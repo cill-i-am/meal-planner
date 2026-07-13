@@ -1,0 +1,25 @@
+{
+  "name": "meal-planner",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --recursive build",
+    "check": "pnpm --recursive check",
+    "dev": "pnpm --filter @meal-planner/api dev",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint --deny-warnings --report-unused-disable-directives .",
+    "lint:fix": "oxlint --fix --deny-warnings --report-unused-disable-directives .",
+    "test": "pnpm --recursive test"
+  },
+  "devDependencies": {
+    "oxfmt": "0.58.0",
+    "oxlint": "1.73.0",
+    "ultracite": "7.9.3"
+  },
+  "engines": {
+    "node": ">=22.18.0",
+    "pnpm": ">=11.7.0"
+  },
+  "packageManager": "pnpm@11.7.0"
+}
