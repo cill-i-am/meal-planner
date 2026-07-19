@@ -3,19 +3,29 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "alchemy:deploy": "tsx scripts/alchemy-command.ts deploy",
+    "alchemy:destroy": "tsx scripts/alchemy-command.ts destroy",
+    "alchemy:plan": "tsx scripts/alchemy-command.ts plan",
     "build": "pnpm --recursive build",
-    "check": "pnpm --recursive check",
+    "check": "tsc -p tsconfig.alchemy.json --noEmit && pnpm --recursive check",
     "dev": "pnpm --filter @meal-planner/api dev",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint --deny-warnings --report-unused-disable-directives .",
     "lint:fix": "oxlint --fix --deny-warnings --report-unused-disable-directives .",
-    "test": "pnpm --recursive test"
+    "test": "vitest run --config vitest.alchemy.config.ts && pnpm --recursive test"
   },
   "devDependencies": {
+    "@effect/platform-node": "4.0.0-beta.99",
+    "@types/node": "24.13.2",
+    "alchemy": "2.0.0-beta.63",
+    "effect": "4.0.0-beta.99",
     "oxfmt": "0.58.0",
     "oxlint": "1.73.0",
-    "ultracite": "7.9.3"
+    "tsx": "4.22.4",
+    "typescript": "5.9.3",
+    "ultracite": "7.9.3",
+    "vitest": "4.1.9"
   },
   "engines": {
     "node": ">=22.18.0",

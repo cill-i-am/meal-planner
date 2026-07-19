@@ -1,6 +1,10 @@
 node_modules/
 dist/
 coverage/
+.alchemy/
+.wrangler/
+.dev.vars
+.dev.vars.*
 .env
 .env.*
 !.env.example
