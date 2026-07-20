@@ -12,8 +12,7 @@ Configure the repo context that the Linear-native skills assume.
 - `AGENTS.md`
 - `docs/agents/*` if present
 - `docs/README.md`
-- Linear teams, Projects, labels/statuses, and Initiatives when tools are
-  available
+- Linear teams, Projects, labels/statuses, and Initiatives when tools are available
 
 ## Ensure
 
@@ -33,20 +32,13 @@ The repo should have:
 
 ## Template Policy
 
-Install `docs/agents/*` from bundled templates. Do not synthesize the workflow
-docs from scratch on each setup run.
+Install `docs/agents/*` from bundled templates. Do not synthesize the workflow docs from scratch on each setup run.
 
 Template sources live under `assets/docs/agents/*` in this skill.
 
-After copying or refreshing templates, patch only stable repo-specific values
-such as project terms and domain-doc locations. Keep Linear teams, statuses,
-labels, and Initiatives in Linear as the source of truth; read them live when a
-skill needs them instead of persisting a second local mapping.
+After copying or refreshing templates, patch only stable repo-specific values such as project terms and domain-doc locations. Keep Linear teams, statuses, labels, and Initiatives in Linear as the source of truth; read them live when a skill needs them instead of persisting a second local mapping.
 
-Create missing files automatically. For existing files, patch conservatively by
-section and preserve project-specific decisions. If an existing file has drifted
-substantially from the bundled template, report the difference and ask before
-replacing it.
+Create missing files automatically. For existing files, patch conservatively by section and preserve project-specific decisions. If an existing file has drifted substantially from the bundled template, report the difference and ask before replacing it.
 
 ## Process
 
@@ -54,8 +46,7 @@ replacing it.
 2. Identify missing or stale workflow docs.
 3. Use bundled templates as the source for missing docs.
 4. Create missing docs automatically.
-5. Patch existing docs in place by section when possible; do not duplicate
-   sections.
+5. Patch existing docs in place by section when possible; do not duplicate sections.
 6. Ask before replacing substantially drifted existing docs.
 7. Update `AGENTS.md` through `build-intent-layer` rules.
 8. Report which skills will use the refreshed setup.
@@ -68,6 +59,4 @@ Keep the report short:
 - Linear access status and any live workspace assumptions used
 - any missing Linear access or follow-up needed
 
-Completion criterion: the repo has the expected `docs/agents/*` files, the
-agent instructions point at them, and no repo-local copy of Linear teams,
-statuses, labels, or Initiatives was introduced as a second source of truth.
+Completion criterion: the repo has the expected `docs/agents/*` files, the agent instructions point at them, and no repo-local copy of Linear teams, statuses, labels, or Initiatives was introduced as a second source of truth.
