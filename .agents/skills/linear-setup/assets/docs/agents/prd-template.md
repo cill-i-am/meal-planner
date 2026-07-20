@@ -2,7 +2,8 @@
 
 ## Problem Statement
 
-What user, business, or system problem are we solving, from the user's perspective?
+What user, business, or system problem are we solving, from the user's
+perspective?
 
 ## Goals
 
@@ -22,7 +23,9 @@ Describe the intended product behavior and workflow.
 
 ## Implementation Decisions
 
-Record stable module, interface, data, API, route, persistence, workflow, or rollout decisions. Avoid volatile file paths unless the path is itself a contract.
+Record stable module, interface, data, API, route, persistence, workflow, or
+rollout decisions. Avoid volatile file paths unless the path is itself a
+contract.
 
 ## Testing And Verification
 
