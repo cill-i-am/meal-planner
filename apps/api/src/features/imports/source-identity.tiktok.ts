@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 
 import { SourceCanonicalId } from "./import.contracts.js";
-import { invalidSource, sourceValidationUnavailable } from "./import.errors.js";
+import { invalidSource, sourceIdentityUnavailable } from "./import.errors.js";
 import type {
   CanonicalSourceIdentity,
   CanonicalSourceIdentityResolverShape,
@@ -105,7 +105,7 @@ const parseCanonicalPath = (
 
 const fetchManual = (fetcher: Fetcher, url: string) =>
   Effect.tryPromise({
-    catch: sourceValidationUnavailable,
+    catch: sourceIdentityUnavailable,
     try: (signal) =>
       fetcher(url, {
         method: "GET",
@@ -120,7 +120,7 @@ const cancelResponseBody = (response: Response) => {
     return Effect.void;
   }
   return Effect.tryPromise({
-    catch: sourceValidationUnavailable,
+    catch: sourceIdentityUnavailable,
     try: () => body.cancel(),
   }).pipe(Effect.ignore);
 };
@@ -133,13 +133,13 @@ const resolveShortLink = (fetcher: Fetcher, initial: URL) =>
       const response = yield* fetchManual(fetcher, current.toString());
       if (response.status < 300 || response.status >= 400) {
         yield* cancelResponseBody(response);
-        return yield* Effect.fail(sourceValidationUnavailable());
+        return yield* Effect.fail(sourceIdentityUnavailable());
       }
 
       yield* cancelResponseBody(response);
       const location = response.headers.get("location");
       if (location === null) {
-        return yield* Effect.fail(sourceValidationUnavailable());
+        return yield* Effect.fail(sourceIdentityUnavailable());
       }
 
       const redirectLocation = resolveRedirectLocation(location, current);
@@ -158,7 +158,7 @@ const resolveShortLink = (fetcher: Fetcher, initial: URL) =>
       }
     }
 
-    return yield* Effect.fail(sourceValidationUnavailable());
+    return yield* Effect.fail(sourceIdentityUnavailable());
   });
 
 export const makeTikTokCanonicalSourceIdentityResolver = (

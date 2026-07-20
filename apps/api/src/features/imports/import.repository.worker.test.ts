@@ -254,6 +254,58 @@ describe("D1 import repository in workerd", () => {
     expect(after?.count).toBe(before?.count);
   });
 
+  it("atomically assigns one winner when the same K1 competes across sources", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const commands = [
+      makeCommand({
+        canonicalId: "7531000000000000000",
+        id: "018f47ad-91aa-7c35-b6fe-000000000008",
+        key: "competing-source-key",
+        requestFingerprint: "competing-source-a",
+      }),
+      makeCommand({
+        canonicalId: "7532000000000000000",
+        id: "018f47ad-91aa-7c35-b6fe-000000000009",
+        key: "competing-source-key",
+        requestFingerprint: "competing-source-b",
+      }),
+    ] as const;
+    const exits = await Promise.all(
+      commands.map((command) =>
+        Effect.runPromiseExit(repository.acceptRequest(command))
+      )
+    );
+    const successes = exits.filter(Exit.isSuccess).map((exit) => exit.value);
+    const failures = exits
+      .filter(Exit.isFailure)
+      .map((exit) => Option.getOrThrow(Cause.findErrorOption(exit.cause)));
+    const imports = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT id, canonical_source_id
+       FROM recipe_imports
+       WHERE canonical_source_id IN (?, ?)`
+    )
+      .bind("7531000000000000000", "7532000000000000000")
+      .all<{ canonical_source_id: string; id: string }>();
+    const ledger = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT import_id
+       FROM import_requests
+       WHERE idempotency_key_hash = ?`
+    )
+      .bind(commands[0].idempotencyKeyHash)
+      .all<{ import_id: string }>();
+
+    expect(successes).toHaveLength(1);
+    expect(successes[0]?.disposition).toBe("created");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ _tag: "IdempotencyConflict" });
+    expect(imports.results).toEqual([
+      expect.objectContaining({ id: successes[0]?.import.view.id }),
+    ]);
+    expect(ledger.results).toEqual([
+      { import_id: successes[0]?.import.view.id },
+    ]);
+  });
+
   it("rejects an incompatible canonical K2 without creating a ledger row", async () => {
     const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
     await Effect.runPromise(
@@ -347,6 +399,56 @@ describe("D1 import repository in workerd", () => {
     expect(new Set(k2.map((result) => result.import.view.id))).toHaveLength(1);
     expect(imports?.count).toBe(2);
     expect(requests?.count).toBe(3);
+  });
+
+  it("rolls back both production tables when the repository batch fails", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const command = makeCommand({
+      canonicalId: "7555000000000000000",
+      id: "018f47ad-91aa-7c35-b6fe-000000000010",
+      key: "repository-rollback-key",
+      requestFingerprint: "repository-rollback-request",
+    });
+    const triggerName = "import_requests_repository_rollback_probe";
+
+    await testEnv.MealPlannerDatabase.prepare(
+      `CREATE TRIGGER ${triggerName}
+       AFTER INSERT ON import_requests
+       WHEN NEW.idempotency_key_hash = '${command.idempotencyKeyHash}'
+       BEGIN
+         SELECT RAISE(ABORT, 'repository rollback probe');
+       END`
+    ).run();
+
+    try {
+      const exit = await Effect.runPromiseExit(
+        repository.acceptRequest(command)
+      );
+      const imports = await testEnv.MealPlannerDatabase.prepare(
+        "SELECT id FROM recipe_imports WHERE id = ?"
+      )
+        .bind(command.candidate.view.id)
+        .all();
+      const requests = await testEnv.MealPlannerDatabase.prepare(
+        "SELECT import_id FROM import_requests WHERE idempotency_key_hash = ?"
+      )
+        .bind(command.idempotencyKeyHash)
+        .all();
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isSuccess(exit)) {
+        throw new Error("Expected repository persistence failure");
+      }
+      expect(
+        Option.getOrThrow(Cause.findErrorOption(exit.cause))
+      ).toMatchObject({ _tag: "ImportPersistenceUnavailable" });
+      expect(imports.results).toEqual([]);
+      expect(requests.results).toEqual([]);
+    } finally {
+      await testEnv.MealPlannerDatabase.prepare(
+        `DROP TRIGGER IF EXISTS ${triggerName}`
+      ).run();
+    }
   });
 
   it("rolls back every statement when a native D1 batch member fails", async () => {

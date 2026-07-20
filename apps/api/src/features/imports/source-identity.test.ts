@@ -2,7 +2,7 @@ import { Cause, Effect, Exit, Fiber, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { SourceDescriptor } from "./import.contracts.js";
-import type { ImportSourceError } from "./import.errors.js";
+import type { SourceIdentityError } from "./import.errors.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
 const source = (url: string) =>
@@ -11,7 +11,7 @@ const source = (url: string) =>
 const resolvedResponse = (response: Response): Promise<Response> =>
   Promise.resolve(response);
 
-const getFailure = async <A>(effect: Effect.Effect<A, ImportSourceError>) => {
+const getFailure = async <A>(effect: Effect.Effect<A, SourceIdentityError>) => {
   const exit = await Effect.runPromiseExit(effect);
 
   expect(Exit.isFailure(exit)).toBe(true);
@@ -54,7 +54,6 @@ describe("TikTok canonical identity", () => {
   });
 
   it.each([
-    "http://www.tiktok.com/@cook/video/7520000000000000000",
     "https://www.tiktok.com.evil.test/@cook/video/7520000000000000000",
     "https://user@www.tiktok.com/@cook/video/7520000000000000000",
     "https://www.tiktok.com:444/@cook/video/7520000000000000000",
@@ -201,8 +200,20 @@ describe("TikTok canonical identity", () => {
         resolver.resolve(source("https://vm.tiktok.com/unresolved"))
       );
 
-      expect(failure._tag).toBe("SourceValidationUnavailable");
+      expect(failure._tag).toBe("SourceIdentityUnavailable");
       expect(cancelled).toBe(true);
     }
   );
+
+  it("classifies short-link transport rejection as identity unavailable", async () => {
+    const resolver = makeTikTokCanonicalSourceIdentityResolver(() =>
+      Promise.reject(new Error("private provider fragment"))
+    );
+
+    const failure = await getFailure(
+      resolver.resolve(source("https://vm.tiktok.com/unresolved"))
+    );
+
+    expect(failure._tag).toBe("SourceIdentityUnavailable");
+  });
 });

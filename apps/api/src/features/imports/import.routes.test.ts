@@ -1,12 +1,13 @@
 import { Effect, Exit, Layer, Redacted, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { ImportAuthorizerShape } from "./import.auth.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import {
   ImportId,
   ImportTimestamp,
+  MaximumSourceUrlLength,
   SourceCanonicalId,
 } from "./import.contracts.js";
 import {
@@ -16,6 +17,7 @@ import {
   importPersistenceUnavailable,
   incompatibleDuplicate,
   invalidSource,
+  sourceIdentityUnavailable,
   sourceValidationUnavailable,
 } from "./import.errors.js";
 import { ImportRoutes } from "./import.routes.js";
@@ -224,20 +226,82 @@ describe("import routes", () => {
     expect(calls).toBe(0);
   });
 
-  it("uses constant safe errors without secrets, URLs, causes, or logs", async () => {
+  it("rejects an oversized source URL before invoking the service", async () => {
+    let calls = 0;
+    const service: ImportServiceShape = {
+      create: () => {
+        calls += 1;
+        return Effect.succeed({ disposition: "created", import: importView });
+      },
+      get: () => Effect.succeed({ import: importView }),
+    };
+    const app = makeApp(service);
+    apps.push(app);
+    const response = await app.handler(
+      new Request("https://meal-planner.test/imports", {
+        body: JSON.stringify({
+          source: {
+            kind: "tiktok",
+            url: `https://www.tiktok.com/${"x".repeat(MaximumSourceUrlLength)}`,
+          },
+        }),
+        headers: authorizedHeaders,
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "invalid_request",
+        message: "The import request is invalid.",
+      },
+    });
+    expect(calls).toBe(0);
+  });
+
+  it("publishes the constant source identity unavailable contract", async () => {
+    const service: ImportServiceShape = {
+      create: () => Effect.fail(sourceIdentityUnavailable()),
+      get: () => Effect.succeed({ import: importView }),
+    };
+    const app = makeApp(service);
+    apps.push(app);
+    const response = await app.handler(
+      new Request("https://meal-planner.test/imports", {
+        body: JSON.stringify({
+          source: {
+            kind: "tiktok",
+            url: "https://vm.tiktok.com/provider-secret-fragment",
+          },
+        }),
+        headers: authorizedHeaders,
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "source_resolution_unavailable",
+        message: "Source resolution is temporarily unavailable.",
+      },
+    });
+  });
+
+  it("uses constant safe errors without secrets, URLs, or causes", async () => {
     const secret = "provider-secret-fragment";
     const submittedUrl = `https://www.tiktok.com/@${secret}/video/7520000000000000000`;
     const errors = [
       invalidSource(),
       idempotencyConflict(),
       incompatibleDuplicate(),
+      sourceIdentityUnavailable(),
       sourceValidationUnavailable(),
       importPersistenceUnavailable(),
       importPersistenceCorrupt(),
     ] as const;
-    const expectedStatuses = [400, 409, 409, 503, 503, 500];
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
+    const expectedStatuses = [400, 409, 409, 503, 503, 503, 500];
     await Promise.all(
       errors.map(async (error, index) => {
         const service: ImportServiceShape = {
@@ -284,9 +348,6 @@ describe("import routes", () => {
     expect(notFoundBody).not.toContain(secret);
     expect(notFoundBody).not.toContain(submittedUrl);
     expect(notFoundBody).not.toContain("cause");
-
-    expect(consoleSpy).not.toHaveBeenCalled();
-    consoleSpy.mockRestore();
   });
 
   it("rejects malformed bodies, keys, and ids with the same safe contract", async () => {

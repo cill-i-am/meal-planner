@@ -1,15 +1,19 @@
 import { Cause, Effect, Exit, Fiber, Option, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
 import { SourceCanonicalId } from "./import.contracts.js";
-import type { ImportSourceError } from "./import.errors.js";
+import type { SourceAvailabilityError } from "./import.errors.js";
+import { sourceValidationUnavailable } from "./import.errors.js";
 import { makeTikTokSourceAvailabilityValidator } from "./source-availability.tiktok.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
 
 const resolvedResponse = (response: Response): Promise<Response> =>
   Promise.resolve(response);
 
-const getFailure = async <A>(effect: Effect.Effect<A, ImportSourceError>) => {
+const getFailure = async <A>(
+  effect: Effect.Effect<A, SourceAvailabilityError>
+) => {
   const exit = await Effect.runPromiseExit(effect);
 
   expect(Exit.isFailure(exit)).toBe(true);
@@ -194,6 +198,54 @@ describe("TikTok availability validation", () => {
     expect(Exit.hasInterrupts(exit)).toBe(true);
     expect(cancelled).toBe(true);
   });
+
+  it("does not let a never-settling reader cancellation defeat the deadline", async () => {
+    let cancelRequested = false;
+    const reading = Promise.withResolvers<boolean>();
+    const pendingRead = Promise.withResolvers<undefined>();
+    const pendingCancel = Promise.withResolvers<undefined>();
+    const validator = makeTikTokSourceAvailabilityValidator(() =>
+      resolvedResponse(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            cancel: () => {
+              cancelRequested = true;
+              return pendingCancel.promise;
+            },
+            pull: () => {
+              reading.resolve(true);
+              return pendingRead.promise;
+            },
+          }),
+          { status: 200 }
+        )
+      )
+    );
+    const exit = await Effect.runPromise(
+      Effect.gen(function* deadline() {
+        const fiber = yield* Effect.forkChild(
+          validator.validate(resolvedVideo).pipe(
+            Effect.timeoutOrElse({
+              duration: "100 millis",
+              orElse: () => Effect.fail(sourceValidationUnavailable()),
+            })
+          )
+        );
+        yield* Effect.promise(() => reading.promise);
+        yield* TestClock.adjust("100 millis");
+        return yield* Fiber.await(fiber);
+      }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected availability timeout");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
+      _tag: "SourceValidationUnavailable",
+    });
+    expect(cancelRequested).toBe(true);
+  }, 1000);
 
   it("rejects malformed and identity-mismatched success bodies", async () => {
     const bodies = [

@@ -39,11 +39,22 @@ const TikTokOEmbedResponse = Schema.Struct({
 
 const MaximumOEmbedBytes = 65_536;
 
+const ignoreCancellation = async (cancellation: Promise<unknown>) => {
+  try {
+    await cancellation;
+  } catch {
+    // Best-effort release failures stay private.
+  }
+};
+
 const cancelReader = (reader: ReadableStreamDefaultReader<Uint8Array>) =>
-  Effect.tryPromise({
-    catch: sourceValidationUnavailable,
-    try: () => reader.cancel(),
-  }).pipe(Effect.ignore);
+  Effect.sync(() => {
+    try {
+      void ignoreCancellation(reader.cancel());
+    } catch {
+      // Best-effort release must remain finite and privacy-safe.
+    }
+  });
 
 const readOEmbedBody = (response: Response) => {
   const { body } = response;

@@ -10,6 +10,7 @@ import type {
   InvalidImportId,
   InvalidImportRequest,
   InvalidSource,
+  SourceIdentityUnavailable,
   SourceValidationUnavailable,
   UnauthorizedImportCaller,
 } from "./import.errors.js";
@@ -23,6 +24,7 @@ type PublicImportError =
   | InvalidImportId
   | InvalidImportRequest
   | InvalidSource
+  | SourceIdentityUnavailable
   | SourceValidationUnavailable
   | UnauthorizedImportCaller;
 
@@ -73,6 +75,13 @@ const publicErrorResponse = (error: PublicImportError) => {
         503,
         "source_validation_unavailable",
         "Source validation is temporarily unavailable."
+      );
+    }
+    case "SourceIdentityUnavailable": {
+      return problem(
+        503,
+        "source_resolution_unavailable",
+        "Source resolution is temporarily unavailable."
       );
     }
     case "ImportPersistenceUnavailable": {

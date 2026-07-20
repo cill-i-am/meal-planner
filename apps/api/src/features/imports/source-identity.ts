@@ -5,7 +5,7 @@ import type {
   SourceCanonicalId,
   SourceDescriptor,
 } from "./import.contracts.js";
-import type { ImportSourceError } from "./import.errors.js";
+import type { SourceIdentityError } from "./import.errors.js";
 
 export const ValidatedVideoUrl = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^https:\/\//u)),
@@ -35,7 +35,7 @@ export type CanonicalIdentityResolution = UnsupportedIdentity | VideoIdentity;
 export interface CanonicalSourceIdentityResolverShape {
   readonly resolve: (
     source: SourceDescriptor
-  ) => Effect.Effect<CanonicalIdentityResolution, ImportSourceError>;
+  ) => Effect.Effect<CanonicalIdentityResolution, SourceIdentityError>;
 }
 
 export class CanonicalSourceIdentityResolver extends Context.Service<

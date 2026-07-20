@@ -26,7 +26,33 @@ export const SourceCanonicalId = TrimmedNonEmptyString.pipe(
 );
 export type SourceCanonicalId = typeof SourceCanonicalId.Type;
 
-export const SourceUrl = TrimmedNonEmptyString.pipe(Schema.brand("SourceUrl"));
+/** Maximum encoded source locator accepted at the HTTP boundary. */
+export const MaximumSourceUrlLength = 2048;
+
+const hasFiniteSourceUrlLength = Schema.makeFilter<string>(
+  (input) => input.length <= MaximumSourceUrlLength,
+  {
+    expected: `a source URL no longer than ${MaximumSourceUrlLength} characters`,
+  },
+  true
+);
+
+const isAbsoluteHttpsUrl = Schema.makeFilter<string>(
+  (input) => {
+    try {
+      return new URL(input).protocol === "https:";
+    } catch {
+      return false;
+    }
+  },
+  { expected: "an absolute HTTPS URL" }
+);
+
+export const SourceUrl = TrimmedNonEmptyString.pipe(
+  Schema.check(hasFiniteSourceUrlLength),
+  Schema.check(isAbsoluteHttpsUrl),
+  Schema.brand("SourceUrl")
+);
 export type SourceUrl = typeof SourceUrl.Type;
 
 export const TikTokSourceDescriptor = Schema.Struct({

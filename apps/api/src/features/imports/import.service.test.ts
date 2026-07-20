@@ -1,4 +1,5 @@
 import { Cause, Effect, Exit, Fiber, Option, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,7 +9,11 @@ import {
   ImportTimestamp,
   SourceCanonicalId,
 } from "./import.contracts.js";
-import { idempotencyConflict, incompatibleDuplicate } from "./import.errors.js";
+import {
+  idempotencyConflict,
+  incompatibleDuplicate,
+  sourceIdentityUnavailable,
+} from "./import.errors.js";
 import type {
   AcceptImportResult,
   ImportRepositoryError,
@@ -22,6 +27,7 @@ import type {
   SourceAvailability,
   SourceAvailabilityValidatorShape,
 } from "./source-availability.js";
+import { makeTikTokSourceAvailabilityValidator } from "./source-availability.tiktok.js";
 import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
 
@@ -338,4 +344,182 @@ describe("ImportService", () => {
     expect(Exit.hasInterrupts(exit)).toBe(true);
     expect(fixture.repository.acceptCalls()).toBe(0);
   });
+
+  it("bounds identity resolution and prevents persistence after the deadline", async () => {
+    const fixture = makeFixture();
+    let providerAborted = false;
+    const started = Promise.withResolvers<boolean>();
+    const service = makeImportService({
+      availabilityValidator: fixture.availability.validator,
+      identityResolver: {
+        resolve: () =>
+          Effect.tryPromise({
+            catch: sourceIdentityUnavailable,
+            try: (signal) => {
+              const pending = Promise.withResolvers<never>();
+              started.resolve(true);
+              signal.addEventListener(
+                "abort",
+                () => {
+                  providerAborted = true;
+                  pending.reject(new DOMException("aborted", "AbortError"));
+                },
+                { once: true }
+              );
+              return pending.promise;
+            },
+          }),
+      },
+      newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000001"),
+      now: () => now,
+      providerDeadlineMilliseconds: 100,
+      repository: fixture.repository.repository,
+      workflowStarter: fixture.workflow.workflow,
+    });
+    const exit = await Effect.runPromise(
+      Effect.gen(function* timeoutIdentity() {
+        const fiber = yield* Effect.forkChild(
+          service.create(videoRequest(), decodeKey("K1"))
+        );
+        yield* Effect.promise(() => started.promise);
+        yield* TestClock.adjust(100);
+        return yield* Fiber.await(fiber);
+      }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected identity timeout");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
+      _tag: "SourceIdentityUnavailable",
+    });
+    expect(providerAborted).toBe(true);
+    expect(fixture.availability.calls()).toBe(0);
+    expect(fixture.repository.acceptCalls()).toBe(0);
+    expect(fixture.workflow.started).toEqual([]);
+  }, 1000);
+
+  it("times out a pending availability read without awaiting reader cancellation", async () => {
+    const fixture = makeFixture();
+    let cancelRequested = false;
+    const reading = Promise.withResolvers<boolean>();
+    const pendingRead = Promise.withResolvers<undefined>();
+    const pendingCancel = Promise.withResolvers<undefined>();
+    const availabilityValidator = makeTikTokSourceAvailabilityValidator(() =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            cancel: () => {
+              cancelRequested = true;
+              return pendingCancel.promise;
+            },
+            pull: () => {
+              reading.resolve(true);
+              return pendingRead.promise;
+            },
+          }),
+          { status: 200 }
+        )
+      )
+    );
+    const service = makeImportService({
+      availabilityValidator,
+      identityResolver: fixture.identity.resolver,
+      newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000001"),
+      now: () => now,
+      providerDeadlineMilliseconds: 100,
+      repository: fixture.repository.repository,
+      workflowStarter: fixture.workflow.workflow,
+    });
+    const exit = await Effect.runPromise(
+      Effect.gen(function* timeoutAvailability() {
+        const fiber = yield* Effect.forkChild(
+          service.create(videoRequest(), decodeKey("K1"))
+        );
+        yield* Effect.promise(() => reading.promise);
+        yield* TestClock.adjust(100);
+        return yield* Fiber.await(fiber);
+      }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected availability timeout");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
+      _tag: "SourceValidationUnavailable",
+    });
+    expect(cancelRequested).toBe(true);
+    expect(fixture.repository.acceptCalls()).toBe(0);
+    expect(fixture.workflow.started).toEqual([]);
+  }, 1000);
+
+  it("shares one absolute deadline across identity and availability", async () => {
+    const fixture = makeFixture();
+    const identityStarted = Promise.withResolvers<boolean>();
+    const availabilityStarted = Promise.withResolvers<boolean>();
+    let availabilityInterrupted = false;
+    const service = makeImportService({
+      availabilityValidator: {
+        validate: () =>
+          Effect.sync(() => {
+            availabilityStarted.resolve(true);
+          }).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(
+              Effect.sync(() => {
+                availabilityInterrupted = true;
+              })
+            )
+          ),
+      },
+      identityResolver: {
+        resolve: () =>
+          Effect.sync(() => {
+            identityStarted.resolve(true);
+          }).pipe(
+            Effect.andThen(Effect.sleep("80 millis")),
+            Effect.as({
+              _tag: "VideoIdentity" as const,
+              identity: {
+                canonicalId: decodeCanonicalId("7520000000000000000"),
+                kind: "tiktok" as const,
+              },
+              videoUrl: decodeVideoUrl(
+                "https://www.tiktok.com/@cook/video/7520000000000000000"
+              ),
+            })
+          ),
+      },
+      newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000001"),
+      now: () => now,
+      providerDeadlineMilliseconds: 100,
+      repository: fixture.repository.repository,
+      workflowStarter: fixture.workflow.workflow,
+    });
+    const exit = await Effect.runPromise(
+      Effect.gen(function* absoluteDeadline() {
+        const fiber = yield* Effect.forkChild(
+          service.create(videoRequest(), decodeKey("K1"))
+        );
+        yield* Effect.promise(() => identityStarted.promise);
+        yield* TestClock.adjust("80 millis");
+        yield* Effect.promise(() => availabilityStarted.promise);
+        yield* TestClock.adjust("20 millis");
+        return yield* Fiber.await(fiber);
+      }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected absolute provider deadline");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
+      _tag: "SourceValidationUnavailable",
+    });
+    expect(availabilityInterrupted).toBe(true);
+    expect(fixture.repository.acceptCalls()).toBe(0);
+    expect(fixture.workflow.started).toEqual([]);
+  }, 1000);
 });

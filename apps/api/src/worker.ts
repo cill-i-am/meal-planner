@@ -29,6 +29,7 @@ import { makeTikTokSourceAvailabilityValidator } from "./features/imports/source
 import { CanonicalSourceIdentityResolver } from "./features/imports/source-identity.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./features/imports/source-identity.tiktok.js";
 import { MealPlannerDatabase } from "./infrastructure/meal-planner-database.js";
+import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
 
 const notFound = HttpServerResponse.json(
   { error: { code: "not_found", message: "The route was not found." } },
@@ -112,8 +113,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                 )
               );
 
-              return yield* routeHandler.pipe(
-                Effect.provide(Layer.mergeAll(authorizerLive, serviceLive))
+              return yield* withCurrentRequestCancellation(
+                routeHandler.pipe(
+                  Effect.provide(Layer.mergeAll(authorizerLive, serviceLive))
+                )
               );
             })
         )

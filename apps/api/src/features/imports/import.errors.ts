@@ -12,6 +12,10 @@ export interface InvalidSource {
   readonly _tag: "InvalidSource";
 }
 
+export interface SourceIdentityUnavailable {
+  readonly _tag: "SourceIdentityUnavailable";
+}
+
 export interface SourceValidationUnavailable {
   readonly _tag: "SourceValidationUnavailable";
 }
@@ -41,7 +45,9 @@ export interface ImportPersistenceCorrupt {
   readonly _tag: "ImportPersistenceCorrupt";
 }
 
-export type ImportSourceError = InvalidSource | SourceValidationUnavailable;
+export type SourceIdentityError = InvalidSource | SourceIdentityUnavailable;
+
+export type SourceAvailabilityError = SourceValidationUnavailable;
 
 export type CreateImportError =
   | IdempotencyConflict
@@ -49,6 +55,7 @@ export type CreateImportError =
   | ImportPersistenceUnavailable
   | IncompatibleDuplicate
   | InvalidSource
+  | SourceIdentityUnavailable
   | SourceValidationUnavailable;
 
 export type GetImportError =
@@ -65,6 +72,10 @@ export const invalidImportId = (): InvalidImportId => ({
 });
 
 export const invalidSource = (): InvalidSource => ({ _tag: "InvalidSource" });
+
+export const sourceIdentityUnavailable = (): SourceIdentityUnavailable => ({
+  _tag: "SourceIdentityUnavailable",
+});
 
 export const sourceValidationUnavailable = (): SourceValidationUnavailable => ({
   _tag: "SourceValidationUnavailable",

@@ -5,6 +5,7 @@ import {
   CreateImportRequest,
   IdempotencyKey,
   ImportView,
+  SourceUrl,
 } from "./import.contracts.js";
 
 const decodeCreate = Schema.decodeUnknownSync(CreateImportRequest);
@@ -42,6 +43,18 @@ describe("import contracts", () => {
     expect(() => decode(" request-1 ")).toThrow();
     expect(() => decode("")).toThrow();
     expect(() => decode("x".repeat(129))).toThrow();
+  });
+
+  it("accepts only finite absolute HTTPS source URLs", () => {
+    const decode = Schema.decodeUnknownSync(SourceUrl);
+    const prefix = "https://www.tiktok.com/";
+    const maximumLengthUrl = `${prefix}${"a".repeat(2048 - prefix.length)}`;
+
+    expect(decode(maximumLengthUrl)).toHaveLength(2048);
+    expect(() => decode(`${maximumLengthUrl}a`)).toThrow();
+    expect(() => decode("x".repeat(1_000_000))).toThrow();
+    expect(() => decode("http://www.tiktok.com/@cook/video/1")).toThrow();
+    expect(() => decode("https://[")).toThrow();
   });
 
   it("decodes only valid queued, failed, and unsupported public states", () => {

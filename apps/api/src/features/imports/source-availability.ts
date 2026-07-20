@@ -1,7 +1,7 @@
 import type { Effect } from "effect";
 import { Context } from "effect";
 
-import type { ImportSourceError } from "./import.errors.js";
+import type { SourceAvailabilityError } from "./import.errors.js";
 import type { VideoIdentity } from "./source-identity.js";
 
 export interface AvailableSource {
@@ -17,7 +17,7 @@ export type SourceAvailability = AvailableSource | PrivateOrUnavailableSource;
 export interface SourceAvailabilityValidatorShape {
   readonly validate: (
     source: Omit<VideoIdentity, "_tag">
-  ) => Effect.Effect<SourceAvailability, ImportSourceError>;
+  ) => Effect.Effect<SourceAvailability, SourceAvailabilityError>;
 }
 
 export const SourceAvailabilityValidator =

@@ -1,4 +1,4 @@
-import { Context, Effect, Option, Schema } from "effect";
+import { Clock, Context, Duration, Effect, Option, Schema } from "effect";
 
 import type {
   CreateImportRequest,
@@ -14,6 +14,8 @@ import {
   idempotencyConflict,
   importNotFound,
   incompatibleDuplicate,
+  sourceIdentityUnavailable,
+  sourceValidationUnavailable,
 } from "./import.errors.js";
 import type { CreateImportError, GetImportError } from "./import.errors.js";
 import type {
@@ -35,6 +37,33 @@ import type {
 } from "./source-identity.js";
 
 const CompatibilityFingerprintSource = "meal-planner-import:v1:no-options";
+const ProviderDeadlineMilliseconds = 5000;
+
+const finiteProviderDeadline = (override: number | undefined) => {
+  const duration = override ?? ProviderDeadlineMilliseconds;
+  if (!Number.isFinite(duration) || duration <= 0) {
+    throw new Error("Provider deadline must be a positive finite duration");
+  }
+  return duration;
+};
+
+const withRemainingProviderBudget = <A, E, R, E2>(
+  effect: Effect.Effect<A, E, R>,
+  deadlineAt: number,
+  onTimeout: () => E2
+): Effect.Effect<A, E | E2, R> =>
+  Clock.currentTimeMillis.pipe(
+    Effect.flatMap((currentTime) => {
+      const remaining = deadlineAt - currentTime;
+      if (remaining <= 0) {
+        return Effect.fail(onTimeout());
+      }
+      return Effect.timeoutOrElse(effect, {
+        duration: Duration.millis(remaining),
+        orElse: () => Effect.fail(onTimeout()),
+      });
+    })
+  );
 
 const digestSha256 = (value: string) =>
   Effect.promise(async () => {
@@ -60,7 +89,8 @@ const requestFingerprintFor = (
 
 const statusForResolution = (
   resolution: CanonicalIdentityResolution,
-  availabilityValidator: SourceAvailabilityValidatorShape
+  availabilityValidator: SourceAvailabilityValidatorShape,
+  deadlineAt: number
 ) =>
   resolution._tag === "UnsupportedIdentity"
     ? Effect.succeed<ImportStatus>({
@@ -69,10 +99,14 @@ const statusForResolution = (
         recovery: "submit_supported_public_video",
       })
     : Effect.map(
-        availabilityValidator.validate({
-          identity: resolution.identity,
-          videoUrl: resolution.videoUrl,
-        }),
+        withRemainingProviderBudget(
+          availabilityValidator.validate({
+            identity: resolution.identity,
+            videoUrl: resolution.videoUrl,
+          }),
+          deadlineAt,
+          sourceValidationUnavailable
+        ),
         (availability): ImportStatus =>
           availability._tag === "Available"
             ? { kind: "queued" }
@@ -88,6 +122,8 @@ export interface MakeImportServiceOptions {
   readonly identityResolver: CanonicalSourceIdentityResolverShape;
   readonly newId: () => ImportId;
   readonly now: () => ImportTimestamp;
+  /** Finite test-only override for the code-owned five-second provider budget. */
+  readonly providerDeadlineMilliseconds?: number;
   readonly repository: ImportRepositoryShape;
   readonly workflowStarter: ImportWorkflowStarterShape;
 }
@@ -107,115 +143,130 @@ export const makeImportService = ({
   identityResolver,
   newId,
   now,
+  providerDeadlineMilliseconds: providerDeadlineOverride,
   repository,
   workflowStarter,
-}: MakeImportServiceOptions): ImportServiceShape => ({
-  create: (request, idempotencyKey) =>
-    Effect.gen(function* create() {
-      const compatibilityFingerprint = yield* Effect.map(
-        digestSha256(CompatibilityFingerprintSource),
-        Schema.decodeUnknownSync(CompatibilityFingerprintSchema)
-      );
-      const idempotencyKeyHash = yield* Effect.map(
-        digestSha256(`idempotency-key:v1:${idempotencyKey}`),
-        Schema.decodeUnknownSync(IdempotencyKeyHash)
-      );
-      const sourceLocatorHash = yield* Effect.map(
-        digestSha256(
-          `source-locator:v1:${request.source.kind}:${request.source.url}`
-        ),
-        Schema.decodeUnknownSync(SourceLocatorHash)
-      );
-      const existingRequest = yield* repository.findRequest(idempotencyKeyHash);
+}: MakeImportServiceOptions): ImportServiceShape => {
+  const providerDeadlineMilliseconds = finiteProviderDeadline(
+    providerDeadlineOverride
+  );
 
-      if (Option.isSome(existingRequest)) {
-        if (existingRequest.value.sourceLocatorHash === sourceLocatorHash) {
+  return {
+    create: (request, idempotencyKey) =>
+      Effect.gen(function* create() {
+        const compatibilityFingerprint = yield* Effect.map(
+          digestSha256(CompatibilityFingerprintSource),
+          Schema.decodeUnknownSync(CompatibilityFingerprintSchema)
+        );
+        const idempotencyKeyHash = yield* Effect.map(
+          digestSha256(`idempotency-key:v1:${idempotencyKey}`),
+          Schema.decodeUnknownSync(IdempotencyKeyHash)
+        );
+        const sourceLocatorHash = yield* Effect.map(
+          digestSha256(
+            `source-locator:v1:${request.source.kind}:${request.source.url}`
+          ),
+          Schema.decodeUnknownSync(SourceLocatorHash)
+        );
+        const existingRequest =
+          yield* repository.findRequest(idempotencyKeyHash);
+
+        if (
+          Option.isSome(existingRequest) &&
+          existingRequest.value.sourceLocatorHash === sourceLocatorHash
+        ) {
           return {
             disposition: "idempotency_replay" as const,
             import: existingRequest.value.import.view,
           };
         }
 
-        const resolution = yield* identityResolver.resolve(request.source);
+        const deadlineAt =
+          (yield* Clock.currentTimeMillis) + providerDeadlineMilliseconds;
+        const resolution = yield* withRemainingProviderBudget(
+          identityResolver.resolve(request.source),
+          deadlineAt,
+          sourceIdentityUnavailable
+        );
         const requestFingerprint = yield* requestFingerprintFor(
           resolution.identity,
           compatibilityFingerprint
         );
-        if (existingRequest.value.requestFingerprint !== requestFingerprint) {
-          return yield* Effect.fail(idempotencyConflict());
-        }
-        return {
-          disposition: "idempotency_replay" as const,
-          import: existingRequest.value.import.view,
-        };
-      }
 
-      const resolution = yield* identityResolver.resolve(request.source);
-      const requestFingerprint = yield* requestFingerprintFor(
-        resolution.identity,
-        compatibilityFingerprint
-      );
-      const canonical = yield* repository.findByCanonicalIdentity(
-        resolution.identity
-      );
-
-      let candidate: StoredImport;
-      if (Option.isSome(canonical)) {
-        if (
-          canonical.value.compatibilityFingerprint !== compatibilityFingerprint
-        ) {
-          return yield* Effect.fail(incompatibleDuplicate());
+        if (Option.isSome(existingRequest)) {
+          if (existingRequest.value.requestFingerprint !== requestFingerprint) {
+            return yield* Effect.fail(idempotencyConflict());
+          }
+          return {
+            disposition: "idempotency_replay" as const,
+            import: existingRequest.value.import.view,
+          };
         }
-        candidate = canonical.value;
-      } else {
-        const status = yield* statusForResolution(
-          resolution,
-          availabilityValidator
+
+        const canonical = yield* repository.findByCanonicalIdentity(
+          resolution.identity
         );
-        const timestamp = now();
-        const view: ImportView = {
-          createdAt: timestamp,
-          evidence: [],
-          id: newId(),
-          source: resolution.identity,
-          status,
-          updatedAt: timestamp,
+
+        let candidate: StoredImport;
+        if (Option.isSome(canonical)) {
+          if (
+            canonical.value.compatibilityFingerprint !==
+            compatibilityFingerprint
+          ) {
+            return yield* Effect.fail(incompatibleDuplicate());
+          }
+          candidate = canonical.value;
+        } else {
+          const status = yield* statusForResolution(
+            resolution,
+            availabilityValidator,
+            deadlineAt
+          );
+          const timestamp = now();
+          const view: ImportView = {
+            createdAt: timestamp,
+            evidence: [],
+            id: newId(),
+            source: resolution.identity,
+            status,
+            updatedAt: timestamp,
+          };
+          candidate = {
+            canonicalSourceId: resolution.identity.canonicalId,
+            compatibilityFingerprint,
+            sourceKind: resolution.identity.kind,
+            view,
+          };
+        }
+
+        const accepted = yield* repository.acceptRequest({
+          candidate,
+          idempotencyKeyHash,
+          requestFingerprint,
+          sourceLocatorHash,
+        });
+
+        if (
+          accepted.disposition === "created" &&
+          accepted.import.view.status.kind === "queued"
+        ) {
+          yield* workflowStarter.start(accepted.import.view.id);
+        }
+
+        return {
+          disposition: accepted.disposition,
+          import: accepted.import.view,
         };
-        candidate = {
-          canonicalSourceId: resolution.identity.canonicalId,
-          compatibilityFingerprint,
-          sourceKind: resolution.identity.kind,
-          view,
-        };
-      }
-
-      const accepted = yield* repository.acceptRequest({
-        candidate,
-        idempotencyKeyHash,
-        requestFingerprint,
-        sourceLocatorHash,
-      });
-
-      if (
-        accepted.disposition === "created" &&
-        accepted.import.view.status.kind === "queued"
-      ) {
-        yield* workflowStarter.start(accepted.import.view.id);
-      }
-
-      return {
-        disposition: accepted.disposition,
-        import: accepted.import.view,
-      };
-    }),
-  get: (id) =>
-    Effect.flatMap(repository.findById(id), (stored) =>
-      Option.match(stored, {
-        onNone: () => Effect.fail(importNotFound(id)),
-        onSome: (value) => Effect.succeed({ import: value.view }),
-      })
-    ),
-});
+      }),
+    get: (id) =>
+      Effect.flatMap(repository.findById(id), (stored) =>
+        Option.match(stored, {
+          onNone: () => Effect.fail(importNotFound(id)),
+          onSome: (value) => Effect.succeed({ import: value.view }),
+        })
+      ),
+  };
+};
 
 export class ImportService extends Context.Service<
   ImportService,
