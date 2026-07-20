@@ -24,8 +24,8 @@ import * as Layer from "effect/Layer";
 providers: Layer.mergeAll(
   Cloudflare.providers(),
   Drizzle.providers(),
-  Planetscale.providers(),
-)
+  Planetscale.providers()
+);
 ```
 
 PlanetScale auth uses service-token credentials:
@@ -126,21 +126,25 @@ Use stages to isolate app infrastructure and branches. Avoid creating full datab
 Recommended pattern:
 
 ```ts
-const { stage } = yield* Alchemy.Stack;
+const { stage } = yield * Alchemy.Stack;
 
 const database = stage.startsWith("pr-")
-  ? yield* Planetscale.PostgresDatabase.ref("AppDatabase", {
+  ? yield *
+    Planetscale.PostgresDatabase.ref("AppDatabase", {
       stage: "dev_shared",
     })
-  : yield* Planetscale.PostgresDatabase("AppDatabase", {
+  : yield *
+    Planetscale.PostgresDatabase("AppDatabase", {
       region: { slug: "us-east" },
       clusterSize: "PS_10",
     });
 
-const branch = yield* Planetscale.PostgresBranch("AppBranch", {
-  database,
-  migrationsDir: schema.out,
-});
+const branch =
+  yield *
+  Planetscale.PostgresBranch("AppBranch", {
+    database,
+    migrationsDir: schema.out,
+  });
 ```
 
 Use `Resource.ref` only for upstream resources that already exist in state. Deploy the upstream stage first. Destroying a PR stage should remove the PR branch, role/password, Hyperdrive, and Worker, not the referenced shared database.

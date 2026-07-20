@@ -20,7 +20,7 @@ describe("Users", () => {
       const users = yield* UserRepository;
       const user = yield* users.findById(UserId.make("usr_1"));
       assert.strictEqual(user.id, UserId.make("usr_1"));
-    }).pipe(Effect.provide(UserRepositoryTestLayer)),
+    }).pipe(Effect.provide(UserRepositoryTestLayer))
   );
 });
 ```
@@ -36,7 +36,7 @@ For a tiny static dependency, use `Layer.succeed`:
 ```ts
 const ClockedFeatureTest = Layer.succeed(
   FeatureFlags,
-  FeatureFlags.of({ checkoutV2: true }),
+  FeatureFlags.of({ checkoutV2: true })
 );
 ```
 
@@ -47,7 +47,7 @@ export const NotificationTestLayer = Layer.effectContext(
   Effect.gen(function* () {
     const sent = yield* Ref.make<ReadonlyArray<Notification>>([]);
     const nextFailure = yield* Ref.make<Option.Option<NotificationError>>(
-      Option.none(),
+      Option.none()
     );
 
     const service = NotificationTest.of({
@@ -62,9 +62,9 @@ export const NotificationTestLayer = Layer.effectContext(
 
     return Context.empty().pipe(
       Context.add(Notification, service),
-      Context.add(NotificationTest, service),
+      Context.add(NotificationTest, service)
     );
-  }),
+  })
 );
 ```
 
@@ -82,10 +82,10 @@ it.effect("rejects a duplicate email", () =>
       Effect.sync(() => {
         assert.strictEqual(error._tag, "EmailAlreadyUsed");
         assert.strictEqual(error.email, command.email);
-      }),
+      })
     ),
-    Effect.provide(TestAppLayer),
-  ),
+    Effect.provide(TestAppLayer)
+  )
 );
 ```
 
@@ -101,9 +101,9 @@ it.effect("retries twice then succeeds", () =>
     const attempts = yield* Ref.make(0);
     const fiber = yield* flakyOperation(attempts).pipe(
       Effect.retry(
-        Schedule.spaced("1 second").pipe(Schedule.upTo({ times: 2 })),
+        Schedule.spaced("1 second").pipe(Schedule.upTo({ times: 2 }))
       ),
-      Effect.fork,
+      Effect.fork
     );
 
     yield* TestClock.adjust("2 seconds");
@@ -111,7 +111,7 @@ it.effect("retries twice then succeeds", () =>
 
     assert.strictEqual(result, expected);
     assert.strictEqual(yield* Ref.get(attempts), 3);
-  }),
+  })
 );
 ```
 
@@ -131,12 +131,12 @@ it.effect("interrupts the worker on scope close", () =>
       worker(started).pipe(
         Effect.ensuring(Deferred.succeed(finalized, undefined)),
         Effect.forkScoped,
-        Effect.zipRight(Deferred.await(started)),
-      ),
+        Effect.zipRight(Deferred.await(started))
+      )
     );
 
     yield* Deferred.await(finalized);
-  }),
+  })
 );
 ```
 

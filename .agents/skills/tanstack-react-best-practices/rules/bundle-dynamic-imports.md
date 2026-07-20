@@ -12,30 +12,30 @@ Lazy-load large client components that are not needed on the first interaction. 
 **Incorrect (Monaco ships in the initial chunk):**
 
 ```tsx
-import { MonacoEditor } from "./monaco-editor"
+import { MonacoEditor } from "./monaco-editor";
 
 function CodePanel({ code }: { readonly code: string }) {
-  return <MonacoEditor value={code} />
+  return <MonacoEditor value={code} />;
 }
 ```
 
 **Correct (Monaco loads on demand):**
 
 ```tsx
-import { lazy, Suspense } from "react"
+import { lazy, Suspense } from "react";
 
 const MonacoEditor = lazy(() =>
   import("./monaco-editor").then((module) => ({
     default: module.MonacoEditor,
-  })),
-)
+  }))
+);
 
 function CodePanel({ code }: { readonly code: string }) {
   return (
     <Suspense fallback={<div>Loading editor...</div>}>
       <MonacoEditor value={code} />
     </Suspense>
-  )
+  );
 }
 ```
 

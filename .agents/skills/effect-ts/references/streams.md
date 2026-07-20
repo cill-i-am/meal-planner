@@ -61,19 +61,19 @@ export const ProviderEventsLive = Layer.effect(
             decodeProviderEvent(raw).pipe(
               Effect.flatMap((event) => Queue.offer(queue, event)),
               Effect.catch((error) =>
-                Effect.logError("ProviderEvents.invalidEvent", error),
-              ),
-            ),
+                Effect.logError("ProviderEvents.invalidEvent", error)
+              )
+            )
           );
-        }),
+        })
       ),
-      (unsubscribe) => Effect.sync(unsubscribe),
+      (unsubscribe) => Effect.sync(unsubscribe)
     );
 
     return ProviderEvents.of({
       events: Stream.fromQueue(queue),
     });
-  }),
+  })
 );
 ```
 
@@ -97,7 +97,7 @@ Use `Stream.paginate(...)` for pull pagination. Its step is effectful and return
 const pages = Stream.paginate(initialCursor, (cursor) =>
   provider
     .listPage(cursor)
-    .pipe(Effect.map((page) => [page.items, page.nextCursor] as const)),
+    .pipe(Effect.map((page) => [page.items, page.nextCursor] as const))
 );
 ```
 
@@ -126,9 +126,9 @@ export const UserProjectionWorkerLive = Layer.effectDiscard(
       Stream.filter(JobEvent.guards.Finished),
       Stream.mapEffect(projection.apply, { concurrency: 8 }),
       Stream.runDrain,
-      Effect.forkScoped,
+      Effect.forkScoped
     );
-  }),
+  })
 );
 ```
 

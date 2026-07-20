@@ -17,7 +17,7 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* () {
     return {};
-  }),
+  })
 );
 ```
 
@@ -47,7 +47,7 @@ export default class Api extends AWS.Lambda.Function<Api>()(
     return {
       fetch: Effect.succeed(HttpServerResponse.text("ok")),
     };
-  }),
+  })
 ) {}
 ```
 
@@ -62,9 +62,9 @@ AWS capabilities are operation-specific bindings:
 ```ts
 import * as S3 from "alchemy/AWS/S3";
 
-const bucket = yield* S3.Bucket("Blobs");
-const putObject = yield* S3.PutObject(bucket);
-const getObject = yield* S3.GetObject(bucket);
+const bucket = yield * S3.Bucket("Blobs");
+const putObject = yield * S3.PutObject(bucket);
+const getObject = yield * S3.GetObject(bucket);
 ```
 
 Each binding provides a typed runtime operation and contributes the corresponding least-privilege IAM statement. Prefer the narrow operation binding over passing a broad SDK client or hand-writing wildcard policies.
@@ -98,8 +98,8 @@ Example producer shape:
 ```ts
 import * as SQS from "alchemy/AWS/SQS";
 
-const jobs = yield* SQS.Queue("Jobs");
-const send = yield* SQS.SendMessage(jobs);
+const jobs = yield * SQS.Queue("Jobs");
+const send = yield * SQS.SendMessage(jobs);
 ```
 
 Consumer APIs take Effect Streams. Make handlers idempotent, configure retries and dead-letter behavior deliberately, and test duplicate delivery where the source is at-least-once.

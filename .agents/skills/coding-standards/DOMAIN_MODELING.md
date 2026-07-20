@@ -115,7 +115,7 @@ Prefer:
 class Money {
   private constructor(
     readonly cents: Cents,
-    readonly currency: Currency,
+    readonly currency: Currency
   ) {}
 
   static create(input: MoneyInput): Result<Money, InvalidMoney> {
@@ -186,7 +186,11 @@ Prefer legal states by construction:
 
 ```ts
 type Invoice =
-  | { readonly _tag: "Draft"; readonly id: InvoiceId; readonly lines: NonEmptyArray<LineItem> }
+  | {
+      readonly _tag: "Draft";
+      readonly id: InvoiceId;
+      readonly lines: NonEmptyArray<LineItem>;
+    }
   | { readonly _tag: "Sent"; readonly id: InvoiceId; readonly sentAt: Instant }
   | { readonly _tag: "Paid"; readonly id: InvoiceId; readonly paidAt: Instant };
 ```

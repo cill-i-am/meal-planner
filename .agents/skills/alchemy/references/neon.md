@@ -47,8 +47,8 @@ import * as Layer from "effect/Layer";
 providers: Layer.mergeAll(
   Cloudflare.providers(),
   Drizzle.providers(),
-  Neon.providers(),
-)
+  Neon.providers()
+);
 ```
 
 Neon auth is API-key based:
@@ -70,10 +70,12 @@ Use `NEON_API_KEY` in CI.
 `Neon.Project` creates the top-level serverless Postgres project. Creating a project also creates the default branch, default role, default database, and a read-write compute endpoint.
 
 ```ts
-const project = yield* Neon.Project("app-db", {
-  region: "aws-us-east-1",
-  pgVersion: 17,
-});
+const project =
+  yield *
+  Neon.Project("app-db", {
+    region: "aws-us-east-1",
+    pgVersion: 17,
+  });
 ```
 
 Important props:
@@ -107,10 +109,12 @@ Prefer `Branch` for per-stage schema/data changes instead of mutating the projec
 `Neon.Branch` creates a copy-on-write branch in a project.
 
 ```ts
-const branch = yield* Neon.Branch("app-branch", {
-  project,
-  migrationsDir: schema.out,
-});
+const branch =
+  yield *
+  Neon.Branch("app-branch", {
+    project,
+    migrationsDir: schema.out,
+  });
 ```
 
 Important props:
@@ -186,9 +190,7 @@ export const NeonDb = Effect.gen(function* () {
 });
 ```
 
-Reference `dev_shared` from non-production stages and create branches there. Do
-not introduce a long-lived staging release gate unless the user explicitly asks
-for one.
+Reference `dev_shared` from non-production stages and create branches there. Do not introduce a long-lived staging release gate unless the user explicitly asks for one.
 
 Deploy the owning stage first:
 
@@ -225,15 +227,19 @@ Rules:
 Use `Drizzle.Schema` and wire `schema.out` to `Neon.Branch.migrationsDir`:
 
 ```ts
-const schema = yield* Drizzle.Schema("app-schema", {
-  schema: "./src/schema.ts",
-  out: "./migrations",
-});
+const schema =
+  yield *
+  Drizzle.Schema("app-schema", {
+    schema: "./src/schema.ts",
+    out: "./migrations",
+  });
 
-const branch = yield* Neon.Branch("app-branch", {
-  project,
-  migrationsDir: schema.out,
-});
+const branch =
+  yield *
+  Neon.Branch("app-branch", {
+    project,
+    migrationsDir: schema.out,
+  });
 ```
 
 Alchemy's Drizzle flow:

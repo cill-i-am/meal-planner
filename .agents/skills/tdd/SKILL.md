@@ -109,14 +109,8 @@ After all tests pass, look for [refactor candidates](refactoring.md):
 
 ## Standards overlay
 
-`../coding-standards/TESTING_AND_VERIFICATION.md` is the source of truth for
-testing and **supersedes `mocking.md`** wherever they disagree:
+`../coding-standards/TESTING_AND_VERIFICATION.md` is the source of truth for testing and **supersedes `mocking.md`** wherever they disagree:
 
-- Do not use module-patching APIs (`vi.mock`, `jest.mock`) or method-spy APIs
-  (`vi.spyOn`, `jest.spyOn`). Replace behavior through a real seam instead
-  (constructor-injected dependency, Effect service/layer, recording fake adapter,
-  local database, runtime binding).
-- Prefer recording fakes supplied through production seams over mocks, even at
-  system boundaries.
-- Use risk-matched evidence and the repository's canonical test command as
-  described in the standards.
+- Do not use module-patching APIs (`vi.mock`, `jest.mock`) or method-spy APIs (`vi.spyOn`, `jest.spyOn`). Replace behavior through a real seam instead (constructor-injected dependency, Effect service/layer, recording fake adapter, local database, runtime binding).
+- Prefer recording fakes supplied through production seams over mocks, even at system boundaries.
+- Use risk-matched evidence and the repository's canonical test command as described in the standards.

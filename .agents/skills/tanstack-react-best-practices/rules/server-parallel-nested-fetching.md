@@ -12,10 +12,8 @@ When fetching nested data in parallel, chain dependent fetches inside each item'
 **Incorrect (all authors wait for all chats):**
 
 ```typescript
-const chats = await Promise.all(chatIds.map((chatId) => getChat(chatId)))
-const authors = await Promise.all(
-  chats.map((chat) => getUser(chat.authorId)),
-)
+const chats = await Promise.all(chatIds.map((chatId) => getChat(chatId)));
+const authors = await Promise.all(chats.map((chat) => getUser(chat.authorId)));
 ```
 
 If one `getChat` call is slow, the authors for the other chats cannot start even when their chat data is already available.
@@ -25,9 +23,9 @@ If one `getChat` call is slow, the authors for the other chats cannot start even
 ```typescript
 const authors = await Promise.all(
   chatIds.map((chatId) =>
-    getChat(chatId).then((chat) => getUser(chat.authorId)),
-  ),
-)
+    getChat(chatId).then((chat) => getUser(chat.authorId))
+  )
+);
 ```
 
 Each item independently chains `getChat` then `getUser`, so a slow item does not block nested fetches for the others.

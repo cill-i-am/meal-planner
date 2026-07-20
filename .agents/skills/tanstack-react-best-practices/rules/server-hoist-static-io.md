@@ -12,23 +12,23 @@ When loading immutable static assets or templates in server functions, server ro
 **Incorrect (reads template on every request):**
 
 ```typescript
-import fs from "node:fs/promises"
+import fs from "node:fs/promises";
 
 export async function renderEmail(data: EmailData) {
-  const template = await fs.readFile("./templates/welcome.html", "utf-8")
-  return applyTemplate(template, data)
+  const template = await fs.readFile("./templates/welcome.html", "utf-8");
+  return applyTemplate(template, data);
 }
 ```
 
 **Correct (starts static I/O once):**
 
 ```typescript
-import fs from "node:fs/promises"
+import fs from "node:fs/promises";
 
-const welcomeTemplate = fs.readFile("./templates/welcome.html", "utf-8")
+const welcomeTemplate = fs.readFile("./templates/welcome.html", "utf-8");
 
 export async function renderEmail(data: EmailData) {
-  return applyTemplate(await welcomeTemplate, data)
+  return applyTemplate(await welcomeTemplate, data);
 }
 ```
 
@@ -36,11 +36,11 @@ export async function renderEmail(data: EmailData) {
 
 ```typescript
 const logoData = fetch(new URL("./assets/logo.png", import.meta.url)).then(
-  (response) => response.arrayBuffer(),
-)
+  (response) => response.arrayBuffer()
+);
 
 export async function getLogoBytes() {
-  return logoData
+  return logoData;
 }
 ```
 

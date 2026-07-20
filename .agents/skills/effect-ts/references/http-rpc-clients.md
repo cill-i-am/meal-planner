@@ -38,9 +38,9 @@ const getProfile = Effect.fn("ProfileProvider.get")(function* (id: ProfileId) {
     Effect.flatMap(HttpClientResponse.filterStatusOk),
     Effect.flatMap(HttpClientResponse.schemaBodyJson(ProfileResponse)),
     Effect.mapError(
-      (cause) => new ProfileProviderError({ operation: "getProfile", cause }),
+      (cause) => new ProfileProviderError({ operation: "getProfile", cause })
     ),
-    Effect.map(decodeProfileDomain),
+    Effect.map(decodeProfileDomain)
   );
 });
 ```
@@ -59,7 +59,7 @@ const makeProviderClient = Effect.gen(function* () {
 
   return client.pipe(
     HttpClient.mapRequest(HttpClientRequest.prependUrl(baseUrl)),
-    HttpClient.mapRequest(HttpClientRequest.bearerToken(Redacted.value(token))),
+    HttpClient.mapRequest(HttpClientRequest.bearerToken(Redacted.value(token)))
   );
 });
 ```

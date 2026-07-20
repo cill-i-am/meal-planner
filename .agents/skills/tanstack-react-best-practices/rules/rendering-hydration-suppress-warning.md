@@ -15,7 +15,7 @@ Do not use this to hide real bugs. Prefer deterministic server/client rendering 
 
 ```tsx
 function Timestamp() {
-  return <span>{new Date().toLocaleString()}</span>
+  return <span>{new Date().toLocaleString()}</span>;
 }
 ```
 
@@ -23,10 +23,6 @@ function Timestamp() {
 
 ```tsx
 function Timestamp() {
-  return (
-    <span suppressHydrationWarning>
-      {new Date().toLocaleString()}
-    </span>
-  )
+  return <span suppressHydrationWarning>{new Date().toLocaleString()}</span>;
 }
 ```

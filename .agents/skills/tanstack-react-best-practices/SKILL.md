@@ -23,29 +23,23 @@ This skill adapts the Vercel React performance rule catalog to the target stack:
 
 ## Data Flow Defaults
 
-- Parse route params, search params, server function inputs, server route bodies,
-  headers, cookies, env/config, and localStorage before carrying values inward.
-- Keep route and server-function payloads plain and serializable. Carry branded
-  values inside the app, but serialize plain decoded data across client/server
-  boundaries.
-- Use narrow projections at external boundaries and shared API contracts. Avoid
-  route-local bespoke DTOs unless the route would otherwise leak sensitive data
-  or large unused payloads.
-- Put reusable query/client/schema logic in feature slices or packages when
-  multiple routes need it. Keep one-off route behavior route-local.
+- Parse route params, search params, server function inputs, server route bodies, headers, cookies, env/config, and localStorage before carrying values inward.
+- Keep route and server-function payloads plain and serializable. Carry branded values inside the app, but serialize plain decoded data across client/server boundaries.
+- Use narrow projections at external boundaries and shared API contracts. Avoid route-local bespoke DTOs unless the route would otherwise leak sensitive data or large unused payloads.
+- Put reusable query/client/schema logic in feature slices or packages when multiple routes need it. Keep one-off route behavior route-local.
 
 ## Rule Categories
 
-| Priority | Category | Impact | Prefix |
-|----------|----------|--------|--------|
-| 1 | Eliminating Waterfalls | CRITICAL | `async-` |
-| 2 | Bundle Size Optimization | CRITICAL | `bundle-` |
-| 3 | Server-Side Performance | HIGH | `server-` |
-| 4 | Client-Side Data Fetching | MEDIUM-HIGH | `client-` |
-| 5 | Re-render Optimization | MEDIUM | `rerender-` |
-| 6 | Rendering Performance | MEDIUM | `rendering-` |
-| 7 | JavaScript Performance | LOW-MEDIUM | `js-` |
-| 8 | Advanced Patterns | LOW | `advanced-` |
+| Priority | Category                  | Impact      | Prefix       |
+| -------- | ------------------------- | ----------- | ------------ |
+| 1        | Eliminating Waterfalls    | CRITICAL    | `async-`     |
+| 2        | Bundle Size Optimization  | CRITICAL    | `bundle-`    |
+| 3        | Server-Side Performance   | HIGH        | `server-`    |
+| 4        | Client-Side Data Fetching | MEDIUM-HIGH | `client-`    |
+| 5        | Re-render Optimization    | MEDIUM      | `rerender-`  |
+| 6        | Rendering Performance     | MEDIUM      | `rendering-` |
+| 7        | JavaScript Performance    | LOW-MEDIUM  | `js-`        |
+| 8        | Advanced Patterns         | LOW         | `advanced-`  |
 
 ## Quick Reference
 
@@ -149,7 +143,4 @@ Read the smallest relevant rule files from `rules/` before acting. When a rule t
 
 The compiled guide in `AGENTS.md` is a sanitized index for target projects. The individual rule files remain the source of detailed examples.
 
-Completion criterion: every touched server/client boundary is parsed and
-authorized where needed, data fetching has one cache owner, avoidable effects or
-local state are removed, and any performance rule applied has a focused
-verification or clear rationale.
+Completion criterion: every touched server/client boundary is parsed and authorized where needed, data fetching has one cache owner, avoidable effects or local state are removed, and any performance rule applied has a focused verification or clear rationale.

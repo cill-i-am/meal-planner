@@ -19,7 +19,7 @@ const normalizeDisplayName = (value: string): string => value.trim();
 
 export const renameUser = Effect.fn("Users.rename")(function* (
   id: UserId,
-  displayName: string,
+  displayName: string
 ) {
   const users = yield* UserRepository;
   return yield* users.rename(id, normalizeDisplayName(displayName));
@@ -58,7 +58,7 @@ Name operations using stable domain vocabulary, not implementation mechanics:
 
 ```ts
 export const completeCheckout = Effect.fn("Checkout.complete")(function* (
-  command: CompleteCheckout,
+  command: CompleteCheckout
 ) {
   const inventory = yield* Inventory;
   const payments = yield* Payments;

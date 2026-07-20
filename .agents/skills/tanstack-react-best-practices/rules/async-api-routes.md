@@ -14,13 +14,13 @@ In TanStack Start server functions and server routes, start independent operatio
 ```typescript
 export const getDashboard = createServerFn({ method: "GET" }).handler(
   async () => {
-    const session = await auth()
-    const config = await loadPublicConfig()
-    const dashboard = await loadDashboard(session.user.id)
+    const session = await auth();
+    const config = await loadPublicConfig();
+    const dashboard = await loadDashboard(session.user.id);
 
-    return { config, dashboard }
-  },
-)
+    return { config, dashboard };
+  }
+);
 ```
 
 **Correct (auth and config start immediately):**
@@ -28,18 +28,18 @@ export const getDashboard = createServerFn({ method: "GET" }).handler(
 ```typescript
 export const getDashboard = createServerFn({ method: "GET" }).handler(
   async () => {
-    const sessionPromise = auth()
-    const configPromise = loadPublicConfig()
+    const sessionPromise = auth();
+    const configPromise = loadPublicConfig();
 
-    const session = await sessionPromise
+    const session = await sessionPromise;
     const [config, dashboard] = await Promise.all([
       configPromise,
       loadDashboard(session.user.id),
-    ])
+    ]);
 
-    return { config, dashboard }
-  },
-)
+    return { config, dashboard };
+  }
+);
 ```
 
 For more complex dependency chains, use `better-all` or an Effect program that makes dependencies explicit.

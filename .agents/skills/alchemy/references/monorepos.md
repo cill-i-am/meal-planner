@@ -189,7 +189,7 @@ export default Alchemy.Stack(
       apiUrl: api.url.as<string>(),
       webUrl: web.url.as<string>(),
     };
-  }),
+  })
 );
 ```
 
@@ -255,7 +255,7 @@ export default Backend.make(
     return {
       url: api.url.as<string>(),
     };
-  }),
+  })
 );
 ```
 
@@ -286,7 +286,7 @@ export default Alchemy.Stack(
     return {
       url: web.url.as<string>(),
     };
-  }),
+  })
 );
 ```
 
@@ -309,9 +309,9 @@ pnpm --filter @acme/api exec alchemy destroy --stage pr-147
 Pin a frontend to a specific backend stage only when stage symmetry is intentionally broken:
 
 ```ts
-const backend = yield* Backend.stage.prod;
-const sharedDevBackend = yield* Backend.stage.dev_shared;
-const prBackend = yield* Backend.stage["pr-42"];
+const backend = yield * Backend.stage.prod;
+const sharedDevBackend = yield * Backend.stage.dev_shared;
+const prBackend = yield * Backend.stage["pr-42"];
 ```
 
 ## Stage And State Behavior

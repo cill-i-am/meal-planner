@@ -17,9 +17,9 @@ Prefer explicit maps or literal paths so the reachable file set stays narrow and
 const pageModules = {
   home: "./pages/home",
   settings: "./pages/settings",
-} as const
+} as const;
 
-const page = await import(pageModules[pageName])
+const page = await import(pageModules[pageName]);
 ```
 
 **Correct (use an explicit map of allowed modules):**
@@ -28,15 +28,15 @@ const page = await import(pageModules[pageName])
 const pageModules = {
   home: () => import("./pages/home"),
   settings: () => import("./pages/settings"),
-} as const
+} as const;
 
-const page = await pageModules[pageName]()
+const page = await pageModules[pageName]();
 ```
 
 **Incorrect (a small enum still hides the final file path):**
 
 ```ts
-const baseDir = path.join(process.cwd(), `content/${contentKind}`)
+const baseDir = path.join(process.cwd(), `content/${contentKind}`);
 ```
 
 **Correct (make final paths literal at the callsite):**
@@ -45,7 +45,7 @@ const baseDir = path.join(process.cwd(), `content/${contentKind}`)
 const baseDir =
   contentKind === ContentKind.Blog
     ? path.join(process.cwd(), "content/blog")
-    : path.join(process.cwd(), "content/docs")
+    : path.join(process.cwd(), "content/docs");
 ```
 
 Reference: [Vite features](https://vite.dev/guide/features.html), [esbuild API](https://esbuild.github.io/api/), [Rollup dynamic import vars](https://www.npmjs.com/package/@rollup/plugin-dynamic-import-vars), [Webpack dependency management](https://webpack.js.org/guides/dependency-management/)

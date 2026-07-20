@@ -67,8 +67,8 @@ export const ProductProvider = () =>
       list: Effect.fn("Stripe.Product.list")(function* () {
         return [];
       }),
-    }),
-);
+    })
+  );
 ```
 
 The adapter helpers in the skeleton (`readProduct`, `createProduct`, `updateProduct`, and attribute conversion) are provider-specific typed Effects; implement them before registering the Layer.
@@ -82,7 +82,7 @@ Expose credentials as a `Context.Service` whose value is an Effect returning a r
 Lifecycle handlers run:
 
 ```ts
-const { apiKey } = yield* yield* StripeCredentials;
+const { apiKey } = yield * yield * StripeCredentials;
 ```
 
 The first yield obtains the lazy credential Effect; the second resolves the current profile/session. This enables environment credentials in CI and refreshed sessions locally.

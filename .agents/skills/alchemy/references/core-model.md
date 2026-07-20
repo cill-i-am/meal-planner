@@ -45,11 +45,9 @@ Provider attributes are lazy `Output<T>` values because they do not exist until 
 ```ts
 import * as Output from "alchemy/Output";
 
-const bucket = yield* Cloudflare.R2.Bucket("Uploads");
+const bucket = yield * Cloudflare.R2.Bucket("Uploads");
 
-const upper = bucket.bucketName.pipe(
-  Output.map((name) => name.toUpperCase()),
-);
+const upper = bucket.bucketName.pipe(Output.map((name) => name.toUpperCase()));
 
 const objectArn = Output.interpolate`arn:aws:s3:::${bucket.bucketName}/objects/*`;
 ```
@@ -112,8 +110,8 @@ The stack's provider Layer maps resource types to lifecycle implementations and 
 providers: Layer.mergeAll(
   Cloudflare.providers(),
   Drizzle.providers(),
-  Neon.providers(),
-)
+  Neon.providers()
+);
 ```
 
 Register each required provider once. Keep the set minimal and use `provider-extension.md` when implementing a new provider.

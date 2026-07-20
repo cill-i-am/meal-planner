@@ -13,39 +13,23 @@ The orchestrator owns the work loop. Workers implement. Reviewers/spec agents ve
 
 - Create a user-visible worker thread for each non-trivial implementation issue.
 - Create the paired user-visible reviewer/spec thread at the same dispatch time.
-- Use Codex app thread tools for thread lifecycle: discover thread tools when
-  they are not loaded, use `list_threads` when avoiding duplicate worker or
-  reviewer threads, use `create_thread` for new user-visible threads, use
-  `send_message_to_thread` for steering, and use `set_thread_archived` only
-  after the thread is no longer needed.
-- Before dispatching, check Linear comments/status, linked PRs, existing
-  worker/reviewer threads, and active heartbeats. Reuse or steer an active owner
-  instead of creating a duplicate worker for the same issue.
-- Let the reviewer/spec thread stay mostly idle until the worker posts a plan or
-  PR when there is nothing useful to inspect yet.
-- The orchestrator may waive the reviewer/spec thread only for tiny or
-  mechanical changes, and should record why.
-- Use `automation_update` for heartbeat automations. Do not write raw automation
-  directives by hand.
+- Use Codex app thread tools for thread lifecycle: discover thread tools when they are not loaded, use `list_threads` when avoiding duplicate worker or reviewer threads, use `create_thread` for new user-visible threads, use `send_message_to_thread` for steering, and use `set_thread_archived` only after the thread is no longer needed.
+- Before dispatching, check Linear comments/status, linked PRs, existing worker/reviewer threads, and active heartbeats. Reuse or steer an active owner instead of creating a duplicate worker for the same issue.
+- Let the reviewer/spec thread stay mostly idle until the worker posts a plan or PR when there is nothing useful to inspect yet.
+- The orchestrator may waive the reviewer/spec thread only for tiny or mechanical changes, and should record why.
+- Use `automation_update` for heartbeat automations. Do not write raw automation directives by hand.
 
 ## Worker Rules
 
 - Use a user-visible Codex worker thread for non-trivial implementation.
-- Use an isolated worktree by default, and use `worktree-isolation` to verify or
-  create that workspace before editing.
-- Do not implement until the worker can report the isolated path, branch, base
-  commit, install result, and baseline check result or blocker.
-- Read the live Linear issue, parent Project/PRD, blockers, and comments before
-  planning. Handoff context is orientation only.
+- Use an isolated worktree by default, and use `worktree-isolation` to verify or create that workspace before editing.
+- Do not implement until the worker can report the isolated path, branch, base commit, install result, and baseline check result or blocker.
+- Read the live Linear issue, parent Project/PRD, blockers, and comments before planning. Handoff context is orientation only.
 - Post a short plan before implementation.
-- Proceed after posting the plan unless the issue, orchestrator, or risk level
-  requires explicit plan approval.
+- Proceed after posting the plan unless the issue, orchestrator, or risk level requires explicit plan approval.
 - Address concrete in-scope reviewer comments directly during PR/CI watch.
-- Stop for orchestrator input when reviewer feedback changes scope, product
-  behavior, architecture, data shape, or requires judgment.
-- Create follow-up Linear issues only for narrow, concrete work discovered
-  during implementation or review. Link the source issue, explain why the work
-  is out of scope, and leave prioritization to triage or the orchestrator.
+- Stop for orchestrator input when reviewer feedback changes scope, product behavior, architecture, data shape, or requires judgment.
+- Create follow-up Linear issues only for narrow, concrete work discovered during implementation or review. Link the source issue, explain why the work is out of scope, and leave prioritization to triage or the orchestrator.
 - Do not create speculative backlog items.
 - Run relevant checks before handing off.
 - Use the in-app Browser for user-visible behavior where practical.
@@ -53,18 +37,9 @@ The orchestrator owns the work loop. Workers implement. Reviewers/spec agents ve
 
 ## Reviewer Rules
 
-The reviewer is read-only. It should read live Linear before reviewing the
-worker's plan when possible and the final diff before approval. Plan review
-should catch overcomplication, scope drift, or missed constraints; it should not
-block normal AFK work unless approval was explicitly required.
+The reviewer is read-only. It should read live Linear before reviewing the worker's plan when possible and the final diff before approval. Plan review should catch overcomplication, scope drift, or missed constraints; it should not block normal AFK work unless approval was explicitly required.
 
-For user-visible changes, the reviewer should gather independent runtime
-evidence with the in-app Browser, preview target, or a focused test subset when
-practical. Use a cheap read-only subagent for this probe when useful. Check the
-changed route or flow for console errors, failed critical requests, loading
-state gaps, visible FOUC, layout shift, interaction jank, duplicate requests,
-and double submissions. If runtime verification is not practical, state the
-specific blocker or waiver.
+For user-visible changes, the reviewer should gather independent runtime evidence with the in-app Browser, preview target, or a focused test subset when practical. Use a cheap read-only subagent for this probe when useful. Check the changed route or flow for console errors, failed critical requests, loading state gaps, visible FOUC, layout shift, interaction jank, duplicate requests, and double submissions. If runtime verification is not practical, state the specific blocker or waiver.
 
 Reviewer output must include:
 
@@ -77,9 +52,7 @@ Reviewer output must include:
 - required fixes
 - residual risks
 
-Reviewers may leave GitHub PR review comments for concrete line-level findings.
-They must still post the final verdict and summary in the reviewer thread. PR
-comments carry code feedback, not merge authority or Linear state authority.
+Reviewers may leave GitHub PR review comments for concrete line-level findings. They must still post the final verdict and summary in the reviewer thread. PR comments carry code feedback, not merge authority or Linear state authority.
 
 ## Merge Authority
 
@@ -90,7 +63,6 @@ Required gates:
 - acceptance criteria satisfied
 - reviewer approved or explicitly waived by orchestrator
 - CI green or failures explained and accepted
-- Browser/preview or focused runtime evidence for user-visible changes,
-  including obvious FOUC, jank, or double-submit risks when relevant
+- Browser/preview or focused runtime evidence for user-visible changes, including obvious FOUC, jank, or double-submit risks when relevant
 - no unresolved blockers or required PR comments
 - no unapproved scope creep, destructive action, or provider mutation

@@ -62,7 +62,7 @@ Keep all `effect` and `@effect/*` packages on a compatible v4 beta line. Verify 
 ```ts
 // Domain and application code compose Effect values.
 export const registerUser = Effect.fn("Users.register")(function* (
-  input: RegisterUserInput,
+  input: RegisterUserInput
 ) {
   const users = yield* UserRepository;
   const welcome = yield* WelcomeEmail;
@@ -75,7 +75,7 @@ export const registerUser = Effect.fn("Users.register")(function* (
 export const POST = (request: Request) =>
   registerFromRequest(request).pipe(
     Effect.provide(AppLayer),
-    Effect.runPromise,
+    Effect.runPromise
   );
 ```
 
