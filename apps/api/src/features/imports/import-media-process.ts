@@ -228,8 +228,13 @@ export const scanTemporaryWorkspace = (root: string) =>
     )
   );
 
+type TemporaryWorkspaceScanner = (
+  root: string
+) => Effect.Effect<void, TerminalMediaFailure>;
+
 export const makeMediaProcessRunner = (
-  execute: CommandExecutor
+  execute: CommandExecutor,
+  scanWorkspace: TemporaryWorkspaceScanner = scanTemporaryWorkspace
 ): MediaProcessRunnerShape => ({
   run: (command, args, options) =>
     Effect.tryPromise({
@@ -244,6 +249,9 @@ export const makeMediaProcessRunner = (
         const controller = new AbortController();
         const abort = () => controller.abort();
         signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) {
+          controller.abort();
+        }
         const timeout = setTimeout(abort, options.deadlineMilliseconds);
         const stdoutChunks: Uint8Array[] = [];
         let stdoutBytes = 0;
@@ -254,16 +262,25 @@ export const makeMediaProcessRunner = (
             return;
           }
           try {
-            await Effect.runPromise(
-              scanTemporaryWorkspace(options.workspaceRoot)
-            );
+            await Effect.runPromise(scanWorkspace(options.workspaceRoot), {
+              signal: controller.signal,
+            });
           } catch {
+            if (controller.signal.aborted) {
+              return;
+            }
             outputLimitExceeded = true;
             controller.abort();
           }
         };
-        await checkWorkspace();
         try {
+          await checkWorkspace();
+          if (outputLimitExceeded) {
+            throw OutputLimitExceeded;
+          }
+          if (controller.signal.aborted) {
+            throw new Error("media process interrupted");
+          }
           const workspacePoll = setInterval(() => {
             void checkWorkspace();
           }, 25);
@@ -324,6 +341,10 @@ export const NodeCommandExecutor: CommandExecutor = ({
 }) =>
   // eslint-disable-next-line promise/avoid-new -- Child processes expose callback events, not a promise API.
   new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      resolve({ exitCode: 1 });
+      return;
+    }
     const child = spawn(command, args, {
       detached: true,
       env: {
@@ -343,12 +364,18 @@ export const NodeCommandExecutor: CommandExecutor = ({
         }
       }
     };
-    signal.addEventListener("abort", terminate, { once: true });
     child.stdout.on("data", (chunk: Buffer) => stdout(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr(chunk));
-    child.once("error", reject);
+    child.once("error", (error) => {
+      signal.removeEventListener("abort", terminate);
+      reject(error);
+    });
     child.once("close", (exitCode) => {
       signal.removeEventListener("abort", terminate);
       resolve({ exitCode: exitCode ?? 1 });
     });
+    signal.addEventListener("abort", terminate, { once: true });
+    if (signal.aborted) {
+      terminate();
+    }
   });

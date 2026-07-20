@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 // eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   makeMediaProcessRunner,
   makeTemporaryArtifactStore,
+  NodeCommandExecutor,
   validateTemporaryWorkspaceEntries,
 } from "./import-media-process.js";
 import {
@@ -36,6 +37,13 @@ const workspaceFiles = (count: number, size: number) =>
     path: `/work/${index}`,
     size,
   }));
+
+const delayedMarker = (marker: string) => [
+  "-e",
+  `setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "launched"), 200)`,
+];
+
+const ignoreProcessOutput = () => null;
 
 describe("bounded media process execution", () => {
   it("freezes stdout, stderr, temp-byte, file-count, and per-file caps", () => {
@@ -94,6 +102,121 @@ describe("bounded media process execution", () => {
         failure: "terminal",
       })
     );
+  });
+
+  it("settles without invoking an executor when the deadline expires during initial workspace preflight", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "meal-planner-process-preflight-")
+    );
+    try {
+      let executions = 0;
+      const runner = makeMediaProcessRunner(
+        () => {
+          executions += 1;
+          return Promise.resolve({ exitCode: 0 });
+        },
+        () => Effect.never
+      );
+
+      const deadlineMissed = Promise.withResolvers<{
+        readonly _tag: "DeadlineMissed";
+      }>();
+      const timeout = setTimeout(
+        () => deadlineMissed.resolve({ _tag: "DeadlineMissed" }),
+        100
+      );
+      const completion = expectSafeFailure(
+        runner.run("yt-dlp", ["synthetic-only"], {
+          deadlineMilliseconds: 10,
+          failure: "retryable",
+          workspaceRoot: root,
+        })
+      ).then((failure) => ({ _tag: "Settled" as const, failure }));
+      const result = await Promise.race([completion, deadlineMissed.promise]);
+      clearTimeout(timeout);
+
+      expect(result).toEqual({
+        _tag: "Settled",
+        failure: {
+          _tag: "RetryableAcquisitionFailure",
+          stage: "process",
+        },
+      });
+      expect(executions).toBe(0);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("never launches a child for a pre-aborted execution", async () => {
+    const root = await mkdtemp(join(tmpdir(), "meal-planner-process-aborted-"));
+    const marker = join(root, "launched");
+    try {
+      const controller = new AbortController();
+      controller.abort();
+      const result = await NodeCommandExecutor({
+        args: [
+          "-e",
+          `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "launched")`,
+        ],
+        command: process.execPath,
+        signal: controller.signal,
+        stderr: ignoreProcessOutput,
+        stdout: ignoreProcessOutput,
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("closes the spawn-listener race and interrupts an in-flight child", async () => {
+    const root = await mkdtemp(join(tmpdir(), "meal-planner-process-race-"));
+    const raceMarker = join(root, "race-launched");
+    const interruptionMarker = join(root, "interruption-launched");
+    try {
+      let abortedReads = 0;
+      const racingSignal = {
+        get aborted() {
+          abortedReads += 1;
+          return abortedReads > 1;
+        },
+        addEventListener: () => null,
+        removeEventListener: () => null,
+      } as unknown as AbortSignal;
+      const raceResult = await NodeCommandExecutor({
+        args: delayedMarker(raceMarker),
+        command: process.execPath,
+        signal: racingSignal,
+        stderr: ignoreProcessOutput,
+        stdout: ignoreProcessOutput,
+      });
+
+      expect(raceResult.exitCode).not.toBe(0);
+      await expect(access(raceMarker)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+
+      const controller = new AbortController();
+      const interrupted = NodeCommandExecutor({
+        args: delayedMarker(interruptionMarker),
+        command: process.execPath,
+        signal: controller.signal,
+        stderr: ignoreProcessOutput,
+        stdout: ignoreProcessOutput,
+      });
+      setTimeout(() => controller.abort(), 25);
+      const interruptedResult = await interrupted;
+
+      expect(interruptedResult.exitCode).not.toBe(0);
+      await expect(access(interruptionMarker)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 
   it("enforces the total, individual, file-count, and forbidden-entry workspace boundaries", async () => {
