@@ -1,5 +1,6 @@
 import { Clock, Context, Duration, Effect, Option, Schema } from "effect";
 
+import { AcquisitionGeneration } from "./import-media.model.js";
 import type {
   CreateImportRequest,
   CreateImportResponse,
@@ -9,6 +10,9 @@ import type {
   ImportStatus,
   ImportTimestamp,
   ImportView,
+  PrivateOrUnavailableImportStatus,
+  QueuedImportStatus,
+  UnsupportedImportStatus,
 } from "./import.contracts.js";
 import {
   idempotencyConflict,
@@ -17,7 +21,11 @@ import {
   sourceIdentityUnavailable,
   sourceValidationUnavailable,
 } from "./import.errors.js";
-import type { CreateImportError, GetImportError } from "./import.errors.js";
+import type {
+  CreateImportError,
+  GetImportError,
+  SourceValidationUnavailable,
+} from "./import.errors.js";
 import type {
   CompatibilityFingerprint,
   ImportRepositoryShape,
@@ -29,6 +37,7 @@ import {
   RequestFingerprint,
   SourceLocatorHash,
 } from "./import.repository.js";
+import { ensureImportWorkflowStarted } from "./import.workflow.js";
 import type { ImportWorkflowStarterShape } from "./import.workflow.js";
 import type { SourceAvailabilityValidatorShape } from "./source-availability.js";
 import type {
@@ -87,13 +96,18 @@ const requestFingerprintFor = (
     Schema.decodeUnknownSync(RequestFingerprint)
   );
 
+type InitialImportStatus =
+  | typeof QueuedImportStatus.Type
+  | typeof PrivateOrUnavailableImportStatus.Type
+  | typeof UnsupportedImportStatus.Type;
+
 const statusForResolution = (
   resolution: CanonicalIdentityResolution,
   availabilityValidator: SourceAvailabilityValidatorShape,
   deadlineAt: number
-) =>
+): Effect.Effect<InitialImportStatus, SourceValidationUnavailable> =>
   resolution._tag === "UnsupportedIdentity"
-    ? Effect.succeed<ImportStatus>({
+    ? Effect.succeed<InitialImportStatus>({
         code: "unsupported_post_type",
         kind: "unsupported",
         recovery: "submit_supported_public_video",
@@ -107,7 +121,7 @@ const statusForResolution = (
           deadlineAt,
           sourceValidationUnavailable
         ),
-        (availability): ImportStatus =>
+        (availability): InitialImportStatus =>
           availability._tag === "Available"
             ? { kind: "queued" }
             : {
@@ -116,6 +130,12 @@ const statusForResolution = (
                 recovery: "check_source_visibility",
               }
       );
+
+const isRecoverableStatus = (status: ImportStatus) =>
+  status.kind === "queued" ||
+  status.kind === "acquiring" ||
+  (status.kind === "failed" &&
+    status.code === "acquisition_temporarily_unavailable");
 
 export interface MakeImportServiceOptions {
   readonly availabilityValidator: SourceAvailabilityValidatorShape;
@@ -175,6 +195,12 @@ export const makeImportService = ({
           Option.isSome(existingRequest) &&
           existingRequest.value.sourceLocatorHash === sourceLocatorHash
         ) {
+          if (isRecoverableStatus(existingRequest.value.import.view.status)) {
+            yield* ensureImportWorkflowStarted(
+              workflowStarter,
+              existingRequest.value.import.view.id
+            );
+          }
           return {
             disposition: "idempotency_replay" as const,
             import: existingRequest.value.import.view,
@@ -196,6 +222,12 @@ export const makeImportService = ({
         if (Option.isSome(existingRequest)) {
           if (existingRequest.value.requestFingerprint !== requestFingerprint) {
             return yield* Effect.fail(idempotencyConflict());
+          }
+          if (isRecoverableStatus(existingRequest.value.import.view.status)) {
+            yield* ensureImportWorkflowStarted(
+              workflowStarter,
+              existingRequest.value.import.view.id
+            );
           }
           return {
             disposition: "idempotency_replay" as const,
@@ -232,6 +264,9 @@ export const makeImportService = ({
             updatedAt: timestamp,
           };
           candidate = {
+            acquisitionGeneration: Schema.decodeUnknownSync(
+              AcquisitionGeneration
+            )(0),
             canonicalSourceId: resolution.identity.canonicalId,
             compatibilityFingerprint,
             sourceKind: resolution.identity.kind,
@@ -246,11 +281,11 @@ export const makeImportService = ({
           sourceLocatorHash,
         });
 
-        if (
-          accepted.disposition === "created" &&
-          accepted.import.view.status.kind === "queued"
-        ) {
-          yield* workflowStarter.start(accepted.import.view.id);
+        if (isRecoverableStatus(accepted.import.view.status)) {
+          yield* ensureImportWorkflowStarted(
+            workflowStarter,
+            accepted.import.view.id
+          );
         }
 
         return {

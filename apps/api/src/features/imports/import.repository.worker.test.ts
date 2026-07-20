@@ -4,6 +4,11 @@ import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
+  AcquisitionGeneration,
+  manifestObjectKey,
+  mediaObjectKey,
+} from "./import-media.model.js";
+import {
   ImportId,
   ImportTimestamp,
   SourceCanonicalId,
@@ -28,6 +33,7 @@ const testEnv = env as unknown as {
 const decodeId = Schema.decodeUnknownSync(ImportId);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
+const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
 const fixtureHash = (value: string) =>
   Array.from(new TextEncoder().encode(value), (byte) =>
     byte.toString(16).padStart(2, "0")
@@ -68,6 +74,7 @@ const makeCommand = ({
 } = {}): AcceptImportCommand => {
   const timestamp = decodeTimestamp("2026-07-20T10:00:00.000Z");
   const candidate: StoredImport = {
+    acquisitionGeneration: decodeGeneration(0),
     canonicalSourceId: decodeCanonicalId(canonicalId),
     compatibilityFingerprint: decodeCompatibilityFingerprint(
       fixtureHash(compatibilityFingerprint)
@@ -128,6 +135,28 @@ describe("D1 import repository in workerd", () => {
     await insertValidImport
       .bind("constraint-probe", "7500000000000000000", timestamp, timestamp)
       .run();
+    const generationDefault = await testEnv.MealPlannerDatabase.prepare(
+      "SELECT acquisition_generation FROM recipe_imports WHERE id = ?"
+    )
+      .bind("constraint-probe")
+      .first<{ acquisition_generation: number }>();
+    expect(generationDefault?.acquisition_generation).toBe(0);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO recipe_imports (
+          acquisition_generation, id, source_kind, canonical_source_id,
+          compatibility_fingerprint, status, status_code, recovery_action,
+          evidence_references_json, created_at, updated_at
+        ) VALUES (-1, ?, 'tiktok', ?, 'constraint-negative', 'queued', NULL, NULL, '[]', ?, ?)`
+      )
+        .bind(
+          "constraint-negative-generation",
+          "7500000000000000099",
+          timestamp,
+          timestamp
+        )
+        .run()
+    ).rejects.toThrow();
     await expect(
       insertValidImport
         .bind(null, "7500000000000000001", timestamp, timestamp)
@@ -148,6 +177,459 @@ describe("D1 import repository in workerd", () => {
     )
       .bind("constraint-probe")
       .run();
+  });
+
+  it("allocates a fresh persisted generation for every actual attempt", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const command = makeCommand({
+      canonicalId: "7580000000000000000",
+      id: "018f47ad-91aa-7c35-b6fe-000000000091",
+      key: "generation-allocation",
+    });
+    await Effect.runPromise(repository.acceptRequest(command));
+    const claimed = await Effect.runPromise(
+      repository.claimAcquisition(command.candidate.view.id)
+    );
+    const first = await Effect.runPromise(
+      repository.beginAcquisitionAttempt(command.candidate.view.id)
+    );
+    const second = await Effect.runPromise(
+      repository.beginAcquisitionAttempt(command.candidate.view.id)
+    );
+    const persisted = Option.getOrThrow(
+      await Effect.runPromise(repository.findById(command.candidate.view.id))
+    );
+
+    expect(claimed.import.acquisitionGeneration).toBe(0);
+    expect(first).toEqual({
+      canonicalSourceId: command.candidate.canonicalSourceId,
+      generation: 1,
+    });
+    expect(second).toEqual({
+      canonicalSourceId: command.candidate.canonicalSourceId,
+      generation: 2,
+    });
+    expect(persisted.acquisitionGeneration).toBe(2);
+  });
+
+  it("guards queued -> acquiring -> acquired and makes identical replay idempotent", async () => {
+    let currentTime = Date.parse("2026-07-20T10:04:00.000Z");
+    const repository = makeD1ImportRepository(
+      testEnv.MealPlannerDatabase,
+      () => currentTime
+    );
+    const command = makeCommand({
+      canonicalId: "7590000000000000000",
+      id: "018f47ad-91aa-7c35-b6fe-000000000101",
+      key: "acquisition-lifecycle",
+    });
+    await Effect.runPromise(repository.acceptRequest(command));
+
+    const claimed = await Effect.runPromise(
+      repository.claimAcquisition(command.candidate.view.id)
+    );
+    currentTime = Date.parse("2026-07-20T10:08:00.000Z");
+    const claimedAgain = await Effect.runPromise(
+      repository.claimAcquisition(command.candidate.view.id)
+    );
+
+    expect(claimed._tag).toBe("Acquiring");
+    expect(claimed.import.view.status).toEqual({ kind: "acquiring" });
+    expect(claimedAgain._tag).toBe("Acquiring");
+    expect(claimed.import.view.updatedAt.toString()).toContain(
+      "2026-07-20T10:04:00"
+    );
+    expect(claimedAgain.import.view.updatedAt).toEqual(
+      claimed.import.view.updatedAt
+    );
+
+    const { generation } = await Effect.runPromise(
+      repository.beginAcquisitionAttempt(command.candidate.view.id)
+    );
+    const acquiredAt = decodeTimestamp("2026-07-20T10:05:00.000Z");
+    const evidence = {
+      acquiredAt,
+      audioStreams: [{ codec: "aac", index: 1 }],
+      bytes: 1024,
+      deleteAt: decodeTimestamp("2026-07-27T10:05:00.000Z"),
+      durationSeconds: 1,
+      generation,
+      manifestKey: manifestObjectKey(command.candidate.view.id, generation),
+      mediaKey: mediaObjectKey(command.candidate.view.id, generation),
+      sha256: fixtureHash("media"),
+      videoStreams: [{ codec: "h264", index: 0 }],
+    } as const;
+    await expect(
+      Effect.runPromise(
+        repository.recordAcquired(
+          command.candidate.view.id,
+          generation,
+          evidence,
+          acquiredAt
+        )
+      )
+    ).resolves.toBe("Recorded");
+    await expect(
+      Effect.runPromise(
+        repository.recordAcquired(
+          command.candidate.view.id,
+          generation,
+          evidence,
+          acquiredAt
+        )
+      )
+    ).resolves.toBe("Recorded");
+    const stored = Option.getOrThrow(
+      await Effect.runPromise(repository.findById(command.candidate.view.id))
+    );
+
+    expect(stored.view.status).toEqual({ kind: "acquired" });
+    expect(stored.view.evidence).toEqual([
+      { kind: "original_media", referenceId: evidence.mediaKey },
+      { kind: "acquisition_manifest", referenceId: evidence.manifestKey },
+    ]);
+  });
+
+  it("supersedes all three stale generations after an emulator-only fourth execution", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const command = makeCommand({
+      canonicalId: "7590000000000000099",
+      id: "018f47ad-91aa-7c35-b6fe-000000000199",
+      key: "generation-finalization-fence",
+    });
+    await Effect.runPromise(repository.acceptRequest(command));
+    await Effect.runPromise(
+      repository.claimAcquisition(command.candidate.view.id)
+    );
+    const [first, second, third, currentAllocation] = await Effect.runPromise(
+      Effect.all(
+        [
+          repository.beginAcquisitionAttempt(command.candidate.view.id),
+          repository.beginAcquisitionAttempt(command.candidate.view.id),
+          repository.beginAcquisitionAttempt(command.candidate.view.id),
+          repository.beginAcquisitionAttempt(command.candidate.view.id),
+        ] as const,
+        { concurrency: 1 }
+      )
+    );
+    const staleGenerations = [
+      first.generation,
+      second.generation,
+      third.generation,
+    ];
+    const stale = first.generation;
+    const current = currentAllocation.generation;
+    const acquiredAt = decodeTimestamp("2026-07-20T10:05:00.000Z");
+    await Promise.all(
+      staleGenerations.map((generation) => {
+        const staleEvidence = {
+          acquiredAt,
+          audioStreams: [{ codec: "aac", index: 1 }],
+          bytes: 1024,
+          deleteAt: decodeTimestamp("2026-07-27T10:05:00.000Z"),
+          durationSeconds: 1,
+          generation,
+          manifestKey: manifestObjectKey(command.candidate.view.id, generation),
+          mediaKey: mediaObjectKey(command.candidate.view.id, generation),
+          sha256: fixtureHash(`stale-media-${generation}`),
+          videoStreams: [{ codec: "h264", index: 0 }],
+        } as const;
+        return expect(
+          Effect.runPromise(
+            repository.recordAcquired(
+              command.candidate.view.id,
+              generation,
+              staleEvidence,
+              acquiredAt
+            )
+          )
+        ).resolves.toBe("Superseded");
+      })
+    );
+
+    expect(staleGenerations).toEqual([
+      decodeGeneration(1),
+      decodeGeneration(2),
+      decodeGeneration(3),
+    ]);
+    expect(current).toBe(decodeGeneration(4));
+
+    const staleFailures = [
+      {
+        _tag: "RetryExhausted",
+        attempts: 3,
+        generation: stale,
+        stage: "store",
+      },
+      {
+        _tag: "Unavailable",
+        code: "private_or_unavailable",
+        generation: stale,
+      },
+      {
+        _tag: "TerminalMedia",
+        code: "invalid_media",
+        generation: stale,
+        stage: "validation",
+      },
+      {
+        _tag: "UnsupportedCarousel",
+        code: "unsupported_carousel",
+        generation: stale,
+      },
+    ] as const;
+    await Promise.all(
+      staleFailures.map((failure) =>
+        expect(
+          Effect.runPromise(
+            repository.recordAcquisitionFailure(
+              command.candidate.view.id,
+              stale,
+              failure,
+              decodeTimestamp("2026-07-20T10:06:00.000Z")
+            )
+          )
+        ).resolves.toBe("Superseded")
+      )
+    );
+
+    const future = decodeGeneration(current + 1);
+    await expect(
+      Effect.runPromise(
+        repository.recordAcquisitionFailure(
+          command.candidate.view.id,
+          future,
+          {
+            _tag: "RetryExhausted",
+            attempts: 3,
+            generation: future,
+            stage: "store",
+          },
+          decodeTimestamp("2026-07-20T10:07:00.000Z")
+        )
+      )
+    ).rejects.toMatchObject({ _tag: "ImportTransitionRejected" });
+
+    const firstFailedAt = decodeTimestamp("2026-07-20T10:08:00.000Z");
+    const currentFailure = {
+      _tag: "RetryExhausted",
+      attempts: 3,
+      generation: current,
+      stage: "store",
+    } as const;
+    await expect(
+      Effect.runPromise(
+        repository.recordAcquisitionFailure(
+          command.candidate.view.id,
+          current,
+          currentFailure,
+          firstFailedAt
+        )
+      )
+    ).resolves.toBe("Recorded");
+    await expect(
+      Effect.runPromise(
+        repository.recordAcquisitionFailure(
+          command.candidate.view.id,
+          current,
+          currentFailure,
+          decodeTimestamp("2026-07-20T10:09:00.000Z")
+        )
+      )
+    ).resolves.toBe("Recorded");
+    const persisted = await testEnv.MealPlannerDatabase.prepare(
+      "SELECT acquisition_generation, updated_at FROM recipe_imports WHERE id = ?"
+    )
+      .bind(command.candidate.view.id)
+      .first<{ acquisition_generation: number; updated_at: string }>();
+
+    expect(persisted).toEqual({
+      acquisition_generation: current,
+      updated_at: "2026-07-20T10:08:00.000Z",
+    });
+  });
+
+  it("refuses an acquired transition after the verified evidence deadline", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase, () =>
+      Date.parse("2026-07-28T10:05:00.000Z")
+    );
+    const command = makeCommand({
+      canonicalId: "7590000000000000001",
+      id: "018f47ad-91aa-7c35-b6fe-000000000102",
+      key: "expired-acquisition-evidence",
+    });
+    await Effect.runPromise(repository.acceptRequest(command));
+    await Effect.runPromise(
+      repository.claimAcquisition(command.candidate.view.id)
+    );
+    const { generation } = await Effect.runPromise(
+      repository.beginAcquisitionAttempt(command.candidate.view.id)
+    );
+    const acquiredAt = decodeTimestamp("2026-07-20T10:05:00.000Z");
+
+    await expect(
+      Effect.runPromise(
+        repository.recordAcquired(
+          command.candidate.view.id,
+          generation,
+          {
+            acquiredAt,
+            audioStreams: [{ codec: "aac", index: 1 }],
+            bytes: 1024,
+            deleteAt: decodeTimestamp("2026-07-27T10:05:00.000Z"),
+            durationSeconds: 1,
+            generation,
+            manifestKey: manifestObjectKey(
+              command.candidate.view.id,
+              generation
+            ),
+            mediaKey: mediaObjectKey(command.candidate.view.id, generation),
+            sha256: fixtureHash("expired-media"),
+            videoStreams: [{ codec: "h264", index: 0 }],
+          },
+          acquiredAt
+        )
+      )
+    ).rejects.toMatchObject({ _tag: "ImportTransitionRejected" });
+  });
+
+  it.each([
+    [
+      {
+        _tag: "RetryExhausted",
+        attempts: 3,
+        generation: decodeGeneration(1),
+        stage: "store",
+      },
+      {
+        code: "acquisition_temporarily_unavailable",
+        kind: "failed",
+        recovery: "retry_later",
+      },
+    ],
+    [
+      {
+        _tag: "Unavailable",
+        code: "private_or_unavailable",
+        generation: decodeGeneration(1),
+      },
+      {
+        code: "private_or_unavailable",
+        kind: "failed",
+        recovery: "check_source_visibility",
+      },
+    ],
+    [
+      {
+        _tag: "TerminalMedia",
+        code: "invalid_media",
+        generation: decodeGeneration(1),
+        stage: "validation",
+      },
+      {
+        code: "invalid_or_unsupported_media",
+        kind: "failed",
+        recovery: "submit_supported_public_video",
+      },
+    ],
+    [
+      {
+        _tag: "UnsupportedCarousel",
+        code: "unsupported_carousel",
+        generation: decodeGeneration(1),
+      },
+      {
+        code: "unsupported_post_type",
+        kind: "unsupported",
+        recovery: "submit_supported_public_video",
+      },
+    ],
+  ] as const)(
+    "records classified acquisition failure %#",
+    async (outcome, expected) => {
+      const index =
+        outcome._tag.length + ("code" in outcome ? outcome.code.length : 0);
+      const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+      const command = makeCommand({
+        canonicalId: `7560000000000000${String(index).padStart(3, "0")}`,
+        id: `018f47ad-91aa-7c35-b6fe-${String(200 + index).padStart(12, "0")}`,
+        key: `classified-${outcome._tag}`,
+      });
+      await Effect.runPromise(repository.acceptRequest(command));
+      await Effect.runPromise(
+        repository.claimAcquisition(command.candidate.view.id)
+      );
+      const { generation } = await Effect.runPromise(
+        repository.beginAcquisitionAttempt(command.candidate.view.id)
+      );
+
+      await Effect.runPromise(
+        repository.recordAcquisitionFailure(
+          command.candidate.view.id,
+          generation,
+          outcome,
+          decodeTimestamp("2026-07-20T10:06:00.000Z")
+        )
+      );
+      const stored = Option.getOrThrow(
+        await Effect.runPromise(repository.findById(command.candidate.view.id))
+      );
+
+      expect(stored.view.status).toEqual(expected);
+      expect(stored.view.evidence).toEqual([]);
+    }
+  );
+
+  it("rejects stale acquisition commits and permits temporary-failure reclaim", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const command = makeCommand({
+      canonicalId: "7570000000000000000",
+      id: "018f47ad-91aa-7c35-b6fe-000000000301",
+      key: "stale-transition",
+    });
+    await Effect.runPromise(repository.acceptRequest(command));
+    const failedAt = decodeTimestamp("2026-07-20T10:07:00.000Z");
+
+    await expect(
+      Effect.runPromise(
+        repository.recordAcquisitionFailure(
+          command.candidate.view.id,
+          decodeGeneration(1),
+          {
+            _tag: "RetryExhausted",
+            attempts: 3,
+            generation: decodeGeneration(1),
+            stage: "process",
+          },
+          failedAt
+        )
+      )
+    ).rejects.toMatchObject({ _tag: "ImportTransitionRejected" });
+
+    await Effect.runPromise(
+      repository.claimAcquisition(command.candidate.view.id)
+    );
+    const { generation } = await Effect.runPromise(
+      repository.beginAcquisitionAttempt(command.candidate.view.id)
+    );
+    await Effect.runPromise(
+      repository.recordAcquisitionFailure(
+        command.candidate.view.id,
+        generation,
+        {
+          _tag: "RetryExhausted",
+          attempts: 3,
+          generation,
+          stage: "process",
+        },
+        failedAt
+      )
+    );
+    const reclaimed = await Effect.runPromise(
+      repository.claimAcquisition(command.candidate.view.id)
+    );
+    expect(reclaimed._tag).toBe("Acquiring");
+    expect(reclaimed.import.view.status).toEqual({ kind: "acquiring" });
   });
 
   it("uses one atomic batch to attach K1 and K2 to one canonical import", async () => {

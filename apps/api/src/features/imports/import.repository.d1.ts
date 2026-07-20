@@ -3,23 +3,42 @@ import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { DateTime, Effect, Option, Schema } from "effect";
 
+import type {
+  AcquisitionGeneration,
+  ClassifiedAcquisitionFailure,
+  VerifiedAcquisitionEvidence,
+} from "./import-media.model.js";
+import {
+  AcquisitionGeneration as AcquisitionGenerationSchema,
+  EvidenceRetentionSeconds,
+  manifestObjectKey,
+  mediaObjectKey,
+} from "./import-media.model.js";
 import {
   EvidenceReference,
-  ImportId,
-  ImportTimestamp,
+  ImportView,
   SourceCanonicalId,
 } from "./import.contracts.js";
-import type { ImportDisposition, ImportStatus } from "./import.contracts.js";
+import type {
+  ImportDisposition,
+  ImportId,
+  ImportStatus,
+  ImportTimestamp,
+} from "./import.contracts.js";
 import { importRequests, recipeImports } from "./import.database-schema.js";
 import {
   idempotencyConflict,
   importPersistenceCorrupt,
   importPersistenceUnavailable,
   incompatibleDuplicate,
+  importNotFound,
+  importTransitionRejected,
 } from "./import.errors.js";
 import type {
   AcceptImportCommand,
+  ClaimAcquisitionResult,
   ImportRepositoryShape,
+  ImportTransitionError,
   StoredImport,
   StoredImportRequest,
 } from "./import.repository.js";
@@ -32,6 +51,7 @@ import {
 const NullableString = Schema.NullOr(Schema.String);
 
 const DatabaseImportRow = Schema.Struct({
+  acquisitionGeneration: AcquisitionGenerationSchema,
   canonicalSourceId: Schema.String,
   compatibilityFingerprint: CompatibilityFingerprint,
   createdAt: Schema.String,
@@ -39,7 +59,13 @@ const DatabaseImportRow = Schema.Struct({
   id: Schema.String,
   recoveryAction: NullableString,
   sourceKind: Schema.Literal("tiktok"),
-  status: Schema.Literals(["failed", "queued", "unsupported"]),
+  status: Schema.Literals([
+    "acquired",
+    "acquiring",
+    "failed",
+    "queued",
+    "unsupported",
+  ]),
   statusCode: NullableString,
   updatedAt: Schema.String,
 });
@@ -50,6 +76,7 @@ const DatabaseRequestFingerprints = Schema.Struct({
 });
 
 const importSelection = {
+  acquisitionGeneration: recipeImports.acquisitionGeneration,
   canonicalSourceId: recipeImports.canonicalSourceId,
   compatibilityFingerprint: recipeImports.compatibilityFingerprint,
   createdAt: recipeImports.createdAt,
@@ -62,13 +89,28 @@ const importSelection = {
   updatedAt: recipeImports.updatedAt,
 } as const;
 
+const decodeUnclassifiedStatus = (
+  row: typeof DatabaseImportRow.Type
+): ImportStatus | null => {
+  if (row.statusCode !== null || row.recoveryAction !== null) {
+    return null;
+  }
+  switch (row.status) {
+    case "acquired":
+    case "acquiring":
+    case "queued": {
+      return { kind: row.status };
+    }
+    default: {
+      return null;
+    }
+  }
+};
+
 const decodeStatus = (row: typeof DatabaseImportRow.Type): ImportStatus => {
-  if (
-    row.status === "queued" &&
-    row.statusCode === null &&
-    row.recoveryAction === null
-  ) {
-    return { kind: "queued" };
+  const unclassified = decodeUnclassifiedStatus(row);
+  if (unclassified !== null) {
+    return unclassified;
   }
   if (
     row.status === "failed" &&
@@ -79,6 +121,28 @@ const decodeStatus = (row: typeof DatabaseImportRow.Type): ImportStatus => {
       code: "private_or_unavailable",
       kind: "failed",
       recovery: "check_source_visibility",
+    };
+  }
+  if (
+    row.status === "failed" &&
+    row.statusCode === "acquisition_temporarily_unavailable" &&
+    row.recoveryAction === "retry_later"
+  ) {
+    return {
+      code: "acquisition_temporarily_unavailable",
+      kind: "failed",
+      recovery: "retry_later",
+    };
+  }
+  if (
+    row.status === "failed" &&
+    row.statusCode === "invalid_or_unsupported_media" &&
+    row.recoveryAction === "submit_supported_public_video"
+  ) {
+    return {
+      code: "invalid_or_unsupported_media",
+      kind: "failed",
+      recovery: "submit_supported_public_video",
     };
   }
   if (
@@ -104,19 +168,20 @@ const decodeStoredImport = (input: unknown) =>
         row.canonicalSourceId
       );
       return {
+        acquisitionGeneration: row.acquisitionGeneration,
         canonicalSourceId,
         compatibilityFingerprint: row.compatibilityFingerprint,
         sourceKind: row.sourceKind,
-        view: {
-          createdAt: Schema.decodeUnknownSync(ImportTimestamp)(row.createdAt),
+        view: Schema.decodeUnknownSync(ImportView)({
+          createdAt: row.createdAt,
           evidence: Schema.decodeUnknownSync(Schema.Array(EvidenceReference))(
             JSON.parse(row.evidenceReferencesJson)
           ),
-          id: Schema.decodeUnknownSync(ImportId)(row.id),
+          id: row.id,
           source: { canonicalId: canonicalSourceId, kind: row.sourceKind },
           status: decodeStatus(row),
-          updatedAt: Schema.decodeUnknownSync(ImportTimestamp)(row.updatedAt),
-        },
+          updatedAt: row.updatedAt,
+        }),
       };
     },
   });
@@ -142,6 +207,8 @@ const persistenceEffect = <A>(promise: () => PromiseLike<A>) =>
 
 const statusColumns = (status: ImportStatus) => {
   switch (status.kind) {
+    case "acquired":
+    case "acquiring":
     case "queued": {
       return { recoveryAction: null, statusCode: null };
     }
@@ -163,11 +230,118 @@ const statusColumns = (status: ImportStatus) => {
   }
 };
 
+const failureStatus = (
+  failure: ClassifiedAcquisitionFailure
+): Exclude<
+  ImportStatus,
+  { readonly kind: "acquired" | "acquiring" | "queued" }
+> => {
+  switch (failure._tag) {
+    case "RetryExhausted": {
+      return {
+        code: "acquisition_temporarily_unavailable",
+        kind: "failed",
+        recovery: "retry_later",
+      };
+    }
+    case "Unavailable": {
+      return {
+        code: "private_or_unavailable",
+        kind: "failed",
+        recovery: "check_source_visibility",
+      };
+    }
+    case "TerminalMedia": {
+      return {
+        code: "invalid_or_unsupported_media",
+        kind: "failed",
+        recovery: "submit_supported_public_video",
+      };
+    }
+    case "UnsupportedCarousel": {
+      return {
+        code: "unsupported_post_type",
+        kind: "unsupported",
+        recovery: "submit_supported_public_video",
+      };
+    }
+    default: {
+      throw new Error("Unsupported acquisition failure");
+    }
+  }
+};
+
+const isVerifiedEvidenceFor = (
+  id: ImportId,
+  evidence: VerifiedAcquisitionEvidence,
+  acquiredAt: ImportTimestamp
+) =>
+  evidence.mediaKey === mediaObjectKey(id, evidence.generation) &&
+  evidence.manifestKey === manifestObjectKey(id, evidence.generation) &&
+  evidence.acquiredAt === acquiredAt &&
+  evidence.sha256.length === 64 &&
+  evidence.bytes > 0 &&
+  evidence.durationSeconds > 0 &&
+  evidence.audioStreams.length > 0 &&
+  evidence.videoStreams.length > 0 &&
+  DateTime.toEpochMillis(evidence.deleteAt) -
+    DateTime.toEpochMillis(evidence.acquiredAt) ===
+    EvidenceRetentionSeconds * 1000;
+
+interface D1ImportRepositoryShape extends ImportRepositoryShape {
+  readonly beginAcquisitionAttempt: (id: ImportId) => Effect.Effect<
+    {
+      readonly canonicalSourceId: SourceCanonicalId;
+      readonly generation: AcquisitionGeneration;
+    },
+    ImportTransitionError
+  >;
+  readonly claimAcquisition: (
+    id: ImportId
+  ) => Effect.Effect<ClaimAcquisitionResult, ImportTransitionError>;
+  readonly recordAcquired: (
+    id: ImportId,
+    generation: AcquisitionGeneration,
+    evidence: VerifiedAcquisitionEvidence,
+    acquiredAt: ImportTimestamp
+  ) => Effect.Effect<"Recorded" | "Superseded", ImportTransitionError>;
+  readonly recordAcquisitionFailure: (
+    id: ImportId,
+    generation: AcquisitionGeneration,
+    failure: ClassifiedAcquisitionFailure,
+    failedAt: ImportTimestamp
+  ) => Effect.Effect<"Recorded" | "Superseded", ImportTransitionError>;
+}
+
 export const makeD1ImportRepository = (
-  binding: AnyD1Database
-): ImportRepositoryShape => {
+  binding: AnyD1Database,
+  currentTimeMillis: () => number = Date.now
+): D1ImportRepositoryShape => {
   const database = drizzle(binding);
 
+  const findById = (id: ImportId) =>
+    Effect.gen(function* findByIdEffect() {
+      const rows = yield* persistenceEffect(() =>
+        database
+          .select(importSelection)
+          .from(recipeImports)
+          .where(eq(recipeImports.id, id))
+          .limit(1)
+      );
+      return rows[0] === undefined
+        ? Option.none()
+        : Option.some(yield* decodeStoredImport(rows[0]));
+    });
+
+  const requireImport = (id: ImportId) =>
+    Effect.flatMap(findById(id), (stored) =>
+      Option.match(stored, {
+        onNone: () => Effect.fail(importNotFound(id)),
+        onSome: Effect.succeed,
+      })
+    );
+
+  // eslint-disable-next-line sort-keys -- Repository methods stay grouped by request, read, and acquisition lifecycle.
   return {
     acceptRequest: (command: AcceptImportCommand) =>
       Effect.gen(function* acceptRequest() {
@@ -181,6 +355,7 @@ export const makeD1ImportRepository = (
           .insert(recipeImports)
           .select(
             sql`SELECT
+              ${command.candidate.acquisitionGeneration},
               ${command.candidate.canonicalSourceId},
               ${command.candidate.compatibilityFingerprint},
               ${createdAt},
@@ -309,6 +484,40 @@ export const makeD1ImportRepository = (
           while: (error) => error._tag === "ImportPersistenceUnavailable",
         })
       ),
+    beginAcquisitionAttempt: (id) =>
+      Effect.gen(function* beginAcquisitionAttempt() {
+        const allocated = yield* persistenceEffect(
+          () =>
+            binding
+              .prepare(
+                `UPDATE recipe_imports
+               SET acquisition_generation = acquisition_generation + 1
+               WHERE id = ? AND status = 'acquiring'
+                 AND acquisition_generation < 9007199254740991
+               RETURNING acquisition_generation, canonical_source_id`
+              )
+              .bind(id)
+              .first() as PromiseLike<{
+              readonly acquisition_generation: number;
+              readonly canonical_source_id: string;
+            } | null>
+        );
+        if (allocated === null) {
+          yield* requireImport(id);
+          return yield* Effect.fail(importTransitionRejected());
+        }
+        return yield* Effect.try({
+          catch: importPersistenceCorrupt,
+          try: () => ({
+            canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)(
+              allocated.canonical_source_id
+            ),
+            generation: Schema.decodeUnknownSync(AcquisitionGenerationSchema)(
+              allocated.acquisition_generation
+            ),
+          }),
+        });
+      }),
     findByCanonicalIdentity: (identity) =>
       Effect.gen(function* findByCanonicalIdentity() {
         const rows = yield* persistenceEffect(() =>
@@ -327,19 +536,7 @@ export const makeD1ImportRepository = (
           ? Option.none()
           : Option.some(yield* decodeStoredImport(rows[0]));
       }),
-    findById: (id) =>
-      Effect.gen(function* findById() {
-        const rows = yield* persistenceEffect(() =>
-          database
-            .select(importSelection)
-            .from(recipeImports)
-            .where(eq(recipeImports.id, id))
-            .limit(1)
-        );
-        return rows[0] === undefined
-          ? Option.none()
-          : Option.some(yield* decodeStoredImport(rows[0]));
-      }),
+    findById,
     findRequest: (idempotencyKeyHash) =>
       Effect.gen(function* findRequest() {
         const rows = yield* persistenceEffect(() =>
@@ -362,6 +559,121 @@ export const makeD1ImportRepository = (
           return Option.none();
         }
         return Option.some(yield* decodeStoredImportRequest(row));
+      }),
+    claimAcquisition: (id) =>
+      Effect.gen(function* claimAcquisition() {
+        const claimedAt = new Date(currentTimeMillis()).toISOString();
+        yield* persistenceEffect(() =>
+          binding
+            .prepare(
+              `UPDATE recipe_imports
+               SET status = 'acquiring', status_code = NULL,
+                   recovery_action = NULL, evidence_references_json = '[]',
+                   updated_at = ?
+               WHERE id = ? AND (
+                 status = 'queued' OR (
+                   status = 'failed'
+                   AND status_code = 'acquisition_temporarily_unavailable'
+                   AND recovery_action = 'retry_later'
+                 )
+               )`
+            )
+            .bind(claimedAt, id)
+            .run()
+        );
+        const stored = yield* requireImport(id);
+        return stored.view.status.kind === "acquiring"
+          ? ({ _tag: "Acquiring", import: stored } as const)
+          : ({ _tag: "Finished", import: stored } as const);
+      }),
+    recordAcquired: (id, generation, evidence, acquiredAt) =>
+      Effect.gen(function* recordAcquired() {
+        if (
+          evidence.generation !== generation ||
+          !isVerifiedEvidenceFor(id, evidence, acquiredAt) ||
+          DateTime.toEpochMillis(evidence.deleteAt) <= currentTimeMillis()
+        ) {
+          return yield* Effect.fail(importTransitionRejected());
+        }
+        const references = [
+          { kind: "original_media", referenceId: evidence.mediaKey },
+          { kind: "acquisition_manifest", referenceId: evidence.manifestKey },
+        ];
+        yield* persistenceEffect(() =>
+          binding
+            .prepare(
+              `UPDATE recipe_imports
+               SET status = 'acquired', status_code = NULL,
+                   recovery_action = NULL, evidence_references_json = ?,
+                   updated_at = ?
+               WHERE id = ? AND status = 'acquiring'
+                 AND acquisition_generation = ?`
+            )
+            .bind(
+              JSON.stringify(references),
+              DateTime.formatIso(acquiredAt),
+              id,
+              generation
+            )
+            .run()
+        );
+        const stored = yield* requireImport(id);
+        if (stored.acquisitionGeneration > generation) {
+          return "Superseded" as const;
+        }
+        if (stored.acquisitionGeneration < generation) {
+          return yield* Effect.fail(importTransitionRejected());
+        }
+        if (
+          stored.view.status.kind === "acquired" &&
+          JSON.stringify(stored.view.evidence) === JSON.stringify(references) &&
+          DateTime.toEpochMillis(stored.view.updatedAt) ===
+            DateTime.toEpochMillis(acquiredAt)
+        ) {
+          return "Recorded" as const;
+        }
+        return yield* Effect.fail(importTransitionRejected());
+      }),
+    recordAcquisitionFailure: (id, generation, failure, failedAt) =>
+      Effect.gen(function* recordAcquisitionFailure() {
+        if (failure.generation !== generation) {
+          return yield* Effect.fail(importTransitionRejected());
+        }
+        const status = failureStatus(failure);
+        const { recoveryAction, statusCode } = statusColumns(status);
+        yield* persistenceEffect(() =>
+          binding
+            .prepare(
+              `UPDATE recipe_imports
+               SET status = ?, status_code = ?, recovery_action = ?,
+                   evidence_references_json = '[]', updated_at = ?
+               WHERE id = ? AND status = 'acquiring'
+                 AND acquisition_generation = ?`
+            )
+            .bind(
+              status.kind,
+              statusCode,
+              recoveryAction,
+              DateTime.formatIso(failedAt),
+              id,
+              generation
+            )
+            .run()
+        );
+        const stored = yield* requireImport(id);
+        if (stored.acquisitionGeneration > generation) {
+          return "Superseded" as const;
+        }
+        if (stored.acquisitionGeneration < generation) {
+          return yield* Effect.fail(importTransitionRejected());
+        }
+        if (
+          stored.view.status.kind === status.kind &&
+          JSON.stringify(stored.view.status) === JSON.stringify(status)
+        ) {
+          return "Recorded" as const;
+        }
+        return yield* Effect.fail(importTransitionRejected());
       }),
   };
 };

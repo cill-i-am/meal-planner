@@ -159,9 +159,10 @@ const makeAvailability = (outcome?: SourceAvailability) => {
 const makeWorkflow = () => {
   const started: string[] = [];
   const workflow: ImportWorkflowStarterShape = {
-    start: (importId) =>
+    ensureStarted: (importId) =>
       Effect.sync(() => {
         started.push(importId);
+        return "already_active" as const;
       }),
   };
   return { started, workflow };
@@ -227,7 +228,10 @@ describe("ImportService", () => {
     expect(replay.disposition).toBe("idempotency_replay");
     expect(fixture.identity.calls()).toBe(identityCalls);
     expect(fixture.availability.calls()).toBe(availabilityCalls);
-    expect(fixture.workflow.started).toHaveLength(1);
+    expect(fixture.workflow.started).toEqual([
+      replay.import.id,
+      replay.import.id,
+    ]);
   });
 
   it("replays a canonically equivalent changed K1 without revalidating availability", async () => {
@@ -292,7 +296,10 @@ describe("ImportService", () => {
     expect(duplicate.import.id).toBe(first.import.id);
     expect(fixture.availability.calls()).toBe(availabilityCalls);
     expect(fixture.repository.requests).toHaveLength(2);
-    expect(fixture.workflow.started).toHaveLength(1);
+    expect(fixture.workflow.started).toEqual([
+      first.import.id,
+      first.import.id,
+    ]);
   });
 
   it("persists private/unavailable and unsupported states without starting work", async () => {

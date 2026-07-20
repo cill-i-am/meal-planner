@@ -2,8 +2,14 @@ import type { Effect, Option } from "effect";
 import { Context, Schema } from "effect";
 
 import type {
+  AcquisitionGeneration,
+  ClassifiedAcquisitionFailure,
+  VerifiedAcquisitionEvidence,
+} from "./import-media.model.js";
+import type {
   ImportDisposition,
   ImportId,
+  ImportTimestamp,
   ImportView,
   SourceCanonicalId,
 } from "./import.contracts.js";
@@ -12,6 +18,8 @@ import type {
   ImportPersistenceCorrupt,
   ImportPersistenceUnavailable,
   IncompatibleDuplicate,
+  ImportNotFound,
+  ImportTransitionRejected,
 } from "./import.errors.js";
 
 const Sha256Hex = Schema.String.pipe(
@@ -39,6 +47,7 @@ export const SourceLocatorHash = Sha256Hex.pipe(
 export type SourceLocatorHash = typeof SourceLocatorHash.Type;
 
 export interface StoredImport {
+  readonly acquisitionGeneration: AcquisitionGeneration;
   readonly canonicalSourceId: SourceCanonicalId;
   readonly compatibilityFingerprint: CompatibilityFingerprint;
   readonly sourceKind: "tiktok";
@@ -69,6 +78,28 @@ export type ImportRepositoryError =
   | ImportPersistenceUnavailable
   | IncompatibleDuplicate;
 
+export type ImportTransitionError =
+  | ImportNotFound
+  | ImportPersistenceCorrupt
+  | ImportPersistenceUnavailable
+  | ImportTransitionRejected;
+
+export type ClaimAcquisitionResult =
+  | { readonly _tag: "Acquiring"; readonly import: StoredImport }
+  | { readonly _tag: "Finished"; readonly import: StoredImport };
+
+export interface BeginAcquisitionAttemptResult {
+  readonly canonicalSourceId: SourceCanonicalId;
+  readonly generation: AcquisitionGeneration;
+}
+
+export const AcquisitionFinalizationResult = Schema.Literals([
+  "Recorded",
+  "Superseded",
+]);
+export type AcquisitionFinalizationResult =
+  typeof AcquisitionFinalizationResult.Type;
+
 export interface ImportRepositoryShape {
   readonly acceptRequest: (
     command: AcceptImportCommand
@@ -92,6 +123,24 @@ export interface ImportRepositoryShape {
     Option.Option<StoredImportRequest>,
     ImportPersistenceCorrupt | ImportPersistenceUnavailable
   >;
+  readonly claimAcquisition?: (
+    id: ImportId
+  ) => Effect.Effect<ClaimAcquisitionResult, ImportTransitionError>;
+  readonly beginAcquisitionAttempt?: (
+    id: ImportId
+  ) => Effect.Effect<BeginAcquisitionAttemptResult, ImportTransitionError>;
+  readonly recordAcquired?: (
+    id: ImportId,
+    generation: AcquisitionGeneration,
+    evidence: VerifiedAcquisitionEvidence,
+    acquiredAt: ImportTimestamp
+  ) => Effect.Effect<AcquisitionFinalizationResult, ImportTransitionError>;
+  readonly recordAcquisitionFailure?: (
+    id: ImportId,
+    generation: AcquisitionGeneration,
+    failure: ClassifiedAcquisitionFailure,
+    failedAt: ImportTimestamp
+  ) => Effect.Effect<AcquisitionFinalizationResult, ImportTransitionError>;
 }
 
 export class ImportRepository extends Context.Service<

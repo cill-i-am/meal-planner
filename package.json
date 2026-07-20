@@ -14,6 +14,7 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint --deny-warnings --report-unused-disable-directives .",
     "lint:fix": "oxlint --fix --deny-warnings --report-unused-disable-directives .",
+    "test:container": "MEAL_PLANNER_RUN_CONTAINER_TESTS=1 pnpm --filter @meal-planner/api exec vitest run --config vitest.container.config.ts",
     "test": "vitest run --config vitest.alchemy.config.ts && pnpm --recursive test"
   },
   "devDependencies": {

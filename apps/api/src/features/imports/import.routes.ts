@@ -26,6 +26,19 @@ const decodeImportId = HttpRouter.schemaPathParams(
   Schema.Struct({ id: ImportId })
 ).pipe(Effect.mapError(() => invalidImportId()));
 
+const createImportStatusCode = (response: typeof CreateImportResponse.Type) => {
+  if (response.import.status.kind === "acquired") {
+    return 200;
+  }
+  if (
+    response.import.status.kind === "queued" ||
+    response.import.status.kind === "acquiring"
+  ) {
+    return 202;
+  }
+  return 422;
+};
+
 export const ImportRouteDefinitions = [
   HttpRouter.route("POST", "/imports", (request) =>
     Effect.gen(function* createImportRoute() {
@@ -38,9 +51,7 @@ export const ImportRouteDefinitions = [
       const service = yield* ImportService;
       return yield* service.create(body, idempotencyKey);
     }).pipe((effect) =>
-      respond(effect, CreateImportResponse, (response) =>
-        response.import.status.kind === "queued" ? 202 : 422
-      )
+      respond(effect, CreateImportResponse, createImportStatusCode)
     )
   ),
   HttpRouter.route("GET", "/imports/:id", (request) =>

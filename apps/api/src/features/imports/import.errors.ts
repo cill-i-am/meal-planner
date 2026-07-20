@@ -45,6 +45,14 @@ export interface ImportPersistenceCorrupt {
   readonly _tag: "ImportPersistenceCorrupt";
 }
 
+export interface WorkflowStartUnavailable {
+  readonly _tag: "WorkflowStartUnavailable";
+}
+
+export interface ImportTransitionRejected {
+  readonly _tag: "ImportTransitionRejected";
+}
+
 export type SourceIdentityError = InvalidSource | SourceIdentityUnavailable;
 
 export type SourceAvailabilityError = SourceValidationUnavailable;
@@ -56,7 +64,8 @@ export type CreateImportError =
   | IncompatibleDuplicate
   | InvalidSource
   | SourceIdentityUnavailable
-  | SourceValidationUnavailable;
+  | SourceValidationUnavailable
+  | WorkflowStartUnavailable;
 
 export type GetImportError =
   | ImportNotFound
@@ -105,4 +114,12 @@ export const importPersistenceUnavailable =
 
 export const importPersistenceCorrupt = (): ImportPersistenceCorrupt => ({
   _tag: "ImportPersistenceCorrupt",
+});
+
+export const workflowStartUnavailable = (): WorkflowStartUnavailable => ({
+  _tag: "WorkflowStartUnavailable",
+});
+
+export const importTransitionRejected = (): ImportTransitionRejected => ({
+  _tag: "ImportTransitionRejected",
 });

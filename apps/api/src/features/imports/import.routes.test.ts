@@ -19,6 +19,7 @@ import {
   invalidSource,
   sourceIdentityUnavailable,
   sourceValidationUnavailable,
+  workflowStartUnavailable,
 } from "./import.errors.js";
 import { ImportRoutes } from "./import.routes.js";
 import { ImportService } from "./import.service.js";
@@ -183,6 +184,118 @@ describe("import routes", () => {
     expect(response.status).toBe(422);
     await expect(response.json()).resolves.toMatchObject({
       import: { id: importId, status: { kind: "failed" } },
+    });
+  });
+
+  it.each([
+    [{ kind: "queued" }, 202],
+    [{ kind: "acquiring" }, 202],
+    [
+      {
+        code: "acquisition_temporarily_unavailable",
+        kind: "failed",
+        recovery: "retry_later",
+      },
+      422,
+    ],
+  ] as const)(
+    "maps public lifecycle status %# to HTTP %i",
+    async (status, expected) => {
+      const service: ImportServiceShape = {
+        create: () =>
+          Effect.succeed({
+            disposition: "idempotency_replay",
+            import: { ...importView, status },
+          }),
+        get: () => Effect.succeed({ import: importView }),
+      };
+      const app = makeApp(service);
+      apps.push(app);
+      const response = await app.handler(
+        new Request("https://meal-planner.test/imports", {
+          body: JSON.stringify({
+            source: {
+              kind: "tiktok",
+              url: "https://www.tiktok.com/@cook/video/7520000000000000000",
+            },
+          }),
+          headers: authorizedHeaders,
+          method: "POST",
+        })
+      );
+
+      expect(response.status).toBe(expected);
+    }
+  );
+
+  it("returns 200 only after acquisition has exact durable evidence", async () => {
+    const evidence = [
+      {
+        kind: "original_media" as const,
+        referenceId: `imports/${importId}/acquisition/v1/generations/1/original.mp4`,
+      },
+      {
+        kind: "acquisition_manifest" as const,
+        referenceId: `imports/${importId}/acquisition/v1/generations/1/manifest.json`,
+      },
+    ] as const;
+    const acquired = {
+      ...importView,
+      evidence,
+      status: { kind: "acquired" as const },
+    };
+    const service: ImportServiceShape = {
+      create: () =>
+        Effect.succeed({ disposition: "idempotency_replay", import: acquired }),
+      get: () => Effect.succeed({ import: acquired }),
+    };
+    const app = makeApp(service);
+    apps.push(app);
+    const response = await app.handler(
+      new Request("https://meal-planner.test/imports", {
+        body: JSON.stringify({
+          source: {
+            kind: "tiktok",
+            url: "https://www.tiktok.com/@cook/video/7520000000000000000",
+          },
+        }),
+        headers: authorizedHeaders,
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      import: { evidence, status: { kind: "acquired" } },
+    });
+  });
+
+  it("maps Workflow start loss to a privacy-safe retryable 503", async () => {
+    const service: ImportServiceShape = {
+      create: () => Effect.fail(workflowStartUnavailable()),
+      get: () => Effect.succeed({ import: importView }),
+    };
+    const app = makeApp(service);
+    apps.push(app);
+    const response = await app.handler(
+      new Request("https://meal-planner.test/imports", {
+        body: JSON.stringify({
+          source: {
+            kind: "tiktok",
+            url: "https://www.tiktok.com/@provider-secret/video/7520000000000000000",
+          },
+        }),
+        headers: authorizedHeaders,
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "workflow_start_unavailable",
+        message: "Import processing is temporarily unavailable.",
+      },
     });
   });
 

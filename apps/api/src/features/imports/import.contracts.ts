@@ -80,10 +80,30 @@ export const QueuedImportStatus = Schema.Struct({
   kind: Schema.Literal("queued"),
 });
 
-export const FailedImportStatus = Schema.Struct({
+export const AcquiringImportStatus = Schema.Struct({
+  kind: Schema.Literal("acquiring"),
+});
+
+export const AcquiredImportStatus = Schema.Struct({
+  kind: Schema.Literal("acquired"),
+});
+
+export const PrivateOrUnavailableImportStatus = Schema.Struct({
   code: Schema.Literal("private_or_unavailable"),
   kind: Schema.Literal("failed"),
   recovery: Schema.Literal("check_source_visibility"),
+});
+
+export const AcquisitionTemporarilyUnavailableImportStatus = Schema.Struct({
+  code: Schema.Literal("acquisition_temporarily_unavailable"),
+  kind: Schema.Literal("failed"),
+  recovery: Schema.Literal("retry_later"),
+});
+
+export const InvalidOrUnsupportedMediaImportStatus = Schema.Struct({
+  code: Schema.Literal("invalid_or_unsupported_media"),
+  kind: Schema.Literal("failed"),
+  recovery: Schema.Literal("submit_supported_public_video"),
 });
 
 export const UnsupportedImportStatus = Schema.Struct({
@@ -93,26 +113,73 @@ export const UnsupportedImportStatus = Schema.Struct({
 });
 
 export const ImportStatus = Schema.Union([
+  AcquiredImportStatus,
+  AcquiringImportStatus,
   QueuedImportStatus,
-  FailedImportStatus,
+  PrivateOrUnavailableImportStatus,
+  AcquisitionTemporarilyUnavailableImportStatus,
+  InvalidOrUnsupportedMediaImportStatus,
   UnsupportedImportStatus,
 ]);
 export type ImportStatus = typeof ImportStatus.Type;
 
-export const EvidenceReference = Schema.Struct({
-  kind: Schema.Literal("source_metadata"),
+export const OriginalMediaEvidenceReference = Schema.Struct({
+  kind: Schema.Literal("original_media"),
   referenceId: TrimmedNonEmptyString,
 });
+export const AcquisitionManifestEvidenceReference = Schema.Struct({
+  kind: Schema.Literal("acquisition_manifest"),
+  referenceId: TrimmedNonEmptyString,
+});
+export const EvidenceReference = Schema.Union([
+  OriginalMediaEvidenceReference,
+  AcquisitionManifestEvidenceReference,
+]);
 export type EvidenceReference = typeof EvidenceReference.Type;
 
-export const ImportView = Schema.Struct({
+const ImportViewFields = {
   createdAt: ImportTimestamp,
-  evidence: Schema.Array(EvidenceReference),
   id: ImportId,
   source: ImportSourceView,
-  status: ImportStatus,
   updatedAt: ImportTimestamp,
+} as const;
+
+const EmptyEvidence = Schema.Array(EvidenceReference).pipe(
+  Schema.check(
+    Schema.makeFilter<readonly EvidenceReference[]>(
+      (evidence) => evidence.length === 0,
+      { expected: "no evidence before acquisition" },
+      true
+    )
+  )
+);
+
+const NonAcquiredImportView = Schema.Struct({
+  ...ImportViewFields,
+  evidence: EmptyEvidence,
+  status: Schema.Union([
+    AcquiringImportStatus,
+    QueuedImportStatus,
+    PrivateOrUnavailableImportStatus,
+    AcquisitionTemporarilyUnavailableImportStatus,
+    InvalidOrUnsupportedMediaImportStatus,
+    UnsupportedImportStatus,
+  ]),
 });
+
+const AcquiredImportView = Schema.Struct({
+  ...ImportViewFields,
+  evidence: Schema.Tuple([
+    OriginalMediaEvidenceReference,
+    AcquisitionManifestEvidenceReference,
+  ]),
+  status: AcquiredImportStatus,
+});
+
+export const ImportView = Schema.Union([
+  NonAcquiredImportView,
+  AcquiredImportView,
+]);
 export type ImportView = typeof ImportView.Type;
 
 export const ImportDisposition = Schema.Literals([
