@@ -28,11 +28,11 @@ import {
   SourceLocatorHash,
 } from "./import.repository.js";
 import type { ImportWorkflowStarterShape } from "./import.workflow.js";
+import type { SourceAvailabilityValidatorShape } from "./source-availability.js";
 import type {
   CanonicalIdentityResolution,
   CanonicalSourceIdentityResolverShape,
-  SourceAvailabilityValidatorShape,
-} from "./source-resolver.js";
+} from "./source-identity.js";
 
 const CompatibilityFingerprintSource = "meal-planner-import:v1:no-options";
 

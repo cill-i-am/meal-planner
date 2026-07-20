@@ -19,11 +19,11 @@ import type {
 import { makeImportService } from "./import.service.js";
 import type { ImportWorkflowStarterShape } from "./import.workflow.js";
 import type {
-  CanonicalSourceIdentityResolverShape,
   SourceAvailability,
   SourceAvailabilityValidatorShape,
-} from "./source-resolver.js";
-import { ValidatedVideoUrl } from "./source-resolver.js";
+} from "./source-availability.js";
+import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
+import { ValidatedVideoUrl } from "./source-identity.js";
 
 const decodeRequest = Schema.decodeUnknownSync(CreateImportRequest);
 const decodeKey = Schema.decodeUnknownSync(IdempotencyKey);

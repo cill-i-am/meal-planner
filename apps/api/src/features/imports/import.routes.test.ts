@@ -1,4 +1,4 @@
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Exit, Layer, Redacted, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -69,6 +69,40 @@ describe("import routes", () => {
 
   afterAll(async () => {
     await Promise.all(apps.map(({ dispose }) => dispose()));
+  });
+
+  it("accepts only the configured bearer token", async () => {
+    const configured = await Effect.runPromise(
+      makeImportAuthorizer(Redacted.make("expected-token"))
+    );
+
+    await expect(
+      Effect.runPromise(configured.authorize("Bearer expected-token"))
+    ).resolves.toBeUndefined();
+    const exits = await Promise.all(
+      [
+        undefined,
+        "",
+        "expected-token",
+        "Basic expected-token",
+        "Bearer wrong-token",
+        "Bearer expected-token extra",
+      ].map((value) => Effect.runPromiseExit(configured.authorize(value)))
+    );
+    for (const exit of exits) {
+      expect(Exit.isFailure(exit)).toBe(true);
+    }
+  });
+
+  it("fails closed when the configured token is empty", async () => {
+    const configured = await Effect.runPromise(
+      makeImportAuthorizer(Redacted.make(""))
+    );
+    const exit = await Effect.runPromiseExit(
+      configured.authorize("Bearer any-token")
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
   });
 
   it("creates and polls a typed import", async () => {

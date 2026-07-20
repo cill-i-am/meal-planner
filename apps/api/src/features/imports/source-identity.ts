@@ -42,24 +42,3 @@ export class CanonicalSourceIdentityResolver extends Context.Service<
   CanonicalSourceIdentityResolver,
   CanonicalSourceIdentityResolverShape
 >()("meal-planner/CanonicalSourceIdentityResolver") {}
-
-export interface AvailableSource {
-  readonly _tag: "Available";
-}
-
-export interface PrivateOrUnavailableSource {
-  readonly _tag: "PrivateOrUnavailable";
-}
-
-export type SourceAvailability = AvailableSource | PrivateOrUnavailableSource;
-
-export interface SourceAvailabilityValidatorShape {
-  readonly validate: (
-    source: Omit<VideoIdentity, "_tag">
-  ) => Effect.Effect<SourceAvailability, ImportSourceError>;
-}
-
-export const SourceAvailabilityValidator =
-  Context.Service<SourceAvailabilityValidatorShape>(
-    "meal-planner/SourceAvailabilityValidator"
-  );

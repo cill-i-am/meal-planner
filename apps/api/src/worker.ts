@@ -24,14 +24,10 @@ import {
   ImportWorkflowStarter,
   ImportWorkflowStarterDeferred,
 } from "./features/imports/import.workflow.js";
-import {
-  CanonicalSourceIdentityResolver,
-  SourceAvailabilityValidator,
-} from "./features/imports/source-resolver.js";
-import {
-  makeTikTokCanonicalSourceIdentityResolver,
-  makeTikTokSourceAvailabilityValidator,
-} from "./features/imports/source-resolver.tiktok.js";
+import { SourceAvailabilityValidator } from "./features/imports/source-availability.js";
+import { makeTikTokSourceAvailabilityValidator } from "./features/imports/source-availability.tiktok.js";
+import { CanonicalSourceIdentityResolver } from "./features/imports/source-identity.js";
+import { makeTikTokCanonicalSourceIdentityResolver } from "./features/imports/source-identity.tiktok.js";
 import { MealPlannerDatabase } from "./infrastructure/meal-planner-database.js";
 
 const notFound = HttpServerResponse.json(
