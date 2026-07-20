@@ -65,7 +65,7 @@ These are not aesthetic preferences. When they conflict with existing code, pres
 Load the files whose triggers match the task.
 
 | If the change touches... | Load... |
-|---|---|
+| --- | --- |
 | Shared coding-standard terms, adoption language, failure/boundary/domain/module/runtime vocabulary | [`VOCABULARY.md`](VOCABULARY.md) |
 | Domain values, invariants, branded types, value classes, state machines, lifecycle transitions, optionality, `Partial<T>`, boolean flags, operation inputs, exhaustive variants, persisted lifecycle constraints | [`DOMAIN_MODELING.md`](DOMAIN_MODELING.md) |
 | Expected failures, custom errors, not-found semantics, cancellation classification, startup config diagnostics, catch/classification | [`ERROR_HANDLING.md`](ERROR_HANDLING.md) |

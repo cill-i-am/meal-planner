@@ -28,8 +28,8 @@ Neon development Postgres:
 providers: Layer.mergeAll(
   Cloudflare.providers(),
   Drizzle.providers(),
-  Neon.providers(),
-)
+  Neon.providers()
+);
 ```
 
 PlanetScale Postgres:
@@ -38,17 +38,14 @@ PlanetScale Postgres:
 providers: Layer.mergeAll(
   Cloudflare.providers(),
   Drizzle.providers(),
-  Planetscale.providers(),
-)
+  Planetscale.providers()
+);
 ```
 
 PlanetScale MySQL:
 
 ```ts
-providers: Layer.mergeAll(
-  Cloudflare.providers(),
-  Planetscale.providers(),
-)
+providers: Layer.mergeAll(Cloudflare.providers(), Planetscale.providers());
 ```
 
 Add `Drizzle.providers()` for MySQL only when the stack uses `Drizzle.Schema` to generate migrations. Many PlanetScale MySQL flows keep checked-in Drizzle migrations and let `Planetscale.MySQLBranch` apply `migrationsDir`.
@@ -107,11 +104,12 @@ export const NeonDb = Effect.gen(function* () {
     out: "./migrations",
   });
 
-  const project = stage.startsWith("pr-") || stage.startsWith("dev_") || stage === "test"
-    ? yield* Neon.Project.ref("app-db", { stage: "dev_shared" })
-    : yield* Neon.Project("app-db", {
-        region: "aws-us-east-1",
-      });
+  const project =
+    stage.startsWith("pr-") || stage.startsWith("dev_") || stage === "test"
+      ? yield* Neon.Project.ref("app-db", { stage: "dev_shared" })
+      : yield* Neon.Project("app-db", {
+          region: "aws-us-east-1",
+        });
 
   const branch = yield* Neon.Branch("app-branch", {
     project,
@@ -134,18 +132,21 @@ export const Hyperdrive = Effect.gen(function* () {
 Runtime:
 
 ```ts
-const hd = yield* Cloudflare.Hyperdrive.Connect(Hyperdrive);
-const db = yield* Drizzle.postgres(hd.connectionString, { relations });
+const hd = yield * Cloudflare.Hyperdrive.Connect(Hyperdrive);
+const db = yield * Drizzle.postgres(hd.connectionString, { relations });
 
-const users = yield* db.select().from(Users);
+const users = yield * db.select().from(Users);
 ```
 
 For larger Workers, put the client behind a service:
 
 ```ts
-class UsersRepo extends Context.Service<UsersRepo, {
-  readonly list: () => Effect.Effect<Array<typeof Users.$inferSelect>>;
-}>()("UsersRepo") {}
+class UsersRepo extends Context.Service<
+  UsersRepo,
+  {
+    readonly list: () => Effect.Effect<Array<typeof Users.$inferSelect>>;
+  }
+>()("UsersRepo") {}
 
 const UsersRepoLive = Layer.effect(UsersRepo)(
   Effect.gen(function* () {
@@ -157,7 +158,7 @@ const UsersRepoLive = Layer.effect(UsersRepo)(
         return yield* db.select().from(Users);
       }),
     };
-  }),
+  })
 ).pipe(Layer.provide(Cloudflare.Hyperdrive.ConnectBinding));
 ```
 
@@ -204,8 +205,8 @@ export const Hyperdrive = Effect.gen(function* () {
 Runtime uses the same Postgres Worker pattern as Neon:
 
 ```ts
-const hd = yield* Cloudflare.Hyperdrive.Connect(Hyperdrive);
-const db = yield* Drizzle.postgres(hd.connectionString, { relations });
+const hd = yield * Cloudflare.Hyperdrive.Connect(Hyperdrive);
+const db = yield * Drizzle.postgres(hd.connectionString, { relations });
 ```
 
 ## PlanetScale MySQL Plus Drizzle
@@ -248,8 +249,8 @@ export const Hyperdrive = Effect.gen(function* () {
 Runtime uses the MySQL adapter, not `Drizzle.postgres`:
 
 ```ts
-const hd = yield* Cloudflare.Hyperdrive.Connect(Hyperdrive);
-const connectionString = yield* hd.connectionString;
+const hd = yield * Cloudflare.Hyperdrive.Connect(Hyperdrive);
+const connectionString = yield * hd.connectionString;
 
 const db = drizzle({
   connection: {
@@ -270,8 +271,9 @@ Use references for expensive shared containers and owned resources for per-stage
 
 ```ts
 const project = stage.startsWith("pr-")
-  ? yield* Neon.Project.ref("app-db", { stage: "dev_shared" })
-  : yield* Neon.Project("app-db", {
+  ? yield * Neon.Project.ref("app-db", { stage: "dev_shared" })
+  : yield *
+    Neon.Project("app-db", {
       region: "aws-us-east-1",
     });
 ```

@@ -12,35 +12,35 @@ Use cross-request caches only for data that is safe to share within a process or
 **Incorrect (unbounded module cache):**
 
 ```typescript
-const productCache = new Map<ProductId, ProductSummary>()
+const productCache = new Map<ProductId, ProductSummary>();
 
 export async function getProductSummary(productId: ProductId) {
-  const cached = productCache.get(productId)
-  if (cached) return cached
+  const cached = productCache.get(productId);
+  if (cached) return cached;
 
-  const product = await fetchProductSummary(productId)
-  productCache.set(productId, product)
-  return product
+  const product = await fetchProductSummary(productId);
+  productCache.set(productId, product);
+  return product;
 }
 ```
 
 **Correct (bounded TTL cache):**
 
 ```typescript
-import { LRUCache } from "lru-cache"
+import { LRUCache } from "lru-cache";
 
 const productCache = new LRUCache<ProductId, ProductSummary>({
   max: 500,
   ttl: 5 * 60 * 1000,
-})
+});
 
 export async function getProductSummary(productId: ProductId) {
-  const cached = productCache.get(productId)
-  if (cached) return cached
+  const cached = productCache.get(productId);
+  if (cached) return cached;
 
-  const product = await fetchProductSummary(productId)
-  productCache.set(productId, product)
-  return product
+  const product = await fetchProductSummary(productId);
+  productCache.set(productId, product);
+  return product;
 }
 ```
 

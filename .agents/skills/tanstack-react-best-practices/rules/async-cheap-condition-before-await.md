@@ -14,10 +14,10 @@ This is a specialization of [Defer Await Until Needed](./async-defer-await.md) f
 **Incorrect:**
 
 ```typescript
-const enabled = await getFeatureFlag()
+const enabled = await getFeatureFlag();
 
 if (enabled && request.method === "POST") {
-  await writeAuditLog()
+  await writeAuditLog();
 }
 ```
 
@@ -25,10 +25,10 @@ if (enabled && request.method === "POST") {
 
 ```typescript
 if (request.method === "POST") {
-  const enabled = await getFeatureFlag()
+  const enabled = await getFeatureFlag();
 
   if (enabled) {
-    await writeAuditLog()
+    await writeAuditLog();
   }
 }
 ```

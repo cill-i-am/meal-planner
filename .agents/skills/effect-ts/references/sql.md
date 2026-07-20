@@ -9,7 +9,7 @@ Application and domain code depend on repository services whose contracts use do
 ```ts
 export interface OrderRepositoryShape {
   readonly findById: (
-    id: OrderId,
+    id: OrderId
   ) => Effect.Effect<Order, OrderNotFound | PersistenceError>;
   readonly save: (order: Order) => Effect.Effect<void, PersistenceError>;
 }
@@ -68,7 +68,7 @@ Use a transaction for writes that must commit or roll back together:
 ```ts
 const completeOrder = Effect.fn("OrderRepository.complete")(function* (
   order: Order,
-  outbox: OrderCompletedOutbox,
+  outbox: OrderCompletedOutbox
 ) {
   const sql = yield* SqlClient.SqlClient;
 
@@ -76,7 +76,7 @@ const completeOrder = Effect.fn("OrderRepository.complete")(function* (
     Effect.gen(function* () {
       yield* updateOrder(sql, order);
       yield* insertOutbox(sql, outbox);
-    }),
+    })
   );
 });
 ```

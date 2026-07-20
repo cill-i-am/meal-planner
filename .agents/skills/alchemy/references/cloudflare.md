@@ -18,7 +18,7 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     const bucket = yield* Cloudflare.R2.Bucket("Uploads");
     return { bucketName: bucket.bucketName };
-  }),
+  })
 );
 ```
 
@@ -64,7 +64,7 @@ export default Cloudflare.Worker(
         return HttpServerResponse.text(object === null ? "missing" : "ok");
       }),
     };
-  }).pipe(Effect.provide(Cloudflare.R2.ReadWriteBucketBinding)),
+  }).pipe(Effect.provide(Cloudflare.R2.ReadWriteBucketBinding))
 );
 ```
 
@@ -109,14 +109,15 @@ Use `database-patterns.md` and the provider-specific database reference before w
 ```ts
 export const Jobs = Cloudflare.Queues.Queue("Jobs");
 
-const queue = yield* Jobs;
-const sender = yield* Cloudflare.Queues.WriteQueue(queue);
+const queue = yield * Jobs;
+const sender = yield * Cloudflare.Queues.WriteQueue(queue);
 
-yield* Cloudflare.Queues.consumeQueueMessages<Job>(
-  queue,
-  { batchSize: 10, maxRetries: 3, retryDelay: "1 second" },
-  (messages) => Stream.runForEach(messages, processJob),
-);
+yield *
+  Cloudflare.Queues.consumeQueueMessages<Job>(
+    queue,
+    { batchSize: 10, maxRetries: 3, retryDelay: "1 second" },
+    (messages) => Stream.runForEach(messages, processJob)
+  );
 ```
 
 Provide `WriteQueueBinding` and `Queues.EventSourceLive` as required. Consumer registration creates the Cloudflare consumer resource and runtime listener together. Successful batches are acknowledged; failed batches retry according to settings. Design for duplicate delivery and configure a dead-letter queue where loss or poison messages matter.

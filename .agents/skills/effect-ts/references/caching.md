@@ -29,13 +29,13 @@ export const ProfileCacheLive = Layer.effect(
 
     return ProfileCache.of({
       get: Effect.fn("ProfileCache.get")((id: ProfileId) =>
-        Cache.get(cache, id),
+        Cache.get(cache, id)
       ),
       invalidate: Effect.fn("ProfileCache.invalidate")((id: ProfileId) =>
-        Cache.invalidate(cache, id),
+        Cache.invalidate(cache, id)
       ),
     });
-  }),
+  })
 );
 ```
 
@@ -58,7 +58,7 @@ const cache =
           onNone: () => Duration.zero,
           onSome: (error) =>
             error._tag === "ProfileNotFound" ? "30 seconds" : Duration.zero,
-        }),
+        })
       );
     },
   });

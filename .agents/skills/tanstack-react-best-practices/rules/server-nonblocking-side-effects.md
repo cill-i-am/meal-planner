@@ -15,11 +15,11 @@ Do not block the response on analytics, audit logs, notifications, or cleanup un
 export const updateProfile = createServerFn({ method: "POST" })
   .validator((input: unknown) => parseUpdateProfile(input))
   .handler(async ({ data }) => {
-    const profile = await saveProfile(data)
-    await writeAuditLog({ action: "profile.updated", userId: profile.userId })
+    const profile = await saveProfile(data);
+    await writeAuditLog({ action: "profile.updated", userId: profile.userId });
 
-    return profile
-  })
+    return profile;
+  });
 ```
 
 **Correct (critical mutation completes, non-critical work is scheduled):**
@@ -28,14 +28,14 @@ export const updateProfile = createServerFn({ method: "POST" })
 export const updateProfile = createServerFn({ method: "POST" })
   .validator((input: unknown) => parseUpdateProfile(input))
   .handler(async ({ data, context }) => {
-    const profile = await saveProfile(data)
+    const profile = await saveProfile(data);
 
     context.waitUntil?.(
-      writeAuditLog({ action: "profile.updated", userId: profile.userId }),
-    )
+      writeAuditLog({ action: "profile.updated", userId: profile.userId })
+    );
 
-    return profile
-  })
+    return profile;
+  });
 ```
 
 For work that must be durable or retried, use a queue, workflow, or durable background pipeline instead of an in-memory promise.

@@ -5,15 +5,11 @@ description: Root-cause debugging loop for bugs, failing tests, flakes, CI failu
 
 # Systematic Debugging
 
-No fixes without a red-capable feedback loop and a root-cause investigation.
-Skip steps only when you explicitly justify why they do not apply.
+No fixes without a red-capable feedback loop and a root-cause investigation. Skip steps only when you explicitly justify why they do not apply.
 
 ## Red Loop Contract
 
-Before editing, name the loop you will trust and run it once. If it does not go
-red for the reported symptom, either tighten the loop or state why this bug
-cannot currently be reproduced. Do not claim a fix from a loop that never proved
-it could fail.
+Before editing, name the loop you will trust and run it once. If it does not go red for the reported symptom, either tighten the loop or state why this bug cannot currently be reproduced. Do not claim a fix from a loop that never proved it could fail.
 
 ## Feedback Loop
 
@@ -28,8 +24,7 @@ Find the tightest pass/fail signal for the reported symptom:
 7. property, fuzz, or repeated loop for flakes
 8. bisection or differential loop when the bug appeared between known states
 
-The loop should be red-capable, deterministic enough to trust, fast enough to
-iterate, and runnable by the agent.
+The loop should be red-capable, deterministic enough to trust, fast enough to iterate, and runnable by the agent.
 
 ## Workflow
 
@@ -42,18 +37,14 @@ iterate, and runnable by the agent.
 7. Apply the root-cause fix, then rerun the minimized repro and the original loop.
 8. Remove temporary diagnostics, harnesses, and debug code before finishing.
 
-Use a unique marker such as `[DEBUG-a4f2]` for temporary diagnostics so cleanup is
-a single search.
+Use a unique marker such as `[DEBUG-a4f2]` for temporary diagnostics so cleanup is a single search.
 
 ## Guardrails
 
 - Do not patch symptoms while the causal path is unknown.
-- Do not widen scope while debugging a worker issue; create a concrete follow-up
-  when the root cause reveals separate work.
-- If a proper regression seam does not exist, say that plainly and verify with
-  the strongest available loop instead of pretending a shallow test proves the fix.
-- For provider, production data, destructive, or credential-dependent debugging,
-  confirm stage, permissions, and safety before mutating anything.
+- Do not widen scope while debugging a worker issue; create a concrete follow-up when the root cause reveals separate work.
+- If a proper regression seam does not exist, say that plainly and verify with the strongest available loop instead of pretending a shallow test proves the fix.
+- For provider, production data, destructive, or credential-dependent debugging, confirm stage, permissions, and safety before mutating anything.
 
 ## Finish
 
@@ -65,6 +56,4 @@ Report:
 - verification command/results
 - any missing test seam or follow-up issue
 
-Completion criterion: the trusted loop was red or the lack of red was explained,
-the root cause connects the symptom to a specific path or invariant, the fixed
-loop is green, and a search for the debug marker finds no leftover diagnostics.
+Completion criterion: the trusted loop was red or the lack of red was explained, the root cause connects the symptom to a specific path or invariant, the fixed loop is green, and a search for the debug marker finds no leftover diagnostics.

@@ -41,7 +41,7 @@ Read:
 Then load topic files matching the changed responsibilities:
 
 | Change touches... | Load... |
-|---|---|
+| --- | --- |
 | domain values, invariants, states, transitions | `../coding-standards/DOMAIN_MODELING.md` |
 | expected failures, custom errors, catch/classification | `../coding-standards/ERROR_HANDLING.md` |
 | logs, traces, telemetry, redaction, secrets | `../coding-standards/OBSERVABILITY.md` |
@@ -139,15 +139,14 @@ Completion criterion: final findings have survived an explicit attempt to dispro
 Start with:
 
 ```md
-Review target: <target>
-Standards loaded: <topic files>
+Review target: <target> Standards loaded: <topic files>
 ```
 
 If there are no findings, say so briefly and include the standards areas checked. Do not add praise.
 
 For each finding:
 
-```md
+````md
 ### <Severity>: <short title>
 
 - **Issue:** <concise explanation of the defect or problem>
@@ -157,12 +156,15 @@ For each finding:
   ```ts
   // real excerpt quoted from the changed file(s)
   ```
+````
+
 - **Proof:** <value flow, reachable state, reproduction with observed result, or missing evidence>
 - **Why it matters:** <behavioral consequence>
 - **Fix direction:** <specific correction shape, followed by a snippet or pseudo-code showing it>
   ```ts
   // snippet or pseudo-code of the fix; not a full patch unless asked
   ```
+
 ```
 
 Include the **Problematic code** block whenever the issue lives in code you can quote; omit it only when the finding is about something absent (e.g. a missing contract or test), and say what is missing instead. Always include a fix-direction snippet or pseudo-code unless the fix is purely a deletion.
@@ -170,3 +172,4 @@ Include the **Problematic code** block whenever the issue lives in code you can 
 Group findings by severity in this order: Blocker, Should Fix, Simplification, Nit, Question.
 
 Completion criterion: the final review is actionable without code edits, every finding includes proof, and no review-only step modified the workspace.
+```

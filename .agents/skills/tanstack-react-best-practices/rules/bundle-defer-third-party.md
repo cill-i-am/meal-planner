@@ -12,9 +12,13 @@ Analytics, logging, session replay, and monitoring should not block the initial 
 **Incorrect (blocks the initial bundle):**
 
 ```tsx
-import { Analytics } from "@example/analytics-react"
+import { Analytics } from "@example/analytics-react";
 
-export function RootDocument({ children }: { readonly children: React.ReactNode }) {
+export function RootDocument({
+  children,
+}: {
+  readonly children: React.ReactNode;
+}) {
   return (
     <html>
       <body>
@@ -22,27 +26,27 @@ export function RootDocument({ children }: { readonly children: React.ReactNode 
         <Analytics />
       </body>
     </html>
-  )
+  );
 }
 ```
 
 **Correct (loads after mount):**
 
 ```tsx
-import { lazy, Suspense } from "react"
+import { lazy, Suspense } from "react";
 
 const Analytics = lazy(() =>
   import("@example/analytics-react").then((module) => ({
     default: module.Analytics,
-  })),
-)
+  }))
+);
 
 export function AnalyticsMount() {
   return (
     <Suspense fallback={null}>
       <Analytics />
     </Suspense>
-  )
+  );
 }
 ```
 

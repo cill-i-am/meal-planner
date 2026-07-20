@@ -31,7 +31,7 @@ export default class Accounts extends Cloudflare.Worker<Accounts>()(
         Effect.succeed(`account:${accountId}`),
       fetch: Effect.succeed(HttpServerResponse.text("ok")),
     };
-  }),
+  })
 ) {}
 ```
 
@@ -63,7 +63,7 @@ export class Account extends Schema.Class<Account>("Account")({
 
 export class AccountNotFound extends Schema.TaggedClass<AccountNotFound>()(
   "AccountNotFound",
-  { id: AccountId },
+  { id: AccountId }
 ) {}
 
 const getAccount = Rpc.make("getAccount", {

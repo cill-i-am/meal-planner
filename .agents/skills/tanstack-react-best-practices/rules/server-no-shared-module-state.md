@@ -12,17 +12,17 @@ In TanStack Start SSR, server functions, server routes, and worker code, module 
 **Incorrect (request data can leak across concurrent renders):**
 
 ```tsx
-let currentUser: User | undefined
+let currentUser: User | undefined;
 
 export const Route = createFileRoute("/dashboard")({
   loader: async () => {
-    currentUser = await requireUser()
+    currentUser = await requireUser();
   },
   component: Dashboard,
-})
+});
 
 function Dashboard() {
-  return <div>{currentUser?.name}</div>
+  return <div>{currentUser?.name}</div>;
 }
 ```
 
@@ -31,14 +31,14 @@ function Dashboard() {
 ```tsx
 export const Route = createFileRoute("/dashboard")({
   loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(currentUserQueryOptions)
+    await context.queryClient.ensureQueryData(currentUserQueryOptions);
   },
   component: Dashboard,
-})
+});
 
 function Dashboard() {
-  const { data: currentUser } = useSuspenseQuery(currentUserQueryOptions)
-  return <div>{currentUser.name}</div>
+  const { data: currentUser } = useSuspenseQuery(currentUserQueryOptions);
+  return <div>{currentUser.name}</div>;
 }
 ```
 

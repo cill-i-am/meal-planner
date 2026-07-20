@@ -14,12 +14,12 @@ Structure route loaders and server functions so independent server work starts i
 ```typescript
 export const Route = createFileRoute("/dashboard")({
   loader: async () => {
-    const header = await fetchHeader()
-    const sidebar = await fetchSidebarItems()
+    const header = await fetchHeader();
+    const sidebar = await fetchSidebarItems();
 
-    return { header, sidebar }
+    return { header, sidebar };
   },
-})
+});
 ```
 
 **Correct (independent work starts together):**
@@ -30,11 +30,11 @@ export const Route = createFileRoute("/dashboard")({
     const [header, sidebar] = await Promise.all([
       fetchHeader(),
       fetchSidebarItems(),
-    ])
+    ]);
 
-    return { header, sidebar }
+    return { header, sidebar };
   },
-})
+});
 ```
 
 **Correct with TanStack Query preloading:**
@@ -45,9 +45,9 @@ export const Route = createFileRoute("/dashboard")({
     await Promise.all([
       context.queryClient.ensureQueryData(headerQueryOptions),
       context.queryClient.ensureQueryData(sidebarQueryOptions),
-    ])
+    ]);
   },
-})
+});
 ```
 
 Use dependency-aware orchestration, such as `better-all` or an explicit Effect program, when only part of the graph is independent.

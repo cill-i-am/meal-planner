@@ -42,17 +42,21 @@ Register `Axiom.providers()` alongside the platform provider. Primary resources 
 - dashboard and annotation resources for operational context.
 
 ```ts
-const traces = yield* Axiom.Dataset("Traces", {
-  name: "app-traces",
-  kind: "otel:traces:v1",
-});
+const traces =
+  yield *
+  Axiom.Dataset("Traces", {
+    name: "app-traces",
+    kind: "otel:traces:v1",
+  });
 
-const ingest = yield* Axiom.ApiToken("RuntimeIngest", {
-  name: "runtime-ingest",
-  datasetCapabilities: {
-    "app-traces": { ingest: ["create"] },
-  },
-});
+const ingest =
+  yield *
+  Axiom.ApiToken("RuntimeIngest", {
+    name: "runtime-ingest",
+    datasetCapabilities: {
+      "app-traces": { ingest: ["create"] },
+    },
+  });
 ```
 
 Use the current generated API for exact token permission and monitor props. Bind the narrow ingest token to the runtime; do not expose administrative/query credentials.
