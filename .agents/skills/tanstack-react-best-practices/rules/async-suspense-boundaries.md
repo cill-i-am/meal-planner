@@ -13,13 +13,13 @@ Use Suspense boundaries around route regions or lazy components whose data/code 
 
 ```tsx
 function DashboardPage() {
-  const { data } = useSuspenseQuery(dashboardQueryOptions)
+  const { data } = useSuspenseQuery(dashboardQueryOptions);
 
   return (
     <DashboardShell>
       <SlowMetricsPanel data={data.metrics} />
     </DashboardShell>
-  )
+  );
 }
 ```
 
@@ -33,12 +33,12 @@ function DashboardPage() {
         <MetricsPanel />
       </Suspense>
     </DashboardShell>
-  )
+  );
 }
 
 function MetricsPanel() {
-  const { data } = useSuspenseQuery(metricsQueryOptions)
-  return <SlowMetricsPanel data={data} />
+  const { data } = useSuspenseQuery(metricsQueryOptions);
+  return <SlowMetricsPanel data={data} />;
 }
 ```
 

@@ -14,8 +14,7 @@ This is a thin project-local routing layer over the official TanStack skills bun
 3. This skill's repo rules.
 4. Existing code patterns in the target app.
 
-If the bundled TanStack skills are unavailable after install, stop and report the
-environment issue instead of inventing framework guidance.
+If the bundled TanStack skills are unavailable after install, stop and report the environment issue instead of inventing framework guidance.
 
 ## Resolve Bundled Skills
 
@@ -61,15 +60,10 @@ Read the smallest set that matches the task:
 - Treat loaders as isomorphic. Do server-only work through server functions, server routes, or server-only helpers described by the official Start skills.
 - Prefer TanStack Query for client-visible server state. Create the `QueryClient` in router setup, preload with `queryClient.ensureQueryData` in loaders, and read with `useSuspenseQuery` in components.
 - Keep loader prefetch narrow: call `ensureQueryData` for critical data, but do not return that same data from the loader when the component reads it from TanStack Query.
-- Use route `beforeLoad` for navigation decisions and context setup only when it
-  can run correctly in every execution environment that may hit the route.
-  Direct-load SSR must not misclassify authenticated or runtime-dependent users.
+- Use route `beforeLoad` for navigation decisions and context setup only when it can run correctly in every execution environment that may hit the route. Direct-load SSR must not misclassify authenticated or runtime-dependent users.
 - Keep route/server-function payloads plain and serializable. Parse boundary values with Effect Schema, carry branded/domain types inward, and do not serialize resources, clients, schema objects, or rich errors through router data.
 - Read runtime config on the TanStack Start server side when values may change without a rebuild. Expose only the public subset to the browser.
 - Use Effect HttpApi for the API app. Do not grow the web app's server routes into a separate ad hoc backend unless the route is genuinely a web-app boundary concern.
 - Do not introduce Next, Remix, SvelteKit, or build-time `VITE_*` public config patterns unless the user explicitly asks for a framework/topology change.
 
-Completion criterion: the selected official skill files were read, the route
-change keeps loader data serializable, server-only work stays on a server
-boundary, and SSR/direct-load behavior is explicitly considered when auth,
-cookies, runtime config, or deployment bindings are involved.
+Completion criterion: the selected official skill files were read, the route change keeps loader data serializable, server-only work stays on a server boundary, and SSR/direct-load behavior is explicitly considered when auth, cookies, runtime config, or deployment bindings are involved.

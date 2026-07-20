@@ -11,7 +11,7 @@ import { Context, Effect, Layer } from "effect";
 
 export interface UserRepositoryShape {
   readonly findById: (
-    id: UserId,
+    id: UserId
   ) => Effect.Effect<User, UserNotFound | PersistenceError>;
   readonly save: (user: User) => Effect.Effect<void, PersistenceError>;
 }
@@ -41,7 +41,7 @@ export const UserRepositoryLive = Layer.effect(
     const sql = yield* SqlClient.SqlClient;
 
     const findById = Effect.fn("UserRepository.findById")(function* (
-      id: UserId,
+      id: UserId
     ) {
       const rows = yield* sql<UserRow>`
         SELECT id, display_name, email
@@ -49,8 +49,8 @@ export const UserRepositoryLive = Layer.effect(
         WHERE id = ${id}
       `.pipe(
         Effect.mapError(
-          (cause) => new PersistenceError({ operation: "findUserById", cause }),
-        ),
+          (cause) => new PersistenceError({ operation: "findUserById", cause })
+        )
       );
 
       const row = rows[0];
@@ -59,9 +59,8 @@ export const UserRepositoryLive = Layer.effect(
       }
       return yield* Schema.decodeUnknownEffect(User)(row).pipe(
         Effect.mapError(
-          (cause) =>
-            new PersistenceError({ operation: "decodeUserRow", cause }),
-        ),
+          (cause) => new PersistenceError({ operation: "decodeUserRow", cause })
+        )
       );
     });
 
@@ -70,7 +69,7 @@ export const UserRepositoryLive = Layer.effect(
     });
 
     return UserRepository.of({ findById, save });
-  }),
+  })
 );
 ```
 
@@ -90,7 +89,7 @@ Application services orchestrate capabilities while leaving requirements visible
 
 ```ts
 export const registerUser = Effect.fn("Users.register")(function* (
-  command: RegisterUser,
+  command: RegisterUser
 ) {
   const users = yield* UserRepository;
   const identities = yield* IdentityProvider;
@@ -120,13 +119,13 @@ const PersistenceLive = UserRepositoryLive.pipe(Layer.provide(SqlLive));
 
 const IntegrationsLive = Layer.mergeAll(
   IdentityProviderLive,
-  NotificationsLive,
+  NotificationsLive
 ).pipe(Layer.provide(HttpClientLive));
 
 export const AppLayer = Layer.mergeAll(
   PersistenceLive,
   IntegrationsLive,
-  AppConfigLive,
+  AppConfigLive
 );
 ```
 
@@ -149,9 +148,9 @@ export const ProjectionWorkerLive = Layer.effectDiscard(
 
     yield* events.stream.pipe(
       Stream.runForEach(projection.apply),
-      Effect.forkScoped,
+      Effect.forkScoped
     );
-  }),
+  })
 );
 ```
 
@@ -161,8 +160,8 @@ When acquisition owns a closeable resource, use a scoped Layer:
 export const BrokerLive = Layer.effect(
   Broker,
   Effect.acquireRelease(connectBroker, (client) => client.close).pipe(
-    Effect.map((client) => Broker.of(makeBroker(client))),
-  ),
+    Effect.map((client) => Broker.of(makeBroker(client)))
+  )
 );
 ```
 

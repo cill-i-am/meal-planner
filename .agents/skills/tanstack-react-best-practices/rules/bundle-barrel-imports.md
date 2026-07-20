@@ -14,20 +14,20 @@ This matters in Vite dev, production builds, and Cloudflare worker cold starts w
 **Incorrect (imports a broad entry point):**
 
 ```tsx
-import { Button, TextField } from "@mui/material"
+import { Button, TextField } from "@mui/material";
 ```
 
 **Correct (typed direct imports when the package supports them):**
 
 ```tsx
-import Button from "@mui/material/Button"
-import TextField from "@mui/material/TextField"
+import Button from "@mui/material/Button";
+import TextField from "@mui/material/TextField";
 ```
 
 **Correct (keep barrel import when it is the package's typed public API and the cost is acceptable):**
 
 ```tsx
-import { Check, Menu, X } from "lucide-react"
+import { Check, Menu, X } from "lucide-react";
 ```
 
 Before changing imports, verify that the package exposes typed subpaths. Do not deep-import private files or paths that collapse to `any` under strict TypeScript.

@@ -49,7 +49,7 @@ const loadRun = (input: string) => {
 // Accepted: this value crosses the real boundary exactly once.
 const loadRun = (input: unknown) =>
   Schema.decodeUnknownEffect(RunId)(input).pipe(
-    Effect.flatMap((runId) => repository.load(runId)),
+    Effect.flatMap((runId) => repository.load(runId))
   );
 ```
 

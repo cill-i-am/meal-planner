@@ -28,7 +28,7 @@ export default class Api extends Cloudflare.Worker<Api>()(
         return HttpServerResponse.text(item === null ? "missing" : "ok");
       }),
     };
-  }).pipe(Effect.provide(Cloudflare.R2.ReadWriteBucketBinding)),
+  }).pipe(Effect.provide(Cloudflare.R2.ReadWriteBucketBinding))
 ) {}
 ```
 
@@ -69,7 +69,7 @@ A binding separates a capability contract from the platform implementation Layer
 ```ts
 export const Uploads = Cloudflare.R2.Bucket("Uploads");
 
-const bucket = yield* Cloudflare.R2.ReadWriteBucket(Uploads);
+const bucket = yield * Cloudflare.R2.ReadWriteBucket(Uploads);
 ```
 
 Provide the matching Layer once at the Function boundary. Use native-binding Layers when the host supports them and HTTP Layers when the topology requires a network transport. Avoid leaking binding implementation choices into domain services.
@@ -99,7 +99,7 @@ export const UploadStoreLive = Layer.effect(
         yield* bucket.put(key, body);
       }),
     });
-  }),
+  })
 ).pipe(Layer.provide(Cloudflare.R2.ReadWriteBucketBinding));
 ```
 
@@ -116,11 +116,12 @@ Rules:
 An event source binds a resource to a Function and invokes it when something happens. One declaration should own permissions, trigger/event mapping, and typed handler registration.
 
 ```ts
-yield* Cloudflare.Queues.consumeQueueMessages<Job>(
-  queue,
-  { batchSize: 10, maxRetries: 3, retryDelay: "1 second" },
-  (messages) => Stream.runForEach(messages, processJob),
-);
+yield *
+  Cloudflare.Queues.consumeQueueMessages<Job>(
+    queue,
+    { batchSize: 10, maxRetries: 3, retryDelay: "1 second" },
+    (messages) => Stream.runForEach(messages, processJob)
+  );
 ```
 
 Common sources:

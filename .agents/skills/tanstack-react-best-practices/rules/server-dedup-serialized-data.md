@@ -14,14 +14,14 @@ TanStack Start loaders, server functions, and query dehydration can all send dat
 ```tsx
 export const Route = createFileRoute("/")({
   loader: async ({ context }) => {
-    const users = await context.queryClient.ensureQueryData(usersQueryOptions)
+    const users = await context.queryClient.ensureQueryData(usersQueryOptions);
     return {
       users,
       sortedUsers: users.toSorted((a, b) => a.name.localeCompare(b.name)),
-    }
+    };
   },
   component: UsersPage,
-})
+});
 ```
 
 **Correct (send once, derive in the component):**
@@ -29,19 +29,19 @@ export const Route = createFileRoute("/")({
 ```tsx
 export const Route = createFileRoute("/")({
   loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(usersQueryOptions)
+    await context.queryClient.ensureQueryData(usersQueryOptions);
   },
   component: UsersPage,
-})
+});
 
 function UsersPage() {
-  const { data: users } = useSuspenseQuery(usersQueryOptions)
+  const { data: users } = useSuspenseQuery(usersQueryOptions);
   const sortedUsers = useMemo(
     () => users.toSorted((a, b) => a.name.localeCompare(b.name)),
-    [users],
-  )
+    [users]
+  );
 
-  return <UserList users={sortedUsers} />
+  return <UserList users={sortedUsers} />;
 }
 ```
 

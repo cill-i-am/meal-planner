@@ -14,10 +14,10 @@ Only send fields the browser actually needs. This applies to TanStack Start load
 ```typescript
 export const getProfile = createServerFn({ method: "GET" }).handler(
   async () => {
-    const session = await requireSession()
-    return db.user.findUniqueOrThrow({ where: { id: session.user.id } })
-  },
-)
+    const session = await requireSession();
+    return db.user.findUniqueOrThrow({ where: { id: session.user.id } });
+  }
+);
 ```
 
 **Correct (return a small DTO parsed at the boundary):**
@@ -25,15 +25,15 @@ export const getProfile = createServerFn({ method: "GET" }).handler(
 ```typescript
 export const getProfile = createServerFn({ method: "GET" }).handler(
   async () => {
-    const session = await requireSession()
+    const session = await requireSession();
     const user = await db.user.findUniqueOrThrow({
       where: { id: session.user.id },
       select: { displayName: true, avatarUrl: true },
-    })
+    });
 
-    return parsePublicProfile(user)
-  },
-)
+    return parsePublicProfile(user);
+  }
+);
 ```
 
 Do not send secrets, internal IDs, permission maps, or implementation details just because they were already loaded server-side.

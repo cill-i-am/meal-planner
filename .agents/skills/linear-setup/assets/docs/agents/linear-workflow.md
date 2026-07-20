@@ -8,8 +8,7 @@ Linear is the durable source of truth for non-trivial product work.
 - Break approved work into vertical-slice Issues.
 - Use Linear blocker relations for dependency graphs.
 - Use one user-visible Codex worker thread per implementation issue.
-- Create one read-only reviewer/spec thread at dispatch time for every
-  non-trivial implementation.
+- Create one read-only reviewer/spec thread at dispatch time for every non-trivial implementation.
 - Keep worker evidence in the Codex thread, Linear issue, and PR.
 
 ## Issue Lifecycle

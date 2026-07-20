@@ -59,7 +59,7 @@ test(
     const { url } = yield* stack;
     const response = yield* Test.getWhenReady(`${url}/health`);
     expect(response.status).toBe(200);
-  }),
+  })
 );
 ```
 

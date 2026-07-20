@@ -31,7 +31,7 @@ export class PersistenceError extends Schema.TaggedErrorClass<PersistenceError>(
   {
     operation: PersistenceOperation,
     cause: Schema.Defect(),
-  },
+  }
 ) {
   override get message() {
     return `User persistence failed during ${this.operation}`;
@@ -47,7 +47,7 @@ Translate third-party failures immediately:
 
 ```ts
 const send = Effect.fn("EmailProvider.send")(function* (
-  message: OutboundEmail,
+  message: OutboundEmail
 ) {
   return yield* Effect.tryPromise({
     try: () => client.send(encodeEmail(message)),
@@ -65,7 +65,7 @@ Use a shared curried mapper when many operations produce the same error family:
 ```ts
 const persistenceError = (operation: PersistenceOperation) =>
   Effect.mapError(
-    (cause: unknown) => new PersistenceError({ operation, cause }),
+    (cause: unknown) => new PersistenceError({ operation, cause })
   );
 
 const rows = yield * query.pipe(persistenceError("findUserById"));
@@ -93,8 +93,8 @@ Use Cause-level APIs only at supervision or diagnostic boundaries where defects 
 const supervise = worker.pipe(
   Effect.catchCauseIf(
     (cause) => !Cause.hasInterrupts(cause),
-    (cause) => Effect.logError("Worker.defect", cause),
-  ),
+    (cause) => Effect.logError("Worker.defect", cause)
+  )
 );
 ```
 
@@ -107,12 +107,12 @@ At a transport edge, map the typed error contract to a stable public shape:
 ```ts
 const toResponse = Match.value<AppError>().pipe(
   Match.tag("UserNotFound", (error) =>
-    Response.json({ code: "USER_NOT_FOUND", id: error.id }, { status: 404 }),
+    Response.json({ code: "USER_NOT_FOUND", id: error.id }, { status: 404 })
   ),
   Match.tag("EmailAlreadyUsed", () =>
-    Response.json({ code: "EMAIL_ALREADY_USED" }, { status: 409 }),
+    Response.json({ code: "EMAIL_ALREADY_USED" }, { status: 409 })
   ),
-  Match.exhaustive,
+  Match.exhaustive
 );
 ```
 
@@ -127,7 +127,7 @@ Public codes should be literal or schema-defined protocol values, not ad hoc mes
 
 ```ts
 export const charge = Effect.fn("Payments.charge")(function* (
-  command: ChargePayment,
+  command: ChargePayment
 ) {
   return yield* provider.charge(command).pipe(
     Effect.withSpan("Payments.providerCharge", {
@@ -135,7 +135,7 @@ export const charge = Effect.fn("Payments.charge")(function* (
         provider: command.provider,
         currency: command.amount.currency,
       },
-    }),
+    })
   );
 });
 ```
@@ -151,7 +151,7 @@ yield *
       operation: "capturePayment",
       provider: error.provider,
       attempt,
-    }),
+    })
   );
 ```
 

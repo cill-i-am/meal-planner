@@ -26,7 +26,7 @@ export function Document() {
       </head>
       <body>{/* content */}</body>
     </html>
-  )
+  );
 }
 ```
 
@@ -42,7 +42,7 @@ export function Document() {
       </head>
       <body>{/* content */}</body>
     </html>
-  )
+  );
 }
 ```
 

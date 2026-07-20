@@ -132,14 +132,17 @@ Avoid copy-on-every-iteration accumulation:
 ```ts
 const usersById = users.reduce<Record<UserId, User>>(
   (acc, user) => ({ ...acc, [user.id]: user }),
-  {},
+  {}
 );
 ```
 
 Prefer mutating the local accumulator:
 
 ```ts
-function indexUserById(acc: Record<UserId, User>, user: User): Record<UserId, User> {
+function indexUserById(
+  acc: Record<UserId, User>,
+  user: User
+): Record<UserId, User> {
   acc[user.id] = user;
   return acc;
 }
@@ -178,7 +181,7 @@ Prefer:
 
 ```ts
 const emails = users.flatMap((user) =>
-  user.email === undefined ? [] : [user.email],
+  user.email === undefined ? [] : [user.email]
 );
 
 const limit = input.limit ?? defaultLimit;

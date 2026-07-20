@@ -77,7 +77,7 @@ Persist only the chosen method in the profile. Store secret material in the cred
 For Effect runtimes, resolve configuration during platform initialization:
 
 ```ts
-const apiKey = yield* Config.redacted("API_KEY");
+const apiKey = yield * Config.redacted("API_KEY");
 ```
 
 This lets Alchemy discover and bind the secret. Capturing the resulting `Redacted` value in returned handlers is correct; first yielding the Config inside `fetch` is too late for deploy-time discovery.

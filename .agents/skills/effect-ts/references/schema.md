@@ -29,7 +29,7 @@ export const CreateUser = Schema.Struct({
 export const StoredUser = User.pipe(
   Schema.fieldsAssign({
     createdAt: Schema.DateTimeUtcFromString,
-  }),
+  })
 );
 ```
 
@@ -72,13 +72,13 @@ Put meaningful validation before the brand. Distinct concepts receive distinct b
 ```ts
 export const UserId = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^usr_[a-z0-9]+$/)),
-  Schema.brand("UserId"),
+  Schema.brand("UserId")
 );
 export type UserId = typeof UserId.Type;
 
 export const OrganizationId = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^org_[a-z0-9]+$/)),
-  Schema.brand("OrganizationId"),
+  Schema.brand("OrganizationId")
 );
 export type OrganizationId = typeof OrganizationId.Type;
 ```
@@ -88,7 +88,7 @@ This makes accidental interchange a type error:
 ```ts
 interface UserRepository {
   readonly findById: (
-    id: UserId,
+    id: UserId
   ) => Effect.Effect<User, UserNotFound | PersistenceError>;
 }
 ```
@@ -151,7 +151,7 @@ export const registerFromRequest = Effect.fn("Users.registerFromRequest")(
     });
     const input = yield* decodeCreateUser(body);
     return yield* registerUser(input);
-  },
+  }
 );
 ```
 

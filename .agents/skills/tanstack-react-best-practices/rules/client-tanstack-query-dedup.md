@@ -13,15 +13,15 @@ Use TanStack Query for client-visible server data that needs cache sharing, requ
 
 ```tsx
 function UserList() {
-  const [users, setUsers] = useState<ReadonlyArray<User>>([])
+  const [users, setUsers] = useState<ReadonlyArray<User>>([]);
 
   useEffect(() => {
     fetch("/api/users")
       .then((response) => response.json())
-      .then(setUsers)
-  }, [])
+      .then(setUsers);
+  }, []);
 
-  return <Users users={users} />
+  return <Users users={users} />;
 }
 ```
 
@@ -33,11 +33,11 @@ export const usersQueryOptions = queryOptions({
   queryFn: fetchUsers,
   retry: 2,
   staleTime: 60_000,
-})
+});
 
 function UserList() {
-  const { data: users } = useSuspenseQuery(usersQueryOptions)
-  return <Users users={users} />
+  const { data: users } = useSuspenseQuery(usersQueryOptions);
+  return <Users users={users} />;
 }
 ```
 
@@ -46,10 +46,10 @@ function UserList() {
 ```tsx
 export const Route = createFileRoute("/users")({
   loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(usersQueryOptions)
+    await context.queryClient.ensureQueryData(usersQueryOptions);
   },
   component: UserList,
-})
+});
 ```
 
 For runtime public config or health checks, use a `refetchInterval` that matches the server cache TTL.

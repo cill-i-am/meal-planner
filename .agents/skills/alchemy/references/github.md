@@ -21,10 +21,7 @@ Import and merge the provider when a stack declares GitHub resources:
 import * as GitHub from "alchemy/GitHub";
 import * as Layer from "effect/Layer";
 
-providers: Layer.mergeAll(
-  Cloudflare.providers(),
-  GitHub.providers(),
-)
+providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers());
 ```
 
 `GitHub.providers()` covers:
@@ -66,17 +63,18 @@ import * as GitHub from "alchemy/GitHub";
 import * as Output from "alchemy/Output";
 
 if (process.env.PULL_REQUEST) {
-  yield* GitHub.Comment("preview-comment", {
-    owner: "your-org",
-    repository: "your-repo",
-    issueNumber: Number(process.env.PULL_REQUEST),
-    body: Output.interpolate`
+  yield *
+    GitHub.Comment("preview-comment", {
+      owner: "your-org",
+      repository: "your-repo",
+      issueNumber: Number(process.env.PULL_REQUEST),
+      body: Output.interpolate`
 Preview deployed
 
 URL: ${web.url}
 Commit: ${process.env.GITHUB_SHA?.slice(0, 7)}
 `,
-  });
+    });
 }
 ```
 
@@ -101,10 +99,7 @@ import * as Redacted from "effect/Redacted";
 export default Alchemy.Stack(
   "github",
   {
-    providers: Layer.mergeAll(
-      Cloudflare.providers(),
-      GitHub.providers(),
-    ),
+    providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers()),
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
@@ -146,7 +141,7 @@ export default Alchemy.Stack(
       name: "CLOUDFLARE_ACCOUNT_ID",
       value: Redacted.make(accountId),
     });
-  }),
+  })
 );
 ```
 
@@ -166,47 +161,51 @@ Use `GitHub.Secret` for sensitive values. Values must be redacted unless already
 import * as GitHub from "alchemy/GitHub";
 import * as Redacted from "effect/Redacted";
 
-yield* GitHub.Secret("database-url", {
-  owner: "your-org",
-  repository: "your-repo",
-  environment: "production",
-  name: "DATABASE_URL",
-  value: Redacted.make(databaseUrl),
-});
+yield *
+  GitHub.Secret("database-url", {
+    owner: "your-org",
+    repository: "your-repo",
+    environment: "production",
+    name: "DATABASE_URL",
+    value: Redacted.make(databaseUrl),
+  });
 ```
 
 Use `GitHub.Variable` for plain-text non-secrets:
 
 ```ts
-yield* GitHub.Variable("deploy-region", {
-  owner: "your-org",
-  repository: "your-repo",
-  name: "DEPLOY_REGION",
-  value: "iad",
-});
+yield *
+  GitHub.Variable("deploy-region", {
+    owner: "your-org",
+    repository: "your-repo",
+    name: "DEPLOY_REGION",
+    value: "iad",
+  });
 ```
 
 Bulk helpers:
 
 ```ts
-yield* GitHub.Secrets({
-  owner: "your-org",
-  repository: "your-repo",
-  environment: "production",
-  secrets: {
-    CLOUDFLARE_API_TOKEN: cloudflareToken.value,
-    DATABASE_URL: databaseUrl,
-  },
-});
+yield *
+  GitHub.Secrets({
+    owner: "your-org",
+    repository: "your-repo",
+    environment: "production",
+    secrets: {
+      CLOUDFLARE_API_TOKEN: cloudflareToken.value,
+      DATABASE_URL: databaseUrl,
+    },
+  });
 
-yield* GitHub.Variables({
-  owner: "your-org",
-  repository: "your-repo",
-  variables: {
-    DEPLOY_REGION: "iad",
-    APP_ENV: "production",
-  },
-});
+yield *
+  GitHub.Variables({
+    owner: "your-org",
+    repository: "your-repo",
+    variables: {
+      DEPLOY_REGION: "iad",
+      APP_ENV: "production",
+    },
+  });
 ```
 
 Notes:
@@ -223,26 +222,29 @@ Notes:
 ```ts
 import * as GitHub from "alchemy/GitHub";
 
-const repo = yield* GitHub.Repository("app-repo", {
-  owner: "your-org",
-  name: "my-app",
-  description: "Production app repository",
-  visibility: "private",
-  hasWiki: false,
-  hasProjects: false,
-  deleteBranchOnMerge: true,
-  allowMergeCommit: false,
-  allowRebaseMerge: false,
-  allowSquashMerge: true,
-  topics: ["alchemy", "cloudflare", "typescript"],
-});
+const repo =
+  yield *
+  GitHub.Repository("app-repo", {
+    owner: "your-org",
+    name: "my-app",
+    description: "Production app repository",
+    visibility: "private",
+    hasWiki: false,
+    hasProjects: false,
+    deleteBranchOnMerge: true,
+    allowMergeCommit: false,
+    allowRebaseMerge: false,
+    allowSquashMerge: true,
+    topics: ["alchemy", "cloudflare", "typescript"],
+  });
 
-yield* GitHub.Variable("repo-url", {
-  owner: "your-org",
-  repository: "my-app",
-  name: "REPOSITORY_URL",
-  value: repo.htmlUrl,
-});
+yield *
+  GitHub.Variable("repo-url", {
+    owner: "your-org",
+    repository: "my-app",
+    name: "REPOSITORY_URL",
+    value: repo.htmlUrl,
+  });
 ```
 
 Repository behavior:
@@ -260,15 +262,16 @@ Use `GitHub.Webhook` when you need a raw GitHub repository webhook. Inside the s
 import * as GitHub from "alchemy/GitHub";
 import * as Config from "effect/Config";
 
-const secret = yield* Config.redacted("GITHUB_WEBHOOK_SECRET");
+const secret = yield * Config.redacted("GITHUB_WEBHOOK_SECRET");
 
-yield* GitHub.Webhook("repo-webhook", {
-  owner: "your-org",
-  repository: "your-repo",
-  url: worker.url.as<string>(),
-  events: ["push", "pull_request"],
-  secret,
-});
+yield *
+  GitHub.Webhook("repo-webhook", {
+    owner: "your-org",
+    repository: "your-repo",
+    url: worker.url.as<string>(),
+    events: ["push", "pull_request"],
+    secret,
+  });
 ```
 
 Prefer `GitHub.consumeRepositoryEvents(...)` inside a Cloudflare Worker when Alchemy should provision the webhook, claim the delivery route, verify signatures, and dispatch typed deliveries to an Effect handler.
@@ -294,17 +297,13 @@ export default class GitHubEvents extends Cloudflare.Worker<GitHubEvents>()(
         events: ["push", "pull_request"],
         secret,
       },
-      (event) => Effect.log(`received ${event.name} delivery ${event.id}`),
+      (event) => Effect.log(`received ${event.name} delivery ${event.id}`)
     );
 
     return {
       fetch: Effect.succeed(HttpServerResponse.text("ok")),
     };
-  }).pipe(
-    Effect.provide(
-      Cloudflare.Workers.GitHubRepositoryEventSourceLive,
-    ),
-  ),
+  }).pipe(Effect.provide(Cloudflare.Workers.GitHubRepositoryEventSourceLive))
 ) {}
 ```
 
@@ -321,16 +320,13 @@ import GitHubEvents from "./src/GitHubEvents.ts";
 export default Alchemy.Stack(
   "GitHubEvents",
   {
-    providers: Layer.mergeAll(
-      Cloudflare.providers(),
-      GitHub.providers(),
-    ),
+    providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers()),
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
     const worker = yield* GitHubEvents;
     return { url: worker.url.as<string>() };
-  }),
+  })
 );
 ```
 

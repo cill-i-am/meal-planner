@@ -19,10 +19,10 @@ export const AppConfigLive = Layer.effect(
     const environment = yield* Config.schema(DeploymentEnvironment, "APP_ENV");
     const databaseUrl = yield* Config.redacted("DATABASE_URL");
     const requestTimeout = yield* Config.duration("REQUEST_TIMEOUT").pipe(
-      Config.withDefault(Duration.seconds(10)),
+      Config.withDefault(Duration.seconds(10))
     );
     const emailEnabled = yield* Config.boolean("EMAIL_ENABLED").pipe(
-      Config.withDefault(false),
+      Config.withDefault(false)
     );
 
     return AppConfig.of({
@@ -31,7 +31,7 @@ export const AppConfigLive = Layer.effect(
       requestTimeout,
       emailEnabled,
     });
-  }),
+  })
 );
 ```
 
@@ -63,7 +63,7 @@ const TestConfigProvider = ConfigProvider.fromUnknown({
 });
 
 const TestLayer = AppConfigLive.pipe(
-  Layer.provide(ConfigProvider.layer(TestConfigProvider)),
+  Layer.provide(ConfigProvider.layer(TestConfigProvider))
 );
 ```
 
@@ -90,7 +90,7 @@ export interface AppConfigShape {
 }
 
 export class AppConfig extends Context.Service<AppConfig, AppConfigShape>()(
-  "@app/AppConfig",
+  "@app/AppConfig"
 ) {}
 ```
 

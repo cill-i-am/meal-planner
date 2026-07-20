@@ -34,11 +34,11 @@ const retryTransientProviderFailure: Schedule.Schedule<unknown, ProviderError> =
   Schedule.exponential("100 millis").pipe(
     Schedule.jittered,
     Schedule.upTo({ times: 5 }),
-    Schedule.while(({ input }) => input.retryable),
+    Schedule.while(({ input }) => input.retryable)
   );
 
 export const fetchProfile = Effect.fn("Profiles.fetch")(function* (
-  id: ProfileId,
+  id: ProfileId
 ) {
   return yield* provider
     .get(id)
@@ -61,10 +61,10 @@ const loadWithFallback = primary
         .load(id)
         .pipe(
           Effect.tap(() =>
-            Effect.logWarning("Profiles.primaryUnavailable", error),
-          ),
-        ),
-    ),
+            Effect.logWarning("Profiles.primaryUnavailable", error)
+          )
+        )
+    )
   );
 ```
 
@@ -88,9 +88,9 @@ const providerRetry: Schedule.Schedule<RateLimited, RateLimited> =
       Effect.succeed(
         input.retryAfterMs === undefined
           ? duration
-          : Duration.max(duration, Duration.millis(input.retryAfterMs)),
-      ),
-    ),
+          : Duration.max(duration, Duration.millis(input.retryAfterMs))
+      )
+    )
   );
 ```
 
@@ -111,13 +111,13 @@ const runPass = Effect.fn("ProjectionWorker.pass")(function* () {
 
 const resilientPass = runPass().pipe(
   Effect.tapError((error) =>
-    Effect.logError("ProjectionWorker.passFailed", error),
+    Effect.logError("ProjectionWorker.passFailed", error)
   ),
-  Effect.ignore,
+  Effect.ignore
 );
 
 export const runProjectionWorker = resilientPass.pipe(
-  Effect.repeat(Schedule.spaced("1 second")),
+  Effect.repeat(Schedule.spaced("1 second"))
 );
 ```
 
@@ -134,10 +134,10 @@ yield *
     (job) =>
       processJob(job).pipe(
         Effect.catchTag("InvalidJob", (error) =>
-          deadLetters.publish(job, error),
-        ),
+          deadLetters.publish(job, error)
+        )
       ),
-    { concurrency: 5, discard: true },
+    { concurrency: 5, discard: true }
   );
 ```
 

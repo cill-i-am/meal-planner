@@ -11,7 +11,7 @@ import * as Schema from "effect/Schema";
 const EmailAddressSchema = Schema.Trim.check(
   Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, {
     message: "Enter a valid email address.",
-  }),
+  })
 ).pipe(Schema.brand("EmailAddress"));
 
 const SignInSchema = Schema.Struct({
@@ -19,7 +19,7 @@ const SignInSchema = Schema.Struct({
   password: Schema.String.check(
     Schema.isMinLength(8, {
       message: "Password must be at least 8 characters.",
-    }),
+    })
   ),
 });
 
@@ -82,7 +82,9 @@ Use the project's `Field` primitives and TanStack Form field state together:
           aria-invalid={isInvalid}
           autoComplete="email"
         />
-        {isInvalid ? <FieldError errors={fieldErrors(field.state.meta.errors)} /> : null}
+        {isInvalid ? (
+          <FieldError errors={fieldErrors(field.state.meta.errors)} />
+        ) : null}
       </Field>
     );
   }}

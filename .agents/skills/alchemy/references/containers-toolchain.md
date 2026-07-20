@@ -20,7 +20,7 @@ import * as Alchemy from "alchemy";
 import * as Docker from "alchemy/Docker";
 import * as Layer from "effect/Layer";
 
-providers: Layer.merge(Docker.providers(), Alchemy.RandomProvider())
+providers: Layer.merge(Docker.providers(), Alchemy.RandomProvider());
 ```
 
 Primary resources:
@@ -35,14 +35,16 @@ Primary resources:
 Example build:
 
 ```ts
-const image = yield* Docker.Image("ApiImage", {
-  name: "api",
-  build: {
-    context: ".",
-    dockerfile: "Dockerfile",
-    platform: "linux/amd64",
-  },
-});
+const image =
+  yield *
+  Docker.Image("ApiImage", {
+    name: "api",
+    build: {
+      context: ".",
+      dockerfile: "Dockerfile",
+      platform: "linux/amd64",
+    },
+  });
 ```
 
 Rules:
@@ -61,15 +63,17 @@ Kubernetes resources currently bind to an `AWS.EKS.Cluster`. There is no standal
 Prefer typed resources such as `Kubernetes.Namespace` and `Kubernetes.Job`. `Kubernetes.Object` is a lower-level shape escape hatch for the same supported kinds, not a way to deploy arbitrary CRDs or unsupported APIs:
 
 ```ts
-const object = yield* Kubernetes.Object("ApiConfig", {
-  cluster,
-  apiVersion: "v1",
-  kind: "ConfigMap",
-  metadata: { name: "api-config", namespace: "app" },
-  body: {
-    data: { LOG_LEVEL: "info" },
-  },
-});
+const object =
+  yield *
+  Kubernetes.Object("ApiConfig", {
+    cluster,
+    apiVersion: "v1",
+    kind: "ConfigMap",
+    metadata: { name: "api-config", namespace: "app" },
+    body: {
+      data: { LOG_LEVEL: "info" },
+    },
+  });
 ```
 
 Objects are bindings on the EKS cluster and use server-side apply. Current support is limited to Namespace, ServiceAccount, ConfigMap, Service, Deployment, and Job, and apply does not wait for rollout readiness. Preserve stable logical IDs, explicit namespaces, field ownership, dependency order, and pruning intent. Do not pass unvalidated arbitrary manifests from external input.
@@ -90,11 +94,13 @@ For EKS:
 ```ts
 import * as Command from "alchemy/Command";
 
-const build = yield* Command.Build("WebBuild", {
-  command: "pnpm build",
-  cwd: "apps/web",
-  outdir: "dist",
-});
+const build =
+  yield *
+  Command.Build("WebBuild", {
+    command: "pnpm build",
+    cwd: "apps/web",
+    outdir: "dist",
+  });
 ```
 
 - `Command.Build`: a memoized command that must produce `outdir`.

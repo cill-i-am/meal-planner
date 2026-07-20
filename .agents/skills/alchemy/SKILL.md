@@ -56,7 +56,7 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     const bucket = yield* Cloudflare.R2.Bucket("Bucket");
     return { bucketName: bucket.bucketName };
-  }),
+  })
 );
 ```
 
@@ -68,8 +68,8 @@ import * as Layer from "effect/Layer";
 providers: Layer.mergeAll(
   Cloudflare.providers(),
   Drizzle.providers(),
-  Neon.providers(),
-)
+  Neon.providers()
+);
 ```
 
 ## Core Rules

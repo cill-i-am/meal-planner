@@ -13,5 +13,4 @@ Use them with the bundled agent skills:
 - `worker-thread-template.md`: template for Codex worker handoffs.
 - `reviewer-thread-template.md`: template for read-only reviewer/spec threads.
 
-Patch stable repo-specific domain terms during setup. Keep Linear team names,
-statuses, labels, and Initiatives in Linear as the source of truth.
+Patch stable repo-specific domain terms during setup. Keep Linear team names, statuses, labels, and Initiatives in Linear as the source of truth.

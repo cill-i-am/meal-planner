@@ -20,12 +20,12 @@ Use `acquireUseRelease` when the resource must not escape one operation:
 
 ```ts
 export const readSnapshot = Effect.fn("Snapshot.read")(function* (
-  path: SnapshotPath,
+  path: SnapshotPath
 ) {
   return yield* Effect.acquireUseRelease(
     FileSystem.open(path, { flag: "r" }),
     (handle) => handle.readAll,
-    (handle) => handle.close,
+    (handle) => handle.close
   );
 });
 ```
@@ -39,14 +39,14 @@ Use `acquireRelease` when downstream work needs the resource for the current sco
 ```ts
 const openSubscription = Effect.acquireRelease(
   broker.subscribe(Topic.UserEvents),
-  (subscription) => subscription.close,
+  (subscription) => subscription.close
 );
 
 const consume = Effect.scoped(
   Effect.gen(function* () {
     const subscription = yield* openSubscription;
     yield* subscription.messages.pipe(Stream.runForEach(handleMessage));
-  }),
+  })
 );
 ```
 
@@ -100,7 +100,7 @@ yield *
   worker(ready).pipe(
     Effect.exit,
     Effect.flatMap((exit) => Deferred.succeed(completed, exit)),
-    Effect.forkScoped,
+    Effect.forkScoped
   );
 
 yield * Deferred.await(ready);

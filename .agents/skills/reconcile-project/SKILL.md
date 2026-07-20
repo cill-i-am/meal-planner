@@ -34,8 +34,7 @@ Find and repair or report:
 Use Linear updates for durable state:
 
 - add or correct blockers
-- move state to the live workflow equivalent of needs information, blocked,
-  ready for agent work, in review, or completed
+- move state to the live workflow equivalent of needs information, blocked, ready for agent work, in review, or completed
 - add comments with evidence
 - mark obsolete issues with rationale
 - trigger or recommend `ci-watch` for PRs with pending/failing CI
@@ -47,17 +46,10 @@ Do not implement code. Do not close or mark done without evidence.
 Report every touched item in exactly one bucket:
 
 - `dispatchable`: issue is ready for an AFK worker and blockers are clear.
-- `active-worker`: issue already has an active worker, reviewer, branch, PR, or
-  heartbeat; include the owner and next check.
-- `needs-ci-watch`: PR exists but checks, PR comments, review threads, or Linear
-  comments still need monitoring.
-- `blocked-hitl`: human decision, external provider state, credentials, or
-  blocker relation prevents agent work.
-- `ready-for-acceptance`: worker evidence exists and orchestrator gates should
-  run.
-- `inconsistent`: Linear, PR, worker evidence, or PRD state disagree; include
-  the proposed correction or the update already made.
+- `active-worker`: issue already has an active worker, reviewer, branch, PR, or heartbeat; include the owner and next check.
+- `needs-ci-watch`: PR exists but checks, PR comments, review threads, or Linear comments still need monitoring.
+- `blocked-hitl`: human decision, external provider state, credentials, or blocker relation prevents agent work.
+- `ready-for-acceptance`: worker evidence exists and orchestrator gates should run.
+- `inconsistent`: Linear, PR, worker evidence, or PRD state disagree; include the proposed correction or the update already made.
 
-Completion criterion: Linear is truthful enough that the orchestrator can safely
-dispatch, steer, accept, or pause each item without relying on stale handoff
-context.
+Completion criterion: Linear is truthful enough that the orchestrator can safely dispatch, steer, accept, or pause each item without relying on stale handoff context.

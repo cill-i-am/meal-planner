@@ -2,8 +2,7 @@
 
 ## Parent
 
-Linear Project/PRD: <link>
-Initiative: <link or omit>
+Linear Project/PRD: <link> Initiative: <link or omit>
 
 ## Goal
 
@@ -17,15 +16,15 @@ Link the parent Project, PRD, docs, prior decisions, and blockers.
 
 In scope:
 
-- 
+-
 
 Out of scope:
 
-- 
+-
 
 ## Acceptance Criteria
 
-- 
+-
 
 ## Verification Expectations
 
@@ -35,9 +34,7 @@ Out of scope:
 ## Risk And Review
 
 - Risk: low | medium | high
-- Expected review stack: production-ready, code-review, simplify, and any
-  stack-specific skills relevant to the changed surfaces. Add review-swarm for
-  broad or high-risk changes.
+- Expected review stack: production-ready, code-review, simplify, and any stack-specific skills relevant to the changed surfaces. Add review-swarm for broad or high-risk changes.
 
 ## Blockers
 
@@ -54,5 +51,4 @@ Anything the worker or reviewer must know before starting.
 
 ## Follow-Up Source
 
-If this issue was created as a follow-up, link the source issue and explain why
-the work was out of scope there.
+If this issue was created as a follow-up, link the source issue and explain why the work was out of scope there.

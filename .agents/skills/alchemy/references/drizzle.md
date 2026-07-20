@@ -24,8 +24,8 @@ import * as Layer from "effect/Layer";
 providers: Layer.mergeAll(
   Cloudflare.providers(),
   Drizzle.providers(),
-  Planetscale.providers(),
-)
+  Planetscale.providers()
+);
 ```
 
 Do not add `Drizzle.providers()` just for a runtime import from `drizzle-orm`. Add it when Alchemy owns schema generation or migration artifacts.
@@ -35,11 +35,13 @@ Do not add `Drizzle.providers()` just for a runtime import from `drizzle-orm`. A
 `Drizzle.Schema` is a deploy-time/build-time resource. It loads a schema module, runs Drizzle Kit programmatic generation, writes migration files, and exposes the migration directory to other resources.
 
 ```ts
-const schema = yield* Drizzle.Schema("AppSchema", {
-  schema: "./src/schema.ts",
-  out: "./migrations",
-  dialect: "postgres",
-});
+const schema =
+  yield *
+  Drizzle.Schema("AppSchema", {
+    schema: "./src/schema.ts",
+    out: "./migrations",
+    dialect: "postgres",
+  });
 ```
 
 Defaults:
@@ -50,29 +52,35 @@ Defaults:
 Wire the generated directory into a migration-aware database branch:
 
 ```ts
-const branch = yield* Planetscale.PostgresBranch("AppBranch", {
-  database,
-  migrationsDir: schema.out,
-});
+const branch =
+  yield *
+  Planetscale.PostgresBranch("AppBranch", {
+    database,
+    migrationsDir: schema.out,
+  });
 ```
 
 or:
 
 ```ts
-const branch = yield* Neon.Branch("AppBranch", {
-  project,
-  migrationsDir: schema.out,
-});
+const branch =
+  yield *
+  Neon.Branch("AppBranch", {
+    project,
+    migrationsDir: schema.out,
+  });
 ```
 
 For MySQL, use `dialect: "mysql"` if Alchemy is generating MySQL migrations:
 
 ```ts
-const schema = yield* Drizzle.Schema("AppSchema", {
-  schema: "./src/schema.ts",
-  out: "./migrations",
-  dialect: "mysql",
-});
+const schema =
+  yield *
+  Drizzle.Schema("AppSchema", {
+    schema: "./src/schema.ts",
+    out: "./migrations",
+    dialect: "mysql",
+  });
 ```
 
 PlanetScale MySQL examples often use checked-in migrations produced by `drizzle-kit generate` and pass `migrationsDir: "./migrations"` to `Planetscale.MySQLBranch`.
@@ -108,7 +116,7 @@ Runtime notes:
 Example query in a Worker handler:
 
 ```ts
-const users = yield* db.select().from(Users).limit(10);
+const users = yield * db.select().from(Users).limit(10);
 return Response.json({ users });
 ```
 
@@ -214,7 +222,7 @@ const { test, beforeAll, afterAll, deploy, destroy } = Test.make({
   providers: Layer.mergeAll(
     Cloudflare.providers(),
     Drizzle.providers(),
-    Planetscale.providers(),
+    Planetscale.providers()
   ),
   state: Cloudflare.state(),
   stage: "test",
