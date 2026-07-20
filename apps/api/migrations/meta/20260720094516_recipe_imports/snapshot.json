@@ -1,0 +1,236 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "7fc3c35f-d17e-40b9-be70-aea1e9bbf929",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "ddl": [
+    {
+      "name": "import_requests",
+      "entityType": "tables"
+    },
+    {
+      "name": "recipe_imports",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "import_requests"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "idempotency_key_hash",
+      "entityType": "columns",
+      "table": "import_requests"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "table": "import_requests"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "request_fingerprint",
+      "entityType": "columns",
+      "table": "import_requests"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_locator_hash",
+      "entityType": "columns",
+      "table": "import_requests"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "canonical_source_id",
+      "entityType": "columns",
+      "table": "recipe_imports"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "compatibility_fingerprint",
+      "entityType": "columns",
+      "table": "recipe_imports"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "recipe_imports"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "evidence_references_json",
+      "entityType": "columns",
+      "table": "recipe_imports"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "recipe_imports"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recovery_action",
+      "entityType": "columns",
+      "table": "recipe_imports"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_kind",
+      "entityType": "columns",
+      "table": "recipe_imports"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "recipe_imports"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status_code",
+      "entityType": "columns",
+      "table": "recipe_imports"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "recipe_imports"
+    },
+    {
+      "columns": ["import_id"],
+      "tableTo": "recipe_imports",
+      "columnsTo": ["id"],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "nameExplicit": false,
+      "name": "fk_import_requests_import_id_recipe_imports_id_fk",
+      "entityType": "fks",
+      "table": "import_requests"
+    },
+    {
+      "columns": ["idempotency_key_hash"],
+      "nameExplicit": false,
+      "name": "import_requests_pk",
+      "table": "import_requests",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "recipe_imports_pk",
+      "table": "recipe_imports",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "import_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "import_requests_import_id_index",
+      "entityType": "indexes",
+      "table": "import_requests"
+    },
+    {
+      "columns": [
+        {
+          "value": "source_kind",
+          "isExpression": false
+        },
+        {
+          "value": "canonical_source_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "recipe_imports_canonical_identity_unique",
+      "entityType": "indexes",
+      "table": "recipe_imports"
+    },
+    {
+      "value": "json_valid(\"evidence_references_json\")",
+      "name": "recipe_imports_evidence_json_check",
+      "entityType": "checks",
+      "table": "recipe_imports"
+    },
+    {
+      "value": "(\n        \"status\" = 'queued'\n        AND \"status_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'private_or_unavailable'\n        AND \"recovery_action\" = 'check_source_visibility'\n      ) OR (\n        \"status\" = 'unsupported'\n        AND \"status_code\" = 'unsupported_post_type'\n        AND \"recovery_action\" = 'submit_supported_public_video'\n      )",
+      "name": "recipe_imports_status_details_check",
+      "entityType": "checks",
+      "table": "recipe_imports"
+    }
+  ],
+  "renames": []
+}

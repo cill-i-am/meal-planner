@@ -3,6 +3,7 @@ packages:
 allowBuilds:
   esbuild: true
   msgpackr-extract: true
+  sharp: false
   workerd: true
 minimumReleaseAgeExclude:
   - "@effect/platform-node-shared@4.0.0-beta.99"

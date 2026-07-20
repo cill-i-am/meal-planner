@@ -8,6 +8,7 @@
     "alchemy:plan": "tsx scripts/alchemy-command.ts plan",
     "build": "pnpm --recursive build",
     "check": "tsc -p tsconfig.alchemy.json --noEmit && pnpm --recursive check",
+    "db:generate": "pnpm --filter @meal-planner/api db:generate",
     "dev": "pnpm --filter @meal-planner/api dev",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",

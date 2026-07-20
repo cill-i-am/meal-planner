@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -22,10 +22,55 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
 
     expect(workerSource).toContain('"MealPlannerApi"');
-    expect(workerSource).toContain("HealthWorkerRoutes");
+    expect(workerSource).toContain("HealthRoutes");
+    expect(workerSource).toContain("ImportRouteDefinitions");
     expect(stackSource).toContain("apiUrl: api.url");
     expect(stackSource).toContain("apiWorkerName: api.workerName");
+    expect(stackSource).toContain("databaseName: database.databaseName");
     expect(stackSource).not.toContain("api.url.as<string>()");
+  });
+
+  it("declares one stable D1 resource with versioned local migrations", () => {
+    const databaseSource = readRepoFile(
+      "./apps/api/src/infrastructure/meal-planner-database.ts"
+    );
+    const migration = readRepoFile(
+      "./apps/api/migrations/0000_recipe_imports.sql"
+    );
+
+    expect(databaseSource).toContain('"MealPlannerDatabase"');
+    expect(databaseSource).toContain('migrationsDir: "./apps/api/migrations"');
+    expect(databaseSource).toContain('migrationsTable: "d1_migrations"');
+    expect(migration).toContain("CREATE TABLE `recipe_imports`");
+    expect(migration).toContain("CREATE TABLE `import_requests`");
+  });
+
+  it("keeps exactly one recursively discoverable deployable SQL migration", () => {
+    const migrationsDirectory = fileURLToPath(
+      new URL("apps/api/migrations", import.meta.url)
+    );
+    const sqlFiles = readdirSync(migrationsDirectory, {
+      recursive: true,
+    })
+      .map(String)
+      .filter((path) => path.endsWith(".sql"))
+      .toSorted();
+
+    expect(sqlFiles).toEqual(["0000_recipe_imports.sql"]);
+  });
+
+  it("binds only D1 and the redacted import token, without Images or Sharp", () => {
+    const workerSource = readRepoFile("./apps/api/src/worker.ts");
+    const databaseSource = readRepoFile(
+      "./apps/api/src/infrastructure/meal-planner-database.ts"
+    );
+    const allSource = `${workerSource}\n${databaseSource}`;
+
+    expect(workerSource).toContain("Cloudflare.D1.QueryDatabase");
+    expect(workerSource).toMatch(
+      /Config\.redacted\(\s*"MEAL_PLANNER_IMPORT_API_TOKEN"\s*\)/u
+    );
+    expect(allSource).not.toMatch(/Cloudflare\.Images|Images\.|sharp/iu);
   });
 
   it("ignores local Alchemy, Wrangler, and Worker credential artifacts", () => {

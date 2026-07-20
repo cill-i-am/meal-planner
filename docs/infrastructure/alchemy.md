@@ -1,9 +1,9 @@
 # Meal Planner Alchemy operations
 
 The repository owns one Alchemy v2 stack named `MealPlanner`. Its first stable
-resource identity is the `MealPlannerApi` Cloudflare Worker. Changing either
-logical ID is a resource-identity decision and must not be treated as a cosmetic
-rename.
+resource identity is the `MealPlannerApi` Cloudflare Worker. Recipe imports add
+the `MealPlannerDatabase` D1 resource. Changing any of these logical IDs is a
+resource-identity decision and must not be treated as a cosmetic rename.
 
 The pinned infrastructure toolchain is Alchemy `2.0.0-beta.63`, Effect and
 `@effect/platform-node` `4.0.0-beta.99`, Node `>=22.18.0`, and pnpm `11.7.0`.
@@ -85,8 +85,8 @@ mutation, and cleanup boundary.
 
 ## Outputs and health verification
 
-The stack returns `apiWorkerName` and the optional `apiUrl`. Alchemy types the
-Worker URL as `string | undefined`: a Worker can exist without a generated
+The stack returns `apiWorkerName`, `databaseName`, and the optional `apiUrl`.
+Alchemy types the Worker URL as `string | undefined`: a Worker can exist without a generated
 workers.dev URL. Operator tooling must not invent a URL or cast it to a required
 string. When `apiUrl` is present, `GET <apiUrl>/health` returns:
 
@@ -96,6 +96,28 @@ string. When `apiUrl` is present, `GET <apiUrl>/health` returns:
 
 When it is absent, use `apiWorkerName` to locate the Worker and inspect its
 configured routes/domains before testing an endpoint.
+
+## Recipe import storage and caller authentication
+
+`MealPlannerDatabase` is bound to the Worker through Alchemy's Effect-native D1
+query binding. Its versioned SQL is under `apps/api/migrations`; the stable
+tracking table is `d1_migrations`. Generate Drizzle metadata with
+`pnpm db:generate`, review the SQL, and move the approved SQL to a numerically
+prefixed top-level file. Keep only Drizzle snapshot JSON under `migrations/meta`:
+Alchemy recursively discovers every `.sql` file beneath its migrations
+directory, so leaving a generated metadata copy there would apply it twice.
+
+`MEAL_PLANNER_IMPORT_API_TOKEN` is a required secret-text Worker binding. The
+Worker reads it through `Config.redacted`; it must never be logged, returned,
+or committed. `POST /imports` and `GET /imports/:id` authenticate before parsing
+caller input and fail closed when the binding is missing or empty.
+
+GAIA-108 persists only source identity, import state, idempotency metadata, and
+safe evidence references. It does not persist submitted or redirect URLs,
+provider payloads, media, recipe data, or credentials. TikTok requests are
+used only for bounded identity/availability checks. GAIA-109 will replace the
+inert `ImportWorkflowStarter` seam with the queued acquisition workflow;
+workflow-start recovery and terminal-to-queued recovery remain later work.
 
 ## Cleanup and test boundaries
 
