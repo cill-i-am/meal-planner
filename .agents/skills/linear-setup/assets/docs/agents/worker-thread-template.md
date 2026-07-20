@@ -28,23 +28,14 @@ Out of scope:
 ## Requirements
 
 - Follow repo `AGENTS.md` and nested instructions.
-- Read the live Linear issue, parent Project/PRD, blockers, and comments before
-  planning. Treat this handoff as orientation only.
-- Use the orchestrator-provisioned worktree created from the exact dispatched
-  base SHA. Do not use local `main`, the coordinator's `HEAD`, or this handoff as
-  base evidence.
+- Read the live Linear issue, parent Project/PRD, blockers, and comments before planning. Treat this handoff as orientation only.
+- Use the orchestrator-provisioned worktree created from the exact dispatched base SHA. Do not use local `main`, the coordinator's `HEAD`, or this handoff as base evidence.
 - Create and own the topic branch inside that worktree.
-- Before planning or editing, run a fresh fetch and report the isolated path,
-  topic branch, `HEAD`, `origin/main`, merge-base, empty worktree status,
-  ahead/behind `0 0`, install result, and baseline result or blocker.
-- If `origin/main` advances before edit authority, hold work and notify the
-  orchestrator. Refresh only through the non-destructive procedure in
-  `worktree-isolation`, then rerun relevant baselines and repeat the
-  plan/reviewer gate.
+- Before planning or editing, run a fresh fetch and report the isolated path, topic branch, `HEAD`, `origin/main`, merge-base, empty worktree status, ahead/behind `0 0`, install result, and baseline result or blocker.
+- If `origin/main` advances before edit authority, hold work and notify the orchestrator. Refresh only through the non-destructive procedure in `worktree-isolation`, then rerun relevant baselines and repeat the plan/reviewer gate.
 - Keep changes surgical and simple.
 - Post a short plan before implementation.
-- Proceed after posting the plan unless the issue or orchestrator explicitly
-  requires plan approval.
+- Proceed after posting the plan unless the issue or orchestrator explicitly requires plan approval.
 - Stop and report if scope or product intent is wrong.
 - Use Linear blockers for dependency issues.
 - Use Browser verification for user-visible changes where practical.
