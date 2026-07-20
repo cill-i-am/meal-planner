@@ -26,12 +26,16 @@ Out of scope:
 ## Requirements
 
 - Follow repo `AGENTS.md` and nested instructions.
-- Read the live Linear issue, parent Project/PRD, blockers, and comments before planning. Treat this handoff as orientation only.
-- Use `worktree-isolation` to verify or create the isolated workspace before editing.
-- Do not implement until you can report the isolated path, branch, base commit, install result, and baseline check result or blocker.
+- Read the live Linear issue, parent Project/PRD, blockers, and comments before
+  planning. Treat this handoff as orientation only.
+- Use `worktree-isolation` to verify or create the isolated workspace before
+  editing.
+- Do not implement until you can report the isolated path, branch, base commit,
+  install result, and baseline check result or blocker.
 - Keep changes surgical and simple.
 - Post a short plan before implementation.
-- Proceed after posting the plan unless the issue or orchestrator explicitly requires plan approval.
+- Proceed after posting the plan unless the issue or orchestrator explicitly
+  requires plan approval.
 - Stop and report if scope or product intent is wrong.
 - Use Linear blockers for dependency issues.
 - Use Browser verification for user-visible changes where practical.

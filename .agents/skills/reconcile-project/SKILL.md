@@ -9,7 +9,8 @@ Make Linear truthful before dispatching or accepting more work.
 
 ## Read
 
-- Linear Project/PRD, child issues, blockers, comments, assignees, statuses
+- Linear Project/PRD, parent/sub-Issue hierarchy, blockers, comments, assignees,
+  statuses
 - linked PRs and CI status
 - worker/orchestrator evidence comments
 - relevant source or architecture docs when spec drift is suspected
@@ -27,6 +28,11 @@ Find and repair or report:
 - issue marked completed/done without production-ready evidence
 - parent PRD changed after issue dispatch
 - issue scope no longer matches parent PRD or source reality
+- Issue title describes an internal technical task rather than an observable
+  outcome, or uses unexplained codebase shorthand
+- delivery outcome is orphaned or attached to the wrong parent capability outcome
+- parent outcome is marked done while children remain incomplete, or all children
+  are done but the combined parent outcome has not been verified
 - duplicate or obsolete issues
 
 ## Actions
@@ -34,7 +40,11 @@ Find and repair or report:
 Use Linear updates for durable state:
 
 - add or correct blockers
-- move state to the live workflow equivalent of needs information, blocked, ready for agent work, in review, or completed
+- rename outcome-equivalent titles and correct parent/sub-Issue relations when
+  scope and ownership are clearly unchanged; report ambiguity instead of silently
+  changing product meaning
+- move state to the live workflow equivalent of needs information, blocked,
+  ready for agent work, in review, or completed
 - add comments with evidence
 - mark obsolete issues with rationale
 - trigger or recommend `ci-watch` for PRs with pending/failing CI
@@ -46,10 +56,17 @@ Do not implement code. Do not close or mark done without evidence.
 Report every touched item in exactly one bucket:
 
 - `dispatchable`: issue is ready for an AFK worker and blockers are clear.
-- `active-worker`: issue already has an active worker, reviewer, branch, PR, or heartbeat; include the owner and next check.
-- `needs-ci-watch`: PR exists but checks, PR comments, review threads, or Linear comments still need monitoring.
-- `blocked-hitl`: human decision, external provider state, credentials, or blocker relation prevents agent work.
-- `ready-for-acceptance`: worker evidence exists and orchestrator gates should run.
-- `inconsistent`: Linear, PR, worker evidence, or PRD state disagree; include the proposed correction or the update already made.
+- `active-worker`: issue already has an active worker, reviewer, branch, PR, or
+  heartbeat; include the owner and next check.
+- `needs-ci-watch`: PR exists but checks, PR comments, review threads, or Linear
+  comments still need monitoring.
+- `blocked-hitl`: human decision, external provider state, credentials, or
+  blocker relation prevents agent work.
+- `ready-for-acceptance`: worker evidence exists and orchestrator gates should
+  run.
+- `inconsistent`: Linear, PR, worker evidence, or PRD state disagree; include
+  the proposed correction or the update already made.
 
-Completion criterion: Linear is truthful enough that the orchestrator can safely dispatch, steer, accept, or pause each item without relying on stale handoff context.
+Completion criterion: Linear's outcome hierarchy, titles, blockers, and execution
+state are truthful enough that the orchestrator can safely dispatch, steer,
+accept, or pause each item without relying on stale handoff context.
