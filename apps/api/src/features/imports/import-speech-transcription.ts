@@ -372,8 +372,14 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
     });
 
     const completed = yield* runDispatch.pipe(
-      Effect.catchTag("SpeechPipelineFailure", (failure) =>
-        input.transcriptionRepository
+      Effect.catchTag("SpeechPipelineFailure", (failure) => {
+        if (
+          failure.code === "outcome_unknown" ||
+          failure.code === "transcript_evidence_failed"
+        ) {
+          return Effect.fail(failure);
+        }
+        return input.transcriptionRepository
           .fail({
             completedAt: now,
             dispatchId,
@@ -382,8 +388,8 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
             importId: input.importId,
             sourceMediaSha256: evidence.sha256,
           })
-          .pipe(Effect.andThen(Effect.fail(failure)))
-      )
+          .pipe(Effect.andThen(Effect.fail(failure)));
+      })
     );
     return {
       _tag: "Transcribed" as const,

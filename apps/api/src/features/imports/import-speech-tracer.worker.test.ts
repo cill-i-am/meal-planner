@@ -483,6 +483,207 @@ describe("provider-free acquired-to-transcript tracer", () => {
     ).toMatchObject({ status: { kind: "transcribed" } });
   });
 
+  it("recovers a committed transcript after its first verification read fails without redispatch", async () => {
+    const interruptedImportId = decodeImportId(
+      "018f47ad-91aa-7c35-b6fe-000000000115"
+    );
+    const acquisitionRepository = await makeAcquiredImport({
+      fixtureCanonicalId: decodeCanonicalId("7520000000000000115"),
+      fixtureImportId: interruptedImportId,
+    });
+    const audio = makeAudioFixture();
+    const speech = makeTranscriptFixture();
+    const durableRepository = makeD1SpeechTranscriptionRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const durableBucket = acquisitionBucket();
+    const transcriptKey = transcriptObjectKey(interruptedImportId, generation);
+    let transcriptPutCommitted = false;
+    let verificationReadsFailed = 0;
+    const interruptedBucket: AcquisitionBucketLike = {
+      get: (key) => {
+        if (
+          key === transcriptKey &&
+          transcriptPutCommitted &&
+          verificationReadsFailed === 0
+        ) {
+          verificationReadsFailed += 1;
+          return Promise.reject(
+            new Error("simulated transcript verification read failure")
+          );
+        }
+        return durableBucket.get(key);
+      },
+      head: (key) => durableBucket.head(key),
+      put: async (key, value, options) => {
+        const object = await durableBucket.put(key, value, options);
+        if (key === transcriptKey) {
+          transcriptPutCommitted = true;
+        }
+        return object;
+      },
+    };
+
+    const interrupted = await Effect.runPromiseExit(
+      transcribeAcquiredImport({
+        acquisitionRepository,
+        audioExtractor: audio.service,
+        bucket: interruptedBucket,
+        importId: interruptedImportId,
+        now: () => transcribedAt,
+        speechTranscriber: speech.service,
+        transcriptionRepository: durableRepository,
+      })
+    );
+    expect(Exit.isFailure(interrupted)).toBe(true);
+    if (Exit.isSuccess(interrupted)) {
+      throw new Error("Expected the simulated transcript verification failure");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(interrupted.cause))).toEqual(
+      {
+        _tag: "SpeechPipelineFailure",
+        code: "transcript_evidence_failed",
+      }
+    );
+    expect(verificationReadsFailed).toBe(1);
+    expect(speech.calls).toHaveLength(1);
+    await expect(
+      testEnv.ImportEvidenceBucket.head(transcriptKey)
+    ).resolves.not.toBeNull();
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(
+          acquisitionRepository.findById(interruptedImportId)
+        )
+      ).view.status
+    ).toEqual({ kind: "transcribing" });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT failure_code, state FROM import_transcriptions
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(interruptedImportId, generation)
+        .first()
+    ).resolves.toEqual({ failure_code: null, state: "dispatching" });
+
+    const replayTrap = makeExternalIoTrap(
+      "Committed transcript replay attempted external I/O"
+    );
+    await expect(
+      Effect.runPromise(
+        transcribeAcquiredImport({
+          acquisitionRepository,
+          audioExtractor: replayTrap.audioExtractor,
+          bucket: interruptedBucket,
+          importId: interruptedImportId,
+          now: () => transcribedAt,
+          speechTranscriber: replayTrap.speechTranscriber,
+          transcriptionRepository: durableRepository,
+        })
+      )
+    ).resolves.toMatchObject({
+      _tag: "Transcribed",
+      generation,
+      importId: interruptedImportId,
+      transcriptKey,
+    });
+    expect(replayTrap.calls).toEqual([]);
+    expect(speech.calls).toHaveLength(1);
+  });
+
+  it("keeps an unknown provider outcome fenced and never redispatches it", async () => {
+    const unknownImportId = decodeImportId(
+      "018f47ad-91aa-7c35-b6fe-000000000116"
+    );
+    const acquisitionRepository = await makeAcquiredImport({
+      fixtureCanonicalId: decodeCanonicalId("7520000000000000116"),
+      fixtureImportId: unknownImportId,
+    });
+    const audio = makeAudioFixture();
+    const providerCalls: string[] = [];
+    const ambiguousProvider: SpeechTranscriberShape = {
+      transcribe: (input) =>
+        Effect.sync(() => {
+          providerCalls.push(input.dispatchId);
+        }).pipe(
+          Effect.andThen(
+            Effect.fail({
+              _tag: "SpeechTranscriptionFailure",
+              code: "outcome_unknown",
+            } satisfies SpeechTranscriptionFailure)
+          )
+        ),
+    };
+    const durableRepository = makeD1SpeechTranscriptionRepository(
+      testEnv.MealPlannerDatabase
+    );
+
+    const firstAttempt = await Effect.runPromiseExit(
+      transcribeAcquiredImport({
+        acquisitionRepository,
+        audioExtractor: audio.service,
+        bucket: acquisitionBucket(),
+        importId: unknownImportId,
+        now: () => transcribedAt,
+        speechTranscriber: ambiguousProvider,
+        transcriptionRepository: durableRepository,
+      })
+    );
+    expect(Exit.isFailure(firstAttempt)).toBe(true);
+    if (Exit.isSuccess(firstAttempt)) {
+      throw new Error("Expected the provider outcome to remain unknown");
+    }
+    expect(
+      Option.getOrThrow(Cause.findErrorOption(firstAttempt.cause))
+    ).toEqual({
+      _tag: "SpeechPipelineFailure",
+      code: "outcome_unknown",
+    });
+    expect(providerCalls).toEqual([`speech:${unknownImportId}:${generation}`]);
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(acquisitionRepository.findById(unknownImportId))
+      ).view.status
+    ).toEqual({ kind: "transcribing" });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT dispatch_id, failure_code, state FROM import_transcriptions
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(unknownImportId, generation)
+        .first()
+    ).resolves.toEqual({
+      dispatch_id: `speech:${unknownImportId}:${generation}`,
+      failure_code: null,
+      state: "dispatching",
+    });
+
+    const replayTrap = makeExternalIoTrap(
+      "Unknown-outcome replay attempted external I/O"
+    );
+    const replay = await Effect.runPromiseExit(
+      transcribeAcquiredImport({
+        acquisitionRepository,
+        audioExtractor: replayTrap.audioExtractor,
+        bucket: acquisitionBucket(),
+        importId: unknownImportId,
+        now: () => transcribedAt,
+        speechTranscriber: replayTrap.speechTranscriber,
+        transcriptionRepository: durableRepository,
+      })
+    );
+    expect(Exit.isFailure(replay)).toBe(true);
+    if (Exit.isSuccess(replay)) {
+      throw new Error("Expected replayed provider uncertainty");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(replay.cause))).toEqual({
+      _tag: "SpeechPipelineFailure",
+      code: "outcome_unknown",
+    });
+    expect(replayTrap.calls).toEqual([]);
+    expect(providerCalls).toHaveLength(1);
+  });
+
   it("records a safe terminal failure and refuses a second dispatch intent", async () => {
     const failedImportId = decodeImportId(
       "018f47ad-91aa-7c35-b6fe-000000000112"
