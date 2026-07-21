@@ -27,12 +27,16 @@ const decodeImportId = HttpRouter.schemaPathParams(
 ).pipe(Effect.mapError(() => invalidImportId()));
 
 const createImportStatusCode = (response: typeof CreateImportResponse.Type) => {
-  if (response.import.status.kind === "acquired") {
+  if (
+    response.import.status.kind === "acquired" ||
+    response.import.status.kind === "transcribed"
+  ) {
     return 200;
   }
   if (
     response.import.status.kind === "queued" ||
-    response.import.status.kind === "acquiring"
+    response.import.status.kind === "acquiring" ||
+    response.import.status.kind === "transcribing"
   ) {
     return 202;
   }

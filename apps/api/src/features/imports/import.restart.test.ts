@@ -182,17 +182,22 @@ const getImport = async (
 };
 
 describe("D1 restart persistence", () => {
-  it("upgrades populated GAIA-108 rows without losing request ownership", async () => {
+  it("upgrades populated pre-acquisition rows through speech without losing ownership", async () => {
     const persistenceDirectory = await mkdtemp(
-      `${tmpdir()}/meal-planner-gaia-109-upgrade-`
+      `${tmpdir()}/meal-planner-gaia-110-upgrade-`
     );
     temporaryDirectories.push(persistenceDirectory);
     const migrations = await readD1Migrations(
       fileURLToPath(new URL("../../../migrations", import.meta.url))
     );
-    const [initialMigration, acquisitionMigration] = migrations;
-    if (initialMigration === undefined || acquisitionMigration === undefined) {
-      throw new Error("Expected both import migrations");
+    const [initialMigration, acquisitionMigration, speechMigration] =
+      migrations;
+    if (
+      initialMigration === undefined ||
+      acquisitionMigration === undefined ||
+      speechMigration === undefined
+    ) {
+      throw new Error("Expected all three import migrations");
     }
     const runtime = makeRuntime(persistenceDirectory);
     const database = await runtime.getD1Database("MealPlannerDatabase");
@@ -236,6 +241,34 @@ describe("D1 restart persistence", () => {
       await database.batch(
         acquisitionMigration.queries.map((query) => database.prepare(query))
       );
+      const acquiredEvidence = JSON.stringify([
+        {
+          kind: "original_media",
+          referenceId:
+            "imports/018f47ad-91aa-7c35-b6fe-000000000901/acquisition/v1/generations/1/original.mp4",
+        },
+        {
+          kind: "acquisition_manifest",
+          referenceId:
+            "imports/018f47ad-91aa-7c35-b6fe-000000000901/acquisition/v1/generations/1/manifest.json",
+        },
+      ]);
+      await database
+        .prepare(
+          `UPDATE recipe_imports
+              SET acquisition_generation = 1, status = 'acquired',
+                  evidence_references_json = ?, updated_at = ?
+            WHERE id = ?`
+        )
+        .bind(
+          acquiredEvidence,
+          "2026-07-20T10:00:00.000Z",
+          "018f47ad-91aa-7c35-b6fe-000000000901"
+        )
+        .run();
+      await database.batch(
+        speechMigration.queries.map((query) => database.prepare(query))
+      );
       const upgraded = await database
         .prepare(
           `SELECT recipe_imports.evidence_references_json,
@@ -253,8 +286,8 @@ describe("D1 restart persistence", () => {
         }>();
 
       expect(upgraded).toEqual({
-        acquisition_generation: 0,
-        evidence_references_json: "[]",
+        acquisition_generation: 1,
+        evidence_references_json: acquiredEvidence,
         import_id: "018f47ad-91aa-7c35-b6fe-000000000901",
       });
       const foreignKeyViolations = await database
@@ -272,8 +305,21 @@ describe("D1 restart persistence", () => {
       const indexes = await database
         .prepare("PRAGMA index_list('import_requests')")
         .all<{ name: string }>();
+      const transcriptionForeignKeys = await database
+        .prepare("PRAGMA foreign_key_list('import_transcriptions')")
+        .all<{
+          from: string;
+          on_delete: string;
+          on_update: string;
+          table: string;
+          to: string;
+        }>();
+      const transcriptionRows = await database
+        .prepare("SELECT COUNT(*) AS count FROM import_transcriptions")
+        .first<{ count: number }>();
 
       expect(foreignKeyViolations.results).toEqual([]);
+      expect(transcriptionRows).toEqual({ count: 0 });
       expect(foreignKeys.results).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -288,6 +334,41 @@ describe("D1 restart persistence", () => {
       expect(
         (indexes.results as { readonly name: string }[]).map(({ name }) => name)
       ).toContain("import_requests_import_id_index");
+      expect(transcriptionForeignKeys.results).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: "import_id",
+            on_delete: "RESTRICT",
+            on_update: "RESTRICT",
+            table: "recipe_imports",
+            to: "id",
+          }),
+          expect.objectContaining({
+            from: "acquisition_generation",
+            on_delete: "RESTRICT",
+            on_update: "RESTRICT",
+            table: "recipe_imports",
+            to: "acquisition_generation",
+          }),
+        ])
+      );
+      await expect(
+        database
+          .prepare(
+            `INSERT INTO import_transcriptions (
+              import_id, acquisition_generation, dispatch_id,
+              source_media_sha256, state, created_at, updated_at
+            ) VALUES (?, 2, ?, ?, 'dispatching', ?, ?)`
+          )
+          .bind(
+            "018f47ad-91aa-7c35-b6fe-000000000901",
+            "speech:invalid-generation",
+            "a".repeat(64),
+            "2026-07-21T10:00:00.000Z",
+            "2026-07-21T10:00:00.000Z"
+          )
+          .run()
+      ).rejects.toThrow();
     } finally {
       await runtime.dispose();
     }

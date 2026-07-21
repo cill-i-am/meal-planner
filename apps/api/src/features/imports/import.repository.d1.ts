@@ -64,6 +64,8 @@ const DatabaseImportRow = Schema.Struct({
     "acquiring",
     "failed",
     "queued",
+    "transcribed",
+    "transcribing",
     "unsupported",
   ]),
   statusCode: NullableString,
@@ -98,7 +100,9 @@ const decodeUnclassifiedStatus = (
   switch (row.status) {
     case "acquired":
     case "acquiring":
-    case "queued": {
+    case "queued":
+    case "transcribed":
+    case "transcribing": {
       return { kind: row.status };
     }
     default: {
@@ -111,6 +115,17 @@ const decodeStatus = (row: typeof DatabaseImportRow.Type): ImportStatus => {
   const unclassified = decodeUnclassifiedStatus(row);
   if (unclassified !== null) {
     return unclassified;
+  }
+  if (
+    row.status === "failed" &&
+    row.statusCode === "transcription_failed" &&
+    row.recoveryAction === "retry_later"
+  ) {
+    return {
+      code: "transcription_failed",
+      kind: "failed",
+      recovery: "retry_later",
+    };
   }
   if (
     row.status === "failed" &&
@@ -209,7 +224,9 @@ const statusColumns = (status: ImportStatus) => {
   switch (status.kind) {
     case "acquired":
     case "acquiring":
-    case "queued": {
+    case "queued":
+    case "transcribed":
+    case "transcribing": {
       return { recoveryAction: null, statusCode: null };
     }
     case "failed": {

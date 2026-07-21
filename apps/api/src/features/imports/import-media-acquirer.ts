@@ -547,6 +547,29 @@ const decodeCommittedEvidence = (
     } satisfies VerifiedAcquisitionEvidence;
   });
 
+/** Re-verify the immutable GAIA-109 media/manifest pair before downstream use. */
+export const readVerifiedAcquisitionEvidence = (
+  bucket: AcquisitionBucketLike,
+  input: {
+    readonly canonicalId: SourceCanonicalId;
+    readonly generation: AcquisitionGeneration;
+    readonly importId: ImportId;
+    readonly now: () => Date;
+  }
+) =>
+  readCommittedPair(bucket, input.importId, input.generation).pipe(
+    Effect.flatMap(({ manifest, media }) =>
+      decodeCommittedEvidence(
+        input.importId,
+        input.generation,
+        input.canonicalId,
+        media,
+        manifest,
+        input.now()
+      )
+    )
+  );
+
 export const acquireStoreVerify = (
   bucket: AcquisitionBucketLike,
   mediaObject: AcquisitionMediaObjectLike,

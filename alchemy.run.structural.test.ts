@@ -45,7 +45,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(migration).toContain("CREATE TABLE `import_requests`");
   });
 
-  it("keeps exactly the two reviewed deployable SQL migrations", () => {
+  it("keeps exactly the reviewed deployable SQL migrations", () => {
     const migrationsDirectory = fileURLToPath(
       new URL("apps/api/migrations", import.meta.url)
     );
@@ -59,6 +59,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(sqlFiles).toEqual([
       "0000_recipe_imports.sql",
       "0001_import_media_acquisition.sql",
+      "0002_import_speech_transcription.sql",
     ]);
   });
 
