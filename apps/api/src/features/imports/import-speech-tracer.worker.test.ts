@@ -542,7 +542,7 @@ describe("provider-free acquired-to-transcript tracer", () => {
     expect(Option.getOrThrow(Cause.findErrorOption(interrupted.cause))).toEqual(
       {
         _tag: "SpeechPipelineFailure",
-        code: "transcript_evidence_failed",
+        code: "transcript_evidence_unknown",
       }
     );
     expect(verificationReadsFailed).toBe(1);
@@ -682,6 +682,107 @@ describe("provider-free acquired-to-transcript tracer", () => {
     });
     expect(replayTrap.calls).toEqual([]);
     expect(providerCalls).toHaveLength(1);
+  });
+
+  it("terminalizes deterministic transcript evidence that exceeds the storage cap", async () => {
+    const oversizedImportId = decodeImportId(
+      "018f47ad-91aa-7c35-b6fe-000000000117"
+    );
+    const acquisitionRepository = await makeAcquiredImport({
+      fixtureCanonicalId: decodeCanonicalId("7520000000000000117"),
+      fixtureImportId: oversizedImportId,
+    });
+    const audio = makeAudioFixture();
+    const oversizedSegmentText = "x".repeat(16_384);
+    const oversizedSpeech = makeDeterministicSpeechTranscriber({
+      cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
+      detectedLanguage: "en",
+      model: "fixture-v1",
+      provider: "deterministic_fake",
+      segments: [
+        {
+          endMilliseconds: 1,
+          startMilliseconds: 0,
+          text: oversizedSegmentText,
+        },
+        ...Array.from({ length: 127 }, (_, offset) => ({
+          endMilliseconds: offset + 2,
+          startMilliseconds: offset + 1,
+          text: oversizedSegmentText,
+        })),
+      ],
+      text: "x".repeat(1_048_576),
+      usage: { audioDurationMilliseconds: 2000, inputBytes: 8 },
+    });
+    const durableRepository = makeD1SpeechTranscriptionRepository(
+      testEnv.MealPlannerDatabase
+    );
+
+    const failed = await Effect.runPromiseExit(
+      transcribeAcquiredImport({
+        acquisitionRepository,
+        audioExtractor: audio.service,
+        bucket: acquisitionBucket(),
+        importId: oversizedImportId,
+        now: () => transcribedAt,
+        speechTranscriber: oversizedSpeech.service,
+        transcriptionRepository: durableRepository,
+      })
+    );
+    expect(Exit.isFailure(failed)).toBe(true);
+    if (Exit.isSuccess(failed)) {
+      throw new Error("Expected oversized transcript evidence rejection");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(failed.cause))).toEqual({
+      _tag: "SpeechPipelineFailure",
+      code: "transcript_evidence_failed",
+    });
+    expect(oversizedSpeech.calls).toHaveLength(1);
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(
+          acquisitionRepository.findById(oversizedImportId)
+        )
+      ).view.status
+    ).toEqual({
+      code: "transcription_failed",
+      kind: "failed",
+      recovery: "retry_later",
+    });
+    await expect(
+      testEnv.ImportEvidenceBucket.head(
+        transcriptObjectKey(oversizedImportId, generation)
+      )
+    ).resolves.toBeNull();
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT failure_code, state FROM import_transcriptions
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(oversizedImportId, generation)
+        .first()
+    ).resolves.toEqual({
+      failure_code: "transcript_evidence_failed",
+      state: "failed",
+    });
+
+    const replayTrap = makeExternalIoTrap(
+      "Oversized transcript replay attempted external I/O"
+    );
+    const replay = await Effect.runPromiseExit(
+      transcribeAcquiredImport({
+        acquisitionRepository,
+        audioExtractor: replayTrap.audioExtractor,
+        bucket: acquisitionBucket(),
+        importId: oversizedImportId,
+        now: () => transcribedAt,
+        speechTranscriber: replayTrap.speechTranscriber,
+        transcriptionRepository: durableRepository,
+      })
+    );
+    expect(Exit.isFailure(replay)).toBe(true);
+    expect(replayTrap.calls).toEqual([]);
+    expect(oversizedSpeech.calls).toHaveLength(1);
   });
 
   it("records a safe terminal failure and refuses a second dispatch intent", async () => {

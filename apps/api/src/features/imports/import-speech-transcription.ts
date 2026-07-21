@@ -54,7 +54,8 @@ export interface SpeechPipelineFailure {
     | "outcome_unknown"
     | "source_evidence_invalid"
     | "transcription_failed"
-    | "transcript_evidence_failed";
+    | "transcript_evidence_failed"
+    | "transcript_evidence_unknown";
 }
 
 /** Generation-scoped private transcript evidence key. */
@@ -98,7 +99,7 @@ const readTranscriptDocument = (
   Effect.gen(function* readTranscript() {
     const key = transcriptObjectKey(expected.importId, expected.generation);
     const object = yield* Effect.tryPromise({
-      catch: () => pipelineFailure("transcript_evidence_failed"),
+      catch: () => pipelineFailure("transcript_evidence_unknown"),
       try: () => bucket.get(key),
     });
     if (object === null) {
@@ -111,7 +112,7 @@ const readTranscriptDocument = (
       return yield* Effect.fail(pipelineFailure("transcript_evidence_failed"));
     }
     const text = yield* Effect.tryPromise({
-      catch: () => pipelineFailure("transcript_evidence_failed"),
+      catch: () => pipelineFailure("transcript_evidence_unknown"),
       try: () => object.text(),
     });
     const bytes = new TextEncoder().encode(text);
@@ -196,7 +197,7 @@ const storeTranscriptDocument = (
       sourceMediaSha256: document.sourceMediaSha256,
     });
     return yield* Option.match(verified, {
-      onNone: () => Effect.fail(pipelineFailure("transcript_evidence_failed")),
+      onNone: () => Effect.fail(pipelineFailure("transcript_evidence_unknown")),
       onSome: Effect.succeed,
     });
   });
@@ -375,7 +376,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       Effect.catchTag("SpeechPipelineFailure", (failure) => {
         if (
           failure.code === "outcome_unknown" ||
-          failure.code === "transcript_evidence_failed"
+          failure.code === "transcript_evidence_unknown"
         ) {
           return Effect.fail(failure);
         }
