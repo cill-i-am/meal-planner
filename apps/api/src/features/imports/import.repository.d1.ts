@@ -25,7 +25,11 @@ import type {
   ImportStatus,
   ImportTimestamp,
 } from "./import.contracts.js";
-import { importRequests, recipeImports } from "./import.database-schema.js";
+import {
+  importRequests,
+  importVisualEvidence,
+  recipeImports,
+} from "./import.database-schema.js";
 import {
   idempotencyConflict,
   importPersistenceCorrupt,
@@ -70,6 +74,11 @@ const DatabaseImportRow = Schema.Struct({
   ]),
   statusCode: NullableString,
   updatedAt: Schema.String,
+  visualFailureCode: NullableString,
+  visualManifestKey: NullableString,
+  visualOutcome: NullableString,
+  visualState: NullableString,
+  visualUpdatedAt: NullableString,
 });
 
 const DatabaseRequestFingerprints = Schema.Struct({
@@ -89,6 +98,13 @@ const importSelection = {
   status: recipeImports.status,
   statusCode: recipeImports.statusCode,
   updatedAt: recipeImports.updatedAt,
+  visualFailureCode: importVisualEvidence.failureCode,
+  visualManifestKey: importVisualEvidence.manifestKey,
+  visualOutcome: importVisualEvidence.outcome,
+  visualState: importVisualEvidence.state,
+  visualUpdatedAt: sql<string | null>`${importVisualEvidence.updatedAt}`.as(
+    "visual_updated_at"
+  ),
 } as const;
 
 const decodeUnclassifiedStatus = (
@@ -174,6 +190,95 @@ const decodeStatus = (row: typeof DatabaseImportRow.Type): ImportStatus => {
   throw new Error("Invalid persisted import state");
 };
 
+type DatabaseImportRow = typeof DatabaseImportRow.Type;
+
+const hasNoVisualPayload = (row: DatabaseImportRow) =>
+  row.visualOutcome === null &&
+  row.visualManifestKey === null &&
+  row.visualFailureCode === null;
+
+const completedVisualStatus = (outcome: string | null) => {
+  switch (outcome) {
+    case "empty": {
+      return { kind: "visual_evidence_empty" } as const;
+    }
+    case "found": {
+      return { kind: "visual_evidence_found" } as const;
+    }
+    case "low_confidence": {
+      return { kind: "visual_evidence_low_confidence" } as const;
+    }
+    default: {
+      return null;
+    }
+  }
+};
+
+const decodeVisualProjection = (
+  row: DatabaseImportRow,
+  evidence: readonly EvidenceReference[]
+) => {
+  if (
+    row.visualState === null &&
+    row.visualUpdatedAt === null &&
+    hasNoVisualPayload(row)
+  ) {
+    return { evidence, status: decodeStatus(row), updatedAt: row.updatedAt };
+  }
+  if (
+    row.status !== "transcribed" ||
+    row.visualUpdatedAt === null ||
+    evidence.length !== 3
+  ) {
+    throw new Error("Invalid visual evidence parent state");
+  }
+  if (row.visualState === "dispatching" && hasNoVisualPayload(row)) {
+    return {
+      evidence,
+      status: { kind: "extracting_visual" } as const,
+      updatedAt: row.visualUpdatedAt,
+    };
+  }
+  if (
+    row.visualState === "failed" &&
+    row.visualOutcome === null &&
+    row.visualManifestKey === null &&
+    row.visualFailureCode !== null
+  ) {
+    return {
+      evidence,
+      status: {
+        code: "visual_evidence_failed",
+        kind: "failed",
+        recovery: "retry_later",
+      } as const,
+      updatedAt: row.visualUpdatedAt,
+    };
+  }
+  if (
+    row.visualState === "completed" &&
+    row.visualFailureCode === null &&
+    row.visualManifestKey !== null
+  ) {
+    const status = completedVisualStatus(row.visualOutcome);
+    if (status === null) {
+      throw new Error("Invalid completed visual outcome");
+    }
+    return {
+      evidence: [
+        ...evidence,
+        {
+          kind: "visual_evidence_manifest" as const,
+          referenceId: row.visualManifestKey,
+        },
+      ],
+      status,
+      updatedAt: row.visualUpdatedAt,
+    };
+  }
+  throw new Error("Invalid persisted visual evidence state");
+};
+
 const decodeStoredImport = (input: unknown) =>
   Effect.try({
     catch: importPersistenceCorrupt,
@@ -182,6 +287,10 @@ const decodeStoredImport = (input: unknown) =>
       const canonicalSourceId = Schema.decodeUnknownSync(SourceCanonicalId)(
         row.canonicalSourceId
       );
+      const baseEvidence = Schema.decodeUnknownSync(
+        Schema.Array(EvidenceReference)
+      )(JSON.parse(row.evidenceReferencesJson));
+      const projection = decodeVisualProjection(row, baseEvidence);
       return {
         acquisitionGeneration: row.acquisitionGeneration,
         canonicalSourceId,
@@ -189,13 +298,11 @@ const decodeStoredImport = (input: unknown) =>
         sourceKind: row.sourceKind,
         view: Schema.decodeUnknownSync(ImportView)({
           createdAt: row.createdAt,
-          evidence: Schema.decodeUnknownSync(Schema.Array(EvidenceReference))(
-            JSON.parse(row.evidenceReferencesJson)
-          ),
+          evidence: projection.evidence,
           id: row.id,
           source: { canonicalId: canonicalSourceId, kind: row.sourceKind },
-          status: decodeStatus(row),
-          updatedAt: row.updatedAt,
+          status: projection.status,
+          updatedAt: projection.updatedAt,
         }),
       };
     },
@@ -224,9 +331,15 @@ const statusColumns = (status: ImportStatus) => {
   switch (status.kind) {
     case "acquired":
     case "acquiring":
+    case "extracting_visual":
     case "queued":
     case "transcribed":
     case "transcribing": {
+      return { recoveryAction: null, statusCode: null };
+    }
+    case "visual_evidence_empty":
+    case "visual_evidence_found":
+    case "visual_evidence_low_confidence": {
       return { recoveryAction: null, statusCode: null };
     }
     case "failed": {
@@ -342,6 +455,16 @@ export const makeD1ImportRepository = (
         database
           .select(importSelection)
           .from(recipeImports)
+          .leftJoin(
+            importVisualEvidence,
+            and(
+              eq(importVisualEvidence.importId, recipeImports.id),
+              eq(
+                importVisualEvidence.acquisitionGeneration,
+                recipeImports.acquisitionGeneration
+              )
+            )
+          )
           .where(eq(recipeImports.id, id))
           .limit(1)
       );
@@ -364,6 +487,17 @@ export const makeD1ImportRepository = (
       Effect.gen(function* acceptRequest() {
         const createdAt = DateTime.formatIso(command.candidate.view.createdAt);
         const updatedAt = DateTime.formatIso(command.candidate.view.updatedAt);
+        const canInsertCandidate =
+          ![
+            "extracting_visual",
+            "visual_evidence_empty",
+            "visual_evidence_found",
+            "visual_evidence_low_confidence",
+          ].includes(command.candidate.view.status.kind) &&
+          !(
+            command.candidate.view.status.kind === "failed" &&
+            command.candidate.view.status.code === "visual_evidence_failed"
+          );
         const { recoveryAction, statusCode } = statusColumns(
           command.candidate.view.status
         );
@@ -383,7 +517,8 @@ export const makeD1ImportRepository = (
               ${command.candidate.view.status.kind},
               ${statusCode},
               ${updatedAt}
-            WHERE NOT EXISTS (
+            WHERE ${canInsertCandidate ? 1 : 0} = 1
+              AND NOT EXISTS (
               SELECT 1 FROM ${importRequests}
               WHERE ${importRequests.idempotencyKeyHash} = ${command.idempotencyKeyHash}
             )`
@@ -424,6 +559,16 @@ export const makeD1ImportRepository = (
             recipeImports,
             eq(importRequests.importId, recipeImports.id)
           )
+          .leftJoin(
+            importVisualEvidence,
+            and(
+              eq(importVisualEvidence.importId, recipeImports.id),
+              eq(
+                importVisualEvidence.acquisitionGeneration,
+                recipeImports.acquisitionGeneration
+              )
+            )
+          )
           .where(
             eq(importRequests.idempotencyKeyHash, command.idempotencyKeyHash)
           )
@@ -432,6 +577,16 @@ export const makeD1ImportRepository = (
         const selectCanonical = database
           .select(importSelection)
           .from(recipeImports)
+          .leftJoin(
+            importVisualEvidence,
+            and(
+              eq(importVisualEvidence.importId, recipeImports.id),
+              eq(
+                importVisualEvidence.acquisitionGeneration,
+                recipeImports.acquisitionGeneration
+              )
+            )
+          )
           .where(
             and(
               eq(recipeImports.sourceKind, command.candidate.sourceKind),
@@ -541,6 +696,16 @@ export const makeD1ImportRepository = (
           database
             .select(importSelection)
             .from(recipeImports)
+            .leftJoin(
+              importVisualEvidence,
+              and(
+                eq(importVisualEvidence.importId, recipeImports.id),
+                eq(
+                  importVisualEvidence.acquisitionGeneration,
+                  recipeImports.acquisitionGeneration
+                )
+              )
+            )
             .where(
               and(
                 eq(recipeImports.sourceKind, identity.kind),
@@ -567,6 +732,16 @@ export const makeD1ImportRepository = (
             .innerJoin(
               recipeImports,
               eq(importRequests.importId, recipeImports.id)
+            )
+            .leftJoin(
+              importVisualEvidence,
+              and(
+                eq(importVisualEvidence.importId, recipeImports.id),
+                eq(
+                  importVisualEvidence.acquisitionGeneration,
+                  recipeImports.acquisitionGeneration
+                )
+              )
             )
             .where(eq(importRequests.idempotencyKeyHash, idempotencyKeyHash))
             .limit(1)

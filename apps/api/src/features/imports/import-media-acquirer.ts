@@ -105,7 +105,7 @@ export interface AcquisitionPutOptions {
   readonly customMetadata: Record<string, string>;
   readonly httpMetadata: {
     readonly cacheControl: "private, no-store";
-    readonly contentType: "application/json" | "video/mp4";
+    readonly contentType: "application/json" | "image/jpeg" | "video/mp4";
   };
   readonly onlyIf: { readonly etagDoesNotMatch: "*" };
   readonly sha256: ArrayBuffer;

@@ -60,6 +60,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "0000_recipe_imports.sql",
       "0001_import_media_acquisition.sql",
       "0002_import_speech_transcription.sql",
+      "0003_import_visual_evidence.sql",
     ]);
   });
 

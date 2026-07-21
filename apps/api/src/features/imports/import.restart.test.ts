@@ -182,7 +182,7 @@ const getImport = async (
 };
 
 describe("D1 restart persistence", () => {
-  it("upgrades populated pre-acquisition rows through speech without losing ownership", async () => {
+  it("upgrades populated rows through visual evidence without losing ownership", async () => {
     const persistenceDirectory = await mkdtemp(
       `${tmpdir()}/meal-planner-gaia-110-upgrade-`
     );
@@ -190,14 +190,19 @@ describe("D1 restart persistence", () => {
     const migrations = await readD1Migrations(
       fileURLToPath(new URL("../../../migrations", import.meta.url))
     );
-    const [initialMigration, acquisitionMigration, speechMigration] =
-      migrations;
+    const [
+      initialMigration,
+      acquisitionMigration,
+      speechMigration,
+      visualMigration,
+    ] = migrations;
     if (
       initialMigration === undefined ||
       acquisitionMigration === undefined ||
-      speechMigration === undefined
+      speechMigration === undefined ||
+      visualMigration === undefined
     ) {
-      throw new Error("Expected all three import migrations");
+      throw new Error("Expected all four import migrations");
     }
     const runtime = makeRuntime(persistenceDirectory);
     const database = await runtime.getD1Database("MealPlannerDatabase");
@@ -269,6 +274,9 @@ describe("D1 restart persistence", () => {
       await database.batch(
         speechMigration.queries.map((query) => database.prepare(query))
       );
+      await database.batch(
+        visualMigration.queries.map((query) => database.prepare(query))
+      );
       const upgraded = await database
         .prepare(
           `SELECT recipe_imports.evidence_references_json,
@@ -317,9 +325,22 @@ describe("D1 restart persistence", () => {
       const transcriptionRows = await database
         .prepare("SELECT COUNT(*) AS count FROM import_transcriptions")
         .first<{ count: number }>();
+      const visualForeignKeys = await database
+        .prepare("PRAGMA foreign_key_list('import_visual_evidence')")
+        .all<{
+          from: string;
+          on_delete: string;
+          on_update: string;
+          table: string;
+          to: string;
+        }>();
+      const visualRows = await database
+        .prepare("SELECT COUNT(*) AS count FROM import_visual_evidence")
+        .first<{ count: number }>();
 
       expect(foreignKeyViolations.results).toEqual([]);
       expect(transcriptionRows).toEqual({ count: 0 });
+      expect(visualRows).toEqual({ count: 0 });
       expect(foreignKeys.results).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -352,6 +373,24 @@ describe("D1 restart persistence", () => {
           }),
         ])
       );
+      expect(visualForeignKeys.results).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: "import_id",
+            on_delete: "RESTRICT",
+            on_update: "RESTRICT",
+            table: "recipe_imports",
+            to: "id",
+          }),
+          expect.objectContaining({
+            from: "acquisition_generation",
+            on_delete: "RESTRICT",
+            on_update: "RESTRICT",
+            table: "recipe_imports",
+            to: "acquisition_generation",
+          }),
+        ])
+      );
       await expect(
         database
           .prepare(
@@ -363,6 +402,23 @@ describe("D1 restart persistence", () => {
           .bind(
             "018f47ad-91aa-7c35-b6fe-000000000901",
             "speech:invalid-generation",
+            "a".repeat(64),
+            "2026-07-21T10:00:00.000Z",
+            "2026-07-21T10:00:00.000Z"
+          )
+          .run()
+      ).rejects.toThrow();
+      await expect(
+        database
+          .prepare(
+            `INSERT INTO import_visual_evidence (
+              import_id, acquisition_generation, dispatch_id,
+              source_media_sha256, state, created_at, updated_at
+            ) VALUES (?, 2, ?, ?, 'dispatching', ?, ?)`
+          )
+          .bind(
+            "018f47ad-91aa-7c35-b6fe-000000000901",
+            "visual:invalid-generation",
             "a".repeat(64),
             "2026-07-21T10:00:00.000Z",
             "2026-07-21T10:00:00.000Z"

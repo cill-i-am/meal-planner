@@ -7,6 +7,7 @@ import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import {
   ImportId,
   ImportTimestamp,
+  ImportView,
   MaximumSourceUrlLength,
   SourceCanonicalId,
 } from "./import.contracts.js";
@@ -190,6 +191,10 @@ describe("import routes", () => {
   it.each([
     [{ kind: "queued" }, 202],
     [{ kind: "acquiring" }, 202],
+    [{ kind: "extracting_visual" }, 202],
+    [{ kind: "visual_evidence_empty" }, 200],
+    [{ kind: "visual_evidence_found" }, 200],
+    [{ kind: "visual_evidence_low_confidence" }, 200],
     [
       {
         code: "acquisition_temporarily_unavailable",
@@ -199,13 +204,37 @@ describe("import routes", () => {
       422,
     ],
   ] as const)(
-    "maps public lifecycle status %# to HTTP %i",
+    "maps each public lifecycle status to its HTTP response",
     async (status, expected) => {
+      const visualEvidence = [
+        { kind: "original_media", referenceId: "private-original" },
+        { kind: "acquisition_manifest", referenceId: "private-acquisition" },
+        { kind: "speech_transcript", referenceId: "private-transcript" },
+        { kind: "visual_evidence_manifest", referenceId: "private-visual" },
+      ];
+      let evidence: readonly unknown[] = [];
+      if (status.kind === "extracting_visual") {
+        evidence = visualEvidence.slice(0, 3);
+      } else if (
+        status.kind === "visual_evidence_empty" ||
+        status.kind === "visual_evidence_found" ||
+        status.kind === "visual_evidence_low_confidence"
+      ) {
+        evidence = visualEvidence;
+      }
+      const statusView = Schema.decodeUnknownSync(ImportView)({
+        createdAt: "2026-07-20T10:00:00.000Z",
+        evidence,
+        id: importId,
+        source: { canonicalId, kind: "tiktok" },
+        status,
+        updatedAt: "2026-07-20T10:00:00.000Z",
+      });
       const service: ImportServiceShape = {
         create: () =>
           Effect.succeed({
             disposition: "idempotency_replay",
-            import: { ...importView, status },
+            import: statusView,
           }),
         get: () => Effect.succeed({ import: importView }),
       };
