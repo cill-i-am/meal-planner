@@ -684,7 +684,7 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
     expect(extractor.calls).toEqual([]);
   });
 
-  it("records bounded-sampling failure without dispatching the extractor", async () => {
+  it("records bounded-sampling failure as terminal and never redispatches it", async () => {
     const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000213");
     const canonicalId = decodeCanonicalId("7520000000000000213");
     const importRepository = await makeTranscribedImport(importId, canonicalId);
@@ -739,10 +739,30 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
       status: {
         code: "visual_evidence_failed",
         kind: "failed",
-        recovery: "retry_later",
+        recovery: "operator_reconcile",
       },
       updatedAt: extractedAt,
     });
+
+    const replayFrames = makeDeterministicFrameSampler([]);
+    const replayExtractor = makeVisualFixture("found");
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: replayExtractor.service,
+          frameSampler: replayFrames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository: makeD1VisualEvidenceRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({ _tag: "ImportTransitionRejected" });
+    expect(replayFrames.calls).toEqual([]);
+    expect(replayExtractor.calls).toEqual([]);
   });
 
   it("rejects extractor output with an undeclared provider payload", async () => {

@@ -139,7 +139,7 @@ export const TranscriptionFailedImportStatus = Schema.Struct({
 export const VisualEvidenceFailedImportStatus = Schema.Struct({
   code: Schema.Literal("visual_evidence_failed"),
   kind: Schema.Literal("failed"),
-  recovery: Schema.Literal("retry_later"),
+  recovery: Schema.Literal("operator_reconcile"),
 });
 
 export const UnsupportedImportStatus = Schema.Struct({

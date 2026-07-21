@@ -250,7 +250,7 @@ const decodeVisualProjection = (
       status: {
         code: "visual_evidence_failed",
         kind: "failed",
-        recovery: "retry_later",
+        recovery: "operator_reconcile",
       } as const,
       updatedAt: row.visualUpdatedAt,
     };
