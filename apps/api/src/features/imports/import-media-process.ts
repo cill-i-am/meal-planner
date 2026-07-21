@@ -194,32 +194,42 @@ export const validateTemporaryWorkspaceEntries = (
     }
   });
 
-export const scanTemporaryWorkspace = (root: string) =>
+export const scanTemporaryWorkspace = (
+  root: string,
+  cancellation?: AbortSignal
+) =>
   Effect.tryPromise({
     catch: limitExceeded,
     try: async () => {
       const entries: TemporaryWorkspaceEntry[] = [];
       const walk = async (directory: string): Promise<void> => {
+        cancellation?.throwIfAborted();
         const names = await readdir(directory);
-        const children = await Promise.all(
-          names.map(async (name) => {
-            const entryPath = join(directory, name);
-            const stats = await lstat(entryPath);
-            return {
-              kind: temporaryWorkspaceEntryKind(stats),
-              path: entryPath,
-              size: stats.size,
-            } satisfies TemporaryWorkspaceEntry;
-          })
-        );
+        cancellation?.throwIfAborted();
+        const children: TemporaryWorkspaceEntry[] = [];
+        for (const name of names) {
+          cancellation?.throwIfAborted();
+          const entryPath = join(directory, name);
+          // eslint-disable-next-line no-await-in-loop -- Serial traversal bounds filesystem work and stops dispatch after cancellation.
+          const stats = await lstat(entryPath);
+          cancellation?.throwIfAborted();
+          children.push({
+            kind: temporaryWorkspaceEntryKind(stats),
+            path: entryPath,
+            size: stats.size,
+          });
+        }
         entries.push(...children);
-        await Promise.all(
-          children
-            .filter((entry) => entry.kind === "directory")
-            .map((entry) => walk(entry.path))
-        );
+        for (const child of children) {
+          cancellation?.throwIfAborted();
+          if (child.kind === "directory") {
+            // eslint-disable-next-line no-await-in-loop -- Serial recursion keeps one owned filesystem operation in flight.
+            await walk(child.path);
+          }
+        }
       };
       await walk(root);
+      cancellation?.throwIfAborted();
       return entries;
     },
   }).pipe(
@@ -229,7 +239,8 @@ export const scanTemporaryWorkspace = (root: string) =>
   );
 
 type TemporaryWorkspaceScanner = (
-  root: string
+  root: string,
+  cancellation: AbortSignal
 ) => Effect.Effect<void, TerminalMediaFailure>;
 
 export const makeMediaProcessRunner = (
@@ -237,9 +248,11 @@ export const makeMediaProcessRunner = (
   scanWorkspace: TemporaryWorkspaceScanner = scanTemporaryWorkspace
 ): MediaProcessRunnerShape => ({
   run: (command, args, options) =>
-    Effect.tryPromise({
-      catch: (error) => processFailure(error, options.failure),
-      try: async (signal) => {
+    Effect.callback<
+      MediaProcessResult,
+      RetryableAcquisitionFailure | TerminalMediaFailure
+    >((resume, signal) => {
+      const complete = async () => {
         if (
           !Number.isFinite(options.deadlineMilliseconds) ||
           options.deadlineMilliseconds <= 0
@@ -262,15 +275,35 @@ export const makeMediaProcessRunner = (
             return;
           }
           try {
-            await Effect.runPromise(scanWorkspace(options.workspaceRoot), {
-              signal: controller.signal,
-            });
+            await Effect.runPromise(
+              scanWorkspace(options.workspaceRoot, controller.signal)
+            );
           } catch {
             if (controller.signal.aborted) {
               return;
             }
             outputLimitExceeded = true;
             controller.abort();
+          }
+        };
+        let activePeriodicWorkspaceScan: Promise<void> | undefined;
+        const trackPeriodicWorkspaceScan = async () => {
+          try {
+            await checkWorkspace();
+          } finally {
+            activePeriodicWorkspaceScan = undefined;
+          }
+        };
+        const startPeriodicWorkspaceScan = () => {
+          if (activePeriodicWorkspaceScan !== undefined) {
+            return;
+          }
+          activePeriodicWorkspaceScan = trackPeriodicWorkspaceScan();
+        };
+        const joinPeriodicWorkspaceScan = async () => {
+          const activeScan = activePeriodicWorkspaceScan;
+          if (activeScan !== undefined) {
+            await activeScan;
           }
         };
         try {
@@ -281,40 +314,58 @@ export const makeMediaProcessRunner = (
           if (controller.signal.aborted) {
             throw new Error("media process interrupted");
           }
-          const workspacePoll = setInterval(() => {
-            void checkWorkspace();
-          }, 25);
-          let result: { readonly exitCode: number };
+          const workspacePoll = setInterval(startPeriodicWorkspaceScan, 25);
+          let execution:
+            | {
+                readonly _tag: "Failure";
+                readonly error: unknown;
+              }
+            | {
+                readonly _tag: "Success";
+                readonly result: { readonly exitCode: number };
+              };
           try {
-            result = await execute({
-              args,
-              command,
-              signal: controller.signal,
-              stderr: (chunk) => {
-                stderrBytes += chunk.byteLength;
-                if (stderrBytes > MaximumRetainedStderrBytes) {
-                  outputLimitExceeded = true;
-                  controller.abort();
-                }
-              },
-              stdout: (chunk) => {
-                stdoutBytes += chunk.byteLength;
-                if (stdoutBytes > MaximumMetadataStdoutBytes) {
-                  outputLimitExceeded = true;
-                  controller.abort();
-                  return;
-                }
-                stdoutChunks.push(Uint8Array.from(chunk));
-              },
-            });
+            execution = {
+              _tag: "Success",
+              result: await execute({
+                args,
+                command,
+                signal: controller.signal,
+                stderr: (chunk) => {
+                  stderrBytes += chunk.byteLength;
+                  if (stderrBytes > MaximumRetainedStderrBytes) {
+                    outputLimitExceeded = true;
+                    controller.abort();
+                  }
+                },
+                stdout: (chunk) => {
+                  stdoutBytes += chunk.byteLength;
+                  if (stdoutBytes > MaximumMetadataStdoutBytes) {
+                    outputLimitExceeded = true;
+                    controller.abort();
+                    return;
+                  }
+                  stdoutChunks.push(Uint8Array.from(chunk));
+                },
+              }),
+            };
+          } catch (error) {
+            execution = { _tag: "Failure", error };
           } finally {
             clearInterval(workspacePoll);
           }
+          await joinPeriodicWorkspaceScan();
           await checkWorkspace();
           if (outputLimitExceeded) {
             throw OutputLimitExceeded;
           }
-          if (controller.signal.aborted || result.exitCode !== 0) {
+          if (controller.signal.aborted) {
+            throw new Error("media process failed");
+          }
+          if (execution._tag === "Failure") {
+            throw execution.error;
+          }
+          if (execution.result.exitCode !== 0) {
             throw new Error("media process failed");
           }
           const stdout = new Uint8Array(stdoutBytes);
@@ -328,7 +379,17 @@ export const makeMediaProcessRunner = (
           clearTimeout(timeout);
           signal.removeEventListener("abort", abort);
         }
-      },
+      };
+      const completion = complete();
+      const observeCompletion = async () => {
+        try {
+          resume(Effect.succeed(await completion));
+        } catch (error) {
+          resume(Effect.fail(processFailure(error, options.failure)));
+        }
+      };
+      const observation = observeCompletion();
+      return Effect.promise(() => observation);
     }),
 });
 

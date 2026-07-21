@@ -45,6 +45,26 @@ const delayedMarker = (marker: string) => [
 
 const ignoreProcessOutput = () => null;
 
+const completeScanOnAbort = (
+  signal: AbortSignal,
+  onAbort: () => void = ignoreProcessOutput
+) =>
+  Effect.promise(
+    () =>
+      // eslint-disable-next-line promise/avoid-new -- The fake scanner models cooperative ownership by the runner signal.
+      new Promise<void>((resolve) => {
+        const complete = () => {
+          onAbort();
+          resolve();
+        };
+        if (signal.aborted) {
+          complete();
+          return;
+        }
+        signal.addEventListener("abort", complete, { once: true });
+      })
+  );
+
 describe("bounded media process execution", () => {
   it("freezes stdout, stderr, temp-byte, file-count, and per-file caps", () => {
     expect({
@@ -115,7 +135,7 @@ describe("bounded media process execution", () => {
           executions += 1;
           return Promise.resolve({ exitCode: 0 });
         },
-        () => Effect.never
+        (_root, signal) => completeScanOnAbort(signal)
       );
 
       const deadlineMissed = Promise.withResolvers<{
@@ -145,6 +165,191 @@ describe("bounded media process execution", () => {
       expect(executions).toBe(0);
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it.each(["resolves", "rejects"] as const)(
+    "joins an active periodic workspace scan before the final check and settlement when the executor %s",
+    async (executorSettlement) => {
+      let executions = 0;
+      let finalizers = 0;
+      let finalizersWhenFinalScan: number | undefined;
+      let rawScanSettled = false;
+      let scans = 0;
+      const periodicScanStarted = Promise.withResolvers<null>();
+      const runner = makeMediaProcessRunner(
+        async () => {
+          executions += 1;
+          await periodicScanStarted.promise;
+          // eslint-disable-next-line promise/avoid-new -- Real time lets multiple poll ticks challenge the single-flight owner.
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 60);
+          });
+          if (executorSettlement === "rejects") {
+            throw new Error("provider-secret-fragment");
+          }
+          return { exitCode: 0 };
+        },
+        (_root, signal) => {
+          scans += 1;
+          if (scans === 3) {
+            finalizersWhenFinalScan = finalizers;
+          }
+          if (scans !== 2) {
+            return Effect.void;
+          }
+          periodicScanStarted.resolve(null);
+          return completeScanOnAbort(signal, () => {
+            rawScanSettled = true;
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                finalizers += 1;
+              })
+            )
+          );
+        }
+      );
+      const hardBoundMissed = Promise.withResolvers<{
+        readonly _tag: "HardBoundMissed";
+      }>();
+      const hardBound = setTimeout(
+        () => hardBoundMissed.resolve({ _tag: "HardBoundMissed" }),
+        500
+      );
+
+      try {
+        const completion = Effect.runPromiseExit(
+          runner.run("yt-dlp", ["synthetic-only"], {
+            deadlineMilliseconds: 125,
+            failure: "retryable",
+            workspaceRoot: "/tmp/meal-planner-periodic-scan",
+          })
+        ).then((exit) => ({
+          _tag: "Settled" as const,
+          exit,
+          finalizersAtSettlement: finalizers,
+          rawScanSettledAtSettlement: rawScanSettled,
+          scansAtSettlement: scans,
+        }));
+        const result = await Promise.race([
+          completion,
+          hardBoundMissed.promise,
+        ]);
+
+        expect(result._tag).toBe("Settled");
+        if (result._tag !== "Settled") {
+          throw new Error("Media process runner exceeded its hard test bound");
+        }
+        expect(Exit.isFailure(result.exit)).toBe(true);
+        if (Exit.isSuccess(result.exit)) {
+          throw new Error("Expected deadline interruption while joining scan");
+        }
+        expect(
+          Option.getOrThrow(Cause.findErrorOption(result.exit.cause))
+        ).toEqual({
+          _tag: "RetryableAcquisitionFailure",
+          stage: "process",
+        });
+        expect(result.finalizersAtSettlement).toBe(1);
+        expect(result.rawScanSettledAtSettlement).toBe(true);
+        expect(finalizersWhenFinalScan).toBe(1);
+        expect(result.scansAtSettlement).toBe(3);
+        expect(executions).toBe(1);
+
+        const settledScanCount = scans;
+        // eslint-disable-next-line promise/avoid-new -- The observation window proves no poll survives settlement.
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 50);
+        });
+        expect(scans).toBe(settledScanCount);
+        expect(finalizers).toBe(1);
+      } finally {
+        clearTimeout(hardBound);
+      }
+    }
+  );
+
+  it("joins the active workspace scan before upstream interruption settles", async () => {
+    let finalizers = 0;
+    let finalizersWhenFinalScan: number | undefined;
+    let rawScanSettled = false;
+    let scans = 0;
+    const executorSettled = Promise.withResolvers<null>();
+    const periodicScanStarted = Promise.withResolvers<null>();
+    const runner = makeMediaProcessRunner(
+      async () => {
+        await periodicScanStarted.promise;
+        executorSettled.resolve(null);
+        return { exitCode: 0 };
+      },
+      (_root, signal) => {
+        scans += 1;
+        if (scans === 3) {
+          finalizersWhenFinalScan = finalizers;
+        }
+        if (scans !== 2) {
+          return Effect.void;
+        }
+        periodicScanStarted.resolve(null);
+        return completeScanOnAbort(signal, () => {
+          rawScanSettled = true;
+        }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              finalizers += 1;
+            })
+          )
+        );
+      }
+    );
+    const upstream = new AbortController();
+    const completion = Effect.runPromiseExit(
+      runner.run("yt-dlp", ["synthetic-only"], {
+        deadlineMilliseconds: 1000,
+        failure: "retryable",
+        workspaceRoot: "/tmp/meal-planner-upstream-scan",
+      }),
+      { signal: upstream.signal }
+    ).then((exit) => ({
+      exit,
+      finalizersAtSettlement: finalizers,
+      rawScanSettledAtSettlement: rawScanSettled,
+      scansAtSettlement: scans,
+    }));
+    const hardBoundMissed = Promise.withResolvers<{
+      readonly _tag: "HardBoundMissed";
+    }>();
+    const hardBound = setTimeout(
+      () => hardBoundMissed.resolve({ _tag: "HardBoundMissed" }),
+      500
+    );
+
+    try {
+      await executorSettled.promise;
+      upstream.abort();
+      const result = await Promise.race([completion, hardBoundMissed.promise]);
+
+      expect(result).not.toEqual({ _tag: "HardBoundMissed" });
+      if ("_tag" in result) {
+        throw new Error("Upstream interruption exceeded its hard test bound");
+      }
+      expect(Exit.hasInterrupts(result.exit)).toBe(true);
+      expect(result.finalizersAtSettlement).toBe(1);
+      expect(result.rawScanSettledAtSettlement).toBe(true);
+      expect(finalizersWhenFinalScan).toBe(1);
+      expect(result.scansAtSettlement).toBe(3);
+
+      const settledScanCount = scans;
+      // eslint-disable-next-line promise/avoid-new -- The observation window proves no poll survives interruption.
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 50);
+      });
+      expect(scans).toBe(settledScanCount);
+      expect(finalizers).toBe(1);
+    } finally {
+      clearTimeout(hardBound);
+      upstream.abort();
     }
   });
 
