@@ -57,7 +57,7 @@ describe("import contracts", () => {
     expect(() => decode("https://[")).toThrow();
   });
 
-  it("decodes only valid queued, failed, and unsupported public states", () => {
+  it("decodes the acquisition lifecycle without admitting crossed failure pairs", () => {
     const base = {
       createdAt: "2026-07-20T09:30:00.000Z",
       evidence: [],
@@ -69,6 +69,9 @@ describe("import contracts", () => {
     expect(
       decodeImport({ ...base, status: { kind: "queued" } }).status
     ).toEqual({ kind: "queued" });
+    expect(
+      decodeImport({ ...base, status: { kind: "acquiring" } }).status
+    ).toEqual({ kind: "acquiring" });
     expect(
       decodeImport({
         ...base,
@@ -82,6 +85,34 @@ describe("import contracts", () => {
       code: "private_or_unavailable",
       kind: "failed",
       recovery: "check_source_visibility",
+    });
+    expect(
+      decodeImport({
+        ...base,
+        status: {
+          code: "acquisition_temporarily_unavailable",
+          kind: "failed",
+          recovery: "retry_later",
+        },
+      }).status
+    ).toEqual({
+      code: "acquisition_temporarily_unavailable",
+      kind: "failed",
+      recovery: "retry_later",
+    });
+    expect(
+      decodeImport({
+        ...base,
+        status: {
+          code: "invalid_or_unsupported_media",
+          kind: "failed",
+          recovery: "submit_supported_public_video",
+        },
+      }).status
+    ).toEqual({
+      code: "invalid_or_unsupported_media",
+      kind: "failed",
+      recovery: "submit_supported_public_video",
     });
     expect(
       decodeImport({
@@ -107,6 +138,47 @@ describe("import contracts", () => {
           recovery: "submit_supported_public_video",
         },
       })
+    ).toThrow();
+    expect(() =>
+      decodeImport({
+        ...base,
+        status: {
+          code: "acquisition_temporarily_unavailable",
+          kind: "failed",
+          recovery: "check_source_visibility",
+        },
+      })
+    ).toThrow();
+  });
+
+  it("requires exactly the deterministic evidence pair for acquired", () => {
+    const base = {
+      createdAt: "2026-07-20T09:30:00.000Z",
+      id: "018f47ad-91aa-7c35-b6fe-3f00a63f8502",
+      source: { canonicalId: "7520000000000000000", kind: "tiktok" },
+      updatedAt: "2026-07-20T09:31:00.000Z",
+    };
+    const evidence = [
+      {
+        kind: "original_media",
+        referenceId:
+          "imports/018f47ad-91aa-7c35-b6fe-3f00a63f8502/acquisition/v1/generations/7/original.mp4",
+      },
+      {
+        kind: "acquisition_manifest",
+        referenceId:
+          "imports/018f47ad-91aa-7c35-b6fe-3f00a63f8502/acquisition/v1/generations/7/manifest.json",
+      },
+    ];
+
+    expect(
+      decodeImport({ ...base, evidence, status: { kind: "acquired" } }).status
+    ).toEqual({ kind: "acquired" });
+    expect(() =>
+      decodeImport({ ...base, evidence: [], status: { kind: "acquired" } })
+    ).toThrow();
+    expect(() =>
+      decodeImport({ ...base, evidence, status: { kind: "acquiring" } })
     ).toThrow();
   });
 

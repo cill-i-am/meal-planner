@@ -20,9 +20,9 @@ import {
   ImportService,
   makeImportService,
 } from "./features/imports/import.service.js";
-import {
+import ImportAcquisitionWorkflow, {
   ImportWorkflowStarter,
-  ImportWorkflowStarterDeferred,
+  makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
 import { SourceAvailabilityValidator } from "./features/imports/source-availability.js";
 import { makeTikTokSourceAvailabilityValidator } from "./features/imports/source-availability.tiktok.js";
@@ -49,6 +49,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   Effect.gen(function* MealPlannerApiWorker() {
     const queryDatabase =
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
+    const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
     const importApiToken = yield* Config.redacted(
       "MEAL_PLANNER_IMPORT_API_TOKEN"
     );
@@ -65,6 +66,12 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const authorizerLive = Layer.effect(
       ImportAuthorizer,
       Effect.map(makeImportAuthorizer(importApiToken), ImportAuthorizer.of)
+    );
+    const workflowStarterLive = Layer.succeed(
+      ImportWorkflowStarter,
+      ImportWorkflowStarter.of(
+        makeImportWorkflowStarter(importAcquisitionWorkflow)
+      )
     );
 
     return {
@@ -108,7 +115,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                     repositoryLive,
                     identityResolverLive,
                     availabilityValidatorLive,
-                    ImportWorkflowStarterDeferred
+                    workflowStarterLive
                   )
                 )
               );

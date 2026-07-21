@@ -13,6 +13,7 @@ import type {
   SourceIdentityUnavailable,
   SourceValidationUnavailable,
   UnauthorizedImportCaller,
+  WorkflowStartUnavailable,
 } from "./import.errors.js";
 
 type PublicImportError =
@@ -26,7 +27,8 @@ type PublicImportError =
   | InvalidSource
   | SourceIdentityUnavailable
   | SourceValidationUnavailable
-  | UnauthorizedImportCaller;
+  | UnauthorizedImportCaller
+  | WorkflowStartUnavailable;
 
 const problem = (
   status: number,
@@ -89,6 +91,13 @@ const publicErrorResponse = (error: PublicImportError) => {
         503,
         "persistence_unavailable",
         "Import persistence is temporarily unavailable."
+      );
+    }
+    case "WorkflowStartUnavailable": {
+      return problem(
+        503,
+        "workflow_start_unavailable",
+        "Import processing is temporarily unavailable."
       );
     }
     case "ImportPersistenceCorrupt": {

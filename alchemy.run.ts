@@ -2,6 +2,7 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 
+import TikTokMediaContainerLive from "./apps/api/src/features/imports/import-media-container.runtime.js";
 import { MealPlannerDatabase } from "./apps/api/src/infrastructure/meal-planner-database.js";
 import MealPlannerApi from "./apps/api/src/worker.js";
 
@@ -20,5 +21,5 @@ export default Alchemy.Stack(
       apiWorkerName: api.workerName,
       databaseName: database.databaseName,
     };
-  })
+  }).pipe(Effect.provide(TikTokMediaContainerLive))
 );

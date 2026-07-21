@@ -27,6 +27,7 @@ export default defineConfig({
               },
               compatibilityDate: "2026-07-14",
               d1Databases: ["MealPlannerDatabase"],
+              r2Buckets: ["ImportEvidenceBucket"],
             },
           })),
         ],
