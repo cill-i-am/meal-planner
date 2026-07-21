@@ -111,7 +111,7 @@ beforeAll(async () => {
 });
 
 describe("D1 import repository in workerd", () => {
-  it("applies the versioned two-table migration", async () => {
+  it("applies the versioned import and speech migration constraints", async () => {
     const tables = await testEnv.MealPlannerDatabase.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
     ).all<{ name: string }>();
@@ -120,6 +120,7 @@ describe("D1 import repository in workerd", () => {
       expect.arrayContaining([
         "d1_migrations",
         "import_requests",
+        "import_transcriptions",
         "recipe_imports",
       ])
     );
@@ -172,10 +173,109 @@ describe("D1 import repository in workerd", () => {
         .bind(timestamp, null, "constraint-probe")
         .run()
     ).rejects.toThrow();
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO import_transcriptions (
+          import_id, acquisition_generation, dispatch_id,
+          source_media_sha256, state, created_at, updated_at, completed_at
+        ) VALUES (?, 0, ?, ?, 'transcribed', ?, ?, ?)`
+      )
+        .bind(
+          "constraint-probe",
+          "speech:invalid-terminal-row",
+          "a".repeat(64),
+          timestamp,
+          timestamp,
+          timestamp
+        )
+        .run()
+    ).rejects.toThrow();
+    const foreignKeyViolations = await testEnv.MealPlannerDatabase.prepare(
+      "PRAGMA foreign_key_check"
+    ).all();
+    expect(foreignKeyViolations.results).toEqual([]);
     await testEnv.MealPlannerDatabase.prepare(
       "DELETE FROM recipe_imports WHERE id = ?"
     )
       .bind("constraint-probe")
+      .run();
+  });
+
+  it("rolls back a speech child transition when its public parent cannot advance", async () => {
+    const parentId = "018f47ad-91aa-7c35-b6fe-000000000115";
+    const timestamp = "2026-07-21T10:00:00.000Z";
+    const evidence = JSON.stringify([
+      {
+        kind: "original_media",
+        referenceId: `imports/${parentId}/acquisition/v1/generations/1/original.mp4`,
+      },
+      {
+        kind: "acquisition_manifest",
+        referenceId: `imports/${parentId}/acquisition/v1/generations/1/manifest.json`,
+      },
+    ]);
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO recipe_imports (
+        acquisition_generation, id, source_kind, canonical_source_id,
+        compatibility_fingerprint, status, status_code, recovery_action,
+        evidence_references_json, created_at, updated_at
+      ) VALUES (1, ?, 'tiktok', ?, ?, 'acquired', NULL, NULL, ?, ?, ?)`
+    )
+      .bind(
+        parentId,
+        "7520000000000000115",
+        "a".repeat(64),
+        evidence,
+        timestamp,
+        timestamp
+      )
+      .run();
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_transcriptions (
+        import_id, acquisition_generation, dispatch_id,
+        source_media_sha256, state, created_at, updated_at
+      ) VALUES (?, 1, ?, ?, 'dispatching', ?, ?)`
+    )
+      .bind(
+        parentId,
+        `speech:${parentId}:1`,
+        "b".repeat(64),
+        timestamp,
+        timestamp
+      )
+      .run();
+    await testEnv.MealPlannerDatabase.prepare(
+      "UPDATE recipe_imports SET status = 'acquired' WHERE id = ?"
+    )
+      .bind(parentId)
+      .run();
+
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE import_transcriptions
+            SET state = 'failed', failure_code = 'transcription_failed',
+                completed_at = ?, updated_at = ?
+          WHERE import_id = ? AND acquisition_generation = 1`
+      )
+        .bind(timestamp, timestamp, parentId)
+        .run()
+    ).rejects.toThrow("speech failure parent transition rejected");
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        "SELECT state, failure_code FROM import_transcriptions WHERE import_id = ?"
+      )
+        .bind(parentId)
+        .first()
+    ).resolves.toEqual({ failure_code: null, state: "dispatching" });
+    await testEnv.MealPlannerDatabase.prepare(
+      "DELETE FROM import_transcriptions WHERE import_id = ?"
+    )
+      .bind(parentId)
+      .run();
+    await testEnv.MealPlannerDatabase.prepare(
+      "DELETE FROM recipe_imports WHERE id = ?"
+    )
+      .bind(parentId)
       .run();
   });
 

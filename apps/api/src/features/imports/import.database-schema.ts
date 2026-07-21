@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -29,13 +30,22 @@ export const recipeImports = sqliteTable(
     }),
     sourceKind: text("source_kind", { enum: ["tiktok"] }).notNull(),
     status: text("status", {
-      enum: ["acquired", "acquiring", "failed", "queued", "unsupported"],
+      enum: [
+        "acquired",
+        "acquiring",
+        "failed",
+        "queued",
+        "transcribed",
+        "transcribing",
+        "unsupported",
+      ],
     }).notNull(),
     statusCode: text("status_code", {
       enum: [
         "acquisition_temporarily_unavailable",
         "invalid_or_unsupported_media",
         "private_or_unavailable",
+        "transcription_failed",
         "unsupported_post_type",
       ],
     }),
@@ -46,6 +56,10 @@ export const recipeImports = sqliteTable(
     uniqueIndex("recipe_imports_canonical_identity_unique").on(
       table.sourceKind,
       table.canonicalSourceId
+    ),
+    uniqueIndex("recipe_imports_id_generation_unique").on(
+      table.id,
+      table.acquisitionGeneration
     ),
     check(
       "recipe_imports_evidence_json_check",
@@ -77,6 +91,26 @@ export const recipeImports = sqliteTable(
         AND json_extract(${table.evidenceReferencesJson}, '$[1].kind') = 'acquisition_manifest'
         AND json_extract(${table.evidenceReferencesJson}, '$[1].referenceId') = 'imports/' || ${table.id} || '/acquisition/v1/generations/' || ${table.acquisitionGeneration} || '/manifest.json'
       ) OR (
+        ${table.status} = 'transcribing'
+        AND ${table.statusCode} IS NULL
+        AND ${table.recoveryAction} IS NULL
+        AND json_array_length(${table.evidenceReferencesJson}) = 2
+        AND json_extract(${table.evidenceReferencesJson}, '$[0].kind') = 'original_media'
+        AND json_extract(${table.evidenceReferencesJson}, '$[0].referenceId') = 'imports/' || ${table.id} || '/acquisition/v1/generations/' || ${table.acquisitionGeneration} || '/original.mp4'
+        AND json_extract(${table.evidenceReferencesJson}, '$[1].kind') = 'acquisition_manifest'
+        AND json_extract(${table.evidenceReferencesJson}, '$[1].referenceId') = 'imports/' || ${table.id} || '/acquisition/v1/generations/' || ${table.acquisitionGeneration} || '/manifest.json'
+      ) OR (
+        ${table.status} = 'transcribed'
+        AND ${table.statusCode} IS NULL
+        AND ${table.recoveryAction} IS NULL
+        AND json_array_length(${table.evidenceReferencesJson}) = 3
+        AND json_extract(${table.evidenceReferencesJson}, '$[0].kind') = 'original_media'
+        AND json_extract(${table.evidenceReferencesJson}, '$[0].referenceId') = 'imports/' || ${table.id} || '/acquisition/v1/generations/' || ${table.acquisitionGeneration} || '/original.mp4'
+        AND json_extract(${table.evidenceReferencesJson}, '$[1].kind') = 'acquisition_manifest'
+        AND json_extract(${table.evidenceReferencesJson}, '$[1].referenceId') = 'imports/' || ${table.id} || '/acquisition/v1/generations/' || ${table.acquisitionGeneration} || '/manifest.json'
+        AND json_extract(${table.evidenceReferencesJson}, '$[2].kind') = 'speech_transcript'
+        AND json_extract(${table.evidenceReferencesJson}, '$[2].referenceId') = 'imports/' || ${table.id} || '/transcription/v1/generations/' || ${table.acquisitionGeneration} || '/transcript.json'
+      ) OR (
         ${table.status} = 'failed'
         AND ${table.statusCode} = 'private_or_unavailable'
         AND ${table.recoveryAction} = 'check_source_visibility'
@@ -92,6 +126,15 @@ export const recipeImports = sqliteTable(
         AND ${table.recoveryAction} = 'submit_supported_public_video'
         AND json_array_length(${table.evidenceReferencesJson}) = 0
       ) OR (
+        ${table.status} = 'failed'
+        AND ${table.statusCode} = 'transcription_failed'
+        AND ${table.recoveryAction} = 'retry_later'
+        AND json_array_length(${table.evidenceReferencesJson}) = 2
+        AND json_extract(${table.evidenceReferencesJson}, '$[0].kind') = 'original_media'
+        AND json_extract(${table.evidenceReferencesJson}, '$[0].referenceId') = 'imports/' || ${table.id} || '/acquisition/v1/generations/' || ${table.acquisitionGeneration} || '/original.mp4'
+        AND json_extract(${table.evidenceReferencesJson}, '$[1].kind') = 'acquisition_manifest'
+        AND json_extract(${table.evidenceReferencesJson}, '$[1].referenceId') = 'imports/' || ${table.id} || '/acquisition/v1/generations/' || ${table.acquisitionGeneration} || '/manifest.json'
+      ) OR (
         ${table.status} = 'unsupported'
         AND ${table.statusCode} = 'unsupported_post_type'
         AND ${table.recoveryAction} = 'submit_supported_public_video'
@@ -106,14 +149,132 @@ export const importRequests = sqliteTable(
   {
     createdAt: text("created_at").notNull(),
     idempotencyKeyHash: text("idempotency_key_hash").notNull().primaryKey(),
-    importId: text("import_id")
-      .notNull()
-      .references(() => recipeImports.id, {
-        onDelete: "restrict",
-        onUpdate: "restrict",
-      }),
+    importId: text("import_id").notNull(),
     requestFingerprint: text("request_fingerprint").notNull(),
     sourceLocatorHash: text("source_locator_hash").notNull(),
   },
   (table) => [index("import_requests_import_id_index").on(table.importId)]
+);
+
+export const importTranscriptions = sqliteTable(
+  "import_transcriptions",
+  {
+    acquisitionGeneration: integer("acquisition_generation").notNull(),
+    completedAt: text("completed_at"),
+    costCertainty: text("cost_certainty", { enum: ["estimated", "known"] }),
+    costCurrency: text("cost_currency", { enum: ["USD"] }),
+    createdAt: text("created_at").notNull(),
+    detectedLanguage: text("detected_language"),
+    dispatchId: text("dispatch_id").notNull(),
+    estimatedCostMicroUsd: integer("estimated_cost_micro_usd"),
+    failureCode: text("failure_code", {
+      enum: [
+        "audio_extraction_failed",
+        "outcome_unknown",
+        "source_evidence_invalid",
+        "transcription_failed",
+        "transcript_evidence_failed",
+      ],
+    }),
+    importId: text("import_id").notNull(),
+    model: text("model"),
+    provider: text("provider"),
+    segmentsCount: integer("segments_count"),
+    sourceMediaSha256: text("source_media_sha256").notNull(),
+    state: text("state", {
+      enum: ["dispatching", "failed", "transcribed"],
+    }).notNull(),
+    transcriptKey: text("transcript_key"),
+    transcriptSha256: text("transcript_sha256"),
+    updatedAt: text("updated_at").notNull(),
+    usageAudioMilliseconds: integer("usage_audio_milliseconds"),
+    usageInputBytes: integer("usage_input_bytes"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.importId, table.acquisitionGeneration] }),
+    foreignKey({
+      columns: [table.importId, table.acquisitionGeneration],
+      foreignColumns: [recipeImports.id, recipeImports.acquisitionGeneration],
+      name: "import_transcriptions_import_generation_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    uniqueIndex("import_transcriptions_dispatch_id_unique").on(
+      table.dispatchId
+    ),
+    index("import_transcriptions_state_updated_index").on(
+      table.state,
+      table.updatedAt
+    ),
+    check(
+      "import_transcriptions_generation_check",
+      sql`typeof(${table.acquisitionGeneration}) = 'integer' AND ${table.acquisitionGeneration} >= 0 AND ${table.acquisitionGeneration} <= 9007199254740991`
+    ),
+    check(
+      "import_transcriptions_dispatch_id_check",
+      sql`length(${table.dispatchId}) BETWEEN 1 AND 100`
+    ),
+    check(
+      "import_transcriptions_source_sha_check",
+      sql`length(${table.sourceMediaSha256}) = 64 AND ${table.sourceMediaSha256} NOT GLOB '*[^0-9a-f]*'`
+    ),
+    check(
+      "import_transcriptions_state_check",
+      sql`(
+        ${table.state} = 'dispatching'
+        AND ${table.transcriptKey} IS NULL
+        AND ${table.transcriptSha256} IS NULL
+        AND ${table.provider} IS NULL
+        AND ${table.model} IS NULL
+        AND ${table.detectedLanguage} IS NULL
+        AND ${table.usageAudioMilliseconds} IS NULL
+        AND ${table.usageInputBytes} IS NULL
+        AND ${table.estimatedCostMicroUsd} IS NULL
+        AND ${table.costCurrency} IS NULL
+        AND ${table.costCertainty} IS NULL
+        AND ${table.segmentsCount} IS NULL
+        AND ${table.failureCode} IS NULL
+        AND ${table.completedAt} IS NULL
+      ) OR (
+        ${table.state} = 'transcribed'
+        AND ${table.transcriptKey} IS NOT NULL
+        AND length(${table.transcriptSha256}) = 64
+        AND ${table.transcriptSha256} NOT GLOB '*[^0-9a-f]*'
+        AND length(${table.provider}) BETWEEN 1 AND 64
+        AND length(${table.model}) BETWEEN 1 AND 64
+        AND ${table.detectedLanguage} GLOB '[a-z][a-z]'
+        AND typeof(${table.usageAudioMilliseconds}) = 'integer'
+        AND ${table.usageAudioMilliseconds} > 0
+        AND typeof(${table.usageInputBytes}) = 'integer'
+        AND ${table.usageInputBytes} > 0
+        AND typeof(${table.estimatedCostMicroUsd}) = 'integer'
+        AND ${table.estimatedCostMicroUsd} >= 0
+        AND ${table.costCurrency} = 'USD'
+        AND ${table.costCertainty} IN ('estimated', 'known')
+        AND typeof(${table.segmentsCount}) = 'integer'
+        AND ${table.segmentsCount} > 0
+        AND ${table.failureCode} IS NULL
+        AND ${table.completedAt} IS NOT NULL
+      ) OR (
+        ${table.state} = 'failed'
+        AND ${table.transcriptKey} IS NULL
+        AND ${table.transcriptSha256} IS NULL
+        AND ${table.provider} IS NULL
+        AND ${table.model} IS NULL
+        AND ${table.detectedLanguage} IS NULL
+        AND ${table.usageAudioMilliseconds} IS NULL
+        AND ${table.usageInputBytes} IS NULL
+        AND ${table.estimatedCostMicroUsd} IS NULL
+        AND ${table.costCurrency} IS NULL
+        AND ${table.costCertainty} IS NULL
+        AND ${table.segmentsCount} IS NULL
+        AND ${table.failureCode} IN (
+          'audio_extraction_failed', 'outcome_unknown',
+          'source_evidence_invalid', 'transcription_failed',
+          'transcript_evidence_failed'
+        )
+        AND ${table.completedAt} IS NOT NULL
+      )`
+    ),
+  ]
 );

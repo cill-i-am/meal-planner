@@ -88,6 +88,14 @@ export const AcquiredImportStatus = Schema.Struct({
   kind: Schema.Literal("acquired"),
 });
 
+export const TranscribingImportStatus = Schema.Struct({
+  kind: Schema.Literal("transcribing"),
+});
+
+export const TranscribedImportStatus = Schema.Struct({
+  kind: Schema.Literal("transcribed"),
+});
+
 export const PrivateOrUnavailableImportStatus = Schema.Struct({
   code: Schema.Literal("private_or_unavailable"),
   kind: Schema.Literal("failed"),
@@ -106,6 +114,12 @@ export const InvalidOrUnsupportedMediaImportStatus = Schema.Struct({
   recovery: Schema.Literal("submit_supported_public_video"),
 });
 
+export const TranscriptionFailedImportStatus = Schema.Struct({
+  code: Schema.Literal("transcription_failed"),
+  kind: Schema.Literal("failed"),
+  recovery: Schema.Literal("retry_later"),
+});
+
 export const UnsupportedImportStatus = Schema.Struct({
   code: Schema.Literal("unsupported_post_type"),
   kind: Schema.Literal("unsupported"),
@@ -119,6 +133,9 @@ export const ImportStatus = Schema.Union([
   PrivateOrUnavailableImportStatus,
   AcquisitionTemporarilyUnavailableImportStatus,
   InvalidOrUnsupportedMediaImportStatus,
+  TranscribedImportStatus,
+  TranscribingImportStatus,
+  TranscriptionFailedImportStatus,
   UnsupportedImportStatus,
 ]);
 export type ImportStatus = typeof ImportStatus.Type;
@@ -131,9 +148,14 @@ export const AcquisitionManifestEvidenceReference = Schema.Struct({
   kind: Schema.Literal("acquisition_manifest"),
   referenceId: TrimmedNonEmptyString,
 });
+export const SpeechTranscriptEvidenceReference = Schema.Struct({
+  kind: Schema.Literal("speech_transcript"),
+  referenceId: TrimmedNonEmptyString,
+});
 export const EvidenceReference = Schema.Union([
   OriginalMediaEvidenceReference,
   AcquisitionManifestEvidenceReference,
+  SpeechTranscriptEvidenceReference,
 ]);
 export type EvidenceReference = typeof EvidenceReference.Type;
 
@@ -173,12 +195,27 @@ const AcquiredImportView = Schema.Struct({
     OriginalMediaEvidenceReference,
     AcquisitionManifestEvidenceReference,
   ]),
-  status: AcquiredImportStatus,
+  status: Schema.Union([
+    AcquiredImportStatus,
+    TranscribingImportStatus,
+    TranscriptionFailedImportStatus,
+  ]),
+});
+
+const TranscribedImportView = Schema.Struct({
+  ...ImportViewFields,
+  evidence: Schema.Tuple([
+    OriginalMediaEvidenceReference,
+    AcquisitionManifestEvidenceReference,
+    SpeechTranscriptEvidenceReference,
+  ]),
+  status: TranscribedImportStatus,
 });
 
 export const ImportView = Schema.Union([
   NonAcquiredImportView,
   AcquiredImportView,
+  TranscribedImportView,
 ]);
 export type ImportView = typeof ImportView.Type;
 

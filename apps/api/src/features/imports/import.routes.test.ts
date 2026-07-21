@@ -270,6 +270,61 @@ describe("import routes", () => {
     });
   });
 
+  it("publishes exact transcript evidence as a completed import", async () => {
+    const evidence = [
+      {
+        kind: "original_media" as const,
+        referenceId: `imports/${importId}/acquisition/v1/generations/1/original.mp4`,
+      },
+      {
+        kind: "acquisition_manifest" as const,
+        referenceId: `imports/${importId}/acquisition/v1/generations/1/manifest.json`,
+      },
+      {
+        kind: "speech_transcript" as const,
+        referenceId: `imports/${importId}/transcription/v1/generations/1/transcript.json`,
+      },
+    ] as const;
+    const transcribed = {
+      ...importView,
+      evidence,
+      status: { kind: "transcribed" as const },
+    };
+    const service: ImportServiceShape = {
+      create: () =>
+        Effect.succeed({
+          disposition: "idempotency_replay",
+          import: transcribed,
+        }),
+      get: () => Effect.succeed({ import: transcribed }),
+    };
+    const app = makeApp(service);
+    apps.push(app);
+    const created = await app.handler(
+      new Request("https://meal-planner.test/imports", {
+        body: JSON.stringify({
+          source: {
+            kind: "tiktok",
+            url: "https://www.tiktok.com/@cook/video/7520000000000000000",
+          },
+        }),
+        headers: authorizedHeaders,
+        method: "POST",
+      })
+    );
+    const polled = await app.handler(
+      new Request(`https://meal-planner.test/imports/${importId}`, {
+        headers: { authorization: "Bearer test-import-token" },
+      })
+    );
+
+    expect(created.status).toBe(200);
+    expect(polled.status).toBe(200);
+    await expect(polled.json()).resolves.toMatchObject({
+      import: { evidence, status: { kind: "transcribed" } },
+    });
+  });
+
   it("maps Workflow start loss to a privacy-safe retryable 503", async () => {
     const service: ImportServiceShape = {
       create: () => Effect.fail(workflowStartUnavailable()),
