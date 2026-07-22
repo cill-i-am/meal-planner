@@ -1,0 +1,858 @@
+import { applyD1Migrations, env } from "cloudflare:test";
+import type { AnyD1Database } from "drizzle-orm/d1";
+import { DateTime, Effect, Option, Schema, Stream } from "effect";
+import { beforeAll, describe, expect, it } from "vitest";
+
+import { acquireStoreVerify } from "./import-media-acquirer.js";
+import type {
+  AcquisitionBucketLike,
+  AcquisitionMediaObjectLike,
+  PreparedMediaArtifact,
+} from "./import-media-acquirer.js";
+import {
+  AcquisitionGeneration,
+  manifestObjectKey,
+  mediaObjectKey,
+} from "./import-media.model.js";
+import {
+  makeDeterministicSpeechAudioExtractor,
+  makeDeterministicSpeechTranscriber,
+} from "./import-speech-transcription.fake.js";
+import {
+  transcribeAcquiredImport,
+  transcriptObjectKey,
+} from "./import-speech-transcription.js";
+import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
+import type { VisualEvidenceExtractorShape } from "./import-visual-evidence-extractor.js";
+import { VisualEvidence } from "./import-visual-evidence-extractor.js";
+import {
+  makeDeterministicFrameSampler,
+  makeDeterministicVisualEvidenceExtractor,
+} from "./import-visual-evidence.fake.js";
+import {
+  extractVisualEvidenceForTranscribedImport,
+  visualEvidenceManifestObjectKey,
+  visualFrameObjectKey,
+} from "./import-visual-evidence.js";
+import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
+import {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "./import.contracts.js";
+import { importPersistenceUnavailable } from "./import.errors.js";
+import { makeD1ImportRepository } from "./import.repository.d1.js";
+import type { AcceptImportCommand, StoredImport } from "./import.repository.js";
+import {
+  CompatibilityFingerprint,
+  IdempotencyKeyHash,
+  RequestFingerprint,
+  SourceLocatorHash,
+} from "./import.repository.js";
+
+interface TestR2Object {
+  readonly checksums?: { readonly sha256?: ArrayBuffer };
+  readonly customMetadata?: Record<string, string>;
+  readonly httpMetadata?: {
+    readonly cacheControl?: string;
+    readonly contentType?: string;
+  };
+  readonly key: string;
+  readonly size: number;
+  readonly text: () => Promise<string>;
+}
+
+interface TestR2Bucket {
+  readonly delete: (key: string) => Promise<void>;
+  readonly get: (key: string) => Promise<TestR2Object | null>;
+  readonly head: (key: string) => Promise<TestR2Object | null>;
+  readonly put: (
+    key: string,
+    value: ArrayBufferView | ReadableStream,
+    options?: unknown
+  ) => Promise<TestR2Object | null>;
+}
+
+const testEnv = env as unknown as {
+  readonly ImportEvidenceBucket: TestR2Bucket;
+  readonly MealPlannerDatabase: AnyD1Database;
+  readonly TEST_MIGRATIONS: {
+    readonly name: string;
+    readonly queries: string[];
+  }[];
+};
+
+const decodeImportId = Schema.decodeUnknownSync(ImportId);
+const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
+const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
+const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
+const decodeCompatibilityFingerprint = Schema.decodeUnknownSync(
+  CompatibilityFingerprint
+);
+const decodeIdempotencyKeyHash = Schema.decodeUnknownSync(IdempotencyKeyHash);
+const decodeRequestFingerprint = Schema.decodeUnknownSync(RequestFingerprint);
+const decodeSourceLocatorHash = Schema.decodeUnknownSync(SourceLocatorHash);
+
+const generation = decodeGeneration(1);
+const acquiredAt = decodeTimestamp("2026-07-21T10:00:00.000Z");
+const transcribedAt = decodeTimestamp("2026-07-21T10:01:00.000Z");
+const extractedAt = decodeTimestamp("2026-07-21T10:02:00.000Z");
+const sourceMedia = new Uint8Array([
+  0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
+]);
+const sourceMediaSha256 =
+  "c43403fe022af967a0b859d3e14ea12d6633f4c8ad475816b0c55d85896e8e35";
+
+const fixtureHash = (value: string) =>
+  Array.from(new TextEncoder().encode(value), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  )
+    .join("")
+    .padEnd(64, "0")
+    .slice(0, 64);
+
+const acquisitionBucket = (): AcquisitionBucketLike => ({
+  get: (key) => testEnv.ImportEvidenceBucket.get(key),
+  head: (key) => testEnv.ImportEvidenceBucket.head(key),
+  put: (key, value, options) =>
+    testEnv.ImportEvidenceBucket.put(key, value, options),
+});
+
+const makeTranscribedImport = async (
+  importId: ImportId,
+  canonicalId: SourceCanonicalId,
+  options: { readonly transcribe?: boolean } = {}
+) => {
+  const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase, () =>
+    Date.parse("2026-07-21T09:59:00.000Z")
+  );
+  const createdAt = decodeTimestamp("2026-07-21T09:58:00.000Z");
+  const identity = importId.slice(-6);
+  const candidate: StoredImport = {
+    acquisitionGeneration: decodeGeneration(0),
+    canonicalSourceId: canonicalId,
+    compatibilityFingerprint: decodeCompatibilityFingerprint(
+      fixtureHash(`${identity}:visual-tracer-compatibility`)
+    ),
+    sourceKind: "tiktok",
+    view: {
+      createdAt,
+      evidence: [],
+      id: importId,
+      source: { canonicalId, kind: "tiktok" },
+      status: { kind: "queued" },
+      updatedAt: createdAt,
+    },
+  };
+  const command: AcceptImportCommand = {
+    candidate,
+    idempotencyKeyHash: decodeIdempotencyKeyHash(
+      fixtureHash(`${identity}:visual-tracer-idempotency`)
+    ),
+    requestFingerprint: decodeRequestFingerprint(
+      fixtureHash(`${identity}:visual-tracer-request`)
+    ),
+    sourceLocatorHash: decodeSourceLocatorHash(
+      fixtureHash(`${identity}:visual-tracer-locator`)
+    ),
+  };
+  await Effect.runPromise(repository.acceptRequest(command));
+  await Effect.runPromise(repository.claimAcquisition(importId));
+  await Effect.runPromise(repository.beginAcquisitionAttempt(importId));
+
+  const prepared: PreparedMediaArtifact = {
+    artifactId: "visual-tracer-source",
+    audioStreams: [{ codec: "aac", index: 1 }],
+    bytes: sourceMedia.byteLength,
+    durationSeconds: 2,
+    metadata: {
+      canonicalId,
+      canonicalUrl: `https://www.tiktok.com/@cook/video/${canonicalId}`,
+      caption: "Synthetic fixture caption",
+      creator: { displayName: "Cook", handle: "cook", id: "cook-id" },
+      observedAt: "2026-07-21T09:57:00.000Z",
+      provenance: {
+        canonicalUrl: "provider_observed",
+        caption: "creator_provided",
+        creator: {
+          displayName: "provider_observed",
+          handle: "provider_observed",
+          id: "provider_observed",
+        },
+        publishedAt: null,
+      },
+      publishedAt: null,
+    },
+    sha256: sourceMediaSha256,
+    videoStreams: [{ codec: "h264", index: 0 }],
+  };
+  const mediaObject: AcquisitionMediaObjectLike = {
+    cleanup: () => Effect.void,
+    prepare: () => Effect.succeed(prepared),
+    stream: () => Stream.make(sourceMedia),
+  };
+  const outcome = await Effect.runPromise(
+    acquireStoreVerify(acquisitionBucket(), mediaObject, {
+      canonicalId,
+      generation,
+      importId,
+      now: () => new Date(DateTime.toEpochMillis(acquiredAt)),
+    })
+  );
+  if (outcome._tag !== "VerifiedAcquisition") {
+    throw new Error("Expected acquired fixture");
+  }
+  await Effect.runPromise(
+    repository.recordAcquired(
+      importId,
+      generation,
+      outcome.evidence,
+      outcome.evidence.acquiredAt
+    )
+  );
+  if (options.transcribe === false) {
+    return repository;
+  }
+
+  const audio = makeDeterministicSpeechAudioExtractor({
+    bytes: new Uint8Array([82, 73, 70, 70, 1, 2, 3, 4]),
+    durationMilliseconds: 2000,
+    mimeType: "audio/wav",
+    sha256: "c4ffde8d57d64bbc7a1220d8bf9560d208511252d9173d1359f5cf9a7b2f14dc",
+  });
+  const speech = makeDeterministicSpeechTranscriber({
+    cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
+    detectedLanguage: "en",
+    model: "fixture-v1",
+    provider: "deterministic_fake",
+    segments: [
+      { endMilliseconds: 900, startMilliseconds: 0, text: "Chop onions." },
+      {
+        endMilliseconds: 1900,
+        startMilliseconds: 1000,
+        text: "Simmer for ten minutes.",
+      },
+    ],
+    text: "Chop onions. Simmer for ten minutes.",
+    usage: { audioDurationMilliseconds: 2000, inputBytes: 8 },
+  });
+  await Effect.runPromise(
+    transcribeAcquiredImport({
+      acquisitionRepository: repository,
+      audioExtractor: audio.service,
+      bucket: acquisitionBucket(),
+      importId,
+      now: () => transcribedAt,
+      speechTranscriber: speech.service,
+      transcriptionRepository: makeD1SpeechTranscriptionRepository(
+        testEnv.MealPlannerDatabase
+      ),
+    })
+  );
+  return repository;
+};
+
+const makeFrameFixture = () =>
+  makeDeterministicFrameSampler([
+    {
+      bytes: new Uint8Array([255, 216, 255, 217]),
+      height: 640,
+      mimeType: "image/jpeg",
+      sha256:
+        "32461d5bd1773012acef0ba15636752949bd7c2ce50f9172159d9f56cf0dd9af",
+      timestampMilliseconds: 0,
+      width: 360,
+    },
+    {
+      bytes: new Uint8Array([255, 216, 1, 255, 217]),
+      height: 640,
+      mimeType: "image/jpeg",
+      sha256:
+        "adeaec77d1bc772e9694f8b5d7ba0ab621797f61f2587493ba69bd8dbbf09bf1",
+      timestampMilliseconds: 1000,
+      width: 360,
+    },
+  ]);
+
+const makeVisualFixture = (outcome: "empty" | "found" | "low_confidence") =>
+  makeDeterministicVisualEvidenceExtractor({
+    cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
+    model: "fixture-vision-v1",
+    observations:
+      outcome === "empty"
+        ? []
+        : [
+            {
+              confidence: outcome === "found" ? 0.98 : 0.42,
+              frameIndex: 1,
+              kind: "visible_text" as const,
+              regions: [{ height: 0.2, width: 0.8, x: 0.1, y: 0.7 }],
+              text: "Bake at 180 C for 20 minutes",
+              timestampMilliseconds: 1000,
+            },
+          ],
+    outcome,
+    provider: "deterministic_fake",
+    usage: { inputBytes: 9, inputFrames: 2, modelCalls: 1 },
+  });
+
+beforeAll(async () => {
+  await applyD1Migrations(
+    testEnv.MealPlannerDatabase,
+    [...testEnv.TEST_MIGRATIONS],
+    "d1_migrations"
+  );
+});
+
+describe("provider-free transcript-to-visual-evidence tracer", () => {
+  it("stores bounded private frames and normalized evidence exactly once", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000210");
+    const canonicalId = decodeCanonicalId("7520000000000000210");
+    const importRepository = await makeTranscribedImport(importId, canonicalId);
+    const frames = makeFrameFixture();
+    const extractor = makeVisualFixture("found");
+    const visualRepository = makeD1VisualEvidenceRepository(
+      testEnv.MealPlannerDatabase
+    );
+
+    const result = await Effect.runPromise(
+      extractVisualEvidenceForTranscribedImport({
+        bucket: acquisitionBucket(),
+        extractor: extractor.service,
+        frameSampler: frames.service,
+        importId,
+        importRepository,
+        now: () => extractedAt,
+        visualRepository,
+      })
+    );
+
+    expect(result).toEqual({
+      _tag: "VisualEvidenceReady",
+      generation,
+      importId,
+      manifestKey: visualEvidenceManifestObjectKey(importId, generation),
+      outcome: "found",
+    });
+    expect(frames.calls).toEqual([
+      {
+        durationMilliseconds: 2000,
+        generation,
+        importId,
+        mediaKey: mediaObjectKey(importId, generation),
+        sourceMediaSha256,
+      },
+    ]);
+    expect(extractor.calls).toHaveLength(1);
+    expect(extractor.calls[0]).toMatchObject({
+      dispatchId: `visual:${importId}:${generation}`,
+      generation,
+      importId,
+    });
+
+    const stored = Option.getOrThrow(
+      await Effect.runPromise(importRepository.findById(importId))
+    );
+    expect(stored.view).toMatchObject({
+      evidence: [
+        {
+          kind: "original_media",
+          referenceId: mediaObjectKey(importId, generation),
+        },
+        {
+          kind: "acquisition_manifest",
+          referenceId: manifestObjectKey(importId, generation),
+        },
+        {
+          kind: "speech_transcript",
+          referenceId: transcriptObjectKey(importId, generation),
+        },
+        {
+          kind: "visual_evidence_manifest",
+          referenceId: visualEvidenceManifestObjectKey(importId, generation),
+        },
+      ],
+      status: { kind: "visual_evidence_found" },
+      updatedAt: extractedAt,
+    });
+    const storedFrames = await Promise.all(
+      [0, 1].map((frameIndex) =>
+        testEnv.ImportEvidenceBucket.head(
+          visualFrameObjectKey(importId, generation, frameIndex)
+        )
+      )
+    );
+    for (const frame of storedFrames) {
+      expect(frame).toMatchObject({
+        customMetadata: expect.objectContaining({
+          generation: String(generation),
+          importId,
+          kind: "visual_frame",
+        }),
+        httpMetadata: {
+          cacheControl: "private, no-store",
+          contentType: "image/jpeg",
+        },
+      });
+    }
+    const manifest = await testEnv.ImportEvidenceBucket.get(
+      visualEvidenceManifestObjectKey(importId, generation)
+    );
+    expect(manifest).toMatchObject({
+      customMetadata: expect.objectContaining({
+        generation: String(generation),
+        importId,
+        kind: "visual_evidence_manifest",
+      }),
+      httpMetadata: {
+        cacheControl: "private, no-store",
+        contentType: "application/json",
+      },
+    });
+    const manifestText = await manifest?.text();
+    expect(manifestText).not.toMatch(/providerBody|authorization|token/iu);
+    expect(JSON.parse(manifestText ?? "{}")).toMatchObject({
+      retention: {
+        configuredAgeSeconds: 604_800,
+        policy: "r2_bucket_object_age",
+      },
+      schemaVersion: 1,
+      sourceEvidenceDeleteAt: "2026-07-28T10:00:00.000Z",
+    });
+
+    const duplicate = await Effect.runPromise(
+      importRepository.acceptRequest({
+        candidate: stored,
+        idempotencyKeyHash: decodeIdempotencyKeyHash(
+          fixtureHash("visual-complete-canonical-duplicate")
+        ),
+        requestFingerprint: decodeRequestFingerprint(
+          fixtureHash("visual-complete-canonical-request")
+        ),
+        sourceLocatorHash: decodeSourceLocatorHash(
+          fixtureHash("visual-complete-canonical-locator")
+        ),
+      })
+    );
+    expect(duplicate).toMatchObject({
+      disposition: "canonical_duplicate",
+      import: { view: { status: { kind: "visual_evidence_found" } } },
+    });
+
+    const replayFrames = makeDeterministicFrameSampler([]);
+    const replayExtractor = makeDeterministicVisualEvidenceExtractor({
+      cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
+      model: "must-not-run",
+      observations: [],
+      outcome: "empty",
+      provider: "deterministic_fake",
+      usage: { inputBytes: 1, inputFrames: 1, modelCalls: 1 },
+    });
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: replayExtractor.service,
+          frameSampler: replayFrames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository,
+        })
+      )
+    ).resolves.toEqual(result);
+    expect(replayFrames.calls).toEqual([]);
+    expect(replayExtractor.calls).toEqual([]);
+
+    await testEnv.ImportEvidenceBucket.delete(
+      visualEvidenceManifestObjectKey(importId, generation)
+    );
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: replayExtractor.service,
+          frameSampler: replayFrames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository,
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "VisualEvidencePipelineFailure",
+      code: "visual_evidence_failed",
+    });
+    expect(replayFrames.calls).toEqual([]);
+    expect(replayExtractor.calls).toEqual([]);
+  });
+
+  it("recovers committed R2 evidence after D1 completion loss without redispatch", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000216");
+    const canonicalId = decodeCanonicalId("7520000000000000216");
+    const importRepository = await makeTranscribedImport(importId, canonicalId);
+    const frames = makeFrameFixture();
+    const extractor = makeVisualFixture("found");
+    const durableRepository = makeD1VisualEvidenceRepository(
+      testEnv.MealPlannerDatabase
+    );
+    let rejectCompletion = true;
+    const interruptedRepository = {
+      ...durableRepository,
+      complete: (evidence: Parameters<typeof durableRepository.complete>[0]) =>
+        Effect.suspend(() => {
+          if (rejectCompletion) {
+            rejectCompletion = false;
+            return Effect.fail(importPersistenceUnavailable());
+          }
+          return durableRepository.complete(evidence);
+        }),
+    };
+
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          frameSampler: frames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository: interruptedRepository,
+        })
+      )
+    ).rejects.toMatchObject({ _tag: "ImportPersistenceUnavailable" });
+    expect(frames.calls).toHaveLength(1);
+    expect(extractor.calls).toHaveLength(1);
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(importRepository.findById(importId))
+      ).view
+    ).toMatchObject({
+      status: { kind: "extracting_visual" },
+      updatedAt: extractedAt,
+    });
+
+    const replayFrames = makeDeterministicFrameSampler([]);
+    const replayExtractor = makeVisualFixture("empty");
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: replayExtractor.service,
+          frameSampler: replayFrames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository: durableRepository,
+        })
+      )
+    ).resolves.toMatchObject({
+      _tag: "VisualEvidenceReady",
+      outcome: "found",
+    });
+    expect(replayFrames.calls).toEqual([]);
+    expect(replayExtractor.calls).toEqual([]);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state FROM import_visual_evidence
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({ state: "completed" });
+  });
+
+  it("fails closed on a pre-manifest replay without redispatching", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000217");
+    const canonicalId = decodeCanonicalId("7520000000000000217");
+    const importRepository = await makeTranscribedImport(importId, canonicalId);
+    const visualRepository = makeD1VisualEvidenceRepository(
+      testEnv.MealPlannerDatabase
+    );
+    await Effect.runPromise(
+      visualRepository.claim({
+        dispatchId: `visual:${importId}:${generation}`,
+        generation,
+        importId,
+        sourceMediaSha256,
+        startedAt: extractedAt,
+      })
+    );
+    const frames = makeFrameFixture();
+    const extractor = makeVisualFixture("found");
+
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          frameSampler: frames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository,
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "VisualEvidencePipelineFailure",
+      code: "outcome_unknown",
+    });
+    expect(frames.calls).toEqual([]);
+    expect(extractor.calls).toEqual([]);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state FROM import_visual_evidence
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({ state: "dispatching" });
+  });
+
+  it("fails closed before sampling when transcript evidence is missing", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000211");
+    const canonicalId = decodeCanonicalId("7520000000000000211");
+    const importRepository = await makeTranscribedImport(importId, canonicalId);
+    await testEnv.ImportEvidenceBucket.delete(
+      transcriptObjectKey(importId, generation)
+    );
+    const frames = makeFrameFixture();
+    const extractor = makeVisualFixture("found");
+
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          frameSampler: frames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository: makeD1VisualEvidenceRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "VisualEvidencePipelineFailure",
+      code: "source_evidence_invalid",
+    });
+    expect(frames.calls).toEqual([]);
+    expect(extractor.calls).toEqual([]);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        "SELECT COUNT(*) AS count FROM import_visual_evidence WHERE import_id = ?"
+      )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(importRepository.findById(importId))
+      ).view.status
+    ).toEqual({ kind: "transcribed" });
+  });
+
+  it("rejects the visual lifecycle before a transcript exists", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000212");
+    const canonicalId = decodeCanonicalId("7520000000000000212");
+    const importRepository = await makeTranscribedImport(
+      importId,
+      canonicalId,
+      { transcribe: false }
+    );
+    const frames = makeFrameFixture();
+    const extractor = makeVisualFixture("found");
+
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          frameSampler: frames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository: makeD1VisualEvidenceRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({ _tag: "ImportTransitionRejected" });
+    expect(frames.calls).toEqual([]);
+    expect(extractor.calls).toEqual([]);
+  });
+
+  it("records bounded-sampling failure as terminal and never redispatches it", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000213");
+    const canonicalId = decodeCanonicalId("7520000000000000213");
+    const importRepository = await makeTranscribedImport(importId, canonicalId);
+    const invalidFrames = makeDeterministicFrameSampler([
+      {
+        bytes: new Uint8Array([255, 216, 255, 217]),
+        height: 640,
+        mimeType: "image/jpeg",
+        sha256:
+          "32461d5bd1773012acef0ba15636752949bd7c2ce50f9172159d9f56cf0dd9af",
+        timestampMilliseconds: 2000,
+        width: 360,
+      },
+    ]);
+    const extractor = makeVisualFixture("found");
+
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          frameSampler: invalidFrames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository: makeD1VisualEvidenceRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "VisualEvidencePipelineFailure",
+      code: "frame_sampling_failed",
+    });
+    expect(extractor.calls).toEqual([]);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT failure_code, state FROM import_visual_evidence
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      failure_code: "frame_sampling_failed",
+      state: "failed",
+    });
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(importRepository.findById(importId))
+      ).view
+    ).toMatchObject({
+      status: {
+        code: "visual_evidence_failed",
+        kind: "failed",
+        recovery: "operator_reconcile",
+      },
+      updatedAt: extractedAt,
+    });
+
+    const replayFrames = makeDeterministicFrameSampler([]);
+    const replayExtractor = makeVisualFixture("found");
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: replayExtractor.service,
+          frameSampler: replayFrames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository: makeD1VisualEvidenceRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({ _tag: "ImportTransitionRejected" });
+    expect(replayFrames.calls).toEqual([]);
+    expect(replayExtractor.calls).toEqual([]);
+  });
+
+  it("rejects extractor output with an undeclared provider payload", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000218");
+    const canonicalId = decodeCanonicalId("7520000000000000218");
+    const importRepository = await makeTranscribedImport(importId, canonicalId);
+    const calls: unknown[] = [];
+    const validEvidence = Schema.decodeUnknownSync(VisualEvidence)({
+      cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
+      model: "fixture-vision-v1",
+      observations: [],
+      outcome: "empty",
+      provider: "deterministic_fake",
+      usage: { inputBytes: 9, inputFrames: 2, modelCalls: 1 },
+    });
+    const extractor: VisualEvidenceExtractorShape = {
+      extract: (input) =>
+        Effect.sync(() => {
+          calls.push(input);
+          return { ...validEvidence, providerBody: "must-not-cross-boundary" };
+        }),
+    };
+
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor,
+          frameSampler: makeFrameFixture().service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository: makeD1VisualEvidenceRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "VisualEvidencePipelineFailure",
+      code: "visual_extraction_failed",
+    });
+    expect(calls).toHaveLength(1);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT failure_code, state FROM import_visual_evidence
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      failure_code: "visual_extraction_failed",
+      state: "failed",
+    });
+  });
+
+  it.each([
+    ["empty", "visual_evidence_empty"],
+    ["low_confidence", "visual_evidence_low_confidence"],
+  ] as const)(
+    "keeps %s evidence explicit in the public lifecycle",
+    async (outcome, expectedStatus) => {
+      const suffix = outcome === "empty" ? "214" : "215";
+      const importId = decodeImportId(
+        `018f47ad-91aa-7c35-b6fe-000000000${suffix}`
+      );
+      const canonicalId = decodeCanonicalId(`7520000000000000${suffix}`);
+      const importRepository = await makeTranscribedImport(
+        importId,
+        canonicalId
+      );
+      const result = await Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: makeVisualFixture(outcome).service,
+          frameSampler: makeFrameFixture().service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualRepository: makeD1VisualEvidenceRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      );
+
+      expect(result.outcome).toBe(outcome);
+      expect(
+        Option.getOrThrow(
+          await Effect.runPromise(importRepository.findById(importId))
+        ).view.status
+      ).toEqual({ kind: expectedStatus });
+    }
+  );
+});

@@ -87,7 +87,8 @@ const sha256Bytes = (hex: string) => {
   return bytes.buffer;
 };
 
-const readTranscriptDocument = (
+/** Re-verify private normalized transcript evidence before downstream use. */
+export const readVerifiedTranscriptEvidence = (
   bucket: AcquisitionBucketLike,
   expected: {
     readonly dispatchId: string;
@@ -190,7 +191,7 @@ const storeTranscriptDocument = (
           sha256: sha256Bytes(sha256),
         }),
     }).pipe(Effect.exit);
-    const verified = yield* readTranscriptDocument(bucket, {
+    const verified = yield* readVerifiedTranscriptEvidence(bucket, {
       dispatchId: document.dispatchId,
       generation: document.acquisitionGeneration,
       importId: document.importId,
@@ -279,7 +280,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       return yield* Effect.fail(pipelineFailure("outcome_unknown"));
     }
     if (claim._tag === "ResumeDispatch") {
-      const recovered = yield* readTranscriptDocument(input.bucket, {
+      const recovered = yield* readVerifiedTranscriptEvidence(input.bucket, {
         dispatchId,
         generation: evidence.generation,
         importId: input.importId,

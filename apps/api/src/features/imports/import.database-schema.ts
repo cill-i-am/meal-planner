@@ -278,3 +278,134 @@ export const importTranscriptions = sqliteTable(
     ),
   ]
 );
+
+export const importVisualEvidence = sqliteTable(
+  "import_visual_evidence",
+  {
+    acquisitionGeneration: integer("acquisition_generation").notNull(),
+    completedAt: text("completed_at"),
+    costCertainty: text("cost_certainty", { enum: ["estimated", "known"] }),
+    costCurrency: text("cost_currency", { enum: ["USD"] }),
+    createdAt: text("created_at").notNull(),
+    dispatchId: text("dispatch_id").notNull(),
+    estimatedCostMicroUsd: integer("estimated_cost_micro_usd"),
+    failureCode: text("failure_code", {
+      enum: [
+        "frame_evidence_failed",
+        "frame_sampling_failed",
+        "outcome_unknown",
+        "source_evidence_invalid",
+        "visual_evidence_failed",
+        "visual_extraction_failed",
+      ],
+    }),
+    importId: text("import_id").notNull(),
+    inputBytes: integer("input_bytes"),
+    inputFrames: integer("input_frames"),
+    manifestKey: text("manifest_key"),
+    manifestSha256: text("manifest_sha256"),
+    model: text("model"),
+    modelCalls: integer("model_calls"),
+    observationsCount: integer("observations_count"),
+    outcome: text("outcome", {
+      enum: ["empty", "found", "low_confidence"],
+    }),
+    provider: text("provider"),
+    sourceMediaSha256: text("source_media_sha256").notNull(),
+    state: text("state", {
+      enum: ["completed", "dispatching", "failed"],
+    }).notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.importId, table.acquisitionGeneration] }),
+    foreignKey({
+      columns: [table.importId, table.acquisitionGeneration],
+      foreignColumns: [recipeImports.id, recipeImports.acquisitionGeneration],
+      name: "import_visual_evidence_import_generation_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    uniqueIndex("import_visual_evidence_dispatch_id_unique").on(
+      table.dispatchId
+    ),
+    index("import_visual_evidence_state_updated_index").on(
+      table.state,
+      table.updatedAt
+    ),
+    check(
+      "import_visual_evidence_generation_check",
+      sql`typeof(${table.acquisitionGeneration}) = 'integer' AND ${table.acquisitionGeneration} >= 0 AND ${table.acquisitionGeneration} <= 9007199254740991`
+    ),
+    check(
+      "import_visual_evidence_dispatch_id_check",
+      sql`length(${table.dispatchId}) BETWEEN 1 AND 100`
+    ),
+    check(
+      "import_visual_evidence_source_sha_check",
+      sql`length(${table.sourceMediaSha256}) = 64 AND ${table.sourceMediaSha256} NOT GLOB '*[^0-9a-f]*'`
+    ),
+    check(
+      "import_visual_evidence_state_check",
+      sql`(
+        ${table.state} = 'dispatching'
+        AND ${table.outcome} IS NULL
+        AND ${table.manifestKey} IS NULL
+        AND ${table.manifestSha256} IS NULL
+        AND ${table.provider} IS NULL
+        AND ${table.model} IS NULL
+        AND ${table.inputFrames} IS NULL
+        AND ${table.inputBytes} IS NULL
+        AND ${table.modelCalls} IS NULL
+        AND ${table.estimatedCostMicroUsd} IS NULL
+        AND ${table.costCurrency} IS NULL
+        AND ${table.costCertainty} IS NULL
+        AND ${table.observationsCount} IS NULL
+        AND ${table.failureCode} IS NULL
+        AND ${table.completedAt} IS NULL
+      ) OR (
+        ${table.state} = 'completed'
+        AND ${table.outcome} IN ('empty', 'found', 'low_confidence')
+        AND ${table.manifestKey} IS NOT NULL
+        AND length(${table.manifestSha256}) = 64
+        AND ${table.manifestSha256} NOT GLOB '*[^0-9a-f]*'
+        AND length(${table.provider}) BETWEEN 1 AND 64
+        AND length(${table.model}) BETWEEN 1 AND 64
+        AND typeof(${table.inputFrames}) = 'integer'
+        AND ${table.inputFrames} BETWEEN 1 AND 12
+        AND typeof(${table.inputBytes}) = 'integer'
+        AND ${table.inputBytes} > 0
+        AND typeof(${table.modelCalls}) = 'integer'
+        AND ${table.modelCalls} = 1
+        AND typeof(${table.estimatedCostMicroUsd}) = 'integer'
+        AND ${table.estimatedCostMicroUsd} >= 0
+        AND ${table.costCurrency} = 'USD'
+        AND ${table.costCertainty} IN ('estimated', 'known')
+        AND typeof(${table.observationsCount}) = 'integer'
+        AND ${table.observationsCount} >= 0
+        AND ${table.failureCode} IS NULL
+        AND ${table.completedAt} IS NOT NULL
+      ) OR (
+        ${table.state} = 'failed'
+        AND ${table.outcome} IS NULL
+        AND ${table.manifestKey} IS NULL
+        AND ${table.manifestSha256} IS NULL
+        AND ${table.provider} IS NULL
+        AND ${table.model} IS NULL
+        AND ${table.inputFrames} IS NULL
+        AND ${table.inputBytes} IS NULL
+        AND ${table.modelCalls} IS NULL
+        AND ${table.estimatedCostMicroUsd} IS NULL
+        AND ${table.costCurrency} IS NULL
+        AND ${table.costCertainty} IS NULL
+        AND ${table.observationsCount} IS NULL
+        AND ${table.failureCode} IN (
+          'frame_evidence_failed', 'frame_sampling_failed', 'outcome_unknown',
+          'source_evidence_invalid', 'visual_evidence_failed',
+          'visual_extraction_failed'
+        )
+        AND ${table.completedAt} IS NOT NULL
+      )`
+    ),
+  ]
+);
