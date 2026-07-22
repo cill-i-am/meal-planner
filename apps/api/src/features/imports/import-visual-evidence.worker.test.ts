@@ -15,15 +15,11 @@ import {
   mediaObjectKey,
 } from "./import-media.model.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
-import {
-  makeD1RecipeDraftRepository,
-  type RecipeDraft,
-} from "./import-recipe-draft.repository.d1.js";
+import type { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
+import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
-import {
-  RecipeExtraction,
-  type RecipeEvidenceAssembly,
-} from "./import-recipe-extractor.js";
+import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
+import { RecipeExtraction } from "./import-recipe-extractor.js";
 import {
   makeDeterministicSpeechAudioExtractor,
   makeDeterministicSpeechTranscriber,
@@ -120,6 +116,12 @@ const fixtureHash = (value: string) =>
     .join("")
     .padEnd(64, "0")
     .slice(0, 64);
+
+const makeRecipeExtractorDescriptor = (version: "schema-1" | "schema-2") => ({
+  model: "fixture-recipe-v1",
+  provider: "deterministic_fake",
+  version,
+});
 
 const acquisitionBucket = (): AcquisitionBucketLike => ({
   get: (key) => testEnv.ImportEvidenceBucket.get(key),
@@ -1221,11 +1223,6 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     const extraction = Schema.decodeUnknownSync(RecipeExtraction)(
       makeRecipeFixture(assembly, canonicalId)
     );
-    const descriptor = (version: "schema-1" | "schema-2") => ({
-      model: "fixture-recipe-v1",
-      provider: "deterministic_fake",
-      version,
-    });
     const fingerprint = (version: "schema-1" | "schema-2") =>
       fixtureHash(`recipe-overlap-${version}`);
     const draft = (version: "schema-1" | "schema-2"): RecipeDraft => ({
@@ -1233,7 +1230,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
       evidenceFingerprint,
       extraction,
       extractionFingerprint: fingerprint(version),
-      extractor: descriptor(version),
+      extractor: makeRecipeExtractorDescriptor(version),
       generation,
       importId,
       lifecycle: "needs_review",
@@ -1241,7 +1238,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     });
     const claim = (version: "schema-1" | "schema-2") =>
       recipeRepository.claim({
-        descriptor: descriptor(version),
+        descriptor: makeRecipeExtractorDescriptor(version),
         evidenceFingerprint,
         extractionFingerprint: fingerprint(version),
         generation,
