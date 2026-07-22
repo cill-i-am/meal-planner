@@ -52,7 +52,7 @@ const MealPlannerWorkerRoutes = HttpRouter.addAll([
 /** Effect-native Cloudflare host for health and authenticated recipe imports. */
 export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   "MealPlannerApi",
-  { main: import.meta.url },
+  { main: import.meta.url, url: false },
   Effect.gen(function* MealPlannerApiWorker() {
     const queryDatabase =
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);

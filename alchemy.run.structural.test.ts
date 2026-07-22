@@ -17,11 +17,14 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(source).toContain("state: Cloudflare.state()");
   });
 
-  it("keeps the Worker identity stable and preserves its optional URL output", () => {
+  it("keeps the Worker identity stable, private, and preserves its optional URL output", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
 
     expect(workerSource).toContain('"MealPlannerApi"');
+    expect(workerSource).toMatch(
+      /Cloudflare\.Worker<MealPlannerApi>\(\)\(\s*"MealPlannerApi",\s*\{\s*main: import\.meta\.url,\s*url: false\s*\}/u
+    );
     expect(workerSource).toContain("HealthRoutes");
     expect(workerSource).toContain("ImportRouteDefinitions");
     expect(stackSource).toContain("apiUrl: api.url");
