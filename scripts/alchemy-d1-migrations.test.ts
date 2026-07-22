@@ -113,6 +113,47 @@ const migrationLedgerStatement = (
 ): string =>
   `INSERT INTO d1_migrations (id, name, applied_at) VALUES ('${(index + 1).toString().padStart(5, "0")}', '${migration.id}', datetime('now'));`;
 
+const executeAtomically = (
+  database: DatabaseSync,
+  statements: readonly string[]
+): void => {
+  database.exec("BEGIN IMMEDIATE;");
+  try {
+    for (const statement of statements) {
+      database.exec(statement);
+    }
+    database.exec("COMMIT;");
+  } catch (error) {
+    database.exec("ROLLBACK;");
+    throw error;
+  }
+};
+
+const splitD1SqlBatch = (sql: string): readonly string[] =>
+  sql
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0)
+    .map((statement) => `${statement};`);
+
+const seedMigrationHistory = (
+  database: DatabaseSync,
+  migrations: readonly MigrationFile[]
+): void => {
+  database.exec(`CREATE TABLE d1_migrations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    applied_at TEXT NOT NULL
+  );`);
+  for (const [index, migration] of migrations.entries()) {
+    executeAtomically(database, [
+      ...splitMigrationStatements(migration.sql),
+      migrationLedgerStatement(migration, index),
+    ]);
+  }
+  database.exec("PRAGMA foreign_keys=ON;");
+};
+
 const runApplyMigrations = async (
   modules: LoadedAlchemyD1Modules,
   migrationsFiles: readonly MigrationFile[],
@@ -151,8 +192,48 @@ const successfulD1Response = (
     })
   );
 
+const makeSemanticD1Client = (
+  database: DatabaseSync,
+  requestBodies: D1QueryBody[]
+): HttpClient.HttpClient =>
+  HttpClient.make((request) =>
+    Effect.sync(() => {
+      const body = decodeRequestBody(request.body);
+      requestBodies.push(body);
+
+      if (body.batch !== undefined) {
+        executeAtomically(
+          database,
+          body.batch.map(({ sql }) => sql)
+        );
+        return successfulD1Response(request);
+      }
+      if (body.sql === undefined) {
+        throw new TypeError("Expected a D1 sql query");
+      }
+
+      const isRead =
+        !body.sql.includes("INSERT INTO d1_migrations") &&
+        /^\s*(?:PRAGMA|SELECT)\b/iu.test(body.sql);
+      const results = isRead
+        ? database.prepare(body.sql).all()
+        : (executeAtomically(database, splitD1SqlBatch(body.sql)), []);
+      return successfulD1Response(request, results);
+    })
+  );
+
+const isMigrationRequest = (body: D1QueryBody): boolean =>
+  body.sql?.includes("INSERT INTO d1_migrations") === true ||
+  body.batch?.some(({ sql }) => sql.includes("INSERT INTO d1_migrations")) ===
+    true;
+
+const migrationHistory = (database: DatabaseSync) =>
+  database
+    .prepare("SELECT id, name FROM d1_migrations ORDER BY id;")
+    .all();
+
 describe("Alchemy D1 migration reconciliation", () => {
-  it("submits every checked-in migration as one complete D1 query", async () => {
+  it("submits every checked-in migration as one atomic D1 statement batch", async () => {
     const modules = await loadAlchemyD1Modules();
     const migrationsFiles = await loadCheckedInMigrations();
     const requestBodies: D1QueryBody[] = [];
@@ -163,83 +244,38 @@ describe("Alchemy D1 migration reconciliation", () => {
 
     await runApplyMigrations(modules, migrationsFiles, client);
 
-    const migrationRequests = requestBodies.filter((body) =>
-      body.sql?.includes("INSERT INTO d1_migrations")
-    );
+    const migrationRequests = requestBodies.filter(isMigrationRequest);
     expect(migrationRequests).toHaveLength(migrationsFiles.length);
 
     for (const [index, migration] of migrationsFiles.entries()) {
       const request = migrationRequests[index];
-      const expectedSql = [
+      const expectedBatch = [
         ...splitMigrationStatements(migration.sql),
         migrationLedgerStatement(migration, index),
-      ].join("\n");
+      ].map((sql) => ({ sql }));
 
-      expect(request?.batch).toBeUndefined();
-      expect(request?.sql).toBe(expectedSql);
-      expect(request?.sql).not.toContain("--> statement-breakpoint");
+      expect(request?.sql).toBeUndefined();
+      expect(request?.batch).toEqual(expectedBatch);
+      expect(request?.batch).not.toContainEqual({
+        sql: expect.stringContaining("--> statement-breakpoint"),
+      });
     }
   });
 
-  it("resumes a partially applied migration series without skipped or duplicate history", async () => {
+  it("applies the trigger migration from 0000/0001 history without skipping or duplicating the ledger", async () => {
     const modules = await loadAlchemyD1Modules();
-    const migrationsFiles = await loadCheckedInMigrations();
-    const [firstMigration] = migrationsFiles;
-    expect(firstMigration).toBeDefined();
-    if (firstMigration === undefined) {
-      return;
+    const migrationsFiles = (await loadCheckedInMigrations()).slice(0, 3);
+    const [initialMigration, acquisitionMigration] = migrationsFiles;
+    if (initialMigration === undefined || acquisitionMigration === undefined) {
+      throw new Error("Expected the 0000 and 0001 migrations");
     }
 
     const database = new DatabaseSync(":memory:");
     try {
-      database.exec(`CREATE TABLE d1_migrations (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        applied_at TEXT NOT NULL
-      );`);
-      database.exec(splitMigrationStatements(firstMigration.sql).join("\n"));
-      database
-        .prepare(
-          "INSERT INTO d1_migrations (id, name, applied_at) VALUES (?, ?, datetime('now'));"
-        )
-        .run("00001", firstMigration.id);
+      seedMigrationHistory(database, [initialMigration, acquisitionMigration]);
 
       const requestBodies: D1QueryBody[] = [];
-      const client = HttpClient.make((request) => {
-        const body = decodeRequestBody(request.body);
-        requestBodies.push(body);
-
-        if (body.batch !== undefined) {
-          return Effect.succeed(
-            HttpClientResponse.fromWeb(
-              request,
-              Response.json(
-                {
-                  errors: [
-                    { code: 7500, message: "incomplete input: SQLITE_ERROR" },
-                  ],
-                  messages: [],
-                  result: null,
-                  success: false,
-                },
-                { status: 400 }
-              )
-            )
-          );
-        }
-
-        if (body.sql === undefined) {
-          throw new TypeError("Expected a D1 sql query");
-        }
-
-        const isRead =
-          !body.sql.includes("INSERT INTO d1_migrations") &&
-          /^\s*(?:PRAGMA|SELECT)\b/iu.test(body.sql);
-        const results = isRead
-          ? database.prepare(body.sql).all()
-          : (database.exec(body.sql), []);
-        return Effect.succeed(successfulD1Response(request, results));
-      });
+      const client = makeSemanticD1Client(database, requestBodies);
 
       await runApplyMigrations(modules, migrationsFiles, client);
 
@@ -247,30 +283,131 @@ describe("Alchemy D1 migration reconciliation", () => {
         id: (index + 1).toString().padStart(5, "0"),
         name: migration.id,
       }));
-      const history = database
-        .prepare("SELECT id, name FROM d1_migrations ORDER BY id;")
-        .all();
+      const history = migrationHistory(database);
       expect(history).toEqual(expectedHistory);
       expect(new Set(history.map(({ name }) => name)).size).toBe(
         migrationsFiles.length
       );
 
-      const firstRunMigrationRequestCount = requestBodies.filter((body) =>
-        body.sql?.includes("INSERT INTO d1_migrations")
-      ).length;
-      expect(firstRunMigrationRequestCount).toBe(migrationsFiles.length - 1);
+      const importId = "018f47ad-91aa-7c35-b6fe-000000000117";
+      const evidence = JSON.stringify([
+        {
+          kind: "original_media",
+          referenceId: `imports/${importId}/acquisition/v1/generations/0/original.mp4`,
+        },
+        {
+          kind: "acquisition_manifest",
+          referenceId: `imports/${importId}/acquisition/v1/generations/0/manifest.json`,
+        },
+      ]);
+      database
+        .prepare(
+          `INSERT INTO recipe_imports (
+            acquisition_generation, canonical_source_id,
+            compatibility_fingerprint, created_at, evidence_references_json,
+            id, source_kind, status, updated_at
+          ) VALUES (0, ?, ?, ?, ?, ?, 'tiktok', 'acquired', ?);`
+        )
+        .run(
+          "7520000000000000117",
+          "compatibility-fingerprint",
+          "2026-07-22T10:00:00.000Z",
+          evidence,
+          importId,
+          "2026-07-22T10:00:00.000Z"
+        );
+      database
+        .prepare(
+          `INSERT INTO import_transcriptions (
+            import_id, acquisition_generation, dispatch_id,
+            source_media_sha256, state, created_at, updated_at
+          ) VALUES (?, 0, ?, ?, 'dispatching', ?, ?);`
+        )
+        .run(
+          importId,
+          "dispatch-117",
+          "a".repeat(64),
+          "2026-07-22T10:01:00.000Z",
+          "2026-07-22T10:01:00.000Z"
+        );
+      expect(
+        database
+          .prepare("SELECT status FROM recipe_imports WHERE id = ?;")
+          .get(importId)
+      ).toEqual({ status: "transcribing" });
+      expect(() =>
+        database
+          .prepare(
+            "UPDATE import_transcriptions SET dispatch_id = ? WHERE import_id = ?;"
+          )
+          .run("changed-dispatch", importId)
+      ).toThrow("import transcription identity is immutable");
+
+      const firstRunMigrationRequestCount =
+        requestBodies.filter(isMigrationRequest).length;
+      expect(firstRunMigrationRequestCount).toBe(1);
 
       await runApplyMigrations(modules, migrationsFiles, client);
 
-      const totalMigrationRequestCount = requestBodies.filter((body) =>
-        body.sql?.includes("INSERT INTO d1_migrations")
-      ).length;
+      const totalMigrationRequestCount =
+        requestBodies.filter(isMigrationRequest).length;
       expect(totalMigrationRequestCount).toBe(firstRunMigrationRequestCount);
+      expect(migrationHistory(database)).toEqual(expectedHistory);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("does not record a migration when an adversarial statement fails", async () => {
+    const modules = await loadAlchemyD1Modules();
+    const migrationsFiles = (await loadCheckedInMigrations()).slice(0, 3);
+    const [initialMigration, acquisitionMigration, speechMigration] =
+      migrationsFiles;
+    if (
+      initialMigration === undefined ||
+      acquisitionMigration === undefined ||
+      speechMigration === undefined
+    ) {
+      throw new Error("Expected the 0000 through 0002 migrations");
+    }
+
+    const database = new DatabaseSync(":memory:");
+    try {
+      seedMigrationHistory(database, [initialMigration, acquisitionMigration]);
+      const requestBodies: D1QueryBody[] = [];
+      const client = makeSemanticD1Client(database, requestBodies);
+      const failingMigration = {
+        ...speechMigration,
+        sql: `${speechMigration.sql}\n--> statement-breakpoint\nTHIS IS NOT VALID SQL;`,
+      };
+
+      await expect(
+        runApplyMigrations(
+          modules,
+          [initialMigration, acquisitionMigration, failingMigration],
+          client
+        )
+      ).rejects.toThrow();
+
+      expect(migrationHistory(database)).toEqual([
+        { id: "00001", name: initialMigration.id },
+        { id: "00002", name: acquisitionMigration.id },
+      ]);
       expect(
         database
-          .prepare("SELECT id, name FROM d1_migrations ORDER BY id;")
-          .all()
-      ).toEqual(expectedHistory);
+          .prepare(
+            "SELECT count(*) AS count FROM sqlite_master WHERE name = 'import_transcriptions';"
+          )
+          .get()
+      ).toEqual({ count: 0 });
+
+      await runApplyMigrations(modules, migrationsFiles, client);
+      expect(migrationHistory(database)).toEqual(
+        migrationsFiles.map((migration, index) => ({
+          id: (index + 1).toString().padStart(5, "0"),
+          name: migration.id,
+        }))
+      );
     } finally {
       database.close();
     }
