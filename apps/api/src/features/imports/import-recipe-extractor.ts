@@ -1,4 +1,5 @@
-import { Context, Effect, Schema } from "effect";
+import { Context, Schema } from "effect";
+import type { Effect } from "effect";
 
 import type { AcquisitionGeneration } from "./import-media.model.js";
 import type { ImportId } from "./import.contracts.js";

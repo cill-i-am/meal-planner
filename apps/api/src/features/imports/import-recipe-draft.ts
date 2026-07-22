@@ -1,9 +1,7 @@
 import { DateTime, Effect, Option, Schema } from "effect";
 
-import {
-  readVerifiedAcquisitionEvidence,
-  type AcquisitionBucketLike,
-} from "./import-media-acquirer.js";
+import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
+import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import type { VerifiedAcquisitionEvidence } from "./import-media.model.js";
 import type {
   RecipeDraftRepositoryShape,
@@ -49,7 +47,7 @@ const sha256Text = (value: string) =>
   ).pipe(Effect.map(bytesToHex));
 
 const sourceEvidenceItems = (evidence: VerifiedAcquisitionEvidence) => {
-  const source = evidence.source;
+  const { source } = evidence;
   if (source === undefined) {
     return null;
   }
@@ -192,6 +190,11 @@ const expectedUnresolvedFields = (extraction: RecipeExtraction) => {
 const supportedStringValue = (fact: RecipeStringFact) =>
   fact.state === "supported" ? fact.value : null;
 
+const cites = (fact: RecipeStringFact, evidenceId: string | undefined) =>
+  fact.state === "supported" &&
+  evidenceId !== undefined &&
+  fact.citations.some((citation) => citation.evidenceId === evidenceId);
+
 const extractionIsGrounded = (
   extraction: RecipeExtraction,
   assembly: RecipeEvidenceAssembly,
@@ -235,10 +238,6 @@ const extractionIsGrounded = (
   const creatorEvidence = assembly.items.find(
     (item) => item.kind === "creator"
   );
-  const cites = (fact: RecipeStringFact, evidenceId: string | undefined) =>
-    fact.state === "supported" &&
-    evidenceId !== undefined &&
-    fact.citations.some((citation) => citation.evidenceId === evidenceId);
   const unresolved = extraction.unresolvedFields;
   const requiredUnresolved = [
     ...expectedUnresolvedFields(extraction),
@@ -354,31 +353,31 @@ export const produceRecipeDraftForImport = Effect.fn(
 
   const raw = yield* input.extractor.extract(assembly).pipe(
     Effect.mapError((failure) => pipelineFailure(failure.code)),
-    Effect.catch((failure) =>
-      failure.code === "outcome_unknown"
-        ? Effect.fail(failure)
+    Effect.catch((error) =>
+      error.code === "outcome_unknown"
+        ? Effect.fail(error)
         : input.recipeRepository
             .fail({
               completedAt: now,
               extractionFingerprint,
               failureCode:
-                failure.code === "model_refusal"
+                error.code === "model_refusal"
                   ? "model_refusal"
                   : "provider_error",
             })
-            .pipe(Effect.andThen(Effect.fail(failure)))
+            .pipe(Effect.andThen(Effect.fail(error)))
     )
   );
   const extraction = yield* decodeRecipeExtraction(raw).pipe(
     Effect.mapError(() => pipelineFailure("invalid_schema")),
-    Effect.catch((failure) =>
+    Effect.catch((error) =>
       input.recipeRepository
         .fail({
           completedAt: now,
           extractionFingerprint,
           failureCode: "invalid_schema",
         })
-        .pipe(Effect.andThen(Effect.fail(failure)))
+        .pipe(Effect.andThen(Effect.fail(error)))
     )
   );
   if (!extractionIsGrounded(extraction, assembly, evidence)) {

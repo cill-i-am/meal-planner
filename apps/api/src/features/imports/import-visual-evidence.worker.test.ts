@@ -300,6 +300,13 @@ const makeVisualFixture = (outcome: "empty" | "found" | "low_confidence") =>
     usage: { inputBytes: 9, inputFrames: 2, modelCalls: 1 },
   });
 
+const unresolvedRecipeFact = (reason: string) => ({
+  citations: [],
+  origin: "unresolved",
+  reason,
+  state: "unresolved",
+});
+
 const makeRecipeFixture = (
   input: RecipeEvidenceAssembly,
   canonicalId: SourceCanonicalId,
@@ -330,12 +337,6 @@ const makeRecipeFixture = (
     state: "supported",
     value,
   });
-  const unresolved = (reason: string) => ({
-    citations: [],
-    origin: "unresolved",
-    reason,
-    state: "unresolved",
-  });
   const transcript = supported(
     "Chop onions.",
     "transcript",
@@ -348,20 +349,20 @@ const makeRecipeFixture = (
   );
   return {
     author: supported("Cook", "creator", "observed"),
-    category: unresolved("not stated"),
+    category: unresolvedRecipeFact("not stated"),
     cookTimeMinutes: supported(20, "visual_observation", "observed"),
     cost: {
       certainty: "known",
       currency: "USD",
       estimatedMicroUsd: 0,
     },
-    cuisine: unresolved("not stated"),
-    description: unresolved("not stated"),
+    cuisine: unresolvedRecipeFact("not stated"),
+    description: unresolvedRecipeFact("not stated"),
     ingredientLines: { items: [transcript], state: "supported" },
     instructions: { items: [transcript, visual], state: "supported" },
     name: supported("Onion bake", "caption", "inferred"),
-    nutrition: unresolved("not stated"),
-    prepTimeMinutes: unresolved("not stated"),
+    nutrition: unresolvedRecipeFact("not stated"),
+    prepTimeMinutes: unresolvedRecipeFact("not stated"),
     sourceUrl: supported(
       `https://www.tiktok.com/@cook/video/${canonicalId}`,
       "source_url",
@@ -370,7 +371,7 @@ const makeRecipeFixture = (
     supportedClaims: { items: [visual], state: "supported" },
     temperatureCelsius: supported(180, "visual_observation", "observed"),
     tools: { items: [], reason: "not stated", state: "unresolved" },
-    totalTimeMinutes: unresolved("not stated"),
+    totalTimeMinutes: unresolvedRecipeFact("not stated"),
     unresolvedFields: [
       "category",
       "cuisine",
@@ -390,7 +391,7 @@ const makeRecipeFixture = (
       modelCalls: 1,
       outputTokens: 50,
     },
-    yield: unresolved("not stated"),
+    yield: unresolvedRecipeFact("not stated"),
   };
 };
 

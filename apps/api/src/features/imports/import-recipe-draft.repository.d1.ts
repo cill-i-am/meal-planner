@@ -261,8 +261,7 @@ export const makeD1RecipeDraftRepository = (
       const encodedDraft = JSON.stringify(
         Schema.encodeSync(RecipeDraft)(draft)
       );
-      const usage = draft.extraction.usage;
-      const cost = draft.extraction.cost;
+      const { cost, usage } = draft.extraction;
       const raw = yield* persistenceEffect(() =>
         binding.batch([
           binding

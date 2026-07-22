@@ -62,6 +62,9 @@ const DatabaseImportRow = Schema.Struct({
   createdAt: Schema.String,
   evidenceReferencesJson: Schema.String,
   id: Schema.String,
+  recipeDraftFingerprint: NullableString,
+  recipeDraftState: NullableString,
+  recipeDraftUpdatedAt: NullableString,
   recoveryAction: NullableString,
   sourceKind: Schema.Literal("tiktok"),
   status: Schema.Literals([
@@ -75,9 +78,6 @@ const DatabaseImportRow = Schema.Struct({
   ]),
   statusCode: NullableString,
   updatedAt: Schema.String,
-  recipeDraftFingerprint: NullableString,
-  recipeDraftState: NullableString,
-  recipeDraftUpdatedAt: NullableString,
   visualFailureCode: NullableString,
   visualManifestKey: NullableString,
   visualOutcome: NullableString,
@@ -97,11 +97,6 @@ const importSelection = {
   createdAt: recipeImports.createdAt,
   evidenceReferencesJson: recipeImports.evidenceReferencesJson,
   id: recipeImports.id,
-  recoveryAction: recipeImports.recoveryAction,
-  sourceKind: recipeImports.sourceKind,
-  status: recipeImports.status,
-  statusCode: recipeImports.statusCode,
-  updatedAt: recipeImports.updatedAt,
   recipeDraftFingerprint: sql<
     string | null
   >`${importRecipeExtractions.extractionFingerprint}`.as(
@@ -113,6 +108,11 @@ const importSelection = {
   recipeDraftUpdatedAt: sql<
     string | null
   >`${importRecipeExtractions.updatedAt}`.as("recipe_draft_updated_at"),
+  recoveryAction: recipeImports.recoveryAction,
+  sourceKind: recipeImports.sourceKind,
+  status: recipeImports.status,
+  statusCode: recipeImports.statusCode,
+  updatedAt: recipeImports.updatedAt,
   visualFailureCode: importVisualEvidence.failureCode,
   visualManifestKey: importVisualEvidence.manifestKey,
   visualOutcome: importVisualEvidence.outcome,
@@ -294,6 +294,43 @@ const decodeVisualProjection = (
   throw new Error("Invalid persisted visual evidence state");
 };
 
+const decodeRecipeProjection = (
+  row: DatabaseImportRow,
+  visualProjection: ReturnType<typeof decodeVisualProjection>
+) => {
+  if (
+    row.recipeDraftState === null &&
+    row.recipeDraftFingerprint === null &&
+    row.recipeDraftUpdatedAt === null
+  ) {
+    return visualProjection;
+  }
+  if (
+    row.recipeDraftState === "needs_review" &&
+    row.recipeDraftFingerprint !== null &&
+    row.recipeDraftUpdatedAt !== null &&
+    visualProjection.evidence.length === 4 &&
+    [
+      "visual_evidence_empty",
+      "visual_evidence_found",
+      "visual_evidence_low_confidence",
+    ].includes(visualProjection.status.kind)
+  ) {
+    return {
+      evidence: [
+        ...visualProjection.evidence,
+        {
+          kind: "recipe_draft" as const,
+          referenceId: `recipe-drafts/${row.recipeDraftFingerprint}`,
+        },
+      ],
+      status: { kind: "needs_review" as const },
+      updatedAt: row.recipeDraftUpdatedAt,
+    };
+  }
+  throw new Error("Invalid persisted recipe draft state");
+};
+
 const decodeStoredImport = (input: unknown) =>
   Effect.try({
     catch: importPersistenceCorrupt,
@@ -306,34 +343,7 @@ const decodeStoredImport = (input: unknown) =>
         Schema.Array(EvidenceReference)
       )(JSON.parse(row.evidenceReferencesJson));
       const visualProjection = decodeVisualProjection(row, baseEvidence);
-      const projection =
-        row.recipeDraftState === null &&
-        row.recipeDraftFingerprint === null &&
-        row.recipeDraftUpdatedAt === null
-          ? visualProjection
-          : row.recipeDraftState === "needs_review" &&
-              row.recipeDraftFingerprint !== null &&
-              row.recipeDraftUpdatedAt !== null &&
-              visualProjection.evidence.length === 4 &&
-              [
-                "visual_evidence_empty",
-                "visual_evidence_found",
-                "visual_evidence_low_confidence",
-              ].includes(visualProjection.status.kind)
-            ? {
-                evidence: [
-                  ...visualProjection.evidence,
-                  {
-                    kind: "recipe_draft" as const,
-                    referenceId: `recipe-drafts/${row.recipeDraftFingerprint}`,
-                  },
-                ],
-                status: { kind: "needs_review" as const },
-                updatedAt: row.recipeDraftUpdatedAt,
-              }
-            : (() => {
-                throw new Error("Invalid persisted recipe draft state");
-              })();
+      const projection = decodeRecipeProjection(row, visualProjection);
       return {
         acquisitionGeneration: row.acquisitionGeneration,
         canonicalSourceId,
