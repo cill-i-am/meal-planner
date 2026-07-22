@@ -184,7 +184,7 @@ describe("Alchemy D1 migration reconciliation", () => {
   it("resumes a partially applied migration series without skipped or duplicate history", async () => {
     const modules = await loadAlchemyD1Modules();
     const migrationsFiles = await loadCheckedInMigrations();
-    const firstMigration = migrationsFiles[0];
+    const [firstMigration] = migrationsFiles;
     expect(firstMigration).toBeDefined();
     if (firstMigration === undefined) {
       return;
