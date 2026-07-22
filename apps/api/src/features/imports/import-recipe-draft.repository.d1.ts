@@ -289,12 +289,12 @@ export const makeD1RecipeDraftRepository = (
             ),
           binding
             .prepare(
-              `UPDATE import_recipe_extractions
+              `UPDATE import_recipe_extractions AS current
                   SET is_current = 0
                 WHERE import_id = ? AND acquisition_generation = ?
                   AND is_current = 1
-                  AND EXISTS (
-                    SELECT 1 FROM import_recipe_extractions AS target
+                  AND current.rowid < (
+                    SELECT target.rowid FROM import_recipe_extractions AS target
                      WHERE target.extraction_fingerprint = ?
                        AND target.state = 'needs_review'
                   )`
@@ -306,10 +306,17 @@ export const makeD1RecipeDraftRepository = (
             ),
           binding
             .prepare(
-              `UPDATE import_recipe_extractions
+              `UPDATE import_recipe_extractions AS target
                   SET is_current = 1
                 WHERE extraction_fingerprint = ? AND import_id = ?
-                  AND acquisition_generation = ? AND state = 'needs_review'`
+                  AND acquisition_generation = ? AND state = 'needs_review'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM import_recipe_extractions AS newer
+                     WHERE newer.import_id = target.import_id
+                       AND newer.acquisition_generation = target.acquisition_generation
+                       AND newer.is_current = 1
+                       AND newer.rowid > target.rowid
+                  )`
             )
             .bind(
               draft.extractionFingerprint,

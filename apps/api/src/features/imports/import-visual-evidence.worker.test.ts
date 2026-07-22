@@ -15,9 +15,15 @@ import {
   mediaObjectKey,
 } from "./import-media.model.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
-import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import {
+  makeD1RecipeDraftRepository,
+  type RecipeDraft,
+} from "./import-recipe-draft.repository.d1.js";
 import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
-import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
+import {
+  RecipeExtraction,
+  type RecipeEvidenceAssembly,
+} from "./import-recipe-extractor.js";
 import {
   makeDeterministicSpeechAudioExtractor,
   makeDeterministicSpeechTranscriber,
@@ -1147,6 +1153,140 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     ).toEqual({
       kind: "recipe_draft",
       referenceId: `recipe-drafts/${updatedDraft.extractionFingerprint}`,
+    });
+  });
+
+  it("keeps the newer extraction current when an older version completes late", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000236");
+    const canonicalId = decodeCanonicalId("7520000000000000236");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const recipeRepository = makeD1RecipeDraftRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const completedAt = decodeTimestamp("2026-07-21T10:03:00.000Z");
+    const evidenceFingerprint = fixtureHash("recipe-overlap-evidence");
+    const evidenceHashes = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT transcript.transcript_sha256, visual.manifest_sha256
+         FROM import_transcriptions AS transcript
+         JOIN import_visual_evidence AS visual
+           ON visual.import_id = transcript.import_id
+          AND visual.acquisition_generation = transcript.acquisition_generation
+        WHERE transcript.import_id = ?
+          AND transcript.acquisition_generation = ?`
+    )
+      .bind(importId, generation)
+      .first<{
+        manifest_sha256: string;
+        transcript_sha256: string;
+      }>();
+    if (evidenceHashes === null) {
+      throw new Error("Expected landed transcript and visual evidence");
+    }
+
+    const assembly: RecipeEvidenceAssembly = {
+      evidenceFingerprint,
+      generation,
+      importId,
+      items: [
+        {
+          artifactReference: "source",
+          evidenceId: "source:url",
+          kind: "source_url",
+          origin: "observed",
+          value: `https://www.tiktok.com/@cook/video/${canonicalId}`,
+        },
+        {
+          artifactReference: "source",
+          evidenceId: "source:creator",
+          kind: "creator",
+          origin: "observed",
+          value: "Cook",
+        },
+        {
+          artifactReference: "transcript",
+          evidenceId: "transcript:0",
+          kind: "transcript",
+          origin: "creator_provided",
+          value: "Chop onions.",
+        },
+        {
+          artifactReference: "visual",
+          evidenceId: "visual:0",
+          kind: "visual_observation",
+          origin: "observed",
+          value: "Bake at 180 C for 20 minutes",
+        },
+      ],
+    };
+    const extraction = Schema.decodeUnknownSync(RecipeExtraction)(
+      makeRecipeFixture(assembly, canonicalId)
+    );
+    const descriptor = (version: "schema-1" | "schema-2") => ({
+      model: "fixture-recipe-v1",
+      provider: "deterministic_fake",
+      version,
+    });
+    const fingerprint = (version: "schema-1" | "schema-2") =>
+      fixtureHash(`recipe-overlap-${version}`);
+    const draft = (version: "schema-1" | "schema-2"): RecipeDraft => ({
+      createdAt: completedAt,
+      evidenceFingerprint,
+      extraction,
+      extractionFingerprint: fingerprint(version),
+      extractor: descriptor(version),
+      generation,
+      importId,
+      lifecycle: "needs_review",
+      schemaVersion: 1,
+    });
+    const claim = (version: "schema-1" | "schema-2") =>
+      recipeRepository.claim({
+        descriptor: descriptor(version),
+        evidenceFingerprint,
+        extractionFingerprint: fingerprint(version),
+        generation,
+        importId,
+        sourceMediaSha256,
+        startedAt: completedAt,
+        transcriptSha256: evidenceHashes.transcript_sha256,
+        visualManifestSha256: evidenceHashes.manifest_sha256,
+      });
+
+    await expect(Effect.runPromise(claim("schema-1"))).resolves.toEqual({
+      _tag: "DispatchClaimed",
+    });
+    await expect(Effect.runPromise(claim("schema-2"))).resolves.toEqual({
+      _tag: "DispatchClaimed",
+    });
+    await expect(
+      Effect.runPromise(recipeRepository.complete(draft("schema-2")))
+    ).resolves.toMatchObject({ extractor: { version: "schema-2" } });
+    await expect(
+      Effect.runPromise(recipeRepository.complete(draft("schema-1")))
+    ).rejects.toMatchObject({ _tag: "ImportTransitionRejected" });
+
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT extractor_version, is_current, state
+           FROM import_recipe_extractions
+          WHERE import_id = ?
+          ORDER BY extractor_version`
+      )
+        .bind(importId)
+        .all()
+    ).resolves.toMatchObject({
+      results: [
+        { extractor_version: "schema-1", is_current: 0, state: "needs_review" },
+        { extractor_version: "schema-2", is_current: 1, state: "needs_review" },
+      ],
+    });
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(importRepository.findById(importId))
+      ).view.evidence.at(-1)
+    ).toEqual({
+      kind: "recipe_draft",
+      referenceId: `recipe-drafts/${fingerprint("schema-2")}`,
     });
   });
 
