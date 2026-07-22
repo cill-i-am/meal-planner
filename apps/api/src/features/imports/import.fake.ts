@@ -27,9 +27,11 @@ export interface DeterministicImportCall {
 /** Recording fake for the existing ordinary ImportService seam. */
 export const makeDeterministicOrdinaryImportService = (options: {
   readonly attempts: readonly DeterministicImportAttempt[];
+  readonly latencyMilliseconds?: number;
 }): {
   readonly calls: readonly DeterministicImportCall[];
   readonly evidenceWrites: number;
+  readonly maximumActiveCalls: number;
   readonly ordinaryImportsCreated: number;
   readonly service: ImportServiceShape;
 } => {
@@ -38,10 +40,15 @@ export const makeDeterministicOrdinaryImportService = (options: {
   const importsByCanonicalId = new Map<string, ImportView>();
   const importsById = new Map<string, ImportView>();
   const importsByKey = new Map<string, ImportView>();
+  let activeCalls = 0;
   let evidenceWrites = 0;
+  let maximumActiveCalls = 0;
   let ordinaryImportsCreated = 0;
 
-  const create: ImportServiceShape["create"] = (request, idempotencyKey) =>
+  const runAttempt = (
+    request: CreateImportRequest,
+    idempotencyKey: IdempotencyKey
+  ) =>
     Effect.suspend(
       (): Effect.Effect<CreateImportResponse, CreateImportError> => {
         calls.push({ idempotencyKey, request });
@@ -56,17 +63,17 @@ export const makeDeterministicOrdinaryImportService = (options: {
           (attempt, index) =>
             !consumed.has(index) && attempt.idempotencyKey === idempotencyKey
         );
-        const attempt = options.attempts[attemptIndex];
-        if (attemptIndex < 0 || attempt === undefined) {
+        const configuredAttempt = options.attempts[attemptIndex];
+        if (attemptIndex === -1 || configuredAttempt === undefined) {
           return Effect.die(
             "No deterministic ordinary import attempt configured"
           );
         }
         consumed.add(attemptIndex);
-        if (attempt.outcome._tag === "Failure") {
-          return Effect.fail(attempt.outcome.error);
+        if (configuredAttempt.outcome._tag === "Failure") {
+          return Effect.fail(configuredAttempt.outcome.error);
         }
-        const canonicalId = attempt.outcome.import.source.canonicalId;
+        const { canonicalId } = configuredAttempt.outcome.import.source;
         if (canonicalId === undefined) {
           return Effect.die(
             "Deterministic ordinary import is missing a canonical identity"
@@ -80,7 +87,7 @@ export const makeDeterministicOrdinaryImportService = (options: {
             import: canonical,
           });
         }
-        const created = attempt.outcome.import;
+        const created = configuredAttempt.outcome.import;
         importsByCanonicalId.set(canonicalId, created);
         importsById.set(created.id, created);
         importsByKey.set(idempotencyKey, created);
@@ -93,10 +100,27 @@ export const makeDeterministicOrdinaryImportService = (options: {
       }
     );
 
+  const create: ImportServiceShape["create"] = (request, idempotencyKey) =>
+    Effect.sync(() => {
+      activeCalls += 1;
+      maximumActiveCalls = Math.max(maximumActiveCalls, activeCalls);
+    }).pipe(
+      Effect.andThen(Effect.sleep(options.latencyMilliseconds ?? 0)),
+      Effect.andThen(runAttempt(request, idempotencyKey)),
+      Effect.ensuring(
+        Effect.sync(() => {
+          activeCalls -= 1;
+        })
+      )
+    );
+
   return {
     calls,
     get evidenceWrites() {
       return evidenceWrites;
+    },
+    get maximumActiveCalls() {
+      return maximumActiveCalls;
     },
     get ordinaryImportsCreated() {
       return ordinaryImportsCreated;

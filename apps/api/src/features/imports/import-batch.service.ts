@@ -120,6 +120,9 @@ const failureCode = (error: CreateImportError): ImportBatchItemFailureCode => {
     case "WorkflowStartUnavailable": {
       return "workflow_start_unavailable";
     }
+    default: {
+      return error satisfies never;
+    }
   }
 };
 
@@ -198,7 +201,7 @@ export const makeImportBatchService = (
               status: "failed",
             }),
             onSuccess: (response): ImportBatchItemView => {
-              const canonicalId = response.import.source.canonicalId;
+              const { canonicalId } = response.import.source;
               if (canonicalId === undefined) {
                 throw new Error(
                   "Ordinary import succeeded without a canonical identity"
@@ -210,6 +213,7 @@ export const makeImportBatchService = (
                 id: item.view.id,
                 idempotencyKey: item.view.idempotencyKey,
                 importId: response.import.id,
+                importStatus: response.import.status,
                 sourceKind: item.view.sourceKind,
                 status: "succeeded",
               };
@@ -245,15 +249,26 @@ export const makeImportBatchService = (
           });
         }
         const timestamp = options.now();
+        const batchId = options.newBatchId();
+        if (batches.has(batchId)) {
+          throw new Error(
+            "Import batch id generator produced a duplicate identity"
+          );
+        }
         const stored: StoredBatch = {
           createdAt: timestamp,
-          id: options.newBatchId(),
           fingerprint,
+          id: batchId,
           items: new Map(),
           updatedAt: timestamp,
         };
         for (const item of request.items) {
           const itemId = options.newItemId();
+          if (stored.items.has(itemId)) {
+            throw new Error(
+              "Import batch item id generator produced a duplicate identity"
+            );
+          }
           stored.items.set(itemId, {
             request: item,
             view: {

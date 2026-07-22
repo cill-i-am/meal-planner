@@ -4,6 +4,7 @@ import {
   IdempotencyKey,
   ImportDisposition,
   ImportId,
+  ImportStatus,
   ImportTimestamp,
   SourceCanonicalId,
   SourceDescriptor,
@@ -36,10 +37,21 @@ export const ImportBatchItemRequest = Schema.Struct({
 /** One ordinary import request and its retry-stable idempotency identity. */
 export type ImportBatchItemRequest = typeof ImportBatchItemRequest.Type;
 
+const hasUniqueItemIdempotencyKeys = Schema.makeFilter<
+  readonly ImportBatchItemRequest[]
+>(
+  (items) =>
+    new Set(items.map(({ idempotencyKey }) => idempotencyKey)).size ===
+    items.length,
+  { expected: "unique per-item idempotency keys" },
+  true
+);
+
 /** Parsed POST body for creating an import batch. */
 export const CreateImportBatchRequest = Schema.Struct({
   items: Schema.Array(ImportBatchItemRequest).pipe(
-    Schema.check(Schema.isMaxLength(MaximumImportBatchSize))
+    Schema.check(Schema.isMaxLength(MaximumImportBatchSize)),
+    Schema.check(hasUniqueItemIdempotencyKeys)
   ),
 });
 /** Parsed POST body for creating an import batch. */
@@ -65,6 +77,7 @@ const SucceededImportBatchItem = Schema.Struct({
   id: ImportBatchItemId,
   idempotencyKey: IdempotencyKey,
   importId: ImportId,
+  importStatus: ImportStatus,
   sourceKind: Schema.Literal("tiktok"),
   status: Schema.Literal("succeeded"),
 });
@@ -113,12 +126,16 @@ export const ImportBatchStatus = Schema.Literals([
 export type ImportBatchStatus = typeof ImportBatchStatus.Type;
 
 /** Unambiguous counts for every batch item lifecycle state. */
+const ImportBatchCount = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+);
+
 export const ImportBatchCounts = Schema.Struct({
-  failed: Schema.Number,
-  queued: Schema.Number,
-  running: Schema.Number,
-  succeeded: Schema.Number,
-  total: Schema.Number,
+  failed: ImportBatchCount,
+  queued: ImportBatchCount,
+  running: ImportBatchCount,
+  succeeded: ImportBatchCount,
+  total: ImportBatchCount,
 });
 /** Unambiguous counts for every batch item lifecycle state. */
 export type ImportBatchCounts = typeof ImportBatchCounts.Type;

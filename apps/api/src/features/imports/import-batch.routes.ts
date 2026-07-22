@@ -85,6 +85,9 @@ const respondError = (error: BatchRouteError) => {
         "Import batching is temporarily unavailable."
       );
     }
+    default: {
+      return error satisfies never;
+    }
   }
 };
 
