@@ -145,6 +145,21 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(allSource).not.toMatch(/Cloudflare\.Images|Images\.|sharp/iu);
   });
 
+  it("declares isolated import and dead-letter queues without an unsafe consumer", () => {
+    const stackSource = readRepoFile("./alchemy.run.ts");
+    const queueSource = readRepoFile(
+      "./apps/api/src/infrastructure/import-batch-queue.ts"
+    );
+
+    expect(queueSource).toContain('"ImportBatchQueue"');
+    expect(queueSource).toContain('"ImportBatchDeadLetterQueue"');
+    expect(queueSource).toContain("makeCloudflareImportBatchQueue");
+    expect(queueSource).not.toContain("Consumer(");
+    expect(queueSource).not.toContain("consumeQueueMessages");
+    expect(stackSource).toContain("importBatchQueueName");
+    expect(stackSource).toContain("importBatchDeadLetterQueueName");
+  });
+
   it("keeps Workflow checkpoints generation-fenced and acquisition R2 writes non-destructive", () => {
     const workflowSource = readRepoFile(
       "./apps/api/src/features/imports/import.workflow.ts"

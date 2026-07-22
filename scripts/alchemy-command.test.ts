@@ -1,8 +1,28 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import { runAlchemyCommand } from "./alchemy-command.js";
 
 describe("Alchemy command guard", () => {
+  it("loads NodeNext source imports before planning without cloud state", () => {
+    const script = fileURLToPath(
+      new URL("./alchemy-command.ts", import.meta.url)
+    );
+    const fixture = fileURLToPath(
+      new URL("./fixtures/alchemy-stack-loader.ts", import.meta.url)
+    );
+    const result = spawnSync(
+      "pnpm",
+      ["exec", "tsx", script, "plan", fixture, "--stage", "loader-test"],
+      { encoding: "utf8" }
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Plan: no changes");
+  });
+
   it("rejects deploy without an explicit stage before invoking Alchemy", () => {
     let invoked = false;
 

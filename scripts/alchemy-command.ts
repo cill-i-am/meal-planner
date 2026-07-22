@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Alchemy commands exposed by the repository's guarded operator scripts. */
 type AlchemyCommand = "deploy" | "destroy" | "plan";
@@ -91,9 +91,16 @@ export const runAlchemyCommand = (
 };
 
 const runAlchemyProcess: AlchemyRunner = (command, args) => {
-  const result = spawnSync("alchemy", [command, ...args], {
-    stdio: "inherit",
-  });
+  const alchemyCli = fileURLToPath(
+    import.meta.resolve("alchemy/bin/alchemy.js")
+  );
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx", alchemyCli, command, ...args],
+    {
+      stdio: "inherit",
+    }
+  );
 
   if (result.error !== undefined) {
     throw new Error("failed to start the Alchemy CLI", { cause: result.error });
