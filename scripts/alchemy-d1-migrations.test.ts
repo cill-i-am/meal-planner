@@ -228,9 +228,7 @@ const isMigrationRequest = (body: D1QueryBody): boolean =>
     true;
 
 const migrationHistory = (database: DatabaseSync) =>
-  database
-    .prepare("SELECT id, name FROM d1_migrations ORDER BY id;")
-    .all();
+  database.prepare("SELECT id, name FROM d1_migrations ORDER BY id;").all();
 
 describe("Alchemy D1 migration reconciliation", () => {
   it("submits every checked-in migration as one atomic D1 statement batch", async () => {
@@ -264,7 +262,8 @@ describe("Alchemy D1 migration reconciliation", () => {
 
   it("applies the trigger migration from 0000/0001 history without skipping or duplicating the ledger", async () => {
     const modules = await loadAlchemyD1Modules();
-    const migrationsFiles = (await loadCheckedInMigrations()).slice(0, 3);
+    const checkedInMigrations = await loadCheckedInMigrations();
+    const migrationsFiles = checkedInMigrations.slice(0, 3);
     const [initialMigration, acquisitionMigration] = migrationsFiles;
     if (initialMigration === undefined || acquisitionMigration === undefined) {
       throw new Error("Expected the 0000 and 0001 migrations");
@@ -360,7 +359,8 @@ describe("Alchemy D1 migration reconciliation", () => {
 
   it("does not record a migration when an adversarial statement fails", async () => {
     const modules = await loadAlchemyD1Modules();
-    const migrationsFiles = (await loadCheckedInMigrations()).slice(0, 3);
+    const checkedInMigrations = await loadCheckedInMigrations();
+    const migrationsFiles = checkedInMigrations.slice(0, 3);
     const [initialMigration, acquisitionMigration, speechMigration] =
       migrationsFiles;
     if (
