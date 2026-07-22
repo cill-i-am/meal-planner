@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { runAlchemyCommand } from "./alchemy-command.js";
 
 describe("Alchemy command guard", () => {
-  it("loads NodeNext source imports before planning without cloud state", () => {
+  it("transforms NodeNext source imports before planning without cloud state", () => {
     const script = fileURLToPath(
       new URL("alchemy-command.ts", import.meta.url)
     );
