@@ -125,4 +125,4 @@ AWS:
 
 ## Report
 
-For reviews, report findings first by severity with file/line evidence, then assumptions, skipped checks, and verification. For implementation completion, summarize only relevant evidence: versions, tests, plan status, stage/profile/account, migrations, cloud mutation, and retained resources.
+For workflow reviews, use the finding dispositions owned by `docs/agents/execution-policy.md`; this capability does not define authority. Include file/line evidence before assumptions, skipped checks, and verification. For implementation completion, summarize only relevant evidence: versions, tests, physical proof, stage/profile/account, migrations, cloud mutation, and retained resources.

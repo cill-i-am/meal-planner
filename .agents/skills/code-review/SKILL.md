@@ -16,6 +16,7 @@ Treat `../coding-standards/` as the standards package. Load standards by topic; 
 - Preserve local conventions when compatible with the standards; do not use local convention to excuse correctness, safety, boundary, observability, or test-integrity violations.
 - Prefer fewer, stronger findings over exhaustive commentary.
 - Do not include praise or a "what's good" section.
+- When an issue or acceptance criteria exists, it controls scope. Identify unrelated hardening as follow-up work instead of silently expanding the reviewed issue.
 
 ## 1. Select the review target
 
@@ -106,7 +107,7 @@ Examples:
 - Async finding: identify the retry, cancellation, redelivery, concurrency, or timeout path and the duplicated/lost/leaked work.
 - Test finding: name the behavior or runtime seam that remains unproven, or the implementation detail the test relies on.
 
-If proof is missing, downgrade to **Question** or drop it.
+If proof is missing, classify it as `question` or drop it.
 
 Completion criterion: every candidate finding has a precise location and behavioral proof shown with real code, values, or a reproduction where possible — not just a standards preference.
 
@@ -126,13 +127,16 @@ Drop or downgrade findings that do not survive.
 
 Completion criterion: final findings have survived an explicit attempt to disprove them.
 
-## Severity labels
+## Finding Disposition
 
-- **Blocker** — likely correctness, safety, security, data-loss, runtime, idempotency, boundary, observability, or test-integrity issue in changed code; or a changed path violates a standards non-negotiable with behavioral consequence.
-- **Should Fix** — meaningful design, contract, maintainability, diagnosability, or verification issue that should be addressed before merge but is not a blocker.
-- **Simplification** — a clearer/deeper/smaller design that removes unnecessary complexity without changing semantics.
-- **Nit** — small local issue with low behavioral risk, usually documentation/naming/mechanical cleanup.
-- **Question** — unresolved ambiguity where the right call depends on product, domain, operational, or local-convention intent.
+This capability reports evidence and recommends a disposition; it does not own workflow state. When `docs/agents/execution-policy.md` exists, use its exact definitions:
+
+- `Fix before merge`: concrete, reproducible acceptance, safety/privacy, security, data-integrity, migration, duplicate-effect, retry/redispatch, lifecycle, destructive-behavior, or claimed-runtime failure.
+- `Residual risk`: an understood limitation that does not invalidate the safe current slice.
+- `Follow-up`: concrete hardening, observability, generalization, simplification, cleanup, or adjacent improvement outside current acceptance.
+- `Human decision required`: unresolved product meaning or external, destructive, irreversible, legal/policy, customer-data, spend, or risk authority.
+
+Do not report speculative canaries, schedulers, control-plane attestation, reconciliation systems, or broad observability as `Fix before merge` unless a failing tracer or acceptance criterion proves they are required. Drop unproven possibilities or present them as explicit questions, not findings.
 
 ## Output format
 
@@ -147,7 +151,7 @@ If there are no findings, say so briefly and include the standards areas checked
 For each finding:
 
 ````md
-### <Severity>: <short title>
+### <Recommended disposition>: <short title>
 
 - **Issue:** <concise explanation of the defect or problem>
 - **Where:** `<file>:<line>` or precise symbol/path
@@ -156,20 +160,16 @@ For each finding:
   ```ts
   // real excerpt quoted from the changed file(s)
   ```
-````
-
 - **Proof:** <value flow, reachable state, reproduction with observed result, or missing evidence>
 - **Why it matters:** <behavioral consequence>
 - **Fix direction:** <specific correction shape, followed by a snippet or pseudo-code showing it>
   ```ts
   // snippet or pseudo-code of the fix; not a full patch unless asked
   ```
-
-```
+````
 
 Include the **Problematic code** block whenever the issue lives in code you can quote; omit it only when the finding is about something absent (e.g. a missing contract or test), and say what is missing instead. Always include a fix-direction snippet or pseudo-code unless the fix is purely a deletion.
 
-Group findings by severity in this order: Blocker, Should Fix, Simplification, Nit, Question.
+Group `Fix before merge` findings first, followed by residual risks and follow-ups. Put any explicit questions last.
 
 Completion criterion: the final review is actionable without code edits, every finding includes proof, and no review-only step modified the workspace.
-```

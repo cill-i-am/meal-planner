@@ -11,6 +11,7 @@ Break a PRD or plan into independently assignable Linear issues. Linear is the s
 
 - `docs/agents/linear-workflow.md`
 - `docs/agents/triage-states.md`
+- `docs/agents/execution-policy.md`
 - `docs/agents/domain.md`
 - relevant parent Linear Initiative/Project/PRD
 - relevant `docs/architecture/*`
@@ -42,7 +43,7 @@ Draft Mode produces issue slices without mutating Linear. Use it for simulations
 6. **Build both structures.** Use parent/sub-Issue relations for the outcome hierarchy and Linear blocker relations for execution order. Do not use one as a substitute for the other. Prefer dependency order that unblocks the most work earliest.
 7. **Quiz before publishing when interactive.** Show the proposed hierarchy with outcome titles, type, dependencies, risk, and covered user stories. Ask for approval if there is meaningful ambiguity.
 8. **Publish parents and blockers first.** Create parent outcome Issues before their children, and create blockers before later Issues need to link to them.
-9. **Prepare orchestrator handoff.** Each leaf issue should be self-contained for a fresh worker session and include review/verification expectations.
+9. **Prepare orchestrator handoff.** Each leaf issue should be self-contained for one fresh delivery owner and include risk, physical proof, and genuine human/external gates. A Ready issue should not require a replacement plan.
 
 In Draft Mode, stop after the proposed issue list, dependency summary, and publishing notes.
 
@@ -60,7 +61,7 @@ Use `docs/agents/issue-template.md` as the source of truth for issue body shape.
 - Include blockers/dependencies as Linear relations.
 - Do not close or modify the parent PRD/Project except to link the new issues and summarize the issue graph.
 - Do not assign work to a worker until all blockers are represented in Linear.
-- Each published issue must include an outcome, hierarchy role, parent context, in/out of scope, acceptance criteria, verification expectations, risk/review level, blockers, and handoff notes sufficient for a fresh worker and reviewer thread.
+- Each published issue must include an outcome, hierarchy role, parent context, in/out of scope, acceptance criteria, proof-of-outcome expectations, risk tier, human/external gates, blockers, and handoff notes sufficient for a fresh delivery owner.
 
 ## Linear Updates
 
