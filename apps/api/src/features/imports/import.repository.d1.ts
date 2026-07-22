@@ -27,6 +27,7 @@ import type {
   ImportTimestamp,
 } from "./import.contracts.js";
 import {
+  importCarouselEvidence,
   importRequests,
   importRecipeExtractions,
   importVisualEvidence,
@@ -59,6 +60,8 @@ const NullableString = Schema.NullOr(Schema.String);
 const DatabaseImportRow = Schema.Struct({
   acquisitionGeneration: AcquisitionGenerationSchema,
   canonicalSourceId: Schema.String,
+  carouselManifestKey: NullableString,
+  carouselUpdatedAt: NullableString,
   compatibilityFingerprint: CompatibilityFingerprint,
   createdAt: Schema.String,
   evidenceReferencesJson: Schema.String,
@@ -95,6 +98,20 @@ const DatabaseRequestFingerprints = Schema.Struct({
 const importSelection = {
   acquisitionGeneration: recipeImports.acquisitionGeneration,
   canonicalSourceId: recipeImports.canonicalSourceId,
+  carouselManifestKey: sql<string | null>`(
+    SELECT ${importCarouselEvidence.manifestKey}
+      FROM ${importCarouselEvidence}
+     WHERE ${importCarouselEvidence.importId} = ${recipeImports.id}
+       AND ${importCarouselEvidence.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
+       AND ${importCarouselEvidence.state} = 'completed'
+  )`.as("carousel_manifest_key"),
+  carouselUpdatedAt: sql<string | null>`(
+    SELECT ${importCarouselEvidence.updatedAt}
+      FROM ${importCarouselEvidence}
+     WHERE ${importCarouselEvidence.importId} = ${recipeImports.id}
+       AND ${importCarouselEvidence.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
+       AND ${importCarouselEvidence.state} = 'completed'
+  )`.as("carousel_updated_at"),
   compatibilityFingerprint: recipeImports.compatibilityFingerprint,
   createdAt: recipeImports.createdAt,
   evidenceReferencesJson: recipeImports.evidenceReferencesJson,
@@ -312,10 +329,48 @@ const decodeRecipeProjection = (
     return visualProjection;
   }
   if (
-    row.recipeDraftState === "needs_review" &&
-    row.recipeDraftFingerprint !== null &&
-    row.recipeDraftJson !== null &&
-    row.recipeDraftUpdatedAt !== null &&
+    row.recipeDraftState !== "needs_review" ||
+    row.recipeDraftFingerprint === null ||
+    row.recipeDraftJson === null ||
+    row.recipeDraftUpdatedAt === null
+  ) {
+    throw new Error("Invalid persisted recipe draft state");
+  }
+  const draft = Schema.decodeUnknownSync(RecipeDraft, {
+    onExcessProperty: "error",
+  })(JSON.parse(row.recipeDraftJson));
+  if (
+    draft.extractionFingerprint !== row.recipeDraftFingerprint ||
+    draft.importId !== row.id ||
+    draft.generation !== row.acquisitionGeneration
+  ) {
+    throw new Error("Persisted recipe draft identity mismatch");
+  }
+  if (draft.schemaVersion === 2) {
+    if (
+      row.carouselManifestKey === null ||
+      row.carouselUpdatedAt === null ||
+      visualProjection.evidence.length !== 0 ||
+      visualProjection.status.kind !== "queued"
+    ) {
+      throw new Error("Invalid persisted carousel recipe draft state");
+    }
+    return {
+      evidence: [
+        {
+          kind: "carousel_evidence_manifest" as const,
+          referenceId: row.carouselManifestKey,
+        },
+        {
+          kind: "recipe_draft" as const,
+          referenceId: `recipe-drafts/${row.recipeDraftFingerprint}`,
+        },
+      ],
+      status: { kind: "needs_review" as const },
+      updatedAt: row.recipeDraftUpdatedAt,
+    };
+  }
+  if (
     visualProjection.evidence.length === 4 &&
     [
       "visual_evidence_empty",
@@ -323,16 +378,6 @@ const decodeRecipeProjection = (
       "visual_evidence_low_confidence",
     ].includes(visualProjection.status.kind)
   ) {
-    const draft = Schema.decodeUnknownSync(RecipeDraft, {
-      onExcessProperty: "error",
-    })(JSON.parse(row.recipeDraftJson));
-    if (
-      draft.extractionFingerprint !== row.recipeDraftFingerprint ||
-      draft.importId !== row.id ||
-      draft.generation !== row.acquisitionGeneration
-    ) {
-      throw new Error("Persisted recipe draft identity mismatch");
-    }
     return {
       evidence: [
         ...visualProjection.evidence,

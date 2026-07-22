@@ -2,8 +2,12 @@ import { DateTime, Effect, Option, Schema } from "effect";
 
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
-import type { VerifiedAcquisitionEvidence } from "./import-media.model.js";
 import type {
+  VerifiedAcquisitionEvidence,
+  VerifiedSourceMetadata,
+} from "./import-media.model.js";
+import type {
+  RecipeDispatchClaim,
   RecipeDraftRepositoryShape,
   RecipeExtractionFailureCode,
 } from "./import-recipe-draft.repository.d1.js";
@@ -12,6 +16,7 @@ import type {
   RecipeEvidenceItem,
   RecipeExtraction,
   RecipeExtractorShape,
+  RecipeExtractorDescriptor as RecipeExtractorDescriptorType,
   RecipeNumberFact,
   RecipeStringFact,
   RecipeUnresolvedField,
@@ -23,7 +28,10 @@ import {
 import { readVerifiedTranscriptEvidence } from "./import-speech-transcription.js";
 import { readVerifiedVisualEvidence } from "./import-visual-evidence.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
-import type { ImportRepositoryShape } from "./import.repository.js";
+import type {
+  ImportRepositoryShape,
+  ImportTransitionError,
+} from "./import.repository.js";
 
 export interface RecipeDraftPipelineFailure {
   readonly _tag: "RecipeDraftPipelineFailure";
@@ -233,7 +241,7 @@ const numericFactsAreGrounded = (
 const extractionIsGrounded = (
   extraction: RecipeExtraction,
   assembly: RecipeEvidenceAssembly,
-  evidence: VerifiedAcquisitionEvidence
+  source: VerifiedSourceMetadata
 ) => {
   const evidenceById = new Map(
     assembly.items.map((item) => [item.evidenceId, item] as const)
@@ -268,9 +276,7 @@ const extractionIsGrounded = (
   );
   const sourceUrl = supportedStringValue(extraction.sourceUrl);
   const expectedAuthor =
-    evidence.source?.creator.displayName ??
-    evidence.source?.creator.handle ??
-    null;
+    source.creator.displayName ?? source.creator.handle ?? null;
   const author = supportedStringValue(extraction.author);
   const sourceUrlEvidence = assembly.items.find(
     (item) => item.kind === "source_url"
@@ -289,7 +295,7 @@ const extractionIsGrounded = (
     numericFactsAreGrounded(extraction, evidenceById) &&
     listsAreConsistent &&
     extraction.usage.inputEvidenceItems === assembly.items.length &&
-    sourceUrl === evidence.source?.canonicalUrl &&
+    sourceUrl === source.canonicalUrl &&
     cites(extraction.sourceUrl, sourceUrlEvidence?.evidenceId) &&
     (expectedAuthor === null
       ? extraction.author.state === "unresolved"
@@ -300,6 +306,129 @@ const extractionIsGrounded = (
     requiredUnresolved.every((field) => unresolved.includes(field))
   );
 };
+
+interface RecipeDraftClaimContext {
+  readonly descriptor: RecipeExtractorDescriptorType;
+  readonly evidenceFingerprint: string;
+  readonly extractionFingerprint: string;
+}
+
+interface ProduceRecipeDraftFromEvidenceInput {
+  readonly assembly: RecipeEvidenceAssembly;
+  readonly claim: (
+    context: RecipeDraftClaimContext
+  ) => Effect.Effect<RecipeDispatchClaim, ImportTransitionError>;
+  readonly extractor: RecipeExtractorShape;
+  readonly now: ImportTimestamp;
+  readonly recipeRepository: RecipeDraftRepositoryShape;
+  readonly source: VerifiedSourceMetadata;
+  readonly transcript:
+    | { readonly route: "video_v1" }
+    | {
+        readonly reason: "source_type_carousel";
+        readonly route: "carousel_v2";
+        readonly status: "not_applicable";
+      };
+}
+
+/** Shared extraction, grounding, and review-draft boundary for every source type. */
+export const produceRecipeDraftFromEvidence = Effect.fn(
+  "Imports.produceRecipeDraftFromEvidence"
+)(function* produceFromEvidence(input: ProduceRecipeDraftFromEvidenceInput) {
+  const descriptor = yield* Schema.decodeUnknownEffect(
+    RecipeExtractorDescriptor,
+    { onExcessProperty: "error" }
+  )(input.extractor.descriptor).pipe(
+    Effect.mapError(() => pipelineFailure("invalid_schema"))
+  );
+  const extractionFingerprint = yield* sha256Text(
+    JSON.stringify({
+      evidenceFingerprint: input.assembly.evidenceFingerprint,
+      extractor: descriptor,
+    })
+  );
+  const claim = yield* input.claim({
+    descriptor,
+    evidenceFingerprint: input.assembly.evidenceFingerprint,
+    extractionFingerprint,
+  });
+  if (claim._tag === "NeedsReview") {
+    return claim.draft;
+  }
+  if (claim._tag === "Failed") {
+    return yield* Effect.fail(pipelineFailure(claim.code));
+  }
+  if (claim._tag === "ResumeDispatch") {
+    return yield* Effect.fail(pipelineFailure("outcome_unknown"));
+  }
+
+  const raw = yield* input.extractor.extract(input.assembly).pipe(
+    Effect.mapError((failure) => pipelineFailure(failure.code)),
+    Effect.catch((error) =>
+      error.code === "outcome_unknown"
+        ? Effect.fail(error)
+        : input.recipeRepository
+            .fail({
+              completedAt: input.now,
+              extractionFingerprint,
+              failureCode:
+                error.code === "model_refusal"
+                  ? "model_refusal"
+                  : "provider_error",
+            })
+            .pipe(Effect.andThen(Effect.fail(error)))
+    )
+  );
+  const extraction = yield* decodeRecipeExtraction(raw).pipe(
+    Effect.mapError(() => pipelineFailure("invalid_schema")),
+    Effect.catch((error) =>
+      input.recipeRepository
+        .fail({
+          completedAt: input.now,
+          extractionFingerprint,
+          failureCode: "invalid_schema",
+        })
+        .pipe(Effect.andThen(Effect.fail(error)))
+    )
+  );
+  if (!extractionIsGrounded(extraction, input.assembly, input.source)) {
+    yield* input.recipeRepository.fail({
+      completedAt: input.now,
+      extractionFingerprint,
+      failureCode: "invalid_schema",
+    });
+    return yield* Effect.fail(pipelineFailure("invalid_schema"));
+  }
+  return yield* input.recipeRepository.complete(
+    input.transcript.route === "video_v1"
+      ? {
+          createdAt: input.now,
+          evidenceFingerprint: input.assembly.evidenceFingerprint,
+          extraction,
+          extractionFingerprint,
+          extractor: descriptor,
+          generation: input.assembly.generation,
+          importId: input.assembly.importId,
+          lifecycle: "needs_review",
+          schemaVersion: 1,
+        }
+      : {
+          createdAt: input.now,
+          evidenceFingerprint: input.assembly.evidenceFingerprint,
+          extraction,
+          extractionFingerprint,
+          extractor: descriptor,
+          generation: input.assembly.generation,
+          importId: input.assembly.importId,
+          lifecycle: "needs_review",
+          schemaVersion: 2,
+          transcript: {
+            reason: input.transcript.reason,
+            status: input.transcript.status,
+          },
+        }
+  );
+});
 
 /** Run one provider-free evidence-to-reviewable-recipe tracer. */
 export const produceRecipeDraftForImport = Effect.fn(
@@ -328,12 +457,6 @@ export const produceRecipeDraftForImport = Effect.fn(
     return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
   }
   const now = input.now();
-  const descriptor = yield* Schema.decodeUnknownEffect(
-    RecipeExtractorDescriptor,
-    { onExcessProperty: "error" }
-  )(input.extractor.descriptor).pipe(
-    Effect.mapError(() => pipelineFailure("invalid_schema"))
-  );
   const evidence = yield* readVerifiedAcquisitionEvidence(input.bucket, {
     canonicalId: stored.canonicalSourceId,
     generation: stored.acquisitionGeneration,
@@ -365,79 +488,28 @@ export const produceRecipeDraftForImport = Effect.fn(
     visual.value,
     input.importId
   );
-  const extractionFingerprint = yield* sha256Text(
-    JSON.stringify({
-      evidenceFingerprint: assembly.evidenceFingerprint,
-      extractor: descriptor,
-    })
-  );
-  const claim = yield* input.recipeRepository.claim({
-    descriptor,
-    evidenceFingerprint: assembly.evidenceFingerprint,
-    extractionFingerprint,
-    generation: evidence.generation,
-    importId: input.importId,
-    sourceMediaSha256: evidence.sha256,
-    startedAt: now,
-    transcriptSha256: transcript.value.sha256,
-    visualManifestSha256: visual.value.sha256,
-  });
-  if (claim._tag === "NeedsReview") {
-    return claim.draft;
+  const { source } = evidence;
+  if (source === undefined) {
+    return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
   }
-  if (claim._tag === "Failed") {
-    return yield* Effect.fail(pipelineFailure(claim.code));
-  }
-  if (claim._tag === "ResumeDispatch") {
-    return yield* Effect.fail(pipelineFailure("outcome_unknown"));
-  }
-
-  const raw = yield* input.extractor.extract(assembly).pipe(
-    Effect.mapError((failure) => pipelineFailure(failure.code)),
-    Effect.catch((error) =>
-      error.code === "outcome_unknown"
-        ? Effect.fail(error)
-        : input.recipeRepository
-            .fail({
-              completedAt: now,
-              extractionFingerprint,
-              failureCode:
-                error.code === "model_refusal"
-                  ? "model_refusal"
-                  : "provider_error",
-            })
-            .pipe(Effect.andThen(Effect.fail(error)))
-    )
-  );
-  const extraction = yield* decodeRecipeExtraction(raw).pipe(
-    Effect.mapError(() => pipelineFailure("invalid_schema")),
-    Effect.catch((error) =>
-      input.recipeRepository
-        .fail({
-          completedAt: now,
-          extractionFingerprint,
-          failureCode: "invalid_schema",
-        })
-        .pipe(Effect.andThen(Effect.fail(error)))
-    )
-  );
-  if (!extractionIsGrounded(extraction, assembly, evidence)) {
-    yield* input.recipeRepository.fail({
-      completedAt: now,
-      extractionFingerprint,
-      failureCode: "invalid_schema",
-    });
-    return yield* Effect.fail(pipelineFailure("invalid_schema"));
-  }
-  return yield* input.recipeRepository.complete({
-    createdAt: now,
-    evidenceFingerprint: assembly.evidenceFingerprint,
-    extraction,
-    extractionFingerprint,
-    extractor: descriptor,
-    generation: evidence.generation,
-    importId: input.importId,
-    lifecycle: "needs_review",
-    schemaVersion: 1,
+  return yield* produceRecipeDraftFromEvidence({
+    assembly,
+    claim: ({ descriptor, evidenceFingerprint, extractionFingerprint }) =>
+      input.recipeRepository.claim({
+        descriptor,
+        evidenceFingerprint,
+        extractionFingerprint,
+        generation: evidence.generation,
+        importId: input.importId,
+        sourceMediaSha256: evidence.sha256,
+        startedAt: now,
+        transcriptSha256: transcript.value.sha256,
+        visualManifestSha256: visual.value.sha256,
+      }),
+    extractor: input.extractor,
+    now,
+    recipeRepository: input.recipeRepository,
+    source,
+    transcript: { route: "video_v1" },
   });
 });

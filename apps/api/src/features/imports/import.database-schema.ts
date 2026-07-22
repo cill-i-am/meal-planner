@@ -410,6 +410,97 @@ export const importVisualEvidence = sqliteTable(
   ]
 );
 
+export const importCarouselEvidence = sqliteTable(
+  "import_carousel_evidence",
+  {
+    acquisitionGeneration: integer("acquisition_generation").notNull(),
+    completedAt: text("completed_at"),
+    createdAt: text("created_at").notNull(),
+    descriptorFingerprint: text("descriptor_fingerprint").notNull(),
+    dispatchId: text("dispatch_id").notNull(),
+    failureCode: text("failure_code", {
+      enum: [
+        "carousel_inaccessible",
+        "carousel_layout_drift",
+        "carousel_partial",
+      ],
+    }),
+    imageCount: integer("image_count"),
+    importId: text("import_id").notNull(),
+    manifestKey: text("manifest_key"),
+    manifestSha256: text("manifest_sha256"),
+    recoveryAction: text("recovery_action", {
+      enum: [
+        "check_source_visibility",
+        "request_complete_carousel",
+        "update_carousel_adapter",
+      ],
+    }),
+    state: text("state", {
+      enum: ["completed", "dispatching", "failed"],
+    }).notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.importId, table.acquisitionGeneration] }),
+    foreignKey({
+      columns: [table.importId, table.acquisitionGeneration],
+      foreignColumns: [recipeImports.id, recipeImports.acquisitionGeneration],
+      name: "import_carousel_evidence_import_generation_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    uniqueIndex("import_carousel_evidence_dispatch_id_unique").on(
+      table.dispatchId
+    ),
+    index("import_carousel_evidence_state_updated_index").on(
+      table.state,
+      table.updatedAt
+    ),
+    check(
+      "import_carousel_evidence_generation_check",
+      sql`typeof(${table.acquisitionGeneration}) = 'integer' AND ${table.acquisitionGeneration} >= 0 AND ${table.acquisitionGeneration} <= 9007199254740991`
+    ),
+    check(
+      "import_carousel_evidence_identity_check",
+      sql`length(${table.descriptorFingerprint}) = 64 AND ${table.descriptorFingerprint} NOT GLOB '*[^0-9a-f]*' AND length(${table.dispatchId}) BETWEEN 1 AND 100`
+    ),
+    check(
+      "import_carousel_evidence_state_check",
+      sql`(
+        ${table.state} = 'dispatching'
+        AND ${table.manifestKey} IS NULL
+        AND ${table.manifestSha256} IS NULL
+        AND ${table.imageCount} IS NULL
+        AND ${table.failureCode} IS NULL
+        AND ${table.recoveryAction} IS NULL
+        AND ${table.completedAt} IS NULL
+      ) OR (
+        ${table.state} = 'completed'
+        AND length(${table.manifestKey}) BETWEEN 1 AND 500
+        AND length(${table.manifestSha256}) = 64
+        AND ${table.manifestSha256} NOT GLOB '*[^0-9a-f]*'
+        AND typeof(${table.imageCount}) = 'integer'
+        AND ${table.imageCount} BETWEEN 1 AND 12
+        AND ${table.failureCode} IS NULL
+        AND ${table.recoveryAction} IS NULL
+        AND ${table.completedAt} IS NOT NULL
+      ) OR (
+        ${table.state} = 'failed'
+        AND ${table.manifestKey} IS NULL
+        AND ${table.manifestSha256} IS NULL
+        AND ${table.imageCount} IS NULL
+        AND ${table.completedAt} IS NOT NULL
+        AND (
+          (${table.failureCode} = 'carousel_inaccessible' AND ${table.recoveryAction} = 'check_source_visibility')
+          OR (${table.failureCode} = 'carousel_partial' AND ${table.recoveryAction} = 'request_complete_carousel')
+          OR (${table.failureCode} = 'carousel_layout_drift' AND ${table.recoveryAction} = 'update_carousel_adapter')
+        )
+      )`
+    ),
+  ]
+);
+
 export const importRecipeExtractions = sqliteTable(
   "import_recipe_extractions",
   {
