@@ -12,6 +12,7 @@ import type {
   RecipeEvidenceItem,
   RecipeExtraction,
   RecipeExtractorShape,
+  RecipeNumberFact,
   RecipeStringFact,
   RecipeUnresolvedField,
 } from "./import-recipe-extractor.js";
@@ -195,6 +196,40 @@ const cites = (fact: RecipeStringFact, evidenceId: string | undefined) =>
   evidenceId !== undefined &&
   fact.citations.some((citation) => citation.evidenceId === evidenceId);
 
+const numberFactIsSupportedBy = (
+  fact: RecipeNumberFact,
+  evidenceById: ReadonlyMap<string, RecipeEvidenceItem>,
+  predicate: (item: RecipeEvidenceItem, value: number) => boolean
+) =>
+  fact.state === "unresolved" ||
+  fact.citations.some((citation) => {
+    const item = evidenceById.get(citation.evidenceId);
+    return item !== undefined && predicate(item, fact.value);
+  });
+
+const timeIsSupported = (item: RecipeEvidenceItem, value: number) =>
+  new RegExp(`\\b${value}\\s*(?:minutes?|mins?)\\b`, "iu").test(item.value);
+
+const temperatureIsSupported = (item: RecipeEvidenceItem, value: number) =>
+  new RegExp(`\\b${value}\\s*(?:°\\s*)?c\\b`, "iu").test(item.value);
+
+const numericFactsAreGrounded = (
+  extraction: RecipeExtraction,
+  evidenceById: ReadonlyMap<string, RecipeEvidenceItem>
+) =>
+  [
+    extraction.cookTimeMinutes,
+    extraction.prepTimeMinutes,
+    extraction.totalTimeMinutes,
+  ].every((fact) =>
+    numberFactIsSupportedBy(fact, evidenceById, timeIsSupported)
+  ) &&
+  numberFactIsSupportedBy(
+    extraction.temperatureCelsius,
+    evidenceById,
+    temperatureIsSupported
+  );
+
 const extractionIsGrounded = (
   extraction: RecipeExtraction,
   assembly: RecipeEvidenceAssembly,
@@ -251,6 +286,7 @@ const extractionIsGrounded = (
   ];
   return (
     citationsAreReal &&
+    numericFactsAreGrounded(extraction, evidenceById) &&
     listsAreConsistent &&
     extraction.usage.inputEvidenceItems === assembly.items.length &&
     sourceUrl === evidence.source?.canonicalUrl &&

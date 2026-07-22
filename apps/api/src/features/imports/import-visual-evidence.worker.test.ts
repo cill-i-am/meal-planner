@@ -1297,6 +1297,61 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     });
   });
 
+  it("rejects time and temperature values swapped within real cited evidence", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000235");
+    const canonicalId = decodeCanonicalId("7520000000000000235");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      {
+        model: "fixture-recipe-numeric-collision",
+        provider: "deterministic_fake",
+        version: "schema-1",
+      },
+      (input: RecipeEvidenceAssembly) => {
+        const fixture = makeRecipeFixture(input, canonicalId);
+        return {
+          ...fixture,
+          cookTimeMinutes: { ...fixture.cookTimeMinutes, value: 180 },
+          temperatureCelsius: {
+            ...fixture.temperatureCelsius,
+            value: 20,
+          },
+        };
+      }
+    );
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          importId,
+          importRepository,
+          now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
+          recipeRepository: makeD1RecipeDraftRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeDraftPipelineFailure",
+      code: "invalid_schema",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, draft_json, failure_code, is_current
+           FROM import_recipe_extractions WHERE import_id = ?`
+      )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({
+      draft_json: null,
+      failure_code: "invalid_schema",
+      is_current: 0,
+      state: "failed",
+    });
+  });
+
   it("does not project needs-review for a corrupt durable draft", async () => {
     const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000234");
     const canonicalId = decodeCanonicalId("7520000000000000234");
