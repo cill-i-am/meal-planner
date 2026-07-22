@@ -610,7 +610,9 @@ export interface RecipeReviewServiceShape {
   ) => Effect.Effect<RecipeReviewView, RecipeReviewServiceError>;
 }
 
-const projectApprovedRecipe = (review: RecipeReviewView): ApprovedRecipe => {
+export const projectApprovedRecipe = (
+  review: RecipeReviewView
+): ApprovedRecipe => {
   const recipe = applyCorrectionOverlay(review.draft, review.corrections);
   const approved = [...review.transitions]
     .toReversed()

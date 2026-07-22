@@ -4,29 +4,27 @@ import { RecipeDraft } from "../imports/import-recipe-draft.repository.d1.js";
 import {
   PlanningTags,
   RecipeReviewView,
-  makeRecipeReviewService,
-  recipeReviewTransitionRejected,
-  recipeReviewVersionConflict,
+  projectApprovedRecipe,
 } from "../imports/import-recipe-review.js";
-import type {
-  RecipeReviewRepositoryShape,
-  RecipeReviewTransition,
-} from "../imports/import-recipe-review.js";
-import { ImportTimestamp } from "../imports/import.contracts.js";
+import { ImportId } from "../imports/import.contracts.js";
 import {
-  MealPlanDraft,
   MealPlanPolicy,
   MealPlanRequest,
-  MealPlanRequestConflict,
   makeDeterministicMealPlanPlanner,
   makeMealPlanService,
+  mealPlanMutationConflict,
+  mealPlanNotFound,
+  mealPlanRequestConflict,
+  mealPlanTransitionRejected,
+  mealPlanVersionConflict,
 } from "./meal-plan.js";
 import type {
+  MealPlan,
   MealPlanDraftId,
   MealPlanDraftRepositoryShape,
 } from "./meal-plan.js";
 
-const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
+const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeTags = Schema.decodeUnknownSync(PlanningTags);
 
 const citation = {
@@ -175,6 +173,34 @@ const breakfastTags = decodeTags({
   totalTimeBand: "under_30_minutes",
 });
 
+const replacementDinnerTags = decodeTags({
+  cuisines: ["Synthetic Weeknight"],
+  dietaryFit: "household_match",
+  difficulty: "easy",
+  leftovers: "two_plus_meals",
+  mealTypes: ["dinner"],
+  totalTimeBand: "under_30_minutes",
+});
+
+const hardDinnerTags = decodeTags({
+  cuisines: ["Synthetic Weekend"],
+  dietaryFit: "household_match",
+  difficulty: "hard",
+  leftovers: "none",
+  mealTypes: ["dinner"],
+  totalTimeBand: "under_30_minutes",
+});
+
+export const syntheticReplacementRecipeId = decodeImportId(
+  "018f47ad-91aa-7c35-b6fe-000000000403"
+);
+export const syntheticHardConstraintRecipeId = decodeImportId(
+  "018f47ad-91aa-7c35-b6fe-000000000404"
+);
+export const syntheticRejectedRecipeId = decodeImportId(
+  "018f47ad-91aa-7c35-b6fe-000000000402"
+);
+
 export const syntheticRecipeReviews: readonly RecipeReviewView[] = [
   makeSyntheticReview({
     fingerprintCharacter: "b",
@@ -189,6 +215,20 @@ export const syntheticRecipeReviews: readonly RecipeReviewView[] = [
     lifecycle: "rejected",
     name: "Synthetic Rejected Pancakes",
     tags: breakfastTags,
+  }),
+  makeSyntheticReview({
+    fingerprintCharacter: "d",
+    importId: syntheticReplacementRecipeId,
+    lifecycle: "approved",
+    name: "Synthetic Bean Traybake",
+    tags: replacementDinnerTags,
+  }),
+  makeSyntheticReview({
+    fingerprintCharacter: "e",
+    importId: syntheticHardConstraintRecipeId,
+    lifecycle: "approved",
+    name: "Synthetic Elaborate Pie",
+    tags: hardDinnerTags,
   }),
 ];
 
@@ -225,106 +265,52 @@ export const syntheticMealPlanRequest = Schema.decodeUnknownSync(
 
 export const makeInMemoryRecipeReviewRepository = (
   initial: readonly RecipeReviewView[]
-): RecipeReviewRepositoryShape => {
+): {
+  readonly listApproved: () => Effect.Effect<
+    readonly ReturnType<typeof projectApprovedRecipe>[]
+  >;
+  readonly reviews: readonly RecipeReviewView[];
+} => {
   const reviews = [...initial];
-  const indexForFingerprint = (fingerprint: string) =>
-    reviews.findIndex(
-      ({ draft }) => draft.extractionFingerprint === fingerprint
-    );
-
   return {
-    correct: (input) =>
-      Effect.gen(function* correctSyntheticReview() {
-        const index = indexForFingerprint(input.extractionFingerprint);
-        const current = reviews[index];
-        if (current === undefined) {
-          return yield* Effect.die("Synthetic review was not found");
-        }
-        if (current.version !== input.expectedVersion) {
-          return yield* Effect.fail(
-            recipeReviewVersionConflict(input.expectedVersion, current.version)
-          );
-        }
-        if (current.lifecycle !== "needs_review") {
-          return yield* Effect.fail(
-            recipeReviewTransitionRejected(current.lifecycle)
-          );
-        }
-        const updated: RecipeReviewView = {
-          ...current,
-          corrections: [...current.corrections, input.correction],
-          tags: input.tags,
-          version: input.correction.version,
-        };
-        reviews[index] = updated;
-        return updated;
-      }),
-    find: (importId) =>
-      Effect.succeed(
-        Option.fromNullishOr(
-          reviews.find(({ draft }) => draft.importId === importId)
-        )
-      ),
     listApproved: () =>
       Effect.succeed(
-        reviews.filter(({ lifecycle }) => lifecycle === "approved")
+        reviews
+          .filter(({ lifecycle }) => lifecycle === "approved")
+          .map(projectApprovedRecipe)
       ),
-    transition: (input) =>
-      Effect.gen(function* transitionSyntheticReview() {
-        const index = indexForFingerprint(input.extractionFingerprint);
-        const current = reviews[index];
-        if (current === undefined) {
-          return yield* Effect.die("Synthetic review was not found");
-        }
-        if (current.version !== input.expectedVersion) {
-          return yield* Effect.fail(
-            recipeReviewVersionConflict(input.expectedVersion, current.version)
-          );
-        }
-        const { transition }: { readonly transition: RecipeReviewTransition } =
-          input;
-        if (transition.from !== current.lifecycle) {
-          return yield* Effect.fail(
-            recipeReviewTransitionRejected(current.lifecycle)
-          );
-        }
-        const updated: RecipeReviewView = {
-          ...current,
-          lifecycle: transition.to,
-          transitions: [...current.transitions, transition],
-          version: transition.version,
-        };
-        reviews[index] = updated;
-        return updated;
-      }),
+    reviews,
   };
 };
 
-const sameDraft = (left: MealPlanDraft, right: MealPlanDraft): boolean =>
-  JSON.stringify(Schema.encodeSync(MealPlanDraft)(left)) ===
-  JSON.stringify(Schema.encodeSync(MealPlanDraft)(right));
+const mutationKey = (draftId: string, mutationId: string) =>
+  `${draftId}:${mutationId}`;
 
 export const makeInMemoryMealPlanDraftRepository = (): {
-  readonly drafts: MealPlanDraft[];
+  readonly drafts: MealPlan[];
   readonly repository: MealPlanDraftRepositoryShape;
 } => {
-  const drafts: MealPlanDraft[] = [];
+  const drafts: MealPlan[] = [];
+  const requestFingerprints = new Map<string, string>();
+  const mutations = new Map<
+    string,
+    { readonly fingerprint: string; readonly result: MealPlan }
+  >();
   return {
     drafts,
     repository: {
-      create: (draft) =>
+      create: ({ draft, requestFingerprint }) =>
         Effect.gen(function* createSyntheticDraft() {
           const existing = drafts.find(
             ({ draftId }) => draftId === draft.draftId
           );
           if (existing !== undefined) {
-            return sameDraft(existing, draft)
+            return requestFingerprints.get(draft.draftId) === requestFingerprint
               ? existing
-              : yield* Effect.fail(
-                  new MealPlanRequestConflict({ draftId: draft.draftId })
-                );
+              : yield* Effect.fail(mealPlanRequestConflict(draft.draftId));
           }
           drafts.push(draft);
+          requestFingerprints.set(draft.draftId, requestFingerprint);
           return draft;
         }),
       find: (draftId: MealPlanDraftId) =>
@@ -333,6 +319,52 @@ export const makeInMemoryMealPlanDraftRepository = (): {
             drafts.find((draft) => draft.draftId === draftId)
           )
         ),
+      findMutation: ({ draftId, mutationFingerprint, mutationId }) =>
+        Effect.gen(function* findSyntheticMutation() {
+          const mutation = mutations.get(mutationKey(draftId, mutationId));
+          if (mutation === undefined) {
+            return Option.none<MealPlan>();
+          }
+          return mutation.fingerprint === mutationFingerprint
+            ? Option.some(mutation.result)
+            : yield* Effect.fail(mealPlanMutationConflict(mutationId));
+        }),
+      save: (input) =>
+        Effect.gen(function* saveSyntheticMealPlan() {
+          const key = mutationKey(input.next.draftId, input.mutationId);
+          const replay = mutations.get(key);
+          if (replay !== undefined) {
+            return replay.fingerprint === input.mutationFingerprint
+              ? replay.result
+              : yield* Effect.fail(mealPlanMutationConflict(input.mutationId));
+          }
+
+          const index = drafts.findIndex(
+            ({ draftId }) => draftId === input.next.draftId
+          );
+          const current = drafts[index];
+          if (current === undefined) {
+            return yield* Effect.fail(mealPlanNotFound(input.next.draftId));
+          }
+          if (current._tag !== "Draft") {
+            return yield* Effect.fail(mealPlanTransitionRejected(current._tag));
+          }
+          if (current.revision !== input.expectedRevision) {
+            return yield* Effect.fail(
+              mealPlanVersionConflict(input.expectedRevision, current.revision)
+            );
+          }
+          if (input.next.revision !== current.revision + 1) {
+            return yield* Effect.die("Synthetic revision invariant failed");
+          }
+
+          drafts[index] = input.next;
+          mutations.set(key, {
+            fingerprint: input.mutationFingerprint,
+            result: input.next,
+          });
+          return input.next;
+        }),
     },
   };
 };
@@ -341,10 +373,6 @@ export const makeSyntheticMealPlanTracer = () => {
   const recipeRepository = makeInMemoryRecipeReviewRepository(
     syntheticRecipeReviews
   );
-  const recipeReviews = makeRecipeReviewService({
-    now: () => decodeTimestamp("2026-07-22T10:02:00.000Z"),
-    repository: recipeRepository,
-  });
   const draftRepository = makeInMemoryMealPlanDraftRepository();
   return {
     drafts: draftRepository.drafts,
@@ -352,7 +380,7 @@ export const makeSyntheticMealPlanTracer = () => {
     service: makeMealPlanService({
       drafts: draftRepository.repository,
       planner: makeDeterministicMealPlanPlanner(),
-      recipeReviews,
+      recipeReviews: recipeRepository,
     }),
   };
 };
