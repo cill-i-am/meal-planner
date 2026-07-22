@@ -517,3 +517,137 @@ export const importRecipeExtractions = sqliteTable(
     ),
   ]
 );
+
+export const recipeReviews = sqliteTable(
+  "recipe_reviews",
+  {
+    createdAt: text("created_at").notNull(),
+    extractionFingerprint: text("extraction_fingerprint").notNull(),
+    lastMutationId: text("last_mutation_id"),
+    lifecycle: text("lifecycle", {
+      enum: ["needs_review", "approved", "rejected"],
+    }).notNull(),
+    tagsJson: text("tags_json"),
+    updatedAt: text("updated_at").notNull(),
+    version: integer("version").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.extractionFingerprint] }),
+    foreignKey({
+      columns: [table.extractionFingerprint],
+      foreignColumns: [importRecipeExtractions.extractionFingerprint],
+      name: "recipe_reviews_extraction_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    index("recipe_reviews_lifecycle_updated_index").on(
+      table.lifecycle,
+      table.updatedAt
+    ),
+    check(
+      "recipe_reviews_lifecycle_check",
+      sql`${table.lifecycle} IN ('needs_review', 'approved', 'rejected')`
+    ),
+    check(
+      "recipe_reviews_version_check",
+      sql`typeof(${table.version}) = 'integer' AND ${table.version} >= 0 AND ${table.version} <= 9007199254740991`
+    ),
+    check(
+      "recipe_reviews_tags_check",
+      sql`(${table.tagsJson} IS NULL OR json_valid(${table.tagsJson})) AND (${table.lifecycle} <> 'approved' OR ${table.tagsJson} IS NOT NULL)`
+    ),
+    check(
+      "recipe_reviews_mutation_check",
+      sql`${table.lastMutationId} IS NULL OR length(${table.lastMutationId}) BETWEEN 1 AND 512`
+    ),
+  ]
+);
+
+export const recipeReviewCorrections = sqliteTable(
+  "recipe_review_corrections",
+  {
+    actorId: text("actor_id").notNull(),
+    afterJson: text("after_json").notNull(),
+    beforeJson: text("before_json").notNull(),
+    correctedAt: text("corrected_at").notNull(),
+    extractionFingerprint: text("extraction_fingerprint").notNull(),
+    field: text("field").notNull(),
+    reason: text("reason").notNull(),
+    tagsAfterJson: text("tags_after_json").notNull(),
+    tagsBeforeJson: text("tags_before_json").notNull(),
+    version: integer("version").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.extractionFingerprint, table.version] }),
+    foreignKey({
+      columns: [table.extractionFingerprint],
+      foreignColumns: [recipeReviews.extractionFingerprint],
+      name: "recipe_review_corrections_review_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check(
+      "recipe_review_corrections_version_check",
+      sql`typeof(${table.version}) = 'integer' AND ${table.version} > 0 AND ${table.version} <= 9007199254740991`
+    ),
+    check(
+      "recipe_review_corrections_actor_check",
+      sql`length(${table.actorId}) BETWEEN 1 AND 128`
+    ),
+    check(
+      "recipe_review_corrections_field_check",
+      sql`${table.field} IN ('author', 'category', 'cook_time_minutes', 'cuisine', 'description', 'ingredient_lines', 'ingredient_quantities', 'ingredient_units', 'instructions', 'name', 'nutrition', 'prep_time_minutes', 'temperature_celsius', 'tools', 'total_time_minutes', 'yield')`
+    ),
+    check(
+      "recipe_review_corrections_json_check",
+      sql`json_valid(${table.beforeJson}) AND json_valid(${table.afterJson}) AND json_valid(${table.tagsBeforeJson}) AND json_valid(${table.tagsAfterJson})`
+    ),
+    check(
+      "recipe_review_corrections_reason_check",
+      sql`length(${table.reason}) BETWEEN 1 AND 4096`
+    ),
+  ]
+);
+
+export const recipeReviewTransitions = sqliteTable(
+  "recipe_review_transitions",
+  {
+    actorId: text("actor_id").notNull(),
+    extractionFingerprint: text("extraction_fingerprint").notNull(),
+    fromLifecycle: text("from_lifecycle", {
+      enum: ["needs_review", "approved", "rejected"],
+    }).notNull(),
+    reason: text("reason").notNull(),
+    toLifecycle: text("to_lifecycle", {
+      enum: ["needs_review", "approved", "rejected"],
+    }).notNull(),
+    transitionedAt: text("transitioned_at").notNull(),
+    version: integer("version").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.extractionFingerprint, table.version] }),
+    foreignKey({
+      columns: [table.extractionFingerprint],
+      foreignColumns: [recipeReviews.extractionFingerprint],
+      name: "recipe_review_transitions_review_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check(
+      "recipe_review_transitions_version_check",
+      sql`typeof(${table.version}) = 'integer' AND ${table.version} > 0 AND ${table.version} <= 9007199254740991`
+    ),
+    check(
+      "recipe_review_transitions_actor_check",
+      sql`length(${table.actorId}) BETWEEN 1 AND 128`
+    ),
+    check(
+      "recipe_review_transitions_lifecycle_check",
+      sql`${table.fromLifecycle} IN ('needs_review', 'approved', 'rejected') AND ${table.toLifecycle} IN ('needs_review', 'approved', 'rejected') AND ${table.fromLifecycle} <> ${table.toLifecycle}`
+    ),
+    check(
+      "recipe_review_transitions_reason_check",
+      sql`length(${table.reason}) BETWEEN 1 AND 4096`
+    ),
+  ]
+);

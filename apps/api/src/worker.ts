@@ -6,6 +6,12 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { HealthRoutes } from "./features/health/health.routes.js";
 import {
+  RecipeReviewService,
+  makeRecipeReviewService,
+} from "./features/imports/import-recipe-review.js";
+import { makeD1RecipeReviewRepository } from "./features/imports/import-recipe-review.repository.d1.js";
+import { RecipeReviewRouteDefinitions } from "./features/imports/import-recipe-review.routes.js";
+import {
   ImportAuthorizer,
   makeImportAuthorizer,
 } from "./features/imports/import.auth.js";
@@ -39,6 +45,7 @@ const notFound = HttpServerResponse.json(
 const MealPlannerWorkerRoutes = HttpRouter.addAll([
   ...HealthRoutes,
   ...ImportRouteDefinitions,
+  ...RecipeReviewRouteDefinitions,
   HttpRouter.route("*", "*", notFound),
 ]);
 
@@ -85,6 +92,18 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                 ImportRepository,
                 ImportRepository.of(makeD1ImportRepository(database))
               );
+              const recipeReviewServiceLive = Layer.succeed(
+                RecipeReviewService,
+                RecipeReviewService.of(
+                  makeRecipeReviewService({
+                    now: () =>
+                      Schema.decodeUnknownSync(ImportTimestamp)(
+                        new Date().toISOString()
+                      ),
+                    repository: makeD1RecipeReviewRepository(database),
+                  })
+                )
+              );
               const serviceLive = Layer.effect(
                 ImportService,
                 Effect.gen(function* ImportServiceLive() {
@@ -122,7 +141,13 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
 
               return yield* withCurrentRequestCancellation(
                 routeHandler.pipe(
-                  Effect.provide(Layer.mergeAll(authorizerLive, serviceLive))
+                  Effect.provide(
+                    Layer.mergeAll(
+                      authorizerLive,
+                      recipeReviewServiceLive,
+                      serviceLive
+                    )
+                  )
                 )
               );
             })
