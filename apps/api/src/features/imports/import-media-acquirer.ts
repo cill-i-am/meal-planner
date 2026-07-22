@@ -543,6 +543,14 @@ const decodeCommittedEvidence = (
       manifestKey: value.manifestKey,
       mediaKey: value.mediaKey,
       sha256: value.sha256,
+      source: {
+        canonicalUrl: value.canonicalUrl,
+        caption: value.caption,
+        creator: value.creator,
+        observedAt: value.observedAt,
+        provenance: value.provenance,
+        publishedAt: value.publishedAt,
+      },
       videoStreams: value.videoStreams,
     } satisfies VerifiedAcquisitionEvidence;
   });

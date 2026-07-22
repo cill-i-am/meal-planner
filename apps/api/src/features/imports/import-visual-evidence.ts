@@ -254,7 +254,8 @@ const observationsMatchFrames = (
     return frame?.timestampMilliseconds === observation.timestampMilliseconds;
   });
 
-const readVisualManifest = (
+/** Re-verify private normalized visual evidence before downstream use. */
+export const readVerifiedVisualEvidence = (
   bucket: AcquisitionBucketLike,
   expected: {
     readonly dispatchId: string;
@@ -378,7 +379,7 @@ const storeVisualManifest = (
           sha256: sha256Bytes(sha256),
         }),
     }).pipe(Effect.exit);
-    const verified = yield* readVisualManifest(bucket, {
+    const verified = yield* readVerifiedVisualEvidence(bucket, {
       dispatchId: document.dispatchId,
       generation: document.acquisitionGeneration,
       importId: document.importId,
@@ -471,7 +472,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     startedAt: now,
   });
   if (claim._tag === "Completed") {
-    const committed = yield* readVisualManifest(input.bucket, {
+    const committed = yield* readVerifiedVisualEvidence(input.bucket, {
       dispatchId,
       generation: evidence.generation,
       importId: input.importId,
@@ -499,7 +500,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     return yield* Effect.fail(pipelineFailure("outcome_unknown"));
   }
   if (claim._tag === "ResumeDispatch") {
-    const recovered = yield* readVisualManifest(input.bucket, {
+    const recovered = yield* readVerifiedVisualEvidence(input.bucket, {
       dispatchId,
       generation: evidence.generation,
       importId: input.importId,

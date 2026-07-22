@@ -27,6 +27,7 @@ import type {
 } from "./import.contracts.js";
 import {
   importRequests,
+  importRecipeExtractions,
   importVisualEvidence,
   recipeImports,
 } from "./import.database-schema.js";
@@ -74,6 +75,9 @@ const DatabaseImportRow = Schema.Struct({
   ]),
   statusCode: NullableString,
   updatedAt: Schema.String,
+  recipeDraftFingerprint: NullableString,
+  recipeDraftState: NullableString,
+  recipeDraftUpdatedAt: NullableString,
   visualFailureCode: NullableString,
   visualManifestKey: NullableString,
   visualOutcome: NullableString,
@@ -98,6 +102,17 @@ const importSelection = {
   status: recipeImports.status,
   statusCode: recipeImports.statusCode,
   updatedAt: recipeImports.updatedAt,
+  recipeDraftFingerprint: sql<
+    string | null
+  >`${importRecipeExtractions.extractionFingerprint}`.as(
+    "recipe_draft_fingerprint"
+  ),
+  recipeDraftState: sql<string | null>`${importRecipeExtractions.state}`.as(
+    "recipe_draft_state"
+  ),
+  recipeDraftUpdatedAt: sql<
+    string | null
+  >`${importRecipeExtractions.updatedAt}`.as("recipe_draft_updated_at"),
   visualFailureCode: importVisualEvidence.failureCode,
   visualManifestKey: importVisualEvidence.manifestKey,
   visualOutcome: importVisualEvidence.outcome,
@@ -290,7 +305,35 @@ const decodeStoredImport = (input: unknown) =>
       const baseEvidence = Schema.decodeUnknownSync(
         Schema.Array(EvidenceReference)
       )(JSON.parse(row.evidenceReferencesJson));
-      const projection = decodeVisualProjection(row, baseEvidence);
+      const visualProjection = decodeVisualProjection(row, baseEvidence);
+      const projection =
+        row.recipeDraftState === null &&
+        row.recipeDraftFingerprint === null &&
+        row.recipeDraftUpdatedAt === null
+          ? visualProjection
+          : row.recipeDraftState === "needs_review" &&
+              row.recipeDraftFingerprint !== null &&
+              row.recipeDraftUpdatedAt !== null &&
+              visualProjection.evidence.length === 4 &&
+              [
+                "visual_evidence_empty",
+                "visual_evidence_found",
+                "visual_evidence_low_confidence",
+              ].includes(visualProjection.status.kind)
+            ? {
+                evidence: [
+                  ...visualProjection.evidence,
+                  {
+                    kind: "recipe_draft" as const,
+                    referenceId: `recipe-drafts/${row.recipeDraftFingerprint}`,
+                  },
+                ],
+                status: { kind: "needs_review" as const },
+                updatedAt: row.recipeDraftUpdatedAt,
+              }
+            : (() => {
+                throw new Error("Invalid persisted recipe draft state");
+              })();
       return {
         acquisitionGeneration: row.acquisitionGeneration,
         canonicalSourceId,
@@ -332,6 +375,7 @@ const statusColumns = (status: ImportStatus) => {
     case "acquired":
     case "acquiring":
     case "extracting_visual":
+    case "needs_review":
     case "queued":
     case "transcribed":
     case "transcribing": {
@@ -465,6 +509,17 @@ export const makeD1ImportRepository = (
               )
             )
           )
+          .leftJoin(
+            importRecipeExtractions,
+            and(
+              eq(importRecipeExtractions.importId, recipeImports.id),
+              eq(
+                importRecipeExtractions.acquisitionGeneration,
+                recipeImports.acquisitionGeneration
+              ),
+              eq(importRecipeExtractions.isCurrent, 1)
+            )
+          )
           .where(eq(recipeImports.id, id))
           .limit(1)
       );
@@ -569,6 +624,17 @@ export const makeD1ImportRepository = (
               )
             )
           )
+          .leftJoin(
+            importRecipeExtractions,
+            and(
+              eq(importRecipeExtractions.importId, recipeImports.id),
+              eq(
+                importRecipeExtractions.acquisitionGeneration,
+                recipeImports.acquisitionGeneration
+              ),
+              eq(importRecipeExtractions.isCurrent, 1)
+            )
+          )
           .where(
             eq(importRequests.idempotencyKeyHash, command.idempotencyKeyHash)
           )
@@ -585,6 +651,17 @@ export const makeD1ImportRepository = (
                 importVisualEvidence.acquisitionGeneration,
                 recipeImports.acquisitionGeneration
               )
+            )
+          )
+          .leftJoin(
+            importRecipeExtractions,
+            and(
+              eq(importRecipeExtractions.importId, recipeImports.id),
+              eq(
+                importRecipeExtractions.acquisitionGeneration,
+                recipeImports.acquisitionGeneration
+              ),
+              eq(importRecipeExtractions.isCurrent, 1)
             )
           )
           .where(
@@ -706,6 +783,17 @@ export const makeD1ImportRepository = (
                 )
               )
             )
+            .leftJoin(
+              importRecipeExtractions,
+              and(
+                eq(importRecipeExtractions.importId, recipeImports.id),
+                eq(
+                  importRecipeExtractions.acquisitionGeneration,
+                  recipeImports.acquisitionGeneration
+                ),
+                eq(importRecipeExtractions.isCurrent, 1)
+              )
+            )
             .where(
               and(
                 eq(recipeImports.sourceKind, identity.kind),
@@ -741,6 +829,17 @@ export const makeD1ImportRepository = (
                   importVisualEvidence.acquisitionGeneration,
                   recipeImports.acquisitionGeneration
                 )
+              )
+            )
+            .leftJoin(
+              importRecipeExtractions,
+              and(
+                eq(importRecipeExtractions.importId, recipeImports.id),
+                eq(
+                  importRecipeExtractions.acquisitionGeneration,
+                  recipeImports.acquisitionGeneration
+                ),
+                eq(importRecipeExtractions.isCurrent, 1)
               )
             )
             .where(eq(importRequests.idempotencyKeyHash, idempotencyKeyHash))

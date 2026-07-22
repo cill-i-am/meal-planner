@@ -56,6 +56,30 @@ const Sha256Hex = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
 );
 
+/** Verified public attribution carried by the private acquisition manifest. */
+export const VerifiedSourceMetadata = Schema.Struct({
+  canonicalUrl: Schema.String,
+  caption: Schema.NullOr(Schema.String),
+  creator: Schema.Struct({
+    displayName: Schema.NullOr(Schema.String),
+    handle: Schema.NullOr(Schema.String),
+    id: Schema.NullOr(Schema.String),
+  }),
+  observedAt: ImportTimestamp,
+  provenance: Schema.Struct({
+    canonicalUrl: Schema.Literal("provider_observed"),
+    caption: Schema.NullOr(Schema.Literal("creator_provided")),
+    creator: Schema.Struct({
+      displayName: Schema.NullOr(Schema.Literal("provider_observed")),
+      handle: Schema.NullOr(Schema.Literal("provider_observed")),
+      id: Schema.NullOr(Schema.Literal("provider_observed")),
+    }),
+    publishedAt: Schema.NullOr(Schema.Literal("provider_observed")),
+  }),
+  publishedAt: Schema.NullOr(ImportTimestamp),
+});
+export type VerifiedSourceMetadata = typeof VerifiedSourceMetadata.Type;
+
 export const VerifiedAcquisitionEvidence = Schema.Struct({
   acquiredAt: ImportTimestamp,
   audioStreams: Schema.NonEmptyArray(MediaStreamSummary),
@@ -78,6 +102,7 @@ export const VerifiedAcquisitionEvidence = Schema.Struct({
   manifestKey: Schema.String,
   mediaKey: Schema.String,
   sha256: Sha256Hex,
+  source: Schema.optionalKey(VerifiedSourceMetadata),
   videoStreams: Schema.NonEmptyArray(MediaStreamSummary),
 });
 export type VerifiedAcquisitionEvidence =
