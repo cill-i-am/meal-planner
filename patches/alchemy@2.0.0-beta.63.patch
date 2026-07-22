@@ -1,0 +1,86 @@
+diff --git a/lib/Cloudflare/D1/ApplyMigrations.js b/lib/Cloudflare/D1/ApplyMigrations.js
+--- a/lib/Cloudflare/D1/ApplyMigrations.js
++++ b/lib/Cloudflare/D1/ApplyMigrations.js
+@@ -14,11 +14,11 @@ export const applyMigrations = (options) => Effect.gen(function* () {
+         const migrationId = nextSeq.toString().padStart(5, "0");
+         nextSeq += 1;
+         // D1 over HTTP doesn't support transactions; run migration + record
+-        // in a single batched query.
+-        yield* executeSQL(accountId, databaseId, [
+-            migration.sql,
++        // in a single batch of complete statements.
++        yield* executeSQLBatch(accountId, databaseId, [
++            ...splitMigrationStatements(migration.sql),
+             `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
+-        ].join("\n"));
++        ]);
+     }
+ });
+ const executeSQL = (accountId, databaseId, sql) => Effect.gen(function* () {
+@@ -27,6 +27,13 @@ const executeSQL = (accountId, databaseId, sql) => Effect.gen(function* () {
+     const queryDb = yield* d1.queryDatabase;
+     return yield* queryDb({ accountId, databaseId, sql });
+ });
++const executeSQLBatch = (accountId, databaseId, statements) => Effect.gen(function* () {
++    const queryDb = yield* d1.queryDatabase;
++    return yield* queryDb({
++        accountId, databaseId, batch: statements.map((sql) => ({ sql })),
++    });
++});
++const splitMigrationStatements = (sql) => sql.split(/--> statement-breakpoint(?:\r?\n)?/u).map((statement) => statement.trim()).filter((statement) => statement.length > 0);
+ const detectSchema = (accountId, databaseId, migrationsTable) => Effect.gen(function* () {
+     const result = yield* executeSQL(accountId, databaseId, `PRAGMA table_info(${migrationsTable});`).pipe(Effect.option);
+     const columns = [];
+diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
+--- a/src/Cloudflare/D1/ApplyMigrations.ts
++++ b/src/Cloudflare/D1/ApplyMigrations.ts
+@@ -31,14 +31,14 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
+       const migrationId = nextSeq.toString().padStart(5, "0");
+       nextSeq += 1;
+       // D1 over HTTP doesn't support transactions; run migration + record
+-      // in a single batched query.
+-      yield* executeSQL(
++      // in a single batch of complete statements.
++      yield* executeSQLBatch(
+         accountId,
+         databaseId,
+         [
+-          migration.sql,
++          ...splitMigrationStatements(migration.sql),
+           `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
+-        ].join("\n"),
++        ],
+       );
+     }
+   });
+@@ -71,6 +71,29 @@ const executeSQL = (
+     return yield* queryDb({ accountId, databaseId, sql });
+   });
+-
++const executeSQLBatch = (
++  accountId: string,
++  databaseId: string,
++  statements: ReadonlyArray<string>,
++): Effect.Effect<
++  d1.QueryDatabaseResponse,
++  d1.QueryDatabaseError,
++  Credentials | HttpClient.HttpClient
++> =>
++  Effect.gen(function* () {
++    const queryDb = yield* d1.queryDatabase;
++    return yield* queryDb({
++      accountId,
++      databaseId,
++      batch: statements.map((sql) => ({ sql })),
++    });
++  });
++
++const splitMigrationStatements = (sql: string): ReadonlyArray<string> =>
++  sql
++    .split(/--> statement-breakpoint(?:\r?\n)?/u)
++    .map((statement) => statement.trim())
++    .filter((statement) => statement.length > 0);
++
+ const detectSchema = (
+   accountId: string,
+   databaseId: string,
