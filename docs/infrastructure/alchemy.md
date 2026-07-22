@@ -85,10 +85,12 @@ mutation, and cleanup boundary.
 
 ## Outputs and health verification
 
-The stack returns `apiWorkerName`, `databaseName`, and the optional `apiUrl`.
-Alchemy types the Worker URL as `string | undefined`: a Worker can exist without a generated
-workers.dev URL. Operator tooling must not invent a URL or cast it to a required
-string. When `apiUrl` is present, `GET <apiUrl>/health` returns:
+The stack returns the safe resource inventory `apiWorkerName`, `databaseName`,
+`evidenceBucketName`, `evidenceRetentionSeconds`, `importBatchQueueName`, and
+`importBatchDeadLetterQueueName`, plus the optional `apiUrl`. Alchemy types the
+Worker URL as `string | undefined`: a Worker can exist without a generated
+workers.dev URL. Operator tooling must not invent a URL or cast it to a
+required string. When `apiUrl` is present, `GET <apiUrl>/health` returns:
 
 ```json
 { "ok": true }
@@ -118,6 +120,29 @@ provider payloads, media, recipe data, or credentials. TikTok requests are
 used only for bounded identity/availability checks. GAIA-109 will replace the
 inert `ImportWorkflowStarter` seam with the queued acquisition workflow;
 workflow-start recovery and terminal-to-queued recovery remain later work.
+
+## Import operations staging topology
+
+`ImportEvidenceBucket` deletes private objects under `imports/` after seven
+days. The lifecycle policy is the deployable deletion boundary; D1 imports,
+idempotency records, recipe reviews, audit transitions, and approved meal plans
+are outside the bucket and are not retention targets.
+
+`ImportBatchQueue` and `ImportBatchDeadLetterQueue` are isolated, stage-owned
+Queue resources. The Cloudflare producer adapter sends the existing ID-only
+`{ batchId, itemId }` message contract and maps provider failures to the safe
+application error. It must never enqueue source URLs, provider payloads, media,
+or credentials.
+
+The stack deliberately does not register a Queue consumer or attach the dead
+letter queue yet. The current batch coordinator and replay claim store are
+provider-free in-memory tracers; connecting them to an at-least-once remote
+consumer would lose batch state across isolates and could duplicate effectful
+work. A later authorized slice must provide durable coordinator and atomic
+replay-claim adapters before it can bind the consumer, configure retry and
+dead-letter delivery, or claim live recovery proof. The existing operational
+service remains the authority for role checks, the pre-side-effect replay quota
+boundary, ordinary-import idempotency, and the closed privacy-safe event union.
 
 ## Cleanup and test boundaries
 
