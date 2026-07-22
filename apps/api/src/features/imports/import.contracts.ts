@@ -112,6 +112,10 @@ export const VisualEvidenceLowConfidenceImportStatus = Schema.Struct({
   kind: Schema.Literal("visual_evidence_low_confidence"),
 });
 
+export const NeedsReviewImportStatus = Schema.Struct({
+  kind: Schema.Literal("needs_review"),
+});
+
 export const PrivateOrUnavailableImportStatus = Schema.Struct({
   code: Schema.Literal("private_or_unavailable"),
   kind: Schema.Literal("failed"),
@@ -155,6 +159,7 @@ export const ImportStatus = Schema.Union([
   PrivateOrUnavailableImportStatus,
   AcquisitionTemporarilyUnavailableImportStatus,
   InvalidOrUnsupportedMediaImportStatus,
+  NeedsReviewImportStatus,
   ExtractingVisualImportStatus,
   TranscribedImportStatus,
   TranscribingImportStatus,
@@ -183,11 +188,16 @@ export const VisualEvidenceManifestReference = Schema.Struct({
   kind: Schema.Literal("visual_evidence_manifest"),
   referenceId: TrimmedNonEmptyString,
 });
+export const RecipeDraftEvidenceReference = Schema.Struct({
+  kind: Schema.Literal("recipe_draft"),
+  referenceId: TrimmedNonEmptyString,
+});
 export const EvidenceReference = Schema.Union([
   OriginalMediaEvidenceReference,
   AcquisitionManifestEvidenceReference,
   SpeechTranscriptEvidenceReference,
   VisualEvidenceManifestReference,
+  RecipeDraftEvidenceReference,
 ]);
 export type EvidenceReference = typeof EvidenceReference.Type;
 
@@ -263,11 +273,24 @@ const VisualEvidenceImportView = Schema.Struct({
   ]),
 });
 
+const RecipeDraftImportView = Schema.Struct({
+  ...ImportViewFields,
+  evidence: Schema.Tuple([
+    OriginalMediaEvidenceReference,
+    AcquisitionManifestEvidenceReference,
+    SpeechTranscriptEvidenceReference,
+    VisualEvidenceManifestReference,
+    RecipeDraftEvidenceReference,
+  ]),
+  status: NeedsReviewImportStatus,
+});
+
 export const ImportView = Schema.Union([
   NonAcquiredImportView,
   AcquiredImportView,
   TranscribedImportView,
   VisualEvidenceImportView,
+  RecipeDraftImportView,
 ]);
 export type ImportView = typeof ImportView.Type;
 

@@ -409,3 +409,111 @@ export const importVisualEvidence = sqliteTable(
     ),
   ]
 );
+
+export const importRecipeExtractions = sqliteTable(
+  "import_recipe_extractions",
+  {
+    acquisitionGeneration: integer("acquisition_generation").notNull(),
+    completedAt: text("completed_at"),
+    costCertainty: text("cost_certainty", { enum: ["estimated", "known"] }),
+    costCurrency: text("cost_currency", { enum: ["USD"] }),
+    createdAt: text("created_at").notNull(),
+    draftJson: text("draft_json"),
+    estimatedCostMicroUsd: integer("estimated_cost_micro_usd"),
+    evidenceFingerprint: text("evidence_fingerprint").notNull(),
+    extractionFingerprint: text("extraction_fingerprint").notNull(),
+    extractorModel: text("extractor_model").notNull(),
+    extractorProvider: text("extractor_provider").notNull(),
+    extractorVersion: text("extractor_version").notNull(),
+    failureCode: text("failure_code", {
+      enum: [
+        "insufficient_evidence",
+        "invalid_schema",
+        "model_refusal",
+        "provider_error",
+      ],
+    }),
+    importId: text("import_id").notNull(),
+    inputEvidenceItems: integer("input_evidence_items"),
+    inputTokens: integer("input_tokens"),
+    isCurrent: integer("is_current").notNull().default(0),
+    latencyMilliseconds: integer("latency_milliseconds"),
+    modelCalls: integer("model_calls"),
+    outputTokens: integer("output_tokens"),
+    state: text("state", {
+      enum: ["dispatching", "failed", "needs_review"],
+    }).notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.extractionFingerprint] }),
+    foreignKey({
+      columns: [table.importId, table.acquisitionGeneration],
+      foreignColumns: [recipeImports.id, recipeImports.acquisitionGeneration],
+      name: "import_recipe_extractions_import_generation_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    uniqueIndex("import_recipe_extractions_current_unique")
+      .on(table.importId, table.acquisitionGeneration)
+      .where(sql`${table.isCurrent} = 1`),
+    index("import_recipe_extractions_state_updated_index").on(
+      table.state,
+      table.updatedAt
+    ),
+    check(
+      "import_recipe_extractions_fingerprint_check",
+      sql`length(${table.evidenceFingerprint}) = 64 AND ${table.evidenceFingerprint} NOT GLOB '*[^0-9a-f]*' AND length(${table.extractionFingerprint}) = 64 AND ${table.extractionFingerprint} NOT GLOB '*[^0-9a-f]*'`
+    ),
+    check(
+      "import_recipe_extractions_descriptor_check",
+      sql`length(${table.extractorProvider}) BETWEEN 1 AND 64 AND length(${table.extractorModel}) BETWEEN 1 AND 64 AND length(${table.extractorVersion}) BETWEEN 1 AND 64`
+    ),
+    check(
+      "import_recipe_extractions_state_check",
+      sql`(
+        ${table.state} = 'dispatching'
+        AND ${table.draftJson} IS NULL
+        AND ${table.failureCode} IS NULL
+        AND ${table.inputEvidenceItems} IS NULL
+        AND ${table.inputTokens} IS NULL
+        AND ${table.outputTokens} IS NULL
+        AND ${table.modelCalls} IS NULL
+        AND ${table.latencyMilliseconds} IS NULL
+        AND ${table.estimatedCostMicroUsd} IS NULL
+        AND ${table.costCurrency} IS NULL
+        AND ${table.costCertainty} IS NULL
+        AND ${table.completedAt} IS NULL
+        AND ${table.isCurrent} = 0
+      ) OR (
+        ${table.state} = 'needs_review'
+        AND json_valid(${table.draftJson})
+        AND ${table.failureCode} IS NULL
+        AND typeof(${table.inputEvidenceItems}) = 'integer' AND ${table.inputEvidenceItems} > 0
+        AND typeof(${table.inputTokens}) = 'integer' AND ${table.inputTokens} >= 0
+        AND typeof(${table.outputTokens}) = 'integer' AND ${table.outputTokens} >= 0
+        AND ${table.modelCalls} = 1
+        AND typeof(${table.latencyMilliseconds}) = 'integer' AND ${table.latencyMilliseconds} >= 0
+        AND typeof(${table.estimatedCostMicroUsd}) = 'integer' AND ${table.estimatedCostMicroUsd} >= 0
+        AND ${table.costCurrency} = 'USD'
+        AND ${table.costCertainty} IN ('estimated', 'known')
+        AND ${table.completedAt} IS NOT NULL
+        AND ${table.isCurrent} IN (0, 1)
+      ) OR (
+        ${table.state} = 'failed'
+        AND ${table.draftJson} IS NULL
+        AND ${table.failureCode} IN ('insufficient_evidence', 'invalid_schema', 'model_refusal', 'provider_error')
+        AND ${table.inputEvidenceItems} IS NULL
+        AND ${table.inputTokens} IS NULL
+        AND ${table.outputTokens} IS NULL
+        AND ${table.modelCalls} IS NULL
+        AND ${table.latencyMilliseconds} IS NULL
+        AND ${table.estimatedCostMicroUsd} IS NULL
+        AND ${table.costCurrency} IS NULL
+        AND ${table.costCertainty} IS NULL
+        AND ${table.completedAt} IS NOT NULL
+        AND ${table.isCurrent} = 0
+      )`
+    ),
+  ]
+);

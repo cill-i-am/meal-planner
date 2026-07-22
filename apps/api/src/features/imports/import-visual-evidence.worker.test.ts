@@ -14,6 +14,12 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
+import type { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
+import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
+import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
+import { RecipeExtraction } from "./import-recipe-extractor.js";
 import {
   makeDeterministicSpeechAudioExtractor,
   makeDeterministicSpeechTranscriber,
@@ -110,6 +116,12 @@ const fixtureHash = (value: string) =>
     .join("")
     .padEnd(64, "0")
     .slice(0, 64);
+
+const makeRecipeExtractorDescriptor = (version: "schema-1" | "schema-2") => ({
+  model: "fixture-recipe-v1",
+  provider: "deterministic_fake",
+  version,
+});
 
 const acquisitionBucket = (): AcquisitionBucketLike => ({
   get: (key) => testEnv.ImportEvidenceBucket.get(key),
@@ -295,6 +307,105 @@ const makeVisualFixture = (outcome: "empty" | "found" | "low_confidence") =>
     provider: "deterministic_fake",
     usage: { inputBytes: 9, inputFrames: 2, modelCalls: 1 },
   });
+
+const unresolvedRecipeFact = (reason: string) => ({
+  citations: [],
+  origin: "unresolved",
+  reason,
+  state: "unresolved",
+});
+
+const makeRecipeFixture = (
+  input: RecipeEvidenceAssembly,
+  canonicalId: SourceCanonicalId,
+  options: {
+    readonly citationEvidenceId?: string;
+    readonly ingredientValue?: string;
+  } = {}
+) => {
+  const evidence = (kind: string) => {
+    const item = input.items.find((candidate) => candidate.kind === kind);
+    if (item === undefined) {
+      throw new Error(`Missing ${kind} fixture evidence`);
+    }
+    return item;
+  };
+  const citation = (kind: string, confidence: number) => {
+    const item = evidence(kind);
+    return {
+      confidence,
+      evidenceId: options.citationEvidenceId ?? item.evidenceId,
+      origin: item.origin,
+    };
+  };
+  const supported = (
+    value: string | number,
+    kind: string,
+    origin: "creator_provided" | "inferred" | "observed"
+  ) => ({
+    citations: [citation(kind, 0.95)],
+    origin,
+    state: "supported",
+    value,
+  });
+  const transcript = supported(
+    options.ingredientValue ?? "Chop onions.",
+    "transcript",
+    "creator_provided"
+  );
+  const visual = supported(
+    "Bake at 180 C for 20 minutes",
+    "visual_observation",
+    "observed"
+  );
+  return {
+    author: supported("Cook", "creator", "observed"),
+    category: unresolvedRecipeFact("not stated"),
+    cookTimeMinutes: supported(20, "visual_observation", "observed"),
+    cost: {
+      certainty: "known",
+      currency: "USD",
+      estimatedMicroUsd: 0,
+    },
+    cuisine: unresolvedRecipeFact("not stated"),
+    description: unresolvedRecipeFact("not stated"),
+    ingredientLines: { items: [transcript], state: "supported" },
+    instructions: { items: [transcript, visual], state: "supported" },
+    name: unresolvedRecipeFact("not stated"),
+    nutrition: unresolvedRecipeFact("not stated"),
+    prepTimeMinutes: unresolvedRecipeFact("not stated"),
+    sourceUrl: supported(
+      `https://www.tiktok.com/@cook/video/${canonicalId}`,
+      "source_url",
+      "observed"
+    ),
+    supportedClaims: { items: [visual], state: "supported" },
+    temperatureCelsius: supported(180, "visual_observation", "observed"),
+    tools: { items: [], reason: "not stated", state: "unresolved" },
+    totalTimeMinutes: unresolvedRecipeFact("not stated"),
+    unresolvedFields: [
+      "category",
+      "cuisine",
+      "description",
+      "ingredient_quantities",
+      "ingredient_units",
+      "name",
+      "nutrition",
+      "prep_time_minutes",
+      "tools",
+      "total_time_minutes",
+      "yield",
+    ],
+    usage: {
+      inputEvidenceItems: input.items.length,
+      inputTokens: 100,
+      latencyMilliseconds: 1,
+      modelCalls: 1,
+      outputTokens: 50,
+    },
+    yield: unresolvedRecipeFact("not stated"),
+  };
+};
 
 beforeAll(async () => {
   await applyD1Migrations(
@@ -855,4 +966,562 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
       ).toEqual({ kind: expectedStatus });
     }
   );
+});
+
+describe("provider-free evidence-to-recipe-draft tracer", () => {
+  const landVisualEvidence = async (
+    importId: ImportId,
+    canonicalId: SourceCanonicalId
+  ) => {
+    const importRepository = await makeTranscribedImport(importId, canonicalId);
+    await Effect.runPromise(
+      extractVisualEvidenceForTranscribedImport({
+        bucket: acquisitionBucket(),
+        extractor: makeVisualFixture("found").service,
+        frameSampler: makeFrameFixture().service,
+        importId,
+        importRepository,
+        now: () => extractedAt,
+        visualRepository: makeD1VisualEvidenceRepository(
+          testEnv.MealPlannerDatabase
+        ),
+      })
+    );
+    return importRepository;
+  };
+
+  it("persists a cited needs-review draft once without retaining raw evidence", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000230");
+    const canonicalId = decodeCanonicalId("7520000000000000230");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const now = decodeTimestamp("2026-07-21T10:03:00.000Z");
+    const descriptor = {
+      model: "fixture-recipe-v1",
+      provider: "deterministic_fake",
+      version: "schema-1",
+    } as const;
+    const extractor = makeDeterministicRecipeExtractor(
+      descriptor,
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
+    );
+    const recipeRepository = makeD1RecipeDraftRepository(
+      testEnv.MealPlannerDatabase
+    );
+
+    const draft = await Effect.runPromise(
+      produceRecipeDraftForImport({
+        bucket: acquisitionBucket(),
+        extractor: extractor.service,
+        importId,
+        importRepository,
+        now: () => now,
+        recipeRepository,
+      })
+    );
+
+    expect(draft).toMatchObject({
+      extractor: descriptor,
+      importId,
+      lifecycle: "needs_review",
+      schemaVersion: 1,
+    });
+    expect(draft.extraction.unresolvedFields).toContain("ingredient_units");
+    expect(extractor.calls).toHaveLength(1);
+    expect(extractor.calls[0]?.items.map(({ kind }) => kind)).toEqual([
+      "source_url",
+      "creator",
+      "caption",
+      "transcript",
+      "visual_observation",
+    ]);
+    const persisted = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT state, draft_json, model_calls, is_current
+         FROM import_recipe_extractions WHERE import_id = ?`
+    )
+      .bind(importId)
+      .first<{
+        draft_json: string;
+        is_current: number;
+        model_calls: number;
+        state: string;
+      }>();
+    expect(persisted).toMatchObject({
+      is_current: 1,
+      model_calls: 1,
+      state: "needs_review",
+    });
+    expect(persisted?.draft_json).not.toMatch(
+      /Synthetic fixture caption|Simmer for ten minutes|providerBody|authorization|secret/iu
+    );
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(importRepository.findById(importId))
+      ).view
+    ).toMatchObject({
+      evidence: [
+        {},
+        {},
+        {},
+        {},
+        {
+          kind: "recipe_draft",
+          referenceId: `recipe-drafts/${draft.extractionFingerprint}`,
+        },
+      ],
+      status: { kind: "needs_review" },
+      updatedAt: now,
+    });
+
+    const replay = makeDeterministicRecipeExtractor(descriptor, {
+      malformed: true,
+    });
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: replay.service,
+          importId,
+          importRepository,
+          now: () => now,
+          recipeRepository,
+        })
+      )
+    ).resolves.toEqual(draft);
+    expect(replay.calls).toEqual([]);
+
+    const reviewable = Option.getOrThrow(
+      await Effect.runPromise(importRepository.findById(importId))
+    );
+    await expect(
+      Effect.runPromise(
+        importRepository.acceptRequest({
+          candidate: reviewable,
+          idempotencyKeyHash: decodeIdempotencyKeyHash(
+            fixtureHash("recipe-review-canonical-duplicate")
+          ),
+          requestFingerprint: decodeRequestFingerprint(
+            fixtureHash("recipe-review-canonical-request")
+          ),
+          sourceLocatorHash: decodeSourceLocatorHash(
+            fixtureHash("recipe-review-canonical-locator")
+          ),
+        })
+      )
+    ).resolves.toMatchObject({
+      disposition: "canonical_duplicate",
+      import: { view: { id: importId, status: { kind: "needs_review" } } },
+    });
+
+    const updatedDescriptor = { ...descriptor, version: "schema-2" };
+    const updatedExtractor = makeDeterministicRecipeExtractor(
+      updatedDescriptor,
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
+    );
+    const updatedDraft = await Effect.runPromise(
+      produceRecipeDraftForImport({
+        bucket: acquisitionBucket(),
+        extractor: updatedExtractor.service,
+        importId,
+        importRepository,
+        now: () => now,
+        recipeRepository,
+      })
+    );
+    expect(updatedExtractor.calls).toHaveLength(1);
+    expect(updatedDraft.extractionFingerprint).not.toBe(
+      draft.extractionFingerprint
+    );
+
+    const historicalReplay = makeDeterministicRecipeExtractor(descriptor, {
+      malformed: true,
+    });
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: historicalReplay.service,
+          importId,
+          importRepository,
+          now: () => now,
+          recipeRepository,
+        })
+      )
+    ).resolves.toEqual(draft);
+    expect(historicalReplay.calls).toEqual([]);
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(importRepository.findById(importId))
+      ).view.evidence.at(-1)
+    ).toEqual({
+      kind: "recipe_draft",
+      referenceId: `recipe-drafts/${updatedDraft.extractionFingerprint}`,
+    });
+  });
+
+  it("keeps the newer extraction current when an older version completes late", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000236");
+    const canonicalId = decodeCanonicalId("7520000000000000236");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const recipeRepository = makeD1RecipeDraftRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const completedAt = decodeTimestamp("2026-07-21T10:03:00.000Z");
+    const evidenceFingerprint = fixtureHash("recipe-overlap-evidence");
+    const evidenceHashes = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT transcript.transcript_sha256, visual.manifest_sha256
+         FROM import_transcriptions AS transcript
+         JOIN import_visual_evidence AS visual
+           ON visual.import_id = transcript.import_id
+          AND visual.acquisition_generation = transcript.acquisition_generation
+        WHERE transcript.import_id = ?
+          AND transcript.acquisition_generation = ?`
+    )
+      .bind(importId, generation)
+      .first<{
+        manifest_sha256: string;
+        transcript_sha256: string;
+      }>();
+    if (evidenceHashes === null) {
+      throw new Error("Expected landed transcript and visual evidence");
+    }
+
+    const assembly: RecipeEvidenceAssembly = {
+      evidenceFingerprint,
+      generation,
+      importId,
+      items: [
+        {
+          artifactReference: "source",
+          evidenceId: "source:url",
+          kind: "source_url",
+          origin: "observed",
+          value: `https://www.tiktok.com/@cook/video/${canonicalId}`,
+        },
+        {
+          artifactReference: "source",
+          evidenceId: "source:creator",
+          kind: "creator",
+          origin: "observed",
+          value: "Cook",
+        },
+        {
+          artifactReference: "transcript",
+          evidenceId: "transcript:0",
+          kind: "transcript",
+          origin: "creator_provided",
+          value: "Chop onions.",
+        },
+        {
+          artifactReference: "visual",
+          evidenceId: "visual:0",
+          kind: "visual_observation",
+          origin: "observed",
+          value: "Bake at 180 C for 20 minutes",
+        },
+      ],
+    };
+    const extraction = Schema.decodeUnknownSync(RecipeExtraction)(
+      makeRecipeFixture(assembly, canonicalId)
+    );
+    const fingerprint = (version: "schema-1" | "schema-2") =>
+      fixtureHash(`recipe-overlap-${version}`);
+    const draft = (version: "schema-1" | "schema-2"): RecipeDraft => ({
+      createdAt: completedAt,
+      evidenceFingerprint,
+      extraction,
+      extractionFingerprint: fingerprint(version),
+      extractor: makeRecipeExtractorDescriptor(version),
+      generation,
+      importId,
+      lifecycle: "needs_review",
+      schemaVersion: 1,
+    });
+    const claim = (version: "schema-1" | "schema-2") =>
+      recipeRepository.claim({
+        descriptor: makeRecipeExtractorDescriptor(version),
+        evidenceFingerprint,
+        extractionFingerprint: fingerprint(version),
+        generation,
+        importId,
+        sourceMediaSha256,
+        startedAt: completedAt,
+        transcriptSha256: evidenceHashes.transcript_sha256,
+        visualManifestSha256: evidenceHashes.manifest_sha256,
+      });
+
+    await expect(Effect.runPromise(claim("schema-1"))).resolves.toEqual({
+      _tag: "DispatchClaimed",
+    });
+    await expect(Effect.runPromise(claim("schema-2"))).resolves.toEqual({
+      _tag: "DispatchClaimed",
+    });
+    await expect(
+      Effect.runPromise(recipeRepository.complete(draft("schema-2")))
+    ).resolves.toMatchObject({ extractor: { version: "schema-2" } });
+    await expect(
+      Effect.runPromise(recipeRepository.complete(draft("schema-1")))
+    ).rejects.toMatchObject({ _tag: "ImportTransitionRejected" });
+
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT extractor_version, is_current, state
+           FROM import_recipe_extractions
+          WHERE import_id = ?
+          ORDER BY extractor_version`
+      )
+        .bind(importId)
+        .all()
+    ).resolves.toMatchObject({
+      results: [
+        { extractor_version: "schema-1", is_current: 0, state: "needs_review" },
+        { extractor_version: "schema-2", is_current: 1, state: "needs_review" },
+      ],
+    });
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(importRepository.findById(importId))
+      ).view.evidence.at(-1)
+    ).toEqual({
+      kind: "recipe_draft",
+      referenceId: `recipe-drafts/${fingerprint("schema-2")}`,
+    });
+  });
+
+  it("classifies malformed extractor output without persisting a draft", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000231");
+    const canonicalId = decodeCanonicalId("7520000000000000231");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      {
+        model: "fixture-recipe-invalid",
+        provider: "deterministic_fake",
+        version: "schema-1",
+      },
+      { name: "untrusted and incomplete" }
+    );
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          importId,
+          importRepository,
+          now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
+          recipeRepository: makeD1RecipeDraftRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeDraftPipelineFailure",
+      code: "invalid_schema",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, draft_json, failure_code, is_current
+           FROM import_recipe_extractions WHERE import_id = ?`
+      )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({
+      draft_json: null,
+      failure_code: "invalid_schema",
+      is_current: 0,
+      state: "failed",
+    });
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(importRepository.findById(importId))
+      ).view.status
+    ).toEqual({ kind: "visual_evidence_found" });
+  });
+
+  it("rejects citations that do not identify landed evidence", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000232");
+    const canonicalId = decodeCanonicalId("7520000000000000232");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      {
+        model: "fixture-recipe-forged-citation",
+        provider: "deterministic_fake",
+        version: "schema-1",
+      },
+      (input: RecipeEvidenceAssembly) =>
+        makeRecipeFixture(input, canonicalId, {
+          citationEvidenceId: "forged:evidence",
+        })
+    );
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          importId,
+          importRepository,
+          now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
+          recipeRepository: makeD1RecipeDraftRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeDraftPipelineFailure",
+      code: "invalid_schema",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, draft_json, failure_code, is_current
+           FROM import_recipe_extractions WHERE import_id = ?`
+      )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({
+      draft_json: null,
+      failure_code: "invalid_schema",
+      is_current: 0,
+      state: "failed",
+    });
+    expect(extractor.calls).toHaveLength(1);
+  });
+
+  it("rejects unsupported facts even when they cite real landed evidence", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000233");
+    const canonicalId = decodeCanonicalId("7520000000000000233");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      {
+        model: "fixture-recipe-unsupported-fact",
+        provider: "deterministic_fake",
+        version: "schema-1",
+      },
+      (input: RecipeEvidenceAssembly) =>
+        makeRecipeFixture(input, canonicalId, {
+          ingredientValue: "10 kg plutonium",
+        })
+    );
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          importId,
+          importRepository,
+          now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
+          recipeRepository: makeD1RecipeDraftRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeDraftPipelineFailure",
+      code: "invalid_schema",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, draft_json, failure_code, is_current
+           FROM import_recipe_extractions WHERE import_id = ?`
+      )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({
+      draft_json: null,
+      failure_code: "invalid_schema",
+      is_current: 0,
+      state: "failed",
+    });
+  });
+
+  it("rejects time and temperature values swapped within real cited evidence", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000235");
+    const canonicalId = decodeCanonicalId("7520000000000000235");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      {
+        model: "fixture-recipe-numeric-collision",
+        provider: "deterministic_fake",
+        version: "schema-1",
+      },
+      (input: RecipeEvidenceAssembly) => {
+        const fixture = makeRecipeFixture(input, canonicalId);
+        return {
+          ...fixture,
+          cookTimeMinutes: { ...fixture.cookTimeMinutes, value: 180 },
+          temperatureCelsius: {
+            ...fixture.temperatureCelsius,
+            value: 20,
+          },
+        };
+      }
+    );
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          importId,
+          importRepository,
+          now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
+          recipeRepository: makeD1RecipeDraftRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeDraftPipelineFailure",
+      code: "invalid_schema",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, draft_json, failure_code, is_current
+           FROM import_recipe_extractions WHERE import_id = ?`
+      )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({
+      draft_json: null,
+      failure_code: "invalid_schema",
+      is_current: 0,
+      state: "failed",
+    });
+  });
+
+  it("does not project needs-review for a corrupt durable draft", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000234");
+    const canonicalId = decodeCanonicalId("7520000000000000234");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      {
+        model: "fixture-recipe-corrupt-draft",
+        provider: "deterministic_fake",
+        version: "schema-1",
+      },
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
+    );
+    await Effect.runPromise(
+      produceRecipeDraftForImport({
+        bucket: acquisitionBucket(),
+        extractor: extractor.service,
+        importId,
+        importRepository,
+        now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
+        recipeRepository: makeD1RecipeDraftRepository(
+          testEnv.MealPlannerDatabase
+        ),
+      })
+    );
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE import_recipe_extractions SET draft_json = '{}'
+        WHERE import_id = ? AND is_current = 1`
+    )
+      .bind(importId)
+      .run();
+
+    await expect(
+      Effect.runPromise(importRepository.findById(importId))
+    ).rejects.toMatchObject({ _tag: "ImportPersistenceCorrupt" });
+  });
 });

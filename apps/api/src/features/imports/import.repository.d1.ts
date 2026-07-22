@@ -14,6 +14,7 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
 import {
   EvidenceReference,
   ImportView,
@@ -27,6 +28,7 @@ import type {
 } from "./import.contracts.js";
 import {
   importRequests,
+  importRecipeExtractions,
   importVisualEvidence,
   recipeImports,
 } from "./import.database-schema.js";
@@ -61,6 +63,10 @@ const DatabaseImportRow = Schema.Struct({
   createdAt: Schema.String,
   evidenceReferencesJson: Schema.String,
   id: Schema.String,
+  recipeDraftFingerprint: NullableString,
+  recipeDraftJson: NullableString,
+  recipeDraftState: NullableString,
+  recipeDraftUpdatedAt: NullableString,
   recoveryAction: NullableString,
   sourceKind: Schema.Literal("tiktok"),
   status: Schema.Literals([
@@ -93,6 +99,20 @@ const importSelection = {
   createdAt: recipeImports.createdAt,
   evidenceReferencesJson: recipeImports.evidenceReferencesJson,
   id: recipeImports.id,
+  recipeDraftFingerprint: sql<
+    string | null
+  >`${importRecipeExtractions.extractionFingerprint}`.as(
+    "recipe_draft_fingerprint"
+  ),
+  recipeDraftJson: sql<string | null>`${importRecipeExtractions.draftJson}`.as(
+    "recipe_draft_json"
+  ),
+  recipeDraftState: sql<string | null>`${importRecipeExtractions.state}`.as(
+    "recipe_draft_state"
+  ),
+  recipeDraftUpdatedAt: sql<
+    string | null
+  >`${importRecipeExtractions.updatedAt}`.as("recipe_draft_updated_at"),
   recoveryAction: recipeImports.recoveryAction,
   sourceKind: recipeImports.sourceKind,
   status: recipeImports.status,
@@ -279,6 +299,55 @@ const decodeVisualProjection = (
   throw new Error("Invalid persisted visual evidence state");
 };
 
+const decodeRecipeProjection = (
+  row: DatabaseImportRow,
+  visualProjection: ReturnType<typeof decodeVisualProjection>
+) => {
+  if (
+    row.recipeDraftState === null &&
+    row.recipeDraftFingerprint === null &&
+    row.recipeDraftJson === null &&
+    row.recipeDraftUpdatedAt === null
+  ) {
+    return visualProjection;
+  }
+  if (
+    row.recipeDraftState === "needs_review" &&
+    row.recipeDraftFingerprint !== null &&
+    row.recipeDraftJson !== null &&
+    row.recipeDraftUpdatedAt !== null &&
+    visualProjection.evidence.length === 4 &&
+    [
+      "visual_evidence_empty",
+      "visual_evidence_found",
+      "visual_evidence_low_confidence",
+    ].includes(visualProjection.status.kind)
+  ) {
+    const draft = Schema.decodeUnknownSync(RecipeDraft, {
+      onExcessProperty: "error",
+    })(JSON.parse(row.recipeDraftJson));
+    if (
+      draft.extractionFingerprint !== row.recipeDraftFingerprint ||
+      draft.importId !== row.id ||
+      draft.generation !== row.acquisitionGeneration
+    ) {
+      throw new Error("Persisted recipe draft identity mismatch");
+    }
+    return {
+      evidence: [
+        ...visualProjection.evidence,
+        {
+          kind: "recipe_draft" as const,
+          referenceId: `recipe-drafts/${row.recipeDraftFingerprint}`,
+        },
+      ],
+      status: { kind: "needs_review" as const },
+      updatedAt: row.recipeDraftUpdatedAt,
+    };
+  }
+  throw new Error("Invalid persisted recipe draft state");
+};
+
 const decodeStoredImport = (input: unknown) =>
   Effect.try({
     catch: importPersistenceCorrupt,
@@ -290,7 +359,8 @@ const decodeStoredImport = (input: unknown) =>
       const baseEvidence = Schema.decodeUnknownSync(
         Schema.Array(EvidenceReference)
       )(JSON.parse(row.evidenceReferencesJson));
-      const projection = decodeVisualProjection(row, baseEvidence);
+      const visualProjection = decodeVisualProjection(row, baseEvidence);
+      const projection = decodeRecipeProjection(row, visualProjection);
       return {
         acquisitionGeneration: row.acquisitionGeneration,
         canonicalSourceId,
@@ -332,6 +402,7 @@ const statusColumns = (status: ImportStatus) => {
     case "acquired":
     case "acquiring":
     case "extracting_visual":
+    case "needs_review":
     case "queued":
     case "transcribed":
     case "transcribing": {
@@ -465,6 +536,17 @@ export const makeD1ImportRepository = (
               )
             )
           )
+          .leftJoin(
+            importRecipeExtractions,
+            and(
+              eq(importRecipeExtractions.importId, recipeImports.id),
+              eq(
+                importRecipeExtractions.acquisitionGeneration,
+                recipeImports.acquisitionGeneration
+              ),
+              eq(importRecipeExtractions.isCurrent, 1)
+            )
+          )
           .where(eq(recipeImports.id, id))
           .limit(1)
       );
@@ -490,6 +572,7 @@ export const makeD1ImportRepository = (
         const canInsertCandidate =
           ![
             "extracting_visual",
+            "needs_review",
             "visual_evidence_empty",
             "visual_evidence_found",
             "visual_evidence_low_confidence",
@@ -569,6 +652,17 @@ export const makeD1ImportRepository = (
               )
             )
           )
+          .leftJoin(
+            importRecipeExtractions,
+            and(
+              eq(importRecipeExtractions.importId, recipeImports.id),
+              eq(
+                importRecipeExtractions.acquisitionGeneration,
+                recipeImports.acquisitionGeneration
+              ),
+              eq(importRecipeExtractions.isCurrent, 1)
+            )
+          )
           .where(
             eq(importRequests.idempotencyKeyHash, command.idempotencyKeyHash)
           )
@@ -585,6 +679,17 @@ export const makeD1ImportRepository = (
                 importVisualEvidence.acquisitionGeneration,
                 recipeImports.acquisitionGeneration
               )
+            )
+          )
+          .leftJoin(
+            importRecipeExtractions,
+            and(
+              eq(importRecipeExtractions.importId, recipeImports.id),
+              eq(
+                importRecipeExtractions.acquisitionGeneration,
+                recipeImports.acquisitionGeneration
+              ),
+              eq(importRecipeExtractions.isCurrent, 1)
             )
           )
           .where(
@@ -706,6 +811,17 @@ export const makeD1ImportRepository = (
                 )
               )
             )
+            .leftJoin(
+              importRecipeExtractions,
+              and(
+                eq(importRecipeExtractions.importId, recipeImports.id),
+                eq(
+                  importRecipeExtractions.acquisitionGeneration,
+                  recipeImports.acquisitionGeneration
+                ),
+                eq(importRecipeExtractions.isCurrent, 1)
+              )
+            )
             .where(
               and(
                 eq(recipeImports.sourceKind, identity.kind),
@@ -741,6 +857,17 @@ export const makeD1ImportRepository = (
                   importVisualEvidence.acquisitionGeneration,
                   recipeImports.acquisitionGeneration
                 )
+              )
+            )
+            .leftJoin(
+              importRecipeExtractions,
+              and(
+                eq(importRecipeExtractions.importId, recipeImports.id),
+                eq(
+                  importRecipeExtractions.acquisitionGeneration,
+                  recipeImports.acquisitionGeneration
+                ),
+                eq(importRecipeExtractions.isCurrent, 1)
               )
             )
             .where(eq(importRequests.idempotencyKeyHash, idempotencyKeyHash))
