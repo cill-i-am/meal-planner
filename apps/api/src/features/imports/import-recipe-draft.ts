@@ -207,14 +207,19 @@ const extractionIsGrounded = (
     if (fact.state !== "supported") {
       return true;
     }
-    return fact.citations.every((citation) => {
-      const item = evidenceById.get(citation.evidenceId);
-      return (
-        item !== undefined &&
-        item.origin === citation.origin &&
-        (fact.origin === "inferred" || fact.origin === citation.origin)
-      );
-    });
+    const citedEvidence = fact.citations.map((citation) => ({
+      citation,
+      item: evidenceById.get(citation.evidenceId),
+    }));
+    return (
+      citedEvidence.every(
+        ({ citation, item }) =>
+          item !== undefined &&
+          item.origin === citation.origin &&
+          (fact.origin === "inferred" || fact.origin === citation.origin)
+      ) &&
+      citedEvidence.some(({ item }) => item?.value.includes(String(fact.value)))
+    );
   });
   const listsAreConsistent = [
     extraction.ingredientLines,

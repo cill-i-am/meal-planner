@@ -310,7 +310,10 @@ const unresolvedRecipeFact = (reason: string) => ({
 const makeRecipeFixture = (
   input: RecipeEvidenceAssembly,
   canonicalId: SourceCanonicalId,
-  citationEvidenceId?: string
+  options: {
+    readonly citationEvidenceId?: string;
+    readonly ingredientValue?: string;
+  } = {}
 ) => {
   const evidence = (kind: string) => {
     const item = input.items.find((candidate) => candidate.kind === kind);
@@ -323,7 +326,7 @@ const makeRecipeFixture = (
     const item = evidence(kind);
     return {
       confidence,
-      evidenceId: citationEvidenceId ?? item.evidenceId,
+      evidenceId: options.citationEvidenceId ?? item.evidenceId,
       origin: item.origin,
     };
   };
@@ -338,7 +341,7 @@ const makeRecipeFixture = (
     value,
   });
   const transcript = supported(
-    "Chop onions.",
+    options.ingredientValue ?? "Chop onions.",
     "transcript",
     "creator_provided"
   );
@@ -360,7 +363,7 @@ const makeRecipeFixture = (
     description: unresolvedRecipeFact("not stated"),
     ingredientLines: { items: [transcript], state: "supported" },
     instructions: { items: [transcript, visual], state: "supported" },
-    name: supported("Onion bake", "caption", "inferred"),
+    name: unresolvedRecipeFact("not stated"),
     nutrition: unresolvedRecipeFact("not stated"),
     prepTimeMinutes: unresolvedRecipeFact("not stated"),
     sourceUrl: supported(
@@ -378,6 +381,7 @@ const makeRecipeFixture = (
       "description",
       "ingredient_quantities",
       "ingredient_units",
+      "name",
       "nutrition",
       "prep_time_minutes",
       "tools",
@@ -1076,6 +1080,74 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
       )
     ).resolves.toEqual(draft);
     expect(replay.calls).toEqual([]);
+
+    const reviewable = Option.getOrThrow(
+      await Effect.runPromise(importRepository.findById(importId))
+    );
+    await expect(
+      Effect.runPromise(
+        importRepository.acceptRequest({
+          candidate: reviewable,
+          idempotencyKeyHash: decodeIdempotencyKeyHash(
+            fixtureHash("recipe-review-canonical-duplicate")
+          ),
+          requestFingerprint: decodeRequestFingerprint(
+            fixtureHash("recipe-review-canonical-request")
+          ),
+          sourceLocatorHash: decodeSourceLocatorHash(
+            fixtureHash("recipe-review-canonical-locator")
+          ),
+        })
+      )
+    ).resolves.toMatchObject({
+      disposition: "canonical_duplicate",
+      import: { view: { id: importId, status: { kind: "needs_review" } } },
+    });
+
+    const updatedDescriptor = { ...descriptor, version: "schema-2" };
+    const updatedExtractor = makeDeterministicRecipeExtractor(
+      updatedDescriptor,
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
+    );
+    const updatedDraft = await Effect.runPromise(
+      produceRecipeDraftForImport({
+        bucket: acquisitionBucket(),
+        extractor: updatedExtractor.service,
+        importId,
+        importRepository,
+        now: () => now,
+        recipeRepository,
+      })
+    );
+    expect(updatedExtractor.calls).toHaveLength(1);
+    expect(updatedDraft.extractionFingerprint).not.toBe(
+      draft.extractionFingerprint
+    );
+
+    const historicalReplay = makeDeterministicRecipeExtractor(descriptor, {
+      malformed: true,
+    });
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: historicalReplay.service,
+          importId,
+          importRepository,
+          now: () => now,
+          recipeRepository,
+        })
+      )
+    ).resolves.toEqual(draft);
+    expect(historicalReplay.calls).toEqual([]);
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(importRepository.findById(importId))
+      ).view.evidence.at(-1)
+    ).toEqual({
+      kind: "recipe_draft",
+      referenceId: `recipe-drafts/${updatedDraft.extractionFingerprint}`,
+    });
   });
 
   it("classifies malformed extractor output without persisting a draft", async () => {
@@ -1139,7 +1211,9 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
         version: "schema-1",
       },
       (input: RecipeEvidenceAssembly) =>
-        makeRecipeFixture(input, canonicalId, "forged:evidence")
+        makeRecipeFixture(input, canonicalId, {
+          citationEvidenceId: "forged:evidence",
+        })
     );
 
     await expect(
@@ -1173,5 +1247,89 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
       state: "failed",
     });
     expect(extractor.calls).toHaveLength(1);
+  });
+
+  it("rejects unsupported facts even when they cite real landed evidence", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000233");
+    const canonicalId = decodeCanonicalId("7520000000000000233");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      {
+        model: "fixture-recipe-unsupported-fact",
+        provider: "deterministic_fake",
+        version: "schema-1",
+      },
+      (input: RecipeEvidenceAssembly) =>
+        makeRecipeFixture(input, canonicalId, {
+          ingredientValue: "10 kg plutonium",
+        })
+    );
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          importId,
+          importRepository,
+          now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
+          recipeRepository: makeD1RecipeDraftRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeDraftPipelineFailure",
+      code: "invalid_schema",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, draft_json, failure_code, is_current
+           FROM import_recipe_extractions WHERE import_id = ?`
+      )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({
+      draft_json: null,
+      failure_code: "invalid_schema",
+      is_current: 0,
+      state: "failed",
+    });
+  });
+
+  it("does not project needs-review for a corrupt durable draft", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000234");
+    const canonicalId = decodeCanonicalId("7520000000000000234");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      {
+        model: "fixture-recipe-corrupt-draft",
+        provider: "deterministic_fake",
+        version: "schema-1",
+      },
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
+    );
+    await Effect.runPromise(
+      produceRecipeDraftForImport({
+        bucket: acquisitionBucket(),
+        extractor: extractor.service,
+        importId,
+        importRepository,
+        now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
+        recipeRepository: makeD1RecipeDraftRepository(
+          testEnv.MealPlannerDatabase
+        ),
+      })
+    );
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE import_recipe_extractions SET draft_json = '{}'
+        WHERE import_id = ? AND is_current = 1`
+    )
+      .bind(importId)
+      .run();
+
+    await expect(
+      Effect.runPromise(importRepository.findById(importId))
+    ).rejects.toMatchObject({ _tag: "ImportPersistenceCorrupt" });
   });
 });

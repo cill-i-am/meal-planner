@@ -14,6 +14,7 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
 import {
   EvidenceReference,
   ImportView,
@@ -63,6 +64,7 @@ const DatabaseImportRow = Schema.Struct({
   evidenceReferencesJson: Schema.String,
   id: Schema.String,
   recipeDraftFingerprint: NullableString,
+  recipeDraftJson: NullableString,
   recipeDraftState: NullableString,
   recipeDraftUpdatedAt: NullableString,
   recoveryAction: NullableString,
@@ -101,6 +103,9 @@ const importSelection = {
     string | null
   >`${importRecipeExtractions.extractionFingerprint}`.as(
     "recipe_draft_fingerprint"
+  ),
+  recipeDraftJson: sql<string | null>`${importRecipeExtractions.draftJson}`.as(
+    "recipe_draft_json"
   ),
   recipeDraftState: sql<string | null>`${importRecipeExtractions.state}`.as(
     "recipe_draft_state"
@@ -301,6 +306,7 @@ const decodeRecipeProjection = (
   if (
     row.recipeDraftState === null &&
     row.recipeDraftFingerprint === null &&
+    row.recipeDraftJson === null &&
     row.recipeDraftUpdatedAt === null
   ) {
     return visualProjection;
@@ -308,6 +314,7 @@ const decodeRecipeProjection = (
   if (
     row.recipeDraftState === "needs_review" &&
     row.recipeDraftFingerprint !== null &&
+    row.recipeDraftJson !== null &&
     row.recipeDraftUpdatedAt !== null &&
     visualProjection.evidence.length === 4 &&
     [
@@ -316,6 +323,16 @@ const decodeRecipeProjection = (
       "visual_evidence_low_confidence",
     ].includes(visualProjection.status.kind)
   ) {
+    const draft = Schema.decodeUnknownSync(RecipeDraft, {
+      onExcessProperty: "error",
+    })(JSON.parse(row.recipeDraftJson));
+    if (
+      draft.extractionFingerprint !== row.recipeDraftFingerprint ||
+      draft.importId !== row.id ||
+      draft.generation !== row.acquisitionGeneration
+    ) {
+      throw new Error("Persisted recipe draft identity mismatch");
+    }
     return {
       evidence: [
         ...visualProjection.evidence,
@@ -555,6 +572,7 @@ export const makeD1ImportRepository = (
         const canInsertCandidate =
           ![
             "extracting_visual",
+            "needs_review",
             "visual_evidence_empty",
             "visual_evidence_found",
             "visual_evidence_low_confidence",

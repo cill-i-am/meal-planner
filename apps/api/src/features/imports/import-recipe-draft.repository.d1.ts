@@ -117,12 +117,8 @@ const decodeDraft = (row: RecipeExtractionRow) =>
   Effect.try({
     catch: importPersistenceCorrupt,
     try: () => {
-      if (
-        row.state !== "needs_review" ||
-        row.draft_json === null ||
-        row.is_current !== 1
-      ) {
-        throw new Error("Recipe draft row is not current");
+      if (row.state !== "needs_review" || row.draft_json === null) {
+        throw new Error("Recipe draft row is not completed");
       }
       const draft = Schema.decodeUnknownSync(RecipeDraft, {
         onExcessProperty: "error",
