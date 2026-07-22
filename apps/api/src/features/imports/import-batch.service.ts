@@ -1,4 +1,4 @@
-import { Context, Effect, Schema } from "effect";
+import { Context, Effect, Schema, Semaphore } from "effect";
 
 import { CreateImportBatchRequest } from "./import-batch.contracts.js";
 import type {
@@ -167,6 +167,7 @@ export const makeImportBatchService = (
 
   const batches = new Map<ImportBatchId, StoredBatch>();
   const batchesByKey = new Map<IdempotencyKey, ImportBatchId>();
+  const importPermits = Semaphore.makeUnsafe(options.concurrency);
 
   const consumeOne = (message: ImportBatchQueueMessage) =>
     Effect.suspend(() => {
@@ -302,10 +303,14 @@ export const makeImportBatchService = (
 
   return {
     consume: (messages) =>
-      Effect.forEach(messages, consumeOne, {
-        concurrency: options.concurrency,
-        discard: true,
-      }),
+      Effect.forEach(
+        messages,
+        (message) => importPermits.withPermit(consumeOne(message)),
+        {
+          concurrency: options.concurrency,
+          discard: true,
+        }
+      ),
     create,
     get: (id) =>
       Effect.suspend(() => {

@@ -498,7 +498,17 @@ describe("provider-free import batch routes", () => {
       );
       expect(response.status).toBe(202);
 
-      await Effect.runPromise(harness.service.consume(harness.queue.enqueued));
+      const firstDelivery = harness.queue.enqueued.slice(0, 3);
+      const secondDelivery = harness.queue.enqueued.slice(3);
+      await Effect.runPromise(
+        Effect.all(
+          [
+            harness.service.consume(firstDelivery),
+            harness.service.consume(secondDelivery),
+          ],
+          { concurrency: "unbounded", discard: true }
+        )
+      );
 
       expect(harness.imports.maximumActiveCalls).toBe(expectedMaximum);
       const result = await Effect.runPromise(harness.service.get(batchId));
