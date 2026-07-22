@@ -13,10 +13,10 @@ export const ImportBatchDeadLetterQueue = Cloudflare.Queues.Queue(
 
 interface ImportBatchQueueSender {
   readonly sendBatch: (
-    messages: ReadonlyArray<{
+    messages: readonly {
       readonly body: unknown;
       readonly contentType: "json";
-    }>
+    }[]
   ) => Promise<void>;
 }
 

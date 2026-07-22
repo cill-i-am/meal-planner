@@ -8,15 +8,15 @@ import { runAlchemyCommand } from "./alchemy-command.js";
 describe("Alchemy command guard", () => {
   it("loads NodeNext source imports before planning without cloud state", () => {
     const script = fileURLToPath(
-      new URL("./alchemy-command.ts", import.meta.url)
+      new URL("alchemy-command.ts", import.meta.url)
     );
     const fixture = fileURLToPath(
-      new URL("./fixtures/alchemy-stack-loader.ts", import.meta.url)
+      new URL("fixtures/alchemy-stack-loader.ts", import.meta.url)
     );
     const result = spawnSync(
       "pnpm",
       ["exec", "tsx", script, "plan", fixture, "--stage", "loader-test"],
-      { encoding: "utf8" }
+      { encoding: "utf-8" }
     );
 
     expect(result.status, result.stderr).toBe(0);
