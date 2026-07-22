@@ -57,6 +57,7 @@ const missing = (itemId: ImportBatchItemId): DeadLetterNotFound => ({
 export const makeProviderFreeOperationalTracer = (input: {
   readonly artifacts: readonly ExpirableImportArtifact[];
   readonly deadLetters: readonly ProviderFreeDeadLetter[];
+  readonly eventFailureTag?: OperationalEvent["_tag"];
   readonly imports: ImportServiceShape;
   readonly replayQuotaLimit: number;
 }) => {
@@ -68,6 +69,7 @@ export const makeProviderFreeOperationalTracer = (input: {
   let claimCount = 0;
   let completedReplayCount = 0;
   let inspectionCount = 0;
+  let releaseCount = 0;
   const artifactStore: ExpirableArtifactStoreShape = {
     expireDue: (cutoffEpochMilliseconds) =>
       Effect.sync(() => {
@@ -87,6 +89,9 @@ export const makeProviderFreeOperationalTracer = (input: {
     emit: (event) =>
       Effect.sync(() => {
         events.push(event);
+        if (event._tag === input.eventFailureTag) {
+          throw new Error("Synthetic operational event failure");
+        }
       }),
   };
   const deadLetterStore: DeadLetterStoreShape = {
@@ -113,12 +118,14 @@ export const makeProviderFreeOperationalTracer = (input: {
           }
           return Effect.succeed({
             _tag: "AlreadyReplayed",
+            correlation: stored.seed.correlation,
             import: stored.imported,
           });
         }
         stored.state = "claimed";
         return Effect.succeed({
           _tag: "Ready",
+          correlation: stored.seed.correlation,
           idempotencyKey: stored.seed.idempotencyKey,
           request: stored.seed.request,
         });
@@ -148,6 +155,7 @@ export const makeProviderFreeOperationalTracer = (input: {
       }),
     releaseReplay: (itemId) =>
       Effect.sync(() => {
+        releaseCount += 1;
         const stored = deadLetters.get(itemId);
         if (stored?.state === "claimed") {
           stored.state = "ready";
@@ -166,6 +174,9 @@ export const makeProviderFreeOperationalTracer = (input: {
       },
       get inspectionCount() {
         return inspectionCount;
+      },
+      get releaseCount() {
+        return releaseCount;
       },
     },
     events,

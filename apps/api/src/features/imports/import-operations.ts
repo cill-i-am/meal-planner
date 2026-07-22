@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect";
+import { Clock, Effect, Exit, Schema } from "effect";
 
 import { MealPlanDraftId } from "../meal-planning/meal-plan.js";
 import {
@@ -65,7 +65,6 @@ const ReplayQuotaUnits = Schema.Number.pipe(
 
 /** Safe request envelope for privileged dead-letter inspection. */
 export const InspectDeadLetterRequest = Schema.Struct({
-  correlation: OperationalCorrelation,
   itemId: ImportBatchItemId,
   principal: OperationalPrincipal,
 });
@@ -115,7 +114,6 @@ const DeadLetterInspectedEvent = Schema.Struct({
 const DeadLetterReplayDeniedEvent = Schema.Struct({
   _tag: Schema.Literal("DeadLetterReplayDenied"),
   actorId: RecipeReviewerActorId,
-  correlation: OperationalCorrelation,
   itemId: ImportBatchItemId,
   occurredAt: ImportTimestamp,
   operation: Schema.Literals(["inspect", "replay"]),
@@ -125,7 +123,6 @@ const DeadLetterReplayDeniedEvent = Schema.Struct({
 const DeadLetterReplayQuotaRejectedEvent = Schema.Struct({
   _tag: Schema.Literal("DeadLetterReplayQuotaRejected"),
   actorId: RecipeReviewerActorId,
-  correlation: OperationalCorrelation,
   itemId: ImportBatchItemId,
   limit: ReplayQuotaUnits,
   occurredAt: ImportTimestamp,
@@ -213,10 +210,12 @@ export type ReplayDeadLetterError =
 export type DeadLetterReplayClaim =
   | {
       readonly _tag: "AlreadyReplayed";
+      readonly correlation: OperationalCorrelation;
       readonly import: ImportView;
     }
   | {
       readonly _tag: "Ready";
+      readonly correlation: OperationalCorrelation;
       readonly idempotencyKey: IdempotencyKey;
       readonly request: CreateImportRequest;
     };
@@ -294,7 +293,6 @@ export const makeImportOperationsService = (input: {
         yield* input.events.emit({
           _tag: "DeadLetterReplayDenied",
           actorId: request.principal.actorId,
-          correlation: request.correlation,
           itemId: request.itemId,
           occurredAt,
           operation: "inspect",
@@ -326,7 +324,6 @@ export const makeImportOperationsService = (input: {
         yield* input.events.emit({
           _tag: "DeadLetterReplayDenied",
           actorId: request.principal.actorId,
-          correlation: request.correlation,
           itemId: request.itemId,
           occurredAt,
           operation: "replay",
@@ -341,7 +338,6 @@ export const makeImportOperationsService = (input: {
         yield* input.events.emit({
           _tag: "DeadLetterReplayQuotaRejected",
           actorId: request.principal.actorId,
-          correlation: request.correlation,
           itemId: request.itemId,
           limit: input.replayQuotaLimit,
           occurredAt,
@@ -354,27 +350,46 @@ export const makeImportOperationsService = (input: {
           requested: request.quotaUnits,
         });
       }
-      const claim = yield* input.deadLetters.claimReplay(request.itemId);
-      if (claim._tag === "AlreadyReplayed") {
-        return {
-          disposition: "already_replayed" as const,
-          import: claim.import,
-        };
-      }
-      const result = yield* input.imports
-        .create(claim.request, claim.idempotencyKey)
-        .pipe(
-          Effect.tapError(() => input.deadLetters.releaseReplay(request.itemId))
-        );
-      yield* input.deadLetters.completeReplay(request.itemId, result.import);
-      yield* input.events.emit({
-        _tag: "DeadLetterReplayed",
-        actorId: request.principal.actorId,
-        correlation: request.correlation,
-        itemId: request.itemId,
-        occurredAt,
-      });
-      return { disposition: "replayed" as const, import: result.import };
+      let replayCompleted = false;
+      return yield* Effect.acquireUseRelease(
+        input.deadLetters.claimReplay(request.itemId),
+        (claim) =>
+          Effect.gen(function* replayClaim() {
+            if (claim._tag === "AlreadyReplayed") {
+              return {
+                disposition: "already_replayed" as const,
+                import: claim.import,
+              };
+            }
+            const result = yield* input.imports.create(
+              claim.request,
+              claim.idempotencyKey
+            );
+            yield* Effect.uninterruptible(
+              input.deadLetters
+                .completeReplay(request.itemId, result.import)
+                .pipe(
+                  Effect.andThen(
+                    Effect.sync(() => {
+                      replayCompleted = true;
+                    })
+                  )
+                )
+            );
+            yield* input.events.emit({
+              _tag: "DeadLetterReplayed",
+              actorId: request.principal.actorId,
+              correlation: claim.correlation,
+              itemId: request.itemId,
+              occurredAt,
+            });
+            return { disposition: "replayed" as const, import: result.import };
+          }),
+        (claim, exit) =>
+          claim._tag === "Ready" && !replayCompleted && Exit.isFailure(exit)
+            ? input.deadLetters.releaseReplay(request.itemId)
+            : Effect.void
+      );
     }
   ),
 });

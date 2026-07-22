@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Deferred, Effect, Exit, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
@@ -15,10 +15,12 @@ import { makeProviderFreeOperationalTracer } from "./import-operations.fake.js";
 import type { ProviderFreeDeadLetter } from "./import-operations.fake.js";
 import {
   ExpirableImportArtifact,
+  InspectDeadLetterRequest,
   OperationalCorrelation,
   OperationalEvent,
   OperationalPrincipal,
   OperationalScope,
+  ReplayDeadLetterRequest,
 } from "./import-operations.js";
 import { projectApprovedRecipe } from "./import-recipe-review.js";
 import type { RecipeReviewView } from "./import-recipe-review.js";
@@ -33,6 +35,7 @@ const BaseTime = Date.parse("2026-07-22T12:00:00.000Z");
 const importId = "018f47ad-91aa-7c35-b6fe-000000000401";
 const batchId = "018f47ad-91aa-7c35-b6fe-000000000501";
 const itemId = "018f47ad-91aa-7c35-b6fe-000000000601";
+const CallerControlledSentinel = "CALLER_CONTROLLED_SENTINEL";
 const operator = Schema.decodeUnknownSync(OperationalPrincipal)({
   actorId: "synthetic_operator",
   role: "operator",
@@ -129,6 +132,27 @@ const makeDeadLetterScenario = async () => {
     stableKey,
   };
 };
+
+const untrustedCorrelation = (stored: OperationalCorrelation) => ({
+  ...stored,
+  evidence: {
+    kind: "visual_evidence_manifest" as const,
+    referenceId: CallerControlledSentinel,
+  },
+});
+
+const decodeReplayRequest = (input: {
+  readonly correlation: OperationalCorrelation;
+  readonly deadLetter: ProviderFreeDeadLetter;
+  readonly principal?: OperationalPrincipal;
+  readonly quotaUnits?: number;
+}) =>
+  Schema.decodeUnknownSync(ReplayDeadLetterRequest)({
+    correlation: untrustedCorrelation(input.correlation),
+    itemId: input.deadLetter.itemId,
+    principal: input.principal ?? operator,
+    quotaUnits: input.quotaUnits ?? 10,
+  });
 
 describe("provider-free import operations tracer", () => {
   it("expires due raw artifacts while preserving approved durable records", async () => {
@@ -227,12 +251,9 @@ describe("provider-free import operations tracer", () => {
       imports: ordinary.service,
       replayQuotaLimit: 10,
     });
-    const operation = {
-      correlation,
-      itemId: deadLetter.itemId,
-      principal: operator,
-      quotaUnits: 10,
-    };
+    const operation = decodeReplayRequest({ correlation, deadLetter });
+
+    expect(operation).not.toHaveProperty("correlation");
 
     const first = await Effect.runPromise(
       tracer.service.replayDeadLetter(operation)
@@ -248,6 +269,7 @@ describe("provider-free import operations tracer", () => {
     });
     expect(ordinary.calls).toEqual([{ idempotencyKey: stableKey, request }]);
     expect(ordinary.ordinaryImportsCreated).toBe(1);
+    expect(tracer.deadLetterStats.releaseCount).toBe(0);
     expect(tracer.events).toContainEqual(
       expect.objectContaining({
         _tag: "DeadLetterReplayed",
@@ -255,6 +277,182 @@ describe("provider-free import operations tracer", () => {
         itemId: deadLetter.itemId,
       })
     );
+    expect(JSON.stringify(tracer.events)).not.toContain(
+      CallerControlledSentinel
+    );
+  });
+
+  it("releases a typed failure claim so replay can recover", async () => {
+    const { correlation, deadLetter, replayedImport, request, stableKey } =
+      await makeDeadLetterScenario();
+    const ordinary = makeDeterministicOrdinaryImportService({
+      attempts: [
+        {
+          idempotencyKey: stableKey,
+          outcome: {
+            _tag: "Failure",
+            error: { _tag: "WorkflowStartUnavailable" },
+          },
+        },
+        {
+          idempotencyKey: stableKey,
+          outcome: { _tag: "Success", import: replayedImport },
+        },
+      ],
+    });
+    const tracer = makeProviderFreeOperationalTracer({
+      artifacts: [],
+      deadLetters: [deadLetter],
+      imports: ordinary.service,
+      replayQuotaLimit: 10,
+    });
+    const operation = decodeReplayRequest({ correlation, deadLetter });
+
+    const first = await Effect.runPromise(
+      Effect.flip(tracer.service.replayDeadLetter(operation))
+    );
+    const recovered = await Effect.runPromise(
+      tracer.service.replayDeadLetter(operation)
+    );
+
+    expect(first).toEqual({ _tag: "WorkflowStartUnavailable" });
+    expect(recovered).toEqual({
+      disposition: "replayed",
+      import: replayedImport,
+    });
+    expect(ordinary.calls).toEqual([
+      { idempotencyKey: stableKey, request },
+      { idempotencyKey: stableKey, request },
+    ]);
+    expect(tracer.deadLetterStats).toMatchObject({
+      claimCount: 2,
+      completedReplayCount: 1,
+      releaseCount: 1,
+    });
+  });
+
+  it("releases a defected claim so replay can recover", async () => {
+    const { correlation, deadLetter, ordinary, replayedImport } =
+      await makeDeadLetterScenario();
+    let attempts = 0;
+    const tracer = makeProviderFreeOperationalTracer({
+      artifacts: [],
+      deadLetters: [deadLetter],
+      imports: {
+        create: (request, idempotencyKey) => {
+          attempts += 1;
+          return attempts === 1
+            ? Effect.die("synthetic import defect")
+            : ordinary.service.create(request, idempotencyKey);
+        },
+        get: ordinary.service.get,
+      },
+      replayQuotaLimit: 10,
+    });
+    const operation = decodeReplayRequest({ correlation, deadLetter });
+
+    const defect = await Effect.runPromiseExit(
+      tracer.service.replayDeadLetter(operation)
+    );
+    const recovered = await Effect.runPromiseExit(
+      tracer.service.replayDeadLetter(operation)
+    );
+
+    expect(Exit.hasDies(defect)).toBe(true);
+    expect(recovered).toEqual(
+      expect.objectContaining({
+        _tag: "Success",
+        value: { disposition: "replayed", import: replayedImport },
+      })
+    );
+    expect(tracer.deadLetterStats).toMatchObject({
+      claimCount: 2,
+      completedReplayCount: 1,
+      releaseCount: 1,
+    });
+  });
+
+  it("releases an interrupted claim so replay can recover", async () => {
+    const { correlation, deadLetter, ordinary, replayedImport } =
+      await makeDeadLetterScenario();
+    const started = await Effect.runPromise(Deferred.make<"started">());
+    let attempts = 0;
+    const tracer = makeProviderFreeOperationalTracer({
+      artifacts: [],
+      deadLetters: [deadLetter],
+      imports: {
+        create: (request, idempotencyKey) => {
+          attempts += 1;
+          return attempts === 1
+            ? Deferred.succeed(started, "started").pipe(
+                Effect.andThen(Effect.never)
+              )
+            : ordinary.service.create(request, idempotencyKey);
+        },
+        get: ordinary.service.get,
+      },
+      replayQuotaLimit: 10,
+    });
+    const operation = decodeReplayRequest({ correlation, deadLetter });
+
+    const interrupted = await Effect.runPromise(
+      Effect.gen(function* interruptReplay() {
+        const fiber = yield* Effect.forkChild(
+          tracer.service.replayDeadLetter(operation)
+        );
+        yield* Deferred.await(started);
+        yield* Fiber.interrupt(fiber);
+        return yield* Fiber.await(fiber);
+      })
+    );
+    const recovered = await Effect.runPromiseExit(
+      tracer.service.replayDeadLetter(operation)
+    );
+
+    expect(Exit.hasInterrupts(interrupted)).toBe(true);
+    expect(recovered).toEqual(
+      expect.objectContaining({
+        _tag: "Success",
+        value: { disposition: "replayed", import: replayedImport },
+      })
+    );
+    expect(tracer.deadLetterStats).toMatchObject({
+      claimCount: 2,
+      completedReplayCount: 1,
+      releaseCount: 1,
+    });
+  });
+
+  it("does not release a completed replay after event emission defects", async () => {
+    const { correlation, deadLetter, ordinary, replayedImport } =
+      await makeDeadLetterScenario();
+    const tracer = makeProviderFreeOperationalTracer({
+      artifacts: [],
+      deadLetters: [deadLetter],
+      eventFailureTag: "DeadLetterReplayed",
+      imports: ordinary.service,
+      replayQuotaLimit: 10,
+    });
+    const operation = decodeReplayRequest({ correlation, deadLetter });
+
+    const defect = await Effect.runPromiseExit(
+      tracer.service.replayDeadLetter(operation)
+    );
+    const replay = await Effect.runPromise(
+      tracer.service.replayDeadLetter(operation)
+    );
+
+    expect(Exit.hasDies(defect)).toBe(true);
+    expect(replay).toEqual({
+      disposition: "already_replayed",
+      import: replayedImport,
+    });
+    expect(ordinary.calls).toHaveLength(1);
+    expect(tracer.deadLetterStats).toMatchObject({
+      claimCount: 2,
+      completedReplayCount: 1,
+      releaseCount: 0,
+    });
   });
 
   it("audits denied replay authorization without business side effects", async () => {
@@ -267,21 +465,33 @@ describe("provider-free import operations tracer", () => {
       replayQuotaLimit: 10,
     });
 
+    const deniedRequest = decodeReplayRequest({
+      correlation,
+      deadLetter,
+      principal: viewer,
+    });
+    const deniedInspectionRequest = Schema.decodeUnknownSync(
+      InspectDeadLetterRequest
+    )({
+      correlation: untrustedCorrelation(correlation),
+      itemId: deadLetter.itemId,
+      principal: viewer,
+    });
+    expect(deniedRequest).not.toHaveProperty("correlation");
+    expect(deniedInspectionRequest).not.toHaveProperty("correlation");
+
     const denied = await Effect.runPromise(
-      Effect.flip(
-        tracer.service.replayDeadLetter({
-          correlation,
-          itemId: deadLetter.itemId,
-          principal: viewer,
-          quotaUnits: 10,
-        })
-      )
+      Effect.flip(tracer.service.replayDeadLetter(deniedRequest))
+    );
+    const deniedInspection = await Effect.runPromise(
+      Effect.flip(tracer.service.inspectDeadLetter(deniedInspectionRequest))
     );
 
     expect(denied).toEqual({
       _tag: "DeadLetterAccessDenied",
       itemId: deadLetter.itemId,
     });
+    expect(deniedInspection).toEqual(denied);
     expect(ordinary.calls).toEqual([]);
     expect(tracer.deadLetterStats).toMatchObject({
       claimCount: 0,
@@ -292,12 +502,24 @@ describe("provider-free import operations tracer", () => {
       expect.objectContaining({
         _tag: "DeadLetterReplayDenied",
         actorId: "synthetic_viewer",
-        correlation,
         itemId: deadLetter.itemId,
         operation: "replay",
         reason: "insufficient_role",
       }),
+      expect.objectContaining({
+        _tag: "DeadLetterReplayDenied",
+        actorId: "synthetic_viewer",
+        itemId: deadLetter.itemId,
+        operation: "inspect",
+        reason: "insufficient_role",
+      }),
     ]);
+    expect(tracer.events.every((event) => !("correlation" in event))).toBe(
+      true
+    );
+    expect(JSON.stringify(tracer.events)).not.toContain(
+      CallerControlledSentinel
+    );
   });
 
   it("enforces the exact replay quota before effects and exposes only safe projections", async () => {
@@ -308,20 +530,24 @@ describe("provider-free import operations tracer", () => {
       imports: allowed.ordinary.service,
       replayQuotaLimit: 10,
     });
+    const inspectionRequest = Schema.decodeUnknownSync(
+      InspectDeadLetterRequest
+    )({
+      correlation: untrustedCorrelation(allowed.correlation),
+      itemId: allowed.deadLetter.itemId,
+      principal: operator,
+    });
+    expect(inspectionRequest).not.toHaveProperty("correlation");
     const inspection = await Effect.runPromise(
-      allowedTracer.service.inspectDeadLetter({
-        correlation: allowed.correlation,
-        itemId: allowed.deadLetter.itemId,
-        principal: operator,
-      })
+      allowedTracer.service.inspectDeadLetter(inspectionRequest)
     );
+    const replayRequest = decodeReplayRequest({
+      correlation: allowed.correlation,
+      deadLetter: allowed.deadLetter,
+    });
+    expect(replayRequest).not.toHaveProperty("correlation");
     const atBoundary = await Effect.runPromise(
-      allowedTracer.service.replayDeadLetter({
-        correlation: allowed.correlation,
-        itemId: allowed.deadLetter.itemId,
-        principal: operator,
-        quotaUnits: 10,
-      })
+      allowedTracer.service.replayDeadLetter(replayRequest)
     );
 
     expect(atBoundary.disposition).toBe("replayed");
@@ -331,6 +557,20 @@ describe("provider-free import operations tracer", () => {
       correlation: allowed.correlation,
       itemId: allowed.deadLetter.itemId,
     });
+    expect(allowedTracer.events).toContainEqual(
+      expect.objectContaining({
+        _tag: "DeadLetterInspected",
+        correlation: allowed.correlation,
+        itemId: allowed.deadLetter.itemId,
+      })
+    );
+    expect(allowedTracer.events).toContainEqual(
+      expect.objectContaining({
+        _tag: "DeadLetterReplayed",
+        correlation: allowed.correlation,
+        itemId: allowed.deadLetter.itemId,
+      })
+    );
     expect(
       allowedTracer.events.every((event) => Schema.is(OperationalEvent)(event))
     ).toBe(true);
@@ -342,15 +582,14 @@ describe("provider-free import operations tracer", () => {
       imports: rejected.ordinary.service,
       replayQuotaLimit: 10,
     });
+    const rejectedRequest = decodeReplayRequest({
+      correlation: rejected.correlation,
+      deadLetter: rejected.deadLetter,
+      quotaUnits: 11,
+    });
+    expect(rejectedRequest).not.toHaveProperty("correlation");
     const aboveBoundary = await Effect.runPromise(
-      Effect.flip(
-        rejectedTracer.service.replayDeadLetter({
-          correlation: rejected.correlation,
-          itemId: rejected.deadLetter.itemId,
-          principal: operator,
-          quotaUnits: 11,
-        })
-      )
+      Effect.flip(rejectedTracer.service.replayDeadLetter(rejectedRequest))
     );
 
     expect(aboveBoundary).toEqual({
@@ -368,11 +607,11 @@ describe("provider-free import operations tracer", () => {
     expect(rejectedTracer.events).toEqual([
       expect.objectContaining({
         _tag: "DeadLetterReplayQuotaRejected",
-        correlation: rejected.correlation,
         limit: 10,
         requested: 11,
       }),
     ]);
+    expect(rejectedTracer.events[0]).not.toHaveProperty("correlation");
 
     const privacySurface = JSON.stringify({
       aboveBoundary,
@@ -387,6 +626,7 @@ describe("provider-free import operations tracer", () => {
       "privateCaption",
       "https://www.tiktok.com/@synthetic/video/751001",
       "[115,101,99,114,101,116]",
+      CallerControlledSentinel,
     ]) {
       expect(privacySurface).not.toContain(sensitiveValue);
     }
