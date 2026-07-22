@@ -23,6 +23,7 @@ CREATE TABLE `import_recipe_extractions` (
 	`completed_at` text,
 	CONSTRAINT `import_recipe_extractions_import_generation_fk` FOREIGN KEY (`import_id`,`acquisition_generation`) REFERENCES `recipe_imports`(`id`,`acquisition_generation`) ON UPDATE RESTRICT ON DELETE RESTRICT,
 	CONSTRAINT `import_recipe_extractions_fingerprint_check` CHECK(length(`evidence_fingerprint`) = 64 AND `evidence_fingerprint` NOT GLOB '*[^0-9a-f]*' AND length(`extraction_fingerprint`) = 64 AND `extraction_fingerprint` NOT GLOB '*[^0-9a-f]*'),
+	CONSTRAINT `import_recipe_extractions_descriptor_check` CHECK(length(`extractor_provider`) BETWEEN 1 AND 64 AND length(`extractor_model`) BETWEEN 1 AND 64 AND length(`extractor_version`) BETWEEN 1 AND 64),
 	CONSTRAINT `import_recipe_extractions_state_check` CHECK((
 		`state` = 'dispatching'
 		AND `draft_json` IS NULL AND `failure_code` IS NULL

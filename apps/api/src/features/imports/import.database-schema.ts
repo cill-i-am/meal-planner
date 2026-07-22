@@ -466,6 +466,10 @@ export const importRecipeExtractions = sqliteTable(
       sql`length(${table.evidenceFingerprint}) = 64 AND ${table.evidenceFingerprint} NOT GLOB '*[^0-9a-f]*' AND length(${table.extractionFingerprint}) = 64 AND ${table.extractionFingerprint} NOT GLOB '*[^0-9a-f]*'`
     ),
     check(
+      "import_recipe_extractions_descriptor_check",
+      sql`length(${table.extractorProvider}) BETWEEN 1 AND 64 AND length(${table.extractorModel}) BETWEEN 1 AND 64 AND length(${table.extractorVersion}) BETWEEN 1 AND 64`
+    ),
+    check(
       "import_recipe_extractions_state_check",
       sql`(
         ${table.state} = 'dispatching'

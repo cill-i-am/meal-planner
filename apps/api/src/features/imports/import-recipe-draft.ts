@@ -1,4 +1,4 @@
-import { DateTime, Effect, Option } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 
 import {
   readVerifiedAcquisitionEvidence,
@@ -17,7 +17,10 @@ import type {
   RecipeStringFact,
   RecipeUnresolvedField,
 } from "./import-recipe-extractor.js";
-import { decodeRecipeExtraction } from "./import-recipe-extractor.js";
+import {
+  decodeRecipeExtraction,
+  RecipeExtractorDescriptor,
+} from "./import-recipe-extractor.js";
 import { readVerifiedTranscriptEvidence } from "./import-speech-transcription.js";
 import { readVerifiedVisualEvidence } from "./import-visual-evidence.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
@@ -203,25 +206,57 @@ const extractionIsGrounded = (
     }
     return fact.citations.every((citation) => {
       const item = evidenceById.get(citation.evidenceId);
-      return item !== undefined && item.origin === citation.origin;
+      return (
+        item !== undefined &&
+        item.origin === citation.origin &&
+        (fact.origin === "inferred" || fact.origin === citation.origin)
+      );
     });
   });
+  const listsAreConsistent = [
+    extraction.ingredientLines,
+    extraction.instructions,
+    extraction.supportedClaims,
+    extraction.tools,
+  ].every(
+    (list) =>
+      list.state === "unresolved" ||
+      list.items.every((item) => item.state === "supported")
+  );
   const sourceUrl = supportedStringValue(extraction.sourceUrl);
   const expectedAuthor =
     evidence.source?.creator.displayName ??
     evidence.source?.creator.handle ??
     null;
   const author = supportedStringValue(extraction.author);
+  const sourceUrlEvidence = assembly.items.find(
+    (item) => item.kind === "source_url"
+  );
+  const creatorEvidence = assembly.items.find(
+    (item) => item.kind === "creator"
+  );
+  const cites = (fact: RecipeStringFact, evidenceId: string | undefined) =>
+    fact.state === "supported" &&
+    evidenceId !== undefined &&
+    fact.citations.some((citation) => citation.evidenceId === evidenceId);
   const unresolved = extraction.unresolvedFields;
-  const requiredUnresolved = expectedUnresolvedFields(extraction);
+  const requiredUnresolved = [
+    ...expectedUnresolvedFields(extraction),
+    "ingredient_quantities" as const,
+    "ingredient_units" as const,
+  ];
   return (
     citationsAreReal &&
+    listsAreConsistent &&
     extraction.usage.inputEvidenceItems === assembly.items.length &&
     sourceUrl === evidence.source?.canonicalUrl &&
+    cites(extraction.sourceUrl, sourceUrlEvidence?.evidenceId) &&
     (expectedAuthor === null
       ? extraction.author.state === "unresolved"
-      : author === expectedAuthor) &&
+      : author === expectedAuthor &&
+        cites(extraction.author, creatorEvidence?.evidenceId)) &&
     new Set(unresolved).size === unresolved.length &&
+    requiredUnresolved.length === unresolved.length &&
     requiredUnresolved.every((field) => unresolved.includes(field))
   );
 };
@@ -253,6 +288,12 @@ export const produceRecipeDraftForImport = Effect.fn(
     return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
   }
   const now = input.now();
+  const descriptor = yield* Schema.decodeUnknownEffect(
+    RecipeExtractorDescriptor,
+    { onExcessProperty: "error" }
+  )(input.extractor.descriptor).pipe(
+    Effect.mapError(() => pipelineFailure("invalid_schema"))
+  );
   const evidence = yield* readVerifiedAcquisitionEvidence(input.bucket, {
     canonicalId: stored.canonicalSourceId,
     generation: stored.acquisitionGeneration,
@@ -287,11 +328,11 @@ export const produceRecipeDraftForImport = Effect.fn(
   const extractionFingerprint = yield* sha256Text(
     JSON.stringify({
       evidenceFingerprint: assembly.evidenceFingerprint,
-      extractor: input.extractor.descriptor,
+      extractor: descriptor,
     })
   );
   const claim = yield* input.recipeRepository.claim({
-    descriptor: input.extractor.descriptor,
+    descriptor,
     evidenceFingerprint: assembly.evidenceFingerprint,
     extractionFingerprint,
     generation: evidence.generation,
@@ -353,7 +394,7 @@ export const produceRecipeDraftForImport = Effect.fn(
     evidenceFingerprint: assembly.evidenceFingerprint,
     extraction,
     extractionFingerprint,
-    extractor: input.extractor.descriptor,
+    extractor: descriptor,
     generation: evidence.generation,
     importId: input.importId,
     lifecycle: "needs_review",

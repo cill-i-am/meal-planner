@@ -152,11 +152,12 @@ export interface RecipeEvidenceAssembly {
   readonly items: readonly RecipeEvidenceItem[];
 }
 
-export interface RecipeExtractorDescriptor {
-  readonly model: string;
-  readonly provider: string;
-  readonly version: string;
-}
+export const RecipeExtractorDescriptor = Schema.Struct({
+  model: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(64))),
+  provider: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(64))),
+  version: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(64))),
+});
+export type RecipeExtractorDescriptor = typeof RecipeExtractorDescriptor.Type;
 
 export interface RecipeExtractionFailure {
   readonly _tag: "RecipeExtractionFailure";

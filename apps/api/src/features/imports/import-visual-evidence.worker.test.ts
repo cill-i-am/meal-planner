@@ -300,6 +300,100 @@ const makeVisualFixture = (outcome: "empty" | "found" | "low_confidence") =>
     usage: { inputBytes: 9, inputFrames: 2, modelCalls: 1 },
   });
 
+const makeRecipeFixture = (
+  input: RecipeEvidenceAssembly,
+  canonicalId: SourceCanonicalId,
+  citationEvidenceId?: string
+) => {
+  const evidence = (kind: string) => {
+    const item = input.items.find((candidate) => candidate.kind === kind);
+    if (item === undefined) {
+      throw new Error(`Missing ${kind} fixture evidence`);
+    }
+    return item;
+  };
+  const citation = (kind: string, confidence: number) => {
+    const item = evidence(kind);
+    return {
+      confidence,
+      evidenceId: citationEvidenceId ?? item.evidenceId,
+      origin: item.origin,
+    };
+  };
+  const supported = (
+    value: string | number,
+    kind: string,
+    origin: "creator_provided" | "inferred" | "observed"
+  ) => ({
+    citations: [citation(kind, 0.95)],
+    origin,
+    state: "supported",
+    value,
+  });
+  const unresolved = (reason: string) => ({
+    citations: [],
+    origin: "unresolved",
+    reason,
+    state: "unresolved",
+  });
+  const transcript = supported(
+    "Chop onions.",
+    "transcript",
+    "creator_provided"
+  );
+  const visual = supported(
+    "Bake at 180 C for 20 minutes",
+    "visual_observation",
+    "observed"
+  );
+  return {
+    author: supported("Cook", "creator", "observed"),
+    category: unresolved("not stated"),
+    cookTimeMinutes: supported(20, "visual_observation", "observed"),
+    cost: {
+      certainty: "known",
+      currency: "USD",
+      estimatedMicroUsd: 0,
+    },
+    cuisine: unresolved("not stated"),
+    description: unresolved("not stated"),
+    ingredientLines: { items: [transcript], state: "supported" },
+    instructions: { items: [transcript, visual], state: "supported" },
+    name: supported("Onion bake", "caption", "inferred"),
+    nutrition: unresolved("not stated"),
+    prepTimeMinutes: unresolved("not stated"),
+    sourceUrl: supported(
+      `https://www.tiktok.com/@cook/video/${canonicalId}`,
+      "source_url",
+      "observed"
+    ),
+    supportedClaims: { items: [visual], state: "supported" },
+    temperatureCelsius: supported(180, "visual_observation", "observed"),
+    tools: { items: [], reason: "not stated", state: "unresolved" },
+    totalTimeMinutes: unresolved("not stated"),
+    unresolvedFields: [
+      "category",
+      "cuisine",
+      "description",
+      "ingredient_quantities",
+      "ingredient_units",
+      "nutrition",
+      "prep_time_minutes",
+      "tools",
+      "total_time_minutes",
+      "yield",
+    ],
+    usage: {
+      inputEvidenceItems: input.items.length,
+      inputTokens: 100,
+      latencyMilliseconds: 1,
+      modelCalls: 1,
+      outputTokens: 50,
+    },
+    yield: unresolved("not stated"),
+  };
+};
+
 beforeAll(async () => {
   await applyD1Migrations(
     testEnv.MealPlannerDatabase,
@@ -895,95 +989,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     } as const;
     const extractor = makeDeterministicRecipeExtractor(
       descriptor,
-      (input: RecipeEvidenceAssembly) => {
-        const evidence = (kind: string) => {
-          const item = input.items.find((candidate) => candidate.kind === kind);
-          if (item === undefined) {
-            throw new Error(`Missing ${kind} fixture evidence`);
-          }
-          return item;
-        };
-        const citation = (kind: string, confidence: number) => {
-          const item = evidence(kind);
-          return {
-            confidence,
-            evidenceId: item.evidenceId,
-            origin: item.origin,
-          };
-        };
-        const supported = (
-          value: string | number,
-          kind: string,
-          origin: "creator_provided" | "inferred" | "observed"
-        ) => ({
-          citations: [citation(kind, 0.95)],
-          origin,
-          state: "supported",
-          value,
-        });
-        const unresolved = (reason: string) => ({
-          citations: [],
-          origin: "unresolved",
-          reason,
-          state: "unresolved",
-        });
-        const transcript = supported(
-          "Chop onions.",
-          "transcript",
-          "creator_provided"
-        );
-        const visual = supported(
-          "Bake at 180 C for 20 minutes",
-          "visual_observation",
-          "observed"
-        );
-        return {
-          author: supported("Cook", "creator", "observed"),
-          category: unresolved("not stated"),
-          cookTimeMinutes: supported(20, "visual_observation", "observed"),
-          cost: {
-            certainty: "known",
-            currency: "USD",
-            estimatedMicroUsd: 0,
-          },
-          cuisine: unresolved("not stated"),
-          description: unresolved("not stated"),
-          ingredientLines: { items: [transcript], state: "supported" },
-          instructions: { items: [transcript, visual], state: "supported" },
-          name: supported("Onion bake", "caption", "inferred"),
-          nutrition: unresolved("not stated"),
-          prepTimeMinutes: unresolved("not stated"),
-          sourceUrl: supported(
-            `https://www.tiktok.com/@cook/video/${canonicalId}`,
-            "source_url",
-            "observed"
-          ),
-          supportedClaims: { items: [visual], state: "supported" },
-          temperatureCelsius: supported(180, "visual_observation", "observed"),
-          tools: { items: [], reason: "not stated", state: "unresolved" },
-          totalTimeMinutes: unresolved("not stated"),
-          unresolvedFields: [
-            "category",
-            "cuisine",
-            "description",
-            "ingredient_quantities",
-            "ingredient_units",
-            "nutrition",
-            "prep_time_minutes",
-            "tools",
-            "total_time_minutes",
-            "yield",
-          ],
-          usage: {
-            inputEvidenceItems: input.items.length,
-            inputTokens: 100,
-            latencyMilliseconds: 1,
-            modelCalls: 1,
-            outputTokens: 50,
-          },
-          yield: unresolved("not stated"),
-        };
-      }
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
     );
     const recipeRepository = makeD1RecipeDraftRepository(
       testEnv.MealPlannerDatabase
@@ -1119,5 +1125,52 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
         await Effect.runPromise(importRepository.findById(importId))
       ).view.status
     ).toEqual({ kind: "visual_evidence_found" });
+  });
+
+  it("rejects citations that do not identify landed evidence", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000232");
+    const canonicalId = decodeCanonicalId("7520000000000000232");
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      {
+        model: "fixture-recipe-forged-citation",
+        provider: "deterministic_fake",
+        version: "schema-1",
+      },
+      (input: RecipeEvidenceAssembly) =>
+        makeRecipeFixture(input, canonicalId, "forged:evidence")
+    );
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          importId,
+          importRepository,
+          now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
+          recipeRepository: makeD1RecipeDraftRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeDraftPipelineFailure",
+      code: "invalid_schema",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, draft_json, failure_code, is_current
+           FROM import_recipe_extractions WHERE import_id = ?`
+      )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({
+      draft_json: null,
+      failure_code: "invalid_schema",
+      is_current: 0,
+      state: "failed",
+    });
+    expect(extractor.calls).toHaveLength(1);
   });
 });

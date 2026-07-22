@@ -4,7 +4,7 @@ import { DateTime, Effect, Schema } from "effect";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import {
   RecipeExtraction,
-  type RecipeExtractorDescriptor,
+  RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import {
@@ -23,11 +23,7 @@ export const RecipeDraft = Schema.Struct({
   evidenceFingerprint: Sha256Hex,
   extraction: RecipeExtraction,
   extractionFingerprint: Sha256Hex,
-  extractor: Schema.Struct({
-    model: Schema.String,
-    provider: Schema.String,
-    version: Schema.String,
-  }),
+  extractor: RecipeExtractorDescriptor,
   generation: AcquisitionGeneration,
   importId: ImportId,
   lifecycle: Schema.Literal("needs_review"),
@@ -299,9 +295,9 @@ export const makeD1RecipeDraftRepository = (
           binding
             .prepare(
               `UPDATE import_recipe_extractions
-                  SET is_current = CASE WHEN extraction_fingerprint = ? THEN 1 ELSE 0 END
+                  SET is_current = 0
                 WHERE import_id = ? AND acquisition_generation = ?
-                  AND (is_current = 1 OR extraction_fingerprint = ?)
+                  AND is_current = 1
                   AND EXISTS (
                     SELECT 1 FROM import_recipe_extractions AS target
                      WHERE target.extraction_fingerprint = ?
@@ -309,11 +305,21 @@ export const makeD1RecipeDraftRepository = (
                   )`
             )
             .bind(
-              draft.extractionFingerprint,
               draft.importId,
               draft.generation,
-              draft.extractionFingerprint,
               draft.extractionFingerprint
+            ),
+          binding
+            .prepare(
+              `UPDATE import_recipe_extractions
+                  SET is_current = 1
+                WHERE extraction_fingerprint = ? AND import_id = ?
+                  AND acquisition_generation = ? AND state = 'needs_review'`
+            )
+            .bind(
+              draft.extractionFingerprint,
+              draft.importId,
+              draft.generation
             ),
           binding
             .prepare(
@@ -324,7 +330,7 @@ export const makeD1RecipeDraftRepository = (
         ])
       );
       const results = yield* decodeBatchResults(raw);
-      const rawRow = results[2]?.results[0];
+      const rawRow = results[3]?.results[0];
       if (rawRow === undefined) {
         return yield* Effect.fail(importTransitionRejected());
       }
