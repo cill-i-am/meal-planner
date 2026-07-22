@@ -188,6 +188,10 @@ export const VisualEvidenceManifestReference = Schema.Struct({
   kind: Schema.Literal("visual_evidence_manifest"),
   referenceId: TrimmedNonEmptyString,
 });
+export const CarouselEvidenceManifestReference = Schema.Struct({
+  kind: Schema.Literal("carousel_evidence_manifest"),
+  referenceId: TrimmedNonEmptyString,
+});
 export const RecipeDraftEvidenceReference = Schema.Struct({
   kind: Schema.Literal("recipe_draft"),
   referenceId: TrimmedNonEmptyString,
@@ -197,6 +201,7 @@ export const EvidenceReference = Schema.Union([
   AcquisitionManifestEvidenceReference,
   SpeechTranscriptEvidenceReference,
   VisualEvidenceManifestReference,
+  CarouselEvidenceManifestReference,
   RecipeDraftEvidenceReference,
 ]);
 export type EvidenceReference = typeof EvidenceReference.Type;
@@ -285,12 +290,22 @@ const RecipeDraftImportView = Schema.Struct({
   status: NeedsReviewImportStatus,
 });
 
+const CarouselRecipeDraftImportView = Schema.Struct({
+  ...ImportViewFields,
+  evidence: Schema.Tuple([
+    CarouselEvidenceManifestReference,
+    RecipeDraftEvidenceReference,
+  ]),
+  status: NeedsReviewImportStatus,
+});
+
 export const ImportView = Schema.Union([
   NonAcquiredImportView,
   AcquiredImportView,
   TranscribedImportView,
   VisualEvidenceImportView,
   RecipeDraftImportView,
+  CarouselRecipeDraftImportView,
 ]);
 export type ImportView = typeof ImportView.Type;
 

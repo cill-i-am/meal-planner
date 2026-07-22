@@ -18,7 +18,7 @@ const Sha256Hex = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
 );
 
-export const RecipeDraft = Schema.Struct({
+const RecipeDraftV1 = Schema.Struct({
   createdAt: ImportTimestamp,
   evidenceFingerprint: Sha256Hex,
   extraction: RecipeExtraction,
@@ -29,6 +29,20 @@ export const RecipeDraft = Schema.Struct({
   lifecycle: Schema.Literal("needs_review"),
   schemaVersion: Schema.Literal(1),
 });
+
+const CarouselTranscriptDisposition = Schema.Struct({
+  reason: Schema.Literal("source_type_carousel"),
+  status: Schema.Literal("not_applicable"),
+});
+
+const RecipeDraftV2 = Schema.Struct({
+  ...RecipeDraftV1.fields,
+  schemaVersion: Schema.Literal(2),
+  transcript: CarouselTranscriptDisposition,
+});
+
+/** V1 remains decodable; carousel drafts add an explicit transcript disposition. */
+export const RecipeDraft = Schema.Union([RecipeDraftV1, RecipeDraftV2]);
 export type RecipeDraft = typeof RecipeDraft.Type;
 
 const NullableString = Schema.NullOr(Schema.String);
@@ -86,6 +100,15 @@ export interface RecipeDraftRepositoryShape {
     readonly startedAt: ImportTimestamp;
     readonly transcriptSha256: string;
     readonly visualManifestSha256: string;
+  }) => Effect.Effect<RecipeDispatchClaim, ImportTransitionError>;
+  readonly claimCarousel: (input: {
+    readonly carouselManifestSha256: string;
+    readonly descriptor: RecipeExtractorDescriptor;
+    readonly evidenceFingerprint: string;
+    readonly extractionFingerprint: string;
+    readonly generation: AcquisitionGeneration;
+    readonly importId: ImportId;
+    readonly startedAt: ImportTimestamp;
   }) => Effect.Effect<RecipeDispatchClaim, ImportTransitionError>;
   readonly complete: (
     draft: RecipeDraft
@@ -252,6 +275,68 @@ export const makeD1RecipeDraftRepository = (
       }
       return yield* claimFromRow(row, insert.results.length === 1);
     }),
+  claimCarousel: (input) =>
+    Effect.gen(function* claimCarouselRecipeExtraction() {
+      const raw = yield* persistenceEffect(() =>
+        binding.batch([
+          binding
+            .prepare(
+              `INSERT INTO import_recipe_extractions (
+                 extraction_fingerprint, import_id, acquisition_generation,
+                 evidence_fingerprint, extractor_provider, extractor_model,
+                 extractor_version, state, created_at, updated_at
+               )
+               SELECT ?, parent.id, parent.acquisition_generation, ?, ?, ?, ?,
+                      'dispatching', ?, ?
+                 FROM recipe_imports AS parent
+                 JOIN import_carousel_evidence AS carousel
+                   ON carousel.import_id = parent.id
+                  AND carousel.acquisition_generation = parent.acquisition_generation
+                WHERE parent.id = ? AND parent.acquisition_generation = ?
+                  AND parent.status = 'queued'
+                  AND carousel.state = 'completed'
+                  AND carousel.manifest_sha256 = ?
+               ON CONFLICT(extraction_fingerprint) DO NOTHING
+               RETURNING extraction_fingerprint`
+            )
+            .bind(
+              input.extractionFingerprint,
+              input.evidenceFingerprint,
+              input.descriptor.provider,
+              input.descriptor.model,
+              input.descriptor.version,
+              DateTime.formatIso(input.startedAt),
+              DateTime.formatIso(input.startedAt),
+              input.importId,
+              input.generation,
+              input.carouselManifestSha256
+            ),
+          binding
+            .prepare(
+              `SELECT * FROM import_recipe_extractions
+                WHERE extraction_fingerprint = ?`
+            )
+            .bind(input.extractionFingerprint),
+        ])
+      );
+      const [insert, select] = yield* decodeBatchResults(raw);
+      const rawRow = select?.results[0];
+      if (insert === undefined || rawRow === undefined) {
+        return yield* Effect.fail(importTransitionRejected());
+      }
+      const row = yield* decodeRow(rawRow);
+      if (
+        row.import_id !== input.importId ||
+        row.acquisition_generation !== input.generation ||
+        row.evidence_fingerprint !== input.evidenceFingerprint ||
+        row.extractor_provider !== input.descriptor.provider ||
+        row.extractor_model !== input.descriptor.model ||
+        row.extractor_version !== input.descriptor.version
+      ) {
+        return yield* Effect.fail(importTransitionRejected());
+      }
+      return yield* claimFromRow(row, insert.results.length === 1);
+    }),
   complete: (draft) =>
     Effect.gen(function* completeRecipeExtraction() {
       const encodedDraft = JSON.stringify(
@@ -336,7 +421,9 @@ export const makeD1RecipeDraftRepository = (
       if (rawRow === undefined) {
         return yield* Effect.fail(importTransitionRejected());
       }
-      return yield* decodeDraft(yield* decodeRow(rawRow));
+      const row = yield* decodeRow(rawRow);
+      const decodedDraft = yield* decodeDraft(row);
+      return decodedDraft;
     }),
   fail: (input) =>
     persistenceEffect(() =>
