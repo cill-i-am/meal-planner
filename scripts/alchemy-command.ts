@@ -94,9 +94,12 @@ const runAlchemyProcess: AlchemyRunner = (command, args) => {
   const alchemyCli = fileURLToPath(
     import.meta.resolve("alchemy/bin/alchemy.js")
   );
+  const sourceLoader = fileURLToPath(
+    new URL("node-next-source-loader.js", import.meta.url)
+  );
   const result = spawnSync(
     process.execPath,
-    ["--import", "tsx", alchemyCli, command, ...args],
+    ["--import", sourceLoader, alchemyCli, command, ...args],
     {
       stdio: "inherit",
     }
