@@ -11,10 +11,9 @@ import type {
   ImportPersistenceCorrupt,
   ImportPersistenceUnavailable,
 } from "./import.errors.js";
-import {
-  importPersistenceCorrupt,
-  importPersistenceUnavailable,
-} from "./import.errors.js";
+import { importPersistenceCorrupt } from "./import.errors.js";
+
+export { importPersistenceUnavailable as recipeReviewPersistenceUnavailable } from "./import.errors.js";
 
 const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
@@ -251,66 +250,85 @@ export const applyCorrectionOverlay = (
 
   for (const correction of corrections) {
     switch (correction.field) {
-      case "author":
+      case "author": {
         recipe.author = correction.after as string;
         break;
-      case "category":
+      }
+      case "category": {
         recipe.category = correction.after as string;
         break;
-      case "cook_time_minutes":
+      }
+      case "cook_time_minutes": {
         recipe.cookTimeMinutes = correction.after as number;
         break;
-      case "cuisine":
+      }
+      case "cuisine": {
         recipe.cuisine = correction.after as string;
         break;
-      case "description":
+      }
+      case "description": {
         recipe.description = correction.after as string;
         break;
-      case "ingredient_lines":
+      }
+      case "ingredient_lines": {
         recipe.ingredientLines = correction.after as readonly [
           string,
           ...string[],
         ];
         break;
-      case "ingredient_quantities":
+      }
+      case "ingredient_quantities": {
         recipe.ingredientQuantities = correction.after as readonly [
           string,
           ...string[],
         ];
         break;
-      case "ingredient_units":
+      }
+      case "ingredient_units": {
         recipe.ingredientUnits = correction.after as readonly [
           string,
           ...string[],
         ];
         break;
-      case "instructions":
+      }
+      case "instructions": {
         recipe.instructions = correction.after as readonly [
           string,
           ...string[],
         ];
         break;
-      case "name":
+      }
+      case "name": {
         recipe.name = correction.after as string;
         break;
-      case "nutrition":
+      }
+      case "nutrition": {
         recipe.nutrition = correction.after as string;
         break;
-      case "prep_time_minutes":
+      }
+      case "prep_time_minutes": {
         recipe.prepTimeMinutes = correction.after as number;
         break;
-      case "temperature_celsius":
+      }
+      case "temperature_celsius": {
         recipe.temperatureCelsius = correction.after as number;
         break;
-      case "tools":
+      }
+      case "tools": {
         recipe.tools = correction.after as readonly [string, ...string[]];
         break;
-      case "total_time_minutes":
+      }
+      case "total_time_minutes": {
         recipe.totalTimeMinutes = correction.after as number;
         break;
-      case "yield":
+      }
+      case "yield": {
         recipe.yield = correction.after as string;
         break;
+      }
+      default: {
+        correction.field satisfies never;
+      }
     }
   }
   return recipe;
@@ -324,16 +342,19 @@ const correctionValueMatchesField = (
     case "cook_time_minutes":
     case "prep_time_minutes":
     case "temperature_celsius":
-    case "total_time_minutes":
+    case "total_time_minutes": {
       return typeof value === "number";
+    }
     case "ingredient_lines":
     case "ingredient_quantities":
     case "ingredient_units":
     case "instructions":
-    case "tools":
+    case "tools": {
       return Array.isArray(value);
-    default:
+    }
+    default: {
       return typeof value === "string";
+    }
   }
 };
 
@@ -459,38 +480,57 @@ const currentValueFor = (
 ): RecipeCorrectionValue | null => {
   const recipe = applyCorrectionOverlay(review.draft, review.corrections);
   switch (field) {
-    case "author":
+    case "author": {
       return recipe.author;
-    case "category":
+    }
+    case "category": {
       return recipe.category;
-    case "cook_time_minutes":
+    }
+    case "cook_time_minutes": {
       return recipe.cookTimeMinutes;
-    case "cuisine":
+    }
+    case "cuisine": {
       return recipe.cuisine;
-    case "description":
+    }
+    case "description": {
       return recipe.description;
-    case "ingredient_lines":
+    }
+    case "ingredient_lines": {
       return recipe.ingredientLines;
-    case "ingredient_quantities":
+    }
+    case "ingredient_quantities": {
       return recipe.ingredientQuantities;
-    case "ingredient_units":
+    }
+    case "ingredient_units": {
       return recipe.ingredientUnits;
-    case "instructions":
+    }
+    case "instructions": {
       return recipe.instructions;
-    case "name":
+    }
+    case "name": {
       return recipe.name;
-    case "nutrition":
+    }
+    case "nutrition": {
       return recipe.nutrition;
-    case "prep_time_minutes":
+    }
+    case "prep_time_minutes": {
       return recipe.prepTimeMinutes;
-    case "temperature_celsius":
+    }
+    case "temperature_celsius": {
       return recipe.temperatureCelsius;
-    case "tools":
+    }
+    case "tools": {
       return recipe.tools;
-    case "total_time_minutes":
+    }
+    case "total_time_minutes": {
       return recipe.totalTimeMinutes;
-    case "yield":
+    }
+    case "yield": {
       return recipe.yield;
+    }
+    default: {
+      return field satisfies never;
+    }
   }
 };
 
@@ -548,7 +588,7 @@ export interface RecipeReviewServiceShape {
 const projectApprovedRecipe = (review: RecipeReviewView): ApprovedRecipe => {
   const recipe = applyCorrectionOverlay(review.draft, review.corrections);
   const approved = [...review.transitions]
-    .reverse()
+    .toReversed()
     .find(({ to }) => to === "approved");
   if (
     review.lifecycle !== "approved" ||
@@ -692,5 +732,3 @@ export class RecipeReviewService extends Context.Service<
   RecipeReviewService,
   RecipeReviewServiceShape
 >()("meal-planner/RecipeReviewService") {}
-
-export const recipeReviewPersistenceUnavailable = importPersistenceUnavailable;

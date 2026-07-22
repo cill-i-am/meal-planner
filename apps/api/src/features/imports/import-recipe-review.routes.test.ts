@@ -107,7 +107,11 @@ describe("recipe review routes", () => {
     "requires authentication for %s %s",
     async (method, path, body) => {
       let calls = 0;
-      const app = makeApp(unreachableService(() => calls++));
+      const app = makeApp(
+        unreachableService(() => {
+          calls += 1;
+        })
+      );
       apps.push(app);
       const response = await app.handler(
         new Request(`https://meal-planner.test${path}`, {
@@ -129,7 +133,7 @@ describe("recipe review routes", () => {
   it("attributes an authorized write to the configured private credential", async () => {
     let auditedActor: RecipeReviewerActorId | undefined;
     const service: RecipeReviewServiceShape = {
-      ...unreachableService(() => undefined),
+      ...unreachableService(() => {}),
       correct: (_id, _request, actorId) => {
         auditedActor = actorId;
         return Effect.fail(recipeReviewVersionConflict(0, 1));

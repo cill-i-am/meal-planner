@@ -28,7 +28,7 @@ const problem = (
 
 const publicErrorResponse = (error: PublicRecipeReviewError) => {
   switch (error._tag) {
-    case "UnauthorizedImportCaller":
+    case "UnauthorizedImportCaller": {
       return problem(
         401,
         "unauthorized",
@@ -36,19 +36,23 @@ const publicErrorResponse = (error: PublicRecipeReviewError) => {
         undefined,
         { "www-authenticate": 'Bearer realm="meal-planner-imports"' }
       );
+    }
     case "InvalidImportId":
-    case "InvalidImportRequest":
+    case "InvalidImportRequest": {
       return problem(400, "invalid_request", "The review request is invalid.");
-    case "InvalidRecipeCorrection":
+    }
+    case "InvalidRecipeCorrection": {
       return problem(
         400,
         "invalid_correction",
         "The correction value does not match its field.",
         { field: error.field }
       );
-    case "RecipeReviewNotFound":
+    }
+    case "RecipeReviewNotFound": {
       return problem(404, "not_found", "The recipe draft was not found.");
-    case "RecipeReviewVersionConflict":
+    }
+    case "RecipeReviewVersionConflict": {
       return problem(
         409,
         "version_conflict",
@@ -58,32 +62,40 @@ const publicErrorResponse = (error: PublicRecipeReviewError) => {
           expectedVersion: error.expectedVersion,
         }
       );
-    case "RecipeReviewTransitionRejected":
+    }
+    case "RecipeReviewTransitionRejected": {
       return problem(
         409,
         "transition_rejected",
         "The requested lifecycle transition is not allowed.",
         { lifecycle: error.lifecycle }
       );
-    case "RecipeApprovalBlocked":
+    }
+    case "RecipeApprovalBlocked": {
       return problem(
         422,
         "approval_blocked",
         "The draft still has unresolved or invalid required review data.",
         { blockers: error.blockers, tagsRequired: error.tagsRequired }
       );
-    case "ImportPersistenceUnavailable":
+    }
+    case "ImportPersistenceUnavailable": {
       return problem(
         503,
         "persistence_unavailable",
         "Recipe review persistence is temporarily unavailable."
       );
-    case "ImportPersistenceCorrupt":
+    }
+    case "ImportPersistenceCorrupt": {
       return problem(
         500,
         "internal_error",
         "The recipe review could not be processed."
       );
+    }
+    default: {
+      return error satisfies never;
+    }
   }
 };
 

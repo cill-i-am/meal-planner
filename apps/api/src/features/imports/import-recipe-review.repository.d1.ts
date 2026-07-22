@@ -9,7 +9,6 @@ import {
   RecipeReviewLifecycle,
   RecipeReviewTransition,
   RecipeReviewVersion,
-  RecipeReviewView,
   recipeReviewNullablePolicy,
   recipeReviewTransitionRejected,
   recipeReviewVersionConflict,
@@ -17,6 +16,7 @@ import {
 import type {
   RecipeReviewRepositoryShape,
   RecipeReviewWriteError,
+  RecipeReviewView,
 } from "./import-recipe-review.js";
 import { EvidenceReference, ImportId } from "./import.contracts.js";
 import {
@@ -136,14 +136,12 @@ const reviewFromRows = (
       Schema.Array(EvidenceReference),
       source.evidence_references_json
     );
-    const corrections = yield* Effect.forEach(
-      correctionValues,
-      decodeCorrection
-    );
-    const transitions = yield* Effect.forEach(
-      transitionValues,
-      decodeTransition
-    );
+    const corrections = yield* Effect.forEach((value) =>
+      decodeCorrection(value)
+    )(correctionValues);
+    const transitions = yield* Effect.forEach((value) =>
+      decodeTransition(value)
+    )(transitionValues);
     const lifecycle =
       source.lifecycle === null
         ? "needs_review"
@@ -258,7 +256,9 @@ const reviewAfterCas = (
       return yield* Effect.fail(importPersistenceCorrupt());
     }
     const review = reviewOption.value;
-    if (updated) return review;
+    if (updated) {
+      return review;
+    }
     if (review.version !== expectedVersion) {
       return yield* Effect.fail(
         recipeReviewVersionConflict(expectedVersion, review.version)
@@ -382,9 +382,9 @@ export const makeD1RecipeReviewRepository = (
         Schema.Struct({ results: Schema.Array(ApprovedImportRow) }),
         raw
       );
-      const reviews = yield* Effect.forEach(rows.results, ({ import_id }) =>
+      const reviews = yield* Effect.forEach(({ import_id }) =>
         readReview(binding, { importId: import_id })
-      );
+      )(rows.results);
       return reviews.flatMap((review) =>
         Option.isSome(review) ? [review.value] : []
       );

@@ -253,7 +253,10 @@ describe("provider-free D1 recipe review tracer", () => {
     );
     let tick = 0;
     const service = makeRecipeReviewService({
-      now: () => decodeTimestamp(`2026-07-22T10:0${++tick}:00.000Z`),
+      now: () => {
+        tick += 1;
+        return decodeTimestamp(`2026-07-22T10:0${tick}:00.000Z`);
+      },
       repository,
     });
 
