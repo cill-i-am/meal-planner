@@ -7,10 +7,12 @@ import {
   ImportBatchItemId,
 } from "./import-batch.contracts.js";
 import { RecipeReviewerActorId } from "./import-recipe-review.js";
-import {
+import type {
   CreateImportRequest,
-  EvidenceReference,
   IdempotencyKey,
+} from "./import.contracts.js";
+import {
+  EvidenceReference,
   ImportId,
   ImportTimestamp,
   ImportView,
@@ -262,7 +264,7 @@ export const makeImportOperationsService = (input: {
   readonly replayQuotaLimit: number;
 }): ImportOperationsServiceShape => ({
   expireArtifacts: Effect.fn("ImportOperations.expireArtifacts")(
-    function* (scope) {
+    function* expireArtifacts(scope) {
       const cutoff = yield* Clock.currentTimeMillis;
       const expired = yield* input.artifacts.expireDue(cutoff);
       const occurredAt = timestampFromEpochMilliseconds(cutoff);
@@ -284,7 +286,7 @@ export const makeImportOperationsService = (input: {
     }
   ),
   inspectDeadLetter: Effect.fn("ImportOperations.inspectDeadLetter")(
-    function* (request) {
+    function* inspectDeadLetter(request) {
       const occurredAt = timestampFromEpochMilliseconds(
         yield* Clock.currentTimeMillis
       );
@@ -316,7 +318,7 @@ export const makeImportOperationsService = (input: {
     }
   ),
   replayDeadLetter: Effect.fn("ImportOperations.replayDeadLetter")(
-    function* (request) {
+    function* replayDeadLetter(request) {
       const occurredAt = timestampFromEpochMilliseconds(
         yield* Clock.currentTimeMillis
       );

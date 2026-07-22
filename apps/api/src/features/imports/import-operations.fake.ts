@@ -4,18 +4,18 @@ import type {
   ImportBatchItemFailureCode,
   ImportBatchItemId,
 } from "./import-batch.contracts.js";
-import {
-  makeImportOperationsService,
-  type DeadLetterInspection,
-  type DeadLetterNotFound,
-  type DeadLetterReplayClaim,
-  type DeadLetterReplayInProgress,
-  type DeadLetterStoreShape,
-  type ExpirableImportArtifact,
-  type ExpirableArtifactStoreShape,
-  type OperationalCorrelation,
-  type OperationalEvent,
-  type OperationalEventSinkShape,
+import { makeImportOperationsService } from "./import-operations.js";
+import type {
+  DeadLetterInspection,
+  DeadLetterNotFound,
+  DeadLetterReplayClaim,
+  DeadLetterReplayInProgress,
+  DeadLetterStoreShape,
+  ExpirableImportArtifact,
+  ExpirableArtifactStoreShape,
+  OperationalCorrelation,
+  OperationalEvent,
+  OperationalEventSinkShape,
 } from "./import-operations.js";
 import type {
   CreateImportRequest,
@@ -47,6 +47,11 @@ interface StoredDeadLetter {
   state: "claimed" | "ready" | "replayed";
   imported?: ImportView;
 }
+
+const missing = (itemId: ImportBatchItemId): DeadLetterNotFound => ({
+  _tag: "DeadLetterNotFound",
+  itemId,
+});
 
 /** Build the deterministic in-memory adapters for the operational tracer. */
 export const makeProviderFreeOperationalTracer = (input: {
@@ -84,10 +89,6 @@ export const makeProviderFreeOperationalTracer = (input: {
         events.push(event);
       }),
   };
-  const missing = (itemId: ImportBatchItemId): DeadLetterNotFound => ({
-    _tag: "DeadLetterNotFound",
-    itemId,
-  });
   const deadLetterStore: DeadLetterStoreShape = {
     claimReplay: (itemId) =>
       Effect.suspend<

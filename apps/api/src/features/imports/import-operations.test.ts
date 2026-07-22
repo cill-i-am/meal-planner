@@ -11,10 +11,8 @@ import {
 import { MealPlanDecisionRequest } from "../meal-planning/meal-plan.js";
 import { ImportBatchItemId } from "./import-batch.contracts.js";
 import { EvidenceRetentionSeconds } from "./import-media.model.js";
-import {
-  makeProviderFreeOperationalTracer,
-  type ProviderFreeDeadLetter,
-} from "./import-operations.fake.js";
+import { makeProviderFreeOperationalTracer } from "./import-operations.fake.js";
+import type { ProviderFreeDeadLetter } from "./import-operations.fake.js";
 import {
   ExpirableImportArtifact,
   OperationalCorrelation,
@@ -22,10 +20,8 @@ import {
   OperationalPrincipal,
   OperationalScope,
 } from "./import-operations.js";
-import {
-  projectApprovedRecipe,
-  type RecipeReviewView,
-} from "./import-recipe-review.js";
+import { projectApprovedRecipe } from "./import-recipe-review.js";
+import type { RecipeReviewView } from "./import-recipe-review.js";
 import {
   CreateImportRequest as OrdinaryCreateImportRequest,
   IdempotencyKey as OrdinaryIdempotencyKey,
@@ -47,7 +43,7 @@ const viewer = Schema.decodeUnknownSync(OperationalPrincipal)({
 });
 
 const firstSyntheticReview = (): RecipeReviewView => {
-  const review = syntheticRecipeReviews[0];
+  const [review] = syntheticRecipeReviews;
   if (review === undefined) {
     throw new Error("Synthetic recipe review fixture is missing");
   }
@@ -180,7 +176,7 @@ describe("provider-free import operations tracer", () => {
     });
 
     await Effect.runPromise(
-      Effect.gen(function* () {
+      Effect.gen(function* retentionBoundary() {
         yield* TestClock.setTime(BaseTime);
         yield* TestClock.adjust(EvidenceRetentionSeconds * 1000 - 1);
         const beforeBoundary = yield* tracer.service.expireArtifacts(scope);
