@@ -71,6 +71,38 @@ describe("provider-free meal-plan tracer", () => {
       )
     ).toBe(false);
     expect(tracer.drafts).toHaveLength(1);
+
+    const maximumRequestKey = "a".repeat(128);
+    const boundaryDraft = await Effect.runPromise(
+      makeSyntheticMealPlanTracer().service.create(
+        Schema.decodeUnknownSync(MealPlanRequest)({
+          requestKey: maximumRequestKey,
+          slots: [
+            {
+              date: "2026-07-27",
+              mealType: "dinner",
+              servings: 2,
+              slotId: "synthetic-boundary-dinner",
+            },
+          ],
+        }),
+        syntheticPlanningPolicy
+      )
+    );
+    expect(boundaryDraft.draftId).toBe(`draft-${maximumRequestKey}`);
+    expect(() =>
+      Schema.decodeUnknownSync(MealPlanRequest)({
+        requestKey: "a".repeat(129),
+        slots: [
+          {
+            date: "2026-07-27",
+            mealType: "dinner",
+            servings: 2,
+            slotId: "synthetic-adjacent-boundary-dinner",
+          },
+        ],
+      })
+    ).toThrow();
   });
 
   it("validates and audits a manual swap exactly once", async () => {

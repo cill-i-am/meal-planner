@@ -33,7 +33,10 @@ export const MealPlanRequestKey = ShortIdentifier.pipe(
 );
 export type MealPlanRequestKey = typeof MealPlanRequestKey.Type;
 
-export const MealPlanDraftId = ShortIdentifier.pipe(
+const DraftIdentifier = TrimmedNonEmptyString.pipe(
+  Schema.check(Schema.isMaxLength(134))
+);
+export const MealPlanDraftId = DraftIdentifier.pipe(
   Schema.brand("MealPlanDraftId")
 );
 export type MealPlanDraftId = typeof MealPlanDraftId.Type;
