@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
@@ -54,6 +55,18 @@ interface D1QueryBody {
   readonly sql?: string;
 }
 
+interface D1ImportBody {
+  readonly action: "ingest" | "init" | "poll";
+  readonly current_bookmark?: string;
+  readonly etag?: string;
+  readonly filename?: string;
+}
+
+interface RecordedD1Transport {
+  readonly importFiles: string[];
+  readonly queryBodies: D1QueryBody[];
+}
+
 interface LoadedAlchemyD1Modules {
   readonly applyMigrationsModule: ApplyMigrationsModule;
   readonly credentialsModule: CredentialsModule;
@@ -65,6 +78,9 @@ const decodeRequestBody = (body: HttpBody.HttpBody): D1QueryBody => {
   }
   return JSON.parse(new TextDecoder().decode(body.body)) as D1QueryBody;
 };
+
+const decodeImportBody = (body: HttpBody.HttpBody): D1ImportBody =>
+  decodeRequestBody(body) as unknown as D1ImportBody;
 
 const loadAlchemyD1Modules = async (): Promise<LoadedAlchemyD1Modules> => {
   const cloudflareEntry = import.meta.resolve("alchemy/Cloudflare");
@@ -136,6 +152,15 @@ const splitD1SqlBatch = (sql: string): readonly string[] =>
     .filter((statement) => statement.length > 0)
     .map((statement) => `${statement};`);
 
+const executeThroughD1Query = (
+  database: DatabaseSync,
+  statements: readonly string[]
+): void =>
+  executeAtomically(
+    database,
+    statements.flatMap((statement) => splitD1SqlBatch(statement))
+  );
+
 const seedMigrationHistory = (
   database: DatabaseSync,
   migrations: readonly MigrationFile[]
@@ -194,19 +219,125 @@ const successfulD1Response = (
 
 const makeSemanticD1Client = (
   database: DatabaseSync,
-  requestBodies: D1QueryBody[]
+  transport: RecordedD1Transport
 ): HttpClient.HttpClient =>
   HttpClient.make((request) =>
     Effect.sync(() => {
+      const requestUrl = new URL(request.url);
+
+      if (requestUrl.hostname === "d1-upload.invalid") {
+        if (request.body._tag !== "Uint8Array") {
+          throw new TypeError("Expected an uploaded SQL file");
+        }
+        const sql = new TextDecoder().decode(request.body.body);
+        transport.importFiles.push(sql);
+        return HttpClientResponse.fromWeb(
+          request,
+          new Response(null, {
+            headers: {
+              etag: `"${createHash("md5").update(sql).digest("hex")}"`,
+            },
+            status: 200,
+          })
+        );
+      }
+
+      if (requestUrl.pathname.endsWith("/import")) {
+        const body = decodeImportBody(request.body);
+        if (body.action === "init") {
+          return HttpClientResponse.fromWeb(
+            request,
+            Response.json({
+              result: {
+                filename: `${body.etag}.sql`,
+                status: "active",
+                success: true,
+                type: "import",
+                upload_url: `https://d1-upload.invalid/${body.etag}.sql`,
+              },
+              success: true,
+            })
+          );
+        }
+        if (body.action === "ingest") {
+          return HttpClientResponse.fromWeb(
+            request,
+            Response.json({
+              result: {
+                at_bookmark: "local-import-bookmark",
+                status: "active",
+                success: true,
+                type: "import",
+              },
+              success: true,
+            })
+          );
+        }
+        if (body.action === "poll") {
+          const sql = transport.importFiles.at(-1);
+          if (sql === undefined) {
+            throw new Error("Expected an uploaded SQL file before ingestion");
+          }
+          try {
+            executeAtomically(database, [sql]);
+            return HttpClientResponse.fromWeb(
+              request,
+              Response.json({
+                result: {
+                  result: { num_queries: splitMigrationStatements(sql).length },
+                  status: "complete",
+                  success: true,
+                  type: "import",
+                },
+                success: true,
+              })
+            );
+          } catch (error) {
+            return HttpClientResponse.fromWeb(
+              request,
+              Response.json({
+                result: {
+                  error: error instanceof Error ? error.message : String(error),
+                  status: "error",
+                  success: false,
+                  type: "import",
+                },
+                success: true,
+              })
+            );
+          }
+        }
+        throw new Error(`Unexpected D1 import action: ${body.action}`);
+      }
+
       const body = decodeRequestBody(request.body);
-      requestBodies.push(body);
+      transport.queryBodies.push(body);
 
       if (body.batch !== undefined) {
-        executeAtomically(
-          database,
-          body.batch.map(({ sql }) => sql)
-        );
-        return successfulD1Response(request);
+        try {
+          executeThroughD1Query(
+            database,
+            body.batch.map(({ sql }) => sql)
+          );
+          return successfulD1Response(request);
+        } catch (error) {
+          return HttpClientResponse.fromWeb(
+            request,
+            Response.json(
+              {
+                errors: [
+                  {
+                    code: 7500,
+                    message: `${error instanceof Error ? error.message : String(error)}: SQLITE_ERROR`,
+                  },
+                ],
+                messages: [],
+                success: false,
+              },
+              { status: 400 }
+            )
+          );
+        }
       }
       if (body.sql === undefined) {
         throw new TypeError("Expected a D1 sql query");
@@ -217,7 +348,7 @@ const makeSemanticD1Client = (
         /^\s*(?:PRAGMA|SELECT)\b/iu.test(body.sql);
       const results = isRead
         ? database.prepare(body.sql).all()
-        : (executeAtomically(database, splitD1SqlBatch(body.sql)), []);
+        : (executeThroughD1Query(database, [body.sql]), []);
       return successfulD1Response(request, results);
     })
   );
@@ -231,32 +362,34 @@ const migrationHistory = (database: DatabaseSync) =>
   database.prepare("SELECT id, name FROM d1_migrations ORDER BY id;").all();
 
 describe("Alchemy D1 migration reconciliation", () => {
-  it("submits every checked-in migration as one atomic D1 statement batch", async () => {
+  it("imports every checked-in migration as one marker-free SQL file", async () => {
     const modules = await loadAlchemyD1Modules();
     const migrationsFiles = await loadCheckedInMigrations();
-    const requestBodies: D1QueryBody[] = [];
-    const client = HttpClient.make((request) => {
-      requestBodies.push(decodeRequestBody(request.body));
-      return Effect.succeed(successfulD1Response(request));
-    });
+    const database = new DatabaseSync(":memory:");
+    try {
+      const transport: RecordedD1Transport = {
+        importFiles: [],
+        queryBodies: [],
+      };
+      const client = makeSemanticD1Client(database, transport);
 
-    await runApplyMigrations(modules, migrationsFiles, client);
+      await runApplyMigrations(modules, migrationsFiles, client);
 
-    const migrationRequests = requestBodies.filter(isMigrationRequest);
-    expect(migrationRequests).toHaveLength(migrationsFiles.length);
+      expect(transport.importFiles).toHaveLength(migrationsFiles.length);
+      expect(transport.queryBodies.filter(isMigrationRequest)).toHaveLength(0);
 
-    for (const [index, migration] of migrationsFiles.entries()) {
-      const request = migrationRequests[index];
-      const expectedBatch = [
-        ...splitMigrationStatements(migration.sql),
-        migrationLedgerStatement(migration, index),
-      ].map((sql) => ({ sql }));
-
-      expect(request?.sql).toBeUndefined();
-      expect(request?.batch).toEqual(expectedBatch);
-      expect(request?.batch).not.toContainEqual({
-        sql: expect.stringContaining("--> statement-breakpoint"),
-      });
+      for (const [index, migration] of migrationsFiles.entries()) {
+        const expectedFile = [
+          ...splitMigrationStatements(migration.sql),
+          migrationLedgerStatement(migration, index),
+        ].join("\n");
+        expect(transport.importFiles[index]).toBe(expectedFile);
+        expect(transport.importFiles[index]).not.toContain(
+          "--> statement-breakpoint"
+        );
+      }
+    } finally {
+      database.close();
     }
   });
 
@@ -264,17 +397,44 @@ describe("Alchemy D1 migration reconciliation", () => {
     const modules = await loadAlchemyD1Modules();
     const checkedInMigrations = await loadCheckedInMigrations();
     const migrationsFiles = checkedInMigrations.slice(0, 3);
-    const [initialMigration, acquisitionMigration] = migrationsFiles;
-    if (initialMigration === undefined || acquisitionMigration === undefined) {
-      throw new Error("Expected the 0000 and 0001 migrations");
+    const [initialMigration, acquisitionMigration, speechMigration] =
+      migrationsFiles;
+    if (
+      initialMigration === undefined ||
+      acquisitionMigration === undefined ||
+      speechMigration === undefined
+    ) {
+      throw new Error("Expected the 0000 through 0002 migrations");
     }
 
     const database = new DatabaseSync(":memory:");
     try {
       seedMigrationHistory(database, [initialMigration, acquisitionMigration]);
 
-      const requestBodies: D1QueryBody[] = [];
-      const client = makeSemanticD1Client(database, requestBodies);
+      const speechStatements = [
+        ...splitMigrationStatements(speechMigration.sql),
+        migrationLedgerStatement(speechMigration, 2),
+      ];
+      expect(() => executeThroughD1Query(database, speechStatements)).toThrow(
+        /incomplete input/u
+      );
+      expect(migrationHistory(database)).toEqual([
+        { id: "00001", name: initialMigration.id },
+        { id: "00002", name: acquisitionMigration.id },
+      ]);
+      expect(
+        database
+          .prepare(
+            "SELECT count(*) AS count FROM sqlite_master WHERE name = 'import_transcriptions';"
+          )
+          .get()
+      ).toEqual({ count: 0 });
+
+      const transport: RecordedD1Transport = {
+        importFiles: [],
+        queryBodies: [],
+      };
+      const client = makeSemanticD1Client(database, transport);
 
       await runApplyMigrations(modules, migrationsFiles, client);
 
@@ -342,15 +502,13 @@ describe("Alchemy D1 migration reconciliation", () => {
           .run("changed-dispatch", importId)
       ).toThrow("import transcription identity is immutable");
 
-      const firstRunMigrationRequestCount =
-        requestBodies.filter(isMigrationRequest).length;
-      expect(firstRunMigrationRequestCount).toBe(1);
+      const firstRunImportCount = transport.importFiles.length;
+      expect(firstRunImportCount).toBe(1);
+      expect(transport.queryBodies.filter(isMigrationRequest)).toHaveLength(0);
 
       await runApplyMigrations(modules, migrationsFiles, client);
 
-      const totalMigrationRequestCount =
-        requestBodies.filter(isMigrationRequest).length;
-      expect(totalMigrationRequestCount).toBe(firstRunMigrationRequestCount);
+      expect(transport.importFiles).toHaveLength(firstRunImportCount);
       expect(migrationHistory(database)).toEqual(expectedHistory);
     } finally {
       database.close();
@@ -374,8 +532,11 @@ describe("Alchemy D1 migration reconciliation", () => {
     const database = new DatabaseSync(":memory:");
     try {
       seedMigrationHistory(database, [initialMigration, acquisitionMigration]);
-      const requestBodies: D1QueryBody[] = [];
-      const client = makeSemanticD1Client(database, requestBodies);
+      const transport: RecordedD1Transport = {
+        importFiles: [],
+        queryBodies: [],
+      };
+      const client = makeSemanticD1Client(database, transport);
       const failingMigration = {
         ...speechMigration,
         sql: `${speechMigration.sql}\n--> statement-breakpoint\nTHIS IS NOT VALID SQL;`,
