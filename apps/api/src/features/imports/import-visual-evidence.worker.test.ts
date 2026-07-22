@@ -1489,7 +1489,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     });
   });
 
-  it("does not project needs-review for a corrupt durable draft", async () => {
+  it("keeps a completed durable draft immutable", async () => {
     const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000234");
     const canonicalId = decodeCanonicalId("7520000000000000234");
     const importRepository = await landVisualEvidence(importId, canonicalId);
@@ -1513,15 +1513,18 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
         ),
       })
     );
-    await testEnv.MealPlannerDatabase.prepare(
-      `UPDATE import_recipe_extractions SET draft_json = '{}'
-        WHERE import_id = ? AND is_current = 1`
-    )
-      .bind(importId)
-      .run();
-
     await expect(
-      Effect.runPromise(importRepository.findById(importId))
-    ).rejects.toMatchObject({ _tag: "ImportPersistenceCorrupt" });
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE import_recipe_extractions SET draft_json = '{}'
+          WHERE import_id = ? AND is_current = 1`
+      )
+        .bind(importId)
+        .run()
+    ).rejects.toThrow("completed recipe drafts are immutable");
+    expect(
+      Option.getOrThrow(
+        await Effect.runPromise(importRepository.findById(importId))
+      ).view.status
+    ).toEqual({ kind: "needs_review" });
   });
 });
