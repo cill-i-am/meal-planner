@@ -81,7 +81,7 @@ type SyntheticBatchItem =
 
 interface SeedSyntheticBatch {
   readonly batchId: ImportBatchId;
-  readonly idempotencyKey: string;
+  readonly idempotencyKey: IdempotencyKey;
   readonly items: readonly SyntheticBatchItem[];
 }
 

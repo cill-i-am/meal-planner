@@ -133,21 +133,24 @@ describe("durable provider-free queue acceptance", () => {
     const idempotencyKey = Schema.decodeUnknownSync(IdempotencyKey)(
       "gaia-117:atomic-seed:712"
     );
+    const batchIdempotencyKey = Schema.decodeUnknownSync(IdempotencyKey)(
+      "gaia-117:atomic-batch:711"
+    );
     const ordinary = makeProviderFreeSyntheticImportService({
       database,
-      now: () => "2026-07-23T08:00:00.000Z",
+      now: acceptanceNow,
     });
     const acceptance = makeD1ImportQueueAcceptance({
       database,
       imports: ordinary,
       maximumDeliveryAttempts: 3,
-      now: () => "2026-07-23T08:00:00.000Z",
+      now: acceptanceNow,
     });
 
     const failedSeed = await Effect.runPromiseExit(
       acceptance.seedBatch({
         batchId,
-        idempotencyKey: "gaia-117:atomic-batch:711",
+        idempotencyKey: batchIdempotencyKey,
         items: [
           {
             deliveryMode: "ordinary",
@@ -242,6 +245,8 @@ describe("durable provider-free queue acceptance", () => {
     const poisonKey = Schema.decodeUnknownSync(IdempotencyKey)(
       "gaia-117:poison:703"
     );
+    const batchIdempotencyKey =
+      Schema.decodeUnknownSync(IdempotencyKey)("gaia-117:batch:701");
     const correlation = Schema.decodeUnknownSync(OperationalCorrelation)({
       batchId,
       evidence: {
@@ -290,7 +295,7 @@ describe("durable provider-free queue acceptance", () => {
     await Effect.runPromise(
       acceptance.seedBatch({
         batchId,
-        idempotencyKey: "gaia-117:batch:701",
+        idempotencyKey: batchIdempotencyKey,
         items: [
           {
             deliveryMode: "ordinary",
