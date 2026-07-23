@@ -79,6 +79,8 @@ CREATE TABLE `import_dead_letters` (
   `failure_code` text NOT NULL,
   `correlation_json` text NOT NULL,
   `replay_state` text DEFAULT 'ready' NOT NULL,
+  `replay_claim_id` text,
+  `replay_claim_expires_at_epoch_milliseconds` integer,
   `replay_import_json` text,
   `created_at` text NOT NULL,
   `updated_at` text NOT NULL,
@@ -99,6 +101,25 @@ CREATE TABLE `import_dead_letters` (
     CHECK (json_valid(`correlation_json`)),
   CONSTRAINT `import_dead_letters_replay_state_check`
     CHECK (`replay_state` IN ('ready', 'claimed', 'replayed')),
+  CONSTRAINT `import_dead_letters_replay_claim_check`
+    CHECK (
+      (
+        `replay_state` = 'ready'
+        AND `replay_claim_id` IS NULL
+        AND `replay_claim_expires_at_epoch_milliseconds` IS NULL
+      )
+      OR (
+        `replay_state` = 'claimed'
+        AND `replay_claim_id` IS NOT NULL
+        AND typeof(`replay_claim_expires_at_epoch_milliseconds`) = 'integer'
+        AND `replay_claim_expires_at_epoch_milliseconds` >= 0
+      )
+      OR (
+        `replay_state` = 'replayed'
+        AND `replay_claim_id` IS NOT NULL
+        AND `replay_claim_expires_at_epoch_milliseconds` IS NULL
+      )
+    ),
   CONSTRAINT `import_dead_letters_replay_import_check`
     CHECK (
       (`replay_state` = 'replayed' AND json_valid(`replay_import_json`))

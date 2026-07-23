@@ -6,6 +6,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { HealthRoutes } from "./features/health/health.routes.js";
 import { ImportBatchQueueMessage } from "./features/imports/import-batch.contracts.js";
+import { DeadLetterReplayClaimId } from "./features/imports/import-operations.js";
 import { makeD1ImportQueueAcceptance } from "./features/imports/import-queue-acceptance.d1.js";
 import {
   RecipeReviewService,
@@ -98,7 +99,12 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
               database,
               imports,
               maximumDeliveryAttempts: 3,
+              newReplayClaimId: () =>
+                Schema.decodeUnknownSync(DeadLetterReplayClaimId)(
+                  crypto.randomUUID()
+                ),
               now: currentIsoTimestamp,
+              replayClaimLeaseMilliseconds: 60_000,
             }).consume(message);
           })
         )

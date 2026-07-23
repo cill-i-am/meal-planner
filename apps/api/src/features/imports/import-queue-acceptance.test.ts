@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Cause, Effect, Exit, Schema } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Schema } from "effect";
 import { Miniflare } from "miniflare";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   ImportBatchId,
@@ -14,6 +14,7 @@ import {
   ImportBatchQueueMessage,
 } from "./import-batch.contracts.js";
 import {
+  DeadLetterReplayClaimId,
   OperationalCorrelation,
   OperationalPrincipal,
   makeImportOperationsService,
@@ -27,6 +28,13 @@ let persistenceDirectory: string;
 let runtime: Miniflare;
 
 const acceptanceNow = () => "2026-07-23T08:00:00.000Z" as const;
+let replayClaimIdSequence = 0;
+const newReplayClaimId = () => {
+  replayClaimIdSequence += 1;
+  return Schema.decodeUnknownSync(DeadLetterReplayClaimId)(
+    `018f47ad-91aa-7c35-b6fe-${String(replayClaimIdSequence).padStart(12, "0")}`
+  );
+};
 
 const runSequentially = <A>(
   values: readonly A[],
@@ -144,7 +152,9 @@ describe("durable provider-free queue acceptance", () => {
       database,
       imports: ordinary,
       maximumDeliveryAttempts: 3,
+      newReplayClaimId,
       now: acceptanceNow,
+      replayClaimLeaseMilliseconds: 60_000,
     });
 
     const failedSeed = await Effect.runPromiseExit(
@@ -223,6 +233,9 @@ describe("durable provider-free queue acceptance", () => {
   });
 
   it("survives redelivery and replays one poisoned item through the ordinary service exactly once", async () => {
+    let currentTimeEpochMilliseconds = Date.parse(acceptanceNow());
+    const currentAcceptanceTime = () =>
+      new Date(currentTimeEpochMilliseconds).toISOString();
     const batchId = Schema.decodeUnknownSync(ImportBatchId)(
       "018f47ad-91aa-7c35-b6fe-000000000701"
     );
@@ -272,7 +285,7 @@ describe("durable provider-free queue acceptance", () => {
     };
     const ordinary = makeProviderFreeSyntheticImportService({
       database,
-      now: acceptanceNow,
+      now: currentAcceptanceTime,
       observe: {
         availabilityValidation: () => {
           providerFreeObservations.availabilityValidations += 1;
@@ -289,7 +302,9 @@ describe("durable provider-free queue acceptance", () => {
       database,
       imports: ordinary,
       maximumDeliveryAttempts: 3,
-      now: acceptanceNow,
+      newReplayClaimId,
+      now: currentAcceptanceTime,
+      replayClaimLeaseMilliseconds: 60_000,
     });
 
     await Effect.runPromise(
@@ -334,7 +349,9 @@ describe("durable provider-free queue acceptance", () => {
         get: ordinary.get,
       },
       maximumDeliveryAttempts: 3,
-      now: acceptanceNow,
+      newReplayClaimId,
+      now: currentAcceptanceTime,
+      replayClaimLeaseMilliseconds: 60_000,
     });
     const interruptedExit = await Effect.runPromiseExit(
       interrupted.consume(happyMessage)
@@ -355,7 +372,9 @@ describe("durable provider-free queue acceptance", () => {
         get: ordinary.get,
       },
       maximumDeliveryAttempts: 3,
-      now: acceptanceNow,
+      newReplayClaimId,
+      now: currentAcceptanceTime,
+      replayClaimLeaseMilliseconds: 60_000,
     });
     await Effect.runPromise(redelivered.consume(happyMessage));
     await Effect.runPromise(redelivered.consume(happyMessage));
@@ -456,12 +475,65 @@ describe("durable provider-free queue acceptance", () => {
       .first<{ readonly replayState: string }>();
     expect(releasedClaim).toEqual({ replayState: "ready" });
 
-    const createSpy = vi.fn(ordinary.create);
+    const abandonedClaim = await Effect.runPromise(
+      acceptance.deadLetters.claimReplay(poisonItemId)
+    );
+    expect(abandonedClaim._tag).toBe("Ready");
+    if (abandonedClaim._tag !== "Ready") {
+      throw new Error("Expected an unreplayed dead letter");
+    }
+    const abandonedImport = await Effect.runPromise(
+      ordinary.create(abandonedClaim.request, abandonedClaim.idempotencyKey)
+    );
+    const observationsBeforeRecovery = { ...providerFreeObservations };
+
+    const concurrentClaimFailure = await Effect.runPromise(
+      Effect.flip(acceptance.deadLetters.claimReplay(poisonItemId))
+    );
+    expect(concurrentClaimFailure).toEqual({
+      _tag: "DeadLetterReplayInProgress",
+      itemId: poisonItemId,
+    });
+
+    currentTimeEpochMilliseconds += 60_001;
+    const recoveredAcceptance = makeD1ImportQueueAcceptance({
+      database,
+      imports: ordinary,
+      maximumDeliveryAttempts: 3,
+      newReplayClaimId,
+      now: currentAcceptanceTime,
+      replayClaimLeaseMilliseconds: 60_000,
+    });
+    const expiredOwnerCompletionFailure = await Effect.runPromise(
+      Effect.flip(
+        acceptance.deadLetters.completeReplay(
+          poisonItemId,
+          abandonedClaim.claimId,
+          abandonedImport.import
+        )
+      )
+    );
+    expect(expiredOwnerCompletionFailure).toEqual({
+      _tag: "DeadLetterReplayInProgress",
+      itemId: poisonItemId,
+    });
+    let recoveredCreateCalls = 0;
+    const replayStarted = await Effect.runPromise(Deferred.make<null>());
+    const continueReplay = await Effect.runPromise(Deferred.make<null>());
     const replayOperations = makeImportOperationsService({
       artifacts: { expireDue: () => Effect.succeed([]) },
-      deadLetters: acceptance.deadLetters,
-      events: acceptance.events,
-      imports: { create: createSpy, get: ordinary.get },
+      deadLetters: recoveredAcceptance.deadLetters,
+      events: recoveredAcceptance.events,
+      imports: {
+        create: (request, idempotencyKey) =>
+          Effect.gen(function* controlledReplay() {
+            recoveredCreateCalls += 1;
+            yield* Deferred.succeed(replayStarted, null);
+            yield* Deferred.await(continueReplay);
+            return yield* ordinary.create(request, idempotencyKey);
+          }),
+        get: ordinary.get,
+      },
       replayQuotaLimit: 1,
     });
     const quotaRejected = await Effect.runPromiseExit(
@@ -472,15 +544,57 @@ describe("durable provider-free queue acceptance", () => {
       })
     );
     expect(Exit.isFailure(quotaRejected)).toBe(true);
-    expect(createSpy).not.toHaveBeenCalled();
+    expect(recoveredCreateCalls).toBe(0);
 
-    const firstReplay = await Effect.runPromise(
+    const firstReplayFiber = Effect.runFork(
       replayOperations.replayDeadLetter({
         itemId: poisonItemId,
         principal: operator,
         quotaUnits: 1,
       })
     );
+    await Effect.runPromise(Deferred.await(replayStarted));
+
+    await Effect.runPromise(
+      acceptance.deadLetters.releaseReplay(poisonItemId, abandonedClaim.claimId)
+    );
+    const staleCompletionFailure = await Effect.runPromise(
+      Effect.flip(
+        acceptance.deadLetters.completeReplay(
+          poisonItemId,
+          abandonedClaim.claimId,
+          abandonedImport.import
+        )
+      )
+    );
+    expect(staleCompletionFailure).toEqual({
+      _tag: "DeadLetterReplayInProgress",
+      itemId: poisonItemId,
+    });
+    const recoveredClaimState = await database
+      .prepare(
+        `SELECT replay_claim_id AS replayClaimId,
+                replay_state AS replayState
+           FROM import_dead_letters
+          WHERE item_id = ?`
+      )
+      .bind(poisonItemId)
+      .first<{
+        readonly replayClaimId: string;
+        readonly replayState: string;
+      }>();
+    expect(recoveredClaimState?.replayState).toBe("claimed");
+    expect(recoveredClaimState?.replayClaimId).not.toBe(abandonedClaim.claimId);
+    const recoveredConcurrentFailure = await Effect.runPromise(
+      Effect.flip(recoveredAcceptance.deadLetters.claimReplay(poisonItemId))
+    );
+    expect(recoveredConcurrentFailure).toEqual({
+      _tag: "DeadLetterReplayInProgress",
+      itemId: poisonItemId,
+    });
+
+    await Effect.runPromise(Deferred.succeed(continueReplay, null));
+    const firstReplay = await Effect.runPromise(Fiber.join(firstReplayFiber));
     const duplicateReplay = await Effect.runPromise(
       replayOperations.replayDeadLetter({
         itemId: poisonItemId,
@@ -490,11 +604,17 @@ describe("durable provider-free queue acceptance", () => {
     );
     expect(firstReplay.disposition).toBe("replayed");
     expect(duplicateReplay.disposition).toBe("already_replayed");
-    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(recoveredCreateCalls).toBe(1);
+    expect(providerFreeObservations.availabilityValidations).toBe(
+      observationsBeforeRecovery.availabilityValidations
+    );
+    expect(providerFreeObservations.identityResolutions).toBe(
+      observationsBeforeRecovery.identityResolutions
+    );
     expect(providerFreeObservations).toEqual({
       availabilityValidations: 2,
       identityResolutions: 2,
-      workflowReconciliations: 3,
+      workflowReconciliations: 4,
     });
 
     const finalBatch = await Effect.runPromise(acceptance.getBatch(batchId));
@@ -535,6 +655,12 @@ describe("durable provider-free queue acceptance", () => {
     expect(serializedEvents).toContain("DeadLetterReplayDenied");
     expect(serializedEvents).toContain("DeadLetterReplayQuotaRejected");
     expect(serializedEvents).toContain("DeadLetterReplayed");
+    expect(
+      eventRows.results.filter(
+        ({ eventJson }: { readonly eventJson: string }) =>
+          eventJson.includes('"DeadLetterReplayed"')
+      )
+    ).toHaveLength(1);
     expect(serializedEvents).not.toContain("synthetic.invalid");
     expect(serializedEvents).not.toContain(happyKey);
     expect(serializedEvents).not.toContain(poisonKey);

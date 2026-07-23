@@ -11,6 +11,7 @@ import { ImportBatchView as ImportBatchViewSchema } from "./import-batch.contrac
 import type {
   DeadLetterNotFound,
   DeadLetterReplayClaim,
+  DeadLetterReplayClaimId,
   DeadLetterReplayInProgress,
   DeadLetterStoreShape,
   OperationalCorrelation,
@@ -223,7 +224,9 @@ const itemView = (row: {
 
 const makeD1OperationalAdapters = (
   database: AnyD1Database,
-  now: () => string
+  newReplayClaimId: () => DeadLetterReplayClaimId,
+  now: () => string,
+  replayClaimLeaseMilliseconds: number
 ): {
   readonly deadLetters: DeadLetterStoreShape;
   readonly events: OperationalEventSinkShape;
@@ -256,8 +259,16 @@ const makeD1OperationalAdapters = (
     );
 
   const deadLetters: DeadLetterStoreShape = {
-    claimReplay: (itemId) =>
-      databaseEffect<
+    claimReplay: (itemId) => {
+      const claimedAt = now();
+      const claimedAtEpochMilliseconds = Date.parse(claimedAt);
+      if (!Number.isFinite(claimedAtEpochMilliseconds)) {
+        throw new TypeError("Replay claim time must be a valid ISO timestamp");
+      }
+      const claimId = newReplayClaimId();
+      const expiresAtEpochMilliseconds =
+        claimedAtEpochMilliseconds + replayClaimLeaseMilliseconds;
+      return databaseEffect<
         readonly {
           readonly results: readonly unknown[];
         }[]
@@ -266,11 +277,27 @@ const makeD1OperationalAdapters = (
           database
             .prepare(
               `UPDATE import_dead_letters
-                  SET replay_state = 'claimed', updated_at = ?
-                WHERE item_id = ? AND replay_state = 'ready'
+                  SET replay_state = 'claimed',
+                      replay_claim_id = ?,
+                      replay_claim_expires_at_epoch_milliseconds = ?,
+                      updated_at = ?
+                WHERE item_id = ?
+                  AND (
+                    replay_state = 'ready'
+                    OR (
+                      replay_state = 'claimed'
+                      AND replay_claim_expires_at_epoch_milliseconds <= ?
+                    )
+                  )
               RETURNING item_id`
             )
-            .bind(now(), itemId),
+            .bind(
+              claimId,
+              expiresAtEpochMilliseconds,
+              claimedAt,
+              itemId,
+              claimedAtEpochMilliseconds
+            ),
           database
             .prepare(
               `SELECT d.correlation_json AS correlationJson,
@@ -325,6 +352,7 @@ const makeD1OperationalAdapters = (
             }
             return Effect.succeed({
               _tag: "Ready",
+              claimId,
               correlation,
               idempotencyKey: Schema.decodeUnknownSync(IdempotencyKeySchema)(
                 row.idempotencyKey
@@ -333,21 +361,43 @@ const makeD1OperationalAdapters = (
             });
           }
         )
-      ),
-    completeReplay: (itemId, imported) => {
+      );
+    },
+    completeReplay: (itemId, claimId, imported) => {
       const importedJson = JSON.stringify(imported);
       const updatedAt = now();
-      return databaseEffect(() =>
+      const completedAtEpochMilliseconds = Date.parse(updatedAt);
+      if (!Number.isFinite(completedAtEpochMilliseconds)) {
+        throw new TypeError(
+          "Replay completion time must be a valid ISO timestamp"
+        );
+      }
+      return databaseEffect<
+        readonly {
+          readonly results: readonly unknown[];
+        }[]
+      >(() =>
         database.batch([
           database
             .prepare(
               `UPDATE import_dead_letters
                   SET replay_state = 'replayed',
+                      replay_claim_expires_at_epoch_milliseconds = NULL,
                       replay_import_json = ?,
                       updated_at = ?
-                WHERE item_id = ? AND replay_state = 'claimed'`
+                WHERE item_id = ?
+                  AND replay_state = 'claimed'
+                  AND replay_claim_id = ?
+                  AND replay_claim_expires_at_epoch_milliseconds > ?
+              RETURNING item_id`
             )
-            .bind(importedJson, updatedAt, itemId),
+            .bind(
+              importedJson,
+              updatedAt,
+              itemId,
+              claimId,
+              completedAtEpochMilliseconds
+            ),
           database
             .prepare(
               `UPDATE import_batch_items
@@ -359,11 +409,13 @@ const makeD1OperationalAdapters = (
                       disposition = 'idempotency_replay',
                       updated_at = ?
                 WHERE id = ?
+                  AND status = 'failed'
                   AND EXISTS (
                     SELECT 1
                       FROM import_dead_letters
                      WHERE item_id = ?
                        AND replay_state = 'replayed'
+                       AND replay_claim_id = ?
                        AND replay_import_json = ?
                   )`
             )
@@ -374,6 +426,7 @@ const makeD1OperationalAdapters = (
               updatedAt,
               itemId,
               itemId,
+              claimId,
               importedJson
             ),
           database
@@ -396,11 +449,28 @@ const makeD1OperationalAdapters = (
                       updated_at = ?
                 WHERE id = (
                   SELECT batch_id FROM import_batch_items WHERE id = ?
-                )`
+                )
+                  AND EXISTS (
+                    SELECT 1
+                      FROM import_dead_letters
+                     WHERE item_id = ?
+                       AND replay_state = 'replayed'
+                       AND replay_claim_id = ?
+                       AND replay_import_json = ?
+                  )`
             )
-            .bind(itemId, updatedAt, itemId),
+            .bind(itemId, updatedAt, itemId, itemId, claimId, importedJson),
         ])
-      ).pipe(Effect.asVoid);
+      ).pipe(
+        Effect.flatMap(([completed]) =>
+          completed !== undefined && completed.results.length === 1
+            ? Effect.void
+            : Effect.fail<DeadLetterReplayInProgress>({
+                _tag: "DeadLetterReplayInProgress",
+                itemId,
+              })
+        )
+      );
     },
     inspect: (itemId) =>
       readDeadLetter(itemId).pipe(
@@ -412,15 +482,20 @@ const makeD1OperationalAdapters = (
           })
         )
       ),
-    releaseReplay: (itemId) =>
+    releaseReplay: (itemId, claimId) =>
       databaseEffect(() =>
         database
           .prepare(
             `UPDATE import_dead_letters
-                SET replay_state = 'ready', updated_at = ?
-              WHERE item_id = ? AND replay_state = 'claimed'`
+                SET replay_state = 'ready',
+                    replay_claim_id = NULL,
+                    replay_claim_expires_at_epoch_milliseconds = NULL,
+                    updated_at = ?
+              WHERE item_id = ?
+                AND replay_state = 'claimed'
+                AND replay_claim_id = ?`
           )
-          .bind(now(), itemId)
+          .bind(now(), itemId, claimId)
           .run()
       ).pipe(Effect.asVoid),
   };
@@ -453,7 +528,9 @@ export const makeD1ImportQueueAcceptance = (input: {
   readonly database: AnyD1Database;
   readonly imports: ImportServiceShape;
   readonly maximumDeliveryAttempts: number;
+  readonly newReplayClaimId: () => DeadLetterReplayClaimId;
   readonly now: () => string;
+  readonly replayClaimLeaseMilliseconds: number;
 }) => {
   if (
     !Number.isInteger(input.maximumDeliveryAttempts) ||
@@ -461,7 +538,18 @@ export const makeD1ImportQueueAcceptance = (input: {
   ) {
     throw new Error("maximumDeliveryAttempts must be a positive integer");
   }
-  const operational = makeD1OperationalAdapters(input.database, input.now);
+  if (
+    !Number.isInteger(input.replayClaimLeaseMilliseconds) ||
+    input.replayClaimLeaseMilliseconds < 1
+  ) {
+    throw new Error("replayClaimLeaseMilliseconds must be a positive integer");
+  }
+  const operational = makeD1OperationalAdapters(
+    input.database,
+    input.newReplayClaimId,
+    input.now,
+    input.replayClaimLeaseMilliseconds
+  );
 
   const consume = (
     message: ImportBatchQueueMessage
