@@ -165,6 +165,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workerSource).toContain("ImportBatchQueueMessage");
     expect(workerSource).toContain("ImportBatchDeadLetterQueue");
     expect(workerSource).toContain("deadLetterQueue");
+    expect(workerSource).toContain("deadLetterQueueId");
     expect(workerSource).toContain("Cloudflare.Queues.EventSourceLive");
     expect(workerSource).toContain("batchSize: 1");
     expect(workerSource).toContain("maxConcurrency: 1");
