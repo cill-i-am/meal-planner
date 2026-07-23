@@ -169,9 +169,10 @@ const sourceRequest = (canonicalId: string) =>
   });
 
 const syntheticCanonicalId = (source: SourceDescriptor) => {
-  const canonicalId = /^https:\/\/synthetic\.invalid\/imports\/(\d{19})$/u.exec(
-    source.url
-  )?.[1];
+  const canonicalId =
+    /^https:\/\/synthetic\.invalid\/imports\/(?<canonicalId>\d{19})$/u.exec(
+      source.url
+    )?.groups?.["canonicalId"];
   if (canonicalId === undefined) {
     throw new Error("Synthetic acceptance requires an inert local source");
   }
@@ -292,12 +293,11 @@ const makeD1OperationalAdapters = (
             DeadLetterReplayClaim,
             DeadLetterNotFound | DeadLetterReplayInProgress
           > => {
-            const claimed = results[0];
-            const selected = results[1];
+            const [claimed, selected] = results;
             if (claimed === undefined || selected === undefined) {
               throw new Error("Incomplete D1 replay claim transaction");
             }
-            const raw = selected.results[0];
+            const [raw] = selected.results;
             if (raw === undefined) {
               return Effect.fail({
                 _tag: "DeadLetterNotFound",

@@ -26,6 +26,18 @@ let database: AnyD1Database;
 let persistenceDirectory: string;
 let runtime: Miniflare;
 
+const acceptanceNow = () => "2026-07-23T08:00:00.000Z" as const;
+
+const runSequentially = <A>(
+  values: readonly A[],
+  run: (value: A) => Promise<void>
+): Promise<void> => {
+  const [value, ...remaining] = values;
+  return value === undefined
+    ? Promise.resolve()
+    : run(value).then(() => runSequentially(remaining, run));
+};
+
 beforeAll(async () => {
   persistenceDirectory = await mkdtemp(
     `${tmpdir()}/meal-planner-gaia-117-queue-`
@@ -51,14 +63,14 @@ beforeAll(async () => {
   const migrations = await readD1Migrations(
     fileURLToPath(new URL("../../../migrations", import.meta.url))
   );
-  for (const migration of migrations) {
+  await runSequentially(migrations, async (migration) => {
     await database.batch([
       ...migration.queries.map((query) => database.prepare(query)),
       database
         .prepare("INSERT INTO d1_migrations (name) VALUES (?)")
         .bind(migration.name),
     ]);
-  }
+  });
 }, 30_000);
 
 afterAll(async () => {
@@ -248,7 +260,6 @@ describe("durable provider-free queue acceptance", () => {
       actorId: "gaia-117-synthetic-viewer",
       role: "viewer",
     });
-    const now = () => "2026-07-23T08:00:00.000Z" as const;
     const providerFreeObservations = {
       availabilityValidations: 0,
       identityResolutions: 0,
@@ -256,7 +267,7 @@ describe("durable provider-free queue acceptance", () => {
     };
     const ordinary = makeProviderFreeSyntheticImportService({
       database,
-      now,
+      now: acceptanceNow,
       observe: {
         availabilityValidation: () => {
           providerFreeObservations.availabilityValidations += 1;
@@ -273,7 +284,7 @@ describe("durable provider-free queue acceptance", () => {
       database,
       imports: ordinary,
       maximumDeliveryAttempts: 3,
-      now,
+      now: acceptanceNow,
     });
 
     await Effect.runPromise(
@@ -318,7 +329,7 @@ describe("durable provider-free queue acceptance", () => {
         get: ordinary.get,
       },
       maximumDeliveryAttempts: 3,
-      now,
+      now: acceptanceNow,
     });
     const interruptedExit = await Effect.runPromiseExit(
       interrupted.consume(happyMessage)
@@ -339,7 +350,7 @@ describe("durable provider-free queue acceptance", () => {
         get: ordinary.get,
       },
       maximumDeliveryAttempts: 3,
-      now,
+      now: acceptanceNow,
     });
     await Effect.runPromise(redelivered.consume(happyMessage));
     await Effect.runPromise(redelivered.consume(happyMessage));
@@ -349,12 +360,12 @@ describe("durable provider-free queue acceptance", () => {
       batchId,
       itemId: poisonItemId,
     });
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    await runSequentially([1, 2, 3], async () => {
       const exit = await Effect.runPromiseExit(
         acceptance.consume(poisonMessage)
       );
       expect(Exit.isFailure(exit)).toBe(true);
-    }
+    });
     const deadLetterState = await database
       .prepare(
         `SELECT i.attempt_count AS attemptCount,

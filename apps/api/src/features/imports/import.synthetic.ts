@@ -18,10 +18,11 @@ import type { ImportServiceShape } from "./import.service.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
 
 const syntheticCanonicalId = (source: SourceDescriptor) => {
-  const match = /^https:\/\/synthetic\.invalid\/imports\/(\d{19})$/u.exec(
-    source.url
-  );
-  return match?.[1];
+  const match =
+    /^https:\/\/synthetic\.invalid\/imports\/(?<canonicalId>\d{19})$/u.exec(
+      source.url
+    );
+  return match?.groups?.["canonicalId"];
 };
 
 const deterministicSyntheticImportId = (canonicalId: string) =>

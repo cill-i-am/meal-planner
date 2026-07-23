@@ -56,6 +56,8 @@ const MealPlannerWorkerRoutes = HttpRouter.addAll([
   HttpRouter.route("*", "*", notFound),
 ]);
 
+const currentIsoTimestamp = () => new Date().toISOString();
+
 /** Effect-native Cloudflare host for health and authenticated recipe imports. */
 export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   "MealPlannerApi",
@@ -88,16 +90,15 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                 })
               )
             );
-            const now = () => new Date().toISOString();
             const imports = makeProviderFreeSyntheticImportService({
               database,
-              now,
+              now: currentIsoTimestamp,
             });
             yield* makeD1ImportQueueAcceptance({
               database,
               imports,
               maximumDeliveryAttempts: 3,
-              now,
+              now: currentIsoTimestamp,
             }).consume(message);
           })
         )
