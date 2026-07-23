@@ -113,7 +113,9 @@ interface QueueRequestBody {
 const accountId = "local-account";
 const consumerId = "a8967cf391c84eca9456b9e494d1f74a";
 const deadLetterQueue = "meal-planner-pilot-gaia-117-import-batch-dlq";
+const deadLetterQueueId = "1c81214aa857418ab4d3c0cb67f456de";
 const queueId = "680ad90563bd4be3a8c0ca04862b97fd";
+const replacementConsumerId = "29ef6202fbd84bc5a3f03b121ba44e61";
 const scriptName = "meal-planner-pilot-gaia-117-api";
 const logicalId = "ImportBatchQueueConsumer";
 const instanceId = "local-instance";
@@ -166,6 +168,25 @@ const cloudflareResponse = (
     Response.json({ errors: [], messages: [], result, success: true })
   );
 
+const cloudflareErrorResponse = (
+  request: Parameters<typeof HttpClientResponse.fromWeb>[0],
+  code: number,
+  message: string,
+  status = 400
+): HttpClientResponse.HttpClientResponse =>
+  HttpClientResponse.fromWeb(
+    request,
+    Response.json(
+      {
+        errors: [{ code, message }],
+        messages: [],
+        result: null,
+        success: false,
+      },
+      { status }
+    )
+  );
+
 const provideQueueServices = <A, R>(
   modules: LoadedQueueModules,
   client: HttpClient.HttpClient,
@@ -206,6 +227,7 @@ const makePersistedConsumer = (
   namespace: undefined,
   props: {
     deadLetterQueue,
+    deadLetterQueueId,
     queueId,
     scriptName,
     settings: desiredSettings,
@@ -242,6 +264,7 @@ const runStablePlan = async (
     .plan(
       Consumer(logicalId, {
         deadLetterQueue,
+        deadLetterQueueId,
         queueId,
         scriptName,
         settings: desiredSettings,
@@ -266,8 +289,10 @@ const runStablePlan = async (
 
 const runStableDeploy = async (
   client: HttpClient.HttpClient,
-  persisted: State.CreatedResourceState
+  persisted: State.CreatedResourceState,
+  requested?: { readonly deadLetterQueueId?: string }
 ) => {
+  const options = requested ?? { deadLetterQueueId };
   const [modules, testCore] = await Promise.all([
     loadQueueModules(),
     loadTestCore(),
@@ -298,6 +323,7 @@ const runStableDeploy = async (
             queueId,
             scriptName,
             settings: desiredSettings,
+            ...options,
           })
         )
       ),
@@ -322,9 +348,10 @@ const runStableDeploy = async (
 
 const physicalConsumer = (
   physicalDeadLetterQueue: string | null | undefined,
-  settings: ConsumerSettings = desiredSettings
+  settings: ConsumerSettings = desiredSettings,
+  physicalConsumerId: string = consumerId
 ) => ({
-  consumer_id: consumerId,
+  consumer_id: physicalConsumerId,
   ...(physicalDeadLetterQueue === undefined
     ? {}
     : { dead_letter_queue: physicalDeadLetterQueue }),
@@ -339,6 +366,284 @@ const physicalConsumer = (
   },
   type: "worker",
 });
+
+const physicalQueue = (options: {
+  readonly consumers: readonly ReturnType<typeof physicalConsumer>[];
+  readonly consumersTotalCount?: number | undefined;
+  readonly physicalQueueId: string;
+  readonly producers?: readonly Record<string, unknown>[] | undefined;
+  readonly producersTotalCount?: number | undefined;
+  readonly queueName: string;
+}) => ({
+  consumers: options.consumers,
+  consumers_total_count:
+    options.consumersTotalCount ?? options.consumers.length,
+  producers: options.producers ?? [],
+  producers_total_count:
+    options.producersTotalCount ?? options.producers?.length ?? 0,
+  queue_id: options.physicalQueueId,
+  queue_name: options.queueName,
+  settings: {
+    delivery_delay: 0,
+    delivery_paused: false,
+    message_retention_period: 345_600,
+  },
+});
+
+type ReplacementFailure =
+  | "create"
+  | "create-defect"
+  | "create-interrupt"
+  | "delete"
+  | "update";
+
+interface ReplacementScenario {
+  readonly deadLetterQueueBacklogBytes?: number | null;
+  readonly deadLetterQueueBacklogCount?: number | null;
+  readonly deadLetterQueueConsumers?: readonly ReturnType<
+    typeof physicalConsumer
+  >[];
+  readonly deadLetterQueuePhysicalId?: string;
+  readonly deadLetterQueueProducers?: readonly Record<string, unknown>[];
+  readonly deadLetterQueueProducersTotalCount?: number;
+  readonly failure?: ReplacementFailure;
+  readonly replacementDeadLetterQueue?: string | null;
+  readonly replacementId?: string;
+  readonly sourceBacklogBytes?: number | null;
+  readonly sourceBacklogCount?: number | null;
+  readonly sourceConsumers?: readonly ReturnType<typeof physicalConsumer>[];
+  readonly sourcePhysicalQueueId?: string;
+  readonly sourceProducers?: readonly Record<string, unknown>[];
+  readonly sourceProducersTotalCount?: number;
+  readonly updateDeadLetterQueue?: string | null;
+}
+
+const unexpectedQueueRequest = (
+  request: Parameters<typeof HttpClientResponse.fromWeb>[0],
+  path: string
+) =>
+  Effect.die(
+    new TypeError(`Unexpected queue test request: ${request.method} ${path}`)
+  );
+
+const makeReplacementClient = (
+  scenario?: ReplacementScenario
+): {
+  readonly client: HttpClient.HttpClient;
+  readonly operations: string[];
+} => {
+  const options = scenario ?? {};
+  let deleted = false;
+  const operations: string[] = [];
+  const replacementId = options.replacementId ?? replacementConsumerId;
+  const consumerPath = `/queues/${queueId}/consumers/${consumerId}`;
+  const replacementPath = `/queues/${queueId}/consumers/${replacementId}`;
+
+  const respondToPut = (
+    request: Parameters<typeof HttpClientResponse.fromWeb>[0],
+    path: string
+  ) => {
+    if (!path.endsWith(consumerPath)) {
+      return unexpectedQueueRequest(request, path);
+    }
+    return Effect.succeed(
+      options.failure === "update"
+        ? cloudflareErrorResponse(
+            request,
+            10_026,
+            "Synthetic generic update failure"
+          )
+        : cloudflareResponse(
+            request,
+            physicalConsumer(options.updateDeadLetterQueue ?? null)
+          )
+    );
+  };
+
+  const respondToGet = (
+    request: Parameters<typeof HttpClientResponse.fromWeb>[0],
+    path: string
+  ) => {
+    if (path.endsWith(consumerPath)) {
+      if (deleted) {
+        return Effect.succeed(
+          cloudflareErrorResponse(
+            request,
+            11_006,
+            "Synthetic consumer not found",
+            404
+          )
+        );
+      }
+      return Effect.succeed(
+        cloudflareResponse(request, physicalConsumer(null))
+      );
+    }
+    if (path.endsWith(`/queues/${queueId}`)) {
+      return Effect.succeed(
+        cloudflareResponse(
+          request,
+          physicalQueue({
+            consumers: options.sourceConsumers ?? [physicalConsumer(null)],
+            physicalQueueId: options.sourcePhysicalQueueId ?? queueId,
+            producers: options.sourceProducers,
+            producersTotalCount: options.sourceProducersTotalCount,
+            queueName: "meal-planner-pilot-gaia-117-import-batch",
+          })
+        )
+      );
+    }
+    if (path.endsWith(`/queues/${queueId}/metrics`)) {
+      return Effect.succeed(
+        cloudflareResponse(request, {
+          backlog_bytes:
+            options.sourceBacklogBytes === undefined
+              ? 0
+              : options.sourceBacklogBytes,
+          backlog_count:
+            options.sourceBacklogCount === undefined
+              ? 0
+              : options.sourceBacklogCount,
+          oldest_message_timestamp_ms: 0,
+        })
+      );
+    }
+    if (path.endsWith(`/queues/${deadLetterQueueId}`)) {
+      return Effect.succeed(
+        cloudflareResponse(
+          request,
+          physicalQueue({
+            consumers: options.deadLetterQueueConsumers ?? [],
+            physicalQueueId:
+              options.deadLetterQueuePhysicalId ?? deadLetterQueueId,
+            producers: options.deadLetterQueueProducers,
+            producersTotalCount: options.deadLetterQueueProducersTotalCount,
+            queueName: deadLetterQueue,
+          })
+        )
+      );
+    }
+    if (path.endsWith(`/queues/${deadLetterQueueId}/metrics`)) {
+      return Effect.succeed(
+        cloudflareResponse(request, {
+          backlog_bytes:
+            options.deadLetterQueueBacklogBytes === undefined
+              ? 0
+              : options.deadLetterQueueBacklogBytes,
+          backlog_count:
+            options.deadLetterQueueBacklogCount === undefined
+              ? 0
+              : options.deadLetterQueueBacklogCount,
+          oldest_message_timestamp_ms: 0,
+        })
+      );
+    }
+    if (path.endsWith(replacementPath)) {
+      return Effect.succeed(
+        cloudflareResponse(
+          request,
+          physicalConsumer(
+            options.replacementDeadLetterQueue === undefined
+              ? deadLetterQueue
+              : options.replacementDeadLetterQueue,
+            desiredSettings,
+            replacementId
+          )
+        )
+      );
+    }
+    return unexpectedQueueRequest(request, path);
+  };
+
+  const respondToDelete = (
+    request: Parameters<typeof HttpClientResponse.fromWeb>[0],
+    path: string
+  ) => {
+    if (!path.endsWith(consumerPath)) {
+      return unexpectedQueueRequest(request, path);
+    }
+    if (options.failure === "delete") {
+      return Effect.succeed(
+        cloudflareErrorResponse(
+          request,
+          10_026,
+          "Synthetic generic delete failure"
+        )
+      );
+    }
+    deleted = true;
+    return Effect.succeed(cloudflareResponse(request, {}));
+  };
+
+  const respondToPost = (
+    request: Parameters<typeof HttpClientResponse.fromWeb>[0],
+    path: string
+  ) => {
+    if (!path.endsWith(`/queues/${queueId}/consumers`)) {
+      return unexpectedQueueRequest(request, path);
+    }
+    if (options.failure === "create") {
+      return Effect.succeed(
+        cloudflareErrorResponse(
+          request,
+          10_026,
+          "Synthetic generic create failure"
+        )
+      );
+    }
+    if (options.failure === "create-defect") {
+      return Effect.die(new Error("Synthetic create defect"));
+    }
+    if (options.failure === "create-interrupt") {
+      return Effect.interrupt;
+    }
+    return Effect.succeed(
+      cloudflareResponse(
+        request,
+        physicalConsumer(deadLetterQueue, desiredSettings, replacementId)
+      )
+    );
+  };
+
+  const client = HttpClient.make((request) => {
+    const path = new URL(request.url).pathname;
+    operations.push(`${request.method} ${path}`);
+    switch (request.method) {
+      case "DELETE": {
+        return respondToDelete(request, path);
+      }
+      case "GET": {
+        return respondToGet(request, path);
+      }
+      case "POST": {
+        return respondToPost(request, path);
+      }
+      case "PUT": {
+        return respondToPut(request, path);
+      }
+      default: {
+        return unexpectedQueueRequest(request, path);
+      }
+    }
+  });
+
+  return { client, operations };
+};
+
+const expectPersistedUpdatingState = (
+  persistedAfter: State.PersistedState | undefined,
+  persisted: State.CreatedResourceState
+) => {
+  expect(persistedAfter).toMatchObject({
+    attr: persisted.attr,
+    old: {
+      attr: persisted.attr,
+      bindings: persisted.bindings,
+      props: persisted.props,
+    },
+    status: "updating",
+  });
+};
 
 describe("Alchemy queue consumer reconciliation", () => {
   it("plans one in-place update when stable cached state hides physical DLQ drift", async () => {
@@ -541,55 +846,37 @@ describe("Alchemy queue consumer reconciliation", () => {
     }
   });
 
-  it.each([
-    ["omitted", undefined],
-    ["null", null],
-    ["mismatched", "other-dead-letter-queue"],
-  ] as const)(
-    "rejects a successful update whose physical DLQ is %s without committing stable desired state",
-    async (_label, physicalDeadLetterQueue) => {
-      let updateAccepted = false;
-      const methods: string[] = [];
-      const client = HttpClient.make((request) =>
-        Effect.sync(() => {
-          methods.push(request.method);
-          if (request.method === "PUT") {
-            updateAccepted = true;
-            return cloudflareResponse(
-              request,
-              physicalConsumer(deadLetterQueue)
-            );
-          }
-          return cloudflareResponse(
-            request,
-            physicalConsumer(updateAccepted ? physicalDeadLetterQueue : null)
-          );
-        })
-      );
-      const persisted = makePersistedConsumer({
-        accountId,
-        consumerId,
-        deadLetterQueue,
-        queueId,
-        scriptName,
-        settings: desiredSettings,
-      });
-      const result = await runStableDeploy(client, persisted);
+  it("does not replace a consumer when the successful update reads back a different non-null DLQ", async () => {
+    let updateAccepted = false;
+    const methods: string[] = [];
+    const client = HttpClient.make((request) =>
+      Effect.sync(() => {
+        methods.push(request.method);
+        if (request.method === "PUT") {
+          updateAccepted = true;
+          return cloudflareResponse(request, physicalConsumer(deadLetterQueue));
+        }
+        return cloudflareResponse(
+          request,
+          physicalConsumer(updateAccepted ? "other-dead-letter-queue" : null)
+        );
+      })
+    );
+    const persisted = makePersistedConsumer({
+      accountId,
+      consumerId,
+      deadLetterQueue,
+      queueId,
+      scriptName,
+      settings: desiredSettings,
+    });
+    const result = await runStableDeploy(client, persisted);
 
-      expect(result.exit._tag).toBe("Failure");
-      expect(methods.filter((method) => method === "PUT")).toHaveLength(1);
-      expect(new Set(methods)).toEqual(new Set(["GET", "PUT"]));
-      expect(result.persistedAfter).toMatchObject({
-        attr: persisted.attr,
-        old: {
-          attr: persisted.attr,
-          bindings: persisted.bindings,
-          props: persisted.props,
-        },
-        status: "updating",
-      });
-    }
-  );
+    expect(result.exit._tag).toBe("Failure");
+    expect(methods.filter((method) => method === "PUT")).toHaveLength(1);
+    expect(new Set(methods)).toEqual(new Set(["GET", "PUT"]));
+    expectPersistedUpdatingState(result.persistedAfter, persisted);
+  });
 
   it("commits freshly observed attributes after the physical consumer converges", async () => {
     let updateAccepted = false;
@@ -630,5 +917,211 @@ describe("Alchemy queue consumer reconciliation", () => {
       },
       status: "updated",
     });
+  });
+
+  it("replaces the owned idle consumer only after a successful update still omits the requested DLQ", async () => {
+    const { client, operations } = makeReplacementClient();
+    const persisted = makePersistedConsumer({
+      accountId,
+      consumerId,
+      deadLetterQueue,
+      queueId,
+      scriptName,
+      settings: desiredSettings,
+    });
+    const result = await runStableDeploy(client, persisted);
+
+    expect(result.exit._tag).toBe("Success");
+    expect(operations).toEqual([
+      `GET /client/v4/accounts/${accountId}/queues/${queueId}/consumers/${consumerId}`,
+      `GET /client/v4/accounts/${accountId}/queues/${queueId}/consumers/${consumerId}`,
+      `PUT /client/v4/accounts/${accountId}/queues/${queueId}/consumers/${consumerId}`,
+      `GET /client/v4/accounts/${accountId}/queues/${queueId}/consumers/${consumerId}`,
+      `GET /client/v4/accounts/${accountId}/queues/${queueId}`,
+      `GET /client/v4/accounts/${accountId}/queues/${queueId}/metrics`,
+      `GET /client/v4/accounts/${accountId}/queues/${deadLetterQueueId}`,
+      `GET /client/v4/accounts/${accountId}/queues/${deadLetterQueueId}/metrics`,
+      `DELETE /client/v4/accounts/${accountId}/queues/${queueId}/consumers/${consumerId}`,
+      `GET /client/v4/accounts/${accountId}/queues/${queueId}/consumers/${consumerId}`,
+      `POST /client/v4/accounts/${accountId}/queues/${queueId}/consumers`,
+      `GET /client/v4/accounts/${accountId}/queues/${queueId}/consumers/${replacementConsumerId}`,
+    ]);
+    expect(result.persistedAfter).toMatchObject({
+      attr: {
+        accountId,
+        consumerId: replacementConsumerId,
+        deadLetterQueue,
+        queueId,
+        scriptName,
+        settings: desiredSettings,
+      },
+      status: "updated",
+    });
+  });
+
+  it.each([
+    [
+      "source Queue identity drift",
+      { sourcePhysicalQueueId: "foreign-source-queue" },
+    ],
+    [
+      "foreign Consumer ownership",
+      {
+        sourceConsumers: [
+          physicalConsumer(null, desiredSettings, "foreign-consumer"),
+        ],
+      },
+    ],
+    [
+      "an active source Queue producer",
+      {
+        sourceProducers: [{ service: "active-producer" }],
+        sourceProducersTotalCount: 1,
+      },
+    ],
+    ["an unknown source Queue backlog", { sourceBacklogCount: null }],
+    ["a nonzero source Queue backlog", { sourceBacklogCount: 1 }],
+    [
+      "DLQ identity drift",
+      { deadLetterQueuePhysicalId: "foreign-dead-letter-queue" },
+    ],
+    [
+      "an active DLQ workload",
+      {
+        deadLetterQueueConsumers: [
+          physicalConsumer(null, desiredSettings, "foreign-dlq-consumer"),
+        ],
+      },
+    ],
+    ["an unknown DLQ backlog", { deadLetterQueueBacklogBytes: null }],
+    ["a nonzero DLQ backlog", { deadLetterQueueBacklogCount: 1 }],
+  ] satisfies readonly (readonly [string, ReplacementScenario])[])(
+    "fails closed before deletion when replacement safety sees %s",
+    async (_label, scenario) => {
+      const { client, operations } = makeReplacementClient(scenario);
+      const persisted = makePersistedConsumer({
+        accountId,
+        consumerId,
+        deadLetterQueue,
+        queueId,
+        scriptName,
+        settings: desiredSettings,
+      });
+      const result = await runStableDeploy(client, persisted);
+
+      expect(result.exit._tag).toBe("Failure");
+      expect(
+        operations.some((operation) => operation.startsWith("DELETE "))
+      ).toBe(false);
+      expect(
+        operations.some((operation) => operation.startsWith("POST "))
+      ).toBe(false);
+      expectPersistedUpdatingState(result.persistedAfter, persisted);
+    }
+  );
+
+  it("fails closed when the retained DLQ identity is unavailable to the Consumer resource", async () => {
+    const { client, operations } = makeReplacementClient();
+    const persisted = makePersistedConsumer({
+      accountId,
+      consumerId,
+      deadLetterQueue,
+      queueId,
+      scriptName,
+      settings: desiredSettings,
+    });
+    const result = await runStableDeploy(client, persisted, {});
+
+    expect(result.exit._tag).toBe("Failure");
+    expect(
+      operations.some((operation) => operation.startsWith("DELETE "))
+    ).toBe(false);
+    expect(operations.some((operation) => operation.startsWith("POST "))).toBe(
+      false
+    );
+    expectPersistedUpdatingState(result.persistedAfter, persisted);
+  });
+
+  it("does not trigger replacement for a generic Consumer update error", async () => {
+    const { client, operations } = makeReplacementClient({
+      failure: "update",
+    });
+    const persisted = makePersistedConsumer({
+      accountId,
+      consumerId,
+      deadLetterQueue,
+      queueId,
+      scriptName,
+      settings: desiredSettings,
+    });
+    const result = await runStableDeploy(client, persisted);
+
+    expect(result.exit._tag).toBe("Failure");
+    expect(
+      operations.some((operation) => operation.startsWith("DELETE "))
+    ).toBe(false);
+    expect(operations.some((operation) => operation.startsWith("POST "))).toBe(
+      false
+    );
+    expectPersistedUpdatingState(result.persistedAfter, persisted);
+  });
+
+  it.each([
+    ["delete failure", "delete", true, false],
+    ["create failure", "create", true, true],
+    ["create defect", "create-defect", true, true],
+    ["create interruption", "create-interrupt", true, true],
+  ] satisfies readonly (readonly [
+    string,
+    ReplacementFailure,
+    boolean,
+    boolean,
+  ])[])(
+    "keeps the old stable state honest after %s",
+    async (_label, failure, expectsDelete, expectsCreate) => {
+      const { client, operations } = makeReplacementClient({ failure });
+      const persisted = makePersistedConsumer({
+        accountId,
+        consumerId,
+        deadLetterQueue,
+        queueId,
+        scriptName,
+        settings: desiredSettings,
+      });
+      const result = await runStableDeploy(client, persisted);
+
+      expect(result.exit._tag).toBe("Failure");
+      expect(
+        operations.some((operation) => operation.startsWith("DELETE "))
+      ).toBe(expectsDelete);
+      expect(
+        operations.some((operation) => operation.startsWith("POST "))
+      ).toBe(expectsCreate);
+      expectPersistedUpdatingState(result.persistedAfter, persisted);
+    }
+  );
+
+  it("does not commit the fresh Consumer ID until replacement readback exactly converges", async () => {
+    const { client, operations } = makeReplacementClient({
+      replacementDeadLetterQueue: null,
+    });
+    const persisted = makePersistedConsumer({
+      accountId,
+      consumerId,
+      deadLetterQueue,
+      queueId,
+      scriptName,
+      settings: desiredSettings,
+    });
+    const result = await runStableDeploy(client, persisted);
+
+    expect(result.exit._tag).toBe("Failure");
+    expect(
+      operations.some((operation) => operation.startsWith("DELETE "))
+    ).toBe(true);
+    expect(operations.some((operation) => operation.startsWith("POST "))).toBe(
+      true
+    );
+    expectPersistedUpdatingState(result.persistedAfter, persisted);
   });
 });
