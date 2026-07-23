@@ -3,14 +3,12 @@ import { pathToFileURL } from "node:url";
 
 import { CloudflareEnvironment } from "alchemy/Cloudflare";
 import { Consumer, ConsumerProviderLive } from "alchemy/Cloudflare/Queues";
-import type {
-  Consumer as ConsumerResource,
-  ConsumerProps,
-  ConsumerSettings,
-} from "alchemy/Cloudflare/Queues";
-import { findProviderByType } from "alchemy/Provider";
+import type { ConsumerSettings } from "alchemy/Cloudflare/Queues";
+import type * as Plan from "alchemy/Plan";
+import * as State from "alchemy/State";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import type * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import type * as HttpBody from "effect/unstable/http/HttpBody";
 import * as HttpClient from "effect/unstable/http/HttpClient";
@@ -70,6 +68,24 @@ interface LoadedQueueModules {
   readonly queuesModule: QueuesModule;
 }
 
+interface ScratchStack {
+  readonly name: string;
+  readonly state: Layer.Layer<State.State>;
+  readonly plan: <A, E, R>(
+    effect: Effect.Effect<A, E, R>
+  ) => Effect.Effect<Plan.Plan<A>, unknown, R>;
+}
+
+interface TestCoreModule {
+  readonly scratchStack: (
+    options: {
+      readonly providers: ReturnType<typeof ConsumerProviderLive>;
+      readonly stage: string;
+    },
+    name: string
+  ) => ScratchStack;
+}
+
 interface QueueRequestBody {
   readonly dead_letter_queue?: string;
   readonly script_name?: string;
@@ -88,6 +104,8 @@ const consumerId = "a8967cf391c84eca9456b9e494d1f74a";
 const deadLetterQueue = "meal-planner-pilot-gaia-117-import-batch-dlq";
 const queueId = "680ad90563bd4be3a8c0ca04862b97fd";
 const scriptName = "meal-planner-pilot-gaia-117-api";
+const logicalId = "ImportBatchQueueConsumer";
+const instanceId = "local-instance";
 const desiredSettings: ConsumerSettings = {
   batchSize: 1,
   maxConcurrency: 1,
@@ -115,6 +133,12 @@ const loadQueueModules = async (): Promise<LoadedQueueModules> => {
   return { credentialsModule, queuesModule };
 };
 
+const loadTestCore = (): Promise<TestCoreModule> => {
+  const stackEntry = import.meta.resolve("alchemy/Stack");
+  const coreUrl = new URL("Test/Core.js", stackEntry);
+  return import(coreUrl.href) as Promise<TestCoreModule>;
+};
+
 const decodeRequestBody = (body: HttpBody.HttpBody): QueueRequestBody => {
   if (body._tag !== "Uint8Array") {
     throw new TypeError(`Expected a JSON request body, received ${body._tag}`);
@@ -124,7 +148,7 @@ const decodeRequestBody = (body: HttpBody.HttpBody): QueueRequestBody => {
 
 const cloudflareResponse = (
   request: Parameters<typeof HttpClientResponse.fromWeb>[0],
-  result: Record<string, unknown>
+  result: unknown
 ): HttpClientResponse.HttpClientResponse =>
   HttpClientResponse.fromWeb(
     request,
@@ -159,99 +183,218 @@ const provideQueueServices = <A, R>(
   ) as Effect.Effect<A, unknown>;
 };
 
+const makePersistedConsumer = (
+  attr: State.CreatedResourceState["attr"]
+): State.CreatedResourceState => ({
+  attr,
+  bindings: [],
+  downstream: [],
+  fqn: logicalId,
+  instanceId,
+  logicalId,
+  namespace: undefined,
+  props: {
+    deadLetterQueue,
+    queueId,
+    scriptName,
+    settings: desiredSettings,
+  },
+  providerVersion: 0,
+  resourceType: Consumer.Type,
+  status: "created",
+});
+
+const runStablePlan = async (
+  client: HttpClient.HttpClient,
+  persisted: State.CreatedResourceState
+) => {
+  const [modules, testCore] = await Promise.all([
+    loadQueueModules(),
+    loadTestCore(),
+  ]);
+  const scratch = testCore.scratchStack(
+    { providers: ConsumerProviderLive(), stage: "test" },
+    "queue-consumer-stable-plan"
+  );
+
+  await Effect.gen(function* seedPersistedState() {
+    const state = yield* yield* State.State;
+    yield* state.set({
+      fqn: logicalId,
+      stack: scratch.name,
+      stage: "test",
+      value: persisted,
+    });
+  }).pipe(Effect.provide(scratch.state), Effect.runPromise);
+
+  const plan = await scratch
+    .plan(
+      Consumer(logicalId, {
+        deadLetterQueue,
+        queueId,
+        scriptName,
+        settings: desiredSettings,
+      })
+    )
+    .pipe(
+      (effect) => provideQueueServices(modules, client, effect),
+      Effect.scoped,
+      Effect.runPromise
+    );
+  const persistedAfter = await Effect.gen(function* readPersistedState() {
+    const state = yield* yield* State.State;
+    return yield* state.get({
+      fqn: logicalId,
+      stack: scratch.name,
+      stage: "test",
+    });
+  }).pipe(Effect.provide(scratch.state), Effect.runPromise);
+
+  return { persistedAfter, plan };
+};
+
 describe("Alchemy queue consumer reconciliation", () => {
-  it("reads physical DLQ/settings drift and classifies it as an in-place update", async () => {
-    const modules = await loadQueueModules();
+  it("plans one in-place update when stable cached state hides physical DLQ drift", async () => {
+    const requests: { method: string; url: string }[] = [];
     const client = HttpClient.make((request) =>
-      Effect.succeed(
-        cloudflareResponse(request, {
+      Effect.sync(() => {
+        requests.push({ method: request.method, url: request.url });
+        return cloudflareResponse(request, {
           consumer_id: consumerId,
           dead_letter_queue: null,
           queue_name: "meal-planner-pilot-gaia-117-import-batch",
           script_name: scriptName,
           settings: {
-            batch_size: 10,
-            max_concurrency: null,
-            max_retries: 3,
-            max_wait_time_ms: 5000,
-            retry_delay: null,
+            batch_size: desiredSettings.batchSize,
+            max_concurrency: desiredSettings.maxConcurrency,
+            max_retries: desiredSettings.maxRetries,
+            max_wait_time_ms: desiredSettings.maxWaitTimeMs,
+            retry_delay: desiredSettings.retryDelay,
           },
           type: "worker",
-        })
-      )
+        });
+      })
     );
-    const cachedOutput: ConsumerResource["Attributes"] = {
+    const persisted = makePersistedConsumer({
       accountId,
       consumerId,
       deadLetterQueue,
       queueId,
       scriptName,
       settings: desiredSettings,
-    };
-    const providerInput = {
-      fqn: "ImportBatchQueueConsumer",
-      id: "ImportBatchQueueConsumer",
-      instanceId: "local-instance",
-      olds: {
-        deadLetterQueue,
-        queueId,
-        scriptName,
-        settings: desiredSettings,
-      },
-      output: cachedOutput,
-    };
+    });
+    const result = await runStablePlan(client, persisted);
 
-    const result = await Effect.gen(function* readAndDiff() {
-      const provider = yield* findProviderByType<ConsumerResource>(
-        Consumer.Type
-      );
-      if (provider.read === undefined || provider.diff === undefined) {
-        return yield* Effect.die("Expected Consumer provider read and diff");
-      }
-      const observed = yield* provider.read(providerInput);
-      if (observed === undefined) {
-        return yield* Effect.die("Expected physical Consumer readback");
-      }
-      const observedProps: ConsumerProps = {
-        queueId: observed.queueId,
-        scriptName: observed.scriptName,
-        ...(observed.deadLetterQueue === undefined
-          ? {}
-          : { deadLetterQueue: observed.deadLetterQueue }),
-        ...(observed.settings === undefined
-          ? {}
-          : { settings: observed.settings }),
-      };
-      const diff = yield* provider.diff({
-        ...providerInput,
-        newBindings: [],
-        news: providerInput.olds,
-        oldBindings: [],
-        olds: observedProps,
-        output: observed,
-      });
-      return { diff, observed };
-    }).pipe(
-      Effect.provide(ConsumerProviderLive()),
-      (effect) => provideQueueServices(modules, client, effect),
-      Effect.runPromise
-    );
-
-    expect(result.observed).toMatchObject({
-      accountId,
-      consumerId,
-      deadLetterQueue: undefined,
-      queueId,
-      scriptName,
-      settings: {
-        batchSize: 10,
-        maxConcurrency: undefined,
-        maxRetries: 3,
-        maxWaitTimeMs: 5000,
-        retryDelay: undefined,
+    expect(Object.keys(result.plan.resources)).toEqual([logicalId]);
+    expect(result.plan.resources[logicalId]).toMatchObject({
+      action: "update",
+      state: {
+        attr: { consumerId },
+        instanceId,
+        logicalId,
       },
     });
-    expect(result.diff).toEqual({ action: "update" });
+    expect(result.plan.deletions).toEqual({});
+    expect(requests.length).toBeGreaterThan(0);
+    expect(new Set(requests.map(({ method }) => method))).toEqual(
+      new Set(["GET"])
+    );
+    expect(
+      requests.every(({ url }) => url.endsWith(`/consumers/${consumerId}`))
+    ).toBe(true);
+    expect(result.persistedAfter).toEqual(persisted);
+  });
+
+  it("keeps a physically matching stable consumer as a no-op", async () => {
+    const methods: string[] = [];
+    const client = HttpClient.make((request) =>
+      Effect.sync(() => {
+        methods.push(request.method);
+        return cloudflareResponse(request, {
+          consumer_id: consumerId,
+          dead_letter_queue: deadLetterQueue,
+          queue_name: "meal-planner-pilot-gaia-117-import-batch",
+          script_name: scriptName,
+          settings: {
+            batch_size: desiredSettings.batchSize,
+            max_concurrency: desiredSettings.maxConcurrency,
+            max_retries: desiredSettings.maxRetries,
+            max_wait_time_ms: desiredSettings.maxWaitTimeMs,
+            retry_delay: desiredSettings.retryDelay,
+          },
+          type: "worker",
+        });
+      })
+    );
+    const persisted = makePersistedConsumer({
+      accountId,
+      consumerId,
+      deadLetterQueue,
+      queueId,
+      scriptName,
+      settings: desiredSettings,
+    });
+    const result = await runStablePlan(client, persisted);
+
+    expect(result.plan.resources[logicalId]).toMatchObject({
+      action: "noop",
+      state: { instanceId, logicalId },
+    });
+    expect(result.plan.deletions).toEqual({});
+    expect(methods.length).toBeGreaterThan(0);
+    expect(new Set(methods)).toEqual(new Set(["GET"]));
+    expect(result.persistedAfter).toEqual(persisted);
+  });
+
+  it("uses the worker-only list scan when stable state lost the consumer ID", async () => {
+    const urls: string[] = [];
+    const client = HttpClient.make((request) =>
+      Effect.sync(() => {
+        urls.push(request.url);
+        return cloudflareResponse(request, [
+          {
+            consumer_id: "http-pull-consumer",
+            dead_letter_queue: null,
+            queue_name: "meal-planner-pilot-gaia-117-import-batch",
+            settings: {},
+            type: "http_pull",
+          },
+          {
+            consumer_id: consumerId,
+            dead_letter_queue: null,
+            queue_name: "meal-planner-pilot-gaia-117-import-batch",
+            script_name: scriptName,
+            settings: {
+              batch_size: 10,
+              max_concurrency: null,
+              max_retries: 3,
+              max_wait_time_ms: 5000,
+              retry_delay: null,
+            },
+            type: "worker",
+          },
+        ]);
+      })
+    );
+    const persisted = makePersistedConsumer({
+      accountId,
+      deadLetterQueue,
+      queueId,
+      scriptName,
+      settings: desiredSettings,
+    });
+    const result = await runStablePlan(client, persisted);
+
+    expect(result.plan.resources[logicalId]).toMatchObject({
+      action: "update",
+      state: { instanceId, logicalId },
+    });
+    expect(result.plan.deletions).toEqual({});
+    expect(urls.length).toBeGreaterThan(0);
+    expect(
+      urls.every((url) => url.endsWith(`/queues/${queueId}/consumers`))
+    ).toBe(true);
+    expect(result.persistedAfter).toEqual(persisted);
   });
 
   it("encodes the configured dead letter queue for create and update requests", async () => {
