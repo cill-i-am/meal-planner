@@ -1,10 +1,13 @@
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Config, Layer, Schema } from "effect";
+import { Config, Layer, Schema, Stream } from "effect";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { HealthRoutes } from "./features/health/health.routes.js";
+import { ImportBatchQueueMessage } from "./features/imports/import-batch.contracts.js";
+import { DeadLetterReplayClaimId } from "./features/imports/import-operations.js";
+import { makeD1ImportQueueAcceptance } from "./features/imports/import-queue-acceptance.d1.js";
 import {
   RecipeReviewService,
   makeRecipeReviewService,
@@ -26,6 +29,7 @@ import {
   ImportService,
   makeImportService,
 } from "./features/imports/import.service.js";
+import { makeProviderFreeSyntheticImportService } from "./features/imports/import.synthetic.js";
 import ImportAcquisitionWorkflow, {
   ImportWorkflowStarter,
   makeImportWorkflowStarter,
@@ -34,6 +38,10 @@ import { SourceAvailabilityValidator } from "./features/imports/source-availabil
 import { makeTikTokSourceAvailabilityValidator } from "./features/imports/source-availability.tiktok.js";
 import { CanonicalSourceIdentityResolver } from "./features/imports/source-identity.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./features/imports/source-identity.tiktok.js";
+import {
+  ImportBatchDeadLetterQueue,
+  ImportBatchQueue,
+} from "./infrastructure/import-batch-queue.js";
 import { MealPlannerDatabase } from "./infrastructure/meal-planner-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
 
@@ -49,6 +57,8 @@ const MealPlannerWorkerRoutes = HttpRouter.addAll([
   HttpRouter.route("*", "*", notFound),
 ]);
 
+const currentIsoTimestamp = () => new Date().toISOString();
+
 /** Effect-native Cloudflare host for health and authenticated recipe imports. */
 export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   "MealPlannerApi",
@@ -56,6 +66,49 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   Effect.gen(function* MealPlannerApiWorker() {
     const queryDatabase =
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
+    const importBatchQueue = yield* ImportBatchQueue;
+    const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
+    const deadLetterQueueName =
+      yield* yield* importBatchDeadLetterQueue.queueName;
+    yield* Cloudflare.Queues.consumeQueueMessages(
+      importBatchQueue,
+      {
+        batchSize: 1,
+        deadLetterQueue: deadLetterQueueName,
+        maxConcurrency: 1,
+        maxRetries: 3,
+      },
+      (messages) =>
+        Stream.runForEach(messages, ({ body }) =>
+          Effect.gen(function* consumeImportBatchMessage() {
+            const database = yield* queryDatabase.raw;
+            const message = yield* Schema.decodeUnknownEffect(
+              ImportBatchQueueMessage
+            )(body, { onExcessProperty: "error" }).pipe(
+              Effect.mapError(
+                (): { readonly _tag: "InvalidImportBatchQueueMessage" } => ({
+                  _tag: "InvalidImportBatchQueueMessage",
+                })
+              )
+            );
+            const imports = makeProviderFreeSyntheticImportService({
+              database,
+              now: currentIsoTimestamp,
+            });
+            yield* makeD1ImportQueueAcceptance({
+              database,
+              imports,
+              maximumDeliveryAttempts: 3,
+              newReplayClaimId: () =>
+                Schema.decodeUnknownSync(DeadLetterReplayClaimId)(
+                  crypto.randomUUID()
+                ),
+              now: currentIsoTimestamp,
+              replayClaimLeaseMilliseconds: 60_000,
+            }).consume(message);
+          })
+        )
+    );
     const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
     const importApiToken = yield* Config.redacted(
       "MEAL_PLANNER_IMPORT_API_TOKEN"
@@ -154,5 +207,12 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         )
       ),
     };
-  }).pipe(Effect.provide(Cloudflare.D1.QueryDatabaseBinding))
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Cloudflare.D1.QueryDatabaseBinding,
+        Cloudflare.Queues.EventSourceLive
+      )
+    )
+  )
 ) {}

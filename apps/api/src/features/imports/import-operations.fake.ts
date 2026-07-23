@@ -1,11 +1,15 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import type {
   ImportBatchItemFailureCode,
   ImportBatchItemId,
 } from "./import-batch.contracts.js";
-import { makeImportOperationsService } from "./import-operations.js";
+import {
+  DeadLetterReplayClaimId,
+  makeImportOperationsService,
+} from "./import-operations.js";
 import type {
+  DeadLetterReplayClaimId as DeadLetterReplayClaimIdType,
   DeadLetterInspection,
   DeadLetterNotFound,
   DeadLetterReplayClaim,
@@ -43,6 +47,7 @@ export interface ProviderFreeDeadLetter {
 }
 
 interface StoredDeadLetter {
+  claimId?: DeadLetterReplayClaimIdType;
   readonly seed: ProviderFreeDeadLetter;
   state: "claimed" | "ready" | "replayed";
   imported?: ImportView;
@@ -123,22 +128,34 @@ export const makeProviderFreeOperationalTracer = (input: {
           });
         }
         stored.state = "claimed";
+        stored.claimId = Schema.decodeUnknownSync(DeadLetterReplayClaimId)(
+          crypto.randomUUID()
+        );
         return Effect.succeed({
           _tag: "Ready",
+          claimId: stored.claimId,
           correlation: stored.seed.correlation,
           idempotencyKey: stored.seed.idempotencyKey,
           request: stored.seed.request,
         });
       }),
-    completeReplay: (itemId, imported) =>
-      Effect.sync(() => {
+    completeReplay: (itemId, claimId, imported) =>
+      Effect.suspend(() => {
         const stored = deadLetters.get(itemId);
-        if (stored === undefined || stored.state !== "claimed") {
-          throw new Error("Cannot complete an unclaimed dead letter");
+        if (
+          stored === undefined ||
+          stored.state !== "claimed" ||
+          stored.claimId !== claimId
+        ) {
+          return Effect.fail({
+            _tag: "DeadLetterReplayInProgress",
+            itemId,
+          });
         }
         stored.imported = imported;
         stored.state = "replayed";
         completedReplayCount += 1;
+        return Effect.void;
       }),
     inspect: (itemId) =>
       Effect.suspend<DeadLetterInspection, DeadLetterNotFound, never>(() => {
@@ -153,11 +170,12 @@ export const makeProviderFreeOperationalTracer = (input: {
           itemId,
         });
       }),
-    releaseReplay: (itemId) =>
+    releaseReplay: (itemId, claimId) =>
       Effect.sync(() => {
         releaseCount += 1;
         const stored = deadLetters.get(itemId);
-        if (stored?.state === "claimed") {
+        if (stored?.state === "claimed" && stored.claimId === claimId) {
+          delete stored.claimId;
           stored.state = "ready";
         }
       }),

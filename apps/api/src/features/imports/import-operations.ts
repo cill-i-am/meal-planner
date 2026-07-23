@@ -63,6 +63,14 @@ const ReplayQuotaUnits = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
 );
 
+/** Durable ownership token for one bounded dead-letter replay claim. */
+export const DeadLetterReplayClaimId = Schema.String.pipe(
+  Schema.check(Schema.isUUID()),
+  Schema.brand("DeadLetterReplayClaimId")
+);
+/** Durable ownership token for one bounded dead-letter replay claim. */
+export type DeadLetterReplayClaimId = typeof DeadLetterReplayClaimId.Type;
+
 /** Safe request envelope for privileged dead-letter inspection. */
 export const InspectDeadLetterRequest = Schema.Struct({
   itemId: ImportBatchItemId,
@@ -179,7 +187,7 @@ export interface DeadLetterNotFound {
   readonly itemId: ImportBatchItemId;
 }
 
-/** Another caller already owns the in-memory replay claim. */
+/** Another caller owns, or recovered, the durable replay claim. */
 export interface DeadLetterReplayInProgress {
   readonly _tag: "DeadLetterReplayInProgress";
   readonly itemId: ImportBatchItemId;
@@ -215,6 +223,7 @@ export type DeadLetterReplayClaim =
     }
   | {
       readonly _tag: "Ready";
+      readonly claimId: DeadLetterReplayClaimId;
       readonly correlation: OperationalCorrelation;
       readonly idempotencyKey: IdempotencyKey;
       readonly request: CreateImportRequest;
@@ -230,12 +239,16 @@ export interface DeadLetterStoreShape {
   >;
   readonly completeReplay: (
     itemId: ImportBatchItemId,
+    claimId: DeadLetterReplayClaimId,
     imported: ImportView
-  ) => Effect.Effect<void>;
+  ) => Effect.Effect<void, DeadLetterReplayInProgress>;
   readonly inspect: (
     itemId: ImportBatchItemId
   ) => Effect.Effect<DeadLetterInspection, DeadLetterNotFound>;
-  readonly releaseReplay: (itemId: ImportBatchItemId) => Effect.Effect<void>;
+  readonly releaseReplay: (
+    itemId: ImportBatchItemId,
+    claimId: DeadLetterReplayClaimId
+  ) => Effect.Effect<void>;
 }
 
 /** Application interface for the bounded operational tracer. */
@@ -367,7 +380,7 @@ export const makeImportOperationsService = (input: {
             );
             yield* Effect.uninterruptible(
               input.deadLetters
-                .completeReplay(request.itemId, result.import)
+                .completeReplay(request.itemId, claim.claimId, result.import)
                 .pipe(
                   Effect.andThen(
                     Effect.sync(() => {
@@ -387,7 +400,7 @@ export const makeImportOperationsService = (input: {
           }),
         (claim, exit) =>
           claim._tag === "Ready" && !replayCompleted && Exit.isFailure(exit)
-            ? input.deadLetters.releaseReplay(request.itemId)
+            ? input.deadLetters.releaseReplay(request.itemId, claim.claimId)
             : Effect.void
       );
     }

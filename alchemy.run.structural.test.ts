@@ -67,6 +67,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "0004_import_recipe_extractions.sql",
       "0005_recipe_reviews.sql",
       "0006_import_carousel_evidence.sql",
+      "0007_import_queue_acceptance.sql",
     ]);
   });
 
@@ -148,8 +149,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(allSource).not.toMatch(/Cloudflare\.Images|Images\.|sharp/iu);
   });
 
-  it("declares isolated import and dead-letter queues without an unsafe consumer", () => {
+  it("declares isolated queues with exactly one private bounded Worker consumer", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
+    const workerSource = readRepoFile("./apps/api/src/worker.ts");
     const queueSource = readRepoFile(
       "./apps/api/src/infrastructure/import-batch-queue.ts"
     );
@@ -159,6 +161,14 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(queueSource).toContain("makeCloudflareImportBatchQueue");
     expect(queueSource).not.toContain("Consumer(");
     expect(queueSource).not.toContain("consumeQueueMessages");
+    expect(workerSource.match(/consumeQueueMessages/gu)).toHaveLength(1);
+    expect(workerSource).toContain("ImportBatchQueueMessage");
+    expect(workerSource).toContain("ImportBatchDeadLetterQueue");
+    expect(workerSource).toContain("deadLetterQueue");
+    expect(workerSource).toContain("Cloudflare.Queues.EventSourceLive");
+    expect(workerSource).toContain("batchSize: 1");
+    expect(workerSource).toContain("maxConcurrency: 1");
+    expect(workerSource).toContain("maxRetries: 3");
     expect(stackSource).toContain("importBatchQueueName");
     expect(stackSource).toContain("importBatchDeadLetterQueueName");
   });
