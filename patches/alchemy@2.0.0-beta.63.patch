@@ -1,5 +1,5 @@
 diff --git a/lib/Cloudflare/D1/ApplyMigrations.js b/lib/Cloudflare/D1/ApplyMigrations.js
-index ba1c3be608856556930a5895497c1071cec015c1..d42ae9faafbf3626b40ab067f36ab865b235c6da 100644
+index ba1c3be608856556930a5895497c1071cec015c1..f2ccfa888c1a6ca6d532fd3a042d355e1894ffdd 100644
 --- a/lib/Cloudflare/D1/ApplyMigrations.js
 +++ b/lib/Cloudflare/D1/ApplyMigrations.js
 @@ -1,5 +1,6 @@
@@ -39,17 +39,167 @@ index ba1c3be608856556930a5895497c1071cec015c1..d42ae9faafbf3626b40ab067f36ab865
  const detectSchema = (accountId, databaseId, migrationsTable) => Effect.gen(function* () {
      const result = yield* executeSQL(accountId, databaseId, `PRAGMA table_info(${migrationsTable});`).pipe(Effect.option);
      const columns = [];
+diff --git a/lib/Cloudflare/Queues/Consumer.js b/lib/Cloudflare/Queues/Consumer.js
+index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..63b1d8a017d92ea06cc903b0fcb060b004915a42 100644
+--- a/lib/Cloudflare/Queues/Consumer.js
++++ b/lib/Cloudflare/Queues/Consumer.js
+@@ -63,6 +63,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
+ // consumer yet" — the caller falls through to createConsumer, which
+ // retries QueueNotFound until the queue propagates.
+ Effect.catchTag("QueueNotFound", () => Effect.succeed(undefined)));
++const observeWorkerConsumer = Effect.fn(function* (options) {
++    if (isLiveId(options.consumerId)) {
++        const fetched = yield* queues
++            .getConsumer({
++            accountId: options.accountId,
++            queueId: options.queueId,
++            consumerId: options.consumerId,
++        })
++            .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
++        const observed = fetched ? toObserved(fetched) : undefined;
++        if (observed) {
++            return observed;
++        }
++    }
++    return yield* findWorkerConsumer(options.accountId, options.queueId);
++});
+ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+     // The `consumerId` is not marked as stable because if you start in dev mode, the ID will change on first deploy.
+     stables: ["accountId"],
+@@ -104,13 +120,13 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+         Effect.catchTag(["QueueNotFound", "InvalidRoute"], () => Effect.succeed([]))), { concurrency: 10 });
+         return rows.flat();
+     }),
+-    diff: Effect.fn(function* ({ olds, news, output }) {
++    diff: Effect.fn(function* ({ news, output }) {
+         const { accountId } = yield* yield* CloudflareEnvironment;
+         if (!isResolved(news))
+             return undefined;
+-        // If either contain `dev:` IDs, we need to update to live ones.
+-        // The live resource doesn't exist yet, so there's no need to replace even when we otherwise would.
+-        if (!isLiveId(output?.queueId) || !isLiveId(output?.consumerId)) {
++        // A dev queue does not exist in the live account, so there is
++        // nothing physical to observe yet.
++        if (!isLiveId(output?.queueId)) {
+             return { action: "update" };
+         }
+         if ((output?.accountId ?? accountId) !== accountId) {
+@@ -121,6 +137,21 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+         if (output?.queueId && news.queueId !== output.queueId) {
+             return { action: "replace", deleteFirst: true };
+         }
++        // Stable resources are diffed directly from persisted state by
++        // Plan.make; provider.read is not called on that path. Observe the
++        // physical consumer here so out-of-band DLQ/settings drift cannot be
++        // hidden by optimistic cached props. This is read-only and remains
++        // Consumer-scoped.
++        const observed = yield* observeWorkerConsumer({
++            accountId,
++            queueId: output.queueId,
++            consumerId: output.consumerId,
++        });
++        if (!observed ||
++            !isLiveId(output.consumerId) ||
++            observed.consumerId !== output.consumerId) {
++            return { action: "update" };
++        }
+         // Settings / DLQ / script drift is an update. We DON'T
+         // escalate scriptName changes to `replace` because the
+         // engine resolves cross-resource Output<string> refs (a
+@@ -132,12 +163,11 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+         // we detect script drift and rebuild the consumer in
+         // place (Cloudflare's PUT silently ignores `script_name`
+         // changes, so reconcile does delete-then-create).
+-        if (JSON.stringify(olds.settings ?? {}) !==
+-            JSON.stringify(news.settings ?? {}) ||
+-            (olds.deadLetterQueue ?? undefined) !==
++        if (JSON.stringify(normalizeConsumerSettings(observed.settings)) !==
++            JSON.stringify(normalizeConsumerSettings(news.settings)) ||
++            observed.deadLetterQueue !==
+                 (news.deadLetterQueue ?? undefined) ||
+-            (output?.scriptName !== undefined &&
+-                news.scriptName !== output.scriptName)) {
++            (observed.script !== undefined && news.scriptName !== observed.script)) {
+             return { action: "update" };
+         }
+     }),
+@@ -356,16 +386,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+                 consumerId: output.consumerId,
+             })
+                 .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
+-            if (fetched) {
++            const observed = fetched ? toObserved(fetched) : undefined;
++            if (observed) {
+                 return {
+-                    consumerId: fetched.consumerId,
++                    consumerId: observed.consumerId,
+                     queueId: output.queueId,
+-                    scriptName: ("scriptName" in fetched && typeof fetched.scriptName === "string"
+-                        ? fetched.scriptName
+-                        : output.scriptName) ?? output.scriptName,
++                    scriptName: observed.script ?? output.scriptName,
+                     accountId: output.accountId,
+-                    deadLetterQueue: output.deadLetterQueue,
+-                    settings: output.settings,
++                    deadLetterQueue: observed.deadLetterQueue,
++                    settings: observed.settings,
+                 };
+             }
+         }
+@@ -381,8 +410,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+                     queueId: output.queueId,
+                     scriptName: match.script ?? output.scriptName,
+                     accountId: output.accountId,
+-                    deadLetterQueue: output.deadLetterQueue,
+-                    settings: output.settings,
++                    deadLetterQueue: match.deadLetterQueue,
++                    settings: match.settings,
+                 };
+             }
+         }
+@@ -390,8 +419,28 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+     }),
+ });
+ const toObserved = (c) => c.consumerId && c.type === "worker"
+-    ? { consumerId: c.consumerId, script: c.scriptName ?? undefined }
++    ? {
++        consumerId: c.consumerId,
++        deadLetterQueue: c.deadLetterQueue ?? undefined,
++        script: c.scriptName ?? undefined,
++        settings: c.settings
++            ? {
++                batchSize: c.settings.batchSize ?? undefined,
++                maxConcurrency: c.settings.maxConcurrency ?? undefined,
++                maxRetries: c.settings.maxRetries ?? undefined,
++                maxWaitTimeMs: c.settings.maxWaitTimeMs ?? undefined,
++                retryDelay: c.settings.retryDelay ?? undefined,
++            }
++            : undefined,
++    }
+     : undefined;
++const normalizeConsumerSettings = (settings) => ({
++    batchSize: settings?.batchSize ?? 10,
++    maxConcurrency: settings?.maxConcurrency,
++    maxRetries: settings?.maxRetries ?? 3,
++    maxWaitTimeMs: settings?.maxWaitTimeMs ?? 5000,
++    retryDelay: settings?.retryDelay,
++});
+ // ~60s budget — Worker reconcile uploads typically land in 2–10s,
+ // but a fresh container/asset deploy can stretch that.
+ const queueHandlerReadinessSchedule = Schedule.max([
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
 index abf4a2e53a8793ad521ed70719bde153f72511de..8b763d891f00fc02056249ba5c5b1698a69a28b8 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
 +++ b/src/Cloudflare/D1/ApplyMigrations.ts
-@@ -2,4 +2,5 @@
- import * as d1 from "@distilled.cloud/cloudflare/d1";
+@@ -3,6 +3,7 @@ import * as d1 from "@distilled.cloud/cloudflare/d1";
  import * as Effect from "effect/Effect";
  import type * as HttpClient from "effect/unstable/http/HttpClient";
  import type { SqlFile } from "../../Sql/SqlFile.ts";
 +import { importD1Database } from "./ImportDatabase.ts";
-@@ -30,15 +31,15 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
+
+ export interface ApplyMigrationsOptions {
+   accountId: string;
+@@ -30,16 +31,16 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
        if (applied.has(migration.id)) continue;
        const migrationId = nextSeq.toString().padStart(5, "0");
        nextSeq += 1;
@@ -71,12 +221,199 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..8b763d891f00fc02056249ba5c5b1698
 +      });
      }
    });
-@@ -71,2 +72,8 @@ const executeSQL = (
+
+@@ -71,6 +72,12 @@ const executeSQL = (
      return yield* queryDb({ accountId, databaseId, sql });
    });
-+
+
 +const splitMigrationStatements = (sql: string): ReadonlyArray<string> =>
 +  sql
 +    .split(/--> statement-breakpoint(?:\r?\n)?/u)
 +    .map((statement) => statement.trim())
 +    .filter((statement) => statement.length > 0);
++
+ const detectSchema = (
+   accountId: string,
+   databaseId: string,
+diff --git a/src/Cloudflare/Queues/Consumer.ts b/src/Cloudflare/Queues/Consumer.ts
+index e157f1fc5c8388c10039cc6c038f080712087cfc..03b2d886b252da09acbe321a5452ee311104495a 100644
+--- a/src/Cloudflare/Queues/Consumer.ts
++++ b/src/Cloudflare/Queues/Consumer.ts
+@@ -137,6 +137,29 @@ const findWorkerConsumer = (acct: string, queueId: string) =>
+     Effect.catchTag("QueueNotFound", () => Effect.succeed(undefined)),
+   );
+
++const observeWorkerConsumer = Effect.fn(function* (options: {
++  accountId: string;
++  queueId: string;
++  consumerId?: string;
++}) {
++  if (isLiveId(options.consumerId)) {
++    const fetched = yield* queues
++      .getConsumer({
++        accountId: options.accountId,
++        queueId: options.queueId,
++        consumerId: options.consumerId,
++      })
++      .pipe(
++        Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)),
++      );
++    const observed = fetched ? toObserved(fetched) : undefined;
++    if (observed) {
++      return observed;
++    }
++  }
++  return yield* findWorkerConsumer(options.accountId, options.queueId);
++});
++
+ export const ConsumerProviderLive = () =>
+   Provider.succeed(Consumer, {
+     // The `consumerId` is not marked as stable because if you start in dev mode, the ID will change on first deploy.
+@@ -199,12 +222,12 @@ export const ConsumerProviderLive = () =>
+       );
+       return rows.flat();
+     }),
+-    diff: Effect.fn(function* ({ olds, news, output }) {
++    diff: Effect.fn(function* ({ news, output }) {
+       const { accountId } = yield* yield* CloudflareEnvironment;
+       if (!isResolved(news)) return undefined;
+-      // If either contain `dev:` IDs, we need to update to live ones.
+-      // The live resource doesn't exist yet, so there's no need to replace even when we otherwise would.
+-      if (!isLiveId(output?.queueId) || !isLiveId(output?.consumerId)) {
++      // A dev queue does not exist in the live account, so there is
++      // nothing physical to observe yet.
++      if (!isLiveId(output?.queueId)) {
+         return { action: "update" };
+       }
+       if ((output?.accountId ?? accountId) !== accountId) {
+@@ -215,6 +238,23 @@ export const ConsumerProviderLive = () =>
+       if (output?.queueId && news.queueId !== output.queueId) {
+         return { action: "replace", deleteFirst: true } as const;
+       }
++      // Stable resources are diffed directly from persisted state by
++      // Plan.make; provider.read is not called on that path. Observe the
++      // physical consumer here so out-of-band DLQ/settings drift cannot be
++      // hidden by optimistic cached props. This is read-only and remains
++      // Consumer-scoped.
++      const observed = yield* observeWorkerConsumer({
++        accountId,
++        queueId: output.queueId,
++        consumerId: output.consumerId,
++      });
++      if (
++        !observed ||
++        !isLiveId(output.consumerId) ||
++        observed.consumerId !== output.consumerId
++      ) {
++        return { action: "update" };
++      }
+       // Settings / DLQ / script drift is an update. We DON'T
+       // escalate scriptName changes to `replace` because the
+       // engine resolves cross-resource Output<string> refs (a
+@@ -227,12 +267,11 @@ export const ConsumerProviderLive = () =>
+       // place (Cloudflare's PUT silently ignores `script_name`
+       // changes, so reconcile does delete-then-create).
+       if (
+-        JSON.stringify(olds.settings ?? {}) !==
+-          JSON.stringify(news.settings ?? {}) ||
+-        (olds.deadLetterQueue ?? undefined) !==
++        JSON.stringify(normalizeConsumerSettings(observed.settings)) !==
++          JSON.stringify(normalizeConsumerSettings(news.settings)) ||
++        observed.deadLetterQueue !==
+           (news.deadLetterQueue ?? undefined) ||
+-        (output?.scriptName !== undefined &&
+-          news.scriptName !== output.scriptName)
++        (observed.script !== undefined && news.scriptName !== observed.script)
+       ) {
+         return { action: "update" } as const;
+       }
+@@ -509,17 +548,15 @@ export const ConsumerProviderLive = () =>
+               Effect.succeed(undefined),
+             ),
+           );
+-        if (fetched) {
++        const observed = fetched ? toObserved(fetched) : undefined;
++        if (observed) {
+           return {
+-            consumerId: fetched.consumerId!,
++            consumerId: observed.consumerId,
+             queueId: output.queueId,
+-            scriptName:
+-              ("scriptName" in fetched && typeof fetched.scriptName === "string"
+-                ? fetched.scriptName
+-                : output.scriptName) ?? output.scriptName,
++            scriptName: observed.script ?? output.scriptName,
+             accountId: output.accountId,
+-            deadLetterQueue: output.deadLetterQueue,
+-            settings: output.settings,
++            deadLetterQueue: observed.deadLetterQueue,
++            settings: observed.settings,
+           };
+         }
+       }
+@@ -538,8 +575,8 @@ export const ConsumerProviderLive = () =>
+             queueId: output.queueId,
+             scriptName: match.script ?? output.scriptName,
+             accountId: output.accountId,
+-            deadLetterQueue: output.deadLetterQueue,
+-            settings: output.settings,
++            deadLetterQueue: match.deadLetterQueue,
++            settings: match.settings,
+           };
+         }
+       }
+@@ -548,19 +585,53 @@ export const ConsumerProviderLive = () =>
+   });
+
+ type ObservedConsumer = {
++  deadLetterQueue: string | undefined;
+   consumerId: string;
++  settings: ConsumerSettings | undefined;
+   script: string | undefined;
+ };
+
+ const toObserved = (c: {
++  deadLetterQueue?: string | null;
+   consumerId?: string | null;
++  settings?: {
++    batchSize?: number | null;
++    maxConcurrency?: number | null;
++    maxRetries?: number | null;
++    maxWaitTimeMs?: number | null;
++    retryDelay?: number | null;
++  } | null;
+   scriptName?: string | null;
+   type?: "worker" | "http_pull" | null;
+ }): ObservedConsumer | undefined =>
+   c.consumerId && c.type === "worker"
+-    ? { consumerId: c.consumerId, script: c.scriptName ?? undefined }
++    ? {
++        consumerId: c.consumerId,
++        deadLetterQueue: c.deadLetterQueue ?? undefined,
++        script: c.scriptName ?? undefined,
++        settings: c.settings
++          ? {
++              batchSize: c.settings.batchSize ?? undefined,
++              maxConcurrency: c.settings.maxConcurrency ?? undefined,
++              maxRetries: c.settings.maxRetries ?? undefined,
++              maxWaitTimeMs: c.settings.maxWaitTimeMs ?? undefined,
++              retryDelay: c.settings.retryDelay ?? undefined,
++            }
++          : undefined,
++      }
+     : undefined;
+
++const normalizeConsumerSettings = (
++  settings: ConsumerSettings | undefined,
++): Required<Pick<ConsumerSettings, "batchSize" | "maxRetries" | "maxWaitTimeMs">> &
++  Pick<ConsumerSettings, "maxConcurrency" | "retryDelay"> => ({
++  batchSize: settings?.batchSize ?? 10,
++  maxConcurrency: settings?.maxConcurrency,
++  maxRetries: settings?.maxRetries ?? 3,
++  maxWaitTimeMs: settings?.maxWaitTimeMs ?? 5000,
++  retryDelay: settings?.retryDelay,
++});
++
+ // ~60s budget — Worker reconcile uploads typically land in 2–10s,
+ // but a fresh container/asset deploy can stretch that.
+ const queueHandlerReadinessSchedule = Schedule.max([
