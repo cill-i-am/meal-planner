@@ -2,12 +2,11 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
 import { CloudflareEnvironment } from "alchemy/Cloudflare";
-import {
-  Consumer,
-  ConsumerProviderLive,
-  type Consumer as ConsumerResource,
-  type ConsumerProps,
-  type ConsumerSettings,
+import { Consumer, ConsumerProviderLive } from "alchemy/Cloudflare/Queues";
+import type {
+  Consumer as ConsumerResource,
+  ConsumerProps,
+  ConsumerSettings,
 } from "alchemy/Cloudflare/Queues";
 import { findProviderByType } from "alchemy/Provider";
 import type * as Context from "effect/Context";
@@ -93,7 +92,7 @@ const desiredSettings: ConsumerSettings = {
   batchSize: 1,
   maxConcurrency: 1,
   maxRetries: 2,
-  maxWaitTimeMs: 1_000,
+  maxWaitTimeMs: 1000,
   retryDelay: 1,
 };
 
@@ -174,7 +173,7 @@ describe("Alchemy queue consumer reconciliation", () => {
             batch_size: 10,
             max_concurrency: null,
             max_retries: 3,
-            max_wait_time_ms: 5_000,
+            max_wait_time_ms: 5000,
             retry_delay: null,
           },
           type: "worker",
@@ -202,7 +201,7 @@ describe("Alchemy queue consumer reconciliation", () => {
       output: cachedOutput,
     };
 
-    const result = await Effect.gen(function* () {
+    const result = await Effect.gen(function* readAndDiff() {
       const provider = yield* findProviderByType<ConsumerResource>(
         Consumer.Type
       );
@@ -248,7 +247,7 @@ describe("Alchemy queue consumer reconciliation", () => {
         batchSize: 10,
         maxConcurrency: undefined,
         maxRetries: 3,
-        maxWaitTimeMs: 5_000,
+        maxWaitTimeMs: 5000,
         retryDelay: undefined,
       },
     });
@@ -304,7 +303,7 @@ describe("Alchemy queue consumer reconciliation", () => {
           batch_size: 1,
           max_concurrency: 1,
           max_retries: 2,
-          max_wait_time_ms: 1_000,
+          max_wait_time_ms: 1000,
           retry_delay: 1,
         },
         type: "worker",
