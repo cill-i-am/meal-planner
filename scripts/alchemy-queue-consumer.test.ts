@@ -71,6 +71,9 @@ interface LoadedQueueModules {
 interface ScratchStack {
   readonly name: string;
   readonly state: Layer.Layer<State.State>;
+  readonly deploy: <A, E, R>(
+    effect: Effect.Effect<A, E, R>
+  ) => Effect.Effect<A, unknown, R>;
   readonly plan: <A, E, R>(
     effect: Effect.Effect<A, E, R>
   ) => Effect.Effect<Plan.Plan<A>, unknown, R>;
@@ -84,6 +87,14 @@ interface TestCoreModule {
     },
     name: string
   ) => ScratchStack;
+  readonly toEffect: <A>(
+    effect: Effect.Effect<A, unknown>,
+    options: {
+      readonly providers: ReturnType<typeof ConsumerProviderLive>;
+      readonly stage: string;
+      readonly state: Layer.Layer<State.State>;
+    }
+  ) => Effect.Effect<A, unknown>;
 }
 
 interface QueueRequestBody {
@@ -252,6 +263,82 @@ const runStablePlan = async (
 
   return { persistedAfter, plan };
 };
+
+const runStableDeploy = async (
+  client: HttpClient.HttpClient,
+  persisted: State.CreatedResourceState
+) => {
+  const [modules, testCore] = await Promise.all([
+    loadQueueModules(),
+    loadTestCore(),
+  ]);
+  const scratch = testCore.scratchStack(
+    { providers: ConsumerProviderLive(), stage: "test" },
+    "queue-consumer-stable-deploy"
+  );
+
+  await Effect.gen(function* seedPersistedState() {
+    const state = yield* yield* State.State;
+    yield* state.set({
+      fqn: logicalId,
+      stack: scratch.name,
+      stage: "test",
+      value: persisted,
+    });
+  }).pipe(Effect.provide(scratch.state), Effect.runPromise);
+
+  const exit = await testCore
+    .toEffect(
+      provideQueueServices(
+        modules,
+        client,
+        scratch.deploy(
+          Consumer(logicalId, {
+            deadLetterQueue,
+            queueId,
+            scriptName,
+            settings: desiredSettings,
+          })
+        )
+      ),
+      {
+        providers: ConsumerProviderLive(),
+        stage: "test",
+        state: scratch.state,
+      }
+    )
+    .pipe(Effect.exit, Effect.runPromise);
+  const persistedAfter = await Effect.gen(function* readPersistedState() {
+    const state = yield* yield* State.State;
+    return yield* state.get({
+      fqn: logicalId,
+      stack: scratch.name,
+      stage: "test",
+    });
+  }).pipe(Effect.provide(scratch.state), Effect.runPromise);
+
+  return { exit, persistedAfter };
+};
+
+const physicalConsumer = (
+  physicalDeadLetterQueue: string | null | undefined,
+  settings: ConsumerSettings = desiredSettings
+) => ({
+  consumer_id: consumerId,
+  ...(physicalDeadLetterQueue === undefined
+    ? {}
+    : { dead_letter_queue: physicalDeadLetterQueue }),
+  queue_name: "meal-planner-pilot-gaia-117-import-batch",
+  script: scriptName,
+  settings: {
+    batch_size: settings.batchSize,
+    max_concurrency: settings.maxConcurrency,
+    max_retries: settings.maxRetries,
+    max_wait_time_ms: settings.maxWaitTimeMs,
+    retry_delay: settings.retryDelay,
+  },
+  type: "worker",
+});
 
 describe("Alchemy queue consumer reconciliation", () => {
   it("plans one in-place update when stable cached state hides physical DLQ drift", async () => {
@@ -452,5 +539,96 @@ describe("Alchemy queue consumer reconciliation", () => {
         type: "worker",
       });
     }
+  });
+
+  it.each([
+    ["omitted", undefined],
+    ["null", null],
+    ["mismatched", "other-dead-letter-queue"],
+  ] as const)(
+    "rejects a successful update whose physical DLQ is %s without committing stable desired state",
+    async (_label, physicalDeadLetterQueue) => {
+      let updateAccepted = false;
+      const methods: string[] = [];
+      const client = HttpClient.make((request) =>
+        Effect.sync(() => {
+          methods.push(request.method);
+          if (request.method === "PUT") {
+            updateAccepted = true;
+            return cloudflareResponse(
+              request,
+              physicalConsumer(deadLetterQueue)
+            );
+          }
+          return cloudflareResponse(
+            request,
+            physicalConsumer(updateAccepted ? physicalDeadLetterQueue : null)
+          );
+        })
+      );
+      const persisted = makePersistedConsumer({
+        accountId,
+        consumerId,
+        deadLetterQueue,
+        queueId,
+        scriptName,
+        settings: desiredSettings,
+      });
+      const result = await runStableDeploy(client, persisted);
+
+      expect(result.exit._tag).toBe("Failure");
+      expect(methods.filter((method) => method === "PUT")).toHaveLength(1);
+      expect(new Set(methods)).toEqual(new Set(["GET", "PUT"]));
+      expect(result.persistedAfter).toMatchObject({
+        attr: persisted.attr,
+        old: {
+          attr: persisted.attr,
+          bindings: persisted.bindings,
+          props: persisted.props,
+        },
+        status: "updating",
+      });
+    }
+  );
+
+  it("commits freshly observed attributes after the physical consumer converges", async () => {
+    let updateAccepted = false;
+    const methods: string[] = [];
+    const client = HttpClient.make((request) =>
+      Effect.sync(() => {
+        methods.push(request.method);
+        if (request.method === "PUT") {
+          updateAccepted = true;
+        }
+        return cloudflareResponse(
+          request,
+          physicalConsumer(updateAccepted ? deadLetterQueue : null)
+        );
+      })
+    );
+    const persisted = makePersistedConsumer({
+      accountId,
+      consumerId,
+      deadLetterQueue,
+      queueId,
+      scriptName,
+      settings: desiredSettings,
+    });
+    const result = await runStableDeploy(client, persisted);
+
+    expect(result.exit._tag).toBe("Success");
+    expect(methods.filter((method) => method === "PUT")).toHaveLength(1);
+    expect(new Set(methods)).toEqual(new Set(["GET", "PUT"]));
+    expect(result.persistedAfter).toMatchObject({
+      attr: {
+        accountId,
+        consumerId,
+        deadLetterQueue,
+        queueId,
+        scriptName,
+        settings: desiredSettings,
+      },
+      status: "updated",
+    });
   });
 });

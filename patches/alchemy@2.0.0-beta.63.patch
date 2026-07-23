@@ -40,7 +40,7 @@ index ba1c3be608856556930a5895497c1071cec015c1..f2ccfa888c1a6ca6d532fd3a042d355e
      const result = yield* executeSQL(accountId, databaseId, `PRAGMA table_info(${migrationsTable});`).pipe(Effect.option);
      const columns = [];
 diff --git a/lib/Cloudflare/Queues/Consumer.js b/lib/Cloudflare/Queues/Consumer.js
-index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..63b1d8a017d92ea06cc903b0fcb060b004915a42 100644
+index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..5e330e9ed91d631561bd931a09686df0e0a2c614 100644
 --- a/lib/Cloudflare/Queues/Consumer.js
 +++ b/lib/Cloudflare/Queues/Consumer.js
 @@ -63,6 +63,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
@@ -123,7 +123,45 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..63b1d8a017d92ea06cc903b0fcb060b0
              return { action: "update" };
          }
      }),
-@@ -356,16 +386,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -302,19 +332,30 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+             while: (e) => e._tag === "QueueHandlerMissing",
+             schedule: queueHandlerReadinessSchedule,
+         }));
+-        yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(Effect.flatMap((fetched) => toObserved(fetched)?.script === news.scriptName
+-            ? Effect.void
+-            : Effect.fail("ScriptUnbound")), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
++        const converged = yield* queues
++            .getConsumer({ accountId: acct, queueId, consumerId })
++            .pipe(Effect.flatMap((fetched) => {
++            const observed = toObserved(fetched);
++            return observed?.script === news.scriptName
++                ? Effect.succeed(observed)
++                : Effect.fail("ScriptUnbound");
++        }), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
+             while: (e) => e === "ScriptUnbound",
+             schedule: queueHandlerReadinessSchedule,
+         }));
++        if (converged.consumerId !== consumerId ||
++            converged.deadLetterQueue !== (news.deadLetterQueue ?? undefined) ||
++            JSON.stringify(normalizeConsumerSettings(converged.settings)) !==
++                JSON.stringify(normalizeConsumerSettings(news.settings))) {
++            return yield* Effect.fail("ConsumerUnconverged");
++        }
+         return {
+-            consumerId,
++            consumerId: converged.consumerId,
+             queueId,
+-            scriptName: news.scriptName,
++            scriptName: converged.script,
+             accountId: acct,
+-            deadLetterQueue: news.deadLetterQueue,
+-            settings: news.settings,
++            deadLetterQueue: converged.deadLetterQueue,
++            settings: converged.settings,
+         };
+     }),
+     delete: Effect.fn(function* ({ output }) {
+@@ -356,16 +397,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
                  consumerId: output.consumerId,
              })
                  .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
@@ -146,7 +184,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..63b1d8a017d92ea06cc903b0fcb060b0
                  };
              }
          }
-@@ -381,8 +410,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -381,8 +421,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
                      queueId: output.queueId,
                      scriptName: match.script ?? output.scriptName,
                      accountId: output.accountId,
@@ -157,7 +195,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..63b1d8a017d92ea06cc903b0fcb060b0
                  };
              }
          }
-@@ -390,8 +419,28 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -390,8 +430,28 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
      }),
  });
  const toObserved = (c) => c.consumerId && c.type === "worker"
@@ -236,7 +274,7 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..8b763d891f00fc02056249ba5c5b1698
    accountId: string,
    databaseId: string,
 diff --git a/src/Cloudflare/Queues/Consumer.ts b/src/Cloudflare/Queues/Consumer.ts
-index e157f1fc5c8388c10039cc6c038f080712087cfc..03b2d886b252da09acbe321a5452ee311104495a 100644
+index e157f1fc5c8388c10039cc6c038f080712087cfc..a0ce9cd4c22868909f1e120787c8e24325d65f4c 100644
 --- a/src/Cloudflare/Queues/Consumer.ts
 +++ b/src/Cloudflare/Queues/Consumer.ts
 @@ -137,6 +137,29 @@ const findWorkerConsumer = (acct: string, queueId: string) =>
@@ -327,7 +365,67 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..03b2d886b252da09acbe321a5452ee31
        ) {
          return { action: "update" } as const;
        }
-@@ -509,17 +548,15 @@ export const ConsumerProviderLive = () =>
+@@ -436,28 +475,41 @@ export const ConsumerProviderLive = () =>
+           }),
+         );
+
+-      yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(
+-        Effect.flatMap((fetched) =>
+-          toObserved(fetched)?.script === news.scriptName
+-            ? Effect.void
+-            : Effect.fail("ScriptUnbound" as const),
+-        ),
+-        Effect.catchTag("ConsumerNotFound", () =>
+-          Effect.fail("ScriptUnbound" as const),
+-        ),
+-        Effect.retry({
+-          while: (e) => e === "ScriptUnbound",
+-          schedule: queueHandlerReadinessSchedule,
+-        }),
+-      );
++      const converged = yield* queues
++        .getConsumer({ accountId: acct, queueId, consumerId })
++        .pipe(
++          Effect.flatMap((fetched) => {
++            const observed = toObserved(fetched);
++            return observed?.script === news.scriptName
++              ? Effect.succeed(observed)
++              : Effect.fail("ScriptUnbound" as const);
++          }),
++          Effect.catchTag("ConsumerNotFound", () =>
++            Effect.fail("ScriptUnbound" as const),
++          ),
++          Effect.retry({
++            while: (e) => e === "ScriptUnbound",
++            schedule: queueHandlerReadinessSchedule,
++          }),
++        );
++
++      if (
++        converged.consumerId !== consumerId ||
++        converged.deadLetterQueue !==
++          (news.deadLetterQueue ?? undefined) ||
++        JSON.stringify(normalizeConsumerSettings(converged.settings)) !==
++          JSON.stringify(normalizeConsumerSettings(news.settings))
++      ) {
++        return yield* Effect.fail("ConsumerUnconverged" as const);
++      }
+
+       return {
+-        consumerId,
++        consumerId: converged.consumerId,
+         queueId,
+-        scriptName: news.scriptName!,
++        scriptName: converged.script,
+         accountId: acct,
+-        deadLetterQueue: news.deadLetterQueue,
+-        settings: news.settings,
++        deadLetterQueue: converged.deadLetterQueue,
++        settings: converged.settings,
+       };
+     }),
+     delete: Effect.fn(function* ({ output }) {
+@@ -509,17 +561,15 @@ export const ConsumerProviderLive = () =>
                Effect.succeed(undefined),
              ),
            );
@@ -351,7 +449,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..03b2d886b252da09acbe321a5452ee31
            };
          }
        }
-@@ -538,8 +575,8 @@ export const ConsumerProviderLive = () =>
+@@ -538,8 +588,8 @@ export const ConsumerProviderLive = () =>
              queueId: output.queueId,
              scriptName: match.script ?? output.scriptName,
              accountId: output.accountId,
@@ -362,7 +460,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..03b2d886b252da09acbe321a5452ee31
            };
          }
        }
-@@ -548,19 +585,53 @@ export const ConsumerProviderLive = () =>
+@@ -548,19 +598,53 @@ export const ConsumerProviderLive = () =>
    });
 
  type ObservedConsumer = {
