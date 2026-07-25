@@ -217,6 +217,56 @@ export const ProviderTaskStepConfig = {
   timeout: "2 minutes",
 } as const;
 
+type ProviderTaskStage = "recipe" | "speech" | "visual";
+
+const providerTaskFailureCode = (error: unknown) =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  typeof error.code === "string"
+    ? error.code
+    : "stage_failed";
+
+const isRetryableProviderTaskFailure = (code: string) =>
+  code === "provider_unavailable" || code === "throttled" || code === "timeout";
+
+/**
+ * Keep retryable provider failures in the durable task's rejection path.
+ * Terminal failures are safe checkpoints and never include raw provider data.
+ */
+export const runProviderTaskAttempt = <A, E, Success>(
+  stage: ProviderTaskStage,
+  effect: Effect.Effect<A, E>,
+  onSuccess: (value: A) => Success
+) =>
+  effect.pipe(
+    Effect.matchEffect({
+      onFailure: (error) => {
+        const code = providerTaskFailureCode(error);
+        return isRetryableProviderTaskFailure(code)
+          ? Effect.die(new Error(`Retryable provider task failure: ${code}`))
+          : Effect.succeed({
+              _tag: "Failed" as const,
+              code,
+              stage,
+            });
+      },
+      onSuccess: (value) => Effect.succeed(onSuccess(value)),
+    })
+  );
+
+export const runProviderTask = <A, E, Success>(
+  name: string,
+  stage: ProviderTaskStage,
+  effect: Effect.Effect<A, E>,
+  onSuccess: (value: A) => Success
+) =>
+  Cloudflare.Workflows.task(
+    name,
+    runProviderTaskAttempt(stage, effect, onSuccess),
+    ProviderTaskStepConfig
+  );
+
 const currentPilotBudgetTimestamp = () =>
   Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
 
@@ -272,29 +322,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           stage: "recipe" | "speech" | "visual",
           effect: Effect.Effect<A, E>
         ) =>
-          Cloudflare.Workflows.task(
-            name,
-            effect.pipe(
-              Effect.match({
-                onFailure: (error) => ({
-                  _tag: "Failed" as const,
-                  code:
-                    typeof error === "object" &&
-                    error !== null &&
-                    "code" in error &&
-                    typeof error.code === "string"
-                      ? error.code
-                      : "stage_failed",
-                  stage,
-                }),
-                onSuccess: () => ({
-                  _tag: "Succeeded" as const,
-                  stage,
-                }),
-              })
-            ),
-            ProviderTaskStepConfig
-          ).pipe(
+          runProviderTask(name, stage, effect, () => ({
+            _tag: "Succeeded" as const,
+            stage,
+          })).pipe(
             Effect.flatMap((value) =>
               Schema.decodeUnknownEffect(ProviderTaskCheckpoint)(value)
             ),
@@ -305,8 +336,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           importId,
         }).pipe(Effect.orDie);
         if (stagedCarousel !== null) {
-          const encodedCarouselEvidence = yield* Cloudflare.Workflows.task(
+          const encodedCarouselEvidence = yield* runProviderTask(
             "extract-carousel-visual-evidence-v1",
+            "visual",
             prepareTikTokCarouselEvidence({
               adapter: stagedCarousel.adapter,
               bucket: rawBucket as unknown as AcquisitionBucketLike,
@@ -315,27 +347,12 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               importId,
               now,
               visualExtractor,
-            }).pipe(
-              Effect.match({
-                onFailure: (error) => ({
-                  _tag: "Failed" as const,
-                  code:
-                    typeof error === "object" &&
-                    error !== null &&
-                    "code" in error &&
-                    typeof error.code === "string"
-                      ? error.code
-                      : "stage_failed",
-                  stage: "visual" as const,
-                }),
-                onSuccess: (evidence) => ({
-                  _tag: "Succeeded" as const,
-                  evidence,
-                  stage: "visual" as const,
-                }),
-              })
-            ),
-            ProviderTaskStepConfig
+            }),
+            (evidence) => ({
+              _tag: "Succeeded" as const,
+              evidence,
+              stage: "visual" as const,
+            })
           );
           const carouselEvidence = yield* Schema.decodeUnknownEffect(
             CarouselEvidenceTaskCheckpoint

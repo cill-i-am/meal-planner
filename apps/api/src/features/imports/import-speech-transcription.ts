@@ -52,7 +52,10 @@ export interface SpeechPipelineFailure {
   readonly code:
     | "audio_extraction_failed"
     | "outcome_unknown"
+    | "provider_unavailable"
     | "source_evidence_invalid"
+    | "throttled"
+    | "timeout"
     | "transcription_failed"
     | "transcript_evidence_failed"
     | "transcript_evidence_unknown";
@@ -332,8 +335,11 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
         .pipe(
           Effect.mapError((error) =>
             pipelineFailure(
-              error.code === "outcome_unknown"
-                ? "outcome_unknown"
+              error.code === "outcome_unknown" ||
+                error.code === "provider_unavailable" ||
+                error.code === "throttled" ||
+                error.code === "timeout"
+                ? error.code
                 : "transcription_failed"
             )
           )
@@ -377,6 +383,9 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       Effect.catchTag("SpeechPipelineFailure", (failure) => {
         if (
           failure.code === "outcome_unknown" ||
+          failure.code === "provider_unavailable" ||
+          failure.code === "throttled" ||
+          failure.code === "timeout" ||
           failure.code === "transcript_evidence_unknown"
         ) {
           return Effect.fail(failure);

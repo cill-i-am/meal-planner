@@ -38,7 +38,10 @@ export interface RecipeDraftPipelineFailure {
   readonly code:
     | RecipeExtractionFailureCode
     | "outcome_unknown"
-    | "source_evidence_invalid";
+    | "provider_unavailable"
+    | "source_evidence_invalid"
+    | "throttled"
+    | "timeout";
 }
 
 const pipelineFailure = (
@@ -59,6 +62,11 @@ const recipeProviderFailureCode = (
     case "model_refusal":
     case "outcome_unknown":
     case "provider_error": {
+      return code;
+    }
+    case "provider_unavailable":
+    case "throttled":
+    case "timeout": {
       return code;
     }
     default: {
@@ -396,7 +404,10 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
       pipelineFailure(recipeProviderFailureCode(failure.code))
     ),
     Effect.catch((error) =>
-      error.code === "outcome_unknown"
+      error.code === "outcome_unknown" ||
+      error.code === "provider_unavailable" ||
+      error.code === "throttled" ||
+      error.code === "timeout"
         ? Effect.fail(error)
         : input.recipeRepository
             .fail({

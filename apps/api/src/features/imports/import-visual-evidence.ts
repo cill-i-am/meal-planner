@@ -85,7 +85,12 @@ export const MaximumVisualEvidenceManifestBytes = 1_048_576;
 
 export interface VisualEvidencePipelineFailure {
   readonly _tag: "VisualEvidencePipelineFailure";
-  readonly code: VisualEvidenceFailureCode | "visual_evidence_unknown";
+  readonly code:
+    | VisualEvidenceFailureCode
+    | "provider_unavailable"
+    | "throttled"
+    | "timeout"
+    | "visual_evidence_unknown";
 }
 
 const pipelineFailure = (
@@ -566,8 +571,11 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
       .pipe(
         Effect.mapError((error) =>
           pipelineFailure(
-            error.code === "outcome_unknown"
-              ? "outcome_unknown"
+            error.code === "outcome_unknown" ||
+              error.code === "provider_unavailable" ||
+              error.code === "throttled" ||
+              error.code === "timeout"
+              ? error.code
               : "visual_extraction_failed"
           )
         )
@@ -616,6 +624,9 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     Effect.catchTag("VisualEvidencePipelineFailure", (failure) => {
       if (
         failure.code === "outcome_unknown" ||
+        failure.code === "provider_unavailable" ||
+        failure.code === "throttled" ||
+        failure.code === "timeout" ||
         failure.code === "visual_evidence_unknown"
       ) {
         return Effect.fail(failure);

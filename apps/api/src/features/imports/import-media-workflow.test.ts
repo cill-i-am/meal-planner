@@ -26,7 +26,9 @@ import {
   MaximumAbsoluteWorkflowSeconds,
   MaximumNestedAcquisitionAttempts,
   MaximumScheduledWorkflowSeconds,
+  ProviderTaskStepConfig,
   runAcquisitionTask,
+  runProviderTaskAttempt,
 } from "./import.workflow.js";
 
 const importId = Schema.decodeUnknownSync(ImportId)(
@@ -80,6 +82,12 @@ const deriveRetryCeiling = (totalPlatformExecutions: number) => {
       platformBackoffSeconds,
   };
 };
+
+const runProviderTaskTestAttempt = <A, E>(effect: Effect.Effect<A, E>) =>
+  runProviderTaskAttempt("visual", effect, () => ({
+    _tag: "Succeeded" as const,
+    stage: "visual" as const,
+  }));
 
 const withRetryCharacterizationMiniflare = async <Value>(
   use: (miniflare: Miniflare) => Promise<Value>,
@@ -732,5 +740,53 @@ describe("import acquisition retry contract", () => {
     const replayed = await Effect.runPromise(execute());
     expect(replayed.generation).toBe(4);
     expect(providerCalls).toBe(1);
+  });
+});
+
+describe("provider durable task retry contract", () => {
+  it("keeps the configured bounded durable retry policy", () => {
+    expect(ProviderTaskStepConfig).toEqual({
+      retries: { backoff: "exponential", delay: "2 seconds", limit: 2 },
+      timeout: "2 minutes",
+    });
+  });
+
+  it.each(["provider_unavailable", "throttled", "timeout"] as const)(
+    "rethrows retryable %s failures through the durable task boundary",
+    async (code) => {
+      const exit = await Effect.runPromiseExit(
+        runProviderTaskTestAttempt(
+          Effect.fail({ code, providerDetail: "must-not-escape" })
+        )
+      );
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isSuccess(exit)) {
+        throw new Error("Expected retryable provider task failure");
+      }
+      expect(Cause.pretty(exit.cause)).toContain(
+        `Retryable provider task failure: ${code}`
+      );
+      expect(JSON.stringify(exit)).not.toContain("must-not-escape");
+    }
+  );
+
+  it.each([
+    "insufficient_evidence",
+    "malformed_response",
+    "model_refusal",
+    "outcome_unknown",
+  ] as const)("durably checkpoints terminal %s failures", async (code) => {
+    await expect(
+      Effect.runPromise(
+        runProviderTaskTestAttempt(
+          Effect.fail({ code, providerDetail: "must-not-escape" })
+        )
+      )
+    ).resolves.toEqual({
+      _tag: "Failed",
+      code,
+      stage: "visual",
+    });
   });
 });

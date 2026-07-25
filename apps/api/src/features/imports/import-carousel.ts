@@ -127,6 +127,9 @@ export interface CarouselImportPipelineFailure {
     | TikTokCarouselAdapterFailure["code"]
     | "carousel_evidence_invalid"
     | "outcome_unknown"
+    | "provider_unavailable"
+    | "throttled"
+    | "timeout"
     | "visual_extraction_failed";
   readonly completeness: "incomplete_no_draft";
   readonly recovery:
@@ -681,8 +684,15 @@ export const prepareTikTokCarouselEvidence = Effect.fn(
       sourceMediaSha256: fingerprint,
     })
     .pipe(
-      Effect.mapError(() =>
-        pipelineFailure("visual_extraction_failed", "operator_reconcile")
+      Effect.mapError((error) =>
+        pipelineFailure(
+          error.code === "provider_unavailable" ||
+            error.code === "throttled" ||
+            error.code === "timeout"
+            ? error.code
+            : "visual_extraction_failed",
+          "operator_reconcile"
+        )
       )
     );
   const visualEvidence = yield* decodeVisualEvidence(rawVisual).pipe(
