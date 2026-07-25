@@ -116,7 +116,15 @@ export interface SpeechTranscriptionInput {
 /** Safe classified speech failure; it never contains a provider body or secret. */
 export interface SpeechTranscriptionFailure {
   readonly _tag: "SpeechTranscriptionFailure";
-  readonly code: "outcome_unknown" | "transcription_failed";
+  readonly code:
+    | "insufficient_evidence"
+    | "malformed_response"
+    | "model_refusal"
+    | "outcome_unknown"
+    | "provider_unavailable"
+    | "throttled"
+    | "timeout"
+    | "transcription_failed";
 }
 
 /** Provider-neutral speech capability. */

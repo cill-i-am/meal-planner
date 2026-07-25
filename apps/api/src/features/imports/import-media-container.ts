@@ -17,6 +17,28 @@ export class TikTokMediaContainer extends Cloudflare.Container<
     readonly prepare: (
       request: TikTokIdentity
     ) => Effect.Effect<PreparedMediaArtifact, ContainerAcquisitionError>;
+    readonly prepareProviderEvidence: (
+      artifactId: string,
+      durationSeconds: number
+    ) => Effect.Effect<
+      {
+        readonly audio: {
+          readonly artifactId: string;
+          readonly bytes: number;
+          readonly durationMilliseconds: number;
+          readonly sha256: string;
+        };
+        readonly frames: readonly {
+          readonly artifactId: string;
+          readonly bytes: number;
+          readonly height: number;
+          readonly sha256: string;
+          readonly timestampMilliseconds: number;
+          readonly width: number;
+        }[];
+      },
+      RetryableAcquisitionFailure
+    >;
     readonly stream: (
       artifactId: string
     ) => Stream.Stream<Uint8Array, RetryableAcquisitionFailure>;

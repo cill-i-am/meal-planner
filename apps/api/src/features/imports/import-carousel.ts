@@ -564,18 +564,15 @@ const completedEvidence = (
   manifestSha256,
 });
 
-/** Provider-free synthetic carousel-to-review-draft vertical tracer. */
-export const importTikTokCarouselToRecipeDraft = Effect.fn(
-  "Imports.importTikTokCarouselToRecipeDraft"
-)(function* importCarousel(input: {
+export const prepareTikTokCarouselEvidence = Effect.fn(
+  "Imports.prepareTikTokCarouselEvidence"
+)(function* prepareCarousel(input: {
   readonly adapter: TikTokCarouselAdapterShape;
   readonly bucket: AcquisitionBucketLike;
   readonly carouselRepository: CarouselEvidenceRepositoryShape;
   readonly descriptor: TikTokCarouselDescriptor;
-  readonly extractor: RecipeExtractorShape;
   readonly importId: ImportId;
   readonly now: () => ImportTimestamp;
-  readonly recipeRepository: RecipeDraftRepositoryShape;
   readonly visualExtractor: VisualEvidenceExtractorShape;
 }) {
   const descriptor = yield* Schema.decodeUnknownEffect(
@@ -617,218 +614,211 @@ export const importTikTokCarouselToRecipeDraft = Effect.fn(
     );
   }
 
-  let committed: {
-    readonly document: CarouselEvidenceManifestDocument;
-    readonly evidence: CompletedCarouselEvidence;
-    readonly sha256: string;
-    readonly source: VerifiedSourceMetadata;
-  };
   if (claim._tag === "Completed") {
-    const verified = yield* readVerifiedManifest(
-      input.bucket,
-      claim.evidence,
-      descriptor
-    );
-    committed = {
-      document: verified.document,
-      evidence: claim.evidence,
-      sha256: verified.sha256,
-      source: {
-        canonicalUrl: descriptor.sourceUrl,
-        caption: verified.document.source.caption,
-        creator: verified.document.source.creator,
-        observedAt: verified.document.source.observedAt,
-        provenance: {
-          canonicalUrl: verified.document.source.provenance.canonicalIdentity,
-          caption: verified.document.source.provenance.caption,
-          creator: verified.document.source.provenance.creator,
-          publishedAt: verified.document.source.provenance.publishedAt,
-        },
-        publishedAt: verified.document.source.publishedAt,
-      },
-    };
-  } else {
-    const acquired = yield* input.adapter.acquire(descriptor).pipe(
-      Effect.catch((error) =>
-        input.carouselRepository
-          .fail({
-            code: error.code,
-            completedAt: now,
-            descriptorFingerprint: fingerprint,
-            generation: parent.generation,
-            importId: input.importId,
-            recovery: error.recovery,
-          })
-          .pipe(
-            Effect.andThen(
-              Effect.fail(pipelineFailure(error.code, error.recovery))
-            )
+    yield* readVerifiedManifest(input.bucket, claim.evidence, descriptor);
+    return claim.evidence;
+  }
+  const acquired = yield* input.adapter.acquire(descriptor).pipe(
+    Effect.catch((error) =>
+      input.carouselRepository
+        .fail({
+          code: error.code,
+          completedAt: now,
+          descriptorFingerprint: fingerprint,
+          generation: parent.generation,
+          importId: input.importId,
+          recovery: error.recovery,
+        })
+        .pipe(
+          Effect.andThen(
+            Effect.fail(pipelineFailure(error.code, error.recovery))
           )
-      )
-    );
-    const validated = yield* validateCompleteAcquisition(
-      acquired,
-      descriptor
-    ).pipe(
-      Effect.catch((error) =>
-        input.carouselRepository
-          .fail({
-            code: error.code,
-            completedAt: now,
-            descriptorFingerprint: fingerprint,
-            generation: parent.generation,
-            importId: input.importId,
-            recovery: error.recovery,
-          })
-          .pipe(
-            Effect.andThen(
-              Effect.fail(pipelineFailure(error.code, error.recovery))
-            )
-          )
-      )
-    );
-    const frames: readonly VisualFrameArtifact[] = validated.images.map(
-      (image) => ({
-        bytes: image.bytes,
-        height: image.height,
-        mimeType: image.mimeType,
-        sha256: image.sha256,
-        timestampMilliseconds: image.orderIndex,
-        width: image.width,
-      })
-    );
-    if (!validateVisualFrames(frames, frames.length)) {
-      return yield* Effect.fail(
-        pipelineFailure("carousel_evidence_invalid", "operator_reconcile")
-      );
-    }
-    const rawVisual = yield* input.visualExtractor
-      .extract({
-        dispatchId: `carousel-visual:${input.importId}:${parent.generation}`,
-        frames,
-        generation: parent.generation,
-        importId: input.importId,
-        sourceMediaSha256: fingerprint,
-      })
-      .pipe(
-        Effect.mapError(() =>
-          pipelineFailure("visual_extraction_failed", "operator_reconcile")
         )
-      );
-    const visualEvidence = yield* decodeVisualEvidence(rawVisual).pipe(
+    )
+  );
+  const validated = yield* validateCompleteAcquisition(
+    acquired,
+    descriptor
+  ).pipe(
+    Effect.catch((error) =>
+      input.carouselRepository
+        .fail({
+          code: error.code,
+          completedAt: now,
+          descriptorFingerprint: fingerprint,
+          generation: parent.generation,
+          importId: input.importId,
+          recovery: error.recovery,
+        })
+        .pipe(
+          Effect.andThen(
+            Effect.fail(pipelineFailure(error.code, error.recovery))
+          )
+        )
+    )
+  );
+  const frames: readonly VisualFrameArtifact[] = validated.images.map(
+    (image) => ({
+      bytes: image.bytes,
+      height: image.height,
+      mimeType: image.mimeType,
+      sha256: image.sha256,
+      timestampMilliseconds: image.orderIndex,
+      width: image.width,
+    })
+  );
+  if (!validateVisualFrames(frames, frames.length)) {
+    return yield* Effect.fail(
+      pipelineFailure("carousel_evidence_invalid", "operator_reconcile")
+    );
+  }
+  const rawVisual = yield* input.visualExtractor
+    .extract({
+      dispatchId: `carousel-visual:${input.importId}:${parent.generation}`,
+      frames,
+      generation: parent.generation,
+      importId: input.importId,
+      sourceMediaSha256: fingerprint,
+    })
+    .pipe(
       Effect.mapError(() =>
         pipelineFailure("visual_extraction_failed", "operator_reconcile")
       )
     );
-    if (
-      visualEvidence.usage.inputFrames !== frames.length ||
-      visualEvidence.usage.inputBytes !==
-        frames.reduce((total, frame) => total + frame.bytes.byteLength, 0) ||
-      visualEvidence.observations.some(
-        (observation) =>
-          frames[observation.frameIndex]?.timestampMilliseconds !==
-          observation.timestampMilliseconds
-      )
-    ) {
-      return yield* Effect.fail(
-        pipelineFailure("visual_extraction_failed", "operator_reconcile")
-      );
-    }
-    const deleteAt = deleteAtFor(now);
-    const images = validated.images.map(
-      (image): CarouselImageReference => ({
-        byteLength: image.bytes.byteLength,
-        deleteAt,
-        height: image.height,
-        key: carouselImageObjectKey(
-          input.importId,
-          parent.generation,
-          image.orderIndex
-        ),
-        mimeType: image.mimeType,
-        orderIndex: image.orderIndex,
-        sha256: image.sha256,
-        sourceAttribution: {
-          canonicalId: descriptor.canonicalId,
-          provenance: validated.source.provenance.canonicalUrl,
-        },
-        width: image.width,
-      })
+  const visualEvidence = yield* decodeVisualEvidence(rawVisual).pipe(
+    Effect.mapError(() =>
+      pipelineFailure("visual_extraction_failed", "operator_reconcile")
+    )
+  );
+  if (
+    visualEvidence.usage.inputFrames !== frames.length ||
+    visualEvidence.usage.inputBytes !==
+      frames.reduce((total, frame) => total + frame.bytes.byteLength, 0) ||
+    visualEvidence.observations.some(
+      (observation) =>
+        frames[observation.frameIndex]?.timestampMilliseconds !==
+        observation.timestampMilliseconds
+    )
+  ) {
+    return yield* Effect.fail(
+      pipelineFailure("visual_extraction_failed", "operator_reconcile")
     );
-    const [firstImage, ...remainingImages] = images;
-    if (firstImage === undefined) {
-      return yield* Effect.fail(
-        pipelineFailure("carousel_partial", "request_complete_carousel")
-      );
-    }
-    const document: CarouselEvidenceManifestDocument = {
-      acquisitionGeneration: parent.generation,
-      createdAt: now,
-      descriptorFingerprint: fingerprint,
-      dispatchId,
-      images: [firstImage, ...remainingImages],
-      importId: input.importId,
-      retention: {
-        configuredAgeSeconds: EvidenceRetentionSeconds,
-        policy: "r2_bucket_object_age",
-      },
-      schemaVersion: 1,
-      source: {
-        canonicalId: descriptor.canonicalId,
-        caption: validated.source.caption,
-        creator: validated.source.creator,
-        observedAt: validated.source.observedAt,
-        provenance: {
-          canonicalIdentity: validated.source.provenance.canonicalUrl,
-          caption: validated.source.provenance.caption,
-          creator: validated.source.provenance.creator,
-          publishedAt: validated.source.provenance.publishedAt,
-        },
-        publishedAt: validated.source.publishedAt,
-      },
-      transcript: {
-        reason: "source_type_carousel",
-        status: "not_applicable",
-      },
-      visualEvidence,
-    };
-    yield* Effect.forEach(
-      validated.images,
-      (image, orderIndex) => {
-        const reference = document.images[orderIndex];
-        return reference === undefined
-          ? Effect.fail(
-              pipelineFailure("carousel_evidence_invalid", "operator_reconcile")
-            )
-          : storeImage(input.bucket, document, reference, image.bytes);
-      },
-      { concurrency: 1, discard: true }
-    );
-    const storedManifest = yield* storeManifest(input.bucket, document);
-    const pendingEvidence = completedEvidence(
-      document,
-      storedManifest.key,
-      storedManifest.sha256
-    );
-    const verified = yield* readVerifiedManifest(
-      input.bucket,
-      pendingEvidence,
-      descriptor
-    );
-    const evidence = yield* input.carouselRepository.complete(pendingEvidence);
-    committed = {
-      document: verified.document,
-      evidence,
-      sha256: verified.sha256,
-      source: validated.source,
-    };
   }
+  const deleteAt = deleteAtFor(now);
+  const images = validated.images.map(
+    (image): CarouselImageReference => ({
+      byteLength: image.bytes.byteLength,
+      deleteAt,
+      height: image.height,
+      key: carouselImageObjectKey(
+        input.importId,
+        parent.generation,
+        image.orderIndex
+      ),
+      mimeType: image.mimeType,
+      orderIndex: image.orderIndex,
+      sha256: image.sha256,
+      sourceAttribution: {
+        canonicalId: descriptor.canonicalId,
+        provenance: validated.source.provenance.canonicalUrl,
+      },
+      width: image.width,
+    })
+  );
+  const [firstImage, ...remainingImages] = images;
+  if (firstImage === undefined) {
+    return yield* Effect.fail(
+      pipelineFailure("carousel_partial", "request_complete_carousel")
+    );
+  }
+  const document: CarouselEvidenceManifestDocument = {
+    acquisitionGeneration: parent.generation,
+    createdAt: now,
+    descriptorFingerprint: fingerprint,
+    dispatchId,
+    images: [firstImage, ...remainingImages],
+    importId: input.importId,
+    retention: {
+      configuredAgeSeconds: EvidenceRetentionSeconds,
+      policy: "r2_bucket_object_age",
+    },
+    schemaVersion: 1,
+    source: {
+      canonicalId: descriptor.canonicalId,
+      caption: validated.source.caption,
+      creator: validated.source.creator,
+      observedAt: validated.source.observedAt,
+      provenance: {
+        canonicalIdentity: validated.source.provenance.canonicalUrl,
+        caption: validated.source.provenance.caption,
+        creator: validated.source.provenance.creator,
+        publishedAt: validated.source.provenance.publishedAt,
+      },
+      publishedAt: validated.source.publishedAt,
+    },
+    transcript: {
+      reason: "source_type_carousel",
+      status: "not_applicable",
+    },
+    visualEvidence,
+  };
+  yield* Effect.forEach(
+    validated.images,
+    (image, orderIndex) => {
+      const reference = document.images[orderIndex];
+      return reference === undefined
+        ? Effect.fail(
+            pipelineFailure("carousel_evidence_invalid", "operator_reconcile")
+          )
+        : storeImage(input.bucket, document, reference, image.bytes);
+    },
+    { concurrency: 1, discard: true }
+  );
+  const storedManifest = yield* storeManifest(input.bucket, document);
+  const pendingEvidence = completedEvidence(
+    document,
+    storedManifest.key,
+    storedManifest.sha256
+  );
+  yield* readVerifiedManifest(input.bucket, pendingEvidence, descriptor);
+  return yield* input.carouselRepository.complete(pendingEvidence);
+});
 
+export const produceTikTokCarouselRecipeDraft = Effect.fn(
+  "Imports.produceTikTokCarouselRecipeDraft"
+)(function* produceCarouselRecipe(input: {
+  readonly bucket: AcquisitionBucketLike;
+  readonly descriptor: TikTokCarouselDescriptor;
+  readonly evidence: CompletedCarouselEvidence;
+  readonly extractor: RecipeExtractorShape;
+  readonly importId: ImportId;
+  readonly now: () => ImportTimestamp;
+  readonly recipeRepository: RecipeDraftRepositoryShape;
+}) {
+  const committed = yield* readVerifiedManifest(
+    input.bucket,
+    input.evidence,
+    input.descriptor
+  );
+  const source: VerifiedSourceMetadata = {
+    canonicalUrl: input.descriptor.sourceUrl,
+    caption: committed.document.source.caption,
+    creator: committed.document.source.creator,
+    observedAt: committed.document.source.observedAt,
+    provenance: {
+      canonicalUrl: committed.document.source.provenance.canonicalIdentity,
+      caption: committed.document.source.provenance.caption,
+      creator: committed.document.source.provenance.creator,
+      publishedAt: committed.document.source.provenance.publishedAt,
+    },
+    publishedAt: committed.document.source.publishedAt,
+  };
   const assembly = yield* assembleRecipeEvidence(
     committed.document,
     committed.sha256,
-    committed.source
+    source
   );
+  const now = input.now();
   const draft = yield* produceRecipeDraftFromEvidence({
     assembly,
     claim: ({
@@ -848,7 +838,7 @@ export const importTikTokCarouselToRecipeDraft = Effect.fn(
     extractor: input.extractor,
     now,
     recipeRepository: input.recipeRepository,
-    source: committed.source,
+    source,
     transcript: {
       reason: "source_type_carousel",
       route: "carousel_v2",
@@ -860,9 +850,35 @@ export const importTikTokCarouselToRecipeDraft = Effect.fn(
     draft,
     evidence: {
       imageCount: committed.document.images.length,
-      manifestKey: committed.evidence.manifestKey,
+      manifestKey: input.evidence.manifestKey,
       transcript: committed.document.transcript,
     },
     status: { kind: "needs_review" as const },
   };
+});
+
+/** Deterministic composition retained for local tests and synthetic harnesses. */
+export const importTikTokCarouselToRecipeDraft = Effect.fn(
+  "Imports.importTikTokCarouselToRecipeDraft"
+)(function* importCarousel(input: {
+  readonly adapter: TikTokCarouselAdapterShape;
+  readonly bucket: AcquisitionBucketLike;
+  readonly carouselRepository: CarouselEvidenceRepositoryShape;
+  readonly descriptor: TikTokCarouselDescriptor;
+  readonly extractor: RecipeExtractorShape;
+  readonly importId: ImportId;
+  readonly now: () => ImportTimestamp;
+  readonly recipeRepository: RecipeDraftRepositoryShape;
+  readonly visualExtractor: VisualEvidenceExtractorShape;
+}) {
+  const evidence = yield* prepareTikTokCarouselEvidence(input);
+  return yield* produceTikTokCarouselRecipeDraft({
+    bucket: input.bucket,
+    descriptor: input.descriptor,
+    evidence,
+    extractor: input.extractor,
+    importId: input.importId,
+    now: input.now,
+    recipeRepository: input.recipeRepository,
+  });
 });

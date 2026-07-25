@@ -10,24 +10,51 @@ import {
 } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
+import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
 import {
+  PilotBudgetRunId,
+  PilotBudgetTimestamp,
   PilotProviderBudgetRuntime,
   makePilotProviderBudgetRuntime,
 } from "../pilots/pilot-provider-budget.js";
+import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+import { loadStagedOperatorCarousel } from "./import-carousel-staging.js";
+import {
+  prepareTikTokCarouselEvidence,
+  produceTikTokCarouselRecipeDraft,
+} from "./import-carousel.js";
+import { makeD1CarouselEvidenceRepository } from "./import-carousel.repository.d1.js";
+import {
+  makeR2SpeechAudioExtractor,
+  makeR2VisualFrameSampler,
+  persistDerivedProviderEvidence,
+} from "./import-derived-media.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { ImportMediaAcquisitionObject } from "./import-media-acquisition-object.js";
-import type {
-  AcquisitionGeneration,
-  AcquisitionStage,
-  RetryableAcquisitionFailure,
-} from "./import-media.model.js";
 import {
+  AcquisitionGeneration,
   AcquisitionTaskOutcome,
   MaximumAcquisitionAttemptSeconds,
   MaximumLocalCleanupMilliseconds,
 } from "./import-media.model.js";
+import type {
+  AcquisitionStage,
+  RetryableAcquisitionFailure,
+} from "./import-media.model.js";
+import {
+  makeInstalledRecipeExtractor,
+  makeInstalledSpeechTranscriber,
+  makeInstalledVisualEvidenceExtractor,
+  makePilotProviderDispatchGate,
+} from "./import-provider-adapters.js";
+import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
+import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import { transcribeAcquiredImport } from "./import-speech-transcription.js";
+import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
+import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
+import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -152,6 +179,46 @@ const AcquisitionClaimCheckpoint = Schema.Union([
     canonicalId: SourceCanonicalId,
   }),
 ]);
+const ProviderTaskCheckpoint = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("Failed"),
+    code: Schema.String,
+    stage: Schema.Literals(["recipe", "speech", "visual"]),
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Succeeded"),
+    stage: Schema.Literals(["recipe", "speech", "visual"]),
+  }),
+]);
+const CarouselEvidenceTaskCheckpoint = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("Failed"),
+    code: Schema.String,
+    stage: Schema.Literal("visual"),
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Succeeded"),
+    evidence: Schema.Struct({
+      completedAt: ImportTimestamp,
+      descriptorFingerprint: Schema.String,
+      dispatchId: Schema.String,
+      generation: AcquisitionGeneration,
+      imageCount: Schema.Number,
+      importId: ImportId,
+      manifestKey: Schema.String,
+      manifestSha256: Schema.String,
+    }),
+    stage: Schema.Literal("visual"),
+  }),
+]);
+
+export const ProviderTaskStepConfig = {
+  retries: { backoff: "exponential", delay: "2 seconds", limit: 2 },
+  timeout: "2 minutes",
+} as const;
+
+const currentPilotBudgetTimestamp = () =>
+  Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
 
 export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<ImportAcquisitionWorkflow>()(
   "ImportAcquisitionWorkflow",
@@ -160,6 +227,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
     const pilotProviderBudgetRuntime = makePilotProviderBudgetRuntime(
       yield* Config.string("ALCHEMY_STAGE")
+    );
+    const providerGateway = yield* Cloudflare.AI.QueryGateway(
+      ImportProviderGateway
     );
     const evidenceBucket =
       yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
@@ -173,6 +243,121 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
         const database = yield* queryDatabase.raw;
         const rawBucket = yield* evidenceBucket.raw;
         const repository = makeD1ImportRepository(database);
+        const now = currentPilotBudgetTimestamp;
+        const dispatch = makePilotProviderDispatchGate({
+          now,
+          repository: makeD1PilotProviderBudgetRepository(
+            database,
+            pilotProviderBudgetRuntime.runtimeStage
+          ),
+          runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
+            `gaia-118:${importId}`
+          ),
+          runtime: pilotProviderBudgetRuntime,
+        });
+        const speechTranscriber = yield* makeInstalledSpeechTranscriber({
+          client: providerGateway,
+          dispatch,
+        });
+        const visualExtractor = yield* makeInstalledVisualEvidenceExtractor({
+          client: providerGateway,
+          dispatch,
+        });
+        const recipeExtractor = yield* makeInstalledRecipeExtractor({
+          client: providerGateway,
+          dispatch,
+        });
+        const task = <A, E>(
+          name: string,
+          stage: "recipe" | "speech" | "visual",
+          effect: Effect.Effect<A, E>
+        ) =>
+          Cloudflare.Workflows.task(
+            name,
+            effect.pipe(
+              Effect.match({
+                onFailure: (error) => ({
+                  _tag: "Failed" as const,
+                  code:
+                    typeof error === "object" &&
+                    error !== null &&
+                    "code" in error &&
+                    typeof error.code === "string"
+                      ? error.code
+                      : "stage_failed",
+                  stage,
+                }),
+                onSuccess: () => ({
+                  _tag: "Succeeded" as const,
+                  stage,
+                }),
+              })
+            ),
+            ProviderTaskStepConfig
+          ).pipe(
+            Effect.flatMap((value) =>
+              Schema.decodeUnknownEffect(ProviderTaskCheckpoint)(value)
+            ),
+            Effect.orDie
+          );
+        const stagedCarousel = yield* loadStagedOperatorCarousel({
+          bucket: rawBucket as unknown as AcquisitionBucketLike,
+          importId,
+        }).pipe(Effect.orDie);
+        if (stagedCarousel !== null) {
+          const encodedCarouselEvidence = yield* Cloudflare.Workflows.task(
+            "extract-carousel-visual-evidence-v1",
+            prepareTikTokCarouselEvidence({
+              adapter: stagedCarousel.adapter,
+              bucket: rawBucket as unknown as AcquisitionBucketLike,
+              carouselRepository: makeD1CarouselEvidenceRepository(database),
+              descriptor: stagedCarousel.descriptor,
+              importId,
+              now,
+              visualExtractor,
+            }).pipe(
+              Effect.match({
+                onFailure: (error) => ({
+                  _tag: "Failed" as const,
+                  code:
+                    typeof error === "object" &&
+                    error !== null &&
+                    "code" in error &&
+                    typeof error.code === "string"
+                      ? error.code
+                      : "stage_failed",
+                  stage: "visual" as const,
+                }),
+                onSuccess: (evidence) => ({
+                  _tag: "Succeeded" as const,
+                  evidence,
+                  stage: "visual" as const,
+                }),
+              })
+            ),
+            ProviderTaskStepConfig
+          );
+          const carouselEvidence = yield* Schema.decodeUnknownEffect(
+            CarouselEvidenceTaskCheckpoint
+          )(encodedCarouselEvidence).pipe(Effect.orDie);
+          if (carouselEvidence._tag === "Failed") {
+            return carouselEvidence;
+          }
+          const recipe = yield* task(
+            "extract-carousel-recipe-v1",
+            "recipe",
+            produceTikTokCarouselRecipeDraft({
+              bucket: rawBucket as unknown as AcquisitionBucketLike,
+              descriptor: stagedCarousel.descriptor,
+              evidence: carouselEvidence.evidence,
+              extractor: recipeExtractor,
+              importId,
+              now,
+              recipeRepository: makeD1RecipeDraftRepository(database),
+            })
+          );
+          return recipe;
+        }
         const rawClaim = yield* Cloudflare.Workflows.task(
           "claim-acquisition-v1",
           repository.claimAcquisition(importId).pipe(
@@ -205,9 +390,24 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     {
                       cleanup: (artifactId) => stub.cleanup(artifactId),
                       prepare: (input) => stub.prepare(input),
+                      prepareProviderEvidence: (artifactId, durationSeconds) =>
+                        stub.prepareProviderEvidence(
+                          artifactId,
+                          durationSeconds
+                        ),
                       stream: (artifactId) => stub.stream(artifactId),
                     },
                     {
+                      beforeCleanup: (prepared, mediaObject) =>
+                        persistDerivedProviderEvidence(
+                          rawBucket as unknown as AcquisitionBucketLike,
+                          mediaObject,
+                          prepared,
+                          {
+                            generation: allocation.generation,
+                            importId,
+                          }
+                        ),
                       canonicalId: allocation.canonicalSourceId,
                       generation: allocation.generation,
                       importId,
@@ -249,6 +449,61 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
         yield* Schema.decodeUnknownEffect(AcquisitionFinalizationResult)(
           encodedFinalization
         ).pipe(Effect.orDie);
+        if (outcome._tag !== "VerifiedAcquisition") {
+          return encodedOutcome;
+        }
+        const speech = yield* task(
+          "transcribe-video-v1",
+          "speech",
+          transcribeAcquiredImport({
+            acquisitionRepository: repository,
+            audioExtractor: makeR2SpeechAudioExtractor(
+              rawBucket as unknown as AcquisitionBucketLike
+            ),
+            bucket: rawBucket as unknown as AcquisitionBucketLike,
+            importId,
+            now,
+            speechTranscriber,
+            transcriptionRepository:
+              makeD1SpeechTranscriptionRepository(database),
+          })
+        );
+        if (speech._tag === "Failed") {
+          return speech;
+        }
+        const visual = yield* task(
+          "extract-visual-evidence-v1",
+          "visual",
+          extractVisualEvidenceForTranscribedImport({
+            bucket: rawBucket as unknown as AcquisitionBucketLike,
+            extractor: visualExtractor,
+            frameSampler: makeR2VisualFrameSampler(
+              rawBucket as unknown as AcquisitionBucketLike
+            ),
+            importId,
+            importRepository: repository,
+            now,
+            visualRepository: makeD1VisualEvidenceRepository(database),
+          })
+        );
+        if (visual._tag === "Failed") {
+          return visual;
+        }
+        const recipe = yield* task(
+          "extract-recipe-v1",
+          "recipe",
+          produceRecipeDraftForImport({
+            bucket: rawBucket as unknown as AcquisitionBucketLike,
+            extractor: recipeExtractor,
+            importId,
+            importRepository: repository,
+            now,
+            recipeRepository: makeD1RecipeDraftRepository(database),
+          })
+        );
+        if (recipe._tag === "Failed") {
+          return recipe;
+        }
         return encodedOutcome;
       }).pipe(
         Effect.provideService(
@@ -260,6 +515,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
     Effect.provide(
       Layer.mergeAll(
         Cloudflare.D1.QueryDatabaseBinding,
+        Cloudflare.AI.QueryGatewayBinding,
         Cloudflare.R2.ReadWriteBucketBinding
       )
     )

@@ -1,0 +1,499 @@
+import { RuntimeContext } from "alchemy";
+import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
+import { Effect, Schema } from "effect";
+import { Tool } from "effect/unstable/ai";
+import { describe, expect, it } from "vitest";
+
+import {
+  makeInstalledRecipeExtractor,
+  makeInstalledSpeechTranscriber,
+  makeInstalledVisualEvidenceExtractor,
+} from "./import-provider-adapters.js";
+import type { ProviderDispatchGate } from "./import-provider-adapters.js";
+import { hasMinimumRecipeEvidence } from "./import-recipe-draft.js";
+import { RecipeExtraction } from "./import-recipe-extractor.js";
+import { VisualEvidence } from "./import-visual-evidence-extractor.js";
+
+const makeGateway = (response: unknown) => {
+  const requests: unknown[] = [];
+  const raw = {
+    run: (_model: string, body: unknown) => {
+      requests.push(body);
+      return Promise.resolve(Response.json(response));
+    },
+  };
+  return {
+    client: {
+      id: Effect.succeed("meal-planner-pilot-gaia-118"),
+      raw: Effect.succeed(raw),
+    } as unknown as QueryGatewayClient,
+    requests,
+  };
+};
+
+const localDispatchGate: ProviderDispatchGate = {
+  run: <A, E>(input: {
+    readonly invoke: Effect.Effect<
+      {
+        readonly cost:
+          | {
+              readonly _tag: "Known";
+              readonly actualCostMicroUsd: number;
+            }
+          | { readonly _tag: "Unknown" };
+        readonly value: A;
+      },
+      E
+    >;
+  }) => input.invoke.pipe(Effect.map(({ value }) => value)),
+};
+
+const testRuntimeContext = RuntimeContext.of({
+  Type: "TestRuntimeContext",
+  env: {},
+  get: <T>() =>
+    // eslint-disable-next-line unicorn/no-useless-undefined -- The Alchemy runtime contract explicitly represents a missing binding with undefined.
+    Effect.succeed<T | undefined>(undefined),
+  id: "installed-provider-test",
+  set: (id) => Effect.succeed(id),
+});
+
+const runFactory = <A>(
+  effect: Effect.Effect<A, never, RuntimeContext>
+): Promise<A> =>
+  Effect.runPromise(
+    effect.pipe(Effect.provideService(RuntimeContext, testRuntimeContext))
+  );
+
+const unresolvedString = {
+  citations: [],
+  origin: "unresolved",
+  reason: "not present in evidence",
+  state: "unresolved",
+} as const;
+const unresolvedNumber = unresolvedString;
+const unresolvedList = {
+  items: [],
+  reason: "not present in evidence",
+  state: "unresolved",
+} as const;
+
+const validRecipe = {
+  author: unresolvedString,
+  category: unresolvedString,
+  cookTimeMinutes: unresolvedNumber,
+  cost: {
+    certainty: "estimated",
+    currency: "USD",
+    estimatedMicroUsd: 50,
+  },
+  cuisine: unresolvedString,
+  description: unresolvedString,
+  ingredientLines: unresolvedList,
+  instructions: unresolvedList,
+  name: unresolvedString,
+  nutrition: unresolvedString,
+  prepTimeMinutes: unresolvedNumber,
+  sourceUrl: unresolvedString,
+  supportedClaims: unresolvedList,
+  temperatureCelsius: unresolvedNumber,
+  tools: unresolvedList,
+  totalTimeMinutes: unresolvedNumber,
+  unresolvedFields: ["name", "description", "ingredient_lines", "instructions"],
+  usage: {
+    inputEvidenceItems: 1,
+    inputTokens: 20,
+    latencyMilliseconds: 10,
+    modelCalls: 1,
+    outputTokens: 10,
+  },
+  yield: unresolvedString,
+};
+
+const validVisual = {
+  cost: {
+    certainty: "estimated",
+    currency: "USD",
+    estimatedMicroUsd: 20,
+  },
+  model: "@cf/meta/llama-3.2-11b-vision-instruct",
+  observations: [],
+  outcome: "empty",
+  provider: "cloudflare-workers-ai",
+  usage: { inputBytes: 3, inputFrames: 1, modelCalls: 1 },
+};
+
+const toolResponse = (name: string, value: unknown) => ({
+  choices: [
+    {
+      finish_reason: "tool_calls",
+      message: {
+        content: null,
+        tool_calls: [
+          {
+            function: { arguments: JSON.stringify(value), name },
+            id: "call-1",
+            type: "function",
+          },
+        ],
+      },
+    },
+  ],
+  usage: { completion_tokens: 10, prompt_tokens: 20 },
+});
+
+describe("installed import provider adapters", () => {
+  it("classifies accessible non-food evidence semantically without a draft shape", () => {
+    expect(
+      hasMinimumRecipeEvidence(
+        Schema.decodeUnknownSync(RecipeExtraction)(validRecipe)
+      )
+    ).toBe(false);
+    expect(JSON.stringify(validRecipe.ingredientLines.items)).not.toContain(
+      "invented"
+    );
+  });
+
+  it("uses the installed speech binding and duration-priced budget settlement", async () => {
+    const gateway = makeGateway({
+      segments: [],
+      text: "Chop the onion.",
+      transcription_info: {
+        text: "Chop the onion.",
+        word_count: 3,
+      },
+      vtt: "WEBVTT",
+    });
+    const dispatches: {
+      readonly actualCostMicroUsd: number;
+      readonly maximumCostMicroUsd: number;
+      readonly providerStageId: string;
+    }[] = [];
+    const dispatch: ProviderDispatchGate = {
+      run: (input) =>
+        input.invoke.pipe(
+          Effect.tap(({ cost }) =>
+            Effect.sync(() => {
+              dispatches.push({
+                actualCostMicroUsd:
+                  cost._tag === "Known" ? cost.actualCostMicroUsd : -1,
+                maximumCostMicroUsd: input.maximumCostMicroUsd,
+                providerStageId: input.providerStageId,
+              });
+            })
+          ),
+          Effect.map(({ value }) => value)
+        ),
+    };
+    const adapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: gateway.client,
+        dispatch,
+      })
+    );
+    const transcript = await Effect.runPromise(
+      adapter.transcribe({
+        audio: {
+          bytes: new Uint8Array([1, 2, 3]),
+          durationMilliseconds: 60_000,
+          mimeType: "audio/wav",
+          sha256: "a".repeat(64),
+        },
+        dispatchId: "speech:import-1:1",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(transcript.text).toBe("Chop the onion.");
+    expect(transcript.cost).toEqual({
+      certainty: "estimated",
+      currency: "USD",
+      estimatedMicroUsd: 510,
+    });
+    expect(dispatches).toEqual([
+      {
+        actualCostMicroUsd: 510,
+        maximumCostMicroUsd: 50_000,
+        providerStageId: "speech-transcription",
+      },
+    ]);
+    expect(gateway.requests[0]).toMatchObject({
+      condition_on_previous_text: false,
+      language: "en",
+      task: "transcribe",
+      vad_filter: true,
+    });
+  });
+
+  it("fails closed when the installed speech response is malformed", async () => {
+    const gateway = makeGateway({
+      providerSecret: "must-not-escape",
+      text: "text without transcription info",
+    });
+    const adapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: gateway.client,
+        dispatch: localDispatchGate,
+      })
+    );
+    const exit = await Effect.runPromiseExit(
+      adapter.transcribe({
+        audio: {
+          bytes: new Uint8Array([1]),
+          durationMilliseconds: 1000,
+          mimeType: "audio/wav",
+          sha256: "a".repeat(64),
+        },
+        dispatchId: "speech:import-1:1",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).not.toContain("must-not-escape");
+  });
+
+  it("uses the installed forced single-tool JSON Schema path for visual evidence", async () => {
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", validVisual)
+    );
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        dispatch: localDispatchGate,
+        model: "@cf/meta/llama-3.2-11b-vision-instruct",
+      })
+    );
+    const output = await Effect.runPromise(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 0,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(output).toEqual({
+      ...validVisual,
+      cost: {
+        certainty: "estimated",
+        currency: "USD",
+        estimatedMicroUsd: 8,
+      },
+    });
+    expect(gateway.requests).toHaveLength(1);
+    const request = gateway.requests[0] as {
+      tool_choice: unknown;
+      tools: readonly {
+        function: { name: string; parameters: unknown };
+      }[];
+    };
+    expect(request.tool_choice).toBe("required");
+    expect(request.tools).toHaveLength(1);
+    expect(request.tools[0]?.function.name).toBe("record_visual_evidence");
+    expect(request.tools[0]?.function.parameters).toEqual(
+      Tool.getJsonSchema(
+        Tool.make("record_visual_evidence", { parameters: VisualEvidence })
+      )
+    );
+  });
+
+  it.each([
+    ["prose", { choices: [{ message: { content: "{}" } }] }],
+    ["wrong tool", toolResponse("wrong_tool", validRecipe)],
+    [
+      "multiple tools",
+      {
+        choices: [
+          {
+            message: {
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validRecipe),
+                    name: "record_recipe",
+                  },
+                },
+                {
+                  function: {
+                    arguments: JSON.stringify(validRecipe),
+                    name: "record_recipe",
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+    [
+      "an extra tool before the forced tool",
+      {
+        choices: [
+          {
+            message: {
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validRecipe),
+                    name: "wrong_tool",
+                  },
+                },
+                {
+                  function: {
+                    arguments: JSON.stringify(validRecipe),
+                    name: "record_recipe",
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+    [
+      "malformed JSON",
+      {
+        choices: [
+          {
+            message: {
+              tool_calls: [
+                {
+                  function: {
+                    arguments: "{",
+                    name: "record_recipe",
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+    [
+      "schema-invalid arguments",
+      toolResponse("record_recipe", {
+        ...validRecipe,
+        cost: { ...validRecipe.cost, estimatedMicroUsd: "not-a-number" },
+      }),
+    ],
+  ])("fails closed for %s", async (_label, response) => {
+    const gateway = makeGateway(response);
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        dispatch: localDispatchGate,
+        model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      })
+    );
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "an accessible non-food travel video",
+          },
+        ],
+      })
+    );
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).not.toContain(
+      "an accessible non-food travel video"
+    );
+  });
+
+  it("exposes the exact recipe schema to the installed transport", async () => {
+    const gateway = makeGateway(toolResponse("record_recipe", validRecipe));
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        dispatch: localDispatchGate,
+        model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      })
+    );
+    const output = await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "visible evidence",
+          },
+        ],
+      })
+    );
+    expect(Schema.is(RecipeExtraction)(output)).toBe(true);
+    const request = gateway.requests[0] as {
+      tools: readonly { function: { parameters: unknown } }[];
+    };
+    expect(request.tools[0]?.function.parameters).toEqual(
+      Tool.getJsonSchema(
+        Tool.make("record_recipe", { parameters: RecipeExtraction })
+      )
+    );
+  });
+
+  it("preserves absent installed usage as unknown for the atomic ledger", async () => {
+    const response = toolResponse("record_recipe", validRecipe);
+    delete (response as { usage?: unknown }).usage;
+    const gateway = makeGateway(response);
+    const costs: string[] = [];
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        dispatch: {
+          run: (input) =>
+            input.invoke.pipe(
+              Effect.tap(({ cost }) =>
+                Effect.sync(() => {
+                  costs.push(cost._tag);
+                })
+              ),
+              Effect.map(({ value }) => value)
+            ),
+        },
+      })
+    );
+    await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "visible evidence",
+          },
+        ],
+      })
+    );
+    expect(costs).toEqual(["Unknown"]);
+  });
+});

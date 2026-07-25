@@ -10,6 +10,8 @@ import {
   OperatorCarouselImportService,
   makeOperatorCarouselImportService,
 } from "./features/imports/import-carousel-operator.service.js";
+import { stageOperatorCarouselForWorkflow } from "./features/imports/import-carousel-staging.js";
+import type { AcquisitionBucketLike } from "./features/imports/import-media-acquirer.js";
 import { DeadLetterReplayClaimId } from "./features/imports/import-operations.js";
 import { makeD1ImportQueueAcceptance } from "./features/imports/import-queue-acceptance.d1.js";
 import {
@@ -23,10 +25,10 @@ import {
   makeImportAuthorizer,
 } from "./features/imports/import.auth.js";
 import {
+  CreateImportRequest,
   ImportId,
   ImportTimestamp,
 } from "./features/imports/import.contracts.js";
-import { carouselProcessingUnavailable } from "./features/imports/import.errors.js";
 import { makeD1ImportRepository } from "./features/imports/import.repository.d1.js";
 import { ImportRepository } from "./features/imports/import.repository.js";
 import { ImportRouteDefinitions } from "./features/imports/import.routes.js";
@@ -34,7 +36,6 @@ import {
   ImportService,
   makeImportService,
 } from "./features/imports/import.service.js";
-import { makeProviderFreeSyntheticImportService } from "./features/imports/import.synthetic.js";
 import ImportAcquisitionWorkflow, {
   ImportWorkflowStarter,
   makeImportWorkflowStarter,
@@ -51,6 +52,7 @@ import {
   ImportBatchDeadLetterQueue,
   ImportBatchQueue,
 } from "./infrastructure/import-batch-queue.js";
+import { ImportEvidenceBucket } from "./infrastructure/import-evidence-bucket.js";
 import { MealPlannerDatabase } from "./infrastructure/meal-planner-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
 
@@ -75,9 +77,12 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   Effect.gen(function* MealPlannerApiWorker() {
     const queryDatabase =
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
+    const evidenceBucket =
+      yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
     const pilotProviderBudgetRuntime = makePilotProviderBudgetRuntime(
       yield* Config.string("ALCHEMY_STAGE")
     );
+    const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
     const importBatchQueue = yield* ImportBatchQueue;
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
     yield* Cloudflare.Queues.consumeQueueMessages(
@@ -102,9 +107,23 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                 })
               )
             );
-            const imports = makeProviderFreeSyntheticImportService({
-              database,
-              now: currentIsoTimestamp,
+            const imports = makeImportService({
+              availabilityValidator: makeTikTokSourceAvailabilityValidator(
+                globalThis.fetch
+              ),
+              identityResolver: makeTikTokCanonicalSourceIdentityResolver(
+                globalThis.fetch
+              ),
+              newId: () =>
+                Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
+              now: () =>
+                Schema.decodeUnknownSync(ImportTimestamp)(
+                  currentIsoTimestamp()
+                ),
+              repository: makeD1ImportRepository(database),
+              workflowStarter: makeImportWorkflowStarter(
+                importAcquisitionWorkflow
+              ),
             });
             yield* makeD1ImportQueueAcceptance({
               database,
@@ -116,6 +135,13 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                 ),
               now: currentIsoTimestamp,
               replayClaimLeaseMilliseconds: 60_000,
+              sourceRequestForCanonicalId: (canonicalId) =>
+                Schema.decodeUnknownSync(CreateImportRequest)({
+                  source: {
+                    kind: "tiktok",
+                    url: `https://www.tiktok.com/@source/video/${canonicalId}`,
+                  },
+                }),
             }).consume(message);
           }).pipe(
             Effect.provideService(
@@ -125,7 +151,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           )
         )
     );
-    const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
     const importApiToken = yield* Config.redacted(
       "MEAL_PLANNER_IMPORT_API_TOKEN"
     );
@@ -156,6 +181,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           (routeHandler) =>
             Effect.gen(function* handleMealPlannerRequest() {
               const database = yield* queryDatabase.raw;
+              const rawBucket = yield* evidenceBucket.raw;
               const repositoryLive = Layer.succeed(
                 ImportRepository,
                 ImportRepository.of(makeD1ImportRepository(database))
@@ -174,10 +200,25 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                         new Date().toISOString()
                       ),
                     pipeline: {
-                      preflight: () =>
-                        Effect.fail(carouselProcessingUnavailable()),
-                      process: () =>
-                        Effect.fail(carouselProcessingUnavailable()),
+                      preflight: () => Effect.void,
+                      process: (pipelineInput) =>
+                        stageOperatorCarouselForWorkflow({
+                          adapter: pipelineInput.adapter,
+                          bucket: rawBucket as unknown as AcquisitionBucketLike,
+                          descriptor: {
+                            canonicalId: pipelineInput.canonicalId,
+                            declaredPageCount: pipelineInput.declaredPageCount,
+                            kind: "tiktok_carousel",
+                            sourceUrl: pipelineInput.sourceUrl,
+                          },
+                          importId: pipelineInput.importId,
+                        }).pipe(
+                          Effect.andThen(
+                            makeImportWorkflowStarter(
+                              importAcquisitionWorkflow
+                            ).ensureStarted(pipelineInput.importId)
+                          )
+                        ),
                     },
                     repository: makeD1ImportRepository(database),
                   })
@@ -255,6 +296,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     Effect.provide(
       Layer.mergeAll(
         Cloudflare.D1.QueryDatabaseBinding,
+        Cloudflare.R2.ReadWriteBucketBinding,
         Cloudflare.Queues.EventSourceLive
       )
     )

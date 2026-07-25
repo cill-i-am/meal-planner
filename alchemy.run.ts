@@ -9,6 +9,7 @@ import {
   ImportBatchQueue,
 } from "./apps/api/src/infrastructure/import-batch-queue.js";
 import { ImportEvidenceBucket } from "./apps/api/src/infrastructure/import-evidence-bucket.js";
+import { ImportProviderGateway } from "./apps/api/src/infrastructure/import-provider-gateway.js";
 import { MealPlannerDatabase } from "./apps/api/src/infrastructure/meal-planner-database.js";
 import MealPlannerApi from "./apps/api/src/worker.js";
 
@@ -23,6 +24,7 @@ export default Alchemy.Stack(
     const evidenceBucket = yield* ImportEvidenceBucket;
     const importBatchQueue = yield* ImportBatchQueue;
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
+    const importProviderGateway = yield* ImportProviderGateway;
     const api = yield* MealPlannerApi;
 
     return {
@@ -33,6 +35,7 @@ export default Alchemy.Stack(
       evidenceRetentionSeconds: EvidenceRetentionSeconds,
       importBatchDeadLetterQueueName: importBatchDeadLetterQueue.queueName,
       importBatchQueueName: importBatchQueue.queueName,
+      importProviderGatewayId: importProviderGateway.gatewayId,
     };
   }).pipe(Effect.provide(TikTokMediaContainerLive))
 );

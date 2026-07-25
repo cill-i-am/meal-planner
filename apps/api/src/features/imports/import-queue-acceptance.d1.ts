@@ -531,6 +531,9 @@ export const makeD1ImportQueueAcceptance = (input: {
   readonly newReplayClaimId: () => DeadLetterReplayClaimId;
   readonly now: () => string;
   readonly replayClaimLeaseMilliseconds: number;
+  readonly sourceRequestForCanonicalId?: (
+    canonicalId: string
+  ) => typeof CreateImportRequestSchema.Type;
 }) => {
   if (
     !Number.isInteger(input.maximumDeliveryAttempts) ||
@@ -640,7 +643,8 @@ export const makeD1ImportQueueAcceptance = (input: {
       }
       const result = yield* input.imports
         .create(
-          sourceRequest(item.sourceCanonicalId),
+          input.sourceRequestForCanonicalId?.(item.sourceCanonicalId) ??
+            sourceRequest(item.sourceCanonicalId),
           Schema.decodeUnknownSync(IdempotencyKeySchema)(item.idempotencyKey)
         )
         .pipe(Effect.mapError(() => poisonFailure(message.itemId)));
