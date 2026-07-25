@@ -114,6 +114,7 @@ const accountId = "local-account";
 const consumerId = "a8967cf391c84eca9456b9e494d1f74a";
 const deadLetterQueue = "meal-planner-pilot-gaia-117-import-batch-dlq";
 const deadLetterQueueId = "1c81214aa857418ab4d3c0cb67f456de";
+const requestedDeadLetterQueueId = "e8188783234440b2987da68b4c267092";
 const queueId = "680ad90563bd4be3a8c0ca04862b97fd";
 const replacementConsumerId = "29ef6202fbd84bc5a3f03b121ba44e61";
 const scriptName = "meal-planner-pilot-gaia-117-api";
@@ -404,6 +405,7 @@ interface ReplacementScenario {
     typeof physicalConsumer
   >[];
   readonly deadLetterQueuePhysicalId?: string;
+  readonly deadLetterQueueSafetyId?: string;
   readonly deadLetterQueueProducers?: readonly Record<string, unknown>[];
   readonly deadLetterQueueProducersTotalCount?: number;
   readonly failure?: ReplacementFailure;
@@ -436,6 +438,8 @@ const makeReplacementClient = (
   let deleted = false;
   const operations: string[] = [];
   const replacementId = options.replacementId ?? replacementConsumerId;
+  const safetyDeadLetterQueueId =
+    options.deadLetterQueueSafetyId ?? deadLetterQueueId;
   const consumerPath = `/queues/${queueId}/consumers/${consumerId}`;
   const replacementPath = `/queues/${queueId}/consumers/${replacementId}`;
 
@@ -508,14 +512,14 @@ const makeReplacementClient = (
         })
       );
     }
-    if (path.endsWith(`/queues/${deadLetterQueueId}`)) {
+    if (path.endsWith(`/queues/${safetyDeadLetterQueueId}`)) {
       return Effect.succeed(
         cloudflareResponse(
           request,
           physicalQueue({
             consumers: options.deadLetterQueueConsumers ?? [],
             physicalQueueId:
-              options.deadLetterQueuePhysicalId ?? deadLetterQueueId,
+              options.deadLetterQueuePhysicalId ?? safetyDeadLetterQueueId,
             producers: options.deadLetterQueueProducers,
             producersTotalCount: options.deadLetterQueueProducersTotalCount,
             queueName: deadLetterQueue,
@@ -523,7 +527,7 @@ const makeReplacementClient = (
         )
       );
     }
-    if (path.endsWith(`/queues/${deadLetterQueueId}/metrics`)) {
+    if (path.endsWith(`/queues/${safetyDeadLetterQueueId}/metrics`)) {
       return Effect.succeed(
         cloudflareResponse(request, {
           backlog_bytes:
@@ -957,6 +961,32 @@ describe("Alchemy queue consumer reconciliation", () => {
       },
       status: "updated",
     });
+  });
+
+  it("fails closed before replacement when the retained and requested DLQ identities differ", async () => {
+    const { client, operations } = makeReplacementClient({
+      deadLetterQueueSafetyId: requestedDeadLetterQueueId,
+    });
+    const persisted = makePersistedConsumer({
+      accountId,
+      consumerId,
+      deadLetterQueue,
+      queueId,
+      scriptName,
+      settings: desiredSettings,
+    });
+    const result = await runStableDeploy(client, persisted, {
+      deadLetterQueueId: requestedDeadLetterQueueId,
+    });
+
+    expect(result.exit._tag).toBe("Failure");
+    expect(
+      operations.some((operation) => operation.startsWith("DELETE "))
+    ).toBe(false);
+    expect(operations.some((operation) => operation.startsWith("POST "))).toBe(
+      false
+    );
+    expectPersistedUpdatingState(result.persistedAfter, persisted);
   });
 
   it.each([

@@ -40,7 +40,7 @@ index ba1c3be608856556930a5895497c1071cec015c1..f2ccfa888c1a6ca6d532fd3a042d355e
      const result = yield* executeSQL(accountId, databaseId, `PRAGMA table_info(${migrationsTable});`).pipe(Effect.option);
      const columns = [];
 diff --git a/lib/Cloudflare/Queues/Consumer.d.ts b/lib/Cloudflare/Queues/Consumer.d.ts
-index bec1997c5fc2cfe7f7d6554848ca93118831f2d1..de274f66f5a94458bc4e2a33a39db3c4411ebc7a 100644
+index bec1997c5fc2cfe7f7d6554848ca93118831f2d1..bd414ce0adf35e028aaef2ee660c4a32bef1e318 100644
 --- a/lib/Cloudflare/Queues/Consumer.d.ts
 +++ b/lib/Cloudflare/Queues/Consumer.d.ts
 @@ -16,6 +16,14 @@ export type ConsumerProps = {
@@ -59,7 +59,7 @@ index bec1997c5fc2cfe7f7d6554848ca93118831f2d1..de274f66f5a94458bc4e2a33a39db3c4
       * Consumer settings.
       */
 diff --git a/lib/Cloudflare/Queues/Consumer.js b/lib/Cloudflare/Queues/Consumer.js
-index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..a87cc15a2bf9d744d226cbb3369c77db161678f6 100644
+index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..00b104e8e7805364ab3a7f50bda46d43ec511ff4 100644
 --- a/lib/Cloudflare/Queues/Consumer.js
 +++ b/lib/Cloudflare/Queues/Consumer.js
 @@ -63,6 +63,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
@@ -125,7 +125,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..a87cc15a2bf9d744d226cbb3369c77db
          // Settings / DLQ / script drift is an update. We DON'T
          // escalate scriptName changes to `replace` because the
          // engine resolves cross-resource Output<string> refs (a
-@@ -132,12 +163,11 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -132,16 +163,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
          // we detect script drift and rebuild the consumer in
          // place (Cloudflare's PUT silently ignores `script_name`
          // changes, so reconcile does delete-then-create).
@@ -142,7 +142,12 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..a87cc15a2bf9d744d226cbb3369c77db
              return { action: "update" };
          }
      }),
-@@ -302,19 +332,83 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-    reconcile: Effect.fn(function* ({ news, output }) {
++    reconcile: Effect.fn(function* ({ news, olds, output }) {
+         const { accountId } = yield* yield* CloudflareEnvironment;
+         const acct = output?.accountId ?? accountId;
+         // Only use `output.queueId` if it's a live ID (i.e. no `dev:` prefix).
+@@ -302,19 +332,87 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
              while: (e) => e._tag === "QueueHandlerMissing",
              schedule: queueHandlerReadinessSchedule,
          }));
@@ -161,9 +166,13 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..a87cc15a2bf9d744d226cbb3369c77db
              schedule: queueHandlerReadinessSchedule,
          }));
 +        const desiredDeadLetterQueue = news.deadLetterQueue ?? undefined;
++        const deadLetterQueueIdentityUnchanged = isLiveId(olds.deadLetterQueueId) &&
++            isLiveId(news.deadLetterQueueId) &&
++            olds.deadLetterQueueId === news.deadLetterQueueId;
 +        const settingsConverged = JSON.stringify(normalizeConsumerSettings(converged.settings)) ===
 +            JSON.stringify(normalizeConsumerSettings(news.settings));
-+        const canReplaceForMissingDeadLetterQueue = owned &&
++        const canReplaceForMissingDeadLetterQueue = deadLetterQueueIdentityUnchanged &&
++            owned &&
 +            observed?.consumerId === consumerId &&
 +            output?.consumerId === consumerId &&
 +            observed.script === news.scriptName &&
@@ -233,7 +242,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..a87cc15a2bf9d744d226cbb3369c77db
          };
      }),
      delete: Effect.fn(function* ({ output }) {
-@@ -356,16 +450,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -356,16 +454,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
                  consumerId: output.consumerId,
              })
                  .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
@@ -256,7 +265,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..a87cc15a2bf9d744d226cbb3369c77db
                  };
              }
          }
-@@ -381,8 +474,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -381,8 +478,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
                      queueId: output.queueId,
                      scriptName: match.script ?? output.scriptName,
                      accountId: output.accountId,
@@ -267,7 +276,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..a87cc15a2bf9d744d226cbb3369c77db
                  };
              }
          }
-@@ -390,8 +483,101 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -390,8 +487,101 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
      }),
  });
  const toObserved = (c) => c.consumerId && c.type === "worker"
@@ -371,7 +380,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..a87cc15a2bf9d744d226cbb3369c77db
  // but a fresh container/asset deploy can stretch that.
  const queueHandlerReadinessSchedule = Schedule.max([
 diff --git a/lib/Cloudflare/Queues/EventSource.d.ts b/lib/Cloudflare/Queues/EventSource.d.ts
-index 0b609cf9379d242927208a40d24f11d9938f0b38..81428c3f1257e6b01cead9f1c8249e3c26880a02 100644
+index 0b609cf9379d242927208a40d24f11d9938f0b38..2e6351468a134b8f1a0d7305e67f5ed520fba89c 100644
 --- a/lib/Cloudflare/Queues/EventSource.d.ts
 +++ b/lib/Cloudflare/Queues/EventSource.d.ts
 @@ -31,6 +31,8 @@ export interface MessagesProps {
@@ -384,7 +393,7 @@ index 0b609cf9379d242927208a40d24f11d9938f0b38..81428c3f1257e6b01cead9f1c8249e3c
  /**
   * Convert a {@link MessagesProps} (with `Duration.Input` time fields)
 diff --git a/lib/Cloudflare/Queues/EventSource.js b/lib/Cloudflare/Queues/EventSource.js
-index 4f79fdff1eebd98f888781ee9f3655750f72879b..2f47114f8fe187350a08fe770c9a7079c10a8c77 100644
+index 4f79fdff1eebd98f888781ee9f3655750f72879b..cfab533151025e4320c51c75eca91b1d78470d68 100644
 --- a/lib/Cloudflare/Queues/EventSource.js
 +++ b/lib/Cloudflare/Queues/EventSource.js
 @@ -68,6 +68,7 @@ export const EventSourceLive = Layer.effect(EventSource, Effect.gen(function* ()
@@ -444,7 +453,7 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..8b763d891f00fc02056249ba5c5b1698
    accountId: string,
    databaseId: string,
 diff --git a/src/Cloudflare/Queues/Consumer.ts b/src/Cloudflare/Queues/Consumer.ts
-index e157f1fc5c8388c10039cc6c038f080712087cfc..d420140bd931ddc43bcb435d2295e3f6393da50f 100644
+index e157f1fc5c8388c10039cc6c038f080712087cfc..6fad760ff55784c8c04ca210f1b4ccfbfcfd9daf 100644
 --- a/src/Cloudflare/Queues/Consumer.ts
 +++ b/src/Cloudflare/Queues/Consumer.ts
 @@ -30,6 +30,14 @@ export type ConsumerProps = {
@@ -533,7 +542,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..d420140bd931ddc43bcb435d2295e3f6
        // Settings / DLQ / script drift is an update. We DON'T
        // escalate scriptName changes to `replace` because the
        // engine resolves cross-resource Output<string> refs (a
-@@ -227,12 +275,11 @@ export const ConsumerProviderLive = () =>
+@@ -227,17 +275,16 @@ export const ConsumerProviderLive = () =>
        // place (Cloudflare's PUT silently ignores `script_name`
        // changes, so reconcile does delete-then-create).
        if (
@@ -550,7 +559,13 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..d420140bd931ddc43bcb435d2295e3f6
        ) {
          return { action: "update" } as const;
        }
-@@ -436,28 +483,102 @@ export const ConsumerProviderLive = () =>
+     }),
+-    reconcile: Effect.fn(function* ({ news, output }) {
++    reconcile: Effect.fn(function* ({ news, olds, output }) {
+       const { accountId } = yield* yield* CloudflareEnvironment;
+       const acct = output?.accountId ?? accountId;
+       // Only use `output.queueId` if it's a live ID (i.e. no `dev:` prefix).
+@@ -436,28 +483,107 @@ export const ConsumerProviderLive = () =>
            }),
          );
 
@@ -587,10 +602,15 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..d420140bd931ddc43bcb435d2295e3f6
 +        );
 +
 +      const desiredDeadLetterQueue = news.deadLetterQueue ?? undefined;
++      const deadLetterQueueIdentityUnchanged =
++        isLiveId(olds.deadLetterQueueId) &&
++        isLiveId(news.deadLetterQueueId) &&
++        olds.deadLetterQueueId === news.deadLetterQueueId;
 +      const settingsConverged =
 +        JSON.stringify(normalizeConsumerSettings(converged.settings)) ===
 +        JSON.stringify(normalizeConsumerSettings(news.settings));
 +      const canReplaceForMissingDeadLetterQueue =
++        deadLetterQueueIdentityUnchanged &&
 +        owned &&
 +        observed?.consumerId === consumerId &&
 +        output?.consumerId === consumerId &&
@@ -671,7 +691,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..d420140bd931ddc43bcb435d2295e3f6
        };
      }),
      delete: Effect.fn(function* ({ output }) {
-@@ -509,17 +630,15 @@ export const ConsumerProviderLive = () =>
+@@ -509,17 +635,15 @@ export const ConsumerProviderLive = () =>
                Effect.succeed(undefined),
              ),
            );
@@ -695,7 +715,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..d420140bd931ddc43bcb435d2295e3f6
            };
          }
        }
-@@ -538,8 +657,8 @@ export const ConsumerProviderLive = () =>
+@@ -538,8 +662,8 @@ export const ConsumerProviderLive = () =>
              queueId: output.queueId,
              scriptName: match.script ?? output.scriptName,
              accountId: output.accountId,
@@ -706,7 +726,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..d420140bd931ddc43bcb435d2295e3f6
            };
          }
        }
-@@ -548,19 +667,175 @@ export const ConsumerProviderLive = () =>
+@@ -548,19 +672,175 @@ export const ConsumerProviderLive = () =>
    });
 
  type ObservedConsumer = {
