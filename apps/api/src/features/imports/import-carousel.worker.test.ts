@@ -5,6 +5,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { makeDeterministicTikTokCarouselAdapter } from "./import-carousel-adapter.fake.js";
 import type { TikTokCarouselAdapterFailure } from "./import-carousel-adapter.js";
+import { OperatorCarouselBundle } from "./import-carousel-operator.js";
+import { makeOperatorCarouselImportService } from "./import-carousel-operator.service.js";
 import {
   CarouselEvidenceManifestDocument,
   carouselImageObjectKey,
@@ -19,6 +21,7 @@ import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake
 import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
 import { makeDeterministicVisualEvidenceExtractor } from "./import-visual-evidence.fake.js";
 import {
+  IdempotencyKey,
   ImportId,
   ImportTimestamp,
   SourceCanonicalId,
@@ -32,6 +35,7 @@ import {
   RequestFingerprint,
   SourceLocatorHash,
 } from "./import.repository.js";
+import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
 interface TestR2Object {
   readonly checksums?: { readonly sha256?: ArrayBuffer };
@@ -64,6 +68,7 @@ const testEnv = env as unknown as {
 };
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
+const decodeIdempotencyKey = Schema.decodeUnknownSync(IdempotencyKey);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodeSourceUrl = Schema.decodeUnknownSync(SourceUrl);
@@ -144,22 +149,26 @@ const descriptorFor = (canonicalId: SourceCanonicalId) => ({
 const completeAdapterOutput = (canonicalId: SourceCanonicalId) => ({
   images: [
     {
-      bytes: new Uint8Array([255, 216, 255, 217]),
+      bytes: new Uint8Array([
+        255, 216, 255, 192, 0, 11, 8, 2, 128, 1, 104, 1, 1, 17, 0, 1, 255, 217,
+      ]),
       height: 640,
       mimeType: "image/jpeg" as const,
       orderIndex: 0,
       sha256:
-        "32461d5bd1773012acef0ba15636752949bd7c2ce50f9172159d9f56cf0dd9af",
+        "02b0cfad339e85daf354a9ae64506a590351a78bbf2a28d335ed69e4cf61a70a",
       width: 360,
     },
     {
-      bytes: new Uint8Array([255, 216, 1, 255, 217]),
-      height: 640,
+      bytes: new Uint8Array([
+        255, 216, 255, 192, 0, 11, 8, 5, 0, 2, 208, 1, 1, 17, 0, 2, 255, 217,
+      ]),
+      height: 1280,
       mimeType: "image/jpeg" as const,
       orderIndex: 1,
       sha256:
-        "adeaec77d1bc772e9694f8b5d7ba0ab621797f61f2587493ba69bd8dbbf09bf1",
-      width: 360,
+        "0b314df8a95df2d26530561227a62f01b3eb3be6239e958f371ce5fdf838b815",
+      width: 720,
     },
   ],
   source: {
@@ -197,7 +206,7 @@ const visualFixture = () =>
     ],
     outcome: "found",
     provider: "deterministic_fake",
-    usage: { inputBytes: 9, inputFrames: 2, modelCalls: 1 },
+    usage: { inputBytes: 36, inputFrames: 2, modelCalls: 1 },
   });
 
 const unresolvedRecipeFact = (reason: string) => ({
@@ -280,6 +289,86 @@ const recipeFixture = (input: RecipeEvidenceAssembly) => {
     },
     yield: unresolvedRecipeFact("not stated"),
   };
+};
+
+const operatorRecipeFixture = (input: RecipeEvidenceAssembly) => {
+  const source = input.items.find(({ kind }) => kind === "source_url");
+  if (source === undefined) {
+    throw new Error("Missing canonical source evidence");
+  }
+  const unresolved = unresolvedRecipeFact("not supplied");
+  const unresolvedList = {
+    items: [],
+    reason: "not supplied",
+    state: "unresolved" as const,
+  };
+  return {
+    author: unresolved,
+    category: unresolved,
+    cookTimeMinutes: unresolved,
+    cost: {
+      certainty: "known" as const,
+      currency: "USD" as const,
+      estimatedMicroUsd: 0,
+    },
+    cuisine: unresolved,
+    description: unresolved,
+    ingredientLines: unresolvedList,
+    instructions: unresolvedList,
+    name: unresolved,
+    nutrition: unresolved,
+    prepTimeMinutes: unresolved,
+    sourceUrl: {
+      citations: [
+        {
+          confidence: 1,
+          evidenceId: source.evidenceId,
+          origin: "observed" as const,
+        },
+      ],
+      origin: "observed" as const,
+      state: "supported" as const,
+      value: source.value,
+    },
+    supportedClaims: unresolvedList,
+    temperatureCelsius: unresolved,
+    tools: unresolvedList,
+    totalTimeMinutes: unresolved,
+    unresolvedFields: [
+      "author",
+      "category",
+      "cook_time_minutes",
+      "cuisine",
+      "description",
+      "ingredient_lines",
+      "ingredient_quantities",
+      "ingredient_units",
+      "instructions",
+      "name",
+      "nutrition",
+      "prep_time_minutes",
+      "temperature_celsius",
+      "tools",
+      "total_time_minutes",
+      "yield",
+    ],
+    usage: {
+      inputEvidenceItems: input.items.length,
+      inputTokens: 0,
+      latencyMilliseconds: 0,
+      modelCalls: 1 as const,
+      outputTokens: 0,
+    },
+    yield: unresolved,
+  };
+};
+
+const base64 = (bytes: Uint8Array) => {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCodePoint(byte);
+  }
+  return btoa(binary);
 };
 
 const runTracer = async (
@@ -408,12 +497,17 @@ describe("provider-free TikTok carousel tracer", () => {
       )
     ).toBe(true);
     expect(manifest.images.map(({ sha256 }) => sha256)).toEqual([
-      "32461d5bd1773012acef0ba15636752949bd7c2ce50f9172159d9f56cf0dd9af",
-      "adeaec77d1bc772e9694f8b5d7ba0ab621797f61f2587493ba69bd8dbbf09bf1",
+      "02b0cfad339e85daf354a9ae64506a590351a78bbf2a28d335ed69e4cf61a70a",
+      "0b314df8a95df2d26530561227a62f01b3eb3be6239e958f371ce5fdf838b815",
     ]);
     expect(manifest.source).toMatchObject({
-      canonicalUrl: descriptorFor(tracer.canonicalId).sourceUrl,
-      provenance: { canonicalUrl: "provider_observed" },
+      canonicalId: tracer.canonicalId,
+      provenance: { canonicalIdentity: "provider_observed" },
+    });
+    expect(manifest.source).not.toHaveProperty("canonicalUrl");
+    expect(manifest.images[0]?.sourceAttribution).toEqual({
+      canonicalId: tracer.canonicalId,
+      provenance: "provider_observed",
     });
     expect(manifest.transcript).toEqual({
       reason: "source_type_carousel",
@@ -540,5 +634,201 @@ describe("provider-free TikTok carousel tracer", () => {
         carouselImageObjectKey(tracer.importId, generation, 0)
       )
     ).toBeNull();
+  });
+
+  it("fails closed when a carousel adapter repeats the same JPEG page", async () => {
+    const canonicalId = decodeCanonicalId("752000000000307");
+    const output = completeAdapterOutput(canonicalId);
+    const [firstImage] = output.images;
+    if (firstImage === undefined) {
+      throw new Error("Expected a synthetic carousel image");
+    }
+    const tracer = await runTracer("000000000307", {
+      ...output,
+      images: [firstImage, { ...firstImage, orderIndex: 1 }],
+    });
+
+    await expect(tracer.run()).rejects.toMatchObject({
+      _tag: "CarouselImportPipelineFailure",
+      code: "carousel_partial",
+      recovery: "request_complete_carousel",
+    });
+    expect(tracer.visual.calls).toEqual([]);
+    expect(tracer.recipe.calls).toEqual([]);
+  });
+
+  it("admits an operator bundle from queued through the installed D1/R2 carousel service exactly once", async () => {
+    const identity = "000000000306";
+    const importId = decodeImportId(`018f47ad-91aa-7c35-b6fe-${identity}`);
+    const canonicalId = decodeCanonicalId(`752${identity}`);
+    const output = completeAdapterOutput(canonicalId);
+    const visual = makeDeterministicVisualEvidenceExtractor({
+      cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
+      model: "provider-free-proof",
+      observations: [],
+      outcome: "empty",
+      provider: "deterministic_fake",
+      usage: {
+        inputBytes: output.images.reduce(
+          (total, image) => total + image.bytes.byteLength,
+          0
+        ),
+        inputFrames: 2,
+        modelCalls: 1,
+      },
+    });
+    const recipe = makeDeterministicRecipeExtractor(
+      {
+        model: "provider-free-proof",
+        provider: "deterministic_fake",
+        version: "operator-carousel-v1",
+      },
+      operatorRecipeFixture
+    );
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const service = makeOperatorCarouselImportService({
+      identityResolver: makeTikTokCanonicalSourceIdentityResolver(() =>
+        Promise.reject(new Error("Network must not be used"))
+      ),
+      newId: () => importId,
+      now: () => completedAt,
+      pipeline: {
+        process: (input) =>
+          importTikTokCarouselToRecipeDraft({
+            adapter: input.adapter,
+            bucket: acquisitionBucket(),
+            carouselRepository: makeD1CarouselEvidenceRepository(
+              testEnv.MealPlannerDatabase
+            ),
+            descriptor: {
+              canonicalId: input.canonicalId,
+              declaredPageCount: input.declaredPageCount,
+              kind: "tiktok_carousel",
+              sourceUrl: input.sourceUrl,
+            },
+            extractor: recipe.service,
+            importId: input.importId,
+            now: () => completedAt,
+            recipeRepository: makeD1RecipeDraftRepository(
+              testEnv.MealPlannerDatabase
+            ),
+            visualExtractor: visual.service,
+          }).pipe(Effect.asVoid),
+      },
+      repository,
+    });
+    const bundle = Schema.decodeUnknownSync(OperatorCarouselBundle)({
+      declaredPageCount: 2,
+      images: output.images.map(
+        ({ bytes, height, orderIndex, sha256, width }) => ({
+          height,
+          jpegBase64: base64(bytes),
+          orderIndex,
+          sha256,
+          width,
+        })
+      ),
+      source: {
+        kind: "tiktok",
+        url: `${descriptorFor(canonicalId).sourceUrl}?tracking=discard`,
+      },
+    });
+
+    const idempotencyKey = decodeIdempotencyKey("operator-306");
+    const admitted = await Effect.runPromise(
+      service.admit(bundle, idempotencyKey)
+    );
+    const replay = await Effect.runPromise(
+      service.admit(bundle, idempotencyKey)
+    );
+
+    expect(admitted).toMatchObject({
+      disposition: "created",
+      import: { id: importId, status: { kind: "needs_review" } },
+    });
+    expect(replay).toMatchObject({
+      disposition: "idempotency_replay",
+      import: { id: importId, status: { kind: "needs_review" } },
+    });
+    expect(visual.calls).toHaveLength(1);
+    expect(recipe.calls).toHaveLength(1);
+    expect(
+      await testEnv.MealPlannerDatabase.prepare(
+        "SELECT status FROM recipe_imports WHERE id = ?"
+      )
+        .bind(importId)
+        .first()
+    ).toEqual({ status: "queued" });
+    expect(
+      await testEnv.MealPlannerDatabase.prepare(
+        "SELECT count(*) AS count FROM import_transcriptions WHERE import_id = ?"
+      )
+        .bind(importId)
+        .first()
+    ).toEqual({ count: 0 });
+    const manifestObject = await testEnv.ImportEvidenceBucket.get(
+      carouselManifestObjectKey(importId, generation)
+    );
+    if (manifestObject === null) {
+      throw new Error("Expected an operator carousel manifest");
+    }
+    const manifest = Schema.decodeUnknownSync(CarouselEvidenceManifestDocument)(
+      JSON.parse(await manifestObject.text())
+    );
+    expect(manifest.source).toMatchObject({
+      canonicalId,
+      provenance: { canonicalIdentity: "operator_supplied" },
+    });
+    expect(JSON.stringify(manifest)).not.toContain("https://");
+    expect(JSON.stringify(manifest)).not.toContain("tracking=discard");
+    expect(
+      manifest.images.every(
+        ({ sourceAttribution }) =>
+          sourceAttribution.provenance === "operator_supplied"
+      )
+    ).toBe(true);
+    expect(manifest.retention.configuredAgeSeconds).toBe(604_800);
+    expect(manifest.transcript).toEqual({
+      reason: "source_type_carousel",
+      status: "not_applicable",
+    });
+
+    const invalidCanonicalId = decodeCanonicalId("752000000000308");
+    const invalidOutput = completeAdapterOutput(invalidCanonicalId);
+    const [duplicateImage] = invalidOutput.images;
+    if (duplicateImage === undefined) {
+      throw new Error("Expected a synthetic carousel image");
+    }
+    const invalidBundle = Schema.decodeUnknownSync(OperatorCarouselBundle)({
+      declaredPageCount: 2,
+      images: [0, 1].map((orderIndex) => ({
+        height: duplicateImage.height,
+        jpegBase64: base64(duplicateImage.bytes),
+        orderIndex,
+        sha256: duplicateImage.sha256,
+        width: duplicateImage.width,
+      })),
+      source: {
+        kind: "tiktok",
+        url: descriptorFor(invalidCanonicalId).sourceUrl,
+      },
+    });
+    await expect(
+      Effect.runPromise(
+        service.admit(
+          invalidBundle,
+          decodeIdempotencyKey("operator-308-invalid")
+        )
+      )
+    ).rejects.toMatchObject({
+      _tag: "InvalidCarouselBundle",
+    });
+    expect(
+      await testEnv.MealPlannerDatabase.prepare(
+        "SELECT count(*) AS count FROM recipe_imports WHERE canonical_source_id = ?"
+      )
+        .bind(invalidCanonicalId)
+        .first()
+    ).toEqual({ count: 0 });
   });
 });

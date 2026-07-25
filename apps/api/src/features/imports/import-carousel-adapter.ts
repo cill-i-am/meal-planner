@@ -30,6 +30,35 @@ export interface TikTokCarouselImageArtifact {
   readonly width: number;
 }
 
+/** Reads dimensions from a complete JPEG without decoding or trusting metadata. */
+export const readJpegDimensions = (bytes: Uint8Array) => {
+  if (
+    bytes.length < 11 ||
+    bytes[0] !== 0xff ||
+    bytes[1] !== 0xd8 ||
+    bytes.at(-2) !== 0xff ||
+    bytes.at(-1) !== 0xd9
+  ) {
+    return null;
+  }
+  for (let index = 2; index + 8 < bytes.length; index += 1) {
+    const marker = bytes[index + 1];
+    if (
+      bytes[index] === 0xff &&
+      marker !== undefined &&
+      [
+        0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce,
+        0xcf,
+      ].includes(marker)
+    ) {
+      const height = (bytes[index + 5] ?? 0) * 256 + (bytes[index + 6] ?? 0);
+      const width = (bytes[index + 7] ?? 0) * 256 + (bytes[index + 8] ?? 0);
+      return height > 0 && width > 0 ? { height, width } : null;
+    }
+  }
+  return null;
+};
+
 export interface TikTokCarouselAcquisition {
   readonly images: readonly TikTokCarouselImageArtifact[];
   readonly source: typeof VerifiedSourceMetadata.Encoded;

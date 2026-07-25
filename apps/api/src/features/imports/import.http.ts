@@ -3,6 +3,7 @@ import { HttpServerResponse } from "effect/unstable/http";
 
 import type {
   IdempotencyConflict,
+  InvalidCarouselBundle,
   ImportNotFound,
   ImportPersistenceCorrupt,
   ImportPersistenceUnavailable,
@@ -14,10 +15,12 @@ import type {
   SourceValidationUnavailable,
   UnauthorizedImportCaller,
   WorkflowStartUnavailable,
+  CarouselProcessingUnavailable,
 } from "./import.errors.js";
 
 type PublicImportError =
   | IdempotencyConflict
+  | InvalidCarouselBundle
   | ImportNotFound
   | ImportPersistenceCorrupt
   | ImportPersistenceUnavailable
@@ -28,16 +31,23 @@ type PublicImportError =
   | SourceIdentityUnavailable
   | SourceValidationUnavailable
   | UnauthorizedImportCaller
-  | WorkflowStartUnavailable;
+  | WorkflowStartUnavailable
+  | CarouselProcessingUnavailable;
 
 const problem = (
   status: number,
   code: string,
   message: string,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
+  recovery?: string
 ) =>
   HttpServerResponse.json(
-    { error: { code, message } },
+    {
+      error:
+        recovery === undefined
+          ? { code, message }
+          : { code, message, recovery },
+    },
     { headers, status }
   ).pipe(Effect.orDie);
 
@@ -51,6 +61,15 @@ const publicErrorResponse = (error: PublicImportError) => {
     case "InvalidImportRequest":
     case "InvalidImportId": {
       return problem(400, "invalid_request", "The import request is invalid.");
+    }
+    case "InvalidCarouselBundle": {
+      return problem(
+        422,
+        "incomplete_carousel",
+        "A complete ordered JPEG carousel is required.",
+        undefined,
+        "request_complete_carousel"
+      );
     }
     case "InvalidSource": {
       return problem(400, "invalid_source", "The source is not supported.");
@@ -98,6 +117,13 @@ const publicErrorResponse = (error: PublicImportError) => {
         503,
         "workflow_start_unavailable",
         "Import processing is temporarily unavailable."
+      );
+    }
+    case "CarouselProcessingUnavailable": {
+      return problem(
+        503,
+        "carousel_processing_unavailable",
+        "Carousel processing is temporarily unavailable."
       );
     }
     case "ImportPersistenceCorrupt": {
