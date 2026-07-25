@@ -353,8 +353,8 @@ const runEventSourcePlan = async () => {
     queue as unknown as Cloudflare.Queues.Queue,
     {
       batchSize: 1,
-      deadLetterQueue,
-      deadLetterQueueId,
+      deadLetterQueue: Output.literal(deadLetterQueue),
+      deadLetterQueueId: Output.literal(deadLetterQueueId),
       maxConcurrency: 1,
       maxRetries: 3,
     },
