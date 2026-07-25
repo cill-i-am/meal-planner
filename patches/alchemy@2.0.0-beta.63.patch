@@ -383,12 +383,20 @@ diff --git a/lib/Cloudflare/Queues/EventSource.d.ts b/lib/Cloudflare/Queues/Even
 index 0b609cf9379d242927208a40d24f11d9938f0b38..2e6351468a134b8f1a0d7305e67f5ed520fba89c 100644
 --- a/lib/Cloudflare/Queues/EventSource.d.ts
 +++ b/lib/Cloudflare/Queues/EventSource.d.ts
-@@ -31,6 +31,8 @@ export interface MessagesProps {
+@@ -4,5 +4,6 @@ import * as Effect from "effect/Effect";
+ import * as Layer from "effect/Layer";
+ import * as Stream from "effect/Stream";
++import type { Input } from "../../Input.ts";
+ import { Worker } from "../Workers/Worker.ts";
+ import type { Queue } from "./Queue.ts";
+ /**
+@@ -31,6 +32,8 @@ export interface MessagesProps {
      retryDelay?: Duration.Input;
      /** Optional dead-letter queue name. */
-     deadLetterQueue?: string;
+-    deadLetterQueue?: string;
++    deadLetterQueue?: Input<string>;
 +    /** Physical ID paired with `deadLetterQueue` for guarded reconciliation. */
-+    deadLetterQueueId?: string;
++    deadLetterQueueId?: Input<string>;
  }
  /**
   * Convert a {@link MessagesProps} (with `Duration.Input` time fields)
@@ -907,16 +915,24 @@ diff --git a/src/Cloudflare/Queues/EventSource.ts b/src/Cloudflare/Queues/EventS
 index 94fe8e726cbbe5f9c7ea92cd69f49112dc137c48..1b6de06347c6697485dca2a3166249281e304de9 100644
 --- a/src/Cloudflare/Queues/EventSource.ts
 +++ b/src/Cloudflare/Queues/EventSource.ts
-@@ -38,6 +38,8 @@ export interface MessagesProps {
+@@ -5,5 +5,6 @@ import * as Effect from "effect/Effect";
+ import * as Layer from "effect/Layer";
+ import * as Stream from "effect/Stream";
++import type { Input } from "../../Input.ts";
+ import * as Namespace from "../../Namespace.ts";
+ import { RuntimeContext } from "../../RuntimeContext.ts";
+ import type { FunctionContext } from "../../Serverless/Function.ts";
+@@ -38,6 +39,8 @@ export interface MessagesProps {
    retryDelay?: Duration.Input;
    /** Optional dead-letter queue name. */
-   deadLetterQueue?: string;
+-  deadLetterQueue?: string;
++  deadLetterQueue?: Input<string>;
 +  /** Physical ID paired with `deadLetterQueue` for guarded reconciliation. */
-+  deadLetterQueueId?: string;
++  deadLetterQueueId?: Input<string>;
  }
 
  /**
-@@ -211,6 +213,7 @@ export const EventSourceLive = Layer.effect(
+@@ -211,6 +214,7 @@ export const EventSourceLive = Layer.effect(
                scriptName: host.workerName,
                settings: toConsumerSettings(props),
                deadLetterQueue: props.deadLetterQueue,
