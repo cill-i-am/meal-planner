@@ -6,6 +6,10 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { HealthRoutes } from "./features/health/health.routes.js";
 import { ImportBatchQueueMessage } from "./features/imports/import-batch.contracts.js";
+import {
+  OperatorCarouselImportService,
+  makeOperatorCarouselImportService,
+} from "./features/imports/import-carousel-operator.service.js";
 import { DeadLetterReplayClaimId } from "./features/imports/import-operations.js";
 import { makeD1ImportQueueAcceptance } from "./features/imports/import-queue-acceptance.d1.js";
 import {
@@ -22,6 +26,7 @@ import {
   ImportId,
   ImportTimestamp,
 } from "./features/imports/import.contracts.js";
+import { carouselProcessingUnavailable } from "./features/imports/import.errors.js";
 import { makeD1ImportRepository } from "./features/imports/import.repository.d1.js";
 import { ImportRepository } from "./features/imports/import.repository.js";
 import { ImportRouteDefinitions } from "./features/imports/import.routes.js";
@@ -144,7 +149,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         makeImportWorkflowStarter(importAcquisitionWorkflow)
       )
     );
-
     return {
       fetch: Effect.scoped(
         Effect.map(
@@ -155,6 +159,29 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
               const repositoryLive = Layer.succeed(
                 ImportRepository,
                 ImportRepository.of(makeD1ImportRepository(database))
+              );
+              const operatorCarouselServiceLive = Layer.succeed(
+                OperatorCarouselImportService,
+                OperatorCarouselImportService.of(
+                  makeOperatorCarouselImportService({
+                    identityResolver: makeTikTokCanonicalSourceIdentityResolver(
+                      globalThis.fetch
+                    ),
+                    newId: () =>
+                      Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
+                    now: () =>
+                      Schema.decodeUnknownSync(ImportTimestamp)(
+                        new Date().toISOString()
+                      ),
+                    pipeline: {
+                      preflight: () =>
+                        Effect.fail(carouselProcessingUnavailable()),
+                      process: () =>
+                        Effect.fail(carouselProcessingUnavailable()),
+                    },
+                    repository: makeD1ImportRepository(database),
+                  })
+                )
               );
               const recipeReviewServiceLive = Layer.succeed(
                 RecipeReviewService,
@@ -208,6 +235,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                   Effect.provide(
                     Layer.mergeAll(
                       authorizerLive,
+                      operatorCarouselServiceLive,
                       recipeReviewServiceLive,
                       serviceLive
                     )

@@ -13,7 +13,8 @@
   "dependencies": {
     "@effect/platform-node": "4.0.0-beta.99",
     "drizzle-orm": "1.0.0-rc.4",
-    "effect": "4.0.0-beta.99"
+    "effect": "4.0.0-beta.99",
+    "jpeg-js": "0.4.4"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.6",

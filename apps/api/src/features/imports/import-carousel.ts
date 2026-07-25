@@ -8,6 +8,7 @@ import type {
 } from "./import-carousel-adapter.js";
 import {
   MaximumCarouselImages,
+  decodeJpegDimensions,
   TikTokCarouselDescriptor as TikTokCarouselDescriptorSchema,
 } from "./import-carousel-adapter.js";
 import type {
@@ -33,6 +34,8 @@ import type {
 } from "./import-visual-evidence-extractor.js";
 import {
   decodeVisualEvidence,
+  MaximumVisualFrameBytes,
+  MaximumVisualInputBytes,
   validateVisualFrames,
   VisualEvidence,
 } from "./import-visual-evidence-extractor.js";
@@ -61,6 +64,25 @@ const TranscriptNotApplicable = Schema.Struct({
   status: Schema.Literal("not_applicable"),
 });
 
+const CarouselSourceProvenance = Schema.Literals([
+  "operator_supplied",
+  "provider_observed",
+]);
+
+const CarouselSourceMetadata = Schema.Struct({
+  canonicalId: SourceCanonicalId,
+  caption: VerifiedSourceMetadata.fields.caption,
+  creator: VerifiedSourceMetadata.fields.creator,
+  observedAt: VerifiedSourceMetadata.fields.observedAt,
+  provenance: Schema.Struct({
+    canonicalIdentity: CarouselSourceProvenance,
+    caption: VerifiedSourceMetadata.fields.provenance.fields.caption,
+    creator: VerifiedSourceMetadata.fields.provenance.fields.creator,
+    publishedAt: VerifiedSourceMetadata.fields.provenance.fields.publishedAt,
+  }),
+  publishedAt: VerifiedSourceMetadata.fields.publishedAt,
+});
+
 const CarouselImageReference = Schema.Struct({
   byteLength: PositiveInteger,
   deleteAt: ImportTimestamp,
@@ -71,8 +93,7 @@ const CarouselImageReference = Schema.Struct({
   sha256: Sha256Hex,
   sourceAttribution: Schema.Struct({
     canonicalId: SourceCanonicalId,
-    canonicalUrl: Schema.String,
-    provenance: Schema.Literal("provider_observed"),
+    provenance: CarouselSourceProvenance,
   }),
   width: PositiveInteger,
 });
@@ -93,7 +114,7 @@ export const CarouselEvidenceManifestDocument = Schema.Struct({
     policy: Schema.Literal("r2_bucket_object_age"),
   }),
   schemaVersion: Schema.Literal(1),
-  source: VerifiedSourceMetadata,
+  source: CarouselSourceMetadata,
   transcript: TranscriptNotApplicable,
   visualEvidence: VisualEvidence,
 });
@@ -208,29 +229,39 @@ const validateCompleteAcquisition = (
     const ordered = acquisition.images.toSorted(
       (left, right) => left.orderIndex - right.orderIndex
     );
+    const checksums = new Set<string>();
+    let totalBytes = 0;
     for (const [orderIndex, image] of ordered.entries()) {
+      const dimensions = decodeJpegDimensions(image.bytes);
+      totalBytes += image.bytes.byteLength;
       if (
         image.orderIndex !== orderIndex ||
         image.bytes.byteLength < 1 ||
+        image.bytes.byteLength > MaximumVisualFrameBytes ||
+        totalBytes > MaximumVisualInputBytes ||
         image.mimeType !== "image/jpeg" ||
         !Number.isSafeInteger(image.height) ||
         image.height <= 0 ||
         !Number.isSafeInteger(image.width) ||
         image.width <= 0 ||
+        dimensions === null ||
+        dimensions.height !== image.height ||
+        dimensions.width !== image.width ||
         !/^[a-f\d]{64}$/u.test(image.sha256) ||
+        checksums.has(image.sha256) ||
         (yield* sha256Hex(image.bytes)) !== image.sha256
       ) {
         return yield* Effect.fail(partialFailure());
       }
+      checksums.add(image.sha256);
     }
     return { images: ordered, source };
   });
 
 const imageMetadata = (
-  descriptor: TikTokCarouselDescriptor,
   document: Pick<
     CarouselEvidenceManifestDocument,
-    "acquisitionGeneration" | "importId"
+    "acquisitionGeneration" | "importId" | "source"
   >,
   reference: CarouselImageReference
 ) => ({
@@ -240,8 +271,8 @@ const imageMetadata = (
   orderIndex: String(reference.orderIndex),
   retentionDeadline: DateTime.formatIso(reference.deleteAt),
   sha256: reference.sha256,
-  sourceAttribution: "provider_observed",
-  sourceCanonicalId: descriptor.canonicalId,
+  sourceAttribution: document.source.provenance.canonicalIdentity,
+  sourceCanonicalId: document.source.canonicalId,
 });
 
 const metadataMatches = (
@@ -253,10 +284,9 @@ const metadataMatches = (
 
 const storeImage = (
   bucket: AcquisitionBucketLike,
-  descriptor: TikTokCarouselDescriptor,
   document: Pick<
     CarouselEvidenceManifestDocument,
-    "acquisitionGeneration" | "importId"
+    "acquisitionGeneration" | "importId" | "source"
   >,
   reference: CarouselImageReference,
   bytes: Uint8Array
@@ -267,7 +297,7 @@ const storeImage = (
       try: () =>
         bucket.put(reference.key, bytes, {
           contentLength: reference.byteLength,
-          customMetadata: imageMetadata(descriptor, document, reference),
+          customMetadata: imageMetadata(document, reference),
           httpMetadata: {
             cacheControl: "private, no-store",
             contentType: "image/jpeg",
@@ -289,7 +319,7 @@ const storeImage = (
       stored.httpMetadata.cacheControl !== "private, no-store" ||
       !metadataMatches(
         stored.customMetadata,
-        imageMetadata(descriptor, document, reference)
+        imageMetadata(document, reference)
       )
     ) {
       return yield* Effect.fail(
@@ -329,7 +359,7 @@ const manifestMatches = (
     document.dispatchId === expected.dispatchId,
     document.images.length === expected.imageCount,
     document.importId === expected.importId,
-    document.source.canonicalUrl === descriptor.sourceUrl,
+    document.source.canonicalId === descriptor.canonicalId,
   ].every(Boolean);
 
 const readVerifiedManifest = (
@@ -397,7 +427,7 @@ const readVerifiedManifest = (
         nativeSha256(stored) !== reference.sha256 ||
         !metadataMatches(
           stored.customMetadata,
-          imageMetadata(descriptor, document, reference)
+          imageMetadata(document, reference)
         )
       ) {
         return yield* Effect.fail(
@@ -442,7 +472,8 @@ const storeManifest = (
 
 const recipeEvidenceItems = (
   document: CarouselEvidenceManifestDocument,
-  manifestSha256: string
+  manifestSha256: string,
+  source: VerifiedSourceMetadata
 ) => {
   const manifestReference = carouselManifestObjectKey(
     document.importId,
@@ -454,7 +485,7 @@ const recipeEvidenceItems = (
       evidenceId: `source_url:${manifestSha256}`,
       kind: "source_url",
       origin: "observed",
-      value: document.source.canonicalUrl,
+      value: source.canonicalUrl,
     },
   ];
   const creator =
@@ -494,10 +525,11 @@ const recipeEvidenceItems = (
 
 const assembleRecipeEvidence = (
   document: CarouselEvidenceManifestDocument,
-  manifestSha256: string
+  manifestSha256: string,
+  source: VerifiedSourceMetadata
 ) =>
   Effect.gen(function* assemble() {
-    const items = recipeEvidenceItems(document, manifestSha256);
+    const items = recipeEvidenceItems(document, manifestSha256, source);
     const evidenceFingerprint = yield* sha256Hex(
       new TextEncoder().encode(
         JSON.stringify({
@@ -589,6 +621,7 @@ export const importTikTokCarouselToRecipeDraft = Effect.fn(
     readonly document: CarouselEvidenceManifestDocument;
     readonly evidence: CompletedCarouselEvidence;
     readonly sha256: string;
+    readonly source: VerifiedSourceMetadata;
   };
   if (claim._tag === "Completed") {
     const verified = yield* readVerifiedManifest(
@@ -600,6 +633,19 @@ export const importTikTokCarouselToRecipeDraft = Effect.fn(
       document: verified.document,
       evidence: claim.evidence,
       sha256: verified.sha256,
+      source: {
+        canonicalUrl: descriptor.sourceUrl,
+        caption: verified.document.source.caption,
+        creator: verified.document.source.creator,
+        observedAt: verified.document.source.observedAt,
+        provenance: {
+          canonicalUrl: verified.document.source.provenance.canonicalIdentity,
+          caption: verified.document.source.provenance.caption,
+          creator: verified.document.source.provenance.creator,
+          publishedAt: verified.document.source.provenance.publishedAt,
+        },
+        publishedAt: verified.document.source.publishedAt,
+      },
     };
   } else {
     const acquired = yield* input.adapter.acquire(descriptor).pipe(
@@ -704,8 +750,7 @@ export const importTikTokCarouselToRecipeDraft = Effect.fn(
         sha256: image.sha256,
         sourceAttribution: {
           canonicalId: descriptor.canonicalId,
-          canonicalUrl: descriptor.sourceUrl,
-          provenance: "provider_observed",
+          provenance: validated.source.provenance.canonicalUrl,
         },
         width: image.width,
       })
@@ -728,7 +773,19 @@ export const importTikTokCarouselToRecipeDraft = Effect.fn(
         policy: "r2_bucket_object_age",
       },
       schemaVersion: 1,
-      source: validated.source,
+      source: {
+        canonicalId: descriptor.canonicalId,
+        caption: validated.source.caption,
+        creator: validated.source.creator,
+        observedAt: validated.source.observedAt,
+        provenance: {
+          canonicalIdentity: validated.source.provenance.canonicalUrl,
+          caption: validated.source.provenance.caption,
+          creator: validated.source.provenance.creator,
+          publishedAt: validated.source.provenance.publishedAt,
+        },
+        publishedAt: validated.source.publishedAt,
+      },
       transcript: {
         reason: "source_type_carousel",
         status: "not_applicable",
@@ -743,13 +800,7 @@ export const importTikTokCarouselToRecipeDraft = Effect.fn(
           ? Effect.fail(
               pipelineFailure("carousel_evidence_invalid", "operator_reconcile")
             )
-          : storeImage(
-              input.bucket,
-              descriptor,
-              document,
-              reference,
-              image.bytes
-            );
+          : storeImage(input.bucket, document, reference, image.bytes);
       },
       { concurrency: 1, discard: true }
     );
@@ -769,12 +820,14 @@ export const importTikTokCarouselToRecipeDraft = Effect.fn(
       document: verified.document,
       evidence,
       sha256: verified.sha256,
+      source: validated.source,
     };
   }
 
   const assembly = yield* assembleRecipeEvidence(
     committed.document,
-    committed.sha256
+    committed.sha256,
+    committed.source
   );
   const draft = yield* produceRecipeDraftFromEvidence({
     assembly,
@@ -795,7 +848,7 @@ export const importTikTokCarouselToRecipeDraft = Effect.fn(
     extractor: input.extractor,
     now,
     recipeRepository: input.recipeRepository,
-    source: committed.document.source,
+    source: committed.source,
     transcript: {
       reason: "source_type_carousel",
       route: "carousel_v2",

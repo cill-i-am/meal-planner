@@ -53,6 +53,14 @@ export interface ImportTransitionRejected {
   readonly _tag: "ImportTransitionRejected";
 }
 
+export interface InvalidCarouselBundle {
+  readonly _tag: "InvalidCarouselBundle";
+}
+
+export interface CarouselProcessingUnavailable {
+  readonly _tag: "CarouselProcessingUnavailable";
+}
+
 export type SourceIdentityError = InvalidSource | SourceIdentityUnavailable;
 
 export type SourceAvailabilityError = SourceValidationUnavailable;
@@ -123,3 +131,12 @@ export const workflowStartUnavailable = (): WorkflowStartUnavailable => ({
 export const importTransitionRejected = (): ImportTransitionRejected => ({
   _tag: "ImportTransitionRejected",
 });
+
+export const invalidCarouselBundle = (): InvalidCarouselBundle => ({
+  _tag: "InvalidCarouselBundle",
+});
+
+export const carouselProcessingUnavailable =
+  (): CarouselProcessingUnavailable => ({
+    _tag: "CarouselProcessingUnavailable",
+  });

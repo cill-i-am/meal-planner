@@ -32,6 +32,11 @@ export default defineConfig({
           })),
         ],
         test: {
+          deps: {
+            optimizer: {
+              ssr: { enabled: true, include: ["jpeg-js"] },
+            },
+          },
           include: ["src/**/*.worker.test.ts"],
           name: "workerd-d1",
         },

@@ -1,5 +1,6 @@
 import { Context, Schema } from "effect";
 import type { Effect } from "effect";
+import { decode as decodeJpeg } from "jpeg-js";
 
 import type { VerifiedSourceMetadata } from "./import-media.model.js";
 import { SourceCanonicalId, SourceUrl } from "./import.contracts.js";
@@ -29,6 +30,27 @@ export interface TikTokCarouselImageArtifact {
   readonly sha256: string;
   readonly width: number;
 }
+
+const MaximumDecodedJpegMegapixels = 20;
+const MaximumJpegDecodeMemoryMegabytes = 64;
+
+/** Fully decodes a bounded JPEG before its dimensions can be trusted. */
+export const decodeJpegDimensions = (bytes: Uint8Array) => {
+  try {
+    const decoded = decodeJpeg(bytes, {
+      formatAsRGBA: false,
+      maxMemoryUsageInMB: MaximumJpegDecodeMemoryMegabytes,
+      maxResolutionInMP: MaximumDecodedJpegMegapixels,
+      tolerantDecoding: false,
+      useTArray: true,
+    });
+    return decoded.height > 0 && decoded.width > 0
+      ? { height: decoded.height, width: decoded.width }
+      : null;
+  } catch {
+    return null;
+  }
+};
 
 export interface TikTokCarouselAcquisition {
   readonly images: readonly TikTokCarouselImageArtifact[];

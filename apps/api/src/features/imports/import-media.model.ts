@@ -67,14 +67,24 @@ export const VerifiedSourceMetadata = Schema.Struct({
   }),
   observedAt: ImportTimestamp,
   provenance: Schema.Struct({
-    canonicalUrl: Schema.Literal("provider_observed"),
-    caption: Schema.NullOr(Schema.Literal("creator_provided")),
+    canonicalUrl: Schema.Literals(["operator_supplied", "provider_observed"]),
+    caption: Schema.NullOr(
+      Schema.Literals(["creator_provided", "operator_supplied"])
+    ),
     creator: Schema.Struct({
-      displayName: Schema.NullOr(Schema.Literal("provider_observed")),
-      handle: Schema.NullOr(Schema.Literal("provider_observed")),
-      id: Schema.NullOr(Schema.Literal("provider_observed")),
+      displayName: Schema.NullOr(
+        Schema.Literals(["operator_supplied", "provider_observed"])
+      ),
+      handle: Schema.NullOr(
+        Schema.Literals(["operator_supplied", "provider_observed"])
+      ),
+      id: Schema.NullOr(
+        Schema.Literals(["operator_supplied", "provider_observed"])
+      ),
     }),
-    publishedAt: Schema.NullOr(Schema.Literal("provider_observed")),
+    publishedAt: Schema.NullOr(
+      Schema.Literals(["operator_supplied", "provider_observed"])
+    ),
   }),
   publishedAt: Schema.NullOr(ImportTimestamp),
 });

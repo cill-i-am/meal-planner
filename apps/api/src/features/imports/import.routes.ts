@@ -1,6 +1,8 @@
-import { Effect, Schema } from "effect";
+import { Effect, FileSystem, Schema } from "effect";
 import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
 
+import { OperatorCarouselBundle } from "./import-carousel-operator.js";
+import { OperatorCarouselImportService } from "./import-carousel-operator.service.js";
 import { ImportAuthorizer } from "./import.auth.js";
 import {
   CreateImportRequest,
@@ -9,7 +11,11 @@ import {
   IdempotencyKey,
   ImportId,
 } from "./import.contracts.js";
-import { invalidImportId, invalidImportRequest } from "./import.errors.js";
+import {
+  invalidCarouselBundle,
+  invalidImportId,
+  invalidImportRequest,
+} from "./import.errors.js";
 import { respond } from "./import.http.js";
 import { ImportService } from "./import.service.js";
 
@@ -25,6 +31,19 @@ const decodeIdempotencyKey = (value: string | undefined) =>
 const decodeImportId = HttpRouter.schemaPathParams(
   Schema.Struct({ id: ImportId })
 ).pipe(Effect.mapError(() => invalidImportId()));
+
+export const MaximumOperatorCarouselRequestBytes = 8_500_000;
+
+const decodeOperatorCarouselRequest = HttpServerRequest.schemaBodyJson(
+  OperatorCarouselBundle,
+  { onExcessProperty: "error" }
+).pipe(
+  Effect.provideService(
+    HttpServerRequest.MaxBodySize,
+    FileSystem.Size(MaximumOperatorCarouselRequestBytes)
+  ),
+  Effect.mapError(() => invalidCarouselBundle())
+);
 
 const createImportStatusCode = (response: typeof CreateImportResponse.Type) => {
   if (
@@ -47,7 +66,7 @@ const createImportStatusCode = (response: typeof CreateImportResponse.Type) => {
   return 422;
 };
 
-export const ImportRouteDefinitions = [
+const CoreImportRouteDefinitions = [
   HttpRouter.route("POST", "/imports", (request) =>
     Effect.gen(function* createImportRoute() {
       const authorizer = yield* ImportAuthorizer;
@@ -73,4 +92,27 @@ export const ImportRouteDefinitions = [
   ),
 ] as const;
 
-export const ImportRoutes = HttpRouter.addAll(ImportRouteDefinitions);
+export const OperatorCarouselRouteDefinitions = [
+  HttpRouter.route("POST", "/imports/operator-carousel", (request) =>
+    Effect.gen(function* admitOperatorCarouselRoute() {
+      const authorizer = yield* ImportAuthorizer;
+      yield* authorizer.authorize(request.headers["authorization"]);
+      const idempotencyKey = yield* decodeIdempotencyKey(
+        request.headers["idempotency-key"]
+      );
+      const bundle = yield* decodeOperatorCarouselRequest;
+      const service = yield* OperatorCarouselImportService;
+      return yield* service.admit(bundle, idempotencyKey);
+    }).pipe((effect) => respond(effect, CreateImportResponse, () => 200))
+  ),
+] as const;
+
+export const ImportRouteDefinitions = [
+  ...CoreImportRouteDefinitions,
+  ...OperatorCarouselRouteDefinitions,
+] as const;
+
+export const ImportRoutes = HttpRouter.addAll(CoreImportRouteDefinitions);
+export const OperatorCarouselRoutes = HttpRouter.addAll(
+  OperatorCarouselRouteDefinitions
+);
