@@ -79,6 +79,16 @@ export interface PilotBudgetDispatch {
   readonly state: PilotBudgetDispatchState;
 }
 
+export type PilotBudgetInvocationClaim =
+  | {
+      readonly _tag: "Claimed";
+      readonly dispatch: PilotBudgetDispatch;
+    }
+  | {
+      readonly _tag: "NotClaimed";
+      readonly dispatch: PilotBudgetDispatch;
+    };
+
 export interface PilotProviderStageBudget {
   readonly budgetCapMicroUsd: number;
   readonly invokingDispatchId?: PilotBudgetDispatchId;
@@ -91,7 +101,7 @@ export interface PilotProviderStageBudget {
 export interface PilotProviderBudgetRepository {
   readonly beginInvocation: (
     input: PilotBudgetReservation
-  ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
+  ) => Effect.Effect<PilotBudgetInvocationClaim, PilotProviderBudgetError>;
   readonly readStage: () => Effect.Effect<
     PilotProviderStageBudget,
     PilotProviderBudgetError
@@ -182,7 +192,6 @@ export const runPilotProviderDispatch = <A, E>(input: {
       return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
     }
     if (reserved.state === "invoking") {
-      yield* input.repository.settleUnknown(input.reservation);
       return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
     }
     if (reserved.state !== "reserved") {
@@ -199,10 +208,23 @@ export const runPilotProviderDispatch = <A, E>(input: {
       );
     }
 
-    const invocation = yield* input.repository.beginInvocation(
+    const invocationClaim = yield* input.repository.beginInvocation(
       input.reservation
     );
-    if (invocation.state !== "invoking") {
+    if (invocationClaim._tag === "NotClaimed") {
+      const { dispatch } = invocationClaim;
+      if (
+        dispatch.state === "settled_known" &&
+        dispatch.actualCostMicroUsd !== null
+      ) {
+        return {
+          _tag: "AlreadySettled",
+          actualCostMicroUsd: dispatch.actualCostMicroUsd,
+        };
+      }
+      return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
+    }
+    if (invocationClaim.dispatch.state !== "invoking") {
       return yield* Effect.fail(
         pilotProviderBudgetError("transition_rejected")
       );

@@ -43,6 +43,7 @@ const StageRow = Schema.Struct({
   state: Schema.Literals(["invoking", "open", "poisoned"]),
 });
 type StageRow = typeof StageRow.Type;
+const QueryRows = Schema.Struct({ results: Schema.Array(Schema.Unknown) });
 
 const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({
@@ -59,6 +60,13 @@ const decodeDispatchRow = (value: unknown) =>
 
 const decodeStageRow = (value: unknown) =>
   Schema.decodeUnknownEffect(StageRow, {
+    onExcessProperty: "ignore",
+  })(value).pipe(
+    Effect.mapError(() => pilotProviderBudgetError("persistence_corrupt"))
+  );
+
+const decodeQueryRows = (value: unknown) =>
+  Schema.decodeUnknownEffect(QueryRows, {
     onExcessProperty: "ignore",
   })(value).pipe(
     Effect.mapError(() => pilotProviderBudgetError("persistence_corrupt"))
@@ -239,17 +247,44 @@ export const makeD1PilotProviderBudgetRepository = (
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
       if (current.state !== "reserved") {
-        return current;
+        return { _tag: "NotClaimed", dispatch: current };
       }
       const timestamp = DateTime.formatIso(input.timestamp);
-      return yield* transition(
-        binding,
-        input,
-        `UPDATE pilot_provider_budget_dispatches
-            SET state = 'invoking', invocation_started_at = ?, updated_at = ?
-          WHERE runtime_stage = ? AND dispatch_id = ? AND state = 'reserved'`,
-        [timestamp, timestamp, PilotProviderBudgetStage, input.dispatchId]
+      const rawClaim = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `UPDATE pilot_provider_budget_dispatches
+                SET state = 'invoking', invocation_started_at = ?, updated_at = ?
+              WHERE runtime_stage = ? AND dispatch_id = ? AND state = 'reserved'
+              RETURNING actual_cost_micro_usd, dispatch_id,
+                        maximum_cost_micro_usd, provider_stage_id, run_id, state`
+          )
+          .bind(
+            timestamp,
+            timestamp,
+            PilotProviderBudgetStage,
+            input.dispatchId
+          )
+          .all()
       );
+      const claimRows = yield* decodeQueryRows(rawClaim);
+      if (claimRows.results.length > 1) {
+        return yield* Effect.fail(
+          pilotProviderBudgetError("persistence_corrupt")
+        );
+      }
+      const [claimedRow] = claimRows.results;
+      if (claimedRow !== undefined) {
+        const dispatch = yield* decodeDispatchRow(claimedRow).pipe(
+          Effect.flatMap(dispatchFromRow),
+          Effect.flatMap((row) => requireIdentity(row, input))
+        );
+        return { _tag: "Claimed", dispatch };
+      }
+      const dispatch = yield* readDispatch(binding, input).pipe(
+        Effect.flatMap((row) => requireIdentity(row, input))
+      );
+      return { _tag: "NotClaimed", dispatch };
     }),
   readStage: () =>
     ensureAllowedStage(runtimeStage).pipe(
