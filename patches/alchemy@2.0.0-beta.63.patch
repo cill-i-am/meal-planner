@@ -1,3 +1,60 @@
+diff --git a/lib/Apply.js b/lib/Apply.js
+index a01c0faaf46fac0063f04303744900c94f52f637..4fc8d75e2a7a02aa9b04efef2060028878ed4f77 100644
+--- a/lib/Apply.js
++++ b/lib/Apply.js
+@@ -354,7 +354,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
+                 resourceType: node.resource.Type,
+                 props: news,
+                 attr,
+-                bindings: excludeDeletedBindings(node.bindings),
++                bindings: bindingOutputs,
+                 providerVersion: node.provider.version ?? 0,
+                 downstream: node.downstream,
+                 removalPolicy: node.resource.RemovalPolicy,
+@@ -450,6 +450,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
+                     ...node.state,
+                     attr,
+                     props: news,
++                    bindings: bindingOutputs,
+                 });
+             }
+             else {
+@@ -461,7 +462,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
+                     resourceType: node.resource.Type,
+                     props: news,
+                     attr,
+-                    bindings: excludeDeletedBindings(node.bindings),
++                    bindings: bindingOutputs,
+                     providerVersion: node.provider.version ?? 0,
+                     downstream: node.downstream,
+                     removalPolicy: node.resource.RemovalPolicy,
+@@ -639,7 +640,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
+                     props: news,
+                     attr,
+                     providerVersion: node.provider.version ?? 0,
+-                    bindings: excludeDeletedBindings(node.bindings),
++                    bindings: bindingOutputs,
+                     downstream: node.downstream,
+                     removalPolicy: node.resource.RemovalPolicy,
+                 });
+@@ -656,7 +657,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
+                     props: news,
+                     attr,
+                     providerVersion: node.provider.version ?? 0,
+-                    bindings: excludeDeletedBindings(node.bindings),
++                    bindings: bindingOutputs,
+                     downstream: node.downstream,
+                     // Preserve the remaining backlog exactly as-is. GC is responsible for
+                     // popping one generation at a time until the chain is exhausted.
+@@ -904,7 +905,7 @@ const converge = Effect.fn(function* (plan, tracker, terminalStatuses, session,
+                     props: newProps,
+                     attr,
+                     providerVersion: node.provider.version ?? 0,
+-                    bindings: excludeDeletedBindings(node.bindings),
++                    bindings: newBindings,
+                     downstream: node.downstream,
+                     namespace,
+                     removalPolicy: node.resource.RemovalPolicy,
 diff --git a/lib/Cloudflare/D1/ApplyMigrations.js b/lib/Cloudflare/D1/ApplyMigrations.js
 index ba1c3be608856556930a5895497c1071cec015c1..f2ccfa888c1a6ca6d532fd3a042d355e1894ffdd 100644
 --- a/lib/Cloudflare/D1/ApplyMigrations.js
@@ -415,7 +472,7 @@ index 4f79fdff1eebd98f888781ee9f3655750f72879b..cfab533151025e4320c51c75eca91b1d
              }));
          }
 diff --git a/lib/Cloudflare/Workers/WorkerProvider.js b/lib/Cloudflare/Workers/WorkerProvider.js
-index 320992f8eec3bd3319666ef8f793cc1700ff6c6e..7bc6e75fa164c0d6b4d5a03ddf379a12cd3b025b 100644
+index 320992f8eec3bd3319666ef8f793cc1700ff6c6e..4826e7c20163f698e57d67ae7f4fbabc9462b412 100644
 --- a/lib/Cloudflare/Workers/WorkerProvider.js
 +++ b/lib/Cloudflare/Workers/WorkerProvider.js
 @@ -288,17 +288,24 @@ const workerAssetConfigForHash = (assets) => {
@@ -461,6 +518,63 @@ index 320992f8eec3bd3319666ef8f793cc1700ff6c6e..7bc6e75fa164c0d6b4d5a03ddf379a12
                  return undefined;
              if ((output?.accountId ?? accountId) !== accountId) {
                  return { action: "replace" };
+diff --git a/src/Apply.ts b/src/Apply.ts
+index a025189e33b794e4288ffa2780033f0f311fbf72..8976101a998b319766b7a58c0740c9cc4907c7a0 100644
+--- a/src/Apply.ts
++++ b/src/Apply.ts
+@@ -680,7 +680,7 @@ const executeNode = (
+           resourceType: node.resource.Type,
+           props: news,
+           attr,
+-          bindings: excludeDeletedBindings(node.bindings),
++          bindings: bindingOutputs,
+           providerVersion: node.provider.version ?? 0,
+           downstream: node.downstream,
+           removalPolicy: node.resource.RemovalPolicy,
+@@ -802,6 +802,7 @@ const executeNode = (
+             ...node.state,
+             attr,
+             props: news,
++            bindings: bindingOutputs,
+           });
+         } else {
+           yield* commit<UpdatedResourceState>({
+@@ -812,7 +813,7 @@ const executeNode = (
+             resourceType: node.resource.Type,
+             props: news,
+             attr,
+-            bindings: excludeDeletedBindings(node.bindings),
++            bindings: bindingOutputs,
+             providerVersion: node.provider.version ?? 0,
+             downstream: node.downstream,
+             removalPolicy: node.resource.RemovalPolicy,
+@@ -1039,7 +1040,7 @@ const executeNode = (
+             props: news,
+             attr,
+             providerVersion: node.provider.version ?? 0,
+-            bindings: excludeDeletedBindings(node.bindings),
++            bindings: bindingOutputs,
+             downstream: node.downstream,
+             removalPolicy: node.resource.RemovalPolicy,
+           });
+@@ -1055,7 +1056,7 @@ const executeNode = (
+             props: news,
+             attr,
+             providerVersion: node.provider.version ?? 0,
+-            bindings: excludeDeletedBindings(node.bindings),
++            bindings: bindingOutputs,
+             downstream: node.downstream,
+             // Preserve the remaining backlog exactly as-is. GC is responsible for
+             // popping one generation at a time until the chain is exhausted.
+@@ -1422,7 +1423,7 @@ const converge = Effect.fn(function* (
+           props: newProps,
+           attr,
+           providerVersion: node.provider.version ?? 0,
+-          bindings: excludeDeletedBindings(node.bindings),
++          bindings: newBindings,
+           downstream: node.downstream,
+           namespace,
+           removalPolicy: node.resource.RemovalPolicy,
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
 index abf4a2e53a8793ad521ed70719bde153f72511de..8b763d891f00fc02056249ba5c5b1698a69a28b8 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
