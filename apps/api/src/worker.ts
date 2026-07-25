@@ -70,11 +70,13 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
     const deadLetterQueueName =
       yield* yield* importBatchDeadLetterQueue.queueName;
+    const deadLetterQueueId = yield* yield* importBatchDeadLetterQueue.queueId;
     yield* Cloudflare.Queues.consumeQueueMessages(
       importBatchQueue,
       {
         batchSize: 1,
         deadLetterQueue: deadLetterQueueName,
+        deadLetterQueueId,
         maxConcurrency: 1,
         maxRetries: 3,
       },
