@@ -39,6 +39,10 @@ import { makeTikTokSourceAvailabilityValidator } from "./features/imports/source
 import { CanonicalSourceIdentityResolver } from "./features/imports/source-identity.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./features/imports/source-identity.tiktok.js";
 import {
+  PilotProviderBudgetRuntime,
+  makePilotProviderBudgetRuntime,
+} from "./features/pilots/pilot-provider-budget.js";
+import {
   ImportBatchDeadLetterQueue,
   ImportBatchQueue,
 } from "./infrastructure/import-batch-queue.js";
@@ -66,6 +70,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   Effect.gen(function* MealPlannerApiWorker() {
     const queryDatabase =
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
+    const pilotProviderBudgetRuntime = makePilotProviderBudgetRuntime(
+      yield* Config.string("ALCHEMY_STAGE")
+    );
     const importBatchQueue = yield* ImportBatchQueue;
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
     yield* Cloudflare.Queues.consumeQueueMessages(
@@ -105,7 +112,12 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
               now: currentIsoTimestamp,
               replayClaimLeaseMilliseconds: 60_000,
             }).consume(message);
-          })
+          }).pipe(
+            Effect.provideService(
+              PilotProviderBudgetRuntime,
+              pilotProviderBudgetRuntime
+            )
+          )
         )
     );
     const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
@@ -202,7 +214,12 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                   )
                 )
               );
-            })
+            }).pipe(
+              Effect.provideService(
+                PilotProviderBudgetRuntime,
+                pilotProviderBudgetRuntime
+              )
+            )
         )
       ),
     };

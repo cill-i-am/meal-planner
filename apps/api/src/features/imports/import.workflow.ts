@@ -1,8 +1,20 @@
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Cause, Context, Effect, Layer, Schedule, Schema } from "effect";
+import {
+  Cause,
+  Config,
+  Context,
+  Effect,
+  Layer,
+  Schedule,
+  Schema,
+} from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
+import {
+  PilotProviderBudgetRuntime,
+  makePilotProviderBudgetRuntime,
+} from "../pilots/pilot-provider-budget.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { ImportMediaAcquisitionObject } from "./import-media-acquisition-object.js";
@@ -146,6 +158,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
   Effect.gen(function* ImportAcquisitionWorkflowInit() {
     const queryDatabase =
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
+    const pilotProviderBudgetRuntime = makePilotProviderBudgetRuntime(
+      yield* Config.string("ALCHEMY_STAGE")
+    );
     const evidenceBucket =
       yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
     const mediaObjects = yield* ImportMediaAcquisitionObject;
@@ -235,7 +250,12 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           encodedFinalization
         ).pipe(Effect.orDie);
         return encodedOutcome;
-      });
+      }).pipe(
+        Effect.provideService(
+          PilotProviderBudgetRuntime,
+          pilotProviderBudgetRuntime
+        )
+      );
   }).pipe(
     Effect.provide(
       Layer.mergeAll(
