@@ -121,6 +121,7 @@ describe("durable provider-free queue acceptance", () => {
       "0005_recipe_reviews.sql",
       "0006_import_carousel_evidence.sql",
       "0007_import_queue_acceptance.sql",
+      "0008_pilot_provider_budget.sql",
     ]);
     expect(
       itemColumns.results.map(({ name }: { readonly name: string }) => name)
@@ -220,7 +221,7 @@ describe("durable provider-free queue acceptance", () => {
           ORDER BY name`
       )
       .all<{ readonly name: string; readonly count: number }>();
-    expect(ledger.results).toHaveLength(8);
+    expect(ledger.results).toHaveLength(9);
     expect(
       ledger.results.every(
         ({ count }: { readonly count: number }) => count === 1
