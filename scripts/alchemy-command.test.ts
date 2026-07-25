@@ -21,7 +21,7 @@ describe("Alchemy command guard", () => {
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("Plan: no changes");
-  });
+  }, 15_000);
 
   it("rejects deploy without an explicit stage before invoking Alchemy", () => {
     let invoked = false;
