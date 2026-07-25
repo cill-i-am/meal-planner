@@ -7,7 +7,7 @@ import type {
 } from "./import-carousel-adapter.js";
 import {
   MaximumCarouselImages,
-  readJpegDimensions,
+  decodeJpegDimensions,
 } from "./import-carousel-adapter.js";
 import {
   MaximumVisualFrameBytes,
@@ -119,7 +119,7 @@ export const makeOperatorCarouselAdapter = (input: {
       let totalBytes = 0;
       for (const [orderIndex, encoded] of input.bundle.images.entries()) {
         const bytes = yield* decodeBase64(encoded.jpegBase64);
-        const dimensions = readJpegDimensions(bytes);
+        const dimensions = decodeJpegDimensions(bytes);
         const actualSha256 = yield* sha256Hex(bytes);
         totalBytes += bytes.byteLength;
         if (

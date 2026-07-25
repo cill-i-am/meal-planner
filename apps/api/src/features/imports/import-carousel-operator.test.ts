@@ -53,35 +53,127 @@ const base64 = (bytes: Uint8Array) => {
   return btoa(binary);
 };
 
-const completeBundle = async () => {
-  const first = jpeg(360, 640, 1);
-  const second = jpeg(720, 1280, 2);
-  return Schema.decodeUnknownSync(OperatorCarouselBundle)({
+const decodeBase64 = (value: string) =>
+  Uint8Array.from(atob(value), (character) => character.codePointAt(0) ?? 0);
+
+const realJpegs = [
+  {
+    bytes: decodeBase64(
+      "/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAADAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z"
+    ),
+    height: 3,
+    sha256: "7f593180ed96b891629067143da2fb44eb996b1a45e7561870a5754d5bba506e",
+    width: 2,
+  },
+  {
+    bytes: decodeBase64(
+      "/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAACAAMDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABQj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCewFIh3//Z"
+    ),
+    height: 2,
+    sha256: "8a2cbe47caa698585b361ae9a034bea0363d4c5fc05807262673be911dd7cf32",
+    width: 3,
+  },
+] as const;
+
+const completeBundle = () =>
+  Schema.decodeUnknownSync(OperatorCarouselBundle)({
     declaredPageCount: 2,
-    images: [
-      {
-        height: 640,
-        jpegBase64: base64(first),
-        orderIndex: 0,
-        sha256: await sha256(first),
-        width: 360,
-      },
-      {
-        height: 1280,
-        jpegBase64: base64(second),
-        orderIndex: 1,
-        sha256: await sha256(second),
-        width: 720,
-      },
-    ],
+    images: realJpegs.map(
+      ({ bytes, height, sha256: checksum, width }, orderIndex) => ({
+        height,
+        jpegBase64: base64(bytes),
+        orderIndex,
+        sha256: checksum,
+        width,
+      })
+    ),
     source: {
       kind: "tiktok",
       url: sourceUrl,
     },
   });
-};
 
 describe("operator carousel adapter", () => {
+  it("rejects JPEG-like bytes without a valid scan", async () => {
+    const bytes = jpeg(360, 640, 1);
+    const bundle = Schema.decodeUnknownSync(OperatorCarouselBundle)({
+      declaredPageCount: 1,
+      images: [
+        {
+          height: 640,
+          jpegBase64: base64(bytes),
+          orderIndex: 0,
+          sha256: await sha256(bytes),
+          width: 360,
+        },
+      ],
+      source: { kind: "tiktok", url: sourceUrl },
+    });
+    const adapter = makeOperatorCarouselAdapter({
+      bundle,
+      canonicalId,
+      receivedAt: "2026-07-25T20:00:00.000Z",
+      sourceUrl,
+    });
+
+    await expect(
+      Effect.runPromise(
+        adapter.acquire({
+          canonicalId,
+          declaredPageCount: 1,
+          kind: "tiktok_carousel",
+          sourceUrl,
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "TikTokCarouselAdapterFailure",
+      code: "carousel_partial",
+    });
+  });
+
+  it("rejects a structurally complete JPEG with undecodable scan data", async () => {
+    const [source] = realJpegs;
+    const bytes = Uint8Array.from([
+      ...source.bytes.slice(0, -7),
+      0,
+      0xff,
+      0xd9,
+    ]);
+    const bundle = Schema.decodeUnknownSync(OperatorCarouselBundle)({
+      declaredPageCount: 1,
+      images: [
+        {
+          height: source.height,
+          jpegBase64: base64(bytes),
+          orderIndex: 0,
+          sha256: await sha256(bytes),
+          width: source.width,
+        },
+      ],
+      source: { kind: "tiktok", url: sourceUrl },
+    });
+    const adapter = makeOperatorCarouselAdapter({
+      bundle,
+      canonicalId,
+      receivedAt: "2026-07-25T20:00:00.000Z",
+      sourceUrl,
+    });
+
+    await expect(
+      Effect.runPromise(
+        adapter.acquire({
+          canonicalId,
+          declaredPageCount: 1,
+          kind: "tiktok_carousel",
+          sourceUrl,
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "TikTokCarouselAdapterFailure",
+      code: "carousel_partial",
+    });
+  });
+
   it.each([
     ["empty JPEG", ""],
     [
@@ -124,7 +216,7 @@ describe("operator carousel adapter", () => {
       0, 1,
     ]);
     expect(acquisition.images.map(({ bytes }) => bytes.byteLength)).toEqual([
-      18, 18,
+      270, 270,
     ]);
     expect(acquisition.source).toMatchObject({
       canonicalUrl: sourceUrl,

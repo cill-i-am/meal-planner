@@ -146,29 +146,32 @@ const descriptorFor = (canonicalId: SourceCanonicalId) => ({
   ),
 });
 
+const decodeBase64 = (value: string) =>
+  Uint8Array.from(atob(value), (character) => character.codePointAt(0) ?? 0);
+
 const completeAdapterOutput = (canonicalId: SourceCanonicalId) => ({
   images: [
     {
-      bytes: new Uint8Array([
-        255, 216, 255, 192, 0, 11, 8, 2, 128, 1, 104, 1, 1, 17, 0, 1, 255, 217,
-      ]),
-      height: 640,
+      bytes: decodeBase64(
+        "/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAADAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z"
+      ),
+      height: 3,
       mimeType: "image/jpeg" as const,
       orderIndex: 0,
       sha256:
-        "02b0cfad339e85daf354a9ae64506a590351a78bbf2a28d335ed69e4cf61a70a",
-      width: 360,
+        "7f593180ed96b891629067143da2fb44eb996b1a45e7561870a5754d5bba506e",
+      width: 2,
     },
     {
-      bytes: new Uint8Array([
-        255, 216, 255, 192, 0, 11, 8, 5, 0, 2, 208, 1, 1, 17, 0, 2, 255, 217,
-      ]),
-      height: 1280,
+      bytes: decodeBase64(
+        "/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAACAAMDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABQj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCewFIh3//Z"
+      ),
+      height: 2,
       mimeType: "image/jpeg" as const,
       orderIndex: 1,
       sha256:
-        "0b314df8a95df2d26530561227a62f01b3eb3be6239e958f371ce5fdf838b815",
-      width: 720,
+        "8a2cbe47caa698585b361ae9a034bea0363d4c5fc05807262673be911dd7cf32",
+      width: 3,
     },
   ],
   source: {
@@ -206,7 +209,7 @@ const visualFixture = () =>
     ],
     outcome: "found",
     provider: "deterministic_fake",
-    usage: { inputBytes: 36, inputFrames: 2, modelCalls: 1 },
+    usage: { inputBytes: 540, inputFrames: 2, modelCalls: 1 },
   });
 
 const unresolvedRecipeFact = (reason: string) => ({
@@ -497,8 +500,8 @@ describe("provider-free TikTok carousel tracer", () => {
       )
     ).toBe(true);
     expect(manifest.images.map(({ sha256 }) => sha256)).toEqual([
-      "02b0cfad339e85daf354a9ae64506a590351a78bbf2a28d335ed69e4cf61a70a",
-      "0b314df8a95df2d26530561227a62f01b3eb3be6239e958f371ce5fdf838b815",
+      "7f593180ed96b891629067143da2fb44eb996b1a45e7561870a5754d5bba506e",
+      "8a2cbe47caa698585b361ae9a034bea0363d4c5fc05807262673be911dd7cf32",
     ]);
     expect(manifest.source).toMatchObject({
       canonicalId: tracer.canonicalId,

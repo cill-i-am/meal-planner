@@ -11,7 +11,11 @@ import {
   IdempotencyKey,
   ImportId,
 } from "./import.contracts.js";
-import { invalidImportId, invalidImportRequest } from "./import.errors.js";
+import {
+  invalidCarouselBundle,
+  invalidImportId,
+  invalidImportRequest,
+} from "./import.errors.js";
 import { respond } from "./import.http.js";
 import { ImportService } from "./import.service.js";
 
@@ -38,7 +42,7 @@ const decodeOperatorCarouselRequest = HttpServerRequest.schemaBodyJson(
     HttpServerRequest.MaxBodySize,
     FileSystem.Size(MaximumOperatorCarouselRequestBytes)
   ),
-  Effect.mapError(() => invalidImportRequest())
+  Effect.mapError(() => invalidCarouselBundle())
 );
 
 const createImportStatusCode = (response: typeof CreateImportResponse.Type) => {

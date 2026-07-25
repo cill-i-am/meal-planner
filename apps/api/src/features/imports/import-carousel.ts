@@ -8,7 +8,7 @@ import type {
 } from "./import-carousel-adapter.js";
 import {
   MaximumCarouselImages,
-  readJpegDimensions,
+  decodeJpegDimensions,
   TikTokCarouselDescriptor as TikTokCarouselDescriptorSchema,
 } from "./import-carousel-adapter.js";
 import type {
@@ -232,7 +232,7 @@ const validateCompleteAcquisition = (
     const checksums = new Set<string>();
     let totalBytes = 0;
     for (const [orderIndex, image] of ordered.entries()) {
-      const dimensions = readJpegDimensions(image.bytes);
+      const dimensions = decodeJpegDimensions(image.bytes);
       totalBytes += image.bytes.byteLength;
       if (
         image.orderIndex !== orderIndex ||

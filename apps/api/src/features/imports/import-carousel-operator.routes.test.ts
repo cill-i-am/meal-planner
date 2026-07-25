@@ -26,6 +26,8 @@ const timestamp = Schema.decodeUnknownSync(ImportTimestamp)(
 const canonicalId = Schema.decodeUnknownSync(SourceCanonicalId)(
   "7520000000000000162"
 );
+const completeJpegBase64 =
+  "/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAADAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z";
 
 let authorizer: ImportAuthorizerShape;
 
@@ -85,12 +87,12 @@ describe("operator carousel route", () => {
       declaredPageCount: 1,
       images: [
         {
-          height: 1,
-          jpegBase64: "/9j/wAALCAABAAEBAREA/9k=",
+          height: 3,
+          jpegBase64: completeJpegBase64,
           orderIndex: 0,
           sha256:
-            "96b3455d1180f0ca4c617adbe4d6a0631c9a46b49e9fa10cc1563a207b001b41",
-          width: 1,
+            "7f593180ed96b891629067143da2fb44eb996b1a45e7561870a5754d5bba506e",
+          width: 2,
         },
       ],
       source: {
@@ -133,6 +135,16 @@ describe("operator carousel route", () => {
   it("rejects the body before decoding when it exceeds the route limit", async () => {
     const app = makeApp({ admit: () => Effect.die("must not be called") });
     apps.push(app);
+    const unauthorized = await app.handler(
+      new Request("https://meal-planner.test/imports/operator-carousel", {
+        body: "x".repeat(MaximumOperatorCarouselRequestBytes + 1),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "operator-oversized",
+        },
+        method: "POST",
+      })
+    );
     const response = await app.handler(
       new Request("https://meal-planner.test/imports/operator-carousel", {
         body: "x".repeat(MaximumOperatorCarouselRequestBytes + 1),
@@ -145,11 +157,51 @@ describe("operator carousel route", () => {
       })
     );
 
-    expect(response.status).toBe(400);
+    expect(unauthorized.status).toBe(401);
+    expect(response.status).toBe(422);
     await expect(response.json()).resolves.toEqual({
       error: {
-        code: "invalid_request",
-        message: "The import request is invalid.",
+        code: "incomplete_carousel",
+        message: "A complete ordered JPEG carousel is required.",
+        recovery: "request_complete_carousel",
+      },
+    });
+  });
+
+  it.each([
+    ["malformed JSON", "{"],
+    [
+      "schema-invalid JSON",
+      JSON.stringify({
+        declaredPageCount: 1,
+        images: [],
+        source: {
+          kind: "tiktok",
+          url: "https://www.tiktok.com/@cook/photo/7520000000000000162",
+        },
+      }),
+    ],
+  ])("returns complete-bundle recovery for %s", async (_name, body) => {
+    const app = makeApp({ admit: () => Effect.die("must not be called") });
+    apps.push(app);
+    const response = await app.handler(
+      new Request("https://meal-planner.test/imports/operator-carousel", {
+        body,
+        headers: {
+          authorization: "Bearer test-import-token",
+          "content-type": "application/json",
+          "idempotency-key": "operator-invalid-body",
+        },
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "incomplete_carousel",
+        message: "A complete ordered JPEG carousel is required.",
+        recovery: "request_complete_carousel",
       },
     });
   });
