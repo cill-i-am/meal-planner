@@ -14,6 +14,7 @@ Drafts remain inactive until explicitly approved.
 ## Product And Engineering
 
 - [TikTok recipe-import feasibility report](tiktok-recipe-import-feasibility.html)
+- [Real-source recipe quality pilot runbook](real-source-pilot-runbook.md)
 - [Tesco API facade](../apps/api/README.md)
 
 Non-trivial software product intent, readiness, blockers, and delivery state
