@@ -56,15 +56,17 @@ Do not paste that mapping into Linear, GitHub, logs, or handoffs.
 Before requesting an execution window, prepare:
 
 1. One approved source for each required source class.
-2. An authorization record for each sample, with:
+2. Random opaque manifest and sample IDs that contain no creator or source
+   information.
+3. An authorization record for each sample, with:
    - route: `creator_owned`, `documented_permission`, or
      `approved_research_basis`;
    - an opaque `auth:` reference;
    - authorization start and expiry timestamps.
-3. A positive whole-number budget cap in micro-US dollars.
-4. Current confirmation that media acquisition, speech transcription, visual
+4. A positive whole-number budget cap in micro-US dollars.
+5. Current confirmation that media acquisition, speech transcription, visual
    evidence, and recipe extraction are configured in the isolated pilot stage.
-5. A deletion deadline for each sample no later than seven days after execution.
+6. A deletion deadline for each sample no later than seven days after execution.
 
 Do not claim readiness from stale configuration or from a successful local test.
 Provider configuration and authorization validity must be checked at execution

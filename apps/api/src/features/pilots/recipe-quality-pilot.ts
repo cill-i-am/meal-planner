@@ -6,6 +6,9 @@ import { ImportTimestamp } from "../imports/import.contracts.js";
 const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
 );
+const OpaquePilotId = TrimmedNonEmptyString.pipe(
+  Schema.check(Schema.isMaxLength(64), Schema.isPattern(/^[a-z\d][a-z\d_-]*$/u))
+);
 const SafeInteger = Schema.Number.pipe(
   Schema.check(
     Schema.isInt(),
@@ -17,14 +20,13 @@ const SafeInteger = Schema.Number.pipe(
 export const RecipeQualityPilotStage = "pilot-gaia-117";
 
 /** Opaque identity that never contains a source locator. */
-export const PilotSampleId = TrimmedNonEmptyString.pipe(
-  Schema.check(
-    Schema.isMaxLength(64),
-    Schema.isPattern(/^[a-z\d][a-z\d_-]*$/u)
-  ),
-  Schema.brand("PilotSampleId")
-);
+export const PilotSampleId = OpaquePilotId.pipe(Schema.brand("PilotSampleId"));
 export type PilotSampleId = typeof PilotSampleId.Type;
+
+export const PilotManifestId = OpaquePilotId.pipe(
+  Schema.brand("PilotManifestId")
+);
+export type PilotManifestId = typeof PilotManifestId.Type;
 
 export const PilotSourceClass = Schema.Literals([
   "normal_video",
@@ -82,7 +84,7 @@ export const PilotManifestSample = Schema.Struct({
 export type PilotManifestSample = typeof PilotManifestSample.Type;
 
 export const PilotManifest = Schema.Struct({
-  manifestId: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(64))),
+  manifestId: PilotManifestId,
   samples: Schema.NonEmptyArray(PilotManifestSample).pipe(
     Schema.check(Schema.isMaxLength(50))
   ),
@@ -368,7 +370,7 @@ const RedactedPilotManifestSample = Schema.Struct({
 });
 
 const RedactedPilotManifest = Schema.Struct({
-  manifestId: TrimmedNonEmptyString,
+  manifestId: PilotManifestId,
   samples: Schema.Array(RedactedPilotManifestSample),
   schemaVersion: Schema.Literal(1),
 });

@@ -218,6 +218,11 @@ describe("recipe quality pilot readiness", () => {
         );
       })
     );
+
+    const unsafeManifestId = preflightInput();
+    unsafeManifestId.manifest.manifestId =
+      "https://www.tiktok.com/@creator/video/123";
+    await expectPreflightCode(unsafeManifestId, "invalid_request");
   });
 
   it("fails closed for every missing execution prerequisite", async () => {
