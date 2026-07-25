@@ -1,14 +1,22 @@
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
+import { RuntimeContext } from "alchemy";
+import * as Cloudflare from "alchemy/Cloudflare";
 import { CloudflareEnvironment } from "alchemy/Cloudflare";
-import { Consumer, ConsumerProviderLive } from "alchemy/Cloudflare/Queues";
+import {
+  consumeQueueMessages,
+  Consumer,
+  ConsumerProviderLive,
+  EventSourceLive,
+} from "alchemy/Cloudflare/Queues";
 import type { ConsumerSettings } from "alchemy/Cloudflare/Queues";
+import * as Output from "alchemy/Output";
 import type * as Plan from "alchemy/Plan";
 import * as State from "alchemy/State";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import type * as Layer from "effect/Layer";
+import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import type * as HttpBody from "effect/unstable/http/HttpBody";
 import * as HttpClient from "effect/unstable/http/HttpClient";
@@ -127,6 +135,11 @@ const desiredSettings: ConsumerSettings = {
   maxWaitTimeMs: 1000,
   retryDelay: 1,
 };
+const desiredSettingsWithProviderDefaults: ConsumerSettings = {
+  batchSize: 1,
+  maxConcurrency: 1,
+  maxRetries: 3,
+};
 
 const loadQueueModules = async (): Promise<LoadedQueueModules> => {
   const cloudflareEntry = import.meta.resolve("alchemy/Cloudflare");
@@ -217,7 +230,8 @@ const provideQueueServices = <A, R>(
 };
 
 const makePersistedConsumer = (
-  attr: State.CreatedResourceState["attr"]
+  attr: State.CreatedResourceState["attr"],
+  settings: ConsumerSettings = desiredSettings
 ): State.CreatedResourceState => ({
   attr,
   bindings: [],
@@ -231,7 +245,7 @@ const makePersistedConsumer = (
     deadLetterQueueId,
     queueId,
     scriptName,
-    settings: desiredSettings,
+    settings,
   },
   providerVersion: 0,
   resourceType: Consumer.Type,
@@ -240,7 +254,8 @@ const makePersistedConsumer = (
 
 const runStablePlan = async (
   client: HttpClient.HttpClient,
-  persisted: State.CreatedResourceState
+  persisted: State.CreatedResourceState,
+  settings: ConsumerSettings = desiredSettings
 ) => {
   const [modules, testCore] = await Promise.all([
     loadQueueModules(),
@@ -268,7 +283,7 @@ const runStablePlan = async (
         deadLetterQueueId,
         queueId,
         scriptName,
-        settings: desiredSettings,
+        settings,
       })
     )
     .pipe(
@@ -286,6 +301,79 @@ const runStablePlan = async (
   }).pipe(Effect.provide(scratch.state), Effect.runPromise);
 
   return { persistedAfter, plan };
+};
+
+const runEventSourcePlan = async () => {
+  const [modules, testCore] = await Promise.all([
+    loadQueueModules(),
+    loadTestCore(),
+  ]);
+  const scratch = testCore.scratchStack(
+    { providers: ConsumerProviderLive(), stage: "test" },
+    "queue-consumer-event-source-plan"
+  );
+  const client = HttpClient.make((request) =>
+    Effect.die(
+      new TypeError(
+        `New EventSource plan unexpectedly called Cloudflare: ${request.method} ${request.url}`
+      )
+    )
+  );
+  const values = new Map<string, unknown>();
+  const runtimeContext = {
+    Type: "test",
+    env: {},
+    get: <T>(key: string) => Effect.succeed(values.get(key) as T | undefined),
+    id: "local-runtime",
+    listen: () => Effect.void,
+    set: (key: string, value: unknown) =>
+      Effect.sync(() => {
+        values.set(key, value);
+        return key;
+      }),
+  };
+  const host = {
+    LogicalId: "MealPlannerApi",
+    workerName: scriptName,
+  };
+  const queue = {
+    LogicalId: "ImportBatchQueue",
+    queueId,
+    queueName: Output.literal("meal-planner-pilot-gaia-117-import-batch"),
+  };
+  const eventSourceLayer = EventSourceLive.pipe(
+    Layer.provide(
+      Layer.succeed(
+        Cloudflare.Worker.Self,
+        host as unknown as Cloudflare.Worker
+      )
+    )
+  );
+  const effect = consumeQueueMessages(
+    queue as unknown as Cloudflare.Queues.Queue,
+    {
+      batchSize: 1,
+      deadLetterQueue,
+      deadLetterQueueId,
+      maxConcurrency: 1,
+      maxRetries: 3,
+    },
+    () => Effect.void
+  ).pipe(
+    Effect.provide(eventSourceLayer),
+    Effect.provideService(
+      RuntimeContext,
+      runtimeContext as unknown as RuntimeContext["Service"]
+    )
+  );
+
+  return scratch
+    .plan(effect)
+    .pipe(
+      (plan) => provideQueueServices(modules, client, plan),
+      Effect.scoped,
+      Effect.runPromise
+    );
 };
 
 const runStableDeploy = async (
@@ -740,6 +828,74 @@ describe("Alchemy queue consumer reconciliation", () => {
     expect(methods.length).toBeGreaterThan(0);
     expect(new Set(methods)).toEqual(new Set(["GET"]));
     expect(result.persistedAfter).toEqual(persisted);
+  });
+
+  it("treats Cloudflare's explicit zero retry delay as the omitted provider default", async () => {
+    const methods: string[] = [];
+    const client = HttpClient.make((request) =>
+      Effect.sync(() => {
+        methods.push(request.method);
+        return cloudflareResponse(request, {
+          consumer_id: consumerId,
+          dead_letter_queue: deadLetterQueue,
+          queue_name: "meal-planner-pilot-gaia-117-import-batch",
+          script_name: scriptName,
+          settings: {
+            batch_size: desiredSettingsWithProviderDefaults.batchSize,
+            max_concurrency: desiredSettingsWithProviderDefaults.maxConcurrency,
+            max_retries: desiredSettingsWithProviderDefaults.maxRetries,
+            max_wait_time_ms: 5000,
+            retry_delay: 0,
+          },
+          type: "worker",
+        });
+      })
+    );
+    const persisted = makePersistedConsumer(
+      {
+        accountId,
+        consumerId,
+        deadLetterQueue,
+        queueId,
+        scriptName,
+        settings: desiredSettingsWithProviderDefaults,
+      },
+      desiredSettingsWithProviderDefaults
+    );
+    const result = await runStablePlan(
+      client,
+      persisted,
+      desiredSettingsWithProviderDefaults
+    );
+
+    expect(result.plan.resources[logicalId]).toMatchObject({
+      action: "noop",
+      state: { instanceId, logicalId },
+    });
+    expect(result.plan.deletions).toEqual({});
+    expect(methods.length).toBeGreaterThan(0);
+    expect(new Set(methods)).toEqual(new Set(["GET"]));
+    expect(result.persistedAfter).toEqual(persisted);
+  });
+
+  it("forwards the physical DLQ identity through the installed EventSource path", async () => {
+    const plan = await runEventSourcePlan();
+    const resource = plan.resources["MealPlannerApi/ImportBatchQueueConsumer"];
+
+    expect(resource).toMatchObject({
+      action: "create",
+      props: {
+        deadLetterQueue,
+        deadLetterQueueId,
+        queueId,
+        scriptName,
+        settings: {
+          batchSize: 1,
+          maxConcurrency: 1,
+          maxRetries: 3,
+        },
+      },
+    });
   });
 
   it("uses the worker-only list scan when stable state lost the consumer ID", async () => {
