@@ -301,7 +301,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..00b104e8e7805364ab3a7f50bda46d43
 +    maxConcurrency: settings?.maxConcurrency,
 +    maxRetries: settings?.maxRetries ?? 3,
 +    maxWaitTimeMs: settings?.maxWaitTimeMs ?? 5000,
-+    retryDelay: settings?.retryDelay,
++    retryDelay: settings?.retryDelay ?? 0,
 +});
 +const replacementUnsafe = (reason) => Effect.fail({
 +    _tag: "ConsumerReplacementUnsafe",
@@ -775,7 +775,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..6fad760ff55784c8c04ca210f1b4ccfb
 +  maxConcurrency: settings?.maxConcurrency,
 +  maxRetries: settings?.maxRetries ?? 3,
 +  maxWaitTimeMs: settings?.maxWaitTimeMs ?? 5000,
-+  retryDelay: settings?.retryDelay,
++  retryDelay: settings?.retryDelay ?? 0,
 +});
 +
 +const replacementUnsafe = (reason: string) =>
