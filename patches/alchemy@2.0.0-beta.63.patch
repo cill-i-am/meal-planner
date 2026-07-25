@@ -59,7 +59,7 @@ index bec1997c5fc2cfe7f7d6554848ca93118831f2d1..bd414ce0adf35e028aaef2ee660c4a32
       * Consumer settings.
       */
 diff --git a/lib/Cloudflare/Queues/Consumer.js b/lib/Cloudflare/Queues/Consumer.js
-index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..00b104e8e7805364ab3a7f50bda46d43ec511ff4 100644
+index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..c9e683c31c22a6dc303e3a97da589addc28cb7e5 100644
 --- a/lib/Cloudflare/Queues/Consumer.js
 +++ b/lib/Cloudflare/Queues/Consumer.js
 @@ -63,6 +63,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
@@ -380,17 +380,19 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..00b104e8e7805364ab3a7f50bda46d43
  // but a fresh container/asset deploy can stretch that.
  const queueHandlerReadinessSchedule = Schedule.max([
 diff --git a/lib/Cloudflare/Queues/EventSource.d.ts b/lib/Cloudflare/Queues/EventSource.d.ts
-index 0b609cf9379d242927208a40d24f11d9938f0b38..2e6351468a134b8f1a0d7305e67f5ed520fba89c 100644
+index 0b609cf9379d242927208a40d24f11d9938f0b38..50613559495aa7d032bf0237de749834d20b17e7 100644
 --- a/lib/Cloudflare/Queues/EventSource.d.ts
 +++ b/lib/Cloudflare/Queues/EventSource.d.ts
-@@ -4,5 +4,6 @@ import * as Effect from "effect/Effect";
+@@ -4,6 +4,7 @@ import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
  import * as Layer from "effect/Layer";
  import * as Stream from "effect/Stream";
 +import type { Input } from "../../Input.ts";
  import { Worker } from "../Workers/Worker.ts";
  import type { Queue } from "./Queue.ts";
  /**
-@@ -31,6 +32,8 @@ export interface MessagesProps {
+@@ -30,7 +31,9 @@ export interface MessagesProps {
+      */
      retryDelay?: Duration.Input;
      /** Optional dead-letter queue name. */
 -    deadLetterQueue?: string;
@@ -412,6 +414,53 @@ index 4f79fdff1eebd98f888781ee9f3655750f72879b..cfab533151025e4320c51c75eca91b1d
                  });
              }));
          }
+diff --git a/lib/Cloudflare/Workers/WorkerProvider.js b/lib/Cloudflare/Workers/WorkerProvider.js
+index 320992f8eec3bd3319666ef8f793cc1700ff6c6e..7bc6e75fa164c0d6b4d5a03ddf379a12cd3b025b 100644
+--- a/lib/Cloudflare/Workers/WorkerProvider.js
++++ b/lib/Cloudflare/Workers/WorkerProvider.js
+@@ -288,17 +288,24 @@ const workerAssetConfigForHash = (assets) => {
+  * the bundle/vite/asset-content hashes, so a change to e.g. a compatibility
+  * flag or observability config planned as a noop and silently never deployed.
+  */
+-const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, }) => resolveMetadataHashValue({
++/**
++ * @internal exported for provider-path regression testing.
++ */
++export const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, }) => resolveMetadataHashValue({
+     accountId,
+     stack: { name: stack.name, stage: stack.stage },
+     compatibility: getCompatibility(props),
+     env: props.env,
+-    bindings: bindings.map((binding) => ({
+-        sid: binding.sid,
+-        data: binding.data,
+-    })),
++    // Hash the live Worker metadata contributed by bindings, not each
++    // resource binding's whole internal data object. Resource providers add
++    // plan/apply-only fields (for example databaseId, bucketName, or a
++    // Container's local `dev` image) as their Outputs resolve. Those fields
++    // are not themselves sent to the Worker API and can differ between plan
++    // phases, which made an unchanged Worker plan as an update forever.
++    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
++    containers: Array.from(new Set(bindings.flatMap((binding) => (binding.data.containers ?? []).map((container) => container.className)))).sort(),
+     assets: workerAssetConfigForHash(props.assets),
+-    cache: props.cache,
++    cache: props.cache ?? getCacheBinding(bindings),
+     limits: props.limits,
+     logpush: props.logpush,
+     observability: props.observability,
+@@ -1566,7 +1573,10 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
+         }),
+         diff: Effect.fn(function* ({ id, news, olds, output, newBindings }) {
+             const { accountId } = yield* yield* CloudflareEnvironment;
+-            if (!isResolved(news))
++            // Plan calls diff once while resolving resource expressions and
++            // again after all binding Outputs resolve. Never hash the
++            // provisional binding shape from the first pass.
++            if (!isResolved(news) || !isResolved(newBindings))
+                 return undefined;
+             if ((output?.accountId ?? accountId) !== accountId) {
+                 return { action: "replace" };
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
 index abf4a2e53a8793ad521ed70719bde153f72511de..8b763d891f00fc02056249ba5c5b1698a69a28b8 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
@@ -461,7 +510,7 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..8b763d891f00fc02056249ba5c5b1698
    accountId: string,
    databaseId: string,
 diff --git a/src/Cloudflare/Queues/Consumer.ts b/src/Cloudflare/Queues/Consumer.ts
-index e157f1fc5c8388c10039cc6c038f080712087cfc..6fad760ff55784c8c04ca210f1b4ccfbfcfd9daf 100644
+index e157f1fc5c8388c10039cc6c038f080712087cfc..7c64d9cfe43482e2def448c4cef95fb6d47543fa 100644
 --- a/src/Cloudflare/Queues/Consumer.ts
 +++ b/src/Cloudflare/Queues/Consumer.ts
 @@ -30,6 +30,14 @@ export type ConsumerProps = {
@@ -912,17 +961,19 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..6fad760ff55784c8c04ca210f1b4ccfb
  // but a fresh container/asset deploy can stretch that.
  const queueHandlerReadinessSchedule = Schedule.max([
 diff --git a/src/Cloudflare/Queues/EventSource.ts b/src/Cloudflare/Queues/EventSource.ts
-index 94fe8e726cbbe5f9c7ea92cd69f49112dc137c48..1b6de06347c6697485dca2a3166249281e304de9 100644
+index 94fe8e726cbbe5f9c7ea92cd69f49112dc137c48..720bddc00fe7eea6e8f6dae990c089ae3b34031a 100644
 --- a/src/Cloudflare/Queues/EventSource.ts
 +++ b/src/Cloudflare/Queues/EventSource.ts
-@@ -5,5 +5,6 @@ import * as Effect from "effect/Effect";
+@@ -5,6 +5,7 @@ import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
  import * as Layer from "effect/Layer";
  import * as Stream from "effect/Stream";
 +import type { Input } from "../../Input.ts";
  import * as Namespace from "../../Namespace.ts";
  import { RuntimeContext } from "../../RuntimeContext.ts";
  import type { FunctionContext } from "../../Serverless/Function.ts";
-@@ -38,6 +39,8 @@ export interface MessagesProps {
+@@ -37,7 +38,9 @@ export interface MessagesProps {
+    */
    retryDelay?: Duration.Input;
    /** Optional dead-letter queue name. */
 -  deadLetterQueue?: string;
@@ -940,3 +991,61 @@ index 94fe8e726cbbe5f9c7ea92cd69f49112dc137c48..1b6de06347c6697485dca2a316624928
              });
            }),
          );
+diff --git a/src/Cloudflare/Workers/WorkerProvider.ts b/src/Cloudflare/Workers/WorkerProvider.ts
+index 6ae1973c0463c1e103f2de857c1736b96ffe8624..179d5c9d8bf51daeec866081b527ed75a2c0c611 100644
+--- a/src/Cloudflare/Workers/WorkerProvider.ts
++++ b/src/Cloudflare/Workers/WorkerProvider.ts
+@@ -398,7 +398,10 @@ const workerAssetConfigForHash = (assets: WorkerProps["assets"]) => {
+  * the bundle/vite/asset-content hashes, so a change to e.g. a compatibility
+  * flag or observability config planned as a noop and silently never deployed.
+  */
+-const resolveWorkerMetadataHash = ({
++/**
++ * @internal exported for provider-path regression testing.
++ */
++export const resolveWorkerMetadataHash = ({
+   props,
+   bindings,
+   accountId,
+@@ -409,12 +412,24 @@ const resolveWorkerMetadataHash = ({
+     stack: { name: stack.name, stage: stack.stage },
+     compatibility: getCompatibility(props),
+     env: props.env,
+-    bindings: bindings.map((binding) => ({
+-      sid: binding.sid,
+-      data: binding.data,
+-    })),
++    // Hash the live Worker metadata contributed by bindings, not each
++    // resource binding's whole internal data object. Resource providers add
++    // plan/apply-only fields (for example databaseId, bucketName, or a
++    // Container's local `dev` image) as their Outputs resolve. Those fields
++    // are not themselves sent to the Worker API and can differ between plan
++    // phases, which made an unchanged Worker plan as an update forever.
++    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
++    containers: Array.from(
++      new Set(
++        bindings.flatMap((binding) =>
++          (binding.data.containers ?? []).map(
++            (container) => container.className,
++          ),
++        ),
++      ),
++    ).sort(),
+     assets: workerAssetConfigForHash(props.assets),
+-    cache: props.cache,
++    cache: props.cache ?? getCacheBinding(bindings),
+     limits: props.limits,
+     logpush: props.logpush,
+     observability: props.observability,
+@@ -2174,7 +2189,10 @@ export const LiveWorkerProvider = () =>
+           }),
+         diff: Effect.fn(function* ({ id, news, olds, output, newBindings }) {
+           const { accountId } = yield* yield* CloudflareEnvironment;
+-          if (!isResolved(news)) return undefined;
++          // Plan calls diff once while resolving resource expressions and
++          // again after all binding Outputs resolve. Never hash the
++          // provisional binding shape from the first pass.
++          if (!isResolved(news) || !isResolved(newBindings)) return undefined;
+           if ((output?.accountId ?? accountId) !== accountId) {
+             return { action: "replace" };
+           }
