@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import { SourceCanonicalId } from "./import.contracts.js";
 import { invalidSource, sourceIdentityUnavailable } from "./import.errors.js";
@@ -22,6 +22,15 @@ const allowedTikTokHosts = new Set([
 ]);
 
 const shortLinkHosts = new Set(["vm.tiktok.com", "vt.tiktok.com"]);
+const MaximumHandoffBodyBytes = 512 * 1024;
+
+const TikTokHandoffMetadata = Schema.Struct({
+  __DEFAULT_SCOPE__: Schema.Struct({
+    "seo.abtest": Schema.Struct({
+      canonical: Schema.String,
+    }),
+  }),
+});
 
 const parseAllowedTikTokUrl = (input: string): URL | undefined => {
   let url: URL;
@@ -125,12 +134,139 @@ const cancelResponseBody = (response: Response) => {
   }).pipe(Effect.ignore);
 };
 
+const readBoundedResponseBody = (response: Response) =>
+  Effect.tryPromise({
+    catch: sourceIdentityUnavailable,
+    try: async (signal) => {
+      const { body } = response;
+      const contentLength = response.headers.get("content-length");
+      if (
+        contentLength !== null &&
+        (!/^\d+$/u.test(contentLength) ||
+          Number(contentLength) > MaximumHandoffBodyBytes)
+      ) {
+        await body?.cancel();
+        throw new Error("TikTok handoff body exceeds the resolution limit");
+      }
+
+      if (body === null) {
+        throw new Error("TikTok handoff body is unavailable");
+      }
+
+      const reader = body.getReader();
+      const cancelForInterruption = async () => {
+        try {
+          await reader.cancel();
+        } catch {
+          // The owning resolution is already interrupted.
+        }
+      };
+      signal.addEventListener("abort", cancelForInterruption, { once: true });
+
+      try {
+        const decoder = new TextDecoder();
+        let bytesRead = 0;
+        let text = "";
+
+        const readNext = async (): Promise<string> => {
+          const next = await reader.read();
+          if (next.done) {
+            return `${text}${decoder.decode()}`;
+          }
+          bytesRead += next.value.byteLength;
+          if (bytesRead > MaximumHandoffBodyBytes) {
+            await reader.cancel();
+            throw new Error("TikTok handoff body exceeds the resolution limit");
+          }
+          text += decoder.decode(next.value, { stream: true });
+          return readNext();
+        };
+        const result = await readNext();
+        return result;
+      } finally {
+        signal.removeEventListener("abort", cancelForInterruption);
+      }
+    },
+  });
+
+const getQuotedAttribute = (
+  attributes: string,
+  name: "id" | "type"
+): string | undefined => {
+  const match = new RegExp(
+    `(?:^|\\s)${name}\\s*=\\s*(?:"(?<double>[^"]*)"|'(?<single>[^']*)')`,
+    "iu"
+  ).exec(attributes);
+  return match?.groups?.["double"] ?? match?.groups?.["single"];
+};
+
+const parseHandoffCanonical = (html: string): string | undefined => {
+  const scripts =
+    /<script\b(?<attributes>[^>]*)>(?<content>[\s\S]*?)<\/script\s*>/giu;
+
+  for (const match of html.matchAll(scripts)) {
+    const attributes = match.groups?.["attributes"];
+    const content = match.groups?.["content"];
+    if (
+      attributes === undefined ||
+      content === undefined ||
+      getQuotedAttribute(attributes, "id") !==
+        "__UNIVERSAL_DATA_FOR_REHYDRATION__" ||
+      getQuotedAttribute(attributes, "type")?.toLowerCase() !==
+        "application/json"
+    ) {
+      continue;
+    }
+
+    let decodedJson: unknown;
+    try {
+      decodedJson = JSON.parse(content);
+    } catch {
+      return undefined;
+    }
+    const metadata = Schema.decodeUnknownOption(TikTokHandoffMetadata)(
+      decodedJson
+    );
+    return Option.isSome(metadata)
+      ? metadata.value.__DEFAULT_SCOPE__["seo.abtest"].canonical
+      : undefined;
+  }
+  return undefined;
+};
+
+const resolveHandoffResponse = (response: Response) =>
+  Effect.gen(function* resolveHandoffResponseEffect() {
+    const contentType = response.headers.get("content-type");
+    if (contentType === null || !/^text\/html(?:\s*;|$)/iu.test(contentType)) {
+      yield* cancelResponseBody(response);
+      return yield* Effect.fail(sourceIdentityUnavailable());
+    }
+
+    const html = yield* readBoundedResponseBody(response);
+    const canonical = parseHandoffCanonical(html);
+    if (canonical === undefined) {
+      return yield* Effect.fail(sourceIdentityUnavailable());
+    }
+
+    const canonicalUrl = parseAllowedTikTokUrl(canonical);
+    if (canonicalUrl === undefined) {
+      return yield* Effect.fail(invalidSource());
+    }
+    const parsed = parseCanonicalPath(canonicalUrl);
+    return parsed === undefined
+      ? yield* Effect.fail(sourceIdentityUnavailable())
+      : parsed;
+  });
+
 const resolveShortLink = (fetcher: Fetcher, initial: URL) =>
   Effect.gen(function* resolveShortLinkEffect() {
     let current = initial;
 
     for (let hop = 0; hop < 5; hop += 1) {
       const response = yield* fetchManual(fetcher, current.toString());
+      if (response.status === 200) {
+        return yield* resolveHandoffResponse(response);
+      }
       if (response.status < 300 || response.status >= 400) {
         yield* cancelResponseBody(response);
         return yield* Effect.fail(sourceIdentityUnavailable());
