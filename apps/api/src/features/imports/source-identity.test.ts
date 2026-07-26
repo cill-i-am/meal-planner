@@ -11,15 +11,18 @@ const source = (url: string) =>
 const resolvedResponse = (response: Response): Promise<Response> =>
   Promise.resolve(response);
 
+const hydrationScript = (canonical: string): string =>
+  `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(
+    {
+      __DEFAULT_SCOPE__: {
+        "seo.abtest": { canonical },
+      },
+    }
+  )}</script>`;
+
 const hydrationResponse = (canonical: string): Response =>
   new Response(
-    `<!doctype html><html><body><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(
-      {
-        __DEFAULT_SCOPE__: {
-          "seo.abtest": { canonical },
-        },
-      }
-    )}</script></body></html>`,
+    `<!doctype html><html><body>${hydrationScript(canonical)}</body></html>`,
     {
       headers: { "content-type": "text/html; charset=utf-8" },
       status: 200,
@@ -227,6 +230,46 @@ describe("TikTok canonical identity", () => {
 
     expect(failure._tag).toBe("InvalidSource");
   });
+
+  it.each([
+    [
+      "an HTML comment",
+      `<!--${hydrationScript(
+        "https://www.tiktok.com/@cook/video/7520000000000000000"
+      )}-->`,
+    ],
+    [
+      "textarea raw text",
+      `<textarea>${hydrationScript(
+        "https://www.tiktok.com/@cook/video/7520000000000000000"
+      )}</textarea>`,
+    ],
+  ])(
+    "ignores hydration-looking pseudo-script markup inside %s",
+    async (_label, body) => {
+      const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
+        resolvedResponse(
+          String(input).includes("vm.tiktok.com")
+            ? new Response(null, {
+                headers: {
+                  location: "https://www.tiktok.com/t/Zsynthetic",
+                },
+                status: 302,
+              })
+            : new Response(body, {
+                headers: { "content-type": "text/html; charset=utf-8" },
+                status: 200,
+              })
+        )
+      );
+
+      const failure = await getFailure(
+        resolver.resolve(source("https://vm.tiktok.com/abc123"))
+      );
+
+      expect(failure._tag).toBe("SourceIdentityUnavailable");
+    }
+  );
 
   it.each([
     ["missing hydration", "<!doctype html><html></html>"],

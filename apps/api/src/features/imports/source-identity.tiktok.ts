@@ -200,36 +200,172 @@ const getQuotedAttribute = (
   return match?.groups?.["double"] ?? match?.groups?.["single"];
 };
 
-const parseHandoffCanonical = (html: string): string | undefined => {
-  const scripts =
-    /<script\b(?<attributes>[^>]*)>(?<content>[\s\S]*?)<\/script\s*>/giu;
+const rawTextElementNames = new Set([
+  "iframe",
+  "noembed",
+  "noframes",
+  "noscript",
+  "script",
+  "style",
+  "textarea",
+  "title",
+  "xmp",
+]);
 
-  for (const match of html.matchAll(scripts)) {
-    const attributes = match.groups?.["attributes"];
-    const content = match.groups?.["content"];
-    if (
-      attributes === undefined ||
-      content === undefined ||
-      getQuotedAttribute(attributes, "id") !==
-        "__UNIVERSAL_DATA_FOR_REHYDRATION__" ||
-      getQuotedAttribute(attributes, "type")?.toLowerCase() !==
-        "application/json"
-    ) {
+interface HtmlTag {
+  readonly _tag: "End" | "Start";
+  readonly attributes: string;
+  readonly end: number;
+  readonly name: string;
+  readonly selfClosing: boolean;
+}
+
+const findTagEnd = (html: string, start: number): number | undefined => {
+  let quote: "'" | '"' | undefined;
+  for (let index = start; index < html.length; index += 1) {
+    const character = html[index];
+    if (quote !== undefined) {
+      if (character === quote) {
+        quote = undefined;
+      }
+    } else if (character === "'" || character === '"') {
+      quote = character;
+    } else if (character === ">") {
+      return index;
+    }
+  }
+  return undefined;
+};
+
+const readNextTag = (html: string, start: number): HtmlTag | undefined => {
+  let index = start;
+  while (index < html.length) {
+    const tagStart = html.indexOf("<", index);
+    if (tagStart === -1) {
+      return undefined;
+    }
+
+    if (html.startsWith("<!--", tagStart)) {
+      const commentEnd = /--!?>/gu;
+      commentEnd.lastIndex = tagStart + 4;
+      const match = commentEnd.exec(html);
+      if (match === null) {
+        return undefined;
+      }
+      index = commentEnd.lastIndex;
       continue;
     }
 
-    let decodedJson: unknown;
-    try {
-      decodedJson = JSON.parse(content);
-    } catch {
+    if (html.startsWith("<!", tagStart) || html.startsWith("<?", tagStart)) {
+      const declarationEnd = findTagEnd(html, tagStart + 2);
+      if (declarationEnd === undefined) {
+        return undefined;
+      }
+      index = declarationEnd + 1;
+      continue;
+    }
+
+    const match = /^<(?<closing>\/)?\s*(?<name>[A-Za-z][\w:-]*)/u.exec(
+      html.slice(tagStart)
+    );
+    const name = match?.groups?.["name"]?.toLowerCase();
+    if (match === null || name === undefined) {
+      index = tagStart + 1;
+      continue;
+    }
+
+    const end = findTagEnd(html, tagStart + match[0].length);
+    if (end === undefined) {
       return undefined;
     }
-    const metadata = Schema.decodeUnknownOption(TikTokHandoffMetadata)(
-      decodedJson
-    );
-    return Option.isSome(metadata)
-      ? metadata.value.__DEFAULT_SCOPE__["seo.abtest"].canonical
-      : undefined;
+    const attributes = html.slice(tagStart + match[0].length, end);
+    return {
+      _tag: match.groups?.["closing"] === undefined ? "Start" : "End",
+      attributes,
+      end: end + 1,
+      name,
+      selfClosing: /\/\s*$/u.test(attributes),
+    };
+  }
+  return undefined;
+};
+
+const findRawTextEnd = (
+  html: string,
+  elementName: string,
+  start: number
+): { readonly content: string; readonly end: number } | undefined => {
+  const closingTag = new RegExp(`</${elementName}\\s*>`, "giu");
+  closingTag.lastIndex = start;
+  const match = closingTag.exec(html);
+  return match === null
+    ? undefined
+    : {
+        content: html.slice(start, match.index),
+        end: closingTag.lastIndex,
+      };
+};
+
+const decodeHandoffCanonical = (content: string): string | undefined => {
+  let decodedJson: unknown;
+  try {
+    decodedJson = JSON.parse(content);
+  } catch {
+    return undefined;
+  }
+  const metadata = Schema.decodeUnknownOption(TikTokHandoffMetadata)(
+    decodedJson
+  );
+  return Option.isSome(metadata)
+    ? metadata.value.__DEFAULT_SCOPE__["seo.abtest"].canonical
+    : undefined;
+};
+
+const isHydrationScript = (tag: HtmlTag): boolean =>
+  tag.name === "script" &&
+  getQuotedAttribute(tag.attributes, "id") ===
+    "__UNIVERSAL_DATA_FOR_REHYDRATION__" &&
+  getQuotedAttribute(tag.attributes, "type")?.toLowerCase() ===
+    "application/json";
+
+const parseHandoffCanonical = (html: string): string | undefined => {
+  let index = 0;
+  let templateDepth = 0;
+
+  while (index < html.length) {
+    const tag = readNextTag(html, index);
+    if (tag === undefined) {
+      return undefined;
+    }
+
+    if (tag._tag === "End") {
+      if (tag.name === "template" && templateDepth > 0) {
+        templateDepth -= 1;
+      }
+      index = tag.end;
+      continue;
+    }
+
+    if (tag.name === "template" && !tag.selfClosing) {
+      templateDepth += 1;
+    }
+
+    if (tag.name === "plaintext") {
+      return undefined;
+    }
+    if (!rawTextElementNames.has(tag.name) || tag.selfClosing) {
+      index = tag.end;
+      continue;
+    }
+
+    const rawText = findRawTextEnd(html, tag.name, tag.end);
+    if (rawText === undefined) {
+      return undefined;
+    }
+    if (templateDepth === 0 && isHydrationScript(tag)) {
+      return decodeHandoffCanonical(rawText.content);
+    }
+    index = rawText.end;
   }
   return undefined;
 };
