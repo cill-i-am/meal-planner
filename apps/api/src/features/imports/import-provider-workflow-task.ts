@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare";
+import { WorkflowStepContext, task } from "alchemy/Cloudflare/Workflows";
 import { Effect, Schema } from "effect";
 
 export const ProviderTaskStepConfig = {
@@ -64,7 +64,7 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
         }
 
         return Effect.gen(function* handleRetryableProviderFailure() {
-          const context = yield* Cloudflare.Workflows.WorkflowStepContext;
+          const context = yield* WorkflowStepContext;
           const retryLimit =
             context.config.retries?.limit ??
             ProviderTaskStepConfig.retries.limit;
@@ -87,7 +87,7 @@ export const runProviderTask = <Value, Failure, Success>(
   effect: Effect.Effect<Value, Failure>,
   onSuccess: (value: Value) => Success
 ) =>
-  Cloudflare.Workflows.task(
+  task(
     name,
     runProviderTaskAttempt(stage, effect, onSuccess),
     ProviderTaskStepConfig

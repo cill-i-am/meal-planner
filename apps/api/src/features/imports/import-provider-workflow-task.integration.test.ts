@@ -1,243 +1,343 @@
-import * as Cloudflare from "alchemy/Cloudflare";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+
+import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import * as Bundle from "alchemy/Bundle";
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { Miniflare } from "miniflare";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import {
-  ProviderTaskStepConfig,
-  runProviderTask,
-} from "./import-provider-workflow-task.js";
-
-class TestWorkflowEntrypoint {
-  run(_event: unknown, _step: unknown): Promise<unknown> {
-    void this;
-    return Promise.resolve();
-  }
+interface ProviderWorkflowInput {
+  readonly failureCode?: string;
+  readonly scenario: "retry_exhausted" | "success" | "terminal" | "unknown";
 }
 
-interface NativeStepContext {
-  readonly attempt: number;
-  readonly config: typeof ProviderTaskStepConfig;
-  readonly step: {
-    readonly count: number;
-    readonly name: string;
+const compatibilityDate = "2026-07-14";
+const compatibilityFlags = ["nodejs_compat"];
+const fixturePath = fileURLToPath(
+  new URL("import-provider-workflow-task.test-fixture.ts", import.meta.url)
+);
+const temporaryDirectories: string[] = [];
+let runtime: Miniflare;
+
+const buildFixture = async (outputDirectory: string) => {
+  type BundlePlugin = NonNullable<
+    Parameters<typeof Bundle.build>[0]["plugins"]
+  >;
+  const alchemyEntry = import.meta.resolve("alchemy");
+  const pluginModule = new URL(
+    "../../@distilled.cloud/cloudflare-rolldown-plugin/dist/plugin.js",
+    alchemyEntry
+  );
+  const { default: cloudflareRolldown } = (await import(pluginModule.href)) as {
+    readonly default: (options: {
+      readonly compatibilityDate: string;
+      readonly compatibilityFlags: string[];
+    }) => BundlePlugin;
   };
-}
+  const output = await Effect.runPromise(
+    Bundle.build(
+      {
+        checks: {
+          ineffectiveDynamicImport: false,
+          unresolvedImport: false,
+        },
+        external: ["cloudflare:workers"],
+        input: fixturePath,
+        plugins: [
+          cloudflareRolldown({
+            compatibilityDate,
+            compatibilityFlags,
+          }),
+        ],
+      },
+      {
+        codeSplitting: false,
+        dir: outputDirectory,
+        format: "esm",
+        minify: true,
+        sourcemap: false,
+      }
+    )
+  );
+  const {
+    files: [{ content }],
+  } = output;
+  return typeof content === "string"
+    ? content
+    : new TextDecoder().decode(content);
+};
 
-const makeCheckpointingNativeStep = () => {
-  const checkpoints = new Map<string, unknown>();
-  const observedConfigs: unknown[] = [];
+const applyMigrations = async () => {
+  const database = await runtime.getD1Database("MealPlannerDatabase");
+  const migrations = await readD1Migrations(
+    fileURLToPath(new URL("../../../migrations", import.meta.url))
+  );
+  await database
+    .prepare(
+      `CREATE TABLE d1_migrations (
+         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+         name TEXT NOT NULL UNIQUE,
+         applied_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+       )`
+    )
+    .run();
+  const applyRemaining = async (
+    remaining: readonly (typeof migrations)[number][]
+  ): Promise<void> => {
+    const [migration, ...rest] = remaining;
+    if (migration === undefined) {
+      return;
+    }
+    await database.batch([
+      ...migration.queries.map((query) => database.prepare(query)),
+      database
+        .prepare("INSERT INTO d1_migrations (name) VALUES (?)")
+        .bind(migration.name),
+    ]);
+    await applyRemaining(rest);
+  };
+  await applyRemaining(migrations);
+};
 
-  return {
-    observedConfigs,
-    step: {
-      do: (
-        name: string,
-        config: typeof ProviderTaskStepConfig,
-        runNativeAttempt: (context: NativeStepContext) => Promise<unknown>
-      ) => {
-        observedConfigs.push(config);
-        if (checkpoints.has(name)) {
-          return Promise.resolve(checkpoints.get(name));
-        }
-
-        const maximumAttempts = config.retries.limit + 1;
-        const executeAttempt = async (attempt: number): Promise<unknown> => {
-          try {
-            const checkpoint = await runNativeAttempt({
-              attempt,
-              config,
-              step: { count: 1, name },
-            });
-            checkpoints.set(name, checkpoint);
-            return checkpoint;
-          } catch (error: unknown) {
-            if (attempt < maximumAttempts) {
-              return executeAttempt(attempt + 1);
-            }
-            throw new Error("Native workflow task retries exhausted", {
-              cause: error,
-            });
-          }
-        };
-        return executeAttempt(1);
+beforeAll(async () => {
+  const temporaryDirectory = await mkdtemp(
+    `${tmpdir()}/meal-planner-gaia-163-native-`
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  const fixtureScript = await buildFixture(temporaryDirectory);
+  runtime = new Miniflare({
+    compatibilityDate,
+    compatibilityFlags,
+    d1Databases: { MealPlannerDatabase: "gaia-163-test" },
+    kvNamespaces: ["PROVIDER_WORKFLOW_STATE"],
+    modules: [
+      {
+        contents: fixtureScript,
+        path: "provider-workflow-fixture.js",
+        type: "ESModule",
+      },
+    ],
+    workflows: {
+      ProviderRetryWorkflow: {
+        className: "ProviderRetryWorkflow",
+        name: "provider-retry-workflow",
       },
     },
-  };
-};
-
-const makeBridgedWorkflow = (
-  workflowClassName: string,
-  workflowExport: unknown
-) => {
-  const entrypoint = Effect.succeed({
-    RuntimeContext: {
-      exports: Effect.succeed({ [workflowClassName]: workflowExport }),
-      shape: () => ({}),
-    },
   });
-  const Bridge = Cloudflare.makeWorkflowBridge(TestWorkflowEntrypoint, {
-    entrypoint,
-    stack: { name: "meal-planner", stage: "test" },
-  })(workflowClassName);
-  return new Bridge({}, {});
+  await applyMigrations();
+}, 30_000);
+
+afterAll(async () => {
+  await runtime.dispose();
+  await Promise.all(
+    temporaryDirectories.map((directory) =>
+      rm(directory, { force: true, recursive: true })
+    )
+  );
+});
+
+const stateKey = (instanceId: string, name: string) => `${instanceId}:${name}`;
+
+const readNumber = async (instanceId: string, name: string) => {
+  const { PROVIDER_WORKFLOW_STATE: namespace } = await runtime.getBindings<{
+    readonly PROVIDER_WORKFLOW_STATE: {
+      readonly get: (key: string) => Promise<string | null>;
+    };
+  }>();
+  return Number((await namespace.get(stateKey(instanceId, name))) ?? "0");
 };
 
-const workflowEvent = {
-  instanceId: "gaia-163",
-  payload: {},
-  timestamp: new Date("2026-07-26T00:00:00.000Z"),
-  workflowName: "provider-retry-workflow",
+const commandWorkflow = async (
+  command:
+    | { readonly action: "restart"; readonly id: string }
+    | {
+        readonly action: "run";
+        readonly id: string;
+        readonly input: ProviderWorkflowInput;
+      }
+) => {
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify(command),
+    method: "POST",
+  });
+  expect(response.status).toBe(200);
+  const status = await response.json();
+  expect(JSON.stringify(status)).not.toContain("must-not-cross-the-checkpoint");
+  return status;
 };
+
+const runWorkflow = (id: string, input: ProviderWorkflowInput) =>
+  commandWorkflow({ action: "run", id, input });
+
+const restartFromAfterProviderCheckpoint = (id: string) =>
+  commandWorkflow({ action: "restart", id });
 
 describe("provider workflow task retry exhaustion", () => {
-  it("checkpoints the exhausted native task and replays it with zero further provider calls", async () => {
-    let providerCalls = 0;
-    const workflowClassName = "ProviderRetryWorkflow";
-    const workflowExport = {
-      kind: "workflow" as const,
-      make: () =>
-        Effect.succeed(() =>
-          runProviderTask(
-            "transcribe-provider",
-            "speech",
-            Effect.sync(() => {
-              providerCalls += 1;
-            }).pipe(
-              Effect.andThen(
-                Effect.fail({
-                  code: "provider_unavailable",
-                  unsafeProviderBody: "must-not-cross-the-checkpoint",
-                })
-              )
-            ),
-            () => ({ _tag: "Succeeded" as const, stage: "speech" as const })
-          )
-        ),
-    };
-    const workflow = makeBridgedWorkflow(workflowClassName, workflowExport);
-    const nativeStep = makeCheckpointingNativeStep();
+  it("uses native retries, checkpoints final exhaustion, and replays with zero provider calls", async () => {
+    const instanceId = "gaia-163-native-retry-exhausted";
 
-    const firstRun = await workflow.run(workflowEvent, nativeStep.step);
-    expect(firstRun).toEqual({
-      _tag: "Failed",
-      code: "retry_exhausted",
-      stage: "speech",
+    await expect(
+      runWorkflow(instanceId, { scenario: "retry_exhausted" })
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Failed",
+        code: "retry_exhausted",
+        stage: "speech",
+      },
+      status: "complete",
     });
-    expect(providerCalls).toBe(3);
-    expect(nativeStep.observedConfigs).toEqual([ProviderTaskStepConfig]);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(3);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(3);
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(1);
 
-    const replay = await workflow.run(workflowEvent, nativeStep.step);
-    expect(replay).toEqual(firstRun);
-    expect(providerCalls).toBe(3);
-    expect(nativeStep.observedConfigs).toEqual([
-      ProviderTaskStepConfig,
-      ProviderTaskStepConfig,
+    await expect(
+      restartFromAfterProviderCheckpoint(instanceId)
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Failed",
+        code: "retry_exhausted",
+        stage: "speech",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(3);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(3);
+  });
+
+  it("uses the real global ledger to poison unknown cost and fence every native retry and replay", async () => {
+    const instanceId = "gaia-163-native-unknown-poison";
+
+    await expect(
+      runWorkflow(instanceId, { scenario: "unknown" })
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Failed",
+        code: "outcome_unknown",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const stage = await database
+      .prepare(
+        `SELECT invoking_dispatch_id, poison_dispatch_id, reserved_micro_usd,
+                settled_micro_usd, state
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      )
+      .first();
+    expect(stage).toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: "dispatch_gaia_163_unknown",
+      reserved_micro_usd: 100,
+      settled_micro_usd: 0,
+      state: "poisoned",
+    });
+    const dispatches = await database
+      .prepare(
+        `SELECT actual_cost_micro_usd, dispatch_id, maximum_cost_micro_usd,
+                provider_stage_id, run_id, state
+           FROM pilot_provider_budget_dispatches
+          ORDER BY dispatch_id`
+      )
+      .all();
+    expect(dispatches.results).toEqual([
+      {
+        actual_cost_micro_usd: null,
+        dispatch_id: "dispatch_gaia_163_unknown",
+        maximum_cost_micro_usd: 100,
+        provider_stage_id: "recipe_extraction",
+        run_id: "run_gaia_163_unknown",
+        state: "settled_unknown",
+      },
     ]);
+
+    await expect(
+      restartFromAfterProviderCheckpoint(instanceId)
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Failed",
+        code: "outcome_unknown",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM pilot_provider_budget_dispatches"
+        )
+        .first()
+    ).resolves.toEqual({ count: 1 });
   });
 
   it.each([
-    {
-      checkpointCode: "model_refusal",
-      label: "refusal",
-      providerCode: "model_refusal",
-    },
-    {
-      checkpointCode: "invalid_schema",
-      label: "malformed output",
-      providerCode: "invalid_schema",
-    },
+    { checkpointCode: "model_refusal", label: "refusal" },
+    { checkpointCode: "invalid_schema", label: "malformed-output" },
     {
       checkpointCode: "insufficient_evidence",
-      label: "insufficient evidence",
-      providerCode: "insufficient_evidence",
-    },
-    {
-      checkpointCode: "outcome_unknown",
-      label: "unknown cost",
-      providerCode: "outcome_unknown",
+      label: "insufficient-evidence",
     },
     {
       checkpointCode: "provider_error",
-      label: "non-retryable provider failure",
-      providerCode: "provider_error",
+      label: "non-retryable-provider-failure",
     },
   ])(
-    "preserves the terminal $label checkpoint and replays it without another provider call",
-    async ({ checkpointCode, label, providerCode }) => {
-      let providerCalls = 0;
-      const workflowClassName = `Terminal${label.replaceAll(" ", "")}Workflow`;
-      const workflow = makeBridgedWorkflow(workflowClassName, {
-        kind: "workflow" as const,
-        make: () =>
-          Effect.succeed(() =>
-            runProviderTask(
-              "extract-recipe-provider",
-              "recipe",
-              Effect.sync(() => {
-                providerCalls += 1;
-              }).pipe(
-                Effect.andThen(
-                  Effect.fail({
-                    code: providerCode,
-                    unsafeProviderBody: "must-not-cross-the-checkpoint",
-                  })
-                )
-              ),
-              () => ({ _tag: "Succeeded" as const, stage: "recipe" as const })
-            )
-          ),
-      });
-      const nativeStep = makeCheckpointingNativeStep();
+    "preserves the terminal $label checkpoint through native replay",
+    async ({ checkpointCode, label }) => {
+      const instanceId = `gaia-163-terminal-${label}`;
 
-      const firstRun = await workflow.run(workflowEvent, nativeStep.step);
-      expect(firstRun).toEqual({
-        _tag: "Failed",
-        code: checkpointCode,
-        stage: "recipe",
+      await expect(
+        runWorkflow(instanceId, {
+          failureCode: checkpointCode,
+          scenario: "terminal",
+        })
+      ).resolves.toMatchObject({
+        output: {
+          _tag: "Failed",
+          code: checkpointCode,
+          stage: "visual",
+        },
+        status: "complete",
       });
-      expect(providerCalls).toBe(1);
+      expect(await readNumber(instanceId, "task-attempts")).toBe(1);
+      expect(await readNumber(instanceId, "provider-calls")).toBe(1);
 
-      expect(await workflow.run(workflowEvent, nativeStep.step)).toEqual(
-        firstRun
-      );
-      expect(providerCalls).toBe(1);
+      await restartFromAfterProviderCheckpoint(instanceId);
+      expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+      expect(await readNumber(instanceId, "task-attempts")).toBe(1);
+      expect(await readNumber(instanceId, "provider-calls")).toBe(1);
     }
   );
 
-  it("preserves a successful checkpoint and replays it without another provider call", async () => {
-    let providerCalls = 0;
-    const workflow = makeBridgedWorkflow("SuccessfulProviderWorkflow", {
-      kind: "workflow" as const,
-      make: () =>
-        Effect.succeed(() =>
-          runProviderTask(
-            "extract-visual-provider",
-            "visual",
-            Effect.sync(() => {
-              providerCalls += 1;
-              return "safe-evidence";
-            }),
-            (evidence) => ({
-              _tag: "Succeeded" as const,
-              evidence,
-              stage: "visual" as const,
-            })
-          )
-        ),
-    });
-    const nativeStep = makeCheckpointingNativeStep();
+  it("preserves a successful checkpoint through native replay", async () => {
+    const instanceId = "gaia-163-success";
 
-    const firstRun = await workflow.run(workflowEvent, nativeStep.step);
-    expect(firstRun).toEqual({
-      _tag: "Succeeded",
-      evidence: "safe-evidence",
-      stage: "visual",
+    await expect(
+      runWorkflow(instanceId, { scenario: "success" })
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "safe-evidence",
+        stage: "visual",
+      },
+      status: "complete",
     });
-    expect(providerCalls).toBe(1);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
 
-    expect(await workflow.run(workflowEvent, nativeStep.step)).toEqual(
-      firstRun
-    );
-    expect(providerCalls).toBe(1);
+    await restartFromAfterProviderCheckpoint(instanceId);
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
   });
 });
