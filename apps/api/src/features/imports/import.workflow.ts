@@ -40,6 +40,7 @@ import {
   MaximumLocalCleanupMilliseconds,
 } from "./import-media.model.js";
 import type {
+  AcquisitionFailureReason,
   AcquisitionStage,
   RetryableAcquisitionFailure,
 } from "./import-media.model.js";
@@ -88,6 +89,7 @@ interface AcquisitionAttemptAllocation {
 interface ConfirmedAcquisitionRetry {
   readonly _tag: "ConfirmedAcquisitionRetry";
   readonly generation: AcquisitionGeneration;
+  readonly reason?: AcquisitionFailureReason;
   readonly stage: AcquisitionStage;
 }
 
@@ -133,11 +135,15 @@ export const runAcquisitionTask = <
           ),
           Effect.mapError(
             // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.mapError is a typed Effect combinator, not Promise callback control flow.
-            (error): ConfirmedAcquisitionRetry => ({
-              _tag: "ConfirmedAcquisitionRetry",
-              generation: allocation.generation,
-              stage: error.stage,
-            })
+            (error): ConfirmedAcquisitionRetry => {
+              const reason = "reason" in error ? error.reason : undefined;
+              return {
+                _tag: "ConfirmedAcquisitionRetry",
+                generation: allocation.generation,
+                ...(reason === undefined ? {} : { reason }),
+                stage: error.stage,
+              };
+            }
           )
         )
       ),
@@ -165,6 +171,7 @@ export const runAcquisitionTask = <
               _tag: "RetryExhausted" as const,
               attempts: 3 as const,
               generation: error.generation,
+              ...(error.reason === undefined ? {} : { reason: error.reason }),
               stage: error.stage,
             })
           : Effect.fail(error),

@@ -1,4 +1,4 @@
-import { Clock, Context, Duration, Effect, Option, Schema } from "effect";
+import { Context, Duration, Effect, Option, Schema } from "effect";
 
 import { AcquisitionGeneration } from "./import-media.model.js";
 import type {
@@ -56,23 +56,15 @@ const finiteProviderDeadline = (override: number | undefined) => {
   return duration;
 };
 
-const withRemainingProviderBudget = <A, E, R, E2>(
+const withProviderBudget = <A, E, R, E2>(
   effect: Effect.Effect<A, E, R>,
-  deadlineAt: number,
+  durationMilliseconds: number,
   onTimeout: () => E2
 ): Effect.Effect<A, E | E2, R> =>
-  Clock.currentTimeMillis.pipe(
-    Effect.flatMap((currentTime) => {
-      const remaining = deadlineAt - currentTime;
-      if (remaining <= 0) {
-        return Effect.fail(onTimeout());
-      }
-      return Effect.timeoutOrElse(effect, {
-        duration: Duration.millis(remaining),
-        orElse: () => Effect.fail(onTimeout()),
-      });
-    })
-  );
+  Effect.timeoutOrElse(effect, {
+    duration: Duration.millis(durationMilliseconds),
+    orElse: () => Effect.fail(onTimeout()),
+  });
 
 const digestSha256 = (value: string) =>
   Effect.promise(async () => {
@@ -104,7 +96,7 @@ type InitialImportStatus =
 const statusForResolution = (
   resolution: CanonicalIdentityResolution,
   availabilityValidator: SourceAvailabilityValidatorShape,
-  deadlineAt: number
+  providerDeadlineMilliseconds: number
 ): Effect.Effect<InitialImportStatus, SourceValidationUnavailable> =>
   resolution._tag === "UnsupportedIdentity"
     ? Effect.succeed<InitialImportStatus>({
@@ -113,12 +105,12 @@ const statusForResolution = (
         recovery: "submit_supported_public_video",
       })
     : Effect.map(
-        withRemainingProviderBudget(
+        withProviderBudget(
           availabilityValidator.validate({
             identity: resolution.identity,
             videoUrl: resolution.videoUrl,
           }),
-          deadlineAt,
+          providerDeadlineMilliseconds,
           sourceValidationUnavailable
         ),
         (availability): InitialImportStatus =>
@@ -207,11 +199,9 @@ export const makeImportService = ({
           };
         }
 
-        const deadlineAt =
-          (yield* Clock.currentTimeMillis) + providerDeadlineMilliseconds;
-        const resolution = yield* withRemainingProviderBudget(
+        const resolution = yield* withProviderBudget(
           identityResolver.resolve(request.source),
-          deadlineAt,
+          providerDeadlineMilliseconds,
           sourceIdentityUnavailable
         );
         const requestFingerprint = yield* requestFingerprintFor(
@@ -252,7 +242,7 @@ export const makeImportService = ({
           const status = yield* statusForResolution(
             resolution,
             availabilityValidator,
-            deadlineAt
+            providerDeadlineMilliseconds
           );
           const timestamp = now();
           const view: ImportView = {

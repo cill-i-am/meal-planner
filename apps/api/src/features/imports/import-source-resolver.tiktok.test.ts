@@ -72,6 +72,14 @@ describe("TikTok source resolver adapter", () => {
     const fixture = makeRunner({
       description: "Pasta from scratch",
       duration: 12,
+      http_headers: {
+        Accept: "video/mp4,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        Authorization: "provider-secret-fragment",
+        Cookie: "provider-secret-fragment",
+        Referer: "https://www.tiktok.com/",
+        "User-Agent": "Mozilla/5.0 synthetic-boundary",
+      },
       id: identity.canonicalId,
       timestamp: 1_721_000_000,
       uploader: "Cook",
@@ -86,6 +94,15 @@ describe("TikTok source resolver adapter", () => {
     );
 
     expect(resolved.mediaLocator).toBe(canary);
+    expect(resolved.requestHeaders).toEqual({
+      accept: "video/mp4,*/*;q=0.8",
+      acceptLanguage: "en-US,en;q=0.9",
+      referer: "https://www.tiktok.com/",
+      userAgent: "Mozilla/5.0 synthetic-boundary",
+    });
+    expect(JSON.stringify(resolved.requestHeaders)).not.toContain(
+      "provider-secret-fragment"
+    );
     expect(resolved.metadata).toMatchObject({
       canonicalId: identity.canonicalId,
       canonicalUrl: `https://www.tiktok.com/@cook/video/${identity.canonicalId}`,
@@ -281,6 +298,142 @@ describe("TikTok source resolver adapter", () => {
       await rm(root, { force: true, recursive: true });
     }
   });
+
+  it("carries only safe resolver headers through the pinned-IP request boundary", async () => {
+    const root = await mkdtemp(join(tmpdir(), "meal-planner-header-policy-"));
+    const fixture = makeRunner({
+      duration: 1,
+      http_headers: {
+        Accept: "video/mp4,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        Authorization: "provider-secret-fragment",
+        Cookie: "provider-secret-fragment",
+        Referer: "https://www.tiktok.com/",
+        "User-Agent": "Mozilla/5.0 synthetic-boundary",
+      },
+      id: identity.canonicalId,
+      url: "https://v16m.tiktokcdn.com/media.mp4",
+      webpage_url: `https://www.tiktok.com/@cook/video/${identity.canonicalId}`,
+    });
+    const resolved = await Effect.runPromise(
+      fixture.resolver.resolve(identity)
+    );
+    const requests: unknown[] = [];
+    const client: SecureMediaDownloadClient = {
+      request: (_url, _address, _signal, headers) => {
+        requests.push(headers);
+        return Promise.resolve(
+          downloadResponse({
+            body: [new Uint8Array([1, 2, 3])],
+            statusCode: 200,
+          })
+        );
+      },
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+    };
+
+    try {
+      await Effect.runPromise(
+        makeSecureMediaDownloader(client).download(
+          resolved.mediaLocator,
+          join(root, "safe.mp4"),
+          1024,
+          resolved.requestHeaders
+        )
+      );
+      expect(requests).toEqual([
+        {
+          accept: "video/mp4,*/*;q=0.8",
+          acceptLanguage: "en-US,en;q=0.9",
+          referer: "https://www.tiktok.com/",
+          userAgent: "Mozilla/5.0 synthetic-boundary",
+        },
+      ]);
+      expect(JSON.stringify(requests)).not.toContain(
+        "provider-secret-fragment"
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("drops malformed or query-bearing request headers before acquisition", async () => {
+    const fixture = makeRunner({
+      duration: 1,
+      http_headers: {
+        Referer:
+          "https://www.tiktok.com/?token=opaque-provider-secret-fragment",
+        "User-Agent":
+          "synthetic-agent\r\nCookie: opaque-provider-secret-fragment",
+      },
+      id: identity.canonicalId,
+      url: "https://v16m.tiktokcdn.com/media.mp4",
+      webpage_url: `https://www.tiktok.com/@cook/video/${identity.canonicalId}`,
+    });
+
+    const resolved = await Effect.runPromise(
+      fixture.resolver.resolve(identity)
+    );
+
+    expect(resolved.requestHeaders).toEqual({});
+    expect(JSON.stringify(resolved.requestHeaders)).not.toContain(
+      "opaque-provider-secret-fragment"
+    );
+  });
+
+  it.each([
+    {
+      expected: "download_dns",
+      request: () => Promise.reject(new Error("must not connect")),
+      resolve: () => Promise.reject(new Error("opaque dns failure")),
+    },
+    {
+      expected: "download_http_response",
+      request: () => Promise.resolve(downloadResponse({ statusCode: 403 })),
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+    },
+    {
+      expected: "download_stream_or_tls",
+      request: () => Promise.reject(new Error("opaque TLS failure")),
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+    },
+    {
+      expected: "download_timeout",
+      request: () => Promise.reject(new DOMException("aborted", "AbortError")),
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+    },
+  ] as const)(
+    "classifies $expected without retaining provider detail",
+    async ({ expected, request, resolve }) => {
+      const root = await mkdtemp(
+        join(tmpdir(), "meal-planner-failure-policy-")
+      );
+      const destination = join(root, "failed.mp4");
+      try {
+        const exit = await Effect.runPromiseExit(
+          makeSecureMediaDownloader({ request, resolve }).download(
+            "https://v16m.tiktokcdn.com/media.mp4",
+            destination,
+            1024
+          )
+        );
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isSuccess(exit)) {
+          throw new Error("Expected classified download failure");
+        }
+        const error = Option.getOrThrow(Cause.findErrorOption(exit.cause));
+        expect(error).toEqual({
+          _tag: "RetryableAcquisitionFailure",
+          reason: expected,
+          stage: "container",
+        });
+        expect(JSON.stringify(error)).not.toMatch(/opaque|provider/iu);
+        await expect(access(destination)).rejects.toThrow();
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    }
+  );
 
   it.each([
     "64:ff9b:1::1",

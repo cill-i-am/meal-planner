@@ -462,7 +462,7 @@ describe("ImportService", () => {
     expect(fixture.workflow.started).toEqual([]);
   }, 1000);
 
-  it("shares one absolute deadline across identity and availability", async () => {
+  it("gives availability its own finite deadline after slow identity resolution", async () => {
     const fixture = makeFixture();
     const identityStarted = Promise.withResolvers<boolean>();
     const availabilityStarted = Promise.withResolvers<boolean>();
@@ -506,7 +506,7 @@ describe("ImportService", () => {
       workflowStarter: fixture.workflow.workflow,
     });
     const exit = await Effect.runPromise(
-      Effect.gen(function* absoluteDeadline() {
+      Effect.gen(function* independentDeadlines() {
         const fiber = yield* Effect.forkChild(
           service.create(videoRequest(), decodeKey("K1"))
         );
@@ -514,13 +514,17 @@ describe("ImportService", () => {
         yield* TestClock.adjust("80 millis");
         yield* Effect.promise(() => availabilityStarted.promise);
         yield* TestClock.adjust("20 millis");
+        expect(availabilityInterrupted).toBe(false);
+        yield* TestClock.adjust("79 millis");
+        expect(availabilityInterrupted).toBe(false);
+        yield* TestClock.adjust("1 millis");
         return yield* Fiber.await(fiber);
       }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
-      throw new Error("Expected absolute provider deadline");
+      throw new Error("Expected bounded availability deadline");
     }
     expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
       _tag: "SourceValidationUnavailable",

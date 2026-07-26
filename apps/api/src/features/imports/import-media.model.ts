@@ -42,6 +42,15 @@ export const AcquisitionStage = Schema.Literals([
 ]);
 export type AcquisitionStage = typeof AcquisitionStage.Type;
 
+export const AcquisitionFailureReason = Schema.Literals([
+  "container_rpc",
+  "download_dns",
+  "download_http_response",
+  "download_stream_or_tls",
+  "download_timeout",
+]);
+export type AcquisitionFailureReason = typeof AcquisitionFailureReason.Type;
+
 export const MediaStreamSummary = Schema.Struct({
   codec: Schema.String.pipe(
     Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
@@ -120,6 +129,7 @@ export type VerifiedAcquisitionEvidence =
 
 export const RetryableAcquisitionFailure = Schema.Struct({
   _tag: Schema.Literal("RetryableAcquisitionFailure"),
+  reason: Schema.optionalKey(AcquisitionFailureReason),
   stage: AcquisitionStage,
 });
 export type RetryableAcquisitionFailure =
@@ -164,6 +174,7 @@ export const RetryExhausted = Schema.Struct({
   _tag: Schema.Literal("RetryExhausted"),
   attempts: Schema.Literal(3),
   generation: AcquisitionGeneration,
+  reason: Schema.optionalKey(AcquisitionFailureReason),
   stage: AcquisitionStage,
 });
 export type RetryExhausted = typeof RetryExhausted.Type;
