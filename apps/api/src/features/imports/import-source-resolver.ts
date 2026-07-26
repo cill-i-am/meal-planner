@@ -32,10 +32,19 @@ export interface CanonicalSourceMetadata {
   readonly publishedAt: string | null;
 }
 
+/** Internal-only request hints: never encode, checkpoint, persist, log, or return from RPC. */
+export interface MediaRequestHeaders {
+  readonly accept?: string;
+  readonly acceptLanguage?: string;
+  readonly referer?: string;
+  readonly userAgent?: string;
+}
+
 /** Internal-only value: never encode, checkpoint, persist, log, or return from RPC. */
 export interface ResolvedVideoSource {
   readonly mediaLocator: string;
   readonly metadata: CanonicalSourceMetadata;
+  readonly requestHeaders: MediaRequestHeaders;
 }
 
 export interface SourceResolverShape {

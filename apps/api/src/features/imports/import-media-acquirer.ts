@@ -1,6 +1,7 @@
 import { Context, DateTime, Effect, Option, Schema, Stream } from "effect";
 
 import type {
+  AcquisitionFailureReason,
   AcquisitionGeneration,
   AcquisitionTaskOutcome,
   MediaLimits,
@@ -19,6 +20,10 @@ import {
   MaximumMediaDurationSeconds,
   MaximumR2OperationMilliseconds,
   MediaStreamSummary,
+  RetryableAcquisitionFailure as RetryableAcquisitionFailureSchema,
+  TerminalMediaFailure as TerminalMediaFailureSchema,
+  UnavailableFailure as UnavailableFailureSchema,
+  UnsupportedCarouselFailure as UnsupportedCarouselFailureSchema,
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
@@ -272,11 +277,45 @@ const hasExpectedMetadata = (
   );
 
 const retryableAt = (
-  stage: RetryableAcquisitionFailure["stage"]
+  stage: RetryableAcquisitionFailure["stage"],
+  reason?: AcquisitionFailureReason
 ): RetryableAcquisitionFailure => ({
   _tag: "RetryableAcquisitionFailure",
+  ...(reason === undefined ? {} : { reason }),
   stage,
 });
+
+const closeContainerFailure = (
+  failure: unknown,
+  generation: AcquisitionGeneration
+): Effect.Effect<AcquisitionTaskOutcome, RetryableAcquisitionFailure> => {
+  if (Schema.is(RetryableAcquisitionFailureSchema)(failure)) {
+    return Effect.fail(retryableAt(failure.stage, failure.reason));
+  }
+  if (Schema.is(TerminalMediaFailureSchema)(failure)) {
+    return Effect.succeed({
+      _tag: "TerminalMedia",
+      code: failure.code,
+      generation,
+      stage: failure.stage,
+    });
+  }
+  if (Schema.is(UnavailableFailureSchema)(failure)) {
+    return Effect.succeed({
+      _tag: "Unavailable",
+      code: failure.code,
+      generation,
+    });
+  }
+  if (Schema.is(UnsupportedCarouselFailureSchema)(failure)) {
+    return Effect.succeed({
+      _tag: "UnsupportedCarousel",
+      code: failure.code,
+      generation,
+    });
+  }
+  return Effect.fail(retryableAt("container", "container_rpc"));
+};
 
 const r2Effect = <A>(
   stage: RetryableAcquisitionFailure["stage"],
@@ -630,9 +669,7 @@ export const acquireStoreVerify = (
       .pipe(
         Effect.matchEffect({
           onFailure: (failure) =>
-            failure._tag === "RetryableAcquisitionFailure"
-              ? Effect.fail(failure)
-              : Effect.succeed({ ...failure, generation: input.generation }),
+            closeContainerFailure(failure, input.generation),
           onSuccess: Effect.succeed,
         })
       );

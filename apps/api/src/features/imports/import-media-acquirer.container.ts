@@ -17,11 +17,15 @@ import {
   hasIsoBaseMediaFileType,
   validateMediaProbe,
 } from "./import-media-validation.js";
-import type { TerminalMediaFailure } from "./import-media.model.js";
+import type {
+  AcquisitionFailureReason,
+  TerminalMediaFailure,
+} from "./import-media.model.js";
 import {
   MaximumMediaProcessMilliseconds,
   MaximumSourceRedirects,
 } from "./import-media.model.js";
+import type { MediaRequestHeaders } from "./import-source-resolver.js";
 import { isSafeTikTokMediaLocator } from "./import-source-resolver.tiktok.js";
 
 const terminal = (
@@ -32,12 +36,21 @@ const terminal = (
   stage: "validation",
 });
 
-const retryableDownload = () => ({
+const retryableDownload = (reason?: AcquisitionFailureReason) => ({
   _tag: "RetryableAcquisitionFailure" as const,
+  ...(reason === undefined ? {} : { reason }),
   stage: "container" as const,
 });
 const UnsafeMediaDestination = Symbol("UnsafeMediaDestination");
 const MediaDownloadLimitExceeded = Symbol("MediaDownloadLimitExceeded");
+const MediaDownloadDnsFailure = Symbol("MediaDownloadDnsFailure");
+const MediaDownloadHttpResponseFailure = Symbol(
+  "MediaDownloadHttpResponseFailure"
+);
+const MediaDownloadStreamOrTlsFailure = Symbol(
+  "MediaDownloadStreamOrTlsFailure"
+);
+const MediaDownloadTimeout = Symbol("MediaDownloadTimeout");
 
 const BlockedMediaAddresses = new BlockList();
 const GlobalUnicastMediaAddresses = new BlockList();
@@ -108,7 +121,8 @@ export interface SecureMediaDownloadClient {
   readonly request: (
     url: URL,
     address: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    headers: MediaRequestHeaders
   ) => Promise<SecureMediaDownloadResponse>;
   readonly resolve: (hostname: string) => Promise<readonly string[]>;
 }
@@ -117,7 +131,8 @@ export interface SecureMediaDownloader {
   readonly download: (
     locator: string,
     destination: string,
-    maximumBytes: number
+    maximumBytes: number,
+    requestHeaders?: MediaRequestHeaders
   ) => Effect.Effect<
     void,
     ReturnType<typeof retryableDownload> | TerminalMediaFailure
@@ -136,7 +151,7 @@ const responseContentLength = (
 };
 
 export const NodeSecureMediaDownloadClient: SecureMediaDownloadClient = {
-  request: (url, address, signal) =>
+  request: (url, address, signal, requestHeaders) =>
     // eslint-disable-next-line promise/avoid-new -- Node HTTPS exposes response callbacks, not a promise API.
     new Promise((resolve, reject) => {
       const request = httpsRequest(
@@ -144,9 +159,16 @@ export const NodeSecureMediaDownloadClient: SecureMediaDownloadClient = {
           checkServerIdentity: (_hostname, certificate) =>
             checkServerIdentity(url.hostname, certificate),
           headers: {
-            accept: "*/*",
+            accept: requestHeaders.accept ?? "*/*",
             host: url.hostname,
-            "user-agent": "MealPlannerMediaAcquirer/1.0",
+            "user-agent":
+              requestHeaders.userAgent ?? "MealPlannerMediaAcquirer/1.0",
+            ...(requestHeaders.acceptLanguage === undefined
+              ? {}
+              : { "accept-language": requestHeaders.acceptLanguage }),
+            ...(requestHeaders.referer === undefined
+              ? {}
+              : { referer: requestHeaders.referer }),
           },
           hostname: address,
           method: "GET",
@@ -182,20 +204,41 @@ const downloadFailure = (error: unknown) => {
   if (error === MediaDownloadLimitExceeded) {
     return terminal("limit_exceeded");
   }
-  return retryableDownload();
+  if (error === MediaDownloadDnsFailure) {
+    return retryableDownload("download_dns");
+  }
+  if (error === MediaDownloadHttpResponseFailure) {
+    return retryableDownload("download_http_response");
+  }
+  if (error === MediaDownloadTimeout) {
+    return retryableDownload("download_timeout");
+  }
+  return retryableDownload("download_stream_or_tls");
 };
+
+const isAbortError = (error: unknown) =>
+  typeof error === "object" &&
+  error !== null &&
+  "name" in error &&
+  error.name === "AbortError";
 
 const requestSafeMedia = async (
   client: SecureMediaDownloadClient,
   locator: string,
   redirects: number,
-  signal: AbortSignal
+  signal: AbortSignal,
+  requestHeaders: MediaRequestHeaders
 ): Promise<SecureMediaDownloadResponse> => {
   if (!isSafeTikTokMediaLocator(locator)) {
     throw UnsafeMediaDestination;
   }
   const url = new URL(locator);
-  const addresses = await client.resolve(url.hostname);
+  let addresses: readonly string[];
+  try {
+    addresses = await client.resolve(url.hostname);
+  } catch {
+    throw MediaDownloadDnsFailure;
+  }
   if (
     addresses.length === 0 ||
     addresses.some((address) => !isPublicMediaAddress(address))
@@ -206,7 +249,14 @@ const requestSafeMedia = async (
   if (address === undefined) {
     throw UnsafeMediaDestination;
   }
-  const response = await client.request(url, address, signal);
+  let response: SecureMediaDownloadResponse;
+  try {
+    response = await client.request(url, address, signal, requestHeaders);
+  } catch (error) {
+    throw isAbortError(error)
+      ? MediaDownloadTimeout
+      : MediaDownloadStreamOrTlsFailure;
+  }
   if (
     [301, 302, 303, 307, 308].includes(response.statusCode) &&
     response.location !== undefined
@@ -219,7 +269,8 @@ const requestSafeMedia = async (
       client,
       new URL(response.location, locator).toString(),
       redirects + 1,
-      signal
+      signal,
+      requestHeaders
     );
   }
   return response;
@@ -228,17 +279,23 @@ const requestSafeMedia = async (
 export const makeSecureMediaDownloader = (
   client: SecureMediaDownloadClient
 ): SecureMediaDownloader => ({
-  download: (locator, destination, maximumBytes) =>
+  download: (locator, destination, maximumBytes, requestHeaders = {}) =>
     Effect.tryPromise({
       catch: downloadFailure,
       try: async (signal) => {
         const file = await open(destination, "wx");
         let completed = false;
         try {
-          const response = await requestSafeMedia(client, locator, 0, signal);
+          const response = await requestSafeMedia(
+            client,
+            locator,
+            0,
+            signal,
+            requestHeaders
+          );
           if (response.statusCode !== 200) {
             response.destroy();
-            throw new Error("media download failed");
+            throw MediaDownloadHttpResponseFailure;
           }
           if (
             response.contentLength !== null &&
@@ -248,13 +305,22 @@ export const makeSecureMediaDownloader = (
             throw MediaDownloadLimitExceeded;
           }
           let bytes = 0;
-          for await (const chunk of response.body) {
-            bytes += chunk.byteLength;
-            if (bytes > maximumBytes) {
-              response.destroy();
-              throw MediaDownloadLimitExceeded;
+          try {
+            for await (const chunk of response.body) {
+              bytes += chunk.byteLength;
+              if (bytes > maximumBytes) {
+                response.destroy();
+                throw MediaDownloadLimitExceeded;
+              }
+              await file.write(chunk);
             }
-            await file.write(chunk);
+          } catch (error) {
+            if (error === MediaDownloadLimitExceeded) {
+              throw error;
+            }
+            throw isAbortError(error)
+              ? MediaDownloadTimeout
+              : MediaDownloadStreamOrTlsFailure;
           }
           if (bytes === 0) {
             throw MediaDownloadLimitExceeded;
@@ -295,11 +361,16 @@ export const makeContainerMediaAcquirer = (
       yield* scanTemporaryWorkspace(workspaceRoot);
       const downloadPath = join(workspaceRoot, "source.download");
       yield* downloader
-        .download(source.mediaLocator, downloadPath, limits.maximumMediaBytes)
+        .download(
+          source.mediaLocator,
+          downloadPath,
+          limits.maximumMediaBytes,
+          source.requestHeaders
+        )
         .pipe(
           Effect.timeoutOrElse({
             duration: remainingMilliseconds(),
-            orElse: () => Effect.fail(retryableDownload()),
+            orElse: () => Effect.fail(retryableDownload("download_timeout")),
           })
         );
       yield* scanTemporaryWorkspace(workspaceRoot);

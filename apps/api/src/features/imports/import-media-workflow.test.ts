@@ -231,6 +231,7 @@ describe("acquisition generation contracts", () => {
       _tag: "RetryExhausted",
       attempts: 3,
       generation: 4,
+      reason: "download_http_response",
       stage: "store",
     },
   ])("requires a generation on $._tag outcomes", (outcome) => {
@@ -544,7 +545,7 @@ describe("import acquisition retry contract", () => {
     expect(generations).toEqual([1, 2, 3]);
   });
 
-  it("encodes third typed failure once while semantic outcomes execute once", async () => {
+  it("encodes the final closed retry reason while semantic outcomes execute once", async () => {
     let allocations = 0;
     let retries = 0;
     const exhausted = runAcquisitionTask(
@@ -558,6 +559,10 @@ describe("import acquisition retry contract", () => {
         retries += 1;
         return Effect.fail({
           _tag: "RetryableAcquisitionFailure" as const,
+          reason:
+            retries === 3
+              ? ("download_http_response" as const)
+              : ("download_dns" as const),
           stage: "verify" as const,
         });
       }
@@ -592,6 +597,7 @@ describe("import acquisition retry contract", () => {
       _tag: "RetryExhausted",
       attempts: 3,
       generation: 3,
+      reason: "download_http_response",
       stage: "verify",
     });
     expect(allocations).toBe(3);

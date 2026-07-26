@@ -11,7 +11,10 @@ import {
   MaximumConcurrentFragments,
   MaximumMediaDurationSeconds,
 } from "./import-media.model.js";
-import type { SourceResolverShape } from "./import-source-resolver.js";
+import type {
+  MediaRequestHeaders,
+  SourceResolverShape,
+} from "./import-source-resolver.js";
 
 const unavailable = (): UnavailableFailure => ({
   _tag: "Unavailable",
@@ -34,6 +37,79 @@ const sourceLimitExceeded = (): TerminalMediaFailure => ({
 
 const stringOrNull = (value: unknown) =>
   typeof value === "string" && value.trim().length > 0 ? value : null;
+
+const containsControlCharacter = (value: string) =>
+  [...value].some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  });
+
+const safeHeaderValue = (value: unknown, maximumLength: number) => {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > maximumLength ||
+    value.trim() !== value ||
+    containsControlCharacter(value)
+  ) {
+    return;
+  }
+  return value;
+};
+
+const headerValue = (
+  headers: Record<string, unknown>,
+  name: string,
+  maximumLength: number
+) => {
+  const entry = Object.entries(headers).find(
+    ([key]) => key.toLowerCase() === name
+  );
+  return safeHeaderValue(entry?.[1], maximumLength);
+};
+
+const safeTikTokReferer = (value: string | undefined) => {
+  if (value === undefined) {
+    return null;
+  }
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.port !== "" ||
+      url.search !== "" ||
+      url.hash !== "" ||
+      !["tiktok.com", "www.tiktok.com"].includes(url.hostname.toLowerCase())
+    ) {
+      return null;
+    }
+    return `https://www.tiktok.com${url.pathname}`;
+  } catch {
+    return null;
+  }
+};
+
+const mediaRequestHeaders = (
+  record: Record<string, unknown>
+): MediaRequestHeaders => {
+  const raw = record["http_headers"];
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return {};
+  }
+  const headers = raw as Record<string, unknown>;
+  const accept = headerValue(headers, "accept", 1024);
+  const acceptLanguage = headerValue(headers, "accept-language", 256);
+  const referer = safeTikTokReferer(headerValue(headers, "referer", 2048));
+  const userAgent = headerValue(headers, "user-agent", 1024);
+  return {
+    ...(accept === undefined ? {} : { accept }),
+    ...(acceptLanguage === undefined ? {} : { acceptLanguage }),
+    ...(referer === null ? {} : { referer }),
+    ...(userAgent === undefined ? {} : { userAgent }),
+  };
+};
 
 const AllowedMediaHostnameSuffixes = [
   "akamaized.net",
@@ -155,6 +231,7 @@ const parseMetadata = (input: Uint8Array, identity: TikTokIdentity) =>
         record,
         identity
       );
+      const requestHeaders = mediaRequestHeaders(record);
       if (
         typeof record["duration"] === "number" &&
         Number.isFinite(record["duration"]) &&
@@ -199,6 +276,7 @@ const parseMetadata = (input: Uint8Array, identity: TikTokIdentity) =>
           },
           publishedAt,
         },
+        requestHeaders,
       };
     },
   });
@@ -244,6 +322,7 @@ export const makeTikTokSourceResolver = (
           return {
             mediaLocator: parsed.mediaLocator,
             metadata: parsed.metadata,
+            requestHeaders: parsed.requestHeaders,
           };
         }
         default: {

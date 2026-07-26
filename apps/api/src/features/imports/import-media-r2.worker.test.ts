@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import { Effect, Exit, Schema, Stream } from "effect";
+import { Cause, Effect, Exit, Option, Schema, Stream } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { acquireStoreVerify } from "./import-media-acquirer.js";
@@ -512,5 +512,43 @@ describe("native R2 generation commit", () => {
     const exit = await result;
 
     expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  it("closes an installed container RPC failure without retaining transport details", async () => {
+    const importId = id(409);
+    const generation = decodeGeneration(1);
+    const fake = makeMediaObject();
+    const mediaObject: AcquisitionMediaObjectLike = {
+      ...fake.object,
+      prepare: () =>
+        Effect.fail({
+          _tag: "RpcCallError",
+          cause: new Error("opaque-provider-secret-fragment"),
+          method: "prepare",
+        } as never),
+    };
+
+    const exit = await Effect.runPromiseExit(
+      acquireStoreVerify(bucket(), mediaObject, {
+        canonicalId,
+        generation,
+        importId,
+        now,
+      })
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      const error = Option.getOrThrow(Cause.findErrorOption(exit.cause));
+      expect(error).toEqual({
+        _tag: "RetryableAcquisitionFailure",
+        reason: "container_rpc",
+        stage: "container",
+      });
+      expect(JSON.stringify(error)).not.toContain(
+        "opaque-provider-secret-fragment"
+      );
+    }
+    expect(fake.cleanupCalls()).toBe(0);
   });
 });
