@@ -49,6 +49,7 @@ import {
   makeInstalledVisualEvidenceExtractor,
   makePilotProviderDispatchGate,
 } from "./import-provider-adapters.js";
+import { runProviderTask } from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
@@ -211,61 +212,6 @@ const CarouselEvidenceTaskCheckpoint = Schema.Union([
     stage: Schema.Literal("visual"),
   }),
 ]);
-
-export const ProviderTaskStepConfig = {
-  retries: { backoff: "exponential", delay: "2 seconds", limit: 2 },
-  timeout: "2 minutes",
-} as const;
-
-type ProviderTaskStage = "recipe" | "speech" | "visual";
-
-const providerTaskFailureCode = (error: unknown) =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  typeof error.code === "string"
-    ? error.code
-    : "stage_failed";
-
-const isRetryableProviderTaskFailure = (code: string) =>
-  code === "provider_unavailable" || code === "throttled" || code === "timeout";
-
-/**
- * Keep retryable provider failures in the durable task's rejection path.
- * Terminal failures are safe checkpoints and never include raw provider data.
- */
-export const runProviderTaskAttempt = <A, E, Success>(
-  stage: ProviderTaskStage,
-  effect: Effect.Effect<A, E>,
-  onSuccess: (value: A) => Success
-) =>
-  effect.pipe(
-    Effect.matchEffect({
-      onFailure: (error) => {
-        const code = providerTaskFailureCode(error);
-        return isRetryableProviderTaskFailure(code)
-          ? Effect.die(new Error(`Retryable provider task failure: ${code}`))
-          : Effect.succeed({
-              _tag: "Failed" as const,
-              code,
-              stage,
-            });
-      },
-      onSuccess: (value) => Effect.succeed(onSuccess(value)),
-    })
-  );
-
-export const runProviderTask = <A, E, Success>(
-  name: string,
-  stage: ProviderTaskStage,
-  effect: Effect.Effect<A, E>,
-  onSuccess: (value: A) => Success
-) =>
-  Cloudflare.Workflows.task(
-    name,
-    runProviderTaskAttempt(stage, effect, onSuccess),
-    ProviderTaskStepConfig
-  );
 
 const currentPilotBudgetTimestamp = () =>
   Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
