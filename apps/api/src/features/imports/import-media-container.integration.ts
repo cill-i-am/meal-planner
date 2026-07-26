@@ -66,6 +66,7 @@ describe.skipIf(!enabled)("pinned media container", () => {
     const suffix = `${process.pid}-${Date.now()}`;
     const builder = `meal-planner-gaia-109-${suffix}`;
     const container = `meal-planner-gaia-109-media-${suffix}`;
+    const workspaceContainer = `meal-planner-gaia-169-workspace-${suffix}`;
     const image = `meal-planner-gaia-109-media:${suffix}`;
     const root = await mkdtemp(join(tmpdir(), "meal-planner-container-test-"));
     const dockerfile = join(root, "Dockerfile");
@@ -99,6 +100,56 @@ describe.skipIf(!enabled)("pinned media container", () => {
           ],
           { timeout: 1_500_000 }
         )
+      );
+      const workspaceScript = `
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+
+if (process.getuid?.() !== 10001 || process.getgid?.() !== 10001) {
+  throw new Error("installed image must run as the media user");
+}
+let systemTemporaryRootUnavailable = false;
+try {
+  const unexpected = await mkdtemp("/tmp/meal-planner-unexpected-");
+  await rm(unexpected, { force: true, recursive: true });
+} catch {
+  systemTemporaryRootUnavailable = true;
+}
+if (!systemTemporaryRootUnavailable) {
+  throw new Error("system temporary root must be unavailable for this proof");
+}
+if (tmpdir() !== "/work/tmp") {
+  throw new Error("installed image must select the owned temporary root");
+}
+const root = await mkdtemp(\`\${tmpdir()}/meal-planner-media-installed-\`);
+if (!root.startsWith("/work/tmp/meal-planner-media-installed-")) {
+  throw new Error("temporary workspace escaped the owned root");
+}
+await rm(root, { force: true, recursive: true });
+`;
+      await Effect.runPromise(
+        docker([
+          "create",
+          "--name",
+          workspaceContainer,
+          "--network",
+          "none",
+          "--platform",
+          "linux/amd64",
+          "--read-only",
+          "--tmpfs",
+          "/work/tmp:uid=10001,gid=10001,mode=0700",
+          image,
+          "node",
+          "--input-type=module",
+          "--eval",
+          workspaceScript,
+        ])
+      );
+      await Effect.runPromise(
+        docker(["start", "--attach", workspaceContainer], {
+          timeout: 120_000,
+        })
       );
       const script = `
 set -eu
@@ -201,6 +252,9 @@ ffprobe -v error -show_format -show_streams -of json /tmp/video-only.mp4 > /tmp/
         validBytes.byteLength - 1
       );
     } finally {
+      await Effect.runPromise(
+        docker(["rm", "--force", workspaceContainer], { allowFailure: true })
+      );
       await Effect.runPromise(
         docker(["rm", "--force", container], { allowFailure: true })
       );

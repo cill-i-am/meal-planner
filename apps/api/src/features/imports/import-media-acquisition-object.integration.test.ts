@@ -230,6 +230,44 @@ const untouchedBucket = (): AcquisitionBucketLike => ({
 });
 
 describe("installed acquisition Durable Object boundary", () => {
+  it("fails closed before resolution when the temporary workspace is unavailable", async () => {
+    let acquireCalls = 0;
+    let resolveCalls = 0;
+    const failureCanary = "opaque-temporary-workspace-canary";
+    const runtime = makeTikTokMediaContainerRuntime({
+      acquirer: {
+        acquire: () => {
+          acquireCalls += 1;
+          return Effect.die("acquirer must remain untouched");
+        },
+      },
+      artifacts: makeTemporaryArtifactStore(() => Promise.resolve()),
+      makeTemporaryRoot: () => Promise.reject(new Error(failureCanary)),
+      processRunner: makeProcessRunner(),
+      resolver: {
+        resolve: () => {
+          resolveCalls += 1;
+          return Effect.die("resolver must remain untouched");
+        },
+      },
+    });
+
+    const exit = await Effect.runPromiseExit(runtime.prepare(identity));
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected temporary workspace allocation to fail");
+    }
+    const failure = Option.getOrThrow(Cause.findErrorOption(exit.cause));
+    expect(failure).toEqual({
+      _tag: "RetryableAcquisitionFailure",
+      reason: "temporary_workspace_unavailable",
+      stage: "container",
+    });
+    expect(JSON.stringify(failure)).not.toContain(failureCanary);
+    expect(resolveCalls).toBe(0);
+    expect(acquireCalls).toBe(0);
+  });
+
   it("runs resolver and download through the Alchemy container layer and RPC", async () => {
     const root = await mkdtemp(join(tmpdir(), "gaia-167-installed-boundary-"));
     const headers: unknown[] = [];

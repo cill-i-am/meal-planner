@@ -37,12 +37,19 @@ FROM node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe2
 COPY --from=tools /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
 COPY --from=tools /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=tools /usr/local/bin/ffprobe /usr/local/bin/ffprobe
-RUN groupadd --gid 10001 media && useradd --uid 10001 --gid media --no-create-home --home-dir /nonexistent media && mkdir /work && chown media:media /work
+RUN groupadd --gid 10001 media && useradd --uid 10001 --gid media --no-create-home --home-dir /nonexistent media && mkdir -p /work/tmp && chown -R media:media /work
+ENV TMPDIR=/work/tmp
 USER 10001:10001
 `;
 
 const retryableContainer = () => ({
   _tag: "RetryableAcquisitionFailure" as const,
+  stage: "container" as const,
+});
+
+const temporaryWorkspaceUnavailable = () => ({
+  _tag: "RetryableAcquisitionFailure" as const,
+  reason: "temporary_workspace_unavailable" as const,
   stage: "container" as const,
 });
 
@@ -81,7 +88,7 @@ export const makeTikTokMediaContainerRuntime = ({
         return yield* artifacts.use(
           artifactId,
           Effect.tryPromise({
-            catch: retryableContainer,
+            catch: temporaryWorkspaceUnavailable,
             try: () => makeTemporaryRoot(request.importId),
           }),
           (root) =>
