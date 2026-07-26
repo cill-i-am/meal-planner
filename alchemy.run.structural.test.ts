@@ -275,7 +275,15 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(containerSource).toContain('"TikTokMediaContainer"');
     expect(runtimeSource).toContain("node:22.19.0-bookworm-slim@sha256:");
     expect(runtimeSource).toContain("2026.07.04/yt-dlp_linux");
-    expect(runtimeSource).toContain("ffmpeg-8.1.2.tar.xz");
+    expect(runtimeSource).toContain("https://github.com/FFmpeg/FFmpeg.git");
+    expect(runtimeSource).toContain("tag n8.1.2");
+    expect(runtimeSource).toContain("DD1EC9E8DE085C629B3E1846B18E8928B3948D64");
+    expect(runtimeSource).toContain("38b88335f99e76ed89ff3c93f877fdefce736c13");
+    expect(runtimeSource).toContain("git verify-tag n8.1.2");
+    expect(runtimeSource).toContain(
+      "git archive --format=tar n8.1.2 | tar --extract --directory /tmp/ffmpeg"
+    );
+    expect(runtimeSource).not.toContain("ffmpeg.org");
     expect(runtimeSource).toContain("--disable-network");
     expect(runtimeSource).toContain("USER 10001:10001");
     expect(runtimeSource).toContain('instanceType: "standard-1"');
