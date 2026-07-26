@@ -166,7 +166,15 @@ export interface VisualEvidenceExtractionInput {
 /** Safe classified adapter failure without a provider body or secret. */
 export interface VisualEvidenceExtractionFailure {
   readonly _tag: "VisualEvidenceExtractionFailure";
-  readonly code: "outcome_unknown" | "visual_extraction_failed";
+  readonly code:
+    | "insufficient_evidence"
+    | "malformed_response"
+    | "model_refusal"
+    | "outcome_unknown"
+    | "provider_unavailable"
+    | "throttled"
+    | "timeout"
+    | "visual_extraction_failed";
 }
 
 export interface VisualEvidenceExtractorShape {

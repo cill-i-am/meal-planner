@@ -54,7 +54,7 @@ const manifestInput = () => ({
 });
 
 const preflightInput = () => ({
-  budgetCapMicroUsd: 20_000,
+  budgetCapMicroUsd: 10_000_000,
   manifest: manifestInput(),
   providerReadiness: {
     mediaAcquisition: "configured" as const,
@@ -66,7 +66,7 @@ const preflightInput = () => ({
     cleanupVerification: "required_after_run" as const,
     evidenceRetentionSeconds: EvidenceRetentionSeconds,
   },
-  stage: "pilot-gaia-117",
+  stage: "pilot-gaia-118",
 });
 
 type CostInput =
@@ -133,7 +133,7 @@ const successfulObservation = (
 });
 
 const failedObservation = () => ({
-  failureCode: "source_unavailable" as const,
+  failureCode: "not_a_recipe" as const,
   mediaKind: "video" as const,
   metrics: metrics({
     reason: "not_applicable_on_failure",
@@ -241,7 +241,11 @@ describe("recipe quality pilot readiness", () => {
         "authorization_missing",
       ],
       [(input) => (input.stage = "prod"), "stage_not_allowed"],
+      [(input) => (input.stage = "pilot-gaia-117"), "stage_not_allowed"],
+      [(input) => (input.stage = "development"), "stage_not_allowed"],
       [(input) => (input.budgetCapMicroUsd = 0), "budget_missing"],
+      [(input) => (input.budgetCapMicroUsd = 9_999_999), "budget_exceeded"],
+      [(input) => (input.budgetCapMicroUsd = 10_000_001), "budget_exceeded"],
       [
         (input) => (input.retentionPolicy.evidenceRetentionSeconds = 60),
         "retention_policy_mismatch",
@@ -421,7 +425,7 @@ describe("recipe quality pilot report", () => {
       ...observation,
       metrics: metrics({
         certainty: "known" as const,
-        estimatedMicroUsd: 5000,
+        estimatedMicroUsd: 2_000_000,
         status: "reported" as const,
       }),
     }));

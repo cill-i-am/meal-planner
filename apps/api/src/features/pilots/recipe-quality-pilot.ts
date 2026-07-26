@@ -17,7 +17,8 @@ const SafeInteger = Schema.Number.pipe(
   )
 );
 /** The one already-isolated non-production stage approved for pilot evidence. */
-export const RecipeQualityPilotStage = "pilot-gaia-117";
+export const RecipeQualityPilotStage = "pilot-gaia-118";
+export const RecipeQualityPilotBudgetCapMicroUsd = 10_000_000;
 
 /** Opaque identity that never contains a source locator. */
 export const PilotSampleId = OpaquePilotId.pipe(Schema.brand("PilotSampleId"));
@@ -118,6 +119,7 @@ export const PilotPreflightErrorCode = Schema.Literals([
   "authorization_expired",
   "authorization_missing",
   "authorization_not_started",
+  "budget_exceeded",
   "budget_missing",
   "cleanup_verification_missing",
   "deletion_deadline_invalid",
@@ -201,6 +203,9 @@ const validatePreflight = (
   }
   if (request.budgetCapMicroUsd < 1) {
     return Effect.fail(preflightError("budget_missing"));
+  }
+  if (request.budgetCapMicroUsd !== RecipeQualityPilotBudgetCapMicroUsd) {
+    return Effect.fail(preflightError("budget_exceeded"));
   }
   if (
     request.retentionPolicy.evidenceRetentionSeconds !==
@@ -343,6 +348,7 @@ const FailedPilotObservation = Schema.Struct({
     "invalid_media",
     "limit_exceeded",
     "model_refusal",
+    "not_a_recipe",
     "provider_error",
     "retry_exhausted",
     "source_unavailable",

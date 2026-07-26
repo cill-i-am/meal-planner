@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
+// eslint-disable-next-line unicorn/import-style -- This TypeScript target does not enable synthetic default imports.
+import * as path from "node:path";
 import { Readable } from "node:stream";
 
 import { Effect, Stream } from "effect";
@@ -100,18 +103,172 @@ export default TikTokMediaContainer.make(
               })
           );
         }),
+      prepareProviderEvidence: (artifactId, durationSeconds) =>
+        Effect.gen(function* prepareProviderEvidence() {
+          const artifact = artifacts.get(artifactId);
+          if (artifact === undefined || artifact.path === null) {
+            return yield* Effect.fail(retryableContainer());
+          }
+          const sourcePath = artifact.path;
+          const audioPath = path.join(artifact.root, "provider-audio.wav");
+          yield* processRunner
+            .run(
+              "ffmpeg",
+              [
+                "-nostdin",
+                "-y",
+                "-i",
+                sourcePath,
+                "-map",
+                "0:a:0",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "pcm_s16le",
+                audioPath,
+              ],
+              {
+                deadlineMilliseconds: 120_000,
+                failure: "retryable",
+                workspaceRoot: artifact.root,
+              }
+            )
+            .pipe(Effect.mapError(retryableContainer));
+          const boundedDuration = Math.max(1, durationSeconds);
+          const timestamps = [0.2, 0.5, 0.8].map((fraction) =>
+            Math.max(0, Math.floor(boundedDuration * fraction * 1000))
+          );
+          const frames = yield* Effect.forEach(
+            timestamps,
+            (timestampMilliseconds, index) =>
+              Effect.gen(function* prepareFrame() {
+                const framePath = path.join(
+                  artifact.root,
+                  `provider-frame-${index}.jpg`
+                );
+                yield* processRunner
+                  .run(
+                    "ffmpeg",
+                    [
+                      "-nostdin",
+                      "-y",
+                      "-ss",
+                      String(timestampMilliseconds / 1000),
+                      "-i",
+                      sourcePath,
+                      "-frames:v",
+                      "1",
+                      "-vf",
+                      "scale='min(1280,iw)':-2",
+                      framePath,
+                    ],
+                    {
+                      deadlineMilliseconds: 60_000,
+                      failure: "retryable",
+                      workspaceRoot: artifact.root,
+                    }
+                  )
+                  .pipe(Effect.mapError(retryableContainer));
+                const probe = yield* processRunner
+                  .run(
+                    "ffprobe",
+                    [
+                      "-v",
+                      "error",
+                      "-select_streams",
+                      "v:0",
+                      "-show_entries",
+                      "stream=width,height",
+                      "-of",
+                      "json",
+                      framePath,
+                    ],
+                    {
+                      deadlineMilliseconds: 10_000,
+                      failure: "retryable",
+                      workspaceRoot: artifact.root,
+                    }
+                  )
+                  .pipe(Effect.mapError(retryableContainer));
+                const dimensions = yield* Effect.try({
+                  catch: retryableContainer,
+                  try: () =>
+                    JSON.parse(new TextDecoder().decode(probe.stdout)) as {
+                      readonly streams?: readonly {
+                        readonly height?: number;
+                        readonly width?: number;
+                      }[];
+                    },
+                });
+                const { height, width } = dimensions.streams?.[0] ?? {};
+                if (
+                  !Number.isSafeInteger(height) ||
+                  !Number.isSafeInteger(width) ||
+                  height === undefined ||
+                  width === undefined ||
+                  height <= 0 ||
+                  width <= 0
+                ) {
+                  return yield* Effect.fail(retryableContainer());
+                }
+                const bytes = yield* Effect.tryPromise({
+                  catch: retryableContainer,
+                  try: () => readFile(framePath),
+                });
+                const derivedArtifactId = `${artifactId}:frame:${index}`;
+                artifacts.registerPath(
+                  derivedArtifactId,
+                  artifact.root,
+                  framePath
+                );
+                return {
+                  artifactId: derivedArtifactId,
+                  bytes: bytes.byteLength,
+                  height,
+                  sha256: createHash("sha256").update(bytes).digest("hex"),
+                  timestampMilliseconds,
+                  width,
+                };
+              }),
+            { concurrency: 1 }
+          );
+          const audioBytes = yield* Effect.tryPromise({
+            catch: retryableContainer,
+            try: () => readFile(audioPath),
+          });
+          const audioStats = yield* Effect.tryPromise({
+            catch: retryableContainer,
+            try: () => stat(audioPath),
+          });
+          if (audioStats.size !== audioBytes.byteLength) {
+            return yield* Effect.fail(retryableContainer());
+          }
+          const audioArtifactId = `${artifactId}:audio`;
+          artifacts.registerPath(audioArtifactId, artifact.root, audioPath);
+          return {
+            audio: {
+              artifactId: audioArtifactId,
+              bytes: audioBytes.byteLength,
+              durationMilliseconds: Math.round(durationSeconds * 1000),
+              sha256: createHash("sha256").update(audioBytes).digest("hex"),
+            },
+            frames,
+          };
+        }),
       stream: (artifactId) => {
         const artifact = artifacts.get(artifactId);
         if (artifact === undefined || artifact.path === null) {
           return Stream.fail(retryableContainer());
         }
-        const { path, root } = artifact;
+        const { path: artifactPath, root } = artifact;
         return Stream.fromEffect(scanTemporaryWorkspace(root)).pipe(
           Stream.flatMap(() =>
             Stream.fromReadableStream({
               evaluate: () =>
                 Readable.toWeb(
-                  createReadStream(path)
+                  createReadStream(artifactPath)
                 ) as ReadableStream<Uint8Array>,
               onError: retryableContainer,
             })

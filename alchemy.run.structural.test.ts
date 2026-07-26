@@ -7,6 +7,41 @@ const readRepoFile = (path: string): string =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf-8");
 
 describe("Alchemy source structure (no provider lifecycle or runtime proof)", () => {
+  it("composes the real private provider path without the synthetic import service", () => {
+    const stackSource = readRepoFile("./alchemy.run.ts");
+    const workerSource = readRepoFile("./apps/api/src/worker.ts");
+    const workflowSource = readRepoFile(
+      "./apps/api/src/features/imports/import.workflow.ts"
+    );
+    const providerTaskSource = readRepoFile(
+      "./apps/api/src/features/imports/import-provider-workflow-task.ts"
+    );
+    const gatewaySource = readRepoFile(
+      "./apps/api/src/infrastructure/import-provider-gateway.ts"
+    );
+
+    expect(workerSource).not.toContain(
+      "makeProviderFreeSyntheticImportService"
+    );
+    expect(workflowSource).toContain("makeInstalledSpeechTranscriber");
+    expect(workflowSource).toContain("makeInstalledVisualEvidenceExtractor");
+    expect(workflowSource).toContain("makeInstalledRecipeExtractor");
+    expect(workflowSource).toContain("makePilotProviderDispatchGate");
+    expect(workflowSource).toContain("Cloudflare.AI.QueryGatewayBinding");
+    expect(workflowSource).toContain('"extract-carousel-visual-evidence-v1"');
+    expect(workflowSource).toContain('"extract-carousel-recipe-v1"');
+    expect(workflowSource).toContain(
+      'import { runProviderTask } from "./import-provider-workflow-task.js"'
+    );
+    expect(providerTaskSource).toContain("ProviderTaskStepConfig");
+    expect(workerSource).toContain("stageOperatorCarouselForWorkflow");
+    expect(workerSource).not.toContain("carouselProcessingUnavailable");
+    expect(gatewaySource).toContain('"ImportProviderGateway"');
+    expect(gatewaySource).toContain("collectLogs: false");
+    expect(gatewaySource).toContain("zdr: true");
+    expect(stackSource).toContain("importProviderGatewayId");
+  });
+
   it("declares exactly one default-exported MealPlanner stack with Cloudflare state", () => {
     const source = readRepoFile("./alchemy.run.ts");
 

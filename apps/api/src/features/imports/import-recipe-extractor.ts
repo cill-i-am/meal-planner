@@ -162,7 +162,15 @@ export type RecipeExtractorDescriptor = typeof RecipeExtractorDescriptor.Type;
 
 export interface RecipeExtractionFailure {
   readonly _tag: "RecipeExtractionFailure";
-  readonly code: "model_refusal" | "outcome_unknown" | "provider_error";
+  readonly code:
+    | "insufficient_evidence"
+    | "malformed_response"
+    | "model_refusal"
+    | "outcome_unknown"
+    | "provider_error"
+    | "provider_unavailable"
+    | "throttled"
+    | "timeout";
 }
 
 export interface RecipeExtractorShape {

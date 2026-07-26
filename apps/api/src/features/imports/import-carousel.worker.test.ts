@@ -296,14 +296,27 @@ const recipeFixture = (input: RecipeEvidenceAssembly) => {
 
 const operatorRecipeFixture = (input: RecipeEvidenceAssembly) => {
   const source = input.items.find(({ kind }) => kind === "source_url");
-  if (source === undefined) {
-    throw new Error("Missing canonical source evidence");
+  const visual = input.items.find(({ kind }) => kind === "visual_observation");
+  if (source === undefined || visual === undefined) {
+    throw new Error("Missing canonical recipe evidence");
   }
   const unresolved = unresolvedRecipeFact("not supplied");
   const unresolvedList = {
     items: [],
     reason: "not supplied",
     state: "unresolved" as const,
+  };
+  const supportedVisual = {
+    citations: [
+      {
+        confidence: 1,
+        evidenceId: visual.evidenceId,
+        origin: "observed" as const,
+      },
+    ],
+    origin: "observed" as const,
+    state: "supported" as const,
+    value: visual.value,
   };
   return {
     author: unresolved,
@@ -316,8 +329,11 @@ const operatorRecipeFixture = (input: RecipeEvidenceAssembly) => {
     },
     cuisine: unresolved,
     description: unresolved,
-    ingredientLines: unresolvedList,
-    instructions: unresolvedList,
+    ingredientLines: {
+      items: [supportedVisual],
+      state: "supported" as const,
+    },
+    instructions: { items: [supportedVisual], state: "supported" as const },
     name: unresolved,
     nutrition: unresolved,
     prepTimeMinutes: unresolved,
@@ -343,10 +359,8 @@ const operatorRecipeFixture = (input: RecipeEvidenceAssembly) => {
       "cook_time_minutes",
       "cuisine",
       "description",
-      "ingredient_lines",
       "ingredient_quantities",
       "ingredient_units",
-      "instructions",
       "name",
       "nutrition",
       "prep_time_minutes",
@@ -668,8 +682,17 @@ describe("provider-free TikTok carousel tracer", () => {
     const visual = makeDeterministicVisualEvidenceExtractor({
       cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
       model: "provider-free-proof",
-      observations: [],
-      outcome: "empty",
+      observations: [
+        {
+          confidence: 1,
+          frameIndex: 0,
+          kind: "visible_text",
+          regions: [{ height: 1, width: 1, x: 0, y: 0 }],
+          text: "Chop onion then cook",
+          timestampMilliseconds: 0,
+        },
+      ],
+      outcome: "found",
       provider: "deterministic_fake",
       usage: {
         inputBytes: output.images.reduce(

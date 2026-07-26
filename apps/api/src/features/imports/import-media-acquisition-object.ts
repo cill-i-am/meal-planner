@@ -10,6 +10,7 @@ export class ImportMediaAcquisitionObject extends Cloudflare.DurableObject<Impor
     return Effect.succeed({
       cleanup: (artifactId: string) => media.cleanup(artifactId),
       prepare: media.prepare,
+      prepareProviderEvidence: media.prepareProviderEvidence,
       stream: media.stream,
     });
   }).pipe(

@@ -97,6 +97,7 @@ interface R2ObjectLike {
 }
 
 interface R2ObjectBodyLike extends R2ObjectLike {
+  readonly arrayBuffer?: () => Promise<ArrayBuffer>;
   readonly text: () => Promise<string>;
 }
 
@@ -105,7 +106,11 @@ export interface AcquisitionPutOptions {
   readonly customMetadata: Record<string, string>;
   readonly httpMetadata: {
     readonly cacheControl: "private, no-store";
-    readonly contentType: "application/json" | "image/jpeg" | "video/mp4";
+    readonly contentType:
+      | "application/json"
+      | "audio/wav"
+      | "image/jpeg"
+      | "video/mp4";
   };
   readonly onlyIf: { readonly etagDoesNotMatch: "*" };
   readonly sha256: ArrayBuffer;
@@ -126,6 +131,28 @@ export interface AcquisitionMediaObjectLike {
   readonly prepare: (
     input: TikTokIdentity
   ) => Effect.Effect<PreparedMediaArtifact, ContainerAcquisitionError>;
+  readonly prepareProviderEvidence?: (
+    artifactId: string,
+    durationSeconds: number
+  ) => Effect.Effect<
+    {
+      readonly audio: {
+        readonly artifactId: string;
+        readonly bytes: number;
+        readonly durationMilliseconds: number;
+        readonly sha256: string;
+      };
+      readonly frames: readonly {
+        readonly artifactId: string;
+        readonly bytes: number;
+        readonly height: number;
+        readonly sha256: string;
+        readonly timestampMilliseconds: number;
+        readonly width: number;
+      }[];
+    },
+    RetryableAcquisitionFailure
+  >;
   readonly stream: (
     artifactId: string
   ) => Stream.Stream<Uint8Array, RetryableAcquisitionFailure>;
@@ -582,6 +609,10 @@ export const acquireStoreVerify = (
   bucket: AcquisitionBucketLike,
   mediaObject: AcquisitionMediaObjectLike,
   input: {
+    readonly beforeCleanup?: (
+      prepared: PreparedMediaArtifact,
+      mediaObject: AcquisitionMediaObjectLike
+    ) => Effect.Effect<void, RetryableAcquisitionFailure>;
     readonly canonicalId: SourceCanonicalId;
     readonly generation: AcquisitionGeneration;
     readonly importId: ImportId;
@@ -623,6 +654,9 @@ export const acquireStoreVerify = (
       });
       if (storedMedia === null) {
         return yield* Effect.fail(retryableAt("store"));
+      }
+      if (input.beforeCleanup !== undefined) {
+        yield* input.beforeCleanup(prepared, mediaObject);
       }
       const manifest = {
         acquiredAt,

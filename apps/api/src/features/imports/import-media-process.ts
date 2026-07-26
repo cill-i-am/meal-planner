@@ -73,8 +73,10 @@ export const makeTemporaryArtifactStore = (
       return;
     }
     await removeRoot(artifact.root);
-    if (artifacts.get(artifactId) === artifact) {
-      artifacts.delete(artifactId);
+    for (const [registeredId, registered] of artifacts) {
+      if (registered.root === artifact.root) {
+        artifacts.delete(registeredId);
+      }
     }
   };
   const register = (artifactId: string, root: string) => {
@@ -84,6 +86,9 @@ export const makeTemporaryArtifactStore = (
     cleanup,
     get: (artifactId: string) => artifacts.get(artifactId),
     register,
+    registerPath: (artifactId: string, root: string, path: string) => {
+      artifacts.set(artifactId, { path, root });
+    },
     setPath: (artifactId: string, path: string) => {
       const artifact = artifacts.get(artifactId);
       if (artifact === undefined) {

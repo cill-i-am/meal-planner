@@ -38,12 +38,42 @@ export interface RecipeDraftPipelineFailure {
   readonly code:
     | RecipeExtractionFailureCode
     | "outcome_unknown"
-    | "source_evidence_invalid";
+    | "provider_unavailable"
+    | "source_evidence_invalid"
+    | "throttled"
+    | "timeout";
 }
 
 const pipelineFailure = (
   code: RecipeDraftPipelineFailure["code"]
 ): RecipeDraftPipelineFailure => ({ _tag: "RecipeDraftPipelineFailure", code });
+
+const recipeProviderFailureCode = (
+  code: RecipeExtractorShape["extract"] extends (
+    ...arguments_: never[]
+  ) => Effect.Effect<unknown, infer Failure>
+    ? Failure extends { readonly code: infer Code }
+      ? Code
+      : never
+    : never
+): RecipeDraftPipelineFailure["code"] => {
+  switch (code) {
+    case "insufficient_evidence":
+    case "model_refusal":
+    case "outcome_unknown":
+    case "provider_error": {
+      return code;
+    }
+    case "provider_unavailable":
+    case "throttled":
+    case "timeout": {
+      return code;
+    }
+    default: {
+      return "provider_error";
+    }
+  }
+};
 
 const bytesToHex = (value: ArrayBuffer) =>
   Array.from(new Uint8Array(value), (byte) =>
@@ -307,6 +337,13 @@ const extractionIsGrounded = (
   );
 };
 
+/** Semantic recipe boundary: accessible non-food evidence must never become a draft. */
+export const hasMinimumRecipeEvidence = (extraction: RecipeExtraction) =>
+  extraction.ingredientLines.state === "supported" &&
+  extraction.ingredientLines.items.length > 0 &&
+  extraction.instructions.state === "supported" &&
+  extraction.instructions.items.length > 0;
+
 interface RecipeDraftClaimContext {
   readonly descriptor: RecipeExtractorDescriptorType;
   readonly evidenceFingerprint: string;
@@ -363,9 +400,14 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
   }
 
   const raw = yield* input.extractor.extract(input.assembly).pipe(
-    Effect.mapError((failure) => pipelineFailure(failure.code)),
+    Effect.mapError((failure) =>
+      pipelineFailure(recipeProviderFailureCode(failure.code))
+    ),
     Effect.catch((error) =>
-      error.code === "outcome_unknown"
+      error.code === "outcome_unknown" ||
+      error.code === "provider_unavailable" ||
+      error.code === "throttled" ||
+      error.code === "timeout"
         ? Effect.fail(error)
         : input.recipeRepository
             .fail({
@@ -398,6 +440,14 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
       failureCode: "invalid_schema",
     });
     return yield* Effect.fail(pipelineFailure("invalid_schema"));
+  }
+  if (!hasMinimumRecipeEvidence(extraction)) {
+    yield* input.recipeRepository.fail({
+      completedAt: input.now,
+      extractionFingerprint,
+      failureCode: "insufficient_evidence",
+    });
+    return yield* Effect.fail(pipelineFailure("insufficient_evidence"));
   }
   return yield* input.recipeRepository.complete(
     input.transcript.route === "video_v1"
