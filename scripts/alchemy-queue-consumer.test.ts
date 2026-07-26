@@ -435,6 +435,50 @@ const runStableDeploy = async (
   return { exit, persistedAfter };
 };
 
+const runFreshDeploy = async (client: HttpClient.HttpClient) => {
+  const [modules, testCore] = await Promise.all([
+    loadQueueModules(),
+    loadTestCore(),
+  ]);
+  const scratch = testCore.scratchStack(
+    { providers: ConsumerProviderLive(), stage: "test" },
+    "queue-consumer-fresh-deploy"
+  );
+
+  const exit = await testCore
+    .toEffect(
+      provideQueueServices(
+        modules,
+        client,
+        scratch.deploy(
+          Consumer(logicalId, {
+            deadLetterQueue,
+            deadLetterQueueId,
+            queueId,
+            scriptName,
+            settings: desiredSettings,
+          })
+        )
+      ),
+      {
+        providers: ConsumerProviderLive(),
+        stage: "test",
+        state: scratch.state,
+      }
+    )
+    .pipe(Effect.exit, Effect.runPromise);
+  const persistedAfter = await Effect.gen(function* readPersistedState() {
+    const state = yield* yield* State.State;
+    return yield* state.get({
+      fqn: logicalId,
+      stack: scratch.name,
+      stage: "test",
+    });
+  }).pipe(Effect.provide(scratch.state), Effect.runPromise);
+
+  return { exit, persistedAfter };
+};
+
 const physicalConsumer = (
   physicalDeadLetterQueue: string | null | undefined,
   settings: ConsumerSettings = desiredSettings,
@@ -738,6 +782,85 @@ const expectPersistedUpdatingState = (
 };
 
 describe("Alchemy queue consumer reconciliation", () => {
+  it("creates and converges a fresh Consumer from empty provider state", async () => {
+    let created = false;
+    const operations: string[] = [];
+    const client = HttpClient.make((request) => {
+      const path = new URL(request.url).pathname;
+      operations.push(`${request.method} ${path}`);
+
+      if (
+        request.method === "GET" &&
+        path.endsWith(`/queues/${queueId}/consumers`)
+      ) {
+        return Effect.succeed(
+          cloudflareResponse(
+            request,
+            created
+              ? [physicalConsumer(deadLetterQueue, desiredSettings, consumerId)]
+              : []
+          )
+        );
+      }
+      if (
+        request.method === "POST" &&
+        path.endsWith(`/queues/${queueId}/consumers`)
+      ) {
+        created = true;
+        return Effect.succeed(
+          cloudflareResponse(
+            request,
+            physicalConsumer(deadLetterQueue, desiredSettings, consumerId)
+          )
+        );
+      }
+      if (
+        request.method === "PUT" &&
+        path.endsWith(`/queues/${queueId}/consumers/${consumerId}`)
+      ) {
+        return Effect.succeed(
+          cloudflareResponse(
+            request,
+            physicalConsumer(deadLetterQueue, desiredSettings, consumerId)
+          )
+        );
+      }
+      if (
+        request.method === "GET" &&
+        path.endsWith(`/queues/${queueId}/consumers/${consumerId}`)
+      ) {
+        return Effect.succeed(
+          cloudflareResponse(
+            request,
+            physicalConsumer(deadLetterQueue, desiredSettings, consumerId)
+          )
+        );
+      }
+      return unexpectedQueueRequest(request, path);
+    });
+
+    const result = await runFreshDeploy(client);
+
+    expect(result.exit._tag).toBe("Success");
+    expect(operations).toEqual([
+      `GET /client/v4/accounts/${accountId}/queues/${queueId}/consumers`,
+      `POST /client/v4/accounts/${accountId}/queues/${queueId}/consumers`,
+      `PUT /client/v4/accounts/${accountId}/queues/${queueId}/consumers/${consumerId}`,
+      `GET /client/v4/accounts/${accountId}/queues/${queueId}/consumers/${consumerId}`,
+    ]);
+    expect(result.persistedAfter).toMatchObject({
+      attr: {
+        accountId,
+        consumerId,
+        deadLetterQueue,
+        queueId,
+        scriptName,
+        settings: desiredSettings,
+      },
+      status: "created",
+    });
+  });
+
   it("plans one in-place update when stable cached state hides physical DLQ drift", async () => {
     const requests: { method: string; url: string }[] = [];
     const client = HttpClient.make((request) =>
