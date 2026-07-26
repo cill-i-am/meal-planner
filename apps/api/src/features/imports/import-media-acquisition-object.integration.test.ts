@@ -1,0 +1,403 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+// eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
+import { join } from "node:path";
+import { Readable } from "node:stream";
+
+import * as Cloudflare from "alchemy/Cloudflare";
+import { Cause, Context, Effect, Exit, Option, Schema } from "effect";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { describe, expect, it } from "vitest";
+
+import {
+  makeContainerMediaAcquirer,
+  makeSecureMediaDownloader,
+} from "./import-media-acquirer.container.js";
+import type {
+  SecureMediaDownloadClient,
+  SecureMediaDownloadResponse,
+} from "./import-media-acquirer.container.js";
+import { acquireStoreVerify } from "./import-media-acquirer.js";
+import type {
+  AcquisitionBucketLike,
+  AcquisitionMediaObjectLike,
+} from "./import-media-acquirer.js";
+import { ImportMediaAcquisitionObjectRuntime } from "./import-media-acquisition-object.js";
+import { TikTokMediaContainer } from "./import-media-container.js";
+import { makeTikTokMediaContainerRuntime } from "./import-media-container.runtime.js";
+import { makeTemporaryArtifactStore } from "./import-media-process.js";
+import type { MediaProcessRunnerShape } from "./import-media-process.js";
+import { AcquisitionGeneration } from "./import-media.model.js";
+import { makeTikTokSourceResolver } from "./import-source-resolver.tiktok.js";
+import { ImportId, SourceCanonicalId } from "./import.contracts.js";
+import { runAcquisitionTask } from "./import.workflow.js";
+
+const identity = {
+  canonicalId: Schema.decodeUnknownSync(SourceCanonicalId)(
+    "7520000000000000000"
+  ),
+  generation: Schema.decodeUnknownSync(AcquisitionGeneration)(1),
+  importId: Schema.decodeUnknownSync(ImportId)(
+    "018f47ad-91aa-7c35-b6fe-000000000001"
+  ),
+  kind: "tiktok" as const,
+};
+
+const mediaBytes = new Uint8Array([
+  0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0,
+]);
+
+const response = (): SecureMediaDownloadResponse => ({
+  body: Readable.from([mediaBytes]),
+  contentLength: mediaBytes.byteLength,
+  destroy: () => null,
+  location: undefined,
+  statusCode: 200,
+});
+
+const videoMetadata = () => ({
+  description: "Synthetic recipe boundary",
+  duration: 12,
+  http_headers: {
+    Accept: "video/mp4",
+    Authorization: "secret-header-canary",
+    Cookie: "secret-header-canary",
+    Referer: "https://www.tiktok.com/",
+    "User-Agent": "synthetic-boundary",
+  },
+  id: identity.canonicalId,
+  uploader: "Synthetic Cook",
+  uploader_id: "synthetic-cook",
+  uploader_url: "https://www.tiktok.com/@synthetic-cook",
+  url: "https://v16m.tiktokcdn.com/media.mp4?token=locator-canary",
+  webpage_url: `https://www.tiktok.com/@synthetic-cook/video/${identity.canonicalId}`,
+});
+
+const makeProcessRunner = (
+  metadata: () => unknown = videoMetadata
+): MediaProcessRunnerShape => ({
+  run: (command, args) =>
+    Effect.promise(async () => {
+      if (command === "yt-dlp") {
+        return {
+          stderrBytes: 0,
+          stdout: new TextEncoder().encode(JSON.stringify(metadata())),
+        };
+      }
+      if (command === "ffmpeg") {
+        await writeFile(String(args.at(-1)), mediaBytes);
+        return { stderrBytes: 0, stdout: new Uint8Array() };
+      }
+      if (command === "ffprobe") {
+        return {
+          stderrBytes: 0,
+          stdout: new TextEncoder().encode(
+            JSON.stringify({
+              format: {
+                duration: "12",
+                format_name: "mp4",
+                size: String(mediaBytes.byteLength),
+              },
+              streams: [
+                { codec_name: "h264", codec_type: "video", index: 0 },
+                { codec_name: "aac", codec_type: "audio", index: 1 },
+              ],
+            })
+          ),
+        };
+      }
+      throw new Error(`Unexpected command ${command}`);
+    }),
+});
+
+const makeContainerFetcher = (
+  runtime: ReturnType<typeof makeTikTokMediaContainerRuntime>,
+  rpcFailure?: Error
+) => {
+  const handler = Cloudflare.serveRpc(
+    runtime as unknown as Record<string, unknown>,
+    Effect.succeed(HttpServerResponse.text("ready"))
+  );
+  return Cloudflare.fromCloudflareFetcher({
+    connect: () => {
+      throw new Error("connect is not used by the acquisition RPC");
+    },
+    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      const webRequest = new Request(input, init);
+      if (
+        rpcFailure !== undefined &&
+        new URL(webRequest.url).pathname !== "/containerstarthealthcheck"
+      ) {
+        return new Response(rpcFailure.message, { status: 502 });
+      }
+      const request = HttpServerRequest.fromWeb(webRequest);
+      const rpcResponse = await Effect.runPromise(
+        Effect.scoped(
+          handler.pipe(
+            Effect.provideService(HttpServerRequest.HttpServerRequest, request)
+          )
+        )
+      );
+      return HttpServerResponse.toWeb(rpcResponse);
+    },
+  });
+};
+
+const withInstalledAcquisitionBoundary = async <A>(
+  runtime: ReturnType<typeof makeTikTokMediaContainerRuntime>,
+  use: (stub: AcquisitionMediaObjectLike) => Promise<A>,
+  rpcFailure?: Error
+) => {
+  const bindingKey = "~alchemy/Container/Binding";
+  const originalBinding = Object.getOwnPropertyDescriptor(
+    TikTokMediaContainer,
+    bindingKey
+  );
+  const fetcher = makeContainerFetcher(runtime, rpcFailure);
+  Object.defineProperty(TikTokMediaContainer, bindingKey, {
+    configurable: true,
+    value: Effect.succeed(
+      Effect.succeed({
+        destroy: () => Effect.void,
+        getTcpPort: () => Effect.succeed(fetcher),
+        interceptAllOutboundHttp: () => Effect.void,
+        interceptOutboundHttp: () => Effect.void,
+        monitor: () => Effect.never,
+        running: Effect.succeed(true),
+        setInactivityTimeout: () => Effect.void,
+        signal: () => Effect.void,
+        start: () => Effect.void,
+      })
+    ),
+  });
+
+  const entrypoint = Effect.succeed({
+    RuntimeContext: {
+      exports: Effect.succeed({
+        ImportMediaAcquisitionObject: {
+          constructor: ImportMediaAcquisitionObjectRuntime,
+          services: Context.empty(),
+        },
+      }),
+      shape: () => ({}),
+    },
+  });
+  class TestDurableObject {
+    readonly ctx;
+    constructor(ctx: unknown) {
+      this.ctx = ctx;
+    }
+  }
+  const pending: Promise<unknown>[] = [];
+  const state = {
+    blockConcurrencyWhile: <Value>(operation: () => Promise<Value>) =>
+      operation(),
+    container: {},
+    id: { toString: () => "gaia-167-installed-boundary" },
+    storage: {},
+    waitUntil: (promise: Promise<unknown>) => {
+      pending.push(promise);
+    },
+  };
+
+  try {
+    const Bridge = Cloudflare.makeDurableObjectBridge(
+      TestDurableObject as never,
+      {
+        entrypoint,
+        stack: { name: "MealPlanner", stage: "test-gaia-167" },
+      }
+    )("ImportMediaAcquisitionObject");
+    const object = new Bridge(state as never, {});
+    const stub = Cloudflare.makeRpcStub<AcquisitionMediaObjectLike>(object);
+    return await use(stub);
+  } finally {
+    await Promise.allSettled(pending);
+    if (originalBinding === undefined) {
+      Reflect.deleteProperty(TikTokMediaContainer, bindingKey);
+    } else {
+      Object.defineProperty(TikTokMediaContainer, bindingKey, originalBinding);
+    }
+  }
+};
+
+const untouchedBucket = (): AcquisitionBucketLike => ({
+  get: () => Promise.reject(new Error("bucket must remain untouched")),
+  head: () => Promise.reject(new Error("bucket must remain untouched")),
+  put: () => Promise.reject(new Error("bucket must remain untouched")),
+});
+
+describe("installed acquisition Durable Object boundary", () => {
+  it("runs resolver and download through the Alchemy container layer and RPC", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gaia-167-installed-boundary-"));
+    const headers: unknown[] = [];
+    const downloadClient: SecureMediaDownloadClient = {
+      request: (_url, _address, _signal, requestHeaders) => {
+        headers.push(requestHeaders);
+        return Promise.resolve(response());
+      },
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+    };
+    const processRunner = makeProcessRunner();
+    const artifacts = makeTemporaryArtifactStore((artifactRoot) =>
+      rm(artifactRoot, { force: true, recursive: true })
+    );
+    const runtime = makeTikTokMediaContainerRuntime({
+      acquirer: makeContainerMediaAcquirer(
+        processRunner,
+        makeSecureMediaDownloader(downloadClient)
+      ),
+      artifacts,
+      makeTemporaryRoot: () => mkdtemp(join(root, "artifact-")),
+      processRunner,
+      resolver: makeTikTokSourceResolver(processRunner),
+    });
+
+    try {
+      await withInstalledAcquisitionBoundary(runtime, async (stub) => {
+        const prepared = await Effect.runPromise(stub.prepare(identity));
+        expect(prepared).toMatchObject({
+          bytes: mediaBytes.byteLength,
+          durationSeconds: 12,
+          metadata: {
+            canonicalId: identity.canonicalId,
+            caption: "Synthetic recipe boundary",
+          },
+        });
+        expect(headers).toEqual([
+          {
+            accept: "video/mp4",
+            referer: "https://www.tiktok.com/",
+            userAgent: "synthetic-boundary",
+          },
+        ]);
+        expect(JSON.stringify(prepared)).not.toMatch(
+          /secret-header-canary|locator-canary/u
+        );
+        const stored = artifacts.get(prepared.artifactId);
+        expect(stored?.path).not.toBeNull();
+        expect(await readFile(String(stored?.path))).toEqual(
+          Buffer.from(mediaBytes)
+        );
+        await Effect.runPromise(stub.cleanup(prepared.artifactId));
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("closes an installed RPC transport failure without retaining its detail", async () => {
+    const processRunner = makeProcessRunner();
+    const runtime = makeTikTokMediaContainerRuntime({
+      acquirer: makeContainerMediaAcquirer(processRunner),
+      artifacts: makeTemporaryArtifactStore(() => Promise.resolve()),
+      processRunner,
+      resolver: makeTikTokSourceResolver(processRunner),
+    });
+    const failureCanary = new Error("opaque-rpc-failure-canary");
+
+    await withInstalledAcquisitionBoundary(
+      runtime,
+      async (stub) => {
+        const exit = await Effect.runPromiseExit(
+          acquireStoreVerify(untouchedBucket(), stub, {
+            canonicalId: identity.canonicalId,
+            generation: identity.generation,
+            importId: identity.importId,
+            now: () => new Date("2026-07-26T12:00:00.000Z"),
+          })
+        );
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isSuccess(exit)) {
+          throw new Error("Expected a closed RPC failure");
+        }
+        const failure = Option.getOrThrow(Cause.findErrorOption(exit.cause));
+        expect(failure).toEqual({
+          _tag: "RetryableAcquisitionFailure",
+          reason: "container_rpc",
+          stage: "container",
+        });
+        expect(JSON.stringify(failure)).not.toContain(failureCanary.message);
+      },
+      failureCanary
+    );
+  });
+
+  it("carries installed download failures through retry exhaustion and replays a semantic outcome once", async () => {
+    let mode: "carousel" | "video" = "video";
+    let metadataCalls = 0;
+    let resolveCalls = 0;
+    const processRunner = makeProcessRunner(() => {
+      metadataCalls += 1;
+      return mode === "video"
+        ? videoMetadata()
+        : {
+            _type: "playlist",
+            entries: [{ id: "photo-1" }, { id: "photo-2" }],
+            id: identity.canonicalId,
+          };
+    });
+    const downloadClient: SecureMediaDownloadClient = {
+      request: () => Promise.reject(new Error("must not connect")),
+      resolve: () => {
+        resolveCalls += 1;
+        return Promise.reject(new Error("opaque-dns-failure-canary"));
+      },
+    };
+    const runtime = makeTikTokMediaContainerRuntime({
+      acquirer: makeContainerMediaAcquirer(
+        processRunner,
+        makeSecureMediaDownloader(downloadClient)
+      ),
+      artifacts: makeTemporaryArtifactStore((artifactRoot) =>
+        rm(artifactRoot, { force: true, recursive: true })
+      ),
+      processRunner,
+      resolver: makeTikTokSourceResolver(processRunner),
+    });
+    let allocations = 0;
+
+    await withInstalledAcquisitionBoundary(runtime, async (stub) => {
+      const execute = () =>
+        runAcquisitionTask(
+          () =>
+            Effect.sync(() => ({
+              canonicalSourceId: identity.canonicalId,
+              generation: Schema.decodeUnknownSync(AcquisitionGeneration)(
+                (allocations += 1)
+              ),
+            })),
+          (allocation) =>
+            acquireStoreVerify(untouchedBucket(), stub, {
+              canonicalId: allocation.canonicalSourceId,
+              generation: allocation.generation,
+              importId: identity.importId,
+              now: () => new Date("2026-07-26T12:00:00.000Z"),
+            })
+        );
+      const exhausted = await Effect.runPromise(execute());
+
+      expect(exhausted).toEqual({
+        _tag: "RetryExhausted",
+        attempts: 3,
+        generation: 3,
+        reason: "download_dns",
+        stage: "container",
+      });
+      expect(metadataCalls).toBe(3);
+      expect(resolveCalls).toBe(3);
+
+      mode = "carousel";
+      const replayed = await Effect.runPromise(execute());
+      expect(replayed).toEqual({
+        _tag: "UnsupportedCarousel",
+        code: "unsupported_carousel",
+        generation: 4,
+      });
+      expect(metadataCalls).toBe(4);
+      expect(resolveCalls).toBe(3);
+    });
+  }, 10_000);
+});
