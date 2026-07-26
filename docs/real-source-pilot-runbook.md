@@ -7,18 +7,21 @@ is used.
 
 The executable readiness contract lives in
 `apps/api/src/features/pilots/recipe-quality-pilot.ts`.
+Use the
+[privacy-safe input package](real-source-pilot-input-package.md) to assemble the
+six candidate slots without persisting source locators.
 
 ## What The Contract Guarantees
 
 The preflight fails closed unless:
 
-- the stage is exactly `pilot-gaia-117`;
+- the stage is exactly `pilot-gaia-118`;
 - every sample has a non-expired authorization record;
 - the sample set covers normal video, sparse description, dense on-screen text,
   speech-heavy video, carousel, and expected-failure cases;
 - video and carousel identities agree with their declared media kind;
 - all four required provider capabilities are explicitly marked configured;
-- the budget cap is a positive integer in micro-US dollars;
+- the budget cap is exactly `10_000_000` micro-US dollars ($10);
 - evidence retention is exactly seven days and post-run deletion verification is
   required; and
 - every sample has a unique opaque ID and a deletion deadline within the
@@ -63,7 +66,7 @@ Before requesting an execution window, prepare:
      `approved_research_basis`;
    - an opaque `auth:` reference;
    - authorization start and expiry timestamps.
-4. A positive whole-number budget cap in micro-US dollars.
+4. The exact `10_000_000` micro-US dollar ($10) budget cap.
 5. Current confirmation that media acquisition, speech transcription, visual
    evidence, and recipe extraction are configured in the isolated pilot stage.
 6. A deletion deadline for each sample no later than seven days after execution.
