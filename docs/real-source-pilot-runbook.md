@@ -3,7 +3,8 @@
 This runbook prepares the GAIA-118 pilot without executing it. The pilot remains
 human-triggered: a final sample set, current provider readiness, a budget cap,
 and an explicit execution window are required before any real source or provider
-is used.
+is used. Every slot is URL-only: the operator supplies the authorized TikTok URL
+through the existing authenticated import boundary.
 
 The executable readiness contract lives in
 `apps/api/src/features/pilots/recipe-quality-pilot.ts`.
@@ -20,6 +21,9 @@ The preflight fails closed unless:
 - the sample set covers normal video, sparse description, dense on-screen text,
   speech-heavy video, carousel, and expected-failure cases;
 - video and carousel identities agree with their declared media kind;
+- the carousel slot records `unsupported_carousel` as a typed acquisition
+  failure with zero provider/model calls and zero provider spend;
+- the separate non-food semantic-failure slot records `not_a_recipe`;
 - all four required provider capabilities are explicitly marked configured;
 - the budget cap is exactly `10_000_000` micro-US dollars ($10);
 - evidence retention is exactly seven days and post-run deletion verification is
@@ -58,7 +62,7 @@ Do not paste that mapping into Linear, GitHub, logs, or handoffs.
 
 Before requesting an execution window, prepare:
 
-1. One approved source for each required source class.
+1. One approved URL-only source for each required source class.
 2. Random opaque manifest and sample IDs that contain no creator or source
    information.
 3. An authorization record for each sample, with:
@@ -83,10 +87,13 @@ When GAIA-118 receives a specific execution authorization:
 2. Construct the privacy-safe manifest and keep the source mapping transient.
 3. Run `runRecipeQualityPilotPreflight` using the current time.
 4. Stop immediately on any typed preflight error.
-5. Submit the approved sources through the existing authenticated import API.
-6. Capture terminal import and review outcomes without copying restricted
+5. Submit each approved URL through the existing authenticated import API.
+6. For the carousel slot, record the resolver's `unsupported_carousel` outcome
+   and verify zero provider/model calls and zero provider spend. Do not invoke
+   downstream transcription, visual-evidence, or recipe-extraction providers.
+7. Capture terminal import and review outcomes without copying restricted
    evidence into the report.
-7. Record per-sample:
+8. Record per-sample:
    - end-to-end latency;
    - temporary storage bytes;
    - provider call count;
@@ -96,14 +103,14 @@ When GAIA-118 receives a specific execution authorization:
    - first-pass and post-review usability;
    - unsupported facts and invented quantities; and
    - review duration.
-8. Build the redacted report with `buildRecipeQualityPilotReport`.
-9. Verify that its sample identities reconcile exactly with the manifest.
-10. Record the report and the future deletion-verification boundary as durable
+9. Build the redacted report with `buildRecipeQualityPilotReport`.
+10. Verify that its sample identities reconcile exactly with the manifest.
+11. Record the report and the future deletion-verification boundary as durable
     evidence.
 
-This sequence uses the existing import and review path. It does not authorize a
-separate ingestion path, direct provider calls, infrastructure changes, or
-manual deletion.
+This URL-only sequence uses the existing import and review path. It does not
+authorize a separate ingestion path, direct provider calls, infrastructure
+changes, or manual deletion.
 
 ## Stop Conditions
 
@@ -112,7 +119,9 @@ Stop without retrying or widening scope if:
 - the exact stage, provider configuration, or budget cannot be proven;
 - authorization is missing, not active, or expired;
 - the required representative coverage is incomplete;
-- a source resolves to a different media kind;
+- a non-carousel source resolves to a different media kind;
+- the carousel source does not resolve to the typed `unsupported_carousel`
+  acquisition failure;
 - an observation cannot be reconciled to exactly one manifest sample;
 - a provider does not report cost—record it as unknown;
 - known cost exceeds the cap;

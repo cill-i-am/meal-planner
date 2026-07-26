@@ -108,15 +108,14 @@ const successfulObservation = (
   sampleId: string,
   sourceClass: Exclude<
     ReturnType<typeof sample>["sourceClass"],
-    "expected_failure"
+    "carousel" | "expected_failure"
   >,
   options?: {
     readonly cost?: Parameters<typeof metrics>[0];
     readonly outcome?: "approved" | "rejected";
   }
 ) => ({
-  mediaKind:
-    sourceClass === "carousel" ? ("carousel" as const) : ("video" as const),
+  mediaKind: "video" as const,
   metrics: metrics(options?.cost),
   outcome: options?.outcome ?? ("approved" as const),
   quality:
@@ -132,7 +131,26 @@ const successfulObservation = (
   status: "evaluated" as const,
 });
 
-const failedObservation = () => ({
+const unsupportedCarouselObservation = () => ({
+  failureCode: "unsupported_carousel" as const,
+  mediaKind: "carousel" as const,
+  metrics: {
+    cost: {
+      certainty: "known" as const,
+      estimatedMicroUsd: 0,
+      status: "reported" as const,
+    },
+    latencyMilliseconds: 50,
+    providerCalls: 0,
+    storageBytes: 0,
+  },
+  outcome: "failed" as const,
+  sampleId: "carousel-001",
+  sourceClass: "carousel" as const,
+  status: "evaluated" as const,
+});
+
+const notARecipeObservation = () => ({
   failureCode: "not_a_recipe" as const,
   mediaKind: "video" as const,
   metrics: metrics({
@@ -144,6 +162,15 @@ const failedObservation = () => ({
   sourceClass: "expected_failure" as const,
   status: "evaluated" as const,
 });
+
+const completeObservations = () => [
+  successfulObservation("normal-001", "normal_video"),
+  successfulObservation("sparse-001", "sparse_description"),
+  successfulObservation("visual-001", "dense_on_screen_text"),
+  successfulObservation("speech-001", "speech_heavy"),
+  unsupportedCarouselObservation(),
+  notARecipeObservation(),
+];
 
 const expectPreflightCode = async (input: unknown, code: string) => {
   const exit = await Effect.runPromiseExit(
@@ -339,7 +366,7 @@ describe("recipe quality pilot readiness", () => {
 });
 
 describe("recipe quality pilot report", () => {
-  it("reconciles a mixed batch while preserving unknown cost", async () => {
+  it("reconciles four evaluated videos and two distinct typed failures", async () => {
     const ready = await Effect.runPromise(
       runRecipeQualityPilotPreflight(preflightInput(), Now)
     );
@@ -352,8 +379,8 @@ describe("recipe quality pilot report", () => {
       successfulObservation("speech-001", "speech_heavy", {
         cost: { reason: "provider_not_reported", status: "unknown" },
       }),
-      successfulObservation("carousel-001", "carousel"),
-      failedObservation(),
+      unsupportedCarouselObservation(),
+      notARecipeObservation(),
     ];
 
     const report = await Effect.runPromise(
@@ -361,29 +388,29 @@ describe("recipe quality pilot report", () => {
     );
 
     expect(report.summary.counts).toEqual({
-      approved: 4,
+      approved: 3,
       carousel: 1,
-      failed: 1,
+      failed: 2,
       rejected: 1,
       total: 6,
       video: 5,
     });
     expect(report.summary.accounting).toEqual({
       budgetStatus: "indeterminate",
-      estimatedCostMicroUsd: 4000,
+      estimatedCostMicroUsd: 3000,
       estimatedCostSamples: 0,
       knownCostSamples: 4,
-      latencyMilliseconds: 600,
-      providerCalls: 18,
-      storageBytes: 6144,
+      latencyMilliseconds: 550,
+      providerCalls: 15,
+      storageBytes: 5120,
       unknownCostSamples: 2,
     });
     expect(report.summary.quality).toEqual({
-      firstPassUsable: 4,
+      firstPassUsable: 3,
       inventedQuantities: 0,
-      postReviewUsable: 4,
-      reviewedSamples: 5,
-      schemaValid: 5,
+      postReviewUsable: 3,
+      reviewedSamples: 4,
+      schemaValid: 4,
       unsupportedFacts: 0,
     });
     expect(
@@ -398,14 +425,7 @@ describe("recipe quality pilot report", () => {
     const ready = await Effect.runPromise(
       runRecipeQualityPilotPreflight(preflightInput(), Now)
     );
-    const complete = [
-      successfulObservation("normal-001", "normal_video"),
-      successfulObservation("sparse-001", "sparse_description"),
-      successfulObservation("visual-001", "dense_on_screen_text"),
-      successfulObservation("speech-001", "speech_heavy"),
-      successfulObservation("carousel-001", "carousel"),
-      failedObservation(),
-    ];
+    const complete = completeObservations();
 
     await expectReportCode(
       buildRecipeQualityPilotReport(ready, complete.slice(1), Now),
@@ -421,14 +441,18 @@ describe("recipe quality pilot report", () => {
       "observations_do_not_reconcile"
     );
 
-    const overBudget = complete.map((observation) => ({
-      ...observation,
-      metrics: metrics({
-        certainty: "known" as const,
-        estimatedMicroUsd: 2_000_000,
-        status: "reported" as const,
-      }),
-    }));
+    const overBudget = complete.map((observation) =>
+      observation.sourceClass === "carousel"
+        ? observation
+        : {
+            ...observation,
+            metrics: metrics({
+              certainty: "known" as const,
+              estimatedMicroUsd: 2_000_001,
+              status: "reported" as const,
+            }),
+          }
+    );
     await expectReportCode(
       buildRecipeQualityPilotReport(ready, overBudget, Now),
       "budget_exceeded"
@@ -439,7 +463,7 @@ describe("recipe quality pilot report", () => {
     const ready = await Effect.runPromise(
       runRecipeQualityPilotPreflight(preflightInput(), Now)
     );
-    const mismatch = successfulObservation("carousel-001", "carousel");
+    const mismatch = unsupportedCarouselObservation();
     await expectReportCode(
       buildRecipeQualityPilotReport(
         ready,
@@ -449,7 +473,7 @@ describe("recipe quality pilot report", () => {
           successfulObservation("visual-001", "dense_on_screen_text"),
           successfulObservation("speech-001", "speech_heavy"),
           { ...mismatch, mediaKind: "video" },
-          failedObservation(),
+          notARecipeObservation(),
         ],
         Now
       ),
@@ -466,18 +490,73 @@ describe("recipe quality pilot report", () => {
     );
   });
 
+  it("rejects carousel spend or calls and preserves each slot's typed outcome", async () => {
+    const ready = await Effect.runPromise(
+      runRecipeQualityPilotPreflight(preflightInput(), Now)
+    );
+    const complete = completeObservations();
+    const carouselSuccess = {
+      ...successfulObservation("normal-001", "normal_video"),
+      mediaKind: "carousel" as const,
+      sampleId: "carousel-001",
+      sourceClass: "carousel" as const,
+    };
+    const carouselFailure = unsupportedCarouselObservation();
+    const semanticFailure = notARecipeObservation();
+    const invalidObservations = [
+      carouselSuccess,
+      { ...carouselFailure, failureCode: "not_a_recipe" as const },
+      {
+        ...carouselFailure,
+        metrics: { ...carouselFailure.metrics, providerCalls: 1 },
+      },
+      {
+        ...carouselFailure,
+        metrics: {
+          ...carouselFailure.metrics,
+          cost: {
+            certainty: "known" as const,
+            estimatedMicroUsd: 1,
+            status: "reported" as const,
+          },
+        },
+      },
+      {
+        ...carouselFailure,
+        metrics: {
+          ...carouselFailure.metrics,
+          cost: {
+            reason: "provider_not_reported" as const,
+            status: "unknown" as const,
+          },
+        },
+      },
+      { ...semanticFailure, failureCode: "unsupported_carousel" as const },
+    ];
+
+    await Promise.all(
+      invalidObservations.map((invalidObservation) =>
+        expectReportCode(
+          buildRecipeQualityPilotReport(
+            ready,
+            complete.map((observation) =>
+              observation.sampleId === invalidObservation.sampleId
+                ? invalidObservation
+                : observation
+            ),
+            Now
+          ),
+          "sample_outcome_mismatch"
+        )
+      )
+    );
+  });
+
   it("rejects invalid generation time, contradictory quality, and aggregate overflow", async () => {
     const ready = await Effect.runPromise(
       runRecipeQualityPilotPreflight(preflightInput(), Now)
     );
-    const complete = [
-      successfulObservation("normal-001", "normal_video"),
-      successfulObservation("sparse-001", "sparse_description"),
-      successfulObservation("visual-001", "dense_on_screen_text"),
-      successfulObservation("speech-001", "speech_heavy"),
-      successfulObservation("carousel-001", "carousel"),
-      failedObservation(),
-    ];
+    const complete = completeObservations();
 
     await expectReportCode(
       buildRecipeQualityPilotReport(ready, complete, "not-a-timestamp"),
@@ -497,13 +576,17 @@ describe("recipe quality pilot report", () => {
       "quality_outcome_mismatch"
     );
 
-    const overflowing = complete.map((observation) => ({
-      ...observation,
-      metrics: {
-        ...observation.metrics,
-        providerCalls: Number.MAX_SAFE_INTEGER,
-      },
-    }));
+    const overflowing = complete.map((observation) =>
+      observation.sourceClass === "carousel"
+        ? observation
+        : {
+            ...observation,
+            metrics: {
+              ...observation.metrics,
+              providerCalls: Number.MAX_SAFE_INTEGER,
+            },
+          }
+    );
     await expectReportCode(
       buildRecipeQualityPilotReport(ready, overflowing, Now),
       "accounting_overflow"

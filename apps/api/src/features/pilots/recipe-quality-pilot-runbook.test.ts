@@ -52,5 +52,23 @@ describe("real-source pilot operator documentation", () => {
 
     expect(inputPackage).not.toMatch(/https?:\/\//u);
     expect(inputPackage).not.toContain("vm.tiktok.com");
+    expect(inputPackage).toContain("`unsupported_carousel`");
+    expect(inputPackage).toContain("`not_a_recipe`");
+  });
+
+  it("documents the URL-only carousel failure without a manual media gate", async () => {
+    const [runbook, inputPackage] = await Promise.all([
+      readFile(runbookUrl, "utf-8"),
+      readFile(inputPackageUrl, "utf-8"),
+    ]);
+
+    for (const document of [runbook, inputPackage]) {
+      expect(document).toMatch(/URL-only/iu);
+      expect(document).not.toMatch(
+        /JPEG|image bundle|manual upload|operator-downloaded/iu
+      );
+    }
+    expect(runbook).toContain("zero provider/model calls");
+    expect(runbook).toContain("zero provider spend");
   });
 });

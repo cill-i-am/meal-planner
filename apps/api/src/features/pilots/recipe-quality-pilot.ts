@@ -352,6 +352,7 @@ const FailedPilotObservation = Schema.Struct({
     "provider_error",
     "retry_exhausted",
     "source_unavailable",
+    "unsupported_carousel",
     "unsupported_source",
   ]),
   outcome: Schema.Literal("failed"),
@@ -436,6 +437,7 @@ export const PilotReportErrorCode = Schema.Literals([
   "observations_do_not_reconcile",
   "quality_outcome_mismatch",
   "sample_identity_mismatch",
+  "sample_outcome_mismatch",
 ]);
 export type PilotReportErrorCode = typeof PilotReportErrorCode.Type;
 
@@ -474,6 +476,32 @@ const qualityMatchesOutcome = (observation: RecipeQualityPilotObservation) =>
     observation.quality.postReviewUsability === "approved") ||
   (observation.outcome === "rejected" &&
     observation.quality.postReviewUsability === "rejected");
+
+const observationMatchesSourceRole = (
+  observation: RecipeQualityPilotObservation
+) => {
+  switch (observation.sourceClass) {
+    case "carousel": {
+      return (
+        observation.outcome === "failed" &&
+        observation.failureCode === "unsupported_carousel" &&
+        observation.metrics.providerCalls === 0 &&
+        observation.metrics.cost.status === "reported" &&
+        observation.metrics.cost.certainty === "known" &&
+        observation.metrics.cost.estimatedMicroUsd === 0
+      );
+    }
+    case "expected_failure": {
+      return (
+        observation.outcome === "failed" &&
+        observation.failureCode === "not_a_recipe"
+      );
+    }
+    default: {
+      return observation.outcome !== "failed";
+    }
+  }
+};
 
 /** Build one exact, redacted report from already-measured terminal outcomes. */
 export const buildRecipeQualityPilotReport = (
@@ -515,6 +543,9 @@ export const buildRecipeQualityPilotReport = (
         })
       ) {
         return Effect.fail(reportError("sample_identity_mismatch"));
+      }
+      if (!observations.every(observationMatchesSourceRole)) {
+        return Effect.fail(reportError("sample_outcome_mismatch"));
       }
       if (!observations.every(qualityMatchesOutcome)) {
         return Effect.fail(reportError("quality_outcome_mismatch"));
