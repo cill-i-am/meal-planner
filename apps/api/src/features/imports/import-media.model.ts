@@ -46,6 +46,7 @@ export const AcquisitionFailureReason = Schema.Literals([
   "container_rpc",
   "download_dns",
   "download_http_response",
+  "download_source_unavailable",
   "download_stream_or_tls",
   "download_timeout",
   "media_session_invalid",

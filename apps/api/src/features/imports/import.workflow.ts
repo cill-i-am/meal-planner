@@ -171,13 +171,23 @@ export const runAcquisitionTask = <
     Effect.matchEffect({
       onFailure: (error) =>
         error._tag === "ConfirmedAcquisitionRetry"
-          ? Effect.succeed({
-              _tag: "RetryExhausted" as const,
-              attempts: 3 as const,
-              generation: error.generation,
-              ...(error.reason === undefined ? {} : { reason: error.reason }),
-              stage: error.stage,
-            })
+          ? Effect.succeed(
+              error.reason === "download_source_unavailable"
+                ? {
+                    _tag: "Unavailable" as const,
+                    code: "private_or_unavailable" as const,
+                    generation: error.generation,
+                  }
+                : {
+                    _tag: "RetryExhausted" as const,
+                    attempts: 3 as const,
+                    generation: error.generation,
+                    ...(error.reason === undefined
+                      ? {}
+                      : { reason: error.reason }),
+                    stage: error.stage,
+                  }
+            )
           : Effect.fail(error),
       onSuccess: Effect.succeed,
     })

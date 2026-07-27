@@ -59,12 +59,12 @@ mediaBytes.set([
   0, 0, 0, 0, 0, 0,
 ]);
 
-const response = (): SecureMediaDownloadResponse => ({
+const response = (statusCode = 200): SecureMediaDownloadResponse => ({
   body: Readable.from([mediaBytes]),
   contentLength: mediaBytes.byteLength,
   destroy: () => null,
   location: undefined,
-  statusCode: 200,
+  statusCode,
 });
 
 const videoMetadata = () => ({
@@ -499,6 +499,64 @@ describe("installed acquisition Durable Object boundary", () => {
       });
       expect(metadataCalls).toBe(4);
       expect(resolveCalls).toBe(3);
+    });
+  }, 10_000);
+
+  it("converges repeated installed source denials after fresh acquisition attempts", async () => {
+    let allocations = 0;
+    let metadataCalls = 0;
+    let requestCalls = 0;
+    const processRunner = makeProcessRunner(() => {
+      metadataCalls += 1;
+      return videoMetadata();
+    });
+    const downloadClient: SecureMediaDownloadClient = {
+      request: () => {
+        requestCalls += 1;
+        return Promise.resolve(response(403));
+      },
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+    };
+    const runtime = makeTikTokMediaContainerRuntime({
+      acquirer: makeContainerMediaAcquirer(
+        processRunner,
+        makeSecureMediaDownloader(downloadClient)
+      ),
+      artifacts: makeTemporaryArtifactStore((artifactRoot) =>
+        rm(artifactRoot, { force: true, recursive: true })
+      ),
+      processRunner,
+      resolver: makeTikTokSourceResolver(processRunner),
+    });
+
+    await withInstalledAcquisitionBoundary(runtime, async (stub) => {
+      const outcome = await Effect.runPromise(
+        runAcquisitionTask(
+          () =>
+            Effect.sync(() => ({
+              canonicalSourceId: identity.canonicalId,
+              generation: Schema.decodeUnknownSync(AcquisitionGeneration)(
+                (allocations += 1)
+              ),
+            })),
+          (allocation) =>
+            acquireStoreVerify(untouchedBucket(), stub, {
+              canonicalId: allocation.canonicalSourceId,
+              generation: allocation.generation,
+              importId: identity.importId,
+              now: () => new Date("2026-07-26T12:00:00.000Z"),
+            })
+        )
+      );
+
+      expect(outcome).toEqual({
+        _tag: "Unavailable",
+        code: "private_or_unavailable",
+        generation: 3,
+      });
+      expect(allocations).toBe(3);
+      expect(metadataCalls).toBe(3);
+      expect(requestCalls).toBe(3);
     });
   }, 10_000);
 });

@@ -625,6 +625,43 @@ describe("import acquisition retry contract", () => {
     expect(semanticAttempts).toBe(1);
   });
 
+  it("converges an exhausted source-unavailable retry without changing other retry exhaustion", async () => {
+    let allocations = 0;
+    let attempts = 0;
+    const effect = runAcquisitionTask(
+      () =>
+        Effect.sync(() => ({
+          generation: Schema.decodeUnknownSync(AcquisitionGeneration)(
+            (allocations += 1)
+          ),
+        })),
+      () => {
+        attempts += 1;
+        return Effect.fail({
+          _tag: "RetryableAcquisitionFailure" as const,
+          reason: "download_source_unavailable" as const,
+          stage: "container" as const,
+        });
+      }
+    );
+    const outcome = await Effect.runPromise(
+      Effect.gen(function* exhaustWithClock() {
+        const fiber = yield* Effect.forkChild(effect);
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("3 seconds");
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
+    );
+
+    expect(outcome).toEqual({
+      _tag: "Unavailable",
+      code: "private_or_unavailable",
+      generation: 3,
+    });
+    expect(allocations).toBe(3);
+    expect(attempts).toBe(3);
+  });
+
   it("retries allocation response loss without a provider call or fabricated outcome", async () => {
     let allocations = 0;
     let providerCalls = 0;
