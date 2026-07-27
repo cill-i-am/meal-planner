@@ -1,10 +1,18 @@
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  access,
+  appendFile,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 // eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
 import { join } from "node:path";
 import { Readable } from "node:stream";
 
-import { Cause, Effect, Exit, Option, Schema } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -21,6 +29,7 @@ import {
   isSafeTikTokMediaLocator,
   makeTikTokSourceResolver,
 } from "./import-source-resolver.tiktok.js";
+import { decodeTikTokMediaSession } from "./import-source-session.js";
 import { ImportId, SourceCanonicalId } from "./import.contracts.js";
 
 const identity = {
@@ -50,19 +59,96 @@ const downloadResponse = ({
   statusCode,
 });
 
-const makeRunner = (metadata: unknown) => {
+const encodeCookieJar = (...records: readonly string[]) =>
+  new TextEncoder().encode(
+    ["# Netscape HTTP Cookie File", ...records, ""].join("\n")
+  );
+
+const sessionRecordForMode = (
+  mode: "inapplicable" | "invalid" | "valid",
+  canary: string
+) =>
+  ({
+    inapplicable: `www.tiktok.com\tFALSE\t/\tTRUE\t4102444800\tsynthetic_session\t${canary}\n`,
+    invalid: "not-a-valid-cookie-record\n",
+    valid: `.tiktokcdn.com\tTRUE\t/\tTRUE\t4102444800\tsynthetic_session\t${canary}\n`,
+  })[mode];
+
+const makeRunner = (
+  metadata: unknown,
+  sessionMode: "inapplicable" | "invalid" | "missing" | "valid" = "valid"
+) => {
   const calls: { args: readonly string[]; command: string }[] = [];
+  const sessionFileAudits: {
+    mode: number;
+    ownedByProcess: boolean;
+    removed: boolean;
+  }[] = [];
+  const sessionCanary = randomUUID();
   const runner: MediaProcessRunnerShape = {
     run: (command, args) =>
-      Effect.sync(() => {
+      Effect.promise(async () => {
         calls.push({ args, command });
+        const cookiesIndex = args.indexOf("--cookies");
+        const sessionPath = args[cookiesIndex + 1];
+        if (sessionPath === undefined) {
+          throw new Error("Expected an ephemeral session file");
+        }
+        const sessionStats = await stat(sessionPath);
+        const audit = {
+          mode: sessionStats.mode % 0o1000,
+          ownedByProcess:
+            typeof process.getuid !== "function" ||
+            sessionStats.uid === process.getuid(),
+          removed: false,
+        };
+        sessionFileAudits.push(audit);
+        await (sessionMode === "missing"
+          ? rm(sessionPath)
+          : appendFile(
+              sessionPath,
+              sessionRecordForMode(sessionMode, sessionCanary)
+            ));
         return {
           stderrBytes: 0,
           stdout: new TextEncoder().encode(JSON.stringify(metadata)),
         };
       }),
   };
-  return { calls, resolver: makeTikTokSourceResolver(runner) };
+  const resolver = makeTikTokSourceResolver(runner);
+  return {
+    calls,
+    resolver: {
+      resolve: (sourceIdentity: typeof identity) =>
+        Effect.acquireUseRelease(
+          Effect.promise(() =>
+            mkdtemp(join(tmpdir(), "meal-planner-resolver-session-"))
+          ),
+          (root) =>
+            resolver.resolve(sourceIdentity, root).pipe(
+              Effect.onExit(() =>
+                Effect.promise(async () => {
+                  const sessionPath = join(root, "yt-dlp-session.cookies");
+                  let removed = false;
+                  try {
+                    await access(sessionPath);
+                  } catch {
+                    removed = true;
+                  }
+                  const audit = sessionFileAudits.at(-1);
+                  if (audit !== undefined) {
+                    audit.removed = removed;
+                  }
+                })
+              )
+            ),
+          (root) =>
+            Effect.promise(() => rm(root, { force: true, recursive: true }))
+        ),
+    },
+    sessionCanary,
+    sessionFileAudits,
+  };
 };
 
 describe("TikTok source resolver adapter", () => {
@@ -128,6 +214,7 @@ describe("TikTok source resolver adapter", () => {
     expect(fixture.calls[0]?.args).toEqual(
       expect.arrayContaining([
         "--ignore-config",
+        "--cookies",
         "--dump-single-json",
         "--skip-download",
         "--no-playlist",
@@ -136,9 +223,54 @@ describe("TikTok source resolver adapter", () => {
       ])
     );
     expect(fixture.calls[0]?.args.join(" ")).not.toMatch(
-      /cookie|session|proxy/iu
+      /cookies-from-browser|proxy|username|password/iu
     );
+    expect(fixture.sessionFileAudits).toEqual([
+      {
+        mode: 0o600,
+        ownedByProcess: true,
+        removed: true,
+      },
+    ]);
+    expect(Object.keys(resolved.session)).toEqual([]);
+    expect(JSON.stringify(resolved.session)).toBe("{}");
+    expect(JSON.stringify(resolved)).not.toContain(fixture.sessionCanary);
   });
+
+  it.each(["missing", "invalid", "inapplicable"] as const)(
+    "fails closed when the ephemeral media session is %s",
+    async (sessionMode) => {
+      const fixture = makeRunner(
+        {
+          duration: 1,
+          id: identity.canonicalId,
+          url: "https://v16m.tiktokcdn.com/media.mp4",
+          webpage_url: `https://www.tiktok.com/@cook/video/${identity.canonicalId}`,
+        },
+        sessionMode
+      );
+      const exit = await Effect.runPromiseExit(
+        fixture.resolver.resolve(identity)
+      );
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isSuccess(exit)) {
+        throw new Error("Expected missing session failure");
+      }
+      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+        _tag: "RetryableAcquisitionFailure",
+        stage: "resolve",
+      });
+      expect(JSON.stringify(exit)).not.toContain(fixture.sessionCanary);
+      expect(fixture.sessionFileAudits).toEqual([
+        {
+          mode: 0o600,
+          ownedByProcess: true,
+          removed: true,
+        },
+      ]);
+    }
+  );
 
   it("keeps carousel as an explicit unsupported adapter branch", async () => {
     const fixture = makeRunner({
@@ -321,7 +453,12 @@ describe("TikTok source resolver adapter", () => {
     const requests: unknown[] = [];
     const client: SecureMediaDownloadClient = {
       request: (_url, _address, _signal, headers) => {
-        requests.push(headers);
+        const { cookie, ...safeHeaders } = headers;
+        requests.push({
+          ...safeHeaders,
+          sessionPresent:
+            cookie === `synthetic_session=${fixture.sessionCanary}`,
+        });
         return Promise.resolve(
           downloadResponse({
             body: [new Uint8Array([1, 2, 3])],
@@ -338,20 +475,76 @@ describe("TikTok source resolver adapter", () => {
           resolved.mediaLocator,
           join(root, "safe.mp4"),
           1024,
-          resolved.requestHeaders
+          resolved.requestHeaders,
+          resolved.session
         )
       );
-      expect(requests).toEqual([
-        {
-          accept: "video/mp4,*/*;q=0.8",
-          acceptLanguage: "en-US,en;q=0.9",
-          referer: "https://www.tiktok.com/",
-          userAgent: "Mozilla/5.0 synthetic-boundary",
-        },
-      ]);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        accept: "video/mp4,*/*;q=0.8",
+        acceptLanguage: "en-US,en;q=0.9",
+        referer: "https://www.tiktok.com/",
+        sessionPresent: true,
+        userAgent: "Mozilla/5.0 synthetic-boundary",
+      });
       expect(JSON.stringify(requests)).not.toContain(
         "provider-secret-fragment"
       );
+      expect(JSON.stringify(requests)).not.toContain(fixture.sessionCanary);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("revalidates redirects and scopes ephemeral cookies to each validated hop", async () => {
+    const root = await mkdtemp(join(tmpdir(), "meal-planner-session-policy-"));
+    const requests: {
+      firstHostCookie: boolean;
+      secondHostCookie: boolean;
+    }[] = [];
+    const session = decodeTikTokMediaSession(
+      encodeCookieJar(
+        "v16m.tiktokcdn.com\tFALSE\t/\tTRUE\t4102444800\tfirst_host\tone",
+        "v19.tiktokcdn.com\tFALSE\t/media\tTRUE\t4102444800\tsecond_host\ttwo",
+        ".tiktokcdn.com\tTRUE\t/private\tTRUE\t4102444800\twrong_path\tthree",
+        ".tiktokcdn.com\tTRUE\t/\tTRUE\t1\texpired\tfour"
+      )
+    );
+    const client: SecureMediaDownloadClient = {
+      request: (url, _address, _signal, headers) => {
+        requests.push({
+          firstHostCookie: headers.cookie === "first_host=one",
+          secondHostCookie: headers.cookie === "second_host=two",
+        });
+        return Promise.resolve(
+          url.hostname === "v16m.tiktokcdn.com"
+            ? downloadResponse({
+                location: "https://v19.tiktokcdn.com/media/video.mp4",
+                statusCode: 302,
+              })
+            : downloadResponse({
+                body: [new Uint8Array([1, 2, 3])],
+                statusCode: 200,
+              })
+        );
+      },
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+    };
+
+    try {
+      await Effect.runPromise(
+        makeSecureMediaDownloader(client).download(
+          "https://v16m.tiktokcdn.com/media/video.mp4",
+          join(root, "redirected.mp4"),
+          1024,
+          {},
+          session
+        )
+      );
+      expect(requests).toEqual([
+        { firstHostCookie: true, secondHostCookie: false },
+        { firstHostCookie: false, secondHostCookie: true },
+      ]);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -380,6 +573,49 @@ describe("TikTok source resolver adapter", () => {
       "opaque-provider-secret-fragment"
     );
   });
+
+  it.each(["cancellation", "timeout"] as const)(
+    "removes the ephemeral session file after resolver %s",
+    async (settlement) => {
+      const root = await mkdtemp(
+        join(tmpdir(), "meal-planner-session-interruption-")
+      );
+      const started = await Effect.runPromise(Deferred.make<true>());
+      const resolver = makeTikTokSourceResolver({
+        run: (_command, args) => {
+          expect(args).toContain("--cookies");
+          return Deferred.succeed(started, true).pipe(
+            Effect.andThen(
+              Effect.never as Effect.Effect<
+                never,
+                {
+                  readonly _tag: "RetryableAcquisitionFailure";
+                  readonly stage: "process";
+                }
+              >
+            )
+          );
+        },
+      });
+      const sessionPath = join(root, "yt-dlp-session.cookies");
+
+      try {
+        if (settlement === "cancellation") {
+          const fiber = Effect.runFork(resolver.resolve(identity, root));
+          await Effect.runPromise(Deferred.await(started));
+          await Effect.runPromise(Fiber.interrupt(fiber));
+        } else {
+          const exit = await Effect.runPromiseExit(
+            resolver.resolve(identity, root).pipe(Effect.timeout("10 millis"))
+          );
+          expect(Exit.isFailure(exit)).toBe(true);
+        }
+        await expect(access(sessionPath)).rejects.toThrow();
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    }
+  );
 
   it.each([
     {

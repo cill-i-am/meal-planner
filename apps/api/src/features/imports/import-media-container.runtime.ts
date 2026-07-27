@@ -93,7 +93,7 @@ export const makeTikTokMediaContainerRuntime = ({
           }),
           (root) =>
             Effect.gen(function* resolveAndAcquire() {
-              const resolved = yield* resolver.resolve(request);
+              const resolved = yield* resolver.resolve(request, root);
               const artifact = yield* acquirer.acquire(
                 resolved,
                 ProductionMediaLimits,

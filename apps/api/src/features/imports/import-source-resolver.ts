@@ -8,6 +8,7 @@ import type {
   UnavailableFailure,
   UnsupportedCarouselFailure,
 } from "./import-media.model.js";
+import type { MediaSessionCapability } from "./import-source-session.js";
 
 export interface CanonicalSourceMetadata {
   readonly canonicalId: string;
@@ -45,11 +46,13 @@ export interface ResolvedVideoSource {
   readonly mediaLocator: string;
   readonly metadata: CanonicalSourceMetadata;
   readonly requestHeaders: MediaRequestHeaders;
+  readonly session: MediaSessionCapability;
 }
 
 export interface SourceResolverShape {
   readonly resolve: (
-    identity: TikTokIdentity
+    identity: TikTokIdentity,
+    workspaceRoot: string
   ) => Effect.Effect<
     ResolvedVideoSource,
     | RetryableAcquisitionFailure
