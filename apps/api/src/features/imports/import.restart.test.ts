@@ -26,6 +26,7 @@ import type { ImportWorkflowStarterShape } from "./import.workflow.js";
 import type { SourceAvailabilityValidatorShape } from "./source-availability.js";
 import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
+import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
 const temporaryDirectories: string[] = [];
 const apiToken = "restart-test-token";
@@ -73,7 +74,8 @@ const makeCounters = (): ApplicationCounters => ({
 
 const makeApplication = async (
   database: AnyD1Database,
-  counters: ApplicationCounters
+  counters: ApplicationCounters,
+  identityResolverOverride?: CanonicalSourceIdentityResolverShape
 ) => {
   const d1Repository = makeD1ImportRepository(database);
   const repository: ImportRepositoryShape = {
@@ -83,7 +85,7 @@ const makeApplication = async (
         counters.acceptRequests += 1;
       }).pipe(Effect.andThen(d1Repository.acceptRequest(command))),
   };
-  const identityResolver: CanonicalSourceIdentityResolverShape = {
+  const defaultIdentityResolver: CanonicalSourceIdentityResolverShape = {
     resolve: (source) =>
       Effect.sync(() => {
         counters.identityProviderCalls += 1;
@@ -102,6 +104,7 @@ const makeApplication = async (
         };
       }),
   };
+  const identityResolver = identityResolverOverride ?? defaultIdentityResolver;
   const availabilityValidator: SourceAvailabilityValidatorShape = {
     validate: () =>
       Effect.sync(() => {
@@ -570,6 +573,100 @@ describe("D1 restart persistence", () => {
     } finally {
       await applicationB.dispose();
       await runtimeB.dispose();
+    }
+  });
+
+  it("returns the persisted 422 unsupported contract for a placeholder carousel handoff without starting work", async () => {
+    const persistenceDirectory = await mkdtemp(
+      `${tmpdir()}/meal-planner-gaia-179-`
+    );
+    temporaryDirectories.push(persistenceDirectory);
+    const migrations = await readD1Migrations(
+      fileURLToPath(new URL("../../../migrations", import.meta.url))
+    );
+    const runtime = makeRuntime(persistenceDirectory);
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    await database.batch(
+      migrations.flatMap((migration) =>
+        migration.queries.map((query) => database.prepare(query))
+      )
+    );
+    let fetchCalls = 0;
+    const identityResolver = makeTikTokCanonicalSourceIdentityResolver(() => {
+      fetchCalls += 1;
+      return Promise.resolve(
+        fetchCalls === 1
+          ? new Response(null, {
+              headers: { location: "https://www.tiktok.com/t/Zsynthetic" },
+              status: 302,
+            })
+          : new Response(
+              `<!doctype html><script type="application/json" id="__UNIVERSAL_DATA_FOR_REHYDRATION__">${JSON.stringify(
+                {
+                  __DEFAULT_SCOPE__: {
+                    "seo.abtest": {
+                      canonical:
+                        "https://www.tiktok.com/@/photo/7520000000000000000",
+                    },
+                  },
+                }
+              )}</script>`,
+              {
+                headers: { "content-type": "text/html; charset=utf-8" },
+                status: 200,
+              }
+            )
+      );
+    });
+    const counters = makeCounters();
+    const application = await makeApplication(
+      database,
+      counters,
+      identityResolver
+    );
+
+    try {
+      const response = await postImport(
+        application.handler,
+        "K-placeholder-photo",
+        "https://vm.tiktok.com/Zsynthetic"
+      );
+      const persisted = await database
+        .prepare(
+          `SELECT status, status_code, recovery_action
+             FROM recipe_imports
+            WHERE id = ?`
+        )
+        .bind(response.body.import.id)
+        .first<{
+          recovery_action: string;
+          status: string;
+          status_code: string;
+        }>();
+
+      expect(response.status).toBe(422);
+      expect(response.body.import).toMatchObject({
+        source: {
+          canonicalId: "7520000000000000000",
+          kind: "tiktok",
+        },
+        status: {
+          code: "unsupported_post_type",
+          kind: "unsupported",
+          recovery: "submit_supported_public_video",
+        },
+      });
+      expect(persisted).toEqual({
+        recovery_action: "submit_supported_public_video",
+        status: "unsupported",
+        status_code: "unsupported_post_type",
+      });
+      expect(fetchCalls).toBe(2);
+      expect(counters.availabilityCalls).toBe(0);
+      expect(counters.workflowStarts).toEqual([]);
+    } finally {
+      await application.dispose();
+      await runtime.dispose();
     }
   });
 });
