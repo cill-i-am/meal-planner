@@ -1,4 +1,6 @@
 import { Effect, Option, Schema } from "effect";
+import { parse } from "parse5";
+import type { DefaultTreeAdapterTypes } from "parse5";
 
 import { SourceCanonicalId } from "./import.contracts.js";
 import { invalidSource, sourceIdentityUnavailable } from "./import.errors.js";
@@ -168,70 +170,89 @@ const readBoundedResponseBody = (response: Response) =>
         let bytesRead = 0;
         let text = "";
 
-        const readNext = async (): Promise<string> => {
+        while (true) {
+          // eslint-disable-next-line no-await-in-loop -- A response stream must be consumed serially under one byte budget.
           const next = await reader.read();
           if (next.done) {
             return `${text}${decoder.decode()}`;
           }
           bytesRead += next.value.byteLength;
           if (bytesRead > MaximumHandoffBodyBytes) {
+            // eslint-disable-next-line no-await-in-loop -- Cancel the owned reader before surfacing the bounded-read failure.
             await reader.cancel();
             throw new Error("TikTok handoff body exceeds the resolution limit");
           }
           text += decoder.decode(next.value, { stream: true });
-          return readNext();
-        };
-        const result = await readNext();
-        return result;
+        }
       } finally {
         signal.removeEventListener("abort", cancelForInterruption);
       }
     },
   });
 
-const getQuotedAttribute = (
-  attributes: string,
+const getAttribute = (
+  element: DefaultTreeAdapterTypes.Element,
   name: "id" | "type"
+): string | undefined =>
+  element.attrs.find((attribute) => attribute.name === name)?.value;
+
+const findHydrationContent = (
+  nodes: readonly DefaultTreeAdapterTypes.ChildNode[]
 ): string | undefined => {
-  const match = new RegExp(
-    `(?:^|\\s)${name}\\s*=\\s*(?:"(?<double>[^"]*)"|'(?<single>[^']*)')`,
-    "iu"
-  ).exec(attributes);
-  return match?.groups?.["double"] ?? match?.groups?.["single"];
+  const pending = nodes.toReversed();
+
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (node === undefined) {
+      continue;
+    }
+    if (node.nodeName === "template") {
+      continue;
+    }
+    if (
+      node.nodeName === "script" &&
+      getAttribute(node, "id") === "__UNIVERSAL_DATA_FOR_REHYDRATION__" &&
+      getAttribute(node, "type")?.toLowerCase() === "application/json"
+    ) {
+      return node.childNodes
+        .filter(
+          (child): child is DefaultTreeAdapterTypes.TextNode =>
+            child.nodeName === "#text"
+        )
+        .map((child) => child.value)
+        .join("");
+    }
+
+    if ("childNodes" in node) {
+      for (let index = node.childNodes.length - 1; index >= 0; index -= 1) {
+        const child = node.childNodes[index];
+        if (child !== undefined) {
+          pending.push(child);
+        }
+      }
+    }
+  }
+  return undefined;
 };
 
 const parseHandoffCanonical = (html: string): string | undefined => {
-  const scripts =
-    /<script\b(?<attributes>[^>]*)>(?<content>[\s\S]*?)<\/script\s*>/giu;
-
-  for (const match of html.matchAll(scripts)) {
-    const attributes = match.groups?.["attributes"];
-    const content = match.groups?.["content"];
-    if (
-      attributes === undefined ||
-      content === undefined ||
-      getQuotedAttribute(attributes, "id") !==
-        "__UNIVERSAL_DATA_FOR_REHYDRATION__" ||
-      getQuotedAttribute(attributes, "type")?.toLowerCase() !==
-        "application/json"
-    ) {
-      continue;
-    }
-
-    let decodedJson: unknown;
-    try {
-      decodedJson = JSON.parse(content);
-    } catch {
-      return undefined;
-    }
-    const metadata = Schema.decodeUnknownOption(TikTokHandoffMetadata)(
-      decodedJson
-    );
-    return Option.isSome(metadata)
-      ? metadata.value.__DEFAULT_SCOPE__["seo.abtest"].canonical
-      : undefined;
+  const content = findHydrationContent(parse(html).childNodes);
+  if (content === undefined) {
+    return undefined;
   }
-  return undefined;
+
+  let decodedJson: unknown;
+  try {
+    decodedJson = JSON.parse(content);
+  } catch {
+    return undefined;
+  }
+  const metadata = Schema.decodeUnknownOption(TikTokHandoffMetadata)(
+    decodedJson
+  );
+  return Option.isSome(metadata)
+    ? metadata.value.__DEFAULT_SCOPE__["seo.abtest"].canonical
+    : undefined;
 };
 
 const resolveHandoffResponse = (response: Response) =>

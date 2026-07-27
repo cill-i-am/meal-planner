@@ -14,7 +14,8 @@
     "@effect/platform-node": "4.0.0-beta.99",
     "drizzle-orm": "1.0.0-rc.4",
     "effect": "4.0.0-beta.99",
-    "jpeg-js": "0.4.4"
+    "jpeg-js": "0.4.4",
+    "parse5": "8.0.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.6",
