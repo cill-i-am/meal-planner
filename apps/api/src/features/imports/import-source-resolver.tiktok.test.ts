@@ -652,8 +652,13 @@ describe("TikTok source resolver adapter", () => {
       resolve: () => Promise.reject(new Error("opaque dns failure")),
     },
     {
-      expected: "download_http_response",
+      expected: "download_source_unavailable",
       request: () => Promise.resolve(downloadResponse({ statusCode: 403 })),
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+    },
+    {
+      expected: "download_http_response",
+      request: () => Promise.resolve(downloadResponse({ statusCode: 500 })),
       resolve: () => Promise.resolve(["8.8.8.8"]),
     },
     {

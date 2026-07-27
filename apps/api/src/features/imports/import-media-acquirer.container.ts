@@ -49,6 +49,7 @@ const MediaDownloadDnsFailure = Symbol("MediaDownloadDnsFailure");
 const MediaDownloadHttpResponseFailure = Symbol(
   "MediaDownloadHttpResponseFailure"
 );
+const MediaDownloadSourceUnavailable = Symbol("MediaDownloadSourceUnavailable");
 const MediaDownloadStreamOrTlsFailure = Symbol(
   "MediaDownloadStreamOrTlsFailure"
 );
@@ -221,6 +222,9 @@ const downloadFailure = (error: unknown) => {
   if (error === MediaDownloadHttpResponseFailure) {
     return retryableDownload("download_http_response");
   }
+  if (error === MediaDownloadSourceUnavailable) {
+    return retryableDownload("download_source_unavailable");
+  }
   if (error === MediaDownloadTimeout) {
     return retryableDownload("download_timeout");
   }
@@ -316,7 +320,9 @@ export const makeSecureMediaDownloader = (
           );
           if (response.statusCode !== 200) {
             response.destroy();
-            throw MediaDownloadHttpResponseFailure;
+            throw [401, 403, 404, 410].includes(response.statusCode)
+              ? MediaDownloadSourceUnavailable
+              : MediaDownloadHttpResponseFailure;
           }
           if (
             response.contentLength !== null &&
