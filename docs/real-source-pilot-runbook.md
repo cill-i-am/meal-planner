@@ -91,9 +91,13 @@ When GAIA-118 receives a specific execution authorization:
 6. For the carousel slot, record the resolver's `unsupported_carousel` outcome
    and verify zero provider/model calls and zero provider spend. Do not invoke
    downstream transcription, visual-evidence, or recipe-extraction providers.
-7. Capture terminal import and review outcomes without copying restricted
+7. Pass each current Workflow provider instance response directly to
+   `decodeRecipeQualityPilotWorkflowStatus`. Record only its typed status
+   projection; stop on `invalid_workflow_response` instead of persisting raw or
+   malformed provider output.
+8. Capture terminal import and review outcomes without copying restricted
    evidence into the report.
-8. Record per-sample:
+9. Record per-sample:
    - end-to-end latency;
    - temporary storage bytes;
    - provider call count;
@@ -103,9 +107,9 @@ When GAIA-118 receives a specific execution authorization:
    - first-pass and post-review usability;
    - unsupported facts and invented quantities; and
    - review duration.
-9. Build the redacted report with `buildRecipeQualityPilotReport`.
-10. Verify that its sample identities reconcile exactly with the manifest.
-11. Record the report and the future deletion-verification boundary as durable
+10. Build the redacted report with `buildRecipeQualityPilotReport`.
+11. Verify that its sample identities reconcile exactly with the manifest.
+12. Record the report and the future deletion-verification boundary as durable
     evidence.
 
 This URL-only sequence uses the existing import and review path. It does not

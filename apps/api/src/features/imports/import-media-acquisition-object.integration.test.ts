@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Cause, Context, Effect, Exit, Option, Schema } from "effect";
+import { Cause, Context, Effect, Exit, Option, Schema, Stream } from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { describe, expect, it } from "vitest";
@@ -53,7 +53,8 @@ const identity = {
   kind: "tiktok" as const,
 };
 
-const mediaBytes = new Uint8Array([
+const mediaBytes = new Uint8Array(128 * 1024 + 24);
+mediaBytes.set([
   0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0,
 ]);
@@ -373,6 +374,14 @@ describe("installed acquisition Durable Object boundary", () => {
         expect(await readFile(String(stored?.path))).toEqual(
           Buffer.from(mediaBytes)
         );
+        const streamed = await Effect.runPromise(
+          stub.stream(prepared.artifactId).pipe(Stream.runCollect)
+        );
+        const streamedBytes = Buffer.concat(
+          Array.from(streamed, (chunk) => Buffer.from(chunk))
+        );
+        expect(streamedBytes.byteLength).toBe(mediaBytes.byteLength);
+        expect(streamedBytes.equals(Buffer.from(mediaBytes))).toBe(true);
         await Effect.runPromise(stub.cleanup(prepared.artifactId));
       });
     } finally {

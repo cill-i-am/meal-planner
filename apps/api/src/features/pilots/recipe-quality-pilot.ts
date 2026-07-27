@@ -3,6 +3,16 @@ import { DateTime, Effect, Schema } from "effect";
 import { EvidenceRetentionSeconds } from "../imports/import-media.model.js";
 import { ImportTimestamp } from "../imports/import.contracts.js";
 
+export {
+  decodeRecipeQualityPilotWorkflowStatus,
+  PilotWorkflowInstanceStatus,
+} from "./recipe-quality-pilot-workflow.js";
+export type {
+  PilotWorkflowInspectionError,
+  PilotWorkflowOutputStatus,
+  RecipeQualityPilotWorkflowStatus,
+} from "./recipe-quality-pilot-workflow.js";
+
 const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
 );
