@@ -218,6 +218,80 @@ const photoHandoffResponse = () =>
     }
   );
 
+const itemHandoffResponse = (mediaKind: "ambiguous" | "carousel" | "video") => {
+  let media;
+  if (mediaKind === "video") {
+    media = { video: { duration: 45 } };
+  } else if (mediaKind === "carousel") {
+    media = { imagePost: { images: [] } };
+  } else {
+    media = { imagePost: { images: [] }, video: { duration: 45 } };
+  }
+
+  return new Response(
+    `<!doctype html><script type="application/json" id="__UNIVERSAL_DATA_FOR_REHYDRATION__">${JSON.stringify(
+      {
+        __DEFAULT_SCOPE__: {
+          "seo.abtest": {
+            canonical: "https://www.tiktok.com/",
+          },
+          "webapp.video-detail": {
+            itemInfo: {
+              itemStruct: {
+                author: {
+                  uniqueId: "synthetic_cook",
+                },
+                id: "7520000000000000001",
+                ...media,
+              },
+            },
+            statusCode: 0,
+          },
+        },
+      }
+    )}</script>`,
+    {
+      headers: { "content-type": "text/html; charset=utf-8" },
+      status: 200,
+    }
+  );
+};
+
+const itemHandoffRequest = decodeRequest({
+  source: {
+    kind: "tiktok",
+    url: "https://vm.tiktok.com/Zsynthetic",
+  },
+});
+
+const makeItemHandoffFixture = (
+  mediaKind: "ambiguous" | "carousel" | "video"
+) => {
+  const fixture = makeFixture();
+  let fetchCalls = 0;
+  const identityResolver = makeTikTokCanonicalSourceIdentityResolver(() => {
+    fetchCalls += 1;
+    return Promise.resolve(
+      fetchCalls === 1
+        ? new Response(null, {
+            headers: { location: "https://www.tiktok.com/t/Zsynthetic" },
+            status: 302,
+          })
+        : itemHandoffResponse(mediaKind)
+    );
+  });
+  const service = makeImportService({
+    availabilityValidator: fixture.availability.validator,
+    identityResolver,
+    newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000100"),
+    now: () => now,
+    repository: fixture.repository.repository,
+    workflowStarter: fixture.workflow.workflow,
+  });
+
+  return { ...fixture, fetchCalls: () => fetchCalls, service };
+};
+
 describe("ImportService", () => {
   it("persists one queued import and starts the deferred workflow once", async () => {
     const fixture = makeFixture();
@@ -393,6 +467,79 @@ describe("ImportService", () => {
     });
     expect(fetchCalls).toBe(2);
     expect(fixture.availability.calls()).toBe(0);
+    expect(fixture.workflow.started).toEqual([]);
+  });
+
+  it("advances a typed video item handoff through availability and workflow dispatch", async () => {
+    const fixture = makeItemHandoffFixture("video");
+
+    const result = await Effect.runPromise(
+      fixture.service.create(
+        itemHandoffRequest,
+        decodeKey("K-video-item-handoff")
+      )
+    );
+
+    expect(result.import).toMatchObject({
+      source: {
+        canonicalId: "7520000000000000001",
+        kind: "tiktok",
+      },
+      status: {
+        kind: "queued",
+      },
+    });
+    expect(fixture.fetchCalls()).toBe(2);
+    expect(fixture.availability.calls()).toBe(1);
+    expect(fixture.workflow.started).toEqual([result.import.id]);
+  });
+
+  it("classifies a typed carousel item handoff before availability or workflow dispatch", async () => {
+    const fixture = makeItemHandoffFixture("carousel");
+
+    const result = await Effect.runPromise(
+      fixture.service.create(
+        itemHandoffRequest,
+        decodeKey("K-carousel-item-handoff")
+      )
+    );
+
+    expect(result.import).toMatchObject({
+      source: {
+        canonicalId: "7520000000000000001",
+        kind: "tiktok",
+      },
+      status: {
+        code: "unsupported_post_type",
+        kind: "unsupported",
+        recovery: "submit_supported_public_video",
+      },
+    });
+    expect(fixture.fetchCalls()).toBe(2);
+    expect(fixture.availability.calls()).toBe(0);
+    expect(fixture.workflow.started).toEqual([]);
+  });
+
+  it("rejects ambiguous item media before persistence or downstream dispatch", async () => {
+    const fixture = makeItemHandoffFixture("ambiguous");
+
+    const exit = await Effect.runPromiseExit(
+      fixture.service.create(
+        itemHandoffRequest,
+        decodeKey("K-ambiguous-item-handoff")
+      )
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected ambiguous item media to be rejected");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
+      _tag: "SourceIdentityUnavailable",
+    });
+    expect(fixture.fetchCalls()).toBe(2);
+    expect(fixture.availability.calls()).toBe(0);
+    expect(fixture.repository.acceptCalls()).toBe(0);
     expect(fixture.workflow.started).toEqual([]);
   });
 
