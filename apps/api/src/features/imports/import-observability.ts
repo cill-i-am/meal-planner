@@ -1,4 +1,4 @@
-import { Console, Context, Effect, Option, Schema } from "effect";
+import { Cause, Console, Context, Effect, Option, Schema } from "effect";
 
 export const ImportCorrelationId = Schema.String.pipe(
   Schema.check(Schema.isUUID()),
@@ -119,7 +119,15 @@ export const emitImportObservabilityEvent = (
       yield* traceStore.value.append(event);
     }
   }).pipe(
-    Effect.withSpan(`import.${event.event}`, { attributes: annotations })
+    Effect.withSpan(`import.${event.event}`, { attributes: annotations }),
+    // Logs, spans and trace persistence are diagnostic only. Preserve caller
+    // interruption, but prevent any telemetry failure or defect from changing
+    // provider, retry or settlement behavior.
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterrupts(cause),
+      () => Effect.void
+    ),
+    Effect.asVoid
   );
 };
 

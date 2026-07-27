@@ -1,9 +1,10 @@
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   ImportCorrelationId,
   ImportObservabilityEvent,
+  ImportObservabilityTraceStore,
   emitImportObservabilityEvent,
   makeImportCorrelationId,
   metadataOnlyGatewayHeaders,
@@ -83,6 +84,67 @@ describe("private import observability", () => {
     expect(JSON.stringify(log.mock.calls)).not.toMatch(
       /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
     );
+    log.mockRestore();
+  });
+
+  it.each([
+    ["budget.reservation", "reserved"],
+    ["provider.dispatch", "started"],
+    ["provider.response", "received"],
+    ["provider.settlement", "known"],
+  ] as const)(
+    "keeps a failed private trace write outside the %s lifecycle seam",
+    async (event, outcome) => {
+      const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+      const traceStore = ImportObservabilityTraceStore.of({
+        append: () => Effect.die(new Error("trace persistence unavailable")),
+        read: () => Effect.succeed([]),
+      });
+
+      await expect(
+        Effect.runPromise(
+          emitImportObservabilityEvent(
+            {
+              correlationId,
+              event,
+              outcome,
+              providerStage: "speech",
+            },
+            traceStore
+          )
+        )
+      ).resolves.toBeUndefined();
+
+      expect(log).toHaveBeenCalledExactlyOnceWith({
+        correlationId,
+        event,
+        outcome,
+        providerStage: "speech",
+      });
+      log.mockRestore();
+    }
+  );
+
+  it("preserves caller interruption while isolating trace failures", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const traceStore = ImportObservabilityTraceStore.of({
+      append: () => Effect.interrupt,
+      read: () => Effect.succeed([]),
+    });
+
+    const exit = await Effect.runPromiseExit(
+      emitImportObservabilityEvent(
+        {
+          correlationId,
+          event: "provider.dispatch",
+          outcome: "started",
+          providerStage: "speech",
+        },
+        traceStore
+      )
+    );
+
+    expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
     log.mockRestore();
   });
 });

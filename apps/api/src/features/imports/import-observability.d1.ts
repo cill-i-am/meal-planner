@@ -1,5 +1,5 @@
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Schema } from "effect";
 
 import type {
   ImportCorrelationId,
@@ -16,7 +16,7 @@ const databaseEffect = <A>(operation: () => PromiseLike<A>) =>
     catch: (cause) =>
       new Error("Durable import observability persistence failed", { cause }),
     try: operation,
-  }).pipe(Effect.orDie);
+  });
 
 const decodeEvent = Schema.decodeUnknownSync(ImportObservabilityEvent, {
   onExcessProperty: "error",
@@ -40,7 +40,14 @@ export const makeD1ImportObservabilityTraceStore = (
         )
         .bind(event.correlationId, JSON.stringify(event), now())
         .run()
-    ).pipe(Effect.asVoid),
+    ).pipe(
+      Effect.asVoid,
+      // Observability is intentionally best-effort. A private trace outage
+      // must never become part of provider dispatch or budget state.
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.void
+      )
+    ),
   read: (correlationId: ImportCorrelationId) =>
     databaseEffect<{
       readonly results: readonly { readonly eventJson: string }[];
@@ -62,6 +69,7 @@ export const makeD1ImportObservabilityTraceStore = (
             Schema.decodeUnknownSync(PersistedTraceRow)(row);
           return decodeEvent(JSON.parse(eventJson));
         })
-      )
+      ),
+      Effect.orDie
     ),
 });
