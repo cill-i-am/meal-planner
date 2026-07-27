@@ -6,7 +6,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { Cause, Effect, Exit, Fiber, Option, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { Miniflare } from "miniflare";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   AcquisitionGeneration,
@@ -17,6 +17,7 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import { ImportCorrelationId } from "./import-observability.js";
 import { ImportId } from "./import.contracts.js";
 import {
   ensureImportWorkflowStarted,
@@ -31,6 +32,9 @@ import {
 
 const importId = Schema.decodeUnknownSync(ImportId)(
   "018f47ad-91aa-7c35-b6fe-000000000001"
+);
+const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
+  "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
 );
 
 const require = createRequire(import.meta.url);
@@ -293,12 +297,16 @@ const makeWorkflow = (
         return instance;
       }),
   };
-  return { calls, starter: makeImportWorkflowStarter(workflow) };
+  return {
+    calls,
+    starter: makeImportWorkflowStarter(workflow, { correlationId }),
+  };
 };
 
 describe("import Workflow start reconciliation", () => {
   it("uses one deterministic, privacy-safe Workflow input", async () => {
     const { calls, starter } = makeWorkflow("queued", true);
+    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
 
     await expect(
       Effect.runPromise(starter.ensureStarted(importId))
@@ -310,13 +318,23 @@ describe("import Workflow start reconciliation", () => {
       [
         {
           id: `import-acquisition-${importId}`,
-          params: { importId },
+          params: { correlationId, importId },
         },
       ],
     ]);
     expect(JSON.stringify(calls.createBatch)).not.toMatch(
       /url|locator|caption/iu
     );
+    expect(log.mock.calls).toEqual([
+      [
+        {
+          correlationId,
+          event: "import.accepted",
+          outcome: "accepted",
+        },
+      ],
+    ]);
+    log.mockRestore();
   });
 
   it.each(["queued", "running", "waiting", "waitingForPause"] as const)(

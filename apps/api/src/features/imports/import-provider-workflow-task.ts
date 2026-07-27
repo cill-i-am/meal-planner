@@ -1,6 +1,9 @@
 import { WorkflowStepContext, task } from "alchemy/Cloudflare/Workflows";
 import { Effect, Schema } from "effect";
 
+import type { ImportCorrelationId } from "./import-observability.js";
+import { emitImportObservabilityEvent } from "./import-observability.js";
+
 export const ProviderTaskStepConfig = {
   retries: { backoff: "exponential", delay: "2 seconds", limit: 2 },
   timeout: "2 minutes",
@@ -53,14 +56,24 @@ const terminalFailureCheckpoint = (
 export const runProviderTaskAttempt = <Value, Failure, Success>(
   stage: ProviderTaskStage,
   effect: Effect.Effect<Value, Failure>,
-  onSuccess: (value: Value) => Success
+  onSuccess: (value: Value) => Success,
+  correlationId?: ImportCorrelationId
 ) =>
   effect.pipe(
     Effect.matchEffect({
       onFailure: (error) => {
         const code = providerTaskFailureCode(error);
         if (!isRetryableProviderTaskFailure(code)) {
-          return Effect.succeed(terminalFailureCheckpoint(stage, code));
+          return (
+            correlationId === undefined
+              ? Effect.void
+              : emitImportObservabilityEvent({
+                  correlationId,
+                  event: "provider.terminal",
+                  outcome: "failed",
+                  providerStage: stage,
+                })
+          ).pipe(Effect.as(terminalFailureCheckpoint(stage, code)));
         }
 
         return Effect.gen(function* handleRetryableProviderFailure() {
@@ -69,15 +82,49 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
             context.config.retries?.limit ??
             ProviderTaskStepConfig.retries.limit;
           if (context.attempt >= retryLimit + 1) {
+            if (correlationId !== undefined) {
+              yield* emitImportObservabilityEvent({
+                attempt: context.attempt,
+                correlationId,
+                event: "provider.retry_exhausted",
+                outcome: "exhausted",
+                providerStage: stage,
+              });
+              yield* emitImportObservabilityEvent({
+                attempt: context.attempt,
+                correlationId,
+                event: "provider.terminal",
+                outcome: "failed",
+                providerStage: stage,
+              });
+            }
             return retryExhaustedCheckpoint(stage);
           }
 
+          if (correlationId !== undefined) {
+            yield* emitImportObservabilityEvent({
+              attempt: context.attempt,
+              correlationId,
+              event: "provider.retry",
+              outcome: "retrying",
+              providerStage: stage,
+            });
+          }
           return yield* Effect.die(
             new Error(`Retryable provider task failure: ${code}`)
           );
         });
       },
-      onSuccess: (value) => Effect.succeed(onSuccess(value)),
+      onSuccess: (value) =>
+        (correlationId === undefined
+          ? Effect.void
+          : emitImportObservabilityEvent({
+              correlationId,
+              event: "provider.terminal",
+              outcome: "succeeded",
+              providerStage: stage,
+            })
+        ).pipe(Effect.as(onSuccess(value))),
     })
   );
 
@@ -85,10 +132,11 @@ export const runProviderTask = <Value, Failure, Success>(
   name: string,
   stage: ProviderTaskStage,
   effect: Effect.Effect<Value, Failure>,
-  onSuccess: (value: Value) => Success
+  onSuccess: (value: Value) => Success,
+  correlationId?: ImportCorrelationId
 ) =>
   task(
     name,
-    runProviderTaskAttempt(stage, effect, onSuccess),
+    runProviderTaskAttempt(stage, effect, onSuccess, correlationId),
     ProviderTaskStepConfig
   );
