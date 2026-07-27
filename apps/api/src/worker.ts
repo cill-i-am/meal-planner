@@ -13,6 +13,11 @@ import {
 import { stageOperatorCarouselForWorkflow } from "./features/imports/import-carousel-staging.js";
 import type { AcquisitionBucketLike } from "./features/imports/import-media-acquirer.js";
 import { DeadLetterReplayClaimId } from "./features/imports/import-operations.js";
+import {
+  ProviderTerminalSettlementService,
+  makeD1ProviderTerminalSettlementService,
+} from "./features/imports/import-provider-terminal-settlement.js";
+import { ProviderTerminalSettlementRouteDefinitions } from "./features/imports/import-provider-terminal-settlement.routes.js";
 import { makeD1ImportQueueAcceptance } from "./features/imports/import-queue-acceptance.d1.js";
 import {
   RecipeReviewService,
@@ -64,6 +69,7 @@ const notFound = HttpServerResponse.json(
 const MealPlannerWorkerRoutes = HttpRouter.addAll([
   ...HealthRoutes,
   ...ImportRouteDefinitions,
+  ...ProviderTerminalSettlementRouteDefinitions,
   ...RecipeReviewRouteDefinitions,
   HttpRouter.route("*", "*", notFound),
 ]);
@@ -79,9 +85,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
     const evidenceBucket =
       yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
-    const pilotProviderBudgetRuntime = makePilotProviderBudgetRuntime(
-      yield* Config.string("ALCHEMY_STAGE")
-    );
+    const runtimeStage = yield* Config.string("ALCHEMY_STAGE");
+    const pilotProviderBudgetRuntime =
+      makePilotProviderBudgetRuntime(runtimeStage);
     const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
     const importBatchQueue = yield* ImportBatchQueue;
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
@@ -236,6 +242,19 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                   })
                 )
               );
+              const providerTerminalSettlementServiceLive = Layer.succeed(
+                ProviderTerminalSettlementService,
+                ProviderTerminalSettlementService.of(
+                  makeD1ProviderTerminalSettlementService({
+                    database,
+                    now: () =>
+                      Schema.decodeUnknownSync(ImportTimestamp)(
+                        new Date().toISOString()
+                      ),
+                    runtimeStage,
+                  })
+                )
+              );
               const serviceLive = Layer.effect(
                 ImportService,
                 Effect.gen(function* ImportServiceLive() {
@@ -277,6 +296,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                     Layer.mergeAll(
                       authorizerLive,
                       operatorCarouselServiceLive,
+                      providerTerminalSettlementServiceLive,
                       recipeReviewServiceLive,
                       serviceLive
                     )

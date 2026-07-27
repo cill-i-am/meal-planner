@@ -7,6 +7,7 @@ import type {
   ImportNotFound,
   ImportPersistenceCorrupt,
   ImportPersistenceUnavailable,
+  ImportTransitionRejected,
   IncompatibleDuplicate,
   InvalidImportId,
   InvalidImportRequest,
@@ -24,6 +25,7 @@ type PublicImportError =
   | ImportNotFound
   | ImportPersistenceCorrupt
   | ImportPersistenceUnavailable
+  | ImportTransitionRejected
   | IncompatibleDuplicate
   | InvalidImportId
   | InvalidImportRequest
@@ -79,6 +81,13 @@ const publicErrorResponse = (error: PublicImportError) => {
         409,
         "idempotency_conflict",
         "The idempotency key was already used for another request."
+      );
+    }
+    case "ImportTransitionRejected": {
+      return problem(
+        409,
+        "transition_rejected",
+        "The requested import transition is not allowed."
       );
     }
     case "IncompatibleDuplicate": {
