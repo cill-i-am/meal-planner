@@ -102,11 +102,29 @@ describe.skipIf(!enabled)("pinned media container", () => {
         )
       );
       const workspaceScript = `
-import { mkdtemp, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 if (process.getuid?.() !== 10001 || process.getgid?.() !== 10001) {
   throw new Error("installed image must run as the media user");
+}
+const ownedTemporaryRoot = await stat("/work/tmp");
+if (!ownedTemporaryRoot.isDirectory()) {
+  throw new Error("installed temporary root must be a directory");
+}
+if (ownedTemporaryRoot.uid !== 10001 || ownedTemporaryRoot.gid !== 10001) {
+  throw new Error("installed temporary root must be owned by the media user");
+}
+if ((ownedTemporaryRoot.mode & 0o300) !== 0o300) {
+  throw new Error("installed temporary root must be owner-writable and traversable");
 }
 let systemTemporaryRootUnavailable = false;
 try {
@@ -125,7 +143,38 @@ const root = await mkdtemp(\`\${tmpdir()}/meal-planner-media-installed-\`);
 if (!root.startsWith("/work/tmp/meal-planner-media-installed-")) {
   throw new Error("temporary workspace escaped the owned root");
 }
+const proofFile = join(root, "workspace-proof.txt");
+const proofContents = "owned installed workspace";
+await writeFile(proofFile, proofContents, "utf8");
+if ((await readFile(proofFile, "utf8")) !== proofContents) {
+  throw new Error("installed temporary workspace did not preserve written bytes");
+}
+await unlink(proofFile);
+try {
+  await stat(proofFile);
+  throw new Error("installed temporary workspace file was not deleted");
+} catch (error) {
+  if (
+    !(error instanceof Error) ||
+    !("code" in error) ||
+    error.code !== "ENOENT"
+  ) {
+    throw error;
+  }
+}
 await rm(root, { force: true, recursive: true });
+try {
+  await stat(root);
+  throw new Error("installed temporary workspace was not removed");
+} catch (error) {
+  if (
+    !(error instanceof Error) ||
+    !("code" in error) ||
+    error.code !== "ENOENT"
+  ) {
+    throw error;
+  }
+}
 `;
       await Effect.runPromise(
         docker([
@@ -136,9 +185,8 @@ await rm(root, { force: true, recursive: true });
           "none",
           "--platform",
           "linux/amd64",
-          "--read-only",
           "--tmpfs",
-          "/work/tmp:uid=10001,gid=10001,mode=0700",
+          "/tmp:mode=000",
           image,
           "node",
           "--input-type=module",
