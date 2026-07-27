@@ -123,6 +123,12 @@ export interface ImportRepositoryShape {
     Option.Option<StoredImportRequest>,
     ImportPersistenceCorrupt | ImportPersistenceUnavailable
   >;
+  readonly isAudioExtractionRecoveryEligible: (
+    id: ImportId
+  ) => Effect.Effect<
+    boolean,
+    ImportPersistenceCorrupt | ImportPersistenceUnavailable
+  >;
   readonly claimAcquisition?: (
     id: ImportId
   ) => Effect.Effect<ClaimAcquisitionResult, ImportTransitionError>;

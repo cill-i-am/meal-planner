@@ -148,12 +148,24 @@ export const persistDerivedProviderEvidence = (
             contentType: "image/jpeg",
             key,
           });
-          return { ...frame, key };
+          return {
+            bytes: frame.bytes,
+            height: frame.height,
+            key,
+            sha256: frame.sha256,
+            timestampMilliseconds: frame.timestampMilliseconds,
+            width: frame.width,
+          };
         }),
       { concurrency: 1 }
     );
     const manifest = {
-      audio: { ...derived.audio, key: storedAudioKey },
+      audio: {
+        bytes: derived.audio.bytes,
+        durationMilliseconds: derived.audio.durationMilliseconds,
+        key: storedAudioKey,
+        sha256: derived.audio.sha256,
+      },
       frames: storedFrames,
       generation: input.generation,
       importId: input.importId,

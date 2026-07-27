@@ -924,13 +924,43 @@ export const makeD1ImportRepository = (
         }
         return Option.some(yield* decodeStoredImportRequest(row));
       }),
+    isAudioExtractionRecoveryEligible: (id) =>
+      Effect.map(
+        persistenceEffect(
+          () =>
+            binding
+              .prepare(
+                `SELECT 1 AS eligible
+                   FROM recipe_imports AS parent
+                   JOIN import_transcriptions AS transcription
+                     ON transcription.import_id = parent.id
+                    AND transcription.acquisition_generation =
+                        parent.acquisition_generation
+                  WHERE parent.id = ?
+                    AND parent.status = 'failed'
+                    AND parent.status_code = 'transcription_failed'
+                    AND parent.recovery_action = 'retry_later'
+                    AND transcription.state = 'failed'
+                    AND transcription.failure_code = 'audio_extraction_failed'
+                  LIMIT 1`
+              )
+              .bind(id)
+              .first<{ readonly eligible: 1 }>() as PromiseLike<{
+              readonly eligible: 1;
+            } | null>
+        ),
+        (row) => row !== null
+      ),
     claimAcquisition: (id) =>
       Effect.gen(function* claimAcquisition() {
         const claimedAt = new Date(currentTimeMillis()).toISOString();
+        // The exact failed child must be consumed in the claim transaction
+        // before its composite foreign key can permit a fresh generation.
         yield* persistenceEffect(() =>
-          binding
-            .prepare(
-              `UPDATE recipe_imports
+          binding.batch([
+            binding
+              .prepare(
+                `UPDATE recipe_imports
                SET status = 'acquiring', status_code = NULL,
                    recovery_action = NULL, evidence_references_json = '[]',
                    updated_at = ?
@@ -939,11 +969,40 @@ export const makeD1ImportRepository = (
                    status = 'failed'
                    AND status_code = 'acquisition_temporarily_unavailable'
                    AND recovery_action = 'retry_later'
+                 ) OR (
+                   status = 'failed'
+                   AND status_code = 'transcription_failed'
+                   AND recovery_action = 'retry_later'
+                   AND EXISTS (
+                     SELECT 1
+                       FROM import_transcriptions AS transcription
+                      WHERE transcription.import_id = recipe_imports.id
+                        AND transcription.acquisition_generation =
+                            recipe_imports.acquisition_generation
+                        AND transcription.state = 'failed'
+                        AND transcription.failure_code =
+                            'audio_extraction_failed'
+                   )
                  )
                )`
-            )
-            .bind(claimedAt, id)
-            .run()
+              )
+              .bind(claimedAt, id),
+            binding
+              .prepare(
+                `DELETE FROM import_transcriptions
+                  WHERE import_id = ?
+                    AND state = 'failed'
+                    AND failure_code = 'audio_extraction_failed'
+                    AND acquisition_generation = (
+                      SELECT acquisition_generation
+                        FROM recipe_imports
+                       WHERE id = ? AND status = 'acquiring'
+                         AND updated_at = ?
+                         AND json_array_length(evidence_references_json) = 0
+                    )`
+              )
+              .bind(id, id, claimedAt),
+          ])
         );
         const stored = yield* requireImport(id);
         return stored.view.status.kind === "acquiring"
