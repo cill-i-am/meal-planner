@@ -326,6 +326,69 @@ describe("TikTok canonical identity", () => {
     });
   });
 
+  it.each(["photo", "photos"])(
+    "classifies an empty-placeholder %s HTML handoff as typed unsupported",
+    async (pathSegment) => {
+      const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
+        resolvedResponse(
+          String(input).includes("vm.tiktok.com")
+            ? new Response(null, {
+                headers: {
+                  location: "https://www.tiktok.com/t/Zsynthetic",
+                },
+                status: 302,
+              })
+            : hydrationResponse(
+                `https://www.tiktok.com/@/${pathSegment}/7520000000000000000`
+              )
+        )
+      );
+
+      await expect(
+        Effect.runPromise(
+          resolver.resolve(source("https://vm.tiktok.com/placeholder-photo"))
+        )
+      ).resolves.toMatchObject({
+        _tag: "UnsupportedIdentity",
+        identity: { canonicalId: "7520000000000000000", kind: "tiktok" },
+      });
+    }
+  );
+
+  it.each([
+    [
+      "empty-placeholder video",
+      "https://www.tiktok.com/@/video/7520000000000000000",
+    ],
+    [
+      "non-numeric placeholder photo",
+      "https://www.tiktok.com/@/photo/not-numeric",
+    ],
+    ["missing placeholder photo identity", "https://www.tiktok.com/@/photo/"],
+  ])("keeps a %s HTML handoff transient", async (_label, canonical) => {
+    let fetchCalls = 0;
+    const resolver = makeTikTokCanonicalSourceIdentityResolver(() => {
+      fetchCalls += 1;
+      return resolvedResponse(
+        fetchCalls === 1
+          ? new Response(null, {
+              headers: {
+                location: "https://www.tiktok.com/t/Zsynthetic",
+              },
+              status: 302,
+            })
+          : hydrationResponse(canonical)
+      );
+    });
+
+    const failure = await getFailure(
+      resolver.resolve(source("https://vm.tiktok.com/invalid-placeholder"))
+    );
+
+    expect(failure._tag).toBe("SourceIdentityUnavailable");
+    expect(fetchCalls).toBe(2);
+  });
+
   it("rejects unsafe canonical metadata from a TikTok-owned HTML handoff", async () => {
     const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
       resolvedResponse(

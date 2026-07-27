@@ -141,7 +141,7 @@ const parseCanonicalPath = (
   }
 
   const photoMatch =
-    /^\/@[^/]+\/(?:photo|photos)\/(?<canonicalId>\d+)\/?$/u.exec(url.pathname);
+    /^\/@[^/]*\/(?:photo|photos)\/(?<canonicalId>\d+)\/?$/u.exec(url.pathname);
   const photoId = photoMatch?.groups?.["canonicalId"];
   if (photoId !== undefined) {
     return {

@@ -248,13 +248,13 @@ const videoRequest = (canonicalId = "7520000000000000000", user = "cook") =>
     },
   });
 
-const photoHandoffResponse = () =>
+const photoHandoffResponse = (canonical: string) =>
   new Response(
     `<!doctype html><script type="application/json" id="__UNIVERSAL_DATA_FOR_REHYDRATION__">${JSON.stringify(
       {
         __DEFAULT_SCOPE__: {
           "seo.abtest": {
-            canonical: "https://www.tiktok.com/@cook/photo/7520000000000000000",
+            canonical,
           },
         },
       }
@@ -505,7 +505,7 @@ describe("ImportService", () => {
     expect(unsupportedFixture.workflow.started).toEqual([]);
   });
 
-  it("persists a short-link photo handoff as unsupported without availability or workflow work", async () => {
+  it("persists an empty-placeholder short-link photo handoff as unsupported without availability or workflow work", async () => {
     const fixture = makeFixture();
     let fetchCalls = 0;
     const identityResolver = makeTikTokCanonicalSourceIdentityResolver(() => {
@@ -516,7 +516,9 @@ describe("ImportService", () => {
               headers: { location: "https://www.tiktok.com/t/Zsynthetic" },
               status: 302,
             })
-          : photoHandoffResponse()
+          : photoHandoffResponse(
+              "https://www.tiktok.com/@/photo/7520000000000000000"
+            )
       );
     });
     const service = makeImportService({
