@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { parse } from "parse5";
+import { html as parse5Html, parse } from "parse5";
 import type { DefaultTreeAdapterTypes } from "parse5";
 
 import { SourceCanonicalId } from "./import.contracts.js";
@@ -25,6 +25,22 @@ const allowedTikTokHosts = new Set([
 
 const shortLinkHosts = new Set(["vm.tiktok.com", "vt.tiktok.com"]);
 const MaximumHandoffBodyBytes = 512 * 1024;
+
+const ignoreCancellation = async (cancellation: Promise<unknown>) => {
+  try {
+    await cancellation;
+  } catch {
+    // Best-effort release failures stay private.
+  }
+};
+
+const cancelBestEffort = (cancel: () => Promise<unknown>) => {
+  try {
+    void ignoreCancellation(cancel());
+  } catch {
+    // Best-effort release must remain finite and privacy-safe.
+  }
+};
 
 const TikTokHandoffMetadata = Schema.Struct({
   __DEFAULT_SCOPE__: Schema.Struct({
@@ -147,7 +163,9 @@ const readBoundedResponseBody = (response: Response) =>
         (!/^\d+$/u.test(contentLength) ||
           Number(contentLength) > MaximumHandoffBodyBytes)
       ) {
-        await body?.cancel();
+        if (body !== null) {
+          cancelBestEffort(() => body.cancel());
+        }
         throw new Error("TikTok handoff body exceeds the resolution limit");
       }
 
@@ -178,8 +196,7 @@ const readBoundedResponseBody = (response: Response) =>
           }
           bytesRead += next.value.byteLength;
           if (bytesRead > MaximumHandoffBodyBytes) {
-            // eslint-disable-next-line no-await-in-loop -- Cancel the owned reader before surfacing the bounded-read failure.
-            await reader.cancel();
+            cancelBestEffort(() => reader.cancel());
             throw new Error("TikTok handoff body exceeds the resolution limit");
           }
           text += decoder.decode(next.value, { stream: true });
@@ -211,6 +228,7 @@ const findHydrationContent = (
     }
     if (
       node.nodeName === "script" &&
+      node.namespaceURI === parse5Html.NS.HTML &&
       getAttribute(node, "id") === "__UNIVERSAL_DATA_FOR_REHYDRATION__" &&
       getAttribute(node, "type")?.toLowerCase() === "application/json"
     ) {

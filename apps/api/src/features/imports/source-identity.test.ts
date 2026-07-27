@@ -39,6 +39,21 @@ const getFailure = async <A>(effect: Effect.Effect<A, SourceIdentityError>) => {
   return Option.getOrThrow(Cause.findErrorOption(exit.cause));
 };
 
+const getFailureWithin = async <A>(
+  effect: Effect.Effect<A, SourceIdentityError>
+) => {
+  const deadline = Promise.withResolvers<never>();
+  const timeout = setTimeout(() => {
+    deadline.reject(new Error("Expected a finite source-identity failure"));
+  }, 250);
+
+  try {
+    return await Promise.race([getFailure(effect), deadline.promise]);
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 describe("TikTok canonical identity", () => {
   it("normalizes direct equivalents without a provider call", async () => {
     let calls = 0;
@@ -210,6 +225,39 @@ describe("TikTok canonical identity", () => {
   });
 
   it.each([
+    ["SVG", "svg"],
+    ["MathML", "math"],
+  ])(
+    "does not trust an exact hydration script in the %s namespace",
+    async (_label, container) => {
+      const script = hydrationScript(
+        "https://www.tiktok.com/@cook/video/7520000000000000000"
+      );
+      const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
+        resolvedResponse(
+          String(input).includes("vm.tiktok.com")
+            ? new Response(null, {
+                headers: {
+                  location: "https://www.tiktok.com/t/Zsynthetic",
+                },
+                status: 302,
+              })
+            : new Response(`<${container}>${script}</${container}>`, {
+                headers: { "content-type": "text/html; charset=utf-8" },
+                status: 200,
+              })
+        )
+      );
+
+      const failure = await getFailure(
+        resolver.resolve(source("https://vm.tiktok.com/abc123"))
+      );
+
+      expect(failure._tag).toBe("SourceIdentityUnavailable");
+    }
+  );
+
+  it.each([
     ["comment", (script: string) => `<!-- ${script} -->`],
     ["raw-text style element", (script: string) => `<style>${script}</style>`],
     ["textarea element", (script: string) => `<textarea>${script}</textarea>`],
@@ -371,6 +419,62 @@ describe("TikTok canonical identity", () => {
     expect(failure._tag).toBe("SourceIdentityUnavailable");
     expect(cancelled).toBe(true);
   });
+
+  it.each(["declared", "streamed"])(
+    "returns a finite typed failure when %s oversize-body cancellation never settles",
+    async (oversizePath) => {
+      let cancelCalls = 0;
+      const neverSettlingCancellation = Promise.withResolvers<undefined>();
+      const resolver = makeTikTokCanonicalSourceIdentityResolver((input) => {
+        if (String(input).includes("vm.tiktok.com")) {
+          return resolvedResponse(
+            new Response(null, {
+              headers: {
+                location: "https://www.tiktok.com/t/Zsynthetic",
+              },
+              status: 302,
+            })
+          );
+        }
+
+        return resolvedResponse(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              cancel: () => {
+                cancelCalls += 1;
+                return neverSettlingCancellation.promise;
+              },
+              ...(oversizePath === "streamed"
+                ? {
+                    start: (
+                      controller: ReadableStreamDefaultController<Uint8Array>
+                    ) => {
+                      controller.enqueue(new Uint8Array(512 * 1024));
+                      controller.enqueue(new Uint8Array([1]));
+                    },
+                  }
+                : {}),
+            }),
+            {
+              headers: {
+                "content-length":
+                  oversizePath === "declared" ? String(512 * 1024 + 1) : "0",
+                "content-type": "text/html; charset=utf-8",
+              },
+              status: 200,
+            }
+          )
+        );
+      });
+
+      const failure = await getFailureWithin(
+        resolver.resolve(source("https://vm.tiktok.com/abc123"))
+      );
+
+      expect(failure._tag).toBe("SourceIdentityUnavailable");
+      expect(cancelCalls).toBe(1);
+    }
+  );
 
   it("classifies explicit photo posts without invoking availability", async () => {
     let calls = 0;
