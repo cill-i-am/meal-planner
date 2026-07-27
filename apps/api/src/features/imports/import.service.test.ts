@@ -2,6 +2,7 @@ import { Cause, Effect, Exit, Fiber, Option, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
+import { manifestObjectKey, mediaObjectKey } from "./import-media.model.js";
 import {
   CreateImportRequest,
   IdempotencyKey,
@@ -9,6 +10,7 @@ import {
   ImportTimestamp,
   SourceCanonicalId,
 } from "./import.contracts.js";
+import type { ImportView } from "./import.contracts.js";
 import {
   idempotencyConflict,
   incompatibleDuplicate,
@@ -42,6 +44,7 @@ const decodeVideoUrl = Schema.decodeUnknownSync(ValidatedVideoUrl);
 const now = decodeTimestamp("2026-07-20T10:00:00.000Z");
 
 const makeRepository = () => {
+  const audioExtractionRecoveryEligibleIds = new Set<string>();
   const imports = new Map<string, StoredImport>();
   const requests = new Map<string, StoredImportRequest>();
   let acceptCalls = 0;
@@ -103,11 +106,55 @@ const makeRepository = () => {
       ),
     findRequest: (idempotencyKeyHash) =>
       Effect.succeed(Option.fromNullishOr(requests.get(idempotencyKeyHash))),
+    isAudioExtractionRecoveryEligible: (id) =>
+      Effect.succeed(audioExtractionRecoveryEligibleIds.has(id)),
+  };
+
+  const markTranscriptionFailed = (id: ImportId) => {
+    const replace = (stored: StoredImport): StoredImport => {
+      const view = {
+        createdAt: stored.view.createdAt,
+        evidence: [
+          {
+            kind: "original_media",
+            referenceId: mediaObjectKey(id, stored.acquisitionGeneration),
+          },
+          {
+            kind: "acquisition_manifest",
+            referenceId: manifestObjectKey(id, stored.acquisitionGeneration),
+          },
+        ],
+        id: stored.view.id,
+        source: stored.view.source,
+        status: {
+          code: "transcription_failed",
+          kind: "failed",
+          recovery: "retry_later",
+        },
+        updatedAt: stored.view.updatedAt,
+      } satisfies ImportView;
+      return { ...stored, view };
+    };
+    for (const [key, stored] of imports) {
+      if (stored.view.id === id) {
+        imports.set(key, replace(stored));
+      }
+    }
+    for (const [key, storedRequest] of requests) {
+      if (storedRequest.import.view.id === id) {
+        requests.set(key, {
+          ...storedRequest,
+          import: replace(storedRequest.import),
+        });
+      }
+    }
   };
 
   return {
     acceptCalls: () => acceptCalls,
+    audioExtractionRecoveryEligibleIds,
     imports,
+    markTranscriptionFailed,
     repository,
     requests,
   };
@@ -324,6 +371,45 @@ describe("ImportService", () => {
       replay.import.id,
       replay.import.id,
     ]);
+  });
+
+  it("restarts a URL replay only when its transcription failure is locally audio-extraction eligible", async () => {
+    const fixture = makeFixture();
+    const request = videoRequest();
+    const first = await Effect.runPromise(
+      fixture.service.create(request, decodeKey("K1"))
+    );
+    fixture.repository.markTranscriptionFailed(first.import.id);
+    fixture.repository.audioExtractionRecoveryEligibleIds.add(first.import.id);
+    fixture.workflow.started.length = 0;
+    const identityCalls = fixture.identity.calls();
+    const availabilityCalls = fixture.availability.calls();
+
+    const replay = await Effect.runPromise(
+      fixture.service.create(request, decodeKey("K1"))
+    );
+
+    expect(replay.disposition).toBe("idempotency_replay");
+    expect(fixture.identity.calls()).toBe(identityCalls);
+    expect(fixture.availability.calls()).toBe(availabilityCalls);
+    expect(fixture.workflow.started).toEqual([first.import.id]);
+  });
+
+  it("does not restart a URL replay for any other transcription failure", async () => {
+    const fixture = makeFixture();
+    const request = videoRequest();
+    const first = await Effect.runPromise(
+      fixture.service.create(request, decodeKey("K1"))
+    );
+    fixture.repository.markTranscriptionFailed(first.import.id);
+    fixture.workflow.started.length = 0;
+
+    const replay = await Effect.runPromise(
+      fixture.service.create(request, decodeKey("K1"))
+    );
+
+    expect(replay.disposition).toBe("idempotency_replay");
+    expect(fixture.workflow.started).toEqual([]);
   });
 
   it("replays a canonically equivalent changed K1 without revalidating availability", async () => {

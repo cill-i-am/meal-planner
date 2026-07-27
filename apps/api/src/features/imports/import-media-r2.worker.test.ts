@@ -3,6 +3,11 @@ import { env } from "cloudflare:test";
 import { Cause, Effect, Exit, Option, Schema, Stream } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  makeR2SpeechAudioExtractor,
+  makeR2VisualFrameSampler,
+  persistDerivedProviderEvidence,
+} from "./import-derived-media.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
 import type {
   AcquisitionBucketLike,
@@ -69,6 +74,16 @@ const bucket = (): AcquisitionBucketLike => ({
   put: (key, value, options) =>
     testEnv.ImportEvidenceBucket.put(key, value, options),
 });
+
+const digest = async (bytes: Uint8Array) => {
+  const value = await crypto.subtle.digest(
+    "SHA-256",
+    Uint8Array.from(bytes).buffer
+  );
+  return Array.from(new Uint8Array(value), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+};
 
 const makeMediaObject = (
   artifactBytes = mediaBytes,
@@ -138,6 +153,189 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("derived provider evidence", () => {
+  it("round-trips strict current-generation evidence without container artifact ids", async () => {
+    const importId = id(411);
+    const generation = decodeGeneration(2);
+    const audioBytes = new Uint8Array([82, 73, 70, 70, 1, 2, 3, 4]);
+    const frameBytes = [
+      new Uint8Array([255, 216, 0, 255, 217]),
+      new Uint8Array([255, 216, 1, 255, 217]),
+    ] as const;
+    const audioSha256 = await digest(audioBytes);
+    const [firstFrameSha256, secondFrameSha256] = await Promise.all([
+      digest(frameBytes[0]),
+      digest(frameBytes[1]),
+    ] as const);
+    const artifacts = new Map<string, Uint8Array>([
+      ["container-audio-411", audioBytes],
+      ["container-frame-411-0", frameBytes[0]],
+      ["container-frame-411-1", frameBytes[1]],
+    ]);
+    const prepared: PreparedMediaArtifact = {
+      artifactId: "container-source-411",
+      audioStreams: [{ codec: "aac", index: 1 }],
+      bytes: mediaBytes.byteLength,
+      durationSeconds: 2,
+      metadata: {
+        canonicalId,
+        canonicalUrl: `https://www.tiktok.com/@cook/video/${canonicalId}`,
+        caption: "Synthetic recipe caption",
+        creator: { displayName: "Cook", handle: "cook", id: "cook-id" },
+        observedAt: "2026-07-20T11:59:00.000Z",
+        provenance: {
+          canonicalUrl: "provider_observed",
+          caption: "creator_provided",
+          creator: {
+            displayName: "provider_observed",
+            handle: "provider_observed",
+            id: "provider_observed",
+          },
+          publishedAt: null,
+        },
+        publishedAt: null,
+      },
+      sha256,
+      videoStreams: [{ codec: "h264", index: 0 }],
+    };
+    const mediaObject: AcquisitionMediaObjectLike = {
+      cleanup: () => Effect.void,
+      prepare: () => Effect.succeed(prepared),
+      prepareProviderEvidence: () =>
+        Effect.succeed({
+          audio: {
+            artifactId: "container-audio-411",
+            bytes: audioBytes.byteLength,
+            durationMilliseconds: 2000,
+            sha256: audioSha256,
+          },
+          frames: [
+            {
+              artifactId: "container-frame-411-0",
+              bytes: frameBytes[0].byteLength,
+              height: 640,
+              sha256: firstFrameSha256,
+              timestampMilliseconds: 0,
+              width: 360,
+            },
+            {
+              artifactId: "container-frame-411-1",
+              bytes: frameBytes[1].byteLength,
+              height: 640,
+              sha256: secondFrameSha256,
+              timestampMilliseconds: 1000,
+              width: 360,
+            },
+          ],
+        }),
+      stream: (artifactId) => {
+        const bytes = artifacts.get(artifactId);
+        return bytes === undefined
+          ? Stream.fail({
+              _tag: "RetryableAcquisitionFailure" as const,
+              stage: "container" as const,
+            })
+          : Stream.make(bytes);
+      },
+    };
+
+    await Effect.runPromise(
+      persistDerivedProviderEvidence(bucket(), mediaObject, prepared, {
+        generation,
+        importId,
+      })
+    );
+
+    const manifestObject = await testEnv.ImportEvidenceBucket.get(
+      `imports/${importId}/generations/${generation}/provider-evidence.json`
+    );
+    expect(manifestObject).not.toBeNull();
+    if (manifestObject === null) {
+      throw new Error("Expected persisted provider evidence manifest");
+    }
+    const manifest = JSON.parse(await manifestObject.text()) as {
+      readonly audio: Record<string, unknown>;
+      readonly frames: readonly Record<string, unknown>[];
+    };
+    expect(Object.keys(manifest).toSorted()).toEqual(
+      [
+        "audio",
+        "frames",
+        "generation",
+        "importId",
+        "schemaVersion",
+        "sourceMediaSha256",
+      ].toSorted()
+    );
+    expect(Object.keys(manifest.audio).toSorted()).toEqual(
+      ["bytes", "durationMilliseconds", "key", "sha256"].toSorted()
+    );
+    expect(
+      manifest.frames.map((frame) => Object.keys(frame).toSorted())
+    ).toEqual([
+      [
+        "bytes",
+        "height",
+        "key",
+        "sha256",
+        "timestampMilliseconds",
+        "width",
+      ].toSorted(),
+      [
+        "bytes",
+        "height",
+        "key",
+        "sha256",
+        "timestampMilliseconds",
+        "width",
+      ].toSorted(),
+    ]);
+
+    const audio = await Effect.runPromise(
+      makeR2SpeechAudioExtractor(bucket()).extract({
+        generation,
+        importId,
+        mediaKey: mediaObjectKey(importId, generation),
+        sourceMediaSha256: prepared.sha256,
+      })
+    );
+    const frames = await Effect.runPromise(
+      makeR2VisualFrameSampler(bucket()).sample({
+        durationMilliseconds: 2000,
+        generation,
+        importId,
+        mediaKey: mediaObjectKey(importId, generation),
+        sourceMediaSha256: prepared.sha256,
+      })
+    );
+
+    expect(audio).toEqual({
+      bytes: audioBytes,
+      durationMilliseconds: 2000,
+      mimeType: "audio/wav",
+      sha256: audioSha256,
+    });
+    expect(frames).toEqual([
+      {
+        bytes: frameBytes[0],
+        height: 640,
+        mimeType: "image/jpeg",
+        sha256: firstFrameSha256,
+        timestampMilliseconds: 0,
+        width: 360,
+      },
+      {
+        bytes: frameBytes[1],
+        height: 640,
+        mimeType: "image/jpeg",
+        sha256: secondFrameSha256,
+        timestampMilliseconds: 1000,
+        width: 360,
+      },
+    ]);
+  });
 });
 
 describe("native R2 generation commit", () => {

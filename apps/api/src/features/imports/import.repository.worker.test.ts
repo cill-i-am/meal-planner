@@ -8,6 +8,7 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -109,6 +110,71 @@ beforeAll(async () => {
     "d1_migrations"
   );
 });
+
+const failCurrentTranscription = async (
+  repository: ReturnType<typeof makeD1ImportRepository>,
+  command: AcceptImportCommand,
+  failureCode:
+    | "audio_extraction_failed"
+    | "outcome_unknown"
+    | "source_evidence_invalid"
+    | "transcription_failed"
+    | "transcript_evidence_failed"
+) => {
+  await Effect.runPromise(repository.acceptRequest(command));
+  await Effect.runPromise(
+    repository.claimAcquisition(command.candidate.view.id)
+  );
+  const { generation } = await Effect.runPromise(
+    repository.beginAcquisitionAttempt(command.candidate.view.id)
+  );
+  const acquiredAt = decodeTimestamp("2026-07-20T10:05:00.000Z");
+  const sourceMediaSha256 = fixtureHash(`media-${command.candidate.view.id}`);
+  await Effect.runPromise(
+    repository.recordAcquired(
+      command.candidate.view.id,
+      generation,
+      {
+        acquiredAt,
+        audioStreams: [{ codec: "aac", index: 1 }],
+        bytes: 1024,
+        deleteAt: decodeTimestamp("2026-07-27T10:05:00.000Z"),
+        durationSeconds: 1,
+        generation,
+        manifestKey: manifestObjectKey(command.candidate.view.id, generation),
+        mediaKey: mediaObjectKey(command.candidate.view.id, generation),
+        sha256: sourceMediaSha256,
+        videoStreams: [{ codec: "h264", index: 0 }],
+      },
+      acquiredAt
+    )
+  );
+  const transcriptionRepository = makeD1SpeechTranscriptionRepository(
+    testEnv.MealPlannerDatabase
+  );
+  const dispatchId = `speech:${command.candidate.view.id}:${generation}`;
+  const startedAt = decodeTimestamp("2026-07-20T10:06:00.000Z");
+  await Effect.runPromise(
+    transcriptionRepository.claim({
+      dispatchId,
+      generation,
+      importId: command.candidate.view.id,
+      sourceMediaSha256,
+      startedAt,
+    })
+  );
+  await Effect.runPromise(
+    transcriptionRepository.fail({
+      completedAt: decodeTimestamp("2026-07-20T10:07:00.000Z"),
+      dispatchId,
+      failureCode,
+      generation,
+      importId: command.candidate.view.id,
+      sourceMediaSha256,
+    })
+  );
+  return generation;
+};
 
 describe("D1 import repository in workerd", () => {
   it("applies the versioned import and speech migration constraints", async () => {
@@ -311,6 +377,167 @@ describe("D1 import repository in workerd", () => {
     });
     expect(persisted.acquisitionGeneration).toBe(2);
   });
+
+  it("restarts acquisition with one fresh generation only after current audio extraction failure", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase, () =>
+      Date.parse("2026-07-20T10:08:00.000Z")
+    );
+    const command = makeCommand({
+      canonicalId: "7580000000000000177",
+      id: "018f47ad-91aa-7c35-b6fe-000000000177",
+      key: "audio-extraction-recovery",
+    });
+    const failedGeneration = await failCurrentTranscription(
+      repository,
+      command,
+      "audio_extraction_failed"
+    );
+    const unrelatedCommand = makeCommand({
+      canonicalId: "7580000000000000178",
+      id: "018f47ad-91aa-7c35-b6fe-000000000178",
+      key: "unrelated-transcription-failure",
+    });
+    const unrelatedGeneration = await failCurrentTranscription(
+      repository,
+      unrelatedCommand,
+      "transcription_failed"
+    );
+    const retryMarker = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT state, failure_code, provider, model,
+              estimated_cost_micro_usd, usage_audio_milliseconds,
+              usage_input_bytes
+         FROM import_transcriptions
+        WHERE import_id = ? AND acquisition_generation = ?`
+    )
+      .bind(command.candidate.view.id, failedGeneration)
+      .first<{
+        readonly estimated_cost_micro_usd: number | null;
+        readonly failure_code: string;
+        readonly model: string | null;
+        readonly provider: string | null;
+        readonly state: string;
+        readonly usage_audio_milliseconds: number | null;
+        readonly usage_input_bytes: number | null;
+      }>();
+
+    await expect(
+      Effect.runPromise(
+        repository.isAudioExtractionRecoveryEligible(command.candidate.view.id)
+      )
+    ).resolves.toBe(true);
+    const claimed = await Effect.runPromise(
+      repository.claimAcquisition(command.candidate.view.id)
+    );
+    const consumedFailure = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT COUNT(*) AS count
+           FROM import_transcriptions
+          WHERE import_id = ? AND acquisition_generation = ?`
+    )
+      .bind(command.candidate.view.id, failedGeneration)
+      .first<{ readonly count: number }>();
+    const allocated = await Effect.runPromise(
+      repository.beginAcquisitionAttempt(command.candidate.view.id)
+    );
+    const unrelatedFailure = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT state, failure_code
+         FROM import_transcriptions
+        WHERE import_id = ? AND acquisition_generation = ?`
+    )
+      .bind(unrelatedCommand.candidate.view.id, unrelatedGeneration)
+      .first<{
+        readonly failure_code: string;
+        readonly state: string;
+      }>();
+    const foreignKeyViolations = await testEnv.MealPlannerDatabase.prepare(
+      "PRAGMA foreign_key_check"
+    ).all();
+
+    expect(retryMarker).toEqual({
+      estimated_cost_micro_usd: null,
+      failure_code: "audio_extraction_failed",
+      model: null,
+      provider: null,
+      state: "failed",
+      usage_audio_milliseconds: null,
+      usage_input_bytes: null,
+    });
+    expect(claimed._tag).toBe("Acquiring");
+    expect(claimed.import.acquisitionGeneration).toBe(failedGeneration);
+    expect(consumedFailure?.count).toBe(0);
+    expect(allocated.generation).toBe(failedGeneration + 1);
+    expect(unrelatedFailure).toEqual({
+      failure_code: "transcription_failed",
+      state: "failed",
+    });
+    expect(foreignKeyViolations.results).toEqual([]);
+    await expect(
+      Effect.runPromise(
+        repository.isAudioExtractionRecoveryEligible(command.candidate.view.id)
+      )
+    ).resolves.toBe(false);
+  });
+
+  it.each([
+    "outcome_unknown",
+    "source_evidence_invalid",
+    "transcription_failed",
+    "transcript_evidence_failed",
+  ] as const)(
+    "does not restart acquisition after current %s transcription failure",
+    async (failureCode) => {
+      const suffix = failureCode.length;
+      const repository = makeD1ImportRepository(
+        testEnv.MealPlannerDatabase,
+        () => Date.parse("2026-07-20T10:08:00.000Z")
+      );
+      const command = makeCommand({
+        canonicalId: `7580000000000001${String(suffix).padStart(2, "0")}`,
+        id: `018f47ad-91aa-7c35-b6fe-${String(400 + suffix).padStart(12, "0")}`,
+        key: `blocked-${failureCode}`,
+      });
+      const failedGeneration = await failCurrentTranscription(
+        repository,
+        command,
+        failureCode
+      );
+
+      await expect(
+        Effect.runPromise(
+          repository.isAudioExtractionRecoveryEligible(
+            command.candidate.view.id
+          )
+        )
+      ).resolves.toBe(false);
+      const claimed = await Effect.runPromise(
+        repository.claimAcquisition(command.candidate.view.id)
+      );
+      const retainedFailure = await testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, failure_code
+             FROM import_transcriptions
+            WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(command.candidate.view.id, failedGeneration)
+        .first<{
+          readonly failure_code: string;
+          readonly state: string;
+        }>();
+      const stored = Option.getOrThrow(
+        await Effect.runPromise(repository.findById(command.candidate.view.id))
+      );
+
+      expect(claimed._tag).toBe("Finished");
+      expect(retainedFailure).toEqual({
+        failure_code: failureCode,
+        state: "failed",
+      });
+      expect(stored.acquisitionGeneration).toBe(failedGeneration);
+      expect(stored.view.status).toEqual({
+        code: "transcription_failed",
+        kind: "failed",
+        recovery: "retry_later",
+      });
+    }
+  );
 
   it("guards queued -> acquiring -> acquired and makes identical replay idempotent", async () => {
     let currentTime = Date.parse("2026-07-20T10:04:00.000Z");

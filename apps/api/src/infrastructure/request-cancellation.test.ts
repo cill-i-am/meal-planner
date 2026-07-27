@@ -212,6 +212,7 @@ describe("request cancellation", () => {
       findByCanonicalIdentity: () => Effect.succeed(Option.none()),
       findById: () => Effect.succeed(Option.none()),
       findRequest: () => Effect.succeed(Option.none()),
+      isAudioExtractionRecoveryEligible: () => Effect.succeed(false),
     };
     const identityResolver: CanonicalSourceIdentityResolverShape = {
       resolve: () =>

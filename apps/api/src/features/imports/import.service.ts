@@ -123,7 +123,7 @@ const statusForResolution = (
               }
       );
 
-const isRecoverableStatus = (status: ImportStatus) =>
+const isAcquisitionRecoverableStatus = (status: ImportStatus) =>
   status.kind === "queued" ||
   status.kind === "acquiring" ||
   (status.kind === "failed" &&
@@ -162,6 +162,19 @@ export const makeImportService = ({
   const providerDeadlineMilliseconds = finiteProviderDeadline(
     providerDeadlineOverride
   );
+  const shouldEnsureWorkflowStarted = (stored: StoredImport) => {
+    if (isAcquisitionRecoverableStatus(stored.view.status)) {
+      return Effect.succeed(true);
+    }
+    if (
+      stored.view.status.kind === "failed" &&
+      stored.view.status.code === "transcription_failed" &&
+      stored.view.status.recovery === "retry_later"
+    ) {
+      return repository.isAudioExtractionRecoveryEligible(stored.view.id);
+    }
+    return Effect.succeed(false);
+  };
 
   return {
     create: (request, idempotencyKey) =>
@@ -187,7 +200,9 @@ export const makeImportService = ({
           Option.isSome(existingRequest) &&
           existingRequest.value.sourceLocatorHash === sourceLocatorHash
         ) {
-          if (isRecoverableStatus(existingRequest.value.import.view.status)) {
+          if (
+            yield* shouldEnsureWorkflowStarted(existingRequest.value.import)
+          ) {
             yield* ensureImportWorkflowStarted(
               workflowStarter,
               existingRequest.value.import.view.id
@@ -213,7 +228,9 @@ export const makeImportService = ({
           if (existingRequest.value.requestFingerprint !== requestFingerprint) {
             return yield* Effect.fail(idempotencyConflict());
           }
-          if (isRecoverableStatus(existingRequest.value.import.view.status)) {
+          if (
+            yield* shouldEnsureWorkflowStarted(existingRequest.value.import)
+          ) {
             yield* ensureImportWorkflowStarted(
               workflowStarter,
               existingRequest.value.import.view.id
@@ -271,7 +288,7 @@ export const makeImportService = ({
           sourceLocatorHash,
         });
 
-        if (isRecoverableStatus(accepted.import.view.status)) {
+        if (yield* shouldEnsureWorkflowStarted(accepted.import)) {
           yield* ensureImportWorkflowStarted(
             workflowStarter,
             accepted.import.view.id
