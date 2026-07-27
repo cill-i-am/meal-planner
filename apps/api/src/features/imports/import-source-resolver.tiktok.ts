@@ -24,7 +24,6 @@ import type {
 import {
   decodeTikTokMediaSession,
   isAllowedTikTokMediaHostname,
-  mediaSessionCookieHeader,
 } from "./import-source-session.js";
 
 const unavailable = (): UnavailableFailure => ({
@@ -33,6 +32,11 @@ const unavailable = (): UnavailableFailure => ({
 });
 const retryableSession = (): RetryableAcquisitionFailure => ({
   _tag: "RetryableAcquisitionFailure",
+  stage: "resolve",
+});
+const invalidSession = (): RetryableAcquisitionFailure => ({
+  _tag: "RetryableAcquisitionFailure",
+  reason: "media_session_invalid",
   stage: "resolve",
 });
 const unsupportedCarousel = (): UnsupportedCarouselFailure => ({
@@ -308,7 +312,7 @@ export const makeTikTokSourceResolver = (
         try: () => rm(sessionPath, { force: true }),
       });
     const readSession = Effect.tryPromise({
-      catch: retryableSession,
+      catch: invalidSession,
       try: async () => {
         const file = await open(
           sessionPath,
@@ -377,14 +381,6 @@ export const makeTikTokSourceResolver = (
             }
             case "video": {
               const session = yield* readSession;
-              if (
-                mediaSessionCookieHeader(
-                  session,
-                  new URL(parsed.mediaLocator)
-                ) === undefined
-              ) {
-                return yield* Effect.fail(retryableSession());
-              }
               return {
                 mediaLocator: parsed.mediaLocator,
                 metadata: parsed.metadata,

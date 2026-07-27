@@ -48,6 +48,7 @@ export const AcquisitionFailureReason = Schema.Literals([
   "download_http_response",
   "download_stream_or_tls",
   "download_timeout",
+  "media_session_invalid",
   "temporary_workspace_unavailable",
 ]);
 export type AcquisitionFailureReason = typeof AcquisitionFailureReason.Type;
