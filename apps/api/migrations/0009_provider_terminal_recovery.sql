@@ -259,6 +259,8 @@ BEGIN
          AND dispatch.`actual_cost_micro_usd` IS NULL
          AND dispatch.`maximum_cost_micro_usd` <=
                stage.`reserved_micro_usd`
+         AND stage.`settled_micro_usd` + stage.`reserved_micro_usd` <
+               stage.`budget_cap_micro_usd`
     )
     THEN RAISE(ABORT, 'pilot provider speech recovery preconditions rejected')
   END;

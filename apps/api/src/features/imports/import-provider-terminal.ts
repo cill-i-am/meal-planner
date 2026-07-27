@@ -379,15 +379,25 @@ export const makeD1ProviderTerminalRecoveryRepository = (
       return recovery;
     }),
   speechDispatchId: (input) =>
-    readRecovery(database, input.importId, input.acquisitionGeneration).pipe(
-      Effect.map(({ recoveryDispatchId }) => recoveryDispatchId),
-      // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.catchTag is typed Effect recovery, not Promise callback control flow.
-      Effect.catchTag("ProviderTerminalPersistenceError", (error) =>
-        error.code === "recovery_not_allowed"
-          ? Effect.succeed(
-              `speech:${input.importId}:${input.acquisitionGeneration}`
-            )
-          : Effect.fail(error)
-      )
-    ),
+    Effect.gen(function* readSpeechDispatchId() {
+      if (runtimeStage !== PilotProviderBudgetStage) {
+        return yield* Effect.fail(
+          providerTerminalPersistenceError("stage_not_allowed")
+        );
+      }
+      return yield* readRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration
+      ).pipe(
+        Effect.map(({ recoveryDispatchId }) => recoveryDispatchId),
+        Effect.catchTag("ProviderTerminalPersistenceError", (error) =>
+          error.code === "recovery_not_allowed"
+            ? Effect.succeed(
+                `speech:${input.importId}:${input.acquisitionGeneration}`
+              )
+            : Effect.fail(error)
+        )
+      );
+    }),
 });

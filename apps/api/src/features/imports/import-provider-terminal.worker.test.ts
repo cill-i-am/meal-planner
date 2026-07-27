@@ -220,6 +220,27 @@ describe("provider terminal recovery", () => {
         })
       )
     ).resolves.toBe(`${seeded.dispatchId}:recovery:1`);
+    const wrongStageRecovery = makeD1ProviderTerminalRecoveryRepository(
+      testEnv.MealPlannerDatabase,
+      "production"
+    );
+    await expect(
+      Effect.runPromise(
+        wrongStageRecovery.speechDispatchId({
+          acquisitionGeneration: seeded.generation,
+          importId: seeded.importId,
+        })
+      )
+    ).rejects.toMatchObject({ code: "stage_not_allowed" });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_dispatches
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(`${seeded.dispatchId}:recovery:1`)
+        .first()
+    ).resolves.toEqual({ count: 0 });
 
     await expect(
       testEnv.MealPlannerDatabase.prepare(
@@ -294,7 +315,17 @@ describe("provider terminal recovery", () => {
     });
   });
 
-  it("rejects recovery outside the exact runtime stage without mutation", async () => {
+  it("keeps the stage poisoned when conservative settlement reaches the exact cap", async () => {
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE pilot_provider_stage_budget
+          SET settled_micro_usd = 9950000,
+              updated_at = '2026-07-27T09:02:00.000Z'
+        WHERE runtime_stage = 'pilot-gaia-118'
+          AND state = 'open'
+          AND reserved_micro_usd = 0
+          AND invoking_dispatch_id IS NULL
+          AND poison_dispatch_id IS NULL`
+    ).run();
     const seeded = await seedPoisonedSpeechImport("000000000180");
     const terminal = makeD1ProviderTerminalCheckpointRepository(
       testEnv.MealPlannerDatabase
@@ -310,7 +341,7 @@ describe("provider terminal recovery", () => {
     );
     const recovery = makeD1ProviderTerminalRecoveryRepository(
       testEnv.MealPlannerDatabase,
-      "production"
+      "pilot-gaia-118"
     );
 
     await expect(
@@ -321,17 +352,64 @@ describe("provider terminal recovery", () => {
           importId: seeded.importId,
         })
       )
-    ).rejects.toMatchObject({ code: "stage_not_allowed" });
+    ).rejects.toMatchObject({ code: "persistence_unavailable" });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        `SELECT state, settled_micro_usd, reserved_micro_usd
+        `SELECT state, settled_micro_usd, reserved_micro_usd,
+                poison_dispatch_id, invoking_dispatch_id
            FROM pilot_provider_stage_budget
           WHERE runtime_stage = 'pilot-gaia-118'`
       ).first()
-    ).resolves.toMatchObject({
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: seeded.dispatchId,
       reserved_micro_usd: 50_000,
-      settled_micro_usd: seeded.settledBefore,
+      settled_micro_usd: 9_950_000,
       state: "poisoned",
     });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, failure_code
+           FROM import_transcriptions
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(seeded.importId, seeded.generation)
+        .first()
+    ).resolves.toEqual({
+      failure_code: "outcome_unknown",
+      state: "failed",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT status, status_code, recovery_action
+           FROM recipe_imports
+          WHERE id = ?`
+      )
+        .bind(seeded.importId)
+        .first()
+    ).resolves.toEqual({
+      recovery_action: "retry_later",
+      status: "failed",
+      status_code: "transcription_failed",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_speech_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND original_dispatch_id = ?`
+      )
+        .bind(seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_reconciliations
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
   });
 });
