@@ -50,6 +50,10 @@ import {
   makeInstalledVisualEvidenceExtractor,
   makePilotProviderDispatchGate,
 } from "./import-provider-adapters.js";
+import {
+  makeD1ProviderTerminalCheckpointRepository,
+  makeD1ProviderTerminalRecoveryRepository,
+} from "./import-provider-terminal.js";
 import { runProviderTask } from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
@@ -246,6 +250,12 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
         const database = yield* queryDatabase.raw;
         const rawBucket = yield* evidenceBucket.raw;
         const repository = makeD1ImportRepository(database);
+        const terminalCheckpoints =
+          makeD1ProviderTerminalCheckpointRepository(database);
+        const terminalRecovery = makeD1ProviderTerminalRecoveryRepository(
+          database,
+          pilotProviderBudgetRuntime.runtimeStage
+        );
         const now = currentPilotBudgetTimestamp;
         const dispatch = makePilotProviderDispatchGate({
           now,
@@ -283,6 +293,24 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               Schema.decodeUnknownEffect(ProviderTaskCheckpoint)(value)
             ),
             Effect.orDie
+          );
+        const persistTerminal = (
+          failure: typeof ProviderTaskCheckpoint.Type & {
+            readonly _tag: "Failed";
+          },
+          generation: AcquisitionGeneration
+        ) =>
+          Cloudflare.Workflows.task(
+            `persist-${failure.stage}-terminal-v1`,
+            terminalCheckpoints
+              .persist({
+                acquisitionGeneration: generation,
+                completedAt: now(),
+                failureCode: failure.code,
+                importId,
+                providerStage: failure.stage,
+              })
+              .pipe(Effect.orDie)
           );
         const stagedCarousel = yield* loadStagedOperatorCarousel({
           bucket: rawBucket as unknown as AcquisitionBucketLike,
@@ -422,6 +450,12 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
         if (outcome._tag !== "VerifiedAcquisition") {
           return encodedOutcome;
         }
+        const speechDispatchId = yield* terminalRecovery
+          .speechDispatchId({
+            acquisitionGeneration: outcome.generation,
+            importId,
+          })
+          .pipe(Effect.orDie);
         const speech = yield* task(
           "transcribe-video-v1",
           "speech",
@@ -431,6 +465,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               rawBucket as unknown as AcquisitionBucketLike
             ),
             bucket: rawBucket as unknown as AcquisitionBucketLike,
+            dispatchId: speechDispatchId,
             importId,
             now,
             speechTranscriber,
@@ -439,6 +474,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           })
         );
         if (speech._tag === "Failed") {
+          yield* persistTerminal(speech, outcome.generation);
           return speech;
         }
         const visual = yield* task(
@@ -457,6 +493,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           })
         );
         if (visual._tag === "Failed") {
+          yield* persistTerminal(visual, outcome.generation);
           return visual;
         }
         const recipe = yield* task(
@@ -472,6 +509,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           })
         );
         if (recipe._tag === "Failed") {
+          yield* persistTerminal(recipe, outcome.generation);
           return recipe;
         }
         return encodedOutcome;
@@ -509,6 +547,9 @@ export interface ImportWorkflowStarterShape {
   ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
   /** Compatibility-only shape for unchanged cancellation fixtures. */
   readonly start?: (importId: ImportId) => Effect.Effect<void>;
+  readonly restartFromSpeech?: (
+    importId: ImportId
+  ) => Effect.Effect<void, WorkflowStartUnavailable>;
 }
 
 export interface ImportWorkflowReconcilerShape extends ImportWorkflowStarterShape {
@@ -518,7 +559,12 @@ export interface ImportWorkflowReconcilerShape extends ImportWorkflowStarterShap
 }
 
 interface WorkflowInstanceLike {
-  readonly restart: () => Effect.Effect<void>;
+  readonly restart: (options?: {
+    readonly from: {
+      readonly name: string;
+      readonly type: "do";
+    };
+  }) => Effect.Effect<void>;
   readonly status: () => Effect.Effect<{
     readonly status: string;
   }>;
@@ -587,6 +633,18 @@ export const makeImportWorkflowStarter = (
       )
     );
   },
+  restartFromSpeech: (importId) =>
+    workflow.get(importWorkflowInstanceId(importId)).pipe(
+      Effect.flatMap((instance) =>
+        instance.restart({
+          from: { name: "transcribe-video-v1", type: "do" },
+        })
+      ),
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterrupts(cause),
+        () => Effect.fail(workflowStartUnavailable())
+      )
+    ),
 });
 
 export const ensureImportWorkflowStarted = (

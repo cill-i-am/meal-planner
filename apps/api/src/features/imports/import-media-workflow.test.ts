@@ -270,12 +270,14 @@ const makeWorkflow = (
     createBatch: [] as unknown[],
     get: [] as string[],
     restart: 0,
+    restartOptions: [] as unknown[],
   };
   const instance = {
     id: importWorkflowInstanceId(importId),
-    restart: () =>
+    restart: (options?: unknown) =>
       Effect.sync(() => {
         calls.restart += 1;
+        calls.restartOptions.push(options);
       }),
     status: () => Effect.succeed({ status }),
   };
@@ -336,6 +338,19 @@ describe("import Workflow start reconciliation", () => {
       Effect.runPromise(starter.ensureStarted(importId))
     ).resolves.toBe("paused");
     expect(calls.restart).toBe(0);
+  });
+
+  it("restarts provider recovery from speech without replaying acquisition", async () => {
+    const { calls, starter } = makeWorkflow("errored");
+
+    await expect(
+      Effect.runPromise(
+        starter.restartFromSpeech?.(importId) ?? Effect.die("missing recovery")
+      )
+    ).resolves.toBeUndefined();
+    expect(calls.restartOptions).toEqual([
+      { from: { name: "transcribe-video-v1", type: "do" } },
+    ]);
   });
 
   it.each(["errored", "terminated", "complete"] as const)(

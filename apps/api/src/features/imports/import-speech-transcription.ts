@@ -234,6 +234,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
     readonly acquisitionRepository: ImportRepositoryShape;
     readonly audioExtractor: SpeechAudioExtractorShape;
     readonly bucket: AcquisitionBucketLike;
+    readonly dispatchId?: string;
     readonly importId: ImportId;
     readonly now: () => ImportTimestamp;
     readonly speechTranscriber: SpeechTranscriberShape;
@@ -263,7 +264,8 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
     if (evidence === null) {
       return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
     }
-    const dispatchId = `speech:${input.importId}:${evidence.generation}`;
+    const dispatchId =
+      input.dispatchId ?? `speech:${input.importId}:${evidence.generation}`;
     const claim = yield* input.transcriptionRepository.claim({
       dispatchId,
       generation: evidence.generation,
