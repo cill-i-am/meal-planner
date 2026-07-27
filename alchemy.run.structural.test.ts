@@ -57,9 +57,15 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
 
     expect(workerSource).toContain('"MealPlannerApi"');
+    expect(workerSource).toContain("main: import.meta.url");
+    expect(workerSource).toContain("observability: {");
+    expect(workerSource).toContain("invocationLogs: false");
     expect(workerSource).toMatch(
-      /Cloudflare\.Worker<MealPlannerApi>\(\)\(\s*"MealPlannerApi",\s*\{\s*main: import\.meta\.url,\s*url: false\s*\}/u
+      /traces:\s*\{\s*\/\/[^]*?enabled:\s*false,\s*\}/u
     );
+    expect(workerSource).not.toContain("invocationLogs: true");
+    expect(workerSource).not.toMatch(/traces:\s*\{[^}]*enabled:\s*true/u);
+    expect(workerSource).toContain("url: false");
     expect(workerSource).toContain("HealthRoutes");
     expect(workerSource).toContain("ImportRouteDefinitions");
     expect(stackSource).toContain("apiUrl: api.url");

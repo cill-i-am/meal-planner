@@ -68,6 +68,35 @@ beforeEach(async () => {
 });
 
 describe("pilot provider stage budget", () => {
+  it("observes only known or unknown outcomes after durable settlement", async () => {
+    const repository = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const outcomes: string[] = [];
+
+    const result = await Effect.runPromise(
+      runPilotProviderDispatch({
+        invoke: Effect.succeed({
+          cost: { _tag: "Known" as const, actualCostMicroUsd: 7 },
+          value: "provider-result",
+        }),
+        onSettlement: (outcome) =>
+          Effect.sync(() => {
+            outcomes.push(outcome);
+          }),
+        repository,
+        reservation: reservation("run_observed", "dispatch_observed", 10),
+      }).pipe(Effect.provideService(PilotProviderBudgetRuntime, runtime))
+    );
+
+    expect(result).toMatchObject({
+      _tag: "Completed",
+      actualCostMicroUsd: 7,
+    });
+    expect(outcomes).toEqual(["known"]);
+  });
+
   it("adds one exact stage authority without changing provider-stage row invariants", async () => {
     const schemas = await testEnv.MealPlannerDatabase.prepare(
       `SELECT name, sql FROM sqlite_master

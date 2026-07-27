@@ -4,7 +4,9 @@ import * as Cloudflare from "alchemy/Cloudflare";
  * Dedicated private GAIA-118 provider gateway.
  *
  * The durable D1 ledger is authoritative; this gateway limit is a second,
- * provider-side fence. Evidence requests and responses are never retained.
+ * provider-side fence. Gateway logging defaults off so an unwrapped request
+ * fails closed; the installed adapters opt in per request with metadata-only
+ * headers and never retain request or response payloads.
  */
 export const ImportProviderGateway = Cloudflare.AI.Gateway(
   "ImportProviderGateway",

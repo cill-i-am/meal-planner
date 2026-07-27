@@ -44,6 +44,14 @@ import type {
   AcquisitionStage,
   RetryableAcquisitionFailure,
 } from "./import-media.model.js";
+import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
+import {
+  ImportCorrelationId,
+  ImportObservabilityTraceStore,
+  emitImportObservabilityEvent,
+  makeImportCorrelationId,
+  observeImportWorkflowStart,
+} from "./import-observability.js";
 import {
   makeInstalledRecipeExtractor,
   makeInstalledSpeechTranscriber,
@@ -193,7 +201,10 @@ export const runAcquisitionTask = <
     })
   );
 
-export const ImportWorkflowInput = Schema.Struct({ importId: ImportId });
+export const ImportWorkflowInput = Schema.Struct({
+  correlationId: ImportCorrelationId,
+  importId: ImportId,
+});
 const AcquisitionClaimCheckpoint = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Finished") }),
   Schema.Struct({
@@ -253,276 +264,298 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
     const mediaObjects = yield* ImportMediaAcquisitionObject;
 
     return (rawInput: unknown) =>
-      Effect.gen(function* runImportAcquisitionWorkflow() {
-        const { importId } = yield* Schema.decodeUnknownEffect(
-          ImportWorkflowInput
-        )(rawInput).pipe(Effect.orDie);
+      Effect.gen(function* initializeImportAcquisitionWorkflow() {
         const database = yield* queryDatabase.raw;
-        const rawBucket = yield* evidenceBucket.raw;
-        const repository = makeD1ImportRepository(database);
-        const terminalCheckpoints =
-          makeD1ProviderTerminalCheckpointRepository(database);
-        const terminalRecovery = makeD1ProviderTerminalRecoveryRepository(
-          database,
-          pilotProviderBudgetRuntime.runtimeStage
+        const traceStore = makeD1ImportObservabilityTraceStore(database, () =>
+          new Date().toISOString()
         );
-        const now = currentPilotBudgetTimestamp;
-        const dispatch = makePilotProviderDispatchGate({
-          now,
-          repository: makeD1PilotProviderBudgetRepository(
+        return yield* Effect.gen(function* runImportAcquisitionWorkflow() {
+          const { correlationId, importId } = yield* Schema.decodeUnknownEffect(
+            ImportWorkflowInput
+          )(rawInput).pipe(Effect.orDie);
+          yield* observeImportWorkflowStart(correlationId);
+          const rawBucket = yield* evidenceBucket.raw;
+          const repository = makeD1ImportRepository(database);
+          const terminalCheckpoints =
+            makeD1ProviderTerminalCheckpointRepository(database);
+          const terminalRecovery = makeD1ProviderTerminalRecoveryRepository(
             database,
             pilotProviderBudgetRuntime.runtimeStage
-          ),
-          runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
-            `gaia-118:${importId}`
-          ),
-          runtime: pilotProviderBudgetRuntime,
-        });
-        const speechTranscriber = yield* makeInstalledSpeechTranscriber({
-          client: providerGateway,
-          dispatch,
-        });
-        const visualExtractor = yield* makeInstalledVisualEvidenceExtractor({
-          client: providerGateway,
-          dispatch,
-        });
-        const recipeExtractor = yield* makeInstalledRecipeExtractor({
-          client: providerGateway,
-          dispatch,
-        });
-        const task = <A, E>(
-          name: string,
-          stage: "recipe" | "speech" | "visual",
-          effect: Effect.Effect<A, E>
-        ) =>
-          runProviderTask(name, stage, effect, () => ({
-            _tag: "Succeeded" as const,
-            stage,
-          })).pipe(
-            Effect.flatMap((value) =>
-              Schema.decodeUnknownEffect(ProviderTaskCheckpoint)(value)
+          );
+          const now = currentPilotBudgetTimestamp;
+          const dispatch = makePilotProviderDispatchGate({
+            correlationId,
+            now,
+            repository: makeD1PilotProviderBudgetRepository(
+              database,
+              pilotProviderBudgetRuntime.runtimeStage
             ),
-            Effect.orDie
-          );
-        const persistTerminal = (
-          failure: typeof ProviderTaskCheckpoint.Type & {
-            readonly _tag: "Failed";
-          },
-          generation: AcquisitionGeneration
-        ) =>
-          Cloudflare.Workflows.task(
-            `persist-${failure.stage}-terminal-v1`,
-            terminalCheckpoints
-              .persist({
-                acquisitionGeneration: generation,
-                completedAt: now(),
-                failureCode: failure.code,
+            runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
+              `gaia-118:${importId}`
+            ),
+            runtime: pilotProviderBudgetRuntime,
+          });
+          const speechTranscriber = yield* makeInstalledSpeechTranscriber({
+            client: providerGateway,
+            correlationId,
+            dispatch,
+          });
+          const visualExtractor = yield* makeInstalledVisualEvidenceExtractor({
+            client: providerGateway,
+            correlationId,
+            dispatch,
+          });
+          const recipeExtractor = yield* makeInstalledRecipeExtractor({
+            client: providerGateway,
+            correlationId,
+            dispatch,
+          });
+          const task = <A, E>(
+            name: string,
+            stage: "recipe" | "speech" | "visual",
+            effect: Effect.Effect<A, E>
+          ) =>
+            runProviderTask(
+              name,
+              stage,
+              effect,
+              () => ({
+                _tag: "Succeeded" as const,
+                stage,
+              }),
+              correlationId
+            ).pipe(
+              Effect.flatMap((value) =>
+                Schema.decodeUnknownEffect(ProviderTaskCheckpoint)(value)
+              ),
+              Effect.orDie
+            );
+          const persistTerminal = (
+            failure: typeof ProviderTaskCheckpoint.Type & {
+              readonly _tag: "Failed";
+            },
+            generation: AcquisitionGeneration
+          ) =>
+            Cloudflare.Workflows.task(
+              `persist-${failure.stage}-terminal-v1`,
+              terminalCheckpoints
+                .persist({
+                  acquisitionGeneration: generation,
+                  completedAt: now(),
+                  failureCode: failure.code,
+                  importId,
+                  providerStage: failure.stage,
+                })
+                .pipe(Effect.orDie)
+            );
+          const stagedCarousel = yield* loadStagedOperatorCarousel({
+            bucket: rawBucket as unknown as AcquisitionBucketLike,
+            importId,
+          }).pipe(Effect.orDie);
+          if (stagedCarousel !== null) {
+            const encodedCarouselEvidence = yield* runProviderTask(
+              "extract-carousel-visual-evidence-v1",
+              "visual",
+              prepareTikTokCarouselEvidence({
+                adapter: stagedCarousel.adapter,
+                bucket: rawBucket as unknown as AcquisitionBucketLike,
+                carouselRepository: makeD1CarouselEvidenceRepository(database),
+                descriptor: stagedCarousel.descriptor,
                 importId,
-                providerStage: failure.stage,
+                now,
+                visualExtractor,
+              }),
+              (evidence) => ({
+                _tag: "Succeeded" as const,
+                evidence,
+                stage: "visual" as const,
+              }),
+              correlationId
+            );
+            const carouselEvidence = yield* Schema.decodeUnknownEffect(
+              CarouselEvidenceTaskCheckpoint
+            )(encodedCarouselEvidence).pipe(Effect.orDie);
+            if (carouselEvidence._tag === "Failed") {
+              return carouselEvidence;
+            }
+            const recipe = yield* task(
+              "extract-carousel-recipe-v1",
+              "recipe",
+              produceTikTokCarouselRecipeDraft({
+                bucket: rawBucket as unknown as AcquisitionBucketLike,
+                descriptor: stagedCarousel.descriptor,
+                evidence: carouselEvidence.evidence,
+                extractor: recipeExtractor,
+                importId,
+                now,
+                recipeRepository: makeD1RecipeDraftRepository(database),
               })
-              .pipe(Effect.orDie)
+            );
+            return recipe;
+          }
+          const rawClaim = yield* Cloudflare.Workflows.task(
+            "claim-acquisition-v1",
+            repository.claimAcquisition(importId).pipe(
+              Effect.map((claim) =>
+                claim._tag === "Finished"
+                  ? ({ _tag: "Finished" } as const)
+                  : {
+                      _tag: "Acquiring" as const,
+                      canonicalId: claim.import.canonicalSourceId,
+                    }
+              ),
+              Effect.orDie
+            )
           );
-        const stagedCarousel = yield* loadStagedOperatorCarousel({
-          bucket: rawBucket as unknown as AcquisitionBucketLike,
-          importId,
-        }).pipe(Effect.orDie);
-        if (stagedCarousel !== null) {
-          const encodedCarouselEvidence = yield* runProviderTask(
-            "extract-carousel-visual-evidence-v1",
-            "visual",
-            prepareTikTokCarouselEvidence({
-              adapter: stagedCarousel.adapter,
+          const claim = yield* Schema.decodeUnknownEffect(
+            AcquisitionClaimCheckpoint
+          )(rawClaim).pipe(Effect.orDie);
+          if (claim._tag === "Finished") {
+            return { _tag: "NoAcquisitionRequired" as const };
+          }
+          const stub = mediaObjects.getByName(importId);
+          const encodedOutcome = yield* Cloudflare.Workflows.task(
+            "resolve-acquire-store-verify-v2",
+            runAcquisitionTask(
+              () => repository.beginAcquisitionAttempt(importId),
+              (allocation) =>
+                allocation.canonicalSourceId === claim.canonicalId
+                  ? acquireStoreVerify(
+                      rawBucket as unknown as AcquisitionBucketLike,
+                      {
+                        cleanup: (artifactId) => stub.cleanup(artifactId),
+                        prepare: (input) => stub.prepare(input),
+                        prepareProviderEvidence: (
+                          artifactId,
+                          durationSeconds
+                        ) =>
+                          stub.prepareProviderEvidence(
+                            artifactId,
+                            durationSeconds
+                          ),
+                        stream: (artifactId) => stub.stream(artifactId),
+                      },
+                      {
+                        beforeCleanup: (prepared, mediaObject) =>
+                          persistDerivedProviderEvidence(
+                            rawBucket as unknown as AcquisitionBucketLike,
+                            mediaObject,
+                            prepared,
+                            {
+                              generation: allocation.generation,
+                              importId,
+                            }
+                          ),
+                        canonicalId: allocation.canonicalSourceId,
+                        generation: allocation.generation,
+                        importId,
+                        now: () => new Date(),
+                      }
+                    )
+                  : Effect.die("Persisted canonical identity changed")
+            ).pipe(
+              Effect.map(Schema.encodeSync(AcquisitionTaskOutcome)),
+              Effect.orDie
+            ),
+            AcquisitionTaskStepConfig
+          );
+          const outcome = yield* Schema.decodeUnknownEffect(
+            AcquisitionTaskOutcome
+          )(encodedOutcome).pipe(Effect.orDie);
+          const encodedFinalization = yield* Cloudflare.Workflows.task(
+            "record-acquisition-v2",
+            (outcome._tag === "VerifiedAcquisition"
+              ? repository.recordAcquired(
+                  importId,
+                  outcome.generation,
+                  outcome.evidence,
+                  outcome.evidence.acquiredAt
+                )
+              : repository.recordAcquisitionFailure(
+                  importId,
+                  outcome.generation,
+                  outcome,
+                  Schema.decodeUnknownSync(ImportTimestamp)(
+                    new Date().toISOString()
+                  )
+                )
+            ).pipe(
+              Effect.map(Schema.encodeSync(AcquisitionFinalizationResult)),
+              Effect.orDie
+            )
+          );
+          yield* Schema.decodeUnknownEffect(AcquisitionFinalizationResult)(
+            encodedFinalization
+          ).pipe(Effect.orDie);
+          if (outcome._tag !== "VerifiedAcquisition") {
+            return encodedOutcome;
+          }
+          const speechDispatchId = yield* terminalRecovery
+            .speechDispatchId({
+              acquisitionGeneration: outcome.generation,
+              importId,
+            })
+            .pipe(Effect.orDie);
+          const speech = yield* task(
+            "transcribe-video-v1",
+            "speech",
+            transcribeAcquiredImport({
+              acquisitionRepository: repository,
+              audioExtractor: makeR2SpeechAudioExtractor(
+                rawBucket as unknown as AcquisitionBucketLike
+              ),
               bucket: rawBucket as unknown as AcquisitionBucketLike,
-              carouselRepository: makeD1CarouselEvidenceRepository(database),
-              descriptor: stagedCarousel.descriptor,
+              dispatchId: speechDispatchId,
               importId,
               now,
-              visualExtractor,
-            }),
-            (evidence) => ({
-              _tag: "Succeeded" as const,
-              evidence,
-              stage: "visual" as const,
+              speechTranscriber,
+              transcriptionRepository:
+                makeD1SpeechTranscriptionRepository(database),
             })
           );
-          const carouselEvidence = yield* Schema.decodeUnknownEffect(
-            CarouselEvidenceTaskCheckpoint
-          )(encodedCarouselEvidence).pipe(Effect.orDie);
-          if (carouselEvidence._tag === "Failed") {
-            return carouselEvidence;
+          if (speech._tag === "Failed") {
+            yield* persistTerminal(speech, outcome.generation);
+            return speech;
+          }
+          const visual = yield* task(
+            "extract-visual-evidence-v1",
+            "visual",
+            extractVisualEvidenceForTranscribedImport({
+              bucket: rawBucket as unknown as AcquisitionBucketLike,
+              extractor: visualExtractor,
+              frameSampler: makeR2VisualFrameSampler(
+                rawBucket as unknown as AcquisitionBucketLike
+              ),
+              importId,
+              importRepository: repository,
+              now,
+              visualRepository: makeD1VisualEvidenceRepository(database),
+            })
+          );
+          if (visual._tag === "Failed") {
+            yield* persistTerminal(visual, outcome.generation);
+            return visual;
           }
           const recipe = yield* task(
-            "extract-carousel-recipe-v1",
+            "extract-recipe-v1",
             "recipe",
-            produceTikTokCarouselRecipeDraft({
+            produceRecipeDraftForImport({
               bucket: rawBucket as unknown as AcquisitionBucketLike,
-              descriptor: stagedCarousel.descriptor,
-              evidence: carouselEvidence.evidence,
               extractor: recipeExtractor,
               importId,
+              importRepository: repository,
               now,
               recipeRepository: makeD1RecipeDraftRepository(database),
             })
           );
-          return recipe;
-        }
-        const rawClaim = yield* Cloudflare.Workflows.task(
-          "claim-acquisition-v1",
-          repository.claimAcquisition(importId).pipe(
-            Effect.map((claim) =>
-              claim._tag === "Finished"
-                ? ({ _tag: "Finished" } as const)
-                : {
-                    _tag: "Acquiring" as const,
-                    canonicalId: claim.import.canonicalSourceId,
-                  }
-            ),
-            Effect.orDie
-          )
-        );
-        const claim = yield* Schema.decodeUnknownEffect(
-          AcquisitionClaimCheckpoint
-        )(rawClaim).pipe(Effect.orDie);
-        if (claim._tag === "Finished") {
-          return { _tag: "NoAcquisitionRequired" as const };
-        }
-        const stub = mediaObjects.getByName(importId);
-        const encodedOutcome = yield* Cloudflare.Workflows.task(
-          "resolve-acquire-store-verify-v2",
-          runAcquisitionTask(
-            () => repository.beginAcquisitionAttempt(importId),
-            (allocation) =>
-              allocation.canonicalSourceId === claim.canonicalId
-                ? acquireStoreVerify(
-                    rawBucket as unknown as AcquisitionBucketLike,
-                    {
-                      cleanup: (artifactId) => stub.cleanup(artifactId),
-                      prepare: (input) => stub.prepare(input),
-                      prepareProviderEvidence: (artifactId, durationSeconds) =>
-                        stub.prepareProviderEvidence(
-                          artifactId,
-                          durationSeconds
-                        ),
-                      stream: (artifactId) => stub.stream(artifactId),
-                    },
-                    {
-                      beforeCleanup: (prepared, mediaObject) =>
-                        persistDerivedProviderEvidence(
-                          rawBucket as unknown as AcquisitionBucketLike,
-                          mediaObject,
-                          prepared,
-                          {
-                            generation: allocation.generation,
-                            importId,
-                          }
-                        ),
-                      canonicalId: allocation.canonicalSourceId,
-                      generation: allocation.generation,
-                      importId,
-                      now: () => new Date(),
-                    }
-                  )
-                : Effect.die("Persisted canonical identity changed")
-          ).pipe(
-            Effect.map(Schema.encodeSync(AcquisitionTaskOutcome)),
-            Effect.orDie
-          ),
-          AcquisitionTaskStepConfig
-        );
-        const outcome = yield* Schema.decodeUnknownEffect(
-          AcquisitionTaskOutcome
-        )(encodedOutcome).pipe(Effect.orDie);
-        const encodedFinalization = yield* Cloudflare.Workflows.task(
-          "record-acquisition-v2",
-          (outcome._tag === "VerifiedAcquisition"
-            ? repository.recordAcquired(
-                importId,
-                outcome.generation,
-                outcome.evidence,
-                outcome.evidence.acquiredAt
-              )
-            : repository.recordAcquisitionFailure(
-                importId,
-                outcome.generation,
-                outcome,
-                Schema.decodeUnknownSync(ImportTimestamp)(
-                  new Date().toISOString()
-                )
-              )
-          ).pipe(
-            Effect.map(Schema.encodeSync(AcquisitionFinalizationResult)),
-            Effect.orDie
-          )
-        );
-        yield* Schema.decodeUnknownEffect(AcquisitionFinalizationResult)(
-          encodedFinalization
-        ).pipe(Effect.orDie);
-        if (outcome._tag !== "VerifiedAcquisition") {
+          if (recipe._tag === "Failed") {
+            yield* persistTerminal(recipe, outcome.generation);
+            return recipe;
+          }
           return encodedOutcome;
-        }
-        const speechDispatchId = yield* terminalRecovery
-          .speechDispatchId({
-            acquisitionGeneration: outcome.generation,
-            importId,
-          })
-          .pipe(Effect.orDie);
-        const speech = yield* task(
-          "transcribe-video-v1",
-          "speech",
-          transcribeAcquiredImport({
-            acquisitionRepository: repository,
-            audioExtractor: makeR2SpeechAudioExtractor(
-              rawBucket as unknown as AcquisitionBucketLike
-            ),
-            bucket: rawBucket as unknown as AcquisitionBucketLike,
-            dispatchId: speechDispatchId,
-            importId,
-            now,
-            speechTranscriber,
-            transcriptionRepository:
-              makeD1SpeechTranscriptionRepository(database),
-          })
+        }).pipe(
+          Effect.provideService(ImportObservabilityTraceStore, traceStore)
         );
-        if (speech._tag === "Failed") {
-          yield* persistTerminal(speech, outcome.generation);
-          return speech;
-        }
-        const visual = yield* task(
-          "extract-visual-evidence-v1",
-          "visual",
-          extractVisualEvidenceForTranscribedImport({
-            bucket: rawBucket as unknown as AcquisitionBucketLike,
-            extractor: visualExtractor,
-            frameSampler: makeR2VisualFrameSampler(
-              rawBucket as unknown as AcquisitionBucketLike
-            ),
-            importId,
-            importRepository: repository,
-            now,
-            visualRepository: makeD1VisualEvidenceRepository(database),
-          })
-        );
-        if (visual._tag === "Failed") {
-          yield* persistTerminal(visual, outcome.generation);
-          return visual;
-        }
-        const recipe = yield* task(
-          "extract-recipe-v1",
-          "recipe",
-          produceRecipeDraftForImport({
-            bucket: rawBucket as unknown as AcquisitionBucketLike,
-            extractor: recipeExtractor,
-            importId,
-            importRepository: repository,
-            now,
-            recipeRepository: makeD1RecipeDraftRepository(database),
-          })
-        );
-        if (recipe._tag === "Failed") {
-          yield* persistTerminal(recipe, outcome.generation);
-          return recipe;
-        }
-        return encodedOutcome;
       }).pipe(
         Effect.provideService(
           PilotProviderBudgetRuntime,
@@ -621,15 +654,27 @@ const reconcileExisting = (instance: WorkflowInstanceLike) =>
   );
 
 export const makeImportWorkflowStarter = (
-  workflow: WorkflowHandleLike
+  workflow: WorkflowHandleLike,
+  options?: {
+    readonly correlationId?: ImportCorrelationId;
+    readonly newCorrelationId?: () => ImportCorrelationId;
+  }
 ): ImportWorkflowReconcilerShape => ({
   ensureStarted: (importId) => {
     const instanceId = importWorkflowInstanceId(importId);
+    const correlationId =
+      options?.correlationId ??
+      (options?.newCorrelationId ?? makeImportCorrelationId)();
     return Effect.gen(function* ensureStarted() {
       const created = yield* workflow.createBatch([
-        { id: instanceId, params: { importId } },
+        { id: instanceId, params: { correlationId, importId } },
       ]);
       if (created.length === 1) {
+        yield* emitImportObservabilityEvent({
+          correlationId,
+          event: "import.accepted",
+          outcome: "accepted",
+        });
         return "created" as const;
       }
       if (created.length !== 0) {
