@@ -91,7 +91,8 @@ const makeProcessRunner = (
     ownedByProcess?: boolean;
     path?: string;
     readonly value: string;
-  }
+  },
+  sessionDomain = ".tiktokcdn.com"
 ): MediaProcessRunnerShape => ({
   run: (command, args) =>
     Effect.promise(async () => {
@@ -111,7 +112,7 @@ const makeProcessRunner = (
         }
         await appendFile(
           sessionPath,
-          `.tiktokcdn.com\tTRUE\t/\tTRUE\t4102444800\tsynthetic_session\t${sessionAudit?.value ?? randomUUID()}\n`
+          `${sessionDomain}\tTRUE\t/\tTRUE\t4102444800\tsynthetic_session\t${sessionAudit?.value ?? randomUUID()}\n`
         );
         return {
           stderrBytes: 0,
@@ -320,7 +321,11 @@ describe("installed acquisition Durable Object boundary", () => {
       },
       resolve: () => Promise.resolve(["8.8.8.8"]),
     };
-    const processRunner = makeProcessRunner(videoMetadata, sessionAudit);
+    const processRunner = makeProcessRunner(
+      videoMetadata,
+      sessionAudit,
+      "www.tiktok.com"
+    );
     const artifacts = makeTemporaryArtifactStore((artifactRoot) =>
       rm(artifactRoot, { force: true, recursive: true })
     );
@@ -350,7 +355,7 @@ describe("installed acquisition Durable Object boundary", () => {
           {
             accept: "video/mp4",
             referer: "https://www.tiktok.com/",
-            sessionPresent: true,
+            sessionPresent: false,
             userAgent: "synthetic-boundary",
           },
         ]);

@@ -65,18 +65,18 @@ const encodeCookieJar = (...records: readonly string[]) =>
   );
 
 const sessionRecordForMode = (
-  mode: "inapplicable" | "invalid" | "valid",
+  mode: "invalid" | "source-scoped" | "valid",
   canary: string
 ) =>
   ({
-    inapplicable: `www.tiktok.com\tFALSE\t/\tTRUE\t4102444800\tsynthetic_session\t${canary}\n`,
     invalid: "not-a-valid-cookie-record\n",
+    "source-scoped": `www.tiktok.com\tFALSE\t/\tTRUE\t4102444800\tsynthetic_session\t${canary}\n`,
     valid: `.tiktokcdn.com\tTRUE\t/\tTRUE\t4102444800\tsynthetic_session\t${canary}\n`,
   })[mode];
 
 const makeRunner = (
   metadata: unknown,
-  sessionMode: "inapplicable" | "invalid" | "missing" | "valid" = "valid"
+  sessionMode: "invalid" | "missing" | "source-scoped" | "valid" = "valid"
 ) => {
   const calls: { args: readonly string[]; command: string }[] = [];
   const sessionFileAudits: {
@@ -237,7 +237,7 @@ describe("TikTok source resolver adapter", () => {
     expect(JSON.stringify(resolved)).not.toContain(fixture.sessionCanary);
   });
 
-  it.each(["missing", "invalid", "inapplicable"] as const)(
+  it.each(["missing", "invalid"] as const)(
     "fails closed when the ephemeral media session is %s",
     async (sessionMode) => {
       const fixture = makeRunner(
@@ -259,6 +259,7 @@ describe("TikTok source resolver adapter", () => {
       }
       expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
         _tag: "RetryableAcquisitionFailure",
+        reason: "media_session_invalid",
         stage: "resolve",
       });
       expect(JSON.stringify(exit)).not.toContain(fixture.sessionCanary);
@@ -271,6 +272,33 @@ describe("TikTok source resolver adapter", () => {
       ]);
     }
   );
+
+  it("accepts a valid source-scoped session when no cookie applies to the media host", async () => {
+    const fixture = makeRunner(
+      {
+        duration: 1,
+        id: identity.canonicalId,
+        url: "https://v16m.tiktokcdn.com/media.mp4",
+        webpage_url: `https://www.tiktok.com/@cook/video/${identity.canonicalId}`,
+      },
+      "source-scoped"
+    );
+
+    const resolved = await Effect.runPromise(
+      fixture.resolver.resolve(identity)
+    );
+
+    expect(resolved.mediaLocator).toBe("https://v16m.tiktokcdn.com/media.mp4");
+    expect(Object.keys(resolved.session)).toEqual([]);
+    expect(JSON.stringify(resolved)).not.toContain(fixture.sessionCanary);
+    expect(fixture.sessionFileAudits).toEqual([
+      {
+        mode: 0o600,
+        ownedByProcess: true,
+        removed: true,
+      },
+    ]);
+  });
 
   it("keeps carousel as an explicit unsupported adapter branch", async () => {
     const fixture = makeRunner({
