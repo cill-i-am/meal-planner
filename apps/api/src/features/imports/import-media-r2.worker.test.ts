@@ -1,3 +1,4 @@
+import { fromRpcStreamEnvelope, toRpcStream } from "alchemy/Rpc";
 import { env } from "cloudflare:test";
 import { Cause, Effect, Exit, Option, Schema, Stream } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +10,7 @@ import type {
   AcquisitionPutOptions,
   PreparedMediaArtifact,
 } from "./import-media-acquirer.js";
+import type { RetryableAcquisitionFailure } from "./import-media.model.js";
 import {
   AcquisitionGeneration,
   MaximumR2OperationMilliseconds,
@@ -18,6 +20,7 @@ import {
 import { ImportId, SourceCanonicalId } from "./import.contracts.js";
 
 interface TestR2Object {
+  readonly arrayBuffer: () => Promise<ArrayBuffer>;
   readonly checksums?: { readonly sha256?: ArrayBuffer };
   readonly customMetadata?: Record<string, string>;
   readonly httpMetadata?: {
@@ -67,14 +70,17 @@ const bucket = (): AcquisitionBucketLike => ({
     testEnv.ImportEvidenceBucket.put(key, value, options),
 });
 
-const makeMediaObject = () => {
+const makeMediaObject = (
+  artifactBytes = mediaBytes,
+  artifactSha256 = sha256
+) => {
   let cleanupCalls = 0;
   let prepares = 0;
   const preparedInputs: unknown[] = [];
   const prepared: PreparedMediaArtifact = {
     artifactId: "artifact-safe-id",
     audioStreams: [{ codec: "aac", index: 1 }],
-    bytes: mediaBytes.byteLength,
+    bytes: artifactBytes.byteLength,
     durationSeconds: 1,
     metadata: {
       canonicalId,
@@ -94,7 +100,7 @@ const makeMediaObject = () => {
       },
       publishedAt: null,
     },
-    sha256,
+    sha256: artifactSha256,
     videoStreams: [{ codec: "h264", index: 0 }],
   };
   const object: AcquisitionMediaObjectLike = {
@@ -108,7 +114,7 @@ const makeMediaObject = () => {
         preparedInputs.push(input);
         return prepared;
       }),
-    stream: () => Stream.make(mediaBytes),
+    stream: () => Stream.make(artifactBytes),
   };
   return {
     cleanupCalls: () => cleanupCalls,
@@ -135,6 +141,139 @@ afterEach(() => {
 });
 
 describe("native R2 generation commit", () => {
+  it("preserves the installed RPC byte stream through real R2 media and manifest commits", async () => {
+    const importId = id(410);
+    const generation = decodeGeneration(1);
+    const chunks = [
+      new Uint8Array(64 * 1024).fill(1),
+      new Uint8Array(64 * 1024).fill(2),
+      new Uint8Array(24).fill(3),
+    ];
+    const expectedBytes = new Uint8Array(
+      chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
+    );
+    let offset = 0;
+    for (const chunk of chunks) {
+      expectedBytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const expectedSha256 =
+      "695cedeae3fa2e339107057b05975667fa8cecba1d534c996a68d08df4ad27c9";
+    const fake = makeMediaObject(expectedBytes, expectedSha256);
+    let deleteCalls = 0;
+    const acquisitionBucket = {
+      ...bucket(),
+      delete: () => {
+        deleteCalls += 1;
+        return Promise.reject(new Error("acquisition must never delete"));
+      },
+    };
+    const mediaObject: AcquisitionMediaObjectLike = {
+      ...fake.object,
+      stream: () =>
+        Stream.unwrap(
+          toRpcStream(Stream.fromIterable(chunks)).pipe(
+            Effect.map(fromRpcStreamEnvelope)
+          )
+        ).pipe(
+          Stream.mapError(
+            (): RetryableAcquisitionFailure => ({
+              _tag: "RetryableAcquisitionFailure",
+              reason: "container_rpc",
+              stage: "container",
+            })
+          )
+        ),
+    };
+
+    const first = await Effect.runPromise(
+      acquireStoreVerify(acquisitionBucket, mediaObject, {
+        canonicalId,
+        generation,
+        importId,
+        now,
+      })
+    );
+    const mediaKey = mediaObjectKey(importId, generation);
+    const manifestKey = manifestObjectKey(importId, generation);
+    const storedMedia = await testEnv.ImportEvidenceBucket.get(mediaKey);
+    const storedManifest = await testEnv.ImportEvidenceBucket.get(manifestKey);
+
+    expect(first).toMatchObject({
+      _tag: "VerifiedAcquisition",
+      evidence: {
+        bytes: expectedBytes.byteLength,
+        sha256: expectedSha256,
+      },
+    });
+    expect(storedMedia).not.toBeNull();
+    expect(storedManifest).not.toBeNull();
+    if (storedMedia === null || storedManifest === null) {
+      throw new Error("Expected committed media and manifest");
+    }
+    expect(new Uint8Array(await storedMedia.arrayBuffer())).toEqual(
+      expectedBytes
+    );
+    expect(storedMedia).toMatchObject({
+      customMetadata: {
+        generation: String(generation),
+        importId,
+        kind: "media",
+        sha256: expectedSha256,
+      },
+      httpMetadata: {
+        cacheControl: "private, no-store",
+        contentType: "video/mp4",
+      },
+      size: expectedBytes.byteLength,
+    });
+    const manifest = JSON.parse(await storedManifest.text()) as {
+      readonly bytes?: number;
+      readonly manifestKey?: string;
+      readonly mediaKey?: string;
+      readonly sha256?: string;
+    };
+    expect(manifest).toMatchObject({
+      bytes: expectedBytes.byteLength,
+      manifestKey,
+      mediaKey,
+      sha256: expectedSha256,
+    });
+    expect(
+      JSON.stringify({
+        keys: [mediaKey, manifestKey],
+        manifestMetadata: storedManifest.customMetadata,
+        mediaMetadata: storedMedia.customMetadata,
+      })
+    ).not.toMatch(/authorization|cookie|header|locator|https?:/iu);
+
+    const replay = await Effect.runPromiseExit(
+      acquireStoreVerify(acquisitionBucket, mediaObject, {
+        canonicalId,
+        generation,
+        importId,
+        now,
+      })
+    );
+    const listed = await testEnv.ImportEvidenceBucket.list({
+      prefix: `imports/${importId}/`,
+    });
+
+    expect(Exit.isFailure(replay)).toBe(true);
+    expect(listed.objects.map(({ key }) => key).toSorted()).toEqual(
+      [mediaKey, manifestKey].toSorted()
+    );
+    const replayedMedia = await testEnv.ImportEvidenceBucket.get(mediaKey);
+    if (replayedMedia === null) {
+      throw new Error("Expected immutable replayed media");
+    }
+    expect(new Uint8Array(await replayedMedia.arrayBuffer())).toEqual(
+      expectedBytes
+    );
+    expect(fake.cleanupCalls()).toBe(2);
+    expect(deleteCalls).toBe(0);
+  });
+
   it("keeps Miniflare's extra fourth execution harmless with immutable keys and zero delete", async () => {
     const importId = id(401);
     const generations = [1, 2, 3, 4].map((generation) =>

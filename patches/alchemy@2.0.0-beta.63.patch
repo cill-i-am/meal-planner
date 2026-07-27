@@ -1,5 +1,5 @@
 diff --git a/lib/Apply.js b/lib/Apply.js
-index a01c0faaf46fac0063f04303744900c94f52f637..4fc8d75e2a7a02aa9b04efef2060028878ed4f77 100644
+index a01c0faaf46fac0063f04303744900c94f52f637..2d103ea0b71fad57ad2c768872bb32a3990f4db0 100644
 --- a/lib/Apply.js
 +++ b/lib/Apply.js
 @@ -354,7 +354,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
@@ -116,7 +116,7 @@ index bec1997c5fc2cfe7f7d6554848ca93118831f2d1..bd414ce0adf35e028aaef2ee660c4a32
       * Consumer settings.
       */
 diff --git a/lib/Cloudflare/Queues/Consumer.js b/lib/Cloudflare/Queues/Consumer.js
-index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..c9e683c31c22a6dc303e3a97da589addc28cb7e5 100644
+index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bfc363cd31 100644
 --- a/lib/Cloudflare/Queues/Consumer.js
 +++ b/lib/Cloudflare/Queues/Consumer.js
 @@ -63,6 +63,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
@@ -518,6 +518,94 @@ index 320992f8eec3bd3319666ef8f793cc1700ff6c6e..4826e7c20163f698e57d67ae7f4fbabc
                  return undefined;
              if ((output?.accountId ?? accountId) !== accountId) {
                  return { action: "replace" };
+diff --git a/lib/Rpc.d.ts b/lib/Rpc.d.ts
+index 864ff33d0f64a904add83f48bab0cd2401ee7c0c..457b84cee93a28343fe16140de7fc124d1d56125 100644
+--- a/lib/Rpc.d.ts
++++ b/lib/Rpc.d.ts
+@@ -84,7 +84,7 @@ export declare const decodeRpcValue: (value: unknown) => unknown;
+  * error channel so that remote `Effect.fail(...)` values are recoverable.
+  */
+ export declare const decodeRpcResult: (value: unknown) => Effect.Effect<unknown, unknown>;
+-export declare const toRpcStream: (stream: Stream.Stream<any, any, any>) => Effect.Effect<{
++export declare const toRpcStream: <R>(stream: Stream.Stream<any, any, R>) => Effect.Effect<{
+     _tag: "~alchemy/rpc/stream";
+     encoding: "bytes";
+     body: ReadableStream<any>;
+@@ -96,7 +96,7 @@ export declare const toRpcStream: (stream: Stream.Stream<any, any, any>) => Effe
+     _tag: "~alchemy/rpc/stream";
+     encoding: "jsonl";
+     body: ReadableStream<Uint8Array<ArrayBufferLike>>;
+-}, never, any>;
++}, never, R>;
+ /**
+  * Encode a `Stream` as a lazy NDJSON byte stream for an HTTP response body.
+  * No peeking, so nothing is held open across the handler→body-streaming
+diff --git a/lib/Rpc.js b/lib/Rpc.js
+index 4a6c6b8073b85eea2a5ee390b41bb15b2b51d493..faa098452ed74ef24b2c3dd640fea3d62b930517 100644
+--- a/lib/Rpc.js
++++ b/lib/Rpc.js
+@@ -1,9 +1,10 @@
+ import * as Cause from "effect/Cause";
+ import * as Data from "effect/Data";
+ import * as Effect from "effect/Effect";
+-import * as Option from "effect/Option";
++import * as Exit from "effect/Exit";
++import * as Pull from "effect/Pull";
+ import * as Result from "effect/Result";
+-import * as Sink from "effect/Sink";
++import * as Scope from "effect/Scope";
+ import * as Stream from "effect/Stream";
+ import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+ import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
+@@ -136,24 +137,39 @@ const encodeStreamErrorMarker = (cause) => {
+     }) + "\n");
+ };
+ const appendStreamErrors = (s) => s.pipe(Stream.catchCause((cause) => Stream.succeed(encodeStreamErrorMarker(cause))));
+-export const toRpcStream = (stream) => Effect.scoped(Effect.gen(function* () {
+-    const [head, rest] = yield* Stream.peel(stream, Sink.head());
+-    if (Option.isSome(head) && head.value instanceof Uint8Array) {
++export const toRpcStream = (stream) => Effect.gen(function* () {
++    const scope = Scope.makeUnsafe();
++    const pull = yield* Stream.toPull(stream).pipe(Effect.provideService(Scope.Scope, scope));
++    const first = yield* pull.pipe(Pull.catchDone(() => Effect.succeed(undefined)), Effect.exit);
++    if (Exit.isFailure(first)) {
++        yield* Scope.close(scope, first);
++        return yield* Effect.failCause(first.cause);
++    }
++    if (first.value === undefined) {
++        yield* Scope.close(scope, Exit.succeed(undefined));
++        return {
++            _tag: StreamTag,
++            encoding: "jsonl",
++            body: Stream.toReadableStream(Stream.empty),
++        };
++    }
++    const firstChunk = first.value;
++    const head = firstChunk[0];
++    const reconstructed = Stream.fromIterable(firstChunk).pipe(Stream.concat(Stream.fromPull(Effect.succeed(pull))));
++    const scopedBody = reconstructed.pipe(Stream.onExit((streamExit) => Scope.close(scope, streamExit)));
++    if (head instanceof Uint8Array) {
+         return {
+             _tag: StreamTag,
+             encoding: "bytes",
+-            body: Stream.toReadableStream(rest.pipe(Stream.prepend([head.value]))),
++            body: Stream.toReadableStream(scopedBody),
+         };
+     }
+-    const body = Option.isSome(head)
+-        ? rest.pipe(Stream.prepend([head.value]))
+-        : rest;
+     return {
+         _tag: StreamTag,
+         encoding: "jsonl",
+-        body: Stream.toReadableStream(appendStreamErrors(body.pipe(Stream.map((value) => JSON.stringify(value) + "\n"))).pipe(Stream.encodeText)),
++        body: Stream.toReadableStream(appendStreamErrors(scopedBody.pipe(Stream.map((value) => JSON.stringify(value) + "\n"))).pipe(Stream.encodeText)),
+     };
+-})).pipe(Effect.catchCause((cause) => {
++}).pipe(Effect.catchCause((cause) => {
+     const failReason = cause.reasons.find(Cause.isFailReason);
+     if (failReason) {
+         return Effect.succeed({
 diff --git a/src/Apply.ts b/src/Apply.ts
 index a025189e33b794e4288ffa2780033f0f311fbf72..8976101a998b319766b7a58c0740c9cc4907c7a0 100644
 --- a/src/Apply.ts
@@ -624,7 +712,7 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..8b763d891f00fc02056249ba5c5b1698
    accountId: string,
    databaseId: string,
 diff --git a/src/Cloudflare/Queues/Consumer.ts b/src/Cloudflare/Queues/Consumer.ts
-index e157f1fc5c8388c10039cc6c038f080712087cfc..7c64d9cfe43482e2def448c4cef95fb6d47543fa 100644
+index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf94d67320f 100644
 --- a/src/Cloudflare/Queues/Consumer.ts
 +++ b/src/Cloudflare/Queues/Consumer.ts
 @@ -30,6 +30,14 @@ export type ConsumerProps = {
@@ -1163,3 +1251,104 @@ index 6ae1973c0463c1e103f2de857c1736b96ffe8624..179d5c9d8bf51daeec866081b527ed75
            if ((output?.accountId ?? accountId) !== accountId) {
              return { action: "replace" };
            }
+diff --git a/src/Rpc.ts b/src/Rpc.ts
+index 2c0b1d33cdfff9538a3f193100c034205b15fdaa..44514373db47740d915e4fa7f961b0e9b9f54d17 100644
+--- a/src/Rpc.ts
++++ b/src/Rpc.ts
+@@ -1,9 +1,10 @@
+ import * as Cause from "effect/Cause";
+ import * as Data from "effect/Data";
+ import * as Effect from "effect/Effect";
+-import * as Option from "effect/Option";
++import * as Exit from "effect/Exit";
++import * as Pull from "effect/Pull";
+ import * as Result from "effect/Result";
+-import * as Sink from "effect/Sink";
++import * as Scope from "effect/Scope";
+ import * as Stream from "effect/Stream";
+ import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+ import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+@@ -257,36 +258,57 @@ const appendStreamErrors = <R>(s: Stream.Stream<string, unknown, R>) =>
+     ),
+   );
+
+-export const toRpcStream = (stream: Stream.Stream<any, any, any>) =>
+-  Effect.scoped(
+-    Effect.gen(function* () {
+-      const [head, rest] = yield* Stream.peel(stream, Sink.head());
+-
+-      if (Option.isSome(head) && head.value instanceof Uint8Array) {
+-        return {
+-          _tag: StreamTag,
+-          encoding: "bytes",
+-          body: Stream.toReadableStream(
+-            rest.pipe(Stream.prepend([head.value])),
+-          ),
+-        } satisfies RpcStreamEnvelope;
+-      }
+-
+-      const body = Option.isSome(head)
+-        ? rest.pipe(Stream.prepend([head.value]))
+-        : rest;
+-
++export const toRpcStream = <R>(
++  stream: Stream.Stream<any, any, R>,
++): Effect.Effect<RpcStreamEnvelope, never, R> =>
++  Effect.gen(function* () {
++    const scope = Scope.makeUnsafe();
++    const pull = yield* Stream.toPull(stream).pipe(
++      Effect.provideService(Scope.Scope, scope),
++    );
++    const first = yield* pull.pipe(
++      Pull.catchDone(() => Effect.succeed(undefined)),
++      Effect.exit,
++    );
++    if (Exit.isFailure(first)) {
++      yield* Scope.close(scope, first);
++      return yield* Effect.failCause(first.cause);
++    }
++    if (first.value === undefined) {
++      yield* Scope.close(scope, Exit.succeed(undefined));
+       return {
+         _tag: StreamTag,
+         encoding: "jsonl",
+-        body: Stream.toReadableStream(
+-          appendStreamErrors(
+-            body.pipe(Stream.map((value) => JSON.stringify(value) + "\n")),
+-          ).pipe(Stream.encodeText),
+-        ),
++        body: Stream.toReadableStream(Stream.empty),
+       } satisfies RpcStreamEnvelope;
+-    }),
+-  ).pipe(
++    }
++    const firstChunk = first.value;
++    const head = firstChunk[0];
++    const reconstructed = Stream.fromIterable(firstChunk).pipe(
++      Stream.concat(Stream.fromPull(Effect.succeed(pull))),
++    );
++    const scopedBody = reconstructed.pipe(
++      Stream.onExit((streamExit) => Scope.close(scope, streamExit)),
++    );
++
++    if (head instanceof Uint8Array) {
++      return {
++        _tag: StreamTag,
++        encoding: "bytes",
++        body: Stream.toReadableStream(scopedBody),
++      } satisfies RpcStreamEnvelope;
++    }
++
++    return {
++      _tag: StreamTag,
++      encoding: "jsonl",
++      body: Stream.toReadableStream(
++        appendStreamErrors(
++          scopedBody.pipe(Stream.map((value) => JSON.stringify(value) + "\n")),
++        ).pipe(Stream.encodeText),
++      ),
++    } satisfies RpcStreamEnvelope;
++  }).pipe(
+     Effect.catchCause((cause) => {
+       const failReason = cause.reasons.find(Cause.isFailReason);
+       if (failReason) {
