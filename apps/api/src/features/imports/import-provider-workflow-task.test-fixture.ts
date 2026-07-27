@@ -258,7 +258,7 @@ const directProviderEffect = (
         : Effect.fail({
             code:
               input.scenario === "retry_exhausted"
-                ? "provider_unavailable"
+                ? (input.failureCode ?? "provider_unavailable")
                 : (input.failureCode ?? "provider_error"),
             unsafeProviderBody: "must-not-cross-the-checkpoint",
           })
