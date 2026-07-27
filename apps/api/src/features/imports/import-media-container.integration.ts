@@ -66,6 +66,7 @@ describe.skipIf(!enabled)("pinned media container", () => {
     const suffix = `${process.pid}-${Date.now()}`;
     const builder = `meal-planner-gaia-109-${suffix}`;
     const container = `meal-planner-gaia-109-media-${suffix}`;
+    const workspaceContainer = `meal-planner-gaia-169-workspace-${suffix}`;
     const image = `meal-planner-gaia-109-media:${suffix}`;
     const root = await mkdtemp(join(tmpdir(), "meal-planner-container-test-"));
     const dockerfile = join(root, "Dockerfile");
@@ -99,6 +100,104 @@ describe.skipIf(!enabled)("pinned media container", () => {
           ],
           { timeout: 1_500_000 }
         )
+      );
+      const workspaceScript = `
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+if (process.getuid?.() !== 10001 || process.getgid?.() !== 10001) {
+  throw new Error("installed image must run as the media user");
+}
+const ownedTemporaryRoot = await stat("/work/tmp");
+if (!ownedTemporaryRoot.isDirectory()) {
+  throw new Error("installed temporary root must be a directory");
+}
+if (ownedTemporaryRoot.uid !== 10001 || ownedTemporaryRoot.gid !== 10001) {
+  throw new Error("installed temporary root must be owned by the media user");
+}
+if ((ownedTemporaryRoot.mode & 0o300) !== 0o300) {
+  throw new Error("installed temporary root must be owner-writable and traversable");
+}
+let systemTemporaryRootUnavailable = false;
+try {
+  const unexpected = await mkdtemp("/tmp/meal-planner-unexpected-");
+  await rm(unexpected, { force: true, recursive: true });
+} catch {
+  systemTemporaryRootUnavailable = true;
+}
+if (!systemTemporaryRootUnavailable) {
+  throw new Error("system temporary root must be unavailable for this proof");
+}
+if (tmpdir() !== "/work/tmp") {
+  throw new Error("installed image must select the owned temporary root");
+}
+const root = await mkdtemp(\`\${tmpdir()}/meal-planner-media-installed-\`);
+if (!root.startsWith("/work/tmp/meal-planner-media-installed-")) {
+  throw new Error("temporary workspace escaped the owned root");
+}
+const proofFile = join(root, "workspace-proof.txt");
+const proofContents = "owned installed workspace";
+await writeFile(proofFile, proofContents, "utf8");
+if ((await readFile(proofFile, "utf8")) !== proofContents) {
+  throw new Error("installed temporary workspace did not preserve written bytes");
+}
+await unlink(proofFile);
+try {
+  await stat(proofFile);
+  throw new Error("installed temporary workspace file was not deleted");
+} catch (error) {
+  if (
+    !(error instanceof Error) ||
+    !("code" in error) ||
+    error.code !== "ENOENT"
+  ) {
+    throw error;
+  }
+}
+await rm(root, { force: true, recursive: true });
+try {
+  await stat(root);
+  throw new Error("installed temporary workspace was not removed");
+} catch (error) {
+  if (
+    !(error instanceof Error) ||
+    !("code" in error) ||
+    error.code !== "ENOENT"
+  ) {
+    throw error;
+  }
+}
+`;
+      await Effect.runPromise(
+        docker([
+          "create",
+          "--name",
+          workspaceContainer,
+          "--network",
+          "none",
+          "--platform",
+          "linux/amd64",
+          "--tmpfs",
+          "/tmp:mode=000",
+          image,
+          "node",
+          "--input-type=module",
+          "--eval",
+          workspaceScript,
+        ])
+      );
+      await Effect.runPromise(
+        docker(["start", "--attach", workspaceContainer], {
+          timeout: 120_000,
+        })
       );
       const script = `
 set -eu
@@ -201,6 +300,9 @@ ffprobe -v error -show_format -show_streams -of json /tmp/video-only.mp4 > /tmp/
         validBytes.byteLength - 1
       );
     } finally {
+      await Effect.runPromise(
+        docker(["rm", "--force", workspaceContainer], { allowFailure: true })
+      );
       await Effect.runPromise(
         docker(["rm", "--force", container], { allowFailure: true })
       );
