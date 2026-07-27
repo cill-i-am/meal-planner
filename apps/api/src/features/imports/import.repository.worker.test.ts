@@ -391,7 +391,9 @@ describe("D1 import repository in workerd", () => {
   });
 
   it("supersedes all three stale generations after an emulator-only fourth execution", async () => {
-    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase, () =>
+      Date.parse("2026-07-20T10:04:00.000Z")
+    );
     const command = makeCommand({
       canonicalId: "7590000000000000099",
       id: "018f47ad-91aa-7c35-b6fe-000000000199",
