@@ -142,7 +142,7 @@ const speechTerminalRecoveryDispatch = (
     const reservation = {
       dispatchId: decodeDispatchId(dispatchId),
       maximumCostMicroUsd: 100,
-      providerStageId: decodeProviderStageId("speech_transcription"),
+      providerStageId: decodeProviderStageId("speech-transcription"),
       runId: decodeRunId("run_gaia_178_terminal_recovery"),
       timestamp: decodeTimestamp("2026-07-27T09:10:00.000Z"),
     };
