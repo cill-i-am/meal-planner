@@ -1,4 +1,13 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  access,
+  appendFile,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 // eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
 import { join } from "node:path";
@@ -76,11 +85,34 @@ const videoMetadata = () => ({
 });
 
 const makeProcessRunner = (
-  metadata: () => unknown = videoMetadata
+  metadata: () => unknown = videoMetadata,
+  sessionAudit?: {
+    mode?: number;
+    ownedByProcess?: boolean;
+    path?: string;
+    readonly value: string;
+  }
 ): MediaProcessRunnerShape => ({
   run: (command, args) =>
     Effect.promise(async () => {
       if (command === "yt-dlp") {
+        const cookiesIndex = args.indexOf("--cookies");
+        const sessionPath = args[cookiesIndex + 1];
+        if (sessionPath === undefined) {
+          throw new Error("Expected an ephemeral session file");
+        }
+        const sessionStats = await stat(sessionPath);
+        if (sessionAudit !== undefined) {
+          sessionAudit.mode = sessionStats.mode % 0o1000;
+          sessionAudit.ownedByProcess =
+            typeof process.getuid !== "function" ||
+            sessionStats.uid === process.getuid();
+          sessionAudit.path = sessionPath;
+        }
+        await appendFile(
+          sessionPath,
+          `.tiktokcdn.com\tTRUE\t/\tTRUE\t4102444800\tsynthetic_session\t${sessionAudit?.value ?? randomUUID()}\n`
+        );
         return {
           stderrBytes: 0,
           stdout: new TextEncoder().encode(JSON.stringify(metadata())),
@@ -270,15 +302,25 @@ describe("installed acquisition Durable Object boundary", () => {
 
   it("runs resolver and download through the Alchemy container layer and RPC", async () => {
     const root = await mkdtemp(join(tmpdir(), "gaia-167-installed-boundary-"));
-    const headers: unknown[] = [];
+    const requests: unknown[] = [];
+    const sessionAudit: {
+      mode?: number;
+      ownedByProcess?: boolean;
+      path?: string;
+      readonly value: string;
+    } = { value: randomUUID() };
     const downloadClient: SecureMediaDownloadClient = {
       request: (_url, _address, _signal, requestHeaders) => {
-        headers.push(requestHeaders);
+        const { cookie, ...safeHeaders } = requestHeaders;
+        requests.push({
+          ...safeHeaders,
+          sessionPresent: cookie === `synthetic_session=${sessionAudit.value}`,
+        });
         return Promise.resolve(response());
       },
       resolve: () => Promise.resolve(["8.8.8.8"]),
     };
-    const processRunner = makeProcessRunner();
+    const processRunner = makeProcessRunner(videoMetadata, sessionAudit);
     const artifacts = makeTemporaryArtifactStore((artifactRoot) =>
       rm(artifactRoot, { force: true, recursive: true })
     );
@@ -304,18 +346,25 @@ describe("installed acquisition Durable Object boundary", () => {
             caption: "Synthetic recipe boundary",
           },
         });
-        expect(headers).toEqual([
+        expect(requests).toEqual([
           {
             accept: "video/mp4",
             referer: "https://www.tiktok.com/",
+            sessionPresent: true,
             userAgent: "synthetic-boundary",
           },
         ]);
+        expect(sessionAudit).toMatchObject({
+          mode: 0o600,
+          ownedByProcess: true,
+        });
         expect(JSON.stringify(prepared)).not.toMatch(
           /secret-header-canary|locator-canary/u
         );
+        expect(JSON.stringify(prepared)).not.toContain(sessionAudit.value);
         const stored = artifacts.get(prepared.artifactId);
         expect(stored?.path).not.toBeNull();
+        await expect(access(String(sessionAudit.path))).rejects.toThrow();
         expect(await readFile(String(stored?.path))).toEqual(
           Buffer.from(mediaBytes)
         );

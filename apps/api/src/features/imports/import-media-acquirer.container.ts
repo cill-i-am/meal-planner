@@ -27,6 +27,8 @@ import {
 } from "./import-media.model.js";
 import type { MediaRequestHeaders } from "./import-source-resolver.js";
 import { isSafeTikTokMediaLocator } from "./import-source-resolver.tiktok.js";
+import type { MediaSessionCapability } from "./import-source-session.js";
+import { mediaSessionCookieHeader } from "./import-source-session.js";
 
 const terminal = (
   code: "invalid_media" | "limit_exceeded" | "unsupported_streams"
@@ -122,9 +124,14 @@ export interface SecureMediaDownloadClient {
     url: URL,
     address: string,
     signal: AbortSignal,
-    headers: MediaRequestHeaders
+    headers: SecureMediaRequestHeaders
   ) => Promise<SecureMediaDownloadResponse>;
   readonly resolve: (hostname: string) => Promise<readonly string[]>;
+}
+
+/** Immediate request-only view; never encode, checkpoint, persist, log, or return from RPC. */
+export interface SecureMediaRequestHeaders extends MediaRequestHeaders {
+  readonly cookie?: string;
 }
 
 export interface SecureMediaDownloader {
@@ -132,7 +139,8 @@ export interface SecureMediaDownloader {
     locator: string,
     destination: string,
     maximumBytes: number,
-    requestHeaders?: MediaRequestHeaders
+    requestHeaders?: MediaRequestHeaders,
+    session?: MediaSessionCapability
   ) => Effect.Effect<
     void,
     ReturnType<typeof retryableDownload> | TerminalMediaFailure
@@ -169,6 +177,9 @@ export const NodeSecureMediaDownloadClient: SecureMediaDownloadClient = {
             ...(requestHeaders.referer === undefined
               ? {}
               : { referer: requestHeaders.referer }),
+            ...(requestHeaders.cookie === undefined
+              ? {}
+              : { cookie: requestHeaders.cookie }),
           },
           hostname: address,
           method: "GET",
@@ -227,7 +238,8 @@ const requestSafeMedia = async (
   locator: string,
   redirects: number,
   signal: AbortSignal,
-  requestHeaders: MediaRequestHeaders
+  requestHeaders: MediaRequestHeaders,
+  session: MediaSessionCapability | undefined
 ): Promise<SecureMediaDownloadResponse> => {
   if (!isSafeTikTokMediaLocator(locator)) {
     throw UnsafeMediaDestination;
@@ -251,7 +263,14 @@ const requestSafeMedia = async (
   }
   let response: SecureMediaDownloadResponse;
   try {
-    response = await client.request(url, address, signal, requestHeaders);
+    const cookie =
+      session === undefined
+        ? undefined
+        : mediaSessionCookieHeader(session, url);
+    response = await client.request(url, address, signal, {
+      ...requestHeaders,
+      ...(cookie === undefined ? {} : { cookie }),
+    });
   } catch (error) {
     throw isAbortError(error)
       ? MediaDownloadTimeout
@@ -270,7 +289,8 @@ const requestSafeMedia = async (
       new URL(response.location, locator).toString(),
       redirects + 1,
       signal,
-      requestHeaders
+      requestHeaders,
+      session
     );
   }
   return response;
@@ -279,7 +299,7 @@ const requestSafeMedia = async (
 export const makeSecureMediaDownloader = (
   client: SecureMediaDownloadClient
 ): SecureMediaDownloader => ({
-  download: (locator, destination, maximumBytes, requestHeaders = {}) =>
+  download: (locator, destination, maximumBytes, requestHeaders, session) =>
     Effect.tryPromise({
       catch: downloadFailure,
       try: async (signal) => {
@@ -291,7 +311,8 @@ export const makeSecureMediaDownloader = (
             locator,
             0,
             signal,
-            requestHeaders
+            requestHeaders ?? {},
+            session
           );
           if (response.statusCode !== 200) {
             response.destroy();
@@ -365,7 +386,8 @@ export const makeContainerMediaAcquirer = (
           source.mediaLocator,
           downloadPath,
           limits.maximumMediaBytes,
-          source.requestHeaders
+          source.requestHeaders,
+          source.session
         )
         .pipe(
           Effect.timeoutOrElse({
