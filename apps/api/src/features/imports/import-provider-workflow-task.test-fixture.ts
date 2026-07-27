@@ -17,11 +17,23 @@ import {
   runPilotProviderDispatch,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+import { AcquisitionGeneration } from "./import-media.model.js";
+import {
+  makeD1ProviderTerminalCheckpointRepository,
+  makeD1ProviderTerminalRecoveryRepository,
+} from "./import-provider-terminal.js";
 import { runProviderTask } from "./import-provider-workflow-task.js";
+import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
 interface ProviderWorkflowInput {
   readonly failureCode?: string;
-  readonly scenario: "retry_exhausted" | "success" | "terminal" | "unknown";
+  readonly importId?: string;
+  readonly scenario:
+    | "retry_exhausted"
+    | "speech_terminal_recovery"
+    | "success"
+    | "terminal"
+    | "unknown";
 }
 
 interface ProviderWorkflowTestEnv {
@@ -60,6 +72,9 @@ const decodeProviderStageId = Schema.decodeUnknownSync(
 );
 const decodeDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
 const decodeTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
+const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
+const decodeImportId = Schema.decodeUnknownSync(ImportId);
+const decodeImportTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 
 const stateKey = (instanceId: string, name: string) => `${instanceId}:${name}`;
 
@@ -112,6 +127,64 @@ const unknownCostDispatch = (
   );
 };
 
+const speechTerminalRecoveryDispatch = (
+  env: ProviderWorkflowTestEnv,
+  instanceId: string,
+  importId: ImportId,
+  acquisitionGeneration: AcquisitionGeneration
+) =>
+  Effect.gen(function* runSpeechTerminalRecoveryDispatch() {
+    const dispatchId = yield* makeD1ProviderTerminalRecoveryRepository(
+      env.MealPlannerDatabase,
+      "pilot-gaia-118"
+    ).speechDispatchId({ acquisitionGeneration, importId });
+    const isRecovery = dispatchId.endsWith(":recovery:1");
+    const reservation = {
+      dispatchId: decodeDispatchId(dispatchId),
+      maximumCostMicroUsd: 100,
+      providerStageId: decodeProviderStageId("speech_transcription"),
+      runId: decodeRunId("run_gaia_178_terminal_recovery"),
+      timestamp: decodeTimestamp("2026-07-27T09:10:00.000Z"),
+    };
+    const repository = makeD1PilotProviderBudgetRepository(
+      env.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    yield* increment(env, instanceId, "task-attempts");
+    const result = yield* runPilotProviderDispatch({
+      invoke: increment(env, instanceId, "provider-calls").pipe(
+        Effect.andThen(
+          isRecovery
+            ? Effect.succeed({
+                cost: {
+                  _tag: "Known" as const,
+                  actualCostMicroUsd: 10,
+                },
+                value: "safe-transcript",
+              })
+            : Effect.fail({
+                code: "provider_unavailable",
+                unsafeProviderBody: "must-not-cross-the-checkpoint",
+              })
+        )
+      ),
+      repository,
+      reservation,
+    });
+    if (result._tag === "Completed") {
+      return result.value;
+    }
+    if (result._tag === "AlreadySettled") {
+      return "safe-transcript";
+    }
+    return yield* Effect.fail({ code: "outcome_unknown" });
+  }).pipe(
+    Effect.provideService(
+      PilotProviderBudgetRuntime,
+      makePilotProviderBudgetRuntime("pilot-gaia-118")
+    )
+  );
+
 const directProviderEffect = (
   env: ProviderWorkflowTestEnv,
   instanceId: string,
@@ -134,6 +207,7 @@ const directProviderEffect = (
 
 const providerStageByScenario = {
   retry_exhausted: "speech",
+  speech_terminal_recovery: "speech",
   success: "visual",
   terminal: "visual",
   unknown: "recipe",
@@ -150,6 +224,71 @@ const providerWorkflowExport = {
       Effect.gen(function* runProviderWorkflow() {
         const event = yield* WorkflowEvent;
         yield* increment(env, event.instanceId, "workflow-runs");
+        if (input.scenario === "speech_terminal_recovery") {
+          if (input.importId === undefined) {
+            return yield* Effect.die("Missing terminal recovery import ID");
+          }
+          const importId = decodeImportId(input.importId);
+          const acquisitionGeneration = decodeGeneration(1);
+          yield* task(
+            "acquire-v1",
+            increment(env, event.instanceId, "acquisition-calls")
+          );
+          const checkpoint = yield* runProviderTask(
+            "transcribe-video-v1",
+            "speech",
+            speechTerminalRecoveryDispatch(
+              env,
+              event.instanceId,
+              importId,
+              acquisitionGeneration
+            ),
+            (evidence) => ({
+              _tag: "Succeeded" as const,
+              evidence,
+              stage: "speech" as const,
+            })
+          );
+          if (checkpoint._tag === "Failed") {
+            yield* task(
+              "persist-speech-terminal-v1",
+              makeD1ProviderTerminalCheckpointRepository(
+                env.MealPlannerDatabase
+              )
+                .persist({
+                  acquisitionGeneration,
+                  completedAt: decodeImportTimestamp(
+                    "2026-07-27T09:10:30.000Z"
+                  ),
+                  failureCode: checkpoint.code,
+                  importId,
+                  providerStage: "speech",
+                })
+                .pipe(Effect.orDie)
+            );
+            return yield* task(
+              "finalize-terminal",
+              Effect.promise(async () => {
+                const durable = await env.MealPlannerDatabase.prepare(
+                  `SELECT failure_code
+                       FROM import_provider_terminal_checkpoints
+                      WHERE import_id = ? AND acquisition_generation = ?
+                        AND provider_stage = 'speech'`
+                )
+                  .bind(importId, acquisitionGeneration)
+                  .first<{ readonly failure_code: string }>();
+                if (durable?.failure_code !== checkpoint.code) {
+                  throw new Error("Terminal checkpoint was not durable");
+                }
+                await Effect.runPromise(
+                  increment(env, event.instanceId, "terminal-before-finalize")
+                );
+                return checkpoint;
+              })
+            );
+          }
+          return yield* task("finalize-terminal", Effect.succeed(checkpoint));
+        }
         const stage = providerStageByScenario[input.scenario];
         const provider =
           input.scenario === "unknown"
@@ -191,7 +330,13 @@ export class ProviderRetryWorkflow extends ProviderRetryWorkflowBridge {}
 
 const readRequest = (request: Request) =>
   request.json() as Promise<
+    | {
+        readonly action: "recover-speech";
+        readonly id: string;
+        readonly importId: string;
+      }
     | { readonly action: "restart"; readonly id: string }
+    | { readonly action: "restart-terminal"; readonly id: string }
     | {
         readonly action: "run";
         readonly id: string;
@@ -210,16 +355,41 @@ export default {
       if (command.action === "run") {
         await workflow.unsafeSetIntrospectionOperations(sessionId, [
           {
-            steps: [{ name: "provider-dispatch" }],
+            steps: [
+              { name: "provider-dispatch" },
+              { name: "transcribe-video-v1" },
+            ],
             type: "disableRetryDelays",
           },
         ]);
         await workflow.create({ id: command.id, params: command.input });
       } else {
         const instance = await workflow.get(command.id);
-        await instance.restart({
-          from: { name: "finalize-terminal", type: "do" },
-        });
+        if (command.action === "recover-speech") {
+          await Effect.runPromise(
+            makeD1ProviderTerminalRecoveryRepository(
+              env.MealPlannerDatabase,
+              "pilot-gaia-118"
+            ).prepareSpeechUnknownRecovery({
+              acquisitionGeneration: decodeGeneration(1),
+              createdAt: decodeImportTimestamp("2026-07-27T09:11:00.000Z"),
+              importId: decodeImportId(command.importId),
+            })
+          );
+          await instance.restart({
+            from: { name: "transcribe-video-v1", type: "do" },
+          });
+        } else {
+          await instance.restart({
+            from: {
+              name:
+                command.action === "restart-terminal"
+                  ? "persist-speech-terminal-v1"
+                  : "finalize-terminal",
+              type: "do",
+            },
+          });
+        }
       }
 
       await workflow.unsafeWaitForStatus(command.id, "complete");

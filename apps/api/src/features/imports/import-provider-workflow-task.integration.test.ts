@@ -10,7 +10,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 interface ProviderWorkflowInput {
   readonly failureCode?: string;
-  readonly scenario: "retry_exhausted" | "success" | "terminal" | "unknown";
+  readonly importId?: string;
+  readonly scenario:
+    | "retry_exhausted"
+    | "speech_terminal_recovery"
+    | "success"
+    | "terminal"
+    | "unknown";
 }
 
 const compatibilityDate = "2026-07-14";
@@ -151,7 +157,13 @@ const readNumber = async (instanceId: string, name: string) => {
 
 const commandWorkflow = async (
   command:
+    | {
+        readonly action: "recover-speech";
+        readonly id: string;
+        readonly importId: string;
+      }
     | { readonly action: "restart"; readonly id: string }
+    | { readonly action: "restart-terminal"; readonly id: string }
     | {
         readonly action: "run";
         readonly id: string;
@@ -173,6 +185,12 @@ const runWorkflow = (id: string, input: ProviderWorkflowInput) =>
 
 const restartFromAfterProviderCheckpoint = (id: string) =>
   commandWorkflow({ action: "restart", id });
+
+const restartFromTerminalPersistence = (id: string) =>
+  commandWorkflow({ action: "restart-terminal", id });
+
+const recoverSpeechAndRestart = (id: string, importId: string) =>
+  commandWorkflow({ action: "recover-speech", id, importId });
 
 describe("provider workflow task retry exhaustion", () => {
   it("uses native retries, checkpoints final exhaustion, and replays with zero provider calls", async () => {
@@ -207,8 +225,191 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "provider-calls")).toBe(3);
   });
 
+  it("persists, replays, and recovers a speech terminal through native tasks and real D1", async () => {
+    const instanceId = "gaia-178-native-speech-terminal-recovery";
+    const importId = "00000000-0000-4000-8000-000000000181";
+    const generation = 1;
+    const originalDispatchId = `speech:${importId}:${generation}`;
+    const recoveryDispatchId = `${originalDispatchId}:recovery:1`;
+    const now = "2026-07-27T09:10:00.000Z";
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const evidence = JSON.stringify([
+      {
+        kind: "original_media",
+        referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
+      },
+      {
+        kind: "acquisition_manifest",
+        referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/manifest.json`,
+      },
+    ]);
+    await database
+      .prepare(
+        `INSERT INTO recipe_imports (
+           acquisition_generation, canonical_source_id,
+           compatibility_fingerprint, created_at,
+           evidence_references_json, id, recovery_action, source_kind,
+           status, status_code, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video', 'acquired', NULL, ?)`
+      )
+      .bind(
+        generation,
+        "canonical-gaia-178-native-recovery",
+        "f".repeat(64),
+        now,
+        evidence,
+        importId,
+        now
+      )
+      .run();
+    await database
+      .prepare(
+        `INSERT INTO import_transcriptions (
+           import_id, acquisition_generation, dispatch_id,
+           source_media_sha256, state, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, 'dispatching', ?, ?)`
+      )
+      .bind(importId, generation, originalDispatchId, "a".repeat(64), now, now)
+      .run();
+
+    await expect(
+      runWorkflow(instanceId, {
+        importId,
+        scenario: "speech_terminal_recovery",
+      })
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Failed",
+        code: "outcome_unknown",
+        stage: "speech",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "acquisition-calls")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT failure_code, ownership_id
+             FROM import_provider_terminal_checkpoints
+            WHERE import_id = ? AND acquisition_generation = ?
+              AND provider_stage = 'speech'`
+        )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      failure_code: "outcome_unknown",
+      ownership_id: originalDispatchId,
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT status, status_code, recovery_action
+             FROM recipe_imports
+            WHERE id = ?`
+        )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({
+      recovery_action: "retry_later",
+      status: "failed",
+      status_code: "transcription_failed",
+    });
+
+    await expect(
+      restartFromTerminalPersistence(instanceId)
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Failed",
+        code: "outcome_unknown",
+        stage: "speech",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "acquisition-calls")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+             FROM import_provider_terminal_checkpoints
+            WHERE import_id = ? AND acquisition_generation = ?
+              AND provider_stage = 'speech'`
+        )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+
+    await expect(
+      recoverSpeechAndRestart(instanceId, importId)
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "safe-transcript",
+        stage: "speech",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "acquisition-calls")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(2);
+    await expect(
+      database
+        .prepare(
+          `SELECT original_dispatch_id, recovery_dispatch_id
+             FROM pilot_provider_speech_recoveries
+            WHERE runtime_stage = 'pilot-gaia-118'
+              AND import_id = ? AND acquisition_generation = ?`
+        )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      original_dispatch_id: originalDispatchId,
+      recovery_dispatch_id: recoveryDispatchId,
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT actual_cost_micro_usd, state
+             FROM pilot_provider_budget_dispatches
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+        .bind(recoveryDispatchId)
+        .first()
+    ).resolves.toEqual({
+      actual_cost_micro_usd: 10,
+      state: "settled_known",
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT invoking_dispatch_id, poison_dispatch_id, state
+             FROM pilot_provider_stage_budget
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        )
+        .first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      state: "open",
+    });
+  });
+
   it("uses the real global ledger to poison unknown cost and fence every native retry and replay", async () => {
     const instanceId = "gaia-163-native-unknown-poison";
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const stageBefore = await database
+      .prepare(
+        `SELECT settled_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      )
+      .first<{ readonly settled_micro_usd: number }>();
+    const dispatchesBefore = await database
+      .prepare("SELECT COUNT(*) AS count FROM pilot_provider_budget_dispatches")
+      .first<{ readonly count: number }>();
+    if (stageBefore === null || dispatchesBefore === null) {
+      throw new Error("Pilot provider budget baseline is missing");
+    }
 
     await expect(
       runWorkflow(instanceId, { scenario: "unknown" })
@@ -223,7 +424,6 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "task-attempts")).toBe(2);
     expect(await readNumber(instanceId, "provider-calls")).toBe(1);
 
-    const database = await runtime.getD1Database("MealPlannerDatabase");
     const stage = await database
       .prepare(
         `SELECT invoking_dispatch_id, poison_dispatch_id, reserved_micro_usd,
@@ -236,14 +436,15 @@ describe("provider workflow task retry exhaustion", () => {
       invoking_dispatch_id: null,
       poison_dispatch_id: "dispatch_gaia_163_unknown",
       reserved_micro_usd: 100,
-      settled_micro_usd: 0,
+      settled_micro_usd: stageBefore.settled_micro_usd,
       state: "poisoned",
     });
     const dispatches = await database
       .prepare(
         `SELECT actual_cost_micro_usd, dispatch_id, maximum_cost_micro_usd,
                 provider_stage_id, run_id, state
-           FROM pilot_provider_budget_dispatches
+          FROM pilot_provider_budget_dispatches
+          WHERE dispatch_id = 'dispatch_gaia_163_unknown'
           ORDER BY dispatch_id`
       )
       .all();
@@ -277,7 +478,7 @@ describe("provider workflow task retry exhaustion", () => {
           "SELECT COUNT(*) AS count FROM pilot_provider_budget_dispatches"
         )
         .first()
-    ).resolves.toEqual({ count: 1 });
+    ).resolves.toEqual({ count: dispatchesBefore.count + 1 });
   });
 
   it.each([
