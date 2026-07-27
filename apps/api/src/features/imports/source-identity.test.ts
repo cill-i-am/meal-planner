@@ -11,6 +11,24 @@ const source = (url: string) =>
 const resolvedResponse = (response: Response): Promise<Response> =>
   Promise.resolve(response);
 
+const hydrationScript = (canonical: string): string =>
+  `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(
+    {
+      __DEFAULT_SCOPE__: {
+        "seo.abtest": { canonical },
+      },
+    }
+  )}</script>`;
+
+const hydrationResponse = (canonical: string): Response =>
+  new Response(
+    `<!doctype html><html><body>${hydrationScript(canonical)}</body></html>`,
+    {
+      headers: { "content-type": "text/html; charset=utf-8" },
+      status: 200,
+    }
+  );
+
 const getFailure = async <A>(effect: Effect.Effect<A, SourceIdentityError>) => {
   const exit = await Effect.runPromiseExit(effect);
 
@@ -19,6 +37,21 @@ const getFailure = async <A>(effect: Effect.Effect<A, SourceIdentityError>) => {
     throw new Error("Expected failure");
   }
   return Option.getOrThrow(Cause.findErrorOption(exit.cause));
+};
+
+const getFailureWithin = async <A>(
+  effect: Effect.Effect<A, SourceIdentityError>
+) => {
+  const deadline = Promise.withResolvers<never>();
+  const timeout = setTimeout(() => {
+    deadline.reject(new Error("Expected a finite source-identity failure"));
+  }, 250);
+
+  try {
+    return await Promise.race([getFailure(effect), deadline.promise]);
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 describe("TikTok canonical identity", () => {
@@ -131,6 +164,318 @@ describe("TikTok canonical identity", () => {
     });
   });
 
+  it("resolves a TikTok-owned HTML handoff through the exact hydration schema", async () => {
+    const seen: string[] = [];
+    const resolver = makeTikTokCanonicalSourceIdentityResolver((input) => {
+      seen.push(String(input));
+      return resolvedResponse(
+        seen.length === 1
+          ? new Response(null, {
+              headers: {
+                location: "https://www.tiktok.com/t/Zsynthetic",
+              },
+              status: 302,
+            })
+          : hydrationResponse(
+              "https://www.tiktok.com/@cook/video/7520000000000000000"
+            )
+      );
+    });
+
+    await expect(
+      Effect.runPromise(
+        resolver.resolve(source("https://vm.tiktok.com/abc123"))
+      )
+    ).resolves.toMatchObject({
+      _tag: "VideoIdentity",
+      identity: { canonicalId: "7520000000000000000", kind: "tiktok" },
+      videoUrl: "https://www.tiktok.com/@cook/video/7520000000000000000",
+    });
+    expect(seen).toEqual([
+      "https://vm.tiktok.com/abc123",
+      "https://www.tiktok.com/t/Zsynthetic",
+    ]);
+  });
+
+  it("does not trust a hydration script inside a self-closing template element", async () => {
+    const script = hydrationScript(
+      "https://www.tiktok.com/@cook/video/7520000000000000000"
+    );
+    const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
+      resolvedResponse(
+        String(input).includes("vm.tiktok.com")
+          ? new Response(null, {
+              headers: {
+                location: "https://www.tiktok.com/t/Zsynthetic",
+              },
+              status: 302,
+            })
+          : new Response(`<template/>${script}</template>`, {
+              headers: { "content-type": "text/html; charset=utf-8" },
+              status: 200,
+            })
+      )
+    );
+
+    const failure = await getFailure(
+      resolver.resolve(source("https://vm.tiktok.com/abc123"))
+    );
+
+    expect(failure._tag).toBe("SourceIdentityUnavailable");
+  });
+
+  it.each([
+    ["SVG", "svg"],
+    ["MathML", "math"],
+  ])(
+    "does not trust an exact hydration script in the %s namespace",
+    async (_label, container) => {
+      const script = hydrationScript(
+        "https://www.tiktok.com/@cook/video/7520000000000000000"
+      );
+      const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
+        resolvedResponse(
+          String(input).includes("vm.tiktok.com")
+            ? new Response(null, {
+                headers: {
+                  location: "https://www.tiktok.com/t/Zsynthetic",
+                },
+                status: 302,
+              })
+            : new Response(`<${container}>${script}</${container}>`, {
+                headers: { "content-type": "text/html; charset=utf-8" },
+                status: 200,
+              })
+        )
+      );
+
+      const failure = await getFailure(
+        resolver.resolve(source("https://vm.tiktok.com/abc123"))
+      );
+
+      expect(failure._tag).toBe("SourceIdentityUnavailable");
+    }
+  );
+
+  it.each([
+    ["comment", (script: string) => `<!-- ${script} -->`],
+    ["raw-text style element", (script: string) => `<style>${script}</style>`],
+    ["textarea element", (script: string) => `<textarea>${script}</textarea>`],
+    ["template element", (script: string) => `<template>${script}</template>`],
+    ["unclosed comment", (script: string) => `<!-- ${script}`],
+    ["unclosed raw-text element", (script: string) => `<style>${script}`],
+    ["unclosed textarea element", (script: string) => `<textarea>${script}`],
+    [
+      "quoted attribute value",
+      (script: string) => `<div data-value='${script}'></div>`,
+    ],
+    [
+      "unclosed quoted attribute value",
+      (script: string) => `<div data-value='${script}`,
+    ],
+  ])("does not trust hydration text inside a %s", async (_label, wrap) => {
+    const script = hydrationScript(
+      "https://www.tiktok.com/@cook/video/7520000000000000000"
+    );
+    const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
+      resolvedResponse(
+        String(input).includes("vm.tiktok.com")
+          ? new Response(null, {
+              headers: {
+                location: "https://www.tiktok.com/t/Zsynthetic",
+              },
+              status: 302,
+            })
+          : new Response(wrap(script), {
+              headers: { "content-type": "text/html; charset=utf-8" },
+              status: 200,
+            })
+      )
+    );
+
+    const failure = await getFailure(
+      resolver.resolve(source("https://vm.tiktok.com/abc123"))
+    );
+
+    expect(failure._tag).toBe("SourceIdentityUnavailable");
+  });
+
+  it("classifies a photo HTML handoff as typed unsupported", async () => {
+    const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
+      resolvedResponse(
+        String(input).includes("vm.tiktok.com")
+          ? new Response(null, {
+              headers: {
+                location: "https://www.tiktok.com/t/Zsynthetic",
+              },
+              status: 302,
+            })
+          : hydrationResponse(
+              "https://www.tiktok.com/@cook/photo/7520000000000000000"
+            )
+      )
+    );
+
+    await expect(
+      Effect.runPromise(
+        resolver.resolve(source("https://vm.tiktok.com/abc123"))
+      )
+    ).resolves.toMatchObject({
+      _tag: "UnsupportedIdentity",
+      identity: { canonicalId: "7520000000000000000", kind: "tiktok" },
+    });
+  });
+
+  it("rejects unsafe canonical metadata from a TikTok-owned HTML handoff", async () => {
+    const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
+      resolvedResponse(
+        String(input).includes("vm.tiktok.com")
+          ? new Response(null, {
+              headers: {
+                location: "https://www.tiktok.com/t/Zsynthetic",
+              },
+              status: 302,
+            })
+          : hydrationResponse(
+              "https://www.tiktok.com.evil.test/@cook/video/7520000000000000000"
+            )
+      )
+    );
+
+    const failure = await getFailure(
+      resolver.resolve(source("https://vm.tiktok.com/abc123"))
+    );
+
+    expect(failure._tag).toBe("InvalidSource");
+  });
+
+  it.each([
+    ["missing hydration", "<!doctype html><html></html>"],
+    [
+      "malformed hydration",
+      '<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">{</script>',
+    ],
+    [
+      "wrong schema",
+      '<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">{"__DEFAULT_SCOPE__":{}}</script>',
+    ],
+  ])("keeps a %s HTML handoff transient", async (_label, body) => {
+    const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
+      resolvedResponse(
+        String(input).includes("vm.tiktok.com")
+          ? new Response(null, {
+              headers: {
+                location: "https://www.tiktok.com/t/Zsynthetic",
+              },
+              status: 302,
+            })
+          : new Response(body, {
+              headers: { "content-type": "text/html; charset=utf-8" },
+              status: 200,
+            })
+      )
+    );
+
+    const failure = await getFailure(
+      resolver.resolve(source("https://vm.tiktok.com/abc123"))
+    );
+
+    expect(failure._tag).toBe("SourceIdentityUnavailable");
+  });
+
+  it("bounds HTML handoff reads before parsing metadata", async () => {
+    let cancelled = false;
+    const resolver = makeTikTokCanonicalSourceIdentityResolver((input) =>
+      resolvedResponse(
+        String(input).includes("vm.tiktok.com")
+          ? new Response(null, {
+              headers: {
+                location: "https://www.tiktok.com/t/Zsynthetic",
+              },
+              status: 302,
+            })
+          : new Response(
+              new ReadableStream<Uint8Array>({
+                cancel: () => {
+                  cancelled = true;
+                },
+                start: (controller) => {
+                  controller.enqueue(new Uint8Array(512 * 1024));
+                  controller.enqueue(new Uint8Array([1]));
+                },
+              }),
+              {
+                headers: { "content-type": "text/html; charset=utf-8" },
+                status: 200,
+              }
+            )
+      )
+    );
+
+    const failure = await getFailure(
+      resolver.resolve(source("https://vm.tiktok.com/abc123"))
+    );
+
+    expect(failure._tag).toBe("SourceIdentityUnavailable");
+    expect(cancelled).toBe(true);
+  });
+
+  it.each(["declared", "streamed"])(
+    "returns a finite typed failure when %s oversize-body cancellation never settles",
+    async (oversizePath) => {
+      let cancelCalls = 0;
+      const neverSettlingCancellation = Promise.withResolvers<undefined>();
+      const resolver = makeTikTokCanonicalSourceIdentityResolver((input) => {
+        if (String(input).includes("vm.tiktok.com")) {
+          return resolvedResponse(
+            new Response(null, {
+              headers: {
+                location: "https://www.tiktok.com/t/Zsynthetic",
+              },
+              status: 302,
+            })
+          );
+        }
+
+        return resolvedResponse(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              cancel: () => {
+                cancelCalls += 1;
+                return neverSettlingCancellation.promise;
+              },
+              ...(oversizePath === "streamed"
+                ? {
+                    start: (
+                      controller: ReadableStreamDefaultController<Uint8Array>
+                    ) => {
+                      controller.enqueue(new Uint8Array(512 * 1024));
+                      controller.enqueue(new Uint8Array([1]));
+                    },
+                  }
+                : {}),
+            }),
+            {
+              headers: {
+                "content-length":
+                  oversizePath === "declared" ? String(512 * 1024 + 1) : "0",
+                "content-type": "text/html; charset=utf-8",
+              },
+              status: 200,
+            }
+          )
+        );
+      });
+
+      const failure = await getFailureWithin(
+        resolver.resolve(source("https://vm.tiktok.com/abc123"))
+      );
+
+      expect(failure._tag).toBe("SourceIdentityUnavailable");
+      expect(cancelCalls).toBe(1);
+    }
+  );
+
   it("classifies explicit photo posts without invoking availability", async () => {
     let calls = 0;
     const resolver = makeTikTokCanonicalSourceIdentityResolver(() => {
@@ -179,7 +524,61 @@ describe("TikTok canonical identity", () => {
     expect(Option.isNone(Cause.findErrorOption(exit.cause))).toBe(true);
   });
 
-  it.each([200, 400, 404, 429, 500])(
+  it("preserves caller interruption while a handoff body is pending", async () => {
+    let cancelled = false;
+    let calls = 0;
+    const resolver = makeTikTokCanonicalSourceIdentityResolver(() => {
+      calls += 1;
+      if (calls === 1) {
+        return resolvedResponse(
+          new Response(null, {
+            headers: {
+              location: "https://www.tiktok.com/t/Zsynthetic",
+            },
+            status: 302,
+          })
+        );
+      }
+      const pendingPull = Promise.withResolvers<boolean>();
+      return resolvedResponse(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            cancel: () => {
+              cancelled = true;
+              pendingPull.resolve(true);
+            },
+            pull: async () => {
+              await pendingPull.promise;
+            },
+          }),
+          {
+            headers: { "content-type": "text/html; charset=utf-8" },
+            status: 200,
+          }
+        )
+      );
+    });
+    const exit = await Effect.runPromise(
+      Effect.gen(function* exit() {
+        const fiber = yield* Effect.forkChild(
+          resolver.resolve(source("https://vm.tiktok.com/pending"))
+        );
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        yield* Fiber.interrupt(fiber);
+        return yield* Fiber.await(fiber);
+      })
+    );
+
+    expect(Exit.hasInterrupts(exit)).toBe(true);
+    expect(cancelled).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected interruption");
+    }
+    expect(Option.isNone(Cause.findErrorOption(exit.cause))).toBe(true);
+  });
+
+  it.each([400, 404, 429, 500])(
     "keeps an unresolved short-link status %s transient",
     async (status) => {
       let cancelled = false;

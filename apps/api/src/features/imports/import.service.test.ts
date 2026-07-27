@@ -30,6 +30,7 @@ import type {
 import { makeTikTokSourceAvailabilityValidator } from "./source-availability.tiktok.js";
 import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
+import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
 const decodeRequest = Schema.decodeUnknownSync(CreateImportRequest);
 const decodeKey = Schema.decodeUnknownSync(IdempotencyKey);
@@ -200,6 +201,23 @@ const videoRequest = (canonicalId = "7520000000000000000", user = "cook") =>
     },
   });
 
+const photoHandoffResponse = () =>
+  new Response(
+    `<!doctype html><script type="application/json" id="__UNIVERSAL_DATA_FOR_REHYDRATION__">${JSON.stringify(
+      {
+        __DEFAULT_SCOPE__: {
+          "seo.abtest": {
+            canonical: "https://www.tiktok.com/@cook/photo/7520000000000000000",
+          },
+        },
+      }
+    )}</script>`,
+    {
+      headers: { "content-type": "text/html; charset=utf-8" },
+      status: 200,
+    }
+  );
+
 describe("ImportService", () => {
   it("persists one queued import and starts the deferred workflow once", async () => {
     const fixture = makeFixture();
@@ -325,6 +343,57 @@ describe("ImportService", () => {
     expect(privateFixture.workflow.started).toEqual([]);
     expect(unsupportedFixture.availability.calls()).toBe(0);
     expect(unsupportedFixture.workflow.started).toEqual([]);
+  });
+
+  it("persists a short-link photo handoff as unsupported without availability or workflow work", async () => {
+    const fixture = makeFixture();
+    let fetchCalls = 0;
+    const identityResolver = makeTikTokCanonicalSourceIdentityResolver(() => {
+      fetchCalls += 1;
+      return Promise.resolve(
+        fetchCalls === 1
+          ? new Response(null, {
+              headers: { location: "https://www.tiktok.com/t/Zsynthetic" },
+              status: 302,
+            })
+          : photoHandoffResponse()
+      );
+    });
+    const service = makeImportService({
+      availabilityValidator: fixture.availability.validator,
+      identityResolver,
+      newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000099"),
+      now: () => now,
+      repository: fixture.repository.repository,
+      workflowStarter: fixture.workflow.workflow,
+    });
+
+    const result = await Effect.runPromise(
+      service.create(
+        decodeRequest({
+          source: {
+            kind: "tiktok",
+            url: "https://vm.tiktok.com/Zsynthetic",
+          },
+        }),
+        decodeKey("K-photo-handoff")
+      )
+    );
+
+    expect(result.import).toMatchObject({
+      source: {
+        canonicalId: "7520000000000000000",
+        kind: "tiktok",
+      },
+      status: {
+        code: "unsupported_post_type",
+        kind: "unsupported",
+        recovery: "submit_supported_public_video",
+      },
+    });
+    expect(fetchCalls).toBe(2);
+    expect(fixture.availability.calls()).toBe(0);
+    expect(fixture.workflow.started).toEqual([]);
   });
 
   it("preserves cancellation before persistence", async () => {
