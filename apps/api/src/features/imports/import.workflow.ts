@@ -5,6 +5,7 @@ import {
   Context,
   Effect,
   Layer,
+  Option,
   Schedule,
   Schema,
 } from "effect";
@@ -19,6 +20,11 @@ import {
   makePilotProviderBudgetRuntime,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+import {
+  AcquisitionCheckpointContinuation,
+  decodeAcquisitionCheckpoint,
+  verifyAcquisitionCheckpointContinuation,
+} from "./import-acquisition-checkpoint.js";
 import { loadStagedOperatorCarousel } from "./import-carousel-staging.js";
 import {
   prepareTikTokCarouselEvidence,
@@ -457,9 +463,11 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             ),
             AcquisitionTaskStepConfig
           );
-          const outcome = yield* Schema.decodeUnknownEffect(
-            AcquisitionTaskOutcome
-          )(encodedOutcome).pipe(Effect.orDie);
+          const decodedCheckpoint = decodeAcquisitionCheckpoint(encodedOutcome);
+          if (decodedCheckpoint._tag === "AcquisitionCheckpointRejected") {
+            return decodedCheckpoint;
+          }
+          const { outcome } = decodedCheckpoint;
           const encodedFinalization = yield* Cloudflare.Workflows.task(
             "record-acquisition-v2",
             (outcome._tag === "VerifiedAcquisition"
@@ -487,6 +495,33 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           ).pipe(Effect.orDie);
           if (outcome._tag !== "VerifiedAcquisition") {
             return encodedOutcome;
+          }
+          const encodedContinuation = yield* Cloudflare.Workflows.task(
+            "verify-acquisition-continuation-v1",
+            repository.findById(importId).pipe(
+              Effect.map(
+                Option.match({
+                  onNone: () => ({
+                    _tag: "AcquisitionCheckpointRejected" as const,
+                    code: "historical_acquisition_checkpoint_invalid" as const,
+                  }),
+                  onSome: (stored) =>
+                    verifyAcquisitionCheckpointContinuation({
+                      importId,
+                      outcome,
+                      stored,
+                    }),
+                })
+              ),
+              Effect.map(Schema.encodeSync(AcquisitionCheckpointContinuation)),
+              Effect.orDie
+            )
+          );
+          const continuation = yield* Schema.decodeUnknownEffect(
+            AcquisitionCheckpointContinuation
+          )(encodedContinuation).pipe(Effect.orDie);
+          if (continuation._tag === "AcquisitionCheckpointRejected") {
+            return continuation;
           }
           const speechDispatchId = yield* terminalRecovery
             .speechDispatchId({
