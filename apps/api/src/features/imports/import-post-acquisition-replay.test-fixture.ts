@@ -10,6 +10,12 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 
 import {
+  PilotBudgetRunId,
+  PilotBudgetTimestamp,
+  makePilotProviderBudgetRuntime,
+} from "../pilots/pilot-provider-budget.js";
+import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+import {
   continueAcquisitionCheckpoint,
   decodeAcquisitionCheckpoint,
   recoverVerifiedAcquisitionCheckpoint,
@@ -27,8 +33,8 @@ import {
   makeInstalledRecipeExtractor,
   makeInstalledSpeechTranscriber,
   makeInstalledVisualEvidenceExtractor,
+  makePilotProviderDispatchGate,
 } from "./import-provider-adapters.js";
-import type { ProviderDispatchGate } from "./import-provider-adapters.js";
 import { makeD1ProviderTerminalRecoveryRepository } from "./import-provider-terminal.js";
 import { SpeechProviderTaskCheckpoint } from "./import-provider-workflow-checkpoint.js";
 import {
@@ -103,18 +109,23 @@ const increment = (
     await env.POST_ACQUISITION_REPLAY_STATE.put(key, String(current + 1));
   });
 
-const externalIoTrap = (
+const replayProviderFixture = (
   env: PostAcquisitionReplayTestEnv,
   instanceId: string
 ): {
   readonly audioExtractor: SpeechAudioExtractorShape;
   readonly client: QueryGatewayClient;
-  readonly dispatch: ProviderDispatchGate;
 } => ({
   audioExtractor: {
     extract: () =>
       increment(env, instanceId, "audio-calls").pipe(
-        Effect.andThen(Effect.die("Audio extraction must not run on replay"))
+        Effect.as({
+          bytes: new Uint8Array([82, 73, 70, 70, 1, 2, 3, 4]),
+          durationMilliseconds: 1000,
+          mimeType: "audio/wav" as const,
+          sha256:
+            "c4ffde8d57d64bbc7a1220d8bf9560d208511252d9173d1359f5cf9a7b2f14dc",
+        })
       ),
   },
   client: {
@@ -127,15 +138,20 @@ const externalIoTrap = (
     raw: Effect.die("Provider gateway must not run on replay"),
     run: () =>
       increment(env, instanceId, "provider-calls").pipe(
-        Effect.andThen(Effect.die("Provider dispatch must not run on replay"))
+        Effect.as(
+          Response.json({
+            text: "Chop the onion.",
+            transcription_info: {
+              duration: 1,
+              duration_after_vad: 1,
+              language: "en",
+              language_probability: 1,
+            },
+            word_count: 3,
+          })
+        )
       ),
   } as unknown as QueryGatewayClient,
-  dispatch: {
-    run: () =>
-      increment(env, instanceId, "provider-calls").pipe(
-        Effect.andThen(Effect.die("Provider dispatch must not run on replay"))
-      ),
-  },
 });
 
 type InstalledRuntimeContext = ReturnType<typeof RuntimeContext.of>;
@@ -156,23 +172,38 @@ const makeWorkflowExport = (runtimeContext: InstalledRuntimeContext) => ({
         );
         return yield* Effect.gen(function* runObservedPostAcquisitionReplay() {
           yield* observeImportWorkflowStart(correlationId);
-          const trap = externalIoTrap(env, event.instanceId);
-          const speechTranscriber = yield* makeInstalledSpeechTranscriber({
-            client: trap.client,
+          const fixture = replayProviderFixture(env, event.instanceId);
+          const dispatch = makePilotProviderDispatchGate({
             correlationId,
-            dispatch: trap.dispatch,
+            now: () =>
+              Schema.decodeUnknownSync(PilotBudgetTimestamp)(
+                "2026-07-28T10:01:00.000Z"
+              ),
+            repository: makeD1PilotProviderBudgetRepository(
+              env.MealPlannerDatabase,
+              "pilot-gaia-118"
+            ),
+            runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
+              `gaia-118:${importId}`
+            ),
+            runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
+          });
+          const speechTranscriber = yield* makeInstalledSpeechTranscriber({
+            client: fixture.client,
+            correlationId,
+            dispatch,
           }).pipe(Effect.provideService(RuntimeContext, runtimeContext));
           yield* increment(env, event.instanceId, "speech-factory");
           yield* makeInstalledVisualEvidenceExtractor({
-            client: trap.client,
+            client: fixture.client,
             correlationId,
-            dispatch: trap.dispatch,
+            dispatch,
           });
           yield* increment(env, event.instanceId, "visual-factory");
           yield* makeInstalledRecipeExtractor({
-            client: trap.client,
+            client: fixture.client,
             correlationId,
-            dispatch: trap.dispatch,
+            dispatch,
           });
           yield* increment(env, event.instanceId, "recipe-factory");
           const stagedCarousel = yield* loadStagedOperatorCarousel({
@@ -290,7 +321,7 @@ const makeWorkflowExport = (runtimeContext: InstalledRuntimeContext) => ({
                         "speech",
                         transcribeAcquiredImport({
                           acquisitionRepository: repository,
-                          audioExtractor: trap.audioExtractor,
+                          audioExtractor: fixture.audioExtractor,
                           bucket: env.ImportEvidenceBucket,
                           dispatchId: speechDispatchId,
                           importId,

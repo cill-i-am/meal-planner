@@ -305,7 +305,6 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
           transcriptKey: completed.transcriptKey,
         };
       }
-      return yield* Effect.fail(pipelineFailure("outcome_unknown"));
     }
 
     const runDispatch = Effect.gen(function* runSpeechDispatch() {

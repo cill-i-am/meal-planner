@@ -371,8 +371,23 @@ const seedInterruptedSpeechDispatch = async (
   ]);
 };
 
+const readSpeechBudgetDispatch = async (importId: string) => {
+  if (runtime === undefined) {
+    throw new Error("Miniflare runtime is not initialized");
+  }
+  const database = await runtime.getD1Database("MealPlannerDatabase");
+  return database
+    .prepare(
+      `SELECT actual_cost_micro_usd, dispatch_id, provider_stage_id, state
+         FROM pilot_provider_budget_dispatches
+        WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+    )
+    .bind(`speech:${importId}:1`)
+    .first();
+};
+
 describe("native post-acquisition Workflow replay", () => {
-  it("persists a typed speech checkpoint without replaying acquisition or dispatching", async () => {
+  it("resumes speech through the installed budget fence without replaying acquisition", async () => {
     const id = "gaia-192-post-acquisition-replay";
     const importId = "00000000-0000-4000-8000-000000000192";
     if (runtime === undefined) {
@@ -406,8 +421,7 @@ describe("native post-acquisition Workflow replay", () => {
     const counters = await commandWorkflow({ action: "read", id });
     expect(status, JSON.stringify(status)).toMatchObject({
       output: {
-        _tag: "Failed",
-        code: "outcome_unknown",
+        _tag: "Succeeded",
         stage: "speech",
       },
       status: "complete",
@@ -417,17 +431,23 @@ describe("native post-acquisition Workflow replay", () => {
       afterAcquisition: 1,
       afterClaim: 1,
       afterRecord: 1,
-      audioCalls: 0,
+      audioCalls: 1,
       beforeClaim: 1,
       dispatchIdentityCalls: 1,
-      providerCalls: 0,
+      providerCalls: 1,
       recipeFactory: 1,
       speechFactory: 1,
       visualFactory: 1,
     });
+    await expect(readSpeechBudgetDispatch(importId)).resolves.toEqual({
+      actual_cost_micro_usd: 9,
+      dispatch_id: `speech:${importId}:1`,
+      provider_stage_id: "speech-transcription",
+      state: "settled_known",
+    });
   }, 30_000);
 
-  it("continues a two-step journal without replaying acquisition", async () => {
+  it("continues a two-step journal through speech without replaying acquisition", async () => {
     const id = "gaia-194-truncated-post-acquisition-replay";
     const importId = "00000000-0000-4000-8000-000000000194";
     if (runtime === undefined) {
@@ -464,8 +484,7 @@ describe("native post-acquisition Workflow replay", () => {
       JSON.stringify({ truncatedCounters, truncatedStatus })
     ).toMatchObject({
       output: {
-        _tag: "Failed",
-        code: "outcome_unknown",
+        _tag: "Succeeded",
         stage: "speech",
       },
       status: "complete",
@@ -475,40 +494,20 @@ describe("native post-acquisition Workflow replay", () => {
       afterAcquisition: 1,
       afterClaim: 1,
       afterRecord: 1,
-      audioCalls: 0,
+      audioCalls: 1,
       beforeClaim: 1,
       dispatchIdentityCalls: 1,
-      providerCalls: 0,
+      providerCalls: 1,
       recipeFactory: 1,
       speechFactory: 1,
       visualFactory: 1,
     });
 
-    const repeatedStatus = await commandWorkflow({
-      action: "restart-truncated",
-      id,
-    });
-    const repeatedCounters = await commandWorkflow({ action: "read", id });
-    expect(repeatedStatus).toMatchObject({
-      output: {
-        _tag: "Failed",
-        code: "outcome_unknown",
-        stage: "speech",
-      },
-      status: "complete",
-    });
-    expect(repeatedCounters).toEqual({
-      acquisitionCalls: 0,
-      afterAcquisition: 2,
-      afterClaim: 2,
-      afterRecord: 2,
-      audioCalls: 0,
-      beforeClaim: 2,
-      dispatchIdentityCalls: 2,
-      providerCalls: 0,
-      recipeFactory: 2,
-      speechFactory: 2,
-      visualFactory: 2,
+    await expect(readSpeechBudgetDispatch(importId)).resolves.toEqual({
+      actual_cost_micro_usd: 9,
+      dispatch_id: `speech:${importId}:1`,
+      provider_stage_id: "speech-transcription",
+      state: "settled_known",
     });
   }, 30_000);
 
