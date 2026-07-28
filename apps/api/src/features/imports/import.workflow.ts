@@ -20,7 +20,6 @@ import {
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import {
-  AcquisitionCheckpointRejected,
   continueAcquisitionCheckpoint,
   decodeAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
@@ -67,6 +66,10 @@ import {
   makeD1ProviderTerminalCheckpointRepository,
   makeD1ProviderTerminalRecoveryRepository,
 } from "./import-provider-terminal.js";
+import {
+  ProviderTaskCheckpoint,
+  SpeechProviderTaskCheckpoint,
+} from "./import-provider-workflow-checkpoint.js";
 import {
   ProviderTaskStepConfig,
   runProviderTask,
@@ -218,21 +221,6 @@ const AcquisitionClaimCheckpoint = Schema.Union([
     _tag: Schema.Literal("Acquiring"),
     canonicalId: SourceCanonicalId,
   }),
-]);
-const ProviderTaskCheckpoint = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("Failed"),
-    code: Schema.String,
-    stage: Schema.Literals(["recipe", "speech", "visual"]),
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("Succeeded"),
-    stage: Schema.Literals(["recipe", "speech", "visual"]),
-  }),
-]);
-const SpeechProviderTaskCheckpoint = Schema.Union([
-  AcquisitionCheckpointRejected,
-  ProviderTaskCheckpoint,
 ]);
 const CarouselEvidenceTaskCheckpoint = Schema.Union([
   Schema.Struct({
@@ -478,11 +466,22 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           const encodedFinalization = yield* Cloudflare.Workflows.task(
             "record-acquisition-v2",
             (outcome._tag === "VerifiedAcquisition"
-              ? repository.recordAcquired(
+              ? continueAcquisitionCheckpoint({
+                  findStored: repository.findById(importId),
                   importId,
-                  outcome.generation,
-                  outcome.evidence,
-                  outcome.evidence.acquiredAt
+                  onAccepted: () => Effect.succeed<"Recorded">("Recorded"),
+                  outcome,
+                }).pipe(
+                  Effect.flatMap((continuation) =>
+                    continuation === "Recorded"
+                      ? Effect.succeed(continuation)
+                      : repository.recordAcquired(
+                          importId,
+                          outcome.generation,
+                          outcome.evidence,
+                          outcome.evidence.acquiredAt
+                        )
+                  )
                 )
               : repository.recordAcquisitionFailure(
                   importId,
@@ -727,9 +726,13 @@ export const makeImportWorkflowStarter = (
   },
   restartFromSpeech: (importId) =>
     workflow.get(importWorkflowInstanceId(importId)).pipe(
+      // Some retained pre-provider journals completed acquisition without ever
+      // registering the speech task. Restart from the guaranteed finalization
+      // checkpoint; its verified-acquisition path is idempotent for already
+      // acquired/transcribing imports and then registers the speech task.
       Effect.flatMap((instance) =>
         instance.restart({
-          from: { name: "transcribe-video-v1", type: "do" },
+          from: { name: "record-acquisition-v2", type: "do" },
         })
       ),
       Effect.catchCauseIf(
