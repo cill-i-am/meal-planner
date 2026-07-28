@@ -129,28 +129,24 @@ const replayProviderFixture = (
       ),
   },
   client: {
-    gateway: Effect.succeed({
-      run: () => {
-        throw new Error("Provider gateway must not run on replay");
+    gateway: Effect.die("universal AI Gateway binding must not be used"),
+    id: Effect.succeed("meal-planner-pilot-gaia-118"),
+    raw: Effect.succeed({
+      run: async () => {
+        await Effect.runPromise(increment(env, instanceId, "provider-calls"));
+        return Response.json({
+          text: "Chop the onion.",
+          transcription_info: {
+            duration: 1,
+            duration_after_vad: 1,
+            language: "en",
+            language_probability: 1,
+          },
+          word_count: 3,
+        });
       },
     }),
-    id: Effect.succeed("meal-planner-pilot-gaia-118"),
-    raw: Effect.die("Provider gateway must not run on replay"),
-    run: () =>
-      increment(env, instanceId, "provider-calls").pipe(
-        Effect.as(
-          Response.json({
-            text: "Chop the onion.",
-            transcription_info: {
-              duration: 1,
-              duration_after_vad: 1,
-              language: "en",
-              language_probability: 1,
-            },
-            word_count: 3,
-          })
-        )
-      ),
+    run: () => Effect.die("universal AI Gateway dispatch must not be used"),
   } as unknown as QueryGatewayClient,
 });
 

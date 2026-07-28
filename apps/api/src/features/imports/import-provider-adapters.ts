@@ -1,4 +1,3 @@
-import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
@@ -27,7 +26,6 @@ import type {
 import {
   ImportObservabilityTraceStore,
   emitImportObservabilityEvent,
-  metadataOnlyGatewayHeaders,
 } from "./import-observability.js";
 import type {
   RecipeEvidenceAssembly,
@@ -456,50 +454,75 @@ const pricedTokenUsage = (
   };
 };
 
+const workersAiGatewayOptions = (gatewayId: string) =>
+  ({
+    gateway: {
+      collectLog: false,
+      id: gatewayId,
+      skipCache: true,
+    },
+    returnRawResponse: true,
+  }) as const;
+
+type WorkersAiBinding = Effect.Success<QueryGatewayClient["raw"]>;
+
+const runWorkersAi = (
+  ai: WorkersAiBinding,
+  model: string,
+  body: unknown,
+  gatewayId: string
+): Promise<Response> =>
+  ai.run(
+    model as never,
+    body as never,
+    workersAiGatewayOptions(gatewayId) as never
+  ) as Promise<Response>;
+
 /**
- * Keep the installed Alchemy LanguageModel composition while routing every
- * Workers AI request through the universal gateway binding, the only runtime
- * seam that can independently disable payload collection.
+ * Keep the installed Alchemy LanguageModel composition while dispatching
+ * through the account-bound Workers AI binding. The binding cannot express
+ * AI Gateway's payload-suppression header, so the proxy disables provider-side
+ * gateway logging at the final SDK boundary and relies on the redacted,
+ * correlation-aware Worker observability events. It never touches the
+ * universal gateway binding.
  */
-const metadataOnlyGatewayClient = (
+const noLogWorkersAiClient = (
   client: QueryGatewayClient,
   correlationId: ImportCorrelationId,
   providerStage: "recipe" | "speech" | "visual",
   traceStore: ImportObservabilityTraceStoreShape | undefined
 ): QueryGatewayClient => ({
   ...client,
-  raw: client.gateway.pipe(
-    Effect.map((gateway) => ({
-      run: async (model: unknown, query: unknown) => {
-        let response: Response;
-        try {
-          response = (await gateway.run({
-            endpoint: String(model),
-            headers: metadataOnlyGatewayHeaders(correlationId),
-            provider: "workers-ai",
-            query,
-          })) as Response;
-        } catch (error) {
-          if (isPilotProviderKnownZeroCostFailure(error)) {
-            throw error;
-          }
-          // eslint-disable-next-line preserve-caught-error -- Provider payloads and transport errors must not cross this privacy boundary, including as Error.cause.
-          throw new Error(ProviderTransportUnavailableMessage);
-        }
-        await Effect.runPromise(
-          emitImportObservabilityEvent(
-            {
-              correlationId,
-              event: "provider.response",
-              outcome: "received",
-              providerStage,
-            },
-            traceStore
-          )
-        );
-        return response;
-      },
-    }))
+  raw: Effect.all([client.raw, client.id]).pipe(
+    Effect.map(
+      ([ai, gatewayId]) =>
+        ({
+          run: async (model: unknown, body: unknown) => {
+            let response: Response;
+            try {
+              response = await runWorkersAi(ai, String(model), body, gatewayId);
+            } catch (error) {
+              if (isPilotProviderKnownZeroCostFailure(error)) {
+                throw error;
+              }
+              // eslint-disable-next-line preserve-caught-error -- Provider payloads and transport errors must not cross this privacy boundary, including as Error.cause.
+              throw new Error(ProviderTransportUnavailableMessage);
+            }
+            await Effect.runPromise(
+              emitImportObservabilityEvent(
+                {
+                  correlationId,
+                  event: "provider.response",
+                  outcome: "received",
+                  providerStage,
+                },
+                traceStore
+              )
+            );
+            return response;
+          },
+        }) as WorkersAiBinding
+    )
   ) as QueryGatewayClient["raw"],
 });
 
@@ -514,7 +537,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const client = metadataOnlyGatewayClient(
+    const client = noLogWorkersAiClient(
       input.client,
       input.correlationId,
       "visual",
@@ -593,7 +616,7 @@ export const makeInstalledRecipeExtractor = (input: {
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const client = metadataOnlyGatewayClient(
+    const client = noLogWorkersAiClient(
       input.client,
       input.correlationId,
       "recipe",
@@ -740,7 +763,8 @@ export const makeInstalledSpeechTranscriber = (input: {
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const runtimeContext = yield* RuntimeContext;
+    const ai = yield* input.client.raw;
+    const gatewayId = yield* input.client.id;
     return {
       transcribe: (request: SpeechTranscriptionInput) =>
         Effect.gen(function* transcribeSpeech() {
@@ -757,20 +781,25 @@ export const makeInstalledSpeechTranscriber = (input: {
             dispatchId: request.dispatchId,
             invoke: failAfter(
               Effect.gen(function* invokeSpeech() {
-                const response = yield* input.client
-                  .run({
-                    endpoint: model,
-                    headers: metadataOnlyGatewayHeaders(input.correlationId),
-                    provider: "workers-ai",
-                    query: {
-                      audio: encodeBase64(request.audio.bytes),
-                      condition_on_previous_text: false,
-                      language: "en",
-                      task: "transcribe",
-                      vad_filter: true,
-                    },
-                  })
-                  .pipe(Effect.provideService(RuntimeContext, runtimeContext));
+                const response = yield* Effect.tryPromise({
+                  catch: (error) =>
+                    isPilotProviderKnownZeroCostFailure(error)
+                      ? error
+                      : safeFailureCode(Cause.fail(error)),
+                  try: () =>
+                    runWorkersAi(
+                      ai,
+                      model,
+                      {
+                        audio: encodeBase64(request.audio.bytes),
+                        condition_on_previous_text: false,
+                        language: "en",
+                        task: "transcribe",
+                        vad_filter: true,
+                      },
+                      gatewayId
+                    ),
+                });
                 yield* emitImportObservabilityEvent(
                   {
                     correlationId: input.correlationId,
