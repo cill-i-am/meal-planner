@@ -303,8 +303,11 @@ const readSettledRecovery = (
          JOIN recipe_imports AS parent
            ON parent.id = checkpoint.import_id
           AND parent.acquisition_generation = checkpoint.acquisition_generation
-         JOIN pilot_provider_stage_budget AS stage
-           ON stage.runtime_stage = audit.runtime_stage
+         JOIN import_transcriptions AS transcription
+           ON transcription.import_id = checkpoint.import_id
+          AND transcription.acquisition_generation =
+                checkpoint.acquisition_generation
+          AND transcription.dispatch_id = audit.dispatch_id || ':recovery:1'
          WHERE audit.runtime_stage = ?
            AND audit.actual_cost_was_unknown = 1
            AND audit.authority = 'authenticated_operator'
@@ -313,11 +316,7 @@ const readSettledRecovery = (
            AND dispatch.actual_cost_micro_usd IS NULL
            AND dispatch.maximum_cost_micro_usd =
                  audit.conservative_charge_micro_usd
-           AND stage.state = 'open'
-           AND stage.reserved_micro_usd = 0
-           AND stage.invoking_dispatch_id IS NULL
-           AND stage.poison_dispatch_id IS NULL
-           AND stage.settled_micro_usd < stage.budget_cap_micro_usd
+           AND instr(audit.dispatch_id, ':recovery:1') = 0
            AND NOT EXISTS (
              SELECT 1
                FROM pilot_provider_speech_recoveries AS recovery
@@ -326,44 +325,21 @@ const readSettledRecovery = (
            )
            AND (
              (
-               parent.status = 'acquired'
-               AND parent.status_code IS NULL
-               AND parent.recovery_action IS NULL
-               AND json_array_length(parent.evidence_references_json) = 2
-               AND NOT EXISTS (
-                 SELECT 1
-                   FROM import_transcriptions AS transcription
-                  WHERE transcription.import_id = checkpoint.import_id
-                    AND transcription.acquisition_generation =
-                          checkpoint.acquisition_generation
-               )
+               transcription.state = 'dispatching'
+               AND parent.status = 'transcribing'
              )
-             OR EXISTS (
-               SELECT 1
-                 FROM import_transcriptions AS transcription
-                WHERE transcription.import_id = checkpoint.import_id
-                  AND transcription.acquisition_generation =
-                        checkpoint.acquisition_generation
-                  AND transcription.dispatch_id =
-                        audit.dispatch_id || ':recovery:1'
-                  AND (
-                    (
-                      transcription.state = 'dispatching'
-                      AND parent.status = 'transcribing'
-                    )
-                    OR (
-                      transcription.state = 'transcribed'
-                      AND parent.status = 'transcribed'
-                    )
-                    OR (
-                      transcription.state = 'failed'
-                      AND parent.status = 'failed'
-                      AND parent.status_code = 'transcription_failed'
-                      AND parent.recovery_action = 'retry_later'
-                    )
-                  )
+             OR (
+               transcription.state = 'transcribed'
+               AND parent.status = 'transcribed'
+             )
+             OR (
+               transcription.state = 'failed'
+               AND parent.status = 'failed'
+               AND parent.status_code = 'transcription_failed'
+               AND parent.recovery_action = 'retry_later'
              )
            )
+           AND json_array_length(parent.evidence_references_json) >= 2
          LIMIT 2`
       )
       .bind(importId, acquisitionGeneration, PilotProviderBudgetStage)
@@ -414,11 +390,12 @@ const readSettledRecoveryCandidate = (
 ) =>
   persistenceEffect<{
     readonly original_dispatch_id: string;
-  } | null>(
-    () =>
-      database
-        .prepare(
-          `SELECT audit.dispatch_id AS original_dispatch_id
+    readonly source_media_sha256: string;
+  } | null>(() =>
+    database
+      .prepare(
+        `SELECT audit.dispatch_id AS original_dispatch_id,
+                  transcription.source_media_sha256
              FROM pilot_provider_budget_reconciliations AS audit
              JOIN pilot_provider_budget_dispatches AS dispatch
                ON dispatch.runtime_stage = audit.runtime_stage
@@ -455,6 +432,7 @@ const readSettledRecoveryCandidate = (
               AND dispatch.actual_cost_micro_usd IS NULL
               AND dispatch.maximum_cost_micro_usd =
                     audit.conservative_charge_micro_usd
+              AND instr(audit.dispatch_id, ':recovery:1') = 0
               AND stage.state = 'open'
               AND stage.reserved_micro_usd = 0
               AND stage.invoking_dispatch_id IS NULL
@@ -467,17 +445,20 @@ const readSettledRecoveryCandidate = (
                    AND recovery.original_dispatch_id = audit.dispatch_id
               )
             LIMIT 2`
-        )
-        .bind(importId, acquisitionGeneration, PilotProviderBudgetStage)
-        .first<{ readonly original_dispatch_id: string }>() as PromiseLike<{
+      )
+      .bind(importId, acquisitionGeneration, PilotProviderBudgetStage)
+      .first<{
         readonly original_dispatch_id: string;
-      } | null>
+        readonly source_media_sha256: string;
+      }>()
   ).pipe(
     Effect.flatMap((candidate) =>
       candidate !== null &&
       typeof candidate.original_dispatch_id === "string" &&
-      candidate.original_dispatch_id.length > 0
-        ? Effect.succeed(candidate.original_dispatch_id)
+      candidate.original_dispatch_id.length > 0 &&
+      typeof candidate.source_media_sha256 === "string" &&
+      /^[\da-f]{64}$/u.test(candidate.source_media_sha256)
+        ? Effect.succeed(candidate)
         : Effect.fail(providerTerminalPersistenceError("recovery_not_allowed"))
     )
   );
@@ -489,9 +470,13 @@ const prepareSettledRecovery = (
     readonly createdAt: ImportTimestamp;
     readonly importId: ImportId;
   },
-  originalDispatchId: string
+  candidate: {
+    readonly original_dispatch_id: string;
+    readonly source_media_sha256: string;
+  }
 ) => {
   const updatedAt = DateTime.formatIso(input.createdAt);
+  const recoveryDispatchId = `${candidate.original_dispatch_id}:recovery:1`;
   return persistenceEffect(() =>
     database.batch([
       database
@@ -558,7 +543,7 @@ const prepareSettledRecovery = (
           input.importId,
           input.acquisitionGeneration,
           PilotProviderBudgetStage,
-          originalDispatchId
+          candidate.original_dispatch_id
         ),
       database
         .prepare(
@@ -617,9 +602,77 @@ const prepareSettledRecovery = (
         .bind(
           input.importId,
           input.acquisitionGeneration,
-          originalDispatchId,
-          originalDispatchId,
+          candidate.original_dispatch_id,
+          candidate.original_dispatch_id,
           PilotProviderBudgetStage
+        ),
+      database
+        .prepare(
+          `INSERT INTO import_transcriptions (
+             import_id, acquisition_generation, dispatch_id,
+             source_media_sha256, state, created_at, updated_at
+           )
+           SELECT parent.id, parent.acquisition_generation, ?, ?,
+                  'dispatching', ?, ?
+             FROM recipe_imports AS parent
+             JOIN import_provider_terminal_checkpoints AS checkpoint
+               ON checkpoint.import_id = parent.id
+              AND checkpoint.acquisition_generation =
+                    parent.acquisition_generation
+              AND checkpoint.provider_stage = 'speech'
+              AND checkpoint.ownership_id = ?
+              AND checkpoint.failure_code = 'outcome_unknown'
+             JOIN pilot_provider_budget_reconciliations AS audit
+               ON audit.runtime_stage = ?
+              AND audit.dispatch_id = checkpoint.ownership_id
+              AND audit.actual_cost_was_unknown = 1
+              AND audit.authority = 'authenticated_operator'
+             JOIN pilot_provider_budget_dispatches AS dispatch
+               ON dispatch.runtime_stage = audit.runtime_stage
+              AND dispatch.dispatch_id = audit.dispatch_id
+              AND dispatch.state = 'settled_unknown'
+              AND dispatch.provider_stage_id = 'speech-transcription'
+              AND dispatch.actual_cost_micro_usd IS NULL
+              AND dispatch.maximum_cost_micro_usd =
+                    audit.conservative_charge_micro_usd
+             JOIN pilot_provider_stage_budget AS stage
+               ON stage.runtime_stage = audit.runtime_stage
+              AND stage.state = 'open'
+              AND stage.reserved_micro_usd = 0
+              AND stage.invoking_dispatch_id IS NULL
+              AND stage.poison_dispatch_id IS NULL
+              AND stage.settled_micro_usd < stage.budget_cap_micro_usd
+            WHERE parent.id = ?
+              AND parent.acquisition_generation = ?
+              AND parent.status = 'acquired'
+              AND parent.status_code IS NULL
+              AND parent.recovery_action IS NULL
+              AND json_array_length(parent.evidence_references_json) = 2
+              AND instr(audit.dispatch_id, ':recovery:1') = 0
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM import_transcriptions AS transcription
+                 WHERE transcription.import_id = parent.id
+                   AND transcription.acquisition_generation =
+                         parent.acquisition_generation
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM pilot_provider_speech_recoveries AS recovery
+                 WHERE recovery.runtime_stage = audit.runtime_stage
+                   AND recovery.original_dispatch_id = audit.dispatch_id
+              )
+           ON CONFLICT(import_id, acquisition_generation) DO NOTHING`
+        )
+        .bind(
+          recoveryDispatchId,
+          candidate.source_media_sha256,
+          updatedAt,
+          updatedAt,
+          candidate.original_dispatch_id,
+          PilotProviderBudgetStage,
+          input.importId,
+          input.acquisitionGeneration
         ),
     ])
   );
@@ -667,14 +720,13 @@ export const makeD1ProviderTerminalRecoveryRepository = (
         input.importId,
         input.acquisitionGeneration
       ).pipe(
-        Effect.map((dispatchId): string | null => dispatchId),
         Effect.catchTag(
           "ProviderTerminalPersistenceError",
           allowMissingRecovery
         )
       );
       if (settled !== null) {
-        const recoveryDispatchId = `${settled}:recovery:1`;
+        const recoveryDispatchId = `${settled.original_dispatch_id}:recovery:1`;
         if (recoveryDispatchId.length > 100) {
           return yield* Effect.fail(
             providerTerminalPersistenceError("persistence_corrupt")
@@ -707,7 +759,8 @@ export const makeD1ProviderTerminalRecoveryRepository = (
       if (
         poison === null ||
         typeof poison.poison_dispatch_id !== "string" ||
-        poison.poison_dispatch_id.length === 0
+        poison.poison_dispatch_id.length === 0 ||
+        poison.poison_dispatch_id.includes(":recovery:1")
       ) {
         return yield* Effect.fail(
           providerTerminalPersistenceError("recovery_not_allowed")

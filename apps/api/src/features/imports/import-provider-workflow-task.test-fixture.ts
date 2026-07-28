@@ -43,6 +43,7 @@ interface ProviderWorkflowInput {
   readonly scenario:
     | "retry_exhausted"
     | "speech_terminal_recovery"
+    | "speech_terminal_recovery_poison"
     | "success"
     | "terminal"
     | "unknown";
@@ -200,7 +201,8 @@ const speechTerminalRecoveryDispatch = (
   env: ProviderWorkflowTestEnv,
   instanceId: string,
   importId: ImportId,
-  acquisitionGeneration: AcquisitionGeneration
+  acquisitionGeneration: AcquisitionGeneration,
+  poisonRecovery: boolean
 ) =>
   Effect.gen(function* runSpeechTerminalRecoveryDispatch() {
     const dispatchId = yield* makeD1ProviderTerminalRecoveryRepository(
@@ -223,7 +225,7 @@ const speechTerminalRecoveryDispatch = (
     const result = yield* runPilotProviderDispatch({
       invoke: increment(env, instanceId, "provider-calls").pipe(
         Effect.andThen(
-          isRecovery
+          isRecovery && !poisonRecovery
             ? Effect.succeed({
                 cost: {
                   _tag: "Known" as const,
@@ -277,6 +279,7 @@ const directProviderEffect = (
 const providerStageByScenario = {
   retry_exhausted: "speech",
   speech_terminal_recovery: "speech",
+  speech_terminal_recovery_poison: "speech",
   success: "visual",
   terminal: "visual",
   unknown: "speech",
@@ -297,7 +300,10 @@ const providerWorkflowExport = {
       Effect.gen(function* runProviderWorkflow() {
         const event = yield* WorkflowEvent;
         yield* increment(env, event.instanceId, "workflow-runs");
-        if (input.scenario === "speech_terminal_recovery") {
+        if (
+          input.scenario === "speech_terminal_recovery" ||
+          input.scenario === "speech_terminal_recovery_poison"
+        ) {
           if (input.importId === undefined) {
             return yield* Effect.die("Missing terminal recovery import ID");
           }
@@ -314,7 +320,8 @@ const providerWorkflowExport = {
               env,
               event.instanceId,
               importId,
-              acquisitionGeneration
+              acquisitionGeneration,
+              input.scenario === "speech_terminal_recovery_poison"
             ),
             (evidence) => ({
               _tag: "Succeeded" as const,
@@ -422,7 +429,11 @@ export class ProviderRetryWorkflow extends ProviderRetryWorkflowBridge {}
 const readRequest = (request: Request) =>
   request.json() as Promise<
     | {
-        readonly action: "recover-speech";
+        readonly action: "interleave-stage";
+        readonly id: string;
+      }
+    | {
+        readonly action: "prepare-speech";
         readonly id: string;
         readonly importId: string;
       }
@@ -433,6 +444,7 @@ const readRequest = (request: Request) =>
         readonly importId: string;
       }
     | { readonly action: "restart"; readonly id: string }
+    | { readonly action: "restart-speech"; readonly id: string }
     | { readonly action: "restart-terminal"; readonly id: string }
     | {
         readonly action: "run";
@@ -464,6 +476,42 @@ export default {
           )
         );
       }
+      if (command.action === "prepare-speech") {
+        return Response.json(
+          await Effect.runPromise(
+            makeD1ProviderTerminalRecoveryRepository(
+              env.MealPlannerDatabase,
+              "pilot-gaia-118"
+            ).prepareSpeechUnknownRecovery({
+              acquisitionGeneration: decodeGeneration(1),
+              createdAt: decodeImportTimestamp("2026-07-27T09:11:00.000Z"),
+              importId: decodeImportId(command.importId),
+            })
+          )
+        );
+      }
+      if (command.action === "interleave-stage") {
+        const repository = makeD1PilotProviderBudgetRepository(
+          env.MealPlannerDatabase,
+          "pilot-gaia-118"
+        );
+        const reservation = {
+          dispatchId: decodeDispatchId(`interleave:${command.id}`),
+          maximumCostMicroUsd: 1,
+          providerStageId: decodeProviderStageId("visual-evidence"),
+          runId: decodeRunId(`run:${command.id}`),
+          timestamp: decodeTimestamp("2026-07-27T09:11:15.000Z"),
+        };
+        await Effect.runPromise(repository.reserve(reservation));
+        await Effect.runPromise(repository.beginInvocation(reservation));
+        await Effect.runPromise(
+          repository.settleKnown({
+            ...reservation,
+            actualCostMicroUsd: 0,
+          })
+        );
+        return Response.json({ outcome: "settled_known_zero" });
+      }
       if (command.action === "run") {
         await workflow.unsafeSetIntrospectionOperations(sessionId, [
           {
@@ -477,31 +525,18 @@ export default {
         await workflow.create({ id: command.id, params: command.input });
       } else {
         const instance = await workflow.get(command.id);
-        if (command.action === "recover-speech") {
-          await Effect.runPromise(
-            makeD1ProviderTerminalRecoveryRepository(
-              env.MealPlannerDatabase,
-              "pilot-gaia-118"
-            ).prepareSpeechUnknownRecovery({
-              acquisitionGeneration: decodeGeneration(1),
-              createdAt: decodeImportTimestamp("2026-07-27T09:11:00.000Z"),
-              importId: decodeImportId(command.importId),
-            })
-          );
-          await instance.restart({
-            from: { name: "transcribe-video-v1", type: "do" },
-          });
-        } else {
-          await instance.restart({
-            from: {
-              name:
-                command.action === "restart-terminal"
-                  ? "persist-speech-terminal-v1"
-                  : "finalize-terminal",
-              type: "do",
-            },
-          });
-        }
+        await instance.restart({
+          from:
+            command.action === "restart-speech"
+              ? { name: "transcribe-video-v1", type: "do" }
+              : {
+                  name:
+                    command.action === "restart-terminal"
+                      ? "persist-speech-terminal-v1"
+                      : "finalize-terminal",
+                  type: "do",
+                },
+        });
       }
 
       await workflow.unsafeWaitForStatus(command.id, "complete");

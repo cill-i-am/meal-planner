@@ -475,13 +475,16 @@ describe("provider terminal recovery", () => {
     });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        `SELECT COUNT(*) AS count
+        `SELECT dispatch_id, state
            FROM import_transcriptions
           WHERE import_id = ? AND acquisition_generation = ?`
       )
         .bind(seeded.importId, seeded.generation)
         .first()
-    ).resolves.toEqual({ count: 0 });
+    ).resolves.toEqual({
+      dispatch_id: `${seeded.dispatchId}:recovery:1`,
+      state: "dispatching",
+    });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
         `SELECT status, status_code, recovery_action,
@@ -503,8 +506,92 @@ describe("provider terminal recovery", () => {
         },
       ]),
       recovery_action: null,
-      status: "acquired",
+      status: "transcribing",
       status_code: null,
+    });
+  });
+
+  it("keeps the persisted recovery identity while unrelated stage activity occupies the ledger", async () => {
+    const seeded = await seedPoisonedSpeechImport("000000000184");
+    await Effect.runPromise(
+      makeD1ProviderTerminalCheckpointRepository(
+        testEnv.MealPlannerDatabase
+      ).persist({
+        acquisitionGeneration: seeded.generation,
+        completedAt: decodeImportTimestamp(seeded.now),
+        failureCode: "outcome_unknown",
+        importId: seeded.importId,
+        providerStage: "speech",
+      })
+    );
+    await Effect.runPromise(
+      makeD1ProviderTerminalSettlementService({
+        database: testEnv.MealPlannerDatabase,
+        now: () => decodeImportTimestamp("2026-07-27T09:02:30.000Z"),
+        runtimeStage: "pilot-gaia-118",
+      }).settle({
+        acquisitionGeneration: seeded.generation,
+        dispatchId: seeded.dispatchId,
+        importId: seeded.importId,
+      })
+    );
+    const recovery = makeD1ProviderTerminalRecoveryRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const prepared = await Effect.runPromise(
+      recovery.prepareSpeechUnknownRecovery({
+        acquisitionGeneration: seeded.generation,
+        createdAt: decodeImportTimestamp("2026-07-27T09:03:00.000Z"),
+        importId: seeded.importId,
+      })
+    );
+    const budget = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const unrelated = {
+      dispatchId: decodeDispatchId("unrelated-gaia-187"),
+      maximumCostMicroUsd: 1,
+      providerStageId: decodeStageId("visual-extraction"),
+      runId: decodeRunId("run-gaia-187-unrelated"),
+      timestamp: decodeBudgetTimestamp("2026-07-27T09:03:30.000Z"),
+    };
+    await Effect.runPromise(budget.reserve(unrelated));
+    await Effect.runPromise(budget.beginInvocation(unrelated));
+
+    await expect(
+      Effect.runPromise(
+        recovery.speechDispatchId({
+          acquisitionGeneration: seeded.generation,
+          importId: seeded.importId,
+        })
+      )
+    ).resolves.toBe(prepared.recoveryDispatchId);
+
+    await Effect.runPromise(
+      budget.settleKnown({ ...unrelated, actualCostMicroUsd: 0 })
+    );
+    await expect(
+      Effect.runPromise(
+        recovery.prepareSpeechUnknownRecovery({
+          acquisitionGeneration: seeded.generation,
+          createdAt: decodeImportTimestamp("2026-07-27T09:04:00.000Z"),
+          importId: seeded.importId,
+        })
+      )
+    ).resolves.toEqual(prepared);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT dispatch_id, state
+           FROM import_transcriptions
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(seeded.importId, seeded.generation)
+        .first()
+    ).resolves.toEqual({
+      dispatch_id: prepared.recoveryDispatchId,
+      state: "dispatching",
     });
   });
 
@@ -668,6 +755,147 @@ describe("provider terminal recovery", () => {
           WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
       )
         .bind(seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+  });
+
+  it("fails closed on a poisoned first recovery without minting a nested identity", async () => {
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE pilot_provider_stage_budget
+          SET settled_micro_usd = 0,
+              reserved_micro_usd = 0,
+              state = 'open',
+              invoking_dispatch_id = NULL,
+              poison_dispatch_id = NULL,
+              updated_at = '2026-07-27T09:04:30.000Z'
+        WHERE runtime_stage = 'pilot-gaia-118'`
+    ).run();
+    const seeded = await seedPoisonedSpeechImport("000000000185");
+    const terminal = makeD1ProviderTerminalCheckpointRepository(
+      testEnv.MealPlannerDatabase
+    );
+    await Effect.runPromise(
+      terminal.persist({
+        acquisitionGeneration: seeded.generation,
+        completedAt: decodeImportTimestamp(seeded.now),
+        failureCode: "outcome_unknown",
+        importId: seeded.importId,
+        providerStage: "speech",
+      })
+    );
+    await Effect.runPromise(
+      makeD1ProviderTerminalSettlementService({
+        database: testEnv.MealPlannerDatabase,
+        now: () => decodeImportTimestamp("2026-07-27T09:05:00.000Z"),
+        runtimeStage: "pilot-gaia-118",
+      }).settle({
+        acquisitionGeneration: seeded.generation,
+        dispatchId: seeded.dispatchId,
+        importId: seeded.importId,
+      })
+    );
+
+    const recovery = makeD1ProviderTerminalRecoveryRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const prepared = await Effect.runPromise(
+      recovery.prepareSpeechUnknownRecovery({
+        acquisitionGeneration: seeded.generation,
+        createdAt: decodeImportTimestamp("2026-07-27T09:05:30.000Z"),
+        importId: seeded.importId,
+      })
+    );
+    const budget = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const recoveryReservation = {
+      dispatchId: decodeDispatchId(prepared.recoveryDispatchId),
+      maximumCostMicroUsd: 50_000,
+      providerStageId: decodeStageId("speech-transcription"),
+      runId: decodeRunId("run-gaia-187-poisoned-recovery"),
+      timestamp: decodeBudgetTimestamp("2026-07-27T09:06:00.000Z"),
+    };
+    await Effect.runPromise(budget.reserve(recoveryReservation));
+    await Effect.runPromise(budget.beginInvocation(recoveryReservation));
+    await Effect.runPromise(budget.settleUnknown(recoveryReservation));
+    await Effect.runPromise(
+      terminal.persist({
+        acquisitionGeneration: seeded.generation,
+        completedAt: decodeImportTimestamp("2026-07-27T09:06:30.000Z"),
+        failureCode: "outcome_unknown",
+        importId: seeded.importId,
+        providerStage: "speech",
+      })
+    );
+
+    await expect(
+      Effect.runPromise(
+        recovery.prepareSpeechUnknownRecovery({
+          acquisitionGeneration: seeded.generation,
+          createdAt: decodeImportTimestamp("2026-07-27T09:07:00.000Z"),
+          importId: seeded.importId,
+        })
+      )
+    ).resolves.toEqual(prepared);
+    await expect(
+      Effect.runPromise(
+        recovery.speechDispatchId({
+          acquisitionGeneration: seeded.generation,
+          importId: seeded.importId,
+        })
+      )
+    ).resolves.toBe(prepared.recoveryDispatchId);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, poison_dispatch_id
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({
+      poison_dispatch_id: prepared.recoveryDispatchId,
+      state: "poisoned",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT dispatch_id, failure_code, state
+           FROM import_transcriptions
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(seeded.importId, seeded.generation)
+        .first()
+    ).resolves.toEqual({
+      dispatch_id: prepared.recoveryDispatchId,
+      failure_code: "outcome_unknown",
+      state: "failed",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM import_provider_terminal_checkpoints
+          WHERE import_id = ? AND acquisition_generation = ?
+            AND provider_stage = 'speech'`
+      )
+        .bind(seeded.importId, seeded.generation)
+        .first()
+    ).resolves.toEqual({ count: 2 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_dispatches
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND dispatch_id LIKE '%:recovery:1:recovery:1'`
+      ).first()
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_speech_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND original_dispatch_id = ?`
+      )
+        .bind(prepared.recoveryDispatchId)
         .first()
     ).resolves.toEqual({ count: 0 });
   });
