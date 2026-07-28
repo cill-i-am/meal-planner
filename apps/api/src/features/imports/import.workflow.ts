@@ -20,9 +20,11 @@ import {
   makePilotProviderBudgetRuntime,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+import type { AcquisitionCheckpointRejected } from "./import-acquisition-checkpoint.js";
 import {
   continueAcquisitionCheckpoint,
   decodeAcquisitionCheckpoint,
+  recoverVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
 import { loadStagedOperatorCarousel } from "./import-carousel-staging.js";
 import {
@@ -35,7 +37,10 @@ import {
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
-import { acquireStoreVerify } from "./import-media-acquirer.js";
+import {
+  acquireStoreVerify,
+  readVerifiedAcquisitionEvidence,
+} from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { ImportMediaAcquisitionObject } from "./import-media-acquisition-object.js";
 import {
@@ -83,6 +88,10 @@ import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcripti
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import { resolveImportWorkflowInput } from "./import-workflow-input.js";
+import {
+  PostAcquisitionJournalCheckpoint,
+  postAcquisitionRestartOptions,
+} from "./import-workflow-journal.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -417,45 +426,76 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           const stub = mediaObjects.getByName(importId);
           const encodedOutcome = yield* Cloudflare.Workflows.task(
             "resolve-acquire-store-verify-v2",
-            runAcquisitionTask(
-              () => repository.beginAcquisitionAttempt(importId),
-              (allocation) =>
-                allocation.canonicalSourceId === claim.canonicalId
-                  ? acquireStoreVerify(
-                      rawBucket as unknown as AcquisitionBucketLike,
-                      {
-                        cleanup: (artifactId) => stub.cleanup(artifactId),
-                        prepare: (input) => stub.prepare(input),
-                        prepareProviderEvidence: (
-                          artifactId,
-                          durationSeconds
-                        ) =>
-                          stub.prepareProviderEvidence(
-                            artifactId,
-                            durationSeconds
-                          ),
-                        stream: (artifactId) => stub.stream(artifactId),
-                      },
-                      {
-                        beforeCleanup: (prepared, mediaObject) =>
-                          persistDerivedProviderEvidence(
-                            rawBucket as unknown as AcquisitionBucketLike,
-                            mediaObject,
-                            prepared,
-                            {
-                              generation: allocation.generation,
-                              importId,
-                            }
-                          ),
-                        canonicalId: allocation.canonicalSourceId,
-                        generation: allocation.generation,
-                        importId,
-                        now: () => new Date(),
-                      }
-                    )
-                  : Effect.die("Persisted canonical identity changed")
-            ).pipe(
-              Effect.map(Schema.encodeSync(AcquisitionTaskOutcome)),
+            recoverVerifiedAcquisitionCheckpoint({
+              expectedCanonicalId: claim.canonicalId,
+              findStored: repository.findById(importId),
+              importId,
+              readEvidence: (stored) =>
+                readVerifiedAcquisitionEvidence(
+                  rawBucket as unknown as AcquisitionBucketLike,
+                  {
+                    canonicalId: stored.canonicalSourceId,
+                    generation: stored.acquisitionGeneration,
+                    importId,
+                    now: () => new Date(),
+                  }
+                ),
+            }).pipe(
+              Effect.flatMap(
+                (
+                  recovered
+                ): Effect.Effect<
+                  AcquisitionTaskOutcome | AcquisitionCheckpointRejected,
+                  UnconfirmedAcquisitionRetry
+                > =>
+                  recovered === null
+                    ? runAcquisitionTask(
+                        () => repository.beginAcquisitionAttempt(importId),
+                        (allocation) =>
+                          allocation.canonicalSourceId === claim.canonicalId
+                            ? acquireStoreVerify(
+                                rawBucket as unknown as AcquisitionBucketLike,
+                                {
+                                  cleanup: (artifactId) =>
+                                    stub.cleanup(artifactId),
+                                  prepare: (input) => stub.prepare(input),
+                                  prepareProviderEvidence: (
+                                    artifactId,
+                                    durationSeconds
+                                  ) =>
+                                    stub.prepareProviderEvidence(
+                                      artifactId,
+                                      durationSeconds
+                                    ),
+                                  stream: (artifactId) =>
+                                    stub.stream(artifactId),
+                                },
+                                {
+                                  beforeCleanup: (prepared, mediaObject) =>
+                                    persistDerivedProviderEvidence(
+                                      rawBucket as unknown as AcquisitionBucketLike,
+                                      mediaObject,
+                                      prepared,
+                                      {
+                                        generation: allocation.generation,
+                                        importId,
+                                      }
+                                    ),
+                                  canonicalId: allocation.canonicalSourceId,
+                                  generation: allocation.generation,
+                                  importId,
+                                  now: () => new Date(),
+                                }
+                              )
+                            : Effect.die("Persisted canonical identity changed")
+                      )
+                    : Effect.succeed(recovered)
+              ),
+              Effect.map((outcome) =>
+                outcome._tag === "AcquisitionCheckpointRejected"
+                  ? outcome
+                  : Schema.encodeSync(AcquisitionTaskOutcome)(outcome)
+              ),
               Effect.orDie
             ),
             AcquisitionTaskStepConfig
@@ -631,6 +671,10 @@ export interface ImportWorkflowStarterShape {
   readonly restartFromSpeech?: (
     importId: ImportId
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
+  readonly restartPostAcquisition?: (
+    importId: ImportId,
+    checkpoint: PostAcquisitionJournalCheckpoint
+  ) => Effect.Effect<void, WorkflowStartUnavailable>;
 }
 
 export interface ImportWorkflowReconcilerShape extends ImportWorkflowStarterShape {
@@ -697,52 +741,67 @@ export const makeImportWorkflowStarter = (
     readonly correlationId?: ImportCorrelationId;
     readonly newCorrelationId?: () => ImportCorrelationId;
   }
-): ImportWorkflowReconcilerShape => ({
-  ensureStarted: (importId) => {
-    const instanceId = importWorkflowInstanceId(importId);
-    const correlationId =
-      options?.correlationId ??
-      (options?.newCorrelationId ?? makeImportCorrelationId)();
-    return Effect.gen(function* ensureStarted() {
-      const created = yield* workflow.createBatch([
-        { id: instanceId, params: { correlationId, importId } },
-      ]);
-      if (created.length === 1) {
-        yield* emitImportObservabilityEvent({
-          correlationId,
-          event: "import.accepted",
-          outcome: "accepted",
-        });
-        return "created" as const;
-      }
-      if (created.length !== 0) {
-        return yield* Effect.fail(workflowStartUnavailable());
-      }
-      return yield* reconcileExisting(yield* workflow.get(instanceId));
-    }).pipe(
-      Effect.catchCauseIf(
-        (cause) => !Cause.hasInterrupts(cause),
-        () => Effect.fail(workflowStartUnavailable())
-      )
-    );
-  },
-  restartFromSpeech: (importId) =>
-    workflow.get(importWorkflowInstanceId(importId)).pipe(
-      // Some retained pre-provider journals completed acquisition without ever
-      // registering the speech task. Restart from the guaranteed finalization
-      // checkpoint; its verified-acquisition path is idempotent for already
-      // acquired/transcribing imports and then registers the speech task.
-      Effect.flatMap((instance) =>
-        instance.restart({
-          from: { name: "record-acquisition-v2", type: "do" },
-        })
+): ImportWorkflowReconcilerShape => {
+  const restartPostAcquisition = (
+    importId: ImportId,
+    rawCheckpoint: PostAcquisitionJournalCheckpoint
+  ) =>
+    Schema.decodeUnknownEffect(PostAcquisitionJournalCheckpoint)(
+      rawCheckpoint
+    ).pipe(
+      Effect.mapError(() => workflowStartUnavailable()),
+      Effect.flatMap((checkpoint) =>
+        workflow
+          .get(importWorkflowInstanceId(importId))
+          .pipe(
+            Effect.flatMap((instance) =>
+              instance.restart(postAcquisitionRestartOptions(checkpoint))
+            )
+          )
       ),
       Effect.catchCauseIf(
         (cause) => !Cause.hasInterrupts(cause),
         () => Effect.fail(workflowStartUnavailable())
       )
-    ),
-});
+    );
+
+  return {
+    ensureStarted: (importId) => {
+      const instanceId = importWorkflowInstanceId(importId);
+      const correlationId =
+        options?.correlationId ??
+        (options?.newCorrelationId ?? makeImportCorrelationId)();
+      return Effect.gen(function* ensureStarted() {
+        const created = yield* workflow.createBatch([
+          { id: instanceId, params: { correlationId, importId } },
+        ]);
+        if (created.length === 1) {
+          yield* emitImportObservabilityEvent({
+            correlationId,
+            event: "import.accepted",
+            outcome: "accepted",
+          });
+          return "created" as const;
+        }
+        if (created.length !== 0) {
+          return yield* Effect.fail(workflowStartUnavailable());
+        }
+        return yield* reconcileExisting(yield* workflow.get(instanceId));
+      }).pipe(
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterrupts(cause),
+          () => Effect.fail(workflowStartUnavailable())
+        )
+      );
+    },
+    restartFromSpeech: (importId) =>
+      restartPostAcquisition(importId, {
+        _tag: "FinalizedWithoutSpeech",
+        lastSuccessfulStep: "record-acquisition-v2",
+      }),
+    restartPostAcquisition,
+  };
+};
 
 export const ensureImportWorkflowStarted = (
   starter: ImportWorkflowStarterShape,

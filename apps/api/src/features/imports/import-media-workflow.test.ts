@@ -371,6 +371,46 @@ describe("import Workflow start reconciliation", () => {
     ]);
   });
 
+  it("restarts the retained resolution only for a typed journal ending before finalization", async () => {
+    const { calls, starter } = makeWorkflow("errored");
+
+    await expect(
+      Effect.runPromise(
+        starter.restartPostAcquisition?.(importId, {
+          _tag: "ResolvedWithoutFinalization",
+          lastSuccessfulStep: "resolve-acquire-store-verify-v2",
+        }) ?? Effect.die("missing recovery")
+      )
+    ).resolves.toBeUndefined();
+    expect(calls.restartOptions).toEqual([
+      {
+        from: {
+          name: "resolve-acquire-store-verify-v2",
+          type: "do",
+        },
+      },
+    ]);
+  });
+
+  it("fails closed when the retained journal classifier is inconsistent", async () => {
+    const { calls, starter } = makeWorkflow("errored");
+    const restart =
+      starter.restartPostAcquisition?.(importId, {
+        _tag: "FinalizedWithoutSpeech",
+        lastSuccessfulStep: "resolve-acquire-store-verify-v2",
+      } as never) ?? Effect.die("missing recovery");
+
+    const exit = await Effect.runPromiseExit(restart);
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected Workflow start failure");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+      _tag: "WorkflowStartUnavailable",
+    });
+    expect(calls.restart).toBe(0);
+  });
+
   it.each(["errored", "terminated", "complete"] as const)(
     "restarts a retained %s instance",
     async (status) => {

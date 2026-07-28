@@ -1,9 +1,10 @@
-import { Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { historicalAcquisitionCheckpointFixture } from "./import-acquisition-checkpoint.historical-fixture.js";
 import {
   decodeAcquisitionCheckpoint,
+  recoverVerifiedAcquisitionCheckpoint,
   verifyAcquisitionCheckpointContinuation,
 } from "./import-acquisition-checkpoint.js";
 import {
@@ -26,6 +27,17 @@ const importId = Schema.decodeUnknownSync(ImportId)(
 const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
 const acquiredAt = "2026-07-28T10:00:00.000Z";
 const historicalCheckpoint = historicalAcquisitionCheckpointFixture(importId);
+
+const verifiedOutcome = () => {
+  const decoded = decodeAcquisitionCheckpoint(historicalCheckpoint);
+  if (
+    decoded._tag !== "Accepted" ||
+    decoded.outcome._tag !== "VerifiedAcquisition"
+  ) {
+    throw new Error("Expected the synthetic checkpoint to decode");
+  }
+  return decoded.outcome;
+};
 
 const storedImport = (overrides: Partial<StoredImport> = {}): StoredImport => ({
   acquisitionGeneration: generation,
@@ -217,5 +229,103 @@ describe("historical acquisition checkpoint boundary", () => {
         stored: storedImport(),
       })
     ).toEqual({ _tag: "Accepted" });
+  });
+});
+
+describe("retained acquisition recovery boundary", () => {
+  it("leaves an acquiring import on the ordinary acquisition path", async () => {
+    let evidenceReads = 0;
+    const acquiring = storedImport({
+      view: {
+        ...storedImport().view,
+        evidence: [],
+        status: { kind: "acquiring" },
+      },
+    });
+
+    await expect(
+      Effect.runPromise(
+        recoverVerifiedAcquisitionCheckpoint({
+          expectedCanonicalId: acquiring.canonicalSourceId,
+          findStored: Effect.succeed(Option.some(acquiring)),
+          importId,
+          readEvidence: () =>
+            Effect.sync(() => {
+              evidenceReads += 1;
+              return verifiedOutcome().evidence;
+            }),
+        })
+      )
+    ).resolves.toBeNull();
+    expect(evidenceReads).toBe(0);
+  });
+
+  it("reuses exact retained evidence without reacquisition", async () => {
+    let evidenceReads = 0;
+    const { evidence } = verifiedOutcome();
+
+    await expect(
+      Effect.runPromise(
+        recoverVerifiedAcquisitionCheckpoint({
+          expectedCanonicalId: storedImport().canonicalSourceId,
+          findStored: Effect.succeed(Option.some(storedImport())),
+          importId,
+          readEvidence: () =>
+            Effect.sync(() => {
+              evidenceReads += 1;
+              return evidence;
+            }),
+        })
+      )
+    ).resolves.toMatchObject({
+      _tag: "VerifiedAcquisition",
+      evidence,
+      generation,
+    });
+    expect(evidenceReads).toBe(1);
+  });
+
+  it("fails closed when retained evidence is absent", async () => {
+    await expect(
+      Effect.runPromise(
+        recoverVerifiedAcquisitionCheckpoint({
+          expectedCanonicalId: storedImport().canonicalSourceId,
+          findStored: Effect.succeed(Option.some(storedImport())),
+          importId,
+          readEvidence: () => Effect.succeed(null),
+        })
+      )
+    ).resolves.toEqual({
+      _tag: "AcquisitionCheckpointRejected",
+      code: "historical_acquisition_checkpoint_invalid",
+    });
+  });
+
+  it("fails closed before reading evidence for incompatible identity", async () => {
+    let evidenceReads = 0;
+    const incompatible = storedImport({
+      canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)(
+        "different-canonical-id"
+      ),
+    });
+
+    await expect(
+      Effect.runPromise(
+        recoverVerifiedAcquisitionCheckpoint({
+          expectedCanonicalId: storedImport().canonicalSourceId,
+          findStored: Effect.succeed(Option.some(incompatible)),
+          importId,
+          readEvidence: () =>
+            Effect.sync(() => {
+              evidenceReads += 1;
+              return verifiedOutcome().evidence;
+            }),
+        })
+      )
+    ).resolves.toEqual({
+      _tag: "AcquisitionCheckpointRejected",
+      code: "historical_acquisition_checkpoint_invalid",
+    });
+    expect(evidenceReads).toBe(0);
   });
 });
