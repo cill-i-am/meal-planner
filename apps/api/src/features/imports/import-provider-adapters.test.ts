@@ -22,66 +22,40 @@ import { hasMinimumRecipeEvidence } from "./import-recipe-draft.js";
 import { RecipeExtraction } from "./import-recipe-extractor.js";
 import { VisualEvidence } from "./import-visual-evidence-extractor.js";
 
-const makeGateway = (response: unknown) => {
-  const requests: unknown[] = [];
-  const gateway = {
-    run: (request: unknown) => {
-      requests.push(request);
-      return Promise.resolve(Response.json(response));
-    },
-  };
-  return {
-    client: {
-      gateway: Effect.succeed(gateway),
-      id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.die("metadata-only universal gateway was bypassed"),
-    } as unknown as QueryGatewayClient,
-    requests,
-  };
-};
-
 const makeRawGateway = (response: Response) => {
   const requests: unknown[] = [];
-  const gateway = {
-    run: (request: unknown) => {
-      requests.push(request);
+  const ai = {
+    run: (model: unknown, body: unknown, options: unknown) => {
+      requests.push({ body, model, options });
       return Promise.resolve(response);
     },
   };
   return {
     client: {
-      gateway: Effect.succeed(gateway),
+      gateway: Effect.die("universal AI Gateway binding must not be used"),
       id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.die("metadata-only universal gateway was bypassed"),
+      raw: Effect.succeed(ai),
+      run: () => Effect.die("universal AI Gateway dispatch must not be used"),
     } as unknown as QueryGatewayClient,
     requests,
   };
 };
 
-const makeSpeechGateway = (response: unknown) => {
-  const requests: unknown[] = [];
-  const run = (request: unknown) =>
-    Effect.sync(() => {
-      requests.push(request);
-      return Response.json(response);
-    });
-  return {
-    client: {
-      gateway: Effect.die("raw universal gateway access was bypassed"),
-      id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.die("metadata-only universal gateway was bypassed"),
-      run,
-    } as unknown as QueryGatewayClient,
-    requests,
-  };
-};
+const makeGateway = (response: unknown) =>
+  makeRawGateway(Response.json(response));
+
+const makeSpeechGateway = makeGateway;
 
 const makeRejectedSpeechGateway = (error: unknown) =>
   ({
-    gateway: Effect.die("raw universal gateway access was bypassed"),
+    gateway: Effect.die("universal AI Gateway binding must not be used"),
     id: Effect.succeed("meal-planner-pilot-gaia-118"),
-    raw: Effect.die("metadata-only universal gateway was bypassed"),
-    run: () => Effect.fail(error),
+    raw: Effect.succeed({
+      run: () => {
+        throw error;
+      },
+    }),
+    run: () => Effect.die("universal AI Gateway dispatch must not be used"),
   }) as unknown as QueryGatewayClient;
 
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
@@ -305,24 +279,32 @@ describe("installed import provider adapters", () => {
         providerStageId: "speech-transcription",
       },
     ]);
-    expect(gateway.requests[0]).toMatchObject({
-      endpoint: "@cf/openai/whisper-large-v3-turbo",
-      headers: {
-        "cf-aig-collect-log": "true",
-        "cf-aig-collect-log-payload": "false",
-        "cf-aig-metadata": JSON.stringify({ correlationId }),
-        "content-type": "application/json",
-      },
-      provider: "workers-ai",
-      query: {
+    expect(gateway.requests[0]).toEqual({
+      body: {
         audio: "AQID",
         condition_on_previous_text: false,
         language: "en",
         task: "transcribe",
         vad_filter: true,
       },
+      model: "@cf/openai/whisper-large-v3-turbo",
+      options: {
+        gateway: {
+          collectLog: true,
+          id: "meal-planner-pilot-gaia-118",
+          metadata: { correlationId },
+          skipCache: true,
+        },
+        returnRawResponse: true,
+      },
     });
-    expect(JSON.stringify(gateway.requests[0])).not.toContain("collectLog");
+    const speechRequest = gateway.requests[0] as {
+      readonly options: { readonly gateway: { readonly metadata: unknown } };
+    };
+    expect(speechRequest.options.gateway.metadata).toEqual({ correlationId });
+    expect(JSON.stringify(speechRequest.options)).not.toMatch(
+      /AQID|Chop the onion|https?:|cookie|credential|prompt|transcript/iu
+    );
     expect(trace.events).toEqual([
       {
         correlationId,
@@ -540,19 +522,40 @@ describe("installed import provider adapters", () => {
     });
     expect(gateway.requests).toHaveLength(1);
     const request = gateway.requests[0] as {
-      readonly query: {
+      readonly body: {
         readonly tool_choice: unknown;
         readonly tools: readonly {
           readonly function: { name: string; parameters: unknown };
         }[];
       };
+      readonly model: string;
+      readonly options: {
+        readonly gateway: {
+          readonly collectLog: boolean;
+          readonly id: string;
+          readonly metadata: unknown;
+          readonly skipCache: boolean;
+        };
+        readonly returnRawResponse: boolean;
+      };
     };
-    expect(request.query.tool_choice).toBe("required");
-    expect(request.query.tools).toHaveLength(1);
-    expect(request.query.tools[0]?.function.name).toBe(
-      "record_visual_evidence"
+    expect(request.model).toBe("@cf/meta/llama-3.2-11b-vision-instruct");
+    expect(request.options).toEqual({
+      gateway: {
+        collectLog: true,
+        id: "meal-planner-pilot-gaia-118",
+        metadata: { correlationId },
+        skipCache: true,
+      },
+      returnRawResponse: true,
+    });
+    expect(JSON.stringify(request.options)).not.toMatch(
+      /AQID|data:image|https?:|cookie|credential|prompt|transcript/iu
     );
-    expect(request.query.tools[0]?.function.parameters).toEqual(
+    expect(request.body.tool_choice).toBe("required");
+    expect(request.body.tools).toHaveLength(1);
+    expect(request.body.tools[0]?.function.name).toBe("record_visual_evidence");
+    expect(request.body.tools[0]?.function.parameters).toEqual(
       Tool.getJsonSchema(
         Tool.make("record_visual_evidence", { parameters: VisualEvidence })
       )
@@ -698,13 +701,13 @@ describe("installed import provider adapters", () => {
     );
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
     const request = gateway.requests[0] as {
-      readonly query: {
+      readonly body: {
         readonly tools: readonly {
           readonly function: { parameters: unknown };
         }[];
       };
     };
-    expect(request.query.tools[0]?.function.parameters).toEqual(
+    expect(request.body.tools[0]?.function.parameters).toEqual(
       Tool.getJsonSchema(
         Tool.make("record_recipe", { parameters: RecipeExtraction })
       )

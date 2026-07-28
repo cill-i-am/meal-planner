@@ -21,10 +21,7 @@ import {
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
-import {
-  ImportCorrelationId,
-  metadataOnlyGatewayHeaders,
-} from "./import-observability.js";
+import { ImportCorrelationId } from "./import-observability.js";
 import {
   makeInstalledSpeechTranscriber,
   makePilotProviderDispatchGate,
@@ -140,36 +137,38 @@ const installedSpeechDispatch = (
       runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
     const client = {
-      gateway: Effect.die("raw universal gateway access was bypassed"),
+      gateway: Effect.die("universal AI Gateway binding must not be used"),
       id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.die("metadata-only universal gateway was bypassed"),
-      run: (request: unknown) =>
-        Effect.gen(function* runSpeechGatewayRequest() {
-          const headers =
-            typeof request === "object" &&
-            request !== null &&
-            "headers" in request
-              ? (request.headers as Record<string, string>)
-              : {};
+      raw: Effect.succeed({
+        run: async (
+          _model: unknown,
+          _body: unknown,
+          options: unknown
+        ): Promise<Response> => {
           if (
-            JSON.stringify(headers) !==
-              JSON.stringify(metadataOnlyGatewayHeaders(correlationId)) ||
-            JSON.stringify(request).includes("collectLog")
+            JSON.stringify(options) !==
+            JSON.stringify({
+              gateway: {
+                collectLog: true,
+                id: "meal-planner-pilot-gaia-118",
+                metadata: { correlationId },
+                skipCache: true,
+              },
+              returnRawResponse: true,
+            })
           ) {
-            return yield* Effect.die(
-              "Metadata-only gateway policy was not installed"
-            );
+            throw new Error("Metadata-only gateway policy was not installed");
           }
-          yield* increment(env, instanceId, "provider-calls");
+          await Effect.runPromise(increment(env, instanceId, "provider-calls"));
           if (outcome === "known_zero") {
-            return yield* Effect.fail(
-              pilotProviderKnownZeroCostFailure("provider_unavailable" as const)
+            throw pilotProviderKnownZeroCostFailure(
+              "provider_unavailable" as const
             );
           }
-          return yield* Effect.fail(
-            new Error("simulated ambiguous provider interruption")
-          );
-        }),
+          throw new Error("simulated ambiguous provider interruption");
+        },
+      }),
+      run: () => Effect.die("universal AI Gateway dispatch must not be used"),
     } as unknown as QueryGatewayClient;
     const transcriber = yield* makeInstalledSpeechTranscriber({
       client,

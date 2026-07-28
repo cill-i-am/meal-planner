@@ -90,9 +90,11 @@ const repository: PilotProviderBudgetRepository = {
 
 const gatewayRequests: unknown[] = [];
 const gatewayClient = {
-  gateway: Effect.succeed({
-    run: (request: unknown) => {
-      gatewayRequests.push(request);
+  gateway: Effect.die("universal AI Gateway binding must not be used"),
+  id: Effect.succeed("meal-planner-pilot-gaia-118"),
+  raw: Effect.succeed({
+    run: (model: unknown, body: unknown, options: unknown) => {
+      gatewayRequests.push({ body, model, options });
       return Promise.resolve(
         Response.json({
           choices: [
@@ -133,8 +135,7 @@ const gatewayClient = {
       );
     },
   }),
-  id: Effect.succeed("meal-planner-pilot-gaia-118"),
-  raw: Effect.die("metadata-only universal gateway was bypassed"),
+  run: () => Effect.die("universal AI Gateway dispatch must not be used"),
 } as unknown as QueryGatewayClient;
 
 const testRuntimeContext = RuntimeContext.of({
@@ -239,16 +240,31 @@ describe("opaque import correlation continuity", () => {
       true
     );
     expect(gatewayRequests).toHaveLength(1);
-    const { headers } = Schema.decodeUnknownSync(
+    const { options } = Schema.decodeUnknownSync(
       Schema.Struct({
-        headers: Schema.Record(Schema.String, Schema.String),
+        options: Schema.Struct({
+          gateway: Schema.Struct({
+            collectLog: Schema.Boolean,
+            id: Schema.String,
+            metadata: Schema.Struct({ correlationId: ImportCorrelationId }),
+            skipCache: Schema.Boolean,
+          }),
+          returnRawResponse: Schema.Boolean,
+        }),
       })
     )(gatewayRequests[0]);
-    expect(headers["cf-aig-collect-log"]).toBe("true");
-    expect(headers["cf-aig-collect-log-payload"]).toBe("false");
-    expect(JSON.parse(headers["cf-aig-metadata"] ?? "")).toEqual({
-      correlationId,
+    expect(options).toEqual({
+      gateway: {
+        collectLog: true,
+        id: "meal-planner-pilot-gaia-118",
+        metadata: { correlationId },
+        skipCache: true,
+      },
+      returnRawResponse: true,
     });
+    expect(JSON.stringify(options)).not.toMatch(
+      /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
+    );
 
     const reconciliationStarter = makeImportWorkflowStarter(
       {
