@@ -5,7 +5,6 @@ import {
   Context,
   Effect,
   Layer,
-  Option,
   Schedule,
   Schema,
 } from "effect";
@@ -21,9 +20,9 @@ import {
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import {
-  AcquisitionCheckpointContinuation,
+  AcquisitionCheckpointRejected,
+  continueAcquisitionCheckpoint,
   decodeAcquisitionCheckpoint,
-  verifyAcquisitionCheckpointContinuation,
 } from "./import-acquisition-checkpoint.js";
 import { loadStagedOperatorCarousel } from "./import-carousel-staging.js";
 import {
@@ -68,7 +67,11 @@ import {
   makeD1ProviderTerminalCheckpointRepository,
   makeD1ProviderTerminalRecoveryRepository,
 } from "./import-provider-terminal.js";
-import { runProviderTask } from "./import-provider-workflow-task.js";
+import {
+  ProviderTaskStepConfig,
+  runProviderTask,
+  runProviderTaskAttempt,
+} from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
@@ -226,6 +229,10 @@ const ProviderTaskCheckpoint = Schema.Union([
     _tag: Schema.Literal("Succeeded"),
     stage: Schema.Literals(["recipe", "speech", "visual"]),
   }),
+]);
+const SpeechProviderTaskCheckpoint = Schema.Union([
+  AcquisitionCheckpointRejected,
+  ProviderTaskCheckpoint,
 ]);
 const CarouselEvidenceTaskCheckpoint = Schema.Union([
   Schema.Struct({
@@ -496,56 +503,53 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           if (outcome._tag !== "VerifiedAcquisition") {
             return encodedOutcome;
           }
-          const encodedContinuation = yield* Cloudflare.Workflows.task(
-            "verify-acquisition-continuation-v1",
-            repository.findById(importId).pipe(
-              Effect.map(
-                Option.match({
-                  onNone: () => ({
-                    _tag: "AcquisitionCheckpointRejected" as const,
-                    code: "historical_acquisition_checkpoint_invalid" as const,
-                  }),
-                  onSome: (stored) =>
-                    verifyAcquisitionCheckpointContinuation({
-                      importId,
-                      outcome,
-                      stored,
-                    }),
-                })
-              ),
-              Effect.map(Schema.encodeSync(AcquisitionCheckpointContinuation)),
-              Effect.orDie
-            )
-          );
-          const continuation = yield* Schema.decodeUnknownEffect(
-            AcquisitionCheckpointContinuation
-          )(encodedContinuation).pipe(Effect.orDie);
-          if (continuation._tag === "AcquisitionCheckpointRejected") {
-            return continuation;
-          }
-          const speechDispatchId = yield* terminalRecovery
-            .speechDispatchId({
-              acquisitionGeneration: outcome.generation,
-              importId,
-            })
-            .pipe(Effect.orDie);
-          const speech = yield* task(
+          const encodedSpeech = yield* Cloudflare.Workflows.task(
             "transcribe-video-v1",
-            "speech",
-            transcribeAcquiredImport({
-              acquisitionRepository: repository,
-              audioExtractor: makeR2SpeechAudioExtractor(
-                rawBucket as unknown as AcquisitionBucketLike
-              ),
-              bucket: rawBucket as unknown as AcquisitionBucketLike,
-              dispatchId: speechDispatchId,
+            continueAcquisitionCheckpoint({
+              findStored: repository.findById(importId),
               importId,
-              now,
-              speechTranscriber,
-              transcriptionRepository:
-                makeD1SpeechTranscriptionRepository(database),
-            })
+              onAccepted: () =>
+                terminalRecovery
+                  .speechDispatchId({
+                    acquisitionGeneration: outcome.generation,
+                    importId,
+                  })
+                  .pipe(
+                    Effect.orDie,
+                    Effect.flatMap((speechDispatchId) =>
+                      runProviderTaskAttempt(
+                        "speech",
+                        transcribeAcquiredImport({
+                          acquisitionRepository: repository,
+                          audioExtractor: makeR2SpeechAudioExtractor(
+                            rawBucket as unknown as AcquisitionBucketLike
+                          ),
+                          bucket: rawBucket as unknown as AcquisitionBucketLike,
+                          dispatchId: speechDispatchId,
+                          importId,
+                          now,
+                          speechTranscriber,
+                          transcriptionRepository:
+                            makeD1SpeechTranscriptionRepository(database),
+                        }),
+                        () => ({
+                          _tag: "Succeeded" as const,
+                          stage: "speech" as const,
+                        }),
+                        correlationId
+                      )
+                    )
+                  ),
+              outcome,
+            }).pipe(Effect.orDie),
+            ProviderTaskStepConfig
           );
+          const speech = yield* Schema.decodeUnknownEffect(
+            SpeechProviderTaskCheckpoint
+          )(encodedSpeech).pipe(Effect.orDie);
+          if (speech._tag === "AcquisitionCheckpointRejected") {
+            return speech;
+          }
           if (speech._tag === "Failed") {
             yield* persistTerminal(speech, outcome.generation);
             return speech;

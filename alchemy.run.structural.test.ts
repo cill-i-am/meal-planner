@@ -30,9 +30,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workflowSource).toContain("Cloudflare.AI.QueryGatewayBinding");
     expect(workflowSource).toContain('"extract-carousel-visual-evidence-v1"');
     expect(workflowSource).toContain('"extract-carousel-recipe-v1"');
-    expect(workflowSource).toContain(
-      'import { runProviderTask } from "./import-provider-workflow-task.js"'
-    );
+    expect(workflowSource).toContain("runProviderTask,");
+    expect(workflowSource).toContain("runProviderTaskAttempt,");
     expect(providerTaskSource).toContain("ProviderTaskStepConfig");
     expect(workerSource).toContain("stageOperatorCarouselForWorkflow");
     expect(workerSource).not.toContain("carouselProcessingUnavailable");

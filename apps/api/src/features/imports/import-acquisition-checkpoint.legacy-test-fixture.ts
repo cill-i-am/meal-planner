@@ -4,17 +4,12 @@ import {
   task,
 } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 
 import { historicalAcquisitionCheckpointFixture } from "./import-acquisition-checkpoint.historical-fixture.js";
-import {
-  continueAcquisitionCheckpoint,
-  decodeAcquisitionCheckpoint,
-} from "./import-acquisition-checkpoint.js";
+import { decodeAcquisitionCheckpoint } from "./import-acquisition-checkpoint.js";
 import { ProviderTaskStepConfig } from "./import-provider-workflow-task.js";
 import { ImportId } from "./import.contracts.js";
-import { makeD1ImportRepository } from "./import.repository.d1.js";
 
 interface AcquisitionReplayTestEnv {
   readonly ACQUISITION_REPLAY_STATE: {
@@ -27,19 +22,19 @@ interface AcquisitionReplayTestEnv {
       readonly params: { readonly importId: string };
     }) => Promise<void>;
     readonly get: (id: string) => Promise<{
-      readonly restart: (options: {
-        readonly from: { readonly name: string; readonly type: "do" };
-      }) => Promise<void>;
       readonly status: () => Promise<unknown>;
     }>;
+    readonly unsafeSetIntrospectionOperations: (
+      sessionId: string,
+      operations: readonly unknown[]
+    ) => Promise<void>;
     readonly unsafeStartIntrospection: () => Promise<string>;
     readonly unsafeStopIntrospection: (sessionId: string) => Promise<void>;
     readonly unsafeWaitForStatus: (
       id: string,
-      status: "complete"
+      status: "errored"
     ) => Promise<void>;
   };
-  readonly MealPlannerDatabase: AnyD1Database;
 }
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
@@ -61,7 +56,7 @@ const workflowExport = {
   make: (rawEnv: unknown) => {
     const env = rawEnv as AcquisitionReplayTestEnv;
     return Effect.succeed((input: { readonly importId: string }) =>
-      Effect.gen(function* runAcquisitionReplayWorkflow() {
+      Effect.gen(function* runLegacyAcquisitionReplayWorkflow() {
         const event = yield* WorkflowEvent;
         const importId = decodeImportId(input.importId);
         const rawCheckpoint = yield* task(
@@ -80,19 +75,13 @@ const workflowExport = {
         );
         return yield* task(
           "transcribe-video-v1",
-          continueAcquisitionCheckpoint({
-            findStored: makeD1ImportRepository(
-              env.MealPlannerDatabase
-            ).findById(importId),
-            importId,
-            onAccepted: () =>
-              Effect.all([
-                increment(env, event.instanceId, "budget-reservation-calls"),
-                increment(env, event.instanceId, "provider-dispatch-calls"),
-                increment(env, event.instanceId, "speech-calls"),
-              ]).pipe(Effect.as({ _tag: "SpeechReached" as const })),
-            outcome: checkpoint.outcome,
-          }).pipe(Effect.orDie),
+          increment(env, event.instanceId, "legacy-speech-attempts").pipe(
+            Effect.andThen(
+              Effect.die(
+                new Error("historical transcription checkpoint failure")
+              )
+            )
+          ),
           ProviderTaskStepConfig
         );
       })
@@ -116,61 +105,42 @@ const AcquisitionReplayWorkflowBridge = makeWorkflowBridge(WorkflowEntrypoint, {
 
 export class AcquisitionReplayWorkflow extends AcquisitionReplayWorkflowBridge {}
 
-const readRequest = (request: Request) =>
-  request.json() as Promise<
-    | {
-        readonly action: "read";
-        readonly id: string;
-      }
-    | {
-        readonly action: "restart-speech";
-        readonly id: string;
-      }
-    | {
-        readonly action: "run";
-        readonly id: string;
-        readonly importId: string;
-      }
-  >;
-
 export default {
   fetch: async (request: Request, rawEnv: unknown) => {
     const env = rawEnv as AcquisitionReplayTestEnv;
-    const command = await readRequest(request);
-    const read = (name: string) =>
-      env.ACQUISITION_REPLAY_STATE.get(stateKey(command.id, name));
+    const command = (await request.json()) as {
+      readonly action: "read" | "run";
+      readonly id: string;
+      readonly importId?: string;
+    };
     if (command.action === "read") {
+      const read = (name: string) =>
+        env.ACQUISITION_REPLAY_STATE.get(stateKey(command.id, name));
       return Response.json({
         acquisitionCalls: Number((await read("acquisition-calls")) ?? "0"),
-        budgetReservationCalls: Number(
-          (await read("budget-reservation-calls")) ?? "0"
-        ),
         legacySpeechAttempts: Number(
           (await read("legacy-speech-attempts")) ?? "0"
         ),
-        providerDispatchCalls: Number(
-          (await read("provider-dispatch-calls")) ?? "0"
-        ),
         recordCalls: Number((await read("record-calls")) ?? "0"),
-        speechCalls: Number((await read("speech-calls")) ?? "0"),
       });
     }
-
+    if (command.importId === undefined) {
+      return new Response("Missing importId", { status: 400 });
+    }
     const workflow = env.AcquisitionReplayWorkflow;
     const sessionId = await workflow.unsafeStartIntrospection();
     try {
-      if (command.action === "run") {
-        await workflow.create({
-          id: command.id,
-          params: { importId: command.importId },
-        });
-      } else {
-        const instance = await workflow.get(command.id);
-        await instance.restart({
-          from: { name: "transcribe-video-v1", type: "do" },
-        });
-      }
-      await workflow.unsafeWaitForStatus(command.id, "complete");
+      await workflow.unsafeSetIntrospectionOperations(sessionId, [
+        {
+          steps: [{ name: "transcribe-video-v1" }],
+          type: "disableRetryDelays",
+        },
+      ]);
+      await workflow.create({
+        id: command.id,
+        params: { importId: command.importId },
+      });
+      await workflow.unsafeWaitForStatus(command.id, "errored");
       const instance = await workflow.get(command.id);
       return Response.json(await instance.status());
     } finally {
