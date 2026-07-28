@@ -3,6 +3,16 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Cause, DateTime, Effect, Exit, Option, Schema, Stream } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import {
+  PilotBudgetDispatchId,
+  PilotBudgetProviderStageId,
+  PilotBudgetRunId,
+  PilotBudgetTimestamp,
+  PilotProviderBudgetRuntime,
+  makePilotProviderBudgetRuntime,
+  runPilotProviderDispatch,
+} from "../pilots/pilot-provider-budget.js";
+import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
 import type {
   AcquisitionBucketLike,
@@ -78,6 +88,12 @@ const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
+const decodeBudgetDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
+const decodeBudgetProviderStageId = Schema.decodeUnknownSync(
+  PilotBudgetProviderStageId
+);
+const decodeBudgetRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
+const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
 const decodeCompatibilityFingerprint = Schema.decodeUnknownSync(
   CompatibilityFingerprint
 );
@@ -135,6 +151,81 @@ const makeTranscriptFixture = () =>
     ],
     text: "Chop onions. Simmer for ten minutes.",
     usage: { audioDurationMilliseconds: 2000, inputBytes: 8 },
+  });
+
+const makeBudgetedSpeechFixture = (fixtureImportId: ImportId) => {
+  const deterministic = makeTranscriptFixture();
+  const repository = makeD1PilotProviderBudgetRepository(
+    testEnv.MealPlannerDatabase,
+    "pilot-gaia-118"
+  );
+  const reservation = {
+    dispatchId: decodeBudgetDispatchId(
+      `speech:${fixtureImportId}:${generation}`
+    ),
+    maximumCostMicroUsd: 50_000,
+    providerStageId: decodeBudgetProviderStageId("speech-transcription"),
+    runId: decodeBudgetRunId(`run-gaia-195-${fixtureImportId.slice(-6)}`),
+    timestamp: decodeBudgetTimestamp("2026-07-28T21:00:00.000Z"),
+  };
+  const service: SpeechTranscriberShape = {
+    transcribe: (request) =>
+      runPilotProviderDispatch({
+        invoke: deterministic.service.transcribe(request).pipe(
+          Effect.map((value) => ({
+            cost: {
+              _tag: "Known" as const,
+              actualCostMicroUsd: 0,
+            },
+            value,
+          }))
+        ),
+        repository,
+        reservation,
+      }).pipe(
+        Effect.provideService(
+          PilotProviderBudgetRuntime,
+          makePilotProviderBudgetRuntime("pilot-gaia-118")
+        ),
+        Effect.flatMap((result) => {
+          if (
+            result._tag === "Completed" ||
+            result._tag === "CompletedUnknownCost"
+          ) {
+            return Effect.succeed(result.value);
+          }
+          return Effect.fail({
+            _tag: "SpeechTranscriptionFailure",
+            code: "outcome_unknown",
+          } satisfies SpeechTranscriptionFailure);
+        }),
+        // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed test adapter channel.
+        Effect.mapError((error) =>
+          typeof error === "object" &&
+          error !== null &&
+          "_tag" in error &&
+          error._tag === "SpeechTranscriptionFailure"
+            ? (error as SpeechTranscriptionFailure)
+            : ({
+                _tag: "SpeechTranscriptionFailure",
+                code: "outcome_unknown",
+              } satisfies SpeechTranscriptionFailure)
+        )
+      ),
+  };
+  return { calls: deterministic.calls, repository, reservation, service };
+};
+
+const seedDispatchingTranscription = (
+  repository: ReturnType<typeof makeD1SpeechTranscriptionRepository>,
+  fixtureImportId: ImportId
+) =>
+  repository.claim({
+    dispatchId: `speech:${fixtureImportId}:${generation}`,
+    generation,
+    importId: fixtureImportId,
+    sourceMediaSha256,
+    startedAt: transcribedAt,
   });
 
 const makeExternalIoTrap = (reason: string) => {
@@ -591,7 +682,7 @@ describe("provider-free acquired-to-transcript tracer", () => {
     expect(speech.calls).toHaveLength(1);
   });
 
-  it("keeps an unknown provider outcome fenced and never redispatches it", async () => {
+  it("leaves an ambiguous provider outcome dispatching for durable budget arbitration", async () => {
     const unknownImportId = decodeImportId(
       "018f47ad-91aa-7c35-b6fe-000000000116"
     );
@@ -658,30 +749,203 @@ describe("provider-free acquired-to-transcript tracer", () => {
       state: "dispatching",
     });
 
-    const replayTrap = makeExternalIoTrap(
-      "Unknown-outcome replay attempted external I/O"
+    expect(providerCalls).toHaveLength(1);
+  });
+
+  it("resumes only budget-safe dispatching transcriptions through the installed fence", async () => {
+    const absentImportId = decodeImportId(
+      "018f47ad-91aa-7c35-b6fe-000000000119"
     );
-    const replay = await Effect.runPromiseExit(
-      transcribeAcquiredImport({
-        acquisitionRepository,
-        audioExtractor: replayTrap.audioExtractor,
-        bucket: acquisitionBucket(),
-        importId: unknownImportId,
-        now: () => transcribedAt,
-        speechTranscriber: replayTrap.speechTranscriber,
-        transcriptionRepository: durableRepository,
+    const absentAcquisitionRepository = await makeAcquiredImport({
+      fixtureCanonicalId: decodeCanonicalId("7520000000000000119"),
+      fixtureImportId: absentImportId,
+    });
+    const transcriptionRepository = makeD1SpeechTranscriptionRepository(
+      testEnv.MealPlannerDatabase
+    );
+    await expect(
+      Effect.runPromise(
+        seedDispatchingTranscription(transcriptionRepository, absentImportId)
+      )
+    ).resolves.toMatchObject({ _tag: "DispatchClaimed" });
+    const absentBudget = makeBudgetedSpeechFixture(absentImportId);
+
+    await expect(
+      Effect.runPromise(
+        transcribeAcquiredImport({
+          acquisitionRepository: absentAcquisitionRepository,
+          audioExtractor: makeAudioFixture().service,
+          bucket: acquisitionBucket(),
+          importId: absentImportId,
+          now: () => transcribedAt,
+          speechTranscriber: absentBudget.service,
+          transcriptionRepository,
+        })
+      )
+    ).resolves.toMatchObject({
+      _tag: "Transcribed",
+      generation,
+      importId: absentImportId,
+    });
+    expect(absentBudget.calls).toHaveLength(1);
+    await expect(
+      Effect.runPromise(
+        absentBudget.repository.readDispatch(absentBudget.reservation)
+      )
+    ).resolves.toMatchObject({
+      actualCostMicroUsd: 0,
+      state: "settled_known",
+    });
+
+    const reservedImportId = decodeImportId(
+      "018f47ad-91aa-7c35-b6fe-000000000120"
+    );
+    const reservedAcquisitionRepository = await makeAcquiredImport({
+      fixtureCanonicalId: decodeCanonicalId("7520000000000000120"),
+      fixtureImportId: reservedImportId,
+    });
+    await Effect.runPromise(
+      seedDispatchingTranscription(transcriptionRepository, reservedImportId)
+    );
+    const reservedBudget = makeBudgetedSpeechFixture(reservedImportId);
+    await Effect.runPromise(
+      reservedBudget.repository.reserve(reservedBudget.reservation)
+    );
+
+    await expect(
+      Effect.runPromise(
+        transcribeAcquiredImport({
+          acquisitionRepository: reservedAcquisitionRepository,
+          audioExtractor: makeAudioFixture().service,
+          bucket: acquisitionBucket(),
+          importId: reservedImportId,
+          now: () => transcribedAt,
+          speechTranscriber: reservedBudget.service,
+          transcriptionRepository,
+        })
+      )
+    ).resolves.toMatchObject({
+      _tag: "Transcribed",
+      generation,
+      importId: reservedImportId,
+    });
+    expect(reservedBudget.calls).toHaveLength(1);
+
+    const settledImportId = decodeImportId(
+      "018f47ad-91aa-7c35-b6fe-000000000121"
+    );
+    const settledAcquisitionRepository = await makeAcquiredImport({
+      fixtureCanonicalId: decodeCanonicalId("7520000000000000121"),
+      fixtureImportId: settledImportId,
+    });
+    await Effect.runPromise(
+      seedDispatchingTranscription(transcriptionRepository, settledImportId)
+    );
+    const settledBudget = makeBudgetedSpeechFixture(settledImportId);
+    await Effect.runPromise(
+      settledBudget.repository.reserve(settledBudget.reservation)
+    );
+    await Effect.runPromise(
+      settledBudget.repository.beginInvocation(settledBudget.reservation)
+    );
+    await Effect.runPromise(
+      settledBudget.repository.settleKnown({
+        ...settledBudget.reservation,
+        actualCostMicroUsd: 0,
       })
     );
-    expect(Exit.isFailure(replay)).toBe(true);
-    if (Exit.isSuccess(replay)) {
-      throw new Error("Expected replayed provider uncertainty");
+
+    const settledReplay = await Effect.runPromiseExit(
+      transcribeAcquiredImport({
+        acquisitionRepository: settledAcquisitionRepository,
+        audioExtractor: makeAudioFixture().service,
+        bucket: acquisitionBucket(),
+        importId: settledImportId,
+        now: () => transcribedAt,
+        speechTranscriber: settledBudget.service,
+        transcriptionRepository,
+      })
+    );
+    expect(Exit.isFailure(settledReplay)).toBe(true);
+    if (Exit.isSuccess(settledReplay)) {
+      throw new Error("Expected settled budget evidence to block redispatch");
     }
-    expect(Option.getOrThrow(Cause.findErrorOption(replay.cause))).toEqual({
+    expect(
+      Option.getOrThrow(Cause.findErrorOption(settledReplay.cause))
+    ).toEqual({
       _tag: "SpeechPipelineFailure",
       code: "outcome_unknown",
     });
-    expect(replayTrap.calls).toEqual([]);
-    expect(providerCalls).toHaveLength(1);
+    expect(settledBudget.calls).toHaveLength(0);
+
+    const invokingImportId = decodeImportId(
+      "018f47ad-91aa-7c35-b6fe-000000000122"
+    );
+    const invokingAcquisitionRepository = await makeAcquiredImport({
+      fixtureCanonicalId: decodeCanonicalId("7520000000000000122"),
+      fixtureImportId: invokingImportId,
+    });
+    await Effect.runPromise(
+      seedDispatchingTranscription(transcriptionRepository, invokingImportId)
+    );
+    const invokingBudget = makeBudgetedSpeechFixture(invokingImportId);
+    await Effect.runPromise(
+      invokingBudget.repository.reserve(invokingBudget.reservation)
+    );
+    await Effect.runPromise(
+      invokingBudget.repository.beginInvocation(invokingBudget.reservation)
+    );
+
+    const invokingReplay = await Effect.runPromiseExit(
+      transcribeAcquiredImport({
+        acquisitionRepository: invokingAcquisitionRepository,
+        audioExtractor: makeAudioFixture().service,
+        bucket: acquisitionBucket(),
+        importId: invokingImportId,
+        now: () => transcribedAt,
+        speechTranscriber: invokingBudget.service,
+        transcriptionRepository,
+      })
+    );
+    expect(Exit.isFailure(invokingReplay)).toBe(true);
+    if (Exit.isSuccess(invokingReplay)) {
+      throw new Error("Expected invoking budget evidence to block redispatch");
+    }
+    expect(
+      Option.getOrThrow(Cause.findErrorOption(invokingReplay.cause))
+    ).toEqual({
+      _tag: "SpeechPipelineFailure",
+      code: "outcome_unknown",
+    });
+    expect(invokingBudget.calls).toHaveLength(0);
+
+    await Effect.runPromise(
+      invokingBudget.repository.settleUnknown(invokingBudget.reservation)
+    );
+    const unknownReplay = await Effect.runPromiseExit(
+      transcribeAcquiredImport({
+        acquisitionRepository: invokingAcquisitionRepository,
+        audioExtractor: makeAudioFixture().service,
+        bucket: acquisitionBucket(),
+        importId: invokingImportId,
+        now: () => transcribedAt,
+        speechTranscriber: invokingBudget.service,
+        transcriptionRepository,
+      })
+    );
+    expect(Exit.isFailure(unknownReplay)).toBe(true);
+    if (Exit.isSuccess(unknownReplay)) {
+      throw new Error(
+        "Expected unknown settled budget evidence to block redispatch"
+      );
+    }
+    expect(
+      Option.getOrThrow(Cause.findErrorOption(unknownReplay.cause))
+    ).toEqual({
+      _tag: "SpeechPipelineFailure",
+      code: "outcome_unknown",
+    });
+    expect(invokingBudget.calls).toHaveLength(0);
   });
 
   it("terminalizes deterministic transcript evidence that exceeds the storage cap", async () => {
@@ -879,69 +1143,6 @@ describe("provider-free acquired-to-transcript tracer", () => {
         state: "failed",
       },
     ]);
-  });
-
-  it("keeps an observed in-flight claim recoverable without issuing concurrent I/O", async () => {
-    const inFlightImportId = decodeImportId(
-      "018f47ad-91aa-7c35-b6fe-000000000114"
-    );
-    const acquisitionRepository = await makeAcquiredImport({
-      fixtureCanonicalId: decodeCanonicalId("7520000000000000114"),
-      fixtureImportId: inFlightImportId,
-    });
-    const transcriptionRepository = makeD1SpeechTranscriptionRepository(
-      testEnv.MealPlannerDatabase
-    );
-    await expect(
-      Effect.runPromise(
-        transcriptionRepository.claim({
-          dispatchId: `speech:${inFlightImportId}:${generation}`,
-          generation,
-          importId: inFlightImportId,
-          sourceMediaSha256,
-          startedAt: transcribedAt,
-        })
-      )
-    ).resolves.toMatchObject({ _tag: "DispatchClaimed" });
-    const inFlightTrap = makeExternalIoTrap(
-      "In-flight replay attempted external I/O"
-    );
-
-    const replay = await Effect.runPromiseExit(
-      transcribeAcquiredImport({
-        acquisitionRepository,
-        audioExtractor: inFlightTrap.audioExtractor,
-        bucket: acquisitionBucket(),
-        importId: inFlightImportId,
-        now: () => transcribedAt,
-        speechTranscriber: inFlightTrap.speechTranscriber,
-        transcriptionRepository,
-      })
-    );
-    expect(Exit.isFailure(replay)).toBe(true);
-    if (Exit.isSuccess(replay)) {
-      throw new Error("Expected in-flight replay uncertainty");
-    }
-    expect(Option.getOrThrow(Cause.findErrorOption(replay.cause))).toEqual({
-      _tag: "SpeechPipelineFailure",
-      code: "outcome_unknown",
-    });
-    expect(inFlightTrap.calls).toEqual([]);
-    expect(
-      Option.getOrThrow(
-        await Effect.runPromise(
-          acquisitionRepository.findById(inFlightImportId)
-        )
-      ).view.status
-    ).toEqual({ kind: "transcribing" });
-    await expect(
-      testEnv.MealPlannerDatabase.prepare(
-        `SELECT COUNT(*) AS count FROM import_transcriptions
-          WHERE import_id = ? AND state = 'dispatching'`
-      )
-        .bind(inFlightImportId)
-        .first()
-    ).resolves.toEqual({ count: 1 });
   });
 
   it("rejects corrupt acquired evidence before audio or provider I/O", async () => {
