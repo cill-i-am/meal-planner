@@ -1,3 +1,4 @@
+import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {
   Cause,
@@ -250,6 +251,7 @@ const currentPilotBudgetTimestamp = () =>
 export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<ImportAcquisitionWorkflow>()(
   "ImportAcquisitionWorkflow",
   Effect.gen(function* ImportAcquisitionWorkflowInit() {
+    const runtimeContext = yield* RuntimeContext;
     const queryDatabase =
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
     const pilotProviderBudgetRuntime = makePilotProviderBudgetRuntime(
@@ -298,7 +300,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             client: providerGateway,
             correlationId,
             dispatch,
-          });
+          }).pipe(Effect.provideService(RuntimeContext, runtimeContext));
           const visualExtractor = yield* makeInstalledVisualEvidenceExtractor({
             client: providerGateway,
             correlationId,
