@@ -22,6 +22,7 @@ import {
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
+import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
 import {
   makeInstalledSpeechTranscriber,
   makePilotProviderDispatchGate,
@@ -240,6 +241,41 @@ const speechTerminalRecoveryDispatch = (
       repository,
       reservation,
     });
+    if (
+      isRecovery &&
+      (result._tag === "Completed" || result._tag === "AlreadySettled")
+    ) {
+      const transcriptKey = `imports/${importId}/transcription/v1/generations/${acquisitionGeneration}/transcript.json`;
+      yield* Effect.promise(async () => {
+        await env.MealPlannerDatabase.prepare(
+          `UPDATE import_transcriptions
+                SET state = 'transcribed',
+                    completed_at = '2026-07-27T09:11:30.000Z',
+                    transcript_key = ?,
+                    transcript_sha256 = ?,
+                    provider = 'installed-test-provider',
+                    model = 'installed-test-model',
+                    detected_language = 'en',
+                    segments_count = 1,
+                    usage_audio_milliseconds = 1000,
+                    usage_input_bytes = 3,
+                    cost_certainty = 'known',
+                    cost_currency = 'USD',
+                    estimated_cost_micro_usd = 10,
+                    updated_at = '2026-07-27T09:11:30.000Z'
+              WHERE import_id = ? AND acquisition_generation = ?
+                AND dispatch_id = ?`
+        )
+          .bind(
+            transcriptKey,
+            "c".repeat(64),
+            importId,
+            acquisitionGeneration,
+            dispatchId
+          )
+          .run();
+      });
+    }
     if (result._tag === "Completed") {
       return result.value;
     }
@@ -365,7 +401,29 @@ const providerWorkflowExport = {
               })
             );
           }
-          return yield* task("finalize-terminal", Effect.succeed(checkpoint));
+          const visual = yield* continueVisualFromSettledSpeech({
+            acquisitionGeneration,
+            continueVisual: (speechDispatchId) =>
+              task(
+                "extract-visual-evidence-v1",
+                Effect.gen(function* recordVisualContinuation() {
+                  yield* increment(env, event.instanceId, "visual-calls");
+                  yield* Effect.promise(() =>
+                    env.PROVIDER_WORKFLOW_STATE.put(
+                      stateKey(event.instanceId, "visual-speech-dispatch-id"),
+                      speechDispatchId
+                    )
+                  );
+                  return checkpoint;
+                })
+              ),
+            importId,
+            terminalRecovery: makeD1ProviderTerminalRecoveryRepository(
+              env.MealPlannerDatabase,
+              "pilot-gaia-118"
+            ),
+          });
+          return yield* task("finalize-terminal", Effect.succeed(visual));
         }
         const stage = providerStageByScenario[input.scenario];
         let provider: Effect.Effect<string, { readonly code: string }>;
@@ -444,6 +502,7 @@ const readRequest = (request: Request) =>
     | { readonly action: "restart"; readonly id: string }
     | { readonly action: "restart-speech"; readonly id: string }
     | { readonly action: "restart-terminal"; readonly id: string }
+    | { readonly action: "restart-visual"; readonly id: string }
     | {
         readonly action: "run";
         readonly id: string;
@@ -523,22 +582,21 @@ export default {
         await workflow.create({ id: command.id, params: command.input });
       } else {
         const instance = await workflow.get(command.id);
+        let restartStep = "finalize-terminal";
+        if (command.action === "restart-speech") {
+          restartStep = "transcribe-video-v1";
+        } else if (command.action === "restart-terminal") {
+          restartStep = "persist-speech-terminal-v1";
+        } else if (command.action === "restart-visual") {
+          restartStep = "extract-visual-evidence-v1";
+        }
         await instance.restart({
-          from:
-            command.action === "restart-speech"
-              ? { name: "transcribe-video-v1", type: "do" }
-              : {
-                  name:
-                    command.action === "restart-terminal"
-                      ? "persist-speech-terminal-v1"
-                      : "finalize-terminal",
-                  type: "do",
-                },
+          from: { name: restartStep, type: "do" },
         });
       }
 
-      await workflow.unsafeWaitForStatus(command.id, "complete");
       const instance = await workflow.get(command.id);
+      await workflow.unsafeWaitForStatus(command.id, "complete");
       return Response.json(await instance.status());
     } finally {
       await workflow.unsafeStopIntrospection(sessionId);

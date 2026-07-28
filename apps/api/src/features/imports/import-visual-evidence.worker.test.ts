@@ -133,7 +133,10 @@ const acquisitionBucket = (): AcquisitionBucketLike => ({
 const makeTranscribedImport = async (
   importId: ImportId,
   canonicalId: SourceCanonicalId,
-  options: { readonly transcribe?: boolean } = {}
+  options: {
+    readonly speechDispatchId?: string;
+    readonly transcribe?: boolean;
+  } = {}
 ) => {
   const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase, () =>
     Date.parse("2026-07-21T09:59:00.000Z")
@@ -253,6 +256,9 @@ const makeTranscribedImport = async (
       acquisitionRepository: repository,
       audioExtractor: audio.service,
       bucket: acquisitionBucket(),
+      ...(options.speechDispatchId === undefined
+        ? {}
+        : { dispatchId: options.speechDispatchId }),
       importId,
       now: () => transcribedAt,
       speechTranscriber: speech.service,
@@ -416,6 +422,98 @@ beforeAll(async () => {
 });
 
 describe("provider-free transcript-to-visual-evidence tracer", () => {
+  it("continues from the exact settled recovery speech dispatch without retaining its identity", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000219");
+    const canonicalId = decodeCanonicalId("7520000000000000219");
+    const speechDispatchId = `speech:${importId}:${generation}:recovery:1`;
+    const importRepository = await makeTranscribedImport(
+      importId,
+      canonicalId,
+      { speechDispatchId }
+    );
+    const frames = makeFrameFixture();
+    const extractor = makeVisualFixture("found");
+
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          frameSampler: frames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          speechDispatchId,
+          visualRepository: makeD1VisualEvidenceRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).resolves.toMatchObject({
+      _tag: "VisualEvidenceReady",
+      generation,
+      importId,
+      outcome: "found",
+    });
+    expect(frames.calls).toHaveLength(1);
+    expect(extractor.calls).toHaveLength(1);
+
+    const manifest = await testEnv.ImportEvidenceBucket.get(
+      visualEvidenceManifestObjectKey(importId, generation)
+    );
+    const manifestText = await manifest?.text();
+    expect(manifest).toMatchObject({
+      httpMetadata: {
+        cacheControl: "private, no-store",
+        contentType: "application/json",
+      },
+    });
+    expect(manifestText).not.toContain(speechDispatchId);
+    expect(manifestText).not.toContain("Chop onions. Simmer for ten minutes.");
+  });
+
+  it("rejects a mismatched speech dispatch before visual ownership or provider work", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000220");
+    const canonicalId = decodeCanonicalId("7520000000000000220");
+    const recoverySpeechDispatchId = `speech:${importId}:${generation}:recovery:1`;
+    const importRepository = await makeTranscribedImport(
+      importId,
+      canonicalId,
+      { speechDispatchId: recoverySpeechDispatchId }
+    );
+    const frames = makeFrameFixture();
+    const extractor = makeVisualFixture("found");
+
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          frameSampler: frames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          speechDispatchId: `speech:${importId}:${generation}`,
+          visualRepository: makeD1VisualEvidenceRepository(
+            testEnv.MealPlannerDatabase
+          ),
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "VisualEvidencePipelineFailure",
+      code: "source_evidence_invalid",
+    });
+    expect(frames.calls).toEqual([]);
+    expect(extractor.calls).toEqual([]);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        "SELECT COUNT(*) AS count FROM import_visual_evidence WHERE import_id = ?"
+      )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+  });
+
   it("stores bounded private frames and normalized evidence exactly once", async () => {
     const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000210");
     const canonicalId = decodeCanonicalId("7520000000000000210");
