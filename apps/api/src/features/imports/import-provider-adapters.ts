@@ -17,6 +17,15 @@ import type {
   PilotProviderBudgetRuntimeShape,
 } from "../pilots/pilot-provider-budget.js";
 import type {
+  ImportCorrelationId,
+  ImportObservabilityTraceStoreShape,
+} from "./import-observability.js";
+import {
+  ImportObservabilityTraceStore,
+  emitImportObservabilityEvent,
+  metadataOnlyGatewayHeaders,
+} from "./import-observability.js";
+import type {
   RecipeEvidenceAssembly,
   RecipeExtractionFailure,
   RecipeExtractorShape,
@@ -50,6 +59,8 @@ const ProviderTimeout = "60 seconds";
 const SpeechMaximumCostMicroUsd = 50_000;
 const VisualMaximumCostMicroUsd = 100_000;
 const RecipeMaximumCostMicroUsd = 100_000;
+const ProviderTransportUnavailableMessage =
+  "provider_transport_unavailable" as const;
 
 type SafeProviderFailureCode =
   | "insufficient_evidence"
@@ -75,6 +86,7 @@ interface ProviderDispatchRequest<A, E> {
     E
   >;
   readonly maximumCostMicroUsd: number;
+  readonly providerStage: "recipe" | "speech" | "visual";
   readonly providerStageId: string;
 }
 
@@ -91,6 +103,7 @@ const dispatchRejected = {
 
 /** Compose the GAIA-161 reserve/claim/settle authority for adapter factories. */
 export const makePilotProviderDispatchGate = (input: {
+  readonly correlationId: ImportCorrelationId;
   readonly now: () => PilotBudgetTimestamp;
   readonly repository: PilotProviderBudgetRepository;
   readonly runId: PilotBudgetRunId;
@@ -99,6 +112,31 @@ export const makePilotProviderDispatchGate = (input: {
   run: <A, E>(request: ProviderDispatchRequest<A, E>) =>
     runPilotProviderDispatch({
       invoke: request.invoke,
+      onDispatch: emitImportObservabilityEvent({
+        correlationId: input.correlationId,
+        event: "provider.dispatch",
+        outcome: "started",
+        providerStage: request.providerStage,
+      }),
+      onPoison: emitImportObservabilityEvent({
+        correlationId: input.correlationId,
+        event: "budget.poison",
+        outcome: "poisoned",
+        providerStage: request.providerStage,
+      }),
+      onReservation: emitImportObservabilityEvent({
+        correlationId: input.correlationId,
+        event: "budget.reservation",
+        outcome: "reserved",
+        providerStage: request.providerStage,
+      }),
+      onSettlement: (outcome) =>
+        emitImportObservabilityEvent({
+          correlationId: input.correlationId,
+          event: "provider.settlement",
+          outcome,
+          providerStage: request.providerStage,
+        }),
       repository: input.repository,
       reservation: {
         dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
@@ -164,14 +202,41 @@ const safeFailureCode = (
   return "provider_unavailable";
 };
 
-const failAfter = <A, E>(
-  effect: Effect.Effect<A, E>
-): Effect.Effect<A, E | SafeProviderFailureCode> =>
+const isProviderTransportFailure = (error: unknown) => {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const record = error as Record<string, unknown>;
+  const reason =
+    typeof record["reason"] === "object" && record["reason"] !== null
+      ? (record["reason"] as Record<string, unknown>)
+      : record;
+  return reason["description"] === ProviderTransportUnavailableMessage;
+};
+
+export const failAfter = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  observability: {
+    readonly correlationId: ImportCorrelationId;
+    readonly providerStage: "recipe" | "speech" | "visual";
+  }
+): Effect.Effect<A, E | SafeProviderFailureCode, R> =>
   effect.pipe(
     Effect.timeoutOrElse({
       duration: ProviderTimeout,
       orElse: () => Effect.fail("timeout" as const),
-    })
+    }),
+    // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed timeout channel.
+    Effect.tapError((error) =>
+      error === "timeout"
+        ? emitImportObservabilityEvent({
+            correlationId: observability.correlationId,
+            event: "provider.timeout",
+            outcome: "timed_out",
+            providerStage: observability.providerStage,
+          })
+        : Effect.void
+    )
   );
 
 const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
@@ -181,6 +246,10 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     readonly name: Name;
     readonly prompt: Prompt.RawInput;
     readonly schema: S;
+  },
+  observability: {
+    readonly correlationId: ImportCorrelationId;
+    readonly providerStage: "recipe" | "visual";
   }
 ): Effect.Effect<
   {
@@ -202,8 +271,23 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
       prompt: input.prompt,
       toolChoice: { tool: input.name },
       toolkit,
-    } as never)
+    } as never),
+    observability
   ).pipe(
+    // The installed Alchemy model parses the raw gateway response before this
+    // Effect can succeed. A failure here is therefore a decode failure unless
+    // the enclosing timeout won the race.
+    // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
+    Effect.tapError((error) =>
+      typeof error === "string" || isProviderTransportFailure(error)
+        ? Effect.void
+        : emitImportObservabilityEvent({
+            correlationId: observability.correlationId,
+            event: "provider.decode",
+            outcome: "malformed",
+            providerStage: observability.providerStage,
+          })
+    ),
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
     Effect.mapError((error) =>
       typeof error === "string" ? error : safeFailureCode(Cause.fail(error))
@@ -223,17 +307,38 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
         call.name !== input.name ||
         response.text.trim().length !== 0
       ) {
-        return Effect.fail("insufficient_evidence" as const);
+        return emitImportObservabilityEvent({
+          correlationId: observability.correlationId,
+          event: "provider.decode",
+          outcome: "malformed",
+          providerStage: observability.providerStage,
+        }).pipe(Effect.andThen(Effect.fail("insufficient_evidence" as const)));
       }
       return Schema.decodeUnknownEffect(input.schema, {
         onExcessProperty: "error",
       })(call.params).pipe(
-        Effect.map((value) => ({
-          inputTokens: response.usage.inputTokens.total,
-          outputTokens: response.usage.outputTokens.total,
-          value,
-        })),
-        Effect.mapError(() => "malformed_response" as const)
+        Effect.matchEffect({
+          onFailure: () =>
+            emitImportObservabilityEvent({
+              correlationId: observability.correlationId,
+              event: "provider.decode",
+              outcome: "malformed",
+              providerStage: observability.providerStage,
+            }).pipe(Effect.andThen(Effect.fail("malformed_response" as const))),
+          onSuccess: (value) =>
+            emitImportObservabilityEvent({
+              correlationId: observability.correlationId,
+              event: "provider.decode",
+              outcome: "succeeded",
+              providerStage: observability.providerStage,
+            }).pipe(
+              Effect.as({
+                inputTokens: response.usage.inputTokens.total,
+                outputTokens: response.usage.outputTokens.total,
+                value,
+              })
+            ),
+        })
       );
     })
   );
@@ -317,15 +422,68 @@ const pricedTokenUsage = (
   };
 };
 
+/**
+ * Keep the installed Alchemy LanguageModel composition while routing every
+ * Workers AI request through the universal gateway binding, the only runtime
+ * seam that can independently disable payload collection.
+ */
+const metadataOnlyGatewayClient = (
+  client: QueryGatewayClient,
+  correlationId: ImportCorrelationId,
+  providerStage: "recipe" | "speech" | "visual",
+  traceStore: ImportObservabilityTraceStoreShape | undefined
+): QueryGatewayClient => ({
+  ...client,
+  raw: client.gateway.pipe(
+    Effect.map((gateway) => ({
+      run: async (model: unknown, query: unknown) => {
+        let response: Response;
+        try {
+          response = (await gateway.run({
+            endpoint: String(model),
+            headers: metadataOnlyGatewayHeaders(correlationId),
+            provider: "workers-ai",
+            query,
+          })) as Response;
+        } catch {
+          throw new Error(ProviderTransportUnavailableMessage);
+        }
+        await Effect.runPromise(
+          emitImportObservabilityEvent(
+            {
+              correlationId,
+              event: "provider.response",
+              outcome: "received",
+              providerStage,
+            },
+            traceStore
+          )
+        );
+        return response;
+      },
+    }))
+  ) as QueryGatewayClient["raw"],
+});
+
 export const makeInstalledVisualEvidenceExtractor = (input: {
   readonly client: QueryGatewayClient;
+  readonly correlationId: ImportCorrelationId;
   readonly dispatch: ProviderDispatchGate;
   readonly model?: string;
 }) =>
   Effect.gen(function* makeVisualAdapter() {
     const model = input.model ?? InstalledVisualModel;
+    const traceStore = Option.getOrUndefined(
+      yield* Effect.serviceOption(ImportObservabilityTraceStore)
+    );
+    const client = metadataOnlyGatewayClient(
+      input.client,
+      input.correlationId,
+      "visual",
+      traceStore
+    );
     const service = yield* Cloudflare.AI.makeLanguageModel({
-      client: input.client,
+      client,
       model,
       parameters: { maxTokens: 8192, temperature: 0 },
     });
@@ -334,12 +492,20 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
         input.dispatch
           .run({
             dispatchId: request.dispatchId,
-            invoke: oneForcedToolCall(service, {
-              description: "Record bounded visual evidence from source images.",
-              name: "record_visual_evidence",
-              prompt: visualPrompt(request),
-              schema: VisualEvidence,
-            }).pipe(
+            invoke: oneForcedToolCall(
+              service,
+              {
+                description:
+                  "Record bounded visual evidence from source images.",
+                name: "record_visual_evidence",
+                prompt: visualPrompt(request),
+                schema: VisualEvidence,
+              },
+              {
+                correlationId: input.correlationId,
+                providerStage: "visual",
+              }
+            ).pipe(
               Effect.map(({ inputTokens, outputTokens, value }) => {
                 const cost = pricedTokenUsage(inputTokens, outputTokens, {
                   inputMicroUsdPerToken: 0.049,
@@ -362,6 +528,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
               })
             ),
             maximumCostMicroUsd: VisualMaximumCostMicroUsd,
+            providerStage: "visual",
             providerStageId: "visual-evidence",
           })
           .pipe(
@@ -379,13 +546,23 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
 
 export const makeInstalledRecipeExtractor = (input: {
   readonly client: QueryGatewayClient;
+  readonly correlationId: ImportCorrelationId;
   readonly dispatch: ProviderDispatchGate;
   readonly model?: string;
 }) =>
   Effect.gen(function* makeRecipeAdapter() {
     const model = input.model ?? InstalledRecipeModel;
+    const traceStore = Option.getOrUndefined(
+      yield* Effect.serviceOption(ImportObservabilityTraceStore)
+    );
+    const client = metadataOnlyGatewayClient(
+      input.client,
+      input.correlationId,
+      "recipe",
+      traceStore
+    );
     const service = yield* Cloudflare.AI.makeLanguageModel({
-      client: input.client,
+      client,
       model,
       parameters: { maxTokens: 16_384, temperature: 0 },
     });
@@ -399,13 +576,20 @@ export const makeInstalledRecipeExtractor = (input: {
         input.dispatch
           .run({
             dispatchId: `recipe:${request.importId}:${request.generation}:${request.evidenceFingerprint}`,
-            invoke: oneForcedToolCall(service, {
-              description:
-                "Record only provenance-backed recipe facts and unresolved fields.",
-              name: "record_recipe",
-              prompt: recipePrompt(request),
-              schema: RecipeExtraction,
-            }).pipe(
+            invoke: oneForcedToolCall(
+              service,
+              {
+                description:
+                  "Record only provenance-backed recipe facts and unresolved fields.",
+                name: "record_recipe",
+                prompt: recipePrompt(request),
+                schema: RecipeExtraction,
+              },
+              {
+                correlationId: input.correlationId,
+                providerStage: "recipe",
+              }
+            ).pipe(
               Effect.map(({ inputTokens, outputTokens, value }) => {
                 const cost = pricedTokenUsage(inputTokens, outputTokens, {
                   inputMicroUsdPerToken: 0.29,
@@ -433,6 +617,7 @@ export const makeInstalledRecipeExtractor = (input: {
               })
             ),
             maximumCostMicroUsd: RecipeMaximumCostMicroUsd,
+            providerStage: "recipe",
             providerStageId: "recipe-extraction",
           })
           .pipe(
@@ -472,13 +657,22 @@ const speechFailure = (
 
 export const makeInstalledSpeechTranscriber = (input: {
   readonly client: QueryGatewayClient;
+  readonly correlationId: ImportCorrelationId;
   readonly dispatch: ProviderDispatchGate;
   readonly model?: string;
 }) =>
   Effect.gen(function* makeSpeechAdapter() {
     const model = input.model ?? InstalledSpeechModel;
-    const ai = yield* input.client.raw;
-    const gatewayId = yield* input.client.id;
+    const traceStore = Option.getOrUndefined(
+      yield* Effect.serviceOption(ImportObservabilityTraceStore)
+    );
+    const client = metadataOnlyGatewayClient(
+      input.client,
+      input.correlationId,
+      "speech",
+      traceStore
+    );
+    const ai = yield* client.raw;
     return {
       transcribe: (request: SpeechTranscriptionInput) =>
         input.dispatch
@@ -498,10 +692,7 @@ export const makeInstalledSpeechTranscriber = (input: {
                         task: "transcribe",
                         vad_filter: true,
                       } as never,
-                      {
-                        gateway: { id: gatewayId },
-                        returnRawResponse: true,
-                      }
+                      { returnRawResponse: true }
                     ),
                 });
                 if (!(response as Response).ok) {
@@ -513,13 +704,48 @@ export const makeInstalledSpeechTranscriber = (input: {
                 const raw = yield* Effect.tryPromise({
                   catch: () => "malformed_response" as const,
                   try: () => (response as Response).json(),
-                });
+                }).pipe(
+                  Effect.tapError(() =>
+                    emitImportObservabilityEvent({
+                      correlationId: input.correlationId,
+                      event: "provider.decode",
+                      outcome: "malformed",
+                      providerStage: "speech",
+                    })
+                  )
+                );
                 const decoded = yield* decodeSpeechResponse(raw).pipe(
-                  Effect.mapError(() => "malformed_response" as const)
+                  Effect.matchEffect({
+                    onFailure: () =>
+                      emitImportObservabilityEvent({
+                        correlationId: input.correlationId,
+                        event: "provider.decode",
+                        outcome: "malformed",
+                        providerStage: "speech",
+                      }).pipe(
+                        Effect.andThen(
+                          Effect.fail("malformed_response" as const)
+                        )
+                      ),
+                    onSuccess: Effect.succeed,
+                  })
                 );
                 if (decoded.text !== decoded.transcription_info.text) {
-                  return yield* Effect.fail("malformed_response" as const);
+                  return yield* emitImportObservabilityEvent({
+                    correlationId: input.correlationId,
+                    event: "provider.decode",
+                    outcome: "malformed",
+                    providerStage: "speech",
+                  }).pipe(
+                    Effect.andThen(Effect.fail("malformed_response" as const))
+                  );
                 }
+                yield* emitImportObservabilityEvent({
+                  correlationId: input.correlationId,
+                  event: "provider.decode",
+                  outcome: "succeeded",
+                  providerStage: "speech",
+                });
                 const estimatedCostMicroUsd = Math.ceil(
                   (request.audio.durationMilliseconds * 510) / 60_000
                 );
@@ -558,7 +784,11 @@ export const makeInstalledSpeechTranscriber = (input: {
                     },
                   }),
                 };
-              })
+              }),
+              {
+                correlationId: input.correlationId,
+                providerStage: "speech",
+              }
             ).pipe(
               // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks normalize provider failures.
               Effect.mapError((error) =>
@@ -568,6 +798,7 @@ export const makeInstalledSpeechTranscriber = (input: {
               )
             ),
             maximumCostMicroUsd: SpeechMaximumCostMicroUsd,
+            providerStage: "speech",
             providerStageId: "speech-transcription",
           })
           .pipe(

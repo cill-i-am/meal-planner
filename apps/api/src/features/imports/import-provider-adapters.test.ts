@@ -2,8 +2,9 @@ import { RuntimeContext } from "alchemy";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import { Effect, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { ImportCorrelationId } from "./import-observability.js";
 import {
   makeInstalledRecipeExtractor,
   makeInstalledSpeechTranscriber,
@@ -16,20 +17,43 @@ import { VisualEvidence } from "./import-visual-evidence-extractor.js";
 
 const makeGateway = (response: unknown) => {
   const requests: unknown[] = [];
-  const raw = {
-    run: (_model: string, body: unknown) => {
-      requests.push(body);
+  const gateway = {
+    run: (request: unknown) => {
+      requests.push(request);
       return Promise.resolve(Response.json(response));
     },
   };
   return {
     client: {
+      gateway: Effect.succeed(gateway),
       id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.succeed(raw),
+      raw: Effect.die("metadata-only universal gateway was bypassed"),
     } as unknown as QueryGatewayClient,
     requests,
   };
 };
+
+const makeRawGateway = (response: Response) => {
+  const requests: unknown[] = [];
+  const gateway = {
+    run: (request: unknown) => {
+      requests.push(request);
+      return Promise.resolve(response);
+    },
+  };
+  return {
+    client: {
+      gateway: Effect.succeed(gateway),
+      id: Effect.succeed("meal-planner-pilot-gaia-118"),
+      raw: Effect.die("metadata-only universal gateway was bypassed"),
+    } as unknown as QueryGatewayClient,
+    requests,
+  };
+};
+
+const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
+  "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
+);
 
 const localDispatchGate: ProviderDispatchGate = {
   run: <A, E>(input: {
@@ -155,6 +179,7 @@ describe("installed import provider adapters", () => {
   });
 
   it("uses the installed speech binding and duration-priced budget settlement", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
     const gateway = makeGateway({
       segments: [],
       text: "Chop the onion.",
@@ -188,6 +213,7 @@ describe("installed import provider adapters", () => {
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
         client: gateway.client,
+        correlationId,
         dispatch,
       })
     );
@@ -220,11 +246,41 @@ describe("installed import provider adapters", () => {
       },
     ]);
     expect(gateway.requests[0]).toMatchObject({
-      condition_on_previous_text: false,
-      language: "en",
-      task: "transcribe",
-      vad_filter: true,
+      endpoint: "@cf/openai/whisper-large-v3-turbo",
+      headers: {
+        "cf-aig-collect-log": "true",
+        "cf-aig-collect-log-payload": "false",
+        "cf-aig-metadata": JSON.stringify({ correlationId }),
+        "content-type": "application/json",
+      },
+      provider: "workers-ai",
+      query: {
+        condition_on_previous_text: false,
+        language: "en",
+        task: "transcribe",
+        vad_filter: true,
+      },
     });
+    expect(log.mock.calls).toEqual([
+      [
+        {
+          correlationId,
+          event: "provider.response",
+          outcome: "received",
+          providerStage: "speech",
+        },
+      ],
+      [
+        {
+          correlationId,
+          event: "provider.decode",
+          outcome: "succeeded",
+          providerStage: "speech",
+        },
+      ],
+    ]);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("Chop the onion.");
+    log.mockRestore();
   });
 
   it("fails closed when the installed speech response is malformed", async () => {
@@ -235,6 +291,7 @@ describe("installed import provider adapters", () => {
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
         client: gateway.client,
+        correlationId,
         dispatch: localDispatchGate,
       })
     );
@@ -256,6 +313,63 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(exit)).not.toContain("must-not-escape");
   });
 
+  it("observes the raw response and installed visual decode failure without payload data", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const gateway = makeRawGateway(
+      new Response('{"providerSecret":"must-not-escape"', {
+        headers: { "content-type": "application/json" },
+      })
+    );
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 0,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(log.mock.calls).toEqual([
+      [
+        {
+          correlationId,
+          event: "provider.response",
+          outcome: "received",
+          providerStage: "visual",
+        },
+      ],
+      [
+        {
+          correlationId,
+          event: "provider.decode",
+          outcome: "malformed",
+          providerStage: "visual",
+        },
+      ],
+    ]);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("must-not-escape");
+    log.mockRestore();
+  });
+
   it("uses the installed forced single-tool JSON Schema path for visual evidence", async () => {
     const gateway = makeGateway(
       toolResponse("record_visual_evidence", validVisual)
@@ -263,6 +377,7 @@ describe("installed import provider adapters", () => {
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
+        correlationId,
         dispatch: localDispatchGate,
         model: "@cf/meta/llama-3.2-11b-vision-instruct",
       })
@@ -296,15 +411,19 @@ describe("installed import provider adapters", () => {
     });
     expect(gateway.requests).toHaveLength(1);
     const request = gateway.requests[0] as {
-      tool_choice: unknown;
-      tools: readonly {
-        function: { name: string; parameters: unknown };
-      }[];
+      readonly query: {
+        readonly tool_choice: unknown;
+        readonly tools: readonly {
+          readonly function: { name: string; parameters: unknown };
+        }[];
+      };
     };
-    expect(request.tool_choice).toBe("required");
-    expect(request.tools).toHaveLength(1);
-    expect(request.tools[0]?.function.name).toBe("record_visual_evidence");
-    expect(request.tools[0]?.function.parameters).toEqual(
+    expect(request.query.tool_choice).toBe("required");
+    expect(request.query.tools).toHaveLength(1);
+    expect(request.query.tools[0]?.function.name).toBe(
+      "record_visual_evidence"
+    );
+    expect(request.query.tools[0]?.function.parameters).toEqual(
       Tool.getJsonSchema(
         Tool.make("record_visual_evidence", { parameters: VisualEvidence })
       )
@@ -395,6 +514,7 @@ describe("installed import provider adapters", () => {
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
+        correlationId,
         dispatch: localDispatchGate,
         model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
       })
@@ -426,6 +546,7 @@ describe("installed import provider adapters", () => {
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
+        correlationId,
         dispatch: localDispatchGate,
         model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
       })
@@ -448,9 +569,13 @@ describe("installed import provider adapters", () => {
     );
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
     const request = gateway.requests[0] as {
-      tools: readonly { function: { parameters: unknown } }[];
+      readonly query: {
+        readonly tools: readonly {
+          readonly function: { parameters: unknown };
+        }[];
+      };
     };
-    expect(request.tools[0]?.function.parameters).toEqual(
+    expect(request.query.tools[0]?.function.parameters).toEqual(
       Tool.getJsonSchema(
         Tool.make("record_recipe", { parameters: RecipeExtraction })
       )
@@ -465,6 +590,7 @@ describe("installed import provider adapters", () => {
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
+        correlationId,
         dispatch: {
           run: (input) =>
             input.invoke.pipe(

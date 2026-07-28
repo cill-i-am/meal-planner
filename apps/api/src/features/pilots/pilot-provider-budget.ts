@@ -162,6 +162,10 @@ export type PilotProviderDispatchResult<A> =
 
 export const runPilotProviderDispatch = <A, E>(input: {
   readonly invoke: Effect.Effect<PilotProviderInvocationResult<A>, E>;
+  readonly onDispatch?: Effect.Effect<void>;
+  readonly onPoison?: Effect.Effect<void>;
+  readonly onReservation?: Effect.Effect<void>;
+  readonly onSettlement?: (outcome: "known" | "unknown") => Effect.Effect<void>;
   readonly prepare?: Effect.Effect<void, E>;
   readonly repository: PilotProviderBudgetRepository;
   readonly reservation: PilotBudgetReservation;
@@ -171,6 +175,11 @@ export const runPilotProviderDispatch = <A, E>(input: {
   PilotProviderBudgetRuntime
 > =>
   Effect.gen(function* runBudgetedProviderDispatch() {
+    const observeSettlement = (outcome: "known" | "unknown") =>
+      input.onSettlement?.(outcome) ?? Effect.void;
+    const observeUnknownSettlement = observeSettlement("unknown").pipe(
+      Effect.andThen(input.onPoison ?? Effect.void)
+    );
     const { runtimeStage } = yield* PilotProviderBudgetRuntime;
     if (runtimeStage !== PilotProviderBudgetStage) {
       return yield* Effect.fail(pilotProviderBudgetError("stage_not_allowed"));
@@ -199,6 +208,7 @@ export const runPilotProviderDispatch = <A, E>(input: {
         pilotProviderBudgetError("transition_rejected")
       );
     }
+    yield* input.onReservation ?? Effect.void;
 
     if (input.prepare !== undefined) {
       yield* input.prepare.pipe(
@@ -230,11 +240,17 @@ export const runPilotProviderDispatch = <A, E>(input: {
       );
     }
 
+    yield* input.onDispatch ?? Effect.void;
     const result = yield* input.invoke.pipe(
-      Effect.tapError(() => input.repository.settleUnknown(input.reservation))
+      Effect.tapError(() =>
+        input.repository
+          .settleUnknown(input.reservation)
+          .pipe(Effect.andThen(observeUnknownSettlement))
+      )
     );
     if (result.cost._tag === "Unknown") {
       yield* input.repository.settleUnknown(input.reservation);
+      yield* observeUnknownSettlement;
       return { _tag: "CompletedUnknownCost", value: result.value };
     }
     if (
@@ -243,6 +259,7 @@ export const runPilotProviderDispatch = <A, E>(input: {
       result.cost.actualCostMicroUsd > input.reservation.maximumCostMicroUsd
     ) {
       yield* input.repository.settleUnknown(input.reservation);
+      yield* observeUnknownSettlement;
       return yield* Effect.fail(
         pilotProviderBudgetError("cost_exceeds_reservation")
       );
@@ -251,6 +268,7 @@ export const runPilotProviderDispatch = <A, E>(input: {
       ...input.reservation,
       actualCostMicroUsd: result.cost.actualCostMicroUsd,
     });
+    yield* observeSettlement("known");
     return {
       _tag: "Completed",
       actualCostMicroUsd: result.cost.actualCostMicroUsd,
