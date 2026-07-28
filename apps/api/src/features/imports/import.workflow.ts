@@ -45,8 +45,8 @@ import type {
   RetryableAcquisitionFailure,
 } from "./import-media.model.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
+import type { ImportCorrelationId } from "./import-observability.js";
 import {
-  ImportCorrelationId,
   ImportObservabilityTraceStore,
   emitImportObservabilityEvent,
   makeImportCorrelationId,
@@ -69,6 +69,7 @@ import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
+import { resolveImportWorkflowInput } from "./import-workflow-input.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -201,10 +202,7 @@ export const runAcquisitionTask = <
     })
   );
 
-export const ImportWorkflowInput = Schema.Struct({
-  correlationId: ImportCorrelationId,
-  importId: ImportId,
-});
+export { ImportWorkflowInput } from "./import-workflow-input.js";
 const AcquisitionClaimCheckpoint = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Finished") }),
   Schema.Struct({
@@ -270,9 +268,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           new Date().toISOString()
         );
         return yield* Effect.gen(function* runImportAcquisitionWorkflow() {
-          const { correlationId, importId } = yield* Schema.decodeUnknownEffect(
-            ImportWorkflowInput
-          )(rawInput).pipe(Effect.orDie);
+          const { correlationId, importId } = yield* resolveImportWorkflowInput(
+            rawInput
+          ).pipe(Effect.orDie);
           yield* observeImportWorkflowStart(correlationId);
           const rawBucket = yield* evidenceBucket.raw;
           const repository = makeD1ImportRepository(database);
