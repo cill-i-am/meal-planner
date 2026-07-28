@@ -13,7 +13,6 @@ import {
   decodeAcquisitionCheckpoint,
   verifyAcquisitionCheckpointContinuation,
 } from "./import-acquisition-checkpoint.js";
-import { AcquisitionTaskOutcome } from "./import-media.model.js";
 import { ImportId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 
@@ -25,7 +24,10 @@ interface AcquisitionReplayTestEnv {
   readonly AcquisitionReplayWorkflow: {
     readonly create: (options: {
       readonly id: string;
-      readonly params: { readonly importId: string };
+      readonly params: {
+        readonly checkpoint: "canonical" | "invalid";
+        readonly importId: string;
+      };
     }) => Promise<void>;
     readonly get: (id: string) => Promise<{
       readonly restart: (options: {
@@ -62,68 +64,85 @@ const workflowExport = {
   kind: "workflow" as const,
   make: (rawEnv: unknown) => {
     const env = rawEnv as AcquisitionReplayTestEnv;
-    return Effect.succeed((input: { readonly importId: string }) =>
-      Effect.gen(function* runAcquisitionReplayWorkflow() {
-        const event = yield* WorkflowEvent;
-        const importId = decodeImportId(input.importId);
-        const rawCheckpoint = yield* task(
-          "resolve-acquire-store-verify-v2",
-          increment(env, event.instanceId, "acquisition-calls").pipe(
-            Effect.as(historicalAcquisitionCheckpointFixture(importId))
-          )
-        );
-        if (
-          Option.isSome(
-            Schema.decodeUnknownOption(AcquisitionTaskOutcome)(rawCheckpoint)
-          )
-        ) {
-          return { _tag: "CurrentDecoderUnexpectedlyAccepted" as const };
-        }
-        yield* increment(env, event.instanceId, "base-decode-rejected");
-        const checkpoint = decodeAcquisitionCheckpoint(rawCheckpoint);
-        if (checkpoint._tag === "AcquisitionCheckpointRejected") {
-          return checkpoint;
-        }
-        yield* increment(env, event.instanceId, "decode-accepted");
-        yield* task(
-          "record-acquisition-v2",
-          increment(env, event.instanceId, "record-calls").pipe(
-            Effect.as("Recorded" as const)
-          )
-        );
-        const continuation = yield* task(
-          "verify-acquisition-continuation-v1",
-          makeD1ImportRepository(env.MealPlannerDatabase)
-            .findById(importId)
-            .pipe(
-              Effect.map(
-                Option.match({
-                  onNone: () => ({
-                    _tag: "AcquisitionCheckpointRejected" as const,
-                    code: "historical_acquisition_checkpoint_invalid" as const,
-                  }),
-                  onSome: (stored) =>
-                    verifyAcquisitionCheckpointContinuation({
-                      importId,
-                      outcome: checkpoint.outcome,
-                      stored,
-                    }),
-                })
-              ),
-              Effect.map(Schema.encodeSync(AcquisitionCheckpointContinuation)),
-              Effect.orDie
+    return Effect.succeed(
+      (input: {
+        readonly checkpoint: "canonical" | "invalid";
+        readonly importId: string;
+      }) =>
+        Effect.gen(function* runAcquisitionReplayWorkflow() {
+          const event = yield* WorkflowEvent;
+          const importId = decodeImportId(input.importId);
+          const historicalCheckpoint =
+            historicalAcquisitionCheckpointFixture(importId);
+          const rawCheckpoint = yield* task(
+            "resolve-acquire-store-verify-v2",
+            increment(env, event.instanceId, "acquisition-calls").pipe(
+              Effect.as(
+                input.checkpoint === "canonical"
+                  ? historicalCheckpoint
+                  : {
+                      ...historicalCheckpoint,
+                      evidence: {
+                        ...historicalCheckpoint.evidence,
+                        acquiredAt: "2026-07-28T10:00:00Z",
+                      },
+                    }
+              )
             )
-        );
-        if (continuation._tag === "AcquisitionCheckpointRejected") {
-          return continuation;
-        }
-        yield* increment(env, event.instanceId, "ownership-accepted");
-        yield* task(
-          "transcribe-video-v1",
-          increment(env, event.instanceId, "speech-calls")
-        );
-        return { _tag: "SpeechReached" as const };
-      })
+          );
+          const checkpoint = decodeAcquisitionCheckpoint(rawCheckpoint);
+          if (checkpoint._tag === "AcquisitionCheckpointRejected") {
+            return checkpoint;
+          }
+          yield* increment(env, event.instanceId, "decode-accepted");
+          yield* task(
+            "record-acquisition-v2",
+            increment(env, event.instanceId, "record-calls").pipe(
+              Effect.as("Recorded" as const)
+            )
+          );
+          const continuation = yield* task(
+            "verify-acquisition-continuation-v1",
+            makeD1ImportRepository(env.MealPlannerDatabase)
+              .findById(importId)
+              .pipe(
+                Effect.map(
+                  Option.match({
+                    onNone: () => ({
+                      _tag: "AcquisitionCheckpointRejected" as const,
+                      code: "historical_acquisition_checkpoint_invalid" as const,
+                    }),
+                    onSome: (stored) =>
+                      verifyAcquisitionCheckpointContinuation({
+                        importId,
+                        outcome: checkpoint.outcome,
+                        stored,
+                      }),
+                  })
+                ),
+                Effect.map(
+                  Schema.encodeSync(AcquisitionCheckpointContinuation)
+                ),
+                Effect.orDie
+              )
+          );
+          if (continuation._tag === "AcquisitionCheckpointRejected") {
+            return continuation;
+          }
+          yield* increment(env, event.instanceId, "ownership-accepted");
+          yield* task(
+            "reserve-stage-budget-v1",
+            increment(env, event.instanceId, "budget-reservation-calls")
+          );
+          yield* task(
+            "transcribe-video-v1",
+            Effect.all([
+              increment(env, event.instanceId, "provider-dispatch-calls"),
+              increment(env, event.instanceId, "speech-calls"),
+            ])
+          );
+          return { _tag: "SpeechReached" as const };
+        })
     );
   },
 };
@@ -155,6 +174,7 @@ const readRequest = (request: Request) =>
         readonly id: string;
       }
     | {
+        readonly checkpoint: "canonical" | "invalid";
         readonly action: "run";
         readonly id: string;
         readonly importId: string;
@@ -170,9 +190,14 @@ export default {
     if (command.action === "read") {
       return Response.json({
         acquisitionCalls: Number((await read("acquisition-calls")) ?? "0"),
-        baseDecodeRejected: Number((await read("base-decode-rejected")) ?? "0"),
+        budgetReservationCalls: Number(
+          (await read("budget-reservation-calls")) ?? "0"
+        ),
         decodeAccepted: Number((await read("decode-accepted")) ?? "0"),
         ownershipAccepted: Number((await read("ownership-accepted")) ?? "0"),
+        providerDispatchCalls: Number(
+          (await read("provider-dispatch-calls")) ?? "0"
+        ),
         recordCalls: Number((await read("record-calls")) ?? "0"),
         speechCalls: Number((await read("speech-calls")) ?? "0"),
       });
@@ -184,7 +209,10 @@ export default {
       if (command.action === "run") {
         await workflow.create({
           id: command.id,
-          params: { importId: command.importId },
+          params: {
+            checkpoint: command.checkpoint,
+            importId: command.importId,
+          },
         });
       } else {
         const instance = await workflow.get(command.id);

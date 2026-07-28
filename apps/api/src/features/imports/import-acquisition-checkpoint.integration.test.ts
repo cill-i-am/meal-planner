@@ -91,14 +91,14 @@ const applyMigrations = async () => {
 
 beforeAll(async () => {
   const temporaryDirectory = await mkdtemp(
-    `${tmpdir()}/meal-planner-gaia-189-replay-`
+    `${tmpdir()}/meal-planner-gaia-190-replay-`
   );
   temporaryDirectories.push(temporaryDirectory);
   const fixtureScript = await buildFixture(temporaryDirectory);
   runtime = new Miniflare({
     compatibilityDate,
     compatibilityFlags,
-    d1Databases: { MealPlannerDatabase: "gaia-189-test" },
+    d1Databases: { MealPlannerDatabase: "gaia-190-test" },
     kvNamespaces: ["ACQUISITION_REPLAY_STATE"],
     modules: [
       {
@@ -138,6 +138,7 @@ const commandWorkflow = async (
       }
     | {
         readonly action: "run";
+        readonly checkpoint: "canonical" | "invalid";
         readonly id: string;
         readonly importId: string;
       }
@@ -146,13 +147,14 @@ const commandWorkflow = async (
     body: JSON.stringify(command),
     method: "POST",
   });
-  expect(response.status).toBe(200);
-  return response.json();
+  const responseBody = await response.text();
+  expect(response.status, responseBody).toBe(200);
+  return JSON.parse(responseBody) as unknown;
 };
 
 describe("native Workflow historical acquisition checkpoint replay", () => {
   it("reuses cached acquisition, verifies D1 ownership, and reaches speech on targeted restart", async () => {
-    const id = "gaia-189-native-acquisition-replay";
+    const id = "gaia-190-canonical-acquisition-replay";
     const importId = "00000000-0000-4000-8000-000000000189";
     const generation = 1;
     const database = await runtime.getD1Database("MealPlannerDatabase");
@@ -190,14 +192,20 @@ describe("native Workflow historical acquisition checkpoint replay", () => {
       )
       .run();
 
-    const firstRun = await commandWorkflow({ action: "run", id, importId });
+    const firstRun = await commandWorkflow({
+      action: "run",
+      checkpoint: "canonical",
+      id,
+      importId,
+    });
     const firstCounters = await commandWorkflow({ action: "read", id });
     expect({ firstCounters, firstRun }).toMatchObject({
       firstCounters: {
         acquisitionCalls: 1,
-        baseDecodeRejected: 1,
+        budgetReservationCalls: 1,
         decodeAccepted: 1,
         ownershipAccepted: 1,
+        providerDispatchCalls: 1,
         recordCalls: 1,
         speechCalls: 1,
       },
@@ -214,11 +222,41 @@ describe("native Workflow historical acquisition checkpoint replay", () => {
     });
     await expect(commandWorkflow({ action: "read", id })).resolves.toEqual({
       acquisitionCalls: 1,
-      baseDecodeRejected: 2,
+      budgetReservationCalls: 1,
       decodeAccepted: 2,
       ownershipAccepted: 2,
+      providerDispatchCalls: 2,
       recordCalls: 1,
       speechCalls: 2,
+    });
+  });
+
+  it("rejects a malformed historical checkpoint before recording, budget, or provider dispatch", async () => {
+    const id = "gaia-190-invalid-acquisition-replay";
+    const importId = "00000000-0000-4000-8000-000000000190";
+
+    await expect(
+      commandWorkflow({
+        action: "run",
+        checkpoint: "invalid",
+        id,
+        importId,
+      })
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "AcquisitionCheckpointRejected",
+        code: "historical_acquisition_checkpoint_invalid",
+      },
+      status: "complete",
+    });
+    await expect(commandWorkflow({ action: "read", id })).resolves.toEqual({
+      acquisitionCalls: 1,
+      budgetReservationCalls: 0,
+      decodeAccepted: 0,
+      ownershipAccepted: 0,
+      providerDispatchCalls: 0,
+      recordCalls: 0,
+      speechCalls: 0,
     });
   });
 });

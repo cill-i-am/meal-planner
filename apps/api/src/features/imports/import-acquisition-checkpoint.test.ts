@@ -1,7 +1,10 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { historicalAcquisitionCheckpointFixture } from "./import-acquisition-checkpoint.historical-fixture.js";
+import {
+  historicalAcquisitionCheckpointFixture,
+  runtimeNativeAcquisitionCheckpointFixture,
+} from "./import-acquisition-checkpoint.historical-fixture.js";
 import {
   decodeAcquisitionCheckpoint,
   verifyAcquisitionCheckpointContinuation,
@@ -26,6 +29,8 @@ const importId = Schema.decodeUnknownSync(ImportId)(
 const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
 const acquiredAt = "2026-07-28T10:00:00.000Z";
 const historicalCheckpoint = historicalAcquisitionCheckpointFixture(importId);
+const runtimeNativeCheckpoint =
+  runtimeNativeAcquisitionCheckpointFixture(importId);
 
 const storedImport = (overrides: Partial<StoredImport> = {}): StoredImport => ({
   acquisitionGeneration: generation,
@@ -70,14 +75,22 @@ const storedImport = (overrides: Partial<StoredImport> = {}): StoredImport => ({
 });
 
 describe("historical acquisition checkpoint boundary", () => {
-  it("reproduces the persisted cross-realm shape rejected by the current decoder", () => {
+  it("reproduces the exact canonical strings emitted by the historical encoder", () => {
     expect(
       Schema.decodeUnknownResult(AcquisitionTaskOutcome)(historicalCheckpoint)
         ._tag
-    ).toBe("Failure");
+    ).toBe("Success");
+    expect(historicalCheckpoint.evidence).toMatchObject({
+      acquiredAt,
+      deleteAt: "2026-08-04T10:00:00.000Z",
+      source: {
+        observedAt: acquiredAt,
+        publishedAt: "2026-07-27T10:00:00.000Z",
+      },
+    });
   });
 
-  it("decodes only the exact persisted historical timestamp representation", () => {
+  it("decodes the exact canonical historical timestamp representation", () => {
     expect(decodeAcquisitionCheckpoint(historicalCheckpoint)).toMatchObject({
       _tag: "Accepted",
       outcome: {
@@ -95,37 +108,38 @@ describe("historical acquisition checkpoint boundary", () => {
     });
   });
 
-  it("preserves the current encoded acquisition checkpoint contract", () => {
-    const decoded = decodeAcquisitionCheckpoint(historicalCheckpoint);
-    if (decoded._tag !== "Accepted") {
-      throw new Error("Expected the synthetic checkpoint to decode");
-    }
-    const currentCheckpoint = Schema.encodeSync(AcquisitionTaskOutcome)(
-      decoded.outcome
-    );
-    expect(
-      Schema.decodeUnknownResult(AcquisitionTaskOutcome)(currentCheckpoint)._tag
-    ).toBe("Success");
-    expect(decodeAcquisitionCheckpoint(currentCheckpoint)).toMatchObject({
+  it("preserves the exact runtime-native timestamp representation", () => {
+    expect(decodeAcquisitionCheckpoint(runtimeNativeCheckpoint)).toMatchObject({
       _tag: "Accepted",
-      outcome: { _tag: "VerifiedAcquisition", generation },
+      outcome: {
+        _tag: "VerifiedAcquisition",
+        evidence: {
+          acquiredAt: expect.any(Object),
+          deleteAt: expect.any(Object),
+          source: {
+            observedAt: expect.any(Object),
+            publishedAt: expect.any(Object),
+          },
+        },
+        generation,
+      },
     });
   });
 
   it.each([
     {
-      name: "ISO string from a different serializer",
-      value: acquiredAt,
+      name: "noncanonical offset",
+      value: "2026-07-28T10:00:00+00:00",
     },
     {
-      name: "fractional epoch",
-      value: { epochMilliseconds: 1_785_232_800_000.5 },
+      name: "missing milliseconds",
+      value: "2026-07-28T10:00:00Z",
     },
     {
-      name: "out-of-range epoch",
-      value: { epochMilliseconds: 9_000_000_000_000_000 },
+      name: "invalid calendar date",
+      value: "2026-02-30T10:00:00.000Z",
     },
-  ])("fails closed for $name", ({ value }) => {
+  ])("fails closed for canonical $name", ({ value }) => {
     expect(
       decodeAcquisitionCheckpoint({
         ...historicalCheckpoint,
@@ -135,6 +149,80 @@ describe("historical acquisition checkpoint boundary", () => {
         },
       })
     ).toEqual({
+      _tag: "AcquisitionCheckpointRejected",
+      code: "historical_acquisition_checkpoint_invalid",
+    });
+  });
+
+  it.each([
+    {
+      name: "fractional epoch",
+      value: { epochMilliseconds: 1_785_232_800_000.5 },
+    },
+    {
+      name: "out-of-range epoch",
+      value: { epochMilliseconds: 9_000_000_000_000_000 },
+    },
+    {
+      name: "excess epoch key",
+      value: {
+        epochMilliseconds: 1_785_232_800_000,
+        serializer: "foreign",
+      },
+    },
+    {
+      name: "foreign serializer shape",
+      value: { seconds: 1_785_232_800 },
+    },
+    {
+      name: "mixed timestamp representation",
+      value: acquiredAt,
+    },
+  ])("fails closed for runtime-native $name", ({ value }) => {
+    expect(
+      decodeAcquisitionCheckpoint({
+        ...runtimeNativeCheckpoint,
+        evidence: {
+          ...runtimeNativeCheckpoint.evidence,
+          acquiredAt: value,
+        },
+      })
+    ).toEqual({
+      _tag: "AcquisitionCheckpointRejected",
+      code: "historical_acquisition_checkpoint_invalid",
+    });
+  });
+
+  it.each([
+    {
+      name: "top-level excess property",
+      value: { ...historicalCheckpoint, serializer: "foreign" },
+    },
+    {
+      name: "evidence excess property",
+      value: {
+        ...historicalCheckpoint,
+        evidence: {
+          ...historicalCheckpoint.evidence,
+          serializer: "foreign",
+        },
+      },
+    },
+    {
+      name: "source excess property",
+      value: {
+        ...historicalCheckpoint,
+        evidence: {
+          ...historicalCheckpoint.evidence,
+          source: {
+            ...historicalCheckpoint.evidence.source,
+            serializer: "foreign",
+          },
+        },
+      },
+    },
+  ])("fails closed for $name", ({ value }) => {
+    expect(decodeAcquisitionCheckpoint(value)).toEqual({
       _tag: "AcquisitionCheckpointRejected",
       code: "historical_acquisition_checkpoint_invalid",
     });
@@ -159,6 +247,25 @@ describe("historical acquisition checkpoint boundary", () => {
           2
         ),
       }),
+    },
+    {
+      checkpoint: {
+        ...historicalCheckpoint,
+        generation: 2,
+      },
+      name: "mismatched outcome and evidence generation",
+      stored: storedImport(),
+    },
+    {
+      checkpoint: {
+        ...historicalCheckpoint,
+        evidence: {
+          ...historicalCheckpoint.evidence,
+          deleteAt: "2026-08-03T10:00:00.000Z",
+        },
+      },
+      name: "invalid seven-day retention",
+      stored: storedImport(),
     },
     {
       name: "non-owned lifecycle",
@@ -188,8 +295,10 @@ describe("historical acquisition checkpoint boundary", () => {
         } as unknown as StoredImport["view"],
       }),
     },
-  ])("fails closed for $name", ({ stored }) => {
-    const decoded = decodeAcquisitionCheckpoint(historicalCheckpoint);
+  ])("fails closed for $name", ({ checkpoint, stored }) => {
+    const decoded = decodeAcquisitionCheckpoint(
+      checkpoint ?? historicalCheckpoint
+    );
     if (decoded._tag !== "Accepted") {
       throw new Error("Expected the synthetic checkpoint to decode");
     }
