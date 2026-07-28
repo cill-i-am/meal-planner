@@ -149,15 +149,14 @@ const installedSpeechDispatch = (
             JSON.stringify(options) !==
             JSON.stringify({
               gateway: {
-                collectLog: true,
+                collectLog: false,
                 id: "meal-planner-pilot-gaia-118",
-                metadata: { correlationId },
                 skipCache: true,
               },
               returnRawResponse: true,
             })
           ) {
-            throw new Error("Metadata-only gateway policy was not installed");
+            throw new Error("Gateway logging was not disabled");
           }
           await Effect.runPromise(increment(env, instanceId, "provider-calls"));
           if (outcome === "known_zero") {

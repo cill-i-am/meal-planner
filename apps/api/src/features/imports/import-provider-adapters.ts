@@ -454,15 +454,11 @@ const pricedTokenUsage = (
   };
 };
 
-const workersAiGatewayOptions = (
-  gatewayId: string,
-  correlationId: ImportCorrelationId
-) =>
+const workersAiGatewayOptions = (gatewayId: string) =>
   ({
     gateway: {
-      collectLog: true,
+      collectLog: false,
       id: gatewayId,
-      metadata: { correlationId },
       skipCache: true,
     },
     returnRawResponse: true,
@@ -474,22 +470,23 @@ const runWorkersAi = (
   ai: WorkersAiBinding,
   model: string,
   body: unknown,
-  gatewayId: string,
-  correlationId: ImportCorrelationId
+  gatewayId: string
 ): Promise<Response> =>
   ai.run(
     model as never,
     body as never,
-    workersAiGatewayOptions(gatewayId, correlationId) as never
+    workersAiGatewayOptions(gatewayId) as never
   ) as Promise<Response>;
 
 /**
  * Keep the installed Alchemy LanguageModel composition while dispatching
- * through the account-bound Workers AI binding. The proxy enforces the
- * metadata-only gateway options at the final SDK boundary and never touches
- * the universal gateway binding.
+ * through the account-bound Workers AI binding. The binding cannot express
+ * AI Gateway's payload-suppression header, so the proxy disables provider-side
+ * gateway logging at the final SDK boundary and relies on the redacted,
+ * correlation-aware Worker observability events. It never touches the
+ * universal gateway binding.
  */
-const metadataOnlyWorkersAiClient = (
+const noLogWorkersAiClient = (
   client: QueryGatewayClient,
   correlationId: ImportCorrelationId,
   providerStage: "recipe" | "speech" | "visual",
@@ -503,13 +500,7 @@ const metadataOnlyWorkersAiClient = (
           run: async (model: unknown, body: unknown) => {
             let response: Response;
             try {
-              response = await runWorkersAi(
-                ai,
-                String(model),
-                body,
-                gatewayId,
-                correlationId
-              );
+              response = await runWorkersAi(ai, String(model), body, gatewayId);
             } catch (error) {
               if (isPilotProviderKnownZeroCostFailure(error)) {
                 throw error;
@@ -546,7 +537,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const client = metadataOnlyWorkersAiClient(
+    const client = noLogWorkersAiClient(
       input.client,
       input.correlationId,
       "visual",
@@ -625,7 +616,7 @@ export const makeInstalledRecipeExtractor = (input: {
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const client = metadataOnlyWorkersAiClient(
+    const client = noLogWorkersAiClient(
       input.client,
       input.correlationId,
       "recipe",
@@ -806,8 +797,7 @@ export const makeInstalledSpeechTranscriber = (input: {
                         task: "transcribe",
                         vad_filter: true,
                       },
-                      gatewayId,
-                      input.correlationId
+                      gatewayId
                     ),
                 });
                 yield* emitImportObservabilityEvent(

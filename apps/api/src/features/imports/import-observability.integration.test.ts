@@ -246,7 +246,6 @@ describe("opaque import correlation continuity", () => {
           gateway: Schema.Struct({
             collectLog: Schema.Boolean,
             id: Schema.String,
-            metadata: Schema.Struct({ correlationId: ImportCorrelationId }),
             skipCache: Schema.Boolean,
           }),
           returnRawResponse: Schema.Boolean,
@@ -255,13 +254,14 @@ describe("opaque import correlation continuity", () => {
     )(gatewayRequests[0]);
     expect(options).toEqual({
       gateway: {
-        collectLog: true,
+        collectLog: false,
         id: "meal-planner-pilot-gaia-118",
-        metadata: { correlationId },
         skipCache: true,
       },
       returnRawResponse: true,
     });
+    expect(options.gateway).not.toHaveProperty("metadata");
+    expect(options).not.toHaveProperty("headers");
     expect(JSON.stringify(options)).not.toMatch(
       /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
     );

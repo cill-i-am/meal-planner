@@ -209,7 +209,7 @@ describe("installed import provider adapters", () => {
     );
   });
 
-  it("uses the installed metadata-only gateway and exact workerd speech response shape", async () => {
+  it("uses the authenticated binding with provider logging disabled and exact workerd speech response shape", async () => {
     const gateway = makeSpeechGateway({
       segments: [],
       text: "Chop the onion.",
@@ -290,18 +290,24 @@ describe("installed import provider adapters", () => {
       model: "@cf/openai/whisper-large-v3-turbo",
       options: {
         gateway: {
-          collectLog: true,
+          collectLog: false,
           id: "meal-planner-pilot-gaia-118",
-          metadata: { correlationId },
           skipCache: true,
         },
         returnRawResponse: true,
       },
     });
     const speechRequest = gateway.requests[0] as {
-      readonly options: { readonly gateway: { readonly metadata: unknown } };
+      readonly options: {
+        readonly gateway: {
+          readonly collectLog: boolean;
+          readonly metadata?: unknown;
+        };
+      };
     };
-    expect(speechRequest.options.gateway.metadata).toEqual({ correlationId });
+    expect(speechRequest.options.gateway.collectLog).toBe(false);
+    expect(speechRequest.options.gateway).not.toHaveProperty("metadata");
+    expect(speechRequest.options).not.toHaveProperty("headers");
     expect(JSON.stringify(speechRequest.options)).not.toMatch(
       /AQID|Chop the onion|https?:|cookie|credential|prompt|transcript/iu
     );
@@ -533,7 +539,7 @@ describe("installed import provider adapters", () => {
         readonly gateway: {
           readonly collectLog: boolean;
           readonly id: string;
-          readonly metadata: unknown;
+          readonly metadata?: unknown;
           readonly skipCache: boolean;
         };
         readonly returnRawResponse: boolean;
@@ -542,13 +548,14 @@ describe("installed import provider adapters", () => {
     expect(request.model).toBe("@cf/meta/llama-3.2-11b-vision-instruct");
     expect(request.options).toEqual({
       gateway: {
-        collectLog: true,
+        collectLog: false,
         id: "meal-planner-pilot-gaia-118",
-        metadata: { correlationId },
         skipCache: true,
       },
       returnRawResponse: true,
     });
+    expect(request.options.gateway).not.toHaveProperty("metadata");
+    expect(request.options).not.toHaveProperty("headers");
     expect(JSON.stringify(request.options)).not.toMatch(
       /AQID|data:image|https?:|cookie|credential|prompt|transcript/iu
     );
@@ -706,7 +713,26 @@ describe("installed import provider adapters", () => {
           readonly function: { parameters: unknown };
         }[];
       };
+      readonly options: {
+        readonly gateway: {
+          readonly collectLog: boolean;
+          readonly id: string;
+          readonly metadata?: unknown;
+          readonly skipCache: boolean;
+        };
+        readonly returnRawResponse: boolean;
+      };
     };
+    expect(request.options).toEqual({
+      gateway: {
+        collectLog: false,
+        id: "meal-planner-pilot-gaia-118",
+        skipCache: true,
+      },
+      returnRawResponse: true,
+    });
+    expect(request.options.gateway).not.toHaveProperty("metadata");
+    expect(request.options).not.toHaveProperty("headers");
     expect(request.body.tools[0]?.function.parameters).toEqual(
       Tool.getJsonSchema(
         Tool.make("record_recipe", { parameters: RecipeExtraction })
