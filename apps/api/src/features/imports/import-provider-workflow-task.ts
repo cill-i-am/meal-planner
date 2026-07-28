@@ -19,15 +19,22 @@ export type ProviderTaskFailureCheckpoint =
   typeof ProviderTaskFailureCheckpoint.Type;
 export type ProviderTaskStage = ProviderTaskFailureCheckpoint["stage"];
 
-const providerTaskFailureCode = (error: unknown) =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  typeof error.code === "string"
-    ? error.code
-    : "stage_failed";
+export const providerTaskFailureCode = (error: unknown): string => {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+  ) {
+    return error.code;
+  }
+  return "stage_failed";
+};
 
-const isRetryableProviderTaskFailure = (code: string) =>
+export const isRetryableProviderTaskFailure = (code: string) =>
   code === "provider_unavailable" || code === "throttled" || code === "timeout";
 
 const retryExhaustedCheckpoint = (

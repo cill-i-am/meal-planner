@@ -1,3 +1,4 @@
+import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
@@ -217,8 +218,14 @@ const safeFailureCode = (
       typeof record["reason"] === "object" && record["reason"] !== null
         ? (record["reason"] as Record<string, unknown>)
         : record;
-    const tag = String(reason["_tag"] ?? record["_tag"] ?? "").toLowerCase();
-    const status = reason["status"] ?? record["status"];
+    const original =
+      typeof record["cause"] === "object" && record["cause"] !== null
+        ? (record["cause"] as Record<string, unknown>)
+        : record;
+    const tag = String(
+      original["_tag"] ?? reason["_tag"] ?? record["_tag"] ?? ""
+    ).toLowerCase();
+    const status = original["status"] ?? reason["status"] ?? record["status"];
     if (status === 429 || tag.includes("rate") || tag.includes("throttl")) {
       return "throttled";
     }
@@ -666,15 +673,33 @@ export const makeInstalledRecipeExtractor = (input: {
 
 const SpeechProviderResponse = Schema.Struct({
   text: SpeechTranscript.fields.text,
-  transcription_info: Schema.Struct({
-    text: SpeechTranscript.fields.text,
-    word_count: Schema.Number.pipe(
+  transcription_info: Schema.optionalKey(
+    Schema.Struct({
+      duration: Schema.optionalKey(
+        Schema.Number.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
+      ),
+      duration_after_vad: Schema.optionalKey(
+        Schema.Number.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
+      ),
+      language: Schema.optionalKey(Schema.String),
+      language_probability: Schema.optionalKey(
+        Schema.Number.pipe(
+          Schema.check(
+            Schema.isGreaterThanOrEqualTo(0),
+            Schema.isLessThanOrEqualTo(1)
+          )
+        )
+      ),
+    })
+  ),
+  word_count: Schema.optionalKey(
+    Schema.Number.pipe(
       Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
-    ),
-  }),
+    )
+  ),
 });
 
-const decodeSpeechResponse = Schema.decodeUnknownEffect(
+const decodeSpeechResponse = Schema.decodeUnknownOption(
   SpeechProviderResponse,
   {
     onExcessProperty: "ignore",
@@ -685,6 +710,24 @@ const speechFailure = (
   code: SafeProviderFailureCode
 ): SpeechTranscriptionFailure =>
   adapterFailure("SpeechTranscriptionFailure", code);
+
+type SpeechDispatchOutcome =
+  | {
+      readonly _tag: "Failed";
+      readonly code: "malformed_response";
+    }
+  | {
+      readonly _tag: "Transcribed";
+      readonly transcript: SpeechTranscript;
+    };
+
+const encodeBase64 = (bytes: Uint8Array) => {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCodePoint(byte);
+  }
+  return btoa(binary);
+};
 
 export const makeInstalledSpeechTranscriber = (input: {
   readonly client: QueryGatewayClient;
@@ -697,122 +740,111 @@ export const makeInstalledSpeechTranscriber = (input: {
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const client = metadataOnlyGatewayClient(
-      input.client,
-      input.correlationId,
-      "speech",
-      traceStore
-    );
-    const ai = yield* client.raw;
+    const runtimeContext = yield* RuntimeContext;
     return {
       transcribe: (request: SpeechTranscriptionInput) =>
-        input.dispatch
-          .run({
+        Effect.gen(function* transcribeSpeech() {
+          const estimatedCostMicroUsd = Math.ceil(
+            (request.audio.durationMilliseconds * 510) / 60_000
+          );
+          if (
+            estimatedCostMicroUsd <= 0 ||
+            estimatedCostMicroUsd > SpeechMaximumCostMicroUsd
+          ) {
+            return yield* Effect.fail("insufficient_evidence" as const);
+          }
+          const outcome = yield* input.dispatch.run({
             dispatchId: request.dispatchId,
             invoke: failAfter(
               Effect.gen(function* invokeSpeech() {
-                const response = yield* Effect.tryPromise({
-                  catch: (error) => error,
-                  try: () =>
-                    ai.run(
-                      model as never,
-                      {
-                        audio: [...request.audio.bytes],
-                        condition_on_previous_text: false,
-                        language: "en",
-                        task: "transcribe",
-                        vad_filter: true,
-                      } as never,
-                      { returnRawResponse: true }
-                    ),
-                });
-                if (!(response as Response).ok) {
-                  return yield* Effect.fail({
-                    _tag: "ProviderHttpError",
-                    status: (response as Response).status,
-                  });
-                }
-                const raw = yield* Effect.tryPromise({
-                  catch: () => "malformed_response" as const,
-                  try: () => (response as Response).json(),
-                }).pipe(
-                  Effect.tapError(() =>
-                    emitImportObservabilityEvent({
-                      correlationId: input.correlationId,
-                      event: "provider.decode",
-                      outcome: "malformed",
-                      providerStage: "speech",
-                    })
-                  )
-                );
-                const decoded = yield* decodeSpeechResponse(raw).pipe(
-                  Effect.matchEffect({
-                    onFailure: () =>
-                      emitImportObservabilityEvent({
-                        correlationId: input.correlationId,
-                        event: "provider.decode",
-                        outcome: "malformed",
-                        providerStage: "speech",
-                      }).pipe(
-                        Effect.andThen(
-                          Effect.fail("malformed_response" as const)
-                        )
-                      ),
-                    onSuccess: Effect.succeed,
+                const response = yield* input.client
+                  .run({
+                    endpoint: model,
+                    headers: metadataOnlyGatewayHeaders(input.correlationId),
+                    provider: "workers-ai",
+                    query: {
+                      audio: encodeBase64(request.audio.bytes),
+                      condition_on_previous_text: false,
+                      language: "en",
+                      task: "transcribe",
+                      vad_filter: true,
+                    },
                   })
+                  .pipe(Effect.provideService(RuntimeContext, runtimeContext));
+                yield* emitImportObservabilityEvent(
+                  {
+                    correlationId: input.correlationId,
+                    event: "provider.response",
+                    outcome: "received",
+                    providerStage: "speech",
+                  },
+                  traceStore
                 );
-                if (decoded.text !== decoded.transcription_info.text) {
-                  return yield* emitImportObservabilityEvent({
+                if (!response.ok) {
+                  return yield* Effect.fail({ status: response.status });
+                }
+                const raw = Option.getOrUndefined(
+                  yield* Effect.tryPromise({
+                    catch: () => "malformed_response" as const,
+                    try: () => response.json(),
+                  }).pipe(Effect.option)
+                );
+                const decoded = Option.getOrUndefined(
+                  decodeSpeechResponse(raw)
+                );
+                const transcript =
+                  decoded === undefined
+                    ? Option.none()
+                    : Schema.decodeUnknownOption(SpeechTranscript)({
+                        cost: {
+                          certainty: "estimated",
+                          currency: "USD",
+                          estimatedMicroUsd: estimatedCostMicroUsd,
+                        },
+                        detectedLanguage: "en",
+                        model,
+                        provider: ProviderName,
+                        segments: [
+                          {
+                            endMilliseconds: request.audio.durationMilliseconds,
+                            startMilliseconds: 0,
+                            text: decoded.text,
+                          },
+                        ],
+                        text: decoded.text,
+                        usage: {
+                          audioDurationMilliseconds:
+                            request.audio.durationMilliseconds,
+                          inputBytes: request.audio.bytes.byteLength,
+                        },
+                      });
+                yield* emitImportObservabilityEvent(
+                  {
                     correlationId: input.correlationId,
                     event: "provider.decode",
-                    outcome: "malformed",
+                    outcome: Option.isSome(transcript)
+                      ? "succeeded"
+                      : "malformed",
                     providerStage: "speech",
-                  }).pipe(
-                    Effect.andThen(Effect.fail("malformed_response" as const))
-                  );
-                }
-                yield* emitImportObservabilityEvent({
-                  correlationId: input.correlationId,
-                  event: "provider.decode",
-                  outcome: "succeeded",
-                  providerStage: "speech",
-                });
-                const estimatedCostMicroUsd = Math.ceil(
-                  (request.audio.durationMilliseconds * 510) / 60_000
+                  },
+                  traceStore
                 );
-                if (
-                  estimatedCostMicroUsd <= 0 ||
-                  estimatedCostMicroUsd > SpeechMaximumCostMicroUsd
-                ) {
-                  return yield* Effect.fail("insufficient_evidence" as const);
-                }
                 return {
                   cost: {
                     _tag: "Known" as const,
                     actualCostMicroUsd: estimatedCostMicroUsd,
                   },
-                  value: Schema.decodeUnknownSync(SpeechTranscript)({
-                    cost: {
-                      certainty: "estimated",
-                      currency: "USD",
-                      estimatedMicroUsd: estimatedCostMicroUsd,
-                    },
-                    detectedLanguage: "en",
-                    model,
-                    provider: ProviderName,
-                    segments: [
-                      {
-                        endMilliseconds: request.audio.durationMilliseconds,
-                        startMilliseconds: 0,
-                        text: decoded.text,
-                      },
-                    ],
-                    text: decoded.text,
-                    usage: {
-                      audioDurationMilliseconds:
-                        request.audio.durationMilliseconds,
-                      inputBytes: request.audio.bytes.byteLength,
-                    },
+                  value: Option.match(transcript, {
+                    onNone: () =>
+                      ({
+                        _tag: "Failed",
+                        code: "malformed_response",
+                      }) satisfies SpeechDispatchOutcome,
+                    onSome: (value) =>
+                      ({
+                        _tag: "Transcribed",
+                        transcript: value,
+                      }) satisfies SpeechDispatchOutcome,
                   }),
                 };
               }),
@@ -821,7 +853,6 @@ export const makeInstalledSpeechTranscriber = (input: {
                 providerStage: "speech",
               }
             ).pipe(
-              // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks normalize provider failures.
               Effect.mapError((error) => {
                 if (isPilotProviderKnownZeroCostFailure(error)) {
                   return error as PilotProviderKnownZeroCostFailure<SafeProviderFailureCode>;
@@ -834,16 +865,20 @@ export const makeInstalledSpeechTranscriber = (input: {
             maximumCostMicroUsd: SpeechMaximumCostMicroUsd,
             providerStage: "speech",
             providerStageId: "speech-transcription",
-          })
-          .pipe(
-            // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
-            Effect.mapError((error) =>
-              speechFailure(
-                typeof error === "object"
-                  ? "outcome_unknown"
-                  : (error as SafeProviderFailureCode)
-              )
+          });
+          if (outcome._tag === "Failed") {
+            return yield* Effect.fail(outcome.code);
+          }
+          return outcome.transcript;
+        }).pipe(
+          // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
+          Effect.mapError((error) =>
+            speechFailure(
+              typeof error === "object"
+                ? "outcome_unknown"
+                : (error as SafeProviderFailureCode)
             )
-          ),
+          )
+        ),
     } satisfies SpeechTranscriberShape;
   });

@@ -4,7 +4,14 @@ import { Effect, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 import { describe, expect, it, vi } from "vitest";
 
-import { ImportCorrelationId } from "./import-observability.js";
+import {
+  ImportCorrelationId,
+  ImportObservabilityTraceStore,
+} from "./import-observability.js";
+import type {
+  ImportObservabilityEvent,
+  ImportObservabilityTraceStoreShape,
+} from "./import-observability.js";
 import {
   makeInstalledRecipeExtractor,
   makeInstalledSpeechTranscriber,
@@ -51,6 +58,32 @@ const makeRawGateway = (response: Response) => {
   };
 };
 
+const makeSpeechGateway = (response: unknown) => {
+  const requests: unknown[] = [];
+  const run = (request: unknown) =>
+    Effect.sync(() => {
+      requests.push(request);
+      return Response.json(response);
+    });
+  return {
+    client: {
+      gateway: Effect.die("raw universal gateway access was bypassed"),
+      id: Effect.succeed("meal-planner-pilot-gaia-118"),
+      raw: Effect.die("metadata-only universal gateway was bypassed"),
+      run,
+    } as unknown as QueryGatewayClient,
+    requests,
+  };
+};
+
+const makeRejectedSpeechGateway = (error: unknown) =>
+  ({
+    gateway: Effect.die("raw universal gateway access was bypassed"),
+    id: Effect.succeed("meal-planner-pilot-gaia-118"),
+    raw: Effect.die("metadata-only universal gateway was bypassed"),
+    run: () => Effect.fail(error),
+  }) as unknown as QueryGatewayClient;
+
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
 );
@@ -83,11 +116,35 @@ const testRuntimeContext = RuntimeContext.of({
 });
 
 const runFactory = <A>(
-  effect: Effect.Effect<A, never, RuntimeContext>
-): Promise<A> =>
-  Effect.runPromise(
-    effect.pipe(Effect.provideService(RuntimeContext, testRuntimeContext))
+  effect: Effect.Effect<A, never, RuntimeContext>,
+  traceStore?: ImportObservabilityTraceStoreShape
+): Promise<A> => {
+  const withRuntime = effect.pipe(
+    Effect.provideService(RuntimeContext, testRuntimeContext)
   );
+  return Effect.runPromise(
+    traceStore === undefined
+      ? withRuntime
+      : withRuntime.pipe(
+          Effect.provideService(ImportObservabilityTraceStore, traceStore)
+        )
+  );
+};
+
+const makeRecordingTraceStore = () => {
+  const events: ImportObservabilityEvent[] = [];
+  const service = ImportObservabilityTraceStore.of({
+    append: (event) =>
+      Effect.sync(() => {
+        events.push(event);
+      }),
+    read: (requestedCorrelationId) =>
+      Effect.succeed(
+        events.filter((event) => event.correlationId === requestedCorrelationId)
+      ),
+  });
+  return { events, service };
+};
 
 const unresolvedString = {
   citations: [],
@@ -178,17 +235,19 @@ describe("installed import provider adapters", () => {
     );
   });
 
-  it("uses the installed speech binding and duration-priced budget settlement", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
-    const gateway = makeGateway({
+  it("uses the installed metadata-only gateway and exact workerd speech response shape", async () => {
+    const gateway = makeSpeechGateway({
       segments: [],
       text: "Chop the onion.",
       transcription_info: {
-        text: "Chop the onion.",
-        word_count: 3,
+        duration: 60,
+        duration_after_vad: 59,
+        language: "en",
+        language_probability: 0.99,
       },
-      vtt: "WEBVTT",
+      word_count: 3,
     });
+    const trace = makeRecordingTraceStore();
     const dispatches: {
       readonly actualCostMicroUsd: number;
       readonly maximumCostMicroUsd: number;
@@ -215,7 +274,8 @@ describe("installed import provider adapters", () => {
         client: gateway.client,
         correlationId,
         dispatch,
-      })
+      }),
+      trace.service
     );
     const transcript = await Effect.runPromise(
       adapter.transcribe({
@@ -255,45 +315,61 @@ describe("installed import provider adapters", () => {
       },
       provider: "workers-ai",
       query: {
+        audio: "AQID",
         condition_on_previous_text: false,
         language: "en",
         task: "transcribe",
         vad_filter: true,
       },
     });
-    expect(log.mock.calls).toEqual([
-      [
-        {
-          correlationId,
-          event: "provider.response",
-          outcome: "received",
-          providerStage: "speech",
-        },
-      ],
-      [
-        {
-          correlationId,
-          event: "provider.decode",
-          outcome: "succeeded",
-          providerStage: "speech",
-        },
-      ],
+    expect(JSON.stringify(gateway.requests[0])).not.toContain("collectLog");
+    expect(trace.events).toEqual([
+      {
+        correlationId,
+        event: "provider.response",
+        outcome: "received",
+        providerStage: "speech",
+      },
+      {
+        correlationId,
+        event: "provider.decode",
+        outcome: "succeeded",
+        providerStage: "speech",
+      },
     ]);
-    expect(JSON.stringify(log.mock.calls)).not.toContain("Chop the onion.");
-    log.mockRestore();
+    expect(JSON.stringify(trace.events)).not.toContain("Chop the onion.");
   });
 
-  it("fails closed when the installed speech response is malformed", async () => {
-    const gateway = makeGateway({
+  it("settles known cost and fails closed when the installed speech response is malformed", async () => {
+    const gateway = makeSpeechGateway({
       providerSecret: "must-not-escape",
-      text: "text without transcription info",
+      transcription_info: {
+        duration: 1,
+        language: "en",
+      },
+      word_count: 4,
     });
+    const trace = makeRecordingTraceStore();
+    const settledCosts: number[] = [];
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
         client: gateway.client,
         correlationId,
-        dispatch: localDispatchGate,
-      })
+        dispatch: {
+          run: (input) =>
+            input.invoke.pipe(
+              Effect.tap(({ cost }) =>
+                Effect.sync(() => {
+                  settledCosts.push(
+                    cost._tag === "Known" ? cost.actualCostMicroUsd : -1
+                  );
+                })
+              ),
+              Effect.map(({ value }) => value)
+            ),
+        },
+      }),
+      trace.service
     );
     const exit = await Effect.runPromiseExit(
       adapter.transcribe({
@@ -310,6 +386,59 @@ describe("installed import provider adapters", () => {
       })
     );
     expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(settledCosts).toEqual([9]);
+    expect(trace.events).toEqual([
+      {
+        correlationId,
+        event: "provider.response",
+        outcome: "received",
+        providerStage: "speech",
+      },
+      {
+        correlationId,
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "speech",
+      },
+    ]);
+    expect(JSON.stringify(exit)).not.toContain("must-not-escape");
+    expect(JSON.stringify(trace.events)).not.toContain("must-not-escape");
+  });
+
+  it("preserves retryable native speech failures as typed redacted failures", async () => {
+    const adapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: makeRejectedSpeechGateway({
+          _tag: "AiGatewayError",
+          cause: {
+            providerSecret: "must-not-escape",
+            status: 429,
+          },
+          message: "providerSecret=must-not-escape",
+        }),
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.transcribe({
+        audio: {
+          bytes: new Uint8Array([1]),
+          durationMilliseconds: 1000,
+          mimeType: "audio/wav",
+          sha256: "a".repeat(64),
+        },
+        dispatchId: "speech:import-1:1",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("throttled");
     expect(JSON.stringify(exit)).not.toContain("must-not-escape");
   });
 
