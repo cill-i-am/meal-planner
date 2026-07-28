@@ -37,6 +37,43 @@ describe("import workflow input", () => {
     expect(first.at(14)).toBe("5");
   });
 
+  it("resolves legacy input without a runtime SHA-1 WebCrypto seam", async () => {
+    const sha1UnavailableCrypto = new Proxy(globalThis.crypto, {
+      get: (target, property, receiver) => {
+        if (property === "subtle") {
+          return {
+            digest: () =>
+              Promise.reject(new Error("SHA-1 is unavailable in this runtime")),
+          };
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const cryptoDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "crypto"
+    );
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: sha1UnavailableCrypto,
+    });
+
+    try {
+      await expect(
+        Effect.runPromise(resolveImportWorkflowInput({ importId }))
+      ).resolves.toEqual({
+        correlationId: "b44d09c6-67ca-527c-a2c7-86628ffc08a6",
+        importId,
+      });
+    } finally {
+      if (cryptoDescriptor === undefined) {
+        Reflect.deleteProperty(globalThis, "crypto");
+      } else {
+        Object.defineProperty(globalThis, "crypto", cryptoDescriptor);
+      }
+    }
+  });
+
   it.each([
     {},
     { importId, sourceUrl: "sensitive-source-sentinel" },
