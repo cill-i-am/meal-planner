@@ -59,22 +59,18 @@ const makeRawGateway = (response: Response) => {
 };
 
 const makeSpeechGateway = (response: unknown) => {
-  const requests: {
-    readonly body: unknown;
-    readonly model: string;
-    readonly options: unknown;
-  }[] = [];
-  const raw = {
-    run: (model: string, body: unknown, options: unknown) => {
-      requests.push({ body, model, options });
-      return Promise.resolve(response);
-    },
-  };
+  const requests: unknown[] = [];
+  const run = (request: unknown) =>
+    Effect.sync(() => {
+      requests.push(request);
+      return Response.json(response);
+    });
   return {
     client: {
-      gateway: Effect.die("native Workers AI binding was bypassed"),
+      gateway: Effect.die("raw universal gateway access was bypassed"),
       id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.succeed(raw),
+      raw: Effect.die("metadata-only universal gateway was bypassed"),
+      run,
     } as unknown as QueryGatewayClient,
     requests,
   };
@@ -82,11 +78,10 @@ const makeSpeechGateway = (response: unknown) => {
 
 const makeRejectedSpeechGateway = (error: unknown) =>
   ({
-    gateway: Effect.die("native Workers AI binding was bypassed"),
+    gateway: Effect.die("raw universal gateway access was bypassed"),
     id: Effect.succeed("meal-planner-pilot-gaia-118"),
-    raw: Effect.succeed({
-      run: Promise.reject.bind(Promise, error),
-    }),
+    raw: Effect.die("metadata-only universal gateway was bypassed"),
+    run: () => Effect.fail(error),
   }) as unknown as QueryGatewayClient;
 
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
@@ -240,15 +235,17 @@ describe("installed import provider adapters", () => {
     );
   });
 
-  it("uses the installed speech binding and duration-priced budget settlement", async () => {
+  it("uses the installed metadata-only gateway and exact workerd speech response shape", async () => {
     const gateway = makeSpeechGateway({
       segments: [],
       text: "Chop the onion.",
       transcription_info: {
-        text: "Chop the onion.",
-        word_count: 3,
+        duration: 60,
+        duration_after_vad: 59,
+        language: "en",
+        language_probability: 0.99,
       },
-      vtt: "WEBVTT",
+      word_count: 3,
     });
     const trace = makeRecordingTraceStore();
     const dispatches: {
@@ -309,22 +306,23 @@ describe("installed import provider adapters", () => {
       },
     ]);
     expect(gateway.requests[0]).toMatchObject({
-      body: {
+      endpoint: "@cf/openai/whisper-large-v3-turbo",
+      headers: {
+        "cf-aig-collect-log": "true",
+        "cf-aig-collect-log-payload": "false",
+        "cf-aig-metadata": JSON.stringify({ correlationId }),
+        "content-type": "application/json",
+      },
+      provider: "workers-ai",
+      query: {
         audio: "AQID",
         condition_on_previous_text: false,
         language: "en",
         task: "transcribe",
         vad_filter: true,
       },
-      model: "@cf/openai/whisper-large-v3-turbo",
-      options: {
-        gateway: {
-          collectLog: true,
-          id: "meal-planner-pilot-gaia-118",
-          metadata: { correlationId },
-        },
-      },
     });
+    expect(JSON.stringify(gateway.requests[0])).not.toContain("collectLog");
     expect(trace.events).toEqual([
       {
         correlationId,
@@ -345,7 +343,11 @@ describe("installed import provider adapters", () => {
   it("settles known cost and fails closed when the installed speech response is malformed", async () => {
     const gateway = makeSpeechGateway({
       providerSecret: "must-not-escape",
-      text: "text without transcription info",
+      transcription_info: {
+        duration: 1,
+        language: "en",
+      },
+      word_count: 4,
     });
     const trace = makeRecordingTraceStore();
     const settledCosts: number[] = [];
@@ -408,8 +410,12 @@ describe("installed import provider adapters", () => {
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
         client: makeRejectedSpeechGateway({
+          _tag: "AiGatewayError",
+          cause: {
+            providerSecret: "must-not-escape",
+            status: 429,
+          },
           message: "providerSecret=must-not-escape",
-          status: 429,
         }),
         correlationId,
         dispatch: localDispatchGate,

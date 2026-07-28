@@ -21,7 +21,10 @@ import {
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
-import { ImportCorrelationId } from "./import-observability.js";
+import {
+  ImportCorrelationId,
+  metadataOnlyGatewayHeaders,
+} from "./import-observability.js";
 import {
   makeInstalledSpeechTranscriber,
   makePilotProviderDispatchGate,
@@ -135,8 +138,11 @@ const installedSpeechDispatch = (
       runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
     const client = {
-      gateway: Effect.succeed({
-        run: async (request: unknown) => {
+      gateway: Effect.die("raw universal gateway access was bypassed"),
+      id: Effect.succeed("meal-planner-pilot-gaia-118"),
+      raw: Effect.die("metadata-only universal gateway was bypassed"),
+      run: (request: unknown) =>
+        Effect.gen(function* runSpeechGatewayRequest() {
           const headers =
             typeof request === "object" &&
             request !== null &&
@@ -144,22 +150,24 @@ const installedSpeechDispatch = (
               ? (request.headers as Record<string, string>)
               : {};
           if (
-            headers["cf-aig-collect-log"] !== "true" ||
-            headers["cf-aig-collect-log-payload"] !== "false"
+            JSON.stringify(headers) !==
+              JSON.stringify(metadataOnlyGatewayHeaders(correlationId)) ||
+            JSON.stringify(request).includes("collectLog")
           ) {
-            throw new Error("Metadata-only gateway policy was not installed");
-          }
-          await Effect.runPromise(increment(env, instanceId, "provider-calls"));
-          if (outcome === "known_zero") {
-            throw pilotProviderKnownZeroCostFailure(
-              "provider_unavailable" as const
+            return yield* Effect.die(
+              "Metadata-only gateway policy was not installed"
             );
           }
-          throw new Error("simulated ambiguous provider interruption");
-        },
-      }),
-      id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.die("metadata-only universal gateway was bypassed"),
+          yield* increment(env, instanceId, "provider-calls");
+          if (outcome === "known_zero") {
+            return yield* Effect.fail(
+              pilotProviderKnownZeroCostFailure("provider_unavailable" as const)
+            );
+          }
+          return yield* Effect.fail(
+            new Error("simulated ambiguous provider interruption")
+          );
+        }),
     } as unknown as QueryGatewayClient;
     const transcriber = yield* makeInstalledSpeechTranscriber({
       client,

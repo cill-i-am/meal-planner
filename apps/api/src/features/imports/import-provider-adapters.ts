@@ -1,3 +1,4 @@
+import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
@@ -217,8 +218,14 @@ const safeFailureCode = (
       typeof record["reason"] === "object" && record["reason"] !== null
         ? (record["reason"] as Record<string, unknown>)
         : record;
-    const tag = String(reason["_tag"] ?? record["_tag"] ?? "").toLowerCase();
-    const status = reason["status"] ?? record["status"];
+    const original =
+      typeof record["cause"] === "object" && record["cause"] !== null
+        ? (record["cause"] as Record<string, unknown>)
+        : record;
+    const tag = String(
+      original["_tag"] ?? reason["_tag"] ?? record["_tag"] ?? ""
+    ).toLowerCase();
+    const status = original["status"] ?? reason["status"] ?? record["status"];
     if (status === 429 || tag.includes("rate") || tag.includes("throttl")) {
       return "throttled";
     }
@@ -666,12 +673,30 @@ export const makeInstalledRecipeExtractor = (input: {
 
 const SpeechProviderResponse = Schema.Struct({
   text: SpeechTranscript.fields.text,
-  transcription_info: Schema.Struct({
-    text: SpeechTranscript.fields.text,
-    word_count: Schema.Number.pipe(
+  transcription_info: Schema.optionalKey(
+    Schema.Struct({
+      duration: Schema.optionalKey(
+        Schema.Number.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
+      ),
+      duration_after_vad: Schema.optionalKey(
+        Schema.Number.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
+      ),
+      language: Schema.optionalKey(Schema.String),
+      language_probability: Schema.optionalKey(
+        Schema.Number.pipe(
+          Schema.check(
+            Schema.isGreaterThanOrEqualTo(0),
+            Schema.isLessThanOrEqualTo(1)
+          )
+        )
+      ),
+    })
+  ),
+  word_count: Schema.optionalKey(
+    Schema.Number.pipe(
       Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
-    ),
-  }),
+    )
+  ),
 });
 
 const decodeSpeechResponse = Schema.decodeUnknownOption(
@@ -715,8 +740,7 @@ export const makeInstalledSpeechTranscriber = (input: {
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const ai = yield* input.client.raw;
-    const gatewayId = yield* input.client.id;
+    const runtimeContext = yield* RuntimeContext;
     return {
       transcribe: (request: SpeechTranscriptionInput) =>
         Effect.gen(function* transcribeSpeech() {
@@ -733,29 +757,20 @@ export const makeInstalledSpeechTranscriber = (input: {
             dispatchId: request.dispatchId,
             invoke: failAfter(
               Effect.gen(function* invokeSpeech() {
-                const raw: unknown = yield* Effect.tryPromise({
-                  catch: (error) => error,
-                  try: () =>
-                    ai.run(
-                      model as never,
-                      {
-                        audio: encodeBase64(request.audio.bytes),
-                        condition_on_previous_text: false,
-                        language: "en",
-                        task: "transcribe",
-                        vad_filter: true,
-                      } as never,
-                      {
-                        gateway: {
-                          collectLog: true,
-                          id: gatewayId,
-                          metadata: {
-                            correlationId: input.correlationId,
-                          },
-                        },
-                      }
-                    ),
-                });
+                const response = yield* input.client
+                  .run({
+                    endpoint: model,
+                    headers: metadataOnlyGatewayHeaders(input.correlationId),
+                    provider: "workers-ai",
+                    query: {
+                      audio: encodeBase64(request.audio.bytes),
+                      condition_on_previous_text: false,
+                      language: "en",
+                      task: "transcribe",
+                      vad_filter: true,
+                    },
+                  })
+                  .pipe(Effect.provideService(RuntimeContext, runtimeContext));
                 yield* emitImportObservabilityEvent(
                   {
                     correlationId: input.correlationId,
@@ -765,12 +780,20 @@ export const makeInstalledSpeechTranscriber = (input: {
                   },
                   traceStore
                 );
+                if (!response.ok) {
+                  return yield* Effect.fail({ status: response.status });
+                }
+                const raw = Option.getOrUndefined(
+                  yield* Effect.tryPromise({
+                    catch: () => "malformed_response" as const,
+                    try: () => response.json(),
+                  }).pipe(Effect.option)
+                );
                 const decoded = Option.getOrUndefined(
                   decodeSpeechResponse(raw)
                 );
                 const transcript =
-                  decoded === undefined ||
-                  decoded.text !== decoded.transcription_info.text
+                  decoded === undefined
                     ? Option.none()
                     : Schema.decodeUnknownOption(SpeechTranscript)({
                         cost: {
@@ -830,7 +853,6 @@ export const makeInstalledSpeechTranscriber = (input: {
                 providerStage: "speech",
               }
             ).pipe(
-              // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks normalize provider failures.
               Effect.mapError((error) => {
                 if (isPilotProviderKnownZeroCostFailure(error)) {
                   return error as PilotProviderKnownZeroCostFailure<SafeProviderFailureCode>;
