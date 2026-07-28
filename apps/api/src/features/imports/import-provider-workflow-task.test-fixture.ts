@@ -29,6 +29,7 @@ import {
   makeInstalledSpeechTranscriber,
   makePilotProviderDispatchGate,
 } from "./import-provider-adapters.js";
+import { makeD1ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
 import {
   makeD1ProviderTerminalCheckpointRepository,
   makeD1ProviderTerminalRecoveryRepository,
@@ -425,6 +426,12 @@ const readRequest = (request: Request) =>
         readonly id: string;
         readonly importId: string;
       }
+    | {
+        readonly action: "settle-speech";
+        readonly dispatchId: string;
+        readonly id: string;
+        readonly importId: string;
+      }
     | { readonly action: "restart"; readonly id: string }
     | { readonly action: "restart-terminal"; readonly id: string }
     | {
@@ -442,6 +449,21 @@ export default {
     const sessionId = await workflow.unsafeStartIntrospection();
 
     try {
+      if (command.action === "settle-speech") {
+        return Response.json(
+          await Effect.runPromise(
+            makeD1ProviderTerminalSettlementService({
+              database: env.MealPlannerDatabase,
+              now: () => decodeImportTimestamp("2026-07-27T09:10:45.000Z"),
+              runtimeStage: "pilot-gaia-118",
+            }).settle({
+              acquisitionGeneration: decodeGeneration(1),
+              dispatchId: decodeDispatchId(command.dispatchId),
+              importId: decodeImportId(command.importId),
+            })
+          )
+        );
+      }
       if (command.action === "run") {
         await workflow.unsafeSetIntrospectionOperations(sessionId, [
           {

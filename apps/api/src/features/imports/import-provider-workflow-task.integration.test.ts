@@ -162,6 +162,12 @@ const commandWorkflow = async (
         readonly id: string;
         readonly importId: string;
       }
+    | {
+        readonly action: "settle-speech";
+        readonly dispatchId: string;
+        readonly id: string;
+        readonly importId: string;
+      }
     | { readonly action: "restart"; readonly id: string }
     | { readonly action: "restart-terminal"; readonly id: string }
     | {
@@ -191,6 +197,12 @@ const restartFromTerminalPersistence = (id: string) =>
 
 const recoverSpeechAndRestart = (id: string, importId: string) =>
   commandWorkflow({ action: "recover-speech", id, importId });
+
+const settleSpeechTerminal = (
+  id: string,
+  importId: string,
+  dispatchId: string
+) => commandWorkflow({ action: "settle-speech", dispatchId, id, importId });
 
 describe("provider workflow task retry exhaustion", () => {
   it("uses native retries, checkpoints final exhaustion, and replays with zero provider calls", async () => {
@@ -386,6 +398,30 @@ describe("provider workflow task retry exhaustion", () => {
     ).resolves.toEqual({ count: 1 });
 
     await expect(
+      settleSpeechTerminal(instanceId, importId, originalDispatchId)
+    ).resolves.toMatchObject({
+      conservativeChargeMicroUsd: 100,
+      dispatchId: originalDispatchId,
+      outcome: "terminal_unknown_cost_settled",
+      runtimeStage: "pilot-gaia-118",
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT invoking_dispatch_id, poison_dispatch_id,
+                  reserved_micro_usd, state
+             FROM pilot_provider_stage_budget
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        )
+        .first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      state: "open",
+    });
+
+    await expect(
       recoverSpeechAndRestart(instanceId, importId)
     ).resolves.toMatchObject({
       output: {
@@ -407,9 +443,20 @@ describe("provider workflow task retry exhaustion", () => {
         )
         .bind(importId, generation)
         .first()
+    ).resolves.toBeNull();
+    await expect(
+      database
+        .prepare(
+          `SELECT authority, conservative_charge_micro_usd
+             FROM pilot_provider_budget_reconciliations
+            WHERE runtime_stage = 'pilot-gaia-118'
+              AND dispatch_id = ?`
+        )
+        .bind(originalDispatchId)
+        .first()
     ).resolves.toEqual({
-      original_dispatch_id: originalDispatchId,
-      recovery_dispatch_id: recoveryDispatchId,
+      authority: "authenticated_operator",
+      conservative_charge_micro_usd: 100,
     });
     await expect(
       database
