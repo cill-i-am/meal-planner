@@ -62,6 +62,7 @@ import {
   makeImportCorrelationId,
   observeImportWorkflowStart,
 } from "./import-observability.js";
+import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
 import {
   makeInstalledRecipeExtractor,
   makeInstalledSpeechTranscriber,
@@ -595,21 +596,28 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             yield* persistTerminal(speech, outcome.generation);
             return speech;
           }
-          const visual = yield* task(
-            "extract-visual-evidence-v1",
-            "visual",
-            extractVisualEvidenceForTranscribedImport({
-              bucket: rawBucket as unknown as AcquisitionBucketLike,
-              extractor: visualExtractor,
-              frameSampler: makeR2VisualFrameSampler(
-                rawBucket as unknown as AcquisitionBucketLike
+          const visual = yield* continueVisualFromSettledSpeech({
+            acquisitionGeneration: outcome.generation,
+            continueVisual: (speechDispatchId) =>
+              task(
+                "extract-visual-evidence-v1",
+                "visual",
+                extractVisualEvidenceForTranscribedImport({
+                  bucket: rawBucket as unknown as AcquisitionBucketLike,
+                  extractor: visualExtractor,
+                  frameSampler: makeR2VisualFrameSampler(
+                    rawBucket as unknown as AcquisitionBucketLike
+                  ),
+                  importId,
+                  importRepository: repository,
+                  now,
+                  speechDispatchId,
+                  visualRepository: makeD1VisualEvidenceRepository(database),
+                })
               ),
-              importId,
-              importRepository: repository,
-              now,
-              visualRepository: makeD1VisualEvidenceRepository(database),
-            })
-          );
+            importId,
+            terminalRecovery,
+          });
           if (visual._tag === "Failed") {
             yield* persistTerminal(visual, outcome.generation);
             return visual;

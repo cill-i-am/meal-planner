@@ -156,6 +156,15 @@ const readNumber = async (instanceId: string, name: string) => {
   return Number((await namespace.get(stateKey(instanceId, name))) ?? "0");
 };
 
+const readText = async (instanceId: string, name: string) => {
+  const { PROVIDER_WORKFLOW_STATE: namespace } = await runtime.getBindings<{
+    readonly PROVIDER_WORKFLOW_STATE: {
+      readonly get: (key: string) => Promise<string | null>;
+    };
+  }>();
+  return namespace.get(stateKey(instanceId, name));
+};
+
 const commandWorkflow = async (
   command:
     | {
@@ -176,6 +185,7 @@ const commandWorkflow = async (
     | { readonly action: "restart"; readonly id: string }
     | { readonly action: "restart-speech"; readonly id: string }
     | { readonly action: "restart-terminal"; readonly id: string }
+    | { readonly action: "restart-visual"; readonly id: string }
     | {
         readonly action: "run";
         readonly id: string;
@@ -186,8 +196,9 @@ const commandWorkflow = async (
     body: JSON.stringify(command),
     method: "POST",
   });
-  expect(response.status).toBe(200);
-  const status = await response.json();
+  const responseText = await response.text();
+  expect(response.status, responseText).toBe(200);
+  const status = JSON.parse(responseText) as unknown;
   expect(JSON.stringify(status)).not.toContain("must-not-cross-the-checkpoint");
   return status;
 };
@@ -209,6 +220,9 @@ const interleaveKnownZeroStageDispatch = (id: string) =>
 
 const restartFromSpeechProvider = (id: string) =>
   commandWorkflow({ action: "restart-speech", id });
+
+const restartFromVisualEvidence = (id: string) =>
+  commandWorkflow({ action: "restart-visual", id });
 
 const settleSpeechTerminal = (
   id: string,
@@ -456,6 +470,24 @@ describe("provider workflow task retry exhaustion", () => {
     });
     expect(await readNumber(instanceId, "acquisition-calls")).toBe(1);
     expect(await readNumber(instanceId, "provider-calls")).toBe(2);
+    expect(await readNumber(instanceId, "visual-calls")).toBe(1);
+    await expect(
+      readText(instanceId, "visual-speech-dispatch-id")
+    ).resolves.toBe(recoveryDispatchId);
+    await expect(restartFromVisualEvidence(instanceId)).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "safe-transcript",
+        stage: "speech",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "acquisition-calls")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(2);
+    expect(await readNumber(instanceId, "visual-calls")).toBe(2);
+    await expect(
+      readText(instanceId, "visual-speech-dispatch-id")
+    ).resolves.toBe(recoveryDispatchId);
     await expect(
       database
         .prepare(
