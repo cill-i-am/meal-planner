@@ -358,7 +358,7 @@ describe("import Workflow start reconciliation", () => {
     expect(calls.restart).toBe(0);
   });
 
-  it("restarts provider recovery from speech without replaying acquisition", async () => {
+  it("restarts provider recovery through the retained native journal", async () => {
     const { calls, starter } = makeWorkflow("errored");
 
     await expect(
@@ -367,7 +367,7 @@ describe("import Workflow start reconciliation", () => {
       )
     ).resolves.toBeUndefined();
     expect(calls.restartOptions).toEqual([
-      { from: { name: "transcribe-video-v1", type: "do" } },
+      { from: { name: "record-acquisition-v2", type: "do" } },
     ]);
   });
 
