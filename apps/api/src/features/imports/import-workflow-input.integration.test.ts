@@ -67,7 +67,7 @@ const buildFixture = async (outputDirectory: string) => {
 
 beforeAll(async () => {
   const temporaryDirectory = await mkdtemp(
-    `${tmpdir()}/meal-planner-gaia-188-native-`
+    `${tmpdir()}/meal-planner-gaia-191-native-`
   );
   temporaryDirectories.push(temporaryDirectory);
   const fixtureScript = await buildFixture(temporaryDirectory);
@@ -127,8 +127,9 @@ const commandWorkflow = async (
 
 describe("native workflow legacy correlation input", () => {
   it("persists one opaque correlation before the requested boundary and reuses it on restart", async () => {
-    const id = "gaia-188-native-legacy-input";
+    const id = "gaia-191-native-legacy-input";
     const importId = "00000000-0000-4000-8000-000000000188";
+    const expectedCorrelationId = "b44d09c6-67ca-527c-a2c7-86628ffc08a6";
 
     await expect(
       commandWorkflow({
@@ -157,8 +158,11 @@ describe("native workflow legacy correlation input", () => {
       readonly workflowRuns: number;
     };
     expect(evidence.workflowRuns).toBe(2);
-    expect(Schema.is(ImportCorrelationId)(evidence.correlations[0])).toBe(true);
-    expect(evidence.correlations[1]).toBe(evidence.correlations[0]);
+    expect(Schema.is(ImportCorrelationId)(expectedCorrelationId)).toBe(true);
+    expect(evidence.correlations).toEqual([
+      expectedCorrelationId,
+      expectedCorrelationId,
+    ]);
     expect(
       evidence.events.map((event) => JSON.parse(event) as unknown)
     ).toEqual([
@@ -179,7 +183,7 @@ describe("native workflow legacy correlation input", () => {
   });
 
   it("preserves a supplied current correlation ID", async () => {
-    const id = "gaia-188-native-current-input";
+    const id = "gaia-191-native-current-input";
     const importId = "00000000-0000-4000-8000-000000000189";
     const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2188";
 
