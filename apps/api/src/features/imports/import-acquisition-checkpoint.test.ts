@@ -1,11 +1,13 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { historicalAcquisitionCheckpointFixture } from "./import-acquisition-checkpoint.historical-fixture.js";
 import {
   decodeAcquisitionCheckpoint,
   verifyAcquisitionCheckpointContinuation,
 } from "./import-acquisition-checkpoint.js";
 import {
+  AcquisitionTaskOutcome,
   AcquisitionGeneration,
   manifestObjectKey,
   mediaObjectKey,
@@ -23,44 +25,7 @@ const importId = Schema.decodeUnknownSync(ImportId)(
 );
 const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
 const acquiredAt = "2026-07-28T10:00:00.000Z";
-const deleteAt = "2026-08-04T10:00:00.000Z";
-const historicalCheckpoint = {
-  _tag: "VerifiedAcquisition",
-  evidence: {
-    acquiredAt,
-    audioStreams: [{ codec: "aac", index: 1 }],
-    bytes: 1024,
-    deleteAt,
-    durationSeconds: 30,
-    generation: 1,
-    manifestKey: manifestObjectKey(importId, generation),
-    mediaKey: mediaObjectKey(importId, generation),
-    sha256: "a".repeat(64),
-    source: {
-      canonicalUrl: "https://example.invalid/redacted-source",
-      caption: null,
-      creator: {
-        displayName: null,
-        handle: null,
-        id: null,
-      },
-      observedAt: acquiredAt,
-      provenance: {
-        canonicalUrl: "provider_observed",
-        caption: null,
-        creator: {
-          displayName: null,
-          handle: null,
-          id: null,
-        },
-        publishedAt: "provider_observed",
-      },
-      publishedAt: "2026-07-27T10:00:00.000Z",
-    },
-    videoStreams: [{ codec: "h264", index: 0 }],
-  },
-  generation: 1,
-} as const;
+const historicalCheckpoint = historicalAcquisitionCheckpointFixture(importId);
 
 const storedImport = (overrides: Partial<StoredImport> = {}): StoredImport => ({
   acquisitionGeneration: generation,
@@ -105,7 +70,14 @@ const storedImport = (overrides: Partial<StoredImport> = {}): StoredImport => ({
 });
 
 describe("historical acquisition checkpoint boundary", () => {
-  it("decodes only the exact canonical historical timestamp representation", () => {
+  it("reproduces the persisted cross-realm shape rejected by the current decoder", () => {
+    expect(
+      Schema.decodeUnknownResult(AcquisitionTaskOutcome)(historicalCheckpoint)
+        ._tag
+    ).toBe("Failure");
+  });
+
+  it("decodes only the exact persisted historical timestamp representation", () => {
     expect(decodeAcquisitionCheckpoint(historicalCheckpoint)).toMatchObject({
       _tag: "Accepted",
       outcome: {
@@ -123,18 +95,35 @@ describe("historical acquisition checkpoint boundary", () => {
     });
   });
 
+  it("preserves the current encoded acquisition checkpoint contract", () => {
+    const decoded = decodeAcquisitionCheckpoint(historicalCheckpoint);
+    if (decoded._tag !== "Accepted") {
+      throw new Error("Expected the synthetic checkpoint to decode");
+    }
+    const currentCheckpoint = Schema.encodeSync(AcquisitionTaskOutcome)(
+      decoded.outcome
+    );
+    expect(
+      Schema.decodeUnknownResult(AcquisitionTaskOutcome)(currentCheckpoint)._tag
+    ).toBe("Success");
+    expect(decodeAcquisitionCheckpoint(currentCheckpoint)).toMatchObject({
+      _tag: "Accepted",
+      outcome: { _tag: "VerifiedAcquisition", generation },
+    });
+  });
+
   it.each([
     {
-      name: "noncanonical offset",
-      value: "2026-07-28T10:00:00+00:00",
+      name: "ISO string from a different serializer",
+      value: acquiredAt,
     },
     {
-      name: "missing milliseconds",
-      value: "2026-07-28T10:00:00Z",
+      name: "fractional epoch",
+      value: { epochMilliseconds: 1_785_232_800_000.5 },
     },
     {
-      name: "invalid calendar date",
-      value: "2026-02-30T10:00:00.000Z",
+      name: "out-of-range epoch",
+      value: { epochMilliseconds: 9_000_000_000_000_000 },
     },
   ])("fails closed for $name", ({ value }) => {
     expect(

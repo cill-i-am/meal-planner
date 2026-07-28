@@ -7,16 +7,13 @@ import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Option, Schema } from "effect";
 
+import { historicalAcquisitionCheckpointFixture } from "./import-acquisition-checkpoint.historical-fixture.js";
 import {
   AcquisitionCheckpointContinuation,
   decodeAcquisitionCheckpoint,
   verifyAcquisitionCheckpointContinuation,
 } from "./import-acquisition-checkpoint.js";
-import {
-  AcquisitionGeneration,
-  manifestObjectKey,
-  mediaObjectKey,
-} from "./import-media.model.js";
+import { AcquisitionTaskOutcome } from "./import-media.model.js";
 import { ImportId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 
@@ -47,10 +44,6 @@ interface AcquisitionReplayTestEnv {
 }
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
-const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
-const generation = decodeGeneration(1);
-const acquiredAt = "2026-07-28T10:00:00.000Z";
-const deleteAt = "2026-08-04T10:00:00.000Z";
 
 const stateKey = (instanceId: string, name: string) => `${instanceId}:${name}`;
 
@@ -65,44 +58,6 @@ const increment = (
     await env.ACQUISITION_REPLAY_STATE.put(key, String(value + 1));
   });
 
-const historicalCheckpoint = (importId: ImportId) => ({
-  _tag: "VerifiedAcquisition" as const,
-  evidence: {
-    acquiredAt,
-    audioStreams: [{ codec: "aac", index: 1 }],
-    bytes: 1024,
-    deleteAt,
-    durationSeconds: 30,
-    generation: 1,
-    manifestKey: manifestObjectKey(importId, generation),
-    mediaKey: mediaObjectKey(importId, generation),
-    sha256: "a".repeat(64),
-    source: {
-      canonicalUrl: "https://example.invalid/redacted-source",
-      caption: null,
-      creator: {
-        displayName: null,
-        handle: null,
-        id: null,
-      },
-      observedAt: acquiredAt,
-      provenance: {
-        canonicalUrl: "provider_observed" as const,
-        caption: null,
-        creator: {
-          displayName: null,
-          handle: null,
-          id: null,
-        },
-        publishedAt: "provider_observed" as const,
-      },
-      publishedAt: "2026-07-27T10:00:00.000Z",
-    },
-    videoStreams: [{ codec: "h264", index: 0 }],
-  },
-  generation: 1,
-});
-
 const workflowExport = {
   kind: "workflow" as const,
   make: (rawEnv: unknown) => {
@@ -114,9 +69,17 @@ const workflowExport = {
         const rawCheckpoint = yield* task(
           "resolve-acquire-store-verify-v2",
           increment(env, event.instanceId, "acquisition-calls").pipe(
-            Effect.as(historicalCheckpoint(importId))
+            Effect.as(historicalAcquisitionCheckpointFixture(importId))
           )
         );
+        if (
+          Option.isSome(
+            Schema.decodeUnknownOption(AcquisitionTaskOutcome)(rawCheckpoint)
+          )
+        ) {
+          return { _tag: "CurrentDecoderUnexpectedlyAccepted" as const };
+        }
+        yield* increment(env, event.instanceId, "base-decode-rejected");
         const checkpoint = decodeAcquisitionCheckpoint(rawCheckpoint);
         if (checkpoint._tag === "AcquisitionCheckpointRejected") {
           return checkpoint;
@@ -207,6 +170,7 @@ export default {
     if (command.action === "read") {
       return Response.json({
         acquisitionCalls: Number((await read("acquisition-calls")) ?? "0"),
+        baseDecodeRejected: Number((await read("base-decode-rejected")) ?? "0"),
         decodeAccepted: Number((await read("decode-accepted")) ?? "0"),
         ownershipAccepted: Number((await read("ownership-accepted")) ?? "0"),
         recordCalls: Number((await read("record-calls")) ?? "0"),

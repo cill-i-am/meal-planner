@@ -195,6 +195,7 @@ describe("native Workflow historical acquisition checkpoint replay", () => {
     expect({ firstCounters, firstRun }).toMatchObject({
       firstCounters: {
         acquisitionCalls: 1,
+        baseDecodeRejected: 1,
         decodeAccepted: 1,
         ownershipAccepted: 1,
         recordCalls: 1,
@@ -213,6 +214,7 @@ describe("native Workflow historical acquisition checkpoint replay", () => {
     });
     await expect(commandWorkflow({ action: "read", id })).resolves.toEqual({
       acquisitionCalls: 1,
+      baseDecodeRejected: 2,
       decodeAccepted: 2,
       ownershipAccepted: 2,
       recordCalls: 1,

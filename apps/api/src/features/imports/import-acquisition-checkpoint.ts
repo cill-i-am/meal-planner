@@ -43,25 +43,35 @@ const rejected = (): AcquisitionCheckpointRejected => ({
   code: "historical_acquisition_checkpoint_invalid",
 });
 
-const isCanonicalHistoricalTimestamp = (value: string) => {
-  const epoch = Date.parse(value);
-  return (
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) &&
-    Number.isFinite(epoch) &&
-    new Date(epoch).toISOString() === value
-  );
+const PersistedHistoricalTimestamp = Schema.Struct({
+  epochMilliseconds: Schema.Number.pipe(
+    Schema.check(Schema.isFinite(), Schema.isInt())
+  ),
+});
+type PersistedHistoricalTimestamp = typeof PersistedHistoricalTimestamp.Type;
+
+const isValidHistoricalTimestamp = (value: PersistedHistoricalTimestamp) => {
+  try {
+    return (
+      Number.isSafeInteger(value.epochMilliseconds) &&
+      Date.parse(new Date(value.epochMilliseconds).toISOString()) ===
+        value.epochMilliseconds
+    );
+  } catch {
+    return false;
+  }
 };
 
 const HistoricalVerifiedSourceMetadata = Schema.Struct({
   ...VerifiedSourceMetadata.fields,
-  observedAt: Schema.String,
-  publishedAt: Schema.NullOr(Schema.String),
+  observedAt: PersistedHistoricalTimestamp,
+  publishedAt: Schema.NullOr(PersistedHistoricalTimestamp),
 });
 
 const HistoricalVerifiedAcquisitionEvidence = Schema.Struct({
   ...VerifiedAcquisitionEvidence.fields,
-  acquiredAt: Schema.String,
-  deleteAt: Schema.String,
+  acquiredAt: PersistedHistoricalTimestamp,
+  deleteAt: PersistedHistoricalTimestamp,
   source: Schema.optionalKey(HistoricalVerifiedSourceMetadata),
 });
 
@@ -71,8 +81,9 @@ const HistoricalVerifiedAcquisition = Schema.Struct({
   generation: VerifiedAcquisitionEvidence.fields.generation,
 });
 
-const timestampFromHistoricalCheckpoint = (value: string) =>
-  DateTime.makeUnsafe(value) as ImportTimestamp;
+const timestampFromHistoricalCheckpoint = (
+  value: PersistedHistoricalTimestamp
+) => DateTime.makeUnsafe(value.epochMilliseconds) as ImportTimestamp;
 
 const normalizeDurableCheckpoint = (raw: unknown): unknown => {
   try {
@@ -94,12 +105,12 @@ const decodeVerifiedCheckpoint = (
   const historical = decoded.value;
   const { acquiredAt, deleteAt, source, ...evidence } = historical.evidence;
   if (
-    !isCanonicalHistoricalTimestamp(acquiredAt) ||
-    !isCanonicalHistoricalTimestamp(deleteAt) ||
+    !isValidHistoricalTimestamp(acquiredAt) ||
+    !isValidHistoricalTimestamp(deleteAt) ||
     (source !== undefined &&
-      (!isCanonicalHistoricalTimestamp(source.observedAt) ||
+      (!isValidHistoricalTimestamp(source.observedAt) ||
         (source.publishedAt !== null &&
-          !isCanonicalHistoricalTimestamp(source.publishedAt))))
+          !isValidHistoricalTimestamp(source.publishedAt))))
   ) {
     return rejected();
   }
@@ -135,12 +146,19 @@ const decodeVerifiedCheckpoint = (
  * Decodes the one proven historical Workflow checkpoint representation.
  *
  * This deliberately does not change the application-wide timestamp or source
- * schemas. Verified acquisition checkpoints must carry the canonical
- * millisecond-precision UTC strings emitted by the historical encoder.
+ * schemas. Verified acquisition checkpoints must carry the exact
+ * `epochMilliseconds` object left after a historical Effect DateTime crossed
+ * the native Workflow structured-clone boundary.
  */
 export const decodeAcquisitionCheckpoint = (
   raw: unknown
 ): DecodedAcquisitionCheckpoint => {
+  const current = Schema.decodeUnknownOption(AcquisitionTaskOutcome, {
+    onExcessProperty: "error",
+  })(raw);
+  if (Option.isSome(current)) {
+    return { _tag: "Accepted", outcome: current.value };
+  }
   if (
     typeof raw === "object" &&
     raw !== null &&
@@ -149,13 +167,7 @@ export const decodeAcquisitionCheckpoint = (
   ) {
     return decodeVerifiedCheckpoint(raw);
   }
-  const outcome = Schema.decodeUnknownOption(AcquisitionTaskOutcome, {
-    onExcessProperty: "error",
-  })(raw);
-  return Option.match(outcome, {
-    onNone: rejected,
-    onSome: (value) => ({ _tag: "Accepted", outcome: value }),
-  });
+  return rejected();
 };
 
 const ownsSpeechContinuation = (stored: StoredImport) =>
