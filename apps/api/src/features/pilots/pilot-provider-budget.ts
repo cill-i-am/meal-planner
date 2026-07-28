@@ -1,4 +1,4 @@
-import { Context, Effect, Schema } from "effect";
+import { Context, Effect, Exit, Schema } from "effect";
 
 import { ImportTimestamp } from "../imports/import.contracts.js";
 
@@ -106,6 +106,9 @@ export interface PilotProviderBudgetRepository {
     PilotProviderStageBudget,
     PilotProviderBudgetError
   >;
+  readonly readDispatch: (
+    input: PilotBudgetReservation
+  ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
   readonly releaseBeforeInvocation: (
     input: PilotBudgetReservation
   ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
@@ -145,6 +148,39 @@ export interface PilotProviderInvocationResult<A> {
   readonly value: A;
 }
 
+/**
+ * The provider boundary may use this marker only when it has authoritative
+ * evidence that a failed dispatch incurred exactly zero cost.
+ */
+const PilotProviderKnownZeroCostFailureBrand = Symbol(
+  "PilotProviderKnownZeroCostFailure"
+);
+
+export interface PilotProviderKnownZeroCostFailure<E> {
+  readonly [PilotProviderKnownZeroCostFailureBrand]: true;
+  readonly _tag: "PilotProviderKnownZeroCostFailure";
+  readonly error: E;
+}
+
+export const pilotProviderKnownZeroCostFailure = <E>(
+  error: E
+): PilotProviderKnownZeroCostFailure<E> => ({
+  [PilotProviderKnownZeroCostFailureBrand]: true,
+  _tag: "PilotProviderKnownZeroCostFailure",
+  error,
+});
+
+export const isPilotProviderKnownZeroCostFailure = (
+  error: unknown
+): error is PilotProviderKnownZeroCostFailure<unknown> =>
+  typeof error === "object" &&
+  error !== null &&
+  "_tag" in error &&
+  error._tag === "PilotProviderKnownZeroCostFailure" &&
+  "error" in error &&
+  PilotProviderKnownZeroCostFailureBrand in error &&
+  error[PilotProviderKnownZeroCostFailureBrand] === true;
+
 export type PilotProviderDispatchResult<A> =
   | {
       readonly _tag: "AlreadySettled";
@@ -160,13 +196,49 @@ export type PilotProviderDispatchResult<A> =
       readonly value: A;
     };
 
+interface KnownZeroFailureResult<E> {
+  readonly _tag: "KnownZeroFailure";
+  readonly error: E;
+}
+
+const settleUnknown = (
+  repository: PilotProviderBudgetRepository,
+  reservation: PilotBudgetReservation,
+  observe: Effect.Effect<void>
+) =>
+  repository
+    .settleUnknown(reservation)
+    .pipe(Effect.andThen(observe), Effect.asVoid);
+
+const settleKnownZero = (
+  repository: PilotProviderBudgetRepository,
+  reservation: PilotBudgetReservation,
+  observe: Effect.Effect<void>
+) =>
+  repository
+    .settleKnown({ ...reservation, actualCostMicroUsd: 0 })
+    .pipe(Effect.andThen(observe), Effect.asVoid);
+
+const previousAttemptMatches = (
+  previous: PilotBudgetReservation,
+  current: PilotBudgetReservation
+) =>
+  previous.dispatchId !== current.dispatchId &&
+  previous.maximumCostMicroUsd === current.maximumCostMicroUsd &&
+  previous.providerStageId === current.providerStageId &&
+  previous.runId === current.runId;
+
 export const runPilotProviderDispatch = <A, E>(input: {
-  readonly invoke: Effect.Effect<PilotProviderInvocationResult<A>, E>;
+  readonly invoke: Effect.Effect<
+    PilotProviderInvocationResult<A>,
+    E | PilotProviderKnownZeroCostFailure<E>
+  >;
   readonly onDispatch?: Effect.Effect<void>;
   readonly onPoison?: Effect.Effect<void>;
   readonly onReservation?: Effect.Effect<void>;
   readonly onSettlement?: (outcome: "known" | "unknown") => Effect.Effect<void>;
   readonly prepare?: Effect.Effect<void, E>;
+  readonly previousAttempt?: PilotBudgetReservation;
   readonly repository: PilotProviderBudgetRepository;
   readonly reservation: PilotBudgetReservation;
 }): Effect.Effect<
@@ -183,6 +255,32 @@ export const runPilotProviderDispatch = <A, E>(input: {
     const { runtimeStage } = yield* PilotProviderBudgetRuntime;
     if (runtimeStage !== PilotProviderBudgetStage) {
       return yield* Effect.fail(pilotProviderBudgetError("stage_not_allowed"));
+    }
+
+    if (input.previousAttempt !== undefined) {
+      if (!previousAttemptMatches(input.previousAttempt, input.reservation)) {
+        return yield* Effect.fail(
+          pilotProviderBudgetError("dispatch_conflict")
+        );
+      }
+      const previous = yield* input.repository.readDispatch(
+        input.previousAttempt
+      );
+      if (
+        previous.state === "settled_known" &&
+        previous.actualCostMicroUsd === 0
+      ) {
+        // Exact durable zero-cost proof is the only safe retry authority.
+      } else if (previous.state === "invoking") {
+        yield* settleUnknown(
+          input.repository,
+          input.previousAttempt,
+          observeUnknownSettlement
+        );
+        return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
+      } else {
+        return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
+      }
     }
 
     const reserved = yield* input.repository.reserve(input.reservation);
@@ -240,38 +338,71 @@ export const runPilotProviderDispatch = <A, E>(input: {
       );
     }
 
-    yield* input.onDispatch ?? Effect.void;
-    const result = yield* input.invoke.pipe(
-      Effect.tapError(() =>
-        input.repository
-          .settleUnknown(input.reservation)
-          .pipe(Effect.andThen(observeUnknownSettlement))
-      )
+    const claimedResult = yield* Effect.gen(
+      function* finalizeClaimedInvocation() {
+        yield* input.onDispatch ?? Effect.void;
+        const result = yield* input.invoke;
+        if (result.cost._tag === "Unknown") {
+          yield* settleUnknown(
+            input.repository,
+            input.reservation,
+            observeUnknownSettlement
+          );
+          return { _tag: "CompletedUnknownCost" as const, value: result.value };
+        }
+        if (
+          !Number.isSafeInteger(result.cost.actualCostMicroUsd) ||
+          result.cost.actualCostMicroUsd < 0 ||
+          result.cost.actualCostMicroUsd > input.reservation.maximumCostMicroUsd
+        ) {
+          yield* settleUnknown(
+            input.repository,
+            input.reservation,
+            observeUnknownSettlement
+          );
+          return yield* Effect.fail(
+            pilotProviderBudgetError("cost_exceeds_reservation")
+          );
+        }
+        yield* input.repository.settleKnown({
+          ...input.reservation,
+          actualCostMicroUsd: result.cost.actualCostMicroUsd,
+        });
+        yield* observeSettlement("known");
+        return {
+          _tag: "Completed" as const,
+          actualCostMicroUsd: result.cost.actualCostMicroUsd,
+          value: result.value,
+        };
+      }
+    ).pipe(
+      Effect.catch((error) =>
+        isPilotProviderKnownZeroCostFailure(error)
+          ? settleKnownZero(
+              input.repository,
+              input.reservation,
+              observeSettlement("known")
+            ).pipe(
+              Effect.as<KnownZeroFailureResult<E>>({
+                _tag: "KnownZeroFailure",
+                error: error.error as E,
+              })
+            )
+          : Effect.fail(error)
+      ),
+      Effect.onExit((exit) => {
+        if (Exit.isSuccess(exit)) {
+          return Effect.void;
+        }
+        return settleUnknown(
+          input.repository,
+          input.reservation,
+          observeUnknownSettlement
+        );
+      })
     );
-    if (result.cost._tag === "Unknown") {
-      yield* input.repository.settleUnknown(input.reservation);
-      yield* observeUnknownSettlement;
-      return { _tag: "CompletedUnknownCost", value: result.value };
+    if (claimedResult._tag === "KnownZeroFailure") {
+      return yield* Effect.fail(claimedResult.error);
     }
-    if (
-      !Number.isSafeInteger(result.cost.actualCostMicroUsd) ||
-      result.cost.actualCostMicroUsd < 0 ||
-      result.cost.actualCostMicroUsd > input.reservation.maximumCostMicroUsd
-    ) {
-      yield* input.repository.settleUnknown(input.reservation);
-      yield* observeUnknownSettlement;
-      return yield* Effect.fail(
-        pilotProviderBudgetError("cost_exceeds_reservation")
-      );
-    }
-    yield* input.repository.settleKnown({
-      ...input.reservation,
-      actualCostMicroUsd: result.cost.actualCostMicroUsd,
-    });
-    yield* observeSettlement("known");
-    return {
-      _tag: "Completed",
-      actualCostMicroUsd: result.cost.actualCostMicroUsd,
-      value: result.value,
-    };
+    return claimedResult;
   });

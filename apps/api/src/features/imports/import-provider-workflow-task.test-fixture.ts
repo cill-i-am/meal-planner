@@ -1,3 +1,5 @@
+import { RuntimeContext } from "alchemy";
+import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import {
   WorkflowEvent,
   makeWorkflowBridge,
@@ -14,10 +16,16 @@ import {
   PilotBudgetTimestamp,
   PilotProviderBudgetRuntime,
   makePilotProviderBudgetRuntime,
+  pilotProviderKnownZeroCostFailure,
   runPilotProviderDispatch,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
+import { ImportCorrelationId } from "./import-observability.js";
+import {
+  makeInstalledSpeechTranscriber,
+  makePilotProviderDispatchGate,
+} from "./import-provider-adapters.js";
 import {
   makeD1ProviderTerminalCheckpointRepository,
   makeD1ProviderTerminalRecoveryRepository,
@@ -70,11 +78,21 @@ const decodeRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
 const decodeProviderStageId = Schema.decodeUnknownSync(
   PilotBudgetProviderStageId
 );
+const testRuntimeContext = RuntimeContext.of({
+  Type: "TestRuntimeContext",
+  env: {},
+  get: <T>() =>
+    // eslint-disable-next-line unicorn/no-useless-undefined -- The Alchemy runtime contract explicitly represents a missing binding with undefined.
+    Effect.succeed<T | undefined>(undefined),
+  id: "installed-provider-workflow-test",
+  set: (id) => Effect.succeed(id),
+});
 const decodeDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
 const decodeTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeImportTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
+const decodeCorrelationId = Schema.decodeUnknownSync(ImportCorrelationId);
 
 const stateKey = (instanceId: string, name: string) => `${instanceId}:${name}`;
 
@@ -89,43 +107,85 @@ const increment = (
     await env.PROVIDER_WORKFLOW_STATE.put(key, String(value + 1));
   });
 
-const unknownCostDispatch = (
+const installedSpeechDispatch = (
   env: ProviderWorkflowTestEnv,
-  instanceId: string
-) => {
-  const reservation = {
-    dispatchId: decodeDispatchId("dispatch_gaia_163_unknown"),
-    maximumCostMicroUsd: 100,
-    providerStageId: decodeProviderStageId("recipe_extraction"),
-    runId: decodeRunId("run_gaia_163_unknown"),
-    timestamp: decodeTimestamp("2026-07-26T06:00:00.000Z"),
-  };
-  const repository = makeD1PilotProviderBudgetRepository(
-    env.MealPlannerDatabase,
-    "pilot-gaia-118"
-  );
-
-  return increment(env, instanceId, "task-attempts").pipe(
-    Effect.andThen(
-      runPilotProviderDispatch({
-        invoke: increment(env, instanceId, "provider-calls").pipe(
-          Effect.andThen(
-            Effect.fail({
-              code: "provider_unavailable",
-              unsafeProviderBody: "must-not-cross-the-checkpoint",
-            })
-          )
-        ),
-        repository,
-        reservation,
-      })
-    ),
-    Effect.provideService(
-      PilotProviderBudgetRuntime,
-      makePilotProviderBudgetRuntime("pilot-gaia-118")
-    )
-  );
-};
+  instanceId: string,
+  outcome: "ambiguous" | "known_zero"
+) =>
+  Effect.gen(function* runInstalledSpeechDispatch() {
+    yield* increment(env, instanceId, "task-attempts");
+    const correlationId = decodeCorrelationId(
+      outcome === "known_zero"
+        ? "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b86"
+        : "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b87"
+    );
+    const repository = makeD1PilotProviderBudgetRepository(
+      env.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const dispatch = makePilotProviderDispatchGate({
+      correlationId,
+      now: () => decodeTimestamp("2026-07-28T08:00:00.000Z"),
+      repository,
+      runId: decodeRunId(
+        outcome === "known_zero"
+          ? "run_gaia_186_known_zero"
+          : "run_gaia_186_ambiguous"
+      ),
+      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
+    });
+    const client = {
+      gateway: Effect.succeed({
+        run: async (request: unknown) => {
+          const headers =
+            typeof request === "object" &&
+            request !== null &&
+            "headers" in request
+              ? (request.headers as Record<string, string>)
+              : {};
+          if (
+            headers["cf-aig-collect-log"] !== "true" ||
+            headers["cf-aig-collect-log-payload"] !== "false"
+          ) {
+            throw new Error("Metadata-only gateway policy was not installed");
+          }
+          await Effect.runPromise(increment(env, instanceId, "provider-calls"));
+          if (outcome === "known_zero") {
+            throw pilotProviderKnownZeroCostFailure(
+              "provider_unavailable" as const
+            );
+          }
+          throw new Error("simulated ambiguous provider interruption");
+        },
+      }),
+      id: Effect.succeed("meal-planner-pilot-gaia-118"),
+      raw: Effect.die("metadata-only universal gateway was bypassed"),
+    } as unknown as QueryGatewayClient;
+    const transcriber = yield* makeInstalledSpeechTranscriber({
+      client,
+      correlationId,
+      dispatch,
+    });
+    return yield* transcriber.transcribe({
+      audio: {
+        bytes: new Uint8Array([1, 2, 3]),
+        durationMilliseconds: 1000,
+        mimeType: "audio/wav",
+        sha256: "a".repeat(64),
+      },
+      dispatchId:
+        outcome === "known_zero"
+          ? "speech:gaia-186-known-zero:1"
+          : "speech:gaia-186-ambiguous:1",
+      generation: decodeGeneration(1),
+      importId: decodeImportId(
+        outcome === "known_zero"
+          ? "00000000-0000-4000-8000-000000000186"
+          : "00000000-0000-4000-8000-000000000187"
+      ),
+      sourceMediaSha256: "b".repeat(64),
+    });
+  });
 
 const speechTerminalRecoveryDispatch = (
   env: ProviderWorkflowTestEnv,
@@ -210,11 +270,15 @@ const providerStageByScenario = {
   speech_terminal_recovery: "speech",
   success: "visual",
   terminal: "visual",
-  unknown: "recipe",
+  unknown: "speech",
 } as const satisfies Record<
   ProviderWorkflowInput["scenario"],
   "recipe" | "speech" | "visual"
 >;
+
+const providerFailureCode = (error: { readonly code: string }) => ({
+  code: error.code,
+});
 
 const providerWorkflowExport = {
   kind: "workflow" as const,
@@ -290,12 +354,30 @@ const providerWorkflowExport = {
           return yield* task("finalize-terminal", Effect.succeed(checkpoint));
         }
         const stage = providerStageByScenario[input.scenario];
-        const provider =
-          input.scenario === "unknown"
-            ? unknownCostDispatch(env, event.instanceId).pipe(
-                Effect.as("unexpected-success")
-              )
-            : directProviderEffect(env, event.instanceId, input);
+        let provider: Effect.Effect<string, { readonly code: string }>;
+        if (input.scenario === "unknown") {
+          provider = installedSpeechDispatch(
+            env,
+            event.instanceId,
+            "ambiguous"
+          ).pipe(
+            Effect.as("unexpected-success"),
+            Effect.mapError(providerFailureCode),
+            Effect.provideService(RuntimeContext, testRuntimeContext)
+          );
+        } else if (input.scenario === "retry_exhausted") {
+          provider = installedSpeechDispatch(
+            env,
+            event.instanceId,
+            "known_zero"
+          ).pipe(
+            Effect.as("unexpected-success"),
+            Effect.mapError(providerFailureCode),
+            Effect.provideService(RuntimeContext, testRuntimeContext)
+          );
+        } else {
+          provider = directProviderEffect(env, event.instanceId, input);
+        }
         const checkpoint = yield* runProviderTask(
           "provider-dispatch",
           stage,
