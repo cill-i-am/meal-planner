@@ -1,4 +1,4 @@
-import { DateTime, Option, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 
 import {
   AcquisitionTaskOutcome,
@@ -208,3 +208,43 @@ export const verifyAcquisitionCheckpointContinuation = (input: {
     ? { _tag: "Accepted" }
     : rejected();
 };
+
+export const continueAcquisitionCheckpoint = <
+  Value,
+  FindError,
+  AcceptedError,
+  AcceptedRequirements,
+>(input: {
+  readonly findStored: Effect.Effect<Option.Option<StoredImport>, FindError>;
+  readonly importId: ImportId;
+  readonly onAccepted: () => Effect.Effect<
+    Value,
+    AcceptedError,
+    AcceptedRequirements
+  >;
+  readonly outcome: AcquisitionTaskOutcome;
+}) =>
+  input.findStored.pipe(
+    Effect.map(
+      Option.match({
+        onNone: rejected,
+        onSome: (stored) =>
+          verifyAcquisitionCheckpointContinuation({
+            importId: input.importId,
+            outcome: input.outcome,
+            stored,
+          }),
+      })
+    ),
+    Effect.flatMap((continuation) =>
+      continuation._tag === "AcquisitionCheckpointRejected"
+        ? Effect.succeed<Value | AcquisitionCheckpointRejected>(continuation)
+        : input
+            .onAccepted()
+            .pipe(
+              Effect.map(
+                (value): Value | AcquisitionCheckpointRejected => value
+              )
+            )
+    )
+  );
