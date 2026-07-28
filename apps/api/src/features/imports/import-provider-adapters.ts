@@ -1,5 +1,6 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
+import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
 import { Cause, Effect, Option, Schema } from "effect";
 import type { LanguageModel, Prompt } from "effect/unstable/ai";
 import { Tool, Toolkit } from "effect/unstable/ai";
@@ -8,11 +9,13 @@ import {
   PilotBudgetDispatchId,
   PilotBudgetProviderStageId,
   PilotProviderBudgetRuntime,
+  isPilotProviderKnownZeroCostFailure,
   runPilotProviderDispatch,
 } from "../pilots/pilot-provider-budget.js";
 import type {
   PilotBudgetRunId,
   PilotBudgetTimestamp,
+  PilotProviderKnownZeroCostFailure,
   PilotProviderBudgetRepository,
   PilotProviderBudgetRuntimeShape,
 } from "../pilots/pilot-provider-budget.js";
@@ -101,6 +104,9 @@ const dispatchRejected = {
   _tag: "ProviderDispatchRejected",
 } as const;
 
+const retryDispatchId = (base: string, attempt: number) =>
+  attempt === 1 ? base : `${base}:attempt:${attempt}`;
+
 /** Compose the GAIA-161 reserve/claim/settle authority for adapter factories. */
 export const makePilotProviderDispatchGate = (input: {
   readonly correlationId: ImportCorrelationId;
@@ -110,45 +116,66 @@ export const makePilotProviderDispatchGate = (input: {
   readonly runtime: PilotProviderBudgetRuntimeShape;
 }): ProviderDispatchGate => ({
   run: <A, E>(request: ProviderDispatchRequest<A, E>) =>
-    runPilotProviderDispatch({
-      invoke: request.invoke,
-      onDispatch: emitImportObservabilityEvent({
-        correlationId: input.correlationId,
-        event: "provider.dispatch",
-        outcome: "started",
-        providerStage: request.providerStage,
-      }),
-      onPoison: emitImportObservabilityEvent({
-        correlationId: input.correlationId,
-        event: "budget.poison",
-        outcome: "poisoned",
-        providerStage: request.providerStage,
-      }),
-      onReservation: emitImportObservabilityEvent({
-        correlationId: input.correlationId,
-        event: "budget.reservation",
-        outcome: "reserved",
-        providerStage: request.providerStage,
-      }),
-      onSettlement: (outcome) =>
-        emitImportObservabilityEvent({
-          correlationId: input.correlationId,
-          event: "provider.settlement",
-          outcome,
-          providerStage: request.providerStage,
-        }),
-      repository: input.repository,
-      reservation: {
+    Effect.gen(function* runBudgetedAdapterDispatch() {
+      const workflowContext = Option.getOrUndefined(
+        yield* Effect.serviceOption(WorkflowStepContext)
+      );
+      const attempt =
+        request.providerStage === "speech"
+          ? (workflowContext?.attempt ?? 1)
+          : 1;
+      const timestamp = input.now();
+      const reservation = {
         dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
-          request.dispatchId
+          retryDispatchId(request.dispatchId, attempt)
         ),
         maximumCostMicroUsd: request.maximumCostMicroUsd,
         providerStageId: Schema.decodeUnknownSync(PilotBudgetProviderStageId)(
           request.providerStageId
         ),
         runId: input.runId,
-        timestamp: input.now(),
-      },
+        timestamp,
+      };
+      return yield* runPilotProviderDispatch({
+        invoke: request.invoke,
+        onDispatch: emitImportObservabilityEvent({
+          correlationId: input.correlationId,
+          event: "provider.dispatch",
+          outcome: "started",
+          providerStage: request.providerStage,
+        }),
+        onPoison: emitImportObservabilityEvent({
+          correlationId: input.correlationId,
+          event: "budget.poison",
+          outcome: "poisoned",
+          providerStage: request.providerStage,
+        }),
+        onReservation: emitImportObservabilityEvent({
+          correlationId: input.correlationId,
+          event: "budget.reservation",
+          outcome: "reserved",
+          providerStage: request.providerStage,
+        }),
+        onSettlement: (outcome) =>
+          emitImportObservabilityEvent({
+            correlationId: input.correlationId,
+            event: "provider.settlement",
+            outcome,
+            providerStage: request.providerStage,
+          }),
+        ...(attempt > 1
+          ? {
+              previousAttempt: {
+                ...reservation,
+                dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+                  retryDispatchId(request.dispatchId, attempt - 1)
+                ),
+              },
+            }
+          : {}),
+        repository: input.repository,
+        reservation,
+      });
     }).pipe(
       Effect.provideService(PilotProviderBudgetRuntime, input.runtime),
       Effect.flatMap((result) => {
@@ -445,7 +472,11 @@ const metadataOnlyGatewayClient = (
             provider: "workers-ai",
             query,
           })) as Response;
-        } catch {
+        } catch (error) {
+          if (isPilotProviderKnownZeroCostFailure(error)) {
+            throw error;
+          }
+          // eslint-disable-next-line preserve-caught-error -- Provider payloads and transport errors must not cross this privacy boundary, including as Error.cause.
           throw new Error(ProviderTransportUnavailableMessage);
         }
         await Effect.runPromise(
@@ -791,11 +822,14 @@ export const makeInstalledSpeechTranscriber = (input: {
               }
             ).pipe(
               // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks normalize provider failures.
-              Effect.mapError((error) =>
-                typeof error === "string"
+              Effect.mapError((error) => {
+                if (isPilotProviderKnownZeroCostFailure(error)) {
+                  return error as PilotProviderKnownZeroCostFailure<SafeProviderFailureCode>;
+                }
+                return typeof error === "string"
                   ? error
-                  : safeFailureCode(Cause.fail(error))
-              )
+                  : safeFailureCode(Cause.fail(error));
+              })
             ),
             maximumCostMicroUsd: SpeechMaximumCostMicroUsd,
             providerStage: "speech",

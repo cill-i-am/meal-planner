@@ -286,6 +286,11 @@ export const makeD1PilotProviderBudgetRepository = (
       );
       return { _tag: "NotClaimed", dispatch };
     }),
+  readDispatch: (input) =>
+    ensureAllowedStage(runtimeStage).pipe(
+      Effect.flatMap(() => readDispatch(binding, input)),
+      Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
+    ),
   readStage: () =>
     ensureAllowedStage(runtimeStage).pipe(
       Effect.flatMap(() => readStageRow(binding))

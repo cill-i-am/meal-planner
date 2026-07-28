@@ -50,6 +50,12 @@ const repository: PilotProviderBudgetRepository = {
         state: "invoking",
       },
     }),
+  readDispatch: (input) =>
+    Effect.succeed({
+      actualCostMicroUsd: 0,
+      ...input,
+      state: "settled_known",
+    }),
   readStage: () =>
     Effect.succeed({
       budgetCapMicroUsd: 10_000_000,

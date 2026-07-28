@@ -195,6 +195,7 @@ const recoverSpeechAndRestart = (id: string, importId: string) =>
 describe("provider workflow task retry exhaustion", () => {
   it("uses native retries, checkpoints final exhaustion, and replays with zero provider calls", async () => {
     const instanceId = "gaia-163-native-retry-exhausted";
+    const database = await runtime.getD1Database("MealPlannerDatabase");
 
     await expect(
       runWorkflow(instanceId, { scenario: "retry_exhausted" })
@@ -209,6 +210,50 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "task-attempts")).toBe(3);
     expect(await readNumber(instanceId, "provider-calls")).toBe(3);
     expect(await readNumber(instanceId, "workflow-runs")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT actual_cost_micro_usd, dispatch_id, state
+             FROM pilot_provider_budget_dispatches
+            WHERE run_id = 'run_gaia_186_known_zero'
+            ORDER BY dispatch_id`
+        )
+        .all()
+    ).resolves.toMatchObject({
+      results: [
+        {
+          actual_cost_micro_usd: 0,
+          dispatch_id: "speech:gaia-186-known-zero:1",
+          state: "settled_known",
+        },
+        {
+          actual_cost_micro_usd: 0,
+          dispatch_id: "speech:gaia-186-known-zero:1:attempt:2",
+          state: "settled_known",
+        },
+        {
+          actual_cost_micro_usd: 0,
+          dispatch_id: "speech:gaia-186-known-zero:1:attempt:3",
+          state: "settled_known",
+        },
+      ],
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT invoking_dispatch_id, poison_dispatch_id,
+                  reserved_micro_usd, settled_micro_usd, state
+             FROM pilot_provider_stage_budget
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        )
+        .first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      settled_micro_usd: 0,
+      state: "open",
+    });
 
     await expect(
       restartFromAfterProviderCheckpoint(instanceId)
@@ -394,7 +439,7 @@ describe("provider workflow task retry exhaustion", () => {
     });
   });
 
-  it("uses the real global ledger to poison unknown cost and fence every native retry and replay", async () => {
+  it("uses the installed speech adapter and real ledger to fence an ambiguous retry and replay", async () => {
     const instanceId = "gaia-163-native-unknown-poison";
     const database = await runtime.getD1Database("MealPlannerDatabase");
     const stageBefore = await database
@@ -417,7 +462,7 @@ describe("provider workflow task retry exhaustion", () => {
       output: {
         _tag: "Failed",
         code: "outcome_unknown",
-        stage: "recipe",
+        stage: "speech",
       },
       status: "complete",
     });
@@ -434,8 +479,8 @@ describe("provider workflow task retry exhaustion", () => {
       .first();
     expect(stage).toEqual({
       invoking_dispatch_id: null,
-      poison_dispatch_id: "dispatch_gaia_163_unknown",
-      reserved_micro_usd: 100,
+      poison_dispatch_id: "speech:gaia-186-ambiguous:1",
+      reserved_micro_usd: 50_000,
       settled_micro_usd: stageBefore.settled_micro_usd,
       state: "poisoned",
     });
@@ -444,17 +489,17 @@ describe("provider workflow task retry exhaustion", () => {
         `SELECT actual_cost_micro_usd, dispatch_id, maximum_cost_micro_usd,
                 provider_stage_id, run_id, state
           FROM pilot_provider_budget_dispatches
-          WHERE dispatch_id = 'dispatch_gaia_163_unknown'
+          WHERE dispatch_id = 'speech:gaia-186-ambiguous:1'
           ORDER BY dispatch_id`
       )
       .all();
     expect(dispatches.results).toEqual([
       {
         actual_cost_micro_usd: null,
-        dispatch_id: "dispatch_gaia_163_unknown",
-        maximum_cost_micro_usd: 100,
-        provider_stage_id: "recipe_extraction",
-        run_id: "run_gaia_163_unknown",
+        dispatch_id: "speech:gaia-186-ambiguous:1",
+        maximum_cost_micro_usd: 50_000,
+        provider_stage_id: "speech-transcription",
+        run_id: "run_gaia_186_ambiguous",
         state: "settled_unknown",
       },
     ]);
@@ -465,7 +510,7 @@ describe("provider workflow task retry exhaustion", () => {
       output: {
         _tag: "Failed",
         code: "outcome_unknown",
-        stage: "recipe",
+        stage: "speech",
       },
       status: "complete",
     });
