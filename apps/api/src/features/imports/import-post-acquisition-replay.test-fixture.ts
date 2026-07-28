@@ -134,7 +134,9 @@ const externalIoTrap = (
   },
 });
 
-const workflowExport = {
+type InstalledRuntimeContext = ReturnType<typeof RuntimeContext.of>;
+
+const makeWorkflowExport = (runtimeContext: InstalledRuntimeContext) => ({
   kind: "workflow" as const,
   make: (rawEnv: unknown) => {
     const env = rawEnv as PostAcquisitionReplayTestEnv;
@@ -155,7 +157,7 @@ const workflowExport = {
             client: trap.client,
             correlationId,
             dispatch: trap.dispatch,
-          }).pipe(Effect.provideService(RuntimeContext, testRuntimeContext));
+          }).pipe(Effect.provideService(RuntimeContext, runtimeContext));
           yield* increment(env, event.instanceId, "speech-factory");
           yield* makeInstalledVisualEvidenceExtractor({
             client: trap.client,
@@ -286,16 +288,21 @@ const workflowExport = {
       })
     );
   },
-};
-
-const entrypoint = Effect.succeed({
-  RuntimeContext: {
-    exports: Effect.succeed({
-      PostAcquisitionReplayWorkflow: workflowExport,
-    }),
-    shape: () => ({}),
-  },
 });
+
+const workflowExport = RuntimeContext.pipe(Effect.map(makeWorkflowExport));
+
+const entrypoint = workflowExport.pipe(
+  Effect.map((capturedWorkflowExport) => ({
+    RuntimeContext: {
+      exports: Effect.succeed({
+        PostAcquisitionReplayWorkflow: capturedWorkflowExport,
+      }),
+      shape: () => ({}),
+    },
+  })),
+  Effect.provideService(RuntimeContext, testRuntimeContext)
+);
 
 const PostAcquisitionReplayWorkflowBridge = makeWorkflowBridge(
   WorkflowEntrypoint,
