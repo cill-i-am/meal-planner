@@ -12,9 +12,12 @@ import { Effect, Schema } from "effect";
 import {
   continueAcquisitionCheckpoint,
   decodeAcquisitionCheckpoint,
+  recoverVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
 import { loadStagedOperatorCarousel } from "./import-carousel-staging.js";
+import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
+import { AcquisitionTaskOutcome } from "./import-media.model.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import {
   ImportObservabilityTraceStore,
@@ -36,6 +39,7 @@ import type { SpeechAudioExtractorShape } from "./import-speech-transcriber.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import { resolveImportWorkflowInput } from "./import-workflow-input.js";
+import { postAcquisitionRestartOptions } from "./import-workflow-journal.js";
 import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 
@@ -49,7 +53,7 @@ interface PostAcquisitionReplayTestEnv {
   readonly PostAcquisitionReplayWorkflow: {
     readonly get: (id: string) => Promise<{
       readonly restart: (options?: {
-        readonly from: { readonly name: string; readonly type: "do" };
+        readonly from?: { readonly name: string; readonly type: "do" };
       }) => Promise<void>;
       readonly status: () => Promise<unknown>;
     }>;
@@ -194,7 +198,38 @@ const makeWorkflowExport = (runtimeContext: InstalledRuntimeContext) => ({
           }
           const rawCheckpoint = yield* task(
             "resolve-acquire-store-verify-v2",
-            Effect.die("Persisted acquisition checkpoint must replay"),
+            recoverVerifiedAcquisitionCheckpoint({
+              expectedCanonicalId: claim.canonicalId,
+              findStored: makeD1ImportRepository(
+                env.MealPlannerDatabase
+              ).findById(importId),
+              importId,
+              readEvidence: (stored) =>
+                readVerifiedAcquisitionEvidence(env.ImportEvidenceBucket, {
+                  canonicalId: stored.canonicalSourceId,
+                  generation: stored.acquisitionGeneration,
+                  importId,
+                  now: () => new Date("2026-07-28T10:01:00.000Z"),
+                }),
+            }).pipe(
+              Effect.orDie,
+              Effect.flatMap((recovered) =>
+                recovered === null
+                  ? increment(env, event.instanceId, "acquisition-calls").pipe(
+                      Effect.andThen(
+                        Effect.die(
+                          "Persisted acquisition checkpoint must replay"
+                        )
+                      )
+                    )
+                  : Effect.succeed(recovered)
+              ),
+              Effect.map((outcome) =>
+                outcome._tag === "AcquisitionCheckpointRejected"
+                  ? outcome
+                  : Schema.encodeSync(AcquisitionTaskOutcome)(outcome)
+              )
+            ),
             AcquisitionTaskStepConfig
           );
           const checkpoint = decodeAcquisitionCheckpoint(rawCheckpoint);
@@ -318,13 +353,18 @@ export default {
   fetch: async (request: Request, rawEnv: unknown) => {
     const env = rawEnv as PostAcquisitionReplayTestEnv;
     const command = (await request.json()) as {
-      readonly action: "read" | "restart" | "restart-legacy";
+      readonly action:
+        | "read"
+        | "restart"
+        | "restart-legacy"
+        | "restart-truncated";
       readonly id: string;
     };
     const read = (name: string) =>
       env.POST_ACQUISITION_REPLAY_STATE.get(stateKey(command.id, name));
     if (command.action === "read") {
       return Response.json({
+        acquisitionCalls: Number((await read("acquisition-calls")) ?? "0"),
         afterAcquisition: Number((await read("after-acquisition")) ?? "0"),
         afterClaim: Number((await read("after-claim")) ?? "0"),
         afterRecord: Number((await read("after-record")) ?? "0"),
@@ -343,15 +383,22 @@ export default {
     const sessionId = await workflow.unsafeStartIntrospection();
     try {
       const instance = await workflow.get(command.id);
-      await instance.restart({
-        from: {
-          name:
-            command.action === "restart-legacy"
-              ? "transcribe-video-v1"
-              : "record-acquisition-v2",
-          type: "do",
-        },
-      });
+      await instance.restart(
+        command.action === "restart-truncated"
+          ? postAcquisitionRestartOptions({
+              _tag: "ResolvedWithoutFinalization",
+              lastSuccessfulStep: "resolve-acquire-store-verify-v2",
+            })
+          : {
+              from: {
+                name:
+                  command.action === "restart-legacy"
+                    ? "transcribe-video-v1"
+                    : "record-acquisition-v2",
+                type: "do",
+              },
+            }
+      );
       await workflow
         .unsafeWaitForStatus(command.id, "complete")
         .catch(() => null);

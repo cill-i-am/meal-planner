@@ -8,7 +8,11 @@ import {
   VerifiedAcquisitionEvidence,
   VerifiedSourceMetadata,
 } from "./import-media.model.js";
-import type { ImportId, ImportTimestamp } from "./import.contracts.js";
+import type {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "./import.contracts.js";
 import type { StoredImport } from "./import.repository.js";
 
 export const AcquisitionCheckpointRejected = Schema.Struct({
@@ -153,19 +157,20 @@ const decodeVerifiedCheckpoint = (
 export const decodeAcquisitionCheckpoint = (
   raw: unknown
 ): DecodedAcquisitionCheckpoint => {
+  const durableCheckpoint = normalizeDurableCheckpoint(raw);
   const current = Schema.decodeUnknownOption(AcquisitionTaskOutcome, {
     onExcessProperty: "error",
-  })(raw);
+  })(durableCheckpoint);
   if (Option.isSome(current)) {
     return { _tag: "Accepted", outcome: current.value };
   }
   if (
-    typeof raw === "object" &&
-    raw !== null &&
-    "_tag" in raw &&
-    raw._tag === "VerifiedAcquisition"
+    typeof durableCheckpoint === "object" &&
+    durableCheckpoint !== null &&
+    "_tag" in durableCheckpoint &&
+    durableCheckpoint._tag === "VerifiedAcquisition"
   ) {
-    return decodeVerifiedCheckpoint(raw);
+    return decodeVerifiedCheckpoint(durableCheckpoint);
   }
   return rejected();
 };
@@ -175,6 +180,55 @@ const ownsSpeechContinuation = (stored: StoredImport) =>
   stored.view.status.kind === "transcribing" ||
   (stored.view.status.kind === "failed" &&
     stored.view.status.code === "transcription_failed");
+
+/**
+ * Reconstructs a missing post-acquisition journal entry only when durable
+ * repository state already owns downstream continuation. A normal acquiring
+ * import returns `null` so the ordinary acquisition attempt remains unchanged.
+ */
+export const recoverVerifiedAcquisitionCheckpoint = <
+  FindError,
+  VerifyError,
+>(input: {
+  readonly findStored: Effect.Effect<Option.Option<StoredImport>, FindError>;
+  readonly importId: ImportId;
+  readonly expectedCanonicalId: SourceCanonicalId;
+  readonly readEvidence: (
+    stored: StoredImport
+  ) => Effect.Effect<VerifiedAcquisitionEvidence | null, VerifyError>;
+}) =>
+  input.findStored.pipe(
+    Effect.flatMap(
+      Option.match({
+        onNone: () => Effect.succeed<null>(null),
+        onSome: (stored) => {
+          if (!ownsSpeechContinuation(stored)) {
+            return Effect.succeed<null>(null);
+          }
+          if (
+            stored.view.id !== input.importId ||
+            stored.sourceKind !== "tiktok" ||
+            stored.view.source.kind !== "tiktok" ||
+            stored.canonicalSourceId !== input.expectedCanonicalId ||
+            stored.view.source.canonicalId !== stored.canonicalSourceId
+          ) {
+            return Effect.succeed(rejected());
+          }
+          return input.readEvidence(stored).pipe(
+            Effect.map((evidence) =>
+              evidence === null
+                ? rejected()
+                : ({
+                    _tag: "VerifiedAcquisition" as const,
+                    evidence,
+                    generation: stored.acquisitionGeneration,
+                  } satisfies AcquisitionTaskOutcome)
+            )
+          );
+        },
+      })
+    )
+  );
 
 export const verifyAcquisitionCheckpointContinuation = (input: {
   readonly importId: ImportId;

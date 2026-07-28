@@ -176,6 +176,7 @@ const commandWorkflow = async (
     | { readonly action: "read"; readonly id: string }
     | { readonly action: "restart"; readonly id: string }
     | { readonly action: "restart-legacy"; readonly id: string }
+    | { readonly action: "restart-truncated"; readonly id: string }
     | { readonly id: string; readonly importId: string }
 ) => {
   if (runtime === undefined) {
@@ -191,7 +192,7 @@ const commandWorkflow = async (
 };
 
 const commandWorkflowRaw = (command: {
-  readonly action: "restart-legacy";
+  readonly action: "restart" | "restart-legacy" | "restart-truncated";
   readonly id: string;
 }) => {
   if (runtime === undefined) {
@@ -214,7 +215,10 @@ const sha256Bytes = (hex: string) =>
 const evidencePrefix = (importId: string) =>
   `imports/${importId}/acquisition/v1/generations/1`;
 
-const seedAcquiringImport = async (importId: string) => {
+const seedAcquiringImport = async (
+  importId: string,
+  canonicalId = "7520000000000000192"
+) => {
   if (runtime === undefined) {
     throw new Error("Miniflare runtime is not initialized");
   }
@@ -230,7 +234,7 @@ const seedAcquiringImport = async (importId: string) => {
     )
     .bind(
       1,
-      "7520000000000000192",
+      canonicalId,
       "b".repeat(64),
       "2026-07-28T09:59:00.000Z",
       importId,
@@ -239,7 +243,10 @@ const seedAcquiringImport = async (importId: string) => {
     .run();
 };
 
-const seedVerifiedAcquisitionEvidence = async (importId: string) => {
+const seedVerifiedAcquisitionEvidence = async (
+  importId: string,
+  canonicalId = "7520000000000000192"
+) => {
   if (runtime === undefined) {
     throw new Error("Miniflare runtime is not initialized");
   }
@@ -269,8 +276,8 @@ const seedVerifiedAcquisitionEvidence = async (importId: string) => {
       acquiredAt: "2026-07-28T10:00:00.000Z",
       audioStreams: [{ codec: "aac", index: 1 }],
       bytes: media.byteLength,
-      canonicalId: "7520000000000000192",
-      canonicalUrl: "https://www.tiktok.com/@fixture/video/7520000000000000192",
+      canonicalId,
+      canonicalUrl: `https://www.tiktok.com/@fixture/video/${canonicalId}`,
       caption: null,
       creator: {
         displayName: null,
@@ -368,6 +375,10 @@ describe("native post-acquisition Workflow replay", () => {
   it("persists a typed speech checkpoint without replaying acquisition or dispatching", async () => {
     const id = "gaia-192-post-acquisition-replay";
     const importId = "00000000-0000-4000-8000-000000000192";
+    if (runtime === undefined) {
+      throw new Error("Miniflare runtime is not initialized");
+    }
+    await runtime.setOptions(runtimeOptions(legacyFixtureScript));
     await seedAcquiringImport(importId);
 
     await expect(commandWorkflow({ id, importId })).resolves.toMatchObject({
@@ -393,7 +404,7 @@ describe("native post-acquisition Workflow replay", () => {
 
     const status = await commandWorkflow({ action: "restart", id });
     const counters = await commandWorkflow({ action: "read", id });
-    expect(status).toMatchObject({
+    expect(status, JSON.stringify(status)).toMatchObject({
       output: {
         _tag: "Failed",
         code: "outcome_unknown",
@@ -402,12 +413,141 @@ describe("native post-acquisition Workflow replay", () => {
       status: "complete",
     });
     expect(counters).toEqual({
+      acquisitionCalls: 0,
       afterAcquisition: 1,
       afterClaim: 1,
       afterRecord: 1,
       audioCalls: 0,
       beforeClaim: 1,
       dispatchIdentityCalls: 1,
+      providerCalls: 0,
+      recipeFactory: 1,
+      speechFactory: 1,
+      visualFactory: 1,
+    });
+  }, 30_000);
+
+  it("continues a two-step journal without replaying acquisition", async () => {
+    const id = "gaia-194-truncated-post-acquisition-replay";
+    const importId = "00000000-0000-4000-8000-000000000194";
+    if (runtime === undefined) {
+      throw new Error("Miniflare runtime is not initialized");
+    }
+    await runtime.setOptions(runtimeOptions(legacyFixtureScript));
+    await seedAcquiringImport(importId, "7520000000000000194");
+
+    await expect(commandWorkflow({ id, importId })).resolves.toMatchObject({
+      status: "errored",
+    });
+    const mediaSha256 = await seedVerifiedAcquisitionEvidence(
+      importId,
+      "7520000000000000194"
+    );
+    await seedInterruptedSpeechDispatch(importId, mediaSha256);
+
+    await runtime.setOptions(runtimeOptions(correctedFixtureScript));
+
+    const oldRestart = await commandWorkflowRaw({ action: "restart", id });
+    const oldRestartBody = await oldRestart.text();
+    expect(oldRestart.status).toBe(500);
+    expect(oldRestartBody).toContain(
+      'Step "record-acquisition-v2" not found in execution history'
+    );
+
+    const truncatedStatus = await commandWorkflow({
+      action: "restart-truncated",
+      id,
+    });
+    const truncatedCounters = await commandWorkflow({ action: "read", id });
+    expect(
+      truncatedStatus,
+      JSON.stringify({ truncatedCounters, truncatedStatus })
+    ).toMatchObject({
+      output: {
+        _tag: "Failed",
+        code: "outcome_unknown",
+        stage: "speech",
+      },
+      status: "complete",
+    });
+    expect(truncatedCounters).toEqual({
+      acquisitionCalls: 0,
+      afterAcquisition: 1,
+      afterClaim: 1,
+      afterRecord: 1,
+      audioCalls: 0,
+      beforeClaim: 1,
+      dispatchIdentityCalls: 1,
+      providerCalls: 0,
+      recipeFactory: 1,
+      speechFactory: 1,
+      visualFactory: 1,
+    });
+
+    const repeatedStatus = await commandWorkflow({
+      action: "restart-truncated",
+      id,
+    });
+    const repeatedCounters = await commandWorkflow({ action: "read", id });
+    expect(repeatedStatus).toMatchObject({
+      output: {
+        _tag: "Failed",
+        code: "outcome_unknown",
+        stage: "speech",
+      },
+      status: "complete",
+    });
+    expect(repeatedCounters).toEqual({
+      acquisitionCalls: 0,
+      afterAcquisition: 2,
+      afterClaim: 2,
+      afterRecord: 2,
+      audioCalls: 0,
+      beforeClaim: 2,
+      dispatchIdentityCalls: 2,
+      providerCalls: 0,
+      recipeFactory: 2,
+      speechFactory: 2,
+      visualFactory: 2,
+    });
+  }, 30_000);
+
+  it("fails closed when a two-step journal has no retained evidence", async () => {
+    const id = "gaia-194-truncated-missing-evidence";
+    const importId = "00000000-0000-4000-8000-000000000195";
+    if (runtime === undefined) {
+      throw new Error("Miniflare runtime is not initialized");
+    }
+    await runtime.setOptions(runtimeOptions(legacyFixtureScript));
+    await seedAcquiringImport(importId, "7520000000000000195");
+
+    await expect(commandWorkflow({ id, importId })).resolves.toMatchObject({
+      status: "errored",
+    });
+    await seedInterruptedSpeechDispatch(importId, "0".repeat(64));
+
+    await runtime.setOptions(runtimeOptions(correctedFixtureScript));
+
+    const status = await commandWorkflow({
+      action: "restart-truncated",
+      id,
+    });
+    const counters = await commandWorkflow({ action: "read", id });
+    expect(status).toMatchObject({
+      output: {
+        _tag: "AcquisitionCheckpointRejected",
+        code: "historical_acquisition_checkpoint_invalid",
+      },
+      status: "complete",
+    });
+    expect(counters).toEqual({
+      acquisitionCalls: 0,
+      afterAcquisition: 1,
+      afterClaim: 1,
+      afterRecord: 0,
+      audioCalls: 0,
+      beforeClaim: 1,
+      dispatchIdentityCalls: 0,
       providerCalls: 0,
       recipeFactory: 1,
       speechFactory: 1,

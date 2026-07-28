@@ -32,6 +32,15 @@ interface PostAcquisitionReplayTestEnv {
 }
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
+const canonicalIdFor = (importId: string) => {
+  if (importId.endsWith("194")) {
+    return "7520000000000000194";
+  }
+  if (importId.endsWith("195")) {
+    return "7520000000000000195";
+  }
+  return "7520000000000000192";
+};
 const AcquisitionTaskStepConfig = {
   // eslint-disable-next-line sort-keys -- Production-faithful historical Workflow configuration.
   retries: { limit: 3, delay: "2 seconds", backoff: "exponential" },
@@ -48,7 +57,7 @@ const workflowExport = {
           "claim-acquisition-v1",
           Effect.succeed({
             _tag: "Acquiring" as const,
-            canonicalId: "7520000000000000192",
+            canonicalId: canonicalIdFor(input.importId),
           })
         );
         const outcome = yield* task(
@@ -56,10 +65,15 @@ const workflowExport = {
           Effect.succeed(historicalAcquisitionCheckpointFixture(importId)),
           AcquisitionTaskStepConfig
         );
-        yield* task(
-          "record-acquisition-v2",
-          Effect.succeed("Recorded" as const)
-        );
+        if (
+          !input.importId.endsWith("194") &&
+          !input.importId.endsWith("195")
+        ) {
+          yield* task(
+            "record-acquisition-v2",
+            Effect.succeed("Recorded" as const)
+          );
+        }
         return yield* Effect.die(
           new Error(
             `historical post-acquisition interruption:${String(outcome._tag)}`
