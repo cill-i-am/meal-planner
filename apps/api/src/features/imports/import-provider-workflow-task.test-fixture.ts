@@ -582,19 +582,16 @@ export default {
         await workflow.create({ id: command.id, params: command.input });
       } else {
         const instance = await workflow.get(command.id);
+        let restartStep = "finalize-terminal";
+        if (command.action === "restart-speech") {
+          restartStep = "transcribe-video-v1";
+        } else if (command.action === "restart-terminal") {
+          restartStep = "persist-speech-terminal-v1";
+        } else if (command.action === "restart-visual") {
+          restartStep = "extract-visual-evidence-v1";
+        }
         await instance.restart({
-          from:
-            command.action === "restart-speech"
-              ? { name: "transcribe-video-v1", type: "do" }
-              : {
-                  name:
-                    command.action === "restart-terminal"
-                      ? "persist-speech-terminal-v1"
-                      : command.action === "restart-visual"
-                        ? "extract-visual-evidence-v1"
-                        : "finalize-terminal",
-                  type: "do",
-                },
+          from: { name: restartStep, type: "do" },
         });
       }
 
