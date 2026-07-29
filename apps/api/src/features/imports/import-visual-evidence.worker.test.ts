@@ -1,6 +1,15 @@
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { DateTime, Effect, Option, Schema, Stream } from "effect";
+import {
+  DateTime,
+  Effect,
+  Layer,
+  Option,
+  Redacted,
+  Schema,
+  Stream,
+} from "effect";
+import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -21,6 +30,11 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import {
+  ProviderTerminalSettlementService,
+  makeD1ProviderTerminalSettlementService,
+} from "./import-provider-terminal-settlement.js";
+import { ProviderTerminalSettlementRoutes } from "./import-provider-terminal-settlement.routes.js";
 import {
   makeD1ProviderTerminalCheckpointRepository,
   makeD1ProviderTerminalRecoveryRepository,
@@ -52,6 +66,7 @@ import {
   visualFrameObjectKey,
 } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
+import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -528,28 +543,110 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
       ).bind("2026-07-21T10:03:00.000Z", originalDispatchId),
     ]);
 
-    const recovery = makeD1ProviderTerminalRecoveryRepository(
-      testEnv.MealPlannerDatabase,
-      "pilot-gaia-118"
+    const authorizer = await Effect.runPromise(
+      makeImportAuthorizer(Redacted.make("test-import-token"))
+    );
+    const service = makeD1ProviderTerminalSettlementService({
+      database: testEnv.MealPlannerDatabase,
+      now: () => decodeTimestamp("2026-07-21T10:04:00.000Z"),
+      runtimeStage: "pilot-gaia-118",
+    });
+    const app = HttpRouter.toWebHandler(
+      Layer.mergeAll(
+        ProviderTerminalSettlementRoutes,
+        Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+        Layer.succeed(
+          ProviderTerminalSettlementService,
+          ProviderTerminalSettlementService.of(service)
+        )
+      ),
+      { disableLogger: true }
     );
     const command = {
       acquisitionGeneration: generation,
-      createdAt: decodeTimestamp("2026-07-21T10:04:00.000Z"),
+      dispatchId: originalDispatchId,
       importId,
+      operation: "prepare_visual_recovery",
     };
+    const postRecovery = (body: unknown, token = "test-import-token") =>
+      app.handler(
+        new Request(
+          "https://meal-planner.test/imports/operator-provider-terminal-settlement",
+          {
+            body: JSON.stringify(body),
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+            },
+            method: "POST",
+          }
+        )
+      );
+
+    const unauthorized = await postRecovery(command, "wrong-token");
+    expect(unauthorized.status).toBe(401);
+    const wrongDispatch = await postRecovery({
+      ...command,
+      dispatchId: `${originalDispatchId}:wrong`,
+    });
+    expect(wrongDispatch.status).toBe(409);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_visual_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state FROM import_visual_evidence
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({ state: "failed" });
+
+    const [firstResponse, concurrentResponse, replayResponse] =
+      await Promise.all([
+        postRecovery(command),
+        postRecovery(command),
+        postRecovery(command),
+      ]);
+    expect(firstResponse.status).toBe(200);
+    expect(concurrentResponse.status).toBe(200);
+    expect(replayResponse.status).toBe(200);
     const [first, concurrent, replay] = await Promise.all([
-      Effect.runPromise(recovery.prepareVisualUnknownRecovery(command)),
-      Effect.runPromise(recovery.prepareVisualUnknownRecovery(command)),
-      Effect.runPromise(recovery.prepareVisualUnknownRecovery(command)),
+      firstResponse.json(),
+      concurrentResponse.json(),
+      replayResponse.json(),
     ]);
     expect(first).toEqual(concurrent);
     expect(first).toEqual(replay);
     expect(first).toEqual({
       acquisitionGeneration: generation,
+      dispatchId: originalDispatchId,
       importId,
-      originalDispatchId,
+      outcome: "visual_recovery_prepared",
       recoveryDispatchId,
+      runtimeStage: "pilot-gaia-118",
     });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT original_dispatch_id, recovery_dispatch_id
+           FROM pilot_provider_visual_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      original_dispatch_id: originalDispatchId,
+      recovery_dispatch_id: recoveryDispatchId,
+    });
+    const recovery = makeD1ProviderTerminalRecoveryRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
     await expect(
       Effect.runPromise(
         recovery.visualDispatchId({

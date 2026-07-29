@@ -124,6 +124,7 @@ describe("durable provider-free queue acceptance", () => {
       "0008_pilot_provider_budget.sql",
       "0009_provider_terminal_recovery.sql",
       "0010_provider_recovery_stage_key.sql",
+      "0011_provider_visual_recovery.sql",
     ]);
     expect(
       itemColumns.results.map(({ name }: { readonly name: string }) => name)
@@ -223,7 +224,7 @@ describe("durable provider-free queue acceptance", () => {
           ORDER BY name`
       )
       .all<{ readonly name: string; readonly count: number }>();
-    expect(ledger.results).toHaveLength(11);
+    expect(ledger.results).toHaveLength(12);
     expect(
       ledger.results.every(
         ({ count }: { readonly count: number }) => count === 1

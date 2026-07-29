@@ -689,60 +689,17 @@ const readSettledVisualRecovery = (
     database
       .prepare(
         `SELECT
-           checkpoint.import_id,
-           checkpoint.acquisition_generation,
-           audit.dispatch_id AS original_dispatch_id,
-           audit.dispatch_id || ':recovery:1' AS recovery_dispatch_id
-         FROM pilot_provider_budget_reconciliations AS audit
-         JOIN pilot_provider_budget_dispatches AS dispatch
-           ON dispatch.runtime_stage = audit.runtime_stage
-          AND dispatch.dispatch_id = audit.dispatch_id
-         JOIN import_provider_terminal_checkpoints AS checkpoint
-           ON checkpoint.import_id = ?
-          AND checkpoint.acquisition_generation = ?
-          AND checkpoint.provider_stage = 'visual'
-          AND checkpoint.ownership_id = audit.dispatch_id
-          AND checkpoint.failure_code = 'visual_extraction_failed'
-         JOIN recipe_imports AS parent
-           ON parent.id = checkpoint.import_id
-          AND parent.acquisition_generation = checkpoint.acquisition_generation
-          AND parent.status = 'transcribed'
-          AND parent.status_code IS NULL
-          AND parent.recovery_action IS NULL
-          AND json_array_length(parent.evidence_references_json) = 3
-         JOIN import_transcriptions AS transcription
-           ON transcription.import_id = parent.id
-          AND transcription.acquisition_generation =
-                parent.acquisition_generation
-          AND transcription.state = 'transcribed'
-         WHERE audit.runtime_stage = ?
-           AND audit.actual_cost_was_unknown = 1
-           AND audit.authority = 'authenticated_operator'
-           AND dispatch.state = 'settled_unknown'
-           AND dispatch.provider_stage_id = 'visual-evidence'
-           AND dispatch.actual_cost_micro_usd IS NULL
-           AND dispatch.maximum_cost_micro_usd =
-                 audit.conservative_charge_micro_usd
-           AND instr(audit.dispatch_id, ':recovery:1') = 0
-           AND NOT EXISTS (
-             SELECT 1
-               FROM import_visual_evidence AS visual
-              WHERE visual.import_id = parent.id
-                AND visual.acquisition_generation =
-                      parent.acquisition_generation
-                AND visual.dispatch_id <>
-                      audit.dispatch_id || ':recovery:1'
-           )
-           AND NOT EXISTS (
-             SELECT 1
-               FROM import_recipe_extractions AS recipe
-              WHERE recipe.import_id = parent.id
-                AND recipe.acquisition_generation =
-                      parent.acquisition_generation
-           )
+           import_id,
+           acquisition_generation,
+           original_dispatch_id,
+           recovery_dispatch_id
+         FROM pilot_provider_visual_recoveries
+         WHERE runtime_stage = ?
+           AND import_id = ?
+           AND acquisition_generation = ?
          LIMIT 2`
       )
-      .bind(importId, acquisitionGeneration, PilotProviderBudgetStage)
+      .bind(PilotProviderBudgetStage, importId, acquisitionGeneration)
       .all()
   ).pipe(
     Effect.flatMap(({ results }) =>
@@ -761,7 +718,8 @@ const readSettledVisualRecovery = (
 const readSettledVisualRecoveryCandidate = (
   database: AnyD1Database,
   importId: ImportId,
-  acquisitionGeneration: AcquisitionGeneration
+  acquisitionGeneration: AcquisitionGeneration,
+  originalDispatchId: string
 ) =>
   persistenceEffect<{
     readonly original_dispatch_id: string;
@@ -805,6 +763,7 @@ const readSettledVisualRecoveryCandidate = (
            JOIN pilot_provider_stage_budget AS stage
              ON stage.runtime_stage = audit.runtime_stage
           WHERE audit.runtime_stage = ?
+            AND audit.dispatch_id = ?
             AND audit.actual_cost_was_unknown = 1
             AND audit.authority = 'authenticated_operator'
             AND dispatch.state = 'settled_unknown'
@@ -827,7 +786,12 @@ const readSettledVisualRecoveryCandidate = (
             )
           LIMIT 2`
       )
-      .bind(importId, acquisitionGeneration, PilotProviderBudgetStage)
+      .bind(
+        importId,
+        acquisitionGeneration,
+        PilotProviderBudgetStage,
+        originalDispatchId
+      )
       .first<{
         readonly original_dispatch_id: string;
         readonly source_media_sha256: string;
@@ -857,78 +821,23 @@ const prepareSettledVisualRecovery = (
     readonly source_media_sha256: string;
   }
 ) => {
-  const exactRecoveryGuard = `
-    EXISTS (
-      SELECT 1
-        FROM recipe_imports AS parent
-        JOIN import_transcriptions AS transcription
-          ON transcription.import_id = parent.id
-         AND transcription.acquisition_generation =
-               parent.acquisition_generation
-         AND transcription.state = 'transcribed'
-        JOIN import_provider_terminal_checkpoints AS checkpoint
-          ON checkpoint.import_id = parent.id
-         AND checkpoint.acquisition_generation =
-               parent.acquisition_generation
-         AND checkpoint.provider_stage = 'visual'
-         AND checkpoint.ownership_id = ?
-         AND checkpoint.failure_code = 'visual_extraction_failed'
-        JOIN pilot_provider_budget_reconciliations AS audit
-          ON audit.runtime_stage = ?
-         AND audit.dispatch_id = checkpoint.ownership_id
-         AND audit.actual_cost_was_unknown = 1
-         AND audit.authority = 'authenticated_operator'
-        JOIN pilot_provider_budget_dispatches AS dispatch
-          ON dispatch.runtime_stage = audit.runtime_stage
-         AND dispatch.dispatch_id = audit.dispatch_id
-         AND dispatch.state = 'settled_unknown'
-         AND dispatch.provider_stage_id = 'visual-evidence'
-         AND dispatch.actual_cost_micro_usd IS NULL
-         AND dispatch.maximum_cost_micro_usd =
-               audit.conservative_charge_micro_usd
-        JOIN pilot_provider_stage_budget AS stage
-          ON stage.runtime_stage = audit.runtime_stage
-         AND stage.state = 'open'
-         AND stage.reserved_micro_usd = 0
-         AND stage.invoking_dispatch_id IS NULL
-         AND stage.poison_dispatch_id IS NULL
-         AND stage.settled_micro_usd < stage.budget_cap_micro_usd
-       WHERE parent.id = ?
-         AND parent.acquisition_generation = ?
-         AND parent.status = 'transcribed'
-         AND parent.status_code IS NULL
-         AND parent.recovery_action IS NULL
-         AND json_array_length(parent.evidence_references_json) = 3
-         AND instr(audit.dispatch_id, ':recovery:1') = 0
-         AND NOT EXISTS (
-           SELECT 1
-             FROM import_recipe_extractions AS recipe
-            WHERE recipe.import_id = parent.id
-              AND recipe.acquisition_generation =
-                    parent.acquisition_generation
-         )
-    )`;
+  const recoveryDispatchId = `${candidate.original_dispatch_id}:recovery:1`;
   return persistenceEffect(() =>
     database
       .prepare(
-        `DELETE FROM import_visual_evidence
-          WHERE import_id = ?
-            AND acquisition_generation = ?
-            AND dispatch_id = ?
-            AND state = 'failed'
-            AND failure_code = 'visual_extraction_failed'
-            AND source_media_sha256 = ?
-            AND ${exactRecoveryGuard}`
+        `INSERT INTO pilot_provider_visual_recoveries (
+           runtime_stage, import_id, acquisition_generation,
+           original_dispatch_id, recovery_dispatch_id, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(runtime_stage, original_dispatch_id) DO NOTHING`
       )
       .bind(
+        PilotProviderBudgetStage,
         input.importId,
         input.acquisitionGeneration,
         candidate.original_dispatch_id,
-        candidate.source_media_sha256,
-        candidate.original_dispatch_id,
-        PilotProviderBudgetStage,
-        input.importId,
-        input.acquisitionGeneration
+        recoveryDispatchId,
+        DateTime.formatIso(input.createdAt)
       )
       .run()
   );
@@ -948,6 +857,7 @@ export interface ProviderTerminalRecoveryRepository {
     readonly acquisitionGeneration: AcquisitionGeneration;
     readonly createdAt: ImportTimestamp;
     readonly importId: ImportId;
+    readonly originalDispatchId: string;
   }) => Effect.Effect<VisualProviderRecovery, ProviderTerminalPersistenceError>;
   readonly visualDispatchId: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
@@ -1087,12 +997,17 @@ export const makeD1ProviderTerminalRecoveryRepository = (
         )
       );
       if (existing !== null) {
-        return existing;
+        return existing.originalDispatchId === input.originalDispatchId
+          ? existing
+          : yield* Effect.fail(
+              providerTerminalPersistenceError("recovery_not_allowed")
+            );
       }
       const candidate = yield* readSettledVisualRecoveryCandidate(
         database,
         input.importId,
-        input.acquisitionGeneration
+        input.acquisitionGeneration,
+        input.originalDispatchId
       ).pipe(
         Effect.map(
           (

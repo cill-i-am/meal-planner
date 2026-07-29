@@ -6,14 +6,27 @@ import {
   PilotProviderBudgetStage,
 } from "../pilots/pilot-provider-budget.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
+import { makeD1ProviderTerminalRecoveryRepository } from "./import-provider-terminal.js";
 import { ImportId } from "./import.contracts.js";
 import type { ImportTimestamp } from "./import.contracts.js";
 
-export const ProviderTerminalSettlementRequest = Schema.Struct({
+const TerminalUnknownSettlementRequest = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   dispatchId: PilotBudgetDispatchId,
   importId: ImportId,
 });
+
+const VisualRecoveryPreparationRequest = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  operation: Schema.Literal("prepare_visual_recovery"),
+});
+
+export const ProviderTerminalSettlementRequest = Schema.Union([
+  TerminalUnknownSettlementRequest,
+  VisualRecoveryPreparationRequest,
+]);
 export type ProviderTerminalSettlementRequest =
   typeof ProviderTerminalSettlementRequest.Type;
 
@@ -25,7 +38,7 @@ const ConservativeChargeMicroUsd = Schema.Number.pipe(
   )
 );
 
-export const ProviderTerminalSettlementResponse = Schema.Struct({
+const TerminalUnknownSettlementResponse = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   conservativeChargeMicroUsd: ConservativeChargeMicroUsd,
   dispatchId: PilotBudgetDispatchId,
@@ -33,6 +46,20 @@ export const ProviderTerminalSettlementResponse = Schema.Struct({
   outcome: Schema.Literal("terminal_unknown_cost_settled"),
   runtimeStage: Schema.Literal(PilotProviderBudgetStage),
 });
+
+const VisualRecoveryPreparationResponse = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  outcome: Schema.Literal("visual_recovery_prepared"),
+  recoveryDispatchId: PilotBudgetDispatchId,
+  runtimeStage: Schema.Literal(PilotProviderBudgetStage),
+});
+
+export const ProviderTerminalSettlementResponse = Schema.Union([
+  TerminalUnknownSettlementResponse,
+  VisualRecoveryPreparationResponse,
+]);
 export type ProviderTerminalSettlementResponse =
   typeof ProviderTerminalSettlementResponse.Type;
 
@@ -53,6 +80,25 @@ const providerTerminalSettlementError = (
   _tag: "ProviderTerminalSettlementError",
   code,
 });
+
+const mapRecoveryErrorCode = (
+  code: string
+): ProviderTerminalSettlementErrorCode => {
+  switch (code) {
+    case "stage_not_allowed": {
+      return "stage_not_allowed";
+    }
+    case "persistence_unavailable": {
+      return "persistence_unavailable";
+    }
+    case "persistence_corrupt": {
+      return "persistence_corrupt";
+    }
+    default: {
+      return "not_allowed";
+    }
+  }
+};
 
 const SettledRow = Schema.Struct({
   acquisition_generation: AcquisitionGeneration,
@@ -360,6 +406,37 @@ export const makeD1ProviderTerminalSettlementService = (input: {
       if (input.runtimeStage !== PilotProviderBudgetStage) {
         return yield* Effect.fail(
           providerTerminalSettlementError("stage_not_allowed")
+        );
+      }
+      if ("operation" in request) {
+        const recovery = yield* makeD1ProviderTerminalRecoveryRepository(
+          input.database,
+          input.runtimeStage
+        )
+          .prepareVisualUnknownRecovery({
+            acquisitionGeneration: request.acquisitionGeneration,
+            createdAt: input.now(),
+            importId: request.importId,
+            originalDispatchId: request.dispatchId,
+          })
+          .pipe(
+            Effect.mapError((error) =>
+              providerTerminalSettlementError(mapRecoveryErrorCode(error.code))
+            )
+          );
+        return yield* Schema.decodeUnknownEffect(
+          VisualRecoveryPreparationResponse
+        )({
+          acquisitionGeneration: recovery.acquisitionGeneration,
+          dispatchId: recovery.originalDispatchId,
+          importId: recovery.importId,
+          outcome: "visual_recovery_prepared",
+          recoveryDispatchId: recovery.recoveryDispatchId,
+          runtimeStage: PilotProviderBudgetStage,
+        }).pipe(
+          Effect.mapError(() =>
+            providerTerminalSettlementError("persistence_corrupt")
+          )
         );
       }
       yield* settleBatch(input.database, request, input.now());

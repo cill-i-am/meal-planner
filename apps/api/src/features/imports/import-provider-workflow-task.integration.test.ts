@@ -17,7 +17,8 @@ interface ProviderWorkflowInput {
     | "speech_terminal_recovery_poison"
     | "success"
     | "terminal"
-    | "unknown";
+    | "unknown"
+    | "visual_terminal_recovery";
 }
 
 const compatibilityDate = "2026-07-14";
@@ -172,6 +173,13 @@ const commandWorkflow = async (
         readonly id: string;
       }
     | {
+        readonly action: "prepare-visual";
+        readonly authorization?: string;
+        readonly dispatchId: string;
+        readonly id: string;
+        readonly importId: string;
+      }
+    | {
         readonly action: "prepare-speech";
         readonly id: string;
         readonly importId: string;
@@ -227,6 +235,39 @@ const restartFromSpeechProvider = (id: string) =>
 
 const restartFromVisualEvidence = (id: string) =>
   commandWorkflow({ action: "restart-visual", id });
+
+const prepareVisualRecoveryResponse = (
+  id: string,
+  importId: string,
+  dispatchId: string,
+  authorization?: string
+) =>
+  runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify({
+      action: "prepare-visual",
+      authorization,
+      dispatchId,
+      id,
+      importId,
+    }),
+    method: "POST",
+  });
+
+const prepareVisualRecovery = async (
+  id: string,
+  importId: string,
+  dispatchId: string
+) => {
+  const response = await prepareVisualRecoveryResponse(
+    id,
+    importId,
+    dispatchId,
+    "Bearer test-import-token"
+  );
+  const responseText = await response.text();
+  expect(response.status, responseText).toBe(200);
+  return JSON.parse(responseText) as unknown;
+};
 
 const settleSpeechTerminal = (
   id: string,
@@ -911,6 +952,381 @@ describe("provider workflow task retry exhaustion", () => {
       expect(await readNumber(instanceId, "provider-calls")).toBe(1);
     }
   );
+
+  it("authenticates one visual recovery and replays native visual and recipe tasks exactly once", async () => {
+    const instanceId = "gaia-200-native-visual-terminal-recovery";
+    const importId = "00000000-0000-4000-8000-000000000200";
+    const generation = 1;
+    const originalDispatchId = `visual:${importId}:${generation}`;
+    const recoveryDispatchId = `${originalDispatchId}:recovery:1`;
+    const recipeDispatchId = `recipe:${importId}:${generation}:gaia-200-evidence`;
+    const speechDispatchId = `speech:${importId}:${generation}`;
+    const now = "2026-07-29T10:00:00.000Z";
+    const completedAt = "2026-07-29T10:02:00.000Z";
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const stageBefore = await database
+      .prepare(
+        `SELECT settled_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      )
+      .first<{ readonly settled_micro_usd: number }>();
+    if (stageBefore === null) {
+      throw new Error("Pilot provider budget baseline is missing");
+    }
+    const evidence = JSON.stringify([
+      {
+        kind: "original_media",
+        referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
+      },
+      {
+        kind: "acquisition_manifest",
+        referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/manifest.json`,
+      },
+      {
+        kind: "speech_transcript",
+        referenceId: `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
+      },
+    ]);
+
+    await database.batch([
+      database.prepare(
+        `UPDATE pilot_provider_stage_budget
+            SET reserved_micro_usd = 0,
+                state = 'open',
+                invoking_dispatch_id = NULL,
+                poison_dispatch_id = NULL
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ),
+      database
+        .prepare(
+          `INSERT INTO recipe_imports (
+             acquisition_generation, canonical_source_id,
+             compatibility_fingerprint, created_at,
+             evidence_references_json, id, recovery_action, source_kind,
+             status, status_code, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video',
+                     'transcribed', NULL, ?)`
+        )
+        .bind(
+          generation,
+          "canonical-gaia-200-native-visual-recovery",
+          "f".repeat(64),
+          now,
+          evidence,
+          importId,
+          completedAt
+        ),
+      database
+        .prepare(
+          `INSERT INTO import_transcriptions (
+             import_id, acquisition_generation, dispatch_id,
+             source_media_sha256, state, transcript_key, transcript_sha256,
+             provider, model, detected_language, usage_audio_milliseconds,
+             usage_input_bytes, estimated_cost_micro_usd, cost_currency,
+             cost_certainty, segments_count, failure_code, created_at,
+             updated_at, completed_at
+           ) VALUES (?, ?, ?, ?, 'transcribed', ?, ?, ?, ?, 'en', 1000, 3,
+                     10, 'USD', 'known', 1, NULL, ?, ?, ?)`
+        )
+        .bind(
+          importId,
+          generation,
+          speechDispatchId,
+          "b".repeat(64),
+          `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
+          "c".repeat(64),
+          "installed-test-provider",
+          "installed-test-model",
+          now,
+          completedAt,
+          completedAt
+        ),
+      database
+        .prepare(
+          `INSERT INTO import_visual_evidence (
+             import_id, acquisition_generation, dispatch_id,
+             source_media_sha256, state, failure_code, created_at,
+             updated_at, completed_at
+           ) VALUES (?, ?, ?, ?, 'failed', 'visual_extraction_failed', ?, ?, ?)`
+        )
+        .bind(
+          importId,
+          generation,
+          originalDispatchId,
+          "b".repeat(64),
+          now,
+          completedAt,
+          completedAt
+        ),
+      database
+        .prepare(
+          `INSERT INTO import_provider_terminal_checkpoints (
+             import_id, acquisition_generation, provider_stage, ownership_id,
+             failure_code, completed_at, created_at
+           ) VALUES (?, ?, 'visual', ?, 'visual_extraction_failed', ?, ?)`
+        )
+        .bind(
+          importId,
+          generation,
+          originalDispatchId,
+          completedAt,
+          completedAt
+        ),
+      database
+        .prepare(
+          `INSERT INTO pilot_provider_budget_dispatches (
+             runtime_stage, dispatch_id, run_id, provider_stage_id,
+             maximum_cost_micro_usd, actual_cost_micro_usd, state,
+             created_at, updated_at, invocation_started_at, completed_at
+           ) VALUES (
+             'pilot-gaia-118', ?, 'gaia-200:visual-terminal-recovery',
+             'visual-evidence', 100000, NULL, 'settled_unknown', ?, ?, ?, ?
+           )`
+        )
+        .bind(originalDispatchId, now, completedAt, now, completedAt),
+      database
+        .prepare(
+          `INSERT INTO pilot_provider_budget_reconciliations (
+             runtime_stage, dispatch_id, conservative_charge_micro_usd,
+             actual_cost_was_unknown, authority, created_at
+           ) VALUES (
+             'pilot-gaia-118', ?, 100000, 1, 'authenticated_operator', ?
+           )`
+        )
+        .bind(originalDispatchId, completedAt),
+      database.prepare(
+        `UPDATE pilot_provider_stage_budget
+            SET settled_micro_usd = settled_micro_usd + 100000,
+                reserved_micro_usd = 0,
+                state = 'open',
+                invoking_dispatch_id = NULL,
+                poison_dispatch_id = NULL,
+                updated_at = '${completedAt}'
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ),
+    ]);
+
+    await expect(
+      runWorkflow(instanceId, {
+        importId,
+        scenario: "visual_terminal_recovery",
+      })
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Failed",
+        code: "visual_extraction_failed",
+        stage: "visual",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "acquisition-calls")).toBe(1);
+    expect(await readNumber(instanceId, "speech-calls")).toBe(1);
+    expect(await readNumber(instanceId, "visual-provider-calls")).toBe(0);
+    expect(await readNumber(instanceId, "recipe-provider-calls")).toBe(0);
+
+    await database
+      .prepare(
+        `UPDATE pilot_provider_stage_budget
+            SET reserved_micro_usd = 1
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      )
+      .run();
+    const driftResponse = await prepareVisualRecoveryResponse(
+      instanceId,
+      importId,
+      originalDispatchId,
+      "Bearer test-import-token"
+    );
+    expect(driftResponse.status).not.toBe(200);
+    await database
+      .prepare(
+        `UPDATE pilot_provider_stage_budget
+            SET reserved_micro_usd = 0
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      )
+      .run();
+    await expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+             FROM pilot_provider_visual_recoveries
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        )
+        .first()
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      database
+        .prepare(
+          `SELECT dispatch_id, failure_code, state
+             FROM import_visual_evidence
+            WHERE import_id = ? AND acquisition_generation = ?`
+        )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      dispatch_id: originalDispatchId,
+      failure_code: "visual_extraction_failed",
+      state: "failed",
+    });
+
+    await expect(
+      prepareVisualRecovery(instanceId, importId, originalDispatchId)
+    ).resolves.toEqual({
+      acquisitionGeneration: generation,
+      dispatchId: originalDispatchId,
+      importId,
+      outcome: "visual_recovery_prepared",
+      recoveryDispatchId,
+      runtimeStage: "pilot-gaia-118",
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT import_id, acquisition_generation, original_dispatch_id,
+                  recovery_dispatch_id
+             FROM pilot_provider_visual_recoveries
+            WHERE runtime_stage = 'pilot-gaia-118'
+              AND original_dispatch_id = ?`
+        )
+        .bind(originalDispatchId)
+        .first()
+    ).resolves.toEqual({
+      acquisition_generation: generation,
+      import_id: importId,
+      original_dispatch_id: originalDispatchId,
+      recovery_dispatch_id: recoveryDispatchId,
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+             FROM import_visual_evidence
+            WHERE import_id = ? AND acquisition_generation = ?`
+        )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+
+    await expect(restartFromVisualEvidence(instanceId)).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "recipe-dispatched",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "acquisition-calls")).toBe(1);
+    expect(await readNumber(instanceId, "speech-calls")).toBe(1);
+    expect(await readNumber(instanceId, "visual-provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-provider-calls")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT dispatch_id, estimated_cost_micro_usd, observations_count,
+                  outcome, state
+             FROM import_visual_evidence
+            WHERE import_id = ? AND acquisition_generation = ?`
+        )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      dispatch_id: recoveryDispatchId,
+      estimated_cost_micro_usd: 100_000,
+      observations_count: 0,
+      outcome: "empty",
+      state: "completed",
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT actual_cost_micro_usd, dispatch_id,
+                  maximum_cost_micro_usd, provider_stage_id, state
+             FROM pilot_provider_budget_dispatches
+            WHERE runtime_stage = 'pilot-gaia-118'
+              AND dispatch_id IN (?, ?, ?)
+            ORDER BY dispatch_id`
+        )
+        .bind(originalDispatchId, recoveryDispatchId, recipeDispatchId)
+        .all()
+    ).resolves.toMatchObject({
+      results: expect.arrayContaining([
+        {
+          actual_cost_micro_usd: null,
+          dispatch_id: originalDispatchId,
+          maximum_cost_micro_usd: 100_000,
+          provider_stage_id: "visual-evidence",
+          state: "settled_unknown",
+        },
+        {
+          actual_cost_micro_usd: 100_000,
+          dispatch_id: recoveryDispatchId,
+          maximum_cost_micro_usd: 100_000,
+          provider_stage_id: "visual-evidence",
+          state: "settled_known",
+        },
+        {
+          actual_cost_micro_usd: 29,
+          dispatch_id: recipeDispatchId,
+          maximum_cost_micro_usd: 100_000,
+          provider_stage_id: "recipe-extraction",
+          state: "settled_known",
+        },
+      ]),
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT invoking_dispatch_id, poison_dispatch_id,
+                  reserved_micro_usd, settled_micro_usd, state
+             FROM pilot_provider_stage_budget
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        )
+        .first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      settled_micro_usd: stageBefore.settled_micro_usd + 200_029,
+      state: "open",
+    });
+
+    await expect(restartFromVisualEvidence(instanceId)).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "recipe-dispatched",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    await expect(
+      prepareVisualRecovery(instanceId, importId, originalDispatchId)
+    ).resolves.toEqual({
+      acquisitionGeneration: generation,
+      dispatchId: originalDispatchId,
+      importId,
+      outcome: "visual_recovery_prepared",
+      recoveryDispatchId,
+      runtimeStage: "pilot-gaia-118",
+    });
+    expect(await readNumber(instanceId, "acquisition-calls")).toBe(1);
+    expect(await readNumber(instanceId, "speech-calls")).toBe(1);
+    expect(await readNumber(instanceId, "visual-provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-provider-calls")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT dispatch_id, state
+             FROM import_transcriptions
+            WHERE import_id = ? AND acquisition_generation = ?`
+        )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      dispatch_id: speechDispatchId,
+      state: "transcribed",
+    });
+  });
 
   it("preserves a successful checkpoint through native replay", async () => {
     const instanceId = "gaia-163-success";
