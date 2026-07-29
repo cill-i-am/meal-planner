@@ -1082,7 +1082,7 @@ describe("provider terminal recovery", () => {
     });
   });
 
-  it("prepares one bounded second visual recovery while preserving both failed dispatch audits", async () => {
+  it("prepares one bounded second visual recovery from an honest unknown outcome while preserving both failed dispatch audits", async () => {
     const importId = decodeImportId("00000000-0000-4000-8000-000000000206");
     const generation = decodeGeneration(1);
     const originalDispatchId = decodeDispatchId(
@@ -1225,7 +1225,7 @@ describe("provider terminal recovery", () => {
            import_id, acquisition_generation, dispatch_id,
            source_media_sha256, state, failure_code, created_at,
            updated_at, completed_at
-         ) VALUES (?, ?, ?, ?, 'failed', 'visual_extraction_failed', ?, ?, ?)`
+         ) VALUES (?, ?, ?, ?, 'failed', 'outcome_unknown', ?, ?, ?)`
       ).bind(
         importId,
         generation,
@@ -1239,7 +1239,7 @@ describe("provider terminal recovery", () => {
         `INSERT INTO import_provider_terminal_checkpoints (
            import_id, acquisition_generation, provider_stage,
            ownership_id, failure_code, completed_at, created_at
-         ) VALUES (?, ?, 'visual', ?, 'visual_extraction_failed', ?, ?)`
+         ) VALUES (?, ?, 'visual', ?, 'outcome_unknown', ?, ?)`
       ).bind(importId, generation, firstRecoveryDispatchId, now, now),
       testEnv.MealPlannerDatabase.prepare(
         `INSERT INTO pilot_provider_budget_dispatches (
@@ -1277,6 +1277,37 @@ describe("provider terminal recovery", () => {
       importId,
       originalDispatchId: firstRecoveryDispatchId,
     };
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE import_visual_evidence
+          SET failure_code = 'visual_extraction_failed'
+        WHERE import_id = ?
+          AND acquisition_generation = ?
+          AND dispatch_id = ?`
+    )
+      .bind(importId, generation, firstRecoveryDispatchId)
+      .run();
+    await expect(
+      Effect.runPromise(recovery.prepareVisualUnknownRecovery(command))
+    ).rejects.toMatchObject({ code: "recovery_not_allowed" });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_visual_second_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND original_dispatch_id = ?`
+      )
+        .bind(originalDispatchId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE import_visual_evidence
+          SET failure_code = 'outcome_unknown'
+        WHERE import_id = ?
+          AND acquisition_generation = ?
+          AND dispatch_id = ?`
+    )
+      .bind(importId, generation, firstRecoveryDispatchId)
+      .run();
     const [first, concurrent, replay] = await Promise.all([
       Effect.runPromise(recovery.prepareVisualUnknownRecovery(command)),
       Effect.runPromise(recovery.prepareVisualUnknownRecovery(command)),

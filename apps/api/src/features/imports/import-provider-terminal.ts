@@ -757,14 +757,17 @@ const readSettledVisualSecondRecoveryCandidate = (
           AND checkpoint.provider_stage = 'visual'
           AND checkpoint.ownership_id =
                 first_recovery.recovery_dispatch_id
-          AND checkpoint.failure_code = 'visual_extraction_failed'
+          AND checkpoint.failure_code IN (
+                'visual_extraction_failed',
+                'outcome_unknown'
+              )
          JOIN import_visual_evidence AS visual
            ON visual.import_id = checkpoint.import_id
           AND visual.acquisition_generation =
                 checkpoint.acquisition_generation
           AND visual.dispatch_id = checkpoint.ownership_id
           AND visual.state = 'failed'
-          AND visual.failure_code = 'visual_extraction_failed'
+          AND visual.failure_code = checkpoint.failure_code
           AND visual.completed_at = checkpoint.completed_at
          JOIN recipe_imports AS parent
            ON parent.id = checkpoint.import_id
