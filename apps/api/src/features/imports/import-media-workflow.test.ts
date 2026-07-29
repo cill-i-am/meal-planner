@@ -399,6 +399,69 @@ describe("import Workflow start reconciliation", () => {
     ]);
   });
 
+  it.each(["queued", "running", "waiting", "waitingForPause"] as const)(
+    "reconciles an already-active speech recovery in %s without another restart",
+    async (status) => {
+      const { calls, starter } = makeWorkflow(status);
+
+      await expect(
+        Effect.runPromise(
+          starter.restartFromSpeech?.(importId) ??
+            Effect.die("missing recovery")
+        )
+      ).resolves.toBeUndefined();
+      expect(calls.restart).toBe(0);
+    }
+  );
+
+  it("reconciles a lost speech-restart response without a blind second restart", async () => {
+    let status = "errored";
+    let restartCalls = 0;
+    const instance = {
+      restart: () =>
+        Effect.sync(() => {
+          restartCalls += 1;
+          status = "running";
+          throw new Error("restart response lost");
+        }),
+      status: () => Effect.sync(() => ({ status })),
+    };
+    const starter = makeImportWorkflowStarter({
+      createBatch: () => Effect.die("not used"),
+      get: () => Effect.succeed(instance),
+    });
+
+    await expect(
+      Effect.runPromise(
+        starter.restartFromSpeech?.(importId) ?? Effect.die("missing recovery")
+      )
+    ).resolves.toBeUndefined();
+    expect(restartCalls).toBe(1);
+  });
+
+  it("fails a speech restart once when its lost response cannot be reconciled", async () => {
+    let restartCalls = 0;
+    const instance = {
+      restart: () =>
+        Effect.sync(() => {
+          restartCalls += 1;
+          throw new Error("restart response lost");
+        }),
+      status: () => Effect.succeed({ status: "errored" }),
+    };
+    const starter = makeImportWorkflowStarter({
+      createBatch: () => Effect.die("not used"),
+      get: () => Effect.succeed(instance),
+    });
+
+    await expect(
+      Effect.runPromise(
+        starter.restartFromSpeech?.(importId) ?? Effect.die("missing recovery")
+      )
+    ).rejects.toMatchObject({ _tag: "WorkflowStartUnavailable" });
+    expect(restartCalls).toBe(1);
+  });
+
   it("restarts the retained resolution only for a typed journal ending before finalization", async () => {
     const { calls, starter } = makeWorkflow("errored");
 

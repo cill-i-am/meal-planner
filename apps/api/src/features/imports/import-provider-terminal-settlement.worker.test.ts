@@ -18,8 +18,11 @@ import {
 } from "./import-provider-terminal-settlement.js";
 import { ProviderTerminalSettlementRoutes } from "./import-provider-terminal-settlement.routes.js";
 import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-terminal.js";
+import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
+import { workflowStartUnavailable } from "./import.errors.js";
+import type { ImportWorkflowStarterShape } from "./import.workflow.js";
 
 const testEnv = env as unknown as {
   readonly MealPlannerDatabase: AnyD1Database;
@@ -271,7 +274,10 @@ const seedPoisonedTerminalRecipeImport = async (
   };
 };
 
-const makeApp = async (runtimeStage: unknown) => {
+const makeApp = async (
+  runtimeStage: unknown,
+  workflowStarter?: Pick<ImportWorkflowStarterShape, "restartFromSpeech">
+) => {
   const authorizer = await Effect.runPromise(
     makeImportAuthorizer(Redacted.make("test-import-token"))
   );
@@ -279,6 +285,7 @@ const makeApp = async (runtimeStage: unknown) => {
     database: testEnv.MealPlannerDatabase,
     now: () => decodeImportTimestamp("2026-07-27T10:01:00.000Z"),
     runtimeStage,
+    ...(workflowStarter === undefined ? {} : { workflowStarter }),
   });
   return HttpRouter.toWebHandler(
     Layer.mergeAll(
@@ -299,6 +306,13 @@ const commandFor = (
   acquisitionGeneration: seeded.acquisitionGeneration,
   dispatchId: seeded.dispatchId,
   importId: seeded.importId,
+});
+
+const speechRecoveryCommandFor = (
+  seeded: Awaited<ReturnType<typeof seedPoisonedTerminalSpeechImport>>
+) => ({
+  ...commandFor(seeded),
+  operation: "prepare_speech_recovery" as const,
 });
 
 const recipeCommandFor = (
@@ -526,6 +540,218 @@ describe("authenticated terminal unknown-cost provider settlement", () => {
       actual_cost_micro_usd: null,
       state: "settled_unknown",
     });
+  });
+
+  it("prepares and activates one exact speech recovery across concurrent authenticated replays", async () => {
+    const seeded = await seedPoisonedTerminalSpeechImport("000000000180");
+    let active = false;
+    let restartCalls = 0;
+    const app = await makeApp("pilot-gaia-118", {
+      restartFromSpeech: () =>
+        Effect.sync(() => {
+          if (!active) {
+            active = true;
+            restartCalls += 1;
+          }
+        }),
+    });
+    const settled = await postSettlement(app, commandFor(seeded));
+    expect(settled.status).toBe(200);
+
+    const [first, replay] = await Promise.all([
+      postSettlement(app, speechRecoveryCommandFor(seeded)),
+      postSettlement(app, speechRecoveryCommandFor(seeded)),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(replay.status).toBe(200);
+    const expected = {
+      acquisitionGeneration: seeded.acquisitionGeneration,
+      dispatchId: seeded.dispatchId,
+      importId: seeded.importId,
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: `${seeded.dispatchId}:recovery:1`,
+      runtimeStage: "pilot-gaia-118",
+    };
+    await expect(first.json()).resolves.toEqual(expected);
+    await expect(replay.json()).resolves.toEqual(expected);
+    expect(restartCalls).toBe(1);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT dispatch_id, state
+           FROM import_transcriptions
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(seeded.importId, seeded.acquisitionGeneration)
+        .first()
+    ).resolves.toEqual({
+      dispatch_id: `${seeded.dispatchId}:recovery:1`,
+      state: "dispatching",
+    });
+  });
+
+  it("reconciles a completed speech recovery after an ambiguous restart response", async () => {
+    const seeded = await seedPoisonedTerminalSpeechImport("000000000176");
+    const recoveryDispatchId = `${seeded.dispatchId}:recovery:1`;
+    let restartCalls = 0;
+    const app = await makeApp("pilot-gaia-118", {
+      restartFromSpeech: () =>
+        Effect.gen(function* completeBeforeLosingRestartResponse() {
+          restartCalls += 1;
+          const reservation = {
+            dispatchId: decodeDispatchId(recoveryDispatchId),
+            maximumCostMicroUsd: 50_000,
+            providerStageId: decodeStageId("speech-transcription"),
+            runId: decodeRunId(`recovery-run-${seeded.importId}`),
+            timestamp: decodeBudgetTimestamp("2026-07-27T10:02:00.000Z"),
+          };
+          const budget = makeD1PilotProviderBudgetRepository(
+            testEnv.MealPlannerDatabase,
+            "pilot-gaia-118"
+          );
+          yield* budget.reserve(reservation).pipe(Effect.orDie);
+          yield* budget.beginInvocation(reservation).pipe(Effect.orDie);
+          yield* budget
+            .settleKnown({ ...reservation, actualCostMicroUsd: 10 })
+            .pipe(Effect.orDie);
+          yield* makeD1SpeechTranscriptionRepository(
+            testEnv.MealPlannerDatabase
+          )
+            .complete({
+              completedAt: decodeImportTimestamp("2026-07-27T10:02:00.000Z"),
+              cost: {
+                certainty: "known",
+                currency: "USD",
+                estimatedMicroUsd: 10,
+              },
+              detectedLanguage: "en",
+              dispatchId: recoveryDispatchId,
+              generation: seeded.acquisitionGeneration,
+              importId: seeded.importId,
+              model: "installed-test-model",
+              provider: "installed-test-provider",
+              segmentsCount: 1,
+              sourceMediaSha256: "a".repeat(64),
+              transcriptKey: `imports/${seeded.importId}/transcription/v1/generations/${seeded.acquisitionGeneration}/transcript.json`,
+              transcriptSha256: "b".repeat(64),
+              usage: {
+                audioDurationMilliseconds: 1,
+                inputBytes: 1,
+              },
+            })
+            .pipe(Effect.orDie);
+          return yield* Effect.fail(workflowStartUnavailable());
+        }),
+    });
+    const settlement = await postSettlement(app, commandFor(seeded));
+    expect(settlement.status).toBe(200);
+
+    const activation = await postSettlement(
+      app,
+      speechRecoveryCommandFor(seeded)
+    );
+    expect(activation.status).toBe(200);
+    const expected = {
+      acquisitionGeneration: seeded.acquisitionGeneration,
+      dispatchId: seeded.dispatchId,
+      importId: seeded.importId,
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId,
+      runtimeStage: "pilot-gaia-118",
+    };
+    await expect(activation.json()).resolves.toEqual(expected);
+    expect(restartCalls).toBe(1);
+
+    const appWithoutStarter = await makeApp("pilot-gaia-118");
+    const replayWithoutStarter = await postSettlement(
+      appWithoutStarter,
+      speechRecoveryCommandFor(seeded)
+    );
+    expect(replayWithoutStarter.status).toBe(200);
+    await expect(replayWithoutStarter.json()).resolves.toEqual(expected);
+    expect(restartCalls).toBe(1);
+  });
+
+  it("does not invoke the retained workflow for unauthenticated or mismatched speech recovery authority", async () => {
+    const seeded = await seedPoisonedTerminalSpeechImport("000000000179");
+    let restartCalls = 0;
+    const app = await makeApp("pilot-gaia-118", {
+      restartFromSpeech: () =>
+        Effect.sync(() => {
+          restartCalls += 1;
+        }),
+    });
+    const settlement = await postSettlement(app, commandFor(seeded));
+    expect(settlement.status).toBe(200);
+
+    const unauthenticated = await postSettlement(
+      app,
+      speechRecoveryCommandFor(seeded),
+      "wrong"
+    );
+    const wrongDispatch = await postSettlement(app, {
+      ...speechRecoveryCommandFor(seeded),
+      dispatchId: decodeDispatchId(`${seeded.dispatchId}:wrong`),
+    });
+    const wrongGeneration = await postSettlement(app, {
+      ...speechRecoveryCommandFor(seeded),
+      acquisitionGeneration: decodeGeneration(2),
+    });
+
+    expect(unauthenticated.status).toBe(401);
+    expect(wrongDispatch.status).toBe(409);
+    expect(wrongGeneration.status).toBe(409);
+    expect(restartCalls).toBe(0);
+  });
+
+  it("fails closed without another restart after the speech recovery itself is terminal", async () => {
+    const seeded = await seedPoisonedTerminalSpeechImport("000000000178");
+    let restartCalls = 0;
+    const app = await makeApp("pilot-gaia-118", {
+      restartFromSpeech: () =>
+        Effect.sync(() => {
+          restartCalls += 1;
+        }),
+    });
+    const settlement = await postSettlement(app, commandFor(seeded));
+    expect(settlement.status).toBe(200);
+    const activation = await postSettlement(
+      app,
+      speechRecoveryCommandFor(seeded)
+    );
+    expect(activation.status).toBe(200);
+    await testEnv.MealPlannerDatabase.batch([
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE import_transcriptions
+            SET state = 'failed',
+                failure_code = 'transcription_failed',
+                completed_at = '2026-07-27T10:02:00.000Z',
+                updated_at = '2026-07-27T10:02:00.000Z'
+          WHERE import_id = ?
+            AND acquisition_generation = ?
+            AND dispatch_id = ?`
+      ).bind(
+        seeded.importId,
+        seeded.acquisitionGeneration,
+        `${seeded.dispatchId}:recovery:1`
+      ),
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE recipe_imports
+            SET status = 'failed',
+                status_code = 'transcription_failed',
+                recovery_action = 'retry_later',
+                updated_at = '2026-07-27T10:02:00.000Z'
+          WHERE id = ? AND acquisition_generation = ?`
+      ).bind(seeded.importId, seeded.acquisitionGeneration),
+    ]);
+
+    const terminalReplay = await postSettlement(
+      app,
+      speechRecoveryCommandFor(seeded)
+    );
+
+    expect(terminalReplay.status).toBe(409);
+    expect(restartCalls).toBe(1);
   });
 
   it("fails closed before service execution for unauthenticated callers", async () => {

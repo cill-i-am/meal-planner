@@ -38,6 +38,7 @@ import { runProviderTask } from "./import-provider-workflow-task.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import { makeImportAuthorizer } from "./import.auth.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
+import { makeImportWorkflowStarter } from "./import.workflow.js";
 
 interface ProviderWorkflowInput {
   readonly failureCode?: string;
@@ -801,8 +802,12 @@ const providerWorkflowExport = {
           const importId = decodeImportId(input.importId);
           const acquisitionGeneration = decodeGeneration(1);
           yield* task(
-            "acquire-v1",
+            "resolve-acquire-store-verify-v2",
             increment(env, event.instanceId, "acquisition-calls")
+          );
+          yield* task(
+            "record-acquisition-v2",
+            increment(env, event.instanceId, "record-acquisition-calls")
           );
           const checkpoint = yield* runProviderTask(
             "transcribe-video-v1",
@@ -1022,6 +1027,13 @@ export class ProviderRetryWorkflow extends ProviderRetryWorkflowBridge {}
 const readRequest = (request: Request) =>
   request.json() as Promise<
     | {
+        readonly action: "activate-speech";
+        readonly authorization?: string;
+        readonly dispatchId: string;
+        readonly id: string;
+        readonly importId: string;
+      }
+    | {
         readonly action: "interleave-stage";
         readonly id: string;
       }
@@ -1060,12 +1072,74 @@ export default {
     const env = rawEnv as ProviderWorkflowTestEnv;
     const command = await readRequest(request);
     const workflow = env.ProviderRetryWorkflow;
-    const sessionId = await workflow.unsafeStartIntrospection();
+    const sessionId =
+      command.action === "activate-speech"
+        ? undefined
+        : await workflow.unsafeStartIntrospection();
 
     try {
       if (command.action === "run-visual-recipe-budget") {
         return Response.json(
           await Effect.runPromise(runInstalledVisualThenRecipe(env))
+        );
+      }
+      if (command.action === "activate-speech") {
+        return Response.json(
+          await Effect.runPromise(
+            Effect.gen(function* activateAuthenticatedSpeechRecovery() {
+              const authorizer = yield* makeImportAuthorizer(
+                Redacted.make("test-import-token")
+              );
+              yield* authorizer.authorize(command.authorization);
+              const workflowStarter = makeImportWorkflowStarter({
+                createBatch: () =>
+                  Effect.die("Recovery must not create a workflow instance"),
+                get: (id) =>
+                  Effect.promise(async () => {
+                    const instance = await workflow.get(id);
+                    return {
+                      restart: (options) =>
+                        options === undefined
+                          ? Effect.die(
+                              "Speech recovery must identify its restart checkpoint"
+                            )
+                          : Effect.promise(() => instance.restart(options)),
+                      status: () =>
+                        Effect.promise(() => instance.status()).pipe(
+                          Effect.flatMap(
+                            Schema.decodeUnknownEffect(
+                              Schema.Struct({ status: Schema.String }),
+                              { onExcessProperty: "ignore" }
+                            )
+                          ),
+                          Effect.orDie
+                        ),
+                    };
+                  }),
+              });
+              const activation = yield* makeD1ProviderTerminalSettlementService(
+                {
+                  database: env.MealPlannerDatabase,
+                  now: () => decodeImportTimestamp("2026-07-27T09:11:00.000Z"),
+                  runtimeStage: "pilot-gaia-118",
+                  workflowStarter,
+                }
+              ).settle({
+                acquisitionGeneration: decodeGeneration(1),
+                dispatchId: decodeDispatchId(command.dispatchId),
+                importId: decodeImportId(command.importId),
+                operation: "prepare_speech_recovery",
+              });
+              yield* Effect.promise(() =>
+                workflow.unsafeWaitForStatus(command.id, "complete")
+              );
+              const instance = yield* Effect.promise(() =>
+                workflow.get(command.id)
+              );
+              const status = yield* Effect.promise(() => instance.status());
+              return { activation, workflow: status };
+            })
+          )
         );
       }
       if (command.action === "settle-speech") {
@@ -1142,6 +1216,9 @@ export default {
         return Response.json({ outcome: "settled_known_zero" });
       }
       if (command.action === "run") {
+        if (sessionId === undefined) {
+          throw new Error("Workflow run requires an introspection session");
+        }
         await workflow.unsafeSetIntrospectionOperations(sessionId, [
           {
             steps: [
@@ -1171,7 +1248,9 @@ export default {
       await workflow.unsafeWaitForStatus(command.id, "complete");
       return Response.json(await instance.status());
     } finally {
-      await workflow.unsafeStopIntrospection(sessionId);
+      if (sessionId !== undefined) {
+        await workflow.unsafeStopIntrospection(sessionId);
+      }
     }
   },
 };
