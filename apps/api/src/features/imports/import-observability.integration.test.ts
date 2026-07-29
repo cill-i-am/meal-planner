@@ -97,27 +97,10 @@ const gatewayClient = {
       gatewayRequests.push({ body, model, options });
       return Promise.resolve(
         Response.json({
-          choices: [
-            {
-              finish_reason: "tool_calls",
-              message: {
-                content: null,
-                tool_calls: [
-                  {
-                    function: {
-                      arguments: JSON.stringify({
-                        observations: [],
-                        outcome: "empty",
-                      }),
-                      name: "record_visual_evidence",
-                    },
-                    id: "call-1",
-                    type: "function",
-                  },
-                ],
-              },
-            },
-          ],
+          response: {
+            observations: [],
+            outcome: "empty",
+          },
           usage: { completion_tokens: 10, prompt_tokens: 20 },
         })
       );
