@@ -1081,4 +1081,276 @@ describe("provider terminal recovery", () => {
       state: "failed",
     });
   });
+
+  it("prepares one bounded second visual recovery while preserving both failed dispatch audits", async () => {
+    const importId = decodeImportId("00000000-0000-4000-8000-000000000206");
+    const generation = decodeGeneration(1);
+    const originalDispatchId = decodeDispatchId(
+      `visual:${importId}:${generation}`
+    );
+    const firstRecoveryDispatchId = decodeDispatchId(
+      `${originalDispatchId}:recovery:1`
+    );
+    const secondRecoveryDispatchId = decodeDispatchId(
+      `${originalDispatchId}:recovery:2`
+    );
+    const now = "2026-07-29T10:00:00.000Z";
+    const evidence = JSON.stringify([
+      {
+        kind: "original_media",
+        referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
+      },
+      {
+        kind: "acquisition_manifest",
+        referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/manifest.json`,
+      },
+      {
+        kind: "speech_transcript",
+        referenceId: `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
+      },
+    ]);
+
+    await testEnv.MealPlannerDatabase.batch([
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE pilot_provider_stage_budget
+            SET settled_micro_usd = 0,
+                reserved_micro_usd = 0,
+                state = 'open',
+                invoking_dispatch_id = NULL,
+                poison_dispatch_id = NULL
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO recipe_imports (
+           acquisition_generation, canonical_source_id,
+           compatibility_fingerprint, created_at,
+           evidence_references_json, id, recovery_action, source_kind,
+           status, status_code, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video',
+                   'transcribed', NULL, ?)`
+      ).bind(
+        generation,
+        "canonical-gaia-206-second-visual-recovery",
+        "f".repeat(64),
+        now,
+        evidence,
+        importId,
+        now
+      ),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO import_transcriptions (
+           import_id, acquisition_generation, dispatch_id,
+           source_media_sha256, state, transcript_key, transcript_sha256,
+           provider, model, detected_language, usage_audio_milliseconds,
+           usage_input_bytes, estimated_cost_micro_usd, cost_currency,
+           cost_certainty, segments_count, failure_code, created_at,
+           updated_at, completed_at
+         ) VALUES (?, ?, ?, ?, 'transcribed', ?, ?, 'fixture-provider',
+                   'fixture-speech', 'en', 1000, 3, 10, 'USD', 'known', 1,
+                   NULL, ?, ?, ?)`
+      ).bind(
+        importId,
+        generation,
+        `speech:${importId}:${generation}`,
+        "a".repeat(64),
+        `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
+        "b".repeat(64),
+        now,
+        now,
+        now
+      ),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO import_visual_evidence (
+           import_id, acquisition_generation, dispatch_id,
+           source_media_sha256, state, failure_code, created_at,
+           updated_at, completed_at
+         ) VALUES (?, ?, ?, ?, 'failed', 'visual_extraction_failed', ?, ?, ?)`
+      ).bind(
+        importId,
+        generation,
+        originalDispatchId,
+        "a".repeat(64),
+        now,
+        now,
+        now
+      ),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO import_provider_terminal_checkpoints (
+           import_id, acquisition_generation, provider_stage,
+           ownership_id, failure_code, completed_at, created_at
+         ) VALUES (?, ?, 'visual', ?, 'visual_extraction_failed', ?, ?)`
+      ).bind(importId, generation, originalDispatchId, now, now),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO pilot_provider_budget_dispatches (
+           runtime_stage, dispatch_id, run_id, provider_stage_id,
+           maximum_cost_micro_usd, actual_cost_micro_usd, state,
+           created_at, updated_at, invocation_started_at, completed_at
+         ) VALUES (
+           'pilot-gaia-118', ?, 'gaia-206:second-visual-recovery:1',
+           'visual-evidence', 100000, NULL, 'settled_unknown', ?, ?, ?, ?
+         )`
+      ).bind(originalDispatchId, now, now, now, now),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO pilot_provider_budget_reconciliations (
+           runtime_stage, dispatch_id, conservative_charge_micro_usd,
+           actual_cost_was_unknown, authority, created_at
+         ) VALUES (
+           'pilot-gaia-118', ?, 100000, 1, 'authenticated_operator', ?
+         )`
+      ).bind(originalDispatchId, now),
+    ]);
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE pilot_provider_stage_budget
+          SET reserved_micro_usd = 0,
+              settled_micro_usd = 100000
+        WHERE runtime_stage = 'pilot-gaia-118'`
+    ).run();
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO pilot_provider_visual_recoveries (
+         runtime_stage, import_id, acquisition_generation,
+         original_dispatch_id, recovery_dispatch_id, created_at
+       ) VALUES ('pilot-gaia-118', ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        importId,
+        generation,
+        originalDispatchId,
+        firstRecoveryDispatchId,
+        now
+      )
+      .run();
+    await testEnv.MealPlannerDatabase.batch([
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO import_visual_evidence (
+           import_id, acquisition_generation, dispatch_id,
+           source_media_sha256, state, failure_code, created_at,
+           updated_at, completed_at
+         ) VALUES (?, ?, ?, ?, 'failed', 'visual_extraction_failed', ?, ?, ?)`
+      ).bind(
+        importId,
+        generation,
+        firstRecoveryDispatchId,
+        "a".repeat(64),
+        now,
+        now,
+        now
+      ),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO import_provider_terminal_checkpoints (
+           import_id, acquisition_generation, provider_stage,
+           ownership_id, failure_code, completed_at, created_at
+         ) VALUES (?, ?, 'visual', ?, 'visual_extraction_failed', ?, ?)`
+      ).bind(importId, generation, firstRecoveryDispatchId, now, now),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO pilot_provider_budget_dispatches (
+           runtime_stage, dispatch_id, run_id, provider_stage_id,
+           maximum_cost_micro_usd, actual_cost_micro_usd, state,
+           created_at, updated_at, invocation_started_at, completed_at
+         ) VALUES (
+           'pilot-gaia-118', ?, 'gaia-206:second-visual-recovery:2',
+           'visual-evidence', 100000, NULL, 'settled_unknown', ?, ?, ?, ?
+         )`
+      ).bind(firstRecoveryDispatchId, now, now, now, now),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO pilot_provider_budget_reconciliations (
+           runtime_stage, dispatch_id, conservative_charge_micro_usd,
+           actual_cost_was_unknown, authority, created_at
+         ) VALUES (
+           'pilot-gaia-118', ?, 100000, 1, 'authenticated_operator', ?
+         )`
+      ).bind(firstRecoveryDispatchId, now),
+    ]);
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE pilot_provider_stage_budget
+          SET reserved_micro_usd = 0,
+              settled_micro_usd = 200000
+        WHERE runtime_stage = 'pilot-gaia-118'`
+    ).run();
+
+    const recovery = makeD1ProviderTerminalRecoveryRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const command = {
+      acquisitionGeneration: generation,
+      createdAt: decodeImportTimestamp("2026-07-29T10:01:00.000Z"),
+      importId,
+      originalDispatchId: firstRecoveryDispatchId,
+    };
+    const [first, concurrent, replay] = await Promise.all([
+      Effect.runPromise(recovery.prepareVisualUnknownRecovery(command)),
+      Effect.runPromise(recovery.prepareVisualUnknownRecovery(command)),
+      Effect.runPromise(recovery.prepareVisualUnknownRecovery(command)),
+    ]);
+    expect(first).toEqual(concurrent);
+    expect(first).toEqual(replay);
+    expect(first).toEqual({
+      acquisitionGeneration: generation,
+      importId,
+      originalDispatchId: firstRecoveryDispatchId,
+      recoveryDispatchId: secondRecoveryDispatchId,
+    });
+    await expect(
+      Effect.runPromise(
+        recovery.visualDispatchId({
+          acquisitionGeneration: generation,
+          importId,
+        })
+      )
+    ).resolves.toBe(secondRecoveryDispatchId);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT original_dispatch_id, first_recovery_dispatch_id,
+                recovery_dispatch_id
+           FROM pilot_provider_visual_second_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      first_recovery_dispatch_id: firstRecoveryDispatchId,
+      original_dispatch_id: originalDispatchId,
+      recovery_dispatch_id: secondRecoveryDispatchId,
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_visual_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND original_dispatch_id = ?`
+      )
+        .bind(originalDispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_reconciliations
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND dispatch_id IN (?, ?)`
+      )
+        .bind(originalDispatchId, firstRecoveryDispatchId)
+        .first()
+    ).resolves.toEqual({ count: 2 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM import_provider_terminal_checkpoints
+          WHERE import_id = ? AND acquisition_generation = ?
+            AND provider_stage = 'visual'
+            AND ownership_id IN (?, ?)`
+      )
+        .bind(importId, generation, originalDispatchId, firstRecoveryDispatchId)
+        .first()
+    ).resolves.toEqual({ count: 2 });
+    await expect(
+      Effect.runPromise(
+        recovery.prepareVisualUnknownRecovery({
+          ...command,
+          originalDispatchId: secondRecoveryDispatchId,
+        })
+      )
+    ).rejects.toMatchObject({ code: "recovery_not_allowed" });
+  });
 });
