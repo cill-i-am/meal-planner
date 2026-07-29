@@ -1049,7 +1049,7 @@ describe("provider workflow task retry exhaustion", () => {
              import_id, acquisition_generation, dispatch_id,
              source_media_sha256, state, failure_code, created_at,
              updated_at, completed_at
-           ) VALUES (?, ?, ?, ?, 'failed', 'visual_extraction_failed', ?, ?, ?)`
+           ) VALUES (?, ?, ?, ?, 'failed', 'outcome_unknown', ?, ?, ?)`
         )
         .bind(
           importId,
