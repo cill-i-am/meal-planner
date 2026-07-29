@@ -63,15 +63,31 @@ export interface PilotBudgetKnownSettlement extends PilotBudgetReservation {
   readonly actualCostMicroUsd: number;
 }
 
+export interface PilotBudgetConservativeSettlement extends PilotBudgetReservation {
+  readonly conservativeChargeMicroUsd: number;
+  readonly replay: PilotProviderConservativeReplayValue;
+}
+
+export interface PilotProviderConservativeReplayValue {
+  readonly evidenceFingerprint: string;
+  readonly generation: number;
+  readonly importId: string;
+  readonly valueJson: string;
+  readonly valueSha256: string;
+}
+
 export type PilotBudgetDispatchState =
   | "invoking"
   | "released"
   | "reserved"
+  | "settled_conservative"
   | "settled_known"
   | "settled_unknown";
 
 export interface PilotBudgetDispatch {
   readonly actualCostMicroUsd: number | null;
+  readonly conservativeChargeMicroUsd?: number;
+  readonly conservativeReplay?: PilotProviderConservativeReplayValue;
   readonly dispatchId: PilotBudgetDispatchId;
   readonly maximumCostMicroUsd: number;
   readonly providerStageId: PilotBudgetProviderStageId;
@@ -118,6 +134,9 @@ export interface PilotProviderBudgetRepository {
   readonly settleKnown: (
     input: PilotBudgetKnownSettlement
   ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
+  readonly settleConservative: (
+    input: PilotBudgetConservativeSettlement
+  ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
   readonly settleUnknown: (
     input: PilotBudgetReservation
   ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
@@ -140,6 +159,10 @@ export type PilotProviderCost =
   | {
       readonly _tag: "Known";
       readonly actualCostMicroUsd: number;
+    }
+  | {
+      readonly _tag: "Conservative";
+      readonly conservativeChargeMicroUsd: number;
     }
   | { readonly _tag: "Unknown" };
 
@@ -187,12 +210,22 @@ export type PilotProviderDispatchResult<A> =
       readonly actualCostMicroUsd: number;
     }
   | {
+      readonly _tag: "AlreadyConservativelySettled";
+      readonly conservativeChargeMicroUsd: number;
+      readonly value: A;
+    }
+  | {
       readonly _tag: "Completed";
       readonly actualCostMicroUsd: number;
       readonly value: A;
     }
   | {
       readonly _tag: "CompletedUnknownCost";
+      readonly value: A;
+    }
+  | {
+      readonly _tag: "CompletedConservativeCost";
+      readonly conservativeChargeMicroUsd: number;
       readonly value: A;
     };
 
@@ -229,6 +262,14 @@ const previousAttemptMatches = (
   previous.runId === current.runId;
 
 export const runPilotProviderDispatch = <A, E>(input: {
+  readonly conservativeReplay?: {
+    readonly decode: (
+      replay: PilotProviderConservativeReplayValue
+    ) => Effect.Effect<A, E>;
+    readonly encode: (
+      value: A
+    ) => Effect.Effect<PilotProviderConservativeReplayValue, E>;
+  };
   readonly invoke: Effect.Effect<
     PilotProviderInvocationResult<A>,
     E | PilotProviderKnownZeroCostFailure<E>
@@ -236,7 +277,9 @@ export const runPilotProviderDispatch = <A, E>(input: {
   readonly onDispatch?: Effect.Effect<void>;
   readonly onPoison?: Effect.Effect<void>;
   readonly onReservation?: Effect.Effect<void>;
-  readonly onSettlement?: (outcome: "known" | "unknown") => Effect.Effect<void>;
+  readonly onSettlement?: (
+    outcome: "conservative" | "known" | "unknown"
+  ) => Effect.Effect<void>;
   readonly prepare?: Effect.Effect<void, E>;
   readonly previousAttempt?: PilotBudgetReservation;
   readonly repository: PilotProviderBudgetRepository;
@@ -246,8 +289,22 @@ export const runPilotProviderDispatch = <A, E>(input: {
   E | PilotProviderBudgetError,
   PilotProviderBudgetRuntime
 > =>
+  // eslint-disable-next-line complexity -- The durable dispatch state machine keeps every settlement branch explicit.
   Effect.gen(function* runBudgetedProviderDispatch() {
-    const observeSettlement = (outcome: "known" | "unknown") =>
+    const replayConservative = (
+      conservativeChargeMicroUsd: number,
+      replay: PilotProviderConservativeReplayValue | undefined
+    ) =>
+      replay === undefined || input.conservativeReplay === undefined
+        ? Effect.fail(pilotProviderBudgetError("persistence_corrupt"))
+        : input.conservativeReplay.decode(replay).pipe(
+            Effect.map((value) => ({
+              _tag: "AlreadyConservativelySettled" as const,
+              conservativeChargeMicroUsd,
+              value,
+            }))
+          );
+    const observeSettlement = (outcome: "conservative" | "known" | "unknown") =>
       input.onSettlement?.(outcome) ?? Effect.void;
     const observeUnknownSettlement = observeSettlement("unknown").pipe(
       Effect.andThen(input.onPoison ?? Effect.void)
@@ -295,6 +352,20 @@ export const runPilotProviderDispatch = <A, E>(input: {
         actualCostMicroUsd: reserved.actualCostMicroUsd,
       };
     }
+    if (reserved.state === "settled_conservative") {
+      if (
+        reserved.conservativeChargeMicroUsd === undefined ||
+        reserved.conservativeReplay === undefined
+      ) {
+        return yield* Effect.fail(
+          pilotProviderBudgetError("persistence_corrupt")
+        );
+      }
+      return yield* replayConservative(
+        reserved.conservativeChargeMicroUsd,
+        reserved.conservativeReplay
+      );
+    }
     if (reserved.state === "settled_unknown") {
       return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
     }
@@ -330,6 +401,16 @@ export const runPilotProviderDispatch = <A, E>(input: {
           actualCostMicroUsd: dispatch.actualCostMicroUsd,
         };
       }
+      if (
+        dispatch.state === "settled_conservative" &&
+        dispatch.conservativeChargeMicroUsd !== undefined &&
+        dispatch.conservativeReplay !== undefined
+      ) {
+        return yield* replayConservative(
+          dispatch.conservativeChargeMicroUsd,
+          dispatch.conservativeReplay
+        );
+      }
       return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
     }
     if (invocationClaim.dispatch.state !== "invoking") {
@@ -349,6 +430,44 @@ export const runPilotProviderDispatch = <A, E>(input: {
             observeUnknownSettlement
           );
           return { _tag: "CompletedUnknownCost" as const, value: result.value };
+        }
+        if (result.cost._tag === "Conservative") {
+          if (
+            !Number.isSafeInteger(result.cost.conservativeChargeMicroUsd) ||
+            result.cost.conservativeChargeMicroUsd !==
+              input.reservation.maximumCostMicroUsd
+          ) {
+            yield* settleUnknown(
+              input.repository,
+              input.reservation,
+              observeUnknownSettlement
+            );
+            return yield* Effect.fail(
+              pilotProviderBudgetError("cost_exceeds_reservation")
+            );
+          }
+          if (input.conservativeReplay === undefined) {
+            yield* settleUnknown(
+              input.repository,
+              input.reservation,
+              observeUnknownSettlement
+            );
+            return yield* Effect.fail(
+              pilotProviderBudgetError("persistence_corrupt")
+            );
+          }
+          const replay = yield* input.conservativeReplay.encode(result.value);
+          yield* input.repository.settleConservative({
+            ...input.reservation,
+            conservativeChargeMicroUsd: result.cost.conservativeChargeMicroUsd,
+            replay,
+          });
+          yield* observeSettlement("conservative");
+          return {
+            _tag: "CompletedConservativeCost" as const,
+            conservativeChargeMicroUsd: result.cost.conservativeChargeMicroUsd,
+            value: result.value,
+          };
         }
         if (
           !Number.isSafeInteger(result.cost.actualCostMicroUsd) ||

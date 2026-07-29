@@ -29,8 +29,16 @@ const decodeProviderStageId = Schema.decodeUnknownSync(
 );
 const decodeDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
 const decodeTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
-const now = decodeTimestamp("2026-07-25T18:00:00.000Z");
+const now = decodeTimestamp("2026-07-29T18:00:00.000Z");
 const runtime = makePilotProviderBudgetRuntime("pilot-gaia-118");
+const evidenceFingerprint = "e".repeat(64);
+const conservativeReplay = (importId: string, value = "decoded-recipe") => ({
+  evidenceFingerprint,
+  generation: 1,
+  importId,
+  valueJson: JSON.stringify(value),
+  valueSha256: "a".repeat(64),
+});
 
 const reservation = (
   runId: string,
@@ -53,7 +61,19 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await testEnv.MealPlannerDatabase.prepare(
+    "DROP TRIGGER pilot_provider_recipe_replay_values_guarded_delete"
+  ).run();
+  await testEnv.MealPlannerDatabase.prepare(
+    "DROP TRIGGER pilot_provider_budget_conservative_settlements_immutable_delete"
+  ).run();
   await testEnv.MealPlannerDatabase.batch([
+    testEnv.MealPlannerDatabase.prepare(
+      "DELETE FROM pilot_provider_recipe_replay_values"
+    ),
+    testEnv.MealPlannerDatabase.prepare(
+      "DELETE FROM pilot_provider_budget_conservative_settlements"
+    ),
     testEnv.MealPlannerDatabase.prepare(
       "DELETE FROM pilot_provider_budget_dispatches"
     ),
@@ -62,14 +82,45 @@ beforeEach(async () => {
           SET settled_micro_usd = 0, reserved_micro_usd = 0,
               state = 'open', invoking_dispatch_id = NULL,
               poison_dispatch_id = NULL,
-              updated_at = '2026-07-25T18:00:00.000Z'
+              updated_at = '2026-07-29T18:00:00.000Z'
         WHERE runtime_stage = 'pilot-gaia-118'`
     ),
   ]);
+  await testEnv.MealPlannerDatabase.prepare(
+    `CREATE TRIGGER pilot_provider_recipe_replay_values_guarded_delete
+     BEFORE DELETE ON pilot_provider_recipe_replay_values
+     WHEN
+       OLD.expires_at >
+         strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       AND NOT EXISTS (
+         SELECT 1
+           FROM import_recipe_extractions
+          WHERE import_id = OLD.import_id
+            AND acquisition_generation = OLD.generation
+            AND evidence_fingerprint = OLD.evidence_fingerprint
+            AND state IN ('needs_review', 'failed')
+       )
+     BEGIN
+       SELECT RAISE(
+         ABORT,
+         'provider recipe replay value remains live'
+       );
+     END`
+  ).run();
+  await testEnv.MealPlannerDatabase.prepare(
+    `CREATE TRIGGER pilot_provider_budget_conservative_settlements_immutable_delete
+     BEFORE DELETE ON pilot_provider_budget_conservative_settlements
+     BEGIN
+       SELECT RAISE(
+         ABORT,
+         'provider conservative settlement audit is immutable'
+       );
+     END`
+  ).run();
 });
 
 describe("pilot provider stage budget", () => {
-  it("observes only known or unknown outcomes after durable settlement", async () => {
+  it("observes settlement outcomes only after durable settlement", async () => {
     const repository = makeD1PilotProviderBudgetRepository(
       testEnv.MealPlannerDatabase,
       "pilot-gaia-118"
@@ -96,6 +147,442 @@ describe("pilot provider stage budget", () => {
       actualCostMicroUsd: 7,
     });
     expect(outcomes).toEqual(["known"]);
+  });
+
+  it("charges one schema-valid recipe response conservatively without claiming known actual spend", async () => {
+    const repository = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const command = {
+      ...reservation(
+        "gaia-118:import-conservative",
+        `recipe:import-conservative:1:${evidenceFingerprint}`,
+        100_000
+      ),
+      providerStageId: decodeProviderStageId("recipe-extraction"),
+    };
+    const outcomes: string[] = [];
+    let providerCalls = 0;
+    const execute = () =>
+      runPilotProviderDispatch({
+        conservativeReplay: {
+          decode: (replay) =>
+            Effect.try({
+              catch: () => "decode_failed" as const,
+              try: () => JSON.parse(replay.valueJson) as string,
+            }),
+          encode: (value) =>
+            Effect.succeed(conservativeReplay("import-conservative", value)),
+        },
+        invoke: Effect.sync(() => {
+          providerCalls += 1;
+          return {
+            cost: {
+              _tag: "Conservative" as const,
+              conservativeChargeMicroUsd: 100_000,
+            },
+            value: "decoded-recipe",
+          };
+        }),
+        onSettlement: (outcome) =>
+          Effect.sync(() => {
+            outcomes.push(outcome);
+          }),
+        repository,
+        reservation: command,
+      }).pipe(Effect.provideService(PilotProviderBudgetRuntime, runtime));
+
+    await expect(Effect.runPromise(execute())).resolves.toMatchObject({
+      _tag: "CompletedConservativeCost",
+      conservativeChargeMicroUsd: 100_000,
+      value: "decoded-recipe",
+    });
+    await expect(Effect.runPromise(execute())).resolves.toMatchObject({
+      _tag: "AlreadyConservativelySettled",
+      conservativeChargeMicroUsd: 100_000,
+      value: "decoded-recipe",
+    });
+
+    expect(providerCalls).toBe(1);
+    expect(outcomes).toEqual(["conservative"]);
+    await expect(
+      repository.readStage().pipe(Effect.runPromise)
+    ).resolves.toEqual({
+      budgetCapMicroUsd: 10_000_000,
+      reservedMicroUsd: 0,
+      settledMicroUsd: 100_000,
+      state: "open",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT actual_cost_micro_usd, state
+           FROM pilot_provider_budget_dispatches
+          WHERE dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .first()
+    ).resolves.toEqual({
+      actual_cost_micro_usd: null,
+      state: "settled_unknown",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT actual_cost_was_unknown, authority,
+                conservative_charge_micro_usd
+           FROM pilot_provider_budget_conservative_settlements
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .first()
+    ).resolves.toEqual({
+      actual_cost_was_unknown: 1,
+      authority: "schema_valid_provider_response",
+      conservative_charge_micro_usd: 100_000,
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT evidence_fingerprint, expires_at, generation, import_id,
+                value_json, value_sha256
+           FROM pilot_provider_recipe_replay_values
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .first()
+    ).resolves.toEqual({
+      evidence_fingerprint: evidenceFingerprint,
+      expires_at: "2026-08-05T18:00:00.000Z",
+      generation: 1,
+      import_id: "import-conservative",
+      value_json: JSON.stringify("decoded-recipe"),
+      value_sha256: "a".repeat(64),
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE pilot_provider_recipe_replay_values
+            SET value_json = value_json
+          WHERE dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .run()
+    ).rejects.toThrow("provider recipe replay value is immutable");
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `DELETE FROM pilot_provider_recipe_replay_values
+          WHERE dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .run()
+    ).rejects.toThrow("provider recipe replay value remains live");
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE pilot_provider_budget_conservative_settlements
+            SET authority = authority
+          WHERE dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .run()
+    ).rejects.toThrow("provider conservative settlement audit is immutable");
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `DELETE FROM pilot_provider_budget_conservative_settlements
+          WHERE dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .run()
+    ).rejects.toThrow("provider conservative settlement audit is immutable");
+  });
+
+  it("converges concurrent conservative settlements on one immutable charge", async () => {
+    const repository = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const command = {
+      ...reservation(
+        "gaia-118:import-concurrent-conservative",
+        `recipe:import-concurrent-conservative:1:${evidenceFingerprint}`,
+        100_000
+      ),
+      providerStageId: decodeProviderStageId("recipe-extraction"),
+    };
+    await Effect.runPromise(repository.reserve(command));
+    await Effect.runPromise(repository.beginInvocation(command));
+
+    const input = {
+      ...command,
+      conservativeChargeMicroUsd: 100_000,
+      replay: conservativeReplay("import-concurrent-conservative"),
+    };
+    const results = await Promise.allSettled([
+      Effect.runPromise(repository.settleConservative(input)),
+      Effect.runPromise(repository.settleConservative(input)),
+    ]);
+
+    expect(results.every(({ status }) => status === "fulfilled")).toBe(true);
+    expect(await Effect.runPromise(repository.readStage())).toEqual({
+      budgetCapMicroUsd: 10_000_000,
+      reservedMicroUsd: 0,
+      settledMicroUsd: 100_000,
+      state: "open",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_conservative_settlements
+          WHERE dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+  });
+
+  it("rejects multibyte conservative replay JSON over the UTF-8 byte cap", async () => {
+    const repository = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const importId = "import-multibyte-replay";
+    const command = {
+      ...reservation(
+        `gaia-118:${importId}`,
+        `recipe:${importId}:1:${evidenceFingerprint}`,
+        100_000
+      ),
+      providerStageId: decodeProviderStageId("recipe-extraction"),
+    };
+    const valueJson = JSON.stringify({ value: "é".repeat(140_000) });
+    expect(valueJson.length).toBeLessThan(262_144);
+    expect(new TextEncoder().encode(valueJson).byteLength).toBeGreaterThan(
+      262_144
+    );
+    await Effect.runPromise(repository.reserve(command));
+    await Effect.runPromise(repository.beginInvocation(command));
+
+    await expect(
+      Effect.runPromise(
+        repository.settleConservative({
+          ...command,
+          conservativeChargeMicroUsd: 100_000,
+          replay: {
+            ...conservativeReplay(importId),
+            valueJson,
+          },
+        })
+      )
+    ).rejects.toMatchObject({ code: "cost_exceeds_reservation" });
+
+    await Effect.runPromise(repository.settleUnknown(command));
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO pilot_provider_budget_conservative_settlements (
+         actual_cost_was_unknown, authority, conservative_charge_micro_usd,
+         created_at, dispatch_id, runtime_stage
+       ) VALUES (
+         1, 'schema_valid_provider_response', 100000, ?, ?,
+         'pilot-gaia-118'
+       )`
+    )
+      .bind("2026-07-29T18:00:00.000Z", command.dispatchId)
+      .run();
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO pilot_provider_recipe_replay_values (
+           created_at, dispatch_id, evidence_fingerprint, expires_at,
+           generation, import_id, runtime_stage, value_json, value_sha256
+         ) VALUES (?, ?, ?, ?, 1, ?, 'pilot-gaia-118', ?, ?)`
+      )
+        .bind(
+          "2026-07-29T18:00:00.000Z",
+          command.dispatchId,
+          evidenceFingerprint,
+          "2026-08-05T18:00:00.000Z",
+          importId,
+          valueJson,
+          "a".repeat(64)
+        )
+        .run()
+    ).rejects.toThrow();
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_recipe_replay_values
+          WHERE dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+  });
+
+  it("fails closed without redispatch when a conservative replay value is absent", async () => {
+    const repository = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const command = {
+      ...reservation(
+        "gaia-118:import-missing-replay",
+        `recipe:import-missing-replay:1:${evidenceFingerprint}`,
+        100_000
+      ),
+      providerStageId: decodeProviderStageId("recipe-extraction"),
+    };
+    let providerCalls = 0;
+    const execute = () =>
+      runPilotProviderDispatch({
+        conservativeReplay: {
+          decode: (replay) =>
+            Effect.try({
+              catch: () => "decode_failed" as const,
+              try: () => JSON.parse(replay.valueJson) as string,
+            }),
+          encode: (value) =>
+            Effect.succeed(conservativeReplay("import-missing-replay", value)),
+        },
+        invoke: Effect.sync(() => {
+          providerCalls += 1;
+          return {
+            cost: {
+              _tag: "Conservative" as const,
+              conservativeChargeMicroUsd: 100_000,
+            },
+            value: "decoded-recipe",
+          };
+        }),
+        repository,
+        reservation: command,
+      }).pipe(Effect.provideService(PilotProviderBudgetRuntime, runtime));
+
+    await expect(Effect.runPromise(execute())).resolves.toMatchObject({
+      _tag: "CompletedConservativeCost",
+    });
+    await testEnv.MealPlannerDatabase.prepare(
+      "DROP TRIGGER pilot_provider_recipe_replay_values_guarded_delete"
+    ).run();
+    try {
+      await testEnv.MealPlannerDatabase.prepare(
+        `DELETE FROM pilot_provider_recipe_replay_values
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .run();
+    } finally {
+      await testEnv.MealPlannerDatabase.prepare(
+        `CREATE TRIGGER pilot_provider_recipe_replay_values_guarded_delete
+         BEFORE DELETE ON pilot_provider_recipe_replay_values
+         WHEN
+           OLD.expires_at >
+             strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+           AND NOT EXISTS (
+             SELECT 1
+               FROM import_recipe_extractions
+              WHERE import_id = OLD.import_id
+                AND acquisition_generation = OLD.generation
+                AND evidence_fingerprint = OLD.evidence_fingerprint
+                AND state IN ('needs_review', 'failed')
+           )
+         BEGIN
+           SELECT RAISE(
+             ABORT,
+             'provider recipe replay value remains live'
+           );
+         END`
+      ).run();
+    }
+
+    await expect(Effect.runPromise(execute())).rejects.toMatchObject({
+      code: "persistence_corrupt",
+    });
+    expect(providerCalls).toBe(1);
+  });
+
+  it("fails closed on an expired replay and sweeps it during ordinary budget activity", async () => {
+    const repository = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const command = {
+      ...reservation(
+        "gaia-118:import-expired-replay",
+        `recipe:import-expired-replay:1:${evidenceFingerprint}`,
+        100_000
+      ),
+      providerStageId: decodeProviderStageId("recipe-extraction"),
+    };
+    let providerCalls = 0;
+    const execute = () =>
+      runPilotProviderDispatch({
+        conservativeReplay: {
+          decode: (replay) =>
+            Effect.try({
+              catch: () => "decode_failed" as const,
+              try: () => JSON.parse(replay.valueJson) as string,
+            }),
+          encode: (value) =>
+            Effect.succeed(conservativeReplay("import-expired-replay", value)),
+        },
+        invoke: Effect.sync(() => {
+          providerCalls += 1;
+          return {
+            cost: {
+              _tag: "Conservative" as const,
+              conservativeChargeMicroUsd: 100_000,
+            },
+            value: "decoded-recipe",
+          };
+        }),
+        repository,
+        reservation: command,
+      }).pipe(Effect.provideService(PilotProviderBudgetRuntime, runtime));
+
+    await expect(Effect.runPromise(execute())).resolves.toMatchObject({
+      _tag: "CompletedConservativeCost",
+    });
+    await testEnv.MealPlannerDatabase.prepare(
+      "DROP TRIGGER pilot_provider_recipe_replay_values_immutable_update"
+    ).run();
+    try {
+      await testEnv.MealPlannerDatabase.prepare(
+        `UPDATE pilot_provider_recipe_replay_values
+            SET created_at = '2026-07-20T18:00:00.000Z',
+                expires_at = '2026-07-27T18:00:00.000Z'
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .run();
+    } finally {
+      await testEnv.MealPlannerDatabase.prepare(
+        `CREATE TRIGGER pilot_provider_recipe_replay_values_immutable_update
+         BEFORE UPDATE ON pilot_provider_recipe_replay_values
+         BEGIN
+           SELECT RAISE(
+             ABORT,
+             'provider recipe replay value is immutable'
+           );
+         END`
+      ).run();
+    }
+
+    await expect(Effect.runPromise(execute())).rejects.toMatchObject({
+      code: "persistence_corrupt",
+    });
+    expect(providerCalls).toBe(1);
+
+    await Effect.runPromise(
+      repository.reserve(
+        reservation("run_expiry_sweep", "dispatch_expiry_sweep", 1)
+      )
+    );
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT dispatch_id
+           FROM pilot_provider_recipe_replay_values
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(command.dispatchId)
+        .first()
+    ).resolves.toBeNull();
   });
 
   it("adds one exact stage authority without changing provider-stage row invariants", async () => {

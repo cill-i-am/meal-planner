@@ -28,6 +28,7 @@ import type {
 } from "./import.contracts.js";
 import {
   importCarouselEvidence,
+  importRecipeTerminalProjections,
   importRequests,
   importRecipeExtractions,
   importVisualEvidence,
@@ -114,7 +115,15 @@ const importSelection = {
   )`.as("carousel_updated_at"),
   compatibilityFingerprint: recipeImports.compatibilityFingerprint,
   createdAt: recipeImports.createdAt,
-  evidenceReferencesJson: recipeImports.evidenceReferencesJson,
+  evidenceReferencesJson: sql<string>`COALESCE(
+    (
+      SELECT ${importRecipeTerminalProjections.evidenceReferencesJson}
+        FROM ${importRecipeTerminalProjections}
+       WHERE ${importRecipeTerminalProjections.importId} = ${recipeImports.id}
+         AND ${importRecipeTerminalProjections.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
+    ),
+    ${recipeImports.evidenceReferencesJson}
+  )`.as("evidence_references_json"),
   id: recipeImports.id,
   recipeDraftFingerprint: sql<
     string | null
@@ -130,11 +139,43 @@ const importSelection = {
   recipeDraftUpdatedAt: sql<
     string | null
   >`${importRecipeExtractions.updatedAt}`.as("recipe_draft_updated_at"),
-  recoveryAction: recipeImports.recoveryAction,
+  recoveryAction: sql<string | null>`COALESCE(
+    (
+      SELECT ${importRecipeTerminalProjections.recoveryAction}
+        FROM ${importRecipeTerminalProjections}
+       WHERE ${importRecipeTerminalProjections.importId} = ${recipeImports.id}
+         AND ${importRecipeTerminalProjections.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
+    ),
+    ${recipeImports.recoveryAction}
+  )`.as("recovery_action"),
   sourceKind: recipeImports.sourceKind,
-  status: recipeImports.status,
-  statusCode: recipeImports.statusCode,
-  updatedAt: recipeImports.updatedAt,
+  status: sql<string>`COALESCE(
+    (
+      SELECT ${importRecipeTerminalProjections.status}
+        FROM ${importRecipeTerminalProjections}
+       WHERE ${importRecipeTerminalProjections.importId} = ${recipeImports.id}
+         AND ${importRecipeTerminalProjections.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
+    ),
+    ${recipeImports.status}
+  )`.as("status"),
+  statusCode: sql<string | null>`COALESCE(
+    (
+      SELECT ${importRecipeTerminalProjections.statusCode}
+        FROM ${importRecipeTerminalProjections}
+       WHERE ${importRecipeTerminalProjections.importId} = ${recipeImports.id}
+         AND ${importRecipeTerminalProjections.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
+    ),
+    ${recipeImports.statusCode}
+  )`.as("status_code"),
+  updatedAt: sql<string>`COALESCE(
+    (
+      SELECT ${importRecipeTerminalProjections.projectedAt}
+        FROM ${importRecipeTerminalProjections}
+       WHERE ${importRecipeTerminalProjections.importId} = ${recipeImports.id}
+         AND ${importRecipeTerminalProjections.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
+    ),
+    ${recipeImports.updatedAt}
+  )`.as("updated_at"),
   visualFailureCode: importVisualEvidence.failureCode,
   visualManifestKey: importVisualEvidence.manifestKey,
   visualOutcome: importVisualEvidence.outcome,
@@ -168,6 +209,17 @@ const decodeStatus = (row: typeof DatabaseImportRow.Type): ImportStatus => {
   const unclassified = decodeUnclassifiedStatus(row);
   if (unclassified !== null) {
     return unclassified;
+  }
+  if (
+    row.status === "failed" &&
+    row.statusCode === "recipe_extraction_failed" &&
+    row.recoveryAction === "operator_reconcile"
+  ) {
+    return {
+      code: "recipe_extraction_failed",
+      kind: "failed",
+      recovery: "operator_reconcile",
+    };
   }
   if (
     row.status === "failed" &&
@@ -251,6 +303,7 @@ const completedVisualStatus = (outcome: string | null) => {
   }
 };
 
+// eslint-disable-next-line complexity -- Projection decoding rejects every invalid persisted state combination.
 const decodeVisualProjection = (
   row: DatabaseImportRow,
   evidence: readonly EvidenceReference[]
@@ -263,7 +316,12 @@ const decodeVisualProjection = (
     return { evidence, status: decodeStatus(row), updatedAt: row.updatedAt };
   }
   if (
-    row.status !== "transcribed" ||
+    (row.status !== "transcribed" &&
+      !(
+        row.status === "failed" &&
+        row.statusCode === "recipe_extraction_failed" &&
+        row.recoveryAction === "operator_reconcile"
+      )) ||
     row.visualUpdatedAt === null ||
     evidence.length !== 3
   ) {
@@ -309,8 +367,8 @@ const decodeVisualProjection = (
           referenceId: row.visualManifestKey,
         },
       ],
-      status,
-      updatedAt: row.visualUpdatedAt,
+      status: row.status === "failed" ? decodeStatus(row) : status,
+      updatedAt: row.status === "failed" ? row.updatedAt : row.visualUpdatedAt,
     };
   }
   throw new Error("Invalid persisted visual evidence state");
@@ -624,7 +682,9 @@ export const makeD1ImportRepository = (
           ].includes(command.candidate.view.status.kind) &&
           !(
             command.candidate.view.status.kind === "failed" &&
-            command.candidate.view.status.code === "visual_evidence_failed"
+            ["recipe_extraction_failed", "visual_evidence_failed"].includes(
+              command.candidate.view.status.code
+            )
           );
         const { recoveryAction, statusCode } = statusColumns(
           command.candidate.view.status
@@ -962,7 +1022,15 @@ export const makeD1ImportRepository = (
                SET status = 'acquiring', status_code = NULL,
                    recovery_action = NULL, evidence_references_json = '[]',
                    updated_at = ?
-               WHERE id = ? AND (
+               WHERE id = ?
+                 AND NOT EXISTS (
+                   SELECT 1
+                     FROM import_recipe_terminal_projections AS projection
+                    WHERE projection.import_id = recipe_imports.id
+                      AND projection.acquisition_generation =
+                          recipe_imports.acquisition_generation
+                 )
+                 AND (
                  status = 'queued' OR (
                    status = 'failed'
                    AND status_code = 'acquisition_temporarily_unavailable'

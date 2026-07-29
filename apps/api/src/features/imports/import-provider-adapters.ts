@@ -1,7 +1,8 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
-import { Cause, Clock, Effect, Option, Schema } from "effect";
+import { Cause, Effect, Option, Schema } from "effect";
+import * as Clock from "effect/Clock";
 import type { LanguageModel, Prompt } from "effect/unstable/ai";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
@@ -15,6 +16,7 @@ import {
 import type {
   PilotBudgetRunId,
   PilotBudgetTimestamp,
+  PilotProviderConservativeReplayValue,
   PilotProviderKnownZeroCostFailure,
   PilotProviderBudgetRepository,
   PilotProviderBudgetRuntimeShape,
@@ -33,6 +35,7 @@ import type {
   RecipeExtractorShape,
 } from "./import-recipe-extractor.js";
 import {
+  RecipeExtraction,
   RecipeExtractionSemantics,
   RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
@@ -73,6 +76,14 @@ type SafeProviderFailureCode =
   | "timeout";
 
 interface ProviderDispatchRequest<A, E> {
+  readonly conservativeReplay?: {
+    readonly decode: (
+      replay: PilotProviderConservativeReplayValue
+    ) => Effect.Effect<A, E>;
+    readonly encode: (
+      value: A
+    ) => Effect.Effect<PilotProviderConservativeReplayValue, E>;
+  };
   readonly dispatchId: string;
   readonly invoke: Effect.Effect<
     {
@@ -80,6 +91,10 @@ interface ProviderDispatchRequest<A, E> {
         | {
             readonly _tag: "Known";
             readonly actualCostMicroUsd: number;
+          }
+        | {
+            readonly _tag: "Conservative";
+            readonly conservativeChargeMicroUsd: number;
           }
         | { readonly _tag: "Unknown" };
       readonly value: A;
@@ -135,6 +150,9 @@ export const makePilotProviderDispatchGate = (input: {
         timestamp,
       };
       return yield* runPilotProviderDispatch({
+        ...(request.conservativeReplay === undefined
+          ? {}
+          : { conservativeReplay: request.conservativeReplay }),
         invoke: request.invoke,
         onDispatch: emitImportObservabilityEvent({
           correlationId: input.correlationId,
@@ -179,7 +197,11 @@ export const makePilotProviderDispatchGate = (input: {
       Effect.flatMap((result) => {
         switch (result._tag) {
           case "Completed":
+          case "CompletedConservativeCost":
           case "CompletedUnknownCost": {
+            return Effect.succeed(result.value);
+          }
+          case "AlreadyConservativelySettled": {
             return Effect.succeed(result.value);
           }
           case "AlreadySettled": {
@@ -232,6 +254,72 @@ const safeFailureCode = (
   }
   return "provider_unavailable";
 };
+
+const recipeReplaySha256 = (valueJson: string) =>
+  Effect.tryPromise({
+    catch: () => "malformed_response" as const,
+    try: async () => {
+      const digest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(valueJson)
+      );
+      return [...new Uint8Array(digest)]
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+    },
+  });
+
+const RecipeReplayMaximumBytes = 262_144;
+
+const recipeReplayByteLength = (valueJson: string) =>
+  new TextEncoder().encode(valueJson).byteLength;
+
+const recipeConservativeReplay = (
+  request: RecipeEvidenceAssembly
+): NonNullable<
+  ProviderDispatchRequest<
+    RecipeExtraction,
+    SafeProviderFailureCode
+  >["conservativeReplay"]
+> => ({
+  decode: (replay) =>
+    Effect.gen(function* decodeRecipeReplay() {
+      if (
+        replay.evidenceFingerprint !== request.evidenceFingerprint ||
+        replay.generation !== request.generation ||
+        replay.importId !== request.importId ||
+        recipeReplayByteLength(replay.valueJson) === 0 ||
+        recipeReplayByteLength(replay.valueJson) > RecipeReplayMaximumBytes ||
+        (yield* recipeReplaySha256(replay.valueJson)) !== replay.valueSha256
+      ) {
+        return yield* Effect.fail("malformed_response" as const);
+      }
+      const parsed = yield* Effect.try({
+        catch: () => "malformed_response" as const,
+        try: () => JSON.parse(replay.valueJson) as unknown,
+      });
+      return yield* Schema.decodeUnknownEffect(RecipeExtraction, {
+        onExcessProperty: "error",
+      })(parsed).pipe(Effect.mapError(() => "malformed_response" as const));
+    }),
+  encode: (value) =>
+    Effect.gen(function* encodeRecipeReplay() {
+      const valueJson = JSON.stringify(
+        Schema.encodeSync(RecipeExtraction)(value)
+      );
+      const valueByteLength = recipeReplayByteLength(valueJson);
+      if (valueByteLength === 0 || valueByteLength > RecipeReplayMaximumBytes) {
+        return yield* Effect.fail("malformed_response" as const);
+      }
+      return {
+        evidenceFingerprint: request.evidenceFingerprint,
+        generation: request.generation,
+        importId: request.importId,
+        valueJson,
+        valueSha256: yield* recipeReplaySha256(valueJson),
+      };
+    }),
+});
 
 const isProviderTransportFailure = (error: unknown) => {
   if (typeof error !== "object" || error === null) {
@@ -883,6 +971,7 @@ export const makeInstalledRecipeExtractor = (input: {
       extract: (request) =>
         input.dispatch
           .run({
+            conservativeReplay: recipeConservativeReplay(request),
             dispatchId: `recipe:${request.importId}:${request.generation}:${request.evidenceFingerprint}`,
             invoke: Effect.gen(function* extractRecipeSemantics() {
               const startedAt = yield* Clock.currentTimeMillis;
@@ -904,10 +993,25 @@ export const makeInstalledRecipeExtractor = (input: {
                   }
                 );
               const completedAt = yield* Clock.currentTimeMillis;
-              const cost = pricedTokenUsage(inputTokens, outputTokens, {
+              const meteredCost = pricedTokenUsage(inputTokens, outputTokens, {
                 inputMicroUsdPerToken: 0.29,
                 outputMicroUsdPerToken: 2.25,
               });
+              // A schema-valid response proves this bounded recipe call
+              // completed. When the provider omits trustworthy usage, charge
+              // the reservation maximum against the safety ledger without
+              // representing it as known provider spend.
+              const cost =
+                meteredCost._tag === "Known"
+                  ? meteredCost
+                  : {
+                      _tag: "Conservative" as const,
+                      conservativeChargeMicroUsd: RecipeMaximumCostMicroUsd,
+                    };
+              const estimatedMicroUsd =
+                cost._tag === "Known"
+                  ? cost.actualCostMicroUsd
+                  : cost.conservativeChargeMicroUsd;
               return {
                 cost,
                 value: {
@@ -915,10 +1019,7 @@ export const makeInstalledRecipeExtractor = (input: {
                   cost: {
                     certainty: "estimated" as const,
                     currency: "USD" as const,
-                    estimatedMicroUsd:
-                      cost._tag === "Known"
-                        ? cost.actualCostMicroUsd
-                        : RecipeMaximumCostMicroUsd,
+                    estimatedMicroUsd,
                   },
                   usage: {
                     inputEvidenceItems: request.items.length,

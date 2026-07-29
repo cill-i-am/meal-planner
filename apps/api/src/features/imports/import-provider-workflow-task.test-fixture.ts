@@ -24,6 +24,7 @@ import { AcquisitionGeneration } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
 import {
+  makeInstalledRecipeExtractor,
   makeInstalledSpeechTranscriber,
   makeInstalledVisualEvidenceExtractor,
   makePilotProviderDispatchGate,
@@ -43,6 +44,8 @@ interface ProviderWorkflowInput {
   readonly importId?: string;
   readonly scenario:
     | "retry_exhausted"
+    | "recipe_conservative_crash_replay"
+    | "recipe_conservative_success"
     | "speech_terminal_recovery"
     | "speech_terminal_recovery_poison"
     | "success"
@@ -113,6 +116,153 @@ const increment = (
     const value = Number((await env.PROVIDER_WORKFLOW_STATE.get(key)) ?? "0");
     await env.PROVIDER_WORKFLOW_STATE.put(key, String(value + 1));
   });
+
+const readNumber = (
+  env: ProviderWorkflowTestEnv,
+  instanceId: string,
+  name: string
+) =>
+  Effect.promise(async () =>
+    Number(
+      (await env.PROVIDER_WORKFLOW_STATE.get(stateKey(instanceId, name))) ?? "0"
+    )
+  );
+
+const unresolvedString = {
+  citations: [],
+  origin: "unresolved",
+  reason: "not present in evidence",
+  state: "unresolved",
+} as const;
+const unresolvedNumber = unresolvedString;
+const unresolvedList = {
+  items: [],
+  reason: "not present in evidence",
+  state: "unresolved",
+} as const;
+const validRecipeSemantics = {
+  author: unresolvedString,
+  category: unresolvedString,
+  cookTimeMinutes: unresolvedNumber,
+  cuisine: unresolvedString,
+  description: unresolvedString,
+  ingredientLines: unresolvedList,
+  instructions: unresolvedList,
+  name: unresolvedString,
+  nutrition: unresolvedString,
+  prepTimeMinutes: unresolvedNumber,
+  sourceUrl: unresolvedString,
+  supportedClaims: unresolvedList,
+  temperatureCelsius: unresolvedNumber,
+  tools: unresolvedList,
+  totalTimeMinutes: unresolvedNumber,
+  unresolvedFields: ["name", "description", "ingredient_lines", "instructions"],
+  yield: unresolvedString,
+} as const;
+
+const installedRecipeConservativeDispatch = (
+  env: ProviderWorkflowTestEnv,
+  instanceId: string,
+  importId: ImportId,
+  crashAfterSettlement: boolean
+) =>
+  Effect.gen(function* runInstalledRecipeConservativeDispatch() {
+    yield* increment(env, instanceId, "task-attempts");
+    const generation = decodeGeneration(1);
+    const correlationId = decodeCorrelationId(
+      "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2205"
+    );
+    const repository = makeD1PilotProviderBudgetRepository(
+      env.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const dispatch = makePilotProviderDispatchGate({
+      correlationId,
+      now: () => decodeTimestamp("2026-07-29T13:00:00.000Z"),
+      repository,
+      runId: decodeRunId(`gaia-118:${importId}`),
+      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
+    });
+    const client = {
+      gateway: Effect.die("universal AI Gateway binding must not be used"),
+      id: Effect.succeed("meal-planner-pilot-gaia-118"),
+      raw: Effect.succeed({
+        run: async (
+          _model: unknown,
+          _body: unknown,
+          options: unknown
+        ): Promise<Response> => {
+          if (
+            JSON.stringify(options) !==
+            JSON.stringify({
+              gateway: {
+                collectLog: false,
+                id: "meal-planner-pilot-gaia-118",
+                skipCache: true,
+              },
+              returnRawResponse: true,
+            })
+          ) {
+            throw new Error("Gateway logging was not disabled");
+          }
+          await Effect.runPromise(increment(env, instanceId, "provider-calls"));
+          return Response.json({
+            response: "",
+            tool_calls: [
+              {
+                arguments: validRecipeSemantics,
+                name: "record_recipe",
+              },
+            ],
+          });
+        },
+      }),
+      run: () => Effect.die("universal AI Gateway dispatch must not be used"),
+    } as unknown as QueryGatewayClient;
+    const extractor = yield* makeInstalledRecipeExtractor({
+      client,
+      correlationId,
+      dispatch,
+    });
+    const output = yield* extractor.extract({
+      evidenceFingerprint: "e".repeat(64),
+      generation,
+      importId,
+      items: [
+        {
+          artifactReference: "private:evidence",
+          evidenceId: "evidence-1",
+          kind: "caption",
+          origin: "creator_provided",
+          value: "visible evidence",
+        },
+      ],
+    });
+    yield* increment(env, instanceId, "recipe-adapter-completions");
+    if (
+      output.cost.certainty !== "estimated" ||
+      output.cost.estimatedMicroUsd !== 100_000 ||
+      output.usage.inputTokens !== 0 ||
+      output.usage.outputTokens !== 0
+    ) {
+      return yield* Effect.die(
+        "Installed recipe adapter did not preserve conservative cost evidence"
+      );
+    }
+    if (
+      crashAfterSettlement &&
+      (yield* readNumber(env, instanceId, "post-settlement-crashes")) === 0
+    ) {
+      yield* increment(env, instanceId, "post-settlement-crashes");
+      return yield* Effect.die(
+        new Error(
+          "simulated crash after conservative settlement and before the task checkpoint"
+        )
+      );
+    }
+    yield* increment(env, instanceId, "recipe-dispatch-completions");
+    return "recipe-conservative-evidence" as const;
+  }).pipe(Effect.provideService(RuntimeContext, testRuntimeContext));
 
 const installedSpeechDispatch = (
   env: ProviderWorkflowTestEnv,
@@ -615,6 +765,8 @@ const directProviderEffect = (
   );
 
 const providerStageByScenario = {
+  recipe_conservative_crash_replay: "recipe",
+  recipe_conservative_success: "recipe",
   retry_exhausted: "speech",
   speech_terminal_recovery: "speech",
   speech_terminal_recovery_poison: "speech",
@@ -785,6 +937,30 @@ const providerWorkflowExport = {
               stage: "recipe" as const,
             })
           );
+        }
+        if (
+          input.scenario === "recipe_conservative_success" ||
+          input.scenario === "recipe_conservative_crash_replay"
+        ) {
+          if (input.importId === undefined) {
+            return yield* Effect.die("Missing conservative recipe import ID");
+          }
+          const checkpoint = yield* runProviderTask(
+            "extract-recipe-conservative-v1",
+            "recipe",
+            installedRecipeConservativeDispatch(
+              env,
+              event.instanceId,
+              decodeImportId(input.importId),
+              input.scenario === "recipe_conservative_crash_replay"
+            ),
+            (evidence) => ({
+              _tag: "Succeeded" as const,
+              evidence,
+              stage: "recipe" as const,
+            })
+          );
+          return yield* task("finalize-terminal", Effect.succeed(checkpoint));
         }
         const stage = providerStageByScenario[input.scenario];
         let provider: Effect.Effect<string, { readonly code: string }>;

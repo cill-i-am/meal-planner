@@ -144,6 +144,40 @@ export const recipeImports = sqliteTable(
   ]
 );
 
+export const importRecipeTerminalProjections = sqliteTable(
+  "import_recipe_terminal_projections",
+  {
+    acquisitionGeneration: integer("acquisition_generation").notNull(),
+    evidenceReferencesJson: text("evidence_references_json").notNull(),
+    importId: text("import_id").notNull(),
+    ownershipId: text("ownership_id").notNull(),
+    projectedAt: text("projected_at").notNull(),
+    recoveryAction: text("recovery_action", {
+      enum: ["operator_reconcile"],
+    }).notNull(),
+    status: text("status", { enum: ["failed"] }).notNull(),
+    statusCode: text("status_code", {
+      enum: ["recipe_extraction_failed"],
+    }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.importId, table.acquisitionGeneration],
+    }),
+    foreignKey({
+      columns: [table.importId],
+      foreignColumns: [recipeImports.id],
+      name: "import_recipe_terminal_projections_import_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check(
+      "import_recipe_terminal_projections_details_check",
+      sql`${table.status} = 'failed' AND ${table.statusCode} = 'recipe_extraction_failed' AND ${table.recoveryAction} = 'operator_reconcile' AND json_valid(${table.evidenceReferencesJson}) AND json_array_length(${table.evidenceReferencesJson}) IN (0, 3) AND length(${table.ownershipId}) = 64 AND ${table.ownershipId} NOT GLOB '*[^0-9a-f]*'`
+    ),
+  ]
+);
+
 export const importRequests = sqliteTable(
   "import_requests",
   {

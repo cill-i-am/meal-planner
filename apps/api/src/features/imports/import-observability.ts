@@ -56,6 +56,7 @@ export const ImportObservabilityEvent = Schema.Struct({
     Schema.Literals([
       "accepted",
       "completed",
+      "conservative",
       "decoded",
       "exhausted",
       "failed",
