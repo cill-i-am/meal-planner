@@ -963,6 +963,7 @@ describe("provider workflow task retry exhaustion", () => {
     const speechDispatchId = `speech:${importId}:${generation}`;
     const now = "2026-07-29T10:00:00.000Z";
     const completedAt = "2026-07-29T10:02:00.000Z";
+    const checkpointCompletedAt = "2026-07-29T10:02:00.962Z";
     const database = await runtime.getD1Database("MealPlannerDatabase");
     const stageBefore = await database
       .prepare(
@@ -1070,8 +1071,8 @@ describe("provider workflow task retry exhaustion", () => {
           importId,
           generation,
           originalDispatchId,
-          completedAt,
-          completedAt
+          checkpointCompletedAt,
+          checkpointCompletedAt
         ),
       database
         .prepare(
