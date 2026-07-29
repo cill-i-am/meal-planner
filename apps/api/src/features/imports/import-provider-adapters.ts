@@ -56,7 +56,7 @@ export const InstalledVisualModel = "@cf/google/gemma-4-26b-a4b-it" as const;
 export const InstalledRecipeModel =
   "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 
-const ProviderTimeout = "60 seconds";
+const ProviderTimeout = "150 seconds";
 const SpeechMaximumCostMicroUsd = 50_000;
 const VisualMaximumCostMicroUsd = 100_000;
 const RecipeMaximumCostMicroUsd = 100_000;
