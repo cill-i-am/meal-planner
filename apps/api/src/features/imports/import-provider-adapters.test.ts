@@ -19,8 +19,10 @@ import {
 } from "./import-provider-adapters.js";
 import type { ProviderDispatchGate } from "./import-provider-adapters.js";
 import { hasMinimumRecipeEvidence } from "./import-recipe-draft.js";
-import { RecipeExtraction } from "./import-recipe-extractor.js";
-import { VisualEvidence } from "./import-visual-evidence-extractor.js";
+import {
+  RecipeExtraction,
+  RecipeExtractionSemantics,
+} from "./import-recipe-extractor.js";
 
 const makeRawGateway = (response: Response) => {
   const requests: unknown[] = [];
@@ -133,15 +135,10 @@ const unresolvedList = {
   state: "unresolved",
 } as const;
 
-const validRecipe = {
+const validRecipeSemantics = {
   author: unresolvedString,
   category: unresolvedString,
   cookTimeMinutes: unresolvedNumber,
-  cost: {
-    certainty: "estimated",
-    currency: "USD",
-    estimatedMicroUsd: 50,
-  },
   cuisine: unresolvedString,
   description: unresolvedString,
   ingredientLines: unresolvedList,
@@ -155,6 +152,16 @@ const validRecipe = {
   tools: unresolvedList,
   totalTimeMinutes: unresolvedNumber,
   unresolvedFields: ["name", "description", "ingredient_lines", "instructions"],
+  yield: unresolvedString,
+} as const;
+
+const validRecipe = {
+  ...validRecipeSemantics,
+  cost: {
+    certainty: "estimated",
+    currency: "USD",
+    estimatedMicroUsd: 50,
+  },
   usage: {
     inputEvidenceItems: 1,
     inputTokens: 20,
@@ -162,7 +169,6 @@ const validRecipe = {
     modelCalls: 1,
     outputTokens: 10,
   },
-  yield: unresolvedString,
 };
 
 const validVisual = {
@@ -177,6 +183,11 @@ const validVisual = {
   provider: "cloudflare-workers-ai",
   usage: { inputBytes: 3, inputFrames: 1, modelCalls: 1 },
 };
+
+const validVisualSemantics = {
+  observations: [],
+  outcome: "empty",
+} as const;
 
 const toolResponse = (name: string, value: unknown) => ({
   choices: [
@@ -487,9 +498,9 @@ describe("installed import provider adapters", () => {
     log.mockRestore();
   });
 
-  it("uses the installed forced single-tool JSON Schema path for visual evidence", async () => {
+  it("accepts semantic-only visual output and injects trusted transport metadata", async () => {
     const gateway = makeGateway(
-      toolResponse("record_visual_evidence", validVisual)
+      toolResponse("record_visual_evidence", validVisualSemantics)
     );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
@@ -519,12 +530,15 @@ describe("installed import provider adapters", () => {
     );
 
     expect(output).toEqual({
-      ...validVisual,
+      ...validVisualSemantics,
       cost: {
         certainty: "estimated",
         currency: "USD",
         estimatedMicroUsd: 8,
       },
+      model: "@cf/meta/llama-3.2-11b-vision-instruct",
+      provider: "cloudflare-workers-ai",
+      usage: { inputBytes: 3, inputFrames: 1, modelCalls: 1 },
     });
     expect(gateway.requests).toHaveLength(1);
     const request = gateway.requests[0] as {
@@ -562,11 +576,108 @@ describe("installed import provider adapters", () => {
     expect(request.body.tool_choice).toBe("required");
     expect(request.body.tools).toHaveLength(1);
     expect(request.body.tools[0]?.function.name).toBe("record_visual_evidence");
-    expect(request.body.tools[0]?.function.parameters).toEqual(
-      Tool.getJsonSchema(
-        Tool.make("record_visual_evidence", { parameters: VisualEvidence })
+    const parameters = request.body.tools[0]?.function.parameters;
+    expect(parameters).toMatchObject({
+      additionalProperties: false,
+      properties: {
+        observations: expect.any(Object),
+        outcome: expect.any(Object),
+      },
+      required: ["observations", "outcome"],
+      type: "object",
+    });
+    expect(
+      Object.keys(
+        (
+          parameters as {
+            readonly properties: Record<string, unknown>;
+          }
+        ).properties
       )
+    ).toEqual(["observations", "outcome"]);
+  });
+
+  it("rejects model attempts to inject visual transport metadata", async () => {
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", validVisual)
     );
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 0,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+  });
+
+  it("preserves absent visual usage as unknown for the atomic ledger", async () => {
+    const response = toolResponse(
+      "record_visual_evidence",
+      validVisualSemantics
+    );
+    delete (response as { usage?: unknown }).usage;
+    const costs: string[] = [];
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: makeGateway(response).client,
+        correlationId,
+        dispatch: {
+          run: (input) =>
+            input.invoke.pipe(
+              Effect.tap(({ cost }) =>
+                Effect.sync(() => {
+                  costs.push(cost._tag);
+                })
+              ),
+              Effect.map(({ value }) => value)
+            ),
+        },
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 0,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(costs).toEqual(["Unknown"]);
+    expect(output.cost.estimatedMicroUsd).toBe(100_000);
   });
 
   it.each([
@@ -644,8 +755,8 @@ describe("installed import provider adapters", () => {
     [
       "schema-invalid arguments",
       toolResponse("record_recipe", {
-        ...validRecipe,
-        cost: { ...validRecipe.cost, estimatedMicroUsd: "not-a-number" },
+        ...validRecipeSemantics,
+        name: { ...validRecipeSemantics.name, state: "invalid" },
       }),
     ],
   ])("fails closed for %s", async (_label, response) => {
@@ -680,8 +791,10 @@ describe("installed import provider adapters", () => {
     );
   });
 
-  it("exposes the exact recipe schema to the installed transport", async () => {
-    const gateway = makeGateway(toolResponse("record_recipe", validRecipe));
+  it("accepts semantic-only recipe output and injects trusted transport usage", async () => {
+    const gateway = makeGateway(
+      toolResponse("record_recipe", validRecipeSemantics)
+    );
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -706,6 +819,21 @@ describe("installed import provider adapters", () => {
         ],
       })
     );
+    expect(output).toEqual({
+      ...validRecipeSemantics,
+      cost: {
+        certainty: "estimated",
+        currency: "USD",
+        estimatedMicroUsd: 29,
+      },
+      usage: {
+        inputEvidenceItems: 1,
+        inputTokens: 20,
+        latencyMilliseconds: expect.any(Number),
+        modelCalls: 1,
+        outputTokens: 10,
+      },
+    });
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
     const request = gateway.requests[0] as {
       readonly body: {
@@ -735,13 +863,43 @@ describe("installed import provider adapters", () => {
     expect(request.options).not.toHaveProperty("headers");
     expect(request.body.tools[0]?.function.parameters).toEqual(
       Tool.getJsonSchema(
-        Tool.make("record_recipe", { parameters: RecipeExtraction })
+        Tool.make("record_recipe", { parameters: RecipeExtractionSemantics })
       )
     );
   });
 
+  it("rejects model attempts to inject recipe transport metadata", async () => {
+    const gateway = makeGateway(toolResponse("record_recipe", validRecipe));
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "visible evidence",
+          },
+        ],
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+  });
+
   it("preserves absent installed usage as unknown for the atomic ledger", async () => {
-    const response = toolResponse("record_recipe", validRecipe);
+    const response = toolResponse("record_recipe", validRecipeSemantics);
     delete (response as { usage?: unknown }).usage;
     const gateway = makeGateway(response);
     const costs: string[] = [];

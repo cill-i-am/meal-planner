@@ -91,16 +91,11 @@ export const RecipeUnresolvedField = Schema.Literals([
 ]);
 export type RecipeUnresolvedField = typeof RecipeUnresolvedField.Type;
 
-/** Strict provider-neutral recipe result. Raw adapter output is decoded here. */
-export const RecipeExtraction = Schema.Struct({
+/** Strict model-owned recipe semantics, excluding adapter transport metadata. */
+export const RecipeExtractionSemantics = Schema.Struct({
   author: RecipeStringFact,
   category: RecipeStringFact,
   cookTimeMinutes: RecipeNumberFact,
-  cost: Schema.Struct({
-    certainty: Schema.Literals(["estimated", "known"]),
-    currency: Schema.Literal("USD"),
-    estimatedMicroUsd: SafeInteger,
-  }),
   cuisine: RecipeStringFact,
   description: RecipeStringFact,
   ingredientLines: RecipeFactList,
@@ -116,6 +111,18 @@ export const RecipeExtraction = Schema.Struct({
   unresolvedFields: Schema.Array(RecipeUnresolvedField).pipe(
     Schema.check(Schema.isMaxLength(16))
   ),
+  yield: RecipeStringFact,
+});
+export type RecipeExtractionSemantics = typeof RecipeExtractionSemantics.Type;
+
+/** Strict provider-neutral recipe result. Raw adapter output is decoded here. */
+export const RecipeExtraction = Schema.Struct({
+  ...RecipeExtractionSemantics.fields,
+  cost: Schema.Struct({
+    certainty: Schema.Literals(["estimated", "known"]),
+    currency: Schema.Literal("USD"),
+    estimatedMicroUsd: SafeInteger,
+  }),
   usage: Schema.Struct({
     inputEvidenceItems: SafeInteger.pipe(Schema.check(Schema.isGreaterThan(0))),
     inputTokens: SafeInteger,
@@ -123,7 +130,6 @@ export const RecipeExtraction = Schema.Struct({
     modelCalls: Schema.Literal(1),
     outputTokens: SafeInteger,
   }),
-  yield: RecipeStringFact,
 });
 export type RecipeExtraction = typeof RecipeExtraction.Type;
 

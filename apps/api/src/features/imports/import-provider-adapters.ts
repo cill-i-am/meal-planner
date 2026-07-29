@@ -1,7 +1,7 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
-import { Cause, Effect, Option, Schema } from "effect";
+import { Cause, Clock, Effect, Option, Schema } from "effect";
 import type { LanguageModel, Prompt } from "effect/unstable/ai";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
@@ -33,7 +33,7 @@ import type {
   RecipeExtractorShape,
 } from "./import-recipe-extractor.js";
 import {
-  RecipeExtraction,
+  RecipeExtractionSemantics,
   RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
 import type {
@@ -47,7 +47,7 @@ import type {
   VisualEvidenceExtractionInput,
   VisualEvidenceExtractorShape,
 } from "./import-visual-evidence-extractor.js";
-import { VisualEvidence } from "./import-visual-evidence-extractor.js";
+import { VisualEvidenceSemantics } from "./import-visual-evidence-extractor.js";
 
 const ProviderName = "cloudflare-workers-ai" as const;
 export const InstalledSpeechModel =
@@ -292,9 +292,13 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
   SafeProviderFailureCode,
   S["DecodingServices"]
 > => {
-  const tool = Tool.make(input.name, {
+  const tool = Tool.dynamic(input.name, {
     description: input.description,
-    parameters: input.schema,
+    // Keep the provider-facing contract strict while retaining the untrusted
+    // arguments verbatim for the explicit fail-closed decode below. Tool.make
+    // decodes parameters inside Effect's response schema first, where excess
+    // object properties are stripped before this adapter can reject them.
+    parameters: Tool.getJsonSchemaFromSchema(input.schema),
   });
   const toolkit = Toolkit.make(tool);
   return failAfter(
@@ -560,7 +564,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                   "Record bounded visual evidence from source images.",
                 name: "record_visual_evidence",
                 prompt: visualPrompt(request),
-                schema: VisualEvidence,
+                schema: VisualEvidenceSemantics,
               },
               {
                 correlationId: input.correlationId,
@@ -583,6 +587,16 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                         cost._tag === "Known"
                           ? cost.actualCostMicroUsd
                           : VisualMaximumCostMicroUsd,
+                    },
+                    model,
+                    provider: ProviderName,
+                    usage: {
+                      inputBytes: request.frames.reduce(
+                        (total, frame) => total + frame.bytes.byteLength,
+                        0
+                      ),
+                      inputFrames: request.frames.length,
+                      modelCalls: 1 as const,
                     },
                   },
                 };
@@ -637,46 +651,50 @@ export const makeInstalledRecipeExtractor = (input: {
         input.dispatch
           .run({
             dispatchId: `recipe:${request.importId}:${request.generation}:${request.evidenceFingerprint}`,
-            invoke: oneForcedToolCall(
-              service,
-              {
-                description:
-                  "Record only provenance-backed recipe facts and unresolved fields.",
-                name: "record_recipe",
-                prompt: recipePrompt(request),
-                schema: RecipeExtraction,
-              },
-              {
-                correlationId: input.correlationId,
-                providerStage: "recipe",
-              }
-            ).pipe(
-              Effect.map(({ inputTokens, outputTokens, value }) => {
-                const cost = pricedTokenUsage(inputTokens, outputTokens, {
-                  inputMicroUsdPerToken: 0.29,
-                  outputMicroUsdPerToken: 2.25,
-                });
-                return {
-                  cost,
-                  value: {
-                    ...value,
-                    cost: {
-                      certainty: "estimated" as const,
-                      currency: "USD" as const,
-                      estimatedMicroUsd:
-                        cost._tag === "Known"
-                          ? cost.actualCostMicroUsd
-                          : RecipeMaximumCostMicroUsd,
-                    },
-                    usage: {
-                      ...value.usage,
-                      inputTokens: inputTokens ?? 0,
-                      outputTokens: outputTokens ?? 0,
-                    },
+            invoke: Effect.gen(function* extractRecipeSemantics() {
+              const startedAt = yield* Clock.currentTimeMillis;
+              const { inputTokens, outputTokens, value } =
+                yield* oneForcedToolCall(
+                  service,
+                  {
+                    description:
+                      "Record only provenance-backed recipe facts and unresolved fields.",
+                    name: "record_recipe",
+                    prompt: recipePrompt(request),
+                    schema: RecipeExtractionSemantics,
                   },
-                };
-              })
-            ),
+                  {
+                    correlationId: input.correlationId,
+                    providerStage: "recipe",
+                  }
+                );
+              const completedAt = yield* Clock.currentTimeMillis;
+              const cost = pricedTokenUsage(inputTokens, outputTokens, {
+                inputMicroUsdPerToken: 0.29,
+                outputMicroUsdPerToken: 2.25,
+              });
+              return {
+                cost,
+                value: {
+                  ...value,
+                  cost: {
+                    certainty: "estimated" as const,
+                    currency: "USD" as const,
+                    estimatedMicroUsd:
+                      cost._tag === "Known"
+                        ? cost.actualCostMicroUsd
+                        : RecipeMaximumCostMicroUsd,
+                  },
+                  usage: {
+                    inputEvidenceItems: request.items.length,
+                    inputTokens: inputTokens ?? 0,
+                    latencyMilliseconds: Math.max(0, completedAt - startedAt),
+                    modelCalls: 1 as const,
+                    outputTokens: outputTokens ?? 0,
+                  },
+                },
+              };
+            }),
             maximumCostMicroUsd: RecipeMaximumCostMicroUsd,
             providerStage: "recipe",
             providerStageId: "recipe-extraction",
