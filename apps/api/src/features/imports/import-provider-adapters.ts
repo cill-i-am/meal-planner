@@ -52,8 +52,7 @@ import { visualEvidenceSemanticsForFrameCount } from "./import-visual-evidence-e
 const ProviderName = "cloudflare-workers-ai" as const;
 export const InstalledSpeechModel =
   "@cf/openai/whisper-large-v3-turbo" as const;
-export const InstalledVisualModel =
-  "@cf/meta/llama-3.2-11b-vision-instruct" as const;
+export const InstalledVisualModel = "@cf/google/gemma-4-26b-a4b-it" as const;
 export const InstalledRecipeModel =
   "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 
@@ -544,12 +543,43 @@ const VisualJsonModeEnvelope = Schema.Struct({
   usage: Schema.optionalKey(Schema.Unknown),
 });
 
-const decodeVisualJsonModeEnvelope = Schema.decodeUnknownEffect(
-  VisualJsonModeEnvelope,
-  {
-    onExcessProperty: "error",
-  }
-);
+const VisualChatCompletionEnvelope = Schema.Struct({
+  choices: Schema.Tuple([
+    Schema.Struct({
+      finish_reason: Schema.NullOr(Schema.String),
+      index: Schema.Number,
+      logprobs: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
+      message: Schema.Struct({
+        content: Schema.String,
+        role: Schema.String,
+      }),
+    }),
+  ]),
+  created: Schema.Number,
+  id: Schema.String,
+  model: Schema.String,
+  object: Schema.String,
+  service_tier: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  system_fingerprint: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  usage: Schema.optionalKey(Schema.Unknown),
+});
+
+const decodeVisualJsonModeEnvelope = (input: unknown) =>
+  Schema.decodeUnknownEffect(
+    Schema.Union([VisualJsonModeEnvelope, VisualChatCompletionEnvelope]),
+    {
+      onExcessProperty: "error",
+    }
+  )(input).pipe(
+    Effect.map((envelope) =>
+      "response" in envelope
+        ? envelope
+        : {
+            response: envelope.choices[0].message.content,
+            usage: envelope.usage,
+          }
+    )
+  );
 
 const decodeVisualJsonModeResponse = (response: unknown) =>
   Effect.try({
@@ -719,8 +749,8 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                       inputTokens,
                       outputTokens,
                       {
-                        inputMicroUsdPerToken: 0.049,
-                        outputMicroUsdPerToken: 0.68,
+                        inputMicroUsdPerToken: 0.1,
+                        outputMicroUsdPerToken: 0.3,
                       }
                     );
                     // A schema-valid response proves this bounded visual call
