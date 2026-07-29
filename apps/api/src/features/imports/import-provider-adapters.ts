@@ -551,6 +551,15 @@ const decodeVisualJsonModeEnvelope = Schema.decodeUnknownEffect(
   }
 );
 
+const decodeVisualJsonModeResponse = (response: unknown) =>
+  Effect.try({
+    catch: () => "malformed_response" as const,
+    try: () =>
+      typeof response === "string"
+        ? (JSON.parse(response) as unknown)
+        : response,
+  });
+
 const visualTokenUsage = (usage: unknown) => {
   if (typeof usage !== "object" || usage === null) {
     return {
@@ -636,9 +645,12 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                     }).pipe(
                       Effect.flatMap(decodeVisualJsonModeEnvelope),
                       Effect.flatMap((envelope) =>
-                        Schema.decodeUnknownEffect(semanticsSchema, {
-                          onExcessProperty: "error",
-                        })(envelope.response).pipe(
+                        decodeVisualJsonModeResponse(envelope.response).pipe(
+                          Effect.flatMap(
+                            Schema.decodeUnknownEffect(semanticsSchema, {
+                              onExcessProperty: "error",
+                            })
+                          ),
                           Effect.flatMap((value) =>
                             Effect.all(
                               value.observations.map((observation) => {

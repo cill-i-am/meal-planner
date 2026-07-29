@@ -676,6 +676,79 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(trace.events)).not.toContain("2 onions");
   });
 
+  it("accepts the installed Workers AI JSON-mode string response contract", async () => {
+    const gateway = makeGateway(
+      visualJsonModeResponse(
+        JSON.stringify({
+          observations: [
+            {
+              confidence: 0.92,
+              frameIndex: 0,
+              text: "2 onions",
+            },
+          ],
+          outcome: "found",
+        })
+      )
+    );
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 125,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(output).toMatchObject({
+      observations: [
+        {
+          confidence: 0.92,
+          frameIndex: 0,
+          kind: "visible_text",
+          text: "2 onions",
+          timestampMilliseconds: 125,
+        },
+      ],
+      outcome: "found",
+    });
+    expect(trace.events).toEqual([
+      {
+        correlationId,
+        event: "provider.response",
+        outcome: "received",
+        providerStage: "visual",
+      },
+      {
+        correlationId,
+        event: "provider.decode",
+        outcome: "succeeded",
+        providerStage: "visual",
+      },
+    ]);
+    expect(JSON.stringify(trace.events)).not.toContain("2 onions");
+  });
+
   it("rejects model attempts to inject visual transport metadata", async () => {
     const gateway = makeGateway(visualJsonModeResponse(validVisual));
     const adapter = await runFactory(
@@ -710,6 +783,7 @@ describe("installed import provider adapters", () => {
   });
 
   it.each([
+    ["invalid JSON-mode string output", visualJsonModeResponse("{not-json")],
     [
       "unknown envelope fields",
       {
