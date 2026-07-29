@@ -748,15 +748,12 @@ export const makeD1ImportRepository = (
           )
           .limit(1);
 
-        const [insertedImports, insertedRequests, winningRows, canonicalRows] =
-          yield* persistenceEffect(() =>
-            database.batch([
-              insertCandidate,
-              insertRequest,
-              selectWinningRequest,
-              selectCanonical,
-            ] as const)
-          );
+        const [insertedImports, insertedRequests] = yield* persistenceEffect(
+          () => database.batch([insertCandidate, insertRequest] as const)
+        );
+        const winningRows = yield* persistenceEffect(
+          () => selectWinningRequest
+        );
 
         const [winningRow] = winningRows;
         if (winningRow !== undefined) {
@@ -789,6 +786,7 @@ export const makeD1ImportRepository = (
           };
         }
 
+        const canonicalRows = yield* persistenceEffect(() => selectCanonical);
         const [canonicalRow] = canonicalRows;
         if (canonicalRow !== undefined) {
           const canonicalImport = yield* decodeStoredImport(canonicalRow);
