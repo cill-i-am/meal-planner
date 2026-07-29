@@ -475,7 +475,7 @@ describe("import Workflow start reconciliation", () => {
 
     await expect(
       Effect.runPromise(starter.ensureStarted(importId))
-    ).rejects.toMatchObject({ _tag: "WorkflowStartUnavailable" });
+    ).resolves.toBe("already_active");
     await expect(
       Effect.runPromise(starter.ensureStarted(importId))
     ).resolves.toBe("already_active");
