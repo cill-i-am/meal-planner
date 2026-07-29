@@ -47,7 +47,7 @@ import type {
   VisualEvidenceExtractionInput,
   VisualEvidenceExtractorShape,
 } from "./import-visual-evidence-extractor.js";
-import { VisualEvidenceSemantics } from "./import-visual-evidence-extractor.js";
+import { visualEvidenceSemanticsForFrameCount } from "./import-visual-evidence-extractor.js";
 
 const ProviderName = "cloudflare-workers-ai" as const;
 export const InstalledSpeechModel =
@@ -405,21 +405,30 @@ const recipePrompt = (input: RecipeEvidenceAssembly): Prompt.RawInput => [
   },
 ];
 
-const visualPrompt = (
-  input: VisualEvidenceExtractionInput
-): Prompt.RawInput => [
+const encodeBase64 = (bytes: Uint8Array) => {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCodePoint(byte);
+  }
+  return btoa(binary);
+};
+
+const visualJsonModeMessages = (input: VisualEvidenceExtractionInput) => [
   {
     content: [
       {
         text:
           "Record only visible text in these ordered source images. " +
-          "Do not infer ingredients, quantities, steps, or other unseen facts.",
-        type: "text",
+          "Each image position is its zero-based frameIndex. " +
+          "Do not infer ingredients, quantities, steps, or other unseen facts. " +
+          "Return only the requested JSON schema.",
+        type: "text" as const,
       },
       ...input.frames.map((frame) => ({
-        data: frame.bytes,
-        mediaType: frame.mimeType,
-        type: "file" as const,
+        image_url: {
+          url: `data:${frame.mimeType};base64,${encodeBase64(frame.bytes)}`,
+        },
+        type: "image_url" as const,
       })),
     ],
     role: "user" as const,
@@ -530,6 +539,35 @@ const noLogWorkersAiClient = (
   ) as QueryGatewayClient["raw"],
 });
 
+const VisualJsonModeEnvelope = Schema.Struct({
+  response: Schema.Unknown,
+  usage: Schema.optionalKey(Schema.Unknown),
+});
+
+const decodeVisualJsonModeEnvelope = Schema.decodeUnknownEffect(
+  VisualJsonModeEnvelope,
+  {
+    onExcessProperty: "error",
+  }
+);
+
+const visualTokenUsage = (usage: unknown) => {
+  if (typeof usage !== "object" || usage === null) {
+    return {
+      inputTokens: undefined,
+      outputTokens: undefined,
+    };
+  }
+  const inputTokens =
+    "prompt_tokens" in usage ? usage.prompt_tokens : undefined;
+  const outputTokens =
+    "completion_tokens" in usage ? usage.completion_tokens : undefined;
+  return {
+    inputTokens: typeof inputTokens === "number" ? inputTokens : undefined,
+    outputTokens: typeof outputTokens === "number" ? outputTokens : undefined,
+  };
+};
+
 export const makeInstalledVisualEvidenceExtractor = (input: {
   readonly client: QueryGatewayClient;
   readonly correlationId: ImportCorrelationId;
@@ -547,75 +585,195 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
       "visual",
       traceStore
     );
-    const service = yield* Cloudflare.AI.makeLanguageModel({
-      client,
-      model,
-      parameters: { maxTokens: 8192, temperature: 0 },
-    });
+    const ai = yield* client.raw;
     return {
       extract: (request) =>
-        input.dispatch
-          .run({
-            dispatchId: request.dispatchId,
-            invoke: oneForcedToolCall(
-              service,
-              {
-                description:
-                  "Record bounded visual evidence from source images.",
-                name: "record_visual_evidence",
-                prompt: visualPrompt(request),
-                schema: VisualEvidenceSemantics,
-              },
-              {
-                correlationId: input.correlationId,
-                providerStage: "visual",
-              }
-            ).pipe(
-              Effect.map(({ inputTokens, outputTokens, value }) => {
-                const cost = pricedTokenUsage(inputTokens, outputTokens, {
-                  inputMicroUsdPerToken: 0.049,
-                  outputMicroUsdPerToken: 0.68,
-                });
-                return {
-                  cost,
-                  value: {
-                    ...value,
-                    cost: {
-                      certainty: "estimated" as const,
-                      currency: "USD" as const,
-                      estimatedMicroUsd:
-                        cost._tag === "Known"
-                          ? cost.actualCostMicroUsd
-                          : VisualMaximumCostMicroUsd,
-                    },
-                    model,
-                    provider: ProviderName,
-                    usage: {
-                      inputBytes: request.frames.reduce(
-                        (total, frame) => total + frame.bytes.byteLength,
-                        0
-                      ),
-                      inputFrames: request.frames.length,
-                      modelCalls: 1 as const,
-                    },
-                  },
-                };
-              })
-            ),
-            maximumCostMicroUsd: VisualMaximumCostMicroUsd,
-            providerStage: "visual",
-            providerStageId: "visual-evidence",
-          })
-          .pipe(
-            Effect.mapError(
-              // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
-              (error): VisualEvidenceExtractionFailure =>
-                adapterFailure(
-                  "VisualEvidenceExtractionFailure",
-                  typeof error === "object" ? "outcome_unknown" : error
-                )
+        request.frames.length === 0
+          ? Effect.fail(
+              adapterFailure(
+                "VisualEvidenceExtractionFailure",
+                "insufficient_evidence"
+              )
             )
-          ),
+          : input.dispatch
+              .run({
+                dispatchId: request.dispatchId,
+                invoke: failAfter(
+                  Effect.gen(function* invokeVisualJsonMode() {
+                    const semanticsSchema =
+                      visualEvidenceSemanticsForFrameCount(
+                        request.frames.length
+                      );
+                    const response = yield* Effect.tryPromise({
+                      catch: (error) =>
+                        isPilotProviderKnownZeroCostFailure(error)
+                          ? error
+                          : safeFailureCode(Cause.fail(error)),
+                      try: () =>
+                        // SAFETY: The installed Cloudflare binding accepts this
+                        // model and native JSON-mode body, while its generated
+                        // generic overload cannot represent model-specific input.
+                        ai.run(
+                          model as never,
+                          {
+                            max_tokens: 8192,
+                            messages: visualJsonModeMessages(request),
+                            response_format: {
+                              json_schema:
+                                Tool.getJsonSchemaFromSchema(semanticsSchema),
+                              type: "json_schema",
+                            },
+                            temperature: 0,
+                          } as never
+                        ) as Promise<Response>,
+                    });
+                    if (!response.ok) {
+                      return yield* Effect.fail({ status: response.status });
+                    }
+                    const decoded = yield* Effect.tryPromise({
+                      catch: () => "malformed_response" as const,
+                      try: () => response.json(),
+                    }).pipe(
+                      Effect.flatMap(decodeVisualJsonModeEnvelope),
+                      Effect.flatMap((envelope) =>
+                        Schema.decodeUnknownEffect(semanticsSchema, {
+                          onExcessProperty: "error",
+                        })(envelope.response).pipe(
+                          Effect.flatMap((value) =>
+                            Effect.all(
+                              value.observations.map((observation) => {
+                                const frame =
+                                  request.frames[observation.frameIndex];
+                                return frame === undefined
+                                  ? Effect.fail("malformed_response" as const)
+                                  : Effect.succeed({
+                                      ...observation,
+                                      kind: "visible_text" as const,
+                                      regions: [
+                                        {
+                                          height: 1,
+                                          width: 1,
+                                          x: 0,
+                                          y: 0,
+                                        },
+                                      ] as const,
+                                      timestampMilliseconds:
+                                        frame.timestampMilliseconds,
+                                    });
+                              })
+                            ).pipe(
+                              Effect.map((observations) => ({
+                                usage: envelope.usage,
+                                value: {
+                                  observations,
+                                  outcome: value.outcome,
+                                },
+                              }))
+                            )
+                          )
+                        )
+                      ),
+                      Effect.matchEffect({
+                        onFailure: () =>
+                          emitImportObservabilityEvent(
+                            {
+                              correlationId: input.correlationId,
+                              event: "provider.decode",
+                              outcome: "malformed",
+                              providerStage: "visual",
+                            },
+                            traceStore
+                          ).pipe(
+                            Effect.andThen(
+                              Effect.fail("malformed_response" as const)
+                            )
+                          ),
+                        onSuccess: (value) =>
+                          emitImportObservabilityEvent(
+                            {
+                              correlationId: input.correlationId,
+                              event: "provider.decode",
+                              outcome: "succeeded",
+                              providerStage: "visual",
+                            },
+                            traceStore
+                          ).pipe(Effect.as(value)),
+                      })
+                    );
+                    const { inputTokens, outputTokens } = visualTokenUsage(
+                      decoded.usage
+                    );
+                    const meteredCost = pricedTokenUsage(
+                      inputTokens,
+                      outputTokens,
+                      {
+                        inputMicroUsdPerToken: 0.049,
+                        outputMicroUsdPerToken: 0.68,
+                      }
+                    );
+                    // A schema-valid response proves this bounded visual call
+                    // completed. When the provider omits trustworthy usage,
+                    // charge the reservation maximum against the safety ledger
+                    // without representing it as known provider spend.
+                    const cost =
+                      meteredCost._tag === "Known"
+                        ? meteredCost
+                        : {
+                            _tag: "Known" as const,
+                            actualCostMicroUsd: VisualMaximumCostMicroUsd,
+                          };
+                    return {
+                      cost,
+                      value: {
+                        cost: {
+                          certainty: "estimated" as const,
+                          currency: "USD" as const,
+                          estimatedMicroUsd: cost.actualCostMicroUsd,
+                        },
+                        model,
+                        observations: decoded.value.observations,
+                        outcome: decoded.value.outcome,
+                        provider: ProviderName,
+                        usage: {
+                          inputBytes: request.frames.reduce(
+                            (total, frame) => total + frame.bytes.byteLength,
+                            0
+                          ),
+                          inputFrames: request.frames.length,
+                          modelCalls: 1 as const,
+                        },
+                      },
+                    };
+                  }),
+                  {
+                    correlationId: input.correlationId,
+                    providerStage: "visual",
+                  }
+                ).pipe(
+                  // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
+                  Effect.mapError((error) => {
+                    if (isPilotProviderKnownZeroCostFailure(error)) {
+                      return error;
+                    }
+                    return typeof error === "string"
+                      ? error
+                      : safeFailureCode(Cause.fail(error));
+                  })
+                ),
+                maximumCostMicroUsd: VisualMaximumCostMicroUsd,
+                providerStage: "visual",
+                providerStageId: "visual-evidence",
+              })
+              .pipe(
+                Effect.mapError(
+                  // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
+                  (error): VisualEvidenceExtractionFailure =>
+                    adapterFailure(
+                      "VisualEvidenceExtractionFailure",
+                      typeof error === "object" ? "outcome_unknown" : error
+                    )
+                )
+              ),
     } satisfies VisualEvidenceExtractorShape;
   });
 
@@ -761,14 +919,6 @@ type SpeechDispatchOutcome =
       readonly _tag: "Transcribed";
       readonly transcript: SpeechTranscript;
     };
-
-const encodeBase64 = (bytes: Uint8Array) => {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCodePoint(byte);
-  }
-  return btoa(binary);
-};
 
 export const makeInstalledSpeechTranscriber = (input: {
   readonly client: QueryGatewayClient;

@@ -189,6 +189,13 @@ const validVisualSemantics = {
   outcome: "empty",
 } as const;
 
+const defaultVisualUsage = { completion_tokens: 10, prompt_tokens: 20 };
+
+const visualJsonModeResponse = (
+  response: unknown,
+  usage: unknown = defaultVisualUsage
+) => ({ response, usage });
+
 const toolResponse = (name: string, value: unknown) => ({
   choices: [
     {
@@ -499,16 +506,26 @@ describe("installed import provider adapters", () => {
   });
 
   it("accepts semantic-only visual output and injects trusted transport metadata", async () => {
-    const gateway = makeGateway(
-      toolResponse("record_visual_evidence", validVisualSemantics)
-    );
+    const visualSemantics = {
+      observations: [
+        {
+          confidence: 0.92,
+          frameIndex: 1,
+          text: "2 onions",
+        },
+      ],
+      outcome: "found",
+    } as const;
+    const gateway = makeGateway(visualJsonModeResponse(visualSemantics));
+    const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
         model: "@cf/meta/llama-3.2-11b-vision-instruct",
-      })
+      }),
+      trace.service
     );
     const output = await Effect.runPromise(
       adapter.extract({
@@ -519,7 +536,15 @@ describe("installed import provider adapters", () => {
             height: 1,
             mimeType: "image/jpeg",
             sha256: "a".repeat(64),
-            timestampMilliseconds: 0,
+            timestampMilliseconds: 125,
+            width: 1,
+          },
+          {
+            bytes: new Uint8Array([4, 5]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "c".repeat(64),
+            timestampMilliseconds: 500,
             width: 1,
           },
         ],
@@ -530,23 +555,35 @@ describe("installed import provider adapters", () => {
     );
 
     expect(output).toEqual({
-      ...validVisualSemantics,
       cost: {
         certainty: "estimated",
         currency: "USD",
         estimatedMicroUsd: 8,
       },
       model: "@cf/meta/llama-3.2-11b-vision-instruct",
+      observations: [
+        {
+          confidence: 0.92,
+          frameIndex: 1,
+          kind: "visible_text",
+          regions: [{ height: 1, width: 1, x: 0, y: 0 }],
+          text: "2 onions",
+          timestampMilliseconds: 500,
+        },
+      ],
+      outcome: "found",
       provider: "cloudflare-workers-ai",
-      usage: { inputBytes: 3, inputFrames: 1, modelCalls: 1 },
+      usage: { inputBytes: 5, inputFrames: 2, modelCalls: 1 },
     });
     expect(gateway.requests).toHaveLength(1);
     const request = gateway.requests[0] as {
       readonly body: {
-        readonly tool_choice: unknown;
-        readonly tools: readonly {
-          readonly function: { name: string; parameters: unknown };
-        }[];
+        readonly response_format: {
+          readonly json_schema: unknown;
+          readonly type: string;
+        };
+        readonly tool_choice?: unknown;
+        readonly tools?: unknown;
       };
       readonly model: string;
       readonly options: {
@@ -573,11 +610,11 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(request.options)).not.toMatch(
       /AQID|data:image|https?:|cookie|credential|prompt|transcript/iu
     );
-    expect(request.body.tool_choice).toBe("required");
-    expect(request.body.tools).toHaveLength(1);
-    expect(request.body.tools[0]?.function.name).toBe("record_visual_evidence");
-    const parameters = request.body.tools[0]?.function.parameters;
-    expect(parameters).toMatchObject({
+    expect(request.body).not.toHaveProperty("tool_choice");
+    expect(request.body).not.toHaveProperty("tools");
+    expect(request.body.response_format.type).toBe("json_schema");
+    const jsonSchema = request.body.response_format.json_schema;
+    expect(jsonSchema).toMatchObject({
       additionalProperties: false,
       properties: {
         observations: expect.any(Object),
@@ -586,21 +623,61 @@ describe("installed import provider adapters", () => {
       required: ["observations", "outcome"],
       type: "object",
     });
+    const observationItems = (
+      jsonSchema as {
+        readonly properties: {
+          readonly observations: {
+            readonly items: {
+              readonly additionalProperties: boolean;
+              readonly properties: Record<string, unknown>;
+            };
+          };
+        };
+      }
+    ).properties.observations.items;
+    expect(observationItems.additionalProperties).toBe(false);
+    expect(Object.keys(observationItems.properties)).toEqual([
+      "confidence",
+      "frameIndex",
+      "text",
+    ]);
+    expect(observationItems.properties["frameIndex"]).toMatchObject({
+      type: "integer",
+    });
+    expect(JSON.stringify(observationItems.properties["frameIndex"])).toMatch(
+      /"minimum":0/u
+    );
+    expect(JSON.stringify(observationItems.properties["frameIndex"])).toMatch(
+      /"maximum":1/u
+    );
     expect(
       Object.keys(
         (
-          parameters as {
+          jsonSchema as {
             readonly properties: Record<string, unknown>;
           }
         ).properties
       )
     ).toEqual(["observations", "outcome"]);
+    expect(trace.events).toEqual([
+      {
+        correlationId,
+        event: "provider.response",
+        outcome: "received",
+        providerStage: "visual",
+      },
+      {
+        correlationId,
+        event: "provider.decode",
+        outcome: "succeeded",
+        providerStage: "visual",
+      },
+    ]);
+    expect(JSON.stringify(trace.events)).not.toContain("2 onions");
   });
 
   it("rejects model attempts to inject visual transport metadata", async () => {
-    const gateway = makeGateway(
-      toolResponse("record_visual_evidence", validVisual)
-    );
+    const gateway = makeGateway(visualJsonModeResponse(validVisual));
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
@@ -632,32 +709,53 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(exit)).toContain("malformed_response");
   });
 
-  it("preserves absent visual usage as unknown for the atomic ledger", async () => {
-    const response = toolResponse(
-      "record_visual_evidence",
-      validVisualSemantics
-    );
-    delete (response as { usage?: unknown }).usage;
-    const costs: string[] = [];
+  it.each([
+    [
+      "unknown envelope fields",
+      {
+        ...visualJsonModeResponse(validVisualSemantics),
+        providerSecret: "must-not-escape",
+      },
+    ],
+    [
+      "model-owned trusted fields",
+      visualJsonModeResponse({
+        observations: [
+          {
+            confidence: 0.9,
+            frameIndex: 0,
+            kind: "visible_text",
+            text: "2 onions",
+          },
+        ],
+        outcome: "found",
+      }),
+    ],
+    [
+      "out-of-range frame references",
+      visualJsonModeResponse({
+        observations: [{ confidence: 0.9, frameIndex: 1, text: "2 onions" }],
+        outcome: "found",
+      }),
+    ],
+    [
+      "contradictory outcomes",
+      visualJsonModeResponse({
+        observations: [{ confidence: 0.9, frameIndex: 0, text: "2 onions" }],
+        outcome: "empty",
+      }),
+    ],
+  ])("fails closed for visual %s", async (_label, response) => {
+    const gateway = makeGateway(response);
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: makeGateway(response).client,
+        client: gateway.client,
         correlationId,
-        dispatch: {
-          run: (input) =>
-            input.invoke.pipe(
-              Effect.tap(({ cost }) =>
-                Effect.sync(() => {
-                  costs.push(cost._tag);
-                })
-              ),
-              Effect.map(({ value }) => value)
-            ),
-        },
+        dispatch: localDispatchGate,
       })
     );
 
-    const output = await Effect.runPromise(
+    const exit = await Effect.runPromiseExit(
       adapter.extract({
         dispatchId: "visual:import-1:1",
         frames: [
@@ -676,8 +774,109 @@ describe("installed import provider adapters", () => {
       })
     );
 
-    expect(costs).toEqual(["Unknown"]);
-    expect(output.cost.estimatedMicroUsd).toBe(100_000);
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(JSON.stringify(exit)).not.toContain("must-not-escape");
+  });
+
+  it.each([
+    ["absent", { response: validVisualSemantics }],
+    [
+      "zero",
+      {
+        response: validVisualSemantics,
+        usage: { completion_tokens: 0, prompt_tokens: 0 },
+      },
+    ],
+    [
+      "invalid",
+      {
+        response: validVisualSemantics,
+        usage: {
+          completion_tokens: "must-not-be-trusted",
+          prompt_tokens: -1,
+        },
+      },
+    ],
+  ])(
+    "settles %s visual usage at the bounded maximum without claiming known provider spend",
+    async (_label, response) => {
+      const costs: (
+        | {
+            readonly _tag: "Known";
+            readonly actualCostMicroUsd: number;
+          }
+        | { readonly _tag: "Unknown" }
+      )[] = [];
+      const adapter = await runFactory(
+        makeInstalledVisualEvidenceExtractor({
+          client: makeGateway(response).client,
+          correlationId,
+          dispatch: {
+            run: (input) =>
+              input.invoke.pipe(
+                Effect.tap(({ cost }) =>
+                  Effect.sync(() => {
+                    costs.push(cost);
+                  })
+                ),
+                Effect.map(({ value }) => value)
+              ),
+          },
+        })
+      );
+
+      const output = await Effect.runPromise(
+        adapter.extract({
+          dispatchId: "visual:import-1:1",
+          frames: [
+            {
+              bytes: new Uint8Array([1, 2, 3]),
+              height: 1,
+              mimeType: "image/jpeg",
+              sha256: "a".repeat(64),
+              timestampMilliseconds: 0,
+              width: 1,
+            },
+          ],
+          generation: 1 as never,
+          importId: "import-1" as never,
+          sourceMediaSha256: "b".repeat(64),
+        })
+      );
+
+      expect(costs).toEqual([{ _tag: "Known", actualCostMicroUsd: 100_000 }]);
+      expect(output.cost).toEqual({
+        certainty: "estimated",
+        currency: "USD",
+        estimatedMicroUsd: 100_000,
+      });
+    }
+  );
+
+  it("rejects an empty visual dispatch before the provider boundary", async () => {
+    const gateway = makeGateway(visualJsonModeResponse(validVisualSemantics));
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("insufficient_evidence");
+    expect(gateway.requests).toHaveLength(0);
   });
 
   it.each([

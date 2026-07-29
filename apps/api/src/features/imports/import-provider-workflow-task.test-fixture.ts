@@ -25,6 +25,7 @@ import { ImportCorrelationId } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
 import {
   makeInstalledSpeechTranscriber,
+  makeInstalledVisualEvidenceExtractor,
   makePilotProviderDispatchGate,
 } from "./import-provider-adapters.js";
 import { makeD1ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
@@ -195,6 +196,106 @@ const installedSpeechDispatch = (
       sourceMediaSha256: "b".repeat(64),
     });
   });
+
+const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
+  Effect.gen(function* runBudgetedComposition() {
+    const responses = [{ response: { observations: [], outcome: "empty" } }];
+    let providerCalls = 0;
+    const client = {
+      gateway: Effect.die("universal AI Gateway binding must not be used"),
+      id: Effect.succeed("meal-planner-pilot-gaia-118"),
+      raw: Effect.succeed({
+        run: (
+          _model: unknown,
+          _body: unknown,
+          options: unknown
+        ): Promise<Response> => {
+          if (
+            JSON.stringify(options) !==
+            JSON.stringify({
+              gateway: {
+                collectLog: false,
+                id: "meal-planner-pilot-gaia-118",
+                skipCache: true,
+              },
+              returnRawResponse: true,
+            })
+          ) {
+            return Promise.reject(
+              new Error("Gateway logging was not disabled")
+            );
+          }
+          providerCalls += 1;
+          const response = responses.shift();
+          return response === undefined
+            ? Promise.reject(new Error("Unexpected provider dispatch"))
+            : Promise.resolve(Response.json(response));
+        },
+      }),
+      run: () => Effect.die("universal AI Gateway dispatch must not be used"),
+    } as unknown as QueryGatewayClient;
+    const repository = makeD1PilotProviderBudgetRepository(
+      env.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const correlationId = decodeCorrelationId(
+      "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2199"
+    );
+    const runId = decodeRunId("gaia-199:missing-visual-usage");
+    const now = decodeTimestamp("2026-07-29T09:00:00.000Z");
+    const dispatch = makePilotProviderDispatchGate({
+      correlationId,
+      now: () => now,
+      repository,
+      runId,
+      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
+    });
+    const visual = yield* makeInstalledVisualEvidenceExtractor({
+      client,
+      correlationId,
+      dispatch,
+    });
+    const importId = decodeImportId("00000000-0000-4000-8000-000000000199");
+    const generation = decodeGeneration(1);
+    const visualOutput = yield* visual.extract({
+      dispatchId: "visual:gaia-199:1",
+      frames: [
+        {
+          bytes: new Uint8Array([1, 2, 3]),
+          height: 1,
+          mimeType: "image/jpeg",
+          sha256: "a".repeat(64),
+          timestampMilliseconds: 0,
+          width: 1,
+        },
+      ],
+      generation,
+      importId,
+      sourceMediaSha256: "b".repeat(64),
+    });
+    const recipeResult = yield* dispatch.run({
+      dispatchId: `recipe:${importId}:${generation}:gaia-199-evidence`,
+      invoke: Effect.sync(() => {
+        providerCalls += 1;
+        return {
+          cost: {
+            _tag: "Known" as const,
+            actualCostMicroUsd: 29,
+          },
+          value: "recipe-dispatched" as const,
+        };
+      }),
+      maximumCostMicroUsd: 100_000,
+      providerStage: "recipe",
+      providerStageId: "recipe-extraction",
+    });
+    return {
+      providerCalls,
+      recipeResult,
+      stage: yield* repository.readStage(),
+      visualCost: visualOutput.cost,
+    };
+  }).pipe(Effect.provideService(RuntimeContext, testRuntimeContext));
 
 const speechTerminalRecoveryDispatch = (
   env: ProviderWorkflowTestEnv,
@@ -499,6 +600,7 @@ const readRequest = (request: Request) =>
         readonly id: string;
         readonly importId: string;
       }
+    | { readonly action: "run-visual-recipe-budget"; readonly id: string }
     | { readonly action: "restart"; readonly id: string }
     | { readonly action: "restart-speech"; readonly id: string }
     | { readonly action: "restart-terminal"; readonly id: string }
@@ -518,6 +620,11 @@ export default {
     const sessionId = await workflow.unsafeStartIntrospection();
 
     try {
+      if (command.action === "run-visual-recipe-budget") {
+        return Response.json(
+          await Effect.runPromise(runInstalledVisualThenRecipe(env))
+        );
+      }
       if (command.action === "settle-speech") {
         return Response.json(
           await Effect.runPromise(

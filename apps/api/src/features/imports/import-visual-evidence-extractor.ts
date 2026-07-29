@@ -68,8 +68,17 @@ export const VisualEvidenceObservation = Schema.Struct({
 });
 export type VisualEvidenceObservation = typeof VisualEvidenceObservation.Type;
 
+/** Strict model-owned observation fields before trusted adapter normalization. */
+export const VisualEvidenceSemanticObservation = Schema.Struct({
+  confidence: UnitInterval,
+  frameIndex: SafeInteger,
+  text: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(4096))),
+});
+export type VisualEvidenceSemanticObservation =
+  typeof VisualEvidenceSemanticObservation.Type;
+
 const visualEvidenceOutcomeMatchesObservations = (evidence: {
-  readonly observations: readonly VisualEvidenceObservation[];
+  readonly observations: readonly { readonly confidence: number }[];
   readonly outcome: "empty" | "found" | "low_confidence";
 }) => {
   switch (evidence.outcome) {
@@ -100,7 +109,7 @@ const visualEvidenceOutcomeMatchesObservations = (evidence: {
 
 /** Strict model-owned visual semantics, excluding adapter transport metadata. */
 export const VisualEvidenceSemantics = Schema.Struct({
-  observations: Schema.Array(VisualEvidenceObservation).pipe(
+  observations: Schema.Array(VisualEvidenceSemanticObservation).pipe(
     Schema.check(Schema.isMaxLength(MaximumVisualObservations))
   ),
   outcome: Schema.Literals(["empty", "found", "low_confidence"]),
@@ -113,6 +122,27 @@ export const VisualEvidenceSemantics = Schema.Struct({
 );
 export type VisualEvidenceSemantics = typeof VisualEvidenceSemantics.Type;
 
+/** Build model semantics whose frame references are bounded by this dispatch. */
+export const visualEvidenceSemanticsForFrameCount = (frameCount: number) =>
+  Schema.Struct({
+    observations: Schema.Array(
+      Schema.Struct({
+        confidence: UnitInterval,
+        frameIndex: SafeInteger.pipe(
+          Schema.check(Schema.isLessThanOrEqualTo(Math.max(0, frameCount - 1)))
+        ),
+        text: VisualEvidenceSemanticObservation.fields.text,
+      })
+    ).pipe(Schema.check(Schema.isMaxLength(MaximumVisualObservations))),
+    outcome: VisualEvidenceSemantics.fields.outcome,
+  }).pipe(
+    Schema.check(
+      Schema.makeFilter(visualEvidenceOutcomeMatchesObservations, {
+        expected: "observations consistent with the visual outcome",
+      })
+    )
+  );
+
 /** Normalized result returned by any future OCR or vision adapter. */
 export const VisualEvidence = Schema.Struct({
   cost: Schema.Struct({
@@ -121,7 +151,9 @@ export const VisualEvidence = Schema.Struct({
     estimatedMicroUsd: SafeInteger,
   }),
   model: SafeAdapterLabel,
-  observations: VisualEvidenceSemantics.fields.observations,
+  observations: Schema.Array(VisualEvidenceObservation).pipe(
+    Schema.check(Schema.isMaxLength(MaximumVisualObservations))
+  ),
   outcome: VisualEvidenceSemantics.fields.outcome,
   provider: SafeAdapterLabel,
   usage: Schema.Struct({
