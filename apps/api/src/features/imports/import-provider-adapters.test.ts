@@ -213,6 +213,16 @@ const toolResponse = (
   ...(usage === null ? {} : { usage }),
 });
 
+const nativeToolResponse = (
+  name: string,
+  value: unknown,
+  usage: unknown | null = defaultVisualUsage
+) => ({
+  response: "",
+  tool_calls: [{ arguments: value, name }],
+  ...(usage === null ? {} : { usage }),
+});
+
 describe("installed import provider adapters", () => {
   it("classifies accessible non-food evidence semantically without a draft shape", () => {
     expect(
@@ -937,29 +947,20 @@ describe("installed import provider adapters", () => {
   });
 
   it.each([
-    ["prose", { choices: [{ message: { content: "{}" } }] }],
-    ["wrong tool", toolResponse("wrong_tool", validRecipe)],
+    ["prose", { response: "{}" }],
+    ["wrong tool", nativeToolResponse("wrong_tool", validRecipeSemantics)],
     [
       "multiple tools",
       {
-        choices: [
+        response: "",
+        tool_calls: [
           {
-            message: {
-              tool_calls: [
-                {
-                  function: {
-                    arguments: JSON.stringify(validRecipe),
-                    name: "record_recipe",
-                  },
-                },
-                {
-                  function: {
-                    arguments: JSON.stringify(validRecipe),
-                    name: "record_recipe",
-                  },
-                },
-              ],
-            },
+            arguments: validRecipeSemantics,
+            name: "record_recipe",
+          },
+          {
+            arguments: validRecipeSemantics,
+            name: "record_recipe",
           },
         ],
       },
@@ -967,24 +968,15 @@ describe("installed import provider adapters", () => {
     [
       "an extra tool before the forced tool",
       {
-        choices: [
+        response: "",
+        tool_calls: [
           {
-            message: {
-              tool_calls: [
-                {
-                  function: {
-                    arguments: JSON.stringify(validRecipe),
-                    name: "wrong_tool",
-                  },
-                },
-                {
-                  function: {
-                    arguments: JSON.stringify(validRecipe),
-                    name: "record_recipe",
-                  },
-                },
-              ],
-            },
+            arguments: validRecipeSemantics,
+            name: "wrong_tool",
+          },
+          {
+            arguments: validRecipeSemantics,
+            name: "record_recipe",
           },
         ],
       },
@@ -992,25 +984,18 @@ describe("installed import provider adapters", () => {
     [
       "malformed JSON",
       {
-        choices: [
+        response: "",
+        tool_calls: [
           {
-            message: {
-              tool_calls: [
-                {
-                  function: {
-                    arguments: "{",
-                    name: "record_recipe",
-                  },
-                },
-              ],
-            },
+            arguments: "{",
+            name: "record_recipe",
           },
         ],
       },
     ],
     [
       "schema-invalid arguments",
-      toolResponse("record_recipe", {
+      nativeToolResponse("record_recipe", {
         ...validRecipeSemantics,
         name: { ...validRecipeSemantics.name, state: "invalid" },
       }),
@@ -1049,7 +1034,7 @@ describe("installed import provider adapters", () => {
 
   it("accepts semantic-only recipe output and injects trusted transport usage", async () => {
     const gateway = makeGateway(
-      toolResponse("record_recipe", validRecipeSemantics)
+      nativeToolResponse("record_recipe", validRecipeSemantics)
     );
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
@@ -1093,8 +1078,10 @@ describe("installed import provider adapters", () => {
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
     const request = gateway.requests[0] as {
       readonly body: {
+        readonly tool_choice: string;
         readonly tools: readonly {
-          readonly function: { parameters: unknown };
+          readonly name: string;
+          readonly parameters: unknown;
         }[];
       };
       readonly options: {
@@ -1117,15 +1104,29 @@ describe("installed import provider adapters", () => {
     });
     expect(request.options.gateway).not.toHaveProperty("metadata");
     expect(request.options).not.toHaveProperty("headers");
-    expect(request.body.tools[0]?.function.parameters).toEqual(
-      Tool.getJsonSchema(
-        Tool.make("record_recipe", { parameters: RecipeExtractionSemantics })
-      )
+    expect(request.body.tool_choice).toBe("required");
+    expect(request.body.tools).toEqual([
+      {
+        description:
+          "Record only provenance-backed recipe facts and unresolved fields.",
+        name: "record_recipe",
+        parameters: Tool.getJsonSchema(
+          Tool.make("record_recipe", { parameters: RecipeExtractionSemantics })
+        ),
+      },
+    ]);
+    expect(request.body.tools[0]?.parameters).toMatchObject(
+      expect.objectContaining({
+        additionalProperties: false,
+        type: "object",
+      })
     );
   });
 
   it("rejects model attempts to inject recipe transport metadata", async () => {
-    const gateway = makeGateway(toolResponse("record_recipe", validRecipe));
+    const gateway = makeGateway(
+      nativeToolResponse("record_recipe", validRecipe)
+    );
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -1155,7 +1156,7 @@ describe("installed import provider adapters", () => {
   });
 
   it("preserves absent installed usage as unknown for the atomic ledger", async () => {
-    const response = toolResponse("record_recipe", validRecipeSemantics);
+    const response = nativeToolResponse("record_recipe", validRecipeSemantics);
     delete (response as { usage?: unknown }).usage;
     const gateway = makeGateway(response);
     const costs: string[] = [];
