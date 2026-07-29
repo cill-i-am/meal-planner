@@ -392,30 +392,21 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
   );
 };
 
-const recipePrompt = (input: RecipeEvidenceAssembly): Prompt.RawInput => [
-  {
-    content: [
-      {
-        text:
-          "Extract only recipe facts supported by the supplied evidence. " +
-          "Use unresolved states for every unsupported field. " +
-          "If the accessible content is not food or not a recipe, keep recipe " +
-          "facts unresolved and return no invented ingredients or instructions.",
-        type: "text",
-      },
-      ...input.items.map((item) => ({
-        text: JSON.stringify({
-          evidenceId: item.evidenceId,
-          kind: item.kind,
-          origin: item.origin,
-          value: item.value,
-        }),
-        type: "text" as const,
-      })),
-    ],
-    role: "user" as const,
-  },
-];
+const recipePromptText = (input: RecipeEvidenceAssembly) =>
+  [
+    "Extract only recipe facts supported by the supplied evidence. " +
+      "Use unresolved states for every unsupported field. " +
+      "If the accessible content is not food or not a recipe, keep recipe " +
+      "facts unresolved and return no invented ingredients or instructions.",
+    ...input.items.map((item) =>
+      JSON.stringify({
+        evidenceId: item.evidenceId,
+        kind: item.kind,
+        origin: item.origin,
+        value: item.value,
+      })
+    ),
+  ].join("\n");
 
 const encodeBase64 = (bytes: Uint8Array) => {
   let binary = "";
@@ -490,6 +481,170 @@ const workersAiGatewayOptions = (gatewayId: string) =>
   }) as const;
 
 type WorkersAiBinding = Effect.Success<QueryGatewayClient["raw"]>;
+
+const asUnknownRecord = (
+  value: unknown
+): Readonly<Record<string, unknown>> | undefined =>
+  typeof value === "object" && value !== null
+    ? (value as Readonly<Record<string, unknown>>)
+    : undefined;
+
+const tokenCount = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
+
+const malformedProviderDecode = (
+  observability: {
+    readonly correlationId: ImportCorrelationId;
+    readonly providerStage: "recipe";
+    readonly traceStore: ImportObservabilityTraceStoreShape | undefined;
+  },
+  failure: "insufficient_evidence" | "malformed_response"
+) =>
+  emitImportObservabilityEvent(
+    {
+      correlationId: observability.correlationId,
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: observability.providerStage,
+    },
+    observability.traceStore
+  ).pipe(Effect.andThen(Effect.fail(failure)));
+
+/**
+ * Llama's native Workers AI binding accepts unwrapped tool declarations and
+ * returns native tool calls. Keep this seam separate from Alchemy's OpenAI
+ * response adapter so the provider-facing schema and fail-closed decode match
+ * the installed model's actual wire contract.
+ */
+const oneNativeWorkersAiToolCall = <Name extends string, S extends Schema.Top>(
+  ai: WorkersAiBinding,
+  model: string,
+  input: {
+    readonly description: string;
+    readonly name: Name;
+    readonly prompt: string;
+    readonly schema: S;
+  },
+  observability: {
+    readonly correlationId: ImportCorrelationId;
+    readonly providerStage: "recipe";
+    readonly traceStore: ImportObservabilityTraceStoreShape | undefined;
+  }
+): Effect.Effect<
+  {
+    readonly inputTokens: number | undefined;
+    readonly outputTokens: number | undefined;
+    readonly value: S["Type"];
+  },
+  SafeProviderFailureCode,
+  S["DecodingServices"]
+> =>
+  failAfter(
+    Effect.tryPromise({
+      catch: (error) => error,
+      try: () =>
+        ai.run(
+          model as never,
+          {
+            max_tokens: 16_384,
+            messages: [{ content: input.prompt, role: "user" }],
+            temperature: 0,
+            tool_choice: "required",
+            tools: [
+              {
+                description: input.description,
+                name: input.name,
+                parameters: Tool.getJsonSchemaFromSchema(input.schema),
+              },
+            ],
+          } as never
+        ) as Promise<Response>,
+    }),
+    observability
+  ).pipe(
+    // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
+    Effect.mapError((error) =>
+      typeof error === "string"
+        ? (error as SafeProviderFailureCode)
+        : safeFailureCode(Cause.fail(error))
+    ),
+    Effect.flatMap((response) =>
+      response.ok
+        ? Effect.tryPromise({
+            catch: () => "malformed_response" as const,
+            try: () => response.json() as Promise<unknown>,
+          }).pipe(
+            Effect.matchEffect({
+              onFailure: () =>
+                malformedProviderDecode(observability, "malformed_response"),
+              onSuccess: Effect.succeed,
+            })
+          )
+        : Effect.fail(
+            response.status === 429
+              ? ("throttled" as const)
+              : ("provider_unavailable" as const)
+          )
+    ),
+    Effect.flatMap((payload) => {
+      const record = asUnknownRecord(payload);
+      const response = record?.["response"];
+      const calls = record?.["tool_calls"];
+      const call =
+        Array.isArray(calls) && calls.length === 1
+          ? asUnknownRecord(calls[0])
+          : undefined;
+      if (
+        record === undefined ||
+        call === undefined ||
+        call["name"] !== input.name ||
+        !(
+          response === undefined ||
+          response === null ||
+          (typeof response === "string" && response.trim().length === 0)
+        )
+      ) {
+        return malformedProviderDecode(observability, "insufficient_evidence");
+      }
+      const encodedArguments = call["arguments"];
+      let argumentsValue: unknown = encodedArguments;
+      if (typeof encodedArguments === "string") {
+        try {
+          argumentsValue = JSON.parse(encodedArguments) as unknown;
+        } catch {
+          return malformedProviderDecode(observability, "malformed_response");
+        }
+      }
+      return Schema.decodeUnknownEffect(input.schema, {
+        onExcessProperty: "error",
+      })(argumentsValue).pipe(
+        Effect.matchEffect({
+          onFailure: () =>
+            malformedProviderDecode(observability, "malformed_response"),
+          onSuccess: (value) => {
+            const usage = asUnknownRecord(record["usage"]);
+            return emitImportObservabilityEvent(
+              {
+                correlationId: observability.correlationId,
+                event: "provider.decode",
+                outcome: "succeeded",
+                providerStage: observability.providerStage,
+              },
+              observability.traceStore
+            ).pipe(
+              Effect.as({
+                inputTokens: tokenCount(usage?.["prompt_tokens"]),
+                outputTokens: tokenCount(usage?.["completion_tokens"]),
+                value,
+              })
+            );
+          },
+        })
+      );
+    })
+  );
 
 const runWorkersAi = (
   ai: WorkersAiBinding,
@@ -719,16 +874,12 @@ export const makeInstalledRecipeExtractor = (input: {
       "recipe",
       traceStore
     );
-    const service = yield* Cloudflare.AI.makeLanguageModel({
-      client,
-      model,
-      parameters: { maxTokens: 16_384, temperature: 0 },
-    });
+    const ai = yield* client.raw;
     return {
       descriptor: Schema.decodeUnknownSync(RecipeExtractorDescriptor)({
         model,
         provider: ProviderName,
-        version: "installed-forced-tool-v1",
+        version: "installed-native-forced-tool-v1",
       }),
       extract: (request) =>
         input.dispatch
@@ -737,13 +888,14 @@ export const makeInstalledRecipeExtractor = (input: {
             invoke: Effect.gen(function* extractRecipeSemantics() {
               const startedAt = yield* Clock.currentTimeMillis;
               const { inputTokens, outputTokens, value } =
-                yield* oneForcedToolCall(
-                  service,
+                yield* oneNativeWorkersAiToolCall(
+                  ai,
+                  model,
                   {
                     description:
                       "Record only provenance-backed recipe facts and unresolved fields.",
                     name: "record_recipe",
-                    prompt: recipePrompt(request),
+                    prompt: recipePromptText(request),
                     schema: RecipeExtractionSemantics,
                   },
                   {
