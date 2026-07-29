@@ -1,8 +1,24 @@
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { DateTime, Effect, Option, Schema, Stream } from "effect";
+import {
+  DateTime,
+  Effect,
+  Layer,
+  Option,
+  Redacted,
+  Schema,
+  Stream,
+} from "effect";
+import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import {
+  PilotBudgetDispatchId,
+  PilotBudgetProviderStageId,
+  PilotBudgetRunId,
+  PilotBudgetTimestamp,
+} from "../pilots/pilot-provider-budget.js";
+import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
 import type {
   AcquisitionBucketLike,
@@ -14,6 +30,15 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import {
+  ProviderTerminalSettlementService,
+  makeD1ProviderTerminalSettlementService,
+} from "./import-provider-terminal-settlement.js";
+import { ProviderTerminalSettlementRoutes } from "./import-provider-terminal-settlement.routes.js";
+import {
+  makeD1ProviderTerminalCheckpointRepository,
+  makeD1ProviderTerminalRecoveryRepository,
+} from "./import-provider-terminal.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import type { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
@@ -41,6 +66,7 @@ import {
   visualFrameObjectKey,
 } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
+import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -98,6 +124,12 @@ const decodeCompatibilityFingerprint = Schema.decodeUnknownSync(
 const decodeIdempotencyKeyHash = Schema.decodeUnknownSync(IdempotencyKeyHash);
 const decodeRequestFingerprint = Schema.decodeUnknownSync(RequestFingerprint);
 const decodeSourceLocatorHash = Schema.decodeUnknownSync(SourceLocatorHash);
+const decodeBudgetDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
+const decodeBudgetProviderStageId = Schema.decodeUnknownSync(
+  PilotBudgetProviderStageId
+);
+const decodeBudgetRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
+const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
 
 const generation = decodeGeneration(1);
 const acquiredAt = decodeTimestamp("2026-07-21T10:00:00.000Z");
@@ -422,6 +454,271 @@ beforeAll(async () => {
 });
 
 describe("provider-free transcript-to-visual-evidence tracer", () => {
+  it("replaces one authenticated settled-unknown visual failure and dispatches the provider exactly once", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000223");
+    const canonicalId = decodeCanonicalId("7520000000000000223");
+    const importRepository = await makeTranscribedImport(importId, canonicalId);
+    const originalDispatchId = decodeBudgetDispatchId(
+      `visual:${importId}:${generation}`
+    );
+    const recoveryDispatchId = `${originalDispatchId}:recovery:1`;
+    const visualRepository = makeD1VisualEvidenceRepository(
+      testEnv.MealPlannerDatabase
+    );
+
+    await expect(
+      Effect.runPromise(
+        visualRepository.claim({
+          dispatchId: originalDispatchId,
+          generation,
+          importId,
+          sourceMediaSha256,
+          startedAt: extractedAt,
+        })
+      )
+    ).resolves.toEqual({
+      _tag: "DispatchClaimed",
+      dispatchId: originalDispatchId,
+    });
+    await Effect.runPromise(
+      visualRepository.fail({
+        completedAt: extractedAt,
+        dispatchId: originalDispatchId,
+        failureCode: "visual_extraction_failed",
+        generation,
+        importId,
+        sourceMediaSha256,
+      })
+    );
+    await Effect.runPromise(
+      makeD1ProviderTerminalCheckpointRepository(
+        testEnv.MealPlannerDatabase
+      ).persist({
+        acquisitionGeneration: generation,
+        completedAt: extractedAt,
+        failureCode: "visual_extraction_failed",
+        importId,
+        providerStage: "visual",
+      })
+    );
+
+    const budget = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const reservation = {
+      dispatchId: originalDispatchId,
+      maximumCostMicroUsd: 100_000,
+      providerStageId: decodeBudgetProviderStageId("visual-evidence"),
+      runId: decodeBudgetRunId("gaia-200-visual-recovery-test"),
+      timestamp: decodeBudgetTimestamp("2026-07-21T10:02:00.000Z"),
+    };
+    await Effect.runPromise(budget.reserve(reservation));
+    await Effect.runPromise(budget.beginInvocation(reservation));
+    await Effect.runPromise(budget.settleUnknown(reservation));
+    await testEnv.MealPlannerDatabase.batch([
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO pilot_provider_budget_reconciliations (
+           runtime_stage, dispatch_id, conservative_charge_micro_usd,
+           actual_cost_was_unknown, authority, created_at
+         ) VALUES ('pilot-gaia-118', ?, ?, 1, 'authenticated_operator', ?)`
+      ).bind(
+        originalDispatchId,
+        reservation.maximumCostMicroUsd,
+        "2026-07-21T10:03:00.000Z"
+      ),
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE pilot_provider_stage_budget
+            SET settled_micro_usd =
+                  settled_micro_usd + reserved_micro_usd,
+                reserved_micro_usd = 0,
+                state = 'open',
+                invoking_dispatch_id = NULL,
+                poison_dispatch_id = NULL,
+                updated_at = ?
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND state = 'poisoned'
+            AND poison_dispatch_id = ?
+            AND invoking_dispatch_id IS NULL`
+      ).bind("2026-07-21T10:03:00.000Z", originalDispatchId),
+    ]);
+
+    const authorizer = await Effect.runPromise(
+      makeImportAuthorizer(Redacted.make("test-import-token"))
+    );
+    const service = makeD1ProviderTerminalSettlementService({
+      database: testEnv.MealPlannerDatabase,
+      now: () => decodeTimestamp("2026-07-21T10:04:00.000Z"),
+      runtimeStage: "pilot-gaia-118",
+    });
+    const app = HttpRouter.toWebHandler(
+      Layer.mergeAll(
+        ProviderTerminalSettlementRoutes,
+        Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+        Layer.succeed(
+          ProviderTerminalSettlementService,
+          ProviderTerminalSettlementService.of(service)
+        )
+      ),
+      { disableLogger: true }
+    );
+    const command = {
+      acquisitionGeneration: generation,
+      dispatchId: originalDispatchId,
+      importId,
+      operation: "prepare_visual_recovery",
+    };
+    const postRecovery = (body: unknown, token = "test-import-token") =>
+      app.handler(
+        new Request(
+          "https://meal-planner.test/imports/operator-provider-terminal-settlement",
+          {
+            body: JSON.stringify(body),
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+            },
+            method: "POST",
+          }
+        )
+      );
+
+    const unauthorized = await postRecovery(command, "wrong-token");
+    expect(unauthorized.status).toBe(401);
+    const wrongDispatch = await postRecovery({
+      ...command,
+      dispatchId: `${originalDispatchId}:wrong`,
+    });
+    expect(wrongDispatch.status).toBe(409);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_visual_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state FROM import_visual_evidence
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({ state: "failed" });
+
+    const [firstResponse, concurrentResponse, replayResponse] =
+      await Promise.all([
+        postRecovery(command),
+        postRecovery(command),
+        postRecovery(command),
+      ]);
+    expect(firstResponse.status).toBe(200);
+    expect(concurrentResponse.status).toBe(200);
+    expect(replayResponse.status).toBe(200);
+    const [first, concurrent, replay] = await Promise.all([
+      firstResponse.json(),
+      concurrentResponse.json(),
+      replayResponse.json(),
+    ]);
+    expect(first).toEqual(concurrent);
+    expect(first).toEqual(replay);
+    expect(first).toEqual({
+      acquisitionGeneration: generation,
+      dispatchId: originalDispatchId,
+      importId,
+      outcome: "visual_recovery_prepared",
+      recoveryDispatchId,
+      runtimeStage: "pilot-gaia-118",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT original_dispatch_id, recovery_dispatch_id
+           FROM pilot_provider_visual_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      original_dispatch_id: originalDispatchId,
+      recovery_dispatch_id: recoveryDispatchId,
+    });
+    const recovery = makeD1ProviderTerminalRecoveryRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    await expect(
+      Effect.runPromise(
+        recovery.visualDispatchId({
+          acquisitionGeneration: generation,
+          importId,
+        })
+      )
+    ).resolves.toBe(recoveryDispatchId);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM import_visual_evidence
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+
+    const frames = makeFrameFixture();
+    const extractor = makeVisualFixture("found");
+    await expect(
+      Effect.runPromise(
+        extractVisualEvidenceForTranscribedImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          frameSampler: frames.service,
+          importId,
+          importRepository,
+          now: () => extractedAt,
+          visualDispatchId: recoveryDispatchId,
+          visualRepository,
+        })
+      )
+    ).resolves.toMatchObject({
+      _tag: "VisualEvidenceReady",
+      generation,
+      importId,
+      outcome: "found",
+    });
+    expect(frames.calls).toHaveLength(1);
+    expect(extractor.calls).toHaveLength(1);
+    expect(extractor.calls[0]).toMatchObject({
+      dispatchId: recoveryDispatchId,
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT dispatch_id, state
+           FROM import_visual_evidence
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      dispatch_id: recoveryDispatchId,
+      state: "completed",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, settled_micro_usd, reserved_micro_usd,
+                poison_dispatch_id, invoking_dispatch_id
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      settled_micro_usd: 100_000,
+      state: "open",
+    });
+  });
+
   it("continues from the exact settled recovery speech dispatch without retaining its identity", async () => {
     const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000219");
     const canonicalId = decodeCanonicalId("7520000000000000219");

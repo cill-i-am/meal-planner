@@ -111,6 +111,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "0008_pilot_provider_budget.sql",
       "0009_provider_terminal_recovery.sql",
       "0010_provider_recovery_stage_key.sql",
+      "0011_provider_visual_recovery.sql",
     ]);
   });
 

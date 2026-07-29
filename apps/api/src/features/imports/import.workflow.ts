@@ -598,7 +598,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           }
           const visual = yield* continueVisualFromSettledSpeech({
             acquisitionGeneration: outcome.generation,
-            continueVisual: (speechDispatchId) =>
+            continueVisual: ({ speechDispatchId, visualDispatchId }) =>
               task(
                 "extract-visual-evidence-v1",
                 "visual",
@@ -612,6 +612,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   importRepository: repository,
                   now,
                   speechDispatchId,
+                  visualDispatchId,
                   visualRepository: makeD1VisualEvidenceRepository(database),
                 })
               ),

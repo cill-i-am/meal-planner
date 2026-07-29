@@ -7,7 +7,7 @@ import {
 } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Schema } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 
 import {
   PilotBudgetDispatchId,
@@ -34,6 +34,8 @@ import {
   makeD1ProviderTerminalRecoveryRepository,
 } from "./import-provider-terminal.js";
 import { runProviderTask } from "./import-provider-workflow-task.js";
+import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
+import { makeImportAuthorizer } from "./import.auth.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
 interface ProviderWorkflowInput {
@@ -45,7 +47,8 @@ interface ProviderWorkflowInput {
     | "speech_terminal_recovery_poison"
     | "success"
     | "terminal"
-    | "unknown";
+    | "unknown"
+    | "visual_terminal_recovery";
 }
 
 interface ProviderWorkflowTestEnv {
@@ -297,6 +300,190 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
     };
   }).pipe(Effect.provideService(RuntimeContext, testRuntimeContext));
 
+const visualTerminalRecoveryDispatch = (
+  env: ProviderWorkflowTestEnv,
+  instanceId: string,
+  importId: ImportId,
+  acquisitionGeneration: AcquisitionGeneration
+) =>
+  Effect.gen(function* runVisualTerminalRecoveryDispatch() {
+    const recovery = makeD1ProviderTerminalRecoveryRepository(
+      env.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const dispatchId = yield* recovery.visualDispatchId({
+      acquisitionGeneration,
+      importId,
+    });
+    const sourceMediaSha256 = "b".repeat(64);
+    const visualRepository = makeD1VisualEvidenceRepository(
+      env.MealPlannerDatabase
+    );
+    const claim = yield* visualRepository.claim({
+      dispatchId,
+      generation: acquisitionGeneration,
+      importId,
+      sourceMediaSha256,
+      startedAt: decodeImportTimestamp("2026-07-29T10:05:00.000Z"),
+    });
+    if (claim._tag === "Failed") {
+      return yield* Effect.fail({ code: claim.code });
+    }
+    if (claim._tag === "Completed") {
+      return "visual-evidence";
+    }
+
+    const correlationId = decodeCorrelationId(
+      "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2200"
+    );
+    const budgetRepository = makeD1PilotProviderBudgetRepository(
+      env.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const budget = makePilotProviderDispatchGate({
+      correlationId,
+      now: () => decodeTimestamp("2026-07-29T10:05:00.000Z"),
+      repository: budgetRepository,
+      runId: decodeRunId("gaia-200:visual-terminal-recovery"),
+      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
+    });
+    const client = {
+      gateway: Effect.die("universal AI Gateway binding must not be used"),
+      id: Effect.succeed("meal-planner-pilot-gaia-118"),
+      raw: Effect.succeed({
+        run: async (
+          _model: unknown,
+          _body: unknown,
+          options: unknown
+        ): Promise<Response> => {
+          if (
+            JSON.stringify(options) !==
+            JSON.stringify({
+              gateway: {
+                collectLog: false,
+                id: "meal-planner-pilot-gaia-118",
+                skipCache: true,
+              },
+              returnRawResponse: true,
+            })
+          ) {
+            throw new Error("Gateway logging was not disabled");
+          }
+          await Effect.runPromise(
+            increment(env, instanceId, "visual-provider-calls")
+          );
+          return Response.json({
+            response: { observations: [], outcome: "empty" },
+          });
+        },
+      }),
+      run: () => Effect.die("universal AI Gateway dispatch must not be used"),
+    } as unknown as QueryGatewayClient;
+    const extractor = yield* makeInstalledVisualEvidenceExtractor({
+      client,
+      correlationId,
+      dispatch: budget,
+    });
+    const output = yield* extractor.extract({
+      dispatchId,
+      frames: [
+        {
+          bytes: new Uint8Array([1, 2, 3]),
+          height: 1,
+          mimeType: "image/jpeg",
+          sha256: "a".repeat(64),
+          timestampMilliseconds: 0,
+          width: 1,
+        },
+      ],
+      generation: acquisitionGeneration,
+      importId,
+      sourceMediaSha256,
+    });
+    yield* visualRepository.complete({
+      completedAt: decodeImportTimestamp("2026-07-29T10:06:00.000Z"),
+      cost: output.cost,
+      dispatchId,
+      generation: acquisitionGeneration,
+      importId,
+      manifestKey: `imports/${importId}/visual/v1/generations/${acquisitionGeneration}/manifest.json`,
+      manifestSha256: "d".repeat(64),
+      model: output.model,
+      observationsCount: output.observations.length,
+      outcome: output.outcome,
+      provider: output.provider,
+      sourceMediaSha256,
+      usage: output.usage,
+    });
+    return "visual-evidence";
+  }).pipe(Effect.provideService(RuntimeContext, testRuntimeContext));
+
+const visualTerminalRecoveryRecipe = (
+  env: ProviderWorkflowTestEnv,
+  instanceId: string,
+  importId: ImportId,
+  acquisitionGeneration: AcquisitionGeneration
+) =>
+  Effect.gen(function* runVisualTerminalRecoveryRecipe() {
+    const dispatchId = `recipe:${importId}:${acquisitionGeneration}:gaia-200-evidence`;
+    const settled = yield* Effect.promise(
+      () =>
+        env.MealPlannerDatabase.prepare(
+          `SELECT actual_cost_micro_usd, provider_stage_id, run_id, state
+             FROM pilot_provider_budget_dispatches
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+          .bind(dispatchId)
+          .first() as Promise<{
+          readonly actual_cost_micro_usd: number | null;
+          readonly provider_stage_id: string;
+          readonly run_id: string;
+          readonly state: string;
+        } | null>
+    );
+    if (settled !== null) {
+      if (
+        settled.actual_cost_micro_usd === 29 &&
+        settled.provider_stage_id === "recipe-extraction" &&
+        settled.run_id === "gaia-200:visual-terminal-recovery" &&
+        settled.state === "settled_known"
+      ) {
+        return "recipe-dispatched" as const;
+      }
+      return yield* Effect.die(
+        "Recipe recovery replay found a mismatched budget dispatch"
+      );
+    }
+    const repository = makeD1PilotProviderBudgetRepository(
+      env.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const dispatch = makePilotProviderDispatchGate({
+      correlationId: decodeCorrelationId(
+        "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2201"
+      ),
+      now: () => decodeTimestamp("2026-07-29T10:07:00.000Z"),
+      repository,
+      runId: decodeRunId("gaia-200:visual-terminal-recovery"),
+      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
+    });
+    return yield* dispatch.run({
+      dispatchId,
+      invoke: increment(env, instanceId, "recipe-provider-calls").pipe(
+        Effect.as({
+          cost: {
+            _tag: "Known" as const,
+            actualCostMicroUsd: 29,
+          },
+          value: "recipe-dispatched" as const,
+        })
+      ),
+      maximumCostMicroUsd: 100_000,
+      providerStage: "recipe",
+      providerStageId: "recipe-extraction",
+    });
+  }).pipe(Effect.orDie);
+
 const speechTerminalRecoveryDispatch = (
   env: ProviderWorkflowTestEnv,
   instanceId: string,
@@ -418,6 +605,7 @@ const providerStageByScenario = {
   success: "visual",
   terminal: "visual",
   unknown: "speech",
+  visual_terminal_recovery: "visual",
 } as const satisfies Record<
   ProviderWorkflowInput["scenario"],
   "recipe" | "speech" | "visual"
@@ -504,7 +692,7 @@ const providerWorkflowExport = {
           }
           const visual = yield* continueVisualFromSettledSpeech({
             acquisitionGeneration,
-            continueVisual: (speechDispatchId) =>
+            continueVisual: ({ speechDispatchId, visualDispatchId }) =>
               task(
                 "extract-visual-evidence-v1",
                 Effect.gen(function* recordVisualContinuation() {
@@ -513,6 +701,12 @@ const providerWorkflowExport = {
                     env.PROVIDER_WORKFLOW_STATE.put(
                       stateKey(event.instanceId, "visual-speech-dispatch-id"),
                       speechDispatchId
+                    )
+                  );
+                  yield* Effect.promise(() =>
+                    env.PROVIDER_WORKFLOW_STATE.put(
+                      stateKey(event.instanceId, "visual-dispatch-id"),
+                      visualDispatchId
                     )
                   );
                   return checkpoint;
@@ -525,6 +719,56 @@ const providerWorkflowExport = {
             ),
           });
           return yield* task("finalize-terminal", Effect.succeed(visual));
+        }
+        if (input.scenario === "visual_terminal_recovery") {
+          if (input.importId === undefined) {
+            return yield* Effect.die("Missing visual recovery import ID");
+          }
+          const importId = decodeImportId(input.importId);
+          const acquisitionGeneration = decodeGeneration(1);
+          yield* task(
+            "acquire-v1",
+            increment(env, event.instanceId, "acquisition-calls")
+          );
+          yield* task(
+            "transcribe-video-v1",
+            increment(env, event.instanceId, "speech-calls")
+          );
+          const visual = yield* runProviderTask(
+            "extract-visual-evidence-v1",
+            "visual",
+            visualTerminalRecoveryDispatch(
+              env,
+              event.instanceId,
+              importId,
+              acquisitionGeneration
+            ),
+            (evidence) => ({
+              _tag: "Succeeded" as const,
+              evidence,
+              stage: "visual" as const,
+            })
+          );
+          if (visual._tag === "Failed") {
+            return yield* task("finalize-terminal", Effect.succeed(visual));
+          }
+          const recipe = yield* task(
+            "extract-recipe-v1",
+            visualTerminalRecoveryRecipe(
+              env,
+              event.instanceId,
+              importId,
+              acquisitionGeneration
+            )
+          );
+          return yield* task(
+            "finalize-terminal",
+            Effect.succeed({
+              _tag: "Succeeded" as const,
+              evidence: recipe,
+              stage: "recipe" as const,
+            })
+          );
         }
         const stage = providerStageByScenario[input.scenario];
         let provider: Effect.Effect<string, { readonly code: string }>;
@@ -590,6 +834,13 @@ const readRequest = (request: Request) =>
         readonly id: string;
       }
     | {
+        readonly action: "prepare-visual";
+        readonly authorization?: string;
+        readonly dispatchId: string;
+        readonly id: string;
+        readonly importId: string;
+      }
+    | {
         readonly action: "prepare-speech";
         readonly id: string;
         readonly importId: string;
@@ -650,6 +901,28 @@ export default {
               acquisitionGeneration: decodeGeneration(1),
               createdAt: decodeImportTimestamp("2026-07-27T09:11:00.000Z"),
               importId: decodeImportId(command.importId),
+            })
+          )
+        );
+      }
+      if (command.action === "prepare-visual") {
+        return Response.json(
+          await Effect.runPromise(
+            Effect.gen(function* prepareAuthenticatedVisualRecovery() {
+              const authorizer = yield* makeImportAuthorizer(
+                Redacted.make("test-import-token")
+              );
+              yield* authorizer.authorize(command.authorization);
+              return yield* makeD1ProviderTerminalSettlementService({
+                database: env.MealPlannerDatabase,
+                now: () => decodeImportTimestamp("2026-07-29T10:04:00.000Z"),
+                runtimeStage: "pilot-gaia-118",
+              }).settle({
+                acquisitionGeneration: decodeGeneration(1),
+                dispatchId: decodeDispatchId(command.dispatchId),
+                importId: decodeImportId(command.importId),
+                operation: "prepare_visual_recovery",
+              });
             })
           )
         );

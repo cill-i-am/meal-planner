@@ -56,6 +56,8 @@ export interface SpeechProviderRecovery {
   readonly recoveryDispatchId: string;
 }
 
+export type VisualProviderRecovery = SpeechProviderRecovery;
+
 const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({
     catch: () => providerTerminalPersistenceError("persistence_unavailable"),
@@ -678,6 +680,169 @@ const prepareSettledRecovery = (
   );
 };
 
+const readSettledVisualRecovery = (
+  database: AnyD1Database,
+  importId: ImportId,
+  acquisitionGeneration: AcquisitionGeneration
+) =>
+  persistenceEffect<{ readonly results: readonly unknown[] }>(() =>
+    database
+      .prepare(
+        `SELECT
+           import_id,
+           acquisition_generation,
+           original_dispatch_id,
+           recovery_dispatch_id
+         FROM pilot_provider_visual_recoveries
+         WHERE runtime_stage = ?
+           AND import_id = ?
+           AND acquisition_generation = ?
+         LIMIT 2`
+      )
+      .bind(PilotProviderBudgetStage, importId, acquisitionGeneration)
+      .all()
+  ).pipe(
+    Effect.flatMap(({ results }) =>
+      results.length === 1
+        ? decodeRecovery(results[0])
+        : Effect.fail(
+            providerTerminalPersistenceError(
+              results.length === 0
+                ? "recovery_not_allowed"
+                : "persistence_corrupt"
+            )
+          )
+    )
+  );
+
+const readSettledVisualRecoveryCandidate = (
+  database: AnyD1Database,
+  importId: ImportId,
+  acquisitionGeneration: AcquisitionGeneration,
+  originalDispatchId: string
+) =>
+  persistenceEffect<{
+    readonly original_dispatch_id: string;
+    readonly source_media_sha256: string;
+  } | null>(() =>
+    database
+      .prepare(
+        `SELECT audit.dispatch_id AS original_dispatch_id,
+                visual.source_media_sha256
+           FROM pilot_provider_budget_reconciliations AS audit
+           JOIN pilot_provider_budget_dispatches AS dispatch
+             ON dispatch.runtime_stage = audit.runtime_stage
+            AND dispatch.dispatch_id = audit.dispatch_id
+           JOIN import_provider_terminal_checkpoints AS checkpoint
+             ON checkpoint.import_id = ?
+            AND checkpoint.acquisition_generation = ?
+            AND checkpoint.provider_stage = 'visual'
+            AND checkpoint.ownership_id = audit.dispatch_id
+            AND checkpoint.failure_code = 'visual_extraction_failed'
+           JOIN import_visual_evidence AS visual
+             ON visual.import_id = checkpoint.import_id
+            AND visual.acquisition_generation =
+                  checkpoint.acquisition_generation
+            AND visual.dispatch_id = checkpoint.ownership_id
+            AND visual.state = 'failed'
+            AND visual.failure_code = 'visual_extraction_failed'
+            AND visual.completed_at = checkpoint.completed_at
+           JOIN recipe_imports AS parent
+             ON parent.id = checkpoint.import_id
+            AND parent.acquisition_generation =
+                  checkpoint.acquisition_generation
+            AND parent.status = 'transcribed'
+            AND parent.status_code IS NULL
+            AND parent.recovery_action IS NULL
+            AND json_array_length(parent.evidence_references_json) = 3
+           JOIN import_transcriptions AS transcription
+             ON transcription.import_id = parent.id
+            AND transcription.acquisition_generation =
+                  parent.acquisition_generation
+            AND transcription.state = 'transcribed'
+           JOIN pilot_provider_stage_budget AS stage
+             ON stage.runtime_stage = audit.runtime_stage
+          WHERE audit.runtime_stage = ?
+            AND audit.dispatch_id = ?
+            AND audit.actual_cost_was_unknown = 1
+            AND audit.authority = 'authenticated_operator'
+            AND dispatch.state = 'settled_unknown'
+            AND dispatch.provider_stage_id = 'visual-evidence'
+            AND dispatch.actual_cost_micro_usd IS NULL
+            AND dispatch.maximum_cost_micro_usd =
+                  audit.conservative_charge_micro_usd
+            AND instr(audit.dispatch_id, ':recovery:1') = 0
+            AND stage.state = 'open'
+            AND stage.reserved_micro_usd = 0
+            AND stage.invoking_dispatch_id IS NULL
+            AND stage.poison_dispatch_id IS NULL
+            AND stage.settled_micro_usd < stage.budget_cap_micro_usd
+            AND NOT EXISTS (
+              SELECT 1
+                FROM import_recipe_extractions AS recipe
+               WHERE recipe.import_id = parent.id
+                 AND recipe.acquisition_generation =
+                       parent.acquisition_generation
+            )
+          LIMIT 2`
+      )
+      .bind(
+        importId,
+        acquisitionGeneration,
+        PilotProviderBudgetStage,
+        originalDispatchId
+      )
+      .first<{
+        readonly original_dispatch_id: string;
+        readonly source_media_sha256: string;
+      }>()
+  ).pipe(
+    Effect.flatMap((candidate) =>
+      candidate !== null &&
+      typeof candidate.original_dispatch_id === "string" &&
+      candidate.original_dispatch_id.length > 0 &&
+      !candidate.original_dispatch_id.includes(":recovery:1") &&
+      typeof candidate.source_media_sha256 === "string" &&
+      /^[\da-f]{64}$/u.test(candidate.source_media_sha256)
+        ? Effect.succeed(candidate)
+        : Effect.fail(providerTerminalPersistenceError("recovery_not_allowed"))
+    )
+  );
+
+const prepareSettledVisualRecovery = (
+  database: AnyD1Database,
+  input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly createdAt: ImportTimestamp;
+    readonly importId: ImportId;
+  },
+  candidate: {
+    readonly original_dispatch_id: string;
+    readonly source_media_sha256: string;
+  }
+) => {
+  const recoveryDispatchId = `${candidate.original_dispatch_id}:recovery:1`;
+  return persistenceEffect(() =>
+    database
+      .prepare(
+        `INSERT INTO pilot_provider_visual_recoveries (
+           runtime_stage, import_id, acquisition_generation,
+           original_dispatch_id, recovery_dispatch_id, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(runtime_stage, original_dispatch_id) DO NOTHING`
+      )
+      .bind(
+        PilotProviderBudgetStage,
+        input.importId,
+        input.acquisitionGeneration,
+        candidate.original_dispatch_id,
+        recoveryDispatchId,
+        DateTime.formatIso(input.createdAt)
+      )
+      .run()
+  );
+};
+
 export interface ProviderTerminalRecoveryRepository {
   readonly prepareSpeechUnknownRecovery: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
@@ -685,6 +850,16 @@ export interface ProviderTerminalRecoveryRepository {
     readonly importId: ImportId;
   }) => Effect.Effect<SpeechProviderRecovery, ProviderTerminalPersistenceError>;
   readonly speechDispatchId: (input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly importId: ImportId;
+  }) => Effect.Effect<string, ProviderTerminalPersistenceError>;
+  readonly prepareVisualUnknownRecovery: (input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly createdAt: ImportTimestamp;
+    readonly importId: ImportId;
+    readonly originalDispatchId: string;
+  }) => Effect.Effect<VisualProviderRecovery, ProviderTerminalPersistenceError>;
+  readonly visualDispatchId: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
     readonly importId: ImportId;
   }) => Effect.Effect<string, ProviderTerminalPersistenceError>;
@@ -803,6 +978,70 @@ export const makeD1ProviderTerminalRecoveryRepository = (
       }
       return recovery;
     }),
+  prepareVisualUnknownRecovery: (input) =>
+    Effect.gen(function* prepareVisualUnknownRecovery() {
+      if (runtimeStage !== PilotProviderBudgetStage) {
+        return yield* Effect.fail(
+          providerTerminalPersistenceError("stage_not_allowed")
+        );
+      }
+      const existing = yield* readSettledVisualRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration
+      ).pipe(
+        Effect.map((recovery): VisualProviderRecovery | null => recovery),
+        Effect.catchTag(
+          "ProviderTerminalPersistenceError",
+          allowMissingRecovery
+        )
+      );
+      if (existing !== null) {
+        return existing.originalDispatchId === input.originalDispatchId
+          ? existing
+          : yield* Effect.fail(
+              providerTerminalPersistenceError("recovery_not_allowed")
+            );
+      }
+      const candidate = yield* readSettledVisualRecoveryCandidate(
+        database,
+        input.importId,
+        input.acquisitionGeneration,
+        input.originalDispatchId
+      ).pipe(
+        Effect.map(
+          (
+            value
+          ): {
+            readonly original_dispatch_id: string;
+            readonly source_media_sha256: string;
+          } | null => value
+        ),
+        Effect.catchTag(
+          "ProviderTerminalPersistenceError",
+          allowMissingRecovery
+        )
+      );
+      if (candidate === null) {
+        return yield* readSettledVisualRecovery(
+          database,
+          input.importId,
+          input.acquisitionGeneration
+        );
+      }
+      const recoveryDispatchId = `${candidate.original_dispatch_id}:recovery:1`;
+      if (recoveryDispatchId.length > 100) {
+        return yield* Effect.fail(
+          providerTerminalPersistenceError("persistence_corrupt")
+        );
+      }
+      yield* prepareSettledVisualRecovery(database, input, candidate);
+      return yield* readSettledVisualRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration
+      );
+    }),
   speechDispatchId: (input) =>
     Effect.gen(function* readSpeechDispatchId() {
       if (runtimeStage !== PilotProviderBudgetStage) {
@@ -817,6 +1056,31 @@ export const makeD1ProviderTerminalRecoveryRepository = (
             )
           : Effect.fail(error);
       return yield* readRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration
+      ).pipe(
+        Effect.map(({ recoveryDispatchId }) => recoveryDispatchId),
+        Effect.catchTag(
+          "ProviderTerminalPersistenceError",
+          useOriginalDispatchId
+        )
+      );
+    }),
+  visualDispatchId: (input) =>
+    Effect.gen(function* readVisualDispatchId() {
+      if (runtimeStage !== PilotProviderBudgetStage) {
+        return yield* Effect.fail(
+          providerTerminalPersistenceError("stage_not_allowed")
+        );
+      }
+      const useOriginalDispatchId = (error: ProviderTerminalPersistenceError) =>
+        error.code === "recovery_not_allowed"
+          ? Effect.succeed(
+              `visual:${input.importId}:${input.acquisitionGeneration}`
+            )
+          : Effect.fail(error);
+      return yield* readSettledVisualRecovery(
         database,
         input.importId,
         input.acquisitionGeneration
