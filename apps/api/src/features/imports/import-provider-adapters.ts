@@ -551,7 +551,6 @@ const oneNativeWorkersAiToolCall = <Name extends string, S extends Schema.Top>(
             max_tokens: 16_384,
             messages: [{ content: input.prompt, role: "user" }],
             temperature: 0,
-            tool_choice: "required",
             tools: [
               {
                 description: input.description,

@@ -1078,7 +1078,7 @@ describe("installed import provider adapters", () => {
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
     const request = gateway.requests[0] as {
       readonly body: {
-        readonly tool_choice: string;
+        readonly tool_choice?: unknown;
         readonly tools: readonly {
           readonly name: string;
           readonly parameters: unknown;
@@ -1104,7 +1104,7 @@ describe("installed import provider adapters", () => {
     });
     expect(request.options.gateway).not.toHaveProperty("metadata");
     expect(request.options).not.toHaveProperty("headers");
-    expect(request.body.tool_choice).toBe("required");
+    expect(request.body).not.toHaveProperty("tool_choice");
     expect(request.body.tools).toEqual([
       {
         description:
