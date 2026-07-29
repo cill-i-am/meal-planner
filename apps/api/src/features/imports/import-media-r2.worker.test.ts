@@ -743,6 +743,13 @@ describe("native R2 generation commit", () => {
       await vi.advanceTimersByTimeAsync(1);
       const exit = await result;
       expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+          _tag: "RetryableAcquisitionFailure",
+          reason: "acquisition_timeout",
+          stage: "store",
+        });
+      }
 
       await expect(
         Effect.runPromise(
@@ -809,6 +816,13 @@ describe("native R2 generation commit", () => {
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+        _tag: "RetryableAcquisitionFailure",
+        reason: "container_rpc",
+        stage: "store",
+      });
+    }
     expect(events).toEqual(["stream-finalized", "cleanup"]);
   });
 

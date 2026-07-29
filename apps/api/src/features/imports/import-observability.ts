@@ -7,6 +7,14 @@ export const ImportCorrelationId = Schema.String.pipe(
 export type ImportCorrelationId = typeof ImportCorrelationId.Type;
 
 export const ImportObservabilityEventName = Schema.Literals([
+  "acquisition.decode",
+  "acquisition.dispatch",
+  "acquisition.rejection",
+  "acquisition.response",
+  "acquisition.retry",
+  "acquisition.settlement",
+  "acquisition.terminal",
+  "acquisition.timeout",
   "budget.poison",
   "budget.reservation",
   "import.accepted",
@@ -24,6 +32,18 @@ export const ImportObservabilityEventName = Schema.Literals([
 export type ImportObservabilityEventName =
   typeof ImportObservabilityEventName.Type;
 
+export const AcquisitionDiagnosticReasonCode = Schema.Literals([
+  "container_exit",
+  "decode_schema",
+  "state_fence",
+  "timeout",
+  "transport",
+  "unsupported_type",
+  "validation",
+]);
+export type AcquisitionDiagnosticReasonCode =
+  typeof AcquisitionDiagnosticReasonCode.Type;
+
 export const ImportObservabilityEvent = Schema.Struct({
   attempt: Schema.optionalKey(
     Schema.Number.pipe(
@@ -36,6 +56,7 @@ export const ImportObservabilityEvent = Schema.Struct({
     Schema.Literals([
       "accepted",
       "completed",
+      "decoded",
       "exhausted",
       "failed",
       "known",
@@ -43,7 +64,9 @@ export const ImportObservabilityEvent = Schema.Struct({
       "poisoned",
       "received",
       "reserved",
+      "rejected",
       "retrying",
+      "settled",
       "started",
       "succeeded",
       "timed_out",
@@ -53,6 +76,7 @@ export const ImportObservabilityEvent = Schema.Struct({
   providerStage: Schema.optionalKey(
     Schema.Literals(["recipe", "speech", "visual"])
   ),
+  reasonCode: Schema.optionalKey(AcquisitionDiagnosticReasonCode),
 });
 export type ImportObservabilityEvent = typeof ImportObservabilityEvent.Type;
 
@@ -95,6 +119,7 @@ const eventAnnotations = (event: ImportObservabilityEvent) => ({
   ...(event.providerStage === undefined
     ? {}
     : { providerStage: event.providerStage }),
+  ...(event.reasonCode === undefined ? {} : { reasonCode: event.reasonCode }),
 });
 
 /**
@@ -106,20 +131,23 @@ const eventAnnotations = (event: ImportObservabilityEvent) => ({
 export const emitImportObservabilityEvent = (
   rawEvent: unknown,
   capturedTraceStore?: ImportObservabilityTraceStoreShape
-) => {
-  const event = decodeEvent(rawEvent);
-  const annotations = eventAnnotations(event);
-  return Effect.gen(function* emitClosedImportEvent() {
-    yield* Console.log(annotations);
-    const traceStore =
-      capturedTraceStore === undefined
-        ? yield* Effect.serviceOption(ImportObservabilityTraceStore)
-        : Option.some(capturedTraceStore);
-    if (Option.isSome(traceStore)) {
-      yield* traceStore.value.append(event);
-    }
+) =>
+  Effect.suspend(() => {
+    const event = decodeEvent(rawEvent);
+    const annotations = eventAnnotations(event);
+    return Effect.gen(function* emitClosedImportEvent() {
+      yield* Console.log(annotations);
+      const traceStore =
+        capturedTraceStore === undefined
+          ? yield* Effect.serviceOption(ImportObservabilityTraceStore)
+          : Option.some(capturedTraceStore);
+      if (Option.isSome(traceStore)) {
+        yield* traceStore.value.append(event);
+      }
+    }).pipe(
+      Effect.withSpan(`import.${event.event}`, { attributes: annotations })
+    );
   }).pipe(
-    Effect.withSpan(`import.${event.event}`, { attributes: annotations }),
     // Logs, spans and trace persistence are diagnostic only. Preserve caller
     // interruption, but prevent any telemetry failure or defect from changing
     // provider, retry or settlement behavior.
@@ -129,7 +157,6 @@ export const emitImportObservabilityEvent = (
     ),
     Effect.asVoid
   );
-};
 
 export const observeImportQueueReceipt = (
   newCorrelationId: () => ImportCorrelationId = makeImportCorrelationId

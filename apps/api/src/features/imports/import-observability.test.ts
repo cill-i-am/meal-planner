@@ -37,13 +37,19 @@ describe("private import observability", () => {
     "authorization",
     "cookie",
     "credential",
+    "headers",
     "media",
     "objectKey",
     "prompt",
     "providerPayload",
     "rawError",
+    "rawStderr",
+    "rawStdout",
     "sourceId",
+    "sourceHeaders",
     "sourceUrl",
+    "stderr",
+    "stdout",
     "transcript",
     "url",
   ])("rejects the sensitive %s field at the logging boundary", (field) => {
@@ -59,6 +65,26 @@ describe("private import observability", () => {
         [field]: "sensitive",
       })
     ).toThrow();
+  });
+
+  it("drops invalid telemetry without synchronously surfacing forbidden values", async () => {
+    const forbiddenValue = "https://secret.example/video?token=private-canary";
+    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    let telemetry: Effect.Effect<void> | undefined;
+
+    expect(() => {
+      telemetry = emitImportObservabilityEvent({
+        correlationId,
+        event: "acquisition.response",
+        sourceUrl: forbiddenValue,
+      });
+    }).not.toThrow();
+    await expect(
+      Effect.runPromise(telemetry ?? Effect.die("missing telemetry effect"))
+    ).resolves.toBeUndefined();
+
+    expect(JSON.stringify(log.mock.calls)).not.toContain(forbiddenValue);
+    log.mockRestore();
   });
 
   it("emits only the closed event name and allowlisted annotations", async () => {

@@ -51,6 +51,12 @@ describe("durable private import trace stream", () => {
           outcome: "received",
           providerStage: "speech",
         });
+        yield* emitImportObservabilityEvent({
+          correlationId,
+          event: "acquisition.terminal",
+          outcome: "rejected",
+          reasonCode: "container_exit",
+        });
       }).pipe(Effect.provideService(ImportObservabilityTraceStore, traceStore))
     );
 
@@ -66,6 +72,12 @@ describe("durable private import trace stream", () => {
         event: "provider.response",
         outcome: "received",
         providerStage: "speech",
+      },
+      {
+        correlationId,
+        event: "acquisition.terminal",
+        outcome: "rejected",
+        reasonCode: "container_exit",
       },
     ]);
 
@@ -86,7 +98,7 @@ describe("durable private import trace stream", () => {
         readonly eventTag: string;
         readonly itemId: string;
       }>();
-    expect(rows.results).toHaveLength(2);
+    expect(rows.results).toHaveLength(3);
     expect(
       rows.results.every(
         (row: { readonly actorId: string | null }) => row.actorId === null
@@ -98,7 +110,7 @@ describe("durable private import trace stream", () => {
       )
     ).toBe(true);
     expect(JSON.stringify(rows.results)).not.toMatch(
-      /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
+      /https?:|prompt|transcript|cookie|authorization|credential|media|payload|stdout|stderr|headers/iu
     );
     log.mockRestore();
   });

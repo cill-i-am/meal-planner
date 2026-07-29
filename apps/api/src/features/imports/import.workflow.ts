@@ -21,7 +21,10 @@ import {
   makePilotProviderBudgetRuntime,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
-import type { AcquisitionCheckpointRejected } from "./import-acquisition-checkpoint.js";
+import type {
+  AcquisitionCheckpointRejected,
+  DecodedAcquisitionCheckpoint,
+} from "./import-acquisition-checkpoint.js";
 import {
   continueAcquisitionCheckpoint,
   decodeAcquisitionCheckpoint,
@@ -56,7 +59,10 @@ import type {
   RetryableAcquisitionFailure,
 } from "./import-media.model.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
-import type { ImportCorrelationId } from "./import-observability.js";
+import type {
+  AcquisitionDiagnosticReasonCode,
+  ImportCorrelationId,
+} from "./import-observability.js";
 import {
   ImportObservabilityTraceStore,
   emitImportObservabilityEvent,
@@ -103,7 +109,10 @@ import {
 import { workflowStartUnavailable } from "./import.errors.js";
 import type { WorkflowStartUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type { StoredImport } from "./import.repository.js";
+import type {
+  AcquisitionFinalizationResult as AcquisitionFinalizationResultType,
+  StoredImport,
+} from "./import.repository.js";
 import { AcquisitionFinalizationResult } from "./import.repository.js";
 
 export const AcquisitionTaskStepConfig = {
@@ -139,6 +148,108 @@ interface UnconfirmedAcquisitionRetry {
 
 type AcquisitionRetry = ConfirmedAcquisitionRetry | UnconfirmedAcquisitionRetry;
 
+const acquisitionFailureReasonCode = (
+  failure: ConfirmedAcquisitionRetry
+): AcquisitionDiagnosticReasonCode => {
+  if (
+    failure.reason === "download_timeout" ||
+    failure.reason === "acquisition_timeout" ||
+    failure.reason === "container_process_timeout"
+  ) {
+    return "timeout";
+  }
+  if (failure.reason === "container_exit") {
+    return "container_exit";
+  }
+  if (
+    failure.reason === "container_rpc" ||
+    failure.reason === "download_dns" ||
+    failure.reason === "download_http_response" ||
+    failure.reason === "download_source_unavailable" ||
+    failure.reason === "download_stream_or_tls"
+  ) {
+    return "transport";
+  }
+  return failure.stage === "process" ? "container_exit" : "validation";
+};
+
+const acquisitionOutcomeReasonCode = (
+  outcome: AcquisitionTaskOutcome
+): AcquisitionDiagnosticReasonCode | undefined => {
+  if (outcome._tag === "RetryExhausted") {
+    return acquisitionFailureReasonCode({
+      _tag: "ConfirmedAcquisitionRetry",
+      generation: outcome.generation,
+      ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
+      stage: outcome.stage,
+    });
+  }
+  if (outcome._tag === "TerminalMedia") {
+    return outcome.code === "unsupported_streams"
+      ? "unsupported_type"
+      : "validation";
+  }
+  if (outcome._tag === "Unavailable") {
+    return "transport";
+  }
+  return outcome._tag === "UnsupportedCarousel"
+    ? "unsupported_type"
+    : undefined;
+};
+
+export const observeAcquisitionCheckpoint = (
+  correlationId: ImportCorrelationId,
+  checkpoint: DecodedAcquisitionCheckpoint
+) =>
+  checkpoint._tag === "AcquisitionCheckpointRejected"
+    ? emitImportObservabilityEvent({
+        correlationId,
+        event: "acquisition.rejection",
+        outcome: "rejected",
+        reasonCode: "decode_schema",
+      }).pipe(
+        Effect.andThen(
+          emitImportObservabilityEvent({
+            correlationId,
+            event: "acquisition.terminal",
+            outcome: "rejected",
+            reasonCode: "decode_schema",
+          })
+        )
+      )
+    : emitImportObservabilityEvent({
+        correlationId,
+        event: "acquisition.decode",
+        outcome: "decoded",
+      });
+
+export const observeAcquisitionSettlement = (
+  correlationId: ImportCorrelationId,
+  outcome: AcquisitionTaskOutcome,
+  settlement: AcquisitionFinalizationResultType
+) => {
+  const reasonCode =
+    settlement === "Superseded"
+      ? ("state_fence" as const)
+      : acquisitionOutcomeReasonCode(outcome);
+  const settled = emitImportObservabilityEvent({
+    correlationId,
+    event: "acquisition.settlement",
+    outcome: settlement === "Superseded" ? "rejected" : "settled",
+    ...(settlement === "Superseded" ? { reasonCode } : {}),
+  });
+  return settled.pipe(
+    Effect.andThen(
+      emitImportObservabilityEvent({
+        correlationId,
+        event: "acquisition.terminal",
+        outcome: reasonCode === undefined ? "succeeded" : "rejected",
+        ...(reasonCode === undefined ? {} : { reasonCode }),
+      })
+    )
+  );
+};
+
 export const runAcquisitionTask = <
   Allocation extends AcquisitionAttemptAllocation,
   AllocationError,
@@ -146,87 +257,149 @@ export const runAcquisitionTask = <
   allocate: () => Effect.Effect<Allocation, AllocationError>,
   attempt: (
     allocation: Allocation
-  ) => Effect.Effect<AcquisitionTaskOutcome, RetryableAcquisitionFailure>
+  ) => Effect.Effect<AcquisitionTaskOutcome, RetryableAcquisitionFailure>,
+  options?: { readonly correlationId?: ImportCorrelationId }
 ) =>
   Effect.suspend(() => {
     let confirmedGeneration: AcquisitionGeneration | undefined;
-    return allocate().pipe(
-      Effect.mapError(
-        (): UnconfirmedAcquisitionRetry => ({
-          _tag: "UnconfirmedAcquisitionRetry",
-          stage: "reconcile",
-        })
-      ),
-      Effect.tap((allocation) =>
-        Effect.sync(() => {
-          confirmedGeneration = allocation.generation;
-        })
-      ),
-      Effect.flatMap((allocation) =>
-        attempt(allocation).pipe(
-          Effect.flatMap((outcome) =>
-            outcome.generation === allocation.generation
-              ? Effect.succeed(outcome)
-              : Effect.fail({
-                  _tag: "RetryableAcquisitionFailure" as const,
-                  stage: "verify" as const,
-                })
-          ),
-          Effect.mapError(
-            // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.mapError is a typed Effect combinator, not Promise callback control flow.
-            (error): ConfirmedAcquisitionRetry => {
-              const reason = "reason" in error ? error.reason : undefined;
-              return {
-                _tag: "ConfirmedAcquisitionRetry",
-                generation: allocation.generation,
-                ...(reason === undefined ? {} : { reason }),
-                stage: error.stage,
-              };
+    let attemptNumber = 0;
+    let executionNumber = 0;
+    const runAttempt = Effect.suspend(() => {
+      executionNumber += 1;
+      return allocate().pipe(
+        Effect.mapError(
+          (): UnconfirmedAcquisitionRetry => ({
+            _tag: "UnconfirmedAcquisitionRetry",
+            stage: "reconcile",
+          })
+        ),
+        Effect.tap((allocation) =>
+          Effect.sync(() => {
+            confirmedGeneration = allocation.generation;
+          })
+        ),
+        Effect.flatMap((allocation) =>
+          Effect.gen(function* observeAcquisitionAttempt() {
+            attemptNumber += 1;
+            if (options?.correlationId !== undefined) {
+              yield* emitImportObservabilityEvent({
+                attempt: attemptNumber,
+                correlationId: options.correlationId,
+                event: "acquisition.dispatch",
+                outcome: "started",
+              });
             }
+            const outcome = yield* attempt(allocation);
+            if (outcome.generation !== allocation.generation) {
+              return yield* Effect.fail({
+                _tag: "RetryableAcquisitionFailure" as const,
+                stage: "verify" as const,
+              });
+            }
+            if (options?.correlationId !== undefined) {
+              yield* emitImportObservabilityEvent({
+                attempt: attemptNumber,
+                correlationId: options.correlationId,
+                event: "acquisition.response",
+                outcome: "succeeded",
+              });
+            }
+            return outcome;
+          }).pipe(
+            Effect.mapError(
+              // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.mapError is a typed Effect combinator, not Promise callback control flow.
+              (error): ConfirmedAcquisitionRetry => {
+                const reason = "reason" in error ? error.reason : undefined;
+                return {
+                  _tag: "ConfirmedAcquisitionRetry",
+                  generation: allocation.generation,
+                  ...(reason === undefined ? {} : { reason }),
+                  stage: error.stage,
+                };
+              }
+            )
           )
-        )
-      ),
-      Effect.timeoutOrElse({
-        duration: `${MaximumAcquisitionExecutionMilliseconds} millis`,
-        orElse: (): Effect.Effect<never, AcquisitionRetry> =>
-          confirmedGeneration === undefined
-            ? Effect.fail({
-                _tag: "UnconfirmedAcquisitionRetry",
-                stage: "reconcile",
-              })
-            : Effect.fail({
-                _tag: "ConfirmedAcquisitionRetry",
-                generation: confirmedGeneration,
-                stage: "process",
-              }),
+        ),
+        Effect.timeoutOrElse({
+          duration: `${MaximumAcquisitionExecutionMilliseconds} millis`,
+          orElse: (): Effect.Effect<never, AcquisitionRetry> =>
+            confirmedGeneration === undefined
+              ? Effect.fail({
+                  _tag: "UnconfirmedAcquisitionRetry",
+                  stage: "reconcile",
+                })
+              : Effect.fail({
+                  _tag: "ConfirmedAcquisitionRetry",
+                  generation: confirmedGeneration,
+                  reason: "acquisition_timeout",
+                  stage: "process",
+                }),
+        }),
+        // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.tapError is a typed Effect combinator, not Promise callback control flow.
+        Effect.tapError((error) => {
+          if (
+            options?.correlationId === undefined ||
+            error._tag !== "ConfirmedAcquisitionRetry"
+          ) {
+            return Effect.void;
+          }
+          const reasonCode = acquisitionFailureReasonCode(error);
+          const response = emitImportObservabilityEvent({
+            attempt: attemptNumber,
+            correlationId: options.correlationId,
+            event:
+              reasonCode === "timeout"
+                ? "acquisition.timeout"
+                : "acquisition.response",
+            outcome: reasonCode === "timeout" ? "timed_out" : "failed",
+            reasonCode,
+          });
+          return executionNumber < 3
+            ? response.pipe(
+                Effect.andThen(
+                  emitImportObservabilityEvent({
+                    attempt: attemptNumber,
+                    correlationId: options.correlationId,
+                    event: "acquisition.retry",
+                    outcome: "retrying",
+                    reasonCode,
+                  })
+                )
+              )
+            : response;
+        })
+      );
+    });
+
+    return runAttempt.pipe(
+      Effect.retry({ schedule: TypedAcquisitionRetrySchedule }),
+      Effect.matchEffect({
+        onFailure: (error) => {
+          if (error._tag !== "ConfirmedAcquisitionRetry") {
+            return Effect.fail(error);
+          }
+          const outcome =
+            error.reason === "download_source_unavailable"
+              ? {
+                  _tag: "Unavailable" as const,
+                  code: "private_or_unavailable" as const,
+                  generation: error.generation,
+                }
+              : {
+                  _tag: "RetryExhausted" as const,
+                  attempts: 3 as const,
+                  generation: error.generation,
+                  ...(error.reason === undefined
+                    ? {}
+                    : { reason: error.reason }),
+                  stage: error.stage,
+                };
+          return Effect.succeed(outcome);
+        },
+        onSuccess: Effect.succeed,
       })
     );
-  }).pipe(
-    Effect.retry({ schedule: TypedAcquisitionRetrySchedule }),
-    Effect.matchEffect({
-      onFailure: (error) =>
-        error._tag === "ConfirmedAcquisitionRetry"
-          ? Effect.succeed(
-              error.reason === "download_source_unavailable"
-                ? {
-                    _tag: "Unavailable" as const,
-                    code: "private_or_unavailable" as const,
-                    generation: error.generation,
-                  }
-                : {
-                    _tag: "RetryExhausted" as const,
-                    attempts: 3 as const,
-                    generation: error.generation,
-                    ...(error.reason === undefined
-                      ? {}
-                      : { reason: error.reason }),
-                    stage: error.stage,
-                  }
-            )
-          : Effect.fail(error),
-      onSuccess: Effect.succeed,
-    })
-  );
+  });
 
 export { ImportWorkflowInput } from "./import-workflow-input.js";
 const AcquisitionClaimCheckpoint = Schema.Union([
@@ -627,7 +800,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                                   now: () => new Date(),
                                 }
                               )
-                            : Effect.die("Persisted canonical identity changed")
+                            : Effect.die(
+                                "Persisted canonical identity changed"
+                              ),
+                        { correlationId }
                       )
                     : Effect.succeed(recovered)
               ),
@@ -641,6 +817,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             AcquisitionTaskStepConfig
           );
           const decodedCheckpoint = decodeAcquisitionCheckpoint(encodedOutcome);
+          yield* observeAcquisitionCheckpoint(correlationId, decodedCheckpoint);
           if (decodedCheckpoint._tag === "AcquisitionCheckpointRejected") {
             return decodedCheckpoint;
           }
@@ -678,9 +855,14 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               Effect.orDie
             )
           );
-          yield* Schema.decodeUnknownEffect(AcquisitionFinalizationResult)(
-            encodedFinalization
-          ).pipe(Effect.orDie);
+          const finalization = yield* Schema.decodeUnknownEffect(
+            AcquisitionFinalizationResult
+          )(encodedFinalization).pipe(Effect.orDie);
+          yield* observeAcquisitionSettlement(
+            correlationId,
+            outcome,
+            finalization
+          );
           if (outcome._tag !== "VerifiedAcquisition") {
             return encodedOutcome;
           }

@@ -118,8 +118,11 @@ export const makeTemporaryArtifactStore = (
   };
 };
 
-const retryableProcess = (): RetryableAcquisitionFailure => ({
+const retryableProcess = (
+  reason?: RetryableAcquisitionFailure["reason"]
+): RetryableAcquisitionFailure => ({
   _tag: "RetryableAcquisitionFailure",
+  ...(reason === undefined ? {} : { reason }),
   stage: "process",
 });
 const terminalProcess = (): TerminalMediaFailure => ({
@@ -134,6 +137,8 @@ const limitExceeded = (): TerminalMediaFailure => ({
 });
 
 const OutputLimitExceeded = Symbol("OutputLimitExceeded");
+const ProcessExited = Symbol("ProcessExited");
+const ProcessTimedOut = Symbol("ProcessTimedOut");
 
 const processFailure = (
   error: unknown,
@@ -142,7 +147,12 @@ const processFailure = (
   if (error === OutputLimitExceeded) {
     return limitExceeded();
   }
-  return failure === "retryable" ? retryableProcess() : terminalProcess();
+  if (failure !== "retryable") {
+    return terminalProcess();
+  }
+  return retryableProcess(
+    error === ProcessTimedOut ? "container_process_timeout" : "container_exit"
+  );
 };
 
 export interface TemporaryWorkspaceEntry {
@@ -266,11 +276,15 @@ export const makeMediaProcessRunner = (
         }
         const controller = new AbortController();
         const abort = () => controller.abort();
+        let deadlineExceeded = false;
         signal.addEventListener("abort", abort, { once: true });
         if (signal.aborted) {
           controller.abort();
         }
-        const timeout = setTimeout(abort, options.deadlineMilliseconds);
+        const timeout = setTimeout(() => {
+          deadlineExceeded = true;
+          controller.abort();
+        }, options.deadlineMilliseconds);
         const stdoutChunks: Uint8Array[] = [];
         let stdoutBytes = 0;
         let stderrBytes = 0;
@@ -317,7 +331,7 @@ export const makeMediaProcessRunner = (
             throw OutputLimitExceeded;
           }
           if (controller.signal.aborted) {
-            throw new Error("media process interrupted");
+            throw deadlineExceeded ? ProcessTimedOut : ProcessExited;
           }
           const workspacePoll = setInterval(startPeriodicWorkspaceScan, 25);
           let execution:
@@ -365,13 +379,13 @@ export const makeMediaProcessRunner = (
             throw OutputLimitExceeded;
           }
           if (controller.signal.aborted) {
-            throw new Error("media process failed");
+            throw deadlineExceeded ? ProcessTimedOut : ProcessExited;
           }
           if (execution._tag === "Failure") {
-            throw execution.error;
+            throw ProcessExited;
           }
           if (execution.result.exitCode !== 0) {
-            throw new Error("media process failed");
+            throw ProcessExited;
           }
           const stdout = new Uint8Array(stdoutBytes);
           let offset = 0;
