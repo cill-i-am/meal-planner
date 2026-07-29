@@ -99,12 +99,17 @@ describe("bounded media process execution", () => {
         failure: "terminal",
       })
     );
-    await expectSafeFailure(
+    const exitFailure = await expectSafeFailure(
       exitRunner.run("ffmpeg", ["-c", "copy"], {
         deadlineMilliseconds: 100,
         failure: "retryable",
       })
     );
+    expect(exitFailure).toEqual({
+      _tag: "RetryableAcquisitionFailure",
+      reason: "container_exit",
+      stage: "process",
+    });
 
     const asynchronousOverflow = makeMediaProcessRunner(
       ({ stdout }) =>
@@ -159,6 +164,7 @@ describe("bounded media process execution", () => {
         _tag: "Settled",
         failure: {
           _tag: "RetryableAcquisitionFailure",
+          reason: "container_process_timeout",
           stage: "process",
         },
       });
@@ -249,6 +255,7 @@ describe("bounded media process execution", () => {
           Option.getOrThrow(Cause.findErrorOption(result.exit.cause))
         ).toEqual({
           _tag: "RetryableAcquisitionFailure",
+          reason: "container_process_timeout",
           stage: "process",
         });
         expect(result.finalizersAtSettlement).toBe(1);

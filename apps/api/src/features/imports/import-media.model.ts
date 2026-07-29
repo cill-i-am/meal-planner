@@ -43,6 +43,9 @@ export const AcquisitionStage = Schema.Literals([
 export type AcquisitionStage = typeof AcquisitionStage.Type;
 
 export const AcquisitionFailureReason = Schema.Literals([
+  "acquisition_timeout",
+  "container_exit",
+  "container_process_timeout",
   "container_rpc",
   "download_dns",
   "download_http_response",

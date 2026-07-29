@@ -17,7 +17,11 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
-import { ImportCorrelationId } from "./import-observability.js";
+import type { ImportObservabilityEvent } from "./import-observability.js";
+import {
+  ImportCorrelationId,
+  ImportObservabilityTraceStore,
+} from "./import-observability.js";
 import { ImportId } from "./import.contracts.js";
 import {
   ensureImportWorkflowStarted,
@@ -27,6 +31,8 @@ import {
   MaximumAbsoluteWorkflowSeconds,
   MaximumNestedAcquisitionAttempts,
   MaximumScheduledWorkflowSeconds,
+  observeAcquisitionCheckpoint,
+  observeAcquisitionSettlement,
   runAcquisitionTask,
 } from "./import.workflow.js";
 
@@ -683,6 +689,102 @@ describe("import acquisition retry contract", () => {
     expect(semanticAttempts).toBe(1);
   });
 
+  it("records decode rejection and settlement terminal reasons without payload data", async () => {
+    const events: ImportObservabilityEvent[] = [];
+    const traceStore = ImportObservabilityTraceStore.of({
+      append: (event) =>
+        Effect.sync(() => {
+          events.push(event);
+        }),
+      read: () => Effect.succeed(events),
+    });
+    const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(4);
+
+    await Effect.runPromise(
+      Effect.gen(function* observeClosedAcquisitionLifecycle() {
+        yield* observeAcquisitionCheckpoint(correlationId, {
+          _tag: "AcquisitionCheckpointRejected",
+          code: "historical_acquisition_checkpoint_invalid",
+        });
+        yield* observeAcquisitionCheckpoint(correlationId, {
+          _tag: "Accepted",
+          outcome: {
+            _tag: "UnsupportedCarousel",
+            code: "unsupported_carousel",
+            generation,
+          },
+        });
+        yield* observeAcquisitionSettlement(
+          correlationId,
+          {
+            _tag: "UnsupportedCarousel",
+            code: "unsupported_carousel",
+            generation,
+          },
+          "Recorded"
+        );
+        yield* observeAcquisitionSettlement(
+          correlationId,
+          {
+            _tag: "UnsupportedCarousel",
+            code: "unsupported_carousel",
+            generation,
+          },
+          "Superseded"
+        );
+      }).pipe(Effect.provideService(ImportObservabilityTraceStore, traceStore))
+    );
+
+    expect(events).toEqual([
+      {
+        correlationId,
+        event: "acquisition.rejection",
+        outcome: "rejected",
+        reasonCode: "decode_schema",
+      },
+      {
+        correlationId,
+        event: "acquisition.terminal",
+        outcome: "rejected",
+        reasonCode: "decode_schema",
+      },
+      {
+        correlationId,
+        event: "acquisition.decode",
+        outcome: "decoded",
+      },
+      {
+        correlationId,
+        event: "acquisition.settlement",
+        outcome: "settled",
+      },
+      {
+        correlationId,
+        event: "acquisition.terminal",
+        outcome: "rejected",
+        reasonCode: "unsupported_type",
+      },
+      {
+        correlationId,
+        event: "acquisition.settlement",
+        outcome: "rejected",
+        reasonCode: "state_fence",
+      },
+      {
+        correlationId,
+        event: "acquisition.terminal",
+        outcome: "rejected",
+        reasonCode: "state_fence",
+      },
+    ]);
+    expect(events.every((event) => event.correlationId === correlationId)).toBe(
+      true
+    );
+    expect(JSON.stringify(events)).not.toMatch(
+      /https?:|prompt|transcript|cookie|authorization|credential|media|payload|stdout|stderr|headers/iu
+    );
+  });
+
   it("converges an exhausted source-unavailable retry without changing other retry exhaustion", async () => {
     let allocations = 0;
     let attempts = 0;
@@ -758,6 +860,14 @@ describe("import acquisition retry contract", () => {
   it("reserves bounded cleanup inside three total 330-second attempt budgets", async () => {
     let allocations = 0;
     let cleanups = 0;
+    const events: ImportObservabilityEvent[] = [];
+    const traceStore = ImportObservabilityTraceStore.of({
+      append: (event) =>
+        Effect.sync(() => {
+          events.push(event);
+        }),
+      read: () => Effect.succeed(events),
+    });
     const result = await Effect.runPromise(
       Effect.gen(function* timeoutWithClock() {
         const fiber = yield* Effect.forkChild(
@@ -781,7 +891,8 @@ describe("import acquisition retry contract", () => {
                     )
                   )
                 )
-              )
+              ),
+            { correlationId }
           )
         );
         yield* Effect.yieldNow;
@@ -794,17 +905,49 @@ describe("import acquisition retry contract", () => {
         yield* TestClock.adjust("325 seconds");
         yield* TestClock.adjust("5 seconds");
         return yield* Fiber.join(fiber);
-      }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
+      }).pipe(
+        Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })),
+        Effect.provideService(ImportObservabilityTraceStore, traceStore)
+      )
     );
 
     expect(result).toEqual({
       _tag: "RetryExhausted",
       attempts: 3,
       generation: 3,
+      reason: "acquisition_timeout",
       stage: "process",
     });
     expect(allocations).toBe(3);
     expect(cleanups).toBe(3);
+    expect(
+      events.filter((event) => event.event === "acquisition.timeout")
+    ).toEqual([
+      {
+        attempt: 1,
+        correlationId,
+        event: "acquisition.timeout",
+        outcome: "timed_out",
+        reasonCode: "timeout",
+      },
+      {
+        attempt: 2,
+        correlationId,
+        event: "acquisition.timeout",
+        outcome: "timed_out",
+        reasonCode: "timeout",
+      },
+      {
+        attempt: 3,
+        correlationId,
+        event: "acquisition.timeout",
+        outcome: "timed_out",
+        reasonCode: "timeout",
+      },
+    ]);
+    expect(
+      events.filter((event) => event.event === "acquisition.terminal")
+    ).toEqual([]);
   });
 
   it("fails the task after unconfirmed allocation exhaustion and allocates fresh on platform replay", async () => {

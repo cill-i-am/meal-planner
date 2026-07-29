@@ -38,6 +38,11 @@ import { makeTikTokMediaContainerRuntime } from "./import-media-container.runtim
 import { makeTemporaryArtifactStore } from "./import-media-process.js";
 import type { MediaProcessRunnerShape } from "./import-media-process.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
+import type { ImportObservabilityEvent } from "./import-observability.js";
+import {
+  ImportCorrelationId,
+  ImportObservabilityTraceStore,
+} from "./import-observability.js";
 import { makeTikTokSourceResolver } from "./import-source-resolver.tiktok.js";
 import { ImportId, SourceCanonicalId } from "./import.contracts.js";
 import { runAcquisitionTask } from "./import.workflow.js";
@@ -52,6 +57,9 @@ const identity = {
   ),
   kind: "tiktok" as const,
 };
+const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
+  "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
+);
 
 const mediaBytes = new Uint8Array(128 * 1024 + 24);
 mediaBytes.set([
@@ -459,6 +467,15 @@ describe("installed acquisition Durable Object boundary", () => {
       resolver: makeTikTokSourceResolver(processRunner),
     });
     let allocations = 0;
+    const events: ImportObservabilityEvent[] = [];
+    const traceStore = ImportObservabilityTraceStore.of({
+      append: (event) =>
+        Effect.sync(() => {
+          events.push(event);
+        }),
+      read: (id) =>
+        Effect.succeed(events.filter((event) => event.correlationId === id)),
+    });
 
     await withInstalledAcquisitionBoundary(runtime, async (stub) => {
       const execute = () =>
@@ -476,9 +493,14 @@ describe("installed acquisition Durable Object boundary", () => {
               generation: allocation.generation,
               importId: identity.importId,
               now: () => new Date("2026-07-26T12:00:00.000Z"),
-            })
+            }),
+          { correlationId }
         );
-      const exhausted = await Effect.runPromise(execute());
+      const exhausted = await Effect.runPromise(
+        execute().pipe(
+          Effect.provideService(ImportObservabilityTraceStore, traceStore)
+        )
+      );
 
       expect(exhausted).toEqual({
         _tag: "RetryExhausted",
@@ -489,9 +511,74 @@ describe("installed acquisition Durable Object boundary", () => {
       });
       expect(metadataCalls).toBe(3);
       expect(resolveCalls).toBe(3);
+      expect(events).toEqual([
+        {
+          attempt: 1,
+          correlationId,
+          event: "acquisition.dispatch",
+          outcome: "started",
+        },
+        {
+          attempt: 1,
+          correlationId,
+          event: "acquisition.response",
+          outcome: "failed",
+          reasonCode: "transport",
+        },
+        {
+          attempt: 1,
+          correlationId,
+          event: "acquisition.retry",
+          outcome: "retrying",
+          reasonCode: "transport",
+        },
+        {
+          attempt: 2,
+          correlationId,
+          event: "acquisition.dispatch",
+          outcome: "started",
+        },
+        {
+          attempt: 2,
+          correlationId,
+          event: "acquisition.response",
+          outcome: "failed",
+          reasonCode: "transport",
+        },
+        {
+          attempt: 2,
+          correlationId,
+          event: "acquisition.retry",
+          outcome: "retrying",
+          reasonCode: "transport",
+        },
+        {
+          attempt: 3,
+          correlationId,
+          event: "acquisition.dispatch",
+          outcome: "started",
+        },
+        {
+          attempt: 3,
+          correlationId,
+          event: "acquisition.response",
+          outcome: "failed",
+          reasonCode: "transport",
+        },
+      ]);
+      expect(
+        events.every((event) => event.correlationId === correlationId)
+      ).toBe(true);
+      expect(JSON.stringify(events)).not.toMatch(
+        /https?:|prompt|transcript|cookie|authorization|credential|media|payload|opaque-dns-failure-canary/iu
+      );
 
       mode = "carousel";
-      const replayed = await Effect.runPromise(execute());
+      const replayed = await Effect.runPromise(
+        execute().pipe(
+          Effect.provideService(ImportObservabilityTraceStore, traceStore)
+        )
+      );
       expect(replayed).toEqual({
         _tag: "UnsupportedCarousel",
         code: "unsupported_carousel",
