@@ -9,11 +9,18 @@ export const ImportWorkflowInput = Schema.Struct({
   importId: ImportId,
 });
 
+export const PreparedVisualRecoveryWorkflowInput = Schema.Struct({
+  correlationId: ImportCorrelationId,
+  importId: ImportId,
+  resume: Schema.Literal("prepared_visual_recovery"),
+});
+
 export const LegacyImportWorkflowInput = Schema.Struct({
   importId: ImportId,
 });
 
 const AcceptedImportWorkflowInput = Schema.Union([
+  PreparedVisualRecoveryWorkflowInput,
   ImportWorkflowInput,
   LegacyImportWorkflowInput,
 ]);

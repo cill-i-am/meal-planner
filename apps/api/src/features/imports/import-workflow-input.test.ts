@@ -18,6 +18,22 @@ describe("import workflow input", () => {
     ).resolves.toEqual({ correlationId, importId });
   });
 
+  it("preserves only the typed private prepared-visual recovery input", async () => {
+    await expect(
+      Effect.runPromise(
+        resolveImportWorkflowInput({
+          correlationId,
+          importId,
+          resume: "prepared_visual_recovery",
+        })
+      )
+    ).resolves.toEqual({
+      correlationId,
+      importId,
+      resume: "prepared_visual_recovery",
+    });
+  });
+
   it("derives a stable domain-separated opaque UUID for legacy input", async () => {
     const decodedImportId = Schema.decodeUnknownSync(ImportId)(importId);
     const otherImportId = Schema.decodeUnknownSync(ImportId)(
@@ -78,6 +94,7 @@ describe("import workflow input", () => {
     {},
     { importId, sourceUrl: "sensitive-source-sentinel" },
     { correlationId, importId, transcript: "sensitive-text-sentinel" },
+    { correlationId, importId, resume: "unknown_recovery" },
     { correlationId: "not-a-uuid", importId },
     { importId: "not-a-uuid" },
   ])("rejects invalid or excess input %#", async (input) => {

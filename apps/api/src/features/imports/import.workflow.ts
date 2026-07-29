@@ -6,6 +6,7 @@ import {
   Context,
   Effect,
   Layer,
+  Option,
   Schedule,
   Schema,
 } from "effect";
@@ -63,6 +64,7 @@ import {
   observeImportWorkflowStart,
 } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
+import { resolvePreparedVisualRecovery } from "./import-prepared-visual-recovery.js";
 import {
   makeInstalledRecipeExtractor,
   makeInstalledSpeechTranscriber,
@@ -101,6 +103,7 @@ import {
 import { workflowStartUnavailable } from "./import.errors.js";
 import type { WorkflowStartUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
+import type { StoredImport } from "./import.repository.js";
 import { AcquisitionFinalizationResult } from "./import.repository.js";
 
 export const AcquisitionTaskStepConfig = {
@@ -258,6 +261,56 @@ const CarouselEvidenceTaskCheckpoint = Schema.Union([
 const currentPilotBudgetTimestamp = () =>
   Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
 
+/**
+ * Execute the private post-transcription recovery branch. Keeping the branch
+ * itself injectable makes the deployed routing seam testable: rejected state
+ * cannot invoke the visual/recipe continuation, while admitted state has no
+ * acquisition or transcription dependency available to replay.
+ */
+export const runPreparedVisualRecoveryWorkflowBranch = <
+  Failure,
+  Requirements,
+>(input: {
+  readonly completeVisualAndRecipe: (
+    recovery: Extract<
+      ReturnType<typeof resolvePreparedVisualRecovery>,
+      { readonly _tag: "PreparedVisualRecoveryReady" }
+    >
+  ) => Effect.Effect<Failure | null, never, Requirements>;
+  readonly findStored: Effect.Effect<Option.Option<StoredImport>>;
+  readonly importId: ImportId;
+  readonly resolveDispatchIds: (stored: StoredImport) => Effect.Effect<{
+    readonly speechDispatchId: string;
+    readonly visualDispatchId: string;
+  }>;
+}) =>
+  Effect.gen(function* runPreparedVisualRecoveryBranch() {
+    const stored = Option.getOrNull(yield* input.findStored);
+    if (stored === null) {
+      return resolvePreparedVisualRecovery({
+        importId: input.importId,
+        speechDispatchId: "",
+        stored,
+        visualDispatchId: "",
+      });
+    }
+    const dispatchIds = yield* input.resolveDispatchIds(stored);
+    const recovery = resolvePreparedVisualRecovery({
+      importId: input.importId,
+      stored,
+      ...dispatchIds,
+    });
+    if (recovery._tag === "PreparedVisualRecoveryRejected") {
+      return recovery;
+    }
+    const failure = yield* input.completeVisualAndRecipe(recovery);
+    return (
+      failure ?? {
+        _tag: "PreparedVisualRecoveryCompleted" as const,
+      }
+    );
+  });
+
 export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<ImportAcquisitionWorkflow>()(
   "ImportAcquisitionWorkflow",
   Effect.gen(function* ImportAcquisitionWorkflowInit() {
@@ -281,9 +334,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           new Date().toISOString()
         );
         return yield* Effect.gen(function* runImportAcquisitionWorkflow() {
-          const { correlationId, importId } = yield* resolveImportWorkflowInput(
+          const workflowInput = yield* resolveImportWorkflowInput(
             rawInput
           ).pipe(Effect.orDie);
+          const { correlationId, importId } = workflowInput;
           yield* observeImportWorkflowStart(correlationId);
           const rawBucket = yield* evidenceBucket.raw;
           const repository = makeD1ImportRepository(database);
@@ -359,6 +413,91 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 })
                 .pipe(Effect.orDie)
             );
+          const completeVisualAndRecipe = (
+            acquisitionGeneration: AcquisitionGeneration,
+            preparedDispatchIds?: {
+              readonly speechDispatchId: string;
+              readonly visualDispatchId: string;
+            }
+          ) =>
+            Effect.gen(function* completePreparedVisualAndRecipe() {
+              const continueVisual = ({
+                speechDispatchId,
+                visualDispatchId,
+              }: {
+                readonly speechDispatchId: string;
+                readonly visualDispatchId: string;
+              }) =>
+                task(
+                  "extract-visual-evidence-v1",
+                  "visual",
+                  extractVisualEvidenceForTranscribedImport({
+                    bucket: rawBucket as unknown as AcquisitionBucketLike,
+                    extractor: visualExtractor,
+                    frameSampler: makeR2VisualFrameSampler(
+                      rawBucket as unknown as AcquisitionBucketLike
+                    ),
+                    importId,
+                    importRepository: repository,
+                    now,
+                    speechDispatchId,
+                    visualDispatchId,
+                    visualRepository: makeD1VisualEvidenceRepository(database),
+                  })
+                );
+              const visual =
+                preparedDispatchIds === undefined
+                  ? yield* continueVisualFromSettledSpeech({
+                      acquisitionGeneration,
+                      continueVisual,
+                      importId,
+                      terminalRecovery,
+                    })
+                  : yield* continueVisual(preparedDispatchIds);
+              if (visual._tag === "Failed") {
+                yield* persistTerminal(visual, acquisitionGeneration);
+                return visual;
+              }
+              const recipe = yield* task(
+                "extract-recipe-v1",
+                "recipe",
+                produceRecipeDraftForImport({
+                  bucket: rawBucket as unknown as AcquisitionBucketLike,
+                  extractor: recipeExtractor,
+                  importId,
+                  importRepository: repository,
+                  now,
+                  recipeRepository: makeD1RecipeDraftRepository(database),
+                })
+              );
+              if (recipe._tag === "Failed") {
+                yield* persistTerminal(recipe, acquisitionGeneration);
+                return recipe;
+              }
+              return null;
+            });
+          if ("resume" in workflowInput) {
+            return yield* runPreparedVisualRecoveryWorkflowBranch({
+              completeVisualAndRecipe: (recovery) =>
+                completeVisualAndRecipe(
+                  recovery.acquisitionGeneration,
+                  recovery
+                ),
+              findStored: repository.findById(importId).pipe(Effect.orDie),
+              importId,
+              resolveDispatchIds: (stored) =>
+                Effect.all({
+                  speechDispatchId: terminalRecovery.speechDispatchId({
+                    acquisitionGeneration: stored.acquisitionGeneration,
+                    importId,
+                  }),
+                  visualDispatchId: terminalRecovery.visualDispatchId({
+                    acquisitionGeneration: stored.acquisitionGeneration,
+                    importId,
+                  }),
+                }).pipe(Effect.orDie),
+            });
+          }
           const stagedCarousel = yield* loadStagedOperatorCarousel({
             bucket: rawBucket as unknown as AcquisitionBucketLike,
             importId,
@@ -596,48 +735,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             yield* persistTerminal(speech, outcome.generation);
             return speech;
           }
-          const visual = yield* continueVisualFromSettledSpeech({
-            acquisitionGeneration: outcome.generation,
-            continueVisual: ({ speechDispatchId, visualDispatchId }) =>
-              task(
-                "extract-visual-evidence-v1",
-                "visual",
-                extractVisualEvidenceForTranscribedImport({
-                  bucket: rawBucket as unknown as AcquisitionBucketLike,
-                  extractor: visualExtractor,
-                  frameSampler: makeR2VisualFrameSampler(
-                    rawBucket as unknown as AcquisitionBucketLike
-                  ),
-                  importId,
-                  importRepository: repository,
-                  now,
-                  speechDispatchId,
-                  visualDispatchId,
-                  visualRepository: makeD1VisualEvidenceRepository(database),
-                })
-              ),
-            importId,
-            terminalRecovery,
-          });
-          if (visual._tag === "Failed") {
-            yield* persistTerminal(visual, outcome.generation);
-            return visual;
-          }
-          const recipe = yield* task(
-            "extract-recipe-v1",
-            "recipe",
-            produceRecipeDraftForImport({
-              bucket: rawBucket as unknown as AcquisitionBucketLike,
-              extractor: recipeExtractor,
-              importId,
-              importRepository: repository,
-              now,
-              recipeRepository: makeD1RecipeDraftRepository(database),
-            })
-          );
-          if (recipe._tag === "Failed") {
-            yield* persistTerminal(recipe, outcome.generation);
-            return recipe;
+          const failure = yield* completeVisualAndRecipe(outcome.generation);
+          if (failure !== null) {
+            return failure;
           }
           return encodedOutcome;
         }).pipe(
