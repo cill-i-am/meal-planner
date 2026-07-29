@@ -202,7 +202,17 @@ const installedSpeechDispatch = (
 
 const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
   Effect.gen(function* runBudgetedComposition() {
-    const responses = [{ response: { observations: [], outcome: "empty" } }];
+    const responses = [
+      {
+        tool_calls: [
+          {
+            arguments: { observations: [], outcome: "empty" },
+            id: "call-visual-1",
+            name: "record_visual_evidence",
+          },
+        ],
+      },
+    ];
     let providerCalls = 0;
     const client = {
       gateway: Effect.die("universal AI Gateway binding must not be used"),
@@ -373,7 +383,13 @@ const visualTerminalRecoveryDispatch = (
             increment(env, instanceId, "visual-provider-calls")
           );
           return Response.json({
-            response: { observations: [], outcome: "empty" },
+            tool_calls: [
+              {
+                arguments: { observations: [], outcome: "empty" },
+                id: "call-visual-recovery-1",
+                name: "record_visual_evidence",
+              },
+            ],
           });
         },
       }),
