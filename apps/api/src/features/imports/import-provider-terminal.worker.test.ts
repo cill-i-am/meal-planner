@@ -972,4 +972,113 @@ describe("provider terminal recovery", () => {
         .first()
     ).resolves.toEqual({ count: 0 });
   });
+
+  it("promotes an uncertain visual projection after native retries exhaust", async () => {
+    const importId = decodeImportId("00000000-0000-4000-8000-000000000205");
+    const generation = decodeGeneration(1);
+    const dispatchId = decodeDispatchId(`visual:${importId}:${generation}`);
+    const acquiredAt = "2026-07-29T06:08:00.000Z";
+    const uncertainAt = "2026-07-29T06:09:00.000Z";
+    const exhaustedAt = decodeImportTimestamp("2026-07-29T06:09:42.000Z");
+    const evidence = JSON.stringify([
+      {
+        kind: "original_media",
+        referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
+      },
+      {
+        kind: "acquisition_manifest",
+        referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/manifest.json`,
+      },
+      {
+        kind: "speech_transcript",
+        referenceId: `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
+      },
+    ]);
+
+    await testEnv.MealPlannerDatabase.batch([
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO recipe_imports (
+           acquisition_generation, canonical_source_id,
+           compatibility_fingerprint, created_at, evidence_references_json,
+           id, recovery_action, source_kind, status, status_code, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video',
+                   'transcribed', NULL, ?)`
+      ).bind(
+        generation,
+        "canonical-gaia-205-visual-retry-exhausted",
+        "f".repeat(64),
+        acquiredAt,
+        evidence,
+        importId,
+        uncertainAt
+      ),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO import_transcriptions (
+           import_id, acquisition_generation, dispatch_id,
+           source_media_sha256, state, transcript_key, transcript_sha256,
+           provider, model, detected_language, usage_audio_milliseconds,
+           usage_input_bytes, estimated_cost_micro_usd, cost_currency,
+           cost_certainty, segments_count, failure_code, created_at,
+           updated_at, completed_at
+         ) VALUES (?, ?, ?, ?, 'transcribed', ?, ?, 'fixture-provider',
+                   'fixture-speech', 'en', 1000, 3, 10, 'USD', 'known', 1,
+                   NULL, ?, ?, ?)`
+      ).bind(
+        importId,
+        generation,
+        `speech:${importId}:${generation}`,
+        "a".repeat(64),
+        `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
+        "b".repeat(64),
+        acquiredAt,
+        uncertainAt,
+        uncertainAt
+      ),
+      testEnv.MealPlannerDatabase.prepare(
+        `INSERT INTO import_visual_evidence (
+           import_id, acquisition_generation, dispatch_id,
+           source_media_sha256, state, failure_code, created_at,
+           updated_at, completed_at
+         ) VALUES (?, ?, ?, ?, 'failed', 'outcome_unknown', ?, ?, ?)`
+      ).bind(
+        importId,
+        generation,
+        dispatchId,
+        "a".repeat(64),
+        acquiredAt,
+        uncertainAt,
+        uncertainAt
+      ),
+    ]);
+
+    await expect(
+      Effect.runPromise(
+        makeD1ProviderTerminalCheckpointRepository(
+          testEnv.MealPlannerDatabase
+        ).persist({
+          acquisitionGeneration: generation,
+          completedAt: exhaustedAt,
+          failureCode: "visual_extraction_failed",
+          importId,
+          providerStage: "visual",
+        })
+      )
+    ).resolves.toMatchObject({
+      failureCode: "visual_extraction_failed",
+      ownershipId: dispatchId,
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, failure_code, completed_at
+           FROM import_visual_evidence
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(importId, generation)
+        .first()
+    ).resolves.toEqual({
+      completed_at: "2026-07-29T06:09:42.000Z",
+      failure_code: "visual_extraction_failed",
+      state: "failed",
+    });
+  });
 });
