@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { AcquisitionGeneration } from "./import-media.model.js";
@@ -10,6 +10,7 @@ import {
 } from "./import.contracts.js";
 import type { StoredImport } from "./import.repository.js";
 import { CompatibilityFingerprint } from "./import.repository.js";
+import { runPreparedVisualRecoveryWorkflowBranch } from "./import.workflow.js";
 
 const importId = Schema.decodeUnknownSync(ImportId)(
   "00000000-0000-4000-8000-000000000208"
@@ -119,4 +120,103 @@ describe("prepared visual recovery", () => {
       code: "state_mismatch",
     });
   });
+
+  it("runs the deployed recovery branch without replaying acquisition or transcription", async () => {
+    let providerContinuations = 0;
+    let dispatchLookups = 0;
+    const outcome = await Effect.runPromise(
+      runPreparedVisualRecoveryWorkflowBranch({
+        completeVisualAndRecipe: (recovery) =>
+          Effect.sync(() => {
+            providerContinuations += 1;
+            expect(recovery).toMatchObject({
+              acquisitionGeneration: generation,
+              speechDispatchId: rootSpeechDispatchId,
+              visualDispatchId: secondVisualRecoveryDispatchId,
+            });
+            return null;
+          }),
+        findStored: Effect.succeed(Option.some(storedImport("transcribed"))),
+        importId,
+        resolveDispatchIds: () =>
+          Effect.sync(() => {
+            dispatchLookups += 1;
+            return {
+              speechDispatchId: rootSpeechDispatchId,
+              visualDispatchId: secondVisualRecoveryDispatchId,
+            };
+          }),
+      })
+    );
+
+    expect(outcome).toEqual({ _tag: "PreparedVisualRecoveryCompleted" });
+    expect(dispatchLookups).toBe(1);
+    expect(providerContinuations).toBe(1);
+  });
+
+  it.each([
+    {
+      name: "missing import",
+      speechDispatchId: rootSpeechDispatchId,
+      stored: Option.none<StoredImport>(),
+      visualDispatchId: secondVisualRecoveryDispatchId,
+    },
+    {
+      name: "wrong import state",
+      speechDispatchId: rootSpeechDispatchId,
+      stored: Option.some(storedImport("extracting_visual")),
+      visualDispatchId: secondVisualRecoveryDispatchId,
+    },
+    {
+      name: "incomplete evidence",
+      speechDispatchId: rootSpeechDispatchId,
+      stored: Option.some({
+        ...storedImport("transcribed"),
+        view: {
+          ...storedImport("transcribed").view,
+          evidence: storedImport("transcribed").view.evidence.slice(0, 2),
+        },
+      } as unknown as StoredImport),
+      visualDispatchId: secondVisualRecoveryDispatchId,
+    },
+    {
+      name: "unowned speech dispatch",
+      speechDispatchId: `${rootSpeechDispatchId}:recovery:2`,
+      stored: Option.some(storedImport("transcribed")),
+      visualDispatchId: secondVisualRecoveryDispatchId,
+    },
+    {
+      name: "wrong visual recovery",
+      speechDispatchId: rootSpeechDispatchId,
+      stored: Option.some(storedImport("transcribed")),
+      visualDispatchId: `visual:${importId}:${generation}:recovery:1`,
+    },
+  ])(
+    "stops $name at the deployed branch before provider continuation",
+    async ({ speechDispatchId, stored, visualDispatchId }) => {
+      let providerContinuations = 0;
+      const outcome = await Effect.runPromise(
+        runPreparedVisualRecoveryWorkflowBranch({
+          completeVisualAndRecipe: () =>
+            Effect.sync(() => {
+              providerContinuations += 1;
+              return null;
+            }),
+          findStored: Effect.succeed(stored),
+          importId,
+          resolveDispatchIds: () =>
+            Effect.succeed({
+              speechDispatchId,
+              visualDispatchId,
+            }),
+        })
+      );
+
+      expect(outcome).toEqual({
+        _tag: "PreparedVisualRecoveryRejected",
+        code: "state_mismatch",
+      });
+      expect(providerContinuations).toBe(0);
+    }
+  );
 });

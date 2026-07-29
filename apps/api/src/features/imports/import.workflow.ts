@@ -103,6 +103,7 @@ import {
 import { workflowStartUnavailable } from "./import.errors.js";
 import type { WorkflowStartUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
+import type { StoredImport } from "./import.repository.js";
 import { AcquisitionFinalizationResult } from "./import.repository.js";
 
 export const AcquisitionTaskStepConfig = {
@@ -259,6 +260,56 @@ const CarouselEvidenceTaskCheckpoint = Schema.Union([
 
 const currentPilotBudgetTimestamp = () =>
   Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
+
+/**
+ * Execute the private post-transcription recovery branch. Keeping the branch
+ * itself injectable makes the deployed routing seam testable: rejected state
+ * cannot invoke the visual/recipe continuation, while admitted state has no
+ * acquisition or transcription dependency available to replay.
+ */
+export const runPreparedVisualRecoveryWorkflowBranch = <
+  Failure,
+  Requirements,
+>(input: {
+  readonly completeVisualAndRecipe: (
+    recovery: Extract<
+      ReturnType<typeof resolvePreparedVisualRecovery>,
+      { readonly _tag: "PreparedVisualRecoveryReady" }
+    >
+  ) => Effect.Effect<Failure | null, never, Requirements>;
+  readonly findStored: Effect.Effect<Option.Option<StoredImport>>;
+  readonly importId: ImportId;
+  readonly resolveDispatchIds: (stored: StoredImport) => Effect.Effect<{
+    readonly speechDispatchId: string;
+    readonly visualDispatchId: string;
+  }>;
+}) =>
+  Effect.gen(function* runPreparedVisualRecoveryBranch() {
+    const stored = Option.getOrNull(yield* input.findStored);
+    if (stored === null) {
+      return resolvePreparedVisualRecovery({
+        importId: input.importId,
+        speechDispatchId: "",
+        stored,
+        visualDispatchId: "",
+      });
+    }
+    const dispatchIds = yield* input.resolveDispatchIds(stored);
+    const recovery = resolvePreparedVisualRecovery({
+      importId: input.importId,
+      stored,
+      ...dispatchIds,
+    });
+    if (recovery._tag === "PreparedVisualRecoveryRejected") {
+      return recovery;
+    }
+    const failure = yield* input.completeVisualAndRecipe(recovery);
+    return (
+      failure ?? {
+        _tag: "PreparedVisualRecoveryCompleted" as const,
+      }
+    );
+  });
 
 export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<ImportAcquisitionWorkflow>()(
   "ImportAcquisitionWorkflow",
@@ -426,44 +477,26 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               return null;
             });
           if ("resume" in workflowInput) {
-            const stored = Option.getOrNull(
-              yield* repository.findById(importId).pipe(Effect.orDie)
-            );
-            if (stored === null) {
-              return resolvePreparedVisualRecovery({
-                importId,
-                speechDispatchId: "",
-                stored,
-                visualDispatchId: "",
-              });
-            }
-            const dispatchIds = yield* Effect.all({
-              speechDispatchId: terminalRecovery.speechDispatchId({
-                acquisitionGeneration: stored.acquisitionGeneration,
-                importId,
-              }),
-              visualDispatchId: terminalRecovery.visualDispatchId({
-                acquisitionGeneration: stored.acquisitionGeneration,
-                importId,
-              }),
-            }).pipe(Effect.orDie);
-            const recovery = resolvePreparedVisualRecovery({
+            return yield* runPreparedVisualRecoveryWorkflowBranch({
+              completeVisualAndRecipe: (recovery) =>
+                completeVisualAndRecipe(
+                  recovery.acquisitionGeneration,
+                  recovery
+                ),
+              findStored: repository.findById(importId).pipe(Effect.orDie),
               importId,
-              stored,
-              ...dispatchIds,
+              resolveDispatchIds: (stored) =>
+                Effect.all({
+                  speechDispatchId: terminalRecovery.speechDispatchId({
+                    acquisitionGeneration: stored.acquisitionGeneration,
+                    importId,
+                  }),
+                  visualDispatchId: terminalRecovery.visualDispatchId({
+                    acquisitionGeneration: stored.acquisitionGeneration,
+                    importId,
+                  }),
+                }).pipe(Effect.orDie),
             });
-            if (recovery._tag === "PreparedVisualRecoveryRejected") {
-              return recovery;
-            }
-            const failure = yield* completeVisualAndRecipe(
-              recovery.acquisitionGeneration,
-              recovery
-            );
-            return (
-              failure ?? {
-                _tag: "PreparedVisualRecoveryCompleted" as const,
-              }
-            );
           }
           const stagedCarousel = yield* loadStagedOperatorCarousel({
             bucket: rawBucket as unknown as AcquisitionBucketLike,
