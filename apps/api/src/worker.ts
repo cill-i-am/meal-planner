@@ -294,6 +294,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                         new Date().toISOString()
                       ),
                     runtimeStage,
+                    workflowStarter: makeImportWorkflowStarter(
+                      importAcquisitionWorkflow
+                    ),
                   })
                 )
               );

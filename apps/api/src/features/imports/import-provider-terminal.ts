@@ -40,6 +40,12 @@ const RecoveryRow = Schema.Struct({
   recovery_dispatch_id: Schema.String,
 });
 
+const SpeechRecoveryActivationRow = Schema.Struct({
+  parent_status: Schema.String,
+  recovery_dispatch_id: Schema.NullOr(Schema.String),
+  transcription_state: Schema.NullOr(Schema.String),
+});
+
 export interface ProviderTerminalCheckpoint {
   readonly acquisitionGeneration: number;
   readonly completedAt: string;
@@ -55,6 +61,16 @@ export interface SpeechProviderRecovery {
   readonly originalDispatchId: string;
   readonly recoveryDispatchId: string;
 }
+
+export type SpeechProviderRecoveryActivation =
+  | {
+      readonly _tag: "Completed";
+      readonly recovery: SpeechProviderRecovery;
+    }
+  | {
+      readonly _tag: "Prepared";
+      readonly recovery: SpeechProviderRecovery;
+    };
 
 export type VisualProviderRecovery = SpeechProviderRecovery;
 
@@ -379,6 +395,80 @@ const readRecovery = (
     )
   );
 };
+
+const assertSpeechRecoveryActivatable = (
+  database: AnyD1Database,
+  input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly importId: ImportId;
+    readonly recovery: SpeechProviderRecovery;
+  }
+) =>
+  persistenceEffect<unknown | null>(() =>
+    database
+      .prepare(
+        `SELECT
+           parent.status AS parent_status,
+           transcription.dispatch_id AS recovery_dispatch_id,
+           transcription.state AS transcription_state
+         FROM recipe_imports AS parent
+         LEFT JOIN import_transcriptions AS transcription
+           ON transcription.import_id = parent.id
+          AND transcription.acquisition_generation =
+                parent.acquisition_generation
+          AND transcription.dispatch_id = ?
+        WHERE parent.id = ?
+          AND parent.acquisition_generation = ?
+        LIMIT 1`
+      )
+      .bind(
+        input.recovery.recoveryDispatchId,
+        input.importId,
+        input.acquisitionGeneration
+      )
+      .first()
+  ).pipe(
+    Effect.flatMap((row) =>
+      row === null
+        ? Effect.fail(providerTerminalPersistenceError("recovery_not_allowed"))
+        : Schema.decodeUnknownEffect(SpeechRecoveryActivationRow, {
+            onExcessProperty: "ignore",
+          })(row).pipe(
+            Effect.mapError(() =>
+              providerTerminalPersistenceError("persistence_corrupt")
+            )
+          )
+    ),
+    Effect.flatMap((row) => {
+      const legacyPrepared =
+        row.parent_status === "acquired" &&
+        row.recovery_dispatch_id === null &&
+        row.transcription_state === null;
+      const settledPrepared =
+        row.parent_status === "transcribing" &&
+        row.recovery_dispatch_id === input.recovery.recoveryDispatchId &&
+        row.transcription_state === "dispatching";
+      const completed =
+        row.parent_status === "transcribed" &&
+        row.recovery_dispatch_id === input.recovery.recoveryDispatchId &&
+        row.transcription_state === "transcribed";
+      if (legacyPrepared || settledPrepared) {
+        return Effect.succeed<SpeechProviderRecoveryActivation>({
+          _tag: "Prepared",
+          recovery: input.recovery,
+        });
+      }
+      if (completed) {
+        return Effect.succeed<SpeechProviderRecoveryActivation>({
+          _tag: "Completed",
+          recovery: input.recovery,
+        });
+      }
+      return Effect.fail(
+        providerTerminalPersistenceError("recovery_not_allowed")
+      );
+    })
+  );
 
 const allowMissingRecovery = (error: ProviderTerminalPersistenceError) =>
   error.code === "recovery_not_allowed"
@@ -1009,10 +1099,20 @@ const prepareSettledVisualSecondRecovery = (
 };
 
 export interface ProviderTerminalRecoveryRepository {
+  readonly inspectSpeechUnknownRecoveryActivation: (input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly importId: ImportId;
+    readonly originalDispatchId: string;
+    readonly recoveryDispatchId: string;
+  }) => Effect.Effect<
+    SpeechProviderRecoveryActivation,
+    ProviderTerminalPersistenceError
+  >;
   readonly prepareSpeechUnknownRecovery: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
     readonly createdAt: ImportTimestamp;
     readonly importId: ImportId;
+    readonly originalDispatchId?: string;
   }) => Effect.Effect<SpeechProviderRecovery, ProviderTerminalPersistenceError>;
   readonly speechDispatchId: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
@@ -1034,6 +1134,32 @@ export const makeD1ProviderTerminalRecoveryRepository = (
   database: AnyD1Database,
   runtimeStage: unknown
 ): ProviderTerminalRecoveryRepository => ({
+  inspectSpeechUnknownRecoveryActivation: (input) =>
+    Effect.gen(function* inspectSpeechUnknownRecoveryActivation() {
+      if (runtimeStage !== PilotProviderBudgetStage) {
+        return yield* Effect.fail(
+          providerTerminalPersistenceError("stage_not_allowed")
+        );
+      }
+      const recovery = yield* readRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration
+      );
+      if (
+        recovery.originalDispatchId !== input.originalDispatchId ||
+        recovery.recoveryDispatchId !== input.recoveryDispatchId
+      ) {
+        return yield* Effect.fail(
+          providerTerminalPersistenceError("recovery_not_allowed")
+        );
+      }
+      return yield* assertSpeechRecoveryActivatable(database, {
+        acquisitionGeneration: input.acquisitionGeneration,
+        importId: input.importId,
+        recovery,
+      });
+    }),
   prepareSpeechUnknownRecovery: (input) =>
     Effect.gen(function* prepareSpeechUnknownRecovery() {
       if (runtimeStage !== PilotProviderBudgetStage) {
@@ -1053,7 +1179,12 @@ export const makeD1ProviderTerminalRecoveryRepository = (
         )
       );
       if (existing !== null) {
-        return existing;
+        return input.originalDispatchId === undefined ||
+          existing.originalDispatchId === input.originalDispatchId
+          ? existing
+          : yield* Effect.fail(
+              providerTerminalPersistenceError("recovery_not_allowed")
+            );
       }
       const settled = yield* readSettledRecoveryCandidate(
         database,
@@ -1066,6 +1197,14 @@ export const makeD1ProviderTerminalRecoveryRepository = (
         )
       );
       if (settled !== null) {
+        if (
+          input.originalDispatchId !== undefined &&
+          settled.original_dispatch_id !== input.originalDispatchId
+        ) {
+          return yield* Effect.fail(
+            providerTerminalPersistenceError("recovery_not_allowed")
+          );
+        }
         const recoveryDispatchId = `${settled.original_dispatch_id}:recovery:1`;
         if (recoveryDispatchId.length > 100) {
           return yield* Effect.fail(
@@ -1101,6 +1240,14 @@ export const makeD1ProviderTerminalRecoveryRepository = (
         typeof poison.poison_dispatch_id !== "string" ||
         poison.poison_dispatch_id.length === 0 ||
         poison.poison_dispatch_id.includes(":recovery:1")
+      ) {
+        return yield* Effect.fail(
+          providerTerminalPersistenceError("recovery_not_allowed")
+        );
+      }
+      if (
+        input.originalDispatchId !== undefined &&
+        poison.poison_dispatch_id !== input.originalDispatchId
       ) {
         return yield* Effect.fail(
           providerTerminalPersistenceError("recovery_not_allowed")

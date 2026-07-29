@@ -172,6 +172,13 @@ const readText = async (instanceId: string, name: string) => {
 const commandWorkflow = async (
   command:
     | {
+        readonly action: "activate-speech";
+        readonly authorization?: string;
+        readonly dispatchId: string;
+        readonly id: string;
+        readonly importId: string;
+      }
+    | {
         readonly action: "interleave-stage";
         readonly id: string;
       }
@@ -229,6 +236,19 @@ const restartFromTerminalPersistence = (id: string) =>
 
 const prepareSpeechRecovery = (id: string, importId: string) =>
   commandWorkflow({ action: "prepare-speech", id, importId });
+
+const activateSpeechRecovery = (
+  id: string,
+  importId: string,
+  dispatchId: string
+) =>
+  commandWorkflow({
+    action: "activate-speech",
+    authorization: "Bearer test-import-token",
+    dispatchId,
+    id,
+    importId,
+  });
 
 const interleaveKnownZeroStageDispatch = (id: string) =>
   commandWorkflow({ action: "interleave-stage", id });
@@ -434,8 +454,8 @@ describe("provider workflow task retry exhaustion", () => {
   });
 
   it("persists, replays, and recovers a speech terminal through native tasks and real D1", async () => {
-    const instanceId = "gaia-178-native-speech-terminal-recovery";
     const importId = "00000000-0000-4000-8000-000000000181";
+    const instanceId = `import-acquisition-${importId}`;
     const generation = 1;
     const originalDispatchId = `speech:${importId}:${generation}`;
     const recoveryDispatchId = `${originalDispatchId}:recovery:1`;
@@ -572,28 +592,39 @@ describe("provider workflow task retry exhaustion", () => {
       state: "open",
     });
 
-    await expect(
-      prepareSpeechRecovery(instanceId, importId)
-    ).resolves.toMatchObject({
-      acquisitionGeneration: generation,
-      importId,
-      originalDispatchId,
-      recoveryDispatchId,
-    });
     await expect(interleaveKnownZeroStageDispatch(instanceId)).resolves.toEqual(
       {
         outcome: "settled_known_zero",
       }
     );
-    await expect(restartFromSpeechProvider(instanceId)).resolves.toMatchObject({
-      output: {
-        _tag: "Succeeded",
-        evidence: "safe-transcript",
-        stage: "speech",
+    const expectedActivation = {
+      activation: {
+        acquisitionGeneration: generation,
+        dispatchId: originalDispatchId,
+        importId,
+        outcome: "speech_recovery_activated",
+        recoveryDispatchId,
       },
-      status: "complete",
-    });
+      workflow: {
+        output: {
+          _tag: "Succeeded",
+          evidence: "safe-transcript",
+          stage: "speech",
+        },
+        status: "complete",
+      },
+    };
+    const [activation, concurrentReplay] = await Promise.all([
+      activateSpeechRecovery(instanceId, importId, originalDispatchId),
+      activateSpeechRecovery(instanceId, importId, originalDispatchId),
+    ]);
+    expect(activation).toMatchObject(expectedActivation);
+    expect(concurrentReplay).toMatchObject(expectedActivation);
+    await expect(
+      activateSpeechRecovery(instanceId, importId, originalDispatchId)
+    ).resolves.toMatchObject(expectedActivation);
     expect(await readNumber(instanceId, "acquisition-calls")).toBe(1);
+    expect(await readNumber(instanceId, "record-acquisition-calls")).toBe(2);
     expect(await readNumber(instanceId, "provider-calls")).toBe(2);
     expect(await readNumber(instanceId, "visual-calls")).toBe(1);
     await expect(

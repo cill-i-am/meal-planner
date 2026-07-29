@@ -9,6 +9,7 @@ import { AcquisitionGeneration } from "./import-media.model.js";
 import { makeD1ProviderTerminalRecoveryRepository } from "./import-provider-terminal.js";
 import { ImportId } from "./import.contracts.js";
 import type { ImportTimestamp } from "./import.contracts.js";
+import type { ImportWorkflowStarterShape } from "./import.workflow.js";
 
 const TerminalUnknownSettlementRequest = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
@@ -23,6 +24,13 @@ const VisualRecoveryPreparationRequest = Schema.Struct({
   dispatchId: PilotBudgetDispatchId,
   importId: ImportId,
   operation: Schema.Literal("prepare_visual_recovery"),
+});
+
+const SpeechRecoveryActivationRequest = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  operation: Schema.Literal("prepare_speech_recovery"),
 });
 
 const RecipeTerminalUnknownSettlementRequest = Schema.Struct({
@@ -40,6 +48,7 @@ const ExpiredRecipeReplaySweepRequest = Schema.Struct({
 
 export const ProviderTerminalSettlementRequest = Schema.Union([
   TerminalUnknownSettlementRequest,
+  SpeechRecoveryActivationRequest,
   VisualRecoveryPreparationRequest,
   RecipeTerminalUnknownSettlementRequest,
   ExpiredRecipeReplaySweepRequest,
@@ -73,6 +82,15 @@ const VisualRecoveryPreparationResponse = Schema.Struct({
   runtimeStage: Schema.Literal(PilotProviderBudgetStage),
 });
 
+const SpeechRecoveryActivationResponse = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  outcome: Schema.Literal("speech_recovery_activated"),
+  recoveryDispatchId: PilotBudgetDispatchId,
+  runtimeStage: Schema.Literal(PilotProviderBudgetStage),
+});
+
 const RecipeTerminalUnknownSettlementResponse = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   conservativeChargeMicroUsd: Schema.Literal(100_000),
@@ -90,6 +108,7 @@ const ExpiredRecipeReplaySweepResponse = Schema.Struct({
 
 export const ProviderTerminalSettlementResponse = Schema.Union([
   TerminalUnknownSettlementResponse,
+  SpeechRecoveryActivationResponse,
   VisualRecoveryPreparationResponse,
   RecipeTerminalUnknownSettlementResponse,
   ExpiredRecipeReplaySweepResponse,
@@ -133,6 +152,9 @@ const mapRecoveryErrorCode = (
     }
   }
 };
+
+const mapRecoveryPersistenceError = (error: { readonly code: string }) =>
+  providerTerminalSettlementError(mapRecoveryErrorCode(error.code));
 
 const SettledRow = Schema.Struct({
   acquisition_generation: AcquisitionGeneration,
@@ -794,6 +816,10 @@ export const makeD1ProviderTerminalSettlementService = (input: {
   readonly database: AnyD1Database;
   readonly now: () => ImportTimestamp;
   readonly runtimeStage: unknown;
+  readonly workflowStarter?: Pick<
+    ImportWorkflowStarterShape,
+    "restartFromSpeech"
+  >;
 }): ProviderTerminalSettlementServiceShape => ({
   settle: (request) =>
     Effect.gen(function* settleTerminalUnknownProviderCost() {
@@ -807,6 +833,68 @@ export const makeD1ProviderTerminalSettlementService = (input: {
         request.operation === "sweep_expired_recipe_replays"
       ) {
         return yield* sweepExpiredRecipeReplays(input.database);
+      }
+      if (
+        "operation" in request &&
+        request.operation === "prepare_speech_recovery"
+      ) {
+        const repository = makeD1ProviderTerminalRecoveryRepository(
+          input.database,
+          input.runtimeStage
+        );
+        const recovery = yield* repository
+          .prepareSpeechUnknownRecovery({
+            acquisitionGeneration: request.acquisitionGeneration,
+            createdAt: input.now(),
+            importId: request.importId,
+            originalDispatchId: request.dispatchId,
+          })
+          .pipe(Effect.mapError(mapRecoveryPersistenceError));
+        const inspectActivation = () =>
+          repository
+            .inspectSpeechUnknownRecoveryActivation({
+              acquisitionGeneration: request.acquisitionGeneration,
+              importId: request.importId,
+              originalDispatchId: request.dispatchId,
+              recoveryDispatchId: recovery.recoveryDispatchId,
+            })
+            .pipe(Effect.mapError(mapRecoveryPersistenceError));
+        const activation = yield* inspectActivation();
+        const activationResponse = () =>
+          Schema.decodeUnknownEffect(SpeechRecoveryActivationResponse)({
+            acquisitionGeneration: request.acquisitionGeneration,
+            dispatchId: recovery.originalDispatchId,
+            importId: recovery.importId,
+            outcome: "speech_recovery_activated",
+            recoveryDispatchId: recovery.recoveryDispatchId,
+            runtimeStage: PilotProviderBudgetStage,
+          }).pipe(
+            Effect.mapError(() =>
+              providerTerminalSettlementError("persistence_corrupt")
+            )
+          );
+        if (activation._tag === "Completed") {
+          return yield* activationResponse();
+        }
+        const restartFromSpeech = input.workflowStarter?.restartFromSpeech;
+        if (restartFromSpeech === undefined) {
+          return yield* Effect.fail(
+            providerTerminalSettlementError("persistence_unavailable")
+          );
+        }
+        const restarted = yield* restartFromSpeech(request.importId).pipe(
+          Effect.as(true),
+          Effect.catch(() => Effect.succeed(false))
+        );
+        if (!restarted) {
+          const reconciled = yield* inspectActivation();
+          if (reconciled._tag !== "Completed") {
+            return yield* Effect.fail(
+              providerTerminalSettlementError("persistence_unavailable")
+            );
+          }
+        }
+        return yield* activationResponse();
       }
       if (
         "operation" in request &&

@@ -1026,6 +1026,58 @@ const reconcileExisting = (instance: WorkflowInstanceLike) =>
     }
   );
 
+const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
+  instance.status().pipe(
+    Effect.flatMap(({ status }) => {
+      switch (status) {
+        case "queued":
+        case "running":
+        case "waiting":
+        case "waitingForPause": {
+          return Effect.void;
+        }
+        case "complete":
+        case "errored":
+        case "terminated": {
+          return instance
+            .restart({
+              from: {
+                name: "record-acquisition-v2",
+                type: "do",
+              },
+            })
+            .pipe(
+              Effect.catchCauseIf(
+                (cause) => !Cause.hasInterrupts(cause),
+                () =>
+                  instance
+                    .status()
+                    .pipe(
+                      Effect.flatMap(({ status: reconciledStatus }) =>
+                        [
+                          "queued",
+                          "running",
+                          "waiting",
+                          "waitingForPause",
+                        ].includes(reconciledStatus)
+                          ? Effect.void
+                          : Effect.fail(workflowStartUnavailable())
+                      )
+                    )
+              )
+            );
+        }
+        default: {
+          return Effect.fail(workflowStartUnavailable());
+        }
+      }
+    }),
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterrupts(cause),
+      () => Effect.fail(workflowStartUnavailable())
+    )
+  );
+
 export const makeImportWorkflowStarter = (
   workflow: WorkflowHandleLike,
   options?: {
@@ -1108,10 +1160,9 @@ export const makeImportWorkflowStarter = (
       );
     },
     restartFromSpeech: (importId) =>
-      restartPostAcquisition(importId, {
-        _tag: "FinalizedWithoutSpeech",
-        lastSuccessfulStep: "record-acquisition-v2",
-      }),
+      workflow
+        .get(importWorkflowInstanceId(importId))
+        .pipe(Effect.flatMap(reconcileSpeechRestart)),
     restartPostAcquisition,
   };
 };
