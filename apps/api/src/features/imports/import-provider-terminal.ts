@@ -746,7 +746,6 @@ const readSettledVisualRecoveryCandidate = (
             AND visual.dispatch_id = checkpoint.ownership_id
             AND visual.state = 'failed'
             AND visual.failure_code = 'visual_extraction_failed'
-            AND visual.completed_at = checkpoint.completed_at
            JOIN recipe_imports AS parent
              ON parent.id = checkpoint.import_id
             AND parent.acquisition_generation =
