@@ -106,20 +106,8 @@ const gatewayClient = {
                   {
                     function: {
                       arguments: JSON.stringify({
-                        cost: {
-                          certainty: "estimated",
-                          currency: "USD",
-                          estimatedMicroUsd: 20,
-                        },
-                        model: "@cf/meta/llama-3.2-11b-vision-instruct",
                         observations: [],
                         outcome: "empty",
-                        provider: "cloudflare-workers-ai",
-                        usage: {
-                          inputBytes: 3,
-                          inputFrames: 1,
-                          modelCalls: 1,
-                        },
                       }),
                       name: "record_visual_evidence",
                     },

@@ -68,6 +68,51 @@ export const VisualEvidenceObservation = Schema.Struct({
 });
 export type VisualEvidenceObservation = typeof VisualEvidenceObservation.Type;
 
+const visualEvidenceOutcomeMatchesObservations = (evidence: {
+  readonly observations: readonly VisualEvidenceObservation[];
+  readonly outcome: "empty" | "found" | "low_confidence";
+}) => {
+  switch (evidence.outcome) {
+    case "empty": {
+      return evidence.observations.length === 0;
+    }
+    case "found": {
+      return (
+        evidence.observations.length > 0 &&
+        evidence.observations.some(
+          ({ confidence }) => confidence >= VisualConfidenceThreshold
+        )
+      );
+    }
+    case "low_confidence": {
+      return (
+        evidence.observations.length > 0 &&
+        evidence.observations.every(
+          ({ confidence }) => confidence < VisualConfidenceThreshold
+        )
+      );
+    }
+    default: {
+      return false;
+    }
+  }
+};
+
+/** Strict model-owned visual semantics, excluding adapter transport metadata. */
+export const VisualEvidenceSemantics = Schema.Struct({
+  observations: Schema.Array(VisualEvidenceObservation).pipe(
+    Schema.check(Schema.isMaxLength(MaximumVisualObservations))
+  ),
+  outcome: Schema.Literals(["empty", "found", "low_confidence"]),
+}).pipe(
+  Schema.check(
+    Schema.makeFilter(visualEvidenceOutcomeMatchesObservations, {
+      expected: "observations consistent with the visual outcome",
+    })
+  )
+);
+export type VisualEvidenceSemantics = typeof VisualEvidenceSemantics.Type;
+
 /** Normalized result returned by any future OCR or vision adapter. */
 export const VisualEvidence = Schema.Struct({
   cost: Schema.Struct({
@@ -76,10 +121,8 @@ export const VisualEvidence = Schema.Struct({
     estimatedMicroUsd: SafeInteger,
   }),
   model: SafeAdapterLabel,
-  observations: Schema.Array(VisualEvidenceObservation).pipe(
-    Schema.check(Schema.isMaxLength(MaximumVisualObservations))
-  ),
-  outcome: Schema.Literals(["empty", "found", "low_confidence"]),
+  observations: VisualEvidenceSemantics.fields.observations,
+  outcome: VisualEvidenceSemantics.fields.outcome,
   provider: SafeAdapterLabel,
   usage: Schema.Struct({
     inputBytes: PositiveInteger,
@@ -90,35 +133,9 @@ export const VisualEvidence = Schema.Struct({
   }),
 }).pipe(
   Schema.check(
-    Schema.makeFilter(
-      (evidence) => {
-        switch (evidence.outcome) {
-          case "empty": {
-            return evidence.observations.length === 0;
-          }
-          case "found": {
-            return (
-              evidence.observations.length > 0 &&
-              evidence.observations.some(
-                ({ confidence }) => confidence >= VisualConfidenceThreshold
-              )
-            );
-          }
-          case "low_confidence": {
-            return (
-              evidence.observations.length > 0 &&
-              evidence.observations.every(
-                ({ confidence }) => confidence < VisualConfidenceThreshold
-              )
-            );
-          }
-          default: {
-            return false;
-          }
-        }
-      },
-      { expected: "observations consistent with the visual outcome" }
-    )
+    Schema.makeFilter(visualEvidenceOutcomeMatchesObservations, {
+      expected: "observations consistent with the visual outcome",
+    })
   )
 );
 export type VisualEvidence = typeof VisualEvidence.Type;
