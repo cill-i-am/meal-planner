@@ -781,9 +781,31 @@ export const makeImportWorkflowStarter = (
         options?.correlationId ??
         (options?.newCorrelationId ?? makeImportCorrelationId)();
       return Effect.gen(function* ensureStarted() {
-        const created = yield* workflow.createBatch([
-          { id: instanceId, params: { correlationId, importId } },
-        ]);
+        const createOutcome = yield* workflow
+          .createBatch([
+            { id: instanceId, params: { correlationId, importId } },
+          ])
+          .pipe(
+            Effect.map((created) => ({
+              _tag: "Created" as const,
+              created,
+            })),
+            Effect.catchCauseIf(
+              (cause) => !Cause.hasInterrupts(cause),
+              () =>
+                workflow.get(instanceId).pipe(
+                  Effect.flatMap(reconcileExisting),
+                  Effect.map((result) => ({
+                    _tag: "Reconciled" as const,
+                    result,
+                  }))
+                )
+            )
+          );
+        if (createOutcome._tag === "Reconciled") {
+          return createOutcome.result;
+        }
+        const { created } = createOutcome;
         if (created.length === 1) {
           yield* emitImportObservabilityEvent({
             correlationId,
