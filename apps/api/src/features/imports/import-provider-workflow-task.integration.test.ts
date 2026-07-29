@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -13,6 +14,8 @@ interface ProviderWorkflowInput {
   readonly importId?: string;
   readonly scenario:
     | "retry_exhausted"
+    | "recipe_conservative_crash_replay"
+    | "recipe_conservative_success"
     | "speech_terminal_recovery"
     | "speech_terminal_recovery_poison"
     | "success"
@@ -1349,5 +1352,216 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
     expect(await readNumber(instanceId, "task-attempts")).toBe(1);
     expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+  });
+
+  it("persists a conservative installed recipe result and replays its native task without another provider call", async () => {
+    const instanceId = `gaia-205-recipe-conservative-${randomUUID()}`;
+    const importId = randomUUID();
+    const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}`;
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const stageBefore = await database
+      .prepare(
+        `SELECT settled_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      )
+      .first<{ readonly settled_micro_usd: number }>();
+    if (stageBefore === null) {
+      throw new Error("Pilot provider budget baseline is missing");
+    }
+
+    const initial = await runWorkflow(instanceId, {
+      importId,
+      scenario: "recipe_conservative_success",
+    });
+    expect(initial).toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "recipe-conservative-evidence",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(1);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-adapter-completions")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-dispatch-completions")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT actual_cost_micro_usd, dispatch_id,
+                  maximum_cost_micro_usd, provider_stage_id, run_id, state
+             FROM pilot_provider_budget_dispatches
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+        .bind(dispatchId)
+        .first()
+    ).resolves.toEqual({
+      actual_cost_micro_usd: null,
+      dispatch_id: dispatchId,
+      maximum_cost_micro_usd: 100_000,
+      provider_stage_id: "recipe-extraction",
+      run_id: `gaia-118:${importId}`,
+      state: "settled_unknown",
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT authority, conservative_charge_micro_usd
+             FROM pilot_provider_budget_conservative_settlements
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+        .bind(dispatchId)
+        .first()
+    ).resolves.toEqual({
+      authority: "schema_valid_provider_response",
+      conservative_charge_micro_usd: 100_000,
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT invoking_dispatch_id, poison_dispatch_id,
+                  reserved_micro_usd, settled_micro_usd, state
+             FROM pilot_provider_stage_budget
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        )
+        .first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      settled_micro_usd: stageBefore.settled_micro_usd + 100_000,
+      state: "open",
+    });
+
+    await expect(
+      restartFromAfterProviderCheckpoint(instanceId)
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "recipe-conservative-evidence",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-adapter-completions")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-dispatch-completions")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+             FROM pilot_provider_budget_conservative_settlements
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+        .bind(dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      database
+        .prepare(
+          `SELECT reserved_micro_usd, settled_micro_usd, state
+             FROM pilot_provider_stage_budget
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        )
+        .first()
+    ).resolves.toEqual({
+      reserved_micro_usd: 0,
+      settled_micro_usd: stageBefore.settled_micro_usd + 100_000,
+      state: "open",
+    });
+  });
+
+  it("replays a conservatively settled recipe after a native post-settlement crash without a second provider call or charge", async () => {
+    const instanceId = `gaia-205-recipe-conservative-crash-${randomUUID()}`;
+    const importId = randomUUID();
+    const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}`;
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const stageBefore = await database
+      .prepare(
+        `SELECT settled_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      )
+      .first<{ readonly settled_micro_usd: number }>();
+    if (stageBefore === null) {
+      throw new Error("Pilot provider budget baseline is missing");
+    }
+
+    await expect(
+      runWorkflow(instanceId, {
+        importId,
+        scenario: "recipe_conservative_crash_replay",
+      })
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "recipe-conservative-evidence",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(1);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-adapter-completions")).toBe(2);
+    expect(await readNumber(instanceId, "recipe-dispatch-completions")).toBe(1);
+    expect(await readNumber(instanceId, "post-settlement-crashes")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+             FROM pilot_provider_budget_conservative_settlements
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+        .bind(dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+             FROM pilot_provider_recipe_replay_values
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+        .bind(dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      database
+        .prepare(
+          `SELECT invoking_dispatch_id, poison_dispatch_id,
+                  reserved_micro_usd, settled_micro_usd, state
+             FROM pilot_provider_stage_budget
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        )
+        .first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      settled_micro_usd: stageBefore.settled_micro_usd + 100_000,
+      state: "open",
+    });
+
+    await expect(
+      restartFromAfterProviderCheckpoint(instanceId)
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "recipe-conservative-evidence",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-adapter-completions")).toBe(2);
+    expect(await readNumber(instanceId, "recipe-dispatch-completions")).toBe(1);
+    expect(await readNumber(instanceId, "post-settlement-crashes")).toBe(1);
   });
 });

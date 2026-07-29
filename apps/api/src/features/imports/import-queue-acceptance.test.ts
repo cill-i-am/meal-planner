@@ -129,6 +129,7 @@ describe("durable provider-free queue acceptance", () => {
       "0013_provider_visual_retry_exhaustion_projection.sql",
       "0014_provider_visual_second_recovery.sql",
       "0015_provider_visual_unknown_outcome_second_recovery.sql",
+      "0016_recipe_terminal_projection.sql",
     ]);
     expect(
       itemColumns.results.map(({ name }: { readonly name: string }) => name)
@@ -228,7 +229,7 @@ describe("durable provider-free queue acceptance", () => {
           ORDER BY name`
       )
       .all<{ readonly name: string; readonly count: number }>();
-    expect(ledger.results).toHaveLength(16);
+    expect(ledger.results).toHaveLength(17);
     expect(
       ledger.results.every(
         ({ count }: { readonly count: number }) => count === 1

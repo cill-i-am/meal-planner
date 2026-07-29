@@ -64,6 +64,12 @@ const repository: PilotProviderBudgetRepository = {
       ...input,
       state: "reserved",
     }),
+  settleConservative: (input) =>
+    Effect.succeed({
+      actualCostMicroUsd: null,
+      ...input,
+      state: "settled_unknown",
+    }),
   settleKnown: (input) =>
     Effect.succeed({
       ...input,

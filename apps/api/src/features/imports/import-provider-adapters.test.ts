@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 import { describe, expect, it, vi } from "vitest";
 
+import type { PilotProviderConservativeReplayValue } from "../pilots/pilot-provider-budget.js";
 import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
@@ -72,6 +73,10 @@ const localDispatchGate: ProviderDispatchGate = {
           | {
               readonly _tag: "Known";
               readonly actualCostMicroUsd: number;
+            }
+          | {
+              readonly _tag: "Conservative";
+              readonly conservativeChargeMicroUsd: number;
             }
           | { readonly _tag: "Unknown" };
         readonly value: A;
@@ -871,6 +876,10 @@ describe("installed import provider adapters", () => {
             readonly _tag: "Known";
             readonly actualCostMicroUsd: number;
           }
+        | {
+            readonly _tag: "Conservative";
+            readonly conservativeChargeMicroUsd: number;
+          }
         | { readonly _tag: "Unknown" }
       )[] = [];
       const adapter = await runFactory(
@@ -1155,11 +1164,18 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(exit)).toContain("malformed_response");
   });
 
-  it("preserves absent installed usage as unknown for the atomic ledger", async () => {
+  it("settles a schema-valid recipe without usage at the conservative maximum", async () => {
     const response = nativeToolResponse("record_recipe", validRecipeSemantics);
     delete (response as { usage?: unknown }).usage;
     const gateway = makeGateway(response);
-    const costs: string[] = [];
+    const costs: (
+      | { readonly _tag: "Known"; readonly actualCostMicroUsd: number }
+      | {
+          readonly _tag: "Conservative";
+          readonly conservativeChargeMicroUsd: number;
+        }
+      | { readonly _tag: "Unknown" }
+    )[] = [];
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -1169,7 +1185,7 @@ describe("installed import provider adapters", () => {
             input.invoke.pipe(
               Effect.tap(({ cost }) =>
                 Effect.sync(() => {
-                  costs.push(cost._tag);
+                  costs.push(cost);
                 })
               ),
               Effect.map(({ value }) => value)
@@ -1177,7 +1193,7 @@ describe("installed import provider adapters", () => {
         },
       })
     );
-    await Effect.runPromise(
+    const output = await Effect.runPromise(
       adapter.extract({
         evidenceFingerprint: "fingerprint",
         generation: 1 as never,
@@ -1193,6 +1209,221 @@ describe("installed import provider adapters", () => {
         ],
       })
     );
-    expect(costs).toEqual(["Unknown"]);
+    expect(costs).toEqual([
+      {
+        _tag: "Conservative",
+        conservativeChargeMicroUsd: 100_000,
+      },
+    ]);
+    expect(output.cost).toEqual({
+      certainty: "estimated",
+      currency: "USD",
+      estimatedMicroUsd: 100_000,
+    });
+  });
+
+  it("fails closed without invoking the provider when a conservative replay hash is corrupt", async () => {
+    const gateway = makeGateway(
+      nativeToolResponse("record_recipe", validRecipeSemantics)
+    );
+    const replayGate: ProviderDispatchGate = {
+      run: <A, E>(input: {
+        readonly conservativeReplay?: {
+          readonly decode: (
+            replay: PilotProviderConservativeReplayValue
+          ) => Effect.Effect<A, E>;
+          readonly encode: (
+            value: A
+          ) => Effect.Effect<PilotProviderConservativeReplayValue, E>;
+        };
+      }) =>
+        Effect.gen(function* replayCorruptHash() {
+          if (input.conservativeReplay === undefined) {
+            return yield* Effect.die("Missing conservative replay codec");
+          }
+          const replay = yield* input.conservativeReplay.encode(
+            validRecipe as A
+          );
+          return yield* input.conservativeReplay.decode({
+            ...replay,
+            valueSha256: "0".repeat(64),
+          });
+        }),
+    };
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: replayGate,
+      })
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        evidenceFingerprint: "e".repeat(64),
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "must-not-appear",
+          },
+        ],
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(JSON.stringify(exit)).not.toContain("must-not-appear");
+    expect(gateway.requests).toHaveLength(0);
+  });
+
+  it("fails closed without invoking the provider when conservative replay JSON violates the schema", async () => {
+    const gateway = makeGateway(
+      nativeToolResponse("record_recipe", validRecipeSemantics)
+    );
+    const valueJson = JSON.stringify({ unexpected: true });
+    const valueSha256 = [
+      ...new Uint8Array(
+        await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(valueJson)
+        )
+      ),
+    ]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    const replayGate: ProviderDispatchGate = {
+      run: <A, E>(input: {
+        readonly conservativeReplay?: {
+          readonly decode: (
+            replay: PilotProviderConservativeReplayValue
+          ) => Effect.Effect<A, E>;
+          readonly encode: (
+            value: A
+          ) => Effect.Effect<PilotProviderConservativeReplayValue, E>;
+        };
+      }) =>
+        Effect.gen(function* replaySchemaInvalidJson() {
+          if (input.conservativeReplay === undefined) {
+            return yield* Effect.die("Missing conservative replay codec");
+          }
+          const replay = yield* input.conservativeReplay.encode(
+            validRecipe as A
+          );
+          return yield* input.conservativeReplay.decode({
+            ...replay,
+            valueJson,
+            valueSha256,
+          });
+        }),
+    };
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: replayGate,
+      })
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        evidenceFingerprint: "e".repeat(64),
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "must-not-appear",
+          },
+        ],
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(JSON.stringify(exit)).not.toContain("must-not-appear");
+    expect(gateway.requests).toHaveLength(0);
+  });
+
+  it("fails closed without invoking the provider when a multibyte replay exceeds the byte cap", async () => {
+    const gateway = makeGateway(
+      nativeToolResponse("record_recipe", validRecipeSemantics)
+    );
+    const valueJson = JSON.stringify({ value: "é".repeat(140_000) });
+    expect(valueJson.length).toBeLessThan(262_144);
+    expect(new TextEncoder().encode(valueJson).byteLength).toBeGreaterThan(
+      262_144
+    );
+    const valueSha256 = [
+      ...new Uint8Array(
+        await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(valueJson)
+        )
+      ),
+    ]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    const replayGate: ProviderDispatchGate = {
+      run: <A, E>(input: {
+        readonly conservativeReplay?: {
+          readonly decode: (
+            replay: PilotProviderConservativeReplayValue
+          ) => Effect.Effect<A, E>;
+          readonly encode: (
+            value: A
+          ) => Effect.Effect<PilotProviderConservativeReplayValue, E>;
+        };
+      }) =>
+        Effect.gen(function* replayOversizedMultibyteJson() {
+          if (input.conservativeReplay === undefined) {
+            return yield* Effect.die("Missing conservative replay codec");
+          }
+          const replay = yield* input.conservativeReplay.encode(
+            validRecipe as A
+          );
+          return yield* input.conservativeReplay.decode({
+            ...replay,
+            valueJson,
+            valueSha256,
+          });
+        }),
+    };
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: replayGate,
+      })
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        evidenceFingerprint: "e".repeat(64),
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "must-not-appear",
+          },
+        ],
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(JSON.stringify(exit)).not.toContain("must-not-appear");
+    expect(gateway.requests).toHaveLength(0);
   });
 });

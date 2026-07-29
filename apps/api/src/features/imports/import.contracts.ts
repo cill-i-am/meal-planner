@@ -146,6 +146,12 @@ export const VisualEvidenceFailedImportStatus = Schema.Struct({
   recovery: Schema.Literal("operator_reconcile"),
 });
 
+export const RecipeExtractionFailedImportStatus = Schema.Struct({
+  code: Schema.Literal("recipe_extraction_failed"),
+  kind: Schema.Literal("failed"),
+  recovery: Schema.Literal("operator_reconcile"),
+});
+
 export const UnsupportedImportStatus = Schema.Struct({
   code: Schema.Literal("unsupported_post_type"),
   kind: Schema.Literal("unsupported"),
@@ -164,6 +170,7 @@ export const ImportStatus = Schema.Union([
   TranscribedImportStatus,
   TranscribingImportStatus,
   TranscriptionFailedImportStatus,
+  RecipeExtractionFailedImportStatus,
   VisualEvidenceEmptyImportStatus,
   VisualEvidenceFailedImportStatus,
   VisualEvidenceFoundImportStatus,
@@ -232,6 +239,7 @@ const NonAcquiredImportView = Schema.Struct({
     PrivateOrUnavailableImportStatus,
     AcquisitionTemporarilyUnavailableImportStatus,
     InvalidOrUnsupportedMediaImportStatus,
+    RecipeExtractionFailedImportStatus,
     UnsupportedImportStatus,
   ]),
 });
@@ -259,6 +267,7 @@ const TranscribedImportView = Schema.Struct({
   status: Schema.Union([
     ExtractingVisualImportStatus,
     TranscribedImportStatus,
+    RecipeExtractionFailedImportStatus,
     VisualEvidenceFailedImportStatus,
   ]),
 });
@@ -275,6 +284,7 @@ const VisualEvidenceImportView = Schema.Struct({
     VisualEvidenceEmptyImportStatus,
     VisualEvidenceFoundImportStatus,
     VisualEvidenceLowConfidenceImportStatus,
+    RecipeExtractionFailedImportStatus,
   ]),
 });
 

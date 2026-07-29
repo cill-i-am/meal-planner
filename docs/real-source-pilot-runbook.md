@@ -111,6 +111,12 @@ When GAIA-118 receives a specific execution authorization:
 11. Verify that its sample identities reconcile exactly with the manifest.
 12. Record the report and the future deletion-verification boundary as durable
     evidence.
+13. At or after that boundary, call the existing authenticated internal
+    operator endpoint with the `sweep_expired_recipe_replays` operation. Verify
+    the returned opaque deletion count and confirm, by opaque replay identity,
+    that expired recipe replay sidecars are physically absent while current
+    sidecars remain. This sweep uses SQLite's current time and must not include
+    source URLs, media, prompts, transcripts, provider payloads, or credentials.
 
 This URL-only sequence uses the existing import and review path. It does not
 authorize a separate ingestion path, direct provider calls, infrastructure
