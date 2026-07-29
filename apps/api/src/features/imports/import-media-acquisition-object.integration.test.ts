@@ -17,7 +17,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { Cause, Context, Effect, Exit, Option, Schema, Stream } from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   makeContainerMediaAcquirer,
@@ -37,7 +37,11 @@ import { TikTokMediaContainer } from "./import-media-container.js";
 import { makeTikTokMediaContainerRuntime } from "./import-media-container.runtime.js";
 import { makeTemporaryArtifactStore } from "./import-media-process.js";
 import type { MediaProcessRunnerShape } from "./import-media-process.js";
-import { AcquisitionGeneration } from "./import-media.model.js";
+import {
+  AcquisitionGeneration,
+  MaximumMediaProcessMilliseconds,
+  ProductionMediaLimits,
+} from "./import-media.model.js";
 import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
   ImportCorrelationId,
@@ -272,6 +276,43 @@ const untouchedBucket = (): AcquisitionBucketLike => ({
 });
 
 describe("installed acquisition Durable Object boundary", () => {
+  it("classifies the container-wide process deadline as a timeout", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gaia-204-container-timeout-"));
+    try {
+      const source = await Effect.runPromise(
+        makeTikTokSourceResolver(makeProcessRunner()).resolve(identity, root)
+      );
+      const acquirer = makeContainerMediaAcquirer(
+        {
+          run: () => Effect.never,
+        },
+        {
+          download: (_locator, destination) =>
+            Effect.promise(() => writeFile(destination, mediaBytes)),
+        }
+      );
+      vi.useFakeTimers();
+      const result = Effect.runPromiseExit(
+        acquirer.acquire(source, ProductionMediaLimits, root)
+      );
+
+      await vi.advanceTimersByTimeAsync(MaximumMediaProcessMilliseconds);
+      const exit = await result;
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+          _tag: "RetryableAcquisitionFailure",
+          reason: "container_process_timeout",
+          stage: "process",
+        });
+      }
+    } finally {
+      vi.useRealTimers();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("fails closed before resolution when the temporary workspace is unavailable", async () => {
     let acquireCalls = 0;
     let resolveCalls = 0;

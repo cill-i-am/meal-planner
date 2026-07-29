@@ -322,12 +322,12 @@ const r2Effect = <A>(
   operation: () => Promise<A>
 ) =>
   Effect.tryPromise({
-    catch: () => retryableAt(stage),
+    catch: () => retryableAt(stage, "container_rpc"),
     try: operation,
   }).pipe(
     Effect.timeoutOrElse({
       duration: MaximumR2OperationMilliseconds,
-      orElse: () => Effect.fail(retryableAt(stage)),
+      orElse: () => Effect.fail(retryableAt(stage, "acquisition_timeout")),
     })
   );
 
@@ -355,15 +355,15 @@ const r2MutationEffect = <A>(
         try {
           finish(Effect.succeed(await pending));
         } catch {
-          finish(Effect.fail(retryableAt(stage)));
+          finish(Effect.fail(retryableAt(stage, "container_rpc")));
         }
       })();
       timer = setTimeout(() => {
         onDeadline?.();
-        finish(Effect.fail(retryableAt(stage)));
+        finish(Effect.fail(retryableAt(stage, "acquisition_timeout")));
       }, MaximumR2OperationMilliseconds);
     } catch {
-      finish(Effect.fail(retryableAt(stage)));
+      finish(Effect.fail(retryableAt(stage, "container_rpc")));
     }
     return Effect.sync(() => {
       if (timer !== undefined) {
@@ -445,7 +445,7 @@ const putMediaObject = (
           } catch {
             controller.abort();
             const localDeadline = setTimeout(
-              () => finish(Effect.fail(retryableAt("store"))),
+              () => finish(Effect.fail(retryableAt("store", "container_rpc"))),
               MaximumLocalCleanupMilliseconds
             );
             try {
@@ -454,16 +454,16 @@ const putMediaObject = (
               // The local stream cancellation is expected on a failed put.
             }
             clearTimeout(localDeadline);
-            finish(Effect.fail(retryableAt("store")));
+            finish(Effect.fail(retryableAt("store", "container_rpc")));
           }
         })();
         timer = setTimeout(() => {
           controller.abort();
-          finish(Effect.fail(retryableAt("store")));
+          finish(Effect.fail(retryableAt("store", "acquisition_timeout")));
         }, MaximumR2OperationMilliseconds);
       } catch {
         controller.abort();
-        finish(Effect.fail(retryableAt("store")));
+        finish(Effect.fail(retryableAt("store", "container_rpc")));
       }
       return Effect.sync(() => {
         if (timer !== undefined) {

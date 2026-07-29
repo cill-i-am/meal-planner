@@ -238,18 +238,16 @@ export const observeAcquisitionSettlement = (
     outcome: settlement === "Superseded" ? "rejected" : "settled",
     ...(settlement === "Superseded" ? { reasonCode } : {}),
   });
-  return reasonCode === undefined
-    ? settled
-    : settled.pipe(
-        Effect.andThen(
-          emitImportObservabilityEvent({
-            correlationId,
-            event: "acquisition.terminal",
-            outcome: "rejected",
-            reasonCode,
-          })
-        )
-      );
+  return settled.pipe(
+    Effect.andThen(
+      emitImportObservabilityEvent({
+        correlationId,
+        event: "acquisition.terminal",
+        outcome: reasonCode === undefined ? "succeeded" : "rejected",
+        ...(reasonCode === undefined ? {} : { reasonCode }),
+      })
+    )
+  );
 };
 
 export const runAcquisitionTask = <
@@ -265,8 +263,10 @@ export const runAcquisitionTask = <
   Effect.suspend(() => {
     let confirmedGeneration: AcquisitionGeneration | undefined;
     let attemptNumber = 0;
-    const runAttempt = Effect.suspend(() =>
-      allocate().pipe(
+    let executionNumber = 0;
+    const runAttempt = Effect.suspend(() => {
+      executionNumber += 1;
+      return allocate().pipe(
         Effect.mapError(
           (): UnconfirmedAcquisitionRetry => ({
             _tag: "UnconfirmedAcquisitionRetry",
@@ -354,7 +354,7 @@ export const runAcquisitionTask = <
             outcome: reasonCode === "timeout" ? "timed_out" : "failed",
             reasonCode,
           });
-          return attemptNumber < 3
+          return executionNumber < 3
             ? response.pipe(
                 Effect.andThen(
                   emitImportObservabilityEvent({
@@ -368,8 +368,8 @@ export const runAcquisitionTask = <
               )
             : response;
         })
-      )
-    );
+      );
+    });
 
     return runAttempt.pipe(
       Effect.retry({ schedule: TypedAcquisitionRetrySchedule }),

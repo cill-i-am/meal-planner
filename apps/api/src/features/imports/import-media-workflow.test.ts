@@ -22,7 +22,7 @@ import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
 } from "./import-observability.js";
-import { ImportId } from "./import.contracts.js";
+import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import {
   ensureImportWorkflowStarted,
   importWorkflowInstanceId,
@@ -42,6 +42,28 @@ const importId = Schema.decodeUnknownSync(ImportId)(
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
 );
+const verifiedAcquisition = (
+  generation: typeof AcquisitionGeneration.Type
+): AcquisitionTaskOutcome => ({
+  _tag: "VerifiedAcquisition",
+  evidence: {
+    acquiredAt: Schema.decodeUnknownSync(ImportTimestamp)(
+      "2026-07-29T12:00:00.000Z"
+    ),
+    audioStreams: [{ codec: "aac", index: 1 }],
+    bytes: 24,
+    deleteAt: Schema.decodeUnknownSync(ImportTimestamp)(
+      "2026-08-05T12:00:00.000Z"
+    ),
+    durationSeconds: 1,
+    generation,
+    manifestKey: "opaque-manifest-key",
+    mediaKey: "opaque-media-key",
+    sha256: "a".repeat(64),
+    videoStreams: [{ codec: "h264", index: 0 }],
+  },
+  generation,
+});
 
 const require = createRequire(import.meta.url);
 const nodePath = require("node:path") as {
@@ -689,6 +711,60 @@ describe("import acquisition retry contract", () => {
     expect(semanticAttempts).toBe(1);
   });
 
+  it("does not announce a retry after a mixed sequence exhausts all executions", async () => {
+    const events: ImportObservabilityEvent[] = [];
+    const traceStore = ImportObservabilityTraceStore.of({
+      append: (event) =>
+        Effect.sync(() => {
+          events.push(event);
+        }),
+      read: () => Effect.succeed(events),
+    });
+    let executions = 0;
+    const effect = runAcquisitionTask(
+      () => {
+        executions += 1;
+        return executions === 1
+          ? Effect.fail({ _tag: "ImportPersistenceUnavailable" as const })
+          : Effect.succeed({
+              generation: Schema.decodeUnknownSync(AcquisitionGeneration)(
+                executions
+              ),
+            });
+      },
+      () =>
+        Effect.fail({
+          _tag: "RetryableAcquisitionFailure" as const,
+          reason: "download_dns" as const,
+          stage: "container" as const,
+        }),
+      { correlationId }
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* exhaustWithClock() {
+        const fiber = yield* Effect.forkChild(effect);
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("3 seconds");
+        return yield* Fiber.join(fiber);
+      }).pipe(
+        Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })),
+        Effect.provideService(ImportObservabilityTraceStore, traceStore)
+      )
+    );
+
+    expect(executions).toBe(3);
+    expect(
+      events.filter((event) => event.event === "acquisition.retry")
+    ).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({
+      attempt: 2,
+      event: "acquisition.response",
+      outcome: "failed",
+      reasonCode: "transport",
+    });
+  });
+
   it("records decode rejection and settlement terminal reasons without payload data", async () => {
     const events: ImportObservabilityEvent[] = [];
     const traceStore = ImportObservabilityTraceStore.of({
@@ -731,6 +807,11 @@ describe("import acquisition retry contract", () => {
             generation,
           },
           "Superseded"
+        );
+        yield* observeAcquisitionSettlement(
+          correlationId,
+          verifiedAcquisition(generation),
+          "Recorded"
         );
       }).pipe(Effect.provideService(ImportObservabilityTraceStore, traceStore))
     );
@@ -775,6 +856,16 @@ describe("import acquisition retry contract", () => {
         event: "acquisition.terminal",
         outcome: "rejected",
         reasonCode: "state_fence",
+      },
+      {
+        correlationId,
+        event: "acquisition.settlement",
+        outcome: "settled",
+      },
+      {
+        correlationId,
+        event: "acquisition.terminal",
+        outcome: "succeeded",
       },
     ]);
     expect(events.every((event) => event.correlationId === correlationId)).toBe(

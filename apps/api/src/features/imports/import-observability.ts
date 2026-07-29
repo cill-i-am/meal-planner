@@ -131,20 +131,23 @@ const eventAnnotations = (event: ImportObservabilityEvent) => ({
 export const emitImportObservabilityEvent = (
   rawEvent: unknown,
   capturedTraceStore?: ImportObservabilityTraceStoreShape
-) => {
-  const event = decodeEvent(rawEvent);
-  const annotations = eventAnnotations(event);
-  return Effect.gen(function* emitClosedImportEvent() {
-    yield* Console.log(annotations);
-    const traceStore =
-      capturedTraceStore === undefined
-        ? yield* Effect.serviceOption(ImportObservabilityTraceStore)
-        : Option.some(capturedTraceStore);
-    if (Option.isSome(traceStore)) {
-      yield* traceStore.value.append(event);
-    }
+) =>
+  Effect.suspend(() => {
+    const event = decodeEvent(rawEvent);
+    const annotations = eventAnnotations(event);
+    return Effect.gen(function* emitClosedImportEvent() {
+      yield* Console.log(annotations);
+      const traceStore =
+        capturedTraceStore === undefined
+          ? yield* Effect.serviceOption(ImportObservabilityTraceStore)
+          : Option.some(capturedTraceStore);
+      if (Option.isSome(traceStore)) {
+        yield* traceStore.value.append(event);
+      }
+    }).pipe(
+      Effect.withSpan(`import.${event.event}`, { attributes: annotations })
+    );
   }).pipe(
-    Effect.withSpan(`import.${event.event}`, { attributes: annotations }),
     // Logs, spans and trace persistence are diagnostic only. Preserve caller
     // interruption, but prevent any telemetry failure or defect from changing
     // provider, retry or settlement behavior.
@@ -154,7 +157,6 @@ export const emitImportObservabilityEvent = (
     ),
     Effect.asVoid
   );
-};
 
 export const observeImportQueueReceipt = (
   newCorrelationId: () => ImportCorrelationId = makeImportCorrelationId

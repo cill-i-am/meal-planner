@@ -496,6 +496,7 @@ export const makeContainerMediaAcquirer = (
         orElse: () =>
           Effect.fail({
             _tag: "RetryableAcquisitionFailure" as const,
+            reason: "container_process_timeout" as const,
             stage: "process" as const,
           }),
       })
