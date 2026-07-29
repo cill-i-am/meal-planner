@@ -177,7 +177,7 @@ const validVisual = {
     currency: "USD",
     estimatedMicroUsd: 20,
   },
-  model: "@cf/meta/llama-3.2-11b-vision-instruct",
+  model: "@cf/google/gemma-4-26b-a4b-it",
   observations: [],
   outcome: "empty",
   provider: "cloudflare-workers-ai",
@@ -190,11 +190,39 @@ const validVisualSemantics = {
 } as const;
 
 const defaultVisualUsage = { completion_tokens: 10, prompt_tokens: 20 };
+const defaultVisualChatUsage = {
+  completion_tokens: 10,
+  prompt_tokens: 20,
+  total_tokens: 30,
+};
 
 const visualJsonModeResponse = (
   response: unknown,
   usage: unknown = defaultVisualUsage
 ) => ({ response, usage });
+
+const visualChatCompletionResponse = (
+  content: unknown,
+  usage: unknown = defaultVisualChatUsage
+) => ({
+  choices: [
+    {
+      finish_reason: "stop",
+      index: 0,
+      logprobs: null,
+      message: {
+        content: JSON.stringify(content),
+        role: "assistant",
+      },
+    },
+  ],
+  created: 1,
+  id: "chatcmpl-opaque",
+  model: "@cf/google/gemma-4-26b-a4b-it",
+  object: "chat.completion",
+  system_fingerprint: null,
+  usage,
+});
 
 const toolResponse = (name: string, value: unknown) => ({
   choices: [
@@ -523,7 +551,7 @@ describe("installed import provider adapters", () => {
         client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
-        model: "@cf/meta/llama-3.2-11b-vision-instruct",
+        model: "@cf/google/gemma-4-26b-a4b-it",
       }),
       trace.service
     );
@@ -558,9 +586,9 @@ describe("installed import provider adapters", () => {
       cost: {
         certainty: "estimated",
         currency: "USD",
-        estimatedMicroUsd: 8,
+        estimatedMicroUsd: 5,
       },
-      model: "@cf/meta/llama-3.2-11b-vision-instruct",
+      model: "@cf/google/gemma-4-26b-a4b-it",
       observations: [
         {
           confidence: 0.92,
@@ -596,7 +624,7 @@ describe("installed import provider adapters", () => {
         readonly returnRawResponse: boolean;
       };
     };
-    expect(request.model).toBe("@cf/meta/llama-3.2-11b-vision-instruct");
+    expect(request.model).toBe("@cf/google/gemma-4-26b-a4b-it");
     expect(request.options).toEqual({
       gateway: {
         collectLog: false,
@@ -747,6 +775,65 @@ describe("installed import provider adapters", () => {
       },
     ]);
     expect(JSON.stringify(trace.events)).not.toContain("2 onions");
+  });
+
+  it("uses Gemma vision and accepts its installed chat-completion JSON contract", async () => {
+    const gateway = makeGateway(
+      visualChatCompletionResponse({
+        observations: [
+          {
+            confidence: 0.92,
+            frameIndex: 0,
+            text: "2 onions",
+          },
+        ],
+        outcome: "found",
+      })
+    );
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 125,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(output).toMatchObject({
+      model: "@cf/google/gemma-4-26b-a4b-it",
+      observations: [
+        {
+          confidence: 0.92,
+          frameIndex: 0,
+          kind: "visible_text",
+          text: "2 onions",
+          timestampMilliseconds: 125,
+        },
+      ],
+      outcome: "found",
+    });
+    expect(gateway.requests).toHaveLength(1);
+    expect((gateway.requests[0] as { readonly model: string }).model).toBe(
+      "@cf/google/gemma-4-26b-a4b-it"
+    );
   });
 
   it("rejects model attempts to inject visual transport metadata", async () => {
