@@ -182,6 +182,7 @@ const commandWorkflow = async (
         readonly id: string;
         readonly importId: string;
       }
+    | { readonly action: "run-visual-recipe-budget"; readonly id: string }
     | { readonly action: "restart"; readonly id: string }
     | { readonly action: "restart-speech"; readonly id: string }
     | { readonly action: "restart-terminal"; readonly id: string }
@@ -205,6 +206,9 @@ const commandWorkflow = async (
 
 const runWorkflow = (id: string, input: ProviderWorkflowInput) =>
   commandWorkflow({ action: "run", id, input });
+
+const runVisualRecipeBudget = (id: string) =>
+  commandWorkflow({ action: "run-visual-recipe-budget", id });
 
 const restartFromAfterProviderCheckpoint = (id: string) =>
   commandWorkflow({ action: "restart", id });
@@ -231,6 +235,83 @@ const settleSpeechTerminal = (
 ) => commandWorkflow({ action: "settle-speech", dispatchId, id, importId });
 
 describe("provider workflow task retry exhaustion", () => {
+  it("settles missing visual usage at the bounded maximum and permits the next recipe dispatch", async () => {
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const stageBefore = await database
+      .prepare(
+        `SELECT settled_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      )
+      .first<{ readonly settled_micro_usd: number }>();
+    if (stageBefore === null) {
+      throw new Error("Pilot provider budget baseline is missing");
+    }
+
+    try {
+      await expect(
+        runVisualRecipeBudget("gaia-199-missing-visual-usage")
+      ).resolves.toEqual({
+        providerCalls: 2,
+        recipeResult: "recipe-dispatched",
+        stage: {
+          budgetCapMicroUsd: 10_000_000,
+          reservedMicroUsd: 0,
+          settledMicroUsd: stageBefore.settled_micro_usd + 100_029,
+          state: "open",
+        },
+        visualCost: {
+          certainty: "estimated",
+          currency: "USD",
+          estimatedMicroUsd: 100_000,
+        },
+      });
+      await expect(
+        database
+          .prepare(
+            `SELECT actual_cost_micro_usd, dispatch_id, state
+               FROM pilot_provider_budget_dispatches
+              WHERE run_id = 'gaia-199:missing-visual-usage'
+              ORDER BY dispatch_id`
+          )
+          .all()
+      ).resolves.toMatchObject({
+        results: [
+          {
+            actual_cost_micro_usd: 29,
+            dispatch_id:
+              "recipe:00000000-0000-4000-8000-000000000199:1:gaia-199-evidence",
+            state: "settled_known",
+          },
+          {
+            actual_cost_micro_usd: 100_000,
+            dispatch_id: "visual:gaia-199:1",
+            state: "settled_known",
+          },
+        ],
+      });
+    } finally {
+      await database
+        .prepare(
+          `DELETE FROM pilot_provider_budget_dispatches
+            WHERE run_id = 'gaia-199:missing-visual-usage'`
+        )
+        .run();
+      await database
+        .prepare(
+          `UPDATE pilot_provider_stage_budget
+              SET settled_micro_usd = ?,
+                  reserved_micro_usd = 0,
+                  state = 'open',
+                  invoking_dispatch_id = NULL,
+                  poison_dispatch_id = NULL
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        )
+        .bind(stageBefore.settled_micro_usd)
+        .run();
+    }
+  });
+
   it("uses native retries, checkpoints final exhaustion, and replays with zero provider calls", async () => {
     const instanceId = "gaia-163-native-retry-exhausted";
     const database = await runtime.getD1Database("MealPlannerDatabase");

@@ -799,9 +799,15 @@ describe("installed import provider adapters", () => {
       },
     ],
   ])(
-    "preserves %s visual usage as unknown for the atomic ledger",
+    "settles %s visual usage at the bounded maximum without claiming known provider spend",
     async (_label, response) => {
-      const costs: string[] = [];
+      const costs: (
+        | {
+            readonly _tag: "Known";
+            readonly actualCostMicroUsd: number;
+          }
+        | { readonly _tag: "Unknown" }
+      )[] = [];
       const adapter = await runFactory(
         makeInstalledVisualEvidenceExtractor({
           client: makeGateway(response).client,
@@ -811,7 +817,7 @@ describe("installed import provider adapters", () => {
               input.invoke.pipe(
                 Effect.tap(({ cost }) =>
                   Effect.sync(() => {
-                    costs.push(cost._tag);
+                    costs.push(cost);
                   })
                 ),
                 Effect.map(({ value }) => value)
@@ -839,8 +845,12 @@ describe("installed import provider adapters", () => {
         })
       );
 
-      expect(costs).toEqual(["Unknown"]);
-      expect(output.cost.estimatedMicroUsd).toBe(100_000);
+      expect(costs).toEqual([{ _tag: "Known", actualCostMicroUsd: 100_000 }]);
+      expect(output.cost).toEqual({
+        certainty: "estimated",
+        currency: "USD",
+        estimatedMicroUsd: 100_000,
+      });
     }
   );
 

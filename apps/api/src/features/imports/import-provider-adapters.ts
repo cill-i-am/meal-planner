@@ -703,20 +703,32 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                     const { inputTokens, outputTokens } = visualTokenUsage(
                       decoded.usage
                     );
-                    const cost = pricedTokenUsage(inputTokens, outputTokens, {
-                      inputMicroUsdPerToken: 0.049,
-                      outputMicroUsdPerToken: 0.68,
-                    });
+                    const meteredCost = pricedTokenUsage(
+                      inputTokens,
+                      outputTokens,
+                      {
+                        inputMicroUsdPerToken: 0.049,
+                        outputMicroUsdPerToken: 0.68,
+                      }
+                    );
+                    // A schema-valid response proves this bounded visual call
+                    // completed. When the provider omits trustworthy usage,
+                    // charge the reservation maximum against the safety ledger
+                    // without representing it as known provider spend.
+                    const cost =
+                      meteredCost._tag === "Known"
+                        ? meteredCost
+                        : {
+                            _tag: "Known" as const,
+                            actualCostMicroUsd: VisualMaximumCostMicroUsd,
+                          };
                     return {
                       cost,
                       value: {
                         cost: {
                           certainty: "estimated" as const,
                           currency: "USD" as const,
-                          estimatedMicroUsd:
-                            cost._tag === "Known"
-                              ? cost.actualCostMicroUsd
-                              : VisualMaximumCostMicroUsd,
+                          estimatedMicroUsd: cost.actualCostMicroUsd,
                         },
                         model,
                         observations: decoded.value.observations,
