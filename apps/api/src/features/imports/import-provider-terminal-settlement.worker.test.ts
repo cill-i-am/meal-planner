@@ -145,6 +145,7 @@ const seedPoisonedTerminalSpeechImport = async (
 const seedPoisonedTerminalRecipeImport = async (
   suffix: string,
   options: {
+    readonly additionalRecipeDispatch?: boolean;
     readonly maximumCostMicroUsd?: number;
     readonly persistCheckpoint?: boolean;
     readonly providerStageId?: string;
@@ -193,19 +194,55 @@ const seedPoisonedTerminalRecipeImport = async (
     )
     .run();
 
+  const runId = decodeRunId(options.runId ?? `gaia-118:${importId}`);
+  const budget = makeD1PilotProviderBudgetRepository(
+    testEnv.MealPlannerDatabase,
+    "pilot-gaia-118"
+  );
+  const settleKnownSibling = async (sibling: {
+    readonly dispatchId: ReturnType<typeof decodeDispatchId>;
+    readonly providerStageId: ReturnType<typeof decodeStageId>;
+  }) => {
+    const reservation = {
+      ...sibling,
+      maximumCostMicroUsd: 1,
+      runId,
+      timestamp: decodeBudgetTimestamp(now),
+    };
+    await Effect.runPromise(budget.reserve(reservation));
+    await Effect.runPromise(budget.beginInvocation(reservation));
+    await Effect.runPromise(
+      budget.settleKnown({ ...reservation, actualCostMicroUsd: 0 })
+    );
+  };
+  await settleKnownSibling({
+    dispatchId: decodeDispatchId(`speech:${importId}:${acquisitionGeneration}`),
+    providerStageId: decodeStageId("speech-transcription"),
+  });
+  await settleKnownSibling({
+    dispatchId: decodeDispatchId(
+      `visual:${importId}:${acquisitionGeneration}:evidence`
+    ),
+    providerStageId: decodeStageId("visual-evidence"),
+  });
+  if (options.additionalRecipeDispatch === true) {
+    await settleKnownSibling({
+      dispatchId: decodeDispatchId(
+        `recipe:${importId}:${acquisitionGeneration}:ambiguous`
+      ),
+      providerStageId: decodeStageId("recipe-extraction"),
+    });
+  }
+
   const reservation = {
     dispatchId,
     maximumCostMicroUsd: options.maximumCostMicroUsd ?? 100_000,
     providerStageId: decodeStageId(
       options.providerStageId ?? "recipe-extraction"
     ),
-    runId: decodeRunId(options.runId ?? `gaia-118:${importId}`),
+    runId,
     timestamp: decodeBudgetTimestamp(now),
   };
-  const budget = makeD1PilotProviderBudgetRepository(
-    testEnv.MealPlannerDatabase,
-    "pilot-gaia-118"
-  );
   await Effect.runPromise(budget.reserve(reservation));
   await Effect.runPromise(budget.beginInvocation(reservation));
   await Effect.runPromise(budget.settleUnknown(reservation));
@@ -735,7 +772,7 @@ describe("authenticated terminal recipe unknown-cost reconciliation", () => {
       )
         .bind(seeded.reservation.runId)
         .first()
-    ).resolves.toEqual({ count: 1 });
+    ).resolves.toEqual({ count: 3 });
     await expect(
       Promise.all([
         testEnv.MealPlannerDatabase.prepare(
@@ -762,6 +799,49 @@ describe("authenticated terminal recipe unknown-cost reconciliation", () => {
           .first(),
       ])
     ).resolves.toEqual([before.checkpoint, before.extraction, before.import]);
+  });
+
+  it("rejects an ambiguous second recipe dispatch while preserving the poison", async () => {
+    const seeded = await seedPoisonedTerminalRecipeImport("000000000224", {
+      additionalRecipeDispatch: true,
+    });
+    const app = await makeApp("pilot-gaia-118");
+
+    const response = await postSettlement(app, recipeCommandFor(seeded));
+
+    expect(response.status).toBe(409);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, poison_dispatch_id, reserved_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({
+      poison_dispatch_id: seeded.dispatchId,
+      reserved_micro_usd: 100_000,
+      state: "poisoned",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_dispatches
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND run_id = ?
+            AND provider_stage_id = 'recipe-extraction'`
+      )
+        .bind(seeded.reservation.runId)
+        .first()
+    ).resolves.toEqual({ count: 2 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_reconciliations
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND dispatch_id = ?`
+      )
+        .bind(seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
   });
 
   it.each([

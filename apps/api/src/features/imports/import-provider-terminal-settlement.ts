@@ -510,9 +510,10 @@ const readRecipeSettled = (
              AND stage.settled_micro_usd <= stage.budget_cap_micro_usd
              AND (
                SELECT COUNT(*)
-                 FROM pilot_provider_budget_dispatches AS sibling
+                FROM pilot_provider_budget_dispatches AS sibling
                 WHERE sibling.runtime_stage = dispatch.runtime_stage
                   AND sibling.run_id = dispatch.run_id
+                  AND sibling.provider_stage_id = 'recipe-extraction'
              ) = 1`
         )
         .bind(
@@ -630,9 +631,10 @@ const settleRecipeBatch = (
              )
              AND (
                SELECT COUNT(*)
-                 FROM pilot_provider_budget_dispatches AS sibling
+                FROM pilot_provider_budget_dispatches AS sibling
                 WHERE sibling.runtime_stage = dispatch.runtime_stage
                   AND sibling.run_id = dispatch.run_id
+                  AND sibling.provider_stage_id = 'recipe-extraction'
              ) = 1
            ON CONFLICT(runtime_stage, dispatch_id) DO NOTHING`
         )
@@ -724,9 +726,10 @@ const settleRecipeBatch = (
                    )
                    AND (
                      SELECT COUNT(*)
-                       FROM pilot_provider_budget_dispatches AS sibling
+                      FROM pilot_provider_budget_dispatches AS sibling
                       WHERE sibling.runtime_stage = dispatch.runtime_stage
                         AND sibling.run_id = dispatch.run_id
+                        AND sibling.provider_stage_id = 'recipe-extraction'
                    ) = 1
               )`
         )
