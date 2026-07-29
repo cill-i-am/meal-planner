@@ -6,7 +6,7 @@ import { emitImportObservabilityEvent } from "./import-observability.js";
 
 export const ProviderTaskStepConfig = {
   retries: { backoff: "exponential", delay: "2 seconds", limit: 2 },
-  timeout: "2 minutes",
+  timeout: "3 minutes",
 } as const;
 
 export const ProviderTaskFailureCheckpoint = Schema.Struct({

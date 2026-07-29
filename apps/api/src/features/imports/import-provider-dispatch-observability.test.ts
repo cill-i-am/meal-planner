@@ -99,6 +99,26 @@ const traceStoreFailingAtAppend = (failingAttempt: number) => {
 };
 
 describe("provider dispatch observability", () => {
+  it("keeps a slow visual provider response alive for the observed production window", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    await Effect.runPromise(
+      Effect.gen(function* slowProvider() {
+        const fiber = yield* Effect.forkChild(
+          failAfter(Effect.never, {
+            correlationId,
+            providerStage: "visual",
+          })
+        );
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("149 seconds");
+        return yield* Fiber.interrupt(fiber);
+      }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
+    );
+
+    expect(log.mock.calls).toEqual([]);
+    log.mockRestore();
+  });
+
   it("emits the closed timeout event without leaking the failed operation", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
     const exit = await Effect.runPromise(
@@ -110,7 +130,7 @@ describe("provider dispatch observability", () => {
           })
         );
         yield* Effect.yieldNow;
-        yield* TestClock.adjust("60 seconds");
+        yield* TestClock.adjust("150 seconds");
         return yield* Fiber.await(fiber);
       }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
     );

@@ -34,6 +34,10 @@ const captureAttempt = async (attempt: number) => {
 };
 
 describe("provider task observability", () => {
+  it("allows the provider timeout to settle before the installed task deadline", () => {
+    expect(ProviderTaskStepConfig.timeout).toBe("3 minutes");
+  });
+
   it("emits a safe terminal success for the same correlation identifier", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
     const result = await Effect.runPromise(
