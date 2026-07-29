@@ -11,13 +11,20 @@ import type { ImportId } from "./import.contracts.js";
  */
 export const continueVisualFromSettledSpeech = <A, E, R>(input: {
   readonly acquisitionGeneration: AcquisitionGeneration;
-  readonly continueVisual: (speechDispatchId: string) => Effect.Effect<A, E, R>;
+  readonly continueVisual: (dispatchIds: {
+    readonly speechDispatchId: string;
+    readonly visualDispatchId: string;
+  }) => Effect.Effect<A, E, R>;
   readonly importId: ImportId;
   readonly terminalRecovery: ProviderTerminalRecoveryRepository;
 }): Effect.Effect<A, E, R> =>
-  input.terminalRecovery
-    .speechDispatchId({
+  Effect.all({
+    speechDispatchId: input.terminalRecovery.speechDispatchId({
       acquisitionGeneration: input.acquisitionGeneration,
       importId: input.importId,
-    })
-    .pipe(Effect.orDie, Effect.flatMap(input.continueVisual));
+    }),
+    visualDispatchId: input.terminalRecovery.visualDispatchId({
+      acquisitionGeneration: input.acquisitionGeneration,
+      importId: input.importId,
+    }),
+  }).pipe(Effect.orDie, Effect.flatMap(input.continueVisual));

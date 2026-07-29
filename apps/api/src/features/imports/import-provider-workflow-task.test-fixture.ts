@@ -504,7 +504,7 @@ const providerWorkflowExport = {
           }
           const visual = yield* continueVisualFromSettledSpeech({
             acquisitionGeneration,
-            continueVisual: (speechDispatchId) =>
+            continueVisual: ({ speechDispatchId, visualDispatchId }) =>
               task(
                 "extract-visual-evidence-v1",
                 Effect.gen(function* recordVisualContinuation() {
@@ -513,6 +513,12 @@ const providerWorkflowExport = {
                     env.PROVIDER_WORKFLOW_STATE.put(
                       stateKey(event.instanceId, "visual-speech-dispatch-id"),
                       speechDispatchId
+                    )
+                  );
+                  yield* Effect.promise(() =>
+                    env.PROVIDER_WORKFLOW_STATE.put(
+                      stateKey(event.instanceId, "visual-dispatch-id"),
+                      visualDispatchId
                     )
                   );
                   return checkpoint;

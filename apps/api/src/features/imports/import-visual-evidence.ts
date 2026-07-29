@@ -430,6 +430,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
   readonly importRepository: ImportRepositoryShape;
   readonly now: () => ImportTimestamp;
   readonly speechDispatchId?: string;
+  readonly visualDispatchId?: string;
   readonly visualRepository: VisualEvidenceRepositoryShape;
 }) {
   const storedOption = yield* input.importRepository.findById(input.importId);
@@ -470,7 +471,8 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
   }
 
-  const dispatchId = `visual:${input.importId}:${evidence.generation}`;
+  const dispatchId =
+    input.visualDispatchId ?? `visual:${input.importId}:${evidence.generation}`;
   const claim = yield* input.visualRepository.claim({
     dispatchId,
     generation: evidence.generation,

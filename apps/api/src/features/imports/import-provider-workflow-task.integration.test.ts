@@ -555,6 +555,9 @@ describe("provider workflow task retry exhaustion", () => {
     await expect(
       readText(instanceId, "visual-speech-dispatch-id")
     ).resolves.toBe(recoveryDispatchId);
+    await expect(readText(instanceId, "visual-dispatch-id")).resolves.toBe(
+      `visual:${importId}:${generation}`
+    );
     await expect(restartFromVisualEvidence(instanceId)).resolves.toMatchObject({
       output: {
         _tag: "Succeeded",
@@ -569,6 +572,9 @@ describe("provider workflow task retry exhaustion", () => {
     await expect(
       readText(instanceId, "visual-speech-dispatch-id")
     ).resolves.toBe(recoveryDispatchId);
+    await expect(readText(instanceId, "visual-dispatch-id")).resolves.toBe(
+      `visual:${importId}:${generation}`
+    );
     await expect(
       database
         .prepare(
