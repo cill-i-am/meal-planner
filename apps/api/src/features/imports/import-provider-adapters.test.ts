@@ -190,41 +190,11 @@ const validVisualSemantics = {
 } as const;
 
 const defaultVisualUsage = { completion_tokens: 10, prompt_tokens: 20 };
-const defaultVisualChatUsage = {
-  completion_tokens: 10,
-  prompt_tokens: 20,
-  total_tokens: 30,
-};
-
-const visualJsonModeResponse = (
-  response: unknown,
-  usage: unknown = defaultVisualUsage
-) => ({ response, usage });
-
-const visualChatCompletionResponse = (
-  content: unknown,
-  usage: unknown = defaultVisualChatUsage
+const toolResponse = (
+  name: string,
+  value: unknown,
+  usage: unknown | null = defaultVisualUsage
 ) => ({
-  choices: [
-    {
-      finish_reason: "stop",
-      index: 0,
-      logprobs: null,
-      message: {
-        content: JSON.stringify(content),
-        role: "assistant",
-      },
-    },
-  ],
-  created: 1,
-  id: "chatcmpl-opaque",
-  model: "@cf/google/gemma-4-26b-a4b-it",
-  object: "chat.completion",
-  system_fingerprint: null,
-  usage,
-});
-
-const toolResponse = (name: string, value: unknown) => ({
   choices: [
     {
       finish_reason: "tool_calls",
@@ -240,7 +210,7 @@ const toolResponse = (name: string, value: unknown) => ({
       },
     },
   ],
-  usage: { completion_tokens: 10, prompt_tokens: 20 },
+  ...(usage === null ? {} : { usage }),
 });
 
 describe("installed import provider adapters", () => {
@@ -533,7 +503,7 @@ describe("installed import provider adapters", () => {
     log.mockRestore();
   });
 
-  it("accepts semantic-only visual output and injects trusted transport metadata", async () => {
+  it("uses one forced visual tool call and injects trusted transport metadata", async () => {
     const visualSemantics = {
       observations: [
         {
@@ -544,7 +514,9 @@ describe("installed import provider adapters", () => {
       ],
       outcome: "found",
     } as const;
-    const gateway = makeGateway(visualJsonModeResponse(visualSemantics));
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", visualSemantics)
+    );
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
@@ -606,12 +578,18 @@ describe("installed import provider adapters", () => {
     expect(gateway.requests).toHaveLength(1);
     const request = gateway.requests[0] as {
       readonly body: {
-        readonly response_format: {
-          readonly json_schema: unknown;
+        readonly response_format?: unknown;
+        readonly messages: readonly {
+          readonly content: readonly { readonly type: string }[];
+        }[];
+        readonly tool_choice: string;
+        readonly tools: readonly {
+          readonly function: {
+            readonly name: string;
+            readonly parameters: unknown;
+          };
           readonly type: string;
-        };
-        readonly tool_choice?: unknown;
-        readonly tools?: unknown;
+        }[];
       };
       readonly model: string;
       readonly options: {
@@ -638,10 +616,19 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(request.options)).not.toMatch(
       /AQID|data:image|https?:|cookie|credential|prompt|transcript/iu
     );
-    expect(request.body).not.toHaveProperty("tool_choice");
-    expect(request.body).not.toHaveProperty("tools");
-    expect(request.body.response_format.type).toBe("json_schema");
-    const jsonSchema = request.body.response_format.json_schema;
+    expect(request.body).not.toHaveProperty("response_format");
+    expect(request.body.tool_choice).toBe("required");
+    expect(request.body.tools).toHaveLength(1);
+    expect(request.body.tools[0]).toMatchObject({
+      function: { name: "record_visual_evidence" },
+      type: "function",
+    });
+    expect(request.body.messages[0]?.content.map(({ type }) => type)).toEqual([
+      "text",
+      "image_url",
+      "image_url",
+    ]);
+    const jsonSchema = request.body.tools[0]?.function.parameters;
     expect(jsonSchema).toMatchObject({
       additionalProperties: false,
       properties: {
@@ -704,92 +691,16 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(trace.events)).not.toContain("2 onions");
   });
 
-  it("accepts the installed Workers AI JSON-mode string response contract", async () => {
-    const gateway = makeGateway(
-      visualJsonModeResponse(
-        JSON.stringify({
-          observations: [
-            {
-              confidence: 0.92,
-              frameIndex: 0,
-              text: "2 onions",
-            },
-          ],
-          outcome: "found",
-        })
-      )
-    );
-    const trace = makeRecordingTraceStore();
-    const adapter = await runFactory(
-      makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
-        correlationId,
-        dispatch: localDispatchGate,
-      }),
-      trace.service
-    );
-
-    const output = await Effect.runPromise(
-      adapter.extract({
-        dispatchId: "visual:import-1:1",
-        frames: [
-          {
-            bytes: new Uint8Array([1, 2, 3]),
-            height: 1,
-            mimeType: "image/jpeg",
-            sha256: "a".repeat(64),
-            timestampMilliseconds: 125,
-            width: 1,
-          },
-        ],
-        generation: 1 as never,
-        importId: "import-1" as never,
-        sourceMediaSha256: "b".repeat(64),
-      })
-    );
-
-    expect(output).toMatchObject({
-      observations: [
+  it("accepts the installed Gemma native forced-tool response contract", async () => {
+    const gateway = makeGateway({
+      tool_calls: [
         {
-          confidence: 0.92,
-          frameIndex: 0,
-          kind: "visible_text",
-          text: "2 onions",
-          timestampMilliseconds: 125,
+          arguments: validVisualSemantics,
+          name: "record_visual_evidence",
         },
       ],
-      outcome: "found",
+      usage: defaultVisualUsage,
     });
-    expect(trace.events).toEqual([
-      {
-        correlationId,
-        event: "provider.response",
-        outcome: "received",
-        providerStage: "visual",
-      },
-      {
-        correlationId,
-        event: "provider.decode",
-        outcome: "succeeded",
-        providerStage: "visual",
-      },
-    ]);
-    expect(JSON.stringify(trace.events)).not.toContain("2 onions");
-  });
-
-  it("uses Gemma vision and accepts its installed chat-completion JSON contract", async () => {
-    const gateway = makeGateway(
-      visualChatCompletionResponse({
-        observations: [
-          {
-            confidence: 0.92,
-            frameIndex: 0,
-            text: "2 onions",
-          },
-        ],
-        outcome: "found",
-      })
-    );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
@@ -819,16 +730,8 @@ describe("installed import provider adapters", () => {
 
     expect(output).toMatchObject({
       model: "@cf/google/gemma-4-26b-a4b-it",
-      observations: [
-        {
-          confidence: 0.92,
-          frameIndex: 0,
-          kind: "visible_text",
-          text: "2 onions",
-          timestampMilliseconds: 125,
-        },
-      ],
-      outcome: "found",
+      observations: [],
+      outcome: "empty",
     });
     expect(gateway.requests).toHaveLength(1);
     expect((gateway.requests[0] as { readonly model: string }).model).toBe(
@@ -837,7 +740,9 @@ describe("installed import provider adapters", () => {
   });
 
   it("rejects model attempts to inject visual transport metadata", async () => {
-    const gateway = makeGateway(visualJsonModeResponse(validVisual));
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", validVisual)
+    );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
@@ -870,17 +775,13 @@ describe("installed import provider adapters", () => {
   });
 
   it.each([
-    ["invalid JSON-mode string output", visualJsonModeResponse("{not-json")],
     [
-      "unknown envelope fields",
-      {
-        ...visualJsonModeResponse(validVisualSemantics),
-        providerSecret: "must-not-escape",
-      },
+      "invalid tool arguments",
+      toolResponse("record_visual_evidence", "{not-json"),
     ],
     [
       "model-owned trusted fields",
-      visualJsonModeResponse({
+      toolResponse("record_visual_evidence", {
         observations: [
           {
             confidence: 0.9,
@@ -894,14 +795,14 @@ describe("installed import provider adapters", () => {
     ],
     [
       "out-of-range frame references",
-      visualJsonModeResponse({
+      toolResponse("record_visual_evidence", {
         observations: [{ confidence: 0.9, frameIndex: 1, text: "2 onions" }],
         outcome: "found",
       }),
     ],
     [
       "contradictory outcomes",
-      visualJsonModeResponse({
+      toolResponse("record_visual_evidence", {
         observations: [{ confidence: 0.9, frameIndex: 0, text: "2 onions" }],
         outcome: "empty",
       }),
@@ -941,23 +842,16 @@ describe("installed import provider adapters", () => {
   });
 
   it.each([
-    ["absent", { response: validVisualSemantics }],
     [
-      "zero",
-      {
-        response: validVisualSemantics,
-        usage: { completion_tokens: 0, prompt_tokens: 0 },
-      },
+      "absent",
+      toolResponse("record_visual_evidence", validVisualSemantics, null),
     ],
     [
-      "invalid",
-      {
-        response: validVisualSemantics,
-        usage: {
-          completion_tokens: "must-not-be-trusted",
-          prompt_tokens: -1,
-        },
-      },
+      "zero",
+      toolResponse("record_visual_evidence", validVisualSemantics, {
+        completion_tokens: 0,
+        prompt_tokens: 0,
+      }),
     ],
   ])(
     "settles %s visual usage at the bounded maximum without claiming known provider spend",
@@ -1016,7 +910,9 @@ describe("installed import provider adapters", () => {
   );
 
   it("rejects an empty visual dispatch before the provider boundary", async () => {
-    const gateway = makeGateway(visualJsonModeResponse(validVisualSemantics));
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", validVisualSemantics)
+    );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,

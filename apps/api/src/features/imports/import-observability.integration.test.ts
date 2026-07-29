@@ -97,10 +97,16 @@ const gatewayClient = {
       gatewayRequests.push({ body, model, options });
       return Promise.resolve(
         Response.json({
-          response: {
-            observations: [],
-            outcome: "empty",
-          },
+          tool_calls: [
+            {
+              arguments: {
+                observations: [],
+                outcome: "empty",
+              },
+              id: "call-visual-1",
+              name: "record_visual_evidence",
+            },
+          ],
           usage: { completion_tokens: 10, prompt_tokens: 20 },
         })
       );

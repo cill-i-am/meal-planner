@@ -281,6 +281,7 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
   observability: {
     readonly correlationId: ImportCorrelationId;
     readonly providerStage: "recipe" | "visual";
+    readonly traceStore: ImportObservabilityTraceStoreShape | undefined;
   }
 ): Effect.Effect<
   {
@@ -316,12 +317,15 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     Effect.tapError((error) =>
       typeof error === "string" || isProviderTransportFailure(error)
         ? Effect.void
-        : emitImportObservabilityEvent({
-            correlationId: observability.correlationId,
-            event: "provider.decode",
-            outcome: "malformed",
-            providerStage: observability.providerStage,
-          })
+        : emitImportObservabilityEvent(
+            {
+              correlationId: observability.correlationId,
+              event: "provider.decode",
+              outcome: "malformed",
+              providerStage: observability.providerStage,
+            },
+            observability.traceStore
+          )
     ),
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
     Effect.mapError((error) =>
@@ -342,31 +346,40 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
         call.name !== input.name ||
         response.text.trim().length !== 0
       ) {
-        return emitImportObservabilityEvent({
-          correlationId: observability.correlationId,
-          event: "provider.decode",
-          outcome: "malformed",
-          providerStage: observability.providerStage,
-        }).pipe(Effect.andThen(Effect.fail("insufficient_evidence" as const)));
+        return emitImportObservabilityEvent(
+          {
+            correlationId: observability.correlationId,
+            event: "provider.decode",
+            outcome: "malformed",
+            providerStage: observability.providerStage,
+          },
+          observability.traceStore
+        ).pipe(Effect.andThen(Effect.fail("insufficient_evidence" as const)));
       }
       return Schema.decodeUnknownEffect(input.schema, {
         onExcessProperty: "error",
       })(call.params).pipe(
         Effect.matchEffect({
           onFailure: () =>
-            emitImportObservabilityEvent({
-              correlationId: observability.correlationId,
-              event: "provider.decode",
-              outcome: "malformed",
-              providerStage: observability.providerStage,
-            }).pipe(Effect.andThen(Effect.fail("malformed_response" as const))),
+            emitImportObservabilityEvent(
+              {
+                correlationId: observability.correlationId,
+                event: "provider.decode",
+                outcome: "malformed",
+                providerStage: observability.providerStage,
+              },
+              observability.traceStore
+            ).pipe(Effect.andThen(Effect.fail("malformed_response" as const))),
           onSuccess: (value) =>
-            emitImportObservabilityEvent({
-              correlationId: observability.correlationId,
-              event: "provider.decode",
-              outcome: "succeeded",
-              providerStage: observability.providerStage,
-            }).pipe(
+            emitImportObservabilityEvent(
+              {
+                correlationId: observability.correlationId,
+                event: "provider.decode",
+                outcome: "succeeded",
+                providerStage: observability.providerStage,
+              },
+              observability.traceStore
+            ).pipe(
               Effect.as({
                 inputTokens: response.usage.inputTokens.total,
                 outputTokens: response.usage.outputTokens.total,
@@ -412,22 +425,22 @@ const encodeBase64 = (bytes: Uint8Array) => {
   return btoa(binary);
 };
 
-const visualJsonModeMessages = (input: VisualEvidenceExtractionInput) => [
+const visualToolPrompt = (
+  input: VisualEvidenceExtractionInput
+): Prompt.RawInput => [
   {
     content: [
       {
         text:
           "Record only visible text in these ordered source images. " +
           "Each image position is its zero-based frameIndex. " +
-          "Do not infer ingredients, quantities, steps, or other unseen facts. " +
-          "Return only the requested JSON schema.",
+          "Do not infer ingredients, quantities, steps, or other unseen facts.",
         type: "text" as const,
       },
       ...input.frames.map((frame) => ({
-        image_url: {
-          url: `data:${frame.mimeType};base64,${encodeBase64(frame.bytes)}`,
-        },
-        type: "image_url" as const,
+        data: frame.bytes,
+        mediaType: frame.mimeType,
+        type: "file" as const,
       })),
     ],
     role: "user" as const,
@@ -538,75 +551,6 @@ const noLogWorkersAiClient = (
   ) as QueryGatewayClient["raw"],
 });
 
-const VisualJsonModeEnvelope = Schema.Struct({
-  response: Schema.Unknown,
-  usage: Schema.optionalKey(Schema.Unknown),
-});
-
-const VisualChatCompletionEnvelope = Schema.Struct({
-  choices: Schema.Tuple([
-    Schema.Struct({
-      finish_reason: Schema.NullOr(Schema.String),
-      index: Schema.Number,
-      logprobs: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
-      message: Schema.Struct({
-        content: Schema.String,
-        role: Schema.String,
-      }),
-    }),
-  ]),
-  created: Schema.Number,
-  id: Schema.String,
-  model: Schema.String,
-  object: Schema.String,
-  service_tier: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  system_fingerprint: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  usage: Schema.optionalKey(Schema.Unknown),
-});
-
-const decodeVisualJsonModeEnvelope = (input: unknown) =>
-  Schema.decodeUnknownEffect(
-    Schema.Union([VisualJsonModeEnvelope, VisualChatCompletionEnvelope]),
-    {
-      onExcessProperty: "error",
-    }
-  )(input).pipe(
-    Effect.map((envelope) =>
-      "response" in envelope
-        ? envelope
-        : {
-            response: envelope.choices[0].message.content,
-            usage: envelope.usage,
-          }
-    )
-  );
-
-const decodeVisualJsonModeResponse = (response: unknown) =>
-  Effect.try({
-    catch: () => "malformed_response" as const,
-    try: () =>
-      typeof response === "string"
-        ? (JSON.parse(response) as unknown)
-        : response,
-  });
-
-const visualTokenUsage = (usage: unknown) => {
-  if (typeof usage !== "object" || usage === null) {
-    return {
-      inputTokens: undefined,
-      outputTokens: undefined,
-    };
-  }
-  const inputTokens =
-    "prompt_tokens" in usage ? usage.prompt_tokens : undefined;
-  const outputTokens =
-    "completion_tokens" in usage ? usage.completion_tokens : undefined;
-  return {
-    inputTokens: typeof inputTokens === "number" ? inputTokens : undefined,
-    outputTokens: typeof outputTokens === "number" ? outputTokens : undefined,
-  };
-};
-
 export const makeInstalledVisualEvidenceExtractor = (input: {
   readonly client: QueryGatewayClient;
   readonly correlationId: ImportCorrelationId;
@@ -624,7 +568,11 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
       "visual",
       traceStore
     );
-    const ai = yield* client.raw;
+    const service = yield* Cloudflare.AI.makeLanguageModel({
+      client,
+      model,
+      parameters: { maxTokens: 8192, temperature: 0 },
+    });
     return {
       extract: (request) =>
         request.frames.length === 0
@@ -638,112 +586,47 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
               .run({
                 dispatchId: request.dispatchId,
                 invoke: failAfter(
-                  Effect.gen(function* invokeVisualJsonMode() {
+                  Effect.gen(function* invokeVisualTool() {
                     const semanticsSchema =
                       visualEvidenceSemanticsForFrameCount(
                         request.frames.length
                       );
-                    const response = yield* Effect.tryPromise({
-                      catch: (error) =>
-                        isPilotProviderKnownZeroCostFailure(error)
-                          ? error
-                          : safeFailureCode(Cause.fail(error)),
-                      try: () =>
-                        // SAFETY: The installed Cloudflare binding accepts this
-                        // model and native JSON-mode body, while its generated
-                        // generic overload cannot represent model-specific input.
-                        ai.run(
-                          model as never,
-                          {
-                            max_tokens: 8192,
-                            messages: visualJsonModeMessages(request),
-                            response_format: {
-                              json_schema:
-                                Tool.getJsonSchemaFromSchema(semanticsSchema),
-                              type: "json_schema",
-                            },
-                            temperature: 0,
-                          } as never
-                        ) as Promise<Response>,
-                    });
-                    if (!response.ok) {
-                      return yield* Effect.fail({ status: response.status });
-                    }
-                    const decoded = yield* Effect.tryPromise({
-                      catch: () => "malformed_response" as const,
-                      try: () => response.json(),
-                    }).pipe(
-                      Effect.flatMap(decodeVisualJsonModeEnvelope),
-                      Effect.flatMap((envelope) =>
-                        decodeVisualJsonModeResponse(envelope.response).pipe(
-                          Effect.flatMap(
-                            Schema.decodeUnknownEffect(semanticsSchema, {
-                              onExcessProperty: "error",
-                            })
-                          ),
-                          Effect.flatMap((value) =>
-                            Effect.all(
-                              value.observations.map((observation) => {
-                                const frame =
-                                  request.frames[observation.frameIndex];
-                                return frame === undefined
-                                  ? Effect.fail("malformed_response" as const)
-                                  : Effect.succeed({
-                                      ...observation,
-                                      kind: "visible_text" as const,
-                                      regions: [
-                                        {
-                                          height: 1,
-                                          width: 1,
-                                          x: 0,
-                                          y: 0,
-                                        },
-                                      ] as const,
-                                      timestampMilliseconds:
-                                        frame.timestampMilliseconds,
-                                    });
-                              })
-                            ).pipe(
-                              Effect.map((observations) => ({
-                                usage: envelope.usage,
-                                value: {
-                                  observations,
-                                  outcome: value.outcome,
+                    const { inputTokens, outputTokens, value } =
+                      yield* oneForcedToolCall(
+                        service,
+                        {
+                          description:
+                            "Record only visible text and the bounded semantic outcome for the supplied ordered images.",
+                          name: "record_visual_evidence",
+                          prompt: visualToolPrompt(request),
+                          schema: semanticsSchema,
+                        },
+                        {
+                          correlationId: input.correlationId,
+                          providerStage: "visual",
+                          traceStore,
+                        }
+                      );
+                    const observations = yield* Effect.all(
+                      value.observations.map((observation) => {
+                        const frame = request.frames[observation.frameIndex];
+                        return frame === undefined
+                          ? Effect.fail("malformed_response" as const)
+                          : Effect.succeed({
+                              ...observation,
+                              kind: "visible_text" as const,
+                              regions: [
+                                {
+                                  height: 1,
+                                  width: 1,
+                                  x: 0,
+                                  y: 0,
                                 },
-                              }))
-                            )
-                          )
-                        )
-                      ),
-                      Effect.matchEffect({
-                        onFailure: () =>
-                          emitImportObservabilityEvent(
-                            {
-                              correlationId: input.correlationId,
-                              event: "provider.decode",
-                              outcome: "malformed",
-                              providerStage: "visual",
-                            },
-                            traceStore
-                          ).pipe(
-                            Effect.andThen(
-                              Effect.fail("malformed_response" as const)
-                            )
-                          ),
-                        onSuccess: (value) =>
-                          emitImportObservabilityEvent(
-                            {
-                              correlationId: input.correlationId,
-                              event: "provider.decode",
-                              outcome: "succeeded",
-                              providerStage: "visual",
-                            },
-                            traceStore
-                          ).pipe(Effect.as(value)),
+                              ] as const,
+                              timestampMilliseconds:
+                                frame.timestampMilliseconds,
+                            });
                       })
-                    );
-                    const { inputTokens, outputTokens } = visualTokenUsage(
-                      decoded.usage
                     );
                     const meteredCost = pricedTokenUsage(
                       inputTokens,
@@ -773,8 +656,8 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                           estimatedMicroUsd: cost.actualCostMicroUsd,
                         },
                         model,
-                        observations: decoded.value.observations,
-                        outcome: decoded.value.outcome,
+                        observations,
+                        outcome: value.outcome,
                         provider: ProviderName,
                         usage: {
                           inputBytes: request.frames.reduce(
@@ -866,6 +749,7 @@ export const makeInstalledRecipeExtractor = (input: {
                   {
                     correlationId: input.correlationId,
                     providerStage: "recipe",
+                    traceStore,
                   }
                 );
               const completedAt = yield* Clock.currentTimeMillis;
