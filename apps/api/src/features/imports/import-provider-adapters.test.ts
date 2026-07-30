@@ -890,6 +890,26 @@ describe("installed import provider adapters", () => {
       "segment",
     ],
     [
+      "segment in a later item before word in an earlier item",
+      {
+        segments: [
+          {
+            words: [
+              {
+                privateWordCanary: "word-private-value",
+                word: "Chop",
+              },
+            ],
+          },
+          {
+            privateSegmentCanary: "segment-private-value",
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      "segment",
+    ],
+    [
       "word when it is the only unsupported location",
       {
         segments: [

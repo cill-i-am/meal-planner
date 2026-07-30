@@ -1492,6 +1492,11 @@ const modelSpecificUnsupportedPropertyLocation = (
     ) {
       return "segment";
     }
+  }
+  for (const segment of raw["segments"]) {
+    if (!isUnknownRecord(segment)) {
+      continue;
+    }
     if (
       Array.isArray(segment["words"]) &&
       segment["words"].some(
