@@ -293,6 +293,36 @@ const seedPoisonedTerminalVisualImport = async (
   };
 };
 
+const seedMissingVisualTerminalCheckpoint = async (
+  suffix: string,
+  options: Parameters<typeof seedPoisonedTerminalVisualImport>[1] = {}
+) => {
+  const seeded = await seedPoisonedTerminalVisualImport(suffix, {
+    ...options,
+    persistCheckpoint: false,
+  });
+  await testEnv.MealPlannerDatabase.prepare(
+    `UPDATE import_visual_evidence
+        SET state = 'failed',
+            failure_code = 'visual_extraction_failed',
+            completed_at = ?,
+            updated_at = ?
+      WHERE import_id = ?
+        AND acquisition_generation = ?
+        AND dispatch_id = ?
+        AND state = 'dispatching'`
+  )
+    .bind(
+      seeded.now,
+      seeded.now,
+      seeded.importId,
+      seeded.acquisitionGeneration,
+      seeded.dispatchId
+    )
+    .run();
+  return seeded;
+};
+
 const seedPoisonedTerminalRecipeImport = async (
   suffix: string,
   options: {
@@ -481,6 +511,15 @@ const visualCommandFor = (
   operation: "settle_visual_unknown" as const,
 });
 
+const visualCheckpointRepairCommandFor = (
+  seeded: Awaited<ReturnType<typeof seedPoisonedTerminalVisualImport>>
+) => ({
+  acquisitionGeneration: seeded.acquisitionGeneration,
+  dispatchId: seeded.dispatchId,
+  importId: seeded.importId,
+  operation: "repair_visual_terminal_checkpoint" as const,
+});
+
 const postSettlement = (
   app: Awaited<ReturnType<typeof makeApp>>,
   body: unknown,
@@ -619,7 +658,8 @@ const readPreservedVisualImport = async (input: {
   readonly importId: string;
 }) => ({
   checkpoint: await testEnv.MealPlannerDatabase.prepare(
-    `SELECT provider_stage, ownership_id, failure_code, completed_at
+    `SELECT provider_stage, ownership_id, failure_code, completed_at,
+            created_at
        FROM import_provider_terminal_checkpoints
       WHERE import_id = ? AND acquisition_generation = ?
         AND provider_stage = 'visual' AND ownership_id = ?`
@@ -651,6 +691,79 @@ const readPreservedVisualImport = async (input: {
     .bind(input.importId, input.acquisitionGeneration)
     .first(),
 });
+
+const readVisualCheckpointRepairState = async (input: {
+  readonly dispatchId: string;
+  readonly importId: string;
+}) => ({
+  auditCount: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT COUNT(*) AS count
+       FROM pilot_provider_budget_reconciliations
+      WHERE runtime_stage = 'pilot-gaia-118'
+        AND dispatch_id = ?`
+  )
+    .bind(input.dispatchId)
+    .first(),
+  dispatch: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT state, actual_cost_micro_usd, maximum_cost_micro_usd,
+            provider_stage_id, run_id, created_at, updated_at,
+            invocation_started_at, completed_at
+       FROM pilot_provider_budget_dispatches
+      WHERE runtime_stage = 'pilot-gaia-118'
+        AND dispatch_id = ?`
+  )
+    .bind(input.dispatchId)
+    .first(),
+  ledger: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT state, budget_cap_micro_usd, settled_micro_usd,
+            reserved_micro_usd, invoking_dispatch_id, poison_dispatch_id,
+            updated_at
+       FROM pilot_provider_stage_budget
+      WHERE runtime_stage = 'pilot-gaia-118'`
+  ).first(),
+  recipeCount: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT COUNT(*) AS count
+       FROM import_recipe_extractions
+      WHERE import_id = ?`
+  )
+    .bind(input.importId)
+    .first(),
+  recoveryCount: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT COUNT(*) AS count
+       FROM pilot_provider_visual_recoveries
+      WHERE runtime_stage = 'pilot-gaia-118'
+        AND original_dispatch_id = ?`
+  )
+    .bind(input.dispatchId)
+    .first(),
+});
+
+const expectVisualCheckpointRepairRejected = async (
+  seeded: Awaited<ReturnType<typeof seedMissingVisualTerminalCheckpoint>>,
+  options: {
+    readonly runtimeStage?: string;
+    readonly status?: number;
+    readonly token?: string;
+  } = {}
+) => {
+  const evidenceBefore = await readPreservedVisualImport(seeded);
+  const stateBefore = await readVisualCheckpointRepairState(seeded);
+  const app = await makeApp(options.runtimeStage ?? "pilot-gaia-118");
+
+  const response = await postSettlement(
+    app,
+    visualCheckpointRepairCommandFor(seeded),
+    options.token
+  );
+
+  expect(response.status).toBe(options.status ?? 409);
+  await expect(readPreservedVisualImport(seeded)).resolves.toEqual(
+    evidenceBefore
+  );
+  await expect(readVisualCheckpointRepairState(seeded)).resolves.toEqual(
+    stateBefore
+  );
+};
 
 describe("authenticated terminal unknown-cost provider settlement", () => {
   it("charges the conservative maximum once and reopens only the stage ledger", async () => {
@@ -1094,6 +1207,278 @@ describe("authenticated terminal unknown-cost provider settlement", () => {
       settled_micro_usd: 10_000_000,
       state: "open",
     });
+  });
+});
+
+describe("authenticated visual terminal checkpoint compatibility repair", () => {
+  it("atomically inserts one immutable matching checkpoint without changing terminal evidence or budget state", async () => {
+    const seeded = await seedMissingVisualTerminalCheckpoint("000000000313");
+    const evidenceBefore = await readPreservedVisualImport(seeded);
+    const stateBefore = await readVisualCheckpointRepairState(seeded);
+    const app = await makeApp("pilot-gaia-118");
+
+    const responses = await Promise.all([
+      postSettlement(app, visualCheckpointRepairCommandFor(seeded)),
+      postSettlement(app, visualCheckpointRepairCommandFor(seeded)),
+      postSettlement(app, visualCheckpointRepairCommandFor(seeded)),
+    ]);
+
+    expect(responses.map(({ status }) => status)).toEqual([200, 200, 200]);
+    const expected = {
+      acquisitionGeneration: seeded.acquisitionGeneration,
+      dispatchId: seeded.dispatchId,
+      importId: seeded.importId,
+      outcome: "visual_terminal_checkpoint_repaired",
+      runtimeStage: "pilot-gaia-118",
+    };
+    await expect(
+      Promise.all(responses.map((response) => response.json()))
+    ).resolves.toEqual([expected, expected, expected]);
+    await expect(readPreservedVisualImport(seeded)).resolves.toEqual({
+      ...evidenceBefore,
+      checkpoint: {
+        completed_at: seeded.now,
+        created_at: seeded.now,
+        failure_code: "visual_extraction_failed",
+        ownership_id: seeded.dispatchId,
+        provider_stage: "visual",
+      },
+    });
+    await expect(readVisualCheckpointRepairState(seeded)).resolves.toEqual(
+      stateBefore
+    );
+    await expect(
+      postSettlement(app, visualCheckpointRepairCommandFor(seeded))
+    ).resolves.toHaveProperty("status", 200);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM import_provider_terminal_checkpoints
+          WHERE import_id = ?
+            AND acquisition_generation = ?
+            AND provider_stage = 'visual'
+            AND ownership_id = ?`
+      )
+        .bind(seeded.importId, seeded.acquisitionGeneration, seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE import_provider_terminal_checkpoints
+            SET failure_code = 'outcome_unknown'
+          WHERE import_id = ?
+            AND acquisition_generation = ?
+            AND provider_stage = 'visual'
+            AND ownership_id = ?`
+      )
+        .bind(seeded.importId, seeded.acquisitionGeneration, seeded.dispatchId)
+        .run()
+    ).rejects.toThrow(/provider terminal checkpoint is immutable/u);
+  });
+
+  it.each([
+    [
+      "a noncanonical maximum",
+      "000000000314",
+      { maximumCostMicroUsd: 100_001 },
+    ],
+    [
+      "a nonvisual provider stage",
+      "000000000315",
+      { providerStageId: "recipe-extraction" },
+    ],
+    ["a foreign run", "000000000316", { runId: "gaia-118:foreign-import" }],
+    [
+      "an ambiguous visual sibling",
+      "000000000317",
+      { additionalVisualDispatch: true },
+    ],
+    [
+      "mismatched speech and visual source identity",
+      "000000000318",
+      { matchingSourceHash: false },
+    ],
+  ] as const)(
+    "fails closed without a checkpoint or mutation for %s",
+    async (_name, suffix, options) => {
+      const seeded = await seedMissingVisualTerminalCheckpoint(suffix, options);
+
+      await expectVisualCheckpointRepairRejected(seeded);
+    }
+  );
+
+  it("rejects the wrong runtime stage, authentication, and exact ownership tuple", async () => {
+    const seeded = await seedMissingVisualTerminalCheckpoint("000000000319");
+    const evidenceBefore = await readPreservedVisualImport(seeded);
+    const stateBefore = await readVisualCheckpointRepairState(seeded);
+    const app = await makeApp("pilot-gaia-118");
+
+    const [unauthenticated, wrongImport, wrongGeneration, wrongDispatch] =
+      await Promise.all([
+        postSettlement(app, visualCheckpointRepairCommandFor(seeded), "wrong"),
+        postSettlement(app, {
+          ...visualCheckpointRepairCommandFor(seeded),
+          importId: decodeImportId("00000000-0000-4000-8000-000000000320"),
+        }),
+        postSettlement(app, {
+          ...visualCheckpointRepairCommandFor(seeded),
+          acquisitionGeneration: decodeGeneration(2),
+        }),
+        postSettlement(app, {
+          ...visualCheckpointRepairCommandFor(seeded),
+          dispatchId: decodeDispatchId(`${seeded.dispatchId}:foreign`),
+        }),
+      ]);
+
+    expect([
+      unauthenticated.status,
+      wrongImport.status,
+      wrongGeneration.status,
+      wrongDispatch.status,
+    ]).toEqual([401, 409, 409, 409]);
+    await expect(readPreservedVisualImport(seeded)).resolves.toEqual(
+      evidenceBefore
+    );
+    await expect(readVisualCheckpointRepairState(seeded)).resolves.toEqual(
+      stateBefore
+    );
+
+    await expectVisualCheckpointRepairRejected(seeded, {
+      runtimeStage: "production",
+    });
+  });
+
+  it.each([
+    [
+      "reserved amount drift",
+      "000000000321",
+      `UPDATE pilot_provider_stage_budget
+          SET reserved_micro_usd = 100001
+        WHERE runtime_stage = 'pilot-gaia-118'`,
+    ],
+    [
+      "invoking state",
+      "000000000322",
+      `UPDATE pilot_provider_stage_budget
+          SET state = 'invoking',
+              invoking_dispatch_id = poison_dispatch_id,
+              poison_dispatch_id = NULL
+        WHERE runtime_stage = 'pilot-gaia-118'`,
+    ],
+    [
+      "wrong poison ownership",
+      "000000000323",
+      `UPDATE pilot_provider_stage_budget
+          SET state = 'open',
+              reserved_micro_usd = 0,
+              poison_dispatch_id = NULL
+        WHERE runtime_stage = 'pilot-gaia-118'`,
+    ],
+  ] as const)(
+    "rejects %s without changing any retained state",
+    async (_name, suffix, mutation) => {
+      const seeded = await seedMissingVisualTerminalCheckpoint(suffix);
+      await testEnv.MealPlannerDatabase.prepare(mutation).run();
+
+      await expectVisualCheckpointRepairRejected(seeded);
+    }
+  );
+
+  it.each([
+    [
+      "nonterminal visual evidence",
+      "000000000324",
+      `UPDATE import_visual_evidence
+          SET state = 'dispatching',
+              failure_code = NULL,
+              completed_at = NULL
+        WHERE import_id = ? AND acquisition_generation = ?`,
+    ],
+    [
+      "a noncanonical visual failure",
+      "000000000325",
+      `UPDATE import_visual_evidence
+          SET failure_code = 'outcome_unknown'
+        WHERE import_id = ? AND acquisition_generation = ?`,
+    ],
+    [
+      "transcript evidence lineage drift",
+      "000000000326",
+      `UPDATE import_transcriptions
+          SET transcript_key = transcript_key || '.foreign'
+        WHERE import_id = ? AND acquisition_generation = ?`,
+    ],
+  ] as const)(
+    "rejects %s without creating a checkpoint",
+    async (_name, suffix, mutation) => {
+      const seeded = await seedMissingVisualTerminalCheckpoint(suffix);
+      await testEnv.MealPlannerDatabase.prepare(mutation)
+        .bind(seeded.importId, seeded.acquisitionGeneration)
+        .run();
+
+      await expectVisualCheckpointRepairRejected(seeded);
+    }
+  );
+
+  it("rejects any existing recipe descendant", async () => {
+    const seeded = await seedMissingVisualTerminalCheckpoint("000000000327");
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_recipe_extractions (
+         extraction_fingerprint, import_id, acquisition_generation,
+         evidence_fingerprint, extractor_provider, extractor_model,
+         extractor_version, state, created_at, updated_at
+       ) VALUES (
+         ?, ?, ?, ?, 'fixture-provider', 'fixture-model', 'fixture-v1',
+         'dispatching', ?, ?
+       )`
+    )
+      .bind(
+        "d".repeat(64),
+        seeded.importId,
+        seeded.acquisitionGeneration,
+        "e".repeat(64),
+        seeded.now,
+        seeded.now
+      )
+      .run();
+
+    await expectVisualCheckpointRepairRejected(seeded);
+  });
+
+  it("rejects a conflicting immutable checkpoint", async () => {
+    const seeded = await seedMissingVisualTerminalCheckpoint("000000000328");
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE import_visual_evidence
+          SET state = 'dispatching',
+              failure_code = NULL,
+              completed_at = NULL
+        WHERE import_id = ? AND acquisition_generation = ?`
+    )
+      .bind(seeded.importId, seeded.acquisitionGeneration)
+      .run();
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_provider_terminal_checkpoints (
+         import_id, acquisition_generation, provider_stage, ownership_id,
+         failure_code, completed_at, created_at
+       ) VALUES (?, ?, 'visual', ?, 'outcome_unknown', ?, ?)`
+    )
+      .bind(
+        seeded.importId,
+        seeded.acquisitionGeneration,
+        seeded.dispatchId,
+        seeded.now,
+        seeded.now
+      )
+      .run();
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE import_visual_evidence
+          SET failure_code = 'visual_extraction_failed'
+        WHERE import_id = ? AND acquisition_generation = ?`
+    )
+      .bind(seeded.importId, seeded.acquisitionGeneration)
+      .run();
+
+    await expectVisualCheckpointRepairRejected(seeded);
   });
 });
 
