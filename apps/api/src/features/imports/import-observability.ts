@@ -90,6 +90,15 @@ export const SpeechEnvelopeFailure = Schema.Literals([
 ]);
 export type SpeechEnvelopeFailure = typeof SpeechEnvelopeFailure.Type;
 
+export const SpeechEnvelopeUnsupportedLocation = Schema.Literals([
+  "root",
+  "segment",
+  "transcription_info",
+  "word",
+]);
+export type SpeechEnvelopeUnsupportedLocation =
+  typeof SpeechEnvelopeUnsupportedLocation.Type;
+
 export const ImportObservabilityEvent = Schema.Struct({
   attempt: Schema.optionalKey(
     Schema.Number.pipe(
@@ -133,6 +142,9 @@ export const ImportObservabilityEvent = Schema.Struct({
   ),
   speechEnvelopeFailure: Schema.optionalKey(SpeechEnvelopeFailure),
   speechEnvelopeFamily: Schema.optionalKey(SpeechEnvelopeFamily),
+  speechEnvelopeUnsupportedLocation: Schema.optionalKey(
+    SpeechEnvelopeUnsupportedLocation
+  ),
 });
 export type ImportObservabilityEvent = typeof ImportObservabilityEvent.Type;
 
@@ -188,6 +200,12 @@ const eventAnnotations = (event: ImportObservabilityEvent) => ({
   ...(event.speechEnvelopeFamily === undefined
     ? {}
     : { speechEnvelopeFamily: event.speechEnvelopeFamily }),
+  ...(event.speechEnvelopeUnsupportedLocation === undefined
+    ? {}
+    : {
+        speechEnvelopeUnsupportedLocation:
+          event.speechEnvelopeUnsupportedLocation,
+      }),
 });
 
 /**
