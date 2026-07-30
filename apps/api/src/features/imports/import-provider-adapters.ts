@@ -1098,40 +1098,82 @@ export const makeInstalledRecipeExtractor = (input: {
     } satisfies RecipeExtractorShape;
   });
 
-const SpeechProviderResponse = Schema.Struct({
+const SpeechProviderNonNegativeInteger = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+);
+
+const SpeechProviderVtt = Schema.String.pipe(
+  Schema.check(Schema.isMaxLength(2_097_152))
+);
+
+const SpeechProviderWord = Schema.Struct({
+  end: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Null])),
+  start: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Null])),
+  word: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+});
+
+const LegacySpeechProviderResponse = Schema.Struct({
   text: SpeechTranscript.fields.text,
-  transcription_info: Schema.optionalKey(
-    Schema.Struct({
-      duration: Schema.optionalKey(
-        Schema.Number.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
-      ),
-      duration_after_vad: Schema.optionalKey(
-        Schema.Number.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
-      ),
-      language: Schema.optionalKey(Schema.String),
-      language_probability: Schema.optionalKey(
-        Schema.Number.pipe(
-          Schema.check(
-            Schema.isGreaterThanOrEqualTo(0),
-            Schema.isLessThanOrEqualTo(1)
-          )
-        )
-      ),
-    })
-  ),
+  vtt: Schema.optionalKey(Schema.Union([SpeechProviderVtt, Schema.Null])),
   word_count: Schema.optionalKey(
-    Schema.Number.pipe(
-      Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
-    )
+    Schema.Union([SpeechProviderNonNegativeInteger, Schema.Null])
+  ),
+  words: Schema.optionalKey(
+    Schema.Union([
+      Schema.Array(SpeechProviderWord).pipe(
+        Schema.check(Schema.isMaxLength(4096))
+      ),
+      Schema.Null,
+    ])
   ),
 });
 
-const decodeSpeechResponse = Schema.decodeUnknownOption(
-  SpeechProviderResponse,
+const DocumentedSpeechProviderResponse = Schema.Struct({
+  transcription_info: Schema.Struct({
+    segments: Schema.optionalKey(
+      Schema.Array(Schema.Unknown).pipe(Schema.check(Schema.isMaxLength(4096)))
+    ),
+    text: SpeechTranscript.fields.text,
+    vtt: Schema.optionalKey(SpeechProviderVtt),
+    word_count: Schema.optionalKey(SpeechProviderNonNegativeInteger),
+  }),
+});
+
+const decodeLegacySpeechResponse = Schema.decodeUnknownOption(
+  LegacySpeechProviderResponse,
   {
-    onExcessProperty: "ignore",
+    onExcessProperty: "error",
   }
 );
+
+const decodeDocumentedSpeechResponse = Schema.decodeUnknownOption(
+  DocumentedSpeechProviderResponse,
+  {
+    onExcessProperty: "error",
+  }
+);
+
+const decodeSpeechResponse = (
+  raw: unknown
+): Option.Option<{ readonly text: string }> => {
+  if (!isUnknownRecord(raw)) {
+    return Option.none();
+  }
+  const hasLegacyText = Object.hasOwn(raw, "text");
+  const hasTranscriptionInfo = Object.hasOwn(raw, "transcription_info");
+  if (hasLegacyText === hasTranscriptionInfo) {
+    return Option.none();
+  }
+  return hasTranscriptionInfo
+    ? decodeDocumentedSpeechResponse(raw).pipe(
+        Option.map(({ transcription_info }) => ({
+          text: transcription_info.text,
+        }))
+      )
+    : decodeLegacySpeechResponse(raw).pipe(
+        Option.map(({ text }) => ({ text }))
+      );
+};
 
 const speechFailure = (
   code: SafeProviderFailureCode
