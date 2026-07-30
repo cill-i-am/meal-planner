@@ -255,14 +255,35 @@ describe("installed import provider adapters", () => {
     );
   });
 
-  it("uses the authenticated binding with provider logging disabled and the documented nested speech response shape", async () => {
+  it("uses the authenticated binding with provider logging disabled and the pinned combined speech response shape", async () => {
     const gateway = makeSpeechGateway({
+      segments: [
+        {
+          avg_logprob: -0.25,
+          compression_ratio: 1.1,
+          end: 1,
+          no_speech_prob: 0.01,
+          start: 0,
+          temperature: 0,
+          text: "Chop the onion.",
+          words: [
+            {
+              end: 0.5,
+              start: 0,
+              word: "Chop",
+            },
+          ],
+        },
+      ],
+      text: "Chop the onion.",
       transcription_info: {
-        segments: [],
-        text: "Chop the onion.",
-        vtt: "WEBVTT",
-        word_count: 3,
+        duration: 1,
+        duration_after_vad: 0.9,
+        language: "en",
+        language_probability: 0.99,
       },
+      vtt: "WEBVTT",
+      word_count: 3,
     });
     const trace = makeRecordingTraceStore();
     const dispatches: {
@@ -402,45 +423,90 @@ describe("installed import provider adapters", () => {
     const malformedResponses = [
       {
         transcription_info: {
-          segments: [],
-          word_count: 3,
+          duration: 1,
+          language: "en",
         },
       },
       {
+        text: 3,
         transcription_info: {
-          segments: [],
-          text: 3,
-          word_count: 3,
+          duration: 1,
+          language: "en",
         },
       },
       {
         text: "Root transcript.",
         transcription_info: {
-          segments: [],
           text: "Nested transcript.",
-          word_count: 2,
         },
       },
       {
+        text: "Same transcript.",
         transcription_info: {
+          text: "Same transcript.",
+        },
+      },
+      {
+        text: "Chop the onion.",
+        transcription_info: {
+          duration: 1,
           providerSecret: "must-not-escape",
-          segments: [],
-          text: "Chop the onion.",
-          word_count: 3,
-        },
-      },
-      {
-        providerSecret: "must-not-escape",
-        transcription_info: {
-          segments: [],
-          text: "Chop the onion.",
-          word_count: 3,
         },
       },
       {
         providerSecret: "must-not-escape",
         text: "Chop the onion.",
         word_count: 3,
+      },
+      {
+        result: {
+          text: "Chop the onion.",
+        },
+      },
+      {
+        result: {
+          text: "Nested transcript.",
+        },
+        text: "Root transcript.",
+      },
+      {
+        segments: [],
+        text: "Chop the onion.",
+        words: [],
+      },
+      {
+        text: "Chop the onion.",
+        transcription_info: {
+          language_probability: 1.01,
+        },
+      },
+      {
+        text: "Chop the onion.",
+        transcription_info: {
+          duration: -1,
+        },
+      },
+      {
+        text: "Chop the onion.",
+        transcription_info: {
+          language: " ",
+        },
+      },
+      {
+        segments: [
+          {
+            no_speech_prob: -0.01,
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      {
+        segments: [
+          {
+            providerSecret: "must-not-escape",
+          },
+        ],
+        text: "Chop the onion.",
       },
     ];
 

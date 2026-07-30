@@ -135,12 +135,16 @@ const replayProviderFixture = (
       run: async () => {
         await Effect.runPromise(increment(env, instanceId, "provider-calls"));
         return Response.json({
+          segments: [],
+          text: "Chop the onion.",
           transcription_info: {
-            segments: [],
-            text: "Chop the onion.",
-            vtt: "WEBVTT",
-            word_count: 3,
+            duration: 1,
+            duration_after_vad: 0.9,
+            language: "en",
+            language_probability: 0.99,
           },
+          vtt: "WEBVTT",
+          word_count: 3,
         });
       },
     }),
