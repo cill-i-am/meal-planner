@@ -155,6 +155,7 @@ describe("private import observability", () => {
         speechEnvelopeFailure: "unsupported_property",
         speechEnvelopeFamily: "model_specific",
         speechEnvelopeUnsupportedLocation: "segment",
+        speechEnvelopeUnsupportedRootProperty: "language",
       })
     );
 
@@ -168,6 +169,7 @@ describe("private import observability", () => {
       speechEnvelopeFailure: "unsupported_property",
       speechEnvelopeFamily: "model_specific",
       speechEnvelopeUnsupportedLocation: "segment",
+      speechEnvelopeUnsupportedRootProperty: "language",
     });
     expect(JSON.stringify(log.mock.calls)).not.toMatch(
       /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
@@ -181,6 +183,7 @@ describe("private import observability", () => {
     ["speechEnvelopeFailure", "private-key-name"],
     ["speechEnvelopeFamily", "provider-specific"],
     ["speechEnvelopeUnsupportedLocation", "private-container-name"],
+    ["speechEnvelopeUnsupportedRootProperty", "private-key-name"],
   ])("rejects an open %s value", (field, value) => {
     const decode = Schema.decodeUnknownSync(ImportObservabilityEvent, {
       onExcessProperty: "error",

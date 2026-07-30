@@ -99,6 +99,19 @@ export const SpeechEnvelopeUnsupportedLocation = Schema.Literals([
 export type SpeechEnvelopeUnsupportedLocation =
   typeof SpeechEnvelopeUnsupportedLocation.Type;
 
+export const SpeechEnvelopeUnsupportedRootProperty = Schema.Literals([
+  "duration",
+  "duration_after_vad",
+  "language",
+  "language_probability",
+  "multiple",
+  "other",
+  "task",
+  "words",
+]);
+export type SpeechEnvelopeUnsupportedRootProperty =
+  typeof SpeechEnvelopeUnsupportedRootProperty.Type;
+
 export const ImportObservabilityEvent = Schema.Struct({
   attempt: Schema.optionalKey(
     Schema.Number.pipe(
@@ -144,6 +157,9 @@ export const ImportObservabilityEvent = Schema.Struct({
   speechEnvelopeFamily: Schema.optionalKey(SpeechEnvelopeFamily),
   speechEnvelopeUnsupportedLocation: Schema.optionalKey(
     SpeechEnvelopeUnsupportedLocation
+  ),
+  speechEnvelopeUnsupportedRootProperty: Schema.optionalKey(
+    SpeechEnvelopeUnsupportedRootProperty
   ),
 });
 export type ImportObservabilityEvent = typeof ImportObservabilityEvent.Type;
@@ -205,6 +221,12 @@ const eventAnnotations = (event: ImportObservabilityEvent) => ({
     : {
         speechEnvelopeUnsupportedLocation:
           event.speechEnvelopeUnsupportedLocation,
+      }),
+  ...(event.speechEnvelopeUnsupportedRootProperty === undefined
+    ? {}
+    : {
+        speechEnvelopeUnsupportedRootProperty:
+          event.speechEnvelopeUnsupportedRootProperty,
       }),
 });
 
