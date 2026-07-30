@@ -69,6 +69,27 @@ export const ProviderDecodeReason = Schema.Literals([
 ]);
 export type ProviderDecodeReason = typeof ProviderDecodeReason.Type;
 
+export const SpeechEnvelopeFamily = Schema.Literals([
+  "generic",
+  "model_specific",
+  "unclassified",
+]);
+export type SpeechEnvelopeFamily = typeof SpeechEnvelopeFamily.Type;
+
+export const SpeechEnvelopeFailure = Schema.Literals([
+  "nested_container_type",
+  "nested_entry_type",
+  "nested_metadata_type",
+  "normalized_text_invalid",
+  "not_object",
+  "required_text_missing",
+  "required_text_type",
+  "root_metadata_type",
+  "semantic_constraint",
+  "unsupported_property",
+]);
+export type SpeechEnvelopeFailure = typeof SpeechEnvelopeFailure.Type;
+
 export const ImportObservabilityEvent = Schema.Struct({
   attempt: Schema.optionalKey(
     Schema.Number.pipe(
@@ -110,6 +131,8 @@ export const ImportObservabilityEvent = Schema.Struct({
       ProviderTaskDiagnosticReasonCode,
     ])
   ),
+  speechEnvelopeFailure: Schema.optionalKey(SpeechEnvelopeFailure),
+  speechEnvelopeFamily: Schema.optionalKey(SpeechEnvelopeFamily),
 });
 export type ImportObservabilityEvent = typeof ImportObservabilityEvent.Type;
 
@@ -159,6 +182,12 @@ const eventAnnotations = (event: ImportObservabilityEvent) => ({
     ? {}
     : { providerStage: event.providerStage }),
   ...(event.reasonCode === undefined ? {} : { reasonCode: event.reasonCode }),
+  ...(event.speechEnvelopeFailure === undefined
+    ? {}
+    : { speechEnvelopeFailure: event.speechEnvelopeFailure }),
+  ...(event.speechEnvelopeFamily === undefined
+    ? {}
+    : { speechEnvelopeFamily: event.speechEnvelopeFamily }),
 });
 
 /**
