@@ -74,6 +74,13 @@ const RecipeThirdRecoveryPreparationRequest = Schema.Struct({
   operation: Schema.Literal("prepare_recipe_third_recovery"),
 });
 
+const RecipeFourthRecoveryPreparationRequest = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  operation: Schema.Literal("prepare_recipe_fourth_recovery"),
+});
+
 const RecipeRecoveryResumeRequest = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   dispatchId: PilotBudgetDispatchId,
@@ -94,6 +101,7 @@ export const ProviderTerminalSettlementRequest = Schema.Union([
   RecipeRecoveryPreparationRequest,
   RecipeSecondRecoveryPreparationRequest,
   RecipeThirdRecoveryPreparationRequest,
+  RecipeFourthRecoveryPreparationRequest,
   RecipeRecoveryResumeRequest,
   ExpiredRecipeReplaySweepRequest,
 ]);
@@ -202,6 +210,18 @@ const RecipeThirdRecoveryPreparationResponse = Schema.Struct({
   runtimeStage: Schema.Literal(PilotProviderBudgetStage),
 });
 
+const RecipeFourthRecoveryPreparationResponse = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  outcome: Schema.Literal("recipe_fourth_recovery_prepared"),
+  recoveryDispatchId: PilotBudgetDispatchId,
+  recoveryExtractionFingerprint: Schema.String.pipe(
+    Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+  ),
+  runtimeStage: Schema.Literal(PilotProviderBudgetStage),
+});
+
 const RecipeRecoveryResumeResponse = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   dispatchId: PilotBudgetDispatchId,
@@ -229,6 +249,7 @@ export const ProviderTerminalSettlementResponse = Schema.Union([
   RecipeRecoveryPreparationResponse,
   RecipeSecondRecoveryPreparationResponse,
   RecipeThirdRecoveryPreparationResponse,
+  RecipeFourthRecoveryPreparationResponse,
   RecipeRecoveryResumeResponse,
   ExpiredRecipeReplaySweepResponse,
 ]);
@@ -910,6 +931,27 @@ const recipeRecoveryUnknownAuthority = `
        AND first.acquisition_generation = second.acquisition_generation
        AND first.recovery_dispatch_id =
              second.first_recovery_dispatch_id
+    UNION ALL
+    SELECT third.runtime_stage, third.import_id,
+           third.acquisition_generation, 3, 'recovery:3',
+           third.recovery_dispatch_id, third.evidence_fingerprint,
+           first.original_extraction_fingerprint,
+           third.recovery_extraction_fingerprint,
+           third.transcript_sha256, third.visual_manifest_sha256,
+           third.evidence_references_json
+      FROM pilot_provider_recipe_third_recoveries AS third
+      JOIN pilot_provider_recipe_second_recoveries AS second
+        ON second.runtime_stage = third.runtime_stage
+       AND second.import_id = third.import_id
+       AND second.acquisition_generation = third.acquisition_generation
+       AND second.recovery_dispatch_id =
+             third.second_recovery_dispatch_id
+      JOIN pilot_provider_recipe_recoveries AS first
+        ON first.runtime_stage = third.runtime_stage
+       AND first.import_id = third.import_id
+       AND first.acquisition_generation = third.acquisition_generation
+       AND first.recovery_dispatch_id =
+             third.first_recovery_dispatch_id
   ) AS recovery
   JOIN pilot_provider_budget_dispatches AS dispatch
     ON dispatch.runtime_stage = recovery.runtime_stage
@@ -1039,6 +1081,29 @@ const readRecipeRecoverySettled = (
                       second.acquisition_generation
                 AND first.recovery_dispatch_id =
                       second.first_recovery_dispatch_id
+             UNION ALL
+             SELECT third.runtime_stage, third.import_id,
+                    third.acquisition_generation, 3, 'recovery:3',
+                    third.recovery_dispatch_id,
+                    third.evidence_fingerprint,
+                    first.original_extraction_fingerprint,
+                    third.recovery_extraction_fingerprint,
+                    third.evidence_references_json
+               FROM pilot_provider_recipe_third_recoveries AS third
+               JOIN pilot_provider_recipe_second_recoveries AS second
+                 ON second.runtime_stage = third.runtime_stage
+                AND second.import_id = third.import_id
+                AND second.acquisition_generation =
+                      third.acquisition_generation
+                AND second.recovery_dispatch_id =
+                      third.second_recovery_dispatch_id
+               JOIN pilot_provider_recipe_recoveries AS first
+                 ON first.runtime_stage = third.runtime_stage
+                AND first.import_id = third.import_id
+                AND first.acquisition_generation =
+                      third.acquisition_generation
+                AND first.recovery_dispatch_id =
+                      third.first_recovery_dispatch_id
            ) AS recovery
              ON recovery.runtime_stage = audit.runtime_stage
             AND recovery.recovery_dispatch_id = audit.dispatch_id
@@ -1251,6 +1316,29 @@ const settleRecipeRecoveryBatch = (
                              second.acquisition_generation
                        AND first.recovery_dispatch_id =
                              second.first_recovery_dispatch_id
+                    UNION ALL
+                    SELECT third.runtime_stage, third.import_id,
+                           third.acquisition_generation, 3, 'recovery:3',
+                           third.recovery_dispatch_id,
+                           third.evidence_fingerprint,
+                           first.original_extraction_fingerprint,
+                           third.recovery_extraction_fingerprint,
+                           third.evidence_references_json
+                      FROM pilot_provider_recipe_third_recoveries AS third
+                      JOIN pilot_provider_recipe_second_recoveries AS second
+                        ON second.runtime_stage = third.runtime_stage
+                       AND second.import_id = third.import_id
+                       AND second.acquisition_generation =
+                             third.acquisition_generation
+                       AND second.recovery_dispatch_id =
+                             third.second_recovery_dispatch_id
+                      JOIN pilot_provider_recipe_recoveries AS first
+                        ON first.runtime_stage = third.runtime_stage
+                       AND first.import_id = third.import_id
+                       AND first.acquisition_generation =
+                             third.acquisition_generation
+                       AND first.recovery_dispatch_id =
+                             third.first_recovery_dispatch_id
                   ) AS recovery
                     ON recovery.runtime_stage = audit.runtime_stage
                    AND recovery.recovery_dispatch_id = audit.dispatch_id
@@ -1468,42 +1556,42 @@ const prepareAdditionalRecipeRecovery = (
   request:
     | typeof RecipeSecondRecoveryPreparationRequest.Type
     | typeof RecipeThirdRecoveryPreparationRequest.Type
+    | typeof RecipeFourthRecoveryPreparationRequest.Type
 ) =>
   Effect.gen(function* prepareAdditionalTerminalRecipeRecovery() {
     const repository = makeD1RecipeRecoveryRepository(
       input.database,
       input.runtimeStage
     );
-    const recovery =
-      request.operation === "prepare_recipe_second_recovery"
-        ? yield* repository
-            .prepareSecond({
-              acquisitionGeneration: request.acquisitionGeneration,
-              createdAt: input.now(),
-              firstRecoveryDispatchId: request.dispatchId,
-              importId: request.importId,
-            })
-            .pipe(
-              Effect.mapError((error) =>
-                providerTerminalSettlementError(
-                  mapRecoveryErrorCode(error.code)
-                )
-              )
-            )
-        : yield* repository
-            .prepareThird({
-              acquisitionGeneration: request.acquisitionGeneration,
-              createdAt: input.now(),
-              importId: request.importId,
-              secondRecoveryDispatchId: request.dispatchId,
-            })
-            .pipe(
-              Effect.mapError((error) =>
-                providerTerminalSettlementError(
-                  mapRecoveryErrorCode(error.code)
-                )
-              )
-            );
+    const preparation = (() => {
+      if (request.operation === "prepare_recipe_second_recovery") {
+        return repository.prepareSecond({
+          acquisitionGeneration: request.acquisitionGeneration,
+          createdAt: input.now(),
+          firstRecoveryDispatchId: request.dispatchId,
+          importId: request.importId,
+        });
+      }
+      if (request.operation === "prepare_recipe_third_recovery") {
+        return repository.prepareThird({
+          acquisitionGeneration: request.acquisitionGeneration,
+          createdAt: input.now(),
+          importId: request.importId,
+          secondRecoveryDispatchId: request.dispatchId,
+        });
+      }
+      return repository.prepareFourth({
+        acquisitionGeneration: request.acquisitionGeneration,
+        createdAt: input.now(),
+        importId: request.importId,
+        thirdRecoveryDispatchId: request.dispatchId,
+      });
+    })();
+    const recovery = yield* preparation.pipe(
+      Effect.mapError((error) =>
+        providerTerminalSettlementError(mapRecoveryErrorCode(error.code))
+      )
+    );
     const start = input.recipeRecoveryStarter?.start;
     if (start === undefined) {
       return yield* Effect.fail(
@@ -1532,13 +1620,30 @@ const prepareAdditionalRecipeRecovery = (
         )
       );
     }
+    if (request.operation === "prepare_recipe_third_recovery") {
+      return yield* Schema.decodeUnknownEffect(
+        RecipeThirdRecoveryPreparationResponse
+      )({
+        acquisitionGeneration: recovery.acquisitionGeneration,
+        dispatchId: recovery.originalDispatchId,
+        importId: recovery.importId,
+        outcome: "recipe_third_recovery_prepared",
+        recoveryDispatchId: recovery.recoveryDispatchId,
+        recoveryExtractionFingerprint: recovery.recoveryExtractionFingerprint,
+        runtimeStage: PilotProviderBudgetStage,
+      }).pipe(
+        Effect.mapError(() =>
+          providerTerminalSettlementError("persistence_corrupt")
+        )
+      );
+    }
     return yield* Schema.decodeUnknownEffect(
-      RecipeThirdRecoveryPreparationResponse
+      RecipeFourthRecoveryPreparationResponse
     )({
       acquisitionGeneration: recovery.acquisitionGeneration,
       dispatchId: recovery.originalDispatchId,
       importId: recovery.importId,
-      outcome: "recipe_third_recovery_prepared",
+      outcome: "recipe_fourth_recovery_prepared",
       recoveryDispatchId: recovery.recoveryDispatchId,
       recoveryExtractionFingerprint: recovery.recoveryExtractionFingerprint,
       runtimeStage: PilotProviderBudgetStage,
@@ -1703,7 +1808,8 @@ export const makeD1ProviderTerminalSettlementService = (
       }
       if (
         isOperation(request, "prepare_recipe_second_recovery") ||
-        isOperation(request, "prepare_recipe_third_recovery")
+        isOperation(request, "prepare_recipe_third_recovery") ||
+        isOperation(request, "prepare_recipe_fourth_recovery")
       ) {
         return yield* prepareAdditionalRecipeRecovery(input, request);
       }
