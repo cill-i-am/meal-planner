@@ -22,6 +22,7 @@ import type {
   PilotProviderBudgetRuntimeShape,
 } from "../pilots/pilot-provider-budget.js";
 import { decodeForcedToolResponseResult } from "./import-forced-tool-response.js";
+import type { ForcedToolResponseDecode } from "./import-forced-tool-response.js";
 import type {
   ImportCorrelationId,
   ImportObservabilityTraceStoreShape,
@@ -68,6 +69,8 @@ const ProviderTransportUnavailableMessage =
   "provider_transport_unavailable" as const;
 const ProviderNormalizationInvalidMessage =
   "provider_normalization_invalid" as const;
+const VisualForcedToolEnvelopeInvalidMessage =
+  "visual_forced_tool_envelope_invalid" as const;
 
 type SafeProviderFailureCode =
   | "insufficient_evidence"
@@ -324,7 +327,10 @@ const recipeConservativeReplay = (
     }),
 });
 
-const isProviderNormalizationFailure = (error: unknown): boolean => {
+const hasProviderErrorDescription = (
+  error: unknown,
+  description: string
+): boolean => {
   if (typeof error !== "object" || error === null) {
     return false;
   }
@@ -333,8 +339,14 @@ const isProviderNormalizationFailure = (error: unknown): boolean => {
     typeof record["reason"] === "object" && record["reason"] !== null
       ? (record["reason"] as Record<string, unknown>)
       : record;
-  return reason["description"] === ProviderNormalizationInvalidMessage;
+  return reason["description"] === description;
 };
+
+const isProviderNormalizationFailure = (error: unknown): boolean =>
+  hasProviderErrorDescription(error, ProviderNormalizationInvalidMessage);
+
+const isVisualForcedToolEnvelopeFailure = (error: unknown): boolean =>
+  hasProviderErrorDescription(error, VisualForcedToolEnvelopeInvalidMessage);
 
 export const failAfter = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
@@ -409,25 +421,44 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     // failure. Request, provider, transport, and timeout failures share this
     // Effect error channel but must not be represented as decode evidence.
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
-    Effect.tapError((error) =>
-      isProviderNormalizationFailure(error)
-        ? emitImportObservabilityEvent(
-            {
-              correlationId: observability.correlationId,
-              decodeReason: "provider_normalization_invalid",
-              decodeStage: "provider_normalization",
-              event: "provider.decode",
-              outcome: "malformed",
-              providerStage: observability.providerStage,
-            },
-            observability.traceStore
-          )
-        : Effect.void
-    ),
+    Effect.tapError((error) => {
+      if (isProviderNormalizationFailure(error)) {
+        return emitImportObservabilityEvent(
+          {
+            correlationId: observability.correlationId,
+            decodeReason: "provider_normalization_invalid",
+            decodeStage: "provider_normalization",
+            event: "provider.decode",
+            outcome: "malformed",
+            providerStage: observability.providerStage,
+          },
+          observability.traceStore
+        );
+      }
+      if (isVisualForcedToolEnvelopeFailure(error)) {
+        return emitImportObservabilityEvent(
+          {
+            correlationId: observability.correlationId,
+            decodeReason: "forced_tool_envelope_invalid",
+            decodeStage: "forced_tool_envelope",
+            event: "provider.decode",
+            outcome: "malformed",
+            providerStage: observability.providerStage,
+          },
+          observability.traceStore
+        );
+      }
+      return Effect.void;
+    }),
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
-    Effect.mapError((error) =>
-      typeof error === "string" ? error : safeFailureCode(Cause.fail(error))
-    ),
+    Effect.mapError((error) => {
+      if (typeof error === "string") {
+        return error;
+      }
+      return isVisualForcedToolEnvelopeFailure(error)
+        ? ("malformed_response" as const)
+        : safeFailureCode(Cause.fail(error));
+    }),
     Effect.flatMap((response) => {
       const decoded = decodeForcedToolResponseResult(
         response.content,
@@ -586,6 +617,15 @@ const workersAiGatewayOptions = (gatewayId: string) =>
     returnRawResponse: true,
   }) as const;
 
+const parsedWorkersAiGatewayOptions = (gatewayId: string) =>
+  ({
+    gateway: {
+      collectLog: false,
+      id: gatewayId,
+      skipCache: true,
+    },
+  }) as const;
+
 type WorkersAiBinding = Effect.Success<QueryGatewayClient["raw"]>;
 
 const runWorkersAi = (
@@ -599,6 +639,77 @@ const runWorkersAi = (
     body as never,
     workersAiGatewayOptions(gatewayId) as never
   ) as Promise<Response>;
+
+const runParsedWorkersAi = (
+  ai: WorkersAiBinding,
+  model: string,
+  body: unknown,
+  gatewayId: string
+): Promise<unknown> =>
+  ai.run(
+    model as never,
+    body as never,
+    parsedWorkersAiGatewayOptions(gatewayId) as never
+  ) as Promise<unknown>;
+
+const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parsedVisualForcedToolContent = (result: unknown): readonly unknown[] => {
+  if (!isUnknownRecord(result)) {
+    return [];
+  }
+  const openAiMessages = Array.isArray(result["choices"])
+    ? result["choices"].flatMap((choice) => {
+        if (!isUnknownRecord(choice)) {
+          return [];
+        }
+        const { message } = choice;
+        return isUnknownRecord(message) ? [message] : [];
+      })
+    : [];
+  const openAiToolCalls = openAiMessages.flatMap((message) =>
+    Array.isArray(message["tool_calls"]) ? message["tool_calls"] : []
+  );
+  const nativeToolCalls = result["tool_calls"];
+  const toolCalls = [
+    ...openAiToolCalls,
+    ...(Array.isArray(nativeToolCalls) ? nativeToolCalls : []),
+  ];
+  const toolParts = toolCalls.map((toolCall) => {
+    const call = isUnknownRecord(toolCall) ? toolCall : {};
+    const functionCall = isUnknownRecord(call["function"])
+      ? call["function"]
+      : undefined;
+    return {
+      name: functionCall?.["name"] ?? call["name"],
+      params: functionCall?.["arguments"] ?? call["arguments"],
+      type: "tool-call" as const,
+    };
+  });
+  const openAiText = openAiMessages.flatMap((message) => {
+    const { content } = message;
+    return typeof content === "string" && content.length > 0
+      ? [{ text: content, type: "text" as const }]
+      : [];
+  });
+  const nativeResponse = result["response"];
+  return [
+    ...openAiText,
+    ...(nativeResponse === undefined || nativeResponse === null
+      ? []
+      : [
+          {
+            text:
+              typeof nativeResponse === "string"
+                ? nativeResponse
+                : JSON.stringify(nativeResponse),
+            type: "text" as const,
+          },
+        ]),
+    ...toolParts,
+  ];
+};
 
 const withProviderNormalizationBoundary = (response: Response): Response => {
   const parseJson = response.json.bind(response);
@@ -669,6 +780,73 @@ const noLogWorkersAiClient = (
   ) as QueryGatewayClient["raw"],
 });
 
+/**
+ * Keep Alchemy's installed visual request construction and response parser,
+ * but source its input from the Workers AI binding's normal parsed result.
+ * This bypasses only the live `Response.json()` seam that failed after a
+ * successful visual provider response. The synthetic Response is local and
+ * contains no data beyond the binding result already held in memory.
+ */
+const parsedVisualWorkersAiClient = (
+  client: QueryGatewayClient,
+  correlationId: ImportCorrelationId,
+  traceStore: ImportObservabilityTraceStoreShape | undefined
+): QueryGatewayClient => ({
+  ...client,
+  raw: Effect.all([client.raw, client.id]).pipe(
+    Effect.map(
+      ([ai, gatewayId]) =>
+        ({
+          run: async (model: unknown, body: unknown) => {
+            let result: unknown;
+            try {
+              result = await runParsedWorkersAi(
+                ai,
+                String(model),
+                body,
+                gatewayId
+              );
+            } catch (error) {
+              if (isPilotProviderKnownZeroCostFailure(error)) {
+                throw error;
+              }
+              // eslint-disable-next-line preserve-caught-error -- Provider payloads and transport errors must not cross this privacy boundary, including as Error.cause.
+              throw new Error(ProviderTransportUnavailableMessage);
+            }
+            await Effect.runPromise(
+              emitImportObservabilityEvent(
+                {
+                  correlationId,
+                  event: "provider.response",
+                  outcome: "received",
+                  providerStage: "visual",
+                },
+                traceStore
+              )
+            );
+            let decoded: ForcedToolResponseDecode;
+            try {
+              decoded = decodeForcedToolResponseResult(
+                parsedVisualForcedToolContent(result),
+                "record_visual_evidence"
+              );
+            } catch {
+              throw new Error(VisualForcedToolEnvelopeInvalidMessage);
+            }
+            if (decoded._tag !== "Decoded") {
+              throw new Error(VisualForcedToolEnvelopeInvalidMessage);
+            }
+            try {
+              return Response.json(result);
+            } catch {
+              throw new Error(ProviderNormalizationInvalidMessage);
+            }
+          },
+        }) as WorkersAiBinding
+    )
+  ) as QueryGatewayClient["raw"],
+});
+
 export const makeInstalledVisualEvidenceExtractor = (input: {
   readonly client: QueryGatewayClient;
   readonly correlationId: ImportCorrelationId;
@@ -680,10 +858,9 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const client = noLogWorkersAiClient(
+    const client = parsedVisualWorkersAiClient(
       input.client,
       input.correlationId,
-      "visual",
       traceStore
     );
     const service = yield* Cloudflare.AI.makeLanguageModel({

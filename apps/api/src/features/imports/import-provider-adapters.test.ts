@@ -32,7 +32,10 @@ const makeRawGateway = (response: Response) => {
   const ai = {
     run: (model: unknown, body: unknown, options: unknown) => {
       requests.push({ body, model, options });
-      return Promise.resolve(response);
+      return (options as { readonly returnRawResponse?: boolean })
+        .returnRawResponse === true
+        ? Promise.resolve(response)
+        : response.clone().json();
     },
   };
   return {
@@ -453,13 +456,9 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(exit)).not.toContain("must-not-escape");
   });
 
-  it("observes the raw response and installed visual decode failure without payload data", async () => {
+  it("maps the parsed visual envelope sentinel through installed Alchemy without payload data", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
-    const gateway = makeRawGateway(
-      new Response('{"providerSecret":"must-not-escape"', {
-        headers: { "content-type": "application/json" },
-      })
-    );
+    const gateway = makeGateway({ providerSecret: "must-not-escape" });
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
@@ -488,6 +487,8 @@ describe("installed import provider adapters", () => {
     );
 
     expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(JSON.stringify(exit)).not.toContain("must-not-escape");
     expect(log.mock.calls).toEqual([
       [
         {
@@ -500,8 +501,8 @@ describe("installed import provider adapters", () => {
       [
         {
           correlationId,
-          decodeReason: "provider_normalization_invalid",
-          decodeStage: "provider_normalization",
+          decodeReason: "forced_tool_envelope_invalid",
+          decodeStage: "forced_tool_envelope",
           event: "provider.decode",
           outcome: "malformed",
           providerStage: "visual",
@@ -645,7 +646,7 @@ describe("installed import provider adapters", () => {
           readonly metadata?: unknown;
           readonly skipCache: boolean;
         };
-        readonly returnRawResponse: boolean;
+        readonly returnRawResponse?: boolean;
       };
     };
     expect(request.model).toBe("@cf/google/gemma-4-26b-a4b-it");
@@ -655,7 +656,6 @@ describe("installed import provider adapters", () => {
         id: "meal-planner-pilot-gaia-118",
         skipCache: true,
       },
-      returnRawResponse: true,
     });
     expect(request.options.gateway).not.toHaveProperty("metadata");
     expect(request.options).not.toHaveProperty("headers");
@@ -1312,6 +1312,180 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(exit)).toContain("malformed_response");
     expect(JSON.stringify(exit)).not.toContain("must-not-escape");
   });
+
+  it.each([
+    ["free-text substitution", { response: "provider-private-canary" }],
+    [
+      "an extra native tool call",
+      {
+        tool_calls: [
+          {
+            arguments: validVisualSemantics,
+            name: "record_visual_evidence",
+          },
+          {
+            arguments: validVisualSemantics,
+            name: "record_visual_evidence",
+          },
+        ],
+      },
+    ],
+    [
+      "a conflicting native mirror",
+      {
+        response: JSON.stringify({
+          arguments: {
+            observations: [
+              {
+                confidence: 0.5,
+                frameIndex: 0,
+                text: "provider-private-canary",
+              },
+            ],
+            outcome: "found",
+          },
+          name: "record_visual_evidence",
+        }),
+        tool_calls: [
+          {
+            arguments: validVisualSemantics,
+            name: "record_visual_evidence",
+          },
+        ],
+      },
+    ],
+    [
+      "an unexpected forced tool",
+      {
+        tool_calls: [
+          {
+            arguments: validVisualSemantics,
+            name: "provider-private-canary",
+          },
+        ],
+      },
+    ],
+    [
+      "conflicting native and OpenAI tool-call mirrors",
+      {
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validVisualSemantics),
+                    name: "record_visual_evidence",
+                  },
+                  id: "provider-private-canary",
+                  type: "function",
+                },
+              ],
+            },
+          },
+        ],
+        tool_calls: [
+          {
+            arguments: {
+              observations: [],
+              outcome: "not_found",
+            },
+            name: "record_visual_evidence",
+          },
+        ],
+      },
+    ],
+    [
+      "an extra OpenAI tool call in another choice",
+      {
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validVisualSemantics),
+                    name: "record_visual_evidence",
+                  },
+                  type: "function",
+                },
+              ],
+            },
+          },
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validVisualSemantics),
+                    name: "record_visual_evidence",
+                  },
+                  type: "function",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  ] as const)(
+    "fails closed for visual %s without leaking provider data",
+    async (_label, response) => {
+      const gateway = makeGateway(response);
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledVisualEvidenceExtractor({
+          client: gateway.client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.extract({
+          dispatchId: "visual:import-1:1",
+          frames: [
+            {
+              bytes: new Uint8Array([1, 2, 3]),
+              height: 1,
+              mimeType: "image/jpeg",
+              sha256: "a".repeat(64),
+              timestampMilliseconds: 0,
+              width: 1,
+            },
+          ],
+          generation: 1 as never,
+          importId: "import-1" as never,
+          sourceMediaSha256: "b".repeat(64),
+        })
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(JSON.stringify(exit)).toContain("malformed_response");
+      expect(trace.events[0]).toEqual({
+        correlationId,
+        event: "provider.response",
+        outcome: "received",
+        providerStage: "visual",
+      });
+      expect(trace.events).toContainEqual(
+        expect.objectContaining({
+          correlationId,
+          event: "provider.decode",
+          outcome: "malformed",
+          providerStage: "visual",
+        })
+      );
+      expect(JSON.stringify(exit)).not.toContain("provider-private-canary");
+      expect(JSON.stringify(trace.events)).not.toContain(
+        "provider-private-canary"
+      );
+    }
+  );
 
   it.each([
     [
