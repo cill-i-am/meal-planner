@@ -47,6 +47,7 @@ interface ProviderWorkflowInput {
     | "retry_exhausted"
     | "recipe_conservative_crash_replay"
     | "recipe_conservative_success"
+    | "recipe_recovery_native_replay"
     | "speech_terminal_recovery"
     | "speech_terminal_recovery_poison"
     | "success"
@@ -165,7 +166,8 @@ const installedRecipeConservativeDispatch = (
   env: ProviderWorkflowTestEnv,
   instanceId: string,
   importId: ImportId,
-  crashAfterSettlement: boolean
+  crashAfterSettlement: boolean,
+  recovery: boolean
 ) =>
   Effect.gen(function* runInstalledRecipeConservativeDispatch() {
     yield* increment(env, instanceId, "task-attempts");
@@ -181,7 +183,11 @@ const installedRecipeConservativeDispatch = (
       correlationId,
       now: () => decodeTimestamp("2026-07-29T13:00:00.000Z"),
       repository,
-      runId: decodeRunId(`gaia-118:${importId}`),
+      runId: decodeRunId(
+        recovery
+          ? `gaia-118:recipe-recovery:${importId}`
+          : `gaia-118:${importId}`
+      ),
       runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
     const client = {
@@ -226,6 +232,13 @@ const installedRecipeConservativeDispatch = (
       dispatch,
     });
     const output = yield* extractor.extract({
+      ...(recovery
+        ? {
+            dispatchId: decodeDispatchId(
+              `recipe:${importId}:${generation}:${"e".repeat(64)}:recovery:1`
+            ),
+          }
+        : {}),
       evidenceFingerprint: "e".repeat(64),
       generation,
       importId,
@@ -768,6 +781,7 @@ const directProviderEffect = (
 const providerStageByScenario = {
   recipe_conservative_crash_replay: "recipe",
   recipe_conservative_success: "recipe",
+  recipe_recovery_native_replay: "recipe",
   retry_exhausted: "speech",
   speech_terminal_recovery: "speech",
   speech_terminal_recovery_poison: "speech",
@@ -957,7 +971,30 @@ const providerWorkflowExport = {
               env,
               event.instanceId,
               decodeImportId(input.importId),
-              input.scenario === "recipe_conservative_crash_replay"
+              input.scenario === "recipe_conservative_crash_replay",
+              false
+            ),
+            (evidence) => ({
+              _tag: "Succeeded" as const,
+              evidence,
+              stage: "recipe" as const,
+            })
+          );
+          return yield* task("finalize-terminal", Effect.succeed(checkpoint));
+        }
+        if (input.scenario === "recipe_recovery_native_replay") {
+          if (input.importId === undefined) {
+            return yield* Effect.die("Missing recovery recipe import ID");
+          }
+          const checkpoint = yield* runProviderTask(
+            "extract-recipe-recovery-v1",
+            "recipe",
+            installedRecipeConservativeDispatch(
+              env,
+              event.instanceId,
+              decodeImportId(input.importId),
+              true,
+              true
             ),
             (evidence) => ({
               _tag: "Succeeded" as const,

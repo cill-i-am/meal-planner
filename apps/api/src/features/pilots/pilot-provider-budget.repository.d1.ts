@@ -111,6 +111,30 @@ const validReplayValueJson = (value: string) => {
 
 const Sha256Pattern = /^[a-f\d]{64}$/u;
 
+const recipeReplayDispatchIds = (replay: {
+  readonly evidenceFingerprint: string;
+  readonly generation: number;
+  readonly importId: string;
+}) => {
+  const root = `recipe:${replay.importId}:${replay.generation}:${replay.evidenceFingerprint}`;
+  return {
+    legacy: root,
+    recovery: `${root}:recovery:1`,
+  } as const;
+};
+
+const isRecipeReplayDispatchId = (
+  dispatchId: string,
+  replay: {
+    readonly evidenceFingerprint: string;
+    readonly generation: number;
+    readonly importId: string;
+  }
+) => {
+  const allowed = recipeReplayDispatchIds(replay);
+  return dispatchId === allowed.legacy || dispatchId === allowed.recovery;
+};
+
 const replayFromRow = (
   row: DispatchRow
 ): PilotBudgetDispatch["conservativeReplay"] | undefined => {
@@ -138,8 +162,11 @@ const replayFromRow = (
     !validReplayValueJson(row.replay_value_json) ||
     typeof row.replay_value_sha256 !== "string" ||
     !Sha256Pattern.test(row.replay_value_sha256) ||
-    row.dispatch_id !==
-      `recipe:${row.replay_import_id}:${row.replay_generation}:${row.replay_evidence_fingerprint}`
+    !isRecipeReplayDispatchId(row.dispatch_id, {
+      evidenceFingerprint: row.replay_evidence_fingerprint,
+      generation: row.replay_generation,
+      importId: row.replay_import_id,
+    })
   ) {
     return undefined;
   }
@@ -571,8 +598,7 @@ export const makeD1PilotProviderBudgetRepository = (
         input.replay.importId.length === 0 ||
         !validReplayValueJson(input.replay.valueJson) ||
         !Sha256Pattern.test(input.replay.valueSha256) ||
-        input.dispatchId !==
-          `recipe:${input.replay.importId}:${input.replay.generation}:${input.replay.evidenceFingerprint}`
+        !isRecipeReplayDispatchId(input.dispatchId, input.replay)
       ) {
         return yield* Effect.fail(
           pilotProviderBudgetError("cost_exceeds_reservation")
@@ -675,9 +701,7 @@ export const makeD1PilotProviderBudgetRepository = (
                   AND dispatch.maximum_cost_micro_usd = 100000
                   AND dispatch.actual_cost_micro_usd IS NULL
                   AND dispatch.state = 'settled_unknown'
-                  AND dispatch.dispatch_id =
-                      'recipe:' || ? || ':' ||
-                      CAST(? AS INTEGER) || ':' || ?
+                  AND dispatch.dispatch_id IN (?, ?)
                   AND audit.actual_cost_was_unknown = 1
                   AND audit.authority =
                       'schema_valid_provider_response'
@@ -695,9 +719,8 @@ export const makeD1PilotProviderBudgetRepository = (
               PilotProviderBudgetStage,
               input.dispatchId,
               input.runId,
-              input.replay.importId,
-              input.replay.generation,
-              input.replay.evidenceFingerprint
+              recipeReplayDispatchIds(input.replay).legacy,
+              recipeReplayDispatchIds(input.replay).recovery
             ),
           binding
             .prepare(

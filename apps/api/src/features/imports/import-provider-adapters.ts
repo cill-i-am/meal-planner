@@ -972,7 +972,9 @@ export const makeInstalledRecipeExtractor = (input: {
         input.dispatch
           .run({
             conservativeReplay: recipeConservativeReplay(request),
-            dispatchId: `recipe:${request.importId}:${request.generation}:${request.evidenceFingerprint}`,
+            dispatchId:
+              request.dispatchId ??
+              `recipe:${request.importId}:${request.generation}:${request.evidenceFingerprint}`,
             invoke: Effect.gen(function* extractRecipeSemantics() {
               const startedAt = yield* Clock.currentTimeMillis;
               const { inputTokens, outputTokens, value } =

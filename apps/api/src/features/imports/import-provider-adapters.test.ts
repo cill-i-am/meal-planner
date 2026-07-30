@@ -1132,6 +1132,48 @@ describe("installed import provider adapters", () => {
     );
   });
 
+  it("uses the immutable recovery dispatch exactly once without changing evidence", async () => {
+    const gateway = makeGateway(
+      nativeToolResponse("record_recipe", validRecipeSemantics)
+    );
+    const dispatches: string[] = [];
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: {
+          run: (input) =>
+            Effect.sync(() => {
+              dispatches.push(input.dispatchId);
+            }).pipe(
+              Effect.andThen(input.invoke),
+              Effect.map(({ value }) => value)
+            ),
+        },
+      })
+    );
+    const request = {
+      dispatchId: "recipe:import-1:1:fingerprint:recovery:1",
+      evidenceFingerprint: "fingerprint",
+      generation: 1 as never,
+      importId: "import-1" as never,
+      items: [
+        {
+          artifactReference: "private:evidence",
+          evidenceId: "evidence-1",
+          kind: "caption" as const,
+          origin: "creator_provided" as const,
+          value: "visible evidence",
+        },
+      ],
+    };
+
+    await Effect.runPromise(adapter.extract(request));
+
+    expect(dispatches).toEqual([request.dispatchId]);
+    expect(gateway.requests).toHaveLength(1);
+  });
+
   it("rejects model attempts to inject recipe transport metadata", async () => {
     const gateway = makeGateway(
       nativeToolResponse("record_recipe", validRecipe)

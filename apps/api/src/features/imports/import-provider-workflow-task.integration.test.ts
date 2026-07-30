@@ -5,9 +5,22 @@ import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import * as Bundle from "alchemy/Bundle";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import {
+  PilotBudgetDispatchId,
+  PilotBudgetProviderStageId,
+  PilotBudgetRunId,
+  PilotBudgetTimestamp,
+} from "../pilots/pilot-provider-budget.js";
+import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+import { AcquisitionGeneration } from "./import-media.model.js";
+import { makeD1ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
+import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-terminal.js";
+import { makeD1RecipeRecoveryRepository } from "./import-recipe-recovery.js";
+import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
 interface ProviderWorkflowInput {
   readonly failureCode?: string;
@@ -16,6 +29,7 @@ interface ProviderWorkflowInput {
     | "retry_exhausted"
     | "recipe_conservative_crash_replay"
     | "recipe_conservative_success"
+    | "recipe_recovery_native_replay"
     | "speech_terminal_recovery"
     | "speech_terminal_recovery_poison"
     | "success"
@@ -31,6 +45,13 @@ const fixturePath = fileURLToPath(
 );
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare;
+const decodeImportId = Schema.decodeUnknownSync(ImportId);
+const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
+const decodeImportTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
+const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
+const decodeRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
+const decodeStageId = Schema.decodeUnknownSync(PilotBudgetProviderStageId);
+const decodeDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
 
 const buildFixture = async (outputDirectory: string) => {
   type BundlePlugin = NonNullable<
@@ -110,6 +131,198 @@ const applyMigrations = async () => {
     await applyRemaining(rest);
   };
   await applyRemaining(migrations);
+};
+
+const prepareRecipeRecovery = async (importIdValue: string) => {
+  const database = await runtime.getD1Database("MealPlannerDatabase");
+  const importId = decodeImportId(importIdValue);
+  const generation = decodeGeneration(1);
+  const now = "2026-07-30T00:00:00.000Z";
+  const sourceSha256 = "a".repeat(64);
+  const transcriptSha256 = "b".repeat(64);
+  const visualManifestSha256 = "c".repeat(64);
+  const evidenceFingerprint = "e".repeat(64);
+  const extractionFingerprint = "f".repeat(64);
+  const dispatchId = decodeDispatchId(
+    `recipe:${importId}:${generation}:${evidenceFingerprint}`
+  );
+  const evidenceReferencesJson = JSON.stringify([
+    {
+      kind: "original_media",
+      referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
+    },
+    {
+      kind: "acquisition_manifest",
+      referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/manifest.json`,
+    },
+    {
+      kind: "speech_transcript",
+      referenceId: `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
+    },
+  ]);
+  await database.batch([
+    database
+      .prepare(
+        `INSERT INTO recipe_imports (
+           acquisition_generation, canonical_source_id,
+           compatibility_fingerprint, created_at, evidence_references_json,
+           id, recovery_action, source_kind, status, status_code, updated_at
+         ) VALUES (
+           ?, ?, ?, ?, ?, ?, NULL, 'tiktok_video', 'transcribed', NULL, ?
+         )`
+      )
+      .bind(
+        generation,
+        `recovery-canonical-${importId}`,
+        "9".repeat(64),
+        now,
+        evidenceReferencesJson,
+        importId,
+        now
+      ),
+    database
+      .prepare(
+        `INSERT INTO import_transcriptions (
+           import_id, acquisition_generation, dispatch_id,
+           source_media_sha256, state, transcript_key, transcript_sha256,
+           provider, model, detected_language, usage_audio_milliseconds,
+           usage_input_bytes, estimated_cost_micro_usd, cost_currency,
+           cost_certainty, segments_count, failure_code, created_at,
+           updated_at, completed_at
+         ) VALUES (
+           ?, ?, ?, ?, 'transcribed', ?, ?,
+           'cloudflare-workers-ai', 'speech-model', 'en', 1000, 100, 1,
+           'USD', 'known', 1, NULL, ?, ?, ?
+         )`
+      )
+      .bind(
+        importId,
+        generation,
+        `speech:${importId}:${generation}`,
+        sourceSha256,
+        `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
+        transcriptSha256,
+        now,
+        now,
+        now
+      ),
+    database
+      .prepare(
+        `INSERT INTO import_visual_evidence (
+           import_id, acquisition_generation, dispatch_id,
+           source_media_sha256, state, outcome, manifest_key, manifest_sha256,
+           provider, model, input_frames, input_bytes, model_calls,
+           estimated_cost_micro_usd, cost_currency, cost_certainty,
+           observations_count, failure_code, created_at, updated_at,
+           completed_at
+         ) VALUES (
+           ?, ?, ?, ?, 'completed', 'found', ?, ?,
+           'cloudflare-workers-ai', 'visual-model', 1, 100, 1, 1, 'USD',
+           'known', 1, NULL, ?, ?, ?
+         )`
+      )
+      .bind(
+        importId,
+        generation,
+        `visual:${importId}:${generation}:evidence`,
+        sourceSha256,
+        `imports/${importId}/visual/v1/generations/${generation}/manifest.json`,
+        visualManifestSha256,
+        now,
+        now,
+        now
+      ),
+    database
+      .prepare(
+        `INSERT INTO import_recipe_extractions (
+           extraction_fingerprint, import_id, acquisition_generation,
+           evidence_fingerprint, extractor_provider, extractor_model,
+           extractor_version, state, created_at, updated_at
+         ) VALUES (
+           ?, ?, ?, ?, 'cloudflare-workers-ai', 'recipe-model',
+           'installed-v1', 'dispatching', ?, ?
+         )`
+      )
+      .bind(
+        extractionFingerprint,
+        importId,
+        generation,
+        evidenceFingerprint,
+        now,
+        now
+      ),
+  ]);
+
+  const budget = makeD1PilotProviderBudgetRepository(
+    database,
+    "pilot-gaia-118"
+  );
+  const runId = decodeRunId(`gaia-118:${importId}`);
+  const settleSibling = async (
+    siblingDispatchId: typeof PilotBudgetDispatchId.Type,
+    providerStageId: typeof PilotBudgetProviderStageId.Type
+  ) => {
+    const reservation = {
+      dispatchId: siblingDispatchId,
+      maximumCostMicroUsd: 1,
+      providerStageId,
+      runId,
+      timestamp: decodeBudgetTimestamp(now),
+    };
+    await Effect.runPromise(budget.reserve(reservation));
+    await Effect.runPromise(budget.beginInvocation(reservation));
+    await Effect.runPromise(
+      budget.settleKnown({ ...reservation, actualCostMicroUsd: 0 })
+    );
+  };
+  await settleSibling(
+    decodeDispatchId(`speech:${importId}:${generation}`),
+    decodeStageId("speech-transcription")
+  );
+  await settleSibling(
+    decodeDispatchId(`visual:${importId}:${generation}:evidence`),
+    decodeStageId("visual-evidence")
+  );
+  const recipeReservation = {
+    dispatchId,
+    maximumCostMicroUsd: 100_000,
+    providerStageId: decodeStageId("recipe-extraction"),
+    runId,
+    timestamp: decodeBudgetTimestamp(now),
+  };
+  await Effect.runPromise(budget.reserve(recipeReservation));
+  await Effect.runPromise(budget.beginInvocation(recipeReservation));
+  await Effect.runPromise(budget.settleUnknown(recipeReservation));
+  await Effect.runPromise(
+    makeD1ProviderTerminalCheckpointRepository(database).persist({
+      acquisitionGeneration: generation,
+      completedAt: decodeImportTimestamp(now),
+      failureCode: "outcome_unknown",
+      importId,
+      providerStage: "recipe",
+    })
+  );
+  await Effect.runPromise(
+    makeD1ProviderTerminalSettlementService({
+      database,
+      now: () => decodeImportTimestamp("2026-07-30T00:01:00.000Z"),
+      runtimeStage: "pilot-gaia-118",
+    }).settle({
+      acquisitionGeneration: generation,
+      dispatchId,
+      importId,
+      operation: "settle_recipe_unknown",
+    })
+  );
+  const recovery = await Effect.runPromise(
+    makeD1RecipeRecoveryRepository(database, "pilot-gaia-118").prepare({
+      acquisitionGeneration: generation,
+      createdAt: decodeImportTimestamp("2026-07-30T00:02:00.000Z"),
+      importId,
+      originalDispatchId: dispatchId,
+    })
+  );
+  return { database, recovery };
 };
 
 beforeAll(async () => {
@@ -701,7 +914,7 @@ describe("provider workflow task retry exhaustion", () => {
       poison_dispatch_id: null,
       state: "open",
     });
-  });
+  }, 15_000);
 
   it("replays one poisoned recovery identity without invoking the provider or nesting recovery", async () => {
     const instanceId = "gaia-187-native-poisoned-speech-recovery";
@@ -1383,6 +1596,116 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
     expect(await readNumber(instanceId, "task-attempts")).toBe(1);
     expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+  });
+
+  it("retries and replays the recipe recovery native task without another provider call", async () => {
+    const instanceId = `gaia-207-recipe-recovery-${randomUUID()}`;
+    const importId = randomUUID();
+    const { database, recovery } = await prepareRecipeRecovery(importId);
+    const stageBefore = await database
+      .prepare(
+        `SELECT settled_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      )
+      .first<{ readonly settled_micro_usd: number }>();
+    if (stageBefore === null) {
+      throw new Error("Pilot provider budget baseline is missing");
+    }
+
+    await expect(
+      runWorkflow(instanceId, {
+        importId,
+        scenario: "recipe_recovery_native_replay",
+      })
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "recipe-conservative-evidence",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(1);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-adapter-completions")).toBe(2);
+    expect(await readNumber(instanceId, "recipe-dispatch-completions")).toBe(1);
+    expect(await readNumber(instanceId, "post-settlement-crashes")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT actual_cost_micro_usd, dispatch_id,
+                  maximum_cost_micro_usd, provider_stage_id, run_id, state
+             FROM pilot_provider_budget_dispatches
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+        .bind(recovery.recoveryDispatchId)
+        .first()
+    ).resolves.toEqual({
+      actual_cost_micro_usd: null,
+      dispatch_id: recovery.recoveryDispatchId,
+      maximum_cost_micro_usd: 100_000,
+      provider_stage_id: "recipe-extraction",
+      run_id: `gaia-118:recipe-recovery:${importId}`,
+      state: "settled_unknown",
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT authority, conservative_charge_micro_usd
+             FROM pilot_provider_budget_conservative_settlements
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+        .bind(recovery.recoveryDispatchId)
+        .first()
+    ).resolves.toEqual({
+      authority: "schema_valid_provider_response",
+      conservative_charge_micro_usd: 100_000,
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+             FROM pilot_provider_recipe_replay_values
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+        .bind(recovery.recoveryDispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      database
+        .prepare(
+          `SELECT invoking_dispatch_id, poison_dispatch_id,
+                  reserved_micro_usd, settled_micro_usd, state
+             FROM pilot_provider_stage_budget
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        )
+        .first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      settled_micro_usd: stageBefore.settled_micro_usd + 100_000,
+      state: "open",
+    });
+
+    await expect(
+      restartFromAfterProviderCheckpoint(instanceId)
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "recipe-conservative-evidence",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-adapter-completions")).toBe(2);
+    expect(await readNumber(instanceId, "recipe-dispatch-completions")).toBe(1);
+    expect(await readNumber(instanceId, "post-settlement-crashes")).toBe(1);
   });
 
   it("persists a conservative installed recipe result and replays its native task without another provider call", async () => {

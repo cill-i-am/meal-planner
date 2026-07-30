@@ -7,6 +7,8 @@ import {
 } from "../pilots/pilot-provider-budget.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { makeD1ProviderTerminalRecoveryRepository } from "./import-provider-terminal.js";
+import { makeD1RecipeRecoveryRepository } from "./import-recipe-recovery.js";
+import type { RecipeRecoveryWorkflowStarterShape } from "./import-recipe-recovery.js";
 import { ImportId } from "./import.contracts.js";
 import type { ImportTimestamp } from "./import.contracts.js";
 import type { ImportWorkflowStarterShape } from "./import.workflow.js";
@@ -42,6 +44,13 @@ const RecipeTerminalUnknownSettlementRequest = Schema.Struct({
 type RecipeTerminalUnknownSettlementRequest =
   typeof RecipeTerminalUnknownSettlementRequest.Type;
 
+const RecipeRecoveryPreparationRequest = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  operation: Schema.Literal("prepare_recipe_recovery"),
+});
+
 const ExpiredRecipeReplaySweepRequest = Schema.Struct({
   operation: Schema.Literal("sweep_expired_recipe_replays"),
 });
@@ -51,6 +60,7 @@ export const ProviderTerminalSettlementRequest = Schema.Union([
   SpeechRecoveryActivationRequest,
   VisualRecoveryPreparationRequest,
   RecipeTerminalUnknownSettlementRequest,
+  RecipeRecoveryPreparationRequest,
   ExpiredRecipeReplaySweepRequest,
 ]);
 export type ProviderTerminalSettlementRequest =
@@ -100,6 +110,18 @@ const RecipeTerminalUnknownSettlementResponse = Schema.Struct({
   runtimeStage: Schema.Literal(PilotProviderBudgetStage),
 });
 
+const RecipeRecoveryPreparationResponse = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  outcome: Schema.Literal("recipe_recovery_prepared"),
+  recoveryDispatchId: PilotBudgetDispatchId,
+  recoveryExtractionFingerprint: Schema.String.pipe(
+    Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+  ),
+  runtimeStage: Schema.Literal(PilotProviderBudgetStage),
+});
+
 const ExpiredRecipeReplaySweepResponse = Schema.Struct({
   deletedCount: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
   outcome: Schema.Literal("expired_recipe_replays_swept"),
@@ -111,6 +133,7 @@ export const ProviderTerminalSettlementResponse = Schema.Union([
   SpeechRecoveryActivationResponse,
   VisualRecoveryPreparationResponse,
   RecipeTerminalUnknownSettlementResponse,
+  RecipeRecoveryPreparationResponse,
   ExpiredRecipeReplaySweepResponse,
 ]);
 export type ProviderTerminalSettlementResponse =
@@ -816,6 +839,7 @@ export const makeD1ProviderTerminalSettlementService = (input: {
   readonly database: AnyD1Database;
   readonly now: () => ImportTimestamp;
   readonly runtimeStage: unknown;
+  readonly recipeRecoveryStarter?: RecipeRecoveryWorkflowStarterShape;
   readonly workflowStarter?: Pick<
     ImportWorkflowStarterShape,
     "restartFromSpeech"
@@ -936,6 +960,52 @@ export const makeD1ProviderTerminalSettlementService = (input: {
       ) {
         yield* settleRecipeBatch(input.database, request, input.now());
         return yield* readRecipeSettled(input.database, request);
+      }
+      if (
+        "operation" in request &&
+        request.operation === "prepare_recipe_recovery"
+      ) {
+        const recovery = yield* makeD1RecipeRecoveryRepository(
+          input.database,
+          input.runtimeStage
+        )
+          .prepare({
+            acquisitionGeneration: request.acquisitionGeneration,
+            createdAt: input.now(),
+            importId: request.importId,
+            originalDispatchId: request.dispatchId,
+          })
+          .pipe(
+            Effect.mapError((error) =>
+              providerTerminalSettlementError(mapRecoveryErrorCode(error.code))
+            )
+          );
+        const start = input.recipeRecoveryStarter?.start;
+        if (start === undefined) {
+          return yield* Effect.fail(
+            providerTerminalSettlementError("persistence_unavailable")
+          );
+        }
+        yield* start(recovery).pipe(
+          Effect.mapError(() =>
+            providerTerminalSettlementError("persistence_unavailable")
+          )
+        );
+        return yield* Schema.decodeUnknownEffect(
+          RecipeRecoveryPreparationResponse
+        )({
+          acquisitionGeneration: recovery.acquisitionGeneration,
+          dispatchId: recovery.originalDispatchId,
+          importId: recovery.importId,
+          outcome: "recipe_recovery_prepared",
+          recoveryDispatchId: recovery.recoveryDispatchId,
+          recoveryExtractionFingerprint: recovery.recoveryExtractionFingerprint,
+          runtimeStage: PilotProviderBudgetStage,
+        }).pipe(
+          Effect.mapError(() =>
+            providerTerminalSettlementError("persistence_corrupt")
+          )
+        );
       }
       yield* settleBatch(input.database, request, input.now());
       return yield* readSettled(input.database, request);
