@@ -5,6 +5,7 @@ import { TestClock } from "effect/testing";
 import { Tool } from "effect/unstable/ai";
 import { describe, expect, it, vi } from "vitest";
 
+import { pilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
 import type { PilotProviderConservativeReplayValue } from "../pilots/pilot-provider-budget.js";
 import {
   ImportCorrelationId,
@@ -50,7 +51,7 @@ const makeGateway = (response: unknown) =>
 
 const makeSpeechGateway = makeGateway;
 
-const makeRejectedSpeechGateway = (error: unknown) =>
+const makeRejectedGateway = (error: unknown) =>
   ({
     gateway: Effect.die("universal AI Gateway binding must not be used"),
     id: Effect.succeed("meal-planner-pilot-gaia-118"),
@@ -419,7 +420,7 @@ describe("installed import provider adapters", () => {
   it("preserves retryable native speech failures as typed redacted failures", async () => {
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeRejectedSpeechGateway({
+        client: makeRejectedGateway({
           _tag: "AiGatewayError",
           cause: {
             providerSecret: "must-not-escape",
@@ -509,6 +510,43 @@ describe("installed import provider adapters", () => {
     ]);
     expect(JSON.stringify(log.mock.calls)).not.toContain("must-not-escape");
     log.mockRestore();
+  });
+
+  it("keeps an installed visual provider rejection out of normalization telemetry", async () => {
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: makeRejectedGateway(
+          pilotProviderKnownZeroCostFailure("provider_unavailable" as const)
+        ),
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 0,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("provider_unavailable");
+    expect(trace.events).toEqual([]);
   });
 
   it("uses one forced visual tool call and injects trusted transport metadata", async () => {
@@ -803,6 +841,41 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(trace.events)).not.toContain(
       "non-authoritative model text"
     );
+  });
+
+  it("keeps an installed recipe provider rejection out of normalization telemetry", async () => {
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: makeRejectedGateway(
+          pilotProviderKnownZeroCostFailure("provider_unavailable" as const)
+        ),
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "visible evidence",
+          },
+        ],
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("provider_unavailable");
+    expect(trace.events).toEqual([]);
   });
 
   it("accepts the installed mirrored structured and native forced recipe call", async () => {
