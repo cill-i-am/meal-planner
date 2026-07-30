@@ -166,7 +166,8 @@ const installedRecipeConservativeDispatch = (
   env: ProviderWorkflowTestEnv,
   instanceId: string,
   importId: ImportId,
-  crashAfterSettlement: boolean
+  crashAfterSettlement: boolean,
+  recovery: boolean
 ) =>
   Effect.gen(function* runInstalledRecipeConservativeDispatch() {
     yield* increment(env, instanceId, "task-attempts");
@@ -182,7 +183,11 @@ const installedRecipeConservativeDispatch = (
       correlationId,
       now: () => decodeTimestamp("2026-07-29T13:00:00.000Z"),
       repository,
-      runId: decodeRunId(`gaia-118:${importId}`),
+      runId: decodeRunId(
+        recovery
+          ? `gaia-118:recipe-recovery:${importId}`
+          : `gaia-118:${importId}`
+      ),
       runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
     const client = {
@@ -227,6 +232,13 @@ const installedRecipeConservativeDispatch = (
       dispatch,
     });
     const output = yield* extractor.extract({
+      ...(recovery
+        ? {
+            dispatchId: decodeDispatchId(
+              `recipe:${importId}:${generation}:${"e".repeat(64)}:recovery:1`
+            ),
+          }
+        : {}),
       evidenceFingerprint: "e".repeat(64),
       generation,
       importId,
@@ -766,35 +778,6 @@ const directProviderEffect = (
     )
   );
 
-const recipeRecoveryNativeReplay = (
-  env: ProviderWorkflowTestEnv,
-  instanceId: string
-) =>
-  Effect.gen(function* runRecipeRecoveryNativeReplay() {
-    yield* increment(env, instanceId, "task-attempts");
-    const replayValue = yield* Effect.promise(() =>
-      env.PROVIDER_WORKFLOW_STATE.get(
-        stateKey(instanceId, "recipe-recovery-provider-result")
-      )
-    );
-    if (replayValue !== null) {
-      return replayValue;
-    }
-    yield* increment(env, instanceId, "provider-calls");
-    yield* Effect.promise(() =>
-      env.PROVIDER_WORKFLOW_STATE.put(
-        stateKey(instanceId, "recipe-recovery-provider-result"),
-        "recipe-recovery-evidence"
-      )
-    );
-    yield* increment(env, instanceId, "post-provider-crashes");
-    return yield* Effect.die(
-      new Error(
-        "simulated crash after the recipe recovery provider response and before the native task checkpoint"
-      )
-    );
-  });
-
 const providerStageByScenario = {
   recipe_conservative_crash_replay: "recipe",
   recipe_conservative_success: "recipe",
@@ -988,7 +971,8 @@ const providerWorkflowExport = {
               env,
               event.instanceId,
               decodeImportId(input.importId),
-              input.scenario === "recipe_conservative_crash_replay"
+              input.scenario === "recipe_conservative_crash_replay",
+              false
             ),
             (evidence) => ({
               _tag: "Succeeded" as const,
@@ -999,10 +983,19 @@ const providerWorkflowExport = {
           return yield* task("finalize-terminal", Effect.succeed(checkpoint));
         }
         if (input.scenario === "recipe_recovery_native_replay") {
+          if (input.importId === undefined) {
+            return yield* Effect.die("Missing recovery recipe import ID");
+          }
           const checkpoint = yield* runProviderTask(
             "extract-recipe-recovery-v1",
             "recipe",
-            recipeRecoveryNativeReplay(env, event.instanceId),
+            installedRecipeConservativeDispatch(
+              env,
+              event.instanceId,
+              decodeImportId(input.importId),
+              true,
+              true
+            ),
             (evidence) => ({
               _tag: "Succeeded" as const,
               evidence,
