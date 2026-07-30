@@ -40,8 +40,7 @@ import {
   makeD1ProviderTerminalRecoveryRepository,
 } from "./import-provider-terminal.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
-import type { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
-import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import * as RecipeDraftRepository from "./import-recipe-draft.repository.d1.js";
 import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
 import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
 import { RecipeExtraction } from "./import-recipe-extractor.js";
@@ -74,7 +73,11 @@ import {
 } from "./import.contracts.js";
 import { importPersistenceUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type { AcceptImportCommand, StoredImport } from "./import.repository.js";
+import type {
+  AcceptImportCommand,
+  ImportRepositoryShape,
+  StoredImport,
+} from "./import.repository.js";
 import {
   CompatibilityFingerprint,
   IdempotencyKeyHash,
@@ -161,6 +164,39 @@ const acquisitionBucket = (): AcquisitionBucketLike => ({
   put: (key, value, options) =>
     testEnv.ImportEvidenceBucket.put(key, value, options),
 });
+
+const bucketWithNativeChecksumOverride = (
+  overrides: ReadonlyMap<string, "missing" | "mismatch">
+): AcquisitionBucketLike => {
+  const bucket = acquisitionBucket();
+  return {
+    ...bucket,
+    get: async (key) => {
+      const object = await bucket.get(key);
+      const override = overrides.get(key);
+      if (object === null || override === undefined) {
+        return object;
+      }
+      return {
+        ...(object.arrayBuffer === undefined
+          ? {}
+          : {
+              arrayBuffer: () => object.arrayBuffer?.() as Promise<ArrayBuffer>,
+            }),
+        checksums:
+          override === "missing" ? {} : { sha256: new Uint8Array(32).buffer },
+        ...(object.customMetadata === undefined
+          ? {}
+          : { customMetadata: object.customMetadata }),
+        ...(object.httpMetadata === undefined
+          ? {}
+          : { httpMetadata: object.httpMetadata }),
+        size: object.size,
+        text: () => object.text(),
+      };
+    },
+  };
+};
 
 const makeTranscribedImport = async (
   importId: ImportId,
@@ -1385,6 +1421,204 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     return importRepository;
   };
 
+  const prepareRecoveryFixture = async (
+    importId: ImportId,
+    canonicalId: SourceCanonicalId
+  ) => {
+    const importRepository = await landVisualEvidence(importId, canonicalId);
+    const recipeRepository: RecipeDraftRepository.RecipeDraftRepositoryShape = {
+      claim: () => Effect.succeed({ _tag: "DispatchClaimed" as const }),
+      claimCarousel: () => Effect.succeed({ _tag: "DispatchClaimed" as const }),
+      complete: Effect.succeed,
+      fail: () => Effect.void,
+    };
+    const initialExtractor = makeDeterministicRecipeExtractor(
+      makeRecipeExtractorDescriptor("schema-1"),
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
+    );
+    const initial = await Effect.runPromise(
+      produceRecipeDraftForImport({
+        bucket: acquisitionBucket(),
+        extractor: initialExtractor.service,
+        importId,
+        importRepository,
+        now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
+        recipeRepository,
+      })
+    );
+    const hashes = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT transcript.transcript_sha256, visual.manifest_sha256
+         FROM import_transcriptions AS transcript
+         JOIN import_visual_evidence AS visual
+           ON visual.import_id = transcript.import_id
+          AND visual.acquisition_generation =
+                transcript.acquisition_generation
+        WHERE transcript.import_id = ?
+          AND transcript.acquisition_generation = ?`
+    )
+      .bind(importId, generation)
+      .first<{
+        manifest_sha256: string;
+        transcript_sha256: string;
+      }>();
+    if (hashes === null) {
+      throw new Error("Expected landed recovery evidence");
+    }
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE recipe_imports
+          SET status = 'transcribed',
+              status_code = NULL,
+              recovery_action = NULL
+        WHERE id = ? AND acquisition_generation = ?`
+    )
+      .bind(importId, generation)
+      .run();
+    return {
+      importRepository,
+      recipeRepository,
+      recovery: {
+        acquisitionGeneration: generation,
+        dispatchId: `recipe:${importId}:${generation}:${initial.evidenceFingerprint}:recovery:1`,
+        evidenceFingerprint: initial.evidenceFingerprint,
+        extractionFingerprint: fixtureHash(
+          `${importId}:missing-native-recovery`
+        ),
+        transcriptSha256: hashes.transcript_sha256,
+        visualManifestSha256: hashes.manifest_sha256,
+      },
+    };
+  };
+
+  it("resumes a transcribed parent when only native R2 JSON checksums are absent", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000240");
+    const canonicalId = decodeCanonicalId("7520000000000000240");
+    const { importRepository, recipeRepository, recovery } =
+      await prepareRecoveryFixture(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      makeRecipeExtractorDescriptor("schema-2"),
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
+    );
+    const bucket = bucketWithNativeChecksumOverride(
+      new Map([
+        [transcriptObjectKey(importId, generation), "missing"],
+        [visualEvidenceManifestObjectKey(importId, generation), "missing"],
+      ])
+    );
+    const stored = Option.getOrThrow(
+      await Effect.runPromise(importRepository.findById(importId))
+    );
+    if (stored.view.status.kind !== "visual_evidence_found") {
+      throw new Error("Expected landed visual evidence");
+    }
+    const [originalMedia, acquisitionManifest, speechTranscript] =
+      stored.view.evidence;
+    if (
+      originalMedia?.kind !== "original_media" ||
+      acquisitionManifest?.kind !== "acquisition_manifest" ||
+      speechTranscript?.kind !== "speech_transcript"
+    ) {
+      throw new Error("Expected transcribed evidence references");
+    }
+    const transcribed: StoredImport = {
+      ...stored,
+      view: {
+        createdAt: stored.view.createdAt,
+        evidence: [originalMedia, acquisitionManifest, speechTranscript],
+        id: stored.view.id,
+        source: stored.view.source,
+        status: { kind: "transcribed" },
+        updatedAt: stored.view.updatedAt,
+      },
+    };
+    const transcribedImportRepository: ImportRepositoryShape = {
+      ...importRepository,
+      findById: () => Effect.succeed(Option.some(transcribed)),
+    };
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket,
+          extractor: extractor.service,
+          importId,
+          importRepository: transcribedImportRepository,
+          now: () => decodeTimestamp("2026-07-21T10:04:00.000Z"),
+          recipeRepository,
+          recovery,
+        })
+      )
+    ).resolves.toMatchObject({
+      evidenceFingerprint: recovery.evidenceFingerprint,
+      extractionFingerprint: recovery.extractionFingerprint,
+      lifecycle: "needs_review",
+    });
+    expect(extractor.calls).toHaveLength(1);
+  });
+
+  it("fails closed before extraction when a present native transcript checksum mismatches", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000241");
+    const canonicalId = decodeCanonicalId("7520000000000000241");
+    const { importRepository, recipeRepository, recovery } =
+      await prepareRecoveryFixture(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      makeRecipeExtractorDescriptor("schema-2"),
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
+    );
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: bucketWithNativeChecksumOverride(
+            new Map([[transcriptObjectKey(importId, generation), "mismatch"]])
+          ),
+          extractor: extractor.service,
+          importId,
+          importRepository,
+          now: () => decodeTimestamp("2026-07-21T10:04:00.000Z"),
+          recipeRepository,
+          recovery,
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeDraftPipelineFailure",
+      code: "source_evidence_invalid",
+      reasonCode: "transcript_native_checksum_mismatch",
+    });
+    expect(extractor.calls).toEqual([]);
+  });
+
+  it("fails closed before extraction when a missing native checksum disagrees with immutable recovery identity", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000242");
+    const canonicalId = decodeCanonicalId("7520000000000000242");
+    const { importRepository, recipeRepository, recovery } =
+      await prepareRecoveryFixture(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      makeRecipeExtractorDescriptor("schema-2"),
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
+    );
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: bucketWithNativeChecksumOverride(
+            new Map([[transcriptObjectKey(importId, generation), "missing"]])
+          ),
+          extractor: extractor.service,
+          importId,
+          importRepository,
+          now: () => decodeTimestamp("2026-07-21T10:04:00.000Z"),
+          recipeRepository,
+          recovery: { ...recovery, transcriptSha256: "0".repeat(64) },
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeDraftPipelineFailure",
+      code: "source_evidence_invalid",
+      reasonCode: "transcript_native_checksum_missing",
+    });
+    expect(extractor.calls).toEqual([]);
+  });
+
   it("persists a cited needs-review draft once without retaining raw evidence", async () => {
     const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000230");
     const canonicalId = decodeCanonicalId("7520000000000000230");
@@ -1399,7 +1633,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
       descriptor,
       (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
     );
-    const recipeRepository = makeD1RecipeDraftRepository(
+    const recipeRepository = RecipeDraftRepository.makeD1RecipeDraftRepository(
       testEnv.MealPlannerDatabase
     );
 
@@ -1557,7 +1791,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000236");
     const canonicalId = decodeCanonicalId("7520000000000000236");
     const importRepository = await landVisualEvidence(importId, canonicalId);
-    const recipeRepository = makeD1RecipeDraftRepository(
+    const recipeRepository = RecipeDraftRepository.makeD1RecipeDraftRepository(
       testEnv.MealPlannerDatabase
     );
     const completedAt = decodeTimestamp("2026-07-21T10:03:00.000Z");
@@ -1620,7 +1854,9 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     );
     const fingerprint = (version: "schema-1" | "schema-2") =>
       fixtureHash(`recipe-overlap-${version}`);
-    const draft = (version: "schema-1" | "schema-2"): RecipeDraft => ({
+    const draft = (
+      version: "schema-1" | "schema-2"
+    ): RecipeDraftRepository.RecipeDraft => ({
       createdAt: completedAt,
       evidenceFingerprint,
       extraction,
@@ -1703,7 +1939,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
           importId,
           importRepository,
           now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
-          recipeRepository: makeD1RecipeDraftRepository(
+          recipeRepository: RecipeDraftRepository.makeD1RecipeDraftRepository(
             testEnv.MealPlannerDatabase
           ),
         })
@@ -1756,7 +1992,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
           importId,
           importRepository,
           now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
-          recipeRepository: makeD1RecipeDraftRepository(
+          recipeRepository: RecipeDraftRepository.makeD1RecipeDraftRepository(
             testEnv.MealPlannerDatabase
           ),
         })
@@ -1805,7 +2041,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
           importId,
           importRepository,
           now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
-          recipeRepository: makeD1RecipeDraftRepository(
+          recipeRepository: RecipeDraftRepository.makeD1RecipeDraftRepository(
             testEnv.MealPlannerDatabase
           ),
         })
@@ -1860,7 +2096,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
           importId,
           importRepository,
           now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
-          recipeRepository: makeD1RecipeDraftRepository(
+          recipeRepository: RecipeDraftRepository.makeD1RecipeDraftRepository(
             testEnv.MealPlannerDatabase
           ),
         })
@@ -1903,7 +2139,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
         importId,
         importRepository,
         now: () => decodeTimestamp("2026-07-21T10:03:00.000Z"),
-        recipeRepository: makeD1RecipeDraftRepository(
+        recipeRepository: RecipeDraftRepository.makeD1RecipeDraftRepository(
           testEnv.MealPlannerDatabase
         ),
       })

@@ -51,6 +51,13 @@ const RecipeRecoveryPreparationRequest = Schema.Struct({
   operation: Schema.Literal("prepare_recipe_recovery"),
 });
 
+const RecipeRecoveryResumeRequest = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  operation: Schema.Literal("resume_recipe_recovery"),
+});
+
 const ExpiredRecipeReplaySweepRequest = Schema.Struct({
   operation: Schema.Literal("sweep_expired_recipe_replays"),
 });
@@ -61,10 +68,24 @@ export const ProviderTerminalSettlementRequest = Schema.Union([
   VisualRecoveryPreparationRequest,
   RecipeTerminalUnknownSettlementRequest,
   RecipeRecoveryPreparationRequest,
+  RecipeRecoveryResumeRequest,
   ExpiredRecipeReplaySweepRequest,
 ]);
 export type ProviderTerminalSettlementRequest =
   typeof ProviderTerminalSettlementRequest.Type;
+
+const isOperation = <
+  Operation extends Extract<
+    ProviderTerminalSettlementRequest,
+    { readonly operation: string }
+  >["operation"],
+>(
+  request: ProviderTerminalSettlementRequest,
+  operation: Operation
+): request is Extract<
+  ProviderTerminalSettlementRequest,
+  { readonly operation: Operation }
+> => "operation" in request && request.operation === operation;
 
 const ConservativeChargeMicroUsd = Schema.Number.pipe(
   Schema.check(
@@ -122,6 +143,18 @@ const RecipeRecoveryPreparationResponse = Schema.Struct({
   runtimeStage: Schema.Literal(PilotProviderBudgetStage),
 });
 
+const RecipeRecoveryResumeResponse = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  outcome: Schema.Literal("recipe_recovery_resumed"),
+  recoveryDispatchId: PilotBudgetDispatchId,
+  recoveryExtractionFingerprint: Schema.String.pipe(
+    Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+  ),
+  runtimeStage: Schema.Literal(PilotProviderBudgetStage),
+});
+
 const ExpiredRecipeReplaySweepResponse = Schema.Struct({
   deletedCount: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
   outcome: Schema.Literal("expired_recipe_replays_swept"),
@@ -134,6 +167,7 @@ export const ProviderTerminalSettlementResponse = Schema.Union([
   VisualRecoveryPreparationResponse,
   RecipeTerminalUnknownSettlementResponse,
   RecipeRecoveryPreparationResponse,
+  RecipeRecoveryResumeResponse,
   ExpiredRecipeReplaySweepResponse,
 ]);
 export type ProviderTerminalSettlementResponse =
@@ -954,17 +988,11 @@ export const makeD1ProviderTerminalSettlementService = (input: {
           )
         );
       }
-      if (
-        "operation" in request &&
-        request.operation === "settle_recipe_unknown"
-      ) {
+      if (isOperation(request, "settle_recipe_unknown")) {
         yield* settleRecipeBatch(input.database, request, input.now());
         return yield* readRecipeSettled(input.database, request);
       }
-      if (
-        "operation" in request &&
-        request.operation === "prepare_recipe_recovery"
-      ) {
+      if (isOperation(request, "prepare_recipe_recovery")) {
         const recovery = yield* makeD1RecipeRecoveryRepository(
           input.database,
           input.runtimeStage
@@ -998,6 +1026,51 @@ export const makeD1ProviderTerminalSettlementService = (input: {
           dispatchId: recovery.originalDispatchId,
           importId: recovery.importId,
           outcome: "recipe_recovery_prepared",
+          recoveryDispatchId: recovery.recoveryDispatchId,
+          recoveryExtractionFingerprint: recovery.recoveryExtractionFingerprint,
+          runtimeStage: PilotProviderBudgetStage,
+        }).pipe(
+          Effect.mapError(() =>
+            providerTerminalSettlementError("persistence_corrupt")
+          )
+        );
+      }
+      if (isOperation(request, "resume_recipe_recovery")) {
+        const recovery = yield* makeD1RecipeRecoveryRepository(
+          input.database,
+          input.runtimeStage
+        )
+          .readResume({
+            acquisitionGeneration: request.acquisitionGeneration,
+            importId: request.importId,
+          })
+          .pipe(
+            Effect.mapError((error) =>
+              providerTerminalSettlementError(mapRecoveryErrorCode(error.code))
+            )
+          );
+        yield* Effect.succeed(recovery.originalDispatchId).pipe(
+          Effect.filterOrFail(
+            (originalDispatchId) => originalDispatchId === request.dispatchId,
+            () => providerTerminalSettlementError("not_allowed")
+          )
+        );
+        const resume = input.recipeRecoveryStarter?.resume;
+        if (resume === undefined) {
+          return yield* Effect.fail(
+            providerTerminalSettlementError("persistence_unavailable")
+          );
+        }
+        yield* resume(recovery).pipe(
+          Effect.mapError(() =>
+            providerTerminalSettlementError("persistence_unavailable")
+          )
+        );
+        return yield* Schema.decodeUnknownEffect(RecipeRecoveryResumeResponse)({
+          acquisitionGeneration: recovery.acquisitionGeneration,
+          dispatchId: recovery.originalDispatchId,
+          importId: recovery.importId,
+          outcome: "recipe_recovery_resumed",
           recoveryDispatchId: recovery.recoveryDispatchId,
           recoveryExtractionFingerprint: recovery.recoveryExtractionFingerprint,
           runtimeStage: PilotProviderBudgetStage,

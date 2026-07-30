@@ -3,6 +3,7 @@ import { DateTime, Effect, Option, Schema } from "effect";
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
+import type { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
   SpeechAudioExtractorShape,
   SpeechTranscriberShape,
@@ -59,6 +60,7 @@ export interface SpeechPipelineFailure {
     | "transcription_failed"
     | "transcript_evidence_failed"
     | "transcript_evidence_unknown";
+  readonly reasonCode?: ProviderTaskDiagnosticReasonCode;
 }
 
 /** Generation-scoped private transcript evidence key. */
@@ -69,8 +71,13 @@ export const transcriptObjectKey = (
   `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`;
 
 const pipelineFailure = (
-  code: SpeechPipelineFailure["code"]
-): SpeechPipelineFailure => ({ _tag: "SpeechPipelineFailure", code });
+  code: SpeechPipelineFailure["code"],
+  reasonCode?: ProviderTaskDiagnosticReasonCode
+): SpeechPipelineFailure => ({
+  _tag: "SpeechPipelineFailure",
+  code,
+  ...(reasonCode === undefined ? {} : { reasonCode }),
+});
 
 const bytesToHex = (value: ArrayBuffer) =>
   Array.from(new Uint8Array(value), (byte) =>
@@ -95,6 +102,7 @@ export const readVerifiedTranscriptEvidence = (
   bucket: AcquisitionBucketLike,
   expected: {
     readonly dispatchId: string;
+    readonly recoverySha256?: string;
     readonly generation: AcquisitionGeneration;
     readonly importId: ImportId;
     readonly sourceMediaSha256: string;
@@ -133,13 +141,27 @@ export const readVerifiedTranscriptEvidence = (
     );
     const metadata = object.customMetadata ?? {};
     const nativeChecksum = object.checksums?.sha256;
-    const nativeChecksumMatches =
-      nativeChecksum === undefined
-        ? false
-        : bytesToHex(nativeChecksum) === digest;
+    if (nativeChecksum !== undefined && bytesToHex(nativeChecksum) !== digest) {
+      return yield* Effect.fail(
+        pipelineFailure(
+          "transcript_evidence_failed",
+          "transcript_native_checksum_mismatch"
+        )
+      );
+    }
+    if (nativeChecksum === undefined && expected.recoverySha256 !== digest) {
+      return yield* Effect.fail(
+        pipelineFailure(
+          "transcript_evidence_failed",
+          "transcript_native_checksum_missing"
+        )
+      );
+    }
+    const checksumMatches =
+      nativeChecksum !== undefined || expected.recoverySha256 === digest;
     const matchesExpectedEvidence = [
       object.size === bytes.byteLength,
-      nativeChecksumMatches,
+      checksumMatches,
       object.httpMetadata?.contentType === "application/json",
       object.httpMetadata?.cacheControl === "private, no-store",
       metadata["importId"] === expected.importId,

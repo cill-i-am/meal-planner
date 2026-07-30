@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect";
 
 import type { ImportCorrelationId } from "./import-observability.js";
 import { emitImportObservabilityEvent } from "./import-observability.js";
+import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 
 export const ProviderTaskStepConfig = {
   retries: { backoff: "exponential", delay: "2 seconds", limit: 2 },
@@ -12,6 +13,7 @@ export const ProviderTaskStepConfig = {
 export const ProviderTaskFailureCheckpoint = Schema.Struct({
   _tag: Schema.Literal("Failed"),
   code: Schema.String,
+  reasonCode: Schema.optionalKey(ProviderTaskDiagnosticReasonCode),
   stage: Schema.Literals(["recipe", "speech", "visual"]),
 });
 
@@ -34,6 +36,18 @@ export const providerTaskFailureCode = (error: unknown): string => {
   return "stage_failed";
 };
 
+const providerTaskFailureReasonCode = (
+  error: unknown
+): ProviderTaskFailureCheckpoint["reasonCode"] => {
+  if (typeof error !== "object" || error === null || !("reasonCode" in error)) {
+    return undefined;
+  }
+  const decoded = Schema.decodeUnknownOption(ProviderTaskDiagnosticReasonCode)(
+    error.reasonCode
+  );
+  return decoded._tag === "Some" ? decoded.value : undefined;
+};
+
 export const isRetryableProviderTaskFailure = (code: string) =>
   code === "provider_unavailable" || code === "throttled" || code === "timeout";
 
@@ -47,10 +61,12 @@ const retryExhaustedCheckpoint = (
 
 const terminalFailureCheckpoint = (
   stage: ProviderTaskStage,
-  code: string
+  code: string,
+  reasonCode?: ProviderTaskFailureCheckpoint["reasonCode"]
 ): ProviderTaskFailureCheckpoint => ({
   _tag: "Failed",
   code,
+  ...(reasonCode === undefined ? {} : { reasonCode }),
   stage,
 });
 
@@ -70,6 +86,7 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
     Effect.matchEffect({
       onFailure: (error) => {
         const code = providerTaskFailureCode(error);
+        const reasonCode = providerTaskFailureReasonCode(error);
         if (!isRetryableProviderTaskFailure(code)) {
           return (
             correlationId === undefined
@@ -79,8 +96,9 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
                   event: "provider.terminal",
                   outcome: "failed",
                   providerStage: stage,
+                  ...(reasonCode === undefined ? {} : { reasonCode }),
                 })
-          ).pipe(Effect.as(terminalFailureCheckpoint(stage, code)));
+          ).pipe(Effect.as(terminalFailureCheckpoint(stage, code, reasonCode)));
         }
 
         return Effect.gen(function* handleRetryableProviderFailure() {

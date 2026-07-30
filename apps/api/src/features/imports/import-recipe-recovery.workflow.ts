@@ -58,12 +58,15 @@ export default class ImportRecipeRecoveryWorkflow extends Cloudflare.Workflow<Im
         const database = yield* queryDatabase.raw;
         return yield* Effect.gen(function* runRecipeRecoveryWorkflow() {
           const rawBucket = yield* evidenceBucket.raw;
-          const recovery = yield* makeD1RecipeRecoveryRepository(
+          const recoveryRepository = makeD1RecipeRecoveryRepository(
             database,
             runtimeStage
-          )
-            .read(workflowInput)
-            .pipe(Effect.orDie);
+          );
+          const recovery = yield* (
+            workflowInput.resumeOrdinal === 1
+              ? recoveryRepository.readResume(workflowInput)
+              : recoveryRepository.read(workflowInput)
+          ).pipe(Effect.orDie);
           const dispatch = makePilotProviderDispatchGate({
             correlationId: workflowInput.correlationId,
             now: currentTimestamp,

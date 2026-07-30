@@ -6,6 +6,7 @@ import type {
   VerifiedAcquisitionEvidence,
   VerifiedSourceMetadata,
 } from "./import-media.model.js";
+import type { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
   RecipeDispatchClaim,
   RecipeDraftRepositoryShape,
@@ -42,11 +43,17 @@ export interface RecipeDraftPipelineFailure {
     | "source_evidence_invalid"
     | "throttled"
     | "timeout";
+  readonly reasonCode?: ProviderTaskDiagnosticReasonCode;
 }
 
 const pipelineFailure = (
-  code: RecipeDraftPipelineFailure["code"]
-): RecipeDraftPipelineFailure => ({ _tag: "RecipeDraftPipelineFailure", code });
+  code: RecipeDraftPipelineFailure["code"],
+  reasonCode?: ProviderTaskDiagnosticReasonCode
+): RecipeDraftPipelineFailure => ({
+  _tag: "RecipeDraftPipelineFailure",
+  code,
+  ...(reasonCode === undefined ? {} : { reasonCode }),
+});
 
 const recipeProviderFailureCode = (
   code: RecipeExtractorShape["extract"] extends (
@@ -73,6 +80,61 @@ const recipeProviderFailureCode = (
       return "provider_error";
     }
   }
+};
+
+const completedVisualStatuses = new Set([
+  "visual_evidence_empty",
+  "visual_evidence_found",
+  "visual_evidence_low_confidence",
+]);
+
+const isRecipeEvidenceReadyStatus = (
+  status: {
+    readonly code?: string;
+    readonly kind: string;
+    readonly recovery?: string;
+  },
+  isRecovery: boolean
+) => {
+  if (completedVisualStatuses.has(status.kind)) {
+    return true;
+  }
+  if (!isRecovery) {
+    return status.kind === "needs_review";
+  }
+  if (status.kind === "transcribed") {
+    return true;
+  }
+  return (
+    status.kind === "failed" &&
+    status.code === "recipe_extraction_failed" &&
+    status.recovery === "operator_reconcile"
+  );
+};
+
+const recoveryEvidenceMismatchReason = (input: {
+  readonly actualEvidenceFingerprint: string;
+  readonly actualGeneration: number;
+  readonly actualTranscriptSha256: string;
+  readonly actualVisualManifestSha256: string;
+  readonly expectedEvidenceFingerprint: string;
+  readonly expectedGeneration: number;
+  readonly expectedTranscriptSha256: string;
+  readonly expectedVisualManifestSha256: string;
+}): ProviderTaskDiagnosticReasonCode | null => {
+  if (input.actualGeneration !== input.expectedGeneration) {
+    return "recovery_generation_mismatch";
+  }
+  if (input.actualTranscriptSha256 !== input.expectedTranscriptSha256) {
+    return "recovery_transcript_hash_mismatch";
+  }
+  if (input.actualVisualManifestSha256 !== input.expectedVisualManifestSha256) {
+    return "recovery_visual_hash_mismatch";
+  }
+  if (input.actualEvidenceFingerprint !== input.expectedEvidenceFingerprint) {
+    return "recovery_assembly_fingerprint_mismatch";
+  }
+  return null;
 };
 
 const bytesToHex = (value: ArrayBuffer) =>
@@ -138,7 +200,9 @@ const assembleEvidence = (
   Effect.gen(function* assemble() {
     const sourceItems = sourceEvidenceItems(evidence);
     if (sourceItems === null) {
-      return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
+      return yield* Effect.fail(
+        pipelineFailure("source_evidence_invalid", "source_metadata_missing")
+      );
     }
     const items: RecipeEvidenceItem[] = [
       ...sourceItems,
@@ -504,20 +568,18 @@ export const produceRecipeDraftForImport = Effect.fn(
 }) {
   const storedOption = yield* input.importRepository.findById(input.importId);
   const stored = yield* Option.match(storedOption, {
-    onNone: () => Effect.fail(pipelineFailure("source_evidence_invalid")),
+    onNone: () =>
+      Effect.fail(pipelineFailure("source_evidence_invalid", "import_missing")),
     onSome: Effect.succeed,
   });
-  const allowedStatus =
-    input.recovery === undefined
-      ? [
-          "needs_review",
-          "visual_evidence_empty",
-          "visual_evidence_found",
-          "visual_evidence_low_confidence",
-        ].includes(stored.view.status.kind)
-      : stored.view.status.kind === "transcribed";
+  const allowedStatus = isRecipeEvidenceReadyStatus(
+    stored.view.status,
+    input.recovery !== undefined
+  );
   if (!allowedStatus) {
-    return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
+    return yield* Effect.fail(
+      pipelineFailure("source_evidence_invalid", "parent_state_invalid")
+    );
   }
   const now = input.now();
   const evidence = yield* readVerifiedAcquisitionEvidence(input.bucket, {
@@ -525,25 +587,58 @@ export const produceRecipeDraftForImport = Effect.fn(
     generation: stored.acquisitionGeneration,
     importId: input.importId,
     now: () => new Date(DateTime.toEpochMillis(now)),
-  }).pipe(Effect.mapError(() => pipelineFailure("source_evidence_invalid")));
+  }).pipe(
+    Effect.mapError(() =>
+      pipelineFailure("source_evidence_invalid", "acquisition_evidence_invalid")
+    )
+  );
   if (evidence === null) {
-    return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
+    return yield* Effect.fail(
+      pipelineFailure("source_evidence_invalid", "acquisition_evidence_missing")
+    );
   }
   const transcript = yield* readVerifiedTranscriptEvidence(input.bucket, {
     dispatchId: `speech:${input.importId}:${evidence.generation}`,
     generation: evidence.generation,
     importId: input.importId,
+    ...(input.recovery === undefined
+      ? {}
+      : { recoverySha256: input.recovery.transcriptSha256 }),
     sourceMediaSha256: evidence.sha256,
-  }).pipe(Effect.mapError(() => pipelineFailure("source_evidence_invalid")));
+  }).pipe(
+    Effect.mapError((error) =>
+      pipelineFailure(
+        "source_evidence_invalid",
+        error.reasonCode ?? "transcript_evidence_invalid"
+      )
+    )
+  );
   const visual = yield* readVerifiedVisualEvidence(input.bucket, {
     dispatchId: `visual:${input.importId}:${evidence.generation}`,
     generation: evidence.generation,
     importId: input.importId,
+    ...(input.recovery === undefined
+      ? {}
+      : { recoverySha256: input.recovery.visualManifestSha256 }),
     sourceEvidenceDeleteAt: evidence.deleteAt,
     sourceMediaSha256: evidence.sha256,
-  }).pipe(Effect.mapError(() => pipelineFailure("source_evidence_invalid")));
-  if (Option.isNone(transcript) || Option.isNone(visual)) {
-    return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
+  }).pipe(
+    Effect.mapError((error) =>
+      pipelineFailure(
+        "source_evidence_invalid",
+        error.reasonCode ?? "visual_evidence_invalid"
+      )
+    )
+  );
+  if (Option.isNone(transcript)) {
+    return yield* Effect.fail(
+      pipelineFailure("source_evidence_invalid", "transcript_evidence_missing")
+    );
+  }
+  if (Option.isNone(visual)) {
+    return yield* Effect.fail(
+      pipelineFailure("source_evidence_invalid", "visual_evidence_missing")
+    );
   }
   const assembly = yield* assembleEvidence(
     evidence,
@@ -551,14 +646,22 @@ export const produceRecipeDraftForImport = Effect.fn(
     visual.value,
     input.importId
   );
-  if (
-    input.recovery !== undefined &&
-    (evidence.generation !== input.recovery.acquisitionGeneration ||
-      assembly.evidenceFingerprint !== input.recovery.evidenceFingerprint ||
-      transcript.value.sha256 !== input.recovery.transcriptSha256 ||
-      visual.value.sha256 !== input.recovery.visualManifestSha256)
-  ) {
-    return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
+  if (input.recovery !== undefined) {
+    const mismatchReason = recoveryEvidenceMismatchReason({
+      actualEvidenceFingerprint: assembly.evidenceFingerprint,
+      actualGeneration: evidence.generation,
+      actualTranscriptSha256: transcript.value.sha256,
+      actualVisualManifestSha256: visual.value.sha256,
+      expectedEvidenceFingerprint: input.recovery.evidenceFingerprint,
+      expectedGeneration: input.recovery.acquisitionGeneration,
+      expectedTranscriptSha256: input.recovery.transcriptSha256,
+      expectedVisualManifestSha256: input.recovery.visualManifestSha256,
+    });
+    if (mismatchReason !== null) {
+      return yield* Effect.fail(
+        pipelineFailure("source_evidence_invalid", mismatchReason)
+      );
+    }
   }
   const dispatchedAssembly =
     input.recovery === undefined
@@ -569,7 +672,9 @@ export const produceRecipeDraftForImport = Effect.fn(
         };
   const { source } = evidence;
   if (source === undefined) {
-    return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));
+    return yield* Effect.fail(
+      pipelineFailure("source_evidence_invalid", "source_metadata_missing")
+    );
   }
   return yield* produceRecipeDraftFromEvidence({
     assembly: dispatchedAssembly,
