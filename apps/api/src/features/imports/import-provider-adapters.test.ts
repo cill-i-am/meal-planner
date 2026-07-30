@@ -803,6 +803,58 @@ describe("installed import provider adapters", () => {
     );
   });
 
+  it("accepts the installed mirrored structured and native forced recipe call", async () => {
+    const nativeResponseText = JSON.stringify({
+      name: "record_recipe",
+      parameters: validRecipeSemantics,
+    });
+    const gateway = makeGateway({
+      response: nativeResponseText,
+      tool_calls: [
+        {
+          arguments: validRecipeSemantics,
+          name: "record_recipe",
+        },
+      ],
+      usage: defaultVisualUsage,
+    });
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "visible evidence",
+          },
+        ],
+      })
+    );
+
+    expect(output).toMatchObject(validRecipeSemantics);
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      event: "provider.decode",
+      outcome: "succeeded",
+      providerStage: "recipe",
+    });
+    expect(JSON.stringify(trace.events)).not.toContain(nativeResponseText);
+  });
+
   it.each(["parameters", "arguments"] as const)(
     "accepts the installed native recipe response text with %s",
     async (field) => {

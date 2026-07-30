@@ -81,6 +81,13 @@ const RecipeFourthRecoveryPreparationRequest = Schema.Struct({
   operation: Schema.Literal("prepare_recipe_fourth_recovery"),
 });
 
+const RecipeFifthRecoveryPreparationRequest = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  operation: Schema.Literal("prepare_recipe_fifth_recovery"),
+});
+
 const RecipeRecoveryResumeRequest = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   dispatchId: PilotBudgetDispatchId,
@@ -102,6 +109,7 @@ export const ProviderTerminalSettlementRequest = Schema.Union([
   RecipeSecondRecoveryPreparationRequest,
   RecipeThirdRecoveryPreparationRequest,
   RecipeFourthRecoveryPreparationRequest,
+  RecipeFifthRecoveryPreparationRequest,
   RecipeRecoveryResumeRequest,
   ExpiredRecipeReplaySweepRequest,
 ]);
@@ -222,6 +230,18 @@ const RecipeFourthRecoveryPreparationResponse = Schema.Struct({
   runtimeStage: Schema.Literal(PilotProviderBudgetStage),
 });
 
+const RecipeFifthRecoveryPreparationResponse = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  outcome: Schema.Literal("recipe_fifth_recovery_prepared"),
+  recoveryDispatchId: PilotBudgetDispatchId,
+  recoveryExtractionFingerprint: Schema.String.pipe(
+    Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+  ),
+  runtimeStage: Schema.Literal(PilotProviderBudgetStage),
+});
+
 const RecipeRecoveryResumeResponse = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   dispatchId: PilotBudgetDispatchId,
@@ -250,6 +270,7 @@ export const ProviderTerminalSettlementResponse = Schema.Union([
   RecipeSecondRecoveryPreparationResponse,
   RecipeThirdRecoveryPreparationResponse,
   RecipeFourthRecoveryPreparationResponse,
+  RecipeFifthRecoveryPreparationResponse,
   RecipeRecoveryResumeResponse,
   ExpiredRecipeReplaySweepResponse,
 ]);
@@ -952,6 +973,66 @@ const recipeRecoveryUnknownAuthority = `
        AND first.acquisition_generation = third.acquisition_generation
        AND first.recovery_dispatch_id =
              third.first_recovery_dispatch_id
+    UNION ALL
+    SELECT fourth.runtime_stage, fourth.import_id,
+           fourth.acquisition_generation, 4, 'recovery:4',
+           fourth.recovery_dispatch_id, fourth.evidence_fingerprint,
+           first.original_extraction_fingerprint,
+           fourth.recovery_extraction_fingerprint,
+           fourth.transcript_sha256, fourth.visual_manifest_sha256,
+           fourth.evidence_references_json
+      FROM pilot_provider_recipe_fourth_recoveries AS fourth
+      JOIN pilot_provider_recipe_third_recoveries AS third
+        ON third.runtime_stage = fourth.runtime_stage
+       AND third.import_id = fourth.import_id
+       AND third.acquisition_generation = fourth.acquisition_generation
+       AND third.recovery_dispatch_id =
+             fourth.third_recovery_dispatch_id
+      JOIN pilot_provider_recipe_second_recoveries AS second
+        ON second.runtime_stage = fourth.runtime_stage
+       AND second.import_id = fourth.import_id
+       AND second.acquisition_generation = fourth.acquisition_generation
+       AND second.recovery_dispatch_id =
+             fourth.second_recovery_dispatch_id
+      JOIN pilot_provider_recipe_recoveries AS first
+        ON first.runtime_stage = fourth.runtime_stage
+       AND first.import_id = fourth.import_id
+       AND first.acquisition_generation = fourth.acquisition_generation
+       AND first.recovery_dispatch_id =
+             fourth.first_recovery_dispatch_id
+    UNION ALL
+    SELECT fifth.runtime_stage, fifth.import_id,
+           fifth.acquisition_generation, 5, 'recovery:5',
+           fifth.recovery_dispatch_id, fifth.evidence_fingerprint,
+           first.original_extraction_fingerprint,
+           fifth.recovery_extraction_fingerprint,
+           fifth.transcript_sha256, fifth.visual_manifest_sha256,
+           fifth.evidence_references_json
+      FROM pilot_provider_recipe_fifth_recoveries AS fifth
+      JOIN pilot_provider_recipe_fourth_recoveries AS fourth
+        ON fourth.runtime_stage = fifth.runtime_stage
+       AND fourth.import_id = fifth.import_id
+       AND fourth.acquisition_generation = fifth.acquisition_generation
+       AND fourth.recovery_dispatch_id =
+             fifth.fourth_recovery_dispatch_id
+      JOIN pilot_provider_recipe_third_recoveries AS third
+        ON third.runtime_stage = fifth.runtime_stage
+       AND third.import_id = fifth.import_id
+       AND third.acquisition_generation = fifth.acquisition_generation
+       AND third.recovery_dispatch_id =
+             fifth.third_recovery_dispatch_id
+      JOIN pilot_provider_recipe_second_recoveries AS second
+        ON second.runtime_stage = fifth.runtime_stage
+       AND second.import_id = fifth.import_id
+       AND second.acquisition_generation = fifth.acquisition_generation
+       AND second.recovery_dispatch_id =
+             fifth.second_recovery_dispatch_id
+      JOIN pilot_provider_recipe_recoveries AS first
+        ON first.runtime_stage = fifth.runtime_stage
+       AND first.import_id = fifth.import_id
+       AND first.acquisition_generation = fifth.acquisition_generation
+       AND first.recovery_dispatch_id =
+             fifth.first_recovery_dispatch_id
   ) AS recovery
   JOIN pilot_provider_budget_dispatches AS dispatch
     ON dispatch.runtime_stage = recovery.runtime_stage
@@ -1104,6 +1185,73 @@ const readRecipeRecoverySettled = (
                       third.acquisition_generation
                 AND first.recovery_dispatch_id =
                       third.first_recovery_dispatch_id
+             UNION ALL
+             SELECT fourth.runtime_stage, fourth.import_id,
+                    fourth.acquisition_generation, 4, 'recovery:4',
+                    fourth.recovery_dispatch_id,
+                    fourth.evidence_fingerprint,
+                    first.original_extraction_fingerprint,
+                    fourth.recovery_extraction_fingerprint,
+                    fourth.evidence_references_json
+               FROM pilot_provider_recipe_fourth_recoveries AS fourth
+               JOIN pilot_provider_recipe_third_recoveries AS third
+                 ON third.runtime_stage = fourth.runtime_stage
+                AND third.import_id = fourth.import_id
+                AND third.acquisition_generation =
+                      fourth.acquisition_generation
+                AND third.recovery_dispatch_id =
+                      fourth.third_recovery_dispatch_id
+               JOIN pilot_provider_recipe_second_recoveries AS second
+                 ON second.runtime_stage = fourth.runtime_stage
+                AND second.import_id = fourth.import_id
+                AND second.acquisition_generation =
+                      fourth.acquisition_generation
+                AND second.recovery_dispatch_id =
+                      fourth.second_recovery_dispatch_id
+               JOIN pilot_provider_recipe_recoveries AS first
+                 ON first.runtime_stage = fourth.runtime_stage
+                AND first.import_id = fourth.import_id
+                AND first.acquisition_generation =
+                      fourth.acquisition_generation
+                AND first.recovery_dispatch_id =
+                      fourth.first_recovery_dispatch_id
+             UNION ALL
+             SELECT fifth.runtime_stage, fifth.import_id,
+                    fifth.acquisition_generation, 5, 'recovery:5',
+                    fifth.recovery_dispatch_id,
+                    fifth.evidence_fingerprint,
+                    first.original_extraction_fingerprint,
+                    fifth.recovery_extraction_fingerprint,
+                    fifth.evidence_references_json
+               FROM pilot_provider_recipe_fifth_recoveries AS fifth
+               JOIN pilot_provider_recipe_fourth_recoveries AS fourth
+                 ON fourth.runtime_stage = fifth.runtime_stage
+                AND fourth.import_id = fifth.import_id
+                AND fourth.acquisition_generation =
+                      fifth.acquisition_generation
+                AND fourth.recovery_dispatch_id =
+                      fifth.fourth_recovery_dispatch_id
+               JOIN pilot_provider_recipe_third_recoveries AS third
+                 ON third.runtime_stage = fifth.runtime_stage
+                AND third.import_id = fifth.import_id
+                AND third.acquisition_generation =
+                      fifth.acquisition_generation
+                AND third.recovery_dispatch_id =
+                      fifth.third_recovery_dispatch_id
+               JOIN pilot_provider_recipe_second_recoveries AS second
+                 ON second.runtime_stage = fifth.runtime_stage
+                AND second.import_id = fifth.import_id
+                AND second.acquisition_generation =
+                      fifth.acquisition_generation
+                AND second.recovery_dispatch_id =
+                      fifth.second_recovery_dispatch_id
+               JOIN pilot_provider_recipe_recoveries AS first
+                 ON first.runtime_stage = fifth.runtime_stage
+                AND first.import_id = fifth.import_id
+                AND first.acquisition_generation =
+                      fifth.acquisition_generation
+                AND first.recovery_dispatch_id =
+                      fifth.first_recovery_dispatch_id
            ) AS recovery
              ON recovery.runtime_stage = audit.runtime_stage
             AND recovery.recovery_dispatch_id = audit.dispatch_id
@@ -1339,6 +1487,73 @@ const settleRecipeRecoveryBatch = (
                              third.acquisition_generation
                        AND first.recovery_dispatch_id =
                              third.first_recovery_dispatch_id
+                    UNION ALL
+                    SELECT fourth.runtime_stage, fourth.import_id,
+                           fourth.acquisition_generation, 4, 'recovery:4',
+                           fourth.recovery_dispatch_id,
+                           fourth.evidence_fingerprint,
+                           first.original_extraction_fingerprint,
+                           fourth.recovery_extraction_fingerprint,
+                           fourth.evidence_references_json
+                      FROM pilot_provider_recipe_fourth_recoveries AS fourth
+                      JOIN pilot_provider_recipe_third_recoveries AS third
+                        ON third.runtime_stage = fourth.runtime_stage
+                       AND third.import_id = fourth.import_id
+                       AND third.acquisition_generation =
+                             fourth.acquisition_generation
+                       AND third.recovery_dispatch_id =
+                             fourth.third_recovery_dispatch_id
+                      JOIN pilot_provider_recipe_second_recoveries AS second
+                        ON second.runtime_stage = fourth.runtime_stage
+                       AND second.import_id = fourth.import_id
+                       AND second.acquisition_generation =
+                             fourth.acquisition_generation
+                       AND second.recovery_dispatch_id =
+                             fourth.second_recovery_dispatch_id
+                      JOIN pilot_provider_recipe_recoveries AS first
+                        ON first.runtime_stage = fourth.runtime_stage
+                       AND first.import_id = fourth.import_id
+                       AND first.acquisition_generation =
+                             fourth.acquisition_generation
+                       AND first.recovery_dispatch_id =
+                             fourth.first_recovery_dispatch_id
+                    UNION ALL
+                    SELECT fifth.runtime_stage, fifth.import_id,
+                           fifth.acquisition_generation, 5, 'recovery:5',
+                           fifth.recovery_dispatch_id,
+                           fifth.evidence_fingerprint,
+                           first.original_extraction_fingerprint,
+                           fifth.recovery_extraction_fingerprint,
+                           fifth.evidence_references_json
+                      FROM pilot_provider_recipe_fifth_recoveries AS fifth
+                      JOIN pilot_provider_recipe_fourth_recoveries AS fourth
+                        ON fourth.runtime_stage = fifth.runtime_stage
+                       AND fourth.import_id = fifth.import_id
+                       AND fourth.acquisition_generation =
+                             fifth.acquisition_generation
+                       AND fourth.recovery_dispatch_id =
+                             fifth.fourth_recovery_dispatch_id
+                      JOIN pilot_provider_recipe_third_recoveries AS third
+                        ON third.runtime_stage = fifth.runtime_stage
+                       AND third.import_id = fifth.import_id
+                       AND third.acquisition_generation =
+                             fifth.acquisition_generation
+                       AND third.recovery_dispatch_id =
+                             fifth.third_recovery_dispatch_id
+                      JOIN pilot_provider_recipe_second_recoveries AS second
+                        ON second.runtime_stage = fifth.runtime_stage
+                       AND second.import_id = fifth.import_id
+                       AND second.acquisition_generation =
+                             fifth.acquisition_generation
+                       AND second.recovery_dispatch_id =
+                             fifth.second_recovery_dispatch_id
+                      JOIN pilot_provider_recipe_recoveries AS first
+                        ON first.runtime_stage = fifth.runtime_stage
+                       AND first.import_id = fifth.import_id
+                       AND first.acquisition_generation =
+                             fifth.acquisition_generation
+                       AND first.recovery_dispatch_id =
+                             fifth.first_recovery_dispatch_id
                   ) AS recovery
                     ON recovery.runtime_stage = audit.runtime_stage
                    AND recovery.recovery_dispatch_id = audit.dispatch_id
@@ -1557,6 +1772,7 @@ const prepareAdditionalRecipeRecovery = (
     | typeof RecipeSecondRecoveryPreparationRequest.Type
     | typeof RecipeThirdRecoveryPreparationRequest.Type
     | typeof RecipeFourthRecoveryPreparationRequest.Type
+    | typeof RecipeFifthRecoveryPreparationRequest.Type
 ) =>
   Effect.gen(function* prepareAdditionalTerminalRecipeRecovery() {
     const repository = makeD1RecipeRecoveryRepository(
@@ -1580,11 +1796,19 @@ const prepareAdditionalRecipeRecovery = (
           secondRecoveryDispatchId: request.dispatchId,
         });
       }
-      return repository.prepareFourth({
+      if (request.operation === "prepare_recipe_fourth_recovery") {
+        return repository.prepareFourth({
+          acquisitionGeneration: request.acquisitionGeneration,
+          createdAt: input.now(),
+          importId: request.importId,
+          thirdRecoveryDispatchId: request.dispatchId,
+        });
+      }
+      return repository.prepareFifth({
         acquisitionGeneration: request.acquisitionGeneration,
         createdAt: input.now(),
+        fourthRecoveryDispatchId: request.dispatchId,
         importId: request.importId,
-        thirdRecoveryDispatchId: request.dispatchId,
       });
     })();
     const recovery = yield* preparation.pipe(
@@ -1637,13 +1861,30 @@ const prepareAdditionalRecipeRecovery = (
         )
       );
     }
+    if (request.operation === "prepare_recipe_fourth_recovery") {
+      return yield* Schema.decodeUnknownEffect(
+        RecipeFourthRecoveryPreparationResponse
+      )({
+        acquisitionGeneration: recovery.acquisitionGeneration,
+        dispatchId: recovery.originalDispatchId,
+        importId: recovery.importId,
+        outcome: "recipe_fourth_recovery_prepared",
+        recoveryDispatchId: recovery.recoveryDispatchId,
+        recoveryExtractionFingerprint: recovery.recoveryExtractionFingerprint,
+        runtimeStage: PilotProviderBudgetStage,
+      }).pipe(
+        Effect.mapError(() =>
+          providerTerminalSettlementError("persistence_corrupt")
+        )
+      );
+    }
     return yield* Schema.decodeUnknownEffect(
-      RecipeFourthRecoveryPreparationResponse
+      RecipeFifthRecoveryPreparationResponse
     )({
       acquisitionGeneration: recovery.acquisitionGeneration,
       dispatchId: recovery.originalDispatchId,
       importId: recovery.importId,
-      outcome: "recipe_fourth_recovery_prepared",
+      outcome: "recipe_fifth_recovery_prepared",
       recoveryDispatchId: recovery.recoveryDispatchId,
       recoveryExtractionFingerprint: recovery.recoveryExtractionFingerprint,
       runtimeStage: PilotProviderBudgetStage,
@@ -1809,7 +2050,8 @@ export const makeD1ProviderTerminalSettlementService = (
       if (
         isOperation(request, "prepare_recipe_second_recovery") ||
         isOperation(request, "prepare_recipe_third_recovery") ||
-        isOperation(request, "prepare_recipe_fourth_recovery")
+        isOperation(request, "prepare_recipe_fourth_recovery") ||
+        isOperation(request, "prepare_recipe_fifth_recovery")
       ) {
         return yield* prepareAdditionalRecipeRecovery(input, request);
       }

@@ -24,6 +24,61 @@ const toolPart = (name = "record_recipe") => ({
 
 describe("forced tool response boundary", () => {
   it.each(["parameters", "arguments"] as const)(
+    "accepts one installed mirrored structured and native %s call",
+    (field) => {
+      expect(
+        decodeForcedToolResponse(
+          [
+            toolPart(),
+            textPart({
+              [field]: validArguments,
+              name: "record_recipe",
+            }),
+          ],
+          "record_recipe"
+        )
+      ).toEqual(validArguments);
+    }
+  );
+
+  it("accepts installed structured parameters encoded as one JSON object string", () => {
+    expect(
+      decodeForcedToolResponse(
+        [
+          {
+            ...toolPart(),
+            params: JSON.stringify(validArguments),
+          },
+        ],
+        "record_recipe"
+      )
+    ).toEqual(validArguments);
+  });
+
+  it("compares mirrored JSON objects semantically while preserving array order", () => {
+    const reordered = {
+      name: {
+        citations: [],
+        origin: "unresolved",
+        reason: "not present in evidence",
+        state: "unresolved",
+      },
+    };
+    expect(
+      decodeForcedToolResponse(
+        [
+          toolPart(),
+          textPart({
+            name: "record_recipe",
+            parameters: reordered,
+          }),
+        ],
+        "record_recipe"
+      )
+    ).toEqual(validArguments);
+  });
+
+  it.each(["parameters", "arguments"] as const)(
     "accepts one native %s envelope when no structured call exists",
     (field) => {
       expect(
@@ -84,16 +139,46 @@ describe("forced tool response boundary", () => {
       ],
     ],
     [
-      "mixed structured and native calls",
+      "conflicting mirrored argument objects",
       [
         toolPart(),
         textPart({
           name: "record_recipe",
+          parameters: { ...validArguments, unexpected: true },
+        }),
+      ],
+    ],
+    [
+      "conflicting mirrored tool names",
+      [
+        toolPart(),
+        textPart({
+          name: "wrong_tool",
           parameters: validArguments,
         }),
       ],
     ],
     ["multiple structured calls", [toolPart(), toolPart()]],
+    ["malformed structured parameters", [{ ...toolPart(), params: "{" }]],
+    [
+      "non-object structured parameters",
+      [{ ...toolPart(), params: JSON.stringify([]) }],
+    ],
+    [
+      "malformed JSON-looking text beside a structured call",
+      [toolPart(), textPart("{")],
+    ],
+    [
+      "an extra-field native envelope beside a structured call",
+      [
+        toolPart(),
+        textPart({
+          extra: true,
+          name: "record_recipe",
+          parameters: validArguments,
+        }),
+      ],
+    ],
     [
       "wrong native tool name",
       [

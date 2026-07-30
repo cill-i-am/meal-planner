@@ -21,7 +21,7 @@ import type {
   PilotProviderBudgetRepository,
   PilotProviderBudgetRuntimeShape,
 } from "../pilots/pilot-provider-budget.js";
-import { decodeForcedToolResponse } from "./import-forced-tool-response.js";
+import { decodeForcedToolResponseResult } from "./import-forced-tool-response.js";
 import type {
   ImportCorrelationId,
   ImportObservabilityTraceStoreShape,
@@ -425,11 +425,11 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
       typeof error === "string" ? error : safeFailureCode(Cause.fail(error))
     ),
     Effect.flatMap((response) => {
-      const argumentsValue = decodeForcedToolResponse(
+      const decoded = decodeForcedToolResponseResult(
         response.content,
         input.name
       );
-      if (argumentsValue === undefined) {
+      if (decoded._tag !== "Decoded") {
         return emitImportObservabilityEvent(
           {
             correlationId: observability.correlationId,
@@ -438,11 +438,19 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
             providerStage: observability.providerStage,
           },
           observability.traceStore
-        ).pipe(Effect.andThen(Effect.fail("insufficient_evidence" as const)));
+        ).pipe(
+          Effect.andThen(
+            Effect.fail(
+              decoded._tag === "Missing"
+                ? ("insufficient_evidence" as const)
+                : ("malformed_response" as const)
+            )
+          )
+        );
       }
       return Schema.decodeUnknownEffect(input.schema, {
         onExcessProperty: "error",
-      })(argumentsValue).pipe(
+      })(decoded.value).pipe(
         Effect.matchEffect({
           onFailure: () =>
             emitImportObservabilityEvent(
