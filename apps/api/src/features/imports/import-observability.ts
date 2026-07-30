@@ -51,6 +51,8 @@ export const ProviderDecodeStage = Schema.Literals([
   "json_mode_envelope",
   "provider_normalization",
   "recipe_schema",
+  "speech_envelope",
+  "speech_transcript",
   "visual_schema",
 ]);
 export type ProviderDecodeStage = typeof ProviderDecodeStage.Type;
@@ -62,6 +64,8 @@ export const ProviderDecodeReason = Schema.Literals([
   "json_mode_envelope_invalid",
   "json_mode_schema_invalid",
   "provider_normalization_invalid",
+  "speech_envelope_schema_invalid",
+  "speech_transcript_normalization_invalid",
 ]);
 export type ProviderDecodeReason = typeof ProviderDecodeReason.Type;
 
