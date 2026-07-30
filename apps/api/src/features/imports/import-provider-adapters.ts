@@ -413,6 +413,8 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
         : emitImportObservabilityEvent(
             {
               correlationId: observability.correlationId,
+              decodeReason: "provider_normalization_invalid",
+              decodeStage: "provider_normalization",
               event: "provider.decode",
               outcome: "malformed",
               providerStage: observability.providerStage,
@@ -433,6 +435,11 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
         return emitImportObservabilityEvent(
           {
             correlationId: observability.correlationId,
+            decodeReason:
+              decoded._tag === "Missing"
+                ? "forced_tool_missing"
+                : "forced_tool_envelope_invalid",
+            decodeStage: "forced_tool_envelope",
             event: "provider.decode",
             outcome: "malformed",
             providerStage: observability.providerStage,
@@ -456,6 +463,11 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
             emitImportObservabilityEvent(
               {
                 correlationId: observability.correlationId,
+                decodeReason: "forced_tool_arguments_schema_invalid",
+                decodeStage:
+                  observability.providerStage === "recipe"
+                    ? "recipe_schema"
+                    : "visual_schema",
                 event: "provider.decode",
                 outcome: "malformed",
                 providerStage: observability.providerStage,

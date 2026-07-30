@@ -499,6 +499,8 @@ describe("installed import provider adapters", () => {
       [
         {
           correlationId,
+          decodeReason: "provider_normalization_invalid",
+          decodeStage: "provider_normalization",
           event: "provider.decode",
           outcome: "malformed",
           providerStage: "visual",
@@ -855,6 +857,64 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(trace.events)).not.toContain(nativeResponseText);
   });
 
+  it("accepts the pinned installed native bare-object mirror beside the same tool call", async () => {
+    const privateCanary = "provider-private-canary";
+    const nativeArguments = {
+      ...validRecipeSemantics,
+      description: {
+        citations: [],
+        origin: "unresolved",
+        reason: privateCanary,
+        state: "unresolved",
+      },
+    } as const;
+    const gateway = makeGateway({
+      response: nativeArguments,
+      tool_calls: [
+        {
+          arguments: nativeArguments,
+          name: "record_recipe",
+        },
+      ],
+      usage: defaultVisualUsage,
+    });
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "visible evidence",
+          },
+        ],
+      })
+    );
+
+    expect(output).toMatchObject(nativeArguments);
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      event: "provider.decode",
+      outcome: "succeeded",
+      providerStage: "recipe",
+    });
+    expect(JSON.stringify(trace.events)).not.toContain(privateCanary);
+  });
+
   it.each(["parameters", "arguments"] as const)(
     "accepts the installed native recipe response text with %s",
     async (field) => {
@@ -997,6 +1057,8 @@ describe("installed import provider adapters", () => {
     expect(exit._tag).toBe("Failure");
     expect(trace.events.at(-1)).toEqual({
       correlationId,
+      decodeReason: "forced_tool_arguments_schema_invalid",
+      decodeStage: "recipe_schema",
       event: "provider.decode",
       outcome: "malformed",
       providerStage: "recipe",
@@ -1008,6 +1070,73 @@ describe("installed import provider adapters", () => {
       "must remain private"
     );
   });
+
+  it.each([
+    [
+      "an invalid forced-tool envelope",
+      {
+        response: "{",
+        tool_calls: [
+          {
+            arguments: validRecipeSemantics,
+            name: "record_recipe",
+          },
+        ],
+        usage: defaultVisualUsage,
+      },
+      "forced_tool_envelope_invalid",
+      "malformed_response",
+    ],
+    [
+      "missing forced-tool content",
+      { usage: defaultVisualUsage },
+      "forced_tool_missing",
+      "insufficient_evidence",
+    ],
+  ] as const)(
+    "classifies %s without retaining provider data",
+    async (_label, response, decodeReason, failureCode) => {
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledRecipeExtractor({
+          client: makeGateway(response).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.extract({
+          evidenceFingerprint: "fingerprint",
+          generation: 1 as never,
+          importId: "import-1" as never,
+          items: [
+            {
+              artifactReference: "private:evidence",
+              evidenceId: "evidence-1",
+              kind: "caption",
+              origin: "creator_provided",
+              value: "provider-private-input-canary",
+            },
+          ],
+        })
+      );
+
+      expect(JSON.stringify(exit)).toContain(failureCode);
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason,
+        decodeStage: "forced_tool_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "recipe",
+      });
+      expect(JSON.stringify(trace.events)).not.toContain(
+        "provider-private-input-canary"
+      );
+    }
+  );
 
   it("rejects model attempts to inject visual transport metadata", async () => {
     const gateway = makeGateway(

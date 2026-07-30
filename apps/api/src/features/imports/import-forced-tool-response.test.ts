@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { decodeForcedToolResponse } from "./import-forced-tool-response.js";
+import {
+  decodeForcedToolResponse,
+  decodeForcedToolResponseResult,
+} from "./import-forced-tool-response.js";
 
 const validArguments = {
   name: {
@@ -122,6 +125,61 @@ describe("forced tool response boundary", () => {
       )
     ).toEqual(validArguments);
   });
+
+  it("accepts an installed bare-object text mirror only beside the same structured call", () => {
+    expect(
+      decodeForcedToolResponse(
+        [toolPart(), textPart(validArguments)],
+        "record_recipe"
+      )
+    ).toEqual(validArguments);
+    expect(
+      decodeForcedToolResponse([textPart(validArguments)], "record_recipe")
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ["missing_content", [], { _tag: "Missing", reason: "missing_content" }],
+    [
+      "invalid_cardinality",
+      [toolPart(), toolPart()],
+      { _tag: "Malformed", reason: "invalid_cardinality" },
+    ],
+    [
+      "unexpected_tool_name",
+      [toolPart("wrong_tool")],
+      { _tag: "Malformed", reason: "unexpected_tool_name" },
+    ],
+    [
+      "invalid_arguments",
+      [{ ...toolPart(), params: "{" }],
+      { _tag: "Malformed", reason: "invalid_arguments" },
+    ],
+    [
+      "invalid_native_envelope",
+      [toolPart(), textPart("{")],
+      { _tag: "Malformed", reason: "invalid_native_envelope" },
+    ],
+    [
+      "mirror_mismatch",
+      [
+        toolPart(),
+        textPart({
+          name: "record_recipe",
+          parameters: { ...validArguments, unexpected: true },
+        }),
+      ],
+      { _tag: "Malformed", reason: "mirror_mismatch" },
+    ],
+  ] as const)(
+    "classifies %s without retaining response data",
+    (_reason, parts, expected) => {
+      expect(decodeForcedToolResponseResult(parts, "record_recipe")).toEqual(
+        expected
+      );
+      expect(JSON.stringify(expected)).not.toContain("not present in evidence");
+    }
+  );
 
   it.each([
     ["zero parts", []],
