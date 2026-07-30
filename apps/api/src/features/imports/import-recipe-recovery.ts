@@ -150,6 +150,107 @@ const readRecipeRecovery = (
     )
   );
 
+const readRecipeRecoveryForResume = (
+  database: AnyD1Database,
+  importId: ImportId,
+  acquisitionGeneration: AcquisitionGeneration
+) =>
+  persistenceEffect(() =>
+    database
+      .prepare(
+        `SELECT recovery.runtime_stage, recovery.import_id,
+                recovery.acquisition_generation, recovery.recovery_ordinal,
+                recovery.recovery_identity, recovery.original_dispatch_id,
+                recovery.recovery_dispatch_id, recovery.evidence_fingerprint,
+                recovery.original_extraction_fingerprint,
+                recovery.recovery_extraction_fingerprint,
+                recovery.transcript_sha256,
+                recovery.visual_manifest_sha256,
+                recovery.evidence_references_json
+           FROM pilot_provider_recipe_recoveries AS recovery
+           JOIN recipe_imports AS parent
+             ON parent.id = recovery.import_id
+            AND parent.acquisition_generation =
+                  recovery.acquisition_generation
+           JOIN import_transcriptions AS transcript
+             ON transcript.import_id = parent.id
+            AND transcript.acquisition_generation =
+                  parent.acquisition_generation
+            AND transcript.state = 'transcribed'
+            AND transcript.transcript_sha256 =
+                  recovery.transcript_sha256
+           JOIN import_visual_evidence AS visual
+             ON visual.import_id = parent.id
+            AND visual.acquisition_generation =
+                  parent.acquisition_generation
+            AND visual.state = 'completed'
+            AND visual.manifest_sha256 =
+                  recovery.visual_manifest_sha256
+            AND visual.source_media_sha256 =
+                  transcript.source_media_sha256
+           JOIN pilot_provider_stage_budget AS stage
+             ON stage.runtime_stage = recovery.runtime_stage
+            AND stage.state = 'open'
+            AND stage.reserved_micro_usd = 0
+            AND stage.invoking_dispatch_id IS NULL
+            AND stage.poison_dispatch_id IS NULL
+            AND stage.settled_micro_usd + 100000 <=
+                  stage.budget_cap_micro_usd
+          WHERE recovery.runtime_stage = ?
+            AND recovery.import_id = ?
+            AND recovery.acquisition_generation = ?
+            AND recovery.recovery_ordinal = 1
+            AND recovery.recovery_identity = 'recovery:1'
+            AND parent.status = 'transcribed'
+            AND parent.status_code IS NULL
+            AND parent.recovery_action IS NULL
+            AND parent.evidence_references_json =
+                  recovery.evidence_references_json
+            AND NOT EXISTS (
+              SELECT 1
+                FROM import_recipe_extractions AS extraction
+               WHERE extraction.extraction_fingerprint =
+                     recovery.recovery_extraction_fingerprint
+            )
+            AND NOT EXISTS (
+              SELECT 1
+                FROM pilot_provider_budget_dispatches AS dispatch
+               WHERE dispatch.runtime_stage = recovery.runtime_stage
+                 AND dispatch.dispatch_id =
+                       recovery.recovery_dispatch_id
+            )`
+      )
+      .bind(PilotProviderBudgetStage, importId, acquisitionGeneration)
+      .first()
+  ).pipe(
+    Effect.flatMap((row) =>
+      row === null
+        ? Effect.fail(persistenceError("recovery_not_allowed"))
+        : Schema.decodeUnknownEffect(RecipeRecoveryRow, {
+            onExcessProperty: "ignore",
+          })(row).pipe(
+            Effect.mapError(() => persistenceError("persistence_corrupt"))
+          )
+    ),
+    Effect.map(
+      (row): RecipeRecovery => ({
+        acquisitionGeneration: row.acquisition_generation,
+        evidenceFingerprint: row.evidence_fingerprint,
+        evidenceReferencesJson: row.evidence_references_json,
+        importId: row.import_id,
+        originalDispatchId: row.original_dispatch_id,
+        originalExtractionFingerprint: row.original_extraction_fingerprint,
+        recoveryDispatchId: row.recovery_dispatch_id,
+        recoveryExtractionFingerprint: row.recovery_extraction_fingerprint,
+        recoveryIdentity: row.recovery_identity,
+        recoveryOrdinal: row.recovery_ordinal,
+        runtimeStage: row.runtime_stage,
+        transcriptSha256: row.transcript_sha256,
+        visualManifestSha256: row.visual_manifest_sha256,
+      })
+    )
+  );
+
 const RecipeRecoveryCandidateRow = Schema.Struct({
   evidence_fingerprint: Sha256,
   evidence_references_json: Schema.String,
@@ -229,6 +330,10 @@ export interface RecipeRecoveryRepositoryShape {
     readonly originalDispatchId: PilotBudgetDispatchId;
   }) => Effect.Effect<RecipeRecovery, RecipeRecoveryPersistenceError>;
   readonly read: (input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly importId: ImportId;
+  }) => Effect.Effect<RecipeRecovery, RecipeRecoveryPersistenceError>;
+  readonly readResume: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
     readonly importId: ImportId;
   }) => Effect.Effect<RecipeRecovery, RecipeRecoveryPersistenceError>;
@@ -320,6 +425,14 @@ export const makeD1RecipeRecoveryRepository = (
           input.acquisitionGeneration
         )
       : Effect.fail(persistenceError("stage_not_allowed")),
+  readResume: (input) =>
+    runtimeStage === PilotProviderBudgetStage
+      ? readRecipeRecoveryForResume(
+          database,
+          input.importId,
+          input.acquisitionGeneration
+        )
+      : Effect.fail(persistenceError("stage_not_allowed")),
 });
 
 export const RecipeRecoveryWorkflowInput = Schema.Struct({
@@ -327,6 +440,7 @@ export const RecipeRecoveryWorkflowInput = Schema.Struct({
   correlationId: ImportCorrelationId,
   importId: ImportId,
   recoveryOrdinal: Schema.Literal(1),
+  resumeOrdinal: Schema.optionalKey(Schema.Literal(1)),
 });
 export type RecipeRecoveryWorkflowInput =
   typeof RecipeRecoveryWorkflowInput.Type;
@@ -365,6 +479,9 @@ const reconcileWorkflowInstance = (instance: WorkflowInstanceLike) =>
     );
 
 export interface RecipeRecoveryWorkflowStarterShape {
+  readonly resume: (
+    recovery: RecipeRecovery
+  ) => Effect.Effect<void, WorkflowStartUnavailable>;
   readonly start: (
     recovery: RecipeRecovery
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
@@ -375,20 +492,35 @@ export const recipeRecoveryWorkflowInstanceId = (
   acquisitionGeneration: AcquisitionGeneration
 ) => `import-recipe-recovery-${importId}-${acquisitionGeneration}-1`;
 
+export const recipeRecoveryResumeWorkflowInstanceId = (
+  importId: ImportId,
+  acquisitionGeneration: AcquisitionGeneration
+) =>
+  `${recipeRecoveryWorkflowInstanceId(importId, acquisitionGeneration)}-resume-1`;
+
 export const makeRecipeRecoveryWorkflowStarter = (
   workflow: WorkflowHandleLike,
   newCorrelationId: () => ImportCorrelationId = makeImportCorrelationId
-): RecipeRecoveryWorkflowStarterShape => ({
-  start: (recovery) => {
-    const id = recipeRecoveryWorkflowInstanceId(
-      recovery.importId,
-      recovery.acquisitionGeneration
-    );
+): RecipeRecoveryWorkflowStarterShape => {
+  const start = (
+    recovery: RecipeRecovery,
+    resume: boolean
+  ): Effect.Effect<void, WorkflowStartUnavailable> => {
+    const id = resume
+      ? recipeRecoveryResumeWorkflowInstanceId(
+          recovery.importId,
+          recovery.acquisitionGeneration
+        )
+      : recipeRecoveryWorkflowInstanceId(
+          recovery.importId,
+          recovery.acquisitionGeneration
+        );
     const params = Schema.decodeUnknownSync(RecipeRecoveryWorkflowInput)({
       acquisitionGeneration: recovery.acquisitionGeneration,
       correlationId: newCorrelationId(),
       importId: recovery.importId,
       recoveryOrdinal: 1,
+      ...(resume ? { resumeOrdinal: 1 as const } : {}),
     });
     return workflow.createBatch([{ id, params }]).pipe(
       Effect.flatMap((created) => {
@@ -411,5 +543,9 @@ export const makeRecipeRecoveryWorkflowStarter = (
         () => Effect.fail(workflowStartUnavailable())
       )
     );
-  },
-});
+  };
+  return {
+    resume: (recovery) => start(recovery, true),
+    start: (recovery) => start(recovery, false),
+  };
+};

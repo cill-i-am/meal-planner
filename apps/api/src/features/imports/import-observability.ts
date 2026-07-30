@@ -1,5 +1,7 @@
 import { Cause, Console, Context, Effect, Option, Schema } from "effect";
 
+import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
+
 export const ImportCorrelationId = Schema.String.pipe(
   Schema.check(Schema.isUUID()),
   Schema.brand("ImportCorrelationId")
@@ -77,7 +79,12 @@ export const ImportObservabilityEvent = Schema.Struct({
   providerStage: Schema.optionalKey(
     Schema.Literals(["recipe", "speech", "visual"])
   ),
-  reasonCode: Schema.optionalKey(AcquisitionDiagnosticReasonCode),
+  reasonCode: Schema.optionalKey(
+    Schema.Union([
+      AcquisitionDiagnosticReasonCode,
+      ProviderTaskDiagnosticReasonCode,
+    ])
+  ),
 });
 export type ImportObservabilityEvent = typeof ImportObservabilityEvent.Type;
 

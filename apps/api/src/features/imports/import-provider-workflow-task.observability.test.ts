@@ -89,6 +89,50 @@ describe("provider task observability", () => {
     ]);
   });
 
+  it("preserves only a closed evidence reason on a terminal checkpoint", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const checkpoint = await Effect.runPromise(
+      runProviderTaskAttempt(
+        "recipe",
+        Effect.fail({
+          code: "source_evidence_invalid",
+          reasonCode: "visual_evidence_invalid",
+          sourceUrl: "https://forbidden.example/private",
+        }),
+        () => "unused",
+        correlationId
+      ).pipe(
+        Effect.provideService(WorkflowStepContext, {
+          attempt: 1,
+          config: ProviderTaskStepConfig,
+          step: { count: 1, name: "extract-recipe-recovery-v1" },
+        })
+      )
+    );
+
+    expect(checkpoint).toEqual({
+      _tag: "Failed",
+      code: "source_evidence_invalid",
+      reasonCode: "visual_evidence_invalid",
+      stage: "recipe",
+    });
+    expect(log.mock.calls).toEqual([
+      [
+        {
+          correlationId,
+          event: "provider.terminal",
+          outcome: "failed",
+          providerStage: "recipe",
+          reasonCode: "visual_evidence_invalid",
+        },
+      ],
+    ]);
+    expect(JSON.stringify({ checkpoint, logs: log.mock.calls })).not.toMatch(
+      /forbidden|https?:|sourceUrl/iu
+    );
+    log.mockRestore();
+  });
+
   it("emits a terminal event when the installed retry policy is exhausted", async () => {
     const { entries, exit } = await captureAttempt(3);
 

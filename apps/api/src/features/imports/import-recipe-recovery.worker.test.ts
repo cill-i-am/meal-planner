@@ -248,7 +248,10 @@ const seedEligibleTerminalRecipe = async (suffix: string) => {
   };
 };
 
-const makeApp = async (started: RecipeRecovery[]) => {
+const makeApp = async (
+  started: RecipeRecovery[],
+  resumed: RecipeRecovery[] = []
+) => {
   const authorizer = await Effect.runPromise(
     makeImportAuthorizer(Redacted.make("test-import-token"))
   );
@@ -256,6 +259,10 @@ const makeApp = async (started: RecipeRecovery[]) => {
     database: testEnv.MealPlannerDatabase,
     now: () => decodeImportTimestamp("2026-07-30T00:02:00.000Z"),
     recipeRecoveryStarter: {
+      resume: (recovery) =>
+        Effect.sync(() => {
+          resumed.push(recovery);
+        }),
       start: (recovery) =>
         Effect.sync(() => {
           started.push(recovery);
@@ -300,6 +307,31 @@ const postRecovery = (
     )
   );
 
+const postResume = (
+  app: Awaited<ReturnType<typeof makeApp>>,
+  seeded: Awaited<ReturnType<typeof seedEligibleTerminalRecipe>>,
+  token = "test-import-token",
+  dispatchId = seeded.dispatchId
+) =>
+  app.handler(
+    new Request(
+      "https://meal-planner.test/imports/operator-provider-terminal-settlement",
+      {
+        body: JSON.stringify({
+          acquisitionGeneration: seeded.generation,
+          dispatchId,
+          importId: seeded.importId,
+          operation: "resume_recipe_recovery",
+        }),
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        method: "POST",
+      }
+    )
+  );
+
 describe("stage-scoped terminal recipe recovery", () => {
   it("authenticates one immutable recovery admission and preserves terminal evidence under duplicates", async () => {
     const seeded = await seedEligibleTerminalRecipe("000000000207");
@@ -322,7 +354,8 @@ describe("stage-scoped terminal recipe recovery", () => {
         .first(),
     ]);
     const started: RecipeRecovery[] = [];
-    const app = await makeApp(started);
+    const resumed: RecipeRecovery[] = [];
+    const app = await makeApp(started, resumed);
 
     const unauthenticated = await postRecovery(app, seeded, "wrong-token");
     expect(unauthenticated.status).toBe(401);
@@ -345,6 +378,35 @@ describe("stage-scoped terminal recipe recovery", () => {
     });
     expect(started).toHaveLength(2);
     expect(started[0]).toEqual(started[1]);
+    const wrongDispatchId = decodeDispatchId(
+      `recipe:${seeded.importId}:${seeded.generation}:${"0".repeat(64)}`
+    );
+    const wrongDispatch = await postResume(
+      app,
+      seeded,
+      "test-import-token",
+      wrongDispatchId
+    );
+    expect(wrongDispatch.status).toBe(409);
+    expect(resumed).toEqual([]);
+    const [resumedFirst, resumedDuplicate] = await Promise.all([
+      postResume(app, seeded),
+      postResume(app, seeded),
+    ]);
+    expect(resumedFirst.status).toBe(200);
+    expect(resumedDuplicate.status).toBe(200);
+    const resumedBody = await resumedFirst.json();
+    await expect(resumedDuplicate.json()).resolves.toEqual(resumedBody);
+    expect(resumedBody).toMatchObject({
+      acquisitionGeneration: seeded.generation,
+      dispatchId: seeded.dispatchId,
+      importId: seeded.importId,
+      outcome: "recipe_recovery_resumed",
+      recoveryDispatchId: `${seeded.dispatchId}:recovery:1`,
+      runtimeStage: "pilot-gaia-118",
+    });
+    expect(resumed).toHaveLength(2);
+    expect(resumed[0]).toEqual(resumed[1]);
     await expect(
       testEnv.MealPlannerDatabase.prepare(
         `SELECT COUNT(*) AS count
@@ -514,5 +576,89 @@ describe("stage-scoped terminal recipe recovery", () => {
       dispatchId: recoveryDispatchId,
       state: "released",
     });
+  });
+
+  it("admits resume only before recovery extraction and budget dispatch begin", async () => {
+    const extractionSeed = await seedEligibleTerminalRecipe("000000000210");
+    const extractionRepository = makeD1RecipeRecoveryRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const extractionRecovery = await Effect.runPromise(
+      extractionRepository.prepare({
+        acquisitionGeneration: extractionSeed.generation,
+        createdAt: decodeImportTimestamp("2026-07-30T00:02:00.000Z"),
+        importId: extractionSeed.importId,
+        originalDispatchId: extractionSeed.dispatchId,
+      })
+    );
+
+    await expect(
+      Effect.runPromise(
+        extractionRepository.readResume({
+          acquisitionGeneration: extractionSeed.generation,
+          importId: extractionSeed.importId,
+        })
+      )
+    ).resolves.toEqual(extractionRecovery);
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_recipe_extractions (
+         extraction_fingerprint, import_id, acquisition_generation,
+         evidence_fingerprint, extractor_provider, extractor_model,
+         extractor_version, state, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 'cloudflare-workers-ai', 'recipe-model',
+         'installed-v1', 'dispatching', ?, ?)`
+    )
+      .bind(
+        extractionRecovery.recoveryExtractionFingerprint,
+        extractionSeed.importId,
+        extractionSeed.generation,
+        extractionSeed.evidenceFingerprint,
+        "2026-07-30T00:03:00.000Z",
+        "2026-07-30T00:03:00.000Z"
+      )
+      .run();
+    const extractionStarted = await Effect.runPromiseExit(
+      extractionRepository.readResume({
+        acquisitionGeneration: extractionSeed.generation,
+        importId: extractionSeed.importId,
+      })
+    );
+    expect(extractionStarted._tag).toBe("Failure");
+
+    const dispatchSeed = await seedEligibleTerminalRecipe("000000000211");
+    const dispatchRepository = makeD1RecipeRecoveryRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const dispatchRecovery = await Effect.runPromise(
+      dispatchRepository.prepare({
+        acquisitionGeneration: dispatchSeed.generation,
+        createdAt: decodeImportTimestamp("2026-07-30T00:02:00.000Z"),
+        importId: dispatchSeed.importId,
+        originalDispatchId: dispatchSeed.dispatchId,
+      })
+    );
+    const budget = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    await Effect.runPromise(
+      budget.reserve({
+        dispatchId: dispatchRecovery.recoveryDispatchId,
+        maximumCostMicroUsd: 100_000,
+        providerStageId: decodeStageId("recipe-extraction"),
+        runId: decodeRunId(`gaia-118:recipe-recovery:${dispatchSeed.importId}`),
+        timestamp: decodeBudgetTimestamp("2026-07-30T00:03:00.000Z"),
+      })
+    );
+
+    const budgetDispatched = await Effect.runPromiseExit(
+      dispatchRepository.readResume({
+        acquisitionGeneration: dispatchSeed.generation,
+        importId: dispatchSeed.importId,
+      })
+    );
+    expect(budgetDispatched._tag).toBe("Failure");
   });
 });

@@ -6,6 +6,7 @@ import {
   AcquisitionGeneration,
   EvidenceRetentionSeconds,
 } from "./import-media.model.js";
+import type { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import { readVerifiedTranscriptEvidence } from "./import-speech-transcription.js";
 import type {
   VisualEvidenceObservation,
@@ -91,13 +92,16 @@ export interface VisualEvidencePipelineFailure {
     | "throttled"
     | "timeout"
     | "visual_evidence_unknown";
+  readonly reasonCode?: ProviderTaskDiagnosticReasonCode;
 }
 
 const pipelineFailure = (
-  code: VisualEvidencePipelineFailure["code"]
+  code: VisualEvidencePipelineFailure["code"],
+  reasonCode?: ProviderTaskDiagnosticReasonCode
 ): VisualEvidencePipelineFailure => ({
   _tag: "VisualEvidencePipelineFailure",
   code,
+  ...(reasonCode === undefined ? {} : { reasonCode }),
 });
 
 const visualGenerationPrefix = (
@@ -197,7 +201,6 @@ const verifyFrameObject = (
     if (
       object === null ||
       object.size !== frame.byteLength ||
-      nativeSha256(object) !== frame.sha256 ||
       object.httpMetadata?.contentType !== "image/jpeg" ||
       object.httpMetadata.cacheControl !== "private, no-store" ||
       !metadataMatches(
@@ -206,6 +209,14 @@ const verifyFrameObject = (
       )
     ) {
       return yield* Effect.fail(pipelineFailure("frame_evidence_failed"));
+    }
+    if (nativeSha256(object) !== frame.sha256) {
+      return yield* Effect.fail(
+        pipelineFailure(
+          "frame_evidence_failed",
+          "visual_frame_native_checksum_mismatch"
+        )
+      );
     }
   });
 
@@ -266,6 +277,7 @@ export const readVerifiedVisualEvidence = (
     readonly dispatchId: string;
     readonly generation: AcquisitionGeneration;
     readonly importId: ImportId;
+    readonly recoverySha256?: string;
     readonly sourceEvidenceDeleteAt: ImportTimestamp;
     readonly sourceMediaSha256: string;
   }
@@ -304,9 +316,28 @@ export const readVerifiedVisualEvidence = (
     )(parsed).pipe(
       Effect.mapError(() => pipelineFailure("visual_evidence_failed"))
     );
+    const nativeChecksum = nativeSha256(object);
+    if (nativeChecksum !== null && nativeChecksum !== sha256) {
+      return yield* Effect.fail(
+        pipelineFailure(
+          "visual_evidence_failed",
+          "visual_manifest_native_checksum_mismatch"
+        )
+      );
+    }
+    if (nativeChecksum === null && expected.recoverySha256 !== sha256) {
+      return yield* Effect.fail(
+        pipelineFailure(
+          "visual_evidence_failed",
+          "visual_manifest_native_checksum_missing"
+        )
+      );
+    }
+    const checksumMatches =
+      nativeChecksum !== null || expected.recoverySha256 === sha256;
     const valid = [
       object.size === bytes.byteLength,
-      nativeSha256(object) === sha256,
+      checksumMatches,
       object.httpMetadata?.contentType === "application/json",
       object.httpMetadata?.cacheControl === "private, no-store",
       object.customMetadata?.["generation"] === String(expected.generation),

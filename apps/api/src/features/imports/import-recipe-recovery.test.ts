@@ -10,6 +10,7 @@ import { ImportCorrelationId } from "./import-observability.js";
 import {
   makeRecipeRecoveryWorkflowStarter,
   recipeRecoveryExtractionFingerprint,
+  recipeRecoveryResumeWorkflowInstanceId,
   recipeRecoveryWorkflowInstanceId,
 } from "./import-recipe-recovery.js";
 import type { RecipeRecovery } from "./import-recipe-recovery.js";
@@ -139,5 +140,46 @@ describe("recipe recovery authority", () => {
     const exit = await Effect.runPromiseExit(starter.start(recovery));
 
     expect(exit._tag).toBe("Failure");
+  });
+
+  it("resumes through one distinct deterministic workflow identity", async () => {
+    const instanceId = recipeRecoveryResumeWorkflowInstanceId(
+      importId,
+      acquisitionGeneration
+    );
+    const batches: unknown[] = [];
+    const instance = {
+      status: () => Effect.succeed({ status: "running" }),
+    };
+    const starter = makeRecipeRecoveryWorkflowStarter(
+      {
+        createBatch: (batch) => {
+          batches.push(batch);
+          return Effect.succeed([instance]);
+        },
+        get: () => Effect.die("unexpected workflow reconciliation"),
+      },
+      () => correlationId
+    );
+
+    await Effect.runPromise(starter.resume(recovery));
+
+    expect(batches).toEqual([
+      [
+        {
+          id: instanceId,
+          params: {
+            acquisitionGeneration,
+            correlationId,
+            importId,
+            recoveryOrdinal: 1,
+            resumeOrdinal: 1,
+          },
+        },
+      ],
+    ]);
+    expect(JSON.stringify(batches)).not.toMatch(
+      /https?:|tiktok|transcript|prompt|cookie|credential/iu
+    );
   });
 });
