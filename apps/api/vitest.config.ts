@@ -11,7 +11,10 @@ export default defineConfig({
     projects: [
       {
         test: {
-          exclude: ["src/**/*.worker.test.ts"],
+          exclude: [
+            "src/**/*.worker.test.ts",
+            "src/features/imports/import-provider-workflow-task.integration.test.ts",
+          ],
           include: ["src/**/*.test.ts"],
           name: "node",
         },
@@ -39,6 +42,15 @@ export default defineConfig({
           },
           include: ["src/**/*.worker.test.ts"],
           name: "workerd-d1",
+        },
+      },
+      {
+        test: {
+          include: [
+            "src/features/imports/import-provider-workflow-task.integration.test.ts",
+          ],
+          name: "node-workflows",
+          sequence: { groupOrder: 1 },
         },
       },
     ],
