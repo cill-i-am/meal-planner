@@ -44,6 +44,15 @@ const RecipeTerminalUnknownSettlementRequest = Schema.Struct({
 type RecipeTerminalUnknownSettlementRequest =
   typeof RecipeTerminalUnknownSettlementRequest.Type;
 
+const VisualTerminalUnknownSettlementRequest = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  operation: Schema.Literal("settle_visual_unknown"),
+});
+type VisualTerminalUnknownSettlementRequest =
+  typeof VisualTerminalUnknownSettlementRequest.Type;
+
 const RecipeRecoveryUnknownSettlementRequest = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   dispatchId: PilotBudgetDispatchId,
@@ -103,6 +112,7 @@ export const ProviderTerminalSettlementRequest = Schema.Union([
   TerminalUnknownSettlementRequest,
   SpeechRecoveryActivationRequest,
   VisualRecoveryPreparationRequest,
+  VisualTerminalUnknownSettlementRequest,
   RecipeTerminalUnknownSettlementRequest,
   RecipeRecoveryUnknownSettlementRequest,
   RecipeRecoveryPreparationRequest,
@@ -170,6 +180,15 @@ const RecipeTerminalUnknownSettlementResponse = Schema.Struct({
   dispatchId: PilotBudgetDispatchId,
   importId: ImportId,
   outcome: Schema.Literal("recipe_terminal_unknown_cost_settled"),
+  runtimeStage: Schema.Literal(PilotProviderBudgetStage),
+});
+
+const VisualTerminalUnknownSettlementResponse = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  conservativeChargeMicroUsd: ConservativeChargeMicroUsd,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  outcome: Schema.Literal("visual_terminal_unknown_cost_settled"),
   runtimeStage: Schema.Literal(PilotProviderBudgetStage),
 });
 
@@ -264,6 +283,7 @@ export const ProviderTerminalSettlementResponse = Schema.Union([
   TerminalUnknownSettlementResponse,
   SpeechRecoveryActivationResponse,
   VisualRecoveryPreparationResponse,
+  VisualTerminalUnknownSettlementResponse,
   RecipeTerminalUnknownSettlementResponse,
   RecipeRecoveryUnknownSettlementResponse,
   RecipeRecoveryPreparationResponse,
@@ -609,6 +629,353 @@ const settleBatch = (
           input.acquisitionGeneration,
           PilotProviderBudgetStage,
           input.dispatchId
+        ),
+    ])
+  );
+};
+
+const readVisualSettled = (
+  database: AnyD1Database,
+  input: VisualTerminalUnknownSettlementRequest
+) =>
+  persistenceEffect<unknown | null>(
+    () =>
+      database
+        .prepare(
+          `SELECT
+             audit.runtime_stage,
+             audit.dispatch_id,
+             audit.conservative_charge_micro_usd,
+             audit.authority,
+             checkpoint.import_id,
+             checkpoint.acquisition_generation
+           FROM pilot_provider_budget_reconciliations AS audit
+           JOIN pilot_provider_budget_dispatches AS dispatch
+             ON dispatch.runtime_stage = audit.runtime_stage
+            AND dispatch.dispatch_id = audit.dispatch_id
+           JOIN import_provider_terminal_checkpoints AS checkpoint
+             ON checkpoint.import_id = ?
+            AND checkpoint.acquisition_generation = ?
+            AND checkpoint.provider_stage = 'visual'
+            AND checkpoint.ownership_id = audit.dispatch_id
+            AND checkpoint.failure_code = 'visual_extraction_failed'
+           JOIN import_visual_evidence AS visual
+             ON visual.import_id = checkpoint.import_id
+            AND visual.acquisition_generation =
+                  checkpoint.acquisition_generation
+            AND visual.dispatch_id = checkpoint.ownership_id
+            AND visual.state = 'failed'
+            AND visual.failure_code = 'visual_extraction_failed'
+            AND visual.completed_at = checkpoint.completed_at
+           JOIN recipe_imports AS parent
+             ON parent.id = checkpoint.import_id
+            AND parent.acquisition_generation =
+                  checkpoint.acquisition_generation
+            AND parent.status = 'transcribed'
+            AND parent.status_code IS NULL
+            AND parent.recovery_action IS NULL
+            AND json_array_length(parent.evidence_references_json) = 3
+           JOIN import_transcriptions AS transcription
+             ON transcription.import_id = parent.id
+            AND transcription.acquisition_generation =
+                  parent.acquisition_generation
+            AND transcription.state = 'transcribed'
+            AND transcription.source_media_sha256 =
+                  visual.source_media_sha256
+           JOIN pilot_provider_stage_budget AS stage
+             ON stage.runtime_stage = audit.runtime_stage
+           WHERE audit.runtime_stage = ?
+             AND audit.dispatch_id = ?
+             AND audit.actual_cost_was_unknown = 1
+             AND audit.authority = 'authenticated_operator'
+             AND dispatch.state = 'settled_unknown'
+             AND dispatch.provider_stage_id = 'visual-evidence'
+             AND dispatch.run_id = 'gaia-118:' || checkpoint.import_id
+             AND dispatch.dispatch_id =
+                   'visual:' || checkpoint.import_id || ':' ||
+                   checkpoint.acquisition_generation
+             AND dispatch.actual_cost_micro_usd IS NULL
+             AND dispatch.maximum_cost_micro_usd =
+                   audit.conservative_charge_micro_usd
+             AND stage.state = 'open'
+             AND stage.reserved_micro_usd = 0
+             AND stage.invoking_dispatch_id IS NULL
+             AND stage.poison_dispatch_id IS NULL
+             AND stage.settled_micro_usd >=
+                   audit.conservative_charge_micro_usd
+             AND stage.settled_micro_usd <= stage.budget_cap_micro_usd
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM import_recipe_extractions AS recipe
+                WHERE recipe.import_id = checkpoint.import_id
+                  AND recipe.acquisition_generation =
+                        checkpoint.acquisition_generation
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM pilot_provider_visual_recoveries AS recovery
+                WHERE recovery.runtime_stage = audit.runtime_stage
+                  AND recovery.original_dispatch_id = audit.dispatch_id
+             )
+             AND (
+               SELECT COUNT(*)
+                 FROM pilot_provider_budget_dispatches AS sibling
+                WHERE sibling.runtime_stage = dispatch.runtime_stage
+                  AND sibling.run_id = dispatch.run_id
+                  AND sibling.provider_stage_id = 'visual-evidence'
+             ) = 1`
+        )
+        .bind(
+          input.importId,
+          input.acquisitionGeneration,
+          PilotProviderBudgetStage,
+          input.dispatchId
+        )
+        .first() as PromiseLike<unknown | null>
+  ).pipe(
+    Effect.flatMap((row) =>
+      row === null
+        ? Effect.fail(providerTerminalSettlementError("not_allowed"))
+        : Schema.decodeUnknownEffect(SettledRow, {
+            onExcessProperty: "ignore",
+          })(row).pipe(
+            Effect.mapError(() =>
+              providerTerminalSettlementError("persistence_corrupt")
+            )
+          )
+    ),
+    Effect.map(
+      (row): ProviderTerminalSettlementResponse => ({
+        acquisitionGeneration: row.acquisition_generation,
+        conservativeChargeMicroUsd: row.conservative_charge_micro_usd,
+        dispatchId: row.dispatch_id,
+        importId: row.import_id,
+        outcome: "visual_terminal_unknown_cost_settled",
+        runtimeStage: row.runtime_stage,
+      })
+    )
+  );
+
+const settleVisualBatch = (
+  database: AnyD1Database,
+  input: VisualTerminalUnknownSettlementRequest,
+  settledAt: ImportTimestamp
+) => {
+  const timestamp = DateTime.formatIso(settledAt);
+  return persistenceEffect(() =>
+    database.batch([
+      database
+        .prepare(
+          `INSERT INTO pilot_provider_budget_reconciliations (
+             runtime_stage,
+             dispatch_id,
+             conservative_charge_micro_usd,
+             actual_cost_was_unknown,
+             authority,
+             created_at
+           )
+           SELECT
+             stage.runtime_stage,
+             dispatch.dispatch_id,
+             dispatch.maximum_cost_micro_usd,
+             1,
+             'authenticated_operator',
+             ?
+           FROM pilot_provider_stage_budget AS stage
+           JOIN pilot_provider_budget_dispatches AS dispatch
+             ON dispatch.runtime_stage = stage.runtime_stage
+            AND dispatch.dispatch_id = stage.poison_dispatch_id
+           JOIN import_provider_terminal_checkpoints AS checkpoint
+             ON checkpoint.import_id = ?
+            AND checkpoint.acquisition_generation = ?
+            AND checkpoint.provider_stage = 'visual'
+            AND checkpoint.ownership_id = dispatch.dispatch_id
+            AND checkpoint.failure_code = 'visual_extraction_failed'
+           JOIN import_visual_evidence AS visual
+             ON visual.import_id = checkpoint.import_id
+            AND visual.acquisition_generation =
+                  checkpoint.acquisition_generation
+            AND visual.dispatch_id = checkpoint.ownership_id
+            AND visual.state = 'failed'
+            AND visual.failure_code = 'visual_extraction_failed'
+            AND visual.completed_at = checkpoint.completed_at
+           JOIN recipe_imports AS parent
+             ON parent.id = checkpoint.import_id
+            AND parent.acquisition_generation =
+                  checkpoint.acquisition_generation
+            AND parent.status = 'transcribed'
+            AND parent.status_code IS NULL
+            AND parent.recovery_action IS NULL
+            AND json_array_length(parent.evidence_references_json) = 3
+           JOIN import_transcriptions AS transcription
+             ON transcription.import_id = parent.id
+            AND transcription.acquisition_generation =
+                  parent.acquisition_generation
+            AND transcription.state = 'transcribed'
+            AND transcription.source_media_sha256 =
+                  visual.source_media_sha256
+           WHERE stage.runtime_stage = ?
+             AND stage.state = 'poisoned'
+             AND stage.poison_dispatch_id = ?
+             AND stage.invoking_dispatch_id IS NULL
+             AND stage.reserved_micro_usd =
+                   dispatch.maximum_cost_micro_usd
+             AND stage.settled_micro_usd + stage.reserved_micro_usd
+                   <= stage.budget_cap_micro_usd
+             AND dispatch.state = 'settled_unknown'
+             AND dispatch.provider_stage_id = 'visual-evidence'
+             AND dispatch.run_id = 'gaia-118:' || checkpoint.import_id
+             AND dispatch.dispatch_id =
+                   'visual:' || checkpoint.import_id || ':' ||
+                   checkpoint.acquisition_generation
+             AND dispatch.actual_cost_micro_usd IS NULL
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM pilot_provider_budget_reconciliations AS existing
+                WHERE existing.runtime_stage = stage.runtime_stage
+                  AND existing.dispatch_id = dispatch.dispatch_id
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM import_recipe_extractions AS recipe
+                WHERE recipe.import_id = checkpoint.import_id
+                  AND recipe.acquisition_generation =
+                        checkpoint.acquisition_generation
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM pilot_provider_visual_recoveries AS recovery
+                WHERE recovery.runtime_stage = stage.runtime_stage
+                  AND recovery.original_dispatch_id = dispatch.dispatch_id
+             )
+             AND (
+               SELECT COUNT(*)
+                 FROM pilot_provider_budget_dispatches AS sibling
+                WHERE sibling.runtime_stage = dispatch.runtime_stage
+                  AND sibling.run_id = dispatch.run_id
+                  AND sibling.provider_stage_id = 'visual-evidence'
+             ) = 1
+           ON CONFLICT(runtime_stage, dispatch_id) DO NOTHING`
+        )
+        .bind(
+          timestamp,
+          input.importId,
+          input.acquisitionGeneration,
+          PilotProviderBudgetStage,
+          input.dispatchId
+        ),
+      database
+        .prepare(
+          `UPDATE pilot_provider_stage_budget
+              SET settled_micro_usd = settled_micro_usd + (
+                    SELECT dispatch.maximum_cost_micro_usd
+                      FROM pilot_provider_budget_dispatches AS dispatch
+                     WHERE dispatch.runtime_stage = ?
+                       AND dispatch.dispatch_id = ?
+                  ),
+                  reserved_micro_usd = 0,
+                  state = 'open',
+                  invoking_dispatch_id = NULL,
+                  poison_dispatch_id = NULL,
+                  updated_at = ?
+            WHERE runtime_stage = ?
+              AND changes() = 1
+              AND state = 'poisoned'
+              AND poison_dispatch_id = ?
+              AND invoking_dispatch_id IS NULL
+              AND EXISTS (
+                SELECT 1
+                  FROM pilot_provider_budget_dispatches AS dispatch
+                  JOIN pilot_provider_budget_reconciliations AS audit
+                    ON audit.runtime_stage = dispatch.runtime_stage
+                   AND audit.dispatch_id = dispatch.dispatch_id
+                  JOIN import_provider_terminal_checkpoints AS checkpoint
+                    ON checkpoint.import_id = ?
+                   AND checkpoint.acquisition_generation = ?
+                   AND checkpoint.provider_stage = 'visual'
+                   AND checkpoint.ownership_id = dispatch.dispatch_id
+                   AND checkpoint.failure_code =
+                         'visual_extraction_failed'
+                  JOIN import_visual_evidence AS visual
+                    ON visual.import_id = checkpoint.import_id
+                   AND visual.acquisition_generation =
+                         checkpoint.acquisition_generation
+                   AND visual.dispatch_id = checkpoint.ownership_id
+                   AND visual.state = 'failed'
+                   AND visual.failure_code = 'visual_extraction_failed'
+                   AND visual.completed_at = checkpoint.completed_at
+                  JOIN recipe_imports AS parent
+                    ON parent.id = checkpoint.import_id
+                   AND parent.acquisition_generation =
+                         checkpoint.acquisition_generation
+                   AND parent.status = 'transcribed'
+                   AND parent.status_code IS NULL
+                   AND parent.recovery_action IS NULL
+                   AND json_array_length(
+                         parent.evidence_references_json
+                       ) = 3
+                  JOIN import_transcriptions AS transcription
+                    ON transcription.import_id = parent.id
+                   AND transcription.acquisition_generation =
+                         parent.acquisition_generation
+                   AND transcription.state = 'transcribed'
+                   AND transcription.source_media_sha256 =
+                         visual.source_media_sha256
+                 WHERE dispatch.runtime_stage = ?
+                   AND dispatch.dispatch_id = ?
+                   AND dispatch.state = 'settled_unknown'
+                   AND dispatch.provider_stage_id = 'visual-evidence'
+                   AND dispatch.run_id =
+                         'gaia-118:' || checkpoint.import_id
+                   AND dispatch.dispatch_id =
+                         'visual:' || checkpoint.import_id || ':' ||
+                         checkpoint.acquisition_generation
+                   AND dispatch.actual_cost_micro_usd IS NULL
+                   AND dispatch.maximum_cost_micro_usd =
+                         audit.conservative_charge_micro_usd
+                   AND audit.actual_cost_was_unknown = 1
+                   AND audit.authority = 'authenticated_operator'
+                   AND audit.created_at = ?
+                   AND pilot_provider_stage_budget.reserved_micro_usd =
+                         dispatch.maximum_cost_micro_usd
+                   AND pilot_provider_stage_budget.settled_micro_usd +
+                         pilot_provider_stage_budget.reserved_micro_usd
+                         <= pilot_provider_stage_budget.budget_cap_micro_usd
+                   AND NOT EXISTS (
+                     SELECT 1
+                       FROM import_recipe_extractions AS recipe
+                      WHERE recipe.import_id = checkpoint.import_id
+                        AND recipe.acquisition_generation =
+                              checkpoint.acquisition_generation
+                   )
+                   AND NOT EXISTS (
+                     SELECT 1
+                       FROM pilot_provider_visual_recoveries AS recovery
+                      WHERE recovery.runtime_stage =
+                            dispatch.runtime_stage
+                        AND recovery.original_dispatch_id =
+                              dispatch.dispatch_id
+                   )
+                   AND (
+                     SELECT COUNT(*)
+                       FROM pilot_provider_budget_dispatches AS sibling
+                      WHERE sibling.runtime_stage = dispatch.runtime_stage
+                        AND sibling.run_id = dispatch.run_id
+                        AND sibling.provider_stage_id = 'visual-evidence'
+                   ) = 1
+              )`
+        )
+        .bind(
+          PilotProviderBudgetStage,
+          input.dispatchId,
+          timestamp,
+          PilotProviderBudgetStage,
+          input.dispatchId,
+          input.importId,
+          input.acquisitionGeneration,
+          PilotProviderBudgetStage,
+          input.dispatchId,
+          timestamp
         ),
     ])
   );
@@ -1905,22 +2272,13 @@ export const makeD1ProviderTerminalSettlementService = (
           providerTerminalSettlementError("stage_not_allowed")
         );
       }
-      if (
-        "operation" in request &&
-        request.operation === "sweep_expired_recipe_replays"
-      ) {
+      if (isOperation(request, "sweep_expired_recipe_replays")) {
         return yield* sweepExpiredRecipeReplays(input.database);
       }
-      if (
-        "operation" in request &&
-        request.operation === "prepare_speech_recovery"
-      ) {
+      if (isOperation(request, "prepare_speech_recovery")) {
         return yield* prepareSpeechRecovery(input, request);
       }
-      if (
-        "operation" in request &&
-        request.operation === "prepare_visual_recovery"
-      ) {
+      if (isOperation(request, "prepare_visual_recovery")) {
         const recovery = yield* makeD1ProviderTerminalRecoveryRepository(
           input.database,
           input.runtimeStage
@@ -1950,6 +2308,10 @@ export const makeD1ProviderTerminalSettlementService = (
             providerTerminalSettlementError("persistence_corrupt")
           )
         );
+      }
+      if (isOperation(request, "settle_visual_unknown")) {
+        yield* settleVisualBatch(input.database, request, input.now());
+        return yield* readVisualSettled(input.database, request);
       }
       if (isOperation(request, "settle_recipe_unknown")) {
         yield* settleRecipeBatch(input.database, request, input.now());

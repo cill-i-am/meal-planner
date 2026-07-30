@@ -145,6 +145,154 @@ const seedPoisonedTerminalSpeechImport = async (
   return { acquisitionGeneration, dispatchId, importId, now, reservation };
 };
 
+const seedPoisonedTerminalVisualImport = async (
+  suffix: string,
+  options: {
+    readonly additionalVisualDispatch?: boolean;
+    readonly matchingSourceHash?: boolean;
+    readonly maximumCostMicroUsd?: number;
+    readonly persistCheckpoint?: boolean;
+    readonly providerStageId?: string;
+    readonly runId?: string;
+  } = {}
+) => {
+  const importId = decodeImportId(`00000000-0000-4000-8000-${suffix}`);
+  const acquisitionGeneration = decodeGeneration(1);
+  const dispatchId = decodeDispatchId(
+    `visual:${importId}:${acquisitionGeneration}`
+  );
+  const speechDispatchId = decodeDispatchId(
+    `speech:${importId}:${acquisitionGeneration}`
+  );
+  const now = "2026-07-30T10:00:00.000Z";
+  const sourceMediaSha256 = "a".repeat(64);
+  const evidence = JSON.stringify([
+    {
+      kind: "original_media",
+      referenceId: `imports/${importId}/acquisition/v1/generations/${acquisitionGeneration}/original.mp4`,
+    },
+    {
+      kind: "acquisition_manifest",
+      referenceId: `imports/${importId}/acquisition/v1/generations/${acquisitionGeneration}/manifest.json`,
+    },
+    {
+      kind: "speech_transcript",
+      referenceId: `imports/${importId}/transcription/v1/generations/${acquisitionGeneration}/transcript.json`,
+    },
+  ]);
+
+  await testEnv.MealPlannerDatabase.batch([
+    testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO recipe_imports (
+         acquisition_generation, canonical_source_id,
+         compatibility_fingerprint, created_at, evidence_references_json, id,
+         recovery_action, source_kind, status, status_code, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video',
+                 'transcribed', NULL, ?)`
+    ).bind(
+      acquisitionGeneration,
+      `visual-canonical-${suffix}`,
+      "f".repeat(64),
+      now,
+      evidence,
+      importId,
+      now
+    ),
+    testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_transcriptions (
+         import_id, acquisition_generation, dispatch_id, source_media_sha256,
+         state, transcript_key, transcript_sha256, provider, model,
+         detected_language, usage_audio_milliseconds, usage_input_bytes,
+         estimated_cost_micro_usd, cost_currency, cost_certainty,
+         segments_count, failure_code, created_at, updated_at, completed_at
+       ) VALUES (?, ?, ?, ?, 'transcribed', ?, ?, 'fixture-provider',
+                 'fixture-speech', 'en', 1000, 3, 10, 'USD', 'known', 1,
+                 NULL, ?, ?, ?)`
+    ).bind(
+      importId,
+      acquisitionGeneration,
+      speechDispatchId,
+      options.matchingSourceHash === false ? "c".repeat(64) : sourceMediaSha256,
+      `imports/${importId}/transcription/v1/generations/${acquisitionGeneration}/transcript.json`,
+      "b".repeat(64),
+      now,
+      now,
+      now
+    ),
+    testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_visual_evidence (
+         import_id, acquisition_generation, dispatch_id, source_media_sha256,
+         state, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 'dispatching', ?, ?)`
+    ).bind(
+      importId,
+      acquisitionGeneration,
+      dispatchId,
+      sourceMediaSha256,
+      now,
+      now
+    ),
+  ]);
+
+  const runId = decodeRunId(options.runId ?? `gaia-118:${importId}`);
+  const budget = makeD1PilotProviderBudgetRepository(
+    testEnv.MealPlannerDatabase,
+    "pilot-gaia-118"
+  );
+  if (options.additionalVisualDispatch === true) {
+    const sibling = {
+      dispatchId: decodeDispatchId(
+        `visual:${importId}:${acquisitionGeneration}:ambiguous`
+      ),
+      maximumCostMicroUsd: 1,
+      providerStageId: decodeStageId("visual-evidence"),
+      runId,
+      timestamp: decodeBudgetTimestamp(now),
+    };
+    await Effect.runPromise(budget.reserve(sibling));
+    await Effect.runPromise(budget.beginInvocation(sibling));
+    await Effect.runPromise(
+      budget.settleKnown({ ...sibling, actualCostMicroUsd: 0 })
+    );
+  }
+
+  const reservation = {
+    dispatchId,
+    maximumCostMicroUsd: options.maximumCostMicroUsd ?? 100_000,
+    providerStageId: decodeStageId(
+      options.providerStageId ?? "visual-evidence"
+    ),
+    runId,
+    timestamp: decodeBudgetTimestamp(now),
+  };
+  await Effect.runPromise(budget.reserve(reservation));
+  await Effect.runPromise(budget.beginInvocation(reservation));
+  await Effect.runPromise(budget.settleUnknown(reservation));
+
+  if (options.persistCheckpoint !== false) {
+    await Effect.runPromise(
+      makeD1ProviderTerminalCheckpointRepository(
+        testEnv.MealPlannerDatabase
+      ).persist({
+        acquisitionGeneration,
+        completedAt: decodeImportTimestamp(now),
+        failureCode: "visual_extraction_failed",
+        importId,
+        providerStage: "visual",
+      })
+    );
+  }
+
+  return {
+    acquisitionGeneration,
+    dispatchId,
+    importId,
+    now,
+    reservation,
+    speechDispatchId,
+  };
+};
+
 const seedPoisonedTerminalRecipeImport = async (
   suffix: string,
   options: {
@@ -324,6 +472,15 @@ const recipeCommandFor = (
   operation: "settle_recipe_unknown" as const,
 });
 
+const visualCommandFor = (
+  seeded: Awaited<ReturnType<typeof seedPoisonedTerminalVisualImport>>
+) => ({
+  acquisitionGeneration: seeded.acquisitionGeneration,
+  dispatchId: seeded.dispatchId,
+  importId: seeded.importId,
+  operation: "settle_visual_unknown" as const,
+});
+
 const postSettlement = (
   app: Awaited<ReturnType<typeof makeApp>>,
   body: unknown,
@@ -453,6 +610,45 @@ const readPreservedImport = async (input: {
         AND dispatch_id = ?`
   )
     .bind(input.importId, input.acquisitionGeneration, input.dispatchId)
+    .first(),
+});
+
+const readPreservedVisualImport = async (input: {
+  readonly acquisitionGeneration: number;
+  readonly dispatchId: string;
+  readonly importId: string;
+}) => ({
+  checkpoint: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT provider_stage, ownership_id, failure_code, completed_at
+       FROM import_provider_terminal_checkpoints
+      WHERE import_id = ? AND acquisition_generation = ?
+        AND provider_stage = 'visual' AND ownership_id = ?`
+  )
+    .bind(input.importId, input.acquisitionGeneration, input.dispatchId)
+    .first(),
+  import: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT status, status_code, recovery_action, evidence_references_json,
+            updated_at
+       FROM recipe_imports
+      WHERE id = ? AND acquisition_generation = ?`
+  )
+    .bind(input.importId, input.acquisitionGeneration)
+    .first(),
+  transcription: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT dispatch_id, source_media_sha256, state, transcript_key,
+            transcript_sha256, completed_at, updated_at
+       FROM import_transcriptions
+      WHERE import_id = ? AND acquisition_generation = ?`
+  )
+    .bind(input.importId, input.acquisitionGeneration)
+    .first(),
+  visual: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT dispatch_id, source_media_sha256, state, failure_code,
+            completed_at, updated_at
+       FROM import_visual_evidence
+      WHERE import_id = ? AND acquisition_generation = ?`
+  )
+    .bind(input.importId, input.acquisitionGeneration)
     .first(),
 });
 
@@ -898,6 +1094,412 @@ describe("authenticated terminal unknown-cost provider settlement", () => {
       settled_micro_usd: 10_000_000,
       state: "open",
     });
+  });
+});
+
+describe("authenticated terminal visual unknown-cost reconciliation", () => {
+  it("charges the exact visual maximum once, reopens the ledger, and preserves all terminal evidence", async () => {
+    const seeded = await seedPoisonedTerminalVisualImport("000000000300");
+    const before = await readPreservedVisualImport(seeded);
+    const app = await makeApp("pilot-gaia-118");
+
+    const [first, concurrent, replay] = await Promise.all([
+      postSettlement(app, visualCommandFor(seeded)),
+      postSettlement(app, visualCommandFor(seeded)),
+      postSettlement(app, visualCommandFor(seeded)),
+    ]);
+
+    const expected = {
+      acquisitionGeneration: seeded.acquisitionGeneration,
+      conservativeChargeMicroUsd: seeded.reservation.maximumCostMicroUsd,
+      dispatchId: seeded.dispatchId,
+      importId: seeded.importId,
+      outcome: "visual_terminal_unknown_cost_settled",
+      runtimeStage: "pilot-gaia-118",
+    };
+    expect([first.status, concurrent.status, replay.status]).toEqual([
+      200, 200, 200,
+    ]);
+    await expect(
+      Promise.all([first.json(), concurrent.json(), replay.json()])
+    ).resolves.toEqual([expected, expected, expected]);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, settled_micro_usd, reserved_micro_usd,
+                poison_dispatch_id, invoking_dispatch_id
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      settled_micro_usd: seeded.reservation.maximumCostMicroUsd,
+      state: "open",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT conservative_charge_micro_usd, actual_cost_was_unknown,
+                authority, COUNT(*) AS count
+           FROM pilot_provider_budget_reconciliations
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({
+      actual_cost_was_unknown: 1,
+      authority: "authenticated_operator",
+      conservative_charge_micro_usd: seeded.reservation.maximumCostMicroUsd,
+      count: 1,
+    });
+    await expect(readPreservedVisualImport(seeded)).resolves.toEqual(before);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, actual_cost_micro_usd, maximum_cost_micro_usd,
+                provider_stage_id, run_id
+           FROM pilot_provider_budget_dispatches
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({
+      actual_cost_micro_usd: null,
+      maximum_cost_micro_usd: seeded.reservation.maximumCostMicroUsd,
+      provider_stage_id: "visual-evidence",
+      run_id: `gaia-118:${seeded.importId}`,
+      state: "settled_unknown",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_dispatches
+          WHERE runtime_stage = 'pilot-gaia-118' AND run_id = ?`
+      )
+        .bind(`gaia-118:${seeded.importId}`)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_visual_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND original_dispatch_id = ?`
+      )
+        .bind(seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM import_recipe_extractions
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(seeded.importId, seeded.acquisitionGeneration)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+  });
+
+  it.each([
+    ["wrong runtime stage", "000000000301", "production", {}],
+    [
+      "missing terminal checkpoint",
+      "000000000302",
+      "pilot-gaia-118",
+      { persistCheckpoint: false },
+    ],
+    [
+      "wrong provider stage",
+      "000000000303",
+      "pilot-gaia-118",
+      { providerStageId: "recipe-extraction" },
+    ],
+    [
+      "wrong pilot run ownership",
+      "000000000304",
+      "pilot-gaia-118",
+      { runId: "gaia-118:wrong-import" },
+    ],
+    [
+      "ambiguous visual dispatch ownership",
+      "000000000305",
+      "pilot-gaia-118",
+      { additionalVisualDispatch: true },
+    ],
+    [
+      "mismatched speech and visual source identity",
+      "000000000306",
+      "pilot-gaia-118",
+      { matchingSourceHash: false },
+    ],
+  ] as const)(
+    "preserves the poison and writes no audit for %s",
+    async (_name, suffix, runtimeStage, options) => {
+      const seeded = await seedPoisonedTerminalVisualImport(suffix, options);
+      const before = await readPreservedVisualImport(seeded);
+      const app = await makeApp(runtimeStage);
+
+      const response = await postSettlement(app, visualCommandFor(seeded));
+
+      expect(response.status).toBe(409);
+      await expect(readPreservedVisualImport(seeded)).resolves.toEqual(before);
+      await expect(
+        testEnv.MealPlannerDatabase.prepare(
+          `SELECT state, poison_dispatch_id, invoking_dispatch_id,
+                  reserved_micro_usd, settled_micro_usd
+             FROM pilot_provider_stage_budget
+            WHERE runtime_stage = 'pilot-gaia-118'`
+        ).first()
+      ).resolves.toEqual({
+        invoking_dispatch_id: null,
+        poison_dispatch_id: seeded.dispatchId,
+        reserved_micro_usd: seeded.reservation.maximumCostMicroUsd,
+        settled_micro_usd: 0,
+        state: "poisoned",
+      });
+      await expect(
+        testEnv.MealPlannerDatabase.prepare(
+          `SELECT COUNT(*) AS count
+             FROM pilot_provider_budget_reconciliations
+            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+        )
+          .bind(seeded.dispatchId)
+          .first()
+      ).resolves.toEqual({ count: 0 });
+    }
+  );
+
+  it("rejects unauthenticated and mismatched visual authority before mutation", async () => {
+    const seeded = await seedPoisonedTerminalVisualImport("000000000307");
+    const before = await readPreservedVisualImport(seeded);
+    const app = await makeApp("pilot-gaia-118");
+
+    const unauthenticated = await postSettlement(
+      app,
+      visualCommandFor(seeded),
+      "wrong"
+    );
+    const wrongImport = await postSettlement(app, {
+      ...visualCommandFor(seeded),
+      importId: decodeImportId("00000000-0000-4000-8000-000000000308"),
+    });
+    const wrongGeneration = await postSettlement(app, {
+      ...visualCommandFor(seeded),
+      acquisitionGeneration: decodeGeneration(2),
+    });
+    const wrongDispatch = await postSettlement(app, {
+      ...visualCommandFor(seeded),
+      dispatchId: decodeDispatchId(`${seeded.dispatchId}:wrong`),
+    });
+
+    expect(unauthenticated.status).toBe(401);
+    expect(wrongImport.status).toBe(409);
+    expect(wrongGeneration.status).toBe(409);
+    expect(wrongDispatch.status).toBe(409);
+    await expect(readPreservedVisualImport(seeded)).resolves.toEqual(before);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, poison_dispatch_id, reserved_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({
+      poison_dispatch_id: seeded.dispatchId,
+      reserved_micro_usd: seeded.reservation.maximumCostMicroUsd,
+      state: "poisoned",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_reconciliations
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+  });
+
+  it("rejects mutable projection drift and an invoking stage without an audit", async () => {
+    const projectionDrift =
+      await seedPoisonedTerminalVisualImport("000000000309");
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE import_visual_evidence
+          SET failure_code = 'outcome_unknown'
+        WHERE import_id = ? AND acquisition_generation = ?`
+    )
+      .bind(projectionDrift.importId, projectionDrift.acquisitionGeneration)
+      .run();
+    const projectionBefore = await readPreservedVisualImport(projectionDrift);
+    const app = await makeApp("pilot-gaia-118");
+
+    const projectionResponse = await postSettlement(
+      app,
+      visualCommandFor(projectionDrift)
+    );
+
+    expect(projectionResponse.status).toBe(409);
+    await expect(readPreservedVisualImport(projectionDrift)).resolves.toEqual(
+      projectionBefore
+    );
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_reconciliations
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(projectionDrift.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE pilot_provider_stage_budget
+          SET state = 'invoking',
+              invoking_dispatch_id = poison_dispatch_id,
+              poison_dispatch_id = NULL
+        WHERE runtime_stage = 'pilot-gaia-118'`
+    ).run();
+    const invokingResponse = await postSettlement(
+      app,
+      visualCommandFor(projectionDrift)
+    );
+
+    expect(invokingResponse.status).toBe(409);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, invoking_dispatch_id, poison_dispatch_id,
+                reserved_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: projectionDrift.dispatchId,
+      poison_dispatch_id: null,
+      reserved_micro_usd: projectionDrift.reservation.maximumCostMicroUsd,
+      state: "invoking",
+    });
+  });
+
+  it("preserves poison and evidence when the reservation has drifted", async () => {
+    const seeded = await seedPoisonedTerminalVisualImport("000000000310");
+    const before = await readPreservedVisualImport(seeded);
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE pilot_provider_stage_budget
+          SET reserved_micro_usd = 100001
+        WHERE runtime_stage = 'pilot-gaia-118'`
+    ).run();
+    const ledgerBefore = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT state, poison_dispatch_id, invoking_dispatch_id,
+              reserved_micro_usd, settled_micro_usd
+         FROM pilot_provider_stage_budget
+        WHERE runtime_stage = 'pilot-gaia-118'`
+    ).first();
+    const app = await makeApp("pilot-gaia-118");
+
+    const response = await postSettlement(app, visualCommandFor(seeded));
+
+    expect(response.status).toBe(409);
+    await expect(readPreservedVisualImport(seeded)).resolves.toEqual(before);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, poison_dispatch_id, invoking_dispatch_id,
+                reserved_micro_usd, settled_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual(ledgerBefore);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_reconciliations
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+  });
+
+  it("charges at the exact stage cap without crossing it", async () => {
+    const seeded = await seedPoisonedTerminalVisualImport("000000000311");
+    const before = await readPreservedVisualImport(seeded);
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE pilot_provider_stage_budget
+          SET settled_micro_usd = 9900000
+        WHERE runtime_stage = 'pilot-gaia-118'`
+    ).run();
+    const app = await makeApp("pilot-gaia-118");
+
+    const response = await postSettlement(app, visualCommandFor(seeded));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      acquisitionGeneration: seeded.acquisitionGeneration,
+      conservativeChargeMicroUsd: seeded.reservation.maximumCostMicroUsd,
+      dispatchId: seeded.dispatchId,
+      importId: seeded.importId,
+      outcome: "visual_terminal_unknown_cost_settled",
+      runtimeStage: "pilot-gaia-118",
+    });
+    await expect(readPreservedVisualImport(seeded)).resolves.toEqual(before);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, settled_micro_usd, reserved_micro_usd,
+                poison_dispatch_id, invoking_dispatch_id,
+                budget_cap_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({
+      budget_cap_micro_usd: 10_000_000,
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      settled_micro_usd: 10_000_000,
+      state: "open",
+    });
+  });
+
+  it("does not consume a poison that already has reconciliation history", async () => {
+    const seeded = await seedPoisonedTerminalVisualImport("000000000312");
+    const before = await readPreservedVisualImport(seeded);
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO pilot_provider_budget_reconciliations (
+         runtime_stage, dispatch_id, conservative_charge_micro_usd,
+         actual_cost_was_unknown, authority, created_at
+       ) VALUES (
+         'pilot-gaia-118', ?, ?, 1, 'authenticated_operator',
+         '2026-07-30T09:59:00.000Z'
+       )`
+    )
+      .bind(seeded.dispatchId, seeded.reservation.maximumCostMicroUsd)
+      .run();
+    const app = await makeApp("pilot-gaia-118");
+
+    const response = await postSettlement(app, visualCommandFor(seeded));
+
+    expect(response.status).toBe(409);
+    await expect(readPreservedVisualImport(seeded)).resolves.toEqual(before);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, poison_dispatch_id, invoking_dispatch_id,
+                reserved_micro_usd, settled_micro_usd
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: seeded.dispatchId,
+      reserved_micro_usd: seeded.reservation.maximumCostMicroUsd,
+      settled_micro_usd: 0,
+      state: "poisoned",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_budget_reconciliations
+          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+      )
+        .bind(seeded.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
   });
 });
 
