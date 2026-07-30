@@ -70,6 +70,19 @@ const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
 );
 
+const speechTranscriptionInput = {
+  audio: {
+    bytes: new Uint8Array([1]),
+    durationMilliseconds: 1000,
+    mimeType: "audio/wav" as const,
+    sha256: "a".repeat(64),
+  },
+  dispatchId: "speech:import-1:1",
+  generation: 1 as never,
+  importId: "import-1" as never,
+  sourceMediaSha256: "b".repeat(64),
+};
+
 const localDispatchGate: ProviderDispatchGate = {
   run: <A, E>(input: {
     readonly invoke: Effect.Effect<
@@ -242,17 +255,14 @@ describe("installed import provider adapters", () => {
     );
   });
 
-  it("uses the authenticated binding with provider logging disabled and exact workerd speech response shape", async () => {
+  it("uses the authenticated binding with provider logging disabled and the documented nested speech response shape", async () => {
     const gateway = makeSpeechGateway({
-      segments: [],
-      text: "Chop the onion.",
       transcription_info: {
-        duration: 60,
-        duration_after_vad: 59,
-        language: "en",
-        language_probability: 0.99,
+        segments: [],
+        text: "Chop the onion.",
+        vtt: "WEBVTT",
+        word_count: 3,
       },
-      word_count: 3,
     });
     const trace = makeRecordingTraceStore();
     const dispatches: {
@@ -359,6 +369,109 @@ describe("installed import provider adapters", () => {
       },
     ]);
     expect(JSON.stringify(trace.events)).not.toContain("Chop the onion.");
+  });
+
+  it("retains the pinned installed root speech response compatibility shape", async () => {
+    const adapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: makeSpeechGateway({
+          text: "Chop the onion.",
+          vtt: null,
+          word_count: 3,
+          words: [
+            {
+              end: 0.5,
+              start: 0,
+              word: "Chop",
+            },
+          ],
+        }).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const transcript = await Effect.runPromise(
+      adapter.transcribe(speechTranscriptionInput)
+    );
+
+    expect(transcript.text).toBe("Chop the onion.");
+  });
+
+  it("fails closed for missing, wrong, ambiguous, or provider-private speech response fields", async () => {
+    const malformedResponses = [
+      {
+        transcription_info: {
+          segments: [],
+          word_count: 3,
+        },
+      },
+      {
+        transcription_info: {
+          segments: [],
+          text: 3,
+          word_count: 3,
+        },
+      },
+      {
+        text: "Root transcript.",
+        transcription_info: {
+          segments: [],
+          text: "Nested transcript.",
+          word_count: 2,
+        },
+      },
+      {
+        transcription_info: {
+          providerSecret: "must-not-escape",
+          segments: [],
+          text: "Chop the onion.",
+          word_count: 3,
+        },
+      },
+      {
+        providerSecret: "must-not-escape",
+        transcription_info: {
+          segments: [],
+          text: "Chop the onion.",
+          word_count: 3,
+        },
+      },
+      {
+        providerSecret: "must-not-escape",
+        text: "Chop the onion.",
+        word_count: 3,
+      },
+    ];
+
+    await Promise.all(
+      malformedResponses.map(async (response) => {
+        const trace = makeRecordingTraceStore();
+        const adapter = await runFactory(
+          makeInstalledSpeechTranscriber({
+            client: makeSpeechGateway(response).client,
+            correlationId,
+            dispatch: localDispatchGate,
+          }),
+          trace.service
+        );
+
+        const exit = await Effect.runPromiseExit(
+          adapter.transcribe(speechTranscriptionInput)
+        );
+
+        expect(exit._tag).toBe("Failure");
+        expect(JSON.stringify(exit)).toContain("malformed_response");
+        expect(trace.events.at(-1)).toEqual({
+          correlationId,
+          event: "provider.decode",
+          outcome: "malformed",
+          providerStage: "speech",
+        });
+        expect(JSON.stringify(exit)).not.toContain("must-not-escape");
+        expect(JSON.stringify(trace.events)).not.toContain("must-not-escape");
+      })
+    );
   });
 
   it("settles known cost and fails closed when the installed speech response is malformed", async () => {
