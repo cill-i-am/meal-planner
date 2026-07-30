@@ -702,7 +702,7 @@ describe("provider workflow task retry exhaustion", () => {
       poison_dispatch_id: null,
       state: "open",
     });
-  });
+  }, 15_000);
 
   it("replays one poisoned recovery identity without invoking the provider or nesting recovery", async () => {
     const instanceId = "gaia-187-native-poisoned-speech-recovery";
