@@ -386,7 +386,7 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
           _model: unknown,
           _body: unknown,
           options: unknown
-        ): Promise<Response> => {
+        ): Promise<unknown> => {
           if (
             JSON.stringify(options) !==
             JSON.stringify({
@@ -395,7 +395,6 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
                 id: "meal-planner-pilot-gaia-118",
                 skipCache: true,
               },
-              returnRawResponse: true,
             })
           ) {
             return Promise.reject(
@@ -406,7 +405,7 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
           const response = responses.shift();
           return response === undefined
             ? Promise.reject(new Error("Unexpected provider dispatch"))
-            : Promise.resolve(Response.json(response));
+            : Promise.resolve(response);
         },
       }),
       run: () => Effect.die("universal AI Gateway dispatch must not be used"),
@@ -529,7 +528,7 @@ const visualTerminalRecoveryDispatch = (
           _model: unknown,
           _body: unknown,
           options: unknown
-        ): Promise<Response> => {
+        ): Promise<unknown> => {
           if (
             JSON.stringify(options) !==
             JSON.stringify({
@@ -538,7 +537,6 @@ const visualTerminalRecoveryDispatch = (
                 id: "meal-planner-pilot-gaia-118",
                 skipCache: true,
               },
-              returnRawResponse: true,
             })
           ) {
             throw new Error("Gateway logging was not disabled");
@@ -546,7 +544,7 @@ const visualTerminalRecoveryDispatch = (
           await Effect.runPromise(
             increment(env, instanceId, "visual-provider-calls")
           );
-          return Response.json({
+          return {
             tool_calls: [
               {
                 arguments: { observations: [], outcome: "empty" },
@@ -554,7 +552,7 @@ const visualTerminalRecoveryDispatch = (
                 name: "record_visual_evidence",
               },
             ],
-          });
+          };
         },
       }),
       run: () => Effect.die("universal AI Gateway dispatch must not be used"),

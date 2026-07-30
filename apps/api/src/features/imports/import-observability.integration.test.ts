@@ -101,21 +101,23 @@ const gatewayClient = {
   raw: Effect.succeed({
     run: (model: unknown, body: unknown, options: unknown) => {
       gatewayRequests.push({ body, model, options });
-      return Promise.resolve(
-        Response.json({
-          tool_calls: [
-            {
-              arguments: {
-                observations: [],
-                outcome: "empty",
-              },
-              id: "call-visual-1",
-              name: "record_visual_evidence",
+      const result = {
+        tool_calls: [
+          {
+            arguments: {
+              observations: [],
+              outcome: "empty",
             },
-          ],
-          usage: { completion_tokens: 10, prompt_tokens: 20 },
-        })
-      );
+            id: "call-visual-1",
+            name: "record_visual_evidence",
+          },
+        ],
+        usage: { completion_tokens: 10, prompt_tokens: 20 },
+      };
+      return (options as { readonly returnRawResponse?: boolean })
+        .returnRawResponse === true
+        ? Promise.resolve(Response.json(result))
+        : Promise.resolve(result);
     },
   }),
   run: () => Effect.die("universal AI Gateway dispatch must not be used"),
@@ -231,7 +233,6 @@ describe("opaque import correlation continuity", () => {
             id: Schema.String,
             skipCache: Schema.Boolean,
           }),
-          returnRawResponse: Schema.Boolean,
         }),
       })
     )(gatewayRequests[0]);
@@ -241,7 +242,6 @@ describe("opaque import correlation continuity", () => {
         id: "meal-planner-pilot-gaia-118",
         skipCache: true,
       },
-      returnRawResponse: true,
     });
     expect(options.gateway).not.toHaveProperty("metadata");
     expect(options).not.toHaveProperty("headers");
