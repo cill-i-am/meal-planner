@@ -432,11 +432,14 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
         }[]
       ).filter((part) => part.type === "tool-call");
       const [call] = calls;
+      // The installed Alchemy adapter preserves the native Workers AI
+      // `response` field as a separate text part even when the provider also
+      // returns a forced tool call. The forced call is the only authoritative
+      // output; unrelated text remains intentionally unused.
       if (
         call === undefined ||
         calls.length !== 1 ||
-        call.name !== input.name ||
-        response.text.trim().length !== 0
+        call.name !== input.name
       ) {
         return emitImportObservabilityEvent(
           {
