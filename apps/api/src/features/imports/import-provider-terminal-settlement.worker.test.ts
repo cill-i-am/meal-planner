@@ -323,6 +323,43 @@ const seedMissingVisualTerminalCheckpoint = async (
   return seeded;
 };
 
+const seedVisualRecoveryDescendant = async (
+  seeded: Awaited<ReturnType<typeof seedMissingVisualTerminalCheckpoint>>
+) => {
+  const trigger = await testEnv.MealPlannerDatabase.prepare(
+    `SELECT sql
+       FROM sqlite_master
+      WHERE type = 'trigger'
+        AND name = 'pilot_provider_visual_recoveries_prepare'`
+  ).first<{ readonly sql: string }>();
+  if (trigger === null) {
+    throw new Error("Missing visual recovery preparation trigger");
+  }
+  await testEnv.MealPlannerDatabase.prepare(
+    "DROP TRIGGER pilot_provider_visual_recoveries_prepare"
+  ).run();
+  try {
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO pilot_provider_visual_recoveries (
+         runtime_stage, import_id, acquisition_generation,
+         original_dispatch_id, recovery_dispatch_id, created_at
+       ) VALUES (
+         'pilot-gaia-118', ?, ?, ?, ?, ?
+       )`
+    )
+      .bind(
+        seeded.importId,
+        seeded.acquisitionGeneration,
+        seeded.dispatchId,
+        `${seeded.dispatchId}:recovery:1`,
+        seeded.now
+      )
+      .run();
+  } finally {
+    await testEnv.MealPlannerDatabase.prepare(trigger.sql).run();
+  }
+};
+
 const seedPoisonedTerminalRecipeImport = async (
   suffix: string,
   options: {
@@ -696,6 +733,15 @@ const readVisualCheckpointRepairState = async (input: {
   readonly dispatchId: string;
   readonly importId: string;
 }) => ({
+  audit: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT runtime_stage, dispatch_id, conservative_charge_micro_usd,
+            actual_cost_was_unknown, authority, created_at
+       FROM pilot_provider_budget_reconciliations
+      WHERE runtime_stage = 'pilot-gaia-118'
+        AND dispatch_id = ?`
+  )
+    .bind(input.dispatchId)
+    .first(),
   auditCount: await testEnv.MealPlannerDatabase.prepare(
     `SELECT COUNT(*) AS count
        FROM pilot_provider_budget_reconciliations
@@ -728,6 +774,15 @@ const readVisualCheckpointRepairState = async (input: {
   )
     .bind(input.importId)
     .first(),
+  recovery: await testEnv.MealPlannerDatabase.prepare(
+    `SELECT runtime_stage, import_id, acquisition_generation,
+            original_dispatch_id, recovery_dispatch_id, created_at
+       FROM pilot_provider_visual_recoveries
+      WHERE runtime_stage = 'pilot-gaia-118'
+        AND original_dispatch_id = ?`
+  )
+    .bind(input.dispatchId)
+    .first(),
   recoveryCount: await testEnv.MealPlannerDatabase.prepare(
     `SELECT COUNT(*) AS count
        FROM pilot_provider_visual_recoveries
@@ -738,6 +793,93 @@ const readVisualCheckpointRepairState = async (input: {
     .first(),
 });
 
+const readVisualCheckpointRepairProtectedRows = (input: {
+  readonly acquisitionGeneration: number;
+  readonly dispatchId: string;
+  readonly importId: string;
+}) =>
+  Promise.all([
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM import_provider_terminal_checkpoints
+        WHERE import_id = ?
+          AND acquisition_generation = ?
+          AND provider_stage = 'visual'
+          AND ownership_id = ?`
+    )
+      .bind(input.importId, input.acquisitionGeneration, input.dispatchId)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM recipe_imports
+        WHERE id = ?
+          AND acquisition_generation = ?`
+    )
+      .bind(input.importId, input.acquisitionGeneration)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM import_transcriptions
+        WHERE import_id = ?
+          AND acquisition_generation = ?`
+    )
+      .bind(input.importId, input.acquisitionGeneration)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM import_visual_evidence
+        WHERE import_id = ?
+          AND acquisition_generation = ?`
+    )
+      .bind(input.importId, input.acquisitionGeneration)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM pilot_provider_stage_budget
+        WHERE runtime_stage = 'pilot-gaia-118'`
+    ).first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM pilot_provider_budget_dispatches
+        WHERE runtime_stage = 'pilot-gaia-118'
+          AND dispatch_id = ?`
+    )
+      .bind(input.dispatchId)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM pilot_provider_budget_reconciliations
+        WHERE runtime_stage = 'pilot-gaia-118'
+          AND dispatch_id = ?`
+    )
+      .bind(input.dispatchId)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM import_recipe_extractions
+        WHERE import_id = ?
+          AND acquisition_generation = ?`
+    )
+      .bind(input.importId, input.acquisitionGeneration)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM pilot_provider_visual_recoveries
+        WHERE runtime_stage = 'pilot-gaia-118'
+          AND original_dispatch_id = ?`
+    )
+      .bind(input.dispatchId)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM pilot_provider_visual_second_recoveries
+        WHERE runtime_stage = 'pilot-gaia-118'
+          AND original_dispatch_id = ?`
+    )
+      .bind(input.dispatchId)
+      .first(),
+  ]);
+
 const expectVisualCheckpointRepairRejected = async (
   seeded: Awaited<ReturnType<typeof seedMissingVisualTerminalCheckpoint>>,
   options: {
@@ -747,6 +889,8 @@ const expectVisualCheckpointRepairRejected = async (
   } = {}
 ) => {
   const evidenceBefore = await readPreservedVisualImport(seeded);
+  const protectedRowsBefore =
+    await readVisualCheckpointRepairProtectedRows(seeded);
   const stateBefore = await readVisualCheckpointRepairState(seeded);
   const app = await makeApp(options.runtimeStage ?? "pilot-gaia-118");
 
@@ -763,6 +907,9 @@ const expectVisualCheckpointRepairRejected = async (
   await expect(readVisualCheckpointRepairState(seeded)).resolves.toEqual(
     stateBefore
   );
+  await expect(
+    readVisualCheckpointRepairProtectedRows(seeded)
+  ).resolves.toEqual(protectedRowsBefore);
 };
 
 describe("authenticated terminal unknown-cost provider settlement", () => {
@@ -1440,6 +1587,29 @@ describe("authenticated visual terminal checkpoint compatibility repair", () => 
         seeded.now,
         seeded.now
       )
+      .run();
+
+    await expectVisualCheckpointRepairRejected(seeded);
+  });
+
+  it("rejects an existing visual recovery descendant without changing any protected row", async () => {
+    const seeded = await seedMissingVisualTerminalCheckpoint("000000000329");
+    await seedVisualRecoveryDescendant(seeded);
+
+    await expectVisualCheckpointRepairRejected(seeded);
+  });
+
+  it("rejects existing reconciliation history without changing any protected row", async () => {
+    const seeded = await seedMissingVisualTerminalCheckpoint("000000000330");
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO pilot_provider_budget_reconciliations (
+         runtime_stage, dispatch_id, conservative_charge_micro_usd,
+         actual_cost_was_unknown, authority, created_at
+       ) VALUES (
+         'pilot-gaia-118', ?, 100000, 1, 'authenticated_operator', ?
+       )`
+    )
+      .bind(seeded.dispatchId, seeded.now)
       .run();
 
     await expectVisualCheckpointRepairRejected(seeded);
