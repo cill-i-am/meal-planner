@@ -803,6 +803,160 @@ describe("installed import provider adapters", () => {
     );
   });
 
+  it.each(["parameters", "arguments"] as const)(
+    "accepts the installed native recipe response text with %s",
+    async (field) => {
+      const nativeResponseText = JSON.stringify({
+        [field]: validRecipeSemantics,
+        name: "record_recipe",
+      });
+      const gateway = makeGateway({
+        response: nativeResponseText,
+        usage: defaultVisualUsage,
+      });
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledRecipeExtractor({
+          client: gateway.client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const output = await Effect.runPromise(
+        adapter.extract({
+          evidenceFingerprint: "fingerprint",
+          generation: 1 as never,
+          importId: "import-1" as never,
+          items: [
+            {
+              artifactReference: "private:evidence",
+              evidenceId: "evidence-1",
+              kind: "caption",
+              origin: "creator_provided",
+              value: "visible evidence",
+            },
+          ],
+        })
+      );
+
+      expect(output).toMatchObject(validRecipeSemantics);
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        event: "provider.decode",
+        outcome: "succeeded",
+        providerStage: "recipe",
+      });
+      expect(JSON.stringify(trace.events)).not.toContain(nativeResponseText);
+    }
+  );
+
+  it.each(["parameters", "arguments"] as const)(
+    "accepts the installed singleton-array native recipe response text with %s",
+    async (field) => {
+      const nativeResponseText = JSON.stringify([
+        {
+          [field]: validRecipeSemantics,
+          name: "record_recipe",
+        },
+      ]);
+      const gateway = makeGateway({
+        response: nativeResponseText,
+        usage: defaultVisualUsage,
+      });
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledRecipeExtractor({
+          client: gateway.client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const output = await Effect.runPromise(
+        adapter.extract({
+          evidenceFingerprint: "fingerprint",
+          generation: 1 as never,
+          importId: "import-1" as never,
+          items: [
+            {
+              artifactReference: "private:evidence",
+              evidenceId: "evidence-1",
+              kind: "caption",
+              origin: "creator_provided",
+              value: "visible evidence",
+            },
+          ],
+        })
+      );
+
+      expect(output).toMatchObject(validRecipeSemantics);
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        event: "provider.decode",
+        outcome: "succeeded",
+        providerStage: "recipe",
+      });
+      expect(JSON.stringify(trace.events)).not.toContain(nativeResponseText);
+    }
+  );
+
+  it("fails closed when native recipe parameters violate the exact schema", async () => {
+    const nativeResponseText = JSON.stringify({
+      name: "record_recipe",
+      parameters: {
+        ...validRecipeSemantics,
+        unexpected: "must remain private",
+      },
+    });
+    const gateway = makeGateway({
+      response: nativeResponseText,
+      usage: defaultVisualUsage,
+    });
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "visible evidence",
+          },
+        ],
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "recipe",
+    });
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      nativeResponseText
+    );
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "must remain private"
+    );
+  });
+
   it("rejects model attempts to inject visual transport metadata", async () => {
     const gateway = makeGateway(
       toolResponse("record_visual_evidence", validVisual)
