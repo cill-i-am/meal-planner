@@ -9,10 +9,18 @@ const workflowSource = () =>
   );
 
 describe("recipe-only recovery workflow composition", () => {
-  it("uses the installed native recipe task without acquisition, speech, visual or URL inputs", async () => {
+  it("uses one ordinal-versioned installed recipe task without acquisition, speech, visual or URL inputs", async () => {
     const source = await workflowSource();
 
-    expect(source).toContain('"extract-recipe-recovery-v1"');
+    expect(source).toMatch(
+      /const recoveryTaskVersion = `v\$\{recovery\.recoveryOrdinal\}`/u
+    );
+    expect(source).toMatch(
+      /`extract-recipe-recovery-\$\{recoveryTaskVersion\}`/u
+    );
+    expect(source).toMatch(
+      /`persist-recipe-recovery-terminal-\$\{recoveryTaskVersion\}`/u
+    );
     expect(source).toContain("runProviderTask(");
     expect(source).toContain("makeInstalledRecipeExtractor");
     expect(source).toContain("recovery.recoveryDispatchId");

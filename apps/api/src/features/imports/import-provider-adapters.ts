@@ -338,6 +338,7 @@ export const failAfter = <A, E, R>(
   observability: {
     readonly correlationId: ImportCorrelationId;
     readonly providerStage: "recipe" | "speech" | "visual";
+    readonly traceStore?: ImportObservabilityTraceStoreShape | undefined;
   }
 ): Effect.Effect<A, E | SafeProviderFailureCode, R> =>
   effect.pipe(
@@ -348,12 +349,15 @@ export const failAfter = <A, E, R>(
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed timeout channel.
     Effect.tapError((error) =>
       error === "timeout"
-        ? emitImportObservabilityEvent({
-            correlationId: observability.correlationId,
-            event: "provider.timeout",
-            outcome: "timed_out",
-            providerStage: observability.providerStage,
-          })
+        ? emitImportObservabilityEvent(
+            {
+              correlationId: observability.correlationId,
+              event: "provider.timeout",
+              outcome: "timed_out",
+              providerStage: observability.providerStage,
+            },
+            observability.traceStore
+          )
         : Effect.void
     )
   );
@@ -570,169 +574,6 @@ const workersAiGatewayOptions = (gatewayId: string) =>
 
 type WorkersAiBinding = Effect.Success<QueryGatewayClient["raw"]>;
 
-const asUnknownRecord = (
-  value: unknown
-): Readonly<Record<string, unknown>> | undefined =>
-  typeof value === "object" && value !== null
-    ? (value as Readonly<Record<string, unknown>>)
-    : undefined;
-
-const tokenCount = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : undefined;
-
-const malformedProviderDecode = (
-  observability: {
-    readonly correlationId: ImportCorrelationId;
-    readonly providerStage: "recipe";
-    readonly traceStore: ImportObservabilityTraceStoreShape | undefined;
-  },
-  failure: "insufficient_evidence" | "malformed_response"
-) =>
-  emitImportObservabilityEvent(
-    {
-      correlationId: observability.correlationId,
-      event: "provider.decode",
-      outcome: "malformed",
-      providerStage: observability.providerStage,
-    },
-    observability.traceStore
-  ).pipe(Effect.andThen(Effect.fail(failure)));
-
-/**
- * Llama's native Workers AI binding accepts unwrapped tool declarations and
- * returns native tool calls. Keep this seam separate from Alchemy's OpenAI
- * response adapter so the provider-facing schema and fail-closed decode match
- * the installed model's actual wire contract.
- */
-const oneNativeWorkersAiToolCall = <Name extends string, S extends Schema.Top>(
-  ai: WorkersAiBinding,
-  model: string,
-  input: {
-    readonly description: string;
-    readonly name: Name;
-    readonly prompt: string;
-    readonly schema: S;
-  },
-  observability: {
-    readonly correlationId: ImportCorrelationId;
-    readonly providerStage: "recipe";
-    readonly traceStore: ImportObservabilityTraceStoreShape | undefined;
-  }
-): Effect.Effect<
-  {
-    readonly inputTokens: number | undefined;
-    readonly outputTokens: number | undefined;
-    readonly value: S["Type"];
-  },
-  SafeProviderFailureCode,
-  S["DecodingServices"]
-> =>
-  failAfter(
-    Effect.tryPromise({
-      catch: (error) => error,
-      try: () =>
-        ai.run(
-          model as never,
-          {
-            max_tokens: 16_384,
-            messages: [{ content: input.prompt, role: "user" }],
-            temperature: 0,
-            tools: [
-              {
-                description: input.description,
-                name: input.name,
-                parameters: Tool.getJsonSchemaFromSchema(input.schema),
-              },
-            ],
-          } as never
-        ) as Promise<Response>,
-    }),
-    observability
-  ).pipe(
-    // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
-    Effect.mapError((error) =>
-      typeof error === "string"
-        ? (error as SafeProviderFailureCode)
-        : safeFailureCode(Cause.fail(error))
-    ),
-    Effect.flatMap((response) =>
-      response.ok
-        ? Effect.tryPromise({
-            catch: () => "malformed_response" as const,
-            try: () => response.json() as Promise<unknown>,
-          }).pipe(
-            Effect.matchEffect({
-              onFailure: () =>
-                malformedProviderDecode(observability, "malformed_response"),
-              onSuccess: Effect.succeed,
-            })
-          )
-        : Effect.fail(
-            response.status === 429
-              ? ("throttled" as const)
-              : ("provider_unavailable" as const)
-          )
-    ),
-    Effect.flatMap((payload) => {
-      const record = asUnknownRecord(payload);
-      const response = record?.["response"];
-      const calls = record?.["tool_calls"];
-      const call =
-        Array.isArray(calls) && calls.length === 1
-          ? asUnknownRecord(calls[0])
-          : undefined;
-      if (
-        record === undefined ||
-        call === undefined ||
-        call["name"] !== input.name ||
-        !(
-          response === undefined ||
-          response === null ||
-          (typeof response === "string" && response.trim().length === 0)
-        )
-      ) {
-        return malformedProviderDecode(observability, "insufficient_evidence");
-      }
-      const encodedArguments = call["arguments"];
-      let argumentsValue: unknown = encodedArguments;
-      if (typeof encodedArguments === "string") {
-        try {
-          argumentsValue = JSON.parse(encodedArguments) as unknown;
-        } catch {
-          return malformedProviderDecode(observability, "malformed_response");
-        }
-      }
-      return Schema.decodeUnknownEffect(input.schema, {
-        onExcessProperty: "error",
-      })(argumentsValue).pipe(
-        Effect.matchEffect({
-          onFailure: () =>
-            malformedProviderDecode(observability, "malformed_response"),
-          onSuccess: (value) => {
-            const usage = asUnknownRecord(record["usage"]);
-            return emitImportObservabilityEvent(
-              {
-                correlationId: observability.correlationId,
-                event: "provider.decode",
-                outcome: "succeeded",
-                providerStage: observability.providerStage,
-              },
-              observability.traceStore
-            ).pipe(
-              Effect.as({
-                inputTokens: tokenCount(usage?.["prompt_tokens"]),
-                outputTokens: tokenCount(usage?.["completion_tokens"]),
-                value,
-              })
-            );
-          },
-        })
-      );
-    })
-  );
-
 const runWorkersAi = (
   ai: WorkersAiBinding,
   model: string,
@@ -915,6 +756,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                   {
                     correlationId: input.correlationId,
                     providerStage: "visual",
+                    traceStore,
                   }
                 ).pipe(
                   // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
@@ -961,12 +803,16 @@ export const makeInstalledRecipeExtractor = (input: {
       "recipe",
       traceStore
     );
-    const ai = yield* client.raw;
+    const service = yield* Cloudflare.AI.makeLanguageModel({
+      client,
+      model,
+      parameters: { maxTokens: 16_384, temperature: 0 },
+    });
     return {
       descriptor: Schema.decodeUnknownSync(RecipeExtractorDescriptor)({
         model,
         provider: ProviderName,
-        version: "installed-native-forced-tool-v1",
+        version: "installed-alchemy-forced-tool-v2",
       }),
       extract: (request) =>
         input.dispatch
@@ -978,9 +824,8 @@ export const makeInstalledRecipeExtractor = (input: {
             invoke: Effect.gen(function* extractRecipeSemantics() {
               const startedAt = yield* Clock.currentTimeMillis;
               const { inputTokens, outputTokens, value } =
-                yield* oneNativeWorkersAiToolCall(
-                  ai,
-                  model,
+                yield* oneForcedToolCall(
+                  service,
                   {
                     description:
                       "Record only provenance-backed recipe facts and unresolved fields.",
@@ -1228,6 +1073,7 @@ export const makeInstalledSpeechTranscriber = (input: {
               {
                 correlationId: input.correlationId,
                 providerStage: "speech",
+                traceStore,
               }
             ).pipe(
               Effect.mapError((error) => {

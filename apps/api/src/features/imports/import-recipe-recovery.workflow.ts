@@ -67,6 +67,7 @@ export default class ImportRecipeRecoveryWorkflow extends Cloudflare.Workflow<Im
               ? recoveryRepository.readResume(workflowInput)
               : recoveryRepository.read(workflowInput)
           ).pipe(Effect.orDie);
+          const recoveryTaskVersion = `v${recovery.recoveryOrdinal}`;
           const dispatch = makePilotProviderDispatchGate({
             correlationId: workflowInput.correlationId,
             now: currentTimestamp,
@@ -86,7 +87,7 @@ export default class ImportRecipeRecoveryWorkflow extends Cloudflare.Workflow<Im
           }).pipe(Effect.provideService(RuntimeContext, runtimeContext));
           const recipeRepository = makeD1RecipeDraftRepository(database);
           const encoded = yield* runProviderTask(
-            "extract-recipe-recovery-v1",
+            `extract-recipe-recovery-${recoveryTaskVersion}`,
             "recipe",
             produceRecipeDraftForImport({
               bucket: rawBucket as unknown as AcquisitionBucketLike,
@@ -115,7 +116,7 @@ export default class ImportRecipeRecoveryWorkflow extends Cloudflare.Workflow<Im
           )(encoded).pipe(Effect.orDie);
           if (checkpoint._tag === "Failed") {
             yield* Cloudflare.Workflows.task(
-              "persist-recipe-recovery-terminal-v1",
+              `persist-recipe-recovery-terminal-${recoveryTaskVersion}`,
               recipeRepository
                 .fail({
                   completedAt: currentTimestamp(),

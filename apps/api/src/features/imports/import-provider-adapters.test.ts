@@ -1,6 +1,7 @@
 import { RuntimeContext } from "alchemy";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
-import { Effect, Schema } from "effect";
+import { Effect, Fiber, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { Tool } from "effect/unstable/ai";
 import { describe, expect, it, vi } from "vitest";
 
@@ -215,16 +216,6 @@ const toolResponse = (
       },
     },
   ],
-  ...(usage === null ? {} : { usage }),
-});
-
-const nativeToolResponse = (
-  name: string,
-  value: unknown,
-  usage: unknown | null = defaultVisualUsage
-) => ({
-  response: "",
-  tool_calls: [{ arguments: value, name }],
   ...(usage === null ? {} : { usage }),
 });
 
@@ -956,20 +947,29 @@ describe("installed import provider adapters", () => {
   });
 
   it.each([
-    ["prose", { response: "{}" }],
-    ["wrong tool", nativeToolResponse("wrong_tool", validRecipeSemantics)],
+    ["prose", { choices: [{ message: { content: "{}" } }] }],
+    ["wrong tool", toolResponse("wrong_tool", validRecipeSemantics)],
     [
       "multiple tools",
       {
-        response: "",
-        tool_calls: [
+        choices: [
           {
-            arguments: validRecipeSemantics,
-            name: "record_recipe",
-          },
-          {
-            arguments: validRecipeSemantics,
-            name: "record_recipe",
+            message: {
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validRecipeSemantics),
+                    name: "record_recipe",
+                  },
+                },
+                {
+                  function: {
+                    arguments: JSON.stringify(validRecipeSemantics),
+                    name: "record_recipe",
+                  },
+                },
+              ],
+            },
           },
         ],
       },
@@ -977,15 +977,24 @@ describe("installed import provider adapters", () => {
     [
       "an extra tool before the forced tool",
       {
-        response: "",
-        tool_calls: [
+        choices: [
           {
-            arguments: validRecipeSemantics,
-            name: "wrong_tool",
-          },
-          {
-            arguments: validRecipeSemantics,
-            name: "record_recipe",
+            message: {
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validRecipeSemantics),
+                    name: "wrong_tool",
+                  },
+                },
+                {
+                  function: {
+                    arguments: JSON.stringify(validRecipeSemantics),
+                    name: "record_recipe",
+                  },
+                },
+              ],
+            },
           },
         ],
       },
@@ -993,18 +1002,25 @@ describe("installed import provider adapters", () => {
     [
       "malformed JSON",
       {
-        response: "",
-        tool_calls: [
+        choices: [
           {
-            arguments: "{",
-            name: "record_recipe",
+            message: {
+              tool_calls: [
+                {
+                  function: {
+                    arguments: "{",
+                    name: "record_recipe",
+                  },
+                },
+              ],
+            },
           },
         ],
       },
     ],
     [
       "schema-invalid arguments",
-      nativeToolResponse("record_recipe", {
+      toolResponse("record_recipe", {
         ...validRecipeSemantics,
         name: { ...validRecipeSemantics.name, state: "invalid" },
       }),
@@ -1043,7 +1059,7 @@ describe("installed import provider adapters", () => {
 
   it("accepts semantic-only recipe output and injects trusted transport usage", async () => {
     const gateway = makeGateway(
-      nativeToolResponse("record_recipe", validRecipeSemantics)
+      toolResponse("record_recipe", validRecipeSemantics)
     );
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
@@ -1089,8 +1105,10 @@ describe("installed import provider adapters", () => {
       readonly body: {
         readonly tool_choice?: unknown;
         readonly tools: readonly {
-          readonly name: string;
-          readonly parameters: unknown;
+          readonly function: {
+            readonly name: string;
+            readonly parameters: unknown;
+          };
         }[];
       };
       readonly options: {
@@ -1113,18 +1131,14 @@ describe("installed import provider adapters", () => {
     });
     expect(request.options.gateway).not.toHaveProperty("metadata");
     expect(request.options).not.toHaveProperty("headers");
-    expect(request.body).not.toHaveProperty("tool_choice");
-    expect(request.body.tools).toEqual([
-      {
-        description:
-          "Record only provenance-backed recipe facts and unresolved fields.",
-        name: "record_recipe",
-        parameters: Tool.getJsonSchema(
-          Tool.make("record_recipe", { parameters: RecipeExtractionSemantics })
-        ),
-      },
-    ]);
-    expect(request.body.tools[0]?.parameters).toMatchObject(
+    expect(request.body.tool_choice).toBe("required");
+    expect(request.body.tools[0]?.function.name).toBe("record_recipe");
+    expect(request.body.tools[0]?.function.parameters).toEqual(
+      Tool.getJsonSchema(
+        Tool.make("record_recipe", { parameters: RecipeExtractionSemantics })
+      )
+    );
+    expect(request.body.tools[0]?.function.parameters).toMatchObject(
       expect.objectContaining({
         additionalProperties: false,
         type: "object",
@@ -1134,7 +1148,7 @@ describe("installed import provider adapters", () => {
 
   it("uses the immutable recovery dispatch exactly once without changing evidence", async () => {
     const gateway = makeGateway(
-      nativeToolResponse("record_recipe", validRecipeSemantics)
+      toolResponse("record_recipe", validRecipeSemantics)
     );
     const dispatches: string[] = [];
     const adapter = await runFactory(
@@ -1175,9 +1189,7 @@ describe("installed import provider adapters", () => {
   });
 
   it("rejects model attempts to inject recipe transport metadata", async () => {
-    const gateway = makeGateway(
-      nativeToolResponse("record_recipe", validRecipe)
-    );
+    const gateway = makeGateway(toolResponse("record_recipe", validRecipe));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -1207,7 +1219,7 @@ describe("installed import provider adapters", () => {
   });
 
   it("settles a schema-valid recipe without usage at the conservative maximum", async () => {
-    const response = nativeToolResponse("record_recipe", validRecipeSemantics);
+    const response = toolResponse("record_recipe", validRecipeSemantics);
     delete (response as { usage?: unknown }).usage;
     const gateway = makeGateway(response);
     const costs: (
@@ -1264,9 +1276,73 @@ describe("installed import provider adapters", () => {
     });
   });
 
+  it("times out a hanging recipe response body without logging or decoding its payload", async () => {
+    const gateway = makeRawGateway(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start() {
+            // The provider returned headers but never completed the body.
+          },
+        }),
+        { headers: { "content-type": "application/json" } }
+      )
+    );
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+    const exit = await Effect.runPromise(
+      Effect.gen(function* hangingRecipeBody() {
+        const fiber = yield* Effect.forkChild(
+          adapter.extract({
+            evidenceFingerprint: "fingerprint",
+            generation: 1 as never,
+            importId: "import-1" as never,
+            items: [
+              {
+                artifactReference: "private:evidence",
+                evidenceId: "evidence-1",
+                kind: "caption",
+                origin: "creator_provided",
+                value: "must-not-appear",
+              },
+            ],
+          })
+        );
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("150 seconds");
+        return yield* Fiber.await(fiber);
+      }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
+    );
+
+    expect(exit).toMatchObject({ _tag: "Failure" });
+    expect(JSON.stringify(exit)).toContain("timeout");
+    expect(trace.events).toEqual([
+      {
+        correlationId,
+        event: "provider.response",
+        outcome: "received",
+        providerStage: "recipe",
+      },
+      {
+        correlationId,
+        event: "provider.timeout",
+        outcome: "timed_out",
+        providerStage: "recipe",
+      },
+    ]);
+    expect(JSON.stringify(exit)).not.toContain("must-not-appear");
+    expect(JSON.stringify(trace.events)).not.toContain("must-not-appear");
+  });
+
   it("fails closed without invoking the provider when a conservative replay hash is corrupt", async () => {
     const gateway = makeGateway(
-      nativeToolResponse("record_recipe", validRecipeSemantics)
+      toolResponse("record_recipe", validRecipeSemantics)
     );
     const replayGate: ProviderDispatchGate = {
       run: <A, E>(input: {
@@ -1325,7 +1401,7 @@ describe("installed import provider adapters", () => {
 
   it("fails closed without invoking the provider when conservative replay JSON violates the schema", async () => {
     const gateway = makeGateway(
-      nativeToolResponse("record_recipe", validRecipeSemantics)
+      toolResponse("record_recipe", validRecipeSemantics)
     );
     const valueJson = JSON.stringify({ unexpected: true });
     const valueSha256 = [
@@ -1396,7 +1472,7 @@ describe("installed import provider adapters", () => {
 
   it("fails closed without invoking the provider when a multibyte replay exceeds the byte cap", async () => {
     const gateway = makeGateway(
-      nativeToolResponse("record_recipe", validRecipeSemantics)
+      toolResponse("record_recipe", validRecipeSemantics)
     );
     const valueJson = JSON.stringify({ value: "é".repeat(140_000) });
     expect(valueJson.length).toBeLessThan(262_144);
