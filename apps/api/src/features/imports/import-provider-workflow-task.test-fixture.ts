@@ -47,6 +47,7 @@ interface ProviderWorkflowInput {
     | "retry_exhausted"
     | "recipe_conservative_crash_replay"
     | "recipe_conservative_success"
+    | "recipe_recovery_native_replay"
     | "speech_terminal_recovery"
     | "speech_terminal_recovery_poison"
     | "success"
@@ -765,9 +766,39 @@ const directProviderEffect = (
     )
   );
 
+const recipeRecoveryNativeReplay = (
+  env: ProviderWorkflowTestEnv,
+  instanceId: string
+) =>
+  Effect.gen(function* runRecipeRecoveryNativeReplay() {
+    yield* increment(env, instanceId, "task-attempts");
+    const replayValue = yield* Effect.promise(() =>
+      env.PROVIDER_WORKFLOW_STATE.get(
+        stateKey(instanceId, "recipe-recovery-provider-result")
+      )
+    );
+    if (replayValue !== null) {
+      return replayValue;
+    }
+    yield* increment(env, instanceId, "provider-calls");
+    yield* Effect.promise(() =>
+      env.PROVIDER_WORKFLOW_STATE.put(
+        stateKey(instanceId, "recipe-recovery-provider-result"),
+        "recipe-recovery-evidence"
+      )
+    );
+    yield* increment(env, instanceId, "post-provider-crashes");
+    return yield* Effect.die(
+      new Error(
+        "simulated crash after the recipe recovery provider response and before the native task checkpoint"
+      )
+    );
+  });
+
 const providerStageByScenario = {
   recipe_conservative_crash_replay: "recipe",
   recipe_conservative_success: "recipe",
+  recipe_recovery_native_replay: "recipe",
   retry_exhausted: "speech",
   speech_terminal_recovery: "speech",
   speech_terminal_recovery_poison: "speech",
@@ -959,6 +990,19 @@ const providerWorkflowExport = {
               decodeImportId(input.importId),
               input.scenario === "recipe_conservative_crash_replay"
             ),
+            (evidence) => ({
+              _tag: "Succeeded" as const,
+              evidence,
+              stage: "recipe" as const,
+            })
+          );
+          return yield* task("finalize-terminal", Effect.succeed(checkpoint));
+        }
+        if (input.scenario === "recipe_recovery_native_replay") {
+          const checkpoint = yield* runProviderTask(
+            "extract-recipe-recovery-v1",
+            "recipe",
+            recipeRecoveryNativeReplay(env, event.instanceId),
             (evidence) => ({
               _tag: "Succeeded" as const,
               evidence,

@@ -24,6 +24,8 @@ import {
 } from "./features/imports/import-provider-terminal-settlement.js";
 import { ProviderTerminalSettlementRouteDefinitions } from "./features/imports/import-provider-terminal-settlement.routes.js";
 import { makeD1ImportQueueAcceptance } from "./features/imports/import-queue-acceptance.d1.js";
+import { makeRecipeRecoveryWorkflowStarter } from "./features/imports/import-recipe-recovery.js";
+import ImportRecipeRecoveryWorkflow from "./features/imports/import-recipe-recovery.workflow.js";
 import {
   RecipeReviewService,
   makeRecipeReviewService,
@@ -114,6 +116,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const pilotProviderBudgetRuntime =
       makePilotProviderBudgetRuntime(runtimeStage);
     const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
+    const importRecipeRecoveryWorkflow = yield* ImportRecipeRecoveryWorkflow;
     const importBatchQueue = yield* ImportBatchQueue;
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
     yield* Cloudflare.Queues.consumeQueueMessages(
@@ -293,6 +296,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                       Schema.decodeUnknownSync(ImportTimestamp)(
                         new Date().toISOString()
                       ),
+                    recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
+                      importRecipeRecoveryWorkflow
+                    ),
                     runtimeStage,
                     workflowStarter: makeImportWorkflowStarter(
                       importAcquisitionWorkflow

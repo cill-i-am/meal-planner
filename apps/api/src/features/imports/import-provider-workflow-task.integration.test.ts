@@ -16,6 +16,7 @@ interface ProviderWorkflowInput {
     | "retry_exhausted"
     | "recipe_conservative_crash_replay"
     | "recipe_conservative_success"
+    | "recipe_recovery_native_replay"
     | "speech_terminal_recovery"
     | "speech_terminal_recovery_poison"
     | "success"
@@ -1383,6 +1384,40 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
     expect(await readNumber(instanceId, "task-attempts")).toBe(1);
     expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+  });
+
+  it("retries and replays the recipe recovery native task without another provider call", async () => {
+    const instanceId = `gaia-207-recipe-recovery-${randomUUID()}`;
+
+    await expect(
+      runWorkflow(instanceId, { scenario: "recipe_recovery_native_replay" })
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "recipe-recovery-evidence",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(1);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "post-provider-crashes")).toBe(1);
+
+    await expect(
+      restartFromAfterProviderCheckpoint(instanceId)
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        evidence: "recipe-recovery-evidence",
+        stage: "recipe",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "post-provider-crashes")).toBe(1);
   });
 
   it("persists a conservative installed recipe result and replays its native task without another provider call", async () => {

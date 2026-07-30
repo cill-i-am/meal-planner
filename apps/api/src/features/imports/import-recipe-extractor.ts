@@ -153,6 +153,7 @@ export interface RecipeEvidenceItem {
 }
 
 export interface RecipeEvidenceAssembly {
+  readonly dispatchId?: string;
   readonly evidenceFingerprint: string;
   readonly generation: AcquisitionGeneration;
   readonly importId: ImportId;
