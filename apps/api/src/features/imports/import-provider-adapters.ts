@@ -28,6 +28,7 @@ import type {
   SpeechEnvelopeFailure,
   SpeechEnvelopeFamily,
   SpeechEnvelopeUnsupportedLocation,
+  SpeechEnvelopeUnsupportedRootProperty,
 } from "./import-observability.js";
 import {
   ImportObservabilityTraceStore,
@@ -1315,12 +1316,41 @@ interface SpeechEnvelopeClassification {
   readonly failure: SpeechEnvelopeFailure | undefined;
   readonly family: SpeechEnvelopeFamily;
   readonly unsupportedLocation?: SpeechEnvelopeUnsupportedLocation;
+  readonly unsupportedRootProperty?: SpeechEnvelopeUnsupportedRootProperty;
 }
 
 const hasUnsupportedProperty = (
   record: Readonly<Record<string, unknown>>,
   allowlist: ReadonlySet<string>
 ): boolean => Object.keys(record).some((key) => !allowlist.has(key));
+
+const classifyUnsupportedRootProperty = (
+  record: Readonly<Record<string, unknown>>,
+  allowlist: ReadonlySet<string>
+): SpeechEnvelopeUnsupportedRootProperty | undefined => {
+  const unsupportedKeys = Object.keys(record).filter(
+    (key) => !allowlist.has(key)
+  );
+  if (unsupportedKeys.length === 0) {
+    return undefined;
+  }
+  if (unsupportedKeys.length > 1) {
+    return "multiple";
+  }
+  switch (unsupportedKeys[0]) {
+    case "duration":
+    case "duration_after_vad":
+    case "language":
+    case "language_probability":
+    case "task":
+    case "words": {
+      return unsupportedKeys[0];
+    }
+    default: {
+      return "other";
+    }
+  }
+};
 
 const isPresentNonNull = (
   record: Readonly<Record<string, unknown>>,
@@ -1541,10 +1571,17 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
     return { failure: "root_metadata_type", family };
   }
   if (family === "unclassified") {
+    const unsupportedRootProperty = classifyUnsupportedRootProperty(
+      raw,
+      ModelSpecificSpeechProviderResponseKeys
+    );
     return {
       failure: "unsupported_property",
       family,
       unsupportedLocation: "root",
+      ...(unsupportedRootProperty === undefined
+        ? {}
+        : { unsupportedRootProperty }),
     };
   }
   if (
@@ -1573,7 +1610,23 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
       ? genericUnsupportedPropertyLocation(raw)
       : modelSpecificUnsupportedPropertyLocation(raw);
   if (unsupportedLocation !== undefined) {
-    return { failure: "unsupported_property", family, unsupportedLocation };
+    const unsupportedRootProperty =
+      unsupportedLocation === "root"
+        ? classifyUnsupportedRootProperty(
+            raw,
+            family === "generic"
+              ? GenericSpeechProviderResponseKeys
+              : ModelSpecificSpeechProviderResponseKeys
+          )
+        : undefined;
+    return {
+      failure: "unsupported_property",
+      family,
+      unsupportedLocation,
+      ...(unsupportedRootProperty === undefined
+        ? {}
+        : { unsupportedRootProperty }),
+    };
   }
   return { failure: undefined, family };
 };
@@ -1594,6 +1647,7 @@ const decodeSpeechResponse = (
       readonly speechEnvelopeFailure: SpeechEnvelopeFailure;
       readonly speechEnvelopeFamily: SpeechEnvelopeFamily;
       readonly speechEnvelopeUnsupportedLocation?: SpeechEnvelopeUnsupportedLocation;
+      readonly speechEnvelopeUnsupportedRootProperty?: SpeechEnvelopeUnsupportedRootProperty;
     } => {
   const classification = classifySpeechEnvelope(raw);
   if (!isUnknownRecord(raw)) {
@@ -1608,6 +1662,12 @@ const decodeSpeechResponse = (
         : {
             speechEnvelopeUnsupportedLocation:
               classification.unsupportedLocation,
+          }),
+      ...(classification.unsupportedRootProperty === undefined
+        ? {}
+        : {
+            speechEnvelopeUnsupportedRootProperty:
+              classification.unsupportedRootProperty,
           }),
     };
   }
@@ -1630,6 +1690,12 @@ const decodeSpeechResponse = (
         : {
             speechEnvelopeUnsupportedLocation:
               classification.unsupportedLocation,
+          }),
+      ...(classification.unsupportedRootProperty === undefined
+        ? {}
+        : {
+            speechEnvelopeUnsupportedRootProperty:
+              classification.unsupportedRootProperty,
           }),
     };
   }
@@ -1666,6 +1732,12 @@ const speechDecodeDiagnostics = (
         : {
             speechEnvelopeUnsupportedLocation:
               decoded.speechEnvelopeUnsupportedLocation,
+          }),
+      ...(decoded.speechEnvelopeUnsupportedRootProperty === undefined
+        ? {}
+        : {
+            speechEnvelopeUnsupportedRootProperty:
+              decoded.speechEnvelopeUnsupportedRootProperty,
           }),
     };
   }

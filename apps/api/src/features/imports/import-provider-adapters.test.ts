@@ -637,12 +637,18 @@ describe("installed import provider adapters", () => {
   ] as const)(
     "emits only bounded speech shape diagnostics for %s",
     async (
-      _case,
+      testCase,
       response,
       speechEnvelopeFamily,
       speechEnvelopeFailure,
       speechEnvelopeUnsupportedLocation
     ) => {
+      let speechEnvelopeUnsupportedRootProperty: "other" | "words" | undefined;
+      if (testCase === "unsupported property") {
+        speechEnvelopeUnsupportedRootProperty = "other";
+      } else if (testCase === "ambiguous mixed family") {
+        speechEnvelopeUnsupportedRootProperty = "words";
+      }
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
@@ -676,6 +682,9 @@ describe("installed import provider adapters", () => {
         ...(speechEnvelopeUnsupportedLocation === undefined
           ? {}
           : { speechEnvelopeUnsupportedLocation }),
+        ...(speechEnvelopeUnsupportedRootProperty === undefined
+          ? {}
+          : { speechEnvelopeUnsupportedRootProperty }),
       });
       expect(JSON.stringify(exit)).not.toContain("private-shape-canary");
       expect(JSON.stringify(trace.events)).not.toContain(
@@ -693,6 +702,9 @@ describe("installed import provider adapters", () => {
         ...(speechEnvelopeUnsupportedLocation === undefined
           ? []
           : ["speechEnvelopeUnsupportedLocation"]),
+        ...(speechEnvelopeUnsupportedRootProperty === undefined
+          ? []
+          : ["speechEnvelopeUnsupportedRootProperty"]),
       ]);
     }
   );
@@ -707,6 +719,7 @@ describe("installed import provider adapters", () => {
       },
       "model_specific",
       "root",
+      "other",
       "root-private-value",
     ],
     [
@@ -721,6 +734,7 @@ describe("installed import provider adapters", () => {
       },
       "model_specific",
       "transcription_info",
+      undefined,
       "info-private-value",
     ],
     [
@@ -736,6 +750,7 @@ describe("installed import provider adapters", () => {
       },
       "model_specific",
       "segment",
+      undefined,
       "segment-private-value",
     ],
     [
@@ -756,6 +771,7 @@ describe("installed import provider adapters", () => {
       },
       "model_specific",
       "word",
+      undefined,
       "word-private-value",
     ],
     [
@@ -771,6 +787,7 @@ describe("installed import provider adapters", () => {
       },
       "generic",
       "word",
+      undefined,
       "generic-word-private-value",
     ],
   ] as const)(
@@ -780,6 +797,7 @@ describe("installed import provider adapters", () => {
       response,
       speechEnvelopeFamily,
       speechEnvelopeUnsupportedLocation,
+      speechEnvelopeUnsupportedRootProperty,
       privateValue
     ) => {
       const trace = makeRecordingTraceStore();
@@ -807,6 +825,9 @@ describe("installed import provider adapters", () => {
         speechEnvelopeFailure: "unsupported_property",
         speechEnvelopeFamily,
         speechEnvelopeUnsupportedLocation,
+        ...(speechEnvelopeUnsupportedRootProperty === undefined
+          ? {}
+          : { speechEnvelopeUnsupportedRootProperty }),
       });
       expect(Object.keys(trace.events.at(-1) ?? {}).toSorted()).toEqual([
         "correlationId",
@@ -818,6 +839,9 @@ describe("installed import provider adapters", () => {
         "speechEnvelopeFailure",
         "speechEnvelopeFamily",
         "speechEnvelopeUnsupportedLocation",
+        ...(speechEnvelopeUnsupportedRootProperty === undefined
+          ? []
+          : ["speechEnvelopeUnsupportedRootProperty"]),
       ]);
       expect(JSON.stringify(exit)).not.toContain(privateValue);
       expect(JSON.stringify(trace.events)).not.toContain(privateValue);
@@ -949,6 +973,95 @@ describe("installed import provider adapters", () => {
       );
     }
   );
+
+  it.each([
+    [
+      "known language field",
+      {
+        language: "en",
+        segments: [],
+        text: "Chop the onion.",
+      },
+      "language",
+    ],
+    [
+      "known duration field",
+      {
+        duration: 1,
+        segments: [],
+        text: "Chop the onion.",
+      },
+      "duration",
+    ],
+    [
+      "unknown private field",
+      {
+        privateRootCanary: "root-private-value",
+        segments: [],
+        text: "Chop the onion.",
+      },
+      "other",
+    ],
+    [
+      "multiple root fields",
+      {
+        language: "en",
+        privateRootCanary: "root-private-value",
+        segments: [],
+        text: "Chop the onion.",
+      },
+      "multiple",
+    ],
+  ] as const)(
+    "classifies an unsupported root property as %s without exposing its value",
+    async (_case, response, speechEnvelopeUnsupportedRootProperty) => {
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway(response).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      await Effect.runPromiseExit(adapter.transcribe(speechTranscriptionInput));
+
+      expect(trace.events.at(-1)).toMatchObject({
+        speechEnvelopeFailure: "unsupported_property",
+        speechEnvelopeFamily: "model_specific",
+        speechEnvelopeUnsupportedLocation: "root",
+        speechEnvelopeUnsupportedRootProperty,
+      });
+      expect(JSON.stringify(trace.events)).not.toContain("root-private-value");
+      expect(JSON.stringify(trace.events)).not.toMatch(/privateRootCanary/u);
+    }
+  );
+
+  it("omits the root-property classification for a nested unsupported property", async () => {
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: makeSpeechGateway({
+          segments: [{ privateSegmentCanary: "segment-private-value" }],
+          text: "Chop the onion.",
+        }).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    await Effect.runPromiseExit(adapter.transcribe(speechTranscriptionInput));
+
+    expect(trace.events.at(-1)).toMatchObject({
+      speechEnvelopeFailure: "unsupported_property",
+      speechEnvelopeUnsupportedLocation: "segment",
+    });
+    expect(trace.events.at(-1)).not.toHaveProperty(
+      "speechEnvelopeUnsupportedRootProperty"
+    );
+  });
 
   it("omits unsupported-property location for a non-unsupported failure", async () => {
     const trace = makeRecordingTraceStore();
@@ -1147,6 +1260,24 @@ describe("installed import provider adapters", () => {
                 )
               : location === undefined
         );
+        const hasUnsupportedRootProperty =
+          diagnosticEvent?.speechEnvelopeUnsupportedRootProperty !== undefined;
+        expect(
+          diagnosticEvent?.speechEnvelopeUnsupportedRootProperty
+        ).toSatisfy((property) =>
+          hasUnsupportedRootProperty
+            ? [
+                "duration",
+                "duration_after_vad",
+                "language",
+                "language_probability",
+                "multiple",
+                "other",
+                "task",
+                "words",
+              ].includes(property ?? "")
+            : property === undefined
+        );
         expect(Object.keys(diagnosticEvent ?? {}).toSorted()).toEqual([
           "correlationId",
           "decodeReason",
@@ -1158,6 +1289,9 @@ describe("installed import provider adapters", () => {
           "speechEnvelopeFamily",
           ...(hasUnsupportedLocation
             ? ["speechEnvelopeUnsupportedLocation"]
+            : []),
+          ...(hasUnsupportedRootProperty
+            ? ["speechEnvelopeUnsupportedRootProperty"]
             : []),
         ]);
         expect(JSON.stringify(exit)).not.toContain("must-not-escape");
