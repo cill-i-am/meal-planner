@@ -22,7 +22,6 @@ import type {
   PilotProviderBudgetRuntimeShape,
 } from "../pilots/pilot-provider-budget.js";
 import { decodeForcedToolResponseResult } from "./import-forced-tool-response.js";
-import type { ForcedToolResponseDecode } from "./import-forced-tool-response.js";
 import type {
   ImportCorrelationId,
   ImportObservabilityTraceStoreShape,
@@ -57,7 +56,8 @@ import { visualEvidenceSemanticsForFrameCount } from "./import-visual-evidence-e
 const ProviderName = "cloudflare-workers-ai" as const;
 export const InstalledSpeechModel =
   "@cf/openai/whisper-large-v3-turbo" as const;
-export const InstalledVisualModel = "@cf/google/gemma-4-26b-a4b-it" as const;
+export const InstalledVisualModel =
+  "@cf/meta/llama-3.2-11b-vision-instruct" as const;
 export const InstalledRecipeModel =
   "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 
@@ -69,8 +69,6 @@ const ProviderTransportUnavailableMessage =
   "provider_transport_unavailable" as const;
 const ProviderNormalizationInvalidMessage =
   "provider_normalization_invalid" as const;
-const VisualForcedToolEnvelopeInvalidMessage =
-  "visual_forced_tool_envelope_invalid" as const;
 
 type SafeProviderFailureCode =
   | "insufficient_evidence"
@@ -80,6 +78,21 @@ type SafeProviderFailureCode =
   | "provider_unavailable"
   | "throttled"
   | "timeout";
+
+const SafeProviderFailureCodes = new Set<string>([
+  "insufficient_evidence",
+  "malformed_response",
+  "model_refusal",
+  "outcome_unknown",
+  "provider_unavailable",
+  "throttled",
+  "timeout",
+]);
+
+const isSafeProviderFailureCode = (
+  value: unknown
+): value is SafeProviderFailureCode =>
+  typeof value === "string" && SafeProviderFailureCodes.has(value);
 
 interface ProviderDispatchRequest<A, E> {
   readonly conservativeReplay?: {
@@ -345,9 +358,6 @@ const hasProviderErrorDescription = (
 const isProviderNormalizationFailure = (error: unknown): boolean =>
   hasProviderErrorDescription(error, ProviderNormalizationInvalidMessage);
 
-const isVisualForcedToolEnvelopeFailure = (error: unknown): boolean =>
-  hasProviderErrorDescription(error, VisualForcedToolEnvelopeInvalidMessage);
-
 export const failAfter = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   observability: {
@@ -435,19 +445,6 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
           observability.traceStore
         );
       }
-      if (isVisualForcedToolEnvelopeFailure(error)) {
-        return emitImportObservabilityEvent(
-          {
-            correlationId: observability.correlationId,
-            decodeReason: "forced_tool_envelope_invalid",
-            decodeStage: "forced_tool_envelope",
-            event: "provider.decode",
-            outcome: "malformed",
-            providerStage: observability.providerStage,
-          },
-          observability.traceStore
-        );
-      }
       return Effect.void;
     }),
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
@@ -455,9 +452,7 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
       if (typeof error === "string") {
         return error;
       }
-      return isVisualForcedToolEnvelopeFailure(error)
-        ? ("malformed_response" as const)
-        : safeFailureCode(Cause.fail(error));
+      return safeFailureCode(Cause.fail(error));
     }),
     Effect.flatMap((response) => {
       const decoded = decodeForcedToolResponseResult(
@@ -553,27 +548,37 @@ const encodeBase64 = (bytes: Uint8Array) => {
   return btoa(binary);
 };
 
-const visualToolPrompt = (
-  input: VisualEvidenceExtractionInput
-): Prompt.RawInput => [
-  {
-    content: [
-      {
-        text:
-          "Record only visible text in these ordered source images. " +
-          "Each image position is its zero-based frameIndex. " +
-          "Do not infer ingredients, quantities, steps, or other unseen facts.",
-        type: "text" as const,
-      },
-      ...input.frames.map((frame) => ({
-        data: frame.bytes,
-        mediaType: frame.mimeType,
-        type: "file" as const,
-      })),
-    ],
-    role: "user" as const,
+const visualJsonModeRequest = (
+  input: VisualEvidenceExtractionInput,
+  jsonSchema: unknown
+) => ({
+  max_tokens: 8192,
+  messages: [
+    {
+      content: [
+        {
+          text:
+            "Record only visible text in these ordered source images. " +
+            "Each image position is its zero-based frameIndex. " +
+            "Do not infer ingredients, quantities, steps, or other unseen facts.",
+          type: "text" as const,
+        },
+        ...input.frames.map((frame) => ({
+          image_url: {
+            url: `data:${frame.mimeType};base64,${encodeBase64(frame.bytes)}`,
+          },
+          type: "image_url" as const,
+        })),
+      ],
+      role: "user" as const,
+    },
+  ],
+  response_format: {
+    json_schema: jsonSchema,
+    type: "json_schema" as const,
   },
-];
+  temperature: 0,
+});
 
 const adapterFailure = <Tag extends string>(
   tag: Tag,
@@ -655,60 +660,86 @@ const runParsedWorkersAi = (
 const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const parsedVisualForcedToolContent = (result: unknown): readonly unknown[] => {
-  if (!isUnknownRecord(result)) {
-    return [];
+const visualJsonModeUsage = (result: Record<string, unknown>) => {
+  const { usage } = result;
+  if (!isUnknownRecord(usage)) {
+    return { inputTokens: undefined, outputTokens: undefined };
   }
-  const openAiMessages = Array.isArray(result["choices"])
-    ? result["choices"].flatMap((choice) => {
-        if (!isUnknownRecord(choice)) {
-          return [];
-        }
-        const { message } = choice;
-        return isUnknownRecord(message) ? [message] : [];
-      })
-    : [];
-  const openAiToolCalls = openAiMessages.flatMap((message) =>
-    Array.isArray(message["tool_calls"]) ? message["tool_calls"] : []
-  );
-  const nativeToolCalls = result["tool_calls"];
-  const toolCalls = [
-    ...openAiToolCalls,
-    ...(Array.isArray(nativeToolCalls) ? nativeToolCalls : []),
-  ];
-  const toolParts = toolCalls.map((toolCall) => {
-    const call = isUnknownRecord(toolCall) ? toolCall : {};
-    const functionCall = isUnknownRecord(call["function"])
-      ? call["function"]
-      : undefined;
-    return {
-      name: functionCall?.["name"] ?? call["name"],
-      params: functionCall?.["arguments"] ?? call["arguments"],
-      type: "tool-call" as const,
-    };
-  });
-  const openAiText = openAiMessages.flatMap((message) => {
-    const { content } = message;
-    return typeof content === "string" && content.length > 0
-      ? [{ text: content, type: "text" as const }]
-      : [];
-  });
-  const nativeResponse = result["response"];
-  return [
-    ...openAiText,
-    ...(nativeResponse === undefined || nativeResponse === null
-      ? []
-      : [
+  return {
+    inputTokens:
+      typeof usage["prompt_tokens"] === "number"
+        ? usage["prompt_tokens"]
+        : undefined,
+    outputTokens:
+      typeof usage["completion_tokens"] === "number"
+        ? usage["completion_tokens"]
+        : undefined,
+  };
+};
+
+const decodeVisualJsonModeEnvelope = <S extends Schema.Top>(
+  result: unknown,
+  schema: S,
+  observability: {
+    readonly correlationId: ImportCorrelationId;
+    readonly traceStore: ImportObservabilityTraceStoreShape | undefined;
+  }
+): Effect.Effect<
+  {
+    readonly inputTokens: number | undefined;
+    readonly outputTokens: number | undefined;
+    readonly value: S["Type"];
+  },
+  SafeProviderFailureCode,
+  S["DecodingServices"]
+> => {
+  const envelopeKeys = isUnknownRecord(result) ? Object.keys(result) : [];
+  if (
+    !isUnknownRecord(result) ||
+    !Object.hasOwn(result, "response") ||
+    envelopeKeys.some((key) => key !== "response" && key !== "usage") ||
+    !isUnknownRecord(result["response"])
+  ) {
+    return emitImportObservabilityEvent(
+      {
+        correlationId: observability.correlationId,
+        decodeReason: "json_mode_envelope_invalid",
+        decodeStage: "json_mode_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "visual",
+      },
+      observability.traceStore
+    ).pipe(Effect.andThen(Effect.fail("malformed_response" as const)));
+  }
+  return Schema.decodeUnknownEffect(schema, {
+    onExcessProperty: "error",
+  })(result["response"]).pipe(
+    Effect.matchEffect({
+      onFailure: () =>
+        emitImportObservabilityEvent(
           {
-            text:
-              typeof nativeResponse === "string"
-                ? nativeResponse
-                : JSON.stringify(nativeResponse),
-            type: "text" as const,
+            correlationId: observability.correlationId,
+            decodeReason: "json_mode_schema_invalid",
+            decodeStage: "visual_schema",
+            event: "provider.decode",
+            outcome: "malformed",
+            providerStage: "visual",
           },
-        ]),
-    ...toolParts,
-  ];
+          observability.traceStore
+        ).pipe(Effect.andThen(Effect.fail("malformed_response" as const))),
+      onSuccess: (value) =>
+        emitImportObservabilityEvent(
+          {
+            correlationId: observability.correlationId,
+            event: "provider.decode",
+            outcome: "succeeded",
+            providerStage: "visual",
+          },
+          observability.traceStore
+        ).pipe(Effect.as({ ...visualJsonModeUsage(result), value })),
+    })
+  );
 };
 
 const withProviderNormalizationBoundary = (response: Response): Response => {
@@ -780,73 +811,6 @@ const noLogWorkersAiClient = (
   ) as QueryGatewayClient["raw"],
 });
 
-/**
- * Keep Alchemy's installed visual request construction and response parser,
- * but source its input from the Workers AI binding's normal parsed result.
- * This bypasses only the live `Response.json()` seam that failed after a
- * successful visual provider response. The synthetic Response is local and
- * contains no data beyond the binding result already held in memory.
- */
-const parsedVisualWorkersAiClient = (
-  client: QueryGatewayClient,
-  correlationId: ImportCorrelationId,
-  traceStore: ImportObservabilityTraceStoreShape | undefined
-): QueryGatewayClient => ({
-  ...client,
-  raw: Effect.all([client.raw, client.id]).pipe(
-    Effect.map(
-      ([ai, gatewayId]) =>
-        ({
-          run: async (model: unknown, body: unknown) => {
-            let result: unknown;
-            try {
-              result = await runParsedWorkersAi(
-                ai,
-                String(model),
-                body,
-                gatewayId
-              );
-            } catch (error) {
-              if (isPilotProviderKnownZeroCostFailure(error)) {
-                throw error;
-              }
-              // eslint-disable-next-line preserve-caught-error -- Provider payloads and transport errors must not cross this privacy boundary, including as Error.cause.
-              throw new Error(ProviderTransportUnavailableMessage);
-            }
-            await Effect.runPromise(
-              emitImportObservabilityEvent(
-                {
-                  correlationId,
-                  event: "provider.response",
-                  outcome: "received",
-                  providerStage: "visual",
-                },
-                traceStore
-              )
-            );
-            let decoded: ForcedToolResponseDecode;
-            try {
-              decoded = decodeForcedToolResponseResult(
-                parsedVisualForcedToolContent(result),
-                "record_visual_evidence"
-              );
-            } catch {
-              throw new Error(VisualForcedToolEnvelopeInvalidMessage);
-            }
-            if (decoded._tag !== "Decoded") {
-              throw new Error(VisualForcedToolEnvelopeInvalidMessage);
-            }
-            try {
-              return Response.json(result);
-            } catch {
-              throw new Error(ProviderNormalizationInvalidMessage);
-            }
-          },
-        }) as WorkersAiBinding
-    )
-  ) as QueryGatewayClient["raw"],
-});
-
 export const makeInstalledVisualEvidenceExtractor = (input: {
   readonly client: QueryGatewayClient;
   readonly correlationId: ImportCorrelationId;
@@ -858,16 +822,10 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const client = parsedVisualWorkersAiClient(
-      input.client,
-      input.correlationId,
-      traceStore
-    );
-    const service = yield* Cloudflare.AI.makeLanguageModel({
-      client,
-      model,
-      parameters: { maxTokens: 8192, temperature: 0 },
-    });
+    const [ai, gatewayId] = yield* Effect.all([
+      input.client.raw,
+      input.client.id,
+    ]);
     return {
       extract: (request) =>
         request.frames.length === 0
@@ -881,24 +839,48 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
               .run({
                 dispatchId: request.dispatchId,
                 invoke: failAfter(
-                  Effect.gen(function* invokeVisualTool() {
+                  Effect.gen(function* invokeVisualJsonMode() {
                     const semanticsSchema =
                       visualEvidenceSemanticsForFrameCount(
                         request.frames.length
                       );
+                    const result = yield* Effect.tryPromise({
+                      catch: (error) => error,
+                      try: async () => {
+                        try {
+                          return await runParsedWorkersAi(
+                            ai,
+                            model,
+                            visualJsonModeRequest(
+                              request,
+                              Tool.getJsonSchemaFromSchema(semanticsSchema)
+                            ),
+                            gatewayId
+                          );
+                        } catch (error) {
+                          if (isPilotProviderKnownZeroCostFailure(error)) {
+                            throw error;
+                          }
+                          // eslint-disable-next-line preserve-caught-error -- Provider payloads and transport errors must not cross this privacy boundary, including as Error.cause.
+                          throw new Error(ProviderTransportUnavailableMessage);
+                        }
+                      },
+                    });
+                    yield* emitImportObservabilityEvent(
+                      {
+                        correlationId: input.correlationId,
+                        event: "provider.response",
+                        outcome: "received",
+                        providerStage: "visual",
+                      },
+                      traceStore
+                    );
                     const { inputTokens, outputTokens, value } =
-                      yield* oneForcedToolCall(
-                        service,
-                        {
-                          description:
-                            "Record only visible text and the bounded semantic outcome for the supplied ordered images.",
-                          name: "record_visual_evidence",
-                          prompt: visualToolPrompt(request),
-                          schema: semanticsSchema,
-                        },
+                      yield* decodeVisualJsonModeEnvelope(
+                        result,
+                        semanticsSchema,
                         {
                           correlationId: input.correlationId,
-                          providerStage: "visual",
                           traceStore,
                         }
                       );
@@ -927,8 +909,8 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                       inputTokens,
                       outputTokens,
                       {
-                        inputMicroUsdPerToken: 0.1,
-                        outputMicroUsdPerToken: 0.3,
+                        inputMicroUsdPerToken: 0.049,
+                        outputMicroUsdPerToken: 0.676,
                       }
                     );
                     // A schema-valid response proves this bounded visual call
@@ -988,11 +970,20 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
               .pipe(
                 Effect.mapError(
                   // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
-                  (error): VisualEvidenceExtractionFailure =>
-                    adapterFailure(
+                  (error): VisualEvidenceExtractionFailure => {
+                    const providerError =
+                      isPilotProviderKnownZeroCostFailure(error) &&
+                      isSafeProviderFailureCode(error.error)
+                        ? error.error
+                        : undefined;
+                    return adapterFailure(
                       "VisualEvidenceExtractionFailure",
-                      typeof error === "object" ? "outcome_unknown" : error
-                    )
+                      providerError ??
+                        (isSafeProviderFailureCode(error)
+                          ? error
+                          : "outcome_unknown")
+                    );
+                  }
                 )
               ),
     } satisfies VisualEvidenceExtractorShape;

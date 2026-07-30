@@ -101,23 +101,13 @@ const gatewayClient = {
   raw: Effect.succeed({
     run: (model: unknown, body: unknown, options: unknown) => {
       gatewayRequests.push({ body, model, options });
-      const result = {
-        tool_calls: [
-          {
-            arguments: {
-              observations: [],
-              outcome: "empty",
-            },
-            id: "call-visual-1",
-            name: "record_visual_evidence",
-          },
-        ],
+      return Promise.resolve({
+        response: {
+          observations: [],
+          outcome: "empty",
+        },
         usage: { completion_tokens: 10, prompt_tokens: 20 },
-      };
-      return (options as { readonly returnRawResponse?: boolean })
-        .returnRawResponse === true
-        ? Promise.resolve(Response.json(result))
-        : Promise.resolve(result);
+      });
     },
   }),
   run: () => Effect.die("universal AI Gateway dispatch must not be used"),

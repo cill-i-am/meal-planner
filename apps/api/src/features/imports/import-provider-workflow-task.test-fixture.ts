@@ -368,13 +368,7 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
   Effect.gen(function* runBudgetedComposition() {
     const responses = [
       {
-        tool_calls: [
-          {
-            arguments: { observations: [], outcome: "empty" },
-            id: "call-visual-1",
-            name: "record_visual_evidence",
-          },
-        ],
+        response: { observations: [], outcome: "empty" },
       },
     ];
     let providerCalls = 0;
@@ -545,13 +539,7 @@ const visualTerminalRecoveryDispatch = (
             increment(env, instanceId, "visual-provider-calls")
           );
           return {
-            tool_calls: [
-              {
-                arguments: { observations: [], outcome: "empty" },
-                id: "call-visual-recovery-1",
-                name: "record_visual_evidence",
-              },
-            ],
+            response: { observations: [], outcome: "empty" },
           };
         },
       }),
