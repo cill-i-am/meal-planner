@@ -141,9 +141,43 @@ describe("private import observability", () => {
     log.mockRestore();
   });
 
+  it("emits only closed speech-envelope family and failure classifications", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+
+    await Effect.runPromise(
+      emitImportObservabilityEvent({
+        correlationId,
+        decodeReason: "speech_envelope_schema_invalid",
+        decodeStage: "speech_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "speech",
+        speechEnvelopeFailure: "unsupported_property",
+        speechEnvelopeFamily: "model_specific",
+      })
+    );
+
+    expect(log).toHaveBeenCalledExactlyOnceWith({
+      correlationId,
+      decodeReason: "speech_envelope_schema_invalid",
+      decodeStage: "speech_envelope",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "speech",
+      speechEnvelopeFailure: "unsupported_property",
+      speechEnvelopeFamily: "model_specific",
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(
+      /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
+    );
+    log.mockRestore();
+  });
+
   it.each([
     ["decodeStage", "unbounded-stage"],
     ["decodeReason", "raw-provider-response"],
+    ["speechEnvelopeFailure", "private-key-name"],
+    ["speechEnvelopeFamily", "provider-specific"],
   ])("rejects an open %s value", (field, value) => {
     const decode = Schema.decodeUnknownSync(ImportObservabilityEvent, {
       onExcessProperty: "error",

@@ -525,6 +525,152 @@ describe("installed import provider adapters", () => {
     });
   });
 
+  it.each([
+    ["non-object envelope", "invalid", "unclassified", "not_object"],
+    [
+      "missing required text",
+      { segments: [] },
+      "model_specific",
+      "required_text_missing",
+    ],
+    [
+      "wrong required text type",
+      { segments: [], text: 3 },
+      "model_specific",
+      "required_text_type",
+    ],
+    [
+      "wrong root metadata type",
+      { text: "Chop the onion.", word_count: "3" },
+      "generic",
+      "root_metadata_type",
+    ],
+    [
+      "wrong nested container type",
+      { segments: {}, text: "Chop the onion." },
+      "model_specific",
+      "nested_container_type",
+    ],
+    [
+      "wrong nested entry type",
+      { segments: [null], text: "Chop the onion." },
+      "model_specific",
+      "nested_entry_type",
+    ],
+    [
+      "wrong nested metadata type",
+      {
+        text: "Chop the onion.",
+        transcription_info: { duration: "1" },
+      },
+      "model_specific",
+      "nested_metadata_type",
+    ],
+    [
+      "unsupported property",
+      {
+        providerSecret: "private-shape-canary",
+        text: "Chop the onion.",
+      },
+      "generic",
+      "unsupported_property",
+    ],
+    [
+      "unsupported model segment id",
+      { segments: [{ id: 0 }], text: "Chop the onion." },
+      "model_specific",
+      "unsupported_property",
+    ],
+    [
+      "unsupported model segment seek",
+      { segments: [{ seek: 0 }], text: "Chop the onion." },
+      "model_specific",
+      "unsupported_property",
+    ],
+    [
+      "unsupported model segment tokens",
+      { segments: [{ tokens: [1] }], text: "Chop the onion." },
+      "model_specific",
+      "unsupported_property",
+    ],
+    [
+      "unsupported model word probability",
+      {
+        segments: [{ words: [{ probability: 1, word: "Chop" }] }],
+        text: "Chop the onion.",
+      },
+      "model_specific",
+      "unsupported_property",
+    ],
+    [
+      "semantic constraint",
+      { text: "Chop the onion.", word_count: -1 },
+      "generic",
+      "semantic_constraint",
+    ],
+    [
+      "normalized text",
+      { text: " \n\t " },
+      "generic",
+      "normalized_text_invalid",
+    ],
+    [
+      "ambiguous mixed family",
+      { segments: [], text: "Chop the onion.", words: [] },
+      "unclassified",
+      "unsupported_property",
+    ],
+  ] as const)(
+    "emits only bounded speech shape diagnostics for %s",
+    async (_case, response, speechEnvelopeFamily, speechEnvelopeFailure) => {
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway(response).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.transcribe(speechTranscriptionInput)
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason:
+          speechEnvelopeFailure === "normalized_text_invalid"
+            ? "speech_transcript_normalization_invalid"
+            : "speech_envelope_schema_invalid",
+        decodeStage:
+          speechEnvelopeFailure === "normalized_text_invalid"
+            ? "speech_transcript"
+            : "speech_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "speech",
+        speechEnvelopeFailure,
+        speechEnvelopeFamily,
+      });
+      expect(JSON.stringify(exit)).not.toContain("private-shape-canary");
+      expect(JSON.stringify(trace.events)).not.toContain(
+        "private-shape-canary"
+      );
+      expect(Object.keys(trace.events.at(-1) ?? {}).toSorted()).toEqual([
+        "correlationId",
+        "decodeReason",
+        "decodeStage",
+        "event",
+        "outcome",
+        "providerStage",
+        "speechEnvelopeFailure",
+        "speechEnvelopeFamily",
+      ]);
+    }
+  );
+
   it("fails closed for missing, wrong, ambiguous, or provider-private speech response fields", async () => {
     const malformedResponses = [
       {
@@ -664,7 +810,7 @@ describe("installed import provider adapters", () => {
 
         expect(exit._tag).toBe("Failure");
         expect(JSON.stringify(exit)).toContain("malformed_response");
-        expect(trace.events.at(-1)).toEqual({
+        expect(trace.events.at(-1)).toMatchObject({
           correlationId,
           decodeReason: "speech_envelope_schema_invalid",
           decodeStage: "speech_envelope",
@@ -672,6 +818,31 @@ describe("installed import provider adapters", () => {
           outcome: "malformed",
           providerStage: "speech",
         });
+        expect([
+          "generic",
+          "model_specific",
+          "unclassified",
+        ] as const).toContain(trace.events.at(-1)?.speechEnvelopeFamily);
+        expect([
+          "nested_container_type",
+          "nested_entry_type",
+          "nested_metadata_type",
+          "required_text_missing",
+          "required_text_type",
+          "root_metadata_type",
+          "semantic_constraint",
+          "unsupported_property",
+        ] as const).toContain(trace.events.at(-1)?.speechEnvelopeFailure);
+        expect(Object.keys(trace.events.at(-1) ?? {}).toSorted()).toEqual([
+          "correlationId",
+          "decodeReason",
+          "decodeStage",
+          "event",
+          "outcome",
+          "providerStage",
+          "speechEnvelopeFailure",
+          "speechEnvelopeFamily",
+        ]);
         expect(JSON.stringify(exit)).not.toContain("must-not-escape");
         expect(JSON.stringify(trace.events)).not.toContain("must-not-escape");
       })
@@ -709,6 +880,8 @@ describe("installed import provider adapters", () => {
       event: "provider.decode",
       outcome: "malformed",
       providerStage: "speech",
+      speechEnvelopeFailure: "normalized_text_invalid",
+      speechEnvelopeFamily: "model_specific",
     });
     expect(Object.keys(trace.events.at(-1) ?? {}).toSorted()).toEqual([
       "correlationId",
@@ -717,6 +890,8 @@ describe("installed import provider adapters", () => {
       "event",
       "outcome",
       "providerStage",
+      "speechEnvelopeFailure",
+      "speechEnvelopeFamily",
     ]);
   });
 
@@ -782,6 +957,8 @@ describe("installed import provider adapters", () => {
         event: "provider.decode",
         outcome: "malformed",
         providerStage: "speech",
+        speechEnvelopeFailure: "required_text_missing",
+        speechEnvelopeFamily: "model_specific",
       },
     ]);
     expect(JSON.stringify(exit)).not.toContain("must-not-escape");
