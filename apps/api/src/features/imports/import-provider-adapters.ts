@@ -27,6 +27,7 @@ import type {
   ImportObservabilityTraceStoreShape,
   SpeechEnvelopeFailure,
   SpeechEnvelopeFamily,
+  SpeechEnvelopeUnsupportedLocation,
 } from "./import-observability.js";
 import {
   ImportObservabilityTraceStore,
@@ -1313,6 +1314,7 @@ const decodeModelSpecificSpeechResponse = Schema.decodeUnknownOption(
 interface SpeechEnvelopeClassification {
   readonly failure: SpeechEnvelopeFailure | undefined;
   readonly family: SpeechEnvelopeFamily;
+  readonly unsupportedLocation?: SpeechEnvelopeUnsupportedLocation;
 }
 
 const hasUnsupportedProperty = (
@@ -1440,11 +1442,13 @@ const modelSpecificNestedMetadataTypesAreInvalid = (
   );
 };
 
-const genericHasUnsupportedProperty = (
+const genericUnsupportedPropertyLocation = (
   raw: Readonly<Record<string, unknown>>
-): boolean =>
-  hasUnsupportedProperty(raw, GenericSpeechProviderResponseKeys) ||
-  (Array.isArray(raw["words"]) &&
+): SpeechEnvelopeUnsupportedLocation | undefined => {
+  if (hasUnsupportedProperty(raw, GenericSpeechProviderResponseKeys)) {
+    return "root";
+  }
+  return Array.isArray(raw["words"]) &&
     raw["words"].some(
       (word) =>
         isUnknownRecord(word) &&
@@ -1452,13 +1456,16 @@ const genericHasUnsupportedProperty = (
           word,
           ModelSpecificSpeechWordOptionalMetadataKeys
         )
-    ));
+    )
+    ? "word"
+    : undefined;
+};
 
-const modelSpecificHasUnsupportedProperty = (
+const modelSpecificUnsupportedPropertyLocation = (
   raw: Readonly<Record<string, unknown>>
-): boolean => {
+): SpeechEnvelopeUnsupportedLocation | undefined => {
   if (hasUnsupportedProperty(raw, ModelSpecificSpeechProviderResponseKeys)) {
-    return true;
+    return "root";
   }
   const transcriptionInfo = raw["transcription_info"];
   if (
@@ -1468,28 +1475,38 @@ const modelSpecificHasUnsupportedProperty = (
       ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys
     )
   ) {
-    return true;
+    return "transcription_info";
   }
-  return (
-    Array.isArray(raw["segments"]) &&
-    raw["segments"].some(
-      (segment) =>
-        isUnknownRecord(segment) &&
-        (hasUnsupportedProperty(
-          segment,
-          ModelSpecificSpeechSegmentOptionalMetadataKeys
-        ) ||
-          (Array.isArray(segment["words"]) &&
-            segment["words"].some(
-              (word) =>
-                isUnknownRecord(word) &&
-                hasUnsupportedProperty(
-                  word,
-                  ModelSpecificSpeechWordOptionalMetadataKeys
-                )
-            )))
-    )
-  );
+  if (!Array.isArray(raw["segments"])) {
+    return undefined;
+  }
+  for (const segment of raw["segments"]) {
+    if (!isUnknownRecord(segment)) {
+      continue;
+    }
+    if (
+      hasUnsupportedProperty(
+        segment,
+        ModelSpecificSpeechSegmentOptionalMetadataKeys
+      )
+    ) {
+      return "segment";
+    }
+    if (
+      Array.isArray(segment["words"]) &&
+      segment["words"].some(
+        (word) =>
+          isUnknownRecord(word) &&
+          hasUnsupportedProperty(
+            word,
+            ModelSpecificSpeechWordOptionalMetadataKeys
+          )
+      )
+    ) {
+      return "word";
+    }
+  }
+  return undefined;
 };
 
 const classifySpeechEnvelopeFamily = (
@@ -1519,7 +1536,11 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
     return { failure: "root_metadata_type", family };
   }
   if (family === "unclassified") {
-    return { failure: "unsupported_property", family };
+    return {
+      failure: "unsupported_property",
+      family,
+      unsupportedLocation: "root",
+    };
   }
   if (
     family === "generic"
@@ -1542,12 +1563,12 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
   ) {
     return { failure: "nested_metadata_type", family };
   }
-  if (
+  const unsupportedLocation =
     family === "generic"
-      ? genericHasUnsupportedProperty(raw)
-      : modelSpecificHasUnsupportedProperty(raw)
-  ) {
-    return { failure: "unsupported_property", family };
+      ? genericUnsupportedPropertyLocation(raw)
+      : modelSpecificUnsupportedPropertyLocation(raw);
+  if (unsupportedLocation !== undefined) {
+    return { failure: "unsupported_property", family, unsupportedLocation };
   }
   return { failure: undefined, family };
 };
@@ -1567,6 +1588,7 @@ const decodeSpeechResponse = (
       readonly decodeStage: "speech_envelope" | "speech_transcript";
       readonly speechEnvelopeFailure: SpeechEnvelopeFailure;
       readonly speechEnvelopeFamily: SpeechEnvelopeFamily;
+      readonly speechEnvelopeUnsupportedLocation?: SpeechEnvelopeUnsupportedLocation;
     } => {
   const classification = classifySpeechEnvelope(raw);
   if (!isUnknownRecord(raw)) {
@@ -1576,6 +1598,12 @@ const decodeSpeechResponse = (
       decodeStage: "speech_envelope",
       speechEnvelopeFailure: classification.failure ?? "not_object",
       speechEnvelopeFamily: classification.family,
+      ...(classification.unsupportedLocation === undefined
+        ? {}
+        : {
+            speechEnvelopeUnsupportedLocation:
+              classification.unsupportedLocation,
+          }),
     };
   }
   const isModelSpecific =
@@ -1592,6 +1620,12 @@ const decodeSpeechResponse = (
       decodeStage: "speech_envelope",
       speechEnvelopeFailure: classification.failure ?? "semantic_constraint",
       speechEnvelopeFamily: classification.family,
+      ...(classification.unsupportedLocation === undefined
+        ? {}
+        : {
+            speechEnvelopeUnsupportedLocation:
+              classification.unsupportedLocation,
+          }),
     };
   }
   const text = Schema.decodeUnknownOption(SpeechTranscript.fields.text)(
@@ -1622,6 +1656,12 @@ const speechDecodeDiagnostics = (
       decodeStage: decoded.decodeStage,
       speechEnvelopeFailure: decoded.speechEnvelopeFailure,
       speechEnvelopeFamily: decoded.speechEnvelopeFamily,
+      ...(decoded.speechEnvelopeUnsupportedLocation === undefined
+        ? {}
+        : {
+            speechEnvelopeUnsupportedLocation:
+              decoded.speechEnvelopeUnsupportedLocation,
+          }),
     };
   }
   if (Option.isNone(transcript)) {

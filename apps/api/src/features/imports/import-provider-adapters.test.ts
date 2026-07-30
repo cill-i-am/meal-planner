@@ -526,36 +526,41 @@ describe("installed import provider adapters", () => {
   });
 
   it.each([
-    ["non-object envelope", "invalid", "unclassified", "not_object"],
+    ["non-object envelope", "invalid", "unclassified", "not_object", undefined],
     [
       "missing required text",
       { segments: [] },
       "model_specific",
       "required_text_missing",
+      undefined,
     ],
     [
       "wrong required text type",
       { segments: [], text: 3 },
       "model_specific",
       "required_text_type",
+      undefined,
     ],
     [
       "wrong root metadata type",
       { text: "Chop the onion.", word_count: "3" },
       "generic",
       "root_metadata_type",
+      undefined,
     ],
     [
       "wrong nested container type",
       { segments: {}, text: "Chop the onion." },
       "model_specific",
       "nested_container_type",
+      undefined,
     ],
     [
       "wrong nested entry type",
       { segments: [null], text: "Chop the onion." },
       "model_specific",
       "nested_entry_type",
+      undefined,
     ],
     [
       "wrong nested metadata type",
@@ -565,6 +570,7 @@ describe("installed import provider adapters", () => {
       },
       "model_specific",
       "nested_metadata_type",
+      undefined,
     ],
     [
       "unsupported property",
@@ -574,24 +580,28 @@ describe("installed import provider adapters", () => {
       },
       "generic",
       "unsupported_property",
+      "root",
     ],
     [
       "unsupported model segment id",
       { segments: [{ id: 0 }], text: "Chop the onion." },
       "model_specific",
       "unsupported_property",
+      "segment",
     ],
     [
       "unsupported model segment seek",
       { segments: [{ seek: 0 }], text: "Chop the onion." },
       "model_specific",
       "unsupported_property",
+      "segment",
     ],
     [
       "unsupported model segment tokens",
       { segments: [{ tokens: [1] }], text: "Chop the onion." },
       "model_specific",
       "unsupported_property",
+      "segment",
     ],
     [
       "unsupported model word probability",
@@ -601,28 +611,38 @@ describe("installed import provider adapters", () => {
       },
       "model_specific",
       "unsupported_property",
+      "word",
     ],
     [
       "semantic constraint",
       { text: "Chop the onion.", word_count: -1 },
       "generic",
       "semantic_constraint",
+      undefined,
     ],
     [
       "normalized text",
       { text: " \n\t " },
       "generic",
       "normalized_text_invalid",
+      undefined,
     ],
     [
       "ambiguous mixed family",
       { segments: [], text: "Chop the onion.", words: [] },
       "unclassified",
       "unsupported_property",
+      "root",
     ],
   ] as const)(
     "emits only bounded speech shape diagnostics for %s",
-    async (_case, response, speechEnvelopeFamily, speechEnvelopeFailure) => {
+    async (
+      _case,
+      response,
+      speechEnvelopeFamily,
+      speechEnvelopeFailure,
+      speechEnvelopeUnsupportedLocation
+    ) => {
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
@@ -653,6 +673,9 @@ describe("installed import provider adapters", () => {
         providerStage: "speech",
         speechEnvelopeFailure,
         speechEnvelopeFamily,
+        ...(speechEnvelopeUnsupportedLocation === undefined
+          ? {}
+          : { speechEnvelopeUnsupportedLocation }),
       });
       expect(JSON.stringify(exit)).not.toContain("private-shape-canary");
       expect(JSON.stringify(trace.events)).not.toContain(
@@ -667,9 +690,269 @@ describe("installed import provider adapters", () => {
         "providerStage",
         "speechEnvelopeFailure",
         "speechEnvelopeFamily",
+        ...(speechEnvelopeUnsupportedLocation === undefined
+          ? []
+          : ["speechEnvelopeUnsupportedLocation"]),
       ]);
     }
   );
+
+  it.each([
+    [
+      "root",
+      {
+        privateRootCanary: "root-private-value",
+        segments: [],
+        text: "Chop the onion.",
+      },
+      "model_specific",
+      "root",
+      "root-private-value",
+    ],
+    [
+      "transcription info",
+      {
+        segments: [],
+        text: "Chop the onion.",
+        transcription_info: {
+          duration: 1,
+          privateInfoCanary: "info-private-value",
+        },
+      },
+      "model_specific",
+      "transcription_info",
+      "info-private-value",
+    ],
+    [
+      "segment",
+      {
+        segments: [
+          {
+            id: 0,
+            privateSegmentCanary: "segment-private-value",
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      "model_specific",
+      "segment",
+      "segment-private-value",
+    ],
+    [
+      "model-specific word",
+      {
+        segments: [
+          {
+            words: [
+              {
+                privateWordCanary: "word-private-value",
+                probability: 1,
+                word: "Chop",
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      "model_specific",
+      "word",
+      "word-private-value",
+    ],
+    [
+      "generic word",
+      {
+        text: "Chop the onion.",
+        words: [
+          {
+            privateGenericWordCanary: "generic-word-private-value",
+            word: "Chop",
+          },
+        ],
+      },
+      "generic",
+      "word",
+      "generic-word-private-value",
+    ],
+  ] as const)(
+    "locates an unsupported speech property at %s without exposing its name or value",
+    async (
+      _case,
+      response,
+      speechEnvelopeFamily,
+      speechEnvelopeUnsupportedLocation,
+      privateValue
+    ) => {
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway(response).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.transcribe(speechTranscriptionInput)
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason: "speech_envelope_schema_invalid",
+        decodeStage: "speech_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "speech",
+        speechEnvelopeFailure: "unsupported_property",
+        speechEnvelopeFamily,
+        speechEnvelopeUnsupportedLocation,
+      });
+      expect(Object.keys(trace.events.at(-1) ?? {}).toSorted()).toEqual([
+        "correlationId",
+        "decodeReason",
+        "decodeStage",
+        "event",
+        "outcome",
+        "providerStage",
+        "speechEnvelopeFailure",
+        "speechEnvelopeFamily",
+        "speechEnvelopeUnsupportedLocation",
+      ]);
+      expect(JSON.stringify(exit)).not.toContain(privateValue);
+      expect(JSON.stringify(trace.events)).not.toContain(privateValue);
+      expect(JSON.stringify(trace.events)).not.toMatch(
+        /private(?:Root|Info|Segment|Word|GenericWord)Canary/u
+      );
+    }
+  );
+
+  it.each([
+    [
+      "root before nested locations",
+      {
+        privateRootCanary: "root-private-value",
+        segments: [
+          {
+            privateSegmentCanary: "segment-private-value",
+            words: [
+              {
+                privateWordCanary: "word-private-value",
+                word: "Chop",
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+        transcription_info: {
+          privateInfoCanary: "info-private-value",
+        },
+      },
+      "root",
+    ],
+    [
+      "transcription info before segment and word",
+      {
+        segments: [
+          {
+            privateSegmentCanary: "segment-private-value",
+            words: [
+              {
+                privateWordCanary: "word-private-value",
+                word: "Chop",
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+        transcription_info: {
+          privateInfoCanary: "info-private-value",
+        },
+      },
+      "transcription_info",
+    ],
+    [
+      "segment before word",
+      {
+        segments: [
+          {
+            privateSegmentCanary: "segment-private-value",
+            words: [
+              {
+                privateWordCanary: "word-private-value",
+                word: "Chop",
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      "segment",
+    ],
+    [
+      "word when it is the only unsupported location",
+      {
+        segments: [
+          {
+            words: [
+              {
+                privateWordCanary: "word-private-value",
+                word: "Chop",
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      "word",
+    ],
+  ] as const)(
+    "uses deterministic unsupported-property precedence: %s",
+    async (_case, response, speechEnvelopeUnsupportedLocation) => {
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway(response).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      await Effect.runPromiseExit(adapter.transcribe(speechTranscriptionInput));
+
+      expect(trace.events.at(-1)?.speechEnvelopeUnsupportedLocation).toBe(
+        speechEnvelopeUnsupportedLocation
+      );
+      expect(JSON.stringify(trace.events)).not.toMatch(
+        /private(?:Root|Info|Segment|Word)Canary|private-value/u
+      );
+    }
+  );
+
+  it("omits unsupported-property location for a non-unsupported failure", async () => {
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: makeSpeechGateway({
+          segments: [],
+          text: 3,
+        }).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    await Effect.runPromiseExit(adapter.transcribe(speechTranscriptionInput));
+
+    expect(trace.events.at(-1)).toMatchObject({
+      speechEnvelopeFailure: "required_text_type",
+    });
+    expect(trace.events.at(-1)).not.toHaveProperty(
+      "speechEnvelopeUnsupportedLocation"
+    );
+  });
 
   it("fails closed for missing, wrong, ambiguous, or provider-private speech response fields", async () => {
     const malformedResponses = [
@@ -833,7 +1116,18 @@ describe("installed import provider adapters", () => {
           "semantic_constraint",
           "unsupported_property",
         ] as const).toContain(trace.events.at(-1)?.speechEnvelopeFailure);
-        expect(Object.keys(trace.events.at(-1) ?? {}).toSorted()).toEqual([
+        const diagnosticEvent = trace.events.at(-1);
+        const hasUnsupportedLocation =
+          diagnosticEvent?.speechEnvelopeFailure === "unsupported_property";
+        expect(diagnosticEvent?.speechEnvelopeUnsupportedLocation).toSatisfy(
+          (location) =>
+            hasUnsupportedLocation
+              ? ["root", "segment", "transcription_info", "word"].includes(
+                  location ?? ""
+                )
+              : location === undefined
+        );
+        expect(Object.keys(diagnosticEvent ?? {}).toSorted()).toEqual([
           "correlationId",
           "decodeReason",
           "decodeStage",
@@ -842,6 +1136,9 @@ describe("installed import provider adapters", () => {
           "providerStage",
           "speechEnvelopeFailure",
           "speechEnvelopeFamily",
+          ...(hasUnsupportedLocation
+            ? ["speechEnvelopeUnsupportedLocation"]
+            : []),
         ]);
         expect(JSON.stringify(exit)).not.toContain("must-not-escape");
         expect(JSON.stringify(trace.events)).not.toContain("must-not-escape");
