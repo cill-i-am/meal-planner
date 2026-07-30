@@ -19,7 +19,10 @@ const Sha256 = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
 );
 
-export const RecipeRecoveryIdentity = Schema.Literal("recovery:1");
+export const RecipeRecoveryIdentity = Schema.Literals([
+  "recovery:1",
+  "recovery:2",
+]);
 export type RecipeRecoveryIdentity = typeof RecipeRecoveryIdentity.Type;
 
 const RecipeRecoveryRow = Schema.Struct({
@@ -32,7 +35,7 @@ const RecipeRecoveryRow = Schema.Struct({
   recovery_dispatch_id: PilotBudgetDispatchId,
   recovery_extraction_fingerprint: Sha256,
   recovery_identity: RecipeRecoveryIdentity,
-  recovery_ordinal: Schema.Literal(1),
+  recovery_ordinal: Schema.Literals([1, 2]),
   runtime_stage: Schema.Literal(PilotProviderBudgetStage),
   transcript_sha256: Sha256,
   visual_manifest_sha256: Sha256,
@@ -48,7 +51,7 @@ export interface RecipeRecovery {
   readonly recoveryDispatchId: PilotBudgetDispatchId;
   readonly recoveryExtractionFingerprint: string;
   readonly recoveryIdentity: RecipeRecoveryIdentity;
-  readonly recoveryOrdinal: 1;
+  readonly recoveryOrdinal: 1 | 2;
   readonly runtimeStage: typeof PilotProviderBudgetStage;
   readonly transcriptSha256: string;
   readonly visualManifestSha256: string;
@@ -90,19 +93,21 @@ const sha256Text = (value: string) =>
   );
 
 export const recipeRecoveryExtractionFingerprint = (
-  originalExtractionFingerprint: string
+  originalExtractionFingerprint: string,
+  recoveryIdentity: RecipeRecoveryIdentity = "recovery:1"
 ) =>
   sha256Text(
     JSON.stringify({
       originalExtractionFingerprint,
-      recoveryIdentity: "recovery:1",
+      recoveryIdentity,
     })
   );
 
 const readRecipeRecovery = (
   database: AnyD1Database,
   importId: ImportId,
-  acquisitionGeneration: AcquisitionGeneration
+  acquisitionGeneration: AcquisitionGeneration,
+  recoveryOrdinal: 1 | 2 = 1
 ) =>
   persistenceEffect(() =>
     database
@@ -117,9 +122,32 @@ const readRecipeRecovery = (
           WHERE runtime_stage = ?
             AND import_id = ?
             AND acquisition_generation = ?
-            AND recovery_ordinal = 1`
+            AND recovery_ordinal = ?
+          UNION ALL
+         SELECT runtime_stage, import_id, acquisition_generation,
+                2 AS recovery_ordinal, 'recovery:2' AS recovery_identity,
+                first_recovery_dispatch_id AS original_dispatch_id,
+                recovery_dispatch_id, evidence_fingerprint,
+                first_recovery_extraction_fingerprint
+                  AS original_extraction_fingerprint,
+                recovery_extraction_fingerprint, transcript_sha256,
+                visual_manifest_sha256, evidence_references_json
+           FROM pilot_provider_recipe_second_recoveries
+          WHERE runtime_stage = ?
+            AND import_id = ?
+            AND acquisition_generation = ?
+            AND ? = 2`
       )
-      .bind(PilotProviderBudgetStage, importId, acquisitionGeneration)
+      .bind(
+        PilotProviderBudgetStage,
+        importId,
+        acquisitionGeneration,
+        recoveryOrdinal,
+        PilotProviderBudgetStage,
+        importId,
+        acquisitionGeneration,
+        recoveryOrdinal
+      )
       .first()
   ).pipe(
     Effect.flatMap((row) =>
@@ -322,6 +350,135 @@ const readCandidate = (
     )
   );
 
+const requireSecondRecoveryCandidate = (
+  database: AnyD1Database,
+  input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly firstRecoveryDispatchId: PilotBudgetDispatchId;
+    readonly importId: ImportId;
+  }
+) =>
+  persistenceEffect(() =>
+    database
+      .prepare(
+        `SELECT 1 AS allowed
+           FROM pilot_provider_recipe_recoveries AS recovery
+           JOIN pilot_provider_budget_dispatches AS dispatch
+             ON dispatch.runtime_stage = recovery.runtime_stage
+            AND dispatch.dispatch_id = recovery.recovery_dispatch_id
+           JOIN pilot_provider_budget_reconciliations AS audit
+             ON audit.runtime_stage = dispatch.runtime_stage
+            AND audit.dispatch_id = dispatch.dispatch_id
+           JOIN pilot_provider_stage_budget AS stage
+             ON stage.runtime_stage = recovery.runtime_stage
+           JOIN import_provider_terminal_checkpoints AS checkpoint
+             ON checkpoint.import_id = recovery.import_id
+            AND checkpoint.acquisition_generation =
+                  recovery.acquisition_generation
+            AND checkpoint.provider_stage = 'recipe'
+            AND checkpoint.ownership_id =
+                  recovery.original_extraction_fingerprint
+            AND checkpoint.failure_code = 'outcome_unknown'
+           JOIN import_recipe_extractions AS original_extraction
+             ON original_extraction.extraction_fingerprint =
+                  checkpoint.ownership_id
+            AND original_extraction.import_id = checkpoint.import_id
+            AND original_extraction.acquisition_generation =
+                  checkpoint.acquisition_generation
+            AND original_extraction.evidence_fingerprint =
+                  recovery.evidence_fingerprint
+            AND original_extraction.state = 'failed'
+            AND original_extraction.failure_code = 'provider_error'
+            AND original_extraction.completed_at = checkpoint.completed_at
+           JOIN import_recipe_extractions AS recovery_extraction
+             ON recovery_extraction.extraction_fingerprint =
+                  recovery.recovery_extraction_fingerprint
+            AND recovery_extraction.import_id = recovery.import_id
+            AND recovery_extraction.acquisition_generation =
+                  recovery.acquisition_generation
+            AND recovery_extraction.evidence_fingerprint =
+                  recovery.evidence_fingerprint
+            AND recovery_extraction.state = 'failed'
+            AND recovery_extraction.failure_code = 'provider_error'
+            AND recovery_extraction.is_current = 0
+           JOIN import_recipe_terminal_projections AS projection
+             ON projection.import_id = checkpoint.import_id
+            AND projection.acquisition_generation =
+                  checkpoint.acquisition_generation
+            AND projection.ownership_id = checkpoint.ownership_id
+            AND projection.projected_at = checkpoint.completed_at
+            AND projection.status = 'failed'
+            AND projection.status_code = 'recipe_extraction_failed'
+            AND projection.recovery_action = 'operator_reconcile'
+           JOIN recipe_imports AS parent
+             ON parent.id = recovery.import_id
+            AND parent.acquisition_generation =
+                  recovery.acquisition_generation
+            AND parent.status = 'transcribed'
+            AND parent.status_code IS NULL
+            AND parent.recovery_action IS NULL
+            AND parent.evidence_references_json =
+                  recovery.evidence_references_json
+            AND projection.evidence_references_json =
+                  parent.evidence_references_json
+           JOIN import_transcriptions AS transcript
+             ON transcript.import_id = parent.id
+            AND transcript.acquisition_generation =
+                  parent.acquisition_generation
+            AND transcript.state = 'transcribed'
+            AND transcript.transcript_sha256 = recovery.transcript_sha256
+           JOIN import_visual_evidence AS visual
+             ON visual.import_id = parent.id
+            AND visual.acquisition_generation =
+                  parent.acquisition_generation
+            AND visual.state = 'completed'
+            AND visual.manifest_sha256 =
+                  recovery.visual_manifest_sha256
+            AND visual.source_media_sha256 =
+                  transcript.source_media_sha256
+          WHERE recovery.runtime_stage = ?
+            AND recovery.import_id = ?
+            AND recovery.acquisition_generation = ?
+            AND recovery.recovery_ordinal = 1
+            AND recovery.recovery_identity = 'recovery:1'
+            AND recovery.recovery_dispatch_id = ?
+            AND dispatch.run_id =
+                  'gaia-118:recipe-recovery:' || recovery.import_id
+            AND dispatch.provider_stage_id = 'recipe-extraction'
+            AND dispatch.state = 'settled_unknown'
+            AND dispatch.actual_cost_micro_usd IS NULL
+            AND dispatch.maximum_cost_micro_usd = 100000
+            AND audit.actual_cost_was_unknown = 1
+            AND audit.authority = 'authenticated_operator'
+            AND audit.conservative_charge_micro_usd = 100000
+            AND stage.state = 'open'
+            AND stage.reserved_micro_usd = 0
+            AND stage.invoking_dispatch_id IS NULL
+            AND stage.poison_dispatch_id IS NULL
+            AND stage.settled_micro_usd + 100000 <=
+                  stage.budget_cap_micro_usd
+            AND NOT EXISTS (
+              SELECT 1
+                FROM pilot_provider_recipe_replay_values AS replay
+               WHERE replay.runtime_stage = recovery.runtime_stage
+                 AND replay.dispatch_id = recovery.recovery_dispatch_id
+            )`
+      )
+      .bind(
+        PilotProviderBudgetStage,
+        input.importId,
+        input.acquisitionGeneration,
+        input.firstRecoveryDispatchId
+      )
+      .first()
+  ).pipe(
+    Effect.flatMap((row) =>
+      row === null
+        ? Effect.fail(persistenceError("recovery_not_allowed"))
+        : Effect.void
+    )
+  );
+
 export interface RecipeRecoveryRepositoryShape {
   readonly prepare: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
@@ -329,9 +486,16 @@ export interface RecipeRecoveryRepositoryShape {
     readonly importId: ImportId;
     readonly originalDispatchId: PilotBudgetDispatchId;
   }) => Effect.Effect<RecipeRecovery, RecipeRecoveryPersistenceError>;
+  readonly prepareSecond: (input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly createdAt: ImportTimestamp;
+    readonly firstRecoveryDispatchId: PilotBudgetDispatchId;
+    readonly importId: ImportId;
+  }) => Effect.Effect<RecipeRecovery, RecipeRecoveryPersistenceError>;
   readonly read: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
     readonly importId: ImportId;
+    readonly recoveryOrdinal?: 1 | 2;
   }) => Effect.Effect<RecipeRecovery, RecipeRecoveryPersistenceError>;
   readonly readResume: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
@@ -417,12 +581,99 @@ export const makeD1RecipeRecoveryRepository = (
       }
       return yield* Effect.fail(persistenceError("persistence_corrupt"));
     }),
+  prepareSecond: (input) =>
+    Effect.gen(function* prepareSecondRecipeRecovery() {
+      if (runtimeStage !== PilotProviderBudgetStage) {
+        return yield* Effect.fail(persistenceError("stage_not_allowed"));
+      }
+      const first = yield* readRecipeRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration,
+        1
+      );
+      if (first.recoveryDispatchId !== input.firstRecoveryDispatchId) {
+        return yield* Effect.fail(persistenceError("recovery_not_allowed"));
+      }
+      const existing = yield* readRecipeRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration,
+        2
+      ).pipe(
+        Effect.map((recovery): RecipeRecovery | null => recovery),
+        Effect.catchTag("RecipeRecoveryPersistenceError", (error) =>
+          error.code === "recovery_not_allowed"
+            ? Effect.succeed(null)
+            : Effect.fail(error)
+        )
+      );
+      if (existing !== null) {
+        return existing.originalDispatchId === input.firstRecoveryDispatchId
+          ? existing
+          : yield* Effect.fail(persistenceError("recovery_not_allowed"));
+      }
+      yield* requireSecondRecoveryCandidate(database, input);
+      const recoveryDispatchId = yield* Schema.decodeUnknownEffect(
+        PilotBudgetDispatchId
+      )(`${first.originalDispatchId}:recovery:2`).pipe(
+        Effect.mapError(() => persistenceError("persistence_corrupt"))
+      );
+      const recoveryExtractionFingerprint =
+        yield* recipeRecoveryExtractionFingerprint(
+          first.recoveryExtractionFingerprint,
+          "recovery:2"
+        );
+      yield* persistenceEffect(() =>
+        database
+          .prepare(
+            `INSERT INTO pilot_provider_recipe_second_recoveries (
+               runtime_stage, import_id, acquisition_generation,
+               original_dispatch_id, first_recovery_dispatch_id,
+               recovery_dispatch_id, evidence_fingerprint,
+               first_recovery_extraction_fingerprint,
+               recovery_extraction_fingerprint, transcript_sha256,
+               visual_manifest_sha256, evidence_references_json, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(
+               runtime_stage, import_id, acquisition_generation
+             ) DO NOTHING`
+          )
+          .bind(
+            PilotProviderBudgetStage,
+            input.importId,
+            input.acquisitionGeneration,
+            first.originalDispatchId,
+            first.recoveryDispatchId,
+            recoveryDispatchId,
+            first.evidenceFingerprint,
+            first.recoveryExtractionFingerprint,
+            recoveryExtractionFingerprint,
+            first.transcriptSha256,
+            first.visualManifestSha256,
+            first.evidenceReferencesJson,
+            DateTime.formatIso(input.createdAt)
+          )
+          .run()
+      );
+      const recovery = yield* readRecipeRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration,
+        2
+      );
+      if (recovery.originalDispatchId === input.firstRecoveryDispatchId) {
+        return recovery;
+      }
+      return yield* Effect.fail(persistenceError("persistence_corrupt"));
+    }),
   read: (input) =>
     runtimeStage === PilotProviderBudgetStage
       ? readRecipeRecovery(
           database,
           input.importId,
-          input.acquisitionGeneration
+          input.acquisitionGeneration,
+          input.recoveryOrdinal
         )
       : Effect.fail(persistenceError("stage_not_allowed")),
   readResume: (input) =>
@@ -439,7 +690,7 @@ export const RecipeRecoveryWorkflowInput = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   correlationId: ImportCorrelationId,
   importId: ImportId,
-  recoveryOrdinal: Schema.Literal(1),
+  recoveryOrdinal: Schema.Literals([1, 2]),
   resumeOrdinal: Schema.optionalKey(Schema.Literal(1)),
 });
 export type RecipeRecoveryWorkflowInput =
@@ -489,14 +740,17 @@ export interface RecipeRecoveryWorkflowStarterShape {
 
 export const recipeRecoveryWorkflowInstanceId = (
   importId: ImportId,
-  acquisitionGeneration: AcquisitionGeneration
-) => `import-recipe-recovery-${importId}-${acquisitionGeneration}-1`;
+  acquisitionGeneration: AcquisitionGeneration,
+  recoveryOrdinal: 1 | 2 = 1
+) =>
+  `import-recipe-recovery-${importId}-${acquisitionGeneration}-${recoveryOrdinal}`;
 
 export const recipeRecoveryResumeWorkflowInstanceId = (
   importId: ImportId,
-  acquisitionGeneration: AcquisitionGeneration
+  acquisitionGeneration: AcquisitionGeneration,
+  recoveryOrdinal: 1 | 2 = 1
 ) =>
-  `${recipeRecoveryWorkflowInstanceId(importId, acquisitionGeneration)}-resume-1`;
+  `${recipeRecoveryWorkflowInstanceId(importId, acquisitionGeneration, recoveryOrdinal)}-resume-1`;
 
 export const makeRecipeRecoveryWorkflowStarter = (
   workflow: WorkflowHandleLike,
@@ -509,17 +763,19 @@ export const makeRecipeRecoveryWorkflowStarter = (
     const id = resume
       ? recipeRecoveryResumeWorkflowInstanceId(
           recovery.importId,
-          recovery.acquisitionGeneration
+          recovery.acquisitionGeneration,
+          recovery.recoveryOrdinal
         )
       : recipeRecoveryWorkflowInstanceId(
           recovery.importId,
-          recovery.acquisitionGeneration
+          recovery.acquisitionGeneration,
+          recovery.recoveryOrdinal
         );
     const params = Schema.decodeUnknownSync(RecipeRecoveryWorkflowInput)({
       acquisitionGeneration: recovery.acquisitionGeneration,
       correlationId: newCorrelationId(),
       importId: recovery.importId,
-      recoveryOrdinal: 1,
+      recoveryOrdinal: recovery.recoveryOrdinal,
       ...(resume ? { resumeOrdinal: 1 as const } : {}),
     });
     return workflow.createBatch([{ id, params }]).pipe(
