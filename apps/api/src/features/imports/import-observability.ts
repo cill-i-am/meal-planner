@@ -48,6 +48,7 @@ export type AcquisitionDiagnosticReasonCode =
 
 export const ProviderDecodeStage = Schema.Literals([
   "forced_tool_envelope",
+  "json_mode_envelope",
   "provider_normalization",
   "recipe_schema",
   "visual_schema",
@@ -58,6 +59,8 @@ export const ProviderDecodeReason = Schema.Literals([
   "forced_tool_arguments_schema_invalid",
   "forced_tool_envelope_invalid",
   "forced_tool_missing",
+  "json_mode_envelope_invalid",
+  "json_mode_schema_invalid",
   "provider_normalization_invalid",
 ]);
 export type ProviderDecodeReason = typeof ProviderDecodeReason.Type;

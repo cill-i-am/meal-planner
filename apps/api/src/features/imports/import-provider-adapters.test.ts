@@ -187,7 +187,7 @@ const validVisual = {
     currency: "USD",
     estimatedMicroUsd: 20,
   },
-  model: "@cf/google/gemma-4-26b-a4b-it",
+  model: "@cf/meta/llama-3.2-11b-vision-instruct",
   observations: [],
   outcome: "empty",
   provider: "cloudflare-workers-ai",
@@ -200,6 +200,13 @@ const validVisualSemantics = {
 } as const;
 
 const defaultVisualUsage = { completion_tokens: 10, prompt_tokens: 20 };
+const jsonModeResponse = (
+  value: unknown,
+  usage: unknown | null = defaultVisualUsage
+) => ({
+  response: value,
+  ...(usage === null ? {} : { usage }),
+});
 const toolResponse = (
   name: string,
   value: unknown,
@@ -456,7 +463,7 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(exit)).not.toContain("must-not-escape");
   });
 
-  it("maps the parsed visual envelope sentinel through installed Alchemy without payload data", async () => {
+  it("maps an invalid JSON Mode envelope without payload data", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
     const gateway = makeGateway({ providerSecret: "must-not-escape" });
     const adapter = await runFactory(
@@ -501,8 +508,8 @@ describe("installed import provider adapters", () => {
       [
         {
           correlationId,
-          decodeReason: "forced_tool_envelope_invalid",
-          decodeStage: "forced_tool_envelope",
+          decodeReason: "json_mode_envelope_invalid",
+          decodeStage: "json_mode_envelope",
           event: "provider.decode",
           outcome: "malformed",
           providerStage: "visual",
@@ -550,7 +557,7 @@ describe("installed import provider adapters", () => {
     expect(trace.events).toEqual([]);
   });
 
-  it("uses one forced visual tool call and injects trusted transport metadata", async () => {
+  it("uses strict visual JSON Mode and injects trusted transport metadata", async () => {
     const visualSemantics = {
       observations: [
         {
@@ -561,16 +568,14 @@ describe("installed import provider adapters", () => {
       ],
       outcome: "found",
     } as const;
-    const gateway = makeGateway(
-      toolResponse("record_visual_evidence", visualSemantics)
-    );
+    const gateway = makeGateway(jsonModeResponse(visualSemantics));
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
-        model: "@cf/google/gemma-4-26b-a4b-it",
+        model: "@cf/meta/llama-3.2-11b-vision-instruct",
       }),
       trace.service
     );
@@ -605,9 +610,9 @@ describe("installed import provider adapters", () => {
       cost: {
         certainty: "estimated",
         currency: "USD",
-        estimatedMicroUsd: 5,
+        estimatedMicroUsd: 8,
       },
-      model: "@cf/google/gemma-4-26b-a4b-it",
+      model: "@cf/meta/llama-3.2-11b-vision-instruct",
       observations: [
         {
           confidence: 0.92,
@@ -625,17 +630,12 @@ describe("installed import provider adapters", () => {
     expect(gateway.requests).toHaveLength(1);
     const request = gateway.requests[0] as {
       readonly body: {
-        readonly response_format?: unknown;
+        readonly response_format: {
+          readonly json_schema: unknown;
+          readonly type: string;
+        };
         readonly messages: readonly {
           readonly content: readonly { readonly type: string }[];
-        }[];
-        readonly tool_choice: string;
-        readonly tools: readonly {
-          readonly function: {
-            readonly name: string;
-            readonly parameters: unknown;
-          };
-          readonly type: string;
         }[];
       };
       readonly model: string;
@@ -649,7 +649,7 @@ describe("installed import provider adapters", () => {
         readonly returnRawResponse?: boolean;
       };
     };
-    expect(request.model).toBe("@cf/google/gemma-4-26b-a4b-it");
+    expect(request.model).toBe("@cf/meta/llama-3.2-11b-vision-instruct");
     expect(request.options).toEqual({
       gateway: {
         collectLog: false,
@@ -662,19 +662,16 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(request.options)).not.toMatch(
       /AQID|data:image|https?:|cookie|credential|prompt|transcript/iu
     );
-    expect(request.body).not.toHaveProperty("response_format");
-    expect(request.body.tool_choice).toBe("required");
-    expect(request.body.tools).toHaveLength(1);
-    expect(request.body.tools[0]).toMatchObject({
-      function: { name: "record_visual_evidence" },
-      type: "function",
-    });
+    expect(request.body).not.toHaveProperty("tool_choice");
+    expect(request.body).not.toHaveProperty("tools");
+    expect(request.body).not.toHaveProperty("stream");
     expect(request.body.messages[0]?.content.map(({ type }) => type)).toEqual([
       "text",
       "image_url",
       "image_url",
     ]);
-    const jsonSchema = request.body.tools[0]?.function.parameters;
+    expect(request.body.response_format.type).toBe("json_schema");
+    const jsonSchema = request.body.response_format.json_schema;
     expect(jsonSchema).toMatchObject({
       additionalProperties: false,
       properties: {
@@ -737,16 +734,8 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(trace.events)).not.toContain("2 onions");
   });
 
-  it("accepts the installed Gemma native forced-tool response contract", async () => {
-    const gateway = makeGateway({
-      tool_calls: [
-        {
-          arguments: validVisualSemantics,
-          name: "record_visual_evidence",
-        },
-      ],
-      usage: defaultVisualUsage,
-    });
+  it("accepts the documented Workers AI JSON Mode response envelope", async () => {
+    const gateway = makeGateway(jsonModeResponse(validVisualSemantics));
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
@@ -775,13 +764,13 @@ describe("installed import provider adapters", () => {
     );
 
     expect(output).toMatchObject({
-      model: "@cf/google/gemma-4-26b-a4b-it",
+      model: "@cf/meta/llama-3.2-11b-vision-instruct",
       observations: [],
       outcome: "empty",
     });
     expect(gateway.requests).toHaveLength(1);
     expect((gateway.requests[0] as { readonly model: string }).model).toBe(
-      "@cf/google/gemma-4-26b-a4b-it"
+      "@cf/meta/llama-3.2-11b-vision-instruct"
     );
   });
 
@@ -1212,9 +1201,7 @@ describe("installed import provider adapters", () => {
   );
 
   it("rejects model attempts to inject visual transport metadata", async () => {
-    const gateway = makeGateway(
-      toolResponse("record_visual_evidence", validVisual)
-    );
+    const gateway = makeGateway(jsonModeResponse(validVisual));
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
@@ -1247,13 +1234,10 @@ describe("installed import provider adapters", () => {
   });
 
   it.each([
-    [
-      "invalid tool arguments",
-      toolResponse("record_visual_evidence", "{not-json"),
-    ],
+    ["prose instead of a structured object", jsonModeResponse("{not-json")],
     [
       "model-owned trusted fields",
-      toolResponse("record_visual_evidence", {
+      jsonModeResponse({
         observations: [
           {
             confidence: 0.9,
@@ -1267,14 +1251,14 @@ describe("installed import provider adapters", () => {
     ],
     [
       "out-of-range frame references",
-      toolResponse("record_visual_evidence", {
+      jsonModeResponse({
         observations: [{ confidence: 0.9, frameIndex: 1, text: "2 onions" }],
         outcome: "found",
       }),
     ],
     [
       "contradictory outcomes",
-      toolResponse("record_visual_evidence", {
+      jsonModeResponse({
         observations: [{ confidence: 0.9, frameIndex: 0, text: "2 onions" }],
         outcome: "empty",
       }),
@@ -1315,6 +1299,20 @@ describe("installed import provider adapters", () => {
 
   it.each([
     ["free-text substitution", { response: "provider-private-canary" }],
+    [
+      "a fenced JSON object",
+      {
+        response:
+          '```json\n{"observations":[],"outcome":"empty","secret":"provider-private-canary"}\n```',
+      },
+    ],
+    [
+      "multiple JSON objects",
+      {
+        response:
+          '{"observations":[],"outcome":"empty"}\n{"secret":"provider-private-canary"}',
+      },
+    ],
     [
       "an extra native tool call",
       {
@@ -1488,13 +1486,10 @@ describe("installed import provider adapters", () => {
   );
 
   it.each([
-    [
-      "absent",
-      toolResponse("record_visual_evidence", validVisualSemantics, null),
-    ],
+    ["absent", jsonModeResponse(validVisualSemantics, null)],
     [
       "zero",
-      toolResponse("record_visual_evidence", validVisualSemantics, {
+      jsonModeResponse(validVisualSemantics, {
         completion_tokens: 0,
         prompt_tokens: 0,
       }),
@@ -1560,9 +1555,7 @@ describe("installed import provider adapters", () => {
   );
 
   it("rejects an empty visual dispatch before the provider boundary", async () => {
-    const gateway = makeGateway(
-      toolResponse("record_visual_evidence", validVisualSemantics)
-    );
+    const gateway = makeGateway(jsonModeResponse(validVisualSemantics));
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
