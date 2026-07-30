@@ -1196,6 +1196,89 @@ const ModelSpecificSpeechProviderResponse = Schema.Struct({
   word_count: Schema.optionalKey(SpeechProviderNonNegativeInteger),
 });
 
+const ModelSpecificSpeechResponseOptionalMetadataKeys: ReadonlySet<string> =
+  new Set(["segments", "transcription_info", "vtt", "word_count"]);
+
+const ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys: ReadonlySet<string> =
+  new Set([
+    "duration",
+    "duration_after_vad",
+    "language",
+    "language_probability",
+  ]);
+
+const ModelSpecificSpeechSegmentOptionalMetadataKeys: ReadonlySet<string> =
+  new Set([
+    "avg_logprob",
+    "compression_ratio",
+    "end",
+    "no_speech_prob",
+    "start",
+    "temperature",
+    "text",
+    "words",
+  ]);
+
+const ModelSpecificSpeechWordOptionalMetadataKeys: ReadonlySet<string> =
+  new Set(["end", "start", "word"]);
+
+const omitAllowlistedNullMetadata = (
+  record: Readonly<Record<string, unknown>>,
+  allowlist: ReadonlySet<string>
+): Record<string, unknown> =>
+  Object.fromEntries(
+    Object.entries(record).filter(
+      ([key, value]) => value !== null || !allowlist.has(key)
+    )
+  );
+
+const normalizeModelSpecificSpeechProviderWord = (raw: unknown): unknown =>
+  isUnknownRecord(raw)
+    ? omitAllowlistedNullMetadata(
+        raw,
+        ModelSpecificSpeechWordOptionalMetadataKeys
+      )
+    : raw;
+
+const normalizeModelSpecificSpeechProviderSegment = (raw: unknown): unknown => {
+  if (!isUnknownRecord(raw)) {
+    return raw;
+  }
+  const normalized = omitAllowlistedNullMetadata(
+    raw,
+    ModelSpecificSpeechSegmentOptionalMetadataKeys
+  );
+  return Array.isArray(normalized["words"])
+    ? {
+        ...normalized,
+        words: normalized["words"].map(
+          normalizeModelSpecificSpeechProviderWord
+        ),
+      }
+    : normalized;
+};
+
+const normalizeModelSpecificSpeechProviderResponse = (
+  raw: Record<string, unknown>
+): Record<string, unknown> => {
+  const normalized = omitAllowlistedNullMetadata(
+    raw,
+    ModelSpecificSpeechResponseOptionalMetadataKeys
+  );
+  if (isUnknownRecord(normalized["transcription_info"])) {
+    normalized["transcription_info"] = omitAllowlistedNullMetadata(
+      normalized["transcription_info"],
+      ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys
+    );
+  }
+  if (Array.isArray(normalized["segments"])) {
+    normalized["segments"] = normalized["segments"].map(
+      normalizeModelSpecificSpeechProviderSegment
+    );
+  }
+  return normalized;
+};
+
 const decodeGenericSpeechResponse = Schema.decodeUnknownOption(
   GenericSpeechProviderResponse,
   {
@@ -1234,9 +1317,9 @@ const decodeSpeechResponse = (
   const isModelSpecific =
     Object.hasOwn(raw, "segments") || Object.hasOwn(raw, "transcription_info");
   const envelope = isModelSpecific
-    ? decodeModelSpecificSpeechResponse(raw).pipe(
-        Option.map(({ text }) => text)
-      )
+    ? decodeModelSpecificSpeechResponse(
+        normalizeModelSpecificSpeechProviderResponse(raw)
+      ).pipe(Option.map(({ text }) => text))
     : decodeGenericSpeechResponse(raw).pipe(Option.map(({ text }) => text));
   if (Option.isNone(envelope)) {
     return {

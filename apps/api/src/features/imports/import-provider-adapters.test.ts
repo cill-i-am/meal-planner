@@ -419,6 +419,73 @@ describe("installed import provider adapters", () => {
     expect(transcript.text).toBe("Chop the onion.");
   });
 
+  it("normalizes null only at allowlisted optional installed-runtime metadata positions", async () => {
+    const compatibleResponses = [
+      {
+        segments: null,
+        text: "Chop the onion.",
+        transcription_info: null,
+        vtt: null,
+        word_count: null,
+      },
+      {
+        segments: [
+          {
+            avg_logprob: null,
+            compression_ratio: null,
+            end: null,
+            no_speech_prob: null,
+            start: null,
+            temperature: null,
+            text: null,
+            words: null,
+          },
+        ],
+        text: "Chop the onion.",
+        transcription_info: {
+          duration: null,
+          duration_after_vad: null,
+          language: null,
+          language_probability: null,
+        },
+        vtt: null,
+        word_count: null,
+      },
+      {
+        segments: [
+          {
+            words: [
+              {
+                end: null,
+                start: null,
+                word: null,
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+      },
+    ];
+
+    await Promise.all(
+      compatibleResponses.map(async (response) => {
+        const adapter = await runFactory(
+          makeInstalledSpeechTranscriber({
+            client: makeSpeechGateway(response).client,
+            correlationId,
+            dispatch: localDispatchGate,
+          })
+        );
+
+        const transcript = await Effect.runPromise(
+          adapter.transcribe(speechTranscriptionInput)
+        );
+
+        expect(transcript.text).toBe("Chop the onion.");
+      })
+    );
+  });
+
   it("normalizes harmless whitespace from the pinned installed speech text contract", async () => {
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
@@ -474,6 +541,10 @@ describe("installed import provider adapters", () => {
         },
       },
       {
+        segments: [],
+        text: null,
+      },
+      {
         text: "Root transcript.",
         transcription_info: {
           text: "Nested transcript.",
@@ -493,9 +564,20 @@ describe("installed import provider adapters", () => {
         },
       },
       {
+        text: "Chop the onion.",
+        transcription_info: {
+          providerSecret: null,
+        },
+      },
+      {
         providerSecret: "must-not-escape",
         text: "Chop the onion.",
         word_count: 3,
+      },
+      {
+        providerSecret: null,
+        segments: [],
+        text: "Chop the onion.",
       },
       {
         result: {
@@ -545,6 +627,18 @@ describe("installed import provider adapters", () => {
             providerSecret: "must-not-escape",
           },
         ],
+        text: "Chop the onion.",
+      },
+      {
+        segments: [
+          {
+            providerSecret: null,
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      {
+        segments: [null],
         text: "Chop the onion.",
       },
       {
