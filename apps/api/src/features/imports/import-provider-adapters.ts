@@ -1130,6 +1130,10 @@ const SpeechProviderSegmentText = Schema.String.pipe(
   Schema.check(Schema.isMaxLength(16_384))
 );
 
+const SpeechProviderTranscriptText = Schema.String.pipe(
+  Schema.check(Schema.isMaxLength(1_048_576))
+);
+
 const LegacySpeechProviderWord = Schema.Struct({
   end: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Null])),
   start: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Null])),
@@ -1137,7 +1141,7 @@ const LegacySpeechProviderWord = Schema.Struct({
 });
 
 const GenericSpeechProviderResponse = Schema.Struct({
-  text: SpeechTranscript.fields.text,
+  text: SpeechProviderTranscriptText,
   vtt: Schema.optionalKey(Schema.Union([SpeechProviderVtt, Schema.Null])),
   word_count: Schema.optionalKey(
     Schema.Union([SpeechProviderNonNegativeInteger, Schema.Null])
@@ -1179,7 +1183,7 @@ const ModelSpecificSpeechProviderResponse = Schema.Struct({
       Schema.check(Schema.isMaxLength(4096))
     )
   ),
-  text: SpeechTranscript.fields.text,
+  text: SpeechProviderTranscriptText,
   transcription_info: Schema.optionalKey(
     Schema.Struct({
       duration: Schema.optionalKey(SpeechProviderNonNegativeNumber),
@@ -1208,19 +1212,72 @@ const decodeModelSpecificSpeechResponse = Schema.decodeUnknownOption(
 
 const decodeSpeechResponse = (
   raw: unknown
-): Option.Option<{ readonly text: string }> => {
+):
+  | {
+      readonly _tag: "Decoded";
+      readonly text: string;
+    }
+  | {
+      readonly _tag: "Rejected";
+      readonly decodeReason:
+        | "speech_envelope_schema_invalid"
+        | "speech_transcript_normalization_invalid";
+      readonly decodeStage: "speech_envelope" | "speech_transcript";
+    } => {
   if (!isUnknownRecord(raw)) {
-    return Option.none();
+    return {
+      _tag: "Rejected",
+      decodeReason: "speech_envelope_schema_invalid",
+      decodeStage: "speech_envelope",
+    };
   }
   const isModelSpecific =
     Object.hasOwn(raw, "segments") || Object.hasOwn(raw, "transcription_info");
-  return isModelSpecific
+  const envelope = isModelSpecific
     ? decodeModelSpecificSpeechResponse(raw).pipe(
-        Option.map(({ text }) => ({ text }))
+        Option.map(({ text }) => text)
       )
-    : decodeGenericSpeechResponse(raw).pipe(
-        Option.map(({ text }) => ({ text }))
-      );
+    : decodeGenericSpeechResponse(raw).pipe(Option.map(({ text }) => text));
+  if (Option.isNone(envelope)) {
+    return {
+      _tag: "Rejected",
+      decodeReason: "speech_envelope_schema_invalid",
+      decodeStage: "speech_envelope",
+    };
+  }
+  const text = Schema.decodeUnknownOption(SpeechTranscript.fields.text)(
+    envelope.value.trim()
+  );
+  return Option.match(text, {
+    onNone: () => ({
+      _tag: "Rejected" as const,
+      decodeReason: "speech_transcript_normalization_invalid" as const,
+      decodeStage: "speech_transcript" as const,
+    }),
+    onSome: (normalizedText) => ({
+      _tag: "Decoded" as const,
+      text: normalizedText,
+    }),
+  });
+};
+
+const speechDecodeDiagnostics = (
+  decoded: ReturnType<typeof decodeSpeechResponse>,
+  transcript: Option.Option<SpeechTranscript>
+) => {
+  if (decoded._tag === "Rejected") {
+    return {
+      decodeReason: decoded.decodeReason,
+      decodeStage: decoded.decodeStage,
+    };
+  }
+  if (Option.isNone(transcript)) {
+    return {
+      decodeReason: "speech_transcript_normalization_invalid" as const,
+      decodeStage: "speech_transcript" as const,
+    };
+  }
+  return {};
 };
 
 const speechFailure = (
@@ -1304,11 +1361,9 @@ export const makeInstalledSpeechTranscriber = (input: {
                     try: () => response.json(),
                   }).pipe(Effect.option)
                 );
-                const decoded = Option.getOrUndefined(
-                  decodeSpeechResponse(raw)
-                );
+                const decoded = decodeSpeechResponse(raw);
                 const transcript =
-                  decoded === undefined
+                  decoded._tag === "Rejected"
                     ? Option.none()
                     : Schema.decodeUnknownOption(SpeechTranscript)({
                         cost: {
@@ -1336,6 +1391,7 @@ export const makeInstalledSpeechTranscriber = (input: {
                 yield* emitImportObservabilityEvent(
                   {
                     correlationId: input.correlationId,
+                    ...speechDecodeDiagnostics(decoded, transcript),
                     event: "provider.decode",
                     outcome: Option.isSome(transcript)
                       ? "succeeded"

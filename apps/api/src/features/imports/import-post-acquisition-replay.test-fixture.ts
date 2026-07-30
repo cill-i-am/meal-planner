@@ -136,7 +136,7 @@ const replayProviderFixture = (
         await Effect.runPromise(increment(env, instanceId, "provider-calls"));
         return Response.json({
           segments: [],
-          text: "Chop the onion.",
+          text: " \nChop the onion.\t ",
           transcription_info: {
             duration: 1,
             duration_after_vad: 0.9,

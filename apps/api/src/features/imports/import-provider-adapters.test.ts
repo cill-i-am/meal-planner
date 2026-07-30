@@ -419,6 +419,45 @@ describe("installed import provider adapters", () => {
     expect(transcript.text).toBe("Chop the onion.");
   });
 
+  it("normalizes harmless whitespace from the pinned installed speech text contract", async () => {
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: makeSpeechGateway({
+          segments: [],
+          text: " \nChop the onion.\t ",
+          transcription_info: {
+            duration: 1,
+            language: "en",
+          },
+          word_count: 3,
+        }).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const transcript = await Effect.runPromise(
+      adapter.transcribe(speechTranscriptionInput)
+    );
+
+    expect(transcript.text).toBe("Chop the onion.");
+    expect(transcript.segments).toEqual([
+      {
+        endMilliseconds: 1000,
+        startMilliseconds: 0,
+        text: "Chop the onion.",
+      },
+    ]);
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      event: "provider.decode",
+      outcome: "succeeded",
+      providerStage: "speech",
+    });
+  });
+
   it("fails closed for missing, wrong, ambiguous, or provider-private speech response fields", async () => {
     const malformedResponses = [
       {
@@ -508,6 +547,9 @@ describe("installed import provider adapters", () => {
         ],
         text: "Chop the onion.",
       },
+      {
+        text: "a".repeat(1_048_577),
+      },
     ];
 
     await Promise.all(
@@ -530,6 +572,8 @@ describe("installed import provider adapters", () => {
         expect(JSON.stringify(exit)).toContain("malformed_response");
         expect(trace.events.at(-1)).toEqual({
           correlationId,
+          decodeReason: "speech_envelope_schema_invalid",
+          decodeStage: "speech_envelope",
           event: "provider.decode",
           outcome: "malformed",
           providerStage: "speech",
@@ -538,6 +582,48 @@ describe("installed import provider adapters", () => {
         expect(JSON.stringify(trace.events)).not.toContain("must-not-escape");
       })
     );
+  });
+
+  it("fails closed with metadata-only transcript normalization diagnostics", async () => {
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: makeSpeechGateway({
+          segments: [],
+          text: " \n\t ",
+          transcription_info: {
+            duration: 1,
+            language: "en",
+          },
+        }).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.transcribe(speechTranscriptionInput)
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      decodeReason: "speech_transcript_normalization_invalid",
+      decodeStage: "speech_transcript",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "speech",
+    });
+    expect(Object.keys(trace.events.at(-1) ?? {}).toSorted()).toEqual([
+      "correlationId",
+      "decodeReason",
+      "decodeStage",
+      "event",
+      "outcome",
+      "providerStage",
+    ]);
   });
 
   it("settles known cost and fails closed when the installed speech response is malformed", async () => {
@@ -597,6 +683,8 @@ describe("installed import provider adapters", () => {
       },
       {
         correlationId,
+        decodeReason: "speech_envelope_schema_invalid",
+        decodeStage: "speech_envelope",
         event: "provider.decode",
         outcome: "malformed",
         providerStage: "speech",
