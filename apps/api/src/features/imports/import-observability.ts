@@ -46,6 +46,22 @@ export const AcquisitionDiagnosticReasonCode = Schema.Literals([
 export type AcquisitionDiagnosticReasonCode =
   typeof AcquisitionDiagnosticReasonCode.Type;
 
+export const ProviderDecodeStage = Schema.Literals([
+  "forced_tool_envelope",
+  "provider_normalization",
+  "recipe_schema",
+  "visual_schema",
+]);
+export type ProviderDecodeStage = typeof ProviderDecodeStage.Type;
+
+export const ProviderDecodeReason = Schema.Literals([
+  "forced_tool_arguments_schema_invalid",
+  "forced_tool_envelope_invalid",
+  "forced_tool_missing",
+  "provider_normalization_invalid",
+]);
+export type ProviderDecodeReason = typeof ProviderDecodeReason.Type;
+
 export const ImportObservabilityEvent = Schema.Struct({
   attempt: Schema.optionalKey(
     Schema.Number.pipe(
@@ -53,6 +69,8 @@ export const ImportObservabilityEvent = Schema.Struct({
     )
   ),
   correlationId: ImportCorrelationId,
+  decodeReason: Schema.optionalKey(ProviderDecodeReason),
+  decodeStage: Schema.optionalKey(ProviderDecodeStage),
   event: ImportObservabilityEventName,
   outcome: Schema.optionalKey(
     Schema.Literals([
@@ -122,6 +140,12 @@ export const metadataOnlyGatewayHeaders = (
 const eventAnnotations = (event: ImportObservabilityEvent) => ({
   ...(event.attempt === undefined ? {} : { attempt: event.attempt }),
   correlationId: event.correlationId,
+  ...(event.decodeReason === undefined
+    ? {}
+    : { decodeReason: event.decodeReason }),
+  ...(event.decodeStage === undefined
+    ? {}
+    : { decodeStage: event.decodeStage }),
   event: event.event,
   ...(event.outcome === undefined ? {} : { outcome: event.outcome }),
   ...(event.providerStage === undefined

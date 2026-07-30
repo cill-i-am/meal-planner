@@ -113,6 +113,53 @@ describe("private import observability", () => {
     log.mockRestore();
   });
 
+  it("emits only closed decode-stage and reason classifications", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+
+    await Effect.runPromise(
+      emitImportObservabilityEvent({
+        correlationId,
+        decodeReason: "forced_tool_envelope_invalid",
+        decodeStage: "forced_tool_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "recipe",
+      })
+    );
+
+    expect(log).toHaveBeenCalledExactlyOnceWith({
+      correlationId,
+      decodeReason: "forced_tool_envelope_invalid",
+      decodeStage: "forced_tool_envelope",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "recipe",
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(
+      /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
+    );
+    log.mockRestore();
+  });
+
+  it.each([
+    ["decodeStage", "unbounded-stage"],
+    ["decodeReason", "raw-provider-response"],
+  ])("rejects an open %s value", (field, value) => {
+    const decode = Schema.decodeUnknownSync(ImportObservabilityEvent, {
+      onExcessProperty: "error",
+    });
+
+    expect(() =>
+      decode({
+        correlationId,
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "recipe",
+        [field]: value,
+      })
+    ).toThrow();
+  });
+
   it.each([
     ["budget.reservation", "reserved"],
     ["provider.dispatch", "started"],

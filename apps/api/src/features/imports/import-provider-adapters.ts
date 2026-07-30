@@ -66,6 +66,8 @@ const VisualMaximumCostMicroUsd = 100_000;
 const RecipeMaximumCostMicroUsd = 100_000;
 const ProviderTransportUnavailableMessage =
   "provider_transport_unavailable" as const;
+const ProviderNormalizationInvalidMessage =
+  "provider_normalization_invalid" as const;
 
 type SafeProviderFailureCode =
   | "insufficient_evidence"
@@ -322,7 +324,7 @@ const recipeConservativeReplay = (
     }),
 });
 
-const isProviderTransportFailure = (error: unknown) => {
+const isProviderNormalizationFailure = (error: unknown): boolean => {
   if (typeof error !== "object" || error === null) {
     return false;
   }
@@ -331,7 +333,7 @@ const isProviderTransportFailure = (error: unknown) => {
     typeof record["reason"] === "object" && record["reason"] !== null
       ? (record["reason"] as Record<string, unknown>)
       : record;
-  return reason["description"] === ProviderTransportUnavailableMessage;
+  return reason["description"] === ProviderNormalizationInvalidMessage;
 };
 
 export const failAfter = <A, E, R>(
@@ -403,22 +405,24 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     } as never),
     observability
   ).pipe(
-    // The installed Alchemy model parses the raw gateway response before this
-    // Effect can succeed. A failure here is therefore a decode failure unless
-    // the enclosing timeout won the race.
+    // The raw-client wrapper marks only the installed adapter's response.json
+    // failure. Request, provider, transport, and timeout failures share this
+    // Effect error channel but must not be represented as decode evidence.
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
     Effect.tapError((error) =>
-      typeof error === "string" || isProviderTransportFailure(error)
-        ? Effect.void
-        : emitImportObservabilityEvent(
+      isProviderNormalizationFailure(error)
+        ? emitImportObservabilityEvent(
             {
               correlationId: observability.correlationId,
+              decodeReason: "provider_normalization_invalid",
+              decodeStage: "provider_normalization",
               event: "provider.decode",
               outcome: "malformed",
               providerStage: observability.providerStage,
             },
             observability.traceStore
           )
+        : Effect.void
     ),
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
     Effect.mapError((error) =>
@@ -433,6 +437,11 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
         return emitImportObservabilityEvent(
           {
             correlationId: observability.correlationId,
+            decodeReason:
+              decoded._tag === "Missing"
+                ? "forced_tool_missing"
+                : "forced_tool_envelope_invalid",
+            decodeStage: "forced_tool_envelope",
             event: "provider.decode",
             outcome: "malformed",
             providerStage: observability.providerStage,
@@ -456,6 +465,11 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
             emitImportObservabilityEvent(
               {
                 correlationId: observability.correlationId,
+                decodeReason: "forced_tool_arguments_schema_invalid",
+                decodeStage:
+                  observability.providerStage === "recipe"
+                    ? "recipe_schema"
+                    : "visual_schema",
                 event: "provider.decode",
                 outcome: "malformed",
                 providerStage: observability.providerStage,
@@ -586,6 +600,27 @@ const runWorkersAi = (
     workersAiGatewayOptions(gatewayId) as never
   ) as Promise<Response>;
 
+const withProviderNormalizationBoundary = (response: Response): Response => {
+  const parseJson = response.json.bind(response);
+  return new Proxy(response, {
+    get: (target, property) => {
+      if (property === "json") {
+        return async (): Promise<unknown> => {
+          try {
+            return await parseJson();
+          } catch {
+            // Provider payloads and parser details must not cross the
+            // observability boundary. Alchemy preserves this closed
+            // description inside its typed AiError.UnknownError.
+            throw new Error(ProviderNormalizationInvalidMessage);
+          }
+        };
+      }
+      return Reflect.get(target, property, target);
+    },
+  });
+};
+
 /**
  * Keep the installed Alchemy LanguageModel composition while dispatching
  * through the account-bound Workers AI binding. The binding cannot express
@@ -627,7 +662,7 @@ const noLogWorkersAiClient = (
                 traceStore
               )
             );
-            return response;
+            return withProviderNormalizationBoundary(response);
           },
         }) as WorkersAiBinding
     )
