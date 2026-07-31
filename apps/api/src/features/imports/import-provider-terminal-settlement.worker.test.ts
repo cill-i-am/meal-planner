@@ -40,6 +40,8 @@ const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
 const decodeRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
 const decodeStageId = Schema.decodeUnknownSync(PilotBudgetProviderStageId);
 const decodeDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
+const readD1Results = (result: { readonly results: readonly unknown[] }) =>
+  result.results;
 
 beforeAll(async () => {
   await applyD1Migrations(
@@ -491,6 +493,84 @@ const seedPoisonedTerminalRecipeImport = async (
   };
 };
 
+const seedMissingRecipeTerminalCheckpoint = async (
+  suffix: string,
+  options: Parameters<typeof seedPoisonedTerminalRecipeImport>[1] = {}
+) => {
+  const seeded = await seedPoisonedTerminalRecipeImport(suffix, {
+    ...options,
+    persistCheckpoint: false,
+  });
+  const speechDispatchId = decodeDispatchId(
+    `speech:${seeded.importId}:${seeded.acquisitionGeneration}`
+  );
+  const transcriptKey = `imports/${seeded.importId}/transcription/v1/generations/${seeded.acquisitionGeneration}/transcript.json`;
+  const evidence = JSON.stringify([
+    {
+      kind: "original_media",
+      referenceId: `imports/${seeded.importId}/acquisition/v1/generations/${seeded.acquisitionGeneration}/original.mp4`,
+    },
+    {
+      kind: "acquisition_manifest",
+      referenceId: `imports/${seeded.importId}/acquisition/v1/generations/${seeded.acquisitionGeneration}/manifest.json`,
+    },
+    {
+      kind: "speech_transcript",
+      referenceId: transcriptKey,
+    },
+  ]);
+  await testEnv.MealPlannerDatabase.batch([
+    testEnv.MealPlannerDatabase.prepare(
+      `UPDATE recipe_imports
+          SET status = 'transcribed',
+              status_code = NULL,
+              recovery_action = NULL,
+              evidence_references_json = ?,
+              updated_at = ?
+        WHERE id = ? AND acquisition_generation = ?`
+    ).bind(evidence, seeded.now, seeded.importId, seeded.acquisitionGeneration),
+    testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_transcriptions (
+         import_id, acquisition_generation, dispatch_id, source_media_sha256,
+         state, transcript_key, transcript_sha256, provider, model,
+         detected_language, usage_audio_milliseconds, usage_input_bytes,
+         estimated_cost_micro_usd, cost_currency, cost_certainty,
+         segments_count, failure_code, created_at, updated_at, completed_at
+       ) VALUES (?, ?, ?, ?, 'transcribed', ?, ?, 'fixture-provider',
+                 'fixture-speech', 'en', 1000, 3, 10, 'USD', 'known', 1,
+                 NULL, ?, ?, ?)`
+    ).bind(
+      seeded.importId,
+      seeded.acquisitionGeneration,
+      speechDispatchId,
+      "a".repeat(64),
+      transcriptKey,
+      "b".repeat(64),
+      seeded.now,
+      seeded.now,
+      seeded.now
+    ),
+    testEnv.MealPlannerDatabase.prepare(
+      `UPDATE import_recipe_extractions
+          SET state = 'failed',
+              failure_code = 'provider_error',
+              completed_at = ?,
+              updated_at = ?
+        WHERE import_id = ?
+          AND acquisition_generation = ?
+          AND extraction_fingerprint = ?
+          AND state = 'dispatching'`
+    ).bind(
+      seeded.now,
+      seeded.now,
+      seeded.importId,
+      seeded.acquisitionGeneration,
+      seeded.extractionFingerprint
+    ),
+  ]);
+  return { ...seeded, speechDispatchId, transcriptKey };
+};
+
 const makeApp = async (
   runtimeStage: unknown,
   workflowStarter?: Pick<ImportWorkflowStarterShape, "restartFromSpeech">
@@ -539,6 +619,15 @@ const recipeCommandFor = (
   dispatchId: seeded.dispatchId,
   importId: seeded.importId,
   operation: "settle_recipe_unknown" as const,
+});
+
+const recipeCheckpointRepairCommandFor = (
+  seeded: Awaited<ReturnType<typeof seedMissingRecipeTerminalCheckpoint>>
+) => ({
+  acquisitionGeneration: seeded.acquisitionGeneration,
+  dispatchId: seeded.dispatchId,
+  importId: seeded.importId,
+  operation: "repair_recipe_terminal_checkpoint" as const,
 });
 
 const visualCommandFor = (
@@ -912,6 +1001,108 @@ const expectVisualCheckpointRepairRejected = async (
   await expect(
     readVisualCheckpointRepairProtectedRows(seeded)
   ).resolves.toEqual(protectedRowsBefore);
+};
+
+const readRecipeCheckpointRepairProtectedRows = (input: {
+  readonly acquisitionGeneration: number;
+  readonly dispatchId: string;
+  readonly importId: string;
+}) =>
+  Promise.all([
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM import_provider_terminal_checkpoints
+        WHERE import_id = ?
+          AND acquisition_generation = ?
+          AND provider_stage = 'recipe'`
+    )
+      .bind(input.importId, input.acquisitionGeneration)
+      .all()
+      .then(readD1Results),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM import_recipe_terminal_projections
+        WHERE import_id = ? AND acquisition_generation = ?`
+    )
+      .bind(input.importId, input.acquisitionGeneration)
+      .all()
+      .then(readD1Results),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM recipe_imports
+        WHERE id = ? AND acquisition_generation = ?`
+    )
+      .bind(input.importId, input.acquisitionGeneration)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM import_transcriptions
+        WHERE import_id = ? AND acquisition_generation = ?`
+    )
+      .bind(input.importId, input.acquisitionGeneration)
+      .all()
+      .then(readD1Results),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM import_recipe_extractions
+        WHERE import_id = ? AND acquisition_generation = ?`
+    )
+      .bind(input.importId, input.acquisitionGeneration)
+      .all()
+      .then(readD1Results),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM pilot_provider_stage_budget
+        WHERE runtime_stage = 'pilot-gaia-118'`
+    ).first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM pilot_provider_budget_dispatches
+        WHERE runtime_stage = 'pilot-gaia-118'
+          AND dispatch_id = ?`
+    )
+      .bind(input.dispatchId)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM pilot_provider_budget_reconciliations
+        WHERE runtime_stage = 'pilot-gaia-118'
+          AND dispatch_id = ?`
+    )
+      .bind(input.dispatchId)
+      .first(),
+    testEnv.MealPlannerDatabase.prepare(
+      `SELECT *
+         FROM pilot_provider_recipe_recoveries
+        WHERE runtime_stage = 'pilot-gaia-118'
+          AND original_dispatch_id = ?`
+    )
+      .bind(input.dispatchId)
+      .all()
+      .then(readD1Results),
+  ]);
+
+const expectRecipeCheckpointRepairRejected = async (
+  seeded: Awaited<ReturnType<typeof seedMissingRecipeTerminalCheckpoint>>,
+  options: {
+    readonly runtimeStage?: string;
+    readonly status?: number;
+    readonly token?: string;
+  } = {}
+) => {
+  const before = await readRecipeCheckpointRepairProtectedRows(seeded);
+  const app = await makeApp(options.runtimeStage ?? "pilot-gaia-118");
+
+  const response = await postSettlement(
+    app,
+    recipeCheckpointRepairCommandFor(seeded),
+    options.token
+  );
+
+  expect(response.status).toBe(options.status ?? 409);
+  await expect(
+    readRecipeCheckpointRepairProtectedRows(seeded)
+  ).resolves.toEqual(before);
 };
 
 describe("authenticated terminal unknown-cost provider settlement", () => {
@@ -2206,6 +2397,180 @@ describe("authenticated terminal visual unknown-cost reconciliation", () => {
         .bind(seeded.dispatchId)
         .first()
     ).resolves.toEqual({ count: 1 });
+  });
+});
+
+describe("authenticated recipe terminal checkpoint compatibility repair", () => {
+  it("atomically reconstructs one immutable checkpoint and projection without clearing the poisoned budget", async () => {
+    const seeded = await seedMissingRecipeTerminalCheckpoint("000000000401");
+    const before = await readRecipeCheckpointRepairProtectedRows(seeded);
+    const app = await makeApp("pilot-gaia-118");
+
+    const responses = await Promise.all([
+      postSettlement(app, recipeCheckpointRepairCommandFor(seeded)),
+      postSettlement(app, recipeCheckpointRepairCommandFor(seeded)),
+      postSettlement(app, recipeCheckpointRepairCommandFor(seeded)),
+    ]);
+
+    expect(responses.map(({ status }) => status)).toEqual([200, 200, 200]);
+    const expected = {
+      acquisitionGeneration: seeded.acquisitionGeneration,
+      dispatchId: seeded.dispatchId,
+      importId: seeded.importId,
+      outcome: "recipe_terminal_checkpoint_repaired",
+      runtimeStage: "pilot-gaia-118",
+    };
+    await expect(
+      Promise.all(responses.map((response) => response.json()))
+    ).resolves.toEqual([expected, expected, expected]);
+    const after = await readRecipeCheckpointRepairProtectedRows(seeded);
+    expect(after.slice(2)).toEqual(before.slice(2));
+    expect(after[0]).toEqual([
+      expect.objectContaining({
+        acquisition_generation: seeded.acquisitionGeneration,
+        completed_at: seeded.now,
+        created_at: seeded.now,
+        failure_code: "outcome_unknown",
+        import_id: seeded.importId,
+        ownership_id: seeded.extractionFingerprint,
+        provider_stage: "recipe",
+      }),
+    ]);
+    expect(after[1]).toEqual([
+      expect.objectContaining({
+        acquisition_generation: seeded.acquisitionGeneration,
+        import_id: seeded.importId,
+        ownership_id: seeded.extractionFingerprint,
+        projected_at: seeded.now,
+        recovery_action: "operator_reconcile",
+        status: "failed",
+        status_code: "recipe_extraction_failed",
+      }),
+    ]);
+    await expect(
+      postSettlement(app, recipeCheckpointRepairCommandFor(seeded))
+    ).resolves.toHaveProperty("status", 200);
+  });
+
+  it.each([
+    [
+      "a noncanonical maximum",
+      "000000000402",
+      { maximumCostMicroUsd: 100_001 },
+    ],
+    [
+      "a nonrecipe provider stage",
+      "000000000403",
+      { providerStageId: "visual-evidence" },
+    ],
+    ["a foreign run", "000000000404", { runId: "gaia-118:foreign-import" }],
+    [
+      "an ambiguous recipe dispatch",
+      "000000000405",
+      { additionalRecipeDispatch: true },
+    ],
+  ] as const)(
+    "fails closed without a checkpoint or projection for %s",
+    async (_name, suffix, options) => {
+      const seeded = await seedMissingRecipeTerminalCheckpoint(suffix, options);
+
+      await expectRecipeCheckpointRepairRejected(seeded);
+    }
+  );
+
+  it("rejects wrong authentication, runtime stage, and exact ownership tuple", async () => {
+    const seeded = await seedMissingRecipeTerminalCheckpoint("000000000406");
+    await expectRecipeCheckpointRepairRejected(seeded, {
+      status: 401,
+      token: "wrong",
+    });
+    await expectRecipeCheckpointRepairRejected(seeded, {
+      runtimeStage: "production",
+    });
+    const before = await readRecipeCheckpointRepairProtectedRows(seeded);
+    const app = await makeApp("pilot-gaia-118");
+    const response = await postSettlement(app, {
+      ...recipeCheckpointRepairCommandFor(seeded),
+      dispatchId: decodeDispatchId(`${seeded.dispatchId}:foreign`),
+    });
+    expect(response.status).toBe(409);
+    await expect(
+      readRecipeCheckpointRepairProtectedRows(seeded)
+    ).resolves.toEqual(before);
+  });
+
+  it.each([
+    [
+      "parent status drift",
+      "000000000407",
+      `UPDATE recipe_imports
+          SET status = 'queued',
+              evidence_references_json = '[]'
+        WHERE id = ? AND acquisition_generation = ?`,
+    ],
+    [
+      "nonterminal extraction state",
+      "000000000408",
+      `UPDATE import_recipe_extractions
+          SET state = 'dispatching',
+              failure_code = NULL,
+              completed_at = NULL
+        WHERE import_id = ? AND acquisition_generation = ?`,
+    ],
+    [
+      "already-reconciled dispatch",
+      "000000000409",
+      `INSERT INTO pilot_provider_budget_reconciliations (
+         runtime_stage, dispatch_id, conservative_charge_micro_usd,
+         actual_cost_was_unknown, authority, created_at
+       ) SELECT 'pilot-gaia-118', ?, 100000, 1,
+                'authenticated_operator', ?
+          FROM recipe_imports
+         WHERE id = ? AND acquisition_generation = ?`,
+    ],
+  ] as const)(
+    "rejects %s without partial repair",
+    async (_name, suffix, mutation) => {
+      const seeded = await seedMissingRecipeTerminalCheckpoint(suffix);
+      const values = mutation.startsWith("INSERT")
+        ? [
+            seeded.dispatchId,
+            seeded.now,
+            seeded.importId,
+            seeded.acquisitionGeneration,
+          ]
+        : [seeded.importId, seeded.acquisitionGeneration];
+      await testEnv.MealPlannerDatabase.prepare(mutation)
+        .bind(...values)
+        .run();
+
+      await expectRecipeCheckpointRepairRejected(seeded);
+    }
+  );
+
+  it("rejects multiple recipe extractions without partial repair", async () => {
+    const seeded = await seedMissingRecipeTerminalCheckpoint("000000000410");
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_recipe_extractions (
+         extraction_fingerprint, import_id, acquisition_generation,
+         evidence_fingerprint, extractor_provider, extractor_model,
+         extractor_version, state, failure_code, created_at, updated_at,
+         completed_at
+       ) VALUES (?, ?, ?, ?, 'fixture-provider', 'fixture-model',
+                 'fixture-v1', 'failed', 'provider_error', ?, ?, ?)`
+    )
+      .bind(
+        "e".repeat(64),
+        seeded.importId,
+        seeded.acquisitionGeneration,
+        "f".repeat(64),
+        seeded.now,
+        seeded.now,
+        seeded.now
+      )
+      .run();
+
+    await expectRecipeCheckpointRepairRejected(seeded);
   });
 });
 

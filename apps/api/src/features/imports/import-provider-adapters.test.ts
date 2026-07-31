@@ -2719,6 +2719,95 @@ describe("installed import provider adapters", () => {
     );
   });
 
+  it("accepts the installed singleton schema-valid bare recipe authority", async () => {
+    const gateway = makeGateway({
+      response: JSON.stringify(validRecipeSemantics),
+      usage: defaultVisualUsage,
+    });
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "visible evidence",
+          },
+        ],
+      })
+    );
+
+    expect(output).toMatchObject(validRecipeSemantics);
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      event: "provider.decode",
+      outcome: "succeeded",
+      providerStage: "recipe",
+    });
+  });
+
+  it.each([
+    ["a singleton-array bare object", JSON.stringify([validRecipeSemantics])],
+    [
+      "an excess-property bare object",
+      JSON.stringify({ ...validRecipeSemantics, unexpected: true }),
+    ],
+  ])("fails closed for %s", async (_label, response) => {
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: makeGateway({
+          response,
+          usage: defaultVisualUsage,
+        }).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:evidence",
+            evidenceId: "evidence-1",
+            kind: "caption",
+            origin: "creator_provided",
+            value: "visible evidence",
+          },
+        ],
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(trace.events.at(-1)).toEqual(
+      expect.objectContaining({
+        correlationId,
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "recipe",
+      })
+    );
+  });
+
   it("keeps an installed recipe provider rejection out of normalization telemetry", async () => {
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(

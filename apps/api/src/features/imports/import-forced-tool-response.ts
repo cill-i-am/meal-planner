@@ -14,7 +14,11 @@ type NativeForcedToolDecode =
   | { readonly _tag: "Call"; readonly call: NativeForcedToolEnvelope }
   | { readonly _tag: "Invalid" }
   | { readonly _tag: "Prose" }
-  | { readonly _tag: "Value"; readonly value: Record<string, unknown> };
+  | {
+      readonly _tag: "Value";
+      readonly value: Record<string, unknown>;
+      readonly wrappedInArray: boolean;
+    };
 
 export type ForcedToolDecodeReason =
   | "invalid_arguments"
@@ -65,6 +69,7 @@ const decodeNativeForcedToolEnvelope = (
       : { _tag: "Prose" };
   }
   let envelope = parsed;
+  const wrappedInArray = Array.isArray(parsed);
   if (Array.isArray(parsed)) {
     if (parsed.length !== 1) {
       return { _tag: "Invalid" };
@@ -88,7 +93,7 @@ const decodeNativeForcedToolEnvelope = (
   if (!isExactEnvelope) {
     return hasArguments || hasParameters || typeof name === "string"
       ? { _tag: "Invalid" }
-      : { _tag: "Value", value: envelope };
+      : { _tag: "Value", value: envelope, wrappedInArray };
   }
   if (typeof name !== "string") {
     return { _tag: "Invalid" };
@@ -139,16 +144,49 @@ export const structurallyEqualJson = (
   );
 };
 
+const decodeTextOnlyForcedToolResponse = (
+  text: readonly (ForcedToolResponsePart & { readonly text: string })[],
+  expectedName: string,
+  acceptUnwrappedObject: boolean
+): ForcedToolResponseDecode => {
+  const [part] = text;
+  if (part === undefined) {
+    return { _tag: "Missing", reason: "missing_content" };
+  }
+  if (text.length !== 1) {
+    return { _tag: "Malformed", reason: "invalid_cardinality" };
+  }
+  const envelope = decodeNativeForcedToolEnvelope(part.text);
+  if (
+    envelope._tag === "Value" &&
+    acceptUnwrappedObject &&
+    !envelope.wrappedInArray
+  ) {
+    return { _tag: "Decoded", value: envelope.value };
+  }
+  if (envelope._tag !== "Call") {
+    return { _tag: "Malformed", reason: "invalid_native_envelope" };
+  }
+  return envelope.call.name === expectedName
+    ? { _tag: "Decoded", value: envelope.call.arguments }
+    : { _tag: "Malformed", reason: "unexpected_tool_name" };
+};
+
 /**
  * Selects the one authoritative forced-tool argument object without exposing
  * native response text. The installed provider may mirror one call as both a
  * structured part and native JSON. A native mirror is authoritative only when
  * its decoded argument object is structurally identical to the structured
- * call; a bare object is never accepted without that structured authority.
+ * call. A caller may explicitly accept one direct bare object when its
+ * downstream schema is the sole authority; array-wrapped or competing values
+ * remain invalid.
  */
 export const decodeForcedToolResponseResult = (
   content: readonly unknown[],
-  expectedName: string
+  expectedName: string,
+  options?: {
+    readonly acceptUnwrappedObject?: boolean;
+  }
 ): ForcedToolResponseDecode => {
   const parts = content.filter(isRecord) as readonly ForcedToolResponsePart[];
   const structured = parts.filter((part) => part.type === "tool-call");
@@ -200,20 +238,11 @@ export const decodeForcedToolResponseResult = (
       : { _tag: "Malformed", reason: "mirror_mismatch" };
   }
 
-  const [part] = text;
-  if (part === undefined) {
-    return { _tag: "Missing", reason: "missing_content" };
-  }
-  if (text.length !== 1) {
-    return { _tag: "Malformed", reason: "invalid_cardinality" };
-  }
-  const envelope = decodeNativeForcedToolEnvelope(part.text);
-  if (envelope._tag !== "Call") {
-    return { _tag: "Malformed", reason: "invalid_native_envelope" };
-  }
-  return envelope.call.name === expectedName
-    ? { _tag: "Decoded", value: envelope.call.arguments }
-    : { _tag: "Malformed", reason: "unexpected_tool_name" };
+  return decodeTextOnlyForcedToolResponse(
+    text,
+    expectedName,
+    options?.acceptUnwrappedObject === true
+  );
 };
 
 export const decodeForcedToolResponse = (

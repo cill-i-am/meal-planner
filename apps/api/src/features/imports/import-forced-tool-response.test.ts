@@ -138,6 +138,38 @@ describe("forced tool response boundary", () => {
     ).toBeUndefined();
   });
 
+  it("accepts one direct bare-object recipe authority only when explicitly enabled", () => {
+    expect(
+      decodeForcedToolResponseResult(
+        [textPart(validArguments)],
+        "record_recipe",
+        { acceptUnwrappedObject: true }
+      )
+    ).toEqual({ _tag: "Decoded", value: validArguments });
+  });
+
+  it.each([
+    ["the default boundary", undefined],
+    ["a singleton array", [validArguments]],
+  ] as const)(
+    "rejects one bare-object recipe authority through %s",
+    (_label, value) => {
+      const content = [
+        textPart(value === undefined ? validArguments : value),
+      ] as const;
+      expect(
+        decodeForcedToolResponseResult(
+          content,
+          "record_recipe",
+          value === undefined ? undefined : { acceptUnwrappedObject: true }
+        )
+      ).toEqual({
+        _tag: "Malformed",
+        reason: "invalid_native_envelope",
+      });
+    }
+  );
+
   it.each([
     ["missing_content", [], { _tag: "Missing", reason: "missing_content" }],
     [
