@@ -403,6 +403,7 @@ export const failAfter = <A, E, R>(
 const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
   service: LanguageModel.Service,
   input: {
+    readonly acceptUnwrappedObject?: boolean;
     readonly description: string;
     readonly name: Name;
     readonly prompt: Prompt.RawInput;
@@ -481,7 +482,10 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     Effect.flatMap((response) => {
       const decoded = decodeForcedToolResponseResult(
         response.content,
-        input.name
+        input.name,
+        input.acceptUnwrappedObject === true
+          ? { acceptUnwrappedObject: true }
+          : undefined
       );
       if (decoded._tag !== "Decoded") {
         return emitImportObservabilityEvent(
@@ -1154,6 +1158,7 @@ export const makeInstalledRecipeExtractor = (input: {
                 yield* oneForcedToolCall(
                   service,
                   {
+                    acceptUnwrappedObject: true,
                     description:
                       "Record only provenance-backed recipe facts and unresolved fields.",
                     name: "record_recipe",
