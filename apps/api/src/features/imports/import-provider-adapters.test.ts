@@ -262,7 +262,11 @@ const validVisualSemantics = {
   outcome: "empty",
 } as const;
 
-const defaultVisualUsage = { completion_tokens: 10, prompt_tokens: 20 };
+const defaultVisualUsage = {
+  completion_tokens: 10,
+  prompt_tokens: 20,
+  total_tokens: 30,
+};
 const toolResponse = (
   name: string,
   value: unknown,
@@ -2845,6 +2849,7 @@ describe("installed import provider adapters", () => {
       {
         completion_tokens: 10,
         prompt_tokens: "provider-private-canary",
+        total_tokens: 30,
       },
     ],
     [
@@ -2852,7 +2857,32 @@ describe("installed import provider adapters", () => {
       {
         completion_tokens: "provider-private-canary",
         prompt_tokens: 20,
+        total_tokens: 30,
       },
+    ],
+    [
+      "a missing total token count",
+      { completion_tokens: 10, prompt_tokens: 20 },
+    ],
+    [
+      "a non-numeric total token count",
+      {
+        completion_tokens: 10,
+        prompt_tokens: 20,
+        total_tokens: "provider-private-canary",
+      },
+    ],
+    [
+      "a negative total token count",
+      { completion_tokens: 10, prompt_tokens: 20, total_tokens: -1 },
+    ],
+    [
+      "a fractional total token count",
+      { completion_tokens: 10, prompt_tokens: 20, total_tokens: 30.5 },
+    ],
+    [
+      "an inconsistent total token count",
+      { completion_tokens: 10, prompt_tokens: 20, total_tokens: 31 },
     ],
     [
       "an excess usage field",

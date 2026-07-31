@@ -856,6 +856,7 @@ const RecipeTransportUsage = Schema.Struct({
   prompt_tokens_details: Schema.optionalKey(
     Schema.Struct({ cached_tokens: RecipeTransportTokenCount })
   ),
+  total_tokens: RecipeTransportTokenCount,
 });
 const decodeRecipeTransportUsage = Schema.decodeUnknownOption(
   RecipeTransportUsage,
@@ -882,7 +883,15 @@ const isSchemaValidRecipeSemantics = (value: unknown): boolean =>
 
 const canonicalizeRecipeTransportUsage = (value: unknown): unknown => {
   const usage = Option.getOrUndefined(decodeRecipeTransportUsage(value));
-  if (usage === undefined) {
+  const expectedTotalTokens =
+    usage === undefined
+      ? undefined
+      : usage.prompt_tokens + usage.completion_tokens;
+  if (
+    usage === undefined ||
+    !Number.isSafeInteger(expectedTotalTokens) ||
+    usage.total_tokens !== expectedTotalTokens
+  ) {
     return rejectRecipeTransportRoot(
       "provider_normalization_recipe_metadata_invalid"
     );
