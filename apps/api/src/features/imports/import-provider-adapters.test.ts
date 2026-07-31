@@ -228,6 +228,10 @@ const validRecipeSemantics = {
   yield: unresolvedString,
 } as const;
 
+const recipeSemanticsWithoutName = Object.fromEntries(
+  Object.entries(validRecipeSemantics).filter(([key]) => key !== "name")
+);
+
 const validRecipe = {
   ...validRecipeSemantics,
   cost: {
@@ -2877,6 +2881,52 @@ describe("installed import provider adapters", () => {
     ]);
   });
 
+  it("discards one inert unwrapped provider sibling only after the known semantics independently decode", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...validRecipeSemantics,
+      provider_private_canary_key: "provider-private-canary-value",
+      usage: defaultVisualUsage,
+    });
+
+    expect(exit).toMatchObject({
+      _tag: "Success",
+      value: {
+        ...validRecipeSemantics,
+        usage: {
+          inputTokens: 20,
+          outputTokens: 10,
+        },
+      },
+    });
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "provider_private_canary_key"
+    );
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "provider-private-canary-value"
+    );
+  });
+
+  it("repairs one inert unwrapped provider sibling without inventing usage metadata", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...validRecipeSemantics,
+      provider_private_canary_key: "provider-private-canary-value",
+    });
+
+    expect(exit).toMatchObject({
+      _tag: "Success",
+      value: validRecipeSemantics,
+    });
+    expect(JSON.stringify(trace.events)).not.toContain(
+      "provider_private_canary_key"
+    );
+    expect(JSON.stringify(trace.events)).not.toContain(
+      "provider-private-canary-value"
+    );
+    expect(JSON.stringify(trace.events)).not.toContain(
+      "not present in evidence"
+    );
+  });
+
   it("fails closed for inconsistent usage beside unwrapped recipe semantics", async () => {
     const { exit, trace } = await runRecipeTransportRoot({
       ...validRecipeSemantics,
@@ -2994,6 +3044,12 @@ describe("installed import provider adapters", () => {
       expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
         "provider-private-canary"
       );
+      expect(JSON.stringify(trace.events)).not.toContain(
+        "provider_private_canary_key"
+      );
+      expect(JSON.stringify(trace.events)).not.toContain(
+        "not present in evidence"
+      );
     }
   );
 
@@ -3050,21 +3106,36 @@ describe("installed import provider adapters", () => {
       "provider_normalization_recipe_authority_conflict",
     ],
     [
-      "malformed unwrapped recipe semantics",
+      "an unexpected nested recipe property that cannot be safely projected",
       {
         ...validRecipeSemantics,
-        unexpected: "provider-private-canary",
+        name: {
+          ...unresolvedString,
+          provider_private_canary_key: "provider-private-canary",
+        },
       },
-      "provider_normalization_recipe_semantics_schema_invalid",
+      "provider_normalization_recipe_semantics_unexpected_property",
     ],
     [
-      "malformed unwrapped recipe semantics with usage metadata",
+      "a missing required recipe field",
+      recipeSemanticsWithoutName,
+      "provider_normalization_recipe_semantics_missing_required_field",
+    ],
+    [
+      "a wrong recipe field type or constraint",
       {
         ...validRecipeSemantics,
-        unexpected: "provider-private-canary",
-        usage: defaultVisualUsage,
+        name: "provider-private-canary",
       },
-      "provider_normalization_recipe_semantics_schema_invalid",
+      "provider_normalization_recipe_semantics_wrong_type_or_constraint",
+    ],
+    [
+      "a violated recipe field constraint",
+      {
+        ...validRecipeSemantics,
+        unresolvedFields: Array.from({ length: 17 }, () => "name"),
+      },
+      "provider_normalization_recipe_semantics_wrong_type_or_constraint",
     ],
     [
       "multiple recipe authorities",
@@ -3097,6 +3168,12 @@ describe("installed import provider adapters", () => {
       });
       expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
         "provider-private-canary"
+      );
+      expect(JSON.stringify(trace.events)).not.toContain(
+        "provider_private_canary_key"
+      );
+      expect(JSON.stringify(trace.events)).not.toContain(
+        "not present in evidence"
       );
     }
   );
