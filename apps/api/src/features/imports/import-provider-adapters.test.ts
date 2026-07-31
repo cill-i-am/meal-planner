@@ -164,6 +164,37 @@ const makeRecordingTraceStore = () => {
   return { events, service };
 };
 
+const recipeEvidenceAssembly = {
+  evidenceFingerprint: "fingerprint",
+  generation: 1 as never,
+  importId: "import-1" as never,
+  items: [
+    {
+      artifactReference: "private:evidence",
+      evidenceId: "evidence-1",
+      kind: "caption",
+      origin: "creator_provided",
+      value: "visible evidence",
+    },
+  ],
+} as const;
+
+const runRecipeTransportRoot = async (response: unknown) => {
+  const trace = makeRecordingTraceStore();
+  const adapter = await runFactory(
+    makeInstalledRecipeExtractor({
+      client: makeGateway(response).client,
+      correlationId,
+      dispatch: localDispatchGate,
+    }),
+    trace.service
+  );
+  const exit = await Effect.runPromiseExit(
+    adapter.extract(recipeEvidenceAssembly)
+  );
+  return { exit, trace };
+};
+
 const unresolvedString = {
   citations: [],
   origin: "unresolved",
@@ -2717,6 +2748,191 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(trace.events)).not.toContain(
       "non-authoritative model text"
     );
+  });
+
+  it.each([
+    ["schema-valid recipe semantics", validRecipeSemantics],
+    [
+      "one named recipe call with parameters",
+      { name: "record_recipe", parameters: validRecipeSemantics },
+    ],
+    [
+      "one named recipe call with arguments",
+      { arguments: validRecipeSemantics, name: "record_recipe" },
+    ],
+  ] as const)(
+    "accepts %s at the raw transport root",
+    async (_label, response) => {
+      const { exit, trace } = await runRecipeTransportRoot(response);
+
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: validRecipeSemantics,
+      });
+      expect(trace.events).toEqual([
+        {
+          correlationId,
+          event: "provider.response",
+          outcome: "received",
+          providerStage: "recipe",
+        },
+        {
+          correlationId,
+          event: "provider.decode",
+          outcome: "succeeded",
+          providerStage: "recipe",
+        },
+      ]);
+    }
+  );
+
+  it.each([
+    [
+      "a wrong call name",
+      {
+        name: "record_visual_evidence",
+        parameters: validRecipeSemantics,
+      },
+    ],
+    [
+      "both call argument fields",
+      {
+        arguments: validRecipeSemantics,
+        name: "record_recipe",
+        parameters: validRecipeSemantics,
+      },
+    ],
+    [
+      "an excess call field",
+      {
+        id: "provider-private-canary",
+        name: "record_recipe",
+        parameters: validRecipeSemantics,
+      },
+    ],
+    [
+      "malformed recipe arguments",
+      {
+        name: "record_recipe",
+        parameters: {
+          ...validRecipeSemantics,
+          unexpected: "provider-private-canary",
+        },
+      },
+    ],
+    ["missing recipe arguments", { name: "record_recipe" }],
+    [
+      "recipe semantics mixed with a transport authority",
+      {
+        ...validRecipeSemantics,
+        response: "provider-private-canary",
+      },
+    ],
+    [
+      "multiple recipe authorities",
+      {
+        name: "record_recipe",
+        parameters: validRecipeSemantics,
+        tool_calls: [
+          {
+            arguments: validRecipeSemantics,
+            name: "record_recipe",
+          },
+        ],
+      },
+    ],
+  ] as const)(
+    "fails closed for %s at the raw recipe transport root",
+    async (_label, response) => {
+      const { exit, trace } = await runRecipeTransportRoot(response);
+
+      expect(exit._tag).toBe("Failure");
+      expect(JSON.stringify(exit)).toContain("malformed_response");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason: "provider_normalization_invalid",
+        decodeStage: "provider_normalization",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "recipe",
+      });
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+        "provider-private-canary"
+      );
+    }
+  );
+
+  it("fails closed for an array at the raw recipe transport root", async () => {
+    const { exit, trace } = await runRecipeTransportRoot([
+      validRecipeSemantics,
+    ]);
+
+    expect(exit._tag).toBe("Failure");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      decodeReason: "forced_tool_missing",
+      decodeStage: "forced_tool_envelope",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "recipe",
+    });
+  });
+
+  it("leaves a non-recipe raw transport root unchanged", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      outcome: "not_a_recipe",
+    });
+
+    expect(exit._tag).toBe("Failure");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      decodeReason: "forced_tool_missing",
+      decodeStage: "forced_tool_envelope",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "recipe",
+    });
+  });
+
+  it("does not canonicalize a visual response at the raw transport root", async () => {
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: makeGateway(validVisualSemantics).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 0,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      decodeReason: "forced_tool_missing",
+      decodeStage: "forced_tool_envelope",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "visual",
+    });
   });
 
   it("accepts the installed singleton schema-valid bare recipe authority", async () => {

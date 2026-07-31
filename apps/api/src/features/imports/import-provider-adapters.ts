@@ -791,6 +791,58 @@ const sameRawToolAuthority = (left: RawToolCall, right: RawToolCall): boolean =>
     comparableToolArguments(right.arguments)
   );
 
+const RecipeSemanticsKeys = new Set(
+  Object.keys(RecipeExtractionSemantics.fields)
+);
+
+const isSchemaValidRecipeSemantics = (value: unknown): boolean =>
+  Schema.decodeUnknownResult(RecipeExtractionSemantics, {
+    onExcessProperty: "error",
+  })(value)._tag === "Success";
+
+const canonicalizeRecipeTransportRoot = (value: unknown): unknown => {
+  if (!isUnknownRecord(value)) {
+    return value;
+  }
+  if (isSchemaValidRecipeSemantics(value)) {
+    return { response: value };
+  }
+
+  const keys = Object.keys(value);
+  const hasArguments = Object.hasOwn(value, "arguments");
+  const hasParameters = Object.hasOwn(value, "parameters");
+  const hasCallSignal =
+    hasArguments || hasParameters || value["name"] === "record_recipe";
+  const hasSemanticsSignal = keys.some((key) => RecipeSemanticsKeys.has(key));
+  if (hasCallSignal) {
+    const exactKeys =
+      keys.length === 2 &&
+      Object.hasOwn(value, "name") &&
+      hasArguments !== hasParameters;
+    const argumentsValue = hasArguments
+      ? value["arguments"]
+      : value["parameters"];
+    if (
+      exactKeys &&
+      value["name"] === "record_recipe" &&
+      isSchemaValidRecipeSemantics(argumentsValue)
+    ) {
+      return { response: value };
+    }
+    throw new Error(ProviderNormalizationInvalidMessage);
+  }
+  if (hasSemanticsSignal) {
+    throw new Error(ProviderNormalizationInvalidMessage);
+  }
+  return value;
+};
+
+const canonicalizeProviderTransportRoot = (
+  value: unknown,
+  providerStage: "recipe" | "visual"
+): unknown =>
+  providerStage === "recipe" ? canonicalizeRecipeTransportRoot(value) : value;
+
 const normalizeRawToolShape = (value: unknown): unknown => {
   if (!isUnknownRecord(value)) {
     return value;
@@ -885,7 +937,10 @@ const normalizeRawToolShape = (value: unknown): unknown => {
   return value;
 };
 
-const withProviderNormalizationBoundary = (response: Response): Response => {
+const withProviderNormalizationBoundary = (
+  response: Response,
+  providerStage: "recipe" | "visual"
+): Response => {
   const parseJson = response.json.bind(response);
   return new Proxy(response, {
     get: (target, property) => {
@@ -893,7 +948,9 @@ const withProviderNormalizationBoundary = (response: Response): Response => {
         return async (): Promise<unknown> => {
           try {
             const raw = await parseJson();
-            return normalizeRawToolShape(raw);
+            return normalizeRawToolShape(
+              canonicalizeProviderTransportRoot(raw, providerStage)
+            );
           } catch {
             // Provider payloads and parser details must not cross the
             // observability boundary. Alchemy preserves this closed
@@ -918,7 +975,7 @@ const withProviderNormalizationBoundary = (response: Response): Response => {
 const noLogWorkersAiClient = (
   client: QueryGatewayClient,
   correlationId: ImportCorrelationId,
-  providerStage: "recipe" | "speech" | "visual",
+  providerStage: "recipe" | "visual",
   traceStore: ImportObservabilityTraceStoreShape | undefined
 ): QueryGatewayClient => ({
   ...client,
@@ -953,7 +1010,7 @@ const noLogWorkersAiClient = (
                 traceStore
               )
             );
-            return withProviderNormalizationBoundary(response);
+            return withProviderNormalizationBoundary(response, providerStage);
           },
         }) as WorkersAiBinding
     )
