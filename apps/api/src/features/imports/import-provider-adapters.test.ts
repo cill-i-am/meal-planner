@@ -83,6 +83,14 @@ const speechTranscriptionInput = {
   sourceMediaSha256: "b".repeat(64),
 };
 
+const nestUnknownMetadata = (leaf: unknown, depth: number): unknown => {
+  let value = leaf;
+  for (let index = 0; index < depth; index += 1) {
+    value = { nested: value };
+  }
+  return value;
+};
+
 const localDispatchGate: ProviderDispatchGate = {
   run: <A, E>(input: {
     readonly invoke: Effect.Effect<
@@ -428,6 +436,12 @@ describe("installed import provider adapters", () => {
           attempt: 1,
           region: "synthetic",
         },
+      },
+    ],
+    [
+      "one deeply nested inert root object",
+      {
+        platformMetadata: nestUnknownMetadata("synthetic", 24),
       },
     ],
     [
@@ -1061,12 +1075,43 @@ describe("installed import provider adapters", () => {
       },
     ],
     [
+      "deep unknown transcript-bearing object",
+      {
+        segments: [],
+        syntheticTranscriptContainer: nestUnknownMetadata(
+          {
+            text: "nested-transcript-canary",
+          },
+          24
+        ),
+        text: "Chop the onion.",
+      },
+    ],
+    [
       "unknown transcript-bearing array",
       {
         segments: [],
         syntheticTranscriptContainer: [
           {
             text: "nested-transcript-canary",
+          },
+        ],
+        text: "Chop the onion.",
+      },
+    ],
+    [
+      "deep unknown transcript-bearing array/container",
+      {
+        segments: [],
+        syntheticTranscriptContainer: [
+          {
+            nested: [
+              {
+                nested: {
+                  text: "nested-transcript-canary",
+                },
+              },
+            ],
           },
         ],
         text: "Chop the onion.",
@@ -1107,6 +1152,58 @@ describe("installed import provider adapters", () => {
       );
       expect(JSON.stringify(trace.events)).not.toMatch(
         /nested-transcript-canary|syntheticTranscriptContainer|wrapper-value-canary/u
+      );
+    }
+  );
+
+  it.each([
+    [
+      "excessively deep inert unknown metadata",
+      nestUnknownMetadata("inert-depth-canary", 70),
+      "inert-depth-canary",
+    ],
+    [
+      "excessively large inert unknown metadata",
+      Array.from({ length: 20_000 }, () => "inert-size-canary"),
+      "inert-size-canary",
+    ],
+  ] as const)(
+    "fails closed for %s without exposing its name or value",
+    async (_case, syntheticTraversalContainer, privateValue) => {
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway({
+            segments: [],
+            syntheticTraversalContainer,
+            text: "Chop the onion.",
+          }).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.transcribe(speechTranscriptionInput)
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason: "speech_envelope_schema_invalid",
+        decodeStage: "speech_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "speech",
+        speechEnvelopeFailure: "unsupported_property",
+        speechEnvelopeFamily: "model_specific",
+        speechEnvelopeUnsupportedLocation: "root",
+        speechEnvelopeUnsupportedRootProperty: "other",
+      });
+      expect(JSON.stringify(exit)).not.toContain(privateValue);
+      expect(JSON.stringify(trace.events)).not.toMatch(
+        /inert-(?:depth|size)-canary|syntheticTraversalContainer/u
       );
     }
   );

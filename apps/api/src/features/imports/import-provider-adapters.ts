@@ -1339,10 +1339,66 @@ const projectDocumentedSpeechResponse = (
       .map((key) => [key, record[key]])
   );
 
-const isTranscriptBearingContainer = (value: unknown): boolean =>
-  (isUnknownRecord(value) && Object.hasOwn(value, "text")) ||
-  (Array.isArray(value) &&
-    value.some((item) => isUnknownRecord(item) && Object.hasOwn(item, "text")));
+const SpeechUnknownMetadataMaximumTraversalDepth = 64;
+const SpeechUnknownMetadataMaximumTraversalNodes = 16_384;
+
+const unknownSpeechMetadataRequiresRejection = (
+  raw: Readonly<Record<string, unknown>>
+): boolean => {
+  const pending: { readonly depth: number; readonly value: unknown }[] = [];
+  const visitedContainers = new WeakSet<object>();
+  let discoveredNodes = 0;
+  const enqueue = (value: unknown, depth: number): boolean => {
+    discoveredNodes += 1;
+    if (
+      discoveredNodes > SpeechUnknownMetadataMaximumTraversalNodes ||
+      depth > SpeechUnknownMetadataMaximumTraversalDepth
+    ) {
+      return false;
+    }
+    if (typeof value === "object" && value !== null) {
+      if (visitedContainers.has(value)) {
+        return false;
+      }
+      visitedContainers.add(value);
+    }
+    pending.push({ depth, value });
+    return true;
+  };
+
+  for (const key of Object.keys(raw)) {
+    if (!SpeechProviderResponseKeys.has(key) && !enqueue(raw[key], 0)) {
+      return true;
+    }
+  }
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined) {
+      continue;
+    }
+    if (isUnknownRecord(current.value)) {
+      if (Object.hasOwn(current.value, "text")) {
+        return true;
+      }
+      for (const value of Object.values(current.value)) {
+        if (!enqueue(value, current.depth + 1)) {
+          return true;
+        }
+      }
+      continue;
+    }
+    if (Array.isArray(current.value)) {
+      for (const value of current.value) {
+        if (!enqueue(value, current.depth + 1)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+};
 
 const hasAmbiguousSpeechWrapper = (
   raw: Readonly<Record<string, unknown>>
@@ -1351,11 +1407,7 @@ const hasAmbiguousSpeechWrapper = (
   Object.hasOwn(raw, "messages") ||
   Object.hasOwn(raw, "result") ||
   Object.hasOwn(raw, "success") ||
-  Object.entries(raw).some(
-    ([key, value]) =>
-      !SpeechProviderResponseKeys.has(key) &&
-      isTranscriptBearingContainer(value)
-  );
+  unknownSpeechMetadataRequiresRejection(raw);
 
 const isPresentNonNull = (
   record: Readonly<Record<string, unknown>>,
