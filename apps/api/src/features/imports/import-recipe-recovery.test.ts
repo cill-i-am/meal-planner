@@ -48,6 +48,18 @@ const recovery: RecipeRecovery = {
   visualManifestSha256: "e".repeat(64),
 };
 
+const sixthRecovery: RecipeRecovery = {
+  ...recovery,
+  originalDispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+    `${originalDispatchId}:recovery:5`
+  ),
+  recoveryDispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+    `${originalDispatchId}:recovery:6`
+  ),
+  recoveryIdentity: "recovery:6",
+  recoveryOrdinal: 6,
+};
+
 describe("recipe recovery authority", () => {
   it("derives a deterministic fingerprint distinct from the terminal attempt", async () => {
     const first = await Effect.runPromise(
@@ -145,7 +157,8 @@ describe("recipe recovery authority", () => {
   it("resumes through one distinct deterministic workflow identity", async () => {
     const instanceId = recipeRecoveryResumeWorkflowInstanceId(
       importId,
-      acquisitionGeneration
+      acquisitionGeneration,
+      6
     );
     const batches: unknown[] = [];
     const instance = {
@@ -162,7 +175,7 @@ describe("recipe recovery authority", () => {
       () => correlationId
     );
 
-    await Effect.runPromise(starter.resume(recovery));
+    await Effect.runPromise(starter.resume(sixthRecovery));
 
     expect(batches).toEqual([
       [
@@ -172,7 +185,7 @@ describe("recipe recovery authority", () => {
             acquisitionGeneration,
             correlationId,
             importId,
-            recoveryOrdinal: 1,
+            recoveryOrdinal: 6,
             resumeOrdinal: 1,
           },
         },

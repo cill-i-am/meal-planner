@@ -115,6 +115,13 @@ const RecipeFifthRecoveryPreparationRequest = Schema.Struct({
   operation: Schema.Literal("prepare_recipe_fifth_recovery"),
 });
 
+const RecipeSixthRecoveryPreparationRequest = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  operation: Schema.Literal("prepare_recipe_sixth_recovery"),
+});
+
 const RecipeRecoveryResumeRequest = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   dispatchId: PilotBudgetDispatchId,
@@ -140,6 +147,7 @@ export const ProviderTerminalSettlementRequest = Schema.Union([
   RecipeThirdRecoveryPreparationRequest,
   RecipeFourthRecoveryPreparationRequest,
   RecipeFifthRecoveryPreparationRequest,
+  RecipeSixthRecoveryPreparationRequest,
   RecipeRecoveryResumeRequest,
   ExpiredRecipeReplaySweepRequest,
 ]);
@@ -297,6 +305,18 @@ const RecipeFifthRecoveryPreparationResponse = Schema.Struct({
   runtimeStage: Schema.Literal(PilotProviderBudgetStage),
 });
 
+const RecipeSixthRecoveryPreparationResponse = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  dispatchId: PilotBudgetDispatchId,
+  importId: ImportId,
+  outcome: Schema.Literal("recipe_sixth_recovery_prepared"),
+  recoveryDispatchId: PilotBudgetDispatchId,
+  recoveryExtractionFingerprint: Schema.String.pipe(
+    Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+  ),
+  runtimeStage: Schema.Literal(PilotProviderBudgetStage),
+});
+
 const RecipeRecoveryResumeResponse = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   dispatchId: PilotBudgetDispatchId,
@@ -329,6 +349,7 @@ export const ProviderTerminalSettlementResponse = Schema.Union([
   RecipeThirdRecoveryPreparationResponse,
   RecipeFourthRecoveryPreparationResponse,
   RecipeFifthRecoveryPreparationResponse,
+  RecipeSixthRecoveryPreparationResponse,
   RecipeRecoveryResumeResponse,
   ExpiredRecipeReplaySweepResponse,
 ]);
@@ -2822,6 +2843,7 @@ const prepareAdditionalRecipeRecovery = (
     | typeof RecipeThirdRecoveryPreparationRequest.Type
     | typeof RecipeFourthRecoveryPreparationRequest.Type
     | typeof RecipeFifthRecoveryPreparationRequest.Type
+    | typeof RecipeSixthRecoveryPreparationRequest.Type
 ) =>
   Effect.gen(function* prepareAdditionalTerminalRecipeRecovery() {
     const repository = makeD1RecipeRecoveryRepository(
@@ -2853,10 +2875,18 @@ const prepareAdditionalRecipeRecovery = (
           thirdRecoveryDispatchId: request.dispatchId,
         });
       }
-      return repository.prepareFifth({
+      if (request.operation === "prepare_recipe_fifth_recovery") {
+        return repository.prepareFifth({
+          acquisitionGeneration: request.acquisitionGeneration,
+          createdAt: input.now(),
+          fourthRecoveryDispatchId: request.dispatchId,
+          importId: request.importId,
+        });
+      }
+      return repository.prepareSixth({
         acquisitionGeneration: request.acquisitionGeneration,
         createdAt: input.now(),
-        fourthRecoveryDispatchId: request.dispatchId,
+        fifthRecoveryDispatchId: request.dispatchId,
         importId: request.importId,
       });
     })();
@@ -2927,13 +2957,30 @@ const prepareAdditionalRecipeRecovery = (
         )
       );
     }
+    if (request.operation === "prepare_recipe_fifth_recovery") {
+      return yield* Schema.decodeUnknownEffect(
+        RecipeFifthRecoveryPreparationResponse
+      )({
+        acquisitionGeneration: recovery.acquisitionGeneration,
+        dispatchId: recovery.originalDispatchId,
+        importId: recovery.importId,
+        outcome: "recipe_fifth_recovery_prepared",
+        recoveryDispatchId: recovery.recoveryDispatchId,
+        recoveryExtractionFingerprint: recovery.recoveryExtractionFingerprint,
+        runtimeStage: PilotProviderBudgetStage,
+      }).pipe(
+        Effect.mapError(() =>
+          providerTerminalSettlementError("persistence_corrupt")
+        )
+      );
+    }
     return yield* Schema.decodeUnknownEffect(
-      RecipeFifthRecoveryPreparationResponse
+      RecipeSixthRecoveryPreparationResponse
     )({
       acquisitionGeneration: recovery.acquisitionGeneration,
       dispatchId: recovery.originalDispatchId,
       importId: recovery.importId,
-      outcome: "recipe_fifth_recovery_prepared",
+      outcome: "recipe_sixth_recovery_prepared",
       recoveryDispatchId: recovery.recoveryDispatchId,
       recoveryExtractionFingerprint: recovery.recoveryExtractionFingerprint,
       runtimeStage: PilotProviderBudgetStage,
@@ -2943,6 +2990,31 @@ const prepareAdditionalRecipeRecovery = (
       )
     );
   });
+
+type AdditionalRecipeRecoveryRequest =
+  | typeof RecipeSecondRecoveryPreparationRequest.Type
+  | typeof RecipeThirdRecoveryPreparationRequest.Type
+  | typeof RecipeFourthRecoveryPreparationRequest.Type
+  | typeof RecipeFifthRecoveryPreparationRequest.Type
+  | typeof RecipeSixthRecoveryPreparationRequest.Type;
+
+const additionalRecipeRecoveryOperations = new Set<
+  AdditionalRecipeRecoveryRequest["operation"]
+>([
+  "prepare_recipe_second_recovery",
+  "prepare_recipe_third_recovery",
+  "prepare_recipe_fourth_recovery",
+  "prepare_recipe_fifth_recovery",
+  "prepare_recipe_sixth_recovery",
+]);
+
+const isAdditionalRecipeRecoveryRequest = (
+  request: ProviderTerminalSettlementRequest
+): request is AdditionalRecipeRecoveryRequest =>
+  "operation" in request &&
+  additionalRecipeRecoveryOperations.has(
+    request.operation as AdditionalRecipeRecoveryRequest["operation"]
+  );
 
 export const makeD1ProviderTerminalSettlementService = (
   input: ProviderTerminalSettlementServiceInput
@@ -3105,12 +3177,7 @@ export const makeD1ProviderTerminalSettlementService = (
           )
         );
       }
-      if (
-        isOperation(request, "prepare_recipe_second_recovery") ||
-        isOperation(request, "prepare_recipe_third_recovery") ||
-        isOperation(request, "prepare_recipe_fourth_recovery") ||
-        isOperation(request, "prepare_recipe_fifth_recovery")
-      ) {
+      if (isAdditionalRecipeRecoveryRequest(request)) {
         return yield* prepareAdditionalRecipeRecovery(input, request);
       }
       yield* settleBatch(input.database, request, input.now());
