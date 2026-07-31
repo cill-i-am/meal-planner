@@ -17,6 +17,7 @@ import type {
 import {
   decodeVisualEvidence,
   MaximumVisualFrames,
+  representativeVisualFrameIndex,
   VisualEvidence,
   validateVisualFrames,
 } from "./import-visual-evidence-extractor.js";
@@ -335,6 +336,8 @@ export const readVerifiedVisualEvidence = (
     }
     const checksumMatches =
       nativeChecksum !== null || expected.recoverySha256 === sha256;
+    const submittedFrame =
+      document.frames[representativeVisualFrameIndex(document.frames.length)];
     const valid = [
       object.size === bytes.byteLength,
       checksumMatches,
@@ -352,9 +355,9 @@ export const readVerifiedVisualEvidence = (
       DateTime.toEpochMillis(document.sourceEvidenceDeleteAt) ===
         DateTime.toEpochMillis(expected.sourceEvidenceDeleteAt),
       document.sourceMediaSha256 === expected.sourceMediaSha256,
-      document.usage.inputBytes ===
-        document.frames.reduce((total, frame) => total + frame.byteLength, 0),
-      document.usage.inputFrames === document.frames.length,
+      submittedFrame !== undefined,
+      document.usage.inputBytes === submittedFrame?.byteLength,
+      document.usage.inputFrames === 1,
       observationsMatchFrames(document.observations, document.frames),
     ].every(Boolean);
     if (!valid) {
@@ -618,13 +621,12 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     const visualEvidence = yield* decodeVisualEvidence(rawVisualEvidence).pipe(
       Effect.mapError(() => pipelineFailure("visual_extraction_failed"))
     );
-    const inputBytes = frames.reduce(
-      (total, frame) => total + frame.bytes.byteLength,
-      0
-    );
+    const submittedFrame =
+      frames[representativeVisualFrameIndex(frames.length)];
     if (
-      visualEvidence.usage.inputBytes !== inputBytes ||
-      visualEvidence.usage.inputFrames !== frames.length ||
+      submittedFrame === undefined ||
+      visualEvidence.usage.inputBytes !== submittedFrame.bytes.byteLength ||
+      visualEvidence.usage.inputFrames !== 1 ||
       !observationsMatchFrames(visualEvidence.observations, frameReferences)
     ) {
       return yield* Effect.fail(pipelineFailure("visual_extraction_failed"));

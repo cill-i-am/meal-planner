@@ -36,6 +36,7 @@ import {
   decodeVisualEvidence,
   MaximumVisualFrameBytes,
   MaximumVisualInputBytes,
+  representativeVisualFrameIndex,
   validateVisualFrames,
   VisualEvidence,
 } from "./import-visual-evidence-extractor.js";
@@ -700,10 +701,11 @@ export const prepareTikTokCarouselEvidence = Effect.fn(
       pipelineFailure("visual_extraction_failed", "operator_reconcile")
     )
   );
+  const submittedFrame = frames[representativeVisualFrameIndex(frames.length)];
   if (
-    visualEvidence.usage.inputFrames !== frames.length ||
-    visualEvidence.usage.inputBytes !==
-      frames.reduce((total, frame) => total + frame.bytes.byteLength, 0) ||
+    submittedFrame === undefined ||
+    visualEvidence.usage.inputFrames !== 1 ||
+    visualEvidence.usage.inputBytes !== submittedFrame.bytes.byteLength ||
     visualEvidence.observations.some(
       (observation) =>
         frames[observation.frameIndex]?.timestampMilliseconds !==

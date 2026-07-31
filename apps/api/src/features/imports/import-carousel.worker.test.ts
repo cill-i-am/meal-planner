@@ -209,7 +209,7 @@ const visualFixture = () =>
     ],
     outcome: "found",
     provider: "deterministic_fake",
-    usage: { inputBytes: 540, inputFrames: 2, modelCalls: 1 },
+    usage: { inputBytes: 270, inputFrames: 1, modelCalls: 1 },
   });
 
 const unresolvedRecipeFact = (reason: string) => ({
@@ -695,11 +695,8 @@ describe("provider-free TikTok carousel tracer", () => {
       outcome: "found",
       provider: "deterministic_fake",
       usage: {
-        inputBytes: output.images.reduce(
-          (total, image) => total + image.bytes.byteLength,
-          0
-        ),
-        inputFrames: 2,
+        inputBytes: output.images[1]?.bytes.byteLength ?? 0,
+        inputFrames: 1,
         modelCalls: 1,
       },
     });

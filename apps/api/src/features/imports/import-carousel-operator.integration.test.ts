@@ -229,7 +229,7 @@ describe("operator carousel HTTP integration", () => {
       ],
       outcome: "found",
       provider: "deterministic_fake",
-      usage: { inputBytes: 540, inputFrames: 2, modelCalls: 1 },
+      usage: { inputBytes: 270, inputFrames: 1, modelCalls: 1 },
     });
     const recipe = makeDeterministicRecipeExtractor(
       {
