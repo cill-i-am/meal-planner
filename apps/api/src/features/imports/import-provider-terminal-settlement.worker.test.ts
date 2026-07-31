@@ -19,6 +19,7 @@ import {
 import { ProviderTerminalSettlementRoutes } from "./import-provider-terminal-settlement.routes.js";
 import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-terminal.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
+import type { VisualEvidenceFailureCode } from "./import-visual-evidence.repository.d1.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { workflowStartUnavailable } from "./import.errors.js";
@@ -154,9 +155,7 @@ const seedPoisonedTerminalVisualImport = async (
     readonly persistCheckpoint?: boolean;
     readonly providerStageId?: string;
     readonly runId?: string;
-    readonly terminalFailureCode?:
-      | "outcome_unknown"
-      | "visual_extraction_failed";
+    readonly terminalFailureCode?: VisualEvidenceFailureCode;
   } = {}
 ) => {
   const importId = decodeImportId(`00000000-0000-4000-8000-${suffix}`);
@@ -1656,13 +1655,13 @@ describe("authenticated visual terminal checkpoint compatibility repair", () => 
 });
 
 describe("authenticated terminal visual unknown-cost reconciliation", () => {
-  it("settles the exact provider-unknown visual-failure pair without replaying", async () => {
+  it("settles the canonical provider-unknown visual-failure pair without replaying", async () => {
     const seeded = await seedPoisonedTerminalVisualImport("000000000331", {
       terminalFailureCode: "outcome_unknown",
     });
     await testEnv.MealPlannerDatabase.prepare(
       `UPDATE import_visual_evidence
-          SET failure_code = 'visual_evidence_failed'
+          SET failure_code = 'outcome_unknown'
         WHERE import_id = ? AND acquisition_generation = ?`
     )
       .bind(seeded.importId, seeded.acquisitionGeneration)
@@ -1724,11 +1723,59 @@ describe("authenticated terminal visual unknown-cost reconciliation", () => {
     });
   });
 
-  it.each([
-    ["outcome_unknown", "visual_extraction_failed", "000000000332"],
-    ["visual_extraction_failed", "visual_evidence_failed", "000000000333"],
-  ] as const)(
-    "rejects the mismatched %s checkpoint and %s projection pair",
+  it("preserves the accepted legacy provider-unknown visual-failure pair", async () => {
+    const seeded = await seedPoisonedTerminalVisualImport("000000000332", {
+      terminalFailureCode: "outcome_unknown",
+    });
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE import_visual_evidence
+          SET failure_code = 'visual_evidence_failed'
+        WHERE import_id = ? AND acquisition_generation = ?`
+    )
+      .bind(seeded.importId, seeded.acquisitionGeneration)
+      .run();
+    const before = await readPreservedVisualImport(seeded);
+    const app = await makeApp("pilot-gaia-118");
+
+    const response = await postSettlement(app, visualCommandFor(seeded));
+
+    expect(response.status).toBe(200);
+    await expect(readPreservedVisualImport(seeded)).resolves.toEqual(before);
+  });
+
+  const visualFailureCodes = [
+    "frame_evidence_failed",
+    "frame_sampling_failed",
+    "outcome_unknown",
+    "source_evidence_invalid",
+    "visual_evidence_failed",
+    "visual_extraction_failed",
+  ] as const satisfies readonly VisualEvidenceFailureCode[];
+  const acceptedVisualSettlementPairs =
+    new Set<`${VisualEvidenceFailureCode}:${VisualEvidenceFailureCode}`>([
+      "outcome_unknown:outcome_unknown",
+      "outcome_unknown:visual_evidence_failed",
+      "visual_extraction_failed:visual_extraction_failed",
+    ]);
+  const rejectedVisualSettlementPairs = visualFailureCodes.flatMap(
+    (checkpointFailureCode, checkpointIndex) =>
+      visualFailureCodes.flatMap((projectionFailureCode, projectionIndex) => {
+        const pair =
+          `${checkpointFailureCode}:${projectionFailureCode}` as const;
+        if (acceptedVisualSettlementPairs.has(pair)) {
+          return [];
+        }
+        const suffix = String(
+          333 + checkpointIndex * visualFailureCodes.length + projectionIndex
+        ).padStart(12, "0");
+        return [
+          [checkpointFailureCode, projectionFailureCode, suffix] as const,
+        ];
+      })
+  );
+
+  it.each(rejectedVisualSettlementPairs)(
+    "rejects the unsupported %s checkpoint and %s projection pair without mutation",
     async (checkpointFailureCode, projectionFailureCode, suffix) => {
       const seeded = await seedPoisonedTerminalVisualImport(suffix, {
         terminalFailureCode: checkpointFailureCode,
@@ -1744,36 +1791,16 @@ describe("authenticated terminal visual unknown-cost reconciliation", () => {
           seeded.acquisitionGeneration
         )
         .run();
-      const before = await readPreservedVisualImport(seeded);
+      const protectedRowsBefore =
+        await readVisualCheckpointRepairProtectedRows(seeded);
       const app = await makeApp("pilot-gaia-118");
 
       const response = await postSettlement(app, visualCommandFor(seeded));
 
       expect(response.status).toBe(409);
-      await expect(readPreservedVisualImport(seeded)).resolves.toEqual(before);
       await expect(
-        testEnv.MealPlannerDatabase.prepare(
-          `SELECT state, poison_dispatch_id, invoking_dispatch_id,
-                  reserved_micro_usd, settled_micro_usd
-             FROM pilot_provider_stage_budget
-            WHERE runtime_stage = 'pilot-gaia-118'`
-        ).first()
-      ).resolves.toEqual({
-        invoking_dispatch_id: null,
-        poison_dispatch_id: seeded.dispatchId,
-        reserved_micro_usd: seeded.reservation.maximumCostMicroUsd,
-        settled_micro_usd: 0,
-        state: "poisoned",
-      });
-      await expect(
-        testEnv.MealPlannerDatabase.prepare(
-          `SELECT COUNT(*) AS count
-             FROM pilot_provider_budget_reconciliations
-            WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
-        )
-          .bind(seeded.dispatchId)
-          .first()
-      ).resolves.toEqual({ count: 0 });
+        readVisualCheckpointRepairProtectedRows(seeded)
+      ).resolves.toEqual(protectedRowsBefore);
     }
   );
 

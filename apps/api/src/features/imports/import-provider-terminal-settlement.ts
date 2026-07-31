@@ -696,7 +696,10 @@ const readVisualSettled = (
                 AND visual.failure_code = 'visual_extraction_failed'
               ) OR (
                 checkpoint.failure_code = 'outcome_unknown'
-                AND visual.failure_code = 'visual_evidence_failed'
+                AND visual.failure_code IN (
+                  'outcome_unknown',
+                  'visual_evidence_failed'
+                )
               )
             )
             AND visual.completed_at = checkpoint.completed_at
@@ -1105,7 +1108,10 @@ const settleVisualBatch = (
                 AND visual.failure_code = 'visual_extraction_failed'
               ) OR (
                 checkpoint.failure_code = 'outcome_unknown'
-                AND visual.failure_code = 'visual_evidence_failed'
+                AND visual.failure_code IN (
+                  'outcome_unknown',
+                  'visual_evidence_failed'
+                )
               )
             )
             AND visual.completed_at = checkpoint.completed_at
@@ -1218,7 +1224,10 @@ const settleVisualBatch = (
                              'visual_extraction_failed'
                      ) OR (
                        checkpoint.failure_code = 'outcome_unknown'
-                       AND visual.failure_code = 'visual_evidence_failed'
+                       AND visual.failure_code IN (
+                         'outcome_unknown',
+                         'visual_evidence_failed'
+                       )
                      )
                    )
                    AND visual.completed_at = checkpoint.completed_at
