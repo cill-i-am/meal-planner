@@ -201,11 +201,42 @@ const unresolvedString = {
   reason: "not present in evidence",
   state: "unresolved",
 } as const;
+const unresolvedStringWithoutReason = {
+  citations: [],
+  origin: "unresolved",
+  state: "unresolved",
+} as const;
 const unresolvedNumber = unresolvedString;
 const unresolvedList = {
   items: [],
   reason: "not present in evidence",
   state: "unresolved",
+} as const;
+const firstCitation = {
+  confidence: 0.9,
+  evidenceId: "evidence-1",
+  origin: "observed",
+} as const;
+const secondCitation = {
+  confidence: 0.8,
+  evidenceId: "evidence-2",
+  origin: "creator_provided",
+} as const;
+const supportedString = {
+  citations: [firstCitation, secondCitation],
+  origin: "observed",
+  state: "supported",
+  value: "first supported value",
+} as const;
+const secondSupportedString = {
+  citations: [secondCitation],
+  origin: "creator_provided",
+  state: "supported",
+  value: "second supported value",
+} as const;
+const supportedList = {
+  items: [supportedString, secondSupportedString],
+  state: "supported",
 } as const;
 
 const validRecipeSemantics = {
@@ -3055,6 +3086,301 @@ describe("installed import provider adapters", () => {
 
   it.each([
     [
+      "a supported fact variant",
+      {
+        ...validRecipeSemantics,
+        name: {
+          ...supportedString,
+          provider_private_canary_key: "provider-private-canary",
+        },
+      },
+      { ...validRecipeSemantics, name: supportedString },
+    ],
+    [
+      "an unresolved fact variant",
+      {
+        ...validRecipeSemantics,
+        name: {
+          ...unresolvedString,
+          provider_private_canary_key: "provider-private-canary",
+        },
+      },
+      validRecipeSemantics,
+    ],
+    [
+      "an evidence citation",
+      {
+        ...validRecipeSemantics,
+        name: {
+          ...supportedString,
+          citations: [
+            {
+              ...firstCitation,
+              provider_private_canary_key: "provider-private-canary",
+            },
+            secondCitation,
+          ],
+        },
+      },
+      { ...validRecipeSemantics, name: supportedString },
+    ],
+    [
+      "a supported fact-list variant",
+      {
+        ...validRecipeSemantics,
+        ingredientLines: {
+          ...supportedList,
+          provider_private_canary_key: "provider-private-canary",
+        },
+      },
+      { ...validRecipeSemantics, ingredientLines: supportedList },
+    ],
+    [
+      "an unresolved fact-list variant",
+      {
+        ...validRecipeSemantics,
+        ingredientLines: {
+          ...unresolvedList,
+          provider_private_canary_key: "provider-private-canary",
+        },
+      },
+      validRecipeSemantics,
+    ],
+    [
+      "a supported fact-list item",
+      {
+        ...validRecipeSemantics,
+        ingredientLines: {
+          items: [
+            {
+              ...supportedString,
+              provider_private_canary_key: "provider-private-canary",
+            },
+            secondSupportedString,
+          ],
+          state: "supported",
+        },
+      },
+      { ...validRecipeSemantics, ingredientLines: supportedList },
+    ],
+    [
+      "an unresolved fact-list item",
+      {
+        ...validRecipeSemantics,
+        ingredientLines: {
+          items: [
+            {
+              ...unresolvedString,
+              provider_private_canary_key: "provider-private-canary",
+            },
+          ],
+          state: "supported",
+        },
+      },
+      {
+        ...validRecipeSemantics,
+        ingredientLines: {
+          items: [unresolvedString],
+          state: "supported",
+        },
+      },
+    ],
+  ] as const)(
+    "canonicalizes an inert nested property inside %s through the installed adapter",
+    async (_label, response, expectedSemantics) => {
+      const { exit, trace } = await runRecipeTransportRoot(response);
+
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: expectedSemantics,
+      });
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+        "provider-private-canary"
+      );
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+        "provider_private_canary_key"
+      );
+    }
+  );
+
+  it("canonicalizes nested recipe semantics in the installed Alchemy tool-call path", async () => {
+    const { exit, trace } = await runRecipeTransportRoot(
+      toolResponse("record_recipe", {
+        ...validRecipeSemantics,
+        ingredientLines: {
+          items: [
+            {
+              ...supportedString,
+              citations: [
+                {
+                  ...firstCitation,
+                  provider_private_canary_key: "provider-private-canary",
+                },
+                secondCitation,
+              ],
+              provider_private_canary_key: "provider-private-canary",
+            },
+            secondSupportedString,
+          ],
+          provider_private_canary_key: "provider-private-canary",
+          state: "supported",
+        },
+      })
+    );
+
+    expect(exit).toMatchObject({
+      _tag: "Success",
+      value: {
+        ...validRecipeSemantics,
+        ingredientLines: supportedList,
+      },
+    });
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "provider-private-canary"
+    );
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "provider_private_canary_key"
+    );
+  });
+
+  it("canonicalizes a native recipe call beside non-authoritative OpenAI metadata", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      choices: [
+        {
+          finish_reason: "tool_calls",
+          message: { content: null, tool_calls: [] },
+        },
+      ],
+      tool_calls: [
+        {
+          arguments: {
+            ...validRecipeSemantics,
+            name: {
+              ...supportedString,
+              provider_private_canary_key: "provider-private-canary",
+            },
+          },
+          name: "record_recipe",
+        },
+      ],
+      usage: defaultVisualUsage,
+    });
+
+    expect(exit).toMatchObject({
+      _tag: "Success",
+      value: { ...validRecipeSemantics, name: supportedString },
+    });
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "provider-private-canary"
+    );
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "provider_private_canary_key"
+    );
+  });
+
+  it.each([
+    [
+      "a missing nested required field",
+      {
+        ...validRecipeSemantics,
+        name: {
+          ...unresolvedStringWithoutReason,
+          provider_private_canary_key: "provider-private-canary",
+        },
+      },
+      "provider_normalization_recipe_semantics_missing_required_field",
+    ],
+    [
+      "a wrong nested field type",
+      {
+        ...validRecipeSemantics,
+        name: {
+          ...unresolvedString,
+          provider_private_canary_key: "provider-private-canary",
+          reason: 17,
+        },
+      },
+      "provider_normalization_recipe_semantics_wrong_type_or_constraint",
+    ],
+    [
+      "an invalid fact discriminator",
+      {
+        ...validRecipeSemantics,
+        name: {
+          ...unresolvedString,
+          provider_private_canary_key: "provider-private-canary",
+          state: "provider-private-canary",
+        },
+      },
+      "provider_normalization_recipe_semantics_wrong_type_or_constraint",
+    ],
+    [
+      "an invalid fact-list discriminator",
+      {
+        ...validRecipeSemantics,
+        ingredientLines: {
+          ...unresolvedList,
+          provider_private_canary_key: "provider-private-canary",
+          state: "provider-private-canary",
+        },
+      },
+      "provider_normalization_recipe_semantics_wrong_type_or_constraint",
+    ],
+    [
+      "a nested fact transport authority",
+      {
+        ...validRecipeSemantics,
+        name: {
+          ...unresolvedString,
+          provider_private_canary_key: "provider-private-canary",
+          response: "provider-private-canary",
+        },
+      },
+      "provider_normalization_recipe_authority_conflict",
+    ],
+    [
+      "a nested citation transport authority",
+      {
+        ...validRecipeSemantics,
+        name: {
+          ...supportedString,
+          citations: [
+            {
+              ...firstCitation,
+              provider_private_canary_key: "provider-private-canary",
+              tool_calls: "provider-private-canary",
+            },
+          ],
+        },
+      },
+      "provider_normalization_recipe_authority_conflict",
+    ],
+  ] as const)(
+    "fails closed without leaking provider data or key names for %s",
+    async (_label, response, decodeReason) => {
+      const { exit, trace } = await runRecipeTransportRoot(response);
+
+      expect(exit._tag).toBe("Failure");
+      expect(JSON.stringify(exit)).toContain("malformed_response");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason,
+        decodeStage: "provider_normalization",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "recipe",
+      });
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+        "provider-private-canary"
+      );
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+        "provider_private_canary_key"
+      );
+    }
+  );
+
+  it.each([
+    [
       "a wrong call name",
       {
         name: "record_visual_evidence",
@@ -3104,17 +3430,6 @@ describe("installed import provider adapters", () => {
         response: "provider-private-canary",
       },
       "provider_normalization_recipe_authority_conflict",
-    ],
-    [
-      "an unexpected nested recipe property that cannot be safely projected",
-      {
-        ...validRecipeSemantics,
-        name: {
-          ...unresolvedString,
-          provider_private_canary_key: "provider-private-canary",
-        },
-      },
-      "provider_normalization_recipe_semantics_unexpected_property",
     ],
     [
       "a missing required recipe field",
