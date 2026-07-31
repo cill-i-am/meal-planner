@@ -2842,6 +2842,63 @@ describe("installed import provider adapters", () => {
     }
   );
 
+  it("accepts unwrapped recipe semantics with allowlisted usage metadata", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...validRecipeSemantics,
+      usage: {
+        ...defaultVisualUsage,
+        prompt_tokens_details: { cached_tokens: 5 },
+      },
+    });
+
+    expect(exit).toMatchObject({
+      _tag: "Success",
+      value: {
+        ...validRecipeSemantics,
+        usage: {
+          inputTokens: 20,
+          outputTokens: 10,
+        },
+      },
+    });
+    expect(trace.events).toEqual([
+      {
+        correlationId,
+        event: "provider.response",
+        outcome: "received",
+        providerStage: "recipe",
+      },
+      {
+        correlationId,
+        event: "provider.decode",
+        outcome: "succeeded",
+        providerStage: "recipe",
+      },
+    ]);
+  });
+
+  it("fails closed for inconsistent usage beside unwrapped recipe semantics", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...validRecipeSemantics,
+      usage: {
+        completion_tokens: 10,
+        prompt_tokens: 20,
+        total_tokens: 31,
+      },
+    });
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      decodeReason: "provider_normalization_recipe_metadata_invalid",
+      decodeStage: "provider_normalization",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "recipe",
+    });
+  });
+
   it.each([
     ["a non-object usage container", "provider-private-canary"],
     [
@@ -2997,6 +3054,15 @@ describe("installed import provider adapters", () => {
       {
         ...validRecipeSemantics,
         unexpected: "provider-private-canary",
+      },
+      "provider_normalization_recipe_semantics_schema_invalid",
+    ],
+    [
+      "malformed unwrapped recipe semantics with usage metadata",
+      {
+        ...validRecipeSemantics,
+        unexpected: "provider-private-canary",
+        usage: defaultVisualUsage,
       },
       "provider_normalization_recipe_semantics_schema_invalid",
     ],
