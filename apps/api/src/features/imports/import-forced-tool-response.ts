@@ -110,7 +110,10 @@ const decodeNativeForcedToolEnvelope = (
   };
 };
 
-const structurallyEqualJson = (left: unknown, right: unknown): boolean => {
+export const structurallyEqualJson = (
+  left: unknown,
+  right: unknown
+): boolean => {
   if (Object.is(left, right)) {
     return true;
   }

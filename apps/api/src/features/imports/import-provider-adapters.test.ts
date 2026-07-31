@@ -2540,6 +2540,127 @@ describe("installed import provider adapters", () => {
     );
   });
 
+  it.each([
+    [
+      "aligned native and OpenAI authorities",
+      {
+        ...toolResponse("record_visual_evidence", validVisualSemantics),
+        tool_calls: [
+          {
+            arguments: validVisualSemantics,
+            name: "record_visual_evidence",
+          },
+        ],
+      },
+    ],
+    [
+      "an empty OpenAI authority beside one native call",
+      {
+        choices: [],
+        tool_calls: [
+          {
+            arguments: validVisualSemantics,
+            name: "record_visual_evidence",
+          },
+        ],
+        usage: defaultVisualUsage,
+      },
+    ],
+    [
+      "one OpenAI message with no calls beside one native call",
+      {
+        choices: [
+          {
+            finish_reason: "tool_calls",
+            message: {
+              content: null,
+              tool_calls: [],
+            },
+          },
+        ],
+        tool_calls: [
+          {
+            arguments: validVisualSemantics,
+            name: "record_visual_evidence",
+          },
+        ],
+        usage: defaultVisualUsage,
+      },
+    ],
+    [
+      "aligned flat and nested fields on one call",
+      {
+        tool_calls: [
+          {
+            arguments: validVisualSemantics,
+            function: {
+              arguments: JSON.stringify(validVisualSemantics),
+              name: "record_visual_evidence",
+            },
+            name: "record_visual_evidence",
+          },
+        ],
+        usage: defaultVisualUsage,
+      },
+    ],
+    [
+      "null non-authoritative tool metadata beside an exact native mirror",
+      {
+        choices: null,
+        response: JSON.stringify({
+          arguments: validVisualSemantics,
+          name: "record_visual_evidence",
+        }),
+        tool_calls: null,
+        usage: defaultVisualUsage,
+      },
+    ],
+  ] as const)(
+    "accepts the unambiguous Workers AI vision variant with %s",
+    async (_label, response) => {
+      const gateway = makeGateway(response);
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledVisualEvidenceExtractor({
+          client: gateway.client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const output = await Effect.runPromise(
+        adapter.extract({
+          dispatchId: "visual:import-1:1",
+          frames: [
+            {
+              bytes: new Uint8Array([1, 2, 3]),
+              height: 1,
+              mimeType: "image/jpeg",
+              sha256: "a".repeat(64),
+              timestampMilliseconds: 125,
+              width: 1,
+            },
+          ],
+          generation: 1 as never,
+          importId: "import-1" as never,
+          sourceMediaSha256: "b".repeat(64),
+        })
+      );
+
+      expect(output).toMatchObject({
+        observations: [],
+        outcome: "empty",
+      });
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        event: "provider.decode",
+        outcome: "succeeded",
+        providerStage: "visual",
+      });
+    }
+  );
+
   it("accepts one native forced recipe tool call beside non-authoritative response text", async () => {
     const gateway = makeGateway({
       response: "non-authoritative model text",
@@ -3118,6 +3239,51 @@ describe("installed import provider adapters", () => {
         tool_calls: [
           {
             arguments: validVisualSemantics,
+            name: "record_visual_evidence",
+          },
+        ],
+      },
+    ],
+    [
+      "conflicting native and OpenAI authorities",
+      {
+        ...toolResponse("record_visual_evidence", validVisualSemantics),
+        tool_calls: [
+          {
+            arguments: {
+              observations: [
+                {
+                  confidence: 0.5,
+                  frameIndex: 0,
+                  text: "provider-private-canary",
+                },
+              ],
+              outcome: "found",
+            },
+            name: "record_visual_evidence",
+          },
+        ],
+      },
+    ],
+    [
+      "conflicting flat and nested fields on one call",
+      {
+        tool_calls: [
+          {
+            arguments: validVisualSemantics,
+            function: {
+              arguments: JSON.stringify({
+                observations: [
+                  {
+                    confidence: 0.5,
+                    frameIndex: 0,
+                    text: "provider-private-canary",
+                  },
+                ],
+                outcome: "found",
+              }),
+              name: "record_visual_evidence",
+            },
             name: "record_visual_evidence",
           },
         ],

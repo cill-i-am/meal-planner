@@ -22,7 +22,10 @@ import type {
   PilotProviderBudgetRepository,
   PilotProviderBudgetRuntimeShape,
 } from "../pilots/pilot-provider-budget.js";
-import { decodeForcedToolResponseResult } from "./import-forced-tool-response.js";
+import {
+  decodeForcedToolResponseResult,
+  structurallyEqualJson,
+} from "./import-forced-tool-response.js";
 import type {
   ImportCorrelationId,
   ImportObservabilityTraceStoreShape,
@@ -652,64 +655,225 @@ const runWorkersAi = (
 const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const isUnambiguousRawToolCall = (value: unknown): boolean => {
-  if (!isUnknownRecord(value)) {
-    return false;
-  }
+type RawToolCallAuthority =
+  | { readonly _tag: "Absent" }
+  | {
+      readonly _tag: "Call";
+      readonly arguments: unknown;
+      readonly call: Record<string, unknown>;
+      readonly name: string;
+    }
+  | { readonly _tag: "Invalid" };
 
-  const { function: functionValue, name: flatName } = value;
-  const hasFlatName = typeof flatName === "string" && flatName.length > 0;
+type RawToolCall = Extract<RawToolCallAuthority, { readonly _tag: "Call" }>;
 
-  if (functionValue === undefined) {
-    return hasFlatName;
+const comparableToolArguments = (value: unknown): unknown => {
+  if (typeof value !== "string") {
+    return value;
   }
-  if (!isUnknownRecord(functionValue) || hasFlatName) {
-    return false;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
   }
-
-  const { name: functionName } = functionValue;
-  return typeof functionName === "string" && functionName.length > 0;
 };
 
-const hasUnambiguousRawToolShape = (value: unknown): boolean => {
+const decodeFlatRawToolCall = (
+  value: Record<string, unknown>
+): RawToolCallAuthority => {
+  const { arguments: toolArguments, id, name, type } = value;
+  if (typeof name !== "string" || name.length === 0) {
+    return { _tag: "Invalid" };
+  }
+  const hasArguments = Object.hasOwn(value, "arguments");
+  return {
+    _tag: "Call",
+    arguments: toolArguments,
+    call: {
+      ...(typeof id === "string" ? { id } : {}),
+      ...(typeof type === "string" ? { type } : {}),
+      ...(hasArguments ? { arguments: toolArguments } : {}),
+      name,
+    },
+    name,
+  };
+};
+
+const decodeNestedRawToolCall = (
+  value: Record<string, unknown>,
+  functionValue: Record<string, unknown>
+): RawToolCallAuthority => {
+  const { arguments: flatArguments, id, name: flatName, type } = value;
+  const hasFlatName = typeof flatName === "string" && flatName.length > 0;
+  const hasFlatArguments = Object.hasOwn(value, "arguments");
+  const { arguments: functionArguments, name: functionName } = functionValue;
+  if (typeof functionName !== "string" || functionName.length === 0) {
+    return { _tag: "Invalid" };
+  }
+  if (hasFlatName && flatName !== functionName) {
+    return { _tag: "Invalid" };
+  }
+
+  const hasFunctionArguments = Object.hasOwn(functionValue, "arguments");
+  if (
+    hasFlatArguments &&
+    hasFunctionArguments &&
+    !structurallyEqualJson(
+      comparableToolArguments(flatArguments),
+      comparableToolArguments(functionArguments)
+    )
+  ) {
+    return { _tag: "Invalid" };
+  }
+  const toolArguments = hasFunctionArguments
+    ? functionArguments
+    : flatArguments;
+
+  return {
+    _tag: "Call",
+    arguments: toolArguments,
+    call: {
+      ...(typeof id === "string" ? { id } : {}),
+      ...(typeof type === "string" ? { type } : {}),
+      function: {
+        ...(hasFunctionArguments || hasFlatArguments
+          ? { arguments: toolArguments }
+          : {}),
+        name: functionName,
+      },
+    },
+    name: functionName,
+  };
+};
+
+const decodeRawToolCall = (value: unknown): RawToolCallAuthority => {
   if (!isUnknownRecord(value)) {
-    return true;
+    return { _tag: "Invalid" };
+  }
+  const { function: functionValue } = value;
+  if (functionValue === undefined || functionValue === null) {
+    return decodeFlatRawToolCall(value);
+  }
+  return isUnknownRecord(functionValue)
+    ? decodeNestedRawToolCall(value, functionValue)
+    : { _tag: "Invalid" };
+};
+
+const decodeRawToolCalls = (value: unknown): RawToolCallAuthority => {
+  if (value === undefined || value === null) {
+    return { _tag: "Absent" };
+  }
+  if (!Array.isArray(value)) {
+    return { _tag: "Invalid" };
+  }
+  if (value.length === 0) {
+    return { _tag: "Absent" };
+  }
+  if (value.length !== 1) {
+    return { _tag: "Invalid" };
+  }
+  return decodeRawToolCall(value[0]);
+};
+
+const sameRawToolAuthority = (left: RawToolCall, right: RawToolCall): boolean =>
+  left.name === right.name &&
+  structurallyEqualJson(
+    comparableToolArguments(left.arguments),
+    comparableToolArguments(right.arguments)
+  );
+
+const normalizeRawToolShape = (value: unknown): unknown => {
+  if (!isUnknownRecord(value)) {
+    return value;
   }
 
   const { choices, tool_calls: nativeToolCalls } = value;
-  if (choices !== undefined) {
-    if (
-      !Array.isArray(choices) ||
-      choices.length !== 1 ||
-      nativeToolCalls !== undefined
-    ) {
-      return false;
-    }
-
-    const [choice] = choices;
-    if (!isUnknownRecord(choice)) {
-      return false;
-    }
-
-    const { message } = choice;
-    if (!isUnknownRecord(message)) {
-      return false;
-    }
-    const { tool_calls: toolCalls } = message;
-    return (
-      toolCalls === undefined ||
-      (Array.isArray(toolCalls) &&
-        toolCalls.length === 1 &&
-        isUnambiguousRawToolCall(toolCalls[0]))
-    );
+  const nativeAuthority = decodeRawToolCalls(nativeToolCalls);
+  if (nativeAuthority._tag === "Invalid") {
+    throw new Error(ProviderNormalizationInvalidMessage);
   }
 
-  return (
-    nativeToolCalls === undefined ||
-    (Array.isArray(nativeToolCalls) &&
-      nativeToolCalls.length === 1 &&
-      isUnambiguousRawToolCall(nativeToolCalls[0]))
-  );
+  let openAiAuthority: RawToolCallAuthority = { _tag: "Absent" };
+  let openAiChoice:
+    | {
+        readonly choice: Record<string, unknown>;
+        readonly message: Record<string, unknown>;
+      }
+    | undefined;
+  if (choices !== undefined && choices !== null) {
+    if (!Array.isArray(choices) || choices.length > 1) {
+      throw new Error(ProviderNormalizationInvalidMessage);
+    }
+    const [choice] = choices;
+    if (choice !== undefined) {
+      if (!isUnknownRecord(choice)) {
+        throw new Error(ProviderNormalizationInvalidMessage);
+      }
+      const { message } = choice;
+      if (!isUnknownRecord(message)) {
+        throw new Error(ProviderNormalizationInvalidMessage);
+      }
+      openAiChoice = { choice, message };
+      openAiAuthority = decodeRawToolCalls(message["tool_calls"]);
+      if (openAiAuthority._tag === "Invalid") {
+        throw new Error(ProviderNormalizationInvalidMessage);
+      }
+    }
+  }
+
+  if (
+    openAiAuthority._tag === "Call" &&
+    nativeAuthority._tag === "Call" &&
+    !sameRawToolAuthority(openAiAuthority, nativeAuthority)
+  ) {
+    throw new Error(ProviderNormalizationInvalidMessage);
+  }
+
+  if (openAiAuthority._tag === "Call" && openAiChoice !== undefined) {
+    const { tool_calls: _nativeToolCalls, ...withoutNativeToolCalls } = value;
+    return {
+      ...withoutNativeToolCalls,
+      choices: [
+        {
+          ...openAiChoice.choice,
+          message: {
+            ...openAiChoice.message,
+            tool_calls: [openAiAuthority.call],
+          },
+        },
+      ],
+    };
+  }
+
+  if (nativeAuthority._tag === "Call") {
+    const canonicalNative = {
+      ...value,
+      tool_calls: [nativeAuthority.call],
+    };
+    if (openAiChoice === undefined) {
+      return Array.isArray(choices) && choices.length === 0
+        ? Object.fromEntries(
+            Object.entries(canonicalNative).filter(([key]) => key !== "choices")
+          )
+        : canonicalNative;
+    }
+    const { tool_calls: _nativeToolCalls, ...withoutNativeToolCalls } =
+      canonicalNative;
+    return {
+      ...withoutNativeToolCalls,
+      choices: [
+        {
+          ...openAiChoice.choice,
+          message: {
+            ...openAiChoice.message,
+            tool_calls: [nativeAuthority.call],
+          },
+        },
+      ],
+    };
+  }
+
+  return value;
 };
 
 const withProviderNormalizationBoundary = (response: Response): Response => {
@@ -720,10 +884,7 @@ const withProviderNormalizationBoundary = (response: Response): Response => {
         return async (): Promise<unknown> => {
           try {
             const raw = await parseJson();
-            if (!hasUnambiguousRawToolShape(raw)) {
-              throw new Error(ProviderNormalizationInvalidMessage);
-            }
-            return raw;
+            return normalizeRawToolShape(raw);
           } catch {
             // Provider payloads and parser details must not cross the
             // observability boundary. Alchemy preserves this closed
