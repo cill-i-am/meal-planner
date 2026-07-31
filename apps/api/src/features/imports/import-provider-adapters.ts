@@ -847,6 +847,57 @@ const RecipeTransportRootKeys = new Set([
   "parameters",
   "usage",
 ]);
+const RecipeNestedAuthorityKeys = new Set([
+  ...RecipeTransportAuthorityKeys,
+  ...RecipeTransportRootKeys,
+]);
+const RecipeEvidenceCitationKeys = new Set([
+  "confidence",
+  "evidenceId",
+  "origin",
+]);
+const RecipeSupportedFactKeys = new Set([
+  "citations",
+  "origin",
+  "state",
+  "value",
+]);
+const RecipeUnresolvedFactKeys = new Set([
+  "citations",
+  "origin",
+  "reason",
+  "state",
+]);
+const RecipeKnownFactKeys = new Set([
+  ...RecipeSupportedFactKeys,
+  ...RecipeUnresolvedFactKeys,
+]);
+const RecipeSupportedFactListKeys = new Set(["items", "state"]);
+const RecipeUnresolvedFactListKeys = new Set(["items", "reason", "state"]);
+const RecipeKnownFactListKeys = new Set([
+  ...RecipeSupportedFactListKeys,
+  ...RecipeUnresolvedFactListKeys,
+]);
+const RecipeFactFieldKeys = new Set([
+  "author",
+  "category",
+  "cookTimeMinutes",
+  "cuisine",
+  "description",
+  "name",
+  "nutrition",
+  "prepTimeMinutes",
+  "sourceUrl",
+  "temperatureCelsius",
+  "totalTimeMinutes",
+  "yield",
+]);
+const RecipeFactListFieldKeys = new Set([
+  "ingredientLines",
+  "instructions",
+  "supportedClaims",
+  "tools",
+]);
 const RecipeTransportTokenCount = Schema.Int.pipe(
   Schema.check(
     Schema.isGreaterThanOrEqualTo(0),
@@ -955,6 +1006,130 @@ const projectRecipeSemantics = (
   return projection;
 };
 
+const projectKnownRecipeNode = (
+  value: Readonly<Record<string, unknown>>,
+  allowedKeys: ReadonlySet<string>
+): Record<string, unknown> => {
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key) && RecipeNestedAuthorityKeys.has(key)) {
+      return rejectRecipeTransportRoot(
+        "provider_normalization_recipe_authority_conflict"
+      );
+    }
+  }
+  const projection: Record<string, unknown> = {};
+  for (const key of allowedKeys) {
+    if (Object.hasOwn(value, key)) {
+      projection[key] = value[key];
+    }
+  }
+  return projection;
+};
+
+const canonicalizeRecipeCitation = (value: unknown): unknown =>
+  isUnknownRecord(value)
+    ? projectKnownRecipeNode(value, RecipeEvidenceCitationKeys)
+    : value;
+
+const canonicalizeRecipeCitations = (value: unknown): unknown =>
+  Array.isArray(value) ? value.map(canonicalizeRecipeCitation) : value;
+
+const canonicalizeRecipeFact = (value: unknown): unknown => {
+  if (!isUnknownRecord(value)) {
+    return value;
+  }
+  let allowedKeys: ReadonlySet<string> | undefined;
+  if (value["state"] === "supported") {
+    allowedKeys = RecipeSupportedFactKeys;
+  } else if (value["state"] === "unresolved") {
+    allowedKeys = RecipeUnresolvedFactKeys;
+  }
+  if (allowedKeys === undefined) {
+    if (Object.hasOwn(value, "state")) {
+      projectKnownRecipeNode(value, RecipeKnownFactKeys);
+      return rejectRecipeTransportRoot(
+        "provider_normalization_recipe_semantics_wrong_type_or_constraint"
+      );
+    }
+    return value;
+  }
+  const projection = projectKnownRecipeNode(value, allowedKeys);
+  if (Object.hasOwn(projection, "citations")) {
+    projection["citations"] = canonicalizeRecipeCitations(
+      projection["citations"]
+    );
+  }
+  return projection;
+};
+
+const canonicalizeRecipeFactList = (value: unknown): unknown => {
+  if (!isUnknownRecord(value)) {
+    return value;
+  }
+  let allowedKeys: ReadonlySet<string> | undefined;
+  if (value["state"] === "supported") {
+    allowedKeys = RecipeSupportedFactListKeys;
+  } else if (value["state"] === "unresolved") {
+    allowedKeys = RecipeUnresolvedFactListKeys;
+  }
+  if (allowedKeys === undefined) {
+    if (Object.hasOwn(value, "state")) {
+      projectKnownRecipeNode(value, RecipeKnownFactListKeys);
+      return rejectRecipeTransportRoot(
+        "provider_normalization_recipe_semantics_wrong_type_or_constraint"
+      );
+    }
+    return value;
+  }
+  const projection = projectKnownRecipeNode(value, allowedKeys);
+  if (value["state"] === "supported" && Array.isArray(projection["items"])) {
+    projection["items"] = projection["items"].map(canonicalizeRecipeFact);
+  }
+  return projection;
+};
+
+const canonicalizeKnownRecipeSemanticsNodes = (
+  value: Readonly<Record<string, unknown>>
+): Record<string, unknown> => {
+  const projection = { ...value };
+  for (const key of RecipeFactFieldKeys) {
+    if (Object.hasOwn(projection, key)) {
+      projection[key] = canonicalizeRecipeFact(projection[key]);
+    }
+  }
+  for (const key of RecipeFactListFieldKeys) {
+    if (Object.hasOwn(projection, key)) {
+      projection[key] = canonicalizeRecipeFactList(projection[key]);
+    }
+  }
+  return projection;
+};
+
+const canonicalizeRecipeSemantics = (
+  value: Readonly<Record<string, unknown>>
+): Record<string, unknown> =>
+  canonicalizeKnownRecipeSemanticsNodes(projectRecipeSemantics(value));
+
+const decodeCanonicalRecipeSemantics = (
+  value: unknown
+): ReturnType<typeof decodeRecipeSemantics> => {
+  const decoded = decodeRecipeSemantics(value);
+  if (decoded._tag === "Success" || !isUnknownRecord(value)) {
+    return decoded;
+  }
+  return decodeRecipeSemantics(canonicalizeRecipeSemantics(value));
+};
+
+const decodeCanonicalNestedRecipeSemantics = (
+  value: unknown
+): ReturnType<typeof decodeRecipeSemantics> => {
+  const decoded = decodeRecipeSemantics(value);
+  if (decoded._tag === "Success" || !isUnknownRecord(value)) {
+    return decoded;
+  }
+  return decodeRecipeSemantics(canonicalizeKnownRecipeSemanticsNodes(value));
+};
+
 const canonicalizeRecipeTransportUsage = (value: unknown): unknown => {
   const usage = Option.getOrUndefined(decodeRecipeTransportUsage(value));
   const expectedTotalTokens =
@@ -1001,13 +1176,11 @@ const canonicalizeUnwrappedRecipeSemantics = (
       ...(hasUsage ? { usage: canonicalizeRecipeTransportUsage(usage) } : {}),
     };
   }
-  const projectedSemantics = decodeRecipeSemantics(
-    projectRecipeSemantics(semantics)
-  );
+  const projectedSemantics = decodeCanonicalRecipeSemantics(semantics);
   if (projectedSemantics._tag === "Failure") {
     return rejectRecipeTransportRoot(
       recipeSemanticsDecodeReason(
-        classifyRecipeSemanticsSchemaMismatch(decodedSemantics.failure.issue)
+        classifyRecipeSemanticsSchemaMismatch(projectedSemantics.failure.issue)
       )
     );
   }
@@ -1061,7 +1234,9 @@ const canonicalizeRecipeTransportRoot = (value: unknown): unknown => {
     const argumentsValue = hasArguments
       ? value["arguments"]
       : value["parameters"];
-    if (!isSchemaValidRecipeSemantics(argumentsValue)) {
+    const decodedArguments =
+      decodeCanonicalNestedRecipeSemantics(argumentsValue);
+    if (decodedArguments._tag === "Failure") {
       return rejectRecipeTransportRoot(
         "provider_normalization_recipe_arguments_schema_invalid"
       );
@@ -1069,8 +1244,8 @@ const canonicalizeRecipeTransportRoot = (value: unknown): unknown => {
     return {
       response: {
         ...(hasArguments
-          ? { arguments: argumentsValue }
-          : { parameters: argumentsValue }),
+          ? { arguments: decodedArguments.success }
+          : { parameters: decodedArguments.success }),
         name: "record_recipe",
       },
       ...(hasUsage
@@ -1090,7 +1265,46 @@ const canonicalizeProviderTransportRoot = (
 ): unknown =>
   providerStage === "recipe" ? canonicalizeRecipeTransportRoot(value) : value;
 
-const normalizeRawToolShape = (value: unknown): unknown => {
+const canonicalizeRawRecipeToolCall = (
+  call: RawToolCall,
+  providerStage: "recipe" | "visual"
+): RawToolCall => {
+  if (providerStage !== "recipe" || call.name !== "record_recipe") {
+    return call;
+  }
+  const decodedArguments = decodeCanonicalNestedRecipeSemantics(
+    comparableToolArguments(call.arguments)
+  );
+  if (decodedArguments._tag === "Failure") {
+    return call;
+  }
+  const canonicalArguments =
+    typeof call.arguments === "string"
+      ? JSON.stringify(decodedArguments.success)
+      : decodedArguments.success;
+  const functionValue = call.call["function"];
+  return {
+    ...call,
+    arguments: canonicalArguments,
+    call: isUnknownRecord(functionValue)
+      ? {
+          ...call.call,
+          function: {
+            ...functionValue,
+            arguments: canonicalArguments,
+          },
+        }
+      : {
+          ...call.call,
+          arguments: canonicalArguments,
+        },
+  };
+};
+
+const normalizeRawToolShape = (
+  value: unknown,
+  providerStage: "recipe" | "visual"
+): unknown => {
   if (!isUnknownRecord(value)) {
     return value;
   }
@@ -1138,6 +1352,10 @@ const normalizeRawToolShape = (value: unknown): unknown => {
   }
 
   if (openAiAuthority._tag === "Call" && openAiChoice !== undefined) {
+    const canonicalCall = canonicalizeRawRecipeToolCall(
+      openAiAuthority,
+      providerStage
+    );
     const { tool_calls: _nativeToolCalls, ...withoutNativeToolCalls } = value;
     return {
       ...withoutNativeToolCalls,
@@ -1146,7 +1364,7 @@ const normalizeRawToolShape = (value: unknown): unknown => {
           ...openAiChoice.choice,
           message: {
             ...openAiChoice.message,
-            tool_calls: [openAiAuthority.call],
+            tool_calls: [canonicalCall.call],
           },
         },
       ],
@@ -1154,9 +1372,13 @@ const normalizeRawToolShape = (value: unknown): unknown => {
   }
 
   if (nativeAuthority._tag === "Call") {
+    const canonicalCall = canonicalizeRawRecipeToolCall(
+      nativeAuthority,
+      providerStage
+    );
     const canonicalNative = {
       ...value,
-      tool_calls: [nativeAuthority.call],
+      tool_calls: [canonicalCall.call],
     };
     if (openAiChoice === undefined) {
       return Array.isArray(choices) && choices.length === 0
@@ -1174,7 +1396,7 @@ const normalizeRawToolShape = (value: unknown): unknown => {
           ...openAiChoice.choice,
           message: {
             ...openAiChoice.message,
-            tool_calls: [nativeAuthority.call],
+            tool_calls: [canonicalCall.call],
           },
         },
       ],
@@ -1196,7 +1418,8 @@ const withProviderNormalizationBoundary = (
           try {
             const raw = await parseJson();
             return normalizeRawToolShape(
-              canonicalizeProviderTransportRoot(raw, providerStage)
+              canonicalizeProviderTransportRoot(raw, providerStage),
+              providerStage
             );
           } catch (error) {
             // Provider payloads and parser details must not cross the
