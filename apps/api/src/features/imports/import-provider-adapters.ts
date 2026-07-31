@@ -65,7 +65,7 @@ const ProviderName = "cloudflare-workers-ai" as const;
 export const InstalledSpeechModel =
   "@cf/openai/whisper-large-v3-turbo" as const;
 export const InstalledVisualModel =
-  "@cf/meta/llama-3.2-11b-vision-instruct" as const;
+  "@cf/meta/llama-4-scout-17b-16e-instruct" as const;
 export const InstalledRecipeModel =
   "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 
@@ -876,8 +876,8 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                     inputTokens,
                     outputTokens,
                     {
-                      inputMicroUsdPerToken: 0.049,
-                      outputMicroUsdPerToken: 0.676,
+                      inputMicroUsdPerToken: 0.27,
+                      outputMicroUsdPerToken: 0.85,
                     }
                   );
                   // A schema-valid response proves this bounded visual call

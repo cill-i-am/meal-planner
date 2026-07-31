@@ -219,7 +219,7 @@ const validVisual = {
     currency: "USD",
     estimatedMicroUsd: 20,
   },
-  model: "@cf/meta/llama-3.2-11b-vision-instruct",
+  model: "@cf/meta/llama-4-scout-17b-16e-instruct",
   observations: [],
   outcome: "empty",
   provider: "cloudflare-workers-ai",
@@ -2315,7 +2315,7 @@ describe("installed import provider adapters", () => {
         client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
-        model: "@cf/meta/llama-3.2-11b-vision-instruct",
+        model: "@cf/meta/llama-4-scout-17b-16e-instruct",
       }),
       trace.service
     );
@@ -2358,9 +2358,9 @@ describe("installed import provider adapters", () => {
       cost: {
         certainty: "estimated",
         currency: "USD",
-        estimatedMicroUsd: 8,
+        estimatedMicroUsd: 14,
       },
-      model: "@cf/meta/llama-3.2-11b-vision-instruct",
+      model: "@cf/meta/llama-4-scout-17b-16e-instruct",
       observations: [
         {
           confidence: 0.92,
@@ -2407,7 +2407,7 @@ describe("installed import provider adapters", () => {
         readonly returnRawResponse?: boolean;
       };
     };
-    expect(request.model).toBe("@cf/meta/llama-3.2-11b-vision-instruct");
+    expect(request.model).toBe("@cf/meta/llama-4-scout-17b-16e-instruct");
     expect(request.options).toEqual({
       gateway: {
         collectLog: false,
@@ -2530,13 +2530,13 @@ describe("installed import provider adapters", () => {
     );
 
     expect(output).toMatchObject({
-      model: "@cf/meta/llama-3.2-11b-vision-instruct",
+      model: "@cf/meta/llama-4-scout-17b-16e-instruct",
       observations: [],
       outcome: "empty",
     });
     expect(gateway.requests).toHaveLength(1);
     expect((gateway.requests[0] as { readonly model: string }).model).toBe(
-      "@cf/meta/llama-3.2-11b-vision-instruct"
+      "@cf/meta/llama-4-scout-17b-16e-instruct"
     );
   });
 
