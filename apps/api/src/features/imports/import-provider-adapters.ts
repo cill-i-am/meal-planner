@@ -1241,6 +1241,11 @@ const ModelSpecificSpeechProviderResponseKeys: ReadonlySet<string> = new Set([
   "word_count",
 ]);
 
+const SpeechProviderResponseKeys: ReadonlySet<string> = new Set([
+  ...GenericSpeechProviderResponseKeys,
+  ...ModelSpecificSpeechProviderResponseKeys,
+]);
+
 const omitAllowlistedNullMetadata = (
   record: Readonly<Record<string, unknown>>,
   allowlist: ReadonlySet<string>
@@ -1324,33 +1329,85 @@ const hasUnsupportedProperty = (
   allowlist: ReadonlySet<string>
 ): boolean => Object.keys(record).some((key) => !allowlist.has(key));
 
-const classifyUnsupportedRootProperty = (
+const projectDocumentedSpeechResponse = (
   record: Readonly<Record<string, unknown>>,
   allowlist: ReadonlySet<string>
-): SpeechEnvelopeUnsupportedRootProperty | undefined => {
-  const unsupportedKeys = Object.keys(record).filter(
-    (key) => !allowlist.has(key)
+): Record<string, unknown> =>
+  Object.fromEntries(
+    [...allowlist]
+      .filter((key) => Object.hasOwn(record, key))
+      .map((key) => [key, record[key]])
   );
-  if (unsupportedKeys.length === 0) {
-    return undefined;
-  }
-  if (unsupportedKeys.length > 1) {
-    return "multiple";
-  }
-  switch (unsupportedKeys[0]) {
-    case "duration":
-    case "duration_after_vad":
-    case "language":
-    case "language_probability":
-    case "task":
-    case "words": {
-      return unsupportedKeys[0];
+
+const SpeechUnknownMetadataMaximumTraversalDepth = 64;
+const SpeechUnknownMetadataMaximumTraversalNodes = 16_384;
+
+const unknownSpeechMetadataRequiresRejection = (
+  raw: Readonly<Record<string, unknown>>
+): boolean => {
+  const pending: { readonly depth: number; readonly value: unknown }[] = [];
+  const visitedContainers = new WeakSet<object>();
+  let discoveredNodes = 0;
+  const enqueue = (value: unknown, depth: number): boolean => {
+    discoveredNodes += 1;
+    if (
+      discoveredNodes > SpeechUnknownMetadataMaximumTraversalNodes ||
+      depth > SpeechUnknownMetadataMaximumTraversalDepth
+    ) {
+      return false;
     }
-    default: {
-      return "other";
+    if (typeof value === "object" && value !== null) {
+      if (visitedContainers.has(value)) {
+        return false;
+      }
+      visitedContainers.add(value);
+    }
+    pending.push({ depth, value });
+    return true;
+  };
+
+  for (const key of Object.keys(raw)) {
+    if (!SpeechProviderResponseKeys.has(key) && !enqueue(raw[key], 0)) {
+      return true;
     }
   }
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined) {
+      continue;
+    }
+    if (isUnknownRecord(current.value)) {
+      if (Object.hasOwn(current.value, "text")) {
+        return true;
+      }
+      for (const value of Object.values(current.value)) {
+        if (!enqueue(value, current.depth + 1)) {
+          return true;
+        }
+      }
+      continue;
+    }
+    if (Array.isArray(current.value)) {
+      for (const value of current.value) {
+        if (!enqueue(value, current.depth + 1)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 };
+
+const hasAmbiguousSpeechWrapper = (
+  raw: Readonly<Record<string, unknown>>
+): boolean =>
+  Object.hasOwn(raw, "errors") ||
+  Object.hasOwn(raw, "messages") ||
+  Object.hasOwn(raw, "result") ||
+  Object.hasOwn(raw, "success") ||
+  unknownSpeechMetadataRequiresRejection(raw);
 
 const isPresentNonNull = (
   record: Readonly<Record<string, unknown>>,
@@ -1474,29 +1531,19 @@ const modelSpecificNestedMetadataTypesAreInvalid = (
 
 const genericUnsupportedPropertyLocation = (
   raw: Readonly<Record<string, unknown>>
-): SpeechEnvelopeUnsupportedLocation | undefined => {
-  if (hasUnsupportedProperty(raw, GenericSpeechProviderResponseKeys)) {
-    return "root";
-  }
-  return Array.isArray(raw["words"]) &&
-    raw["words"].some(
-      (word) =>
-        isUnknownRecord(word) &&
-        hasUnsupportedProperty(
-          word,
-          ModelSpecificSpeechWordOptionalMetadataKeys
-        )
-    )
+): SpeechEnvelopeUnsupportedLocation | undefined =>
+  Array.isArray(raw["words"]) &&
+  raw["words"].some(
+    (word) =>
+      isUnknownRecord(word) &&
+      hasUnsupportedProperty(word, ModelSpecificSpeechWordOptionalMetadataKeys)
+  )
     ? "word"
     : undefined;
-};
 
 const modelSpecificUnsupportedPropertyLocation = (
   raw: Readonly<Record<string, unknown>>
 ): SpeechEnvelopeUnsupportedLocation | undefined => {
-  if (hasUnsupportedProperty(raw, ModelSpecificSpeechProviderResponseKeys)) {
-    return "root";
-  }
   const transcriptionInfo = raw["transcription_info"];
   if (
     isUnknownRecord(transcriptionInfo) &&
@@ -1571,17 +1618,19 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
     return { failure: "root_metadata_type", family };
   }
   if (family === "unclassified") {
-    const unsupportedRootProperty = classifyUnsupportedRootProperty(
-      raw,
-      ModelSpecificSpeechProviderResponseKeys
-    );
     return {
       failure: "unsupported_property",
       family,
       unsupportedLocation: "root",
-      ...(unsupportedRootProperty === undefined
-        ? {}
-        : { unsupportedRootProperty }),
+      unsupportedRootProperty: "words",
+    };
+  }
+  if (hasAmbiguousSpeechWrapper(raw)) {
+    return {
+      failure: "unsupported_property",
+      family,
+      unsupportedLocation: "root",
+      unsupportedRootProperty: "other",
     };
   }
   if (
@@ -1610,22 +1659,10 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
       ? genericUnsupportedPropertyLocation(raw)
       : modelSpecificUnsupportedPropertyLocation(raw);
   if (unsupportedLocation !== undefined) {
-    const unsupportedRootProperty =
-      unsupportedLocation === "root"
-        ? classifyUnsupportedRootProperty(
-            raw,
-            family === "generic"
-              ? GenericSpeechProviderResponseKeys
-              : ModelSpecificSpeechProviderResponseKeys
-          )
-        : undefined;
     return {
       failure: "unsupported_property",
       family,
       unsupportedLocation,
-      ...(unsupportedRootProperty === undefined
-        ? {}
-        : { unsupportedRootProperty }),
     };
   }
   return { failure: undefined, family };
@@ -1650,7 +1687,7 @@ const decodeSpeechResponse = (
       readonly speechEnvelopeUnsupportedRootProperty?: SpeechEnvelopeUnsupportedRootProperty;
     } => {
   const classification = classifySpeechEnvelope(raw);
-  if (!isUnknownRecord(raw)) {
+  if (!isUnknownRecord(raw) || classification.failure !== undefined) {
     return {
       _tag: "Rejected",
       decodeReason: "speech_envelope_schema_invalid",
@@ -1671,13 +1708,20 @@ const decodeSpeechResponse = (
           }),
     };
   }
-  const isModelSpecific =
-    Object.hasOwn(raw, "segments") || Object.hasOwn(raw, "transcription_info");
+  const isModelSpecific = classification.family === "model_specific";
+  const projected = projectDocumentedSpeechResponse(
+    raw,
+    isModelSpecific
+      ? ModelSpecificSpeechProviderResponseKeys
+      : GenericSpeechProviderResponseKeys
+  );
   const envelope = isModelSpecific
     ? decodeModelSpecificSpeechResponse(
-        normalizeModelSpecificSpeechProviderResponse(raw)
+        normalizeModelSpecificSpeechProviderResponse(projected)
       ).pipe(Option.map(({ text }) => text))
-    : decodeGenericSpeechResponse(raw).pipe(Option.map(({ text }) => text));
+    : decodeGenericSpeechResponse(projected).pipe(
+        Option.map(({ text }) => text)
+      );
   if (Option.isNone(envelope)) {
     return {
       _tag: "Rejected",

@@ -83,6 +83,14 @@ const speechTranscriptionInput = {
   sourceMediaSha256: "b".repeat(64),
 };
 
+const nestUnknownMetadata = (leaf: unknown, depth: number): unknown => {
+  let value = leaf;
+  for (let index = 0; index < depth; index += 1) {
+    value = { nested: value };
+  }
+  return value;
+};
+
 const localDispatchGate: ProviderDispatchGate = {
   run: <A, E>(input: {
     readonly invoke: Effect.Effect<
@@ -419,6 +427,79 @@ describe("installed import provider adapters", () => {
     expect(transcript.text).toBe("Chop the onion.");
   });
 
+  it.each([
+    ["one unconsumed root scalar", { platformRevision: 7 }],
+    [
+      "one inert root object",
+      {
+        platformMetadata: {
+          attempt: 1,
+          region: "synthetic",
+        },
+      },
+    ],
+    [
+      "one deeply nested inert root object",
+      {
+        platformMetadata: nestUnknownMetadata("synthetic", 24),
+      },
+    ],
+    [
+      "multiple unconsumed root values",
+      {
+        platformEnabled: true,
+        platformMetadata: {
+          attempt: 1,
+          region: "synthetic",
+        },
+        platformRevision: 7,
+      },
+    ],
+  ] as const)(
+    "discards %s after family discrimination without changing semantic output",
+    async (_case, rootMetadata) => {
+      const baselineAdapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway({
+            segments: [],
+            text: "Chop the onion.",
+          }).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        })
+      );
+      const trace = makeRecordingTraceStore();
+      const metadataAdapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway({
+            ...rootMetadata,
+            segments: [],
+            text: "Chop the onion.",
+          }).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const [baselineTranscript, metadataTranscript] = await Promise.all([
+        Effect.runPromise(baselineAdapter.transcribe(speechTranscriptionInput)),
+        Effect.runPromise(metadataAdapter.transcribe(speechTranscriptionInput)),
+      ]);
+
+      expect(metadataTranscript).toEqual(baselineTranscript);
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        event: "provider.decode",
+        outcome: "succeeded",
+        providerStage: "speech",
+      });
+      expect(JSON.stringify(trace.events)).not.toMatch(
+        /platform(?:Enabled|Metadata|Revision)|synthetic/u
+      );
+    }
+  );
+
   it("normalizes null only at allowlisted optional installed-runtime metadata positions", async () => {
     const compatibleResponses = [
       {
@@ -573,16 +654,6 @@ describe("installed import provider adapters", () => {
       undefined,
     ],
     [
-      "unsupported property",
-      {
-        providerSecret: "private-shape-canary",
-        text: "Chop the onion.",
-      },
-      "generic",
-      "unsupported_property",
-      "root",
-    ],
-    [
       "unsupported model segment id",
       { segments: [{ id: 0 }], text: "Chop the onion." },
       "model_specific",
@@ -643,12 +714,8 @@ describe("installed import provider adapters", () => {
       speechEnvelopeFailure,
       speechEnvelopeUnsupportedLocation
     ) => {
-      let speechEnvelopeUnsupportedRootProperty: "other" | "words" | undefined;
-      if (testCase === "unsupported property") {
-        speechEnvelopeUnsupportedRootProperty = "other";
-      } else if (testCase === "ambiguous mixed family") {
-        speechEnvelopeUnsupportedRootProperty = "words";
-      }
+      const speechEnvelopeUnsupportedRootProperty =
+        testCase === "ambiguous mixed family" ? ("words" as const) : undefined;
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
@@ -710,18 +777,6 @@ describe("installed import provider adapters", () => {
   );
 
   it.each([
-    [
-      "root",
-      {
-        privateRootCanary: "root-private-value",
-        segments: [],
-        text: "Chop the onion.",
-      },
-      "model_specific",
-      "root",
-      "other",
-      "root-private-value",
-    ],
     [
       "transcription info",
       {
@@ -853,7 +908,7 @@ describe("installed import provider adapters", () => {
 
   it.each([
     [
-      "root before nested locations",
+      "discarded root metadata does not mask a nested failure",
       {
         privateRootCanary: "root-private-value",
         segments: [
@@ -872,7 +927,7 @@ describe("installed import provider adapters", () => {
           privateInfoCanary: "info-private-value",
         },
       },
-      "root",
+      "transcription_info",
     ],
     [
       "transcription info before segment and word",
@@ -976,45 +1031,95 @@ describe("installed import provider adapters", () => {
 
   it.each([
     [
-      "known language field",
+      "result wrapper",
       {
-        language: "en",
+        result: {
+          accepted: "wrapper-value-canary",
+        },
         segments: [],
         text: "Chop the onion.",
       },
-      "language",
     ],
     [
-      "known duration field",
+      "success wrapper",
       {
-        duration: 1,
         segments: [],
+        success: true,
         text: "Chop the onion.",
       },
-      "duration",
     ],
     [
-      "unknown private field",
+      "errors wrapper",
       {
-        privateRootCanary: "root-private-value",
+        errors: ["wrapper-value-canary"],
         segments: [],
         text: "Chop the onion.",
       },
-      "other",
     ],
     [
-      "multiple root fields",
+      "messages wrapper",
       {
-        language: "en",
-        privateRootCanary: "root-private-value",
+        messages: ["wrapper-value-canary"],
         segments: [],
         text: "Chop the onion.",
       },
-      "multiple",
+    ],
+    [
+      "unknown transcript-bearing object",
+      {
+        segments: [],
+        syntheticTranscriptContainer: {
+          text: "nested-transcript-canary",
+        },
+        text: "Chop the onion.",
+      },
+    ],
+    [
+      "deep unknown transcript-bearing object",
+      {
+        segments: [],
+        syntheticTranscriptContainer: nestUnknownMetadata(
+          {
+            text: "nested-transcript-canary",
+          },
+          24
+        ),
+        text: "Chop the onion.",
+      },
+    ],
+    [
+      "unknown transcript-bearing array",
+      {
+        segments: [],
+        syntheticTranscriptContainer: [
+          {
+            text: "nested-transcript-canary",
+          },
+        ],
+        text: "Chop the onion.",
+      },
+    ],
+    [
+      "deep unknown transcript-bearing array/container",
+      {
+        segments: [],
+        syntheticTranscriptContainer: [
+          {
+            nested: [
+              {
+                nested: {
+                  text: "nested-transcript-canary",
+                },
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+      },
     ],
   ] as const)(
-    "classifies an unsupported root property as %s without exposing its value",
-    async (_case, response, speechEnvelopeUnsupportedRootProperty) => {
+    "rejects an ambiguous %s without exposing its name or value",
+    async (_case, response) => {
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
@@ -1025,16 +1130,81 @@ describe("installed import provider adapters", () => {
         trace.service
       );
 
-      await Effect.runPromiseExit(adapter.transcribe(speechTranscriptionInput));
+      const exit = await Effect.runPromiseExit(
+        adapter.transcribe(speechTranscriptionInput)
+      );
 
-      expect(trace.events.at(-1)).toMatchObject({
+      expect(exit._tag).toBe("Failure");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason: "speech_envelope_schema_invalid",
+        decodeStage: "speech_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "speech",
         speechEnvelopeFailure: "unsupported_property",
         speechEnvelopeFamily: "model_specific",
         speechEnvelopeUnsupportedLocation: "root",
-        speechEnvelopeUnsupportedRootProperty,
+        speechEnvelopeUnsupportedRootProperty: "other",
       });
-      expect(JSON.stringify(trace.events)).not.toContain("root-private-value");
-      expect(JSON.stringify(trace.events)).not.toMatch(/privateRootCanary/u);
+      expect(JSON.stringify(exit)).not.toMatch(
+        /nested-transcript-canary|wrapper-value-canary/u
+      );
+      expect(JSON.stringify(trace.events)).not.toMatch(
+        /nested-transcript-canary|syntheticTranscriptContainer|wrapper-value-canary/u
+      );
+    }
+  );
+
+  it.each([
+    [
+      "excessively deep inert unknown metadata",
+      nestUnknownMetadata("inert-depth-canary", 70),
+      "inert-depth-canary",
+    ],
+    [
+      "excessively large inert unknown metadata",
+      Array.from({ length: 20_000 }, () => "inert-size-canary"),
+      "inert-size-canary",
+    ],
+  ] as const)(
+    "fails closed for %s without exposing its name or value",
+    async (_case, syntheticTraversalContainer, privateValue) => {
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway({
+            segments: [],
+            syntheticTraversalContainer,
+            text: "Chop the onion.",
+          }).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.transcribe(speechTranscriptionInput)
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason: "speech_envelope_schema_invalid",
+        decodeStage: "speech_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "speech",
+        speechEnvelopeFailure: "unsupported_property",
+        speechEnvelopeFamily: "model_specific",
+        speechEnvelopeUnsupportedLocation: "root",
+        speechEnvelopeUnsupportedRootProperty: "other",
+      });
+      expect(JSON.stringify(exit)).not.toContain(privateValue);
+      expect(JSON.stringify(trace.events)).not.toMatch(
+        /inert-(?:depth|size)-canary|syntheticTraversalContainer/u
+      );
     }
   );
 
@@ -1130,16 +1300,6 @@ describe("installed import provider adapters", () => {
         transcription_info: {
           providerSecret: null,
         },
-      },
-      {
-        providerSecret: "must-not-escape",
-        text: "Chop the onion.",
-        word_count: 3,
-      },
-      {
-        providerSecret: null,
-        segments: [],
-        text: "Chop the onion.",
       },
       {
         result: {
