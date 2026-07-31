@@ -1110,6 +1110,15 @@ const SpeechProviderNonNegativeInteger = Schema.Number.pipe(
   )
 );
 
+const SpeechProviderSegmentMetadataInteger =
+  SpeechProviderNonNegativeInteger.pipe(
+    Schema.check(Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))
+  );
+
+const SpeechProviderSegmentTokens = Schema.Array(
+  SpeechProviderSegmentMetadataInteger
+).pipe(Schema.check(Schema.isMaxLength(4096)));
+
 const SpeechProviderFiniteNumber = Schema.Number.pipe(
   Schema.check(Schema.isFinite())
 );
@@ -1170,10 +1179,13 @@ const ModelSpecificSpeechProviderSegment = Schema.Struct({
   avg_logprob: Schema.optionalKey(SpeechProviderFiniteNumber),
   compression_ratio: Schema.optionalKey(SpeechProviderNonNegativeNumber),
   end: Schema.optionalKey(SpeechProviderNonNegativeNumber),
+  id: Schema.optionalKey(SpeechProviderSegmentMetadataInteger),
   no_speech_prob: Schema.optionalKey(SpeechProviderProbability),
+  seek: Schema.optionalKey(SpeechProviderSegmentMetadataInteger),
   start: Schema.optionalKey(SpeechProviderNonNegativeNumber),
   temperature: Schema.optionalKey(SpeechProviderNonNegativeNumber),
   text: Schema.optionalKey(SpeechProviderSegmentText),
+  tokens: Schema.optionalKey(SpeechProviderSegmentTokens),
   words: Schema.optionalKey(
     Schema.Array(ModelSpecificSpeechProviderWord).pipe(
       Schema.check(Schema.isMaxLength(4096))
@@ -1212,6 +1224,21 @@ const ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys: ReadonlySet<stri
   ]);
 
 const ModelSpecificSpeechSegmentOptionalMetadataKeys: ReadonlySet<string> =
+  new Set([
+    "avg_logprob",
+    "compression_ratio",
+    "end",
+    "id",
+    "no_speech_prob",
+    "seek",
+    "start",
+    "temperature",
+    "text",
+    "tokens",
+    "words",
+  ]);
+
+const ModelSpecificSpeechSegmentNullableMetadataKeys: ReadonlySet<string> =
   new Set([
     "avg_logprob",
     "compression_ratio",
@@ -1270,7 +1297,7 @@ const normalizeModelSpecificSpeechProviderSegment = (raw: unknown): unknown => {
   }
   const normalized = omitAllowlistedNullMetadata(
     raw,
-    ModelSpecificSpeechSegmentOptionalMetadataKeys
+    ModelSpecificSpeechSegmentNullableMetadataKeys
   );
   return Array.isArray(normalized["words"])
     ? {
@@ -1440,8 +1467,10 @@ const modelSpecificNestedContainersAreInvalid = (
     raw["segments"].some(
       (segment) =>
         isUnknownRecord(segment) &&
-        isPresentNonNull(segment, "words") &&
-        !Array.isArray(segment["words"])
+        ((isPresentNonNull(segment, "tokens") &&
+          !Array.isArray(segment["tokens"])) ||
+          (isPresentNonNull(segment, "words") &&
+            !Array.isArray(segment["words"])))
     )
   );
 };
@@ -1508,10 +1537,18 @@ const modelSpecificNestedMetadataTypesAreInvalid = (
         hasWrongNullableNumberType(segment, "avg_logprob") ||
         hasWrongNullableNumberType(segment, "compression_ratio") ||
         hasWrongNullableNumberType(segment, "end") ||
+        hasWrongNullableNumberType(segment, "id") ||
         hasWrongNullableNumberType(segment, "no_speech_prob") ||
+        hasWrongNullableNumberType(segment, "seek") ||
         hasWrongNullableNumberType(segment, "start") ||
         hasWrongNullableNumberType(segment, "temperature") ||
         hasWrongNullableStringType(segment, "text")
+      ) {
+        return true;
+      }
+      if (
+        Array.isArray(segment["tokens"]) &&
+        segment["tokens"].some((token) => typeof token !== "number")
       ) {
         return true;
       }
