@@ -3151,6 +3151,68 @@ describe("installed import provider adapters", () => {
         ],
       },
     ],
+    [
+      "a valid OpenAI tool call beside a malformed nameless call",
+      {
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validVisualSemantics),
+                    name: "record_visual_evidence",
+                  },
+                  type: "function",
+                },
+                {
+                  function: {
+                    arguments: "{}",
+                  },
+                  type: "function",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+    [
+      "an extra authoritative OpenAI choice",
+      {
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validVisualSemantics),
+                    name: "record_visual_evidence",
+                  },
+                  type: "function",
+                },
+              ],
+            },
+          },
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validVisualSemantics),
+                    name: "record_visual_evidence",
+                  },
+                  type: "function",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
   ] as const)(
     "fails closed for visual %s without leaking provider data",
     async (_label, response) => {

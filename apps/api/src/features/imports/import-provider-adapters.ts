@@ -463,6 +463,9 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
       if (typeof error === "string") {
         return error;
       }
+      if (isProviderNormalizationFailure(error)) {
+        return "malformed_response" as const;
+      }
       if (
         hasProviderErrorDescription(error, ProviderKnownZeroSetupFailureMessage)
       ) {
@@ -649,6 +652,66 @@ const runWorkersAi = (
 const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const isUnambiguousRawToolCall = (value: unknown): boolean => {
+  if (!isUnknownRecord(value)) {
+    return false;
+  }
+
+  const { function: functionValue, name: flatName } = value;
+  const hasFlatName = typeof flatName === "string" && flatName.length > 0;
+
+  if (functionValue === undefined) {
+    return hasFlatName;
+  }
+  if (!isUnknownRecord(functionValue) || hasFlatName) {
+    return false;
+  }
+
+  const { name: functionName } = functionValue;
+  return typeof functionName === "string" && functionName.length > 0;
+};
+
+const hasUnambiguousRawToolShape = (value: unknown): boolean => {
+  if (!isUnknownRecord(value)) {
+    return true;
+  }
+
+  const { choices, tool_calls: nativeToolCalls } = value;
+  if (choices !== undefined) {
+    if (
+      !Array.isArray(choices) ||
+      choices.length !== 1 ||
+      nativeToolCalls !== undefined
+    ) {
+      return false;
+    }
+
+    const [choice] = choices;
+    if (!isUnknownRecord(choice)) {
+      return false;
+    }
+
+    const { message } = choice;
+    if (!isUnknownRecord(message)) {
+      return false;
+    }
+    const { tool_calls: toolCalls } = message;
+    return (
+      toolCalls === undefined ||
+      (Array.isArray(toolCalls) &&
+        toolCalls.length === 1 &&
+        isUnambiguousRawToolCall(toolCalls[0]))
+    );
+  }
+
+  return (
+    nativeToolCalls === undefined ||
+    (Array.isArray(nativeToolCalls) &&
+      nativeToolCalls.length === 1 &&
+      isUnambiguousRawToolCall(nativeToolCalls[0]))
+  );
+};
+
 const withProviderNormalizationBoundary = (response: Response): Response => {
   const parseJson = response.json.bind(response);
   return new Proxy(response, {
@@ -656,7 +719,11 @@ const withProviderNormalizationBoundary = (response: Response): Response => {
       if (property === "json") {
         return async (): Promise<unknown> => {
           try {
-            return await parseJson();
+            const raw = await parseJson();
+            if (!hasUnambiguousRawToolShape(raw)) {
+              throw new Error(ProviderNormalizationInvalidMessage);
+            }
+            return raw;
           } catch {
             // Provider payloads and parser details must not cross the
             // observability boundary. Alchemy preserves this closed
