@@ -684,14 +684,21 @@ const readVisualSettled = (
             AND checkpoint.acquisition_generation = ?
             AND checkpoint.provider_stage = 'visual'
             AND checkpoint.ownership_id = audit.dispatch_id
-            AND checkpoint.failure_code = 'visual_extraction_failed'
            JOIN import_visual_evidence AS visual
              ON visual.import_id = checkpoint.import_id
             AND visual.acquisition_generation =
                   checkpoint.acquisition_generation
             AND visual.dispatch_id = checkpoint.ownership_id
             AND visual.state = 'failed'
-            AND visual.failure_code = 'visual_extraction_failed'
+            AND (
+              (
+                checkpoint.failure_code = 'visual_extraction_failed'
+                AND visual.failure_code = 'visual_extraction_failed'
+              ) OR (
+                checkpoint.failure_code = 'outcome_unknown'
+                AND visual.failure_code = 'visual_evidence_failed'
+              )
+            )
             AND visual.completed_at = checkpoint.completed_at
            JOIN recipe_imports AS parent
              ON parent.id = checkpoint.import_id
@@ -1086,14 +1093,21 @@ const settleVisualBatch = (
             AND checkpoint.acquisition_generation = ?
             AND checkpoint.provider_stage = 'visual'
             AND checkpoint.ownership_id = dispatch.dispatch_id
-            AND checkpoint.failure_code = 'visual_extraction_failed'
            JOIN import_visual_evidence AS visual
              ON visual.import_id = checkpoint.import_id
             AND visual.acquisition_generation =
                   checkpoint.acquisition_generation
             AND visual.dispatch_id = checkpoint.ownership_id
             AND visual.state = 'failed'
-            AND visual.failure_code = 'visual_extraction_failed'
+            AND (
+              (
+                checkpoint.failure_code = 'visual_extraction_failed'
+                AND visual.failure_code = 'visual_extraction_failed'
+              ) OR (
+                checkpoint.failure_code = 'outcome_unknown'
+                AND visual.failure_code = 'visual_evidence_failed'
+              )
+            )
             AND visual.completed_at = checkpoint.completed_at
            JOIN recipe_imports AS parent
              ON parent.id = checkpoint.import_id
@@ -1190,15 +1204,23 @@ const settleVisualBatch = (
                    AND checkpoint.acquisition_generation = ?
                    AND checkpoint.provider_stage = 'visual'
                    AND checkpoint.ownership_id = dispatch.dispatch_id
-                   AND checkpoint.failure_code =
-                         'visual_extraction_failed'
                   JOIN import_visual_evidence AS visual
                     ON visual.import_id = checkpoint.import_id
                    AND visual.acquisition_generation =
                          checkpoint.acquisition_generation
                    AND visual.dispatch_id = checkpoint.ownership_id
                    AND visual.state = 'failed'
-                   AND visual.failure_code = 'visual_extraction_failed'
+                   AND (
+                     (
+                       checkpoint.failure_code =
+                             'visual_extraction_failed'
+                       AND visual.failure_code =
+                             'visual_extraction_failed'
+                     ) OR (
+                       checkpoint.failure_code = 'outcome_unknown'
+                       AND visual.failure_code = 'visual_evidence_failed'
+                     )
+                   )
                    AND visual.completed_at = checkpoint.completed_at
                   JOIN recipe_imports AS parent
                     ON parent.id = checkpoint.import_id
