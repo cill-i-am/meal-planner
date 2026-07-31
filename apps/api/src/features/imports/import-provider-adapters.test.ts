@@ -427,6 +427,78 @@ describe("installed import provider adapters", () => {
     expect(transcript.text).toBe("Chop the onion.");
   });
 
+  it("accepts bounded standard Whisper segment metadata and projects it away", async () => {
+    const baselineAdapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: makeSpeechGateway({
+          segments: [],
+          text: "Chop the onion.",
+        }).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+    const trace = makeRecordingTraceStore();
+    const metadataAdapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: makeSpeechGateway({
+          segments: [
+            {
+              id: 0,
+              seek: 0,
+              tokens: [50_365, 50_817],
+            },
+          ],
+          text: "Chop the onion.",
+        }).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const [baselineTranscript, metadataTranscript] = await Promise.all([
+      Effect.runPromise(baselineAdapter.transcribe(speechTranscriptionInput)),
+      Effect.runPromise(metadataAdapter.transcribe(speechTranscriptionInput)),
+    ]);
+
+    expect(metadataTranscript).toEqual(baselineTranscript);
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      event: "provider.decode",
+      outcome: "succeeded",
+      providerStage: "speech",
+    });
+    expect(
+      JSON.stringify({ metadataTranscript, trace: trace.events })
+    ).not.toMatch(/50365|50817/u);
+  });
+
+  it("accepts only the bounded upper edge of standard Whisper segment metadata", async () => {
+    const adapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: makeSpeechGateway({
+          segments: [
+            {
+              id: Number.MAX_SAFE_INTEGER,
+              seek: Number.MAX_SAFE_INTEGER,
+              tokens: Array.from({ length: 4096 }, () => 1),
+            },
+          ],
+          text: "Chop the onion.",
+        }).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const transcript = await Effect.runPromise(
+      adapter.transcribe(speechTranscriptionInput)
+    );
+
+    expect(transcript.text).toBe("Chop the onion.");
+  });
+
   it.each([
     ["one unconsumed root scalar", { platformRevision: 7 }],
     [
@@ -654,25 +726,86 @@ describe("installed import provider adapters", () => {
       undefined,
     ],
     [
-      "unsupported model segment id",
-      { segments: [{ id: 0 }], text: "Chop the onion." },
+      "wrong model segment id type",
+      { segments: [{ id: "0" }], text: "Chop the onion." },
       "model_specific",
-      "unsupported_property",
-      "segment",
+      "nested_metadata_type",
+      undefined,
     ],
     [
-      "unsupported model segment seek",
-      { segments: [{ seek: 0 }], text: "Chop the onion." },
+      "wrong model segment seek type",
+      { segments: [{ seek: "0" }], text: "Chop the onion." },
       "model_specific",
-      "unsupported_property",
-      "segment",
+      "nested_metadata_type",
+      undefined,
     ],
     [
-      "unsupported model segment tokens",
-      { segments: [{ tokens: [1] }], text: "Chop the onion." },
+      "wrong model segment tokens container",
+      { segments: [{ tokens: {} }], text: "Chop the onion." },
       "model_specific",
+      "nested_container_type",
+      undefined,
+    ],
+    [
+      "wrong model segment token type",
+      { segments: [{ tokens: [1, "2"] }], text: "Chop the onion." },
+      "model_specific",
+      "nested_metadata_type",
+      undefined,
+    ],
+    [
+      "null model segment id",
+      { segments: [{ id: null }], text: "Chop the onion." },
+      "model_specific",
+      "semantic_constraint",
+      undefined,
+    ],
+    [
+      "out-of-range model segment id",
+      {
+        segments: [{ id: Number.MAX_SAFE_INTEGER + 1 }],
+        text: "Chop the onion.",
+      },
+      "model_specific",
+      "semantic_constraint",
+      undefined,
+    ],
+    [
+      "non-finite model segment seek",
+      {
+        segments: [{ seek: Number.POSITIVE_INFINITY }],
+        text: "Chop the onion.",
+      },
+      "model_specific",
+      "semantic_constraint",
+      undefined,
+    ],
+    [
+      "oversized model segment tokens",
+      {
+        segments: [{ tokens: Array.from({ length: 4097 }, () => 1) }],
+        text: "Chop the onion.",
+      },
+      "model_specific",
+      "semantic_constraint",
+      undefined,
+    ],
+    [
+      "out-of-range model segment token",
+      {
+        segments: [{ tokens: [Number.MAX_SAFE_INTEGER + 1] }],
+        text: "Chop the onion.",
+      },
+      "model_specific",
+      "semantic_constraint",
+      undefined,
+    ],
+    [
+      "standard segment metadata on a generic word",
+      { text: "Chop the onion.", words: [{ id: 0 }] },
+      "generic",
       "unsupported_property",
-      "segment",
+      "word",
     ],
     [
       "unsupported model word probability",
@@ -731,6 +864,8 @@ describe("installed import provider adapters", () => {
       );
 
       expect(exit._tag).toBe("Failure");
+      expect(JSON.stringify(exit)).toContain("SpeechTranscriptionFailure");
+      expect(JSON.stringify(exit)).toContain("malformed_response");
       expect(trace.events.at(-1)).toEqual({
         correlationId,
         decodeReason:
@@ -1213,7 +1348,14 @@ describe("installed import provider adapters", () => {
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
         client: makeSpeechGateway({
-          segments: [{ privateSegmentCanary: "segment-private-value" }],
+          segments: [
+            {
+              id: 0,
+              privateSegmentCanary: "segment-private-value",
+              seek: 0,
+              tokens: [50_365],
+            },
+          ],
           text: "Chop the onion.",
         }).client,
         correlationId,
@@ -1222,7 +1364,9 @@ describe("installed import provider adapters", () => {
       trace.service
     );
 
-    await Effect.runPromiseExit(adapter.transcribe(speechTranscriptionInput));
+    const exit = await Effect.runPromiseExit(
+      adapter.transcribe(speechTranscriptionInput)
+    );
 
     expect(trace.events.at(-1)).toMatchObject({
       speechEnvelopeFailure: "unsupported_property",
@@ -1230,6 +1374,9 @@ describe("installed import provider adapters", () => {
     });
     expect(trace.events.at(-1)).not.toHaveProperty(
       "speechEnvelopeUnsupportedRootProperty"
+    );
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toMatch(
+      /segment-private-value|50365/u
     );
   });
 
