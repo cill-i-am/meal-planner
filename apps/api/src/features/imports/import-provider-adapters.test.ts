@@ -54,6 +54,14 @@ const makeGateway = (response: unknown) =>
 
 const makeSpeechGateway = makeGateway;
 
+const makeSpeechGatewayFromValue = (response: unknown) => {
+  const responseEnvelope = new Response(null, { status: 200 });
+  Object.defineProperty(responseEnvelope, "json", {
+    value: () => Promise.resolve(response),
+  });
+  return makeRawGateway(responseEnvelope);
+};
+
 const makeRejectedGateway = (error: unknown) =>
   ({
     gateway: Effect.die("universal AI Gateway binding must not be used"),
@@ -572,6 +580,98 @@ describe("installed import provider adapters", () => {
     }
   );
 
+  it.each([
+    [
+      "transcription-info",
+      {
+        segments: [],
+        text: "Chop the onion.",
+        transcription_info: { duration: 1 },
+      },
+      {
+        segments: [],
+        text: "Chop the onion.",
+        transcription_info: {
+          duration: 1,
+          providerPrivateInfoCanary: { revision: 7 },
+        },
+      },
+      /providerPrivateInfoCanary|revision/u,
+    ],
+    [
+      "segment",
+      {
+        segments: [{ id: 0 }],
+        text: "Chop the onion.",
+      },
+      {
+        segments: [
+          {
+            id: 0,
+            providerPrivateSegmentCanary: { revision: 7 },
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      /providerPrivateSegmentCanary|revision/u,
+    ],
+    [
+      "model-specific word",
+      {
+        segments: [{ words: [{ word: "Chop" }] }],
+        text: "Chop the onion.",
+      },
+      {
+        segments: [
+          {
+            words: [
+              {
+                providerPrivateWordCanary: { revision: 7 },
+                word: "Chop",
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      /providerPrivateWordCanary|revision/u,
+    ],
+  ] as const)(
+    "discards bounded inert %s metadata without changing semantic output",
+    async (_case, baselineResponse, metadataResponse, privatePattern) => {
+      const baselineAdapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway(baselineResponse).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        })
+      );
+      const trace = makeRecordingTraceStore();
+      const metadataAdapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway(metadataResponse).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const [baselineTranscript, metadataTranscript] = await Promise.all([
+        Effect.runPromise(baselineAdapter.transcribe(speechTranscriptionInput)),
+        Effect.runPromise(metadataAdapter.transcribe(speechTranscriptionInput)),
+      ]);
+
+      expect(metadataTranscript).toEqual(baselineTranscript);
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        event: "provider.decode",
+        outcome: "succeeded",
+        providerStage: "speech",
+      });
+      expect(JSON.stringify(trace.events)).not.toMatch(privatePattern);
+    }
+  );
+
   it("normalizes null only at allowlisted optional installed-runtime metadata positions", async () => {
     const compatibleResponses = [
       {
@@ -808,16 +908,6 @@ describe("installed import provider adapters", () => {
       "word",
     ],
     [
-      "unsupported model word probability",
-      {
-        segments: [{ words: [{ probability: 1, word: "Chop" }] }],
-        text: "Chop the onion.",
-      },
-      "model_specific",
-      "unsupported_property",
-      "word",
-    ],
-    [
       "semantic constraint",
       { text: "Chop the onion.", word_count: -1 },
       "generic",
@@ -919,7 +1009,11 @@ describe("installed import provider adapters", () => {
         text: "Chop the onion.",
         transcription_info: {
           duration: 1,
-          privateInfoCanary: "info-private-value",
+          privateInfoCanary: {
+            nested: {
+              text: "info-private-value",
+            },
+          },
         },
       },
       "model_specific",
@@ -933,7 +1027,9 @@ describe("installed import provider adapters", () => {
         segments: [
           {
             id: 0,
-            privateSegmentCanary: "segment-private-value",
+            privateSegmentCanary: {
+              text: "segment-private-value",
+            },
           },
         ],
         text: "Chop the onion.",
@@ -950,7 +1046,11 @@ describe("installed import provider adapters", () => {
           {
             words: [
               {
-                privateWordCanary: "word-private-value",
+                privateWordCanary: {
+                  nested: {
+                    text: "word-private-value",
+                  },
+                },
                 probability: 1,
                 word: "Chop",
               },
@@ -981,7 +1081,7 @@ describe("installed import provider adapters", () => {
       "generic-word-private-value",
     ],
   ] as const)(
-    "locates an unsupported speech property at %s without exposing its name or value",
+    "locates transcript-bearing unknown metadata at %s without exposing its name or value",
     async (
       _case,
       response,
@@ -1048,10 +1148,14 @@ describe("installed import provider adapters", () => {
         privateRootCanary: "root-private-value",
         segments: [
           {
-            privateSegmentCanary: "segment-private-value",
+            privateSegmentCanary: {
+              text: "segment-private-value",
+            },
             words: [
               {
-                privateWordCanary: "word-private-value",
+                privateWordCanary: {
+                  text: "word-private-value",
+                },
                 word: "Chop",
               },
             ],
@@ -1059,7 +1163,9 @@ describe("installed import provider adapters", () => {
         ],
         text: "Chop the onion.",
         transcription_info: {
-          privateInfoCanary: "info-private-value",
+          privateInfoCanary: {
+            text: "info-private-value",
+          },
         },
       },
       "transcription_info",
@@ -1069,10 +1175,14 @@ describe("installed import provider adapters", () => {
       {
         segments: [
           {
-            privateSegmentCanary: "segment-private-value",
+            privateSegmentCanary: {
+              text: "segment-private-value",
+            },
             words: [
               {
-                privateWordCanary: "word-private-value",
+                privateWordCanary: {
+                  text: "word-private-value",
+                },
                 word: "Chop",
               },
             ],
@@ -1080,7 +1190,9 @@ describe("installed import provider adapters", () => {
         ],
         text: "Chop the onion.",
         transcription_info: {
-          privateInfoCanary: "info-private-value",
+          privateInfoCanary: {
+            text: "info-private-value",
+          },
         },
       },
       "transcription_info",
@@ -1090,10 +1202,14 @@ describe("installed import provider adapters", () => {
       {
         segments: [
           {
-            privateSegmentCanary: "segment-private-value",
+            privateSegmentCanary: {
+              text: "segment-private-value",
+            },
             words: [
               {
-                privateWordCanary: "word-private-value",
+                privateWordCanary: {
+                  text: "word-private-value",
+                },
                 word: "Chop",
               },
             ],
@@ -1110,13 +1226,17 @@ describe("installed import provider adapters", () => {
           {
             words: [
               {
-                privateWordCanary: "word-private-value",
+                privateWordCanary: {
+                  text: "word-private-value",
+                },
                 word: "Chop",
               },
             ],
           },
           {
-            privateSegmentCanary: "segment-private-value",
+            privateSegmentCanary: {
+              text: "segment-private-value",
+            },
           },
         ],
         text: "Chop the onion.",
@@ -1130,7 +1250,9 @@ describe("installed import provider adapters", () => {
           {
             words: [
               {
-                privateWordCanary: "word-private-value",
+                privateWordCanary: {
+                  text: "word-private-value",
+                },
                 word: "Chop",
               },
             ],
@@ -1343,6 +1465,279 @@ describe("installed import provider adapters", () => {
     }
   );
 
+  it.each([
+    [
+      "transcription-info depth",
+      {
+        segments: [],
+        text: "Chop the onion.",
+        transcription_info: {
+          privateInfoCanary: nestUnknownMetadata(
+            "nested-depth-private-value",
+            70
+          ),
+        },
+      },
+      "transcription_info",
+      /nested-depth-private-value|privateInfoCanary/u,
+    ],
+    [
+      "segment node count",
+      {
+        segments: [
+          {
+            privateSegmentCanary: Array.from(
+              { length: 20_000 },
+              () => "nested-size-private-value"
+            ),
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      "segment",
+      /nested-size-private-value|privateSegmentCanary/u,
+    ],
+    [
+      "word depth",
+      {
+        segments: [
+          {
+            words: [
+              {
+                privateWordCanary: nestUnknownMetadata(
+                  "nested-word-depth-private-value",
+                  70
+                ),
+                word: "Chop",
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      "word",
+      /nested-word-depth-private-value|privateWordCanary/u,
+    ],
+  ] as const)(
+    "fails closed when unknown nested metadata exceeds the bounded %s traversal",
+    async (
+      _case,
+      response,
+      speechEnvelopeUnsupportedLocation,
+      privatePattern
+    ) => {
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway(response).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.transcribe(speechTranscriptionInput)
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason: "speech_envelope_schema_invalid",
+        decodeStage: "speech_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "speech",
+        speechEnvelopeFailure: "unsupported_property",
+        speechEnvelopeFamily: "model_specific",
+        speechEnvelopeUnsupportedLocation,
+      });
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toMatch(
+        privatePattern
+      );
+    }
+  );
+
+  it("shares the existing node budget across root and nested unknown metadata", async () => {
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledSpeechTranscriber({
+        client: makeSpeechGateway({
+          privateRootCanary: Array.from({ length: 6000 }, () => 1),
+          segments: [
+            {
+              privateSegmentCanary: Array.from({ length: 6000 }, () => 3),
+            },
+          ],
+          text: "Chop the onion.",
+          transcription_info: {
+            privateInfoCanary: Array.from({ length: 6000 }, () => 2),
+          },
+        }).client,
+        correlationId,
+        dispatch: localDispatchGate,
+      }),
+      trace.service
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.transcribe(speechTranscriptionInput)
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(trace.events.at(-1)).toMatchObject({
+      speechEnvelopeFailure: "unsupported_property",
+      speechEnvelopeUnsupportedLocation: "segment",
+    });
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toMatch(
+      /private(?:Root|Info|Segment)Canary/u
+    );
+  });
+
+  it.each(["transcription_info", "segment", "word"] as const)(
+    "fails closed for cyclic unknown %s metadata",
+    async (speechEnvelopeUnsupportedLocation) => {
+      const cycle: Record<string, unknown> = {};
+      cycle["nested"] = cycle;
+      let response: unknown;
+      if (speechEnvelopeUnsupportedLocation === "transcription_info") {
+        response = {
+          segments: [],
+          text: "Chop the onion.",
+          transcription_info: {
+            privateCycleCanary: cycle,
+          },
+        };
+      } else if (speechEnvelopeUnsupportedLocation === "segment") {
+        response = {
+          segments: [
+            {
+              privateCycleCanary: cycle,
+            },
+          ],
+          text: "Chop the onion.",
+        };
+      } else {
+        response = {
+          segments: [
+            {
+              words: [
+                {
+                  privateCycleCanary: cycle,
+                  word: "Chop",
+                },
+              ],
+            },
+          ],
+          text: "Chop the onion.",
+        };
+      }
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGatewayFromValue(response).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.transcribe(speechTranscriptionInput)
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason: "speech_envelope_schema_invalid",
+        decodeStage: "speech_envelope",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "speech",
+        speechEnvelopeFailure: "unsupported_property",
+        speechEnvelopeFamily: "model_specific",
+        speechEnvelopeUnsupportedLocation,
+      });
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toMatch(
+        /privateCycleCanary/u
+      );
+    }
+  );
+
+  it.each([
+    [
+      "transcription-info field",
+      {
+        segments: [],
+        text: "Chop the onion.",
+        transcription_info: {
+          duration: -1,
+          privateInfoCanary: "safe-private-value",
+        },
+      },
+      "semantic_constraint",
+    ],
+    [
+      "segment field",
+      {
+        segments: [
+          {
+            id: "0",
+            privateSegmentCanary: "safe-private-value",
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      "nested_metadata_type",
+    ],
+    [
+      "word field",
+      {
+        segments: [
+          {
+            words: [
+              {
+                privateWordCanary: "safe-private-value",
+                start: "0",
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+      },
+      "nested_metadata_type",
+    ],
+  ] as const)(
+    "preserves strict validation of a malformed known %s beside inert unknown metadata",
+    async (_case, response, speechEnvelopeFailure) => {
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          client: makeSpeechGateway(response).client,
+          correlationId,
+          dispatch: localDispatchGate,
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.transcribe(speechTranscriptionInput)
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(trace.events.at(-1)).toMatchObject({
+        speechEnvelopeFailure,
+        speechEnvelopeFamily: "model_specific",
+      });
+      expect(trace.events.at(-1)).not.toHaveProperty(
+        "speechEnvelopeUnsupportedLocation"
+      );
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toMatch(
+        /private(?:Info|Segment|Word)Canary|safe-private-value/u
+      );
+    }
+  );
+
   it("omits the root-property classification for a nested unsupported property", async () => {
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
@@ -1351,7 +1746,9 @@ describe("installed import provider adapters", () => {
           segments: [
             {
               id: 0,
-              privateSegmentCanary: "segment-private-value",
+              privateSegmentCanary: {
+                text: "segment-private-value",
+              },
               seek: 0,
               tokens: [50_365],
             },
@@ -1404,7 +1801,7 @@ describe("installed import provider adapters", () => {
     );
   });
 
-  it("fails closed for missing, wrong, ambiguous, or provider-private speech response fields", async () => {
+  it("fails closed for missing, wrong, ambiguous, or unsafe speech response fields", async () => {
     const malformedResponses = [
       {
         transcription_info: {
@@ -1433,19 +1830,6 @@ describe("installed import provider adapters", () => {
         text: "Same transcript.",
         transcription_info: {
           text: "Same transcript.",
-        },
-      },
-      {
-        text: "Chop the onion.",
-        transcription_info: {
-          duration: 1,
-          providerSecret: "must-not-escape",
-        },
-      },
-      {
-        text: "Chop the onion.",
-        transcription_info: {
-          providerSecret: null,
         },
       },
       {
@@ -1486,22 +1870,6 @@ describe("installed import provider adapters", () => {
         segments: [
           {
             no_speech_prob: -0.01,
-          },
-        ],
-        text: "Chop the onion.",
-      },
-      {
-        segments: [
-          {
-            providerSecret: "must-not-escape",
-          },
-        ],
-        text: "Chop the onion.",
-      },
-      {
-        segments: [
-          {
-            providerSecret: null,
           },
         ],
         text: "Chop the onion.",

@@ -133,6 +133,18 @@ const replayRootMetadata = (
   return { platformRevision: 7 };
 };
 
+const replayNestedMetadata = (
+  instanceId: string
+): Readonly<Record<string, unknown>> =>
+  instanceId.includes("nested-metadata")
+    ? {
+        platformMetadata: {
+          attempt: 1,
+          region: "synthetic",
+        },
+      }
+    : {};
+
 const replayProviderFixture = (
   env: PostAcquisitionReplayTestEnv,
   instanceId: string
@@ -158,10 +170,12 @@ const replayProviderFixture = (
     raw: Effect.succeed({
       run: async () => {
         await Effect.runPromise(increment(env, instanceId, "provider-calls"));
+        const nestedMetadata = replayNestedMetadata(instanceId);
         return Response.json({
           ...replayRootMetadata(instanceId),
           segments: [
             {
+              ...nestedMetadata,
               avg_logprob: null,
               compression_ratio: null,
               end: null,
@@ -172,11 +186,19 @@ const replayProviderFixture = (
               temperature: null,
               text: null,
               tokens: [50_365, 50_817],
-              words: null,
+              words: instanceId.includes("nested-metadata")
+                ? [
+                    {
+                      ...nestedMetadata,
+                      word: "Chop",
+                    },
+                  ]
+                : null,
             },
           ],
           text: " \nChop the onion.\t ",
           transcription_info: {
+            ...nestedMetadata,
             duration: null,
             duration_after_vad: null,
             language: null,
