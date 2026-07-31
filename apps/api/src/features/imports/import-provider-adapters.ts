@@ -909,6 +909,33 @@ const canonicalizeRecipeTransportUsage = (value: unknown): unknown => {
   };
 };
 
+const canonicalizeUnwrappedRecipeSemantics = (
+  value: Record<string, unknown>,
+  keys: readonly string[]
+): unknown => {
+  if (keys.some((key) => RecipeTransportAuthorityKeys.has(key))) {
+    return rejectRecipeTransportRoot(
+      "provider_normalization_recipe_authority_conflict"
+    );
+  }
+  if (!Object.hasOwn(value, "usage")) {
+    return rejectRecipeTransportRoot(
+      "provider_normalization_recipe_semantics_schema_invalid"
+    );
+  }
+
+  const { usage, ...semantics } = value;
+  if (!isSchemaValidRecipeSemantics(semantics)) {
+    return rejectRecipeTransportRoot(
+      "provider_normalization_recipe_semantics_schema_invalid"
+    );
+  }
+  return {
+    response: semantics,
+    usage: canonicalizeRecipeTransportUsage(usage),
+  };
+};
+
 const canonicalizeRecipeTransportRoot = (value: unknown): unknown => {
   if (!isUnknownRecord(value)) {
     return value;
@@ -971,11 +998,7 @@ const canonicalizeRecipeTransportRoot = (value: unknown): unknown => {
     };
   }
   if (hasSemanticsSignal) {
-    return rejectRecipeTransportRoot(
-      keys.some((key) => RecipeTransportAuthorityKeys.has(key))
-        ? "provider_normalization_recipe_authority_conflict"
-        : "provider_normalization_recipe_semantics_schema_invalid"
-    );
+    return canonicalizeUnwrappedRecipeSemantics(value, keys);
   }
   return value;
 };
