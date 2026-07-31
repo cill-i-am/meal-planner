@@ -101,13 +101,32 @@ const gatewayClient = {
   raw: Effect.succeed({
     run: (model: unknown, body: unknown, options: unknown) => {
       gatewayRequests.push({ body, model, options });
-      return Promise.resolve({
-        response: {
-          observations: [],
-          outcome: "empty",
-        },
-        usage: { completion_tokens: 10, prompt_tokens: 20 },
-      });
+      return Promise.resolve(
+        Response.json({
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    function: {
+                      arguments: JSON.stringify({
+                        observations: [],
+                        outcome: "empty",
+                      }),
+                      name: "record_visual_evidence",
+                    },
+                    id: "visual-correlation-call-1",
+                    type: "function",
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { completion_tokens: 10, prompt_tokens: 20 },
+        })
+      );
     },
   }),
   run: () => Effect.die("universal AI Gateway dispatch must not be used"),

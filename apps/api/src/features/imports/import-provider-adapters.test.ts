@@ -5,7 +5,10 @@ import { TestClock } from "effect/testing";
 import { Tool } from "effect/unstable/ai";
 import { describe, expect, it, vi } from "vitest";
 
-import { pilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
+import {
+  isPilotProviderKnownZeroCostFailure,
+  pilotProviderKnownZeroCostFailure,
+} from "../pilots/pilot-provider-budget.js";
 import type { PilotProviderConservativeReplayValue } from "../pilots/pilot-provider-budget.js";
 import {
   ImportCorrelationId,
@@ -229,13 +232,6 @@ const validVisualSemantics = {
 } as const;
 
 const defaultVisualUsage = { completion_tokens: 10, prompt_tokens: 20 };
-const jsonModeResponse = (
-  value: unknown,
-  usage: unknown | null = defaultVisualUsage
-) => ({
-  response: value,
-  ...(usage === null ? {} : { usage }),
-});
 const toolResponse = (
   name: string,
   value: unknown,
@@ -2127,7 +2123,7 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(exit)).not.toContain("must-not-escape");
   });
 
-  it("maps an invalid JSON Mode envelope without payload data", async () => {
+  it("maps a missing visual forced-tool call without payload data", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
     const gateway = makeGateway({ providerSecret: "must-not-escape" });
     const adapter = await runFactory(
@@ -2158,7 +2154,7 @@ describe("installed import provider adapters", () => {
     );
 
     expect(exit._tag).toBe("Failure");
-    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(JSON.stringify(exit)).toContain("insufficient_evidence");
     expect(JSON.stringify(exit)).not.toContain("must-not-escape");
     expect(log.mock.calls).toEqual([
       [
@@ -2172,8 +2168,8 @@ describe("installed import provider adapters", () => {
       [
         {
           correlationId,
-          decodeReason: "json_mode_envelope_invalid",
-          decodeStage: "json_mode_envelope",
+          decodeReason: "forced_tool_missing",
+          decodeStage: "forced_tool_envelope",
           event: "provider.decode",
           outcome: "malformed",
           providerStage: "visual",
@@ -2184,15 +2180,91 @@ describe("installed import provider adapters", () => {
     log.mockRestore();
   });
 
-  it("keeps an installed visual provider rejection out of normalization telemetry", async () => {
+  it.each(["request-shape rejection", "model-agreement requirement"])(
+    "preserves an explicitly branded known-zero visual %s for guarded settlement",
+    async () => {
+      let reachedDispatchAsKnownZero = false;
+      const dispatch: ProviderDispatchGate = {
+        run: (input) =>
+          input.invoke.pipe(
+            // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed failure channel under test.
+            Effect.tapError((error) =>
+              Effect.sync(() => {
+                reachedDispatchAsKnownZero =
+                  isPilotProviderKnownZeroCostFailure(error);
+              })
+            ),
+            Effect.map(({ value }) => value)
+          ),
+      };
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledVisualEvidenceExtractor({
+          client: makeRejectedGateway(
+            pilotProviderKnownZeroCostFailure("provider_unavailable" as const)
+          ),
+          correlationId,
+          dispatch,
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.extract({
+          dispatchId: "visual:import-1:1",
+          frames: [
+            {
+              bytes: new Uint8Array([1, 2, 3]),
+              height: 1,
+              mimeType: "image/jpeg",
+              sha256: "a".repeat(64),
+              timestampMilliseconds: 0,
+              width: 1,
+            },
+          ],
+          generation: 1 as never,
+          importId: "import-1" as never,
+          sourceMediaSha256: "b".repeat(64),
+        })
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(JSON.stringify(exit)).toContain("provider_unavailable");
+      expect(reachedDispatchAsKnownZero).toBe(true);
+      expect(trace.events).toEqual([]);
+    }
+  );
+
+  it("does not infer known-zero visual settlement from unbranded provider status, code, or name fields", async () => {
+    let reachedDispatchAsKnownZero = false;
+    const dispatch: ProviderDispatchGate = {
+      run: (input) =>
+        input.invoke.pipe(
+          // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed failure channel under test.
+          Effect.tapError((error) =>
+            Effect.sync(() => {
+              reachedDispatchAsKnownZero =
+                isPilotProviderKnownZeroCostFailure(error);
+            })
+          ),
+          Effect.map(({ value }) => value)
+        ),
+    };
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: makeRejectedGateway(
-          pilotProviderKnownZeroCostFailure("provider_unavailable" as const)
-        ),
+        client: makeRejectedGateway({
+          _tag: "AiGatewayError",
+          cause: {
+            code: "model_agreement_required",
+            name: "request_shape_rejected",
+            providerSecret: "must-not-escape",
+            status: 400,
+          },
+          message: "providerSecret=must-not-escape",
+        }),
         correlationId,
-        dispatch: localDispatchGate,
+        dispatch,
       }),
       trace.service
     );
@@ -2218,10 +2290,12 @@ describe("installed import provider adapters", () => {
 
     expect(exit._tag).toBe("Failure");
     expect(JSON.stringify(exit)).toContain("provider_unavailable");
+    expect(JSON.stringify(exit)).not.toContain("must-not-escape");
+    expect(reachedDispatchAsKnownZero).toBe(false);
     expect(trace.events).toEqual([]);
   });
 
-  it("uses strict visual JSON Mode and injects trusted transport metadata", async () => {
+  it("uses the current Workers AI image-message forced-tool contract and injects trusted transport metadata", async () => {
     const visualSemantics = {
       observations: [
         {
@@ -2232,7 +2306,9 @@ describe("installed import provider adapters", () => {
       ],
       outcome: "found",
     } as const;
-    const gateway = makeGateway(jsonModeResponse(visualSemantics));
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", visualSemantics)
+    );
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
@@ -2302,13 +2378,22 @@ describe("installed import provider adapters", () => {
     expect(gateway.requests).toHaveLength(1);
     const request = gateway.requests[0] as {
       readonly body: {
-        readonly image: string;
-        readonly response_format: {
-          readonly json_schema: unknown;
-          readonly type: string;
-        };
         readonly messages: readonly {
-          readonly content: string;
+          readonly content: readonly [
+            { readonly text: string; readonly type: "text" },
+            {
+              readonly image_url: { readonly url: string };
+              readonly type: "image_url";
+            },
+          ];
+        }[];
+        readonly tool_choice: string;
+        readonly tools: readonly {
+          readonly function: {
+            readonly name: string;
+            readonly parameters: unknown;
+          };
+          readonly type: string;
         }[];
       };
       readonly model: string;
@@ -2329,23 +2414,27 @@ describe("installed import provider adapters", () => {
         id: "meal-planner-pilot-gaia-118",
         skipCache: true,
       },
+      returnRawResponse: true,
     });
     expect(request.options.gateway).not.toHaveProperty("metadata");
     expect(request.options).not.toHaveProperty("headers");
     expect(JSON.stringify(request.options)).not.toMatch(
       /AQID|data:image|https?:|cookie|credential|prompt|transcript/iu
     );
-    expect(request.body).not.toHaveProperty("tool_choice");
-    expect(request.body).not.toHaveProperty("tools");
+    expect(request.body.tool_choice).toBe("required");
+    expect(request.body.tools).toHaveLength(1);
+    expect(request.body.tools[0]?.function.name).toBe("record_visual_evidence");
     expect(request.body).not.toHaveProperty("stream");
-    expect(request.body.image).toBe("BAU=");
-    expect(request.body.messages[0]?.content).toContain(
+    expect(request.body).not.toHaveProperty("image");
+    expect(request.body).not.toHaveProperty("response_format");
+    expect(request.body.messages[0]?.content[0]?.text).toContain(
       "original source frameIndex is 1"
     );
-    expect(JSON.stringify(request.body.messages)).not.toContain("image_url");
-    expect(JSON.stringify(request.body.messages)).not.toContain("data:image");
-    expect(request.body.response_format.type).toBe("json_schema");
-    const jsonSchema = request.body.response_format.json_schema;
+    expect(request.body.messages[0]?.content[1]).toEqual({
+      image_url: { url: "data:image/jpeg;base64,BAU=" },
+      type: "image_url",
+    });
+    const jsonSchema = request.body.tools[0]?.function.parameters;
     expect(jsonSchema).toMatchObject({
       additionalProperties: false,
       properties: {
@@ -2409,8 +2498,10 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(trace.events)).not.toContain("BAU=");
   });
 
-  it("accepts the documented Workers AI JSON Mode response envelope", async () => {
-    const gateway = makeGateway(jsonModeResponse(validVisualSemantics));
+  it("accepts the documented Workers AI forced-tool response envelope", async () => {
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", validVisualSemantics)
+    );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
@@ -2876,7 +2967,9 @@ describe("installed import provider adapters", () => {
   );
 
   it("rejects model attempts to inject visual transport metadata", async () => {
-    const gateway = makeGateway(jsonModeResponse(validVisual));
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", validVisual)
+    );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
@@ -2909,10 +3002,13 @@ describe("installed import provider adapters", () => {
   });
 
   it.each([
-    ["prose instead of a structured object", jsonModeResponse("{not-json")],
+    [
+      "prose instead of a structured object",
+      toolResponse("record_visual_evidence", "{not-json"),
+    ],
     [
       "model-owned trusted fields",
-      jsonModeResponse({
+      toolResponse("record_visual_evidence", {
         observations: [
           {
             confidence: 0.9,
@@ -2926,14 +3022,14 @@ describe("installed import provider adapters", () => {
     ],
     [
       "out-of-range frame references",
-      jsonModeResponse({
+      toolResponse("record_visual_evidence", {
         observations: [{ confidence: 0.9, frameIndex: 1, text: "2 onions" }],
         outcome: "found",
       }),
     ],
     [
       "contradictory outcomes",
-      jsonModeResponse({
+      toolResponse("record_visual_evidence", {
         observations: [{ confidence: 0.9, frameIndex: 0, text: "2 onions" }],
         outcome: "empty",
       }),
@@ -3028,18 +3124,7 @@ describe("installed import provider adapters", () => {
       },
     ],
     [
-      "an unexpected forced tool",
-      {
-        tool_calls: [
-          {
-            arguments: validVisualSemantics,
-            name: "provider-private-canary",
-          },
-        ],
-      },
-    ],
-    [
-      "conflicting native and OpenAI tool-call mirrors",
+      "an extra OpenAI tool call",
       {
         choices: [
           {
@@ -3051,26 +3136,50 @@ describe("installed import provider adapters", () => {
                     arguments: JSON.stringify(validVisualSemantics),
                     name: "record_visual_evidence",
                   },
-                  id: "provider-private-canary",
+                  type: "function",
+                },
+                {
+                  function: {
+                    arguments: JSON.stringify(validVisualSemantics),
+                    name: "record_visual_evidence",
+                  },
                   type: "function",
                 },
               ],
             },
           },
         ],
-        tool_calls: [
+      },
+    ],
+    [
+      "a valid OpenAI tool call beside a malformed nameless call",
+      {
+        choices: [
           {
-            arguments: {
-              observations: [],
-              outcome: "not_found",
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify(validVisualSemantics),
+                    name: "record_visual_evidence",
+                  },
+                  type: "function",
+                },
+                {
+                  function: {
+                    arguments: "{}",
+                  },
+                  type: "function",
+                },
+              ],
             },
-            name: "record_visual_evidence",
           },
         ],
       },
     ],
     [
-      "an extra OpenAI tool call in another choice",
+      "an extra authoritative OpenAI choice",
       {
         choices: [
           {
@@ -3161,16 +3270,19 @@ describe("installed import provider adapters", () => {
   );
 
   it.each([
-    ["absent", jsonModeResponse(validVisualSemantics, null)],
+    [
+      "absent",
+      toolResponse("record_visual_evidence", validVisualSemantics, null),
+    ],
     [
       "zero",
-      jsonModeResponse(validVisualSemantics, {
+      toolResponse("record_visual_evidence", validVisualSemantics, {
         completion_tokens: 0,
         prompt_tokens: 0,
       }),
     ],
   ])(
-    "settles %s visual usage at the bounded maximum without claiming known provider spend",
+    "settles %s visual usage at the bounded safety maximum",
     async (_label, response) => {
       const costs: (
         | {
@@ -3230,7 +3342,9 @@ describe("installed import provider adapters", () => {
   );
 
   it("rejects an empty visual dispatch before the provider boundary", async () => {
-    const gateway = makeGateway(jsonModeResponse(validVisualSemantics));
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", validVisualSemantics)
+    );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
         client: gateway.client,
