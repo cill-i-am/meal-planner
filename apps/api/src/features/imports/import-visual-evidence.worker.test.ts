@@ -379,7 +379,7 @@ const makeVisualFixture = (outcome: "empty" | "found" | "low_confidence") =>
           ],
     outcome,
     provider: "deterministic_fake",
-    usage: { inputBytes: 9, inputFrames: 2, modelCalls: 1 },
+    usage: { inputBytes: 5, inputFrames: 1, modelCalls: 1 },
   });
 
 const unresolvedRecipeFact = (reason: string) => ({
@@ -1318,7 +1318,7 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
       observations: [],
       outcome: "empty",
       provider: "deterministic_fake",
-      usage: { inputBytes: 9, inputFrames: 2, modelCalls: 1 },
+      usage: { inputBytes: 5, inputFrames: 1, modelCalls: 1 },
     });
     const extractor: VisualEvidenceExtractorShape = {
       extract: (input) =>

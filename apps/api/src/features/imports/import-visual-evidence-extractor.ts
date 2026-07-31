@@ -122,14 +122,21 @@ export const VisualEvidenceSemantics = Schema.Struct({
 );
 export type VisualEvidenceSemantics = typeof VisualEvidenceSemantics.Type;
 
-/** Build model semantics whose frame references are bounded by this dispatch. */
-export const visualEvidenceSemanticsForFrameCount = (frameCount: number) =>
+/** Pick one stable source frame for the native single-image vision request. */
+export const representativeVisualFrameIndex = (frameCount: number) =>
+  Math.floor(frameCount / 2);
+
+/** Build model semantics constrained to the submitted source frame. */
+export const visualEvidenceSemanticsForFrameIndex = (frameIndex: number) =>
   Schema.Struct({
     observations: Schema.Array(
       Schema.Struct({
         confidence: UnitInterval,
         frameIndex: SafeInteger.pipe(
-          Schema.check(Schema.isLessThanOrEqualTo(Math.max(0, frameCount - 1)))
+          Schema.check(
+            Schema.isGreaterThanOrEqualTo(frameIndex),
+            Schema.isLessThanOrEqualTo(frameIndex)
+          )
         ),
         text: VisualEvidenceSemanticObservation.fields.text,
       })

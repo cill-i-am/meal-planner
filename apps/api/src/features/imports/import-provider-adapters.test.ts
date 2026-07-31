@@ -2263,6 +2263,14 @@ describe("installed import provider adapters", () => {
             timestampMilliseconds: 500,
             width: 1,
           },
+          {
+            bytes: new Uint8Array([6]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "d".repeat(64),
+            timestampMilliseconds: 750,
+            width: 1,
+          },
         ],
         generation: 1 as never,
         importId: "import-1" as never,
@@ -2289,17 +2297,18 @@ describe("installed import provider adapters", () => {
       ],
       outcome: "found",
       provider: "cloudflare-workers-ai",
-      usage: { inputBytes: 5, inputFrames: 2, modelCalls: 1 },
+      usage: { inputBytes: 2, inputFrames: 1, modelCalls: 1 },
     });
     expect(gateway.requests).toHaveLength(1);
     const request = gateway.requests[0] as {
       readonly body: {
+        readonly image: string;
         readonly response_format: {
           readonly json_schema: unknown;
           readonly type: string;
         };
         readonly messages: readonly {
-          readonly content: readonly { readonly type: string }[];
+          readonly content: string;
         }[];
       };
       readonly model: string;
@@ -2329,11 +2338,12 @@ describe("installed import provider adapters", () => {
     expect(request.body).not.toHaveProperty("tool_choice");
     expect(request.body).not.toHaveProperty("tools");
     expect(request.body).not.toHaveProperty("stream");
-    expect(request.body.messages[0]?.content.map(({ type }) => type)).toEqual([
-      "text",
-      "image_url",
-      "image_url",
-    ]);
+    expect(request.body.image).toBe("BAU=");
+    expect(request.body.messages[0]?.content).toContain(
+      "original source frameIndex is 1"
+    );
+    expect(JSON.stringify(request.body.messages)).not.toContain("image_url");
+    expect(JSON.stringify(request.body.messages)).not.toContain("data:image");
     expect(request.body.response_format.type).toBe("json_schema");
     const jsonSchema = request.body.response_format.json_schema;
     expect(jsonSchema).toMatchObject({
@@ -2367,7 +2377,7 @@ describe("installed import provider adapters", () => {
       type: "integer",
     });
     expect(JSON.stringify(observationItems.properties["frameIndex"])).toMatch(
-      /"minimum":0/u
+      /"minimum":1/u
     );
     expect(JSON.stringify(observationItems.properties["frameIndex"])).toMatch(
       /"maximum":1/u
@@ -2396,6 +2406,7 @@ describe("installed import provider adapters", () => {
       },
     ]);
     expect(JSON.stringify(trace.events)).not.toContain("2 onions");
+    expect(JSON.stringify(trace.events)).not.toContain("BAU=");
   });
 
   it("accepts the documented Workers AI JSON Mode response envelope", async () => {

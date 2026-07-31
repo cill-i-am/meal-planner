@@ -52,10 +52,13 @@ import type {
 import { SpeechTranscript } from "./import-speech-transcriber.js";
 import type {
   VisualEvidenceExtractionFailure,
-  VisualEvidenceExtractionInput,
   VisualEvidenceExtractorShape,
+  VisualFrameArtifact,
 } from "./import-visual-evidence-extractor.js";
-import { visualEvidenceSemanticsForFrameCount } from "./import-visual-evidence-extractor.js";
+import {
+  representativeVisualFrameIndex,
+  visualEvidenceSemanticsForFrameIndex,
+} from "./import-visual-evidence-extractor.js";
 
 const ProviderName = "cloudflare-workers-ai" as const;
 export const InstalledSpeechModel =
@@ -553,27 +556,19 @@ const encodeBase64 = (bytes: Uint8Array) => {
 };
 
 const visualJsonModeRequest = (
-  input: VisualEvidenceExtractionInput,
+  frame: VisualFrameArtifact,
+  frameIndex: number,
   jsonSchema: unknown
 ) => ({
+  image: encodeBase64(frame.bytes),
   max_tokens: 8192,
   messages: [
     {
-      content: [
-        {
-          text:
-            "Record only visible text in these ordered source images. " +
-            "Each image position is its zero-based frameIndex. " +
-            "Do not infer ingredients, quantities, steps, or other unseen facts.",
-          type: "text" as const,
-        },
-        ...input.frames.map((frame) => ({
-          image_url: {
-            url: `data:${frame.mimeType};base64,${encodeBase64(frame.bytes)}`,
-          },
-          type: "image_url" as const,
-        })),
-      ],
+      content:
+        "Record only visible text in the provided source image. " +
+        `Its zero-based original source frameIndex is ${frameIndex}. ` +
+        "Every observation must use exactly that frameIndex. " +
+        "Do not infer ingredients, quantities, steps, or other unseen facts.",
       role: "user" as const,
     },
   ],
@@ -844,10 +839,17 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                 dispatchId: request.dispatchId,
                 invoke: failAfter(
                   Effect.gen(function* invokeVisualJsonMode() {
-                    const semanticsSchema =
-                      visualEvidenceSemanticsForFrameCount(
-                        request.frames.length
+                    const frameIndex = representativeVisualFrameIndex(
+                      request.frames.length
+                    );
+                    const frame = request.frames[frameIndex];
+                    if (frame === undefined) {
+                      return yield* Effect.fail(
+                        "insufficient_evidence" as const
                       );
+                    }
+                    const semanticsSchema =
+                      visualEvidenceSemanticsForFrameIndex(frameIndex);
                     const result = yield* Effect.tryPromise({
                       catch: (error) => error,
                       try: async () => {
@@ -856,7 +858,8 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                             ai,
                             model,
                             visualJsonModeRequest(
-                              request,
+                              frame,
+                              frameIndex,
                               Tool.getJsonSchemaFromSchema(semanticsSchema)
                             ),
                             gatewayId
@@ -890,8 +893,9 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                       );
                     const observations = yield* Effect.all(
                       value.observations.map((observation) => {
-                        const frame = request.frames[observation.frameIndex];
-                        return frame === undefined
+                        const observationFrame =
+                          request.frames[observation.frameIndex];
+                        return observationFrame === undefined
                           ? Effect.fail("malformed_response" as const)
                           : Effect.succeed({
                               ...observation,
@@ -905,7 +909,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                                 },
                               ] as const,
                               timestampMilliseconds:
-                                frame.timestampMilliseconds,
+                                observationFrame.timestampMilliseconds,
                             });
                       })
                     );
@@ -941,11 +945,8 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                         outcome: value.outcome,
                         provider: ProviderName,
                         usage: {
-                          inputBytes: request.frames.reduce(
-                            (total, frame) => total + frame.bytes.byteLength,
-                            0
-                          ),
-                          inputFrames: request.frames.length,
+                          inputBytes: frame.bytes.byteLength,
+                          inputFrames: 1 as const,
                           modelCalls: 1 as const,
                         },
                       },
