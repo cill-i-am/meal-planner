@@ -29,6 +29,7 @@ import {
 import type {
   ImportCorrelationId,
   ImportObservabilityTraceStoreShape,
+  ProviderDecodeReason,
   SpeechEnvelopeFailure,
   SpeechEnvelopeFamily,
   SpeechEnvelopeUnsupportedLocation,
@@ -80,6 +81,20 @@ const ProviderTransportUnavailableMessage =
   "provider_transport_unavailable" as const;
 const ProviderNormalizationInvalidMessage =
   "provider_normalization_invalid" as const;
+const ProviderNormalizationRecipeDecodeReasons = [
+  "provider_normalization_recipe_arguments_ambiguous",
+  "provider_normalization_recipe_arguments_missing",
+  "provider_normalization_recipe_arguments_schema_invalid",
+  "provider_normalization_recipe_authority_conflict",
+  "provider_normalization_recipe_metadata_invalid",
+  "provider_normalization_recipe_semantics_schema_invalid",
+  "provider_normalization_recipe_tool_name_invalid",
+] as const satisfies readonly ProviderDecodeReason[];
+type ProviderNormalizationRecipeDecodeReason =
+  (typeof ProviderNormalizationRecipeDecodeReasons)[number];
+const ProviderNormalizationRecipeDecodeReasonSet = new Set<string>(
+  ProviderNormalizationRecipeDecodeReasons
+);
 const ProviderKnownZeroSetupFailureMessage =
   "provider_known_zero_setup_failure" as const;
 
@@ -353,23 +368,44 @@ const recipeConservativeReplay = (
     }),
 });
 
-const hasProviderErrorDescription = (
-  error: unknown,
-  description: string
-): boolean => {
+const providerErrorDescription = (error: unknown): string | undefined => {
   if (typeof error !== "object" || error === null) {
-    return false;
+    return undefined;
   }
   const record = error as Record<string, unknown>;
   const reason =
     typeof record["reason"] === "object" && record["reason"] !== null
       ? (record["reason"] as Record<string, unknown>)
       : record;
-  return reason["description"] === description;
+  return typeof reason["description"] === "string"
+    ? reason["description"]
+    : undefined;
+};
+
+const hasProviderErrorDescription = (
+  error: unknown,
+  description: string
+): boolean => providerErrorDescription(error) === description;
+
+const providerNormalizationDecodeReason = (
+  error: unknown
+): ProviderDecodeReason | undefined => {
+  const description = providerErrorDescription(error);
+  if (description === ProviderNormalizationInvalidMessage) {
+    return ProviderNormalizationInvalidMessage;
+  }
+  const prefix = `${ProviderNormalizationInvalidMessage}:`;
+  if (description?.startsWith(prefix) !== true) {
+    return undefined;
+  }
+  const reason = description.slice(prefix.length);
+  return ProviderNormalizationRecipeDecodeReasonSet.has(reason)
+    ? (reason as ProviderNormalizationRecipeDecodeReason)
+    : undefined;
 };
 
 const isProviderNormalizationFailure = (error: unknown): boolean =>
-  hasProviderErrorDescription(error, ProviderNormalizationInvalidMessage);
+  providerNormalizationDecodeReason(error) !== undefined;
 
 export const failAfter = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
@@ -447,11 +483,12 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     // Effect error channel but must not be represented as decode evidence.
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
     Effect.tapError((error) => {
-      if (isProviderNormalizationFailure(error)) {
+      const decodeReason = providerNormalizationDecodeReason(error);
+      if (decodeReason !== undefined) {
         return emitImportObservabilityEvent(
           {
             correlationId: observability.correlationId,
-            decodeReason: "provider_normalization_invalid",
+            decodeReason,
             decodeStage: "provider_normalization",
             event: "provider.decode",
             outcome: "malformed",
@@ -794,11 +831,83 @@ const sameRawToolAuthority = (left: RawToolCall, right: RawToolCall): boolean =>
 const RecipeSemanticsKeys = new Set(
   Object.keys(RecipeExtractionSemantics.fields)
 );
+const RecipeTransportAuthorityKeys = new Set([
+  "arguments",
+  "choices",
+  "parameters",
+  "response",
+  "tool_calls",
+]);
+const RecipeTransportRootKeys = new Set([
+  "arguments",
+  "name",
+  "parameters",
+  "usage",
+]);
+const RecipeTransportTokenCount = Schema.Int.pipe(
+  Schema.check(
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+  )
+);
+const RecipeTransportUsage = Schema.Struct({
+  completion_tokens: RecipeTransportTokenCount,
+  prompt_tokens: RecipeTransportTokenCount,
+  prompt_tokens_details: Schema.optionalKey(
+    Schema.Struct({ cached_tokens: RecipeTransportTokenCount })
+  ),
+  total_tokens: RecipeTransportTokenCount,
+});
+const decodeRecipeTransportUsage = Schema.decodeUnknownOption(
+  RecipeTransportUsage,
+  { onExcessProperty: "error" }
+);
+
+class ProviderNormalizationRejectionError extends Error {
+  constructor(decodeReason: ProviderNormalizationRecipeDecodeReason) {
+    super(`${ProviderNormalizationInvalidMessage}:${decodeReason}`);
+    this.name = "ProviderNormalizationRejectionError";
+  }
+}
+
+const rejectRecipeTransportRoot = (
+  decodeReason: ProviderNormalizationRecipeDecodeReason
+): never => {
+  throw new ProviderNormalizationRejectionError(decodeReason);
+};
 
 const isSchemaValidRecipeSemantics = (value: unknown): boolean =>
   Schema.decodeUnknownResult(RecipeExtractionSemantics, {
     onExcessProperty: "error",
   })(value)._tag === "Success";
+
+const canonicalizeRecipeTransportUsage = (value: unknown): unknown => {
+  const usage = Option.getOrUndefined(decodeRecipeTransportUsage(value));
+  const expectedTotalTokens =
+    usage === undefined
+      ? undefined
+      : usage.prompt_tokens + usage.completion_tokens;
+  if (
+    usage === undefined ||
+    !Number.isSafeInteger(expectedTotalTokens) ||
+    usage.total_tokens !== expectedTotalTokens
+  ) {
+    return rejectRecipeTransportRoot(
+      "provider_normalization_recipe_metadata_invalid"
+    );
+  }
+  return {
+    completion_tokens: usage.completion_tokens,
+    prompt_tokens: usage.prompt_tokens,
+    ...(usage.prompt_tokens_details === undefined
+      ? {}
+      : {
+          prompt_tokens_details: {
+            cached_tokens: usage.prompt_tokens_details.cached_tokens,
+          },
+        }),
+  };
+};
 
 const canonicalizeRecipeTransportRoot = (value: unknown): unknown => {
   if (!isUnknownRecord(value)) {
@@ -815,24 +924,58 @@ const canonicalizeRecipeTransportRoot = (value: unknown): unknown => {
     hasArguments || hasParameters || value["name"] === "record_recipe";
   const hasSemanticsSignal = keys.some((key) => RecipeSemanticsKeys.has(key));
   if (hasCallSignal) {
-    const exactKeys =
-      keys.length === 2 &&
-      Object.hasOwn(value, "name") &&
-      hasArguments !== hasParameters;
+    if (value["name"] !== "record_recipe") {
+      return rejectRecipeTransportRoot(
+        "provider_normalization_recipe_tool_name_invalid"
+      );
+    }
+    if (!hasArguments && !hasParameters) {
+      return rejectRecipeTransportRoot(
+        "provider_normalization_recipe_arguments_missing"
+      );
+    }
+    if (hasArguments && hasParameters) {
+      return rejectRecipeTransportRoot(
+        "provider_normalization_recipe_arguments_ambiguous"
+      );
+    }
+    const unsupportedKeys = keys.filter(
+      (key) => !RecipeTransportRootKeys.has(key)
+    );
+    if (unsupportedKeys.length > 0) {
+      return rejectRecipeTransportRoot(
+        unsupportedKeys.some((key) => RecipeTransportAuthorityKeys.has(key))
+          ? "provider_normalization_recipe_authority_conflict"
+          : "provider_normalization_recipe_metadata_invalid"
+      );
+    }
+    const hasUsage = Object.hasOwn(value, "usage");
     const argumentsValue = hasArguments
       ? value["arguments"]
       : value["parameters"];
-    if (
-      exactKeys &&
-      value["name"] === "record_recipe" &&
-      isSchemaValidRecipeSemantics(argumentsValue)
-    ) {
-      return { response: value };
+    if (!isSchemaValidRecipeSemantics(argumentsValue)) {
+      return rejectRecipeTransportRoot(
+        "provider_normalization_recipe_arguments_schema_invalid"
+      );
     }
-    throw new Error(ProviderNormalizationInvalidMessage);
+    return {
+      response: {
+        ...(hasArguments
+          ? { arguments: argumentsValue }
+          : { parameters: argumentsValue }),
+        name: "record_recipe",
+      },
+      ...(hasUsage
+        ? { usage: canonicalizeRecipeTransportUsage(value["usage"]) }
+        : {}),
+    };
   }
   if (hasSemanticsSignal) {
-    throw new Error(ProviderNormalizationInvalidMessage);
+    return rejectRecipeTransportRoot(
+      keys.some((key) => RecipeTransportAuthorityKeys.has(key))
+        ? "provider_normalization_recipe_authority_conflict"
+        : "provider_normalization_recipe_semantics_schema_invalid"
+    );
   }
   return value;
 };
@@ -951,10 +1094,14 @@ const withProviderNormalizationBoundary = (
             return normalizeRawToolShape(
               canonicalizeProviderTransportRoot(raw, providerStage)
             );
-          } catch {
+          } catch (error) {
             // Provider payloads and parser details must not cross the
             // observability boundary. Alchemy preserves this closed
             // description inside its typed AiError.UnknownError.
+            if (error instanceof ProviderNormalizationRejectionError) {
+              throw error;
+            }
+            // eslint-disable-next-line preserve-caught-error -- Provider payloads and parser details must not cross this privacy boundary, including as Error.cause.
             throw new Error(ProviderNormalizationInvalidMessage);
           }
         };

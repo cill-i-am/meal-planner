@@ -262,7 +262,11 @@ const validVisualSemantics = {
   outcome: "empty",
 } as const;
 
-const defaultVisualUsage = { completion_tokens: 10, prompt_tokens: 20 };
+const defaultVisualUsage = {
+  completion_tokens: 10,
+  prompt_tokens: 20,
+  total_tokens: 30,
+};
 const toolResponse = (
   name: string,
   value: unknown,
@@ -2788,11 +2792,162 @@ describe("installed import provider adapters", () => {
 
   it.each([
     [
+      "parameters",
+      {
+        name: "record_recipe",
+        parameters: validRecipeSemantics,
+        usage: defaultVisualUsage,
+      },
+    ],
+    [
+      "arguments",
+      {
+        arguments: validRecipeSemantics,
+        name: "record_recipe",
+        usage: {
+          ...defaultVisualUsage,
+          prompt_tokens_details: { cached_tokens: 5 },
+        },
+      },
+    ],
+  ] as const)(
+    "accepts one named recipe call with %s and allowlisted usage metadata",
+    async (_label, response) => {
+      const { exit, trace } = await runRecipeTransportRoot(response);
+
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: {
+          ...validRecipeSemantics,
+          usage: {
+            inputTokens: 20,
+            outputTokens: 10,
+          },
+        },
+      });
+      expect(trace.events).toEqual([
+        {
+          correlationId,
+          event: "provider.response",
+          outcome: "received",
+          providerStage: "recipe",
+        },
+        {
+          correlationId,
+          event: "provider.decode",
+          outcome: "succeeded",
+          providerStage: "recipe",
+        },
+      ]);
+    }
+  );
+
+  it.each([
+    ["a non-object usage container", "provider-private-canary"],
+    [
+      "a non-numeric prompt token count",
+      {
+        completion_tokens: 10,
+        prompt_tokens: "provider-private-canary",
+        total_tokens: 30,
+      },
+    ],
+    [
+      "a non-numeric completion token count",
+      {
+        completion_tokens: "provider-private-canary",
+        prompt_tokens: 20,
+        total_tokens: 30,
+      },
+    ],
+    [
+      "a missing total token count",
+      { completion_tokens: 10, prompt_tokens: 20 },
+    ],
+    [
+      "a non-numeric total token count",
+      {
+        completion_tokens: 10,
+        prompt_tokens: 20,
+        total_tokens: "provider-private-canary",
+      },
+    ],
+    [
+      "a negative total token count",
+      { completion_tokens: 10, prompt_tokens: 20, total_tokens: -1 },
+    ],
+    [
+      "a fractional total token count",
+      { completion_tokens: 10, prompt_tokens: 20, total_tokens: 30.5 },
+    ],
+    [
+      "an inconsistent total token count",
+      { completion_tokens: 10, prompt_tokens: 20, total_tokens: 31 },
+    ],
+    [
+      "an excess usage field",
+      {
+        ...defaultVisualUsage,
+        provider_private_canary: "provider-private-canary",
+      },
+    ],
+    [
+      "a non-object prompt token detail container",
+      {
+        ...defaultVisualUsage,
+        prompt_tokens_details: "provider-private-canary",
+      },
+    ],
+    [
+      "a non-numeric cached token count",
+      {
+        ...defaultVisualUsage,
+        prompt_tokens_details: { cached_tokens: "provider-private-canary" },
+      },
+    ],
+    [
+      "an excess prompt token detail field",
+      {
+        ...defaultVisualUsage,
+        prompt_tokens_details: {
+          cached_tokens: 5,
+          provider_private_canary: "provider-private-canary",
+        },
+      },
+    ],
+  ] as const)(
+    "fails closed through the public installed recipe extractor for %s",
+    async (_label, usage) => {
+      const { exit, trace } = await runRecipeTransportRoot({
+        name: "record_recipe",
+        parameters: validRecipeSemantics,
+        usage,
+      });
+
+      expect(exit._tag).toBe("Failure");
+      expect(JSON.stringify(exit)).toContain("malformed_response");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason: "provider_normalization_recipe_metadata_invalid",
+        decodeStage: "provider_normalization",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "recipe",
+      });
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+        "provider-private-canary"
+      );
+    }
+  );
+
+  it.each([
+    [
       "a wrong call name",
       {
         name: "record_visual_evidence",
         parameters: validRecipeSemantics,
       },
+      "provider_normalization_recipe_tool_name_invalid",
     ],
     [
       "both call argument fields",
@@ -2801,6 +2956,7 @@ describe("installed import provider adapters", () => {
         name: "record_recipe",
         parameters: validRecipeSemantics,
       },
+      "provider_normalization_recipe_arguments_ambiguous",
     ],
     [
       "an excess call field",
@@ -2808,7 +2964,9 @@ describe("installed import provider adapters", () => {
         id: "provider-private-canary",
         name: "record_recipe",
         parameters: validRecipeSemantics,
+        usage: defaultVisualUsage,
       },
+      "provider_normalization_recipe_metadata_invalid",
     ],
     [
       "malformed recipe arguments",
@@ -2819,14 +2977,28 @@ describe("installed import provider adapters", () => {
           unexpected: "provider-private-canary",
         },
       },
+      "provider_normalization_recipe_arguments_schema_invalid",
     ],
-    ["missing recipe arguments", { name: "record_recipe" }],
+    [
+      "missing recipe arguments",
+      { name: "record_recipe" },
+      "provider_normalization_recipe_arguments_missing",
+    ],
     [
       "recipe semantics mixed with a transport authority",
       {
         ...validRecipeSemantics,
         response: "provider-private-canary",
       },
+      "provider_normalization_recipe_authority_conflict",
+    ],
+    [
+      "malformed unwrapped recipe semantics",
+      {
+        ...validRecipeSemantics,
+        unexpected: "provider-private-canary",
+      },
+      "provider_normalization_recipe_semantics_schema_invalid",
     ],
     [
       "multiple recipe authorities",
@@ -2840,17 +3012,18 @@ describe("installed import provider adapters", () => {
           },
         ],
       },
+      "provider_normalization_recipe_authority_conflict",
     ],
   ] as const)(
     "fails closed for %s at the raw recipe transport root",
-    async (_label, response) => {
+    async (_label, response, decodeReason) => {
       const { exit, trace } = await runRecipeTransportRoot(response);
 
       expect(exit._tag).toBe("Failure");
       expect(JSON.stringify(exit)).toContain("malformed_response");
       expect(trace.events.at(-1)).toEqual({
         correlationId,
-        decodeReason: "provider_normalization_invalid",
+        decodeReason,
         decodeStage: "provider_normalization",
         event: "provider.decode",
         outcome: "malformed",

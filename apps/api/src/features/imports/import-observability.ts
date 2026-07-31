@@ -64,6 +64,13 @@ export const ProviderDecodeReason = Schema.Literals([
   "json_mode_envelope_invalid",
   "json_mode_schema_invalid",
   "provider_normalization_invalid",
+  "provider_normalization_recipe_arguments_ambiguous",
+  "provider_normalization_recipe_arguments_missing",
+  "provider_normalization_recipe_arguments_schema_invalid",
+  "provider_normalization_recipe_authority_conflict",
+  "provider_normalization_recipe_metadata_invalid",
+  "provider_normalization_recipe_semantics_schema_invalid",
+  "provider_normalization_recipe_tool_name_invalid",
   "speech_envelope_schema_invalid",
   "speech_transcript_normalization_invalid",
 ]);
