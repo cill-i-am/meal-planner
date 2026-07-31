@@ -367,9 +367,29 @@ const installedSpeechDispatch = (
 const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
   Effect.gen(function* runBudgetedComposition() {
     const responses = [
-      {
-        response: { observations: [], outcome: "empty" },
-      },
+      Response.json({
+        choices: [
+          {
+            finish_reason: "tool_calls",
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify({
+                      observations: [],
+                      outcome: "empty",
+                    }),
+                    name: "record_visual_evidence",
+                  },
+                  id: "visual-call-1",
+                  type: "function",
+                },
+              ],
+            },
+          },
+        ],
+      }),
     ];
     let providerCalls = 0;
     const client = {
@@ -379,22 +399,8 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
         run: (
           _model: unknown,
           _body: unknown,
-          options: unknown
-        ): Promise<unknown> => {
-          if (
-            JSON.stringify(options) !==
-            JSON.stringify({
-              gateway: {
-                collectLog: false,
-                id: "meal-planner-pilot-gaia-118",
-                skipCache: true,
-              },
-            })
-          ) {
-            return Promise.reject(
-              new Error("Gateway logging was not disabled")
-            );
-          }
+          _options: unknown
+        ): Promise<Response> => {
           providerCalls += 1;
           const response = responses.shift();
           return response === undefined
@@ -427,22 +433,26 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
     });
     const importId = decodeImportId("00000000-0000-4000-8000-000000000199");
     const generation = decodeGeneration(1);
-    const visualOutput = yield* visual.extract({
-      dispatchId: "visual:gaia-199:1",
-      frames: [
-        {
-          bytes: new Uint8Array([1, 2, 3]),
-          height: 1,
-          mimeType: "image/jpeg",
-          sha256: "a".repeat(64),
-          timestampMilliseconds: 0,
-          width: 1,
-        },
-      ],
-      generation,
-      importId,
-      sourceMediaSha256: "b".repeat(64),
-    });
+    const visualOutput = yield* visual
+      .extract({
+        dispatchId: "visual:gaia-199:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 0,
+            width: 1,
+          },
+        ],
+        generation,
+        importId,
+        sourceMediaSha256: "b".repeat(64),
+      })
+      .pipe(
+        Effect.mapError((error) => new Error(`visual:${JSON.stringify(error)}`))
+      );
     const recipeResult = yield* dispatch.run({
       dispatchId: `recipe:${importId}:${generation}:gaia-199-evidence`,
       invoke: Effect.sync(() => {
@@ -522,7 +532,7 @@ const visualTerminalRecoveryDispatch = (
           _model: unknown,
           _body: unknown,
           options: unknown
-        ): Promise<unknown> => {
+        ): Promise<Response> => {
           if (
             JSON.stringify(options) !==
             JSON.stringify({
@@ -531,6 +541,7 @@ const visualTerminalRecoveryDispatch = (
                 id: "meal-planner-pilot-gaia-118",
                 skipCache: true,
               },
+              returnRawResponse: true,
             })
           ) {
             throw new Error("Gateway logging was not disabled");
@@ -538,9 +549,29 @@ const visualTerminalRecoveryDispatch = (
           await Effect.runPromise(
             increment(env, instanceId, "visual-provider-calls")
           );
-          return {
-            response: { observations: [], outcome: "empty" },
-          };
+          return Response.json({
+            choices: [
+              {
+                finish_reason: "tool_calls",
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      function: {
+                        arguments: JSON.stringify({
+                          observations: [],
+                          outcome: "empty",
+                        }),
+                        name: "record_visual_evidence",
+                      },
+                      id: "visual-call-1",
+                      type: "function",
+                    },
+                  ],
+                },
+              },
+            ],
+          });
         },
       }),
       run: () => Effect.die("universal AI Gateway dispatch must not be used"),

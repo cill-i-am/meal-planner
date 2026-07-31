@@ -11,6 +11,7 @@ import {
   PilotBudgetProviderStageId,
   PilotProviderBudgetRuntime,
   isPilotProviderKnownZeroCostFailure,
+  pilotProviderKnownZeroCostFailure,
   runPilotProviderDispatch,
 } from "../pilots/pilot-provider-budget.js";
 import type {
@@ -76,6 +77,8 @@ const ProviderTransportUnavailableMessage =
   "provider_transport_unavailable" as const;
 const ProviderNormalizationInvalidMessage =
   "provider_normalization_invalid" as const;
+const ProviderKnownZeroSetupFailureMessage =
+  "provider_known_zero_setup_failure" as const;
 
 type SafeProviderFailureCode =
   | "insufficient_evidence"
@@ -413,7 +416,8 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     readonly outputTokens: number | undefined;
     readonly value: S["Type"];
   },
-  SafeProviderFailureCode,
+  | SafeProviderFailureCode
+  | PilotProviderKnownZeroCostFailure<SafeProviderFailureCode>,
   S["DecodingServices"]
 > => {
   const tool = Tool.dynamic(input.name, {
@@ -458,6 +462,13 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     Effect.mapError((error) => {
       if (typeof error === "string") {
         return error;
+      }
+      if (
+        hasProviderErrorDescription(error, ProviderKnownZeroSetupFailureMessage)
+      ) {
+        return pilotProviderKnownZeroCostFailure(
+          "provider_unavailable" as const
+        );
       }
       return safeFailureCode(Cause.fail(error));
     }),
@@ -555,29 +566,29 @@ const encodeBase64 = (bytes: Uint8Array) => {
   return btoa(binary);
 };
 
-const visualJsonModeRequest = (
+const visualPrompt = (
   frame: VisualFrameArtifact,
-  frameIndex: number,
-  jsonSchema: unknown
-) => ({
-  image: encodeBase64(frame.bytes),
-  max_tokens: 8192,
-  messages: [
-    {
-      content:
-        "Record only visible text in the provided source image. " +
-        `Its zero-based original source frameIndex is ${frameIndex}. ` +
-        "Every observation must use exactly that frameIndex. " +
-        "Do not infer ingredients, quantities, steps, or other unseen facts.",
-      role: "user" as const,
-    },
-  ],
-  response_format: {
-    json_schema: jsonSchema,
-    type: "json_schema" as const,
+  frameIndex: number
+): Prompt.RawInput => [
+  {
+    content: [
+      {
+        text:
+          "Record only visible text in the provided source image. " +
+          `Its zero-based original source frameIndex is ${frameIndex}. ` +
+          "Every observation must use exactly that frameIndex. " +
+          "Do not infer ingredients, quantities, steps, or other unseen facts.",
+        type: "text",
+      },
+      {
+        data: frame.bytes,
+        mediaType: frame.mimeType,
+        type: "file",
+      },
+    ],
+    role: "user",
   },
-  temperature: 0,
-});
+];
 
 const adapterFailure = <Tag extends string>(
   tag: Tag,
@@ -621,15 +632,6 @@ const workersAiGatewayOptions = (gatewayId: string) =>
     returnRawResponse: true,
   }) as const;
 
-const parsedWorkersAiGatewayOptions = (gatewayId: string) =>
-  ({
-    gateway: {
-      collectLog: false,
-      id: gatewayId,
-      skipCache: true,
-    },
-  }) as const;
-
 type WorkersAiBinding = Effect.Success<QueryGatewayClient["raw"]>;
 
 const runWorkersAi = (
@@ -644,102 +646,8 @@ const runWorkersAi = (
     workersAiGatewayOptions(gatewayId) as never
   ) as Promise<Response>;
 
-const runParsedWorkersAi = (
-  ai: WorkersAiBinding,
-  model: string,
-  body: unknown,
-  gatewayId: string
-): Promise<unknown> =>
-  ai.run(
-    model as never,
-    body as never,
-    parsedWorkersAiGatewayOptions(gatewayId) as never
-  ) as Promise<unknown>;
-
 const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-
-const visualJsonModeUsage = (result: Record<string, unknown>) => {
-  const { usage } = result;
-  if (!isUnknownRecord(usage)) {
-    return { inputTokens: undefined, outputTokens: undefined };
-  }
-  return {
-    inputTokens:
-      typeof usage["prompt_tokens"] === "number"
-        ? usage["prompt_tokens"]
-        : undefined,
-    outputTokens:
-      typeof usage["completion_tokens"] === "number"
-        ? usage["completion_tokens"]
-        : undefined,
-  };
-};
-
-const decodeVisualJsonModeEnvelope = <S extends Schema.Top>(
-  result: unknown,
-  schema: S,
-  observability: {
-    readonly correlationId: ImportCorrelationId;
-    readonly traceStore: ImportObservabilityTraceStoreShape | undefined;
-  }
-): Effect.Effect<
-  {
-    readonly inputTokens: number | undefined;
-    readonly outputTokens: number | undefined;
-    readonly value: S["Type"];
-  },
-  SafeProviderFailureCode,
-  S["DecodingServices"]
-> => {
-  const envelopeKeys = isUnknownRecord(result) ? Object.keys(result) : [];
-  if (
-    !isUnknownRecord(result) ||
-    !Object.hasOwn(result, "response") ||
-    envelopeKeys.some((key) => key !== "response" && key !== "usage") ||
-    !isUnknownRecord(result["response"])
-  ) {
-    return emitImportObservabilityEvent(
-      {
-        correlationId: observability.correlationId,
-        decodeReason: "json_mode_envelope_invalid",
-        decodeStage: "json_mode_envelope",
-        event: "provider.decode",
-        outcome: "malformed",
-        providerStage: "visual",
-      },
-      observability.traceStore
-    ).pipe(Effect.andThen(Effect.fail("malformed_response" as const)));
-  }
-  return Schema.decodeUnknownEffect(schema, {
-    onExcessProperty: "error",
-  })(result["response"]).pipe(
-    Effect.matchEffect({
-      onFailure: () =>
-        emitImportObservabilityEvent(
-          {
-            correlationId: observability.correlationId,
-            decodeReason: "json_mode_schema_invalid",
-            decodeStage: "visual_schema",
-            event: "provider.decode",
-            outcome: "malformed",
-            providerStage: "visual",
-          },
-          observability.traceStore
-        ).pipe(Effect.andThen(Effect.fail("malformed_response" as const))),
-      onSuccess: (value) =>
-        emitImportObservabilityEvent(
-          {
-            correlationId: observability.correlationId,
-            event: "provider.decode",
-            outcome: "succeeded",
-            providerStage: "visual",
-          },
-          observability.traceStore
-        ).pipe(Effect.as({ ...visualJsonModeUsage(result), value })),
-    })
-  );
-};
 
 const withProviderNormalizationBoundary = (response: Response): Response => {
   const parseJson = response.json.bind(response);
@@ -787,7 +695,12 @@ const noLogWorkersAiClient = (
               response = await runWorkersAi(ai, String(model), body, gatewayId);
             } catch (error) {
               if (isPilotProviderKnownZeroCostFailure(error)) {
-                throw error;
+                // Alchemy intentionally redacts the original thrown value into
+                // an AiError description. Preserve only this internal,
+                // payload-free authority marker so the outer budget gate can
+                // settle an explicitly classified setup failure at exact zero.
+                // eslint-disable-next-line preserve-caught-error -- The branded failure is intentionally reduced to a non-secret authority marker.
+                throw new Error(ProviderKnownZeroSetupFailureMessage);
               }
               // eslint-disable-next-line preserve-caught-error -- Provider payloads and transport errors must not cross this privacy boundary, including as Error.cause.
               throw new Error(ProviderTransportUnavailableMessage);
@@ -821,10 +734,17 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const [ai, gatewayId] = yield* Effect.all([
-      input.client.raw,
-      input.client.id,
-    ]);
+    const client = noLogWorkersAiClient(
+      input.client,
+      input.correlationId,
+      "visual",
+      traceStore
+    );
+    const service = yield* Cloudflare.AI.makeLanguageModel({
+      client,
+      model,
+      parameters: { maxTokens: 8192, temperature: 0 },
+    });
     return {
       extract: (request) =>
         request.frames.length === 0
@@ -837,127 +757,93 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
           : input.dispatch
               .run({
                 dispatchId: request.dispatchId,
-                invoke: failAfter(
-                  Effect.gen(function* invokeVisualJsonMode() {
-                    const frameIndex = representativeVisualFrameIndex(
-                      request.frames.length
-                    );
-                    const frame = request.frames[frameIndex];
-                    if (frame === undefined) {
-                      return yield* Effect.fail(
-                        "insufficient_evidence" as const
-                      );
-                    }
-                    const semanticsSchema =
-                      visualEvidenceSemanticsForFrameIndex(frameIndex);
-                    const result = yield* Effect.tryPromise({
-                      catch: (error) => error,
-                      try: async () => {
-                        try {
-                          return await runParsedWorkersAi(
-                            ai,
-                            model,
-                            visualJsonModeRequest(
-                              frame,
-                              frameIndex,
-                              Tool.getJsonSchemaFromSchema(semanticsSchema)
-                            ),
-                            gatewayId
-                          );
-                        } catch (error) {
-                          if (isPilotProviderKnownZeroCostFailure(error)) {
-                            throw error;
-                          }
-                          // eslint-disable-next-line preserve-caught-error -- Provider payloads and transport errors must not cross this privacy boundary, including as Error.cause.
-                          throw new Error(ProviderTransportUnavailableMessage);
-                        }
+                invoke: Effect.gen(function* invokeVisualForcedTool() {
+                  const frameIndex = representativeVisualFrameIndex(
+                    request.frames.length
+                  );
+                  const frame = request.frames[frameIndex];
+                  if (frame === undefined) {
+                    return yield* Effect.fail("insufficient_evidence" as const);
+                  }
+                  const semanticsSchema =
+                    visualEvidenceSemanticsForFrameIndex(frameIndex);
+                  const { inputTokens, outputTokens, value } =
+                    yield* oneForcedToolCall(
+                      service,
+                      {
+                        description:
+                          "Record only text visibly present in the supplied source image.",
+                        name: "record_visual_evidence",
+                        prompt: visualPrompt(frame, frameIndex),
+                        schema: semanticsSchema,
                       },
-                    });
-                    yield* emitImportObservabilityEvent(
                       {
                         correlationId: input.correlationId,
-                        event: "provider.response",
-                        outcome: "received",
                         providerStage: "visual",
-                      },
-                      traceStore
-                    );
-                    const { inputTokens, outputTokens, value } =
-                      yield* decodeVisualJsonModeEnvelope(
-                        result,
-                        semanticsSchema,
-                        {
-                          correlationId: input.correlationId,
-                          traceStore,
-                        }
-                      );
-                    const observations = yield* Effect.all(
-                      value.observations.map((observation) => {
-                        const observationFrame =
-                          request.frames[observation.frameIndex];
-                        return observationFrame === undefined
-                          ? Effect.fail("malformed_response" as const)
-                          : Effect.succeed({
-                              ...observation,
-                              kind: "visible_text" as const,
-                              regions: [
-                                {
-                                  height: 1,
-                                  width: 1,
-                                  x: 0,
-                                  y: 0,
-                                },
-                              ] as const,
-                              timestampMilliseconds:
-                                observationFrame.timestampMilliseconds,
-                            });
-                      })
-                    );
-                    const meteredCost = pricedTokenUsage(
-                      inputTokens,
-                      outputTokens,
-                      {
-                        inputMicroUsdPerToken: 0.049,
-                        outputMicroUsdPerToken: 0.676,
+                        traceStore,
                       }
                     );
-                    // A schema-valid response proves this bounded visual call
-                    // completed. When the provider omits trustworthy usage,
-                    // charge the reservation maximum against the safety ledger
-                    // without representing it as known provider spend.
-                    const cost =
-                      meteredCost._tag === "Known"
-                        ? meteredCost
-                        : {
-                            _tag: "Known" as const,
-                            actualCostMicroUsd: VisualMaximumCostMicroUsd,
-                          };
-                    return {
-                      cost,
-                      value: {
-                        cost: {
-                          certainty: "estimated" as const,
-                          currency: "USD" as const,
-                          estimatedMicroUsd: cost.actualCostMicroUsd,
-                        },
-                        model,
-                        observations,
-                        outcome: value.outcome,
-                        provider: ProviderName,
-                        usage: {
-                          inputBytes: frame.bytes.byteLength,
-                          inputFrames: 1 as const,
-                          modelCalls: 1 as const,
-                        },
+                  const observations = yield* Effect.all(
+                    value.observations.map((observation) => {
+                      const observationFrame =
+                        request.frames[observation.frameIndex];
+                      return observationFrame === undefined
+                        ? Effect.fail("malformed_response" as const)
+                        : Effect.succeed({
+                            ...observation,
+                            kind: "visible_text" as const,
+                            regions: [
+                              {
+                                height: 1,
+                                width: 1,
+                                x: 0,
+                                y: 0,
+                              },
+                            ] as const,
+                            timestampMilliseconds:
+                              observationFrame.timestampMilliseconds,
+                          });
+                    })
+                  );
+                  const meteredCost = pricedTokenUsage(
+                    inputTokens,
+                    outputTokens,
+                    {
+                      inputMicroUsdPerToken: 0.049,
+                      outputMicroUsdPerToken: 0.676,
+                    }
+                  );
+                  // A schema-valid response proves this bounded visual call
+                  // completed. When the provider omits trustworthy usage,
+                  // charge the reservation maximum against the safety ledger
+                  // while the returned estimate remains explicitly uncertain.
+                  const cost =
+                    meteredCost._tag === "Known"
+                      ? meteredCost
+                      : {
+                          _tag: "Known" as const,
+                          actualCostMicroUsd: VisualMaximumCostMicroUsd,
+                        };
+                  return {
+                    cost,
+                    value: {
+                      cost: {
+                        certainty: "estimated" as const,
+                        currency: "USD" as const,
+                        estimatedMicroUsd: cost.actualCostMicroUsd,
                       },
-                    };
-                  }),
-                  {
-                    correlationId: input.correlationId,
-                    providerStage: "visual",
-                    traceStore,
-                  }
-                ).pipe(
+                      model,
+                      observations,
+                      outcome: value.outcome,
+                      provider: ProviderName,
+                      usage: {
+                        inputBytes: frame.bytes.byteLength,
+                        inputFrames: 1 as const,
+                        modelCalls: 1 as const,
+                      },
+                    },
+                  };
+                }).pipe(
                   // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
                   Effect.mapError((error) => {
                     if (isPilotProviderKnownZeroCostFailure(error)) {
@@ -1093,11 +979,21 @@ export const makeInstalledRecipeExtractor = (input: {
           .pipe(
             Effect.mapError(
               // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
-              (error): RecipeExtractionFailure =>
-                adapterFailure(
+              (error): RecipeExtractionFailure => {
+                const providerError =
+                  isPilotProviderKnownZeroCostFailure(error) &&
+                  isSafeProviderFailureCode(error.error)
+                    ? error.error
+                    : undefined;
+
+                return adapterFailure(
                   "RecipeExtractionFailure",
-                  typeof error === "object" ? "outcome_unknown" : error
-                )
+                  providerError ??
+                    (isSafeProviderFailureCode(error)
+                      ? error
+                      : "outcome_unknown")
+                );
+              }
             )
           ),
     } satisfies RecipeExtractorShape;
