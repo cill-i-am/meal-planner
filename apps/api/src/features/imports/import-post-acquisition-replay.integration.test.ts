@@ -590,6 +590,52 @@ describe("native post-acquisition Workflow replay", () => {
     await expectPersistedTranscriptSemantics(importId);
   }, 30_000);
 
+  it("discards bounded inert nested metadata through the installed Workerd replay", async () => {
+    const id = "gaia-222-nested-metadata-post-acquisition-replay";
+    const importId = "00000000-0000-4000-8000-000000000222";
+    if (runtime === undefined) {
+      throw new Error("Miniflare runtime is not initialized");
+    }
+    await runtime.setOptions(runtimeOptions(legacyFixtureScript));
+    await seedAcquiringImport(importId, "7520000000000000222");
+
+    await expect(commandWorkflow({ id, importId })).resolves.toMatchObject({
+      status: "errored",
+    });
+    const mediaSha256 = await seedVerifiedAcquisitionEvidence(
+      importId,
+      "7520000000000000222"
+    );
+    await seedInterruptedSpeechDispatch(importId, mediaSha256);
+
+    await runtime.setOptions(runtimeOptions(correctedFixtureScript));
+
+    const status = await commandWorkflow({ action: "restart", id });
+    const counters = await commandWorkflow({ action: "read", id });
+    expect(status, JSON.stringify({ counters, status })).toMatchObject({
+      output: {
+        _tag: "Succeeded",
+        stage: "speech",
+      },
+      status: "complete",
+    });
+    expect(counters).toMatchObject({
+      acquisitionCalls: 0,
+      audioCalls: 1,
+      providerCalls: 1,
+      recipeFactory: 1,
+      speechFactory: 1,
+      visualFactory: 1,
+    });
+    await expect(readSpeechBudgetDispatch(importId)).resolves.toEqual({
+      actual_cost_micro_usd: 9,
+      dispatch_id: `speech:${importId}:1`,
+      provider_stage_id: "speech-transcription",
+      state: "settled_known",
+    });
+    await expectPersistedTranscriptSemantics(importId);
+  }, 30_000);
+
   it("fails closed when a two-step journal has no retained evidence", async () => {
     const id = "gaia-194-truncated-missing-evidence";
     const importId = "00000000-0000-4000-8000-000000000195";

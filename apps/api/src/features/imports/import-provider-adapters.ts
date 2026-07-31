@@ -1283,10 +1283,23 @@ const omitAllowlistedNullMetadata = (
     )
   );
 
+const projectDocumentedSpeechResponse = (
+  record: Readonly<Record<string, unknown>>,
+  allowlist: ReadonlySet<string>
+): Record<string, unknown> =>
+  Object.fromEntries(
+    [...allowlist]
+      .filter((key) => Object.hasOwn(record, key))
+      .map((key) => [key, record[key]])
+  );
+
 const normalizeModelSpecificSpeechProviderWord = (raw: unknown): unknown =>
   isUnknownRecord(raw)
     ? omitAllowlistedNullMetadata(
-        raw,
+        projectDocumentedSpeechResponse(
+          raw,
+          ModelSpecificSpeechWordOptionalMetadataKeys
+        ),
         ModelSpecificSpeechWordOptionalMetadataKeys
       )
     : raw;
@@ -1296,7 +1309,10 @@ const normalizeModelSpecificSpeechProviderSegment = (raw: unknown): unknown => {
     return raw;
   }
   const normalized = omitAllowlistedNullMetadata(
-    raw,
+    projectDocumentedSpeechResponse(
+      raw,
+      ModelSpecificSpeechSegmentOptionalMetadataKeys
+    ),
     ModelSpecificSpeechSegmentNullableMetadataKeys
   );
   return Array.isArray(normalized["words"])
@@ -1318,7 +1334,10 @@ const normalizeModelSpecificSpeechProviderResponse = (
   );
   if (isUnknownRecord(normalized["transcription_info"])) {
     normalized["transcription_info"] = omitAllowlistedNullMetadata(
-      normalized["transcription_info"],
+      projectDocumentedSpeechResponse(
+        normalized["transcription_info"],
+        ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys
+      ),
       ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys
     );
   }
@@ -1356,45 +1375,45 @@ const hasUnsupportedProperty = (
   allowlist: ReadonlySet<string>
 ): boolean => Object.keys(record).some((key) => !allowlist.has(key));
 
-const projectDocumentedSpeechResponse = (
-  record: Readonly<Record<string, unknown>>,
-  allowlist: ReadonlySet<string>
-): Record<string, unknown> =>
-  Object.fromEntries(
-    [...allowlist]
-      .filter((key) => Object.hasOwn(record, key))
-      .map((key) => [key, record[key]])
-  );
-
 const SpeechUnknownMetadataMaximumTraversalDepth = 64;
 const SpeechUnknownMetadataMaximumTraversalNodes = 16_384;
 
+interface SpeechUnknownMetadataTraversal {
+  discoveredNodes: number;
+  readonly visitedContainers: WeakSet<object>;
+}
+
+const makeSpeechUnknownMetadataTraversal =
+  (): SpeechUnknownMetadataTraversal => ({
+    discoveredNodes: 0,
+    visitedContainers: new WeakSet<object>(),
+  });
+
 const unknownSpeechMetadataRequiresRejection = (
-  raw: Readonly<Record<string, unknown>>
+  values: Iterable<unknown>,
+  traversal: SpeechUnknownMetadataTraversal
 ): boolean => {
   const pending: { readonly depth: number; readonly value: unknown }[] = [];
-  const visitedContainers = new WeakSet<object>();
-  let discoveredNodes = 0;
   const enqueue = (value: unknown, depth: number): boolean => {
-    discoveredNodes += 1;
+    traversal.discoveredNodes += 1;
     if (
-      discoveredNodes > SpeechUnknownMetadataMaximumTraversalNodes ||
+      traversal.discoveredNodes > SpeechUnknownMetadataMaximumTraversalNodes ||
       depth > SpeechUnknownMetadataMaximumTraversalDepth
     ) {
       return false;
     }
     if (typeof value === "object" && value !== null) {
-      if (visitedContainers.has(value)) {
+      if (traversal.visitedContainers.has(value)) {
         return false;
       }
-      visitedContainers.add(value);
+      traversal.visitedContainers.add(value);
     }
     pending.push({ depth, value });
     return true;
   };
 
-  for (const key of Object.keys(raw)) {
-    if (!SpeechProviderResponseKeys.has(key) && !enqueue(raw[key], 0)) {
+  for (const value of values) {
+    if (!enqueue(value, 0)) {
       return true;
     }
   }
@@ -1433,8 +1452,29 @@ const hasAmbiguousSpeechWrapper = (
   Object.hasOwn(raw, "errors") ||
   Object.hasOwn(raw, "messages") ||
   Object.hasOwn(raw, "result") ||
-  Object.hasOwn(raw, "success") ||
-  unknownSpeechMetadataRequiresRejection(raw);
+  Object.hasOwn(raw, "success");
+
+const unknownSpeechMetadataValues = function* unknownSpeechMetadataValues(
+  raw: Readonly<Record<string, unknown>>,
+  allowlist: ReadonlySet<string>
+): Generator<unknown> {
+  for (const key of Object.keys(raw)) {
+    if (!allowlist.has(key)) {
+      yield raw[key];
+    }
+  }
+};
+
+const unknownSpeechContainerMetadataRequiresRejection = (
+  raw: Readonly<Record<string, unknown>>,
+  allowlist: ReadonlySet<string>,
+  traversal: SpeechUnknownMetadataTraversal
+): boolean =>
+  (!allowlist.has("text") && Object.hasOwn(raw, "text")) ||
+  unknownSpeechMetadataRequiresRejection(
+    unknownSpeechMetadataValues(raw, allowlist),
+    traversal
+  );
 
 const isPresentNonNull = (
   record: Readonly<Record<string, unknown>>,
@@ -1579,14 +1619,16 @@ const genericUnsupportedPropertyLocation = (
     : undefined;
 
 const modelSpecificUnsupportedPropertyLocation = (
-  raw: Readonly<Record<string, unknown>>
+  raw: Readonly<Record<string, unknown>>,
+  traversal: SpeechUnknownMetadataTraversal
 ): SpeechEnvelopeUnsupportedLocation | undefined => {
   const transcriptionInfo = raw["transcription_info"];
   if (
     isUnknownRecord(transcriptionInfo) &&
-    hasUnsupportedProperty(
+    unknownSpeechContainerMetadataRequiresRejection(
       transcriptionInfo,
-      ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys
+      ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys,
+      traversal
     )
   ) {
     return "transcription_info";
@@ -1599,9 +1641,10 @@ const modelSpecificUnsupportedPropertyLocation = (
       continue;
     }
     if (
-      hasUnsupportedProperty(
+      unknownSpeechContainerMetadataRequiresRejection(
         segment,
-        ModelSpecificSpeechSegmentOptionalMetadataKeys
+        ModelSpecificSpeechSegmentOptionalMetadataKeys,
+        traversal
       )
     ) {
       return "segment";
@@ -1611,18 +1654,20 @@ const modelSpecificUnsupportedPropertyLocation = (
     if (!isUnknownRecord(segment)) {
       continue;
     }
-    if (
-      Array.isArray(segment["words"]) &&
-      segment["words"].some(
-        (word) =>
-          isUnknownRecord(word) &&
-          hasUnsupportedProperty(
-            word,
-            ModelSpecificSpeechWordOptionalMetadataKeys
-          )
-      )
-    ) {
-      return "word";
+    if (!Array.isArray(segment["words"])) {
+      continue;
+    }
+    for (const word of segment["words"]) {
+      if (
+        isUnknownRecord(word) &&
+        unknownSpeechContainerMetadataRequiresRejection(
+          word,
+          ModelSpecificSpeechWordOptionalMetadataKeys,
+          traversal
+        )
+      ) {
+        return "word";
+      }
     }
   }
   return undefined;
@@ -1670,6 +1715,20 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
       unsupportedRootProperty: "other",
     };
   }
+  const unknownMetadataTraversal = makeSpeechUnknownMetadataTraversal();
+  if (
+    unknownSpeechMetadataRequiresRejection(
+      unknownSpeechMetadataValues(raw, SpeechProviderResponseKeys),
+      unknownMetadataTraversal
+    )
+  ) {
+    return {
+      failure: "unsupported_property",
+      family,
+      unsupportedLocation: "root",
+      unsupportedRootProperty: "other",
+    };
+  }
   if (
     family === "generic"
       ? genericNestedContainersAreInvalid(raw)
@@ -1694,7 +1753,7 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
   const unsupportedLocation =
     family === "generic"
       ? genericUnsupportedPropertyLocation(raw)
-      : modelSpecificUnsupportedPropertyLocation(raw);
+      : modelSpecificUnsupportedPropertyLocation(raw, unknownMetadataTraversal);
   if (unsupportedLocation !== undefined) {
     return {
       failure: "unsupported_property",
