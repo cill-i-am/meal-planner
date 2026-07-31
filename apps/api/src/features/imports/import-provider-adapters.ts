@@ -2,6 +2,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
 import { Cause, Effect, Option, Schema } from "effect";
+import type { SchemaIssue } from "effect";
 import * as Clock from "effect/Clock";
 import type { LanguageModel, Prompt } from "effect/unstable/ai";
 import { Tool, Toolkit } from "effect/unstable/ai";
@@ -87,7 +88,9 @@ const ProviderNormalizationRecipeDecodeReasons = [
   "provider_normalization_recipe_arguments_schema_invalid",
   "provider_normalization_recipe_authority_conflict",
   "provider_normalization_recipe_metadata_invalid",
-  "provider_normalization_recipe_semantics_schema_invalid",
+  "provider_normalization_recipe_semantics_missing_required_field",
+  "provider_normalization_recipe_semantics_unexpected_property",
+  "provider_normalization_recipe_semantics_wrong_type_or_constraint",
   "provider_normalization_recipe_tool_name_invalid",
 ] as const satisfies readonly ProviderDecodeReason[];
 type ProviderNormalizationRecipeDecodeReason =
@@ -876,10 +879,81 @@ const rejectRecipeTransportRoot = (
   throw new ProviderNormalizationRejectionError(decodeReason);
 };
 
-const isSchemaValidRecipeSemantics = (value: unknown): boolean =>
-  Schema.decodeUnknownResult(RecipeExtractionSemantics, {
+const decodeRecipeSemantics = Schema.decodeUnknownResult(
+  RecipeExtractionSemantics,
+  {
     onExcessProperty: "error",
-  })(value)._tag === "Success";
+  }
+);
+
+const isSchemaValidRecipeSemantics = (value: unknown): boolean =>
+  decodeRecipeSemantics(value)._tag === "Success";
+
+const RecipeSemanticsSchemaMismatchPriority = {
+  missing_required_field: 1,
+  unexpected_property: 2,
+  wrong_type_or_constraint: 0,
+} as const;
+type RecipeSemanticsSchemaMismatch =
+  keyof typeof RecipeSemanticsSchemaMismatchPriority;
+
+const higherPriorityRecipeSemanticsSchemaMismatch = (
+  left: RecipeSemanticsSchemaMismatch,
+  right: RecipeSemanticsSchemaMismatch
+): RecipeSemanticsSchemaMismatch =>
+  RecipeSemanticsSchemaMismatchPriority[left] >=
+  RecipeSemanticsSchemaMismatchPriority[right]
+    ? left
+    : right;
+
+const classifyRecipeSemanticsSchemaMismatch = (
+  issue: SchemaIssue.Issue
+): RecipeSemanticsSchemaMismatch => {
+  switch (issue._tag) {
+    case "MissingKey": {
+      return "missing_required_field";
+    }
+    case "UnexpectedKey": {
+      return "unexpected_property";
+    }
+    case "Encoding":
+    case "Filter":
+    case "Pointer": {
+      return classifyRecipeSemanticsSchemaMismatch(issue.issue);
+    }
+    case "AnyOf":
+    case "Composite": {
+      let mismatch: RecipeSemanticsSchemaMismatch = "wrong_type_or_constraint";
+      for (const nestedIssue of issue.issues) {
+        mismatch = higherPriorityRecipeSemanticsSchemaMismatch(
+          mismatch,
+          classifyRecipeSemanticsSchemaMismatch(nestedIssue)
+        );
+      }
+      return mismatch;
+    }
+    default: {
+      return "wrong_type_or_constraint";
+    }
+  }
+};
+
+const recipeSemanticsDecodeReason = (
+  mismatch: RecipeSemanticsSchemaMismatch
+): ProviderNormalizationRecipeDecodeReason =>
+  `provider_normalization_recipe_semantics_${mismatch}`;
+
+const projectRecipeSemantics = (
+  value: Readonly<Record<string, unknown>>
+): Record<string, unknown> => {
+  const projection: Record<string, unknown> = {};
+  for (const key of RecipeSemanticsKeys) {
+    if (Object.hasOwn(value, key)) {
+      projection[key] = value[key];
+    }
+  }
+  return projection;
+};
 
 const canonicalizeRecipeTransportUsage = (value: unknown): unknown => {
   const usage = Option.getOrUndefined(decodeRecipeTransportUsage(value));
@@ -918,21 +992,28 @@ const canonicalizeUnwrappedRecipeSemantics = (
       "provider_normalization_recipe_authority_conflict"
     );
   }
-  if (!Object.hasOwn(value, "usage")) {
-    return rejectRecipeTransportRoot(
-      "provider_normalization_recipe_semantics_schema_invalid"
-    );
-  }
-
+  const hasUsage = Object.hasOwn(value, "usage");
   const { usage, ...semantics } = value;
-  if (!isSchemaValidRecipeSemantics(semantics)) {
+  const decodedSemantics = decodeRecipeSemantics(semantics);
+  if (decodedSemantics._tag === "Success") {
+    return {
+      response: decodedSemantics.success,
+      ...(hasUsage ? { usage: canonicalizeRecipeTransportUsage(usage) } : {}),
+    };
+  }
+  const projectedSemantics = decodeRecipeSemantics(
+    projectRecipeSemantics(semantics)
+  );
+  if (projectedSemantics._tag === "Failure") {
     return rejectRecipeTransportRoot(
-      "provider_normalization_recipe_semantics_schema_invalid"
+      recipeSemanticsDecodeReason(
+        classifyRecipeSemanticsSchemaMismatch(decodedSemantics.failure.issue)
+      )
     );
   }
   return {
-    response: semantics,
-    usage: canonicalizeRecipeTransportUsage(usage),
+    response: projectedSemantics.success,
+    ...(hasUsage ? { usage: canonicalizeRecipeTransportUsage(usage) } : {}),
   };
 };
 
