@@ -109,6 +109,30 @@ const increment = (
     await env.POST_ACQUISITION_REPLAY_STATE.put(key, String(current + 1));
   });
 
+const replayRootMetadata = (
+  instanceId: string
+): Readonly<Record<string, unknown>> => {
+  if (instanceId.includes("root-object")) {
+    return {
+      platformMetadata: {
+        attempt: 1,
+        region: "synthetic",
+      },
+    };
+  }
+  if (instanceId.includes("root-multiple")) {
+    return {
+      platformEnabled: true,
+      platformMetadata: {
+        attempt: 1,
+        region: "synthetic",
+      },
+      platformRevision: 7,
+    };
+  }
+  return { platformRevision: 7 };
+};
+
 const replayProviderFixture = (
   env: PostAcquisitionReplayTestEnv,
   instanceId: string
@@ -135,6 +159,7 @@ const replayProviderFixture = (
       run: async () => {
         await Effect.runPromise(increment(env, instanceId, "provider-calls"));
         return Response.json({
+          ...replayRootMetadata(instanceId),
           segments: [
             {
               avg_logprob: null,

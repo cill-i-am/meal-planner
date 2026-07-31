@@ -1241,6 +1241,11 @@ const ModelSpecificSpeechProviderResponseKeys: ReadonlySet<string> = new Set([
   "word_count",
 ]);
 
+const SpeechProviderResponseKeys: ReadonlySet<string> = new Set([
+  ...GenericSpeechProviderResponseKeys,
+  ...ModelSpecificSpeechProviderResponseKeys,
+]);
+
 const omitAllowlistedNullMetadata = (
   record: Readonly<Record<string, unknown>>,
   allowlist: ReadonlySet<string>
@@ -1324,33 +1329,33 @@ const hasUnsupportedProperty = (
   allowlist: ReadonlySet<string>
 ): boolean => Object.keys(record).some((key) => !allowlist.has(key));
 
-const classifyUnsupportedRootProperty = (
+const projectDocumentedSpeechResponse = (
   record: Readonly<Record<string, unknown>>,
   allowlist: ReadonlySet<string>
-): SpeechEnvelopeUnsupportedRootProperty | undefined => {
-  const unsupportedKeys = Object.keys(record).filter(
-    (key) => !allowlist.has(key)
+): Record<string, unknown> =>
+  Object.fromEntries(
+    [...allowlist]
+      .filter((key) => Object.hasOwn(record, key))
+      .map((key) => [key, record[key]])
   );
-  if (unsupportedKeys.length === 0) {
-    return undefined;
-  }
-  if (unsupportedKeys.length > 1) {
-    return "multiple";
-  }
-  switch (unsupportedKeys[0]) {
-    case "duration":
-    case "duration_after_vad":
-    case "language":
-    case "language_probability":
-    case "task":
-    case "words": {
-      return unsupportedKeys[0];
-    }
-    default: {
-      return "other";
-    }
-  }
-};
+
+const isTranscriptBearingContainer = (value: unknown): boolean =>
+  (isUnknownRecord(value) && Object.hasOwn(value, "text")) ||
+  (Array.isArray(value) &&
+    value.some((item) => isUnknownRecord(item) && Object.hasOwn(item, "text")));
+
+const hasAmbiguousSpeechWrapper = (
+  raw: Readonly<Record<string, unknown>>
+): boolean =>
+  Object.hasOwn(raw, "errors") ||
+  Object.hasOwn(raw, "messages") ||
+  Object.hasOwn(raw, "result") ||
+  Object.hasOwn(raw, "success") ||
+  Object.entries(raw).some(
+    ([key, value]) =>
+      !SpeechProviderResponseKeys.has(key) &&
+      isTranscriptBearingContainer(value)
+  );
 
 const isPresentNonNull = (
   record: Readonly<Record<string, unknown>>,
@@ -1474,29 +1479,19 @@ const modelSpecificNestedMetadataTypesAreInvalid = (
 
 const genericUnsupportedPropertyLocation = (
   raw: Readonly<Record<string, unknown>>
-): SpeechEnvelopeUnsupportedLocation | undefined => {
-  if (hasUnsupportedProperty(raw, GenericSpeechProviderResponseKeys)) {
-    return "root";
-  }
-  return Array.isArray(raw["words"]) &&
-    raw["words"].some(
-      (word) =>
-        isUnknownRecord(word) &&
-        hasUnsupportedProperty(
-          word,
-          ModelSpecificSpeechWordOptionalMetadataKeys
-        )
-    )
+): SpeechEnvelopeUnsupportedLocation | undefined =>
+  Array.isArray(raw["words"]) &&
+  raw["words"].some(
+    (word) =>
+      isUnknownRecord(word) &&
+      hasUnsupportedProperty(word, ModelSpecificSpeechWordOptionalMetadataKeys)
+  )
     ? "word"
     : undefined;
-};
 
 const modelSpecificUnsupportedPropertyLocation = (
   raw: Readonly<Record<string, unknown>>
 ): SpeechEnvelopeUnsupportedLocation | undefined => {
-  if (hasUnsupportedProperty(raw, ModelSpecificSpeechProviderResponseKeys)) {
-    return "root";
-  }
   const transcriptionInfo = raw["transcription_info"];
   if (
     isUnknownRecord(transcriptionInfo) &&
@@ -1571,17 +1566,19 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
     return { failure: "root_metadata_type", family };
   }
   if (family === "unclassified") {
-    const unsupportedRootProperty = classifyUnsupportedRootProperty(
-      raw,
-      ModelSpecificSpeechProviderResponseKeys
-    );
     return {
       failure: "unsupported_property",
       family,
       unsupportedLocation: "root",
-      ...(unsupportedRootProperty === undefined
-        ? {}
-        : { unsupportedRootProperty }),
+      unsupportedRootProperty: "words",
+    };
+  }
+  if (hasAmbiguousSpeechWrapper(raw)) {
+    return {
+      failure: "unsupported_property",
+      family,
+      unsupportedLocation: "root",
+      unsupportedRootProperty: "other",
     };
   }
   if (
@@ -1610,22 +1607,10 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
       ? genericUnsupportedPropertyLocation(raw)
       : modelSpecificUnsupportedPropertyLocation(raw);
   if (unsupportedLocation !== undefined) {
-    const unsupportedRootProperty =
-      unsupportedLocation === "root"
-        ? classifyUnsupportedRootProperty(
-            raw,
-            family === "generic"
-              ? GenericSpeechProviderResponseKeys
-              : ModelSpecificSpeechProviderResponseKeys
-          )
-        : undefined;
     return {
       failure: "unsupported_property",
       family,
       unsupportedLocation,
-      ...(unsupportedRootProperty === undefined
-        ? {}
-        : { unsupportedRootProperty }),
     };
   }
   return { failure: undefined, family };
@@ -1650,7 +1635,7 @@ const decodeSpeechResponse = (
       readonly speechEnvelopeUnsupportedRootProperty?: SpeechEnvelopeUnsupportedRootProperty;
     } => {
   const classification = classifySpeechEnvelope(raw);
-  if (!isUnknownRecord(raw)) {
+  if (!isUnknownRecord(raw) || classification.failure !== undefined) {
     return {
       _tag: "Rejected",
       decodeReason: "speech_envelope_schema_invalid",
@@ -1671,13 +1656,20 @@ const decodeSpeechResponse = (
           }),
     };
   }
-  const isModelSpecific =
-    Object.hasOwn(raw, "segments") || Object.hasOwn(raw, "transcription_info");
+  const isModelSpecific = classification.family === "model_specific";
+  const projected = projectDocumentedSpeechResponse(
+    raw,
+    isModelSpecific
+      ? ModelSpecificSpeechProviderResponseKeys
+      : GenericSpeechProviderResponseKeys
+  );
   const envelope = isModelSpecific
     ? decodeModelSpecificSpeechResponse(
-        normalizeModelSpecificSpeechProviderResponse(raw)
+        normalizeModelSpecificSpeechProviderResponse(projected)
       ).pipe(Option.map(({ text }) => text))
-    : decodeGenericSpeechResponse(raw).pipe(Option.map(({ text }) => text));
+    : decodeGenericSpeechResponse(projected).pipe(
+        Option.map(({ text }) => text)
+      );
   if (Option.isNone(envelope)) {
     return {
       _tag: "Rejected",
