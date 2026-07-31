@@ -2001,6 +2001,8 @@ const settleRecipeBatch = (
 
 const recipeRecoveryUnknownAuthority = `
   FROM (
+    SELECT *
+      FROM (
     SELECT runtime_stage, import_id, acquisition_generation,
            recovery_ordinal, recovery_identity, recovery_dispatch_id,
            evidence_fingerprint, original_extraction_fingerprint,
@@ -2103,6 +2105,46 @@ const recipeRecoveryUnknownAuthority = `
        AND first.acquisition_generation = fifth.acquisition_generation
        AND first.recovery_dispatch_id =
              fifth.first_recovery_dispatch_id
+      ) AS first_through_fifth
+    UNION ALL
+    SELECT sixth.runtime_stage, sixth.import_id,
+           sixth.acquisition_generation, 6, 'recovery:6',
+           sixth.recovery_dispatch_id, sixth.evidence_fingerprint,
+           first.original_extraction_fingerprint,
+           sixth.recovery_extraction_fingerprint,
+           sixth.transcript_sha256, sixth.visual_manifest_sha256,
+           sixth.evidence_references_json
+      FROM pilot_provider_recipe_sixth_recoveries AS sixth
+      JOIN pilot_provider_recipe_fifth_recoveries AS fifth
+        ON fifth.runtime_stage = sixth.runtime_stage
+       AND fifth.import_id = sixth.import_id
+       AND fifth.acquisition_generation = sixth.acquisition_generation
+       AND fifth.recovery_dispatch_id =
+             sixth.fifth_recovery_dispatch_id
+      JOIN pilot_provider_recipe_fourth_recoveries AS fourth
+        ON fourth.runtime_stage = sixth.runtime_stage
+       AND fourth.import_id = sixth.import_id
+       AND fourth.acquisition_generation = sixth.acquisition_generation
+       AND fourth.recovery_dispatch_id =
+             sixth.fourth_recovery_dispatch_id
+      JOIN pilot_provider_recipe_third_recoveries AS third
+        ON third.runtime_stage = sixth.runtime_stage
+       AND third.import_id = sixth.import_id
+       AND third.acquisition_generation = sixth.acquisition_generation
+       AND third.recovery_dispatch_id =
+             sixth.third_recovery_dispatch_id
+      JOIN pilot_provider_recipe_second_recoveries AS second
+        ON second.runtime_stage = sixth.runtime_stage
+       AND second.import_id = sixth.import_id
+       AND second.acquisition_generation = sixth.acquisition_generation
+       AND second.recovery_dispatch_id =
+             sixth.second_recovery_dispatch_id
+      JOIN pilot_provider_recipe_recoveries AS first
+        ON first.runtime_stage = sixth.runtime_stage
+       AND first.import_id = sixth.import_id
+       AND first.acquisition_generation = sixth.acquisition_generation
+       AND first.recovery_dispatch_id =
+             sixth.first_recovery_dispatch_id
   ) AS recovery
   JOIN pilot_provider_budget_dispatches AS dispatch
     ON dispatch.runtime_stage = recovery.runtime_stage
@@ -2209,6 +2251,8 @@ const readRecipeRecoverySettled = (
            JOIN pilot_provider_stage_budget AS stage
              ON stage.runtime_stage = audit.runtime_stage
            JOIN (
+             SELECT *
+               FROM (
              SELECT runtime_stage, import_id, acquisition_generation,
                     recovery_ordinal, recovery_identity,
                     recovery_dispatch_id, evidence_fingerprint,
@@ -2322,6 +2366,51 @@ const readRecipeRecoverySettled = (
                       fifth.acquisition_generation
                 AND first.recovery_dispatch_id =
                       fifth.first_recovery_dispatch_id
+               ) AS first_through_fifth
+             UNION ALL
+             SELECT sixth.runtime_stage, sixth.import_id,
+                    sixth.acquisition_generation, 6, 'recovery:6',
+                    sixth.recovery_dispatch_id,
+                    sixth.evidence_fingerprint,
+                    first.original_extraction_fingerprint,
+                    sixth.recovery_extraction_fingerprint,
+                    sixth.evidence_references_json
+               FROM pilot_provider_recipe_sixth_recoveries AS sixth
+               JOIN pilot_provider_recipe_fifth_recoveries AS fifth
+                 ON fifth.runtime_stage = sixth.runtime_stage
+                AND fifth.import_id = sixth.import_id
+                AND fifth.acquisition_generation =
+                      sixth.acquisition_generation
+                AND fifth.recovery_dispatch_id =
+                      sixth.fifth_recovery_dispatch_id
+               JOIN pilot_provider_recipe_fourth_recoveries AS fourth
+                 ON fourth.runtime_stage = sixth.runtime_stage
+                AND fourth.import_id = sixth.import_id
+                AND fourth.acquisition_generation =
+                      sixth.acquisition_generation
+                AND fourth.recovery_dispatch_id =
+                      sixth.fourth_recovery_dispatch_id
+               JOIN pilot_provider_recipe_third_recoveries AS third
+                 ON third.runtime_stage = sixth.runtime_stage
+                AND third.import_id = sixth.import_id
+                AND third.acquisition_generation =
+                      sixth.acquisition_generation
+                AND third.recovery_dispatch_id =
+                      sixth.third_recovery_dispatch_id
+               JOIN pilot_provider_recipe_second_recoveries AS second
+                 ON second.runtime_stage = sixth.runtime_stage
+                AND second.import_id = sixth.import_id
+                AND second.acquisition_generation =
+                      sixth.acquisition_generation
+                AND second.recovery_dispatch_id =
+                      sixth.second_recovery_dispatch_id
+               JOIN pilot_provider_recipe_recoveries AS first
+                 ON first.runtime_stage = sixth.runtime_stage
+                AND first.import_id = sixth.import_id
+                AND first.acquisition_generation =
+                      sixth.acquisition_generation
+                AND first.recovery_dispatch_id =
+                      sixth.first_recovery_dispatch_id
            ) AS recovery
              ON recovery.runtime_stage = audit.runtime_stage
             AND recovery.recovery_dispatch_id = audit.dispatch_id
@@ -2500,6 +2589,7 @@ const settleRecipeRecoveryBatch = (
                   poison_dispatch_id = NULL,
                   updated_at = ?
             WHERE runtime_stage = ?
+              AND changes() = 1
               AND state = 'poisoned'
               AND poison_dispatch_id = ?
               AND invoking_dispatch_id IS NULL
@@ -2510,6 +2600,8 @@ const settleRecipeRecoveryBatch = (
                 SELECT 1
                   FROM pilot_provider_budget_reconciliations AS audit
                   JOIN (
+                    SELECT *
+                      FROM (
                     SELECT runtime_stage, import_id,
                            acquisition_generation, recovery_ordinal,
                            recovery_identity, recovery_dispatch_id,
@@ -2624,6 +2716,51 @@ const settleRecipeRecoveryBatch = (
                              fifth.acquisition_generation
                        AND first.recovery_dispatch_id =
                              fifth.first_recovery_dispatch_id
+                      ) AS first_through_fifth
+                    UNION ALL
+                    SELECT sixth.runtime_stage, sixth.import_id,
+                           sixth.acquisition_generation, 6, 'recovery:6',
+                           sixth.recovery_dispatch_id,
+                           sixth.evidence_fingerprint,
+                           first.original_extraction_fingerprint,
+                           sixth.recovery_extraction_fingerprint,
+                           sixth.evidence_references_json
+                      FROM pilot_provider_recipe_sixth_recoveries AS sixth
+                      JOIN pilot_provider_recipe_fifth_recoveries AS fifth
+                        ON fifth.runtime_stage = sixth.runtime_stage
+                       AND fifth.import_id = sixth.import_id
+                       AND fifth.acquisition_generation =
+                             sixth.acquisition_generation
+                       AND fifth.recovery_dispatch_id =
+                             sixth.fifth_recovery_dispatch_id
+                      JOIN pilot_provider_recipe_fourth_recoveries AS fourth
+                        ON fourth.runtime_stage = sixth.runtime_stage
+                       AND fourth.import_id = sixth.import_id
+                       AND fourth.acquisition_generation =
+                             sixth.acquisition_generation
+                       AND fourth.recovery_dispatch_id =
+                             sixth.fourth_recovery_dispatch_id
+                      JOIN pilot_provider_recipe_third_recoveries AS third
+                        ON third.runtime_stage = sixth.runtime_stage
+                       AND third.import_id = sixth.import_id
+                       AND third.acquisition_generation =
+                             sixth.acquisition_generation
+                       AND third.recovery_dispatch_id =
+                             sixth.third_recovery_dispatch_id
+                      JOIN pilot_provider_recipe_second_recoveries AS second
+                        ON second.runtime_stage = sixth.runtime_stage
+                       AND second.import_id = sixth.import_id
+                       AND second.acquisition_generation =
+                             sixth.acquisition_generation
+                       AND second.recovery_dispatch_id =
+                             sixth.second_recovery_dispatch_id
+                      JOIN pilot_provider_recipe_recoveries AS first
+                        ON first.runtime_stage = sixth.runtime_stage
+                       AND first.import_id = sixth.import_id
+                       AND first.acquisition_generation =
+                             sixth.acquisition_generation
+                       AND first.recovery_dispatch_id =
+                             sixth.first_recovery_dispatch_id
                   ) AS recovery
                     ON recovery.runtime_stage = audit.runtime_stage
                    AND recovery.recovery_dispatch_id = audit.dispatch_id
