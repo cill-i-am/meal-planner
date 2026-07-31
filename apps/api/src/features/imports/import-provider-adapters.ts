@@ -704,13 +704,18 @@ const decodeNestedRawToolCall = (
   functionValue: Record<string, unknown>
 ): RawToolCallAuthority => {
   const { arguments: flatArguments, id, name: flatName, type } = value;
-  const hasFlatName = typeof flatName === "string" && flatName.length > 0;
+  const hasFlatName = Object.hasOwn(value, "name");
   const hasFlatArguments = Object.hasOwn(value, "arguments");
   const { arguments: functionArguments, name: functionName } = functionValue;
   if (typeof functionName !== "string" || functionName.length === 0) {
     return { _tag: "Invalid" };
   }
-  if (hasFlatName && flatName !== functionName) {
+  if (
+    hasFlatName &&
+    (typeof flatName !== "string" ||
+      flatName.length === 0 ||
+      flatName !== functionName)
+  ) {
     return { _tag: "Invalid" };
   }
 

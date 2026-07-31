@@ -3290,6 +3290,34 @@ describe("installed import provider adapters", () => {
       },
     ],
     [
+      "an empty flat name beside a valid nested name",
+      {
+        tool_calls: [
+          {
+            function: {
+              arguments: JSON.stringify(validVisualSemantics),
+              name: "record_visual_evidence",
+            },
+            name: "",
+          },
+        ],
+      },
+    ],
+    [
+      "a null flat name beside a valid nested name",
+      {
+        tool_calls: [
+          {
+            function: {
+              arguments: JSON.stringify(validVisualSemantics),
+              name: "record_visual_evidence",
+            },
+            name: null,
+          },
+        ],
+      },
+    ],
+    [
       "an extra OpenAI tool call",
       {
         choices: [
