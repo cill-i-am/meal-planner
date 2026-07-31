@@ -844,6 +844,23 @@ const RecipeTransportRootKeys = new Set([
   "parameters",
   "usage",
 ]);
+const RecipeTransportTokenCount = Schema.Int.pipe(
+  Schema.check(
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+  )
+);
+const RecipeTransportUsage = Schema.Struct({
+  completion_tokens: RecipeTransportTokenCount,
+  prompt_tokens: RecipeTransportTokenCount,
+  prompt_tokens_details: Schema.optionalKey(
+    Schema.Struct({ cached_tokens: RecipeTransportTokenCount })
+  ),
+});
+const decodeRecipeTransportUsage = Schema.decodeUnknownOption(
+  RecipeTransportUsage,
+  { onExcessProperty: "error" }
+);
 
 class ProviderNormalizationRejectionError extends Error {
   constructor(decodeReason: ProviderNormalizationRecipeDecodeReason) {
@@ -862,6 +879,26 @@ const isSchemaValidRecipeSemantics = (value: unknown): boolean =>
   Schema.decodeUnknownResult(RecipeExtractionSemantics, {
     onExcessProperty: "error",
   })(value)._tag === "Success";
+
+const canonicalizeRecipeTransportUsage = (value: unknown): unknown => {
+  const usage = Option.getOrUndefined(decodeRecipeTransportUsage(value));
+  if (usage === undefined) {
+    return rejectRecipeTransportRoot(
+      "provider_normalization_recipe_metadata_invalid"
+    );
+  }
+  return {
+    completion_tokens: usage.completion_tokens,
+    prompt_tokens: usage.prompt_tokens,
+    ...(usage.prompt_tokens_details === undefined
+      ? {}
+      : {
+          prompt_tokens_details: {
+            cached_tokens: usage.prompt_tokens_details.cached_tokens,
+          },
+        }),
+  };
+};
 
 const canonicalizeRecipeTransportRoot = (value: unknown): unknown => {
   if (!isUnknownRecord(value)) {
@@ -919,7 +956,9 @@ const canonicalizeRecipeTransportRoot = (value: unknown): unknown => {
           : { parameters: argumentsValue }),
         name: "record_recipe",
       },
-      ...(hasUsage ? { usage: value["usage"] } : {}),
+      ...(hasUsage
+        ? { usage: canonicalizeRecipeTransportUsage(value["usage"]) }
+        : {}),
     };
   }
   if (hasSemanticsSignal) {

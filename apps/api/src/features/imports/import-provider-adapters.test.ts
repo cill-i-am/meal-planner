@@ -2800,7 +2800,10 @@ describe("installed import provider adapters", () => {
       {
         arguments: validRecipeSemantics,
         name: "record_recipe",
-        usage: defaultVisualUsage,
+        usage: {
+          ...defaultVisualUsage,
+          prompt_tokens_details: { cached_tokens: 5 },
+        },
       },
     ],
   ] as const)(
@@ -2832,6 +2835,78 @@ describe("installed import provider adapters", () => {
           providerStage: "recipe",
         },
       ]);
+    }
+  );
+
+  it.each([
+    ["a non-object usage container", "provider-private-canary"],
+    [
+      "a non-numeric prompt token count",
+      {
+        completion_tokens: 10,
+        prompt_tokens: "provider-private-canary",
+      },
+    ],
+    [
+      "a non-numeric completion token count",
+      {
+        completion_tokens: "provider-private-canary",
+        prompt_tokens: 20,
+      },
+    ],
+    [
+      "an excess usage field",
+      {
+        ...defaultVisualUsage,
+        provider_private_canary: "provider-private-canary",
+      },
+    ],
+    [
+      "a non-object prompt token detail container",
+      {
+        ...defaultVisualUsage,
+        prompt_tokens_details: "provider-private-canary",
+      },
+    ],
+    [
+      "a non-numeric cached token count",
+      {
+        ...defaultVisualUsage,
+        prompt_tokens_details: { cached_tokens: "provider-private-canary" },
+      },
+    ],
+    [
+      "an excess prompt token detail field",
+      {
+        ...defaultVisualUsage,
+        prompt_tokens_details: {
+          cached_tokens: 5,
+          provider_private_canary: "provider-private-canary",
+        },
+      },
+    ],
+  ] as const)(
+    "fails closed through the public installed recipe extractor for %s",
+    async (_label, usage) => {
+      const { exit, trace } = await runRecipeTransportRoot({
+        name: "record_recipe",
+        parameters: validRecipeSemantics,
+        usage,
+      });
+
+      expect(exit._tag).toBe("Failure");
+      expect(JSON.stringify(exit)).toContain("malformed_response");
+      expect(trace.events.at(-1)).toEqual({
+        correlationId,
+        decodeReason: "provider_normalization_recipe_metadata_invalid",
+        decodeStage: "provider_normalization",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "recipe",
+      });
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+        "provider-private-canary"
+      );
     }
   );
 
