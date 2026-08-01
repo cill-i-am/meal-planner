@@ -110,6 +110,7 @@ const validReplayValueJson = (value: string) => {
 };
 
 const Sha256Pattern = /^[a-f\d]{64}$/u;
+const RecipeReplayRecoveryOrdinals = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
 const recipeReplayDispatchIds = (replay: {
   readonly evidenceFingerprint: string;
@@ -117,10 +118,12 @@ const recipeReplayDispatchIds = (replay: {
   readonly importId: string;
 }) => {
   const root = `recipe:${replay.importId}:${replay.generation}:${replay.evidenceFingerprint}`;
-  return {
-    legacy: root,
-    recovery: `${root}:recovery:1`,
-  } as const;
+  return [
+    root,
+    ...RecipeReplayRecoveryOrdinals.map(
+      (recoveryOrdinal) => `${root}:recovery:${recoveryOrdinal}`
+    ),
+  ];
 };
 
 const isRecipeReplayDispatchId = (
@@ -132,7 +135,7 @@ const isRecipeReplayDispatchId = (
   }
 ) => {
   const allowed = recipeReplayDispatchIds(replay);
-  return dispatchId === allowed.legacy || dispatchId === allowed.recovery;
+  return allowed.includes(dispatchId);
 };
 
 const replayFromRow = (
@@ -701,7 +704,7 @@ export const makeD1PilotProviderBudgetRepository = (
                   AND dispatch.maximum_cost_micro_usd = 100000
                   AND dispatch.actual_cost_micro_usd IS NULL
                   AND dispatch.state = 'settled_unknown'
-                  AND dispatch.dispatch_id IN (?, ?)
+                  AND dispatch.dispatch_id IN (?, ?, ?, ?, ?, ?, ?, ?, ?)
                   AND audit.actual_cost_was_unknown = 1
                   AND audit.authority =
                       'schema_valid_provider_response'
@@ -719,8 +722,7 @@ export const makeD1PilotProviderBudgetRepository = (
               PilotProviderBudgetStage,
               input.dispatchId,
               input.runId,
-              recipeReplayDispatchIds(input.replay).legacy,
-              recipeReplayDispatchIds(input.replay).recovery
+              ...recipeReplayDispatchIds(input.replay)
             ),
           binding
             .prepare(
