@@ -295,6 +295,7 @@ const postOperation = (
       | "prepare_recipe_fourth_recovery"
       | "prepare_recipe_fifth_recovery"
       | "prepare_recipe_sixth_recovery"
+      | "prepare_recipe_seventh_recovery"
       | "prepare_recipe_second_recovery"
       | "prepare_recipe_third_recovery"
       | "settle_recipe_recovery_unknown";
@@ -709,6 +710,75 @@ const seedUnknownSixthRecovery = async (suffix: string) => {
   await Effect.runPromise(
     makeD1RecipeDraftRepository(testEnv.MealPlannerDatabase).fail({
       completedAt: decodeImportTimestamp("2026-07-30T00:18:01.000Z"),
+      extractionFingerprint: recovery.recoveryExtractionFingerprint,
+      failureCode: "provider_error",
+    })
+  );
+  return { ...seeded, recovery };
+};
+
+const seedUnknownSeventhRecovery = async (suffix: string) => {
+  const seeded = await seedUnknownSixthRecovery(suffix);
+  const service = makeD1ProviderTerminalSettlementService({
+    database: testEnv.MealPlannerDatabase,
+    now: () => decodeImportTimestamp("2026-07-30T00:19:00.000Z"),
+    runtimeStage: "pilot-gaia-118",
+  });
+  await Effect.runPromise(
+    service.settle({
+      acquisitionGeneration: seeded.generation,
+      dispatchId: seeded.recovery.recoveryDispatchId,
+      importId: seeded.importId,
+      operation: "settle_recipe_recovery_unknown",
+    })
+  );
+  const recovery = await Effect.runPromise(
+    makeD1RecipeRecoveryRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    ).prepareSeventh({
+      acquisitionGeneration: seeded.generation,
+      createdAt: decodeImportTimestamp("2026-07-30T00:20:00.000Z"),
+      importId: seeded.importId,
+      sixthRecoveryDispatchId: seeded.recovery.recoveryDispatchId,
+    })
+  );
+  await testEnv.MealPlannerDatabase.prepare(
+    `INSERT INTO import_recipe_extractions (
+       extraction_fingerprint, import_id, acquisition_generation,
+       evidence_fingerprint, extractor_provider, extractor_model,
+       extractor_version, state, created_at, updated_at
+     ) VALUES (
+       ?, ?, ?, ?, 'cloudflare-workers-ai', 'recipe-model',
+       'installed-alchemy-forced-tool-v2', 'dispatching', ?, ?
+     )`
+  )
+    .bind(
+      recovery.recoveryExtractionFingerprint,
+      seeded.importId,
+      seeded.generation,
+      seeded.evidenceFingerprint,
+      "2026-07-30T00:21:00.000Z",
+      "2026-07-30T00:21:00.000Z"
+    )
+    .run();
+  const reservation = {
+    dispatchId: recovery.recoveryDispatchId,
+    maximumCostMicroUsd: 100_000,
+    providerStageId: decodeStageId("recipe-extraction"),
+    runId: decodeRunId(`gaia-118:recipe-recovery:${seeded.importId}`),
+    timestamp: decodeBudgetTimestamp("2026-07-30T00:21:00.000Z"),
+  };
+  const budget = makeD1PilotProviderBudgetRepository(
+    testEnv.MealPlannerDatabase,
+    "pilot-gaia-118"
+  );
+  await Effect.runPromise(budget.reserve(reservation));
+  await Effect.runPromise(budget.beginInvocation(reservation));
+  await Effect.runPromise(budget.settleUnknown(reservation));
+  await Effect.runPromise(
+    makeD1RecipeDraftRepository(testEnv.MealPlannerDatabase).fail({
+      completedAt: decodeImportTimestamp("2026-07-30T00:21:01.000Z"),
       extractionFingerprint: recovery.recoveryExtractionFingerprint,
       failureCode: "provider_error",
     })
@@ -1795,6 +1865,183 @@ describe("stage-scoped terminal recipe recovery", () => {
         .bind(seeded.importId)
         .run()
     ).rejects.toThrow("sixth recipe recovery is immutable");
+  });
+
+  it("settles the exact poisoned sixth recovery and admits one immutable seventh identity", async () => {
+    const seeded = await seedUnknownSixthRecovery("000000000231");
+    const started: RecipeRecovery[] = [];
+    const resumed: RecipeRecovery[] = [];
+    const app = await makeApp(started, resumed);
+
+    const beforeSettlement = await postOperation(app, {
+      acquisitionGeneration: seeded.generation,
+      dispatchId: seeded.recovery.recoveryDispatchId,
+      importId: seeded.importId,
+      operation: "prepare_recipe_seventh_recovery",
+    });
+    expect(beforeSettlement.status).toBe(409);
+
+    const settleRequest = {
+      acquisitionGeneration: seeded.generation,
+      dispatchId: seeded.recovery.recoveryDispatchId,
+      importId: seeded.importId,
+      operation: "settle_recipe_recovery_unknown" as const,
+    };
+    const [firstSettlement, duplicateSettlement] = await Promise.all([
+      postOperation(app, settleRequest),
+      postOperation(app, settleRequest),
+    ]);
+    expect(firstSettlement.status).toBe(200);
+    expect(duplicateSettlement.status).toBe(200);
+    await expect(duplicateSettlement.json()).resolves.toEqual(
+      await firstSettlement.json()
+    );
+
+    const prepareRequest = {
+      acquisitionGeneration: seeded.generation,
+      dispatchId: seeded.recovery.recoveryDispatchId,
+      importId: seeded.importId,
+      operation: "prepare_recipe_seventh_recovery" as const,
+    };
+    const [first, duplicate] = await Promise.all([
+      postOperation(app, prepareRequest),
+      postOperation(app, prepareRequest),
+    ]);
+    expect(first.status).toBe(200);
+    expect(duplicate.status).toBe(200);
+    const firstBody = await first.json();
+    await expect(duplicate.json()).resolves.toEqual(firstBody);
+    expect(firstBody).toMatchObject({
+      acquisitionGeneration: seeded.generation,
+      dispatchId: seeded.recovery.recoveryDispatchId,
+      importId: seeded.importId,
+      outcome: "recipe_seventh_recovery_prepared",
+      recoveryDispatchId: `${seeded.dispatchId}:recovery:7`,
+      runtimeStage: "pilot-gaia-118",
+    });
+    expect(started).toHaveLength(2);
+    expect(started[0]).toEqual(started[1]);
+    expect(started[0]).toMatchObject({
+      originalDispatchId: seeded.recovery.recoveryDispatchId,
+      recoveryDispatchId: `${seeded.dispatchId}:recovery:7`,
+      recoveryIdentity: "recovery:7",
+      recoveryOrdinal: 7,
+    });
+
+    const [resumedFirst, resumedDuplicate] = await Promise.all([
+      postResume(
+        app,
+        seeded,
+        "test-import-token",
+        seeded.recovery.recoveryDispatchId
+      ),
+      postResume(
+        app,
+        seeded,
+        "test-import-token",
+        seeded.recovery.recoveryDispatchId
+      ),
+    ]);
+    expect(resumedFirst.status).toBe(200);
+    expect(resumedDuplicate.status).toBe(200);
+    const resumedBody = await resumedFirst.json();
+    await expect(resumedDuplicate.json()).resolves.toEqual(resumedBody);
+    expect(resumedBody).toMatchObject({
+      outcome: "recipe_recovery_resumed",
+      recoveryDispatchId: `${seeded.dispatchId}:recovery:7`,
+      runtimeStage: "pilot-gaia-118",
+    });
+    expect(resumed).toHaveLength(2);
+    expect(resumed[0]).toEqual(resumed[1]);
+    expect(resumed[0]).toMatchObject({
+      recoveryIdentity: "recovery:7",
+      recoveryOrdinal: 7,
+    });
+
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, settled_micro_usd, reserved_micro_usd,
+                invoking_dispatch_id, poison_dispatch_id
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      settled_micro_usd: 700_000,
+      state: "open",
+    });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_recipe_seventh_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118' AND import_id = ?`
+      )
+        .bind(seeded.importId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE pilot_provider_recipe_seventh_recoveries
+            SET created_at = '2026-07-30T00:22:00.000Z'
+          WHERE runtime_stage = 'pilot-gaia-118' AND import_id = ?`
+      )
+        .bind(seeded.importId)
+        .run()
+    ).rejects.toThrow("seventh recipe recovery is immutable");
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `DELETE FROM pilot_provider_recipe_seventh_recoveries
+          WHERE runtime_stage = 'pilot-gaia-118' AND import_id = ?`
+      )
+        .bind(seeded.importId)
+        .run()
+    ).rejects.toThrow("seventh recipe recovery is immutable");
+  });
+
+  it("settles the exact poisoned seventh recovery once under concurrent replay", async () => {
+    const seeded = await seedUnknownSeventhRecovery("000000000232");
+    const app = await makeApp([]);
+    const request = {
+      acquisitionGeneration: seeded.generation,
+      dispatchId: seeded.recovery.recoveryDispatchId,
+      importId: seeded.importId,
+      operation: "settle_recipe_recovery_unknown" as const,
+    };
+
+    const responses = await Promise.all([
+      postOperation(app, request),
+      postOperation(app, request),
+      postOperation(app, request),
+    ]);
+
+    expect(responses.map(({ status }) => status)).toEqual([200, 200, 200]);
+    const expected = {
+      acquisitionGeneration: seeded.generation,
+      conservativeChargeMicroUsd: 100_000,
+      dispatchId: seeded.recovery.recoveryDispatchId,
+      importId: seeded.importId,
+      outcome: "recipe_recovery_unknown_cost_settled",
+      runtimeStage: "pilot-gaia-118",
+    };
+    await expect(
+      Promise.all(responses.map((response) => response.json()))
+    ).resolves.toEqual([expected, expected, expected]);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT state, settled_micro_usd, reserved_micro_usd,
+                invoking_dispatch_id, poison_dispatch_id
+           FROM pilot_provider_stage_budget
+          WHERE runtime_stage = 'pilot-gaia-118'`
+      ).first()
+    ).resolves.toEqual({
+      invoking_dispatch_id: null,
+      poison_dispatch_id: null,
+      reserved_micro_usd: 0,
+      settled_micro_usd: 800_000,
+      state: "open",
+    });
   });
 
   it("settles the exact poisoned sixth recovery once under concurrent replay", async () => {

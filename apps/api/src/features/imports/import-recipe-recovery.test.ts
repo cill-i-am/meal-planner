@@ -48,16 +48,16 @@ const recovery: RecipeRecovery = {
   visualManifestSha256: "e".repeat(64),
 };
 
-const sixthRecovery: RecipeRecovery = {
+const seventhRecovery: RecipeRecovery = {
   ...recovery,
   originalDispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
-    `${originalDispatchId}:recovery:5`
-  ),
-  recoveryDispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
     `${originalDispatchId}:recovery:6`
   ),
-  recoveryIdentity: "recovery:6",
-  recoveryOrdinal: 6,
+  recoveryDispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+    `${originalDispatchId}:recovery:7`
+  ),
+  recoveryIdentity: "recovery:7",
+  recoveryOrdinal: 7,
 };
 
 describe("recipe recovery authority", () => {
@@ -158,7 +158,7 @@ describe("recipe recovery authority", () => {
     const instanceId = recipeRecoveryResumeWorkflowInstanceId(
       importId,
       acquisitionGeneration,
-      6
+      7
     );
     const batches: unknown[] = [];
     const instance = {
@@ -175,7 +175,7 @@ describe("recipe recovery authority", () => {
       () => correlationId
     );
 
-    await Effect.runPromise(starter.resume(sixthRecovery));
+    await Effect.runPromise(starter.resume(seventhRecovery));
 
     expect(batches).toEqual([
       [
@@ -185,7 +185,7 @@ describe("recipe recovery authority", () => {
             acquisitionGeneration,
             correlationId,
             importId,
-            recoveryOrdinal: 6,
+            recoveryOrdinal: 7,
             resumeOrdinal: 1,
           },
         },
