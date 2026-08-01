@@ -2558,17 +2558,10 @@ describe("installed import provider adapters", () => {
     expect(observationItems.additionalProperties).toBe(false);
     expect(Object.keys(observationItems.properties)).toEqual([
       "confidence",
-      "frameIndex",
-      "kind",
-      "regions",
       "text",
-      "timestampMilliseconds",
     ]);
-    expect(observationItems.properties["frameIndex"]).toMatchObject({
-      type: "integer",
-    });
     expect(observationItems).toMatchObject({
-      required: ["confidence", "text"],
+      required: ["text"],
     });
     expect(
       Object.keys(
@@ -2578,7 +2571,7 @@ describe("installed import provider adapters", () => {
           }
         ).properties
       )
-    ).toEqual(["observations", "outcome"]);
+    ).toEqual(["observations"]);
     expect(trace.events).toEqual([
       {
         correlationId,
@@ -2650,6 +2643,61 @@ describe("installed import provider adapters", () => {
           text: "2 onions",
           timestampMilliseconds: 125,
         },
+      ],
+      outcome: "found",
+    });
+  });
+
+  it("conservatively normalizes optional provider confidence variants", async () => {
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", {
+        observations: [
+          {
+            confidence: "92%",
+            text: "  2 onions  ",
+          },
+          {
+            text: "add stock",
+          },
+          {
+            confidence: "high",
+            text: "serve",
+          },
+        ],
+      })
+    );
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 125,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(output).toMatchObject({
+      observations: [
+        { confidence: 0.92, text: "2 onions" },
+        { confidence: 0, text: "add stock" },
+        { confidence: 0, text: "serve" },
       ],
       outcome: "found",
     });
@@ -4482,12 +4530,6 @@ describe("installed import provider adapters", () => {
       toolResponse("record_visual_evidence", {
         observations: [{ confidence: 0.9, text: "2 onions" }],
         unknownProviderField: "must-not-escape",
-      }),
-    ],
-    [
-      "non-numeric confidence text",
-      toolResponse("record_visual_evidence", {
-        observations: [{ confidence: "high", text: "2 onions" }],
       }),
     ],
     [
