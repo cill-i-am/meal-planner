@@ -53,7 +53,10 @@ import {
   RecipeExtractorDescriptor,
   RecipeUnresolvedField,
 } from "./import-recipe-extractor.js";
-import { recipeEvidenceContains } from "./import-recipe-grounding.js";
+import {
+  projectRecipeEvidenceSpan,
+  recipeEvidenceContains,
+} from "./import-recipe-grounding.js";
 import type {
   SpeechTranscriberShape,
   SpeechTranscriptionFailure,
@@ -680,6 +683,34 @@ const normalizedStringEvidence = (
   value: string
 ) => items.find((item) => recipeEvidenceContains(item.value, value));
 
+const groundedStringEvidence = (
+  fact: RecipeExtractionSemantics["name"],
+  items: readonly RecipeEvidenceItem[]
+) => {
+  if (fact.state === "unresolved") {
+    return null;
+  }
+  const exact = normalizedStringEvidence(items, fact.value);
+  if (exact !== undefined) {
+    return { item: exact, value: fact.value } as const;
+  }
+  for (const citation of fact.citations) {
+    const item = items.find(
+      (candidate) =>
+        candidate.evidenceId === citation.evidenceId &&
+        candidate.origin === citation.origin
+    );
+    if (item === undefined) {
+      continue;
+    }
+    const projected = projectRecipeEvidenceSpan(item.value, fact.value);
+    if (projected !== null) {
+      return { item, value: projected } as const;
+    }
+  }
+  return null;
+};
+
 const exactTimeEvidence = (
   items: readonly RecipeEvidenceItem[],
   value: number
@@ -703,10 +734,10 @@ const groundRecipeStringFact = (
   if (fact.state === "unresolved") {
     return MissingRecipeFact;
   }
-  const evidence = normalizedStringEvidence(items, fact.value);
-  return evidence === undefined
+  const grounded = groundedStringEvidence(fact, items);
+  return grounded === null
     ? MissingRecipeFact
-    : trustedSupportedRecipeFact(fact.value, evidence);
+    : trustedSupportedRecipeFact(grounded.value, grounded.item);
 };
 
 const groundRecipeNumberFact = (
@@ -737,10 +768,10 @@ const groundRecipeFactList = (
     if (fact.state === "unresolved") {
       return [];
     }
-    const evidence = normalizedStringEvidence(items, fact.value);
-    return evidence === undefined
+    const groundedFact = groundedStringEvidence(fact, items);
+    return groundedFact === null
       ? []
-      : [trustedSupportedRecipeFact(fact.value, evidence)];
+      : [trustedSupportedRecipeFact(groundedFact.value, groundedFact.item)];
   });
   const unique = grounded.filter(
     (fact, index) =>
@@ -2071,7 +2102,7 @@ export const makeInstalledRecipeExtractor = (input: {
       descriptor: Schema.decodeUnknownSync(RecipeExtractorDescriptor)({
         model,
         provider: ProviderName,
-        version: "installed-alchemy-forced-tool-v3",
+        version: "installed-alchemy-forced-tool-v4",
       }),
       extract: (request) =>
         input.dispatch
