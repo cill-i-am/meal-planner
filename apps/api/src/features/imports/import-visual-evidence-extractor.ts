@@ -34,6 +34,13 @@ const UnitInterval = Schema.Number.pipe(
     Schema.isLessThanOrEqualTo(1)
   )
 );
+const ProviderVisualConfidence = Schema.Number.pipe(
+  Schema.check(
+    Schema.isFinite(),
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(100)
+  )
+);
 
 /** Normalized rectangular evidence region relative to a source frame. */
 export const VisualEvidenceRegion = Schema.Struct({
@@ -117,22 +124,30 @@ export type VisualEvidenceSemantics = typeof VisualEvidenceSemantics.Type;
 export const representativeVisualFrameIndex = (frameCount: number) =>
   Math.floor(frameCount / 2);
 
-/** Build strict model-owned observations constrained to the submitted frame. */
-export const visualEvidenceObservationsForFrameIndex = (frameIndex: number) =>
-  Schema.Struct({
-    observations: Schema.Array(
-      Schema.Struct({
-        confidence: UnitInterval,
-        frameIndex: SafeInteger.pipe(
-          Schema.check(
-            Schema.isGreaterThanOrEqualTo(frameIndex),
-            Schema.isLessThanOrEqualTo(frameIndex)
-          )
-        ),
-        text: VisualEvidenceSemanticObservation.fields.text,
-      })
-    ).pipe(Schema.check(Schema.isMaxLength(MaximumVisualObservations))),
-  });
+/**
+ * Closed provider transport schema. Only text and confidence are authoritative.
+ * Older model shapes may echo bounded metadata, but the adapter ignores it and
+ * derives transport identity and aggregate outcome from trusted inputs.
+ */
+export const VisualEvidenceProviderSemantics = Schema.Struct({
+  observations: Schema.Array(
+    Schema.Struct({
+      confidence: ProviderVisualConfidence,
+      frameIndex: Schema.optionalKey(SafeInteger),
+      kind: Schema.optionalKey(Schema.Literal("visible_text")),
+      regions: Schema.optionalKey(
+        Schema.Array(VisualEvidenceRegion).pipe(
+          Schema.check(Schema.isMaxLength(16))
+        )
+      ),
+      text: VisualEvidenceSemanticObservation.fields.text,
+      timestampMilliseconds: Schema.optionalKey(SafeInteger),
+    })
+  ).pipe(Schema.check(Schema.isMaxLength(MaximumVisualObservations))),
+  outcome: Schema.optionalKey(
+    Schema.Literals(["empty", "found", "low_confidence"])
+  ),
+});
 
 /** Normalized result returned by any future OCR or vision adapter. */
 export const VisualEvidence = Schema.Struct({
