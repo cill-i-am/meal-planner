@@ -152,6 +152,50 @@ const seedDispatchingRecipeImport = async (suffix: string) => {
   return { extractionFingerprint, generation, importId, now };
 };
 
+const seedFailedRecipeImport = async (suffix: string) => {
+  const importId = decodeImportId(`00000000-0000-4000-8000-${suffix}`);
+  const generation = decodeGeneration(1);
+  const extractionFingerprint = "9".repeat(64);
+  const createdAt = "2026-08-01T10:00:00.000Z";
+  const completedAt = "2026-08-01T10:00:30.000Z";
+  await testEnv.MealPlannerDatabase.prepare(
+    `INSERT INTO recipe_imports (
+       acquisition_generation, canonical_source_id, compatibility_fingerprint,
+       created_at, evidence_references_json, id, recovery_action, source_kind,
+       status, status_code, updated_at
+     ) VALUES (?, ?, ?, ?, '[]', ?, NULL, 'tiktok_video', 'queued', NULL, ?)`
+  )
+    .bind(
+      generation,
+      `failed-recipe-${suffix}`,
+      "8".repeat(64),
+      createdAt,
+      importId,
+      createdAt
+    )
+    .run();
+  await testEnv.MealPlannerDatabase.prepare(
+    `INSERT INTO import_recipe_extractions (
+       extraction_fingerprint, import_id, acquisition_generation,
+       evidence_fingerprint, extractor_provider, extractor_model,
+       extractor_version, state, failure_code, completed_at, created_at,
+       updated_at
+     ) VALUES (?, ?, ?, ?, 'cloudflare-workers-ai', 'recipe-model',
+               'installed-v1', 'failed', 'invalid_schema', ?, ?, ?)`
+  )
+    .bind(
+      extractionFingerprint,
+      importId,
+      generation,
+      "7".repeat(64),
+      completedAt,
+      createdAt,
+      completedAt
+    )
+    .run();
+  return { completedAt, extractionFingerprint, generation, importId };
+};
+
 describe("provider terminal recovery", () => {
   it("projects a recipe terminal checkpoint to the public import exactly once", async () => {
     const seeded = await seedDispatchingRecipeImport("000000000215");
@@ -253,6 +297,56 @@ describe("provider terminal recovery", () => {
     ).resolves.toEqual({
       acquisition_generation: seeded.generation,
       status: "queued",
+    });
+  });
+
+  it("uses an already-failed recipe row's exact terminal facts", async () => {
+    const seeded = await seedFailedRecipeImport("000000000241");
+    const repository = makeD1ProviderTerminalCheckpointRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const checkpoint = await Effect.runPromise(
+      repository.persist({
+        acquisitionGeneration: seeded.generation,
+        completedAt: decodeImportTimestamp("2026-08-01T10:01:00.000Z"),
+        failureCode: "invalid_schema",
+        importId: seeded.importId,
+        providerStage: "recipe",
+      })
+    );
+
+    expect(checkpoint).toEqual({
+      acquisitionGeneration: seeded.generation,
+      completedAt: seeded.completedAt,
+      failureCode: "invalid_schema",
+      importId: seeded.importId,
+      ownershipId: seeded.extractionFingerprint,
+      providerStage: "recipe",
+    });
+    await expect(
+      Effect.runPromise(
+        repository.persist({
+          acquisitionGeneration: seeded.generation,
+          completedAt: decodeImportTimestamp("2026-08-01T10:02:00.000Z"),
+          failureCode: "invalid_schema",
+          importId: seeded.importId,
+          providerStage: "recipe",
+        })
+      )
+    ).resolves.toEqual(checkpoint);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT ownership_id, projected_at, status, status_code
+           FROM import_recipe_terminal_projections
+          WHERE import_id = ? AND acquisition_generation = ?`
+      )
+        .bind(seeded.importId, seeded.generation)
+        .first()
+    ).resolves.toEqual({
+      ownership_id: seeded.extractionFingerprint,
+      projected_at: seeded.completedAt,
+      status: "failed",
+      status_code: "recipe_extraction_failed",
     });
   });
 

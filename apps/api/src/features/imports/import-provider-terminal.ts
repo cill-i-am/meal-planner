@@ -40,6 +40,13 @@ const RecoveryRow = Schema.Struct({
   recovery_dispatch_id: Schema.String,
 });
 
+const RecipeTerminalOwnershipRow = Schema.Struct({
+  completed_at: Schema.NullOr(Schema.String),
+  failure_code: Schema.NullOr(Schema.String),
+  ownership_id: Schema.String,
+  state: Schema.Literals(["dispatching", "failed"]),
+});
+
 const SpeechRecoveryActivationRow = Schema.Struct({
   parent_status: Schema.String,
   recovery_dispatch_id: Schema.NullOr(Schema.String),
@@ -179,6 +186,44 @@ const readActiveOwnership = (
     )
   );
 
+const readActiveRecipeOwnership = (
+  database: AnyD1Database,
+  input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly importId: ImportId;
+  }
+) =>
+  persistenceEffect<unknown | null>(
+    () =>
+      database
+        .prepare(
+          `SELECT extraction_fingerprint AS ownership_id, state,
+                failure_code, completed_at
+           FROM import_recipe_extractions
+          WHERE import_id = ?
+            AND acquisition_generation = ?
+            AND state IN ('dispatching', 'failed')
+          ORDER BY updated_at DESC,
+                   CASE state WHEN 'dispatching' THEN 0 ELSE 1 END,
+                   extraction_fingerprint DESC
+          LIMIT 1`
+        )
+        .bind(input.importId, input.acquisitionGeneration)
+        .first() as PromiseLike<unknown | null>
+  ).pipe(
+    Effect.flatMap((row) =>
+      row === null
+        ? Effect.fail(providerTerminalPersistenceError("persistence_corrupt"))
+        : Schema.decodeUnknownEffect(RecipeTerminalOwnershipRow, {
+            onExcessProperty: "ignore",
+          })(row).pipe(
+            Effect.mapError(() =>
+              providerTerminalPersistenceError("persistence_corrupt")
+            )
+          )
+    )
+  );
+
 const readCheckpoint = (
   database: AnyD1Database,
   input: {
@@ -215,6 +260,40 @@ const readCheckpoint = (
     )
   );
 
+const readOptionalCheckpoint = (
+  database: AnyD1Database,
+  input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly importId: ImportId;
+    readonly ownershipId: string;
+    readonly providerStage: ProviderTaskStage;
+  }
+) =>
+  persistenceEffect<unknown | null>(
+    () =>
+      database
+        .prepare(
+          `SELECT import_id, acquisition_generation, provider_stage,
+                ownership_id, failure_code, completed_at
+           FROM import_provider_terminal_checkpoints
+          WHERE import_id = ?
+            AND acquisition_generation = ?
+            AND provider_stage = ?
+            AND ownership_id = ?`
+        )
+        .bind(
+          input.importId,
+          input.acquisitionGeneration,
+          input.providerStage,
+          input.ownershipId
+        )
+        .first() as PromiseLike<unknown | null>
+  ).pipe(
+    Effect.flatMap((row) =>
+      row === null ? Effect.succeed(null) : decodeCheckpoint(row)
+    )
+  );
+
 export interface ProviderTerminalCheckpointRepository {
   readonly persist: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
@@ -233,8 +312,53 @@ export const makeD1ProviderTerminalCheckpointRepository = (
 ): ProviderTerminalCheckpointRepository => ({
   persist: (input) =>
     Effect.gen(function* persistProviderTerminalCheckpoint() {
-      const ownershipId = yield* readActiveOwnership(database, input);
-      const completedAt = DateTime.formatIso(input.completedAt);
+      const requestedCompletedAt = DateTime.formatIso(input.completedAt);
+      const recipeOwnership =
+        input.providerStage === "recipe"
+          ? yield* readActiveRecipeOwnership(database, input)
+          : undefined;
+      const ownershipId =
+        recipeOwnership?.ownership_id ??
+        (yield* readActiveOwnership(database, input));
+      if (recipeOwnership?.state === "failed") {
+        const existingCheckpoint = yield* readOptionalCheckpoint(database, {
+          ...input,
+          ownershipId,
+        });
+        if (existingCheckpoint !== null) {
+          if (
+            existingCheckpoint.failureCode !== input.failureCode ||
+            (recipeOwnership.failure_code !== "provider_error" &&
+              recipeOwnership.failure_code !==
+                existingCheckpoint.failureCode) ||
+            recipeOwnership.completed_at !== existingCheckpoint.completedAt
+          ) {
+            return yield* Effect.fail(
+              providerTerminalPersistenceError("persistence_corrupt")
+            );
+          }
+          return existingCheckpoint;
+        }
+      }
+      let terminalFacts = {
+        completedAt: requestedCompletedAt,
+        failureCode: input.failureCode,
+      };
+      if (recipeOwnership?.state === "failed") {
+        if (
+          recipeOwnership.failure_code !== input.failureCode ||
+          typeof recipeOwnership.completed_at !== "string" ||
+          recipeOwnership.completed_at.length === 0
+        ) {
+          return yield* Effect.fail(
+            providerTerminalPersistenceError("persistence_corrupt")
+          );
+        }
+        terminalFacts = {
+          completedAt: recipeOwnership.completed_at,
+          failureCode: recipeOwnership.failure_code,
+        };
+      }
       yield* persistenceEffect(() =>
         database
           .prepare(
@@ -251,9 +375,9 @@ export const makeD1ProviderTerminalCheckpointRepository = (
             input.acquisitionGeneration,
             input.providerStage,
             ownershipId,
-            input.failureCode,
-            completedAt,
-            completedAt
+            terminalFacts.failureCode,
+            terminalFacts.completedAt,
+            terminalFacts.completedAt
           )
           .run()
       );
@@ -261,7 +385,10 @@ export const makeD1ProviderTerminalCheckpointRepository = (
         ...input,
         ownershipId,
       });
-      if (checkpoint.failureCode !== input.failureCode) {
+      if (
+        checkpoint.failureCode !== terminalFacts.failureCode ||
+        checkpoint.completedAt !== terminalFacts.completedAt
+      ) {
         return yield* Effect.fail(
           providerTerminalPersistenceError("persistence_corrupt")
         );

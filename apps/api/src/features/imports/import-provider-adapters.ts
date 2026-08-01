@@ -600,6 +600,14 @@ const recipePromptText = (input: RecipeEvidenceAssembly) =>
       "Use unresolved states for every unsupported field. " +
       "If the accessible content is not food or not a recipe, keep recipe " +
       "facts unresolved and return no invented ingredients or instructions.",
+    "Copy every supported value verbatim from at least one cited evidence item. " +
+      "Use exactly the supplied evidenceId and origin in every citation. " +
+      "Include a numeric fact only when the exact number and unit occur in the " +
+      "cited evidence text. Set sourceUrl to the exact source_url evidence value " +
+      "and cite that item. Set author only to an exact creator value and cite " +
+      "that item. List every unresolved fact field exactly once in " +
+      "unresolvedFields, including ingredient_quantities and ingredient_units " +
+      "when the evidence does not provide them.",
     ...input.items.map((item) =>
       JSON.stringify({
         evidenceId: item.evidenceId,

@@ -5000,6 +5000,22 @@ describe("installed import provider adapters", () => {
         type: "object",
       })
     );
+    const serializedRequest = JSON.stringify(request.body);
+    expect(serializedRequest).toContain(
+      "Copy every supported value verbatim from at least one cited evidence item"
+    );
+    expect(serializedRequest).toContain(
+      "Use exactly the supplied evidenceId and origin in every citation"
+    );
+    expect(serializedRequest).toContain(
+      "Include a numeric fact only when the exact number and unit occur in the cited evidence text"
+    );
+    expect(serializedRequest).toContain(
+      "Set sourceUrl to the exact source_url evidence value"
+    );
+    expect(serializedRequest).toContain(
+      "List every unresolved fact field exactly once in unresolvedFields"
+    );
   });
 
   it("uses the immutable recovery dispatch exactly once without changing evidence", async () => {
