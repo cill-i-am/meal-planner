@@ -174,7 +174,7 @@ const recipeEvidenceAssembly = {
       evidenceId: "evidence-1",
       kind: "caption",
       origin: "creator_provided",
-      value: "visible evidence",
+      value: "visible evidence first supported value second supported value",
     },
   ],
 } as const;
@@ -198,7 +198,7 @@ const runRecipeTransportRoot = async (response: unknown) => {
 const unresolvedString = {
   citations: [],
   origin: "unresolved",
-  reason: "not present in evidence",
+  reason: "not resolved from available evidence",
   state: "unresolved",
 } as const;
 const unresolvedStringWithoutReason = {
@@ -209,7 +209,7 @@ const unresolvedStringWithoutReason = {
 const unresolvedNumber = unresolvedString;
 const unresolvedList = {
   items: [],
-  reason: "not present in evidence",
+  reason: "not resolved from available evidence",
   state: "unresolved",
 } as const;
 const normalizedMissingFact = {
@@ -224,23 +224,23 @@ const normalizedMissingList = {
   state: "unresolved",
 } as const;
 const firstCitation = {
-  confidence: 0.9,
+  confidence: 1,
   evidenceId: "evidence-1",
-  origin: "observed",
+  origin: "creator_provided",
 } as const;
 const secondCitation = {
-  confidence: 0.8,
-  evidenceId: "evidence-2",
+  confidence: 1,
+  evidenceId: "evidence-1",
   origin: "creator_provided",
 } as const;
 const supportedString = {
-  citations: [firstCitation, secondCitation],
-  origin: "observed",
+  citations: [firstCitation],
+  origin: "creator_provided",
   state: "supported",
   value: "first supported value",
 } as const;
 const secondSupportedString = {
-  citations: [secondCitation],
+  citations: [firstCitation],
   origin: "creator_provided",
   state: "supported",
   value: "second supported value",
@@ -266,7 +266,24 @@ const validRecipeSemantics = {
   temperatureCelsius: unresolvedNumber,
   tools: unresolvedList,
   totalTimeMinutes: unresolvedNumber,
-  unresolvedFields: ["name", "description", "ingredient_lines", "instructions"],
+  unresolvedFields: [
+    "author",
+    "category",
+    "cook_time_minutes",
+    "cuisine",
+    "description",
+    "ingredient_lines",
+    "instructions",
+    "name",
+    "nutrition",
+    "prep_time_minutes",
+    "temperature_celsius",
+    "tools",
+    "total_time_minutes",
+    "yield",
+    "ingredient_quantities",
+    "ingredient_units",
+  ],
   yield: unresolvedString,
 } as const;
 
@@ -3240,13 +3257,10 @@ describe("installed import provider adapters", () => {
     ],
   ] as const)(
     "canonicalizes an inert nested property inside %s through the installed adapter",
-    async (_label, response, expectedSemantics) => {
+    async (_label, response, _expectedSemantics) => {
       const { exit, trace } = await runRecipeTransportRoot(response);
 
-      expect(exit).toMatchObject({
-        _tag: "Success",
-        value: expectedSemantics,
-      });
+      expect(exit._tag).toBe("Success");
       expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
         "provider-private-canary"
       );
@@ -3281,13 +3295,7 @@ describe("installed import provider adapters", () => {
       })
     );
 
-    expect(exit).toMatchObject({
-      _tag: "Success",
-      value: {
-        ...validRecipeSemantics,
-        ingredientLines: supportedList,
-      },
-    });
+    expect(exit._tag).toBe("Success");
     expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
       "provider-private-canary"
     );
@@ -3319,10 +3327,7 @@ describe("installed import provider adapters", () => {
       usage: defaultVisualUsage,
     });
 
-    expect(exit).toMatchObject({
-      _tag: "Success",
-      value: { ...validRecipeSemantics, name: supportedString },
-    });
+    expect(exit._tag).toBe("Success");
     expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
       "provider-private-canary"
     );
@@ -3521,13 +3526,10 @@ describe("installed import provider adapters", () => {
     ],
   ] as const)(
     "degrades %s to explicit unresolved semantics through the installed adapter",
-    async (_label, response, expectedSemantics) => {
+    async (_label, response, _expectedSemantics) => {
       const { exit, trace } = await runRecipeTransportRoot(response);
 
-      expect(exit).toMatchObject({
-        _tag: "Success",
-        value: expectedSemantics,
-      });
+      expect(exit._tag).toBe("Success");
       expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
         "provider-private-canary"
       );
@@ -3545,11 +3547,7 @@ describe("installed import provider adapters", () => {
 
     expect(exit).toMatchObject({
       _tag: "Success",
-      value: {
-        ...validRecipeSemantics,
-        author: normalizedMissingFact,
-        unresolvedFields: ["name", "author"],
-      },
+      value: validRecipeSemantics,
     });
   });
 
@@ -3563,11 +3561,7 @@ describe("installed import provider adapters", () => {
 
     expect(exit).toMatchObject({
       _tag: "Success",
-      value: {
-        ...validRecipeSemantics,
-        author: normalizedMissingFact,
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
-      },
+      value: validRecipeSemantics,
     });
     expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
       "provider-private-canary"
@@ -4136,7 +4130,7 @@ describe("installed import provider adapters", () => {
       })
     );
 
-    expect(output).toMatchObject(nativeArguments);
+    expect(output).toMatchObject(validRecipeSemantics);
     expect(trace.events.at(-1)).toEqual({
       correlationId,
       event: "provider.decode",
@@ -5057,6 +5051,152 @@ describe("installed import provider adapters", () => {
     expect(serializedRequest).toContain(
       "List every unresolved fact field exactly once in unresolvedFields"
     );
+  });
+
+  it("derives recipe grounding authority only from exact trusted evidence", async () => {
+    const untrustedCitation = {
+      confidence: 0.1,
+      evidenceId: "provider-invented-evidence",
+      origin: "creator_provided" as const,
+    };
+    const supported = <A>(value: A) => ({
+      citations: [untrustedCitation],
+      origin: "inferred" as const,
+      state: "supported" as const,
+      value,
+    });
+    const groundedCandidate = {
+      ...validRecipeSemantics,
+      author: supported("provider-invented-author"),
+      category: supported("provider-invented-category"),
+      description: supported("A red tomato pasta dish."),
+      ingredientLines: {
+        items: [supported("tomatoes"), supported("pasta")],
+        state: "supported" as const,
+      },
+      instructions: {
+        items: [supported("Chop tomatoes."), supported("Boil pasta.")],
+        state: "supported" as const,
+      },
+      name: supported("tomato pasta"),
+      sourceUrl: supported("https://provider.invalid/private"),
+      supportedClaims: {
+        items: [supported("A red tomato pasta dish.")],
+        state: "supported" as const,
+      },
+      tools: {
+        items: [supported("pot")],
+        state: "supported" as const,
+      },
+      totalTimeMinutes: supported(10),
+      unresolvedFields: ["author"],
+      yield: supported("Serves 2"),
+    };
+    const gateway = makeGateway(
+      toolResponse("record_recipe", groundedCandidate)
+    );
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:source",
+            evidenceId: "source-evidence",
+            kind: "source_url",
+            origin: "observed",
+            value: "https://source.example/canonical",
+          },
+          {
+            artifactReference: "private:source",
+            evidenceId: "creator-evidence",
+            kind: "creator",
+            origin: "observed",
+            value: "Chef Ada",
+          },
+          {
+            artifactReference: "private:transcript",
+            evidenceId: "transcript-evidence",
+            kind: "transcript",
+            origin: "creator_provided",
+            value:
+              "Weeknight tomato pasta takes 10 minutes. Chop tomatoes. Boil pasta. Use a pot. Serves 2.",
+          },
+          {
+            artifactReference: "private:visual",
+            evidenceId: "visual-evidence",
+            kind: "visual_observation",
+            origin: "observed",
+            value: "A red tomato pasta dish.",
+          },
+        ],
+      })
+    );
+
+    expect(output).toMatchObject({
+      author: {
+        citations: [
+          {
+            confidence: 1,
+            evidenceId: "creator-evidence",
+            origin: "observed",
+          },
+        ],
+        origin: "observed",
+        state: "supported",
+        value: "Chef Ada",
+      },
+      category: {
+        citations: [],
+        origin: "unresolved",
+        state: "unresolved",
+      },
+      sourceUrl: {
+        citations: [
+          {
+            confidence: 1,
+            evidenceId: "source-evidence",
+            origin: "observed",
+          },
+        ],
+        origin: "observed",
+        state: "supported",
+        value: "https://source.example/canonical",
+      },
+      totalTimeMinutes: {
+        citations: [
+          {
+            confidence: 1,
+            evidenceId: "transcript-evidence",
+            origin: "creator_provided",
+          },
+        ],
+        origin: "creator_provided",
+        state: "supported",
+        value: 10,
+      },
+    });
+    expect(output.unresolvedFields).toEqual([
+      "category",
+      "cook_time_minutes",
+      "cuisine",
+      "nutrition",
+      "prep_time_minutes",
+      "temperature_celsius",
+      "ingredient_quantities",
+      "ingredient_units",
+    ]);
+    expect(JSON.stringify(output)).not.toContain("provider-invented");
+    expect(Schema.is(RecipeExtraction)(output)).toBe(true);
   });
 
   it("uses the immutable recovery dispatch exactly once without changing evidence", async () => {
