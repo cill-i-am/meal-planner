@@ -2392,15 +2392,19 @@ describe("installed import provider adapters", () => {
     expect(trace.events).toEqual([]);
   });
 
-  it("uses the current Workers AI image-message forced-tool contract and injects trusted transport metadata", async () => {
+  it("uses the current Workers AI image-message forced-tool contract and derives trusted visual metadata", async () => {
     const visualSemantics = {
       observations: [
         {
-          confidence: 0.92,
-          frameIndex: 1,
+          confidence: 92,
+          frameIndex: 0,
+          kind: "visible_text",
+          regions: [{ height: 0.25, width: 0.25, x: 0.25, y: 0.25 }],
           text: "2 onions",
+          timestampMilliseconds: 999,
         },
       ],
+      outcome: "empty",
     } as const;
     const gateway = makeGateway(
       toolResponse("record_visual_evidence", visualSemantics)
@@ -2524,7 +2528,7 @@ describe("installed import provider adapters", () => {
     expect(request.body).not.toHaveProperty("image");
     expect(request.body).not.toHaveProperty("response_format");
     expect(request.body.messages[0]?.content[0]?.text).toContain(
-      "original source frameIndex is 1"
+      "adapter owns the source frame identity and timing"
     );
     expect(request.body.messages[0]?.content[1]).toEqual({
       image_url: { url: "data:image/jpeg;base64,BAU=" },
@@ -2555,17 +2559,17 @@ describe("installed import provider adapters", () => {
     expect(Object.keys(observationItems.properties)).toEqual([
       "confidence",
       "frameIndex",
+      "kind",
+      "regions",
       "text",
+      "timestampMilliseconds",
     ]);
     expect(observationItems.properties["frameIndex"]).toMatchObject({
       type: "integer",
     });
-    expect(JSON.stringify(observationItems.properties["frameIndex"])).toMatch(
-      /"minimum":1/u
-    );
-    expect(JSON.stringify(observationItems.properties["frameIndex"])).toMatch(
-      /"maximum":1/u
-    );
+    expect(observationItems).toMatchObject({
+      required: ["confidence", "text"],
+    });
     expect(
       Object.keys(
         (
@@ -2574,7 +2578,7 @@ describe("installed import provider adapters", () => {
           }
         ).properties
       )
-    ).toEqual(["observations"]);
+    ).toEqual(["observations", "outcome"]);
     expect(trace.events).toEqual([
       {
         correlationId,
@@ -4404,30 +4408,21 @@ describe("installed import provider adapters", () => {
       toolResponse("record_visual_evidence", "{not-json"),
     ],
     [
-      "model-owned trusted fields",
+      "unknown observation metadata",
       toolResponse("record_visual_evidence", {
         observations: [
           {
             confidence: 0.9,
-            frameIndex: 0,
-            kind: "visible_text",
             text: "2 onions",
+            unknownProviderField: "must-not-escape",
           },
         ],
-        outcome: "found",
       }),
     ],
     [
-      "out-of-range frame references",
+      "out-of-range confidence",
       toolResponse("record_visual_evidence", {
-        observations: [{ confidence: 0.9, frameIndex: 1, text: "2 onions" }],
-      }),
-    ],
-    [
-      "model-supplied derived outcomes",
-      toolResponse("record_visual_evidence", {
-        observations: [{ confidence: 0.9, frameIndex: 0, text: "2 onions" }],
-        outcome: "empty",
+        observations: [{ confidence: 101, text: "2 onions" }],
       }),
     ],
   ])("fails closed for visual %s", async (_label, response) => {

@@ -66,7 +66,7 @@ import type {
 } from "./import-visual-evidence-extractor.js";
 import {
   representativeVisualFrameIndex,
-  visualEvidenceObservationsForFrameIndex,
+  VisualEvidenceProviderSemantics,
   visualEvidenceOutcomeForObservations,
 } from "./import-visual-evidence-extractor.js";
 
@@ -817,17 +817,13 @@ const encodeBase64 = (bytes: Uint8Array) => {
   return btoa(binary);
 };
 
-const visualPrompt = (
-  frame: VisualFrameArtifact,
-  frameIndex: number
-): Prompt.RawInput => [
+const visualPrompt = (frame: VisualFrameArtifact): Prompt.RawInput => [
   {
     content: [
       {
         text:
           "Record only visible text in the provided source image. " +
-          `Its zero-based original source frameIndex is ${frameIndex}. ` +
-          "Every observation must use exactly that frameIndex. " +
+          "The adapter owns the source frame identity and timing. " +
           "Do not infer ingredients, quantities, steps, or other unseen facts.",
         type: "text",
       },
@@ -1926,8 +1922,6 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                   if (frame === undefined) {
                     return yield* Effect.fail("insufficient_evidence" as const);
                   }
-                  const semanticsSchema =
-                    visualEvidenceObservationsForFrameIndex(frameIndex);
                   const { inputTokens, outputTokens, value } =
                     yield* oneForcedToolCall(
                       service,
@@ -1935,8 +1929,8 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                         description:
                           "Record only observations of text visibly present in the supplied source image.",
                         name: "record_visual_evidence",
-                        prompt: visualPrompt(frame, frameIndex),
-                        schema: semanticsSchema,
+                        prompt: visualPrompt(frame),
+                        schema: VisualEvidenceProviderSemantics,
                       },
                       {
                         correlationId: input.correlationId,
@@ -1944,26 +1938,24 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                         traceStore,
                       }
                     );
-                  const observations = yield* Effect.all(
-                    value.observations.map((observation) => {
-                      const observationFrame =
-                        request.frames[observation.frameIndex];
-                      return observationFrame === undefined
-                        ? Effect.fail("malformed_response" as const)
-                        : Effect.succeed({
-                            ...observation,
-                            kind: "visible_text" as const,
-                            regions: [
-                              {
-                                height: 1,
-                                width: 1,
-                                x: 0,
-                                y: 0,
-                              },
-                            ] as const,
-                            timestampMilliseconds:
-                              observationFrame.timestampMilliseconds,
-                          });
+                  const observations = value.observations.map(
+                    (observation) => ({
+                      confidence:
+                        observation.confidence > 1
+                          ? observation.confidence / 100
+                          : observation.confidence,
+                      frameIndex,
+                      kind: "visible_text" as const,
+                      regions: [
+                        {
+                          height: 1,
+                          width: 1,
+                          x: 0,
+                          y: 0,
+                        },
+                      ] as const,
+                      text: observation.text,
+                      timestampMilliseconds: frame.timestampMilliseconds,
                     })
                   );
                   const meteredCost = pricedTokenUsage(
