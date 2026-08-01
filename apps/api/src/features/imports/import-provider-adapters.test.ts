@@ -5539,6 +5539,77 @@ describe("installed import provider adapters", () => {
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
   });
 
+  it("projects uncited provider-selected facts back to exact evidence spans", async () => {
+    const candidate = {
+      ...validRecipeSemantics,
+      ingredientLines: {
+        items: [
+          {
+            state: "supported" as const,
+            value: "tomatoes and pasta",
+          },
+        ],
+        state: "supported" as const,
+      },
+      instructions: {
+        items: [
+          {
+            state: "supported" as const,
+            value: "add chopped tomatoes to the pan",
+          },
+        ],
+        state: "supported" as const,
+      },
+    };
+    const gateway = makeGateway(toolResponse("record_recipe", candidate));
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:transcript",
+            evidenceId: "transcript-evidence",
+            kind: "transcript",
+            origin: "creator_provided",
+            value:
+              "Ingredients include tomatoes, plus fresh pasta. Start by adding the chopped tomatoes to the pan.",
+          },
+        ],
+      })
+    );
+
+    expect(output.ingredientLines).toMatchObject({
+      items: [
+        {
+          state: "supported",
+          value: "tomatoes, plus fresh pasta",
+        },
+      ],
+      state: "supported",
+    });
+    expect(output.instructions).toMatchObject({
+      items: [
+        {
+          state: "supported",
+          value: "adding the chopped tomatoes to the pan",
+        },
+      ],
+      state: "supported",
+    });
+    expect(hasMinimumRecipeEvidence(output)).toBe(true);
+    expect(Schema.is(RecipeExtraction)(output)).toBe(true);
+  });
+
   it("projects model-selected facts to exact cited evidence spans", async () => {
     const candidate = {
       ...validRecipeSemantics,

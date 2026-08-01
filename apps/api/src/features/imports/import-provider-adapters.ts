@@ -708,6 +708,19 @@ const groundedStringEvidence = (
       return { item, value: projected } as const;
     }
   }
+  for (const item of items) {
+    if (
+      item.kind !== "caption" &&
+      item.kind !== "transcript" &&
+      item.kind !== "visual_observation"
+    ) {
+      continue;
+    }
+    const projected = projectRecipeEvidenceSpan(item.value, fact.value);
+    if (projected !== null) {
+      return { item, value: projected } as const;
+    }
+  }
   return null;
 };
 
