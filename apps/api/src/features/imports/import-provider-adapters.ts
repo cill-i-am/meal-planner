@@ -42,6 +42,7 @@ import {
 } from "./import-observability.js";
 import type {
   RecipeEvidenceAssembly,
+  RecipeEvidenceItem,
   RecipeExtractionFailure,
   RecipeExtractorShape,
 } from "./import-recipe-extractor.js";
@@ -619,6 +620,195 @@ const recipePromptText = (input: RecipeEvidenceAssembly) =>
     ),
   ].join("\n");
 
+const RecipeUnresolvedFieldBySemanticKey = new Map<
+  string,
+  RecipeUnresolvedField
+>([
+  ["author", "author"],
+  ["category", "category"],
+  ["cookTimeMinutes", "cook_time_minutes"],
+  ["cuisine", "cuisine"],
+  ["description", "description"],
+  ["ingredientLines", "ingredient_lines"],
+  ["instructions", "instructions"],
+  ["name", "name"],
+  ["nutrition", "nutrition"],
+  ["prepTimeMinutes", "prep_time_minutes"],
+  ["temperatureCelsius", "temperature_celsius"],
+  ["tools", "tools"],
+  ["totalTimeMinutes", "total_time_minutes"],
+  ["yield", "yield"],
+]);
+const MissingRecipeSemanticReason =
+  "not resolved from available evidence" as const;
+const MissingRecipeFact = {
+  citations: [],
+  origin: "unresolved",
+  reason: MissingRecipeSemanticReason,
+  state: "unresolved",
+} as const;
+const MissingRecipeFactList = {
+  items: [],
+  reason: MissingRecipeSemanticReason,
+  state: "unresolved",
+} as const;
+
+const trustedRecipeCitation = (item: RecipeEvidenceItem) => ({
+  confidence: 1,
+  evidenceId: item.evidenceId,
+  origin: item.origin,
+});
+
+const trustedSupportedRecipeFact = <A>(value: A, item: RecipeEvidenceItem) => ({
+  citations: [trustedRecipeCitation(item)] as const,
+  origin: item.origin,
+  state: "supported" as const,
+  value,
+});
+
+const exactStringEvidence = (
+  items: readonly RecipeEvidenceItem[],
+  value: string
+) => items.find((item) => item.value.includes(value));
+
+const exactTimeEvidence = (
+  items: readonly RecipeEvidenceItem[],
+  value: number
+) =>
+  items.find((item) =>
+    new RegExp(`\\b${value}\\s*(?:minutes?|mins?)\\b`, "iu").test(item.value)
+  );
+
+const exactTemperatureEvidence = (
+  items: readonly RecipeEvidenceItem[],
+  value: number
+) =>
+  items.find((item) =>
+    new RegExp(`\\b${value}\\s*(?:°\\s*)?c\\b`, "iu").test(item.value)
+  );
+
+const groundRecipeStringFact = (
+  fact: RecipeExtractionSemantics["name"],
+  items: readonly RecipeEvidenceItem[]
+) => {
+  if (fact.state === "unresolved") {
+    return MissingRecipeFact;
+  }
+  const evidence = exactStringEvidence(items, fact.value);
+  return evidence === undefined
+    ? MissingRecipeFact
+    : trustedSupportedRecipeFact(fact.value, evidence);
+};
+
+const groundRecipeNumberFact = (
+  fact: RecipeExtractionSemantics["totalTimeMinutes"],
+  items: readonly RecipeEvidenceItem[],
+  findEvidence: (
+    evidence: readonly RecipeEvidenceItem[],
+    value: number
+  ) => RecipeEvidenceItem | undefined
+) => {
+  if (fact.state === "unresolved") {
+    return MissingRecipeFact;
+  }
+  const evidence = findEvidence(items, fact.value);
+  return evidence === undefined
+    ? MissingRecipeFact
+    : trustedSupportedRecipeFact(fact.value, evidence);
+};
+
+const groundRecipeFactList = (
+  list: RecipeExtractionSemantics["ingredientLines"],
+  items: readonly RecipeEvidenceItem[]
+) => {
+  if (list.state === "unresolved") {
+    return MissingRecipeFactList;
+  }
+  const grounded = list.items.flatMap((fact) => {
+    if (fact.state === "unresolved") {
+      return [];
+    }
+    const evidence = exactStringEvidence(items, fact.value);
+    return evidence === undefined
+      ? []
+      : [trustedSupportedRecipeFact(fact.value, evidence)];
+  });
+  const unique = grounded.filter(
+    (fact, index) =>
+      grounded.findIndex((candidate) => candidate.value === fact.value) ===
+      index
+  );
+  const [first, ...rest] = unique;
+  return first === undefined
+    ? MissingRecipeFactList
+    : { items: [first, ...rest] as const, state: "supported" as const };
+};
+
+const trustedEvidenceFact = (
+  items: readonly RecipeEvidenceItem[],
+  kind: "creator" | "source_url"
+) => {
+  const evidence = items.find((item) => item.kind === kind);
+  return evidence === undefined
+    ? MissingRecipeFact
+    : trustedSupportedRecipeFact(evidence.value, evidence);
+};
+
+const deriveTrustedRecipeSemantics = (
+  candidate: RecipeExtractionSemantics,
+  items: readonly RecipeEvidenceItem[]
+): RecipeExtractionSemantics => {
+  const semantics = {
+    author: trustedEvidenceFact(items, "creator"),
+    category: groundRecipeStringFact(candidate.category, items),
+    cookTimeMinutes: groundRecipeNumberFact(
+      candidate.cookTimeMinutes,
+      items,
+      exactTimeEvidence
+    ),
+    cuisine: groundRecipeStringFact(candidate.cuisine, items),
+    description: groundRecipeStringFact(candidate.description, items),
+    ingredientLines: groundRecipeFactList(candidate.ingredientLines, items),
+    instructions: groundRecipeFactList(candidate.instructions, items),
+    name: groundRecipeStringFact(candidate.name, items),
+    nutrition: groundRecipeStringFact(candidate.nutrition, items),
+    prepTimeMinutes: groundRecipeNumberFact(
+      candidate.prepTimeMinutes,
+      items,
+      exactTimeEvidence
+    ),
+    sourceUrl: trustedEvidenceFact(items, "source_url"),
+    supportedClaims: groundRecipeFactList(candidate.supportedClaims, items),
+    temperatureCelsius: groundRecipeNumberFact(
+      candidate.temperatureCelsius,
+      items,
+      exactTemperatureEvidence
+    ),
+    tools: groundRecipeFactList(candidate.tools, items),
+    totalTimeMinutes: groundRecipeNumberFact(
+      candidate.totalTimeMinutes,
+      items,
+      exactTimeEvidence
+    ),
+    yield: groundRecipeStringFact(candidate.yield, items),
+  };
+  const unresolvedFields = [
+    ...RecipeUnresolvedFieldBySemanticKey.entries(),
+  ].flatMap(([key, field]) =>
+    semantics[key as keyof typeof semantics].state === "unresolved"
+      ? [field]
+      : []
+  );
+  return {
+    ...semantics,
+    unresolvedFields: [
+      ...unresolvedFields,
+      "ingredient_quantities",
+      "ingredient_units",
+    ],
+  };
+};
+
 const encodeBase64 = (bytes: Uint8Array) => {
   let binary = "";
   for (const byte of bytes) {
@@ -909,38 +1099,6 @@ const RecipeFactListFieldKeys = new Set([
   "supportedClaims",
   "tools",
 ]);
-const RecipeUnresolvedFieldBySemanticKey = new Map<
-  string,
-  RecipeUnresolvedField
->([
-  ["author", "author"],
-  ["category", "category"],
-  ["cookTimeMinutes", "cook_time_minutes"],
-  ["cuisine", "cuisine"],
-  ["description", "description"],
-  ["ingredientLines", "ingredient_lines"],
-  ["instructions", "instructions"],
-  ["name", "name"],
-  ["nutrition", "nutrition"],
-  ["prepTimeMinutes", "prep_time_minutes"],
-  ["temperatureCelsius", "temperature_celsius"],
-  ["tools", "tools"],
-  ["totalTimeMinutes", "total_time_minutes"],
-  ["yield", "yield"],
-]);
-const MissingRecipeSemanticReason =
-  "not resolved from available evidence" as const;
-const MissingRecipeFact = {
-  citations: [],
-  origin: "unresolved",
-  reason: MissingRecipeSemanticReason,
-  state: "unresolved",
-} as const;
-const MissingRecipeFactList = {
-  items: [],
-  reason: MissingRecipeSemanticReason,
-  state: "unresolved",
-} as const;
 const RecipeTransportTokenCount = Schema.Int.pipe(
   Schema.check(
     Schema.isGreaterThanOrEqualTo(0),
@@ -1961,7 +2119,7 @@ export const makeInstalledRecipeExtractor = (input: {
               return {
                 cost,
                 value: {
-                  ...value,
+                  ...deriveTrustedRecipeSemantics(value, request.items),
                   cost: {
                     certainty: "estimated" as const,
                     currency: "USD" as const,
