@@ -378,7 +378,6 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
                   function: {
                     arguments: JSON.stringify({
                       observations: [],
-                      outcome: "empty",
                     }),
                     name: "record_visual_evidence",
                   },
@@ -560,7 +559,6 @@ const visualTerminalRecoveryDispatch = (
                       function: {
                         arguments: JSON.stringify({
                           observations: [],
-                          outcome: "empty",
                         }),
                         name: "record_visual_evidence",
                       },

@@ -305,7 +305,6 @@ const validVisual = {
 
 const validVisualSemantics = {
   observations: [],
-  outcome: "empty",
 } as const;
 
 const defaultVisualUsage = {
@@ -2385,7 +2384,6 @@ describe("installed import provider adapters", () => {
           text: "2 onions",
         },
       ],
-      outcome: "found",
     } as const;
     const gateway = makeGateway(
       toolResponse("record_visual_evidence", visualSemantics)
@@ -2520,9 +2518,8 @@ describe("installed import provider adapters", () => {
       additionalProperties: false,
       properties: {
         observations: expect.any(Object),
-        outcome: expect.any(Object),
       },
-      required: ["observations", "outcome"],
+      required: ["observations"],
       type: "object",
     });
     const observationItems = (
@@ -2560,7 +2557,7 @@ describe("installed import provider adapters", () => {
           }
         ).properties
       )
-    ).toEqual(["observations", "outcome"]);
+    ).toEqual(["observations"]);
     expect(trace.events).toEqual([
       {
         correlationId,
@@ -2619,6 +2616,51 @@ describe("installed import provider adapters", () => {
     expect((gateway.requests[0] as { readonly model: string }).model).toBe(
       "@cf/meta/llama-4-scout-17b-16e-instruct"
     );
+  });
+
+  it("derives low-confidence outcome from strict provider observations", async () => {
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", {
+        observations: [
+          {
+            confidence: 0.5,
+            frameIndex: 0,
+            text: "possible ingredient label",
+          },
+        ],
+      })
+    );
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 125,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(output).toMatchObject({
+      observations: [{ confidence: 0.5, text: "possible ingredient label" }],
+      outcome: "low_confidence",
+    });
   });
 
   it.each([
@@ -4385,11 +4427,10 @@ describe("installed import provider adapters", () => {
       "out-of-range frame references",
       toolResponse("record_visual_evidence", {
         observations: [{ confidence: 0.9, frameIndex: 1, text: "2 onions" }],
-        outcome: "found",
       }),
     ],
     [
-      "contradictory outcomes",
+      "model-supplied derived outcomes",
       toolResponse("record_visual_evidence", {
         observations: [{ confidence: 0.9, frameIndex: 0, text: "2 onions" }],
         outcome: "empty",
