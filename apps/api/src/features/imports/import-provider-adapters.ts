@@ -65,7 +65,8 @@ import type {
 } from "./import-visual-evidence-extractor.js";
 import {
   representativeVisualFrameIndex,
-  visualEvidenceSemanticsForFrameIndex,
+  visualEvidenceObservationsForFrameIndex,
+  visualEvidenceOutcomeForObservations,
 } from "./import-visual-evidence-extractor.js";
 
 const ProviderName = "cloudflare-workers-ai" as const;
@@ -1768,13 +1769,13 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                     return yield* Effect.fail("insufficient_evidence" as const);
                   }
                   const semanticsSchema =
-                    visualEvidenceSemanticsForFrameIndex(frameIndex);
+                    visualEvidenceObservationsForFrameIndex(frameIndex);
                   const { inputTokens, outputTokens, value } =
                     yield* oneForcedToolCall(
                       service,
                       {
                         description:
-                          "Record only text visibly present in the supplied source image.",
+                          "Record only observations of text visibly present in the supplied source image.",
                         name: "record_visual_evidence",
                         prompt: visualPrompt(frame, frameIndex),
                         schema: semanticsSchema,
@@ -1836,7 +1837,8 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                       },
                       model,
                       observations,
-                      outcome: value.outcome,
+                      outcome:
+                        visualEvidenceOutcomeForObservations(observations),
                       provider: ProviderName,
                       usage: {
                         inputBytes: frame.bytes.byteLength,

@@ -77,35 +77,26 @@ export const VisualEvidenceSemanticObservation = Schema.Struct({
 export type VisualEvidenceSemanticObservation =
   typeof VisualEvidenceSemanticObservation.Type;
 
+/** Derive aggregate outcome only after strict provider observations decode. */
+export const visualEvidenceOutcomeForObservations = (
+  observations: readonly { readonly confidence: number }[]
+): "empty" | "found" | "low_confidence" => {
+  if (observations.length === 0) {
+    return "empty";
+  }
+  return observations.some(
+    ({ confidence }) => confidence >= VisualConfidenceThreshold
+  )
+    ? "found"
+    : "low_confidence";
+};
+
 const visualEvidenceOutcomeMatchesObservations = (evidence: {
   readonly observations: readonly { readonly confidence: number }[];
   readonly outcome: "empty" | "found" | "low_confidence";
-}) => {
-  switch (evidence.outcome) {
-    case "empty": {
-      return evidence.observations.length === 0;
-    }
-    case "found": {
-      return (
-        evidence.observations.length > 0 &&
-        evidence.observations.some(
-          ({ confidence }) => confidence >= VisualConfidenceThreshold
-        )
-      );
-    }
-    case "low_confidence": {
-      return (
-        evidence.observations.length > 0 &&
-        evidence.observations.every(
-          ({ confidence }) => confidence < VisualConfidenceThreshold
-        )
-      );
-    }
-    default: {
-      return false;
-    }
-  }
-};
+}) =>
+  evidence.outcome ===
+  visualEvidenceOutcomeForObservations(evidence.observations);
 
 /** Strict model-owned visual semantics, excluding adapter transport metadata. */
 export const VisualEvidenceSemantics = Schema.Struct({
@@ -126,8 +117,8 @@ export type VisualEvidenceSemantics = typeof VisualEvidenceSemantics.Type;
 export const representativeVisualFrameIndex = (frameCount: number) =>
   Math.floor(frameCount / 2);
 
-/** Build model semantics constrained to the submitted source frame. */
-export const visualEvidenceSemanticsForFrameIndex = (frameIndex: number) =>
+/** Build strict model-owned observations constrained to the submitted frame. */
+export const visualEvidenceObservationsForFrameIndex = (frameIndex: number) =>
   Schema.Struct({
     observations: Schema.Array(
       Schema.Struct({
@@ -141,14 +132,7 @@ export const visualEvidenceSemanticsForFrameIndex = (frameIndex: number) =>
         text: VisualEvidenceSemanticObservation.fields.text,
       })
     ).pipe(Schema.check(Schema.isMaxLength(MaximumVisualObservations))),
-    outcome: VisualEvidenceSemantics.fields.outcome,
-  }).pipe(
-    Schema.check(
-      Schema.makeFilter(visualEvidenceOutcomeMatchesObservations, {
-        expected: "observations consistent with the visual outcome",
-      })
-    )
-  );
+  });
 
 /** Normalized result returned by any future OCR or vision adapter. */
 export const VisualEvidence = Schema.Struct({
