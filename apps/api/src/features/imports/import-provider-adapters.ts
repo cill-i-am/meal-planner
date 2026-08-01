@@ -1060,6 +1060,26 @@ const projectKnownRecipeNode = (
   return projection;
 };
 
+const assertNoRecipeNestedAuthority = (value: unknown): void => {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      assertNoRecipeNestedAuthority(item);
+    }
+    return;
+  }
+  if (!isUnknownRecord(value)) {
+    return;
+  }
+  for (const [key, nested] of Object.entries(value)) {
+    if (RecipeNestedAuthorityKeys.has(key)) {
+      rejectRecipeTransportRoot(
+        "provider_normalization_recipe_authority_conflict"
+      );
+    }
+    assertNoRecipeNestedAuthority(nested);
+  }
+};
+
 const canonicalizeRecipeCitation = (value: unknown): unknown =>
   isUnknownRecord(value)
     ? projectKnownRecipeNode(value, RecipeEvidenceCitationKeys)
@@ -1168,9 +1188,10 @@ const canonicalizeRecipeFactWithMissingRepair = (
   value: unknown,
   kind: "number" | "string"
 ): CanonicalizedRecipeNode => {
+  assertNoRecipeNestedAuthority(value);
   const canonical = canonicalizeRecipeFact(value);
   if (!isUnknownRecord(canonical)) {
-    return { repaired: false, value: canonical };
+    return { repaired: true, value: MissingRecipeFact };
   }
 
   if (canonical["state"] === "supported") {
@@ -1185,7 +1206,7 @@ const canonicalizeRecipeFactWithMissingRepair = (
         isSupportedRecipeOrigin(canonical["origin"])) &&
       (!Object.hasOwn(canonical, "value") ||
         isValidRecipeFactValue(canonical["value"], kind));
-    return hasMissingKey && presentMembersAreValid
+    return hasMissingKey || !presentMembersAreValid
       ? { repaired: true, value: MissingRecipeFact }
       : { repaired: false, value: canonical };
   }
@@ -1203,20 +1224,21 @@ const canonicalizeRecipeFactWithMissingRepair = (
         canonical["origin"] === "unresolved") &&
       (!Object.hasOwn(canonical, "reason") ||
         isTrimmedNonEmptyString(canonical["reason"]));
-    return hasMissingKey && presentMembersAreValid
+    return hasMissingKey || !presentMembersAreValid
       ? { repaired: true, value: MissingRecipeFact }
       : { repaired: false, value: canonical };
   }
 
-  return { repaired: false, value: canonical };
+  return { repaired: true, value: MissingRecipeFact };
 };
 
 const canonicalizeRecipeFactListWithMissingRepair = (
   value: unknown
 ): CanonicalizedRecipeNode => {
+  assertNoRecipeNestedAuthority(value);
   const canonical = canonicalizeRecipeFactList(value);
   if (!isUnknownRecord(canonical)) {
-    return { repaired: false, value: canonical };
+    return { repaired: true, value: MissingRecipeFactList };
   }
 
   let repairedItem = false;
@@ -1229,10 +1251,13 @@ const canonicalizeRecipeFactListWithMissingRepair = (
   }
 
   if (canonical["state"] === "supported") {
-    const hasMissingItems = !Object.hasOwn(canonical, "items");
-    return hasMissingItems
-      ? { repaired: true, value: MissingRecipeFactList }
-      : { repaired: repairedItem, value: canonical };
+    const itemsAreValid =
+      Array.isArray(canonical["items"]) &&
+      canonical["items"].length > 0 &&
+      canonical["items"].length <= 256;
+    return itemsAreValid
+      ? { repaired: repairedItem, value: canonical }
+      : { repaired: true, value: MissingRecipeFactList };
   }
 
   if (canonical["state"] === "unresolved") {
@@ -1245,12 +1270,12 @@ const canonicalizeRecipeFactListWithMissingRepair = (
           canonical["items"].length === 0)) &&
       (!Object.hasOwn(canonical, "reason") ||
         isTrimmedNonEmptyString(canonical["reason"]));
-    return hasMissingKey && presentMembersAreValid
+    return hasMissingKey || !presentMembersAreValid
       ? { repaired: true, value: MissingRecipeFactList }
       : { repaired: false, value: canonical };
   }
 
-  return { repaired: repairedItem, value: canonical };
+  return { repaired: true, value: MissingRecipeFactList };
 };
 
 const isRecipeNodeUnresolved = (value: unknown): boolean =>
@@ -1295,17 +1320,14 @@ const canonicalizeKnownRecipeSemanticsNodes = (
     }
   }
 
-  if (!Object.hasOwn(projection, "unresolvedFields")) {
-    projection["unresolvedFields"] = [
-      ...RecipeUnresolvedFieldBySemanticKey.entries(),
-    ].flatMap(([key, unresolvedField]) =>
-      isRecipeNodeUnresolved(projection[key]) ? [unresolvedField] : []
-    );
-  } else if (isValidUnresolvedFields(projection["unresolvedFields"])) {
-    projection["unresolvedFields"] = [
-      ...new Set([...projection["unresolvedFields"], ...repairedFields]),
-    ];
-  }
+  const { unresolvedFields } = projection;
+  assertNoRecipeNestedAuthority(unresolvedFields);
+  projection["unresolvedFields"] = isValidUnresolvedFields(unresolvedFields)
+    ? [...new Set([...unresolvedFields, ...repairedFields])]
+    : [...RecipeUnresolvedFieldBySemanticKey.entries()].flatMap(
+        ([key, unresolvedField]) =>
+          isRecipeNodeUnresolved(projection[key]) ? [unresolvedField] : []
+      );
   return projection;
 };
 

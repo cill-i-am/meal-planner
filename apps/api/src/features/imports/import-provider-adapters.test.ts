@@ -3364,12 +3364,99 @@ describe("installed import provider adapters", () => {
       },
     ],
     [
+      "a wrong supported-fact value type",
+      {
+        ...validRecipeSemantics,
+        author: { ...supportedString, value: 17 },
+      },
+      {
+        ...validRecipeSemantics,
+        author: normalizedMissingFact,
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
+      },
+    ],
+    [
+      "a wrong root fact type",
+      { ...validRecipeSemantics, author: 17 },
+      {
+        ...validRecipeSemantics,
+        author: normalizedMissingFact,
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
+      },
+    ],
+    [
+      "a wrong unresolved-fact reason type",
+      {
+        ...validRecipeSemantics,
+        author: { ...unresolvedString, reason: 17 },
+      },
+      {
+        ...validRecipeSemantics,
+        author: normalizedMissingFact,
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
+      },
+    ],
+    [
+      "a missing member beside a wrong supported-fact member",
+      {
+        ...validRecipeSemantics,
+        author: {
+          origin: 17,
+          state: "supported",
+          value: "provider-private-canary",
+        },
+      },
+      {
+        ...validRecipeSemantics,
+        author: normalizedMissingFact,
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
+      },
+    ],
+    [
+      "an empty supported fact list",
+      {
+        ...validRecipeSemantics,
+        tools: { items: [], state: "supported" },
+      },
+      {
+        ...validRecipeSemantics,
+        tools: normalizedMissingList,
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "tools"],
+      },
+    ],
+    [
       "the unresolved-fields summary",
       Object.fromEntries(
         Object.entries(validRecipeSemantics).filter(
           ([key]) => key !== "unresolvedFields"
         )
       ),
+      {
+        ...validRecipeSemantics,
+        unresolvedFields: [
+          "author",
+          "category",
+          "cook_time_minutes",
+          "cuisine",
+          "description",
+          "ingredient_lines",
+          "instructions",
+          "name",
+          "nutrition",
+          "prep_time_minutes",
+          "temperature_celsius",
+          "tools",
+          "total_time_minutes",
+          "yield",
+        ],
+      },
+    ],
+    [
+      "an invalid unresolved-fields summary",
+      {
+        ...validRecipeSemantics,
+        unresolvedFields: ["provider-private-canary"],
+      },
       {
         ...validRecipeSemantics,
         unresolvedFields: [
@@ -3422,6 +3509,27 @@ describe("installed import provider adapters", () => {
         unresolvedFields: ["name", "author"],
       },
     });
+  });
+
+  it("degrades a wrong fact type through the installed Alchemy tool-call path", async () => {
+    const { exit, trace } = await runRecipeTransportRoot(
+      toolResponse("record_recipe", {
+        ...validRecipeSemantics,
+        author: { ...supportedString, value: 17 },
+      })
+    );
+
+    expect(exit).toMatchObject({
+      _tag: "Success",
+      value: {
+        ...validRecipeSemantics,
+        author: normalizedMissingFact,
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
+      },
+    });
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "provider-private-canary"
+    );
   });
 
   it("fails closed when a supported fact carries an invalid unresolved-only member", async () => {
@@ -3504,28 +3612,20 @@ describe("installed import provider adapters", () => {
 
   it.each([
     [
-      "a wrong nested field type",
+      "a missing fact discriminator with nested transport authority",
       {
         ...validRecipeSemantics,
-        name: {
-          ...unresolvedString,
-          provider_private_canary_key: "provider-private-canary",
-          reason: 17,
-        },
+        name: { response: "provider-private-canary" },
       },
-      "provider_normalization_recipe_semantics_wrong_type_or_constraint",
+      "provider_normalization_recipe_authority_conflict",
     ],
     [
-      "a missing member beside a wrong nested field type",
+      "an invalid unresolved summary with nested transport authority",
       {
         ...validRecipeSemantics,
-        author: {
-          origin: 17,
-          state: "supported",
-          value: "provider-private-canary",
-        },
+        unresolvedFields: [{ response: "provider-private-canary" }],
       },
-      "provider_normalization_recipe_semantics_missing_required_field",
+      "provider_normalization_recipe_authority_conflict",
     ],
     [
       "an invalid fact discriminator",
@@ -3655,22 +3755,6 @@ describe("installed import provider adapters", () => {
         response: "provider-private-canary",
       },
       "provider_normalization_recipe_authority_conflict",
-    ],
-    [
-      "a wrong recipe field type or constraint",
-      {
-        ...validRecipeSemantics,
-        name: "provider-private-canary",
-      },
-      "provider_normalization_recipe_semantics_wrong_type_or_constraint",
-    ],
-    [
-      "a violated recipe field constraint",
-      {
-        ...validRecipeSemantics,
-        unresolvedFields: Array.from({ length: 17 }, () => "name"),
-      },
-      "provider_normalization_recipe_semantics_wrong_type_or_constraint",
     ],
     [
       "multiple recipe authorities",
