@@ -129,24 +129,24 @@ export const representativeVisualFrameIndex = (frameCount: number) =>
  * Older model shapes may echo bounded metadata, but the adapter ignores it and
  * derives transport identity and aggregate outcome from trusted inputs.
  */
+export const VisualEvidenceProviderToolArguments = Schema.Struct({
+  observations: Schema.Array(
+    Schema.Struct({
+      confidence: Schema.optionalKey(
+        Schema.Union([ProviderVisualConfidence, Schema.String])
+      ),
+      text: VisualEvidenceSemanticObservation.fields.text,
+    })
+  ).pipe(Schema.check(Schema.isMaxLength(MaximumVisualObservations))),
+});
+
 export const VisualEvidenceProviderSemantics = Schema.Struct({
   observations: Schema.Array(
     Schema.Struct({
       confidence: ProviderVisualConfidence,
-      frameIndex: Schema.optionalKey(SafeInteger),
-      kind: Schema.optionalKey(Schema.Literal("visible_text")),
-      regions: Schema.optionalKey(
-        Schema.Array(VisualEvidenceRegion).pipe(
-          Schema.check(Schema.isMaxLength(16))
-        )
-      ),
       text: VisualEvidenceSemanticObservation.fields.text,
-      timestampMilliseconds: Schema.optionalKey(SafeInteger),
     })
   ).pipe(Schema.check(Schema.isMaxLength(MaximumVisualObservations))),
-  outcome: Schema.optionalKey(
-    Schema.Literals(["empty", "found", "low_confidence"])
-  ),
 });
 
 const VisualProviderRootKeys = new Set(["observations", "outcome"]);
@@ -165,14 +165,21 @@ const isUnknownRecord = (
   typeof input === "object" && input !== null && !Array.isArray(input);
 
 const normalizeProviderConfidence = (input: unknown): unknown => {
+  if (input === undefined || input === null) {
+    return 0;
+  }
   if (typeof input !== "string") {
     return input;
   }
   const trimmed = input.trim();
-  if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/u.test(trimmed)) {
-    return input;
+  const numeric = /^(?:\d+(?:\.\d+)?|\.\d+)$/u.exec(trimmed);
+  if (numeric !== null) {
+    return Number(trimmed);
   }
-  return Number(trimmed);
+  const percentage = /^(?<value>\d+(?:\.\d+)?|\.\d+)%$/u.exec(trimmed);
+  return percentage?.groups?.["value"] === undefined
+    ? 0
+    : Number(percentage.groups["value"]);
 };
 
 /**

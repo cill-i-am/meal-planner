@@ -68,6 +68,7 @@ import {
   projectVisualProviderSemanticsInput,
   representativeVisualFrameIndex,
   VisualEvidenceProviderSemantics,
+  VisualEvidenceProviderToolArguments,
   visualEvidenceOutcomeForObservations,
 } from "./import-visual-evidence-extractor.js";
 
@@ -453,6 +454,7 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     readonly normalizeValue?: (value: unknown) => unknown;
     readonly prompt: Prompt.RawInput;
     readonly schema: S;
+    readonly toolSchema?: Schema.Top;
   },
   observability: {
     readonly correlationId: ImportCorrelationId;
@@ -475,7 +477,7 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     // arguments verbatim for the explicit fail-closed decode below. Tool.make
     // decodes parameters inside Effect's response schema first, where excess
     // object properties are stripped before this adapter can reject them.
-    parameters: Tool.getJsonSchemaFromSchema(input.schema),
+    parameters: Tool.getJsonSchemaFromSchema(input.toolSchema ?? input.schema),
   });
   const toolkit = Toolkit.make(tool);
   return failAfter(
@@ -1938,6 +1940,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                         normalizeValue: projectVisualProviderSemanticsInput,
                         prompt: visualPrompt(frame),
                         schema: VisualEvidenceProviderSemantics,
+                        toolSchema: VisualEvidenceProviderToolArguments,
                       },
                       {
                         correlationId: input.correlationId,
