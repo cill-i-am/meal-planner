@@ -125,6 +125,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "0022_recipe_sixth_recovery.sql",
       "0023_recipe_seventh_recovery.sql",
       "0024_recipe_eighth_recovery.sql",
+      "0025_recipe_terminal_truth.sql",
     ]);
   });
 
