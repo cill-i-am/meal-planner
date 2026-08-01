@@ -3408,6 +3408,100 @@ describe("installed import provider adapters", () => {
     }
   );
 
+  it("deduplicates an existing unresolved summary before adding a repaired field", async () => {
+    const { exit } = await runRecipeTransportRoot({
+      ...recipeSemanticsWithoutAuthor,
+      unresolvedFields: Array.from({ length: 16 }, () => "name"),
+    });
+
+    expect(exit).toMatchObject({
+      _tag: "Success",
+      value: {
+        ...validRecipeSemantics,
+        author: normalizedMissingFact,
+        unresolvedFields: ["name", "author"],
+      },
+    });
+  });
+
+  it("fails closed when a supported fact carries an invalid unresolved-only member", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...validRecipeSemantics,
+      author: {
+        origin: "observed",
+        reason: 17,
+        state: "supported",
+        value: "provider-private-canary",
+      },
+    });
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      decodeReason:
+        "provider_normalization_recipe_semantics_wrong_type_or_constraint",
+      decodeStage: "provider_normalization",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "recipe",
+    });
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "provider-private-canary"
+    );
+  });
+
+  it("fails closed when an unresolved fact carries an invalid supported-only member", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...validRecipeSemantics,
+      author: {
+        citations: [],
+        origin: "unresolved",
+        reason: "not present in evidence",
+        state: "unresolved",
+        value: "provider-private-canary",
+      },
+    });
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      decodeReason:
+        "provider_normalization_recipe_semantics_wrong_type_or_constraint",
+      decodeStage: "provider_normalization",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "recipe",
+    });
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "provider-private-canary"
+    );
+  });
+
+  it("fails closed when a supported fact list carries an invalid unresolved-only member", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...validRecipeSemantics,
+      tools: {
+        items: [supportedString],
+        reason: 17,
+        state: "supported",
+      },
+    });
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      decodeReason:
+        "provider_normalization_recipe_semantics_wrong_type_or_constraint",
+      decodeStage: "provider_normalization",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "recipe",
+    });
+  });
+
   it.each([
     [
       "a wrong nested field type",

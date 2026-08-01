@@ -1087,6 +1087,15 @@ const canonicalizeRecipeFact = (value: unknown): unknown => {
     }
     return value;
   }
+  if (
+    Object.keys(value).some(
+      (key) => RecipeKnownFactKeys.has(key) && !allowedKeys.has(key)
+    )
+  ) {
+    return rejectRecipeTransportRoot(
+      "provider_normalization_recipe_semantics_wrong_type_or_constraint"
+    );
+  }
   const projection = projectKnownRecipeNode(value, allowedKeys);
   if (Object.hasOwn(projection, "citations")) {
     projection["citations"] = canonicalizeRecipeCitations(
@@ -1114,6 +1123,15 @@ const canonicalizeRecipeFactList = (value: unknown): unknown => {
       );
     }
     return value;
+  }
+  if (
+    Object.keys(value).some(
+      (key) => RecipeKnownFactListKeys.has(key) && !allowedKeys.has(key)
+    )
+  ) {
+    return rejectRecipeTransportRoot(
+      "provider_normalization_recipe_semantics_wrong_type_or_constraint"
+    );
   }
   const projection = projectKnownRecipeNode(value, allowedKeys);
   if (value["state"] === "supported" && Array.isArray(projection["items"])) {
@@ -1285,13 +1303,7 @@ const canonicalizeKnownRecipeSemanticsNodes = (
     );
   } else if (isValidUnresolvedFields(projection["unresolvedFields"])) {
     projection["unresolvedFields"] = [
-      ...projection["unresolvedFields"],
-      ...[...repairedFields].filter(
-        (field) =>
-          !(projection["unresolvedFields"] as RecipeUnresolvedField[]).includes(
-            field
-          )
-      ),
+      ...new Set([...projection["unresolvedFields"], ...repairedFields]),
     ];
   }
   return projection;
