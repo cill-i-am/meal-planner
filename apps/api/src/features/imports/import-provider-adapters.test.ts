@@ -2729,6 +2729,109 @@ describe("installed import provider adapters", () => {
     });
   });
 
+  it("keeps only safe visual facts when the provider adds malformed metadata", async () => {
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", {
+        observations: [
+          {
+            confidence: 87,
+            providerPrivateNote: "must-not-escape",
+            text: "  chop the onions  ",
+          },
+          {
+            confidence: 140,
+            text: "add stock",
+          },
+          {
+            confidence: 95,
+            text: null,
+          },
+        ],
+        providerPrivateSummary: "must-not-escape",
+      })
+    );
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 125,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(output).toMatchObject({
+      observations: [
+        { confidence: 0.87, text: "chop the onions" },
+        { confidence: 0, text: "add stock" },
+      ],
+      outcome: "found",
+    });
+    expect(JSON.stringify(output)).not.toContain("must-not-escape");
+  });
+
+  it.each([
+    ["omits observations", { providerPrivateNote: "must-not-escape" }],
+    [
+      "returns non-array observations",
+      {
+        observations: { text: "must-not-escape" },
+        providerPrivateNote: "must-not-escape",
+      },
+    ],
+  ])(
+    "projects empty visual evidence when the provider %s",
+    async (_label, body) => {
+      const gateway = makeGateway(toolResponse("record_visual_evidence", body));
+      const adapter = await runFactory(
+        makeInstalledVisualEvidenceExtractor({
+          client: gateway.client,
+          correlationId,
+          dispatch: localDispatchGate,
+        })
+      );
+
+      const output = await Effect.runPromise(
+        adapter.extract({
+          dispatchId: "visual:import-1:1",
+          frames: [
+            {
+              bytes: new Uint8Array([1, 2, 3]),
+              height: 1,
+              mimeType: "image/jpeg",
+              sha256: "a".repeat(64),
+              timestampMilliseconds: 125,
+              width: 1,
+            },
+          ],
+          generation: 1 as never,
+          importId: "import-1" as never,
+          sourceMediaSha256: "b".repeat(64),
+        })
+      );
+
+      expect(output).toMatchObject({ observations: [], outcome: "empty" });
+      expect(JSON.stringify(output)).not.toContain("must-not-escape");
+    }
+  );
+
   it("accepts the documented Workers AI forced-tool response envelope", async () => {
     const gateway = makeGateway(
       toolResponse("record_visual_evidence", validVisualSemantics)
@@ -4499,9 +4602,12 @@ describe("installed import provider adapters", () => {
     }
   );
 
-  it("rejects model attempts to inject visual transport metadata", async () => {
+  it("discards model attempts to inject visual transport metadata", async () => {
     const gateway = makeGateway(
-      toolResponse("record_visual_evidence", validVisual)
+      toolResponse("record_visual_evidence", {
+        ...validVisual,
+        providerPrivateCanary: "must-not-escape",
+      })
     );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
@@ -4511,7 +4617,7 @@ describe("installed import provider adapters", () => {
       })
     );
 
-    const exit = await Effect.runPromiseExit(
+    const output = await Effect.runPromise(
       adapter.extract({
         dispatchId: "visual:import-1:1",
         frames: [
@@ -4530,41 +4636,12 @@ describe("installed import provider adapters", () => {
       })
     );
 
-    expect(exit._tag).toBe("Failure");
-    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(output).toMatchObject({ observations: [], outcome: "empty" });
+    expect(JSON.stringify(output)).not.toContain("must-not-escape");
   });
 
-  it.each([
-    [
-      "prose instead of a structured object",
-      toolResponse("record_visual_evidence", "{not-json"),
-    ],
-    [
-      "unknown observation metadata",
-      toolResponse("record_visual_evidence", {
-        observations: [
-          {
-            confidence: 0.9,
-            text: "2 onions",
-            unknownProviderField: "must-not-escape",
-          },
-        ],
-      }),
-    ],
-    [
-      "unknown root metadata",
-      toolResponse("record_visual_evidence", {
-        observations: [{ confidence: 0.9, text: "2 onions" }],
-        unknownProviderField: "must-not-escape",
-      }),
-    ],
-    [
-      "out-of-range confidence",
-      toolResponse("record_visual_evidence", {
-        observations: [{ confidence: 101, text: "2 onions" }],
-      }),
-    ],
-  ])("fails closed for visual %s", async (_label, response) => {
+  it("fails closed for prose instead of structured visual tool arguments", async () => {
+    const response = toolResponse("record_visual_evidence", "{not-json");
     const gateway = makeGateway(response);
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
