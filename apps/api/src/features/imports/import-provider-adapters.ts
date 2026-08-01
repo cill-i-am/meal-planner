@@ -46,9 +46,11 @@ import type {
   RecipeExtractorShape,
 } from "./import-recipe-extractor.js";
 import {
+  RecipeEvidenceCitation,
   RecipeExtraction,
   RecipeExtractionSemantics,
   RecipeExtractorDescriptor,
+  RecipeUnresolvedField,
 } from "./import-recipe-extractor.js";
 import type {
   SpeechTranscriberShape,
@@ -878,26 +880,58 @@ const RecipeKnownFactListKeys = new Set([
   ...RecipeSupportedFactListKeys,
   ...RecipeUnresolvedFactListKeys,
 ]);
-const RecipeFactFieldKeys = new Set([
-  "author",
-  "category",
-  "cookTimeMinutes",
-  "cuisine",
-  "description",
-  "name",
-  "nutrition",
-  "prepTimeMinutes",
-  "sourceUrl",
-  "temperatureCelsius",
-  "totalTimeMinutes",
-  "yield",
-]);
+const RecipeFactFieldKinds = {
+  author: "string",
+  category: "string",
+  cookTimeMinutes: "number",
+  cuisine: "string",
+  description: "string",
+  name: "string",
+  nutrition: "string",
+  prepTimeMinutes: "number",
+  sourceUrl: "string",
+  temperatureCelsius: "number",
+  totalTimeMinutes: "number",
+  yield: "string",
+} as const;
 const RecipeFactListFieldKeys = new Set([
   "ingredientLines",
   "instructions",
   "supportedClaims",
   "tools",
 ]);
+const RecipeUnresolvedFieldBySemanticKey = new Map<
+  string,
+  RecipeUnresolvedField
+>([
+  ["author", "author"],
+  ["category", "category"],
+  ["cookTimeMinutes", "cook_time_minutes"],
+  ["cuisine", "cuisine"],
+  ["description", "description"],
+  ["ingredientLines", "ingredient_lines"],
+  ["instructions", "instructions"],
+  ["name", "name"],
+  ["nutrition", "nutrition"],
+  ["prepTimeMinutes", "prep_time_minutes"],
+  ["temperatureCelsius", "temperature_celsius"],
+  ["tools", "tools"],
+  ["totalTimeMinutes", "total_time_minutes"],
+  ["yield", "yield"],
+]);
+const MissingRecipeSemanticReason =
+  "not resolved from available evidence" as const;
+const MissingRecipeFact = {
+  citations: [],
+  origin: "unresolved",
+  reason: MissingRecipeSemanticReason,
+  state: "unresolved",
+} as const;
+const MissingRecipeFactList = {
+  items: [],
+  reason: MissingRecipeSemanticReason,
+  state: "unresolved",
+} as const;
 const RecipeTransportTokenCount = Schema.Int.pipe(
   Schema.check(
     Schema.isGreaterThanOrEqualTo(0),
@@ -1088,19 +1122,177 @@ const canonicalizeRecipeFactList = (value: unknown): unknown => {
   return projection;
 };
 
+interface CanonicalizedRecipeNode {
+  readonly repaired: boolean;
+  readonly value: unknown;
+}
+
+const isTrimmedNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0 && value.trim() === value;
+
+const isSupportedRecipeOrigin = (value: unknown): boolean =>
+  value === "creator_provided" || value === "inferred" || value === "observed";
+
+const isValidRecipeCitationList = (value: unknown): boolean =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every(Schema.is(RecipeEvidenceCitation));
+
+const isValidRecipeFactValue = (
+  value: unknown,
+  kind: "number" | "string"
+): boolean =>
+  kind === "string"
+    ? isTrimmedNonEmptyString(value) && value.length <= 4096
+    : Number.isSafeInteger(value) && Number(value) >= 0;
+
+const canonicalizeRecipeFactWithMissingRepair = (
+  value: unknown,
+  kind: "number" | "string"
+): CanonicalizedRecipeNode => {
+  const canonical = canonicalizeRecipeFact(value);
+  if (!isUnknownRecord(canonical)) {
+    return { repaired: false, value: canonical };
+  }
+
+  if (canonical["state"] === "supported") {
+    const requiredKeys = ["citations", "origin", "value"] as const;
+    const hasMissingKey = requiredKeys.some(
+      (key) => !Object.hasOwn(canonical, key)
+    );
+    const presentMembersAreValid =
+      (!Object.hasOwn(canonical, "citations") ||
+        isValidRecipeCitationList(canonical["citations"])) &&
+      (!Object.hasOwn(canonical, "origin") ||
+        isSupportedRecipeOrigin(canonical["origin"])) &&
+      (!Object.hasOwn(canonical, "value") ||
+        isValidRecipeFactValue(canonical["value"], kind));
+    return hasMissingKey && presentMembersAreValid
+      ? { repaired: true, value: MissingRecipeFact }
+      : { repaired: false, value: canonical };
+  }
+
+  if (canonical["state"] === "unresolved") {
+    const requiredKeys = ["citations", "origin", "reason"] as const;
+    const hasMissingKey = requiredKeys.some(
+      (key) => !Object.hasOwn(canonical, key)
+    );
+    const presentMembersAreValid =
+      (!Object.hasOwn(canonical, "citations") ||
+        (Array.isArray(canonical["citations"]) &&
+          canonical["citations"].length === 0)) &&
+      (!Object.hasOwn(canonical, "origin") ||
+        canonical["origin"] === "unresolved") &&
+      (!Object.hasOwn(canonical, "reason") ||
+        isTrimmedNonEmptyString(canonical["reason"]));
+    return hasMissingKey && presentMembersAreValid
+      ? { repaired: true, value: MissingRecipeFact }
+      : { repaired: false, value: canonical };
+  }
+
+  return { repaired: false, value: canonical };
+};
+
+const canonicalizeRecipeFactListWithMissingRepair = (
+  value: unknown
+): CanonicalizedRecipeNode => {
+  const canonical = canonicalizeRecipeFactList(value);
+  if (!isUnknownRecord(canonical)) {
+    return { repaired: false, value: canonical };
+  }
+
+  let repairedItem = false;
+  if (canonical["state"] === "supported" && Array.isArray(canonical["items"])) {
+    canonical["items"] = canonical["items"].map((item) => {
+      const result = canonicalizeRecipeFactWithMissingRepair(item, "string");
+      repairedItem ||= result.repaired;
+      return result.value;
+    });
+  }
+
+  if (canonical["state"] === "supported") {
+    const hasMissingItems = !Object.hasOwn(canonical, "items");
+    return hasMissingItems
+      ? { repaired: true, value: MissingRecipeFactList }
+      : { repaired: repairedItem, value: canonical };
+  }
+
+  if (canonical["state"] === "unresolved") {
+    const hasMissingKey = ["items", "reason"].some(
+      (key) => !Object.hasOwn(canonical, key)
+    );
+    const presentMembersAreValid =
+      (!Object.hasOwn(canonical, "items") ||
+        (Array.isArray(canonical["items"]) &&
+          canonical["items"].length === 0)) &&
+      (!Object.hasOwn(canonical, "reason") ||
+        isTrimmedNonEmptyString(canonical["reason"]));
+    return hasMissingKey && presentMembersAreValid
+      ? { repaired: true, value: MissingRecipeFactList }
+      : { repaired: false, value: canonical };
+  }
+
+  return { repaired: repairedItem, value: canonical };
+};
+
+const isRecipeNodeUnresolved = (value: unknown): boolean =>
+  isUnknownRecord(value) &&
+  (value["state"] === "unresolved" ||
+    (value["state"] === "supported" &&
+      Array.isArray(value["items"]) &&
+      value["items"].some(
+        (item) => isUnknownRecord(item) && item["state"] === "unresolved"
+      )));
+
+const isValidUnresolvedFields = (
+  value: unknown
+): value is RecipeUnresolvedField[] =>
+  Array.isArray(value) &&
+  value.length <= 16 &&
+  value.every(Schema.is(RecipeUnresolvedField));
+
 const canonicalizeKnownRecipeSemanticsNodes = (
   value: Readonly<Record<string, unknown>>
 ): Record<string, unknown> => {
   const projection = { ...value };
-  for (const key of RecipeFactFieldKeys) {
-    if (Object.hasOwn(projection, key)) {
-      projection[key] = canonicalizeRecipeFact(projection[key]);
+  const repairedFields = new Set<RecipeUnresolvedField>();
+  for (const [key, kind] of Object.entries(RecipeFactFieldKinds)) {
+    const result = Object.hasOwn(projection, key)
+      ? canonicalizeRecipeFactWithMissingRepair(projection[key], kind)
+      : { repaired: true, value: MissingRecipeFact };
+    projection[key] = result.value;
+    const unresolvedField = RecipeUnresolvedFieldBySemanticKey.get(key);
+    if (result.repaired && unresolvedField !== undefined) {
+      repairedFields.add(unresolvedField);
     }
   }
   for (const key of RecipeFactListFieldKeys) {
-    if (Object.hasOwn(projection, key)) {
-      projection[key] = canonicalizeRecipeFactList(projection[key]);
+    const result = Object.hasOwn(projection, key)
+      ? canonicalizeRecipeFactListWithMissingRepair(projection[key])
+      : { repaired: true, value: MissingRecipeFactList };
+    projection[key] = result.value;
+    const unresolvedField = RecipeUnresolvedFieldBySemanticKey.get(key);
+    if (result.repaired && unresolvedField !== undefined) {
+      repairedFields.add(unresolvedField);
     }
+  }
+
+  if (!Object.hasOwn(projection, "unresolvedFields")) {
+    projection["unresolvedFields"] = [
+      ...RecipeUnresolvedFieldBySemanticKey.entries(),
+    ].flatMap(([key, unresolvedField]) =>
+      isRecipeNodeUnresolved(projection[key]) ? [unresolvedField] : []
+    );
+  } else if (isValidUnresolvedFields(projection["unresolvedFields"])) {
+    projection["unresolvedFields"] = [
+      ...projection["unresolvedFields"],
+      ...[...repairedFields].filter(
+        (field) =>
+          !(projection["unresolvedFields"] as RecipeUnresolvedField[]).includes(
+            field
+          )
+      ),
+    ];
   }
   return projection;
 };

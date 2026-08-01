@@ -212,6 +212,17 @@ const unresolvedList = {
   reason: "not present in evidence",
   state: "unresolved",
 } as const;
+const normalizedMissingFact = {
+  citations: [],
+  origin: "unresolved",
+  reason: "not resolved from available evidence",
+  state: "unresolved",
+} as const;
+const normalizedMissingList = {
+  items: [],
+  reason: "not resolved from available evidence",
+  state: "unresolved",
+} as const;
 const firstCitation = {
   confidence: 0.9,
   evidenceId: "evidence-1",
@@ -259,8 +270,8 @@ const validRecipeSemantics = {
   yield: unresolvedString,
 } as const;
 
-const recipeSemanticsWithoutName = Object.fromEntries(
-  Object.entries(validRecipeSemantics).filter(([key]) => key !== "name")
+const recipeSemanticsWithoutAuthor = Object.fromEntries(
+  Object.entries(validRecipeSemantics).filter(([key]) => key !== "author")
 );
 
 const validRecipe = {
@@ -3280,16 +3291,124 @@ describe("installed import provider adapters", () => {
 
   it.each([
     [
-      "a missing nested required field",
+      "a missing root fact",
+      recipeSemanticsWithoutAuthor,
       {
         ...validRecipeSemantics,
-        name: {
+        author: normalizedMissingFact,
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
+      },
+    ],
+    [
+      "a missing unresolved-fact member",
+      {
+        ...validRecipeSemantics,
+        author: {
           ...unresolvedStringWithoutReason,
           provider_private_canary_key: "provider-private-canary",
         },
       },
-      "provider_normalization_recipe_semantics_missing_required_field",
+      {
+        ...validRecipeSemantics,
+        author: normalizedMissingFact,
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
+      },
     ],
+    [
+      "a missing supported-fact member",
+      {
+        ...validRecipeSemantics,
+        author: {
+          origin: "observed",
+          state: "supported",
+          value: "provider-private-canary",
+        },
+      },
+      {
+        ...validRecipeSemantics,
+        author: normalizedMissingFact,
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
+      },
+    ],
+    [
+      "a missing supported-list member",
+      {
+        ...validRecipeSemantics,
+        tools: { state: "supported" },
+      },
+      {
+        ...validRecipeSemantics,
+        tools: normalizedMissingList,
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "tools"],
+      },
+    ],
+    [
+      "a missing supported-list item member",
+      {
+        ...validRecipeSemantics,
+        tools: {
+          items: [
+            {
+              origin: "observed",
+              state: "supported",
+              value: "provider-private-canary",
+            },
+          ],
+          state: "supported",
+        },
+      },
+      {
+        ...validRecipeSemantics,
+        tools: { items: [normalizedMissingFact], state: "supported" },
+        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "tools"],
+      },
+    ],
+    [
+      "the unresolved-fields summary",
+      Object.fromEntries(
+        Object.entries(validRecipeSemantics).filter(
+          ([key]) => key !== "unresolvedFields"
+        )
+      ),
+      {
+        ...validRecipeSemantics,
+        unresolvedFields: [
+          "author",
+          "category",
+          "cook_time_minutes",
+          "cuisine",
+          "description",
+          "ingredient_lines",
+          "instructions",
+          "name",
+          "nutrition",
+          "prep_time_minutes",
+          "temperature_celsius",
+          "tools",
+          "total_time_minutes",
+          "yield",
+        ],
+      },
+    ],
+  ] as const)(
+    "degrades %s to explicit unresolved semantics through the installed adapter",
+    async (_label, response, expectedSemantics) => {
+      const { exit, trace } = await runRecipeTransportRoot(response);
+
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: expectedSemantics,
+      });
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+        "provider-private-canary"
+      );
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+        "provider_private_canary_key"
+      );
+    }
+  );
+
+  it.each([
     [
       "a wrong nested field type",
       {
@@ -3301,6 +3420,18 @@ describe("installed import provider adapters", () => {
         },
       },
       "provider_normalization_recipe_semantics_wrong_type_or_constraint",
+    ],
+    [
+      "a missing member beside a wrong nested field type",
+      {
+        ...validRecipeSemantics,
+        author: {
+          origin: 17,
+          state: "supported",
+          value: "provider-private-canary",
+        },
+      },
+      "provider_normalization_recipe_semantics_missing_required_field",
     ],
     [
       "an invalid fact discriminator",
@@ -3430,11 +3561,6 @@ describe("installed import provider adapters", () => {
         response: "provider-private-canary",
       },
       "provider_normalization_recipe_authority_conflict",
-    ],
-    [
-      "a missing required recipe field",
-      recipeSemanticsWithoutName,
-      "provider_normalization_recipe_semantics_missing_required_field",
     ],
     [
       "a wrong recipe field type or constraint",
