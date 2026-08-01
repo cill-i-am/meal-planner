@@ -53,6 +53,7 @@ import {
   RecipeExtractorDescriptor,
   RecipeUnresolvedField,
 } from "./import-recipe-extractor.js";
+import { recipeEvidenceContains } from "./import-recipe-grounding.js";
 import type {
   SpeechTranscriberShape,
   SpeechTranscriptionFailure,
@@ -674,10 +675,10 @@ const trustedSupportedRecipeFact = <A>(value: A, item: RecipeEvidenceItem) => ({
   value,
 });
 
-const exactStringEvidence = (
+const normalizedStringEvidence = (
   items: readonly RecipeEvidenceItem[],
   value: string
-) => items.find((item) => item.value.includes(value));
+) => items.find((item) => recipeEvidenceContains(item.value, value));
 
 const exactTimeEvidence = (
   items: readonly RecipeEvidenceItem[],
@@ -702,7 +703,7 @@ const groundRecipeStringFact = (
   if (fact.state === "unresolved") {
     return MissingRecipeFact;
   }
-  const evidence = exactStringEvidence(items, fact.value);
+  const evidence = normalizedStringEvidence(items, fact.value);
   return evidence === undefined
     ? MissingRecipeFact
     : trustedSupportedRecipeFact(fact.value, evidence);
@@ -736,7 +737,7 @@ const groundRecipeFactList = (
     if (fact.state === "unresolved") {
       return [];
     }
-    const evidence = exactStringEvidence(items, fact.value);
+    const evidence = normalizedStringEvidence(items, fact.value);
     return evidence === undefined
       ? []
       : [trustedSupportedRecipeFact(fact.value, evidence)];
@@ -2070,7 +2071,7 @@ export const makeInstalledRecipeExtractor = (input: {
       descriptor: Schema.decodeUnknownSync(RecipeExtractorDescriptor)({
         model,
         provider: ProviderName,
-        version: "installed-alchemy-forced-tool-v2",
+        version: "installed-alchemy-forced-tool-v3",
       }),
       extract: (request) =>
         input.dispatch
