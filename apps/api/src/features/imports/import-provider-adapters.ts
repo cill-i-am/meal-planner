@@ -65,6 +65,7 @@ import type {
   VisualFrameArtifact,
 } from "./import-visual-evidence-extractor.js";
 import {
+  projectVisualProviderSemanticsInput,
   representativeVisualFrameIndex,
   VisualEvidenceProviderSemantics,
   visualEvidenceOutcomeForObservations,
@@ -449,6 +450,7 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     readonly acceptUnwrappedObject?: boolean;
     readonly description: string;
     readonly name: Name;
+    readonly normalizeValue?: (value: unknown) => unknown;
     readonly prompt: Prompt.RawInput;
     readonly schema: S;
   },
@@ -555,9 +557,13 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
           )
         );
       }
+      const normalizedInput =
+        input.normalizeValue === undefined
+          ? decoded.value
+          : input.normalizeValue(decoded.value);
       return Schema.decodeUnknownEffect(input.schema, {
         onExcessProperty: "error",
-      })(decoded.value).pipe(
+      })(normalizedInput).pipe(
         Effect.matchEffect({
           onFailure: () =>
             emitImportObservabilityEvent(
@@ -1929,6 +1935,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                         description:
                           "Record only observations of text visibly present in the supplied source image.",
                         name: "record_visual_evidence",
+                        normalizeValue: projectVisualProviderSemanticsInput,
                         prompt: visualPrompt(frame),
                         schema: VisualEvidenceProviderSemantics,
                       },

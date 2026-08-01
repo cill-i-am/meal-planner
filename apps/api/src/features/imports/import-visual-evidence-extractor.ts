@@ -149,6 +149,71 @@ export const VisualEvidenceProviderSemantics = Schema.Struct({
   ),
 });
 
+const VisualProviderRootKeys = new Set(["observations", "outcome"]);
+const VisualProviderObservationKeys = new Set([
+  "confidence",
+  "frameIndex",
+  "kind",
+  "regions",
+  "text",
+  "timestampMilliseconds",
+]);
+
+const isUnknownRecord = (
+  input: unknown
+): input is Readonly<Record<string, unknown>> =>
+  typeof input === "object" && input !== null && !Array.isArray(input);
+
+const normalizeProviderConfidence = (input: unknown): unknown => {
+  if (typeof input !== "string") {
+    return input;
+  }
+  const trimmed = input.trim();
+  if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/u.test(trimmed)) {
+    return input;
+  }
+  return Number(trimmed);
+};
+
+/**
+ * Project a closed provider response onto its authoritative semantic fields.
+ * Known legacy transport fields are intentionally discarded before semantic
+ * validation; an unknown key keeps the original value so strict decoding
+ * still fails closed.
+ */
+export const projectVisualProviderSemanticsInput = (
+  input: unknown
+): unknown => {
+  if (
+    !isUnknownRecord(input) ||
+    Object.keys(input).some((key) => !VisualProviderRootKeys.has(key)) ||
+    !Array.isArray(input["observations"])
+  ) {
+    return input;
+  }
+
+  const observations: unknown[] = [];
+  for (const observation of input["observations"]) {
+    if (
+      !isUnknownRecord(observation) ||
+      Object.keys(observation).some(
+        (key) => !VisualProviderObservationKeys.has(key)
+      )
+    ) {
+      return input;
+    }
+    observations.push({
+      confidence: normalizeProviderConfidence(observation["confidence"]),
+      text:
+        typeof observation["text"] === "string"
+          ? observation["text"].trim()
+          : observation["text"],
+    });
+  }
+
+  return { observations };
+};
+
 /** Normalized result returned by any future OCR or vision adapter. */
 export const VisualEvidence = Schema.Struct({
   cost: Schema.Struct({
