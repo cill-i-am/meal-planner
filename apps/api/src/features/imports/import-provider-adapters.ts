@@ -92,6 +92,8 @@ const ProviderTransportUnavailableMessage =
   "provider_transport_unavailable" as const;
 const ProviderNormalizationInvalidMessage =
   "provider_normalization_invalid" as const;
+const ProviderNormalizationBodyInvalidMessage =
+  "provider_normalization_body_invalid" as const;
 const ProviderNormalizationRecipeDecodeReasons = [
   "provider_normalization_recipe_arguments_ambiguous",
   "provider_normalization_recipe_arguments_missing",
@@ -404,7 +406,10 @@ const providerNormalizationDecodeReason = (
   error: unknown
 ): ProviderDecodeReason | undefined => {
   const description = providerErrorDescription(error);
-  if (description === ProviderNormalizationInvalidMessage) {
+  if (
+    description === ProviderNormalizationInvalidMessage ||
+    description === ProviderNormalizationBodyInvalidMessage
+  ) {
     return ProviderNormalizationInvalidMessage;
   }
   const prefix = `${ProviderNormalizationInvalidMessage}:`;
@@ -419,6 +424,9 @@ const providerNormalizationDecodeReason = (
 
 const isProviderNormalizationFailure = (error: unknown): boolean =>
   providerNormalizationDecodeReason(error) !== undefined;
+
+const isProviderNormalizationBodyFailure = (error: unknown): boolean =>
+  hasProviderErrorDescription(error, ProviderNormalizationBodyInvalidMessage);
 
 export const failAfter = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
@@ -457,6 +465,7 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     readonly name: Name;
     readonly normalizeValue?: (value: unknown) => unknown;
     readonly prompt: Prompt.RawInput;
+    readonly providerNormalizationFallback?: () => S["Type"];
     readonly schema: S;
     readonly toolSchema?: Schema.Top;
   },
@@ -514,6 +523,17 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
       }
       return Effect.void;
     }),
+    Effect.map((response) => ({ _tag: "Response" as const, response })),
+    Effect.catchIf(
+      (error) =>
+        isProviderNormalizationBodyFailure(error) &&
+        input.providerNormalizationFallback !== undefined,
+      () =>
+        Effect.succeed({
+          _tag: "ProviderNormalizationFallback" as const,
+          value: input.providerNormalizationFallback?.() as S["Type"],
+        })
+    ),
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
     Effect.mapError((error) => {
       if (typeof error === "string") {
@@ -531,7 +551,15 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
       }
       return safeFailureCode(Cause.fail(error));
     }),
-    Effect.flatMap((response) => {
+    Effect.flatMap((result) => {
+      if (result._tag === "ProviderNormalizationFallback") {
+        return Effect.succeed({
+          inputTokens: undefined,
+          outputTokens: undefined,
+          value: result.value,
+        });
+      }
+      const { response } = result;
       const decoded = decodeForcedToolResponseResult(
         response.content,
         input.name,
@@ -1876,8 +1904,16 @@ const withProviderNormalizationBoundary = (
     get: (target, property) => {
       if (property === "json") {
         return async (): Promise<unknown> => {
+          let raw: unknown;
           try {
-            const raw = await parseJson();
+            raw = await parseJson();
+          } catch {
+            // The raw body is untrusted and must never cross this boundary.
+            // Preserve only enough internal authority for the optional visual
+            // stage to degrade without weakening structural tool validation.
+            throw new Error(ProviderNormalizationBodyInvalidMessage);
+          }
+          try {
             return normalizeRawToolShape(
               canonicalizeProviderTransportRoot(raw, providerStage),
               providerStage
@@ -2003,6 +2039,15 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                         name: "record_visual_evidence",
                         normalizeValue: projectVisualProviderSemanticsInput,
                         prompt: visualPrompt(frame),
+                        // Visual evidence is optional. A provider response
+                        // that cannot be normalized must not abort otherwise
+                        // valid transcript processing or leave the budget
+                        // poisoned. Record honest empty evidence and charge
+                        // the full bounded reservation; strict forced-tool
+                        // envelope and argument validation still fail closed.
+                        providerNormalizationFallback: () => ({
+                          observations: [],
+                        }),
                         schema: VisualEvidenceProviderSemantics,
                         toolSchema: VisualEvidenceProviderToolArguments,
                       },

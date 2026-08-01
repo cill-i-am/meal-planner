@@ -4675,6 +4675,94 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(exit)).not.toContain("must-not-escape");
   });
 
+  it("degrades an unparseable optional visual response to bounded empty evidence", async () => {
+    const costs: (
+      | {
+          readonly _tag: "Known";
+          readonly actualCostMicroUsd: number;
+        }
+      | {
+          readonly _tag: "Conservative";
+          readonly conservativeChargeMicroUsd: number;
+        }
+      | { readonly _tag: "Unknown" }
+    )[] = [];
+    const trace = makeRecordingTraceStore();
+    const gateway = makeRawGateway(
+      new Response("provider-private-canary", {
+        headers: { "content-type": "application/json" },
+      })
+    );
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: {
+          run: (input) =>
+            input.invoke.pipe(
+              Effect.tap(({ cost }) =>
+                Effect.sync(() => {
+                  costs.push(cost);
+                })
+              ),
+              Effect.map(({ value }) => value)
+            ),
+        },
+      }),
+      trace.service
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 0,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(output).toMatchObject({
+      cost: {
+        certainty: "estimated",
+        currency: "USD",
+        estimatedMicroUsd: 100_000,
+      },
+      observations: [],
+      outcome: "empty",
+      usage: { inputBytes: 3, inputFrames: 1, modelCalls: 1 },
+    });
+    expect(costs).toEqual([{ _tag: "Known", actualCostMicroUsd: 100_000 }]);
+    expect(trace.events).toEqual([
+      {
+        correlationId,
+        event: "provider.response",
+        outcome: "received",
+        providerStage: "visual",
+      },
+      {
+        correlationId,
+        decodeReason: "provider_normalization_invalid",
+        decodeStage: "provider_normalization",
+        event: "provider.decode",
+        outcome: "malformed",
+        providerStage: "visual",
+      },
+    ]);
+    expect(JSON.stringify({ output, trace: trace.events })).not.toContain(
+      "provider-private-canary"
+    );
+  });
+
   it.each([
     ["free-text substitution", { response: "provider-private-canary" }],
     [
