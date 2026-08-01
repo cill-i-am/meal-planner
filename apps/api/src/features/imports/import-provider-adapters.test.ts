@@ -2597,6 +2597,64 @@ describe("installed import provider adapters", () => {
     expect(JSON.stringify(trace.events)).not.toContain("BAU=");
   });
 
+  it("projects known inert visual metadata before strict semantic decoding", async () => {
+    const gateway = makeGateway(
+      toolResponse("record_visual_evidence", {
+        observations: [
+          {
+            confidence: " 92 ",
+            frameIndex: "provider-owned",
+            kind: "provider-owned",
+            regions: [{ providerOwned: true }],
+            text: "  2 onions  ",
+            timestampMilliseconds: null,
+          },
+        ],
+        outcome: "provider-owned",
+      })
+    );
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 125,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+
+    expect(output).toMatchObject({
+      observations: [
+        {
+          confidence: 0.92,
+          frameIndex: 0,
+          kind: "visible_text",
+          regions: [{ height: 1, width: 1, x: 0, y: 0 }],
+          text: "2 onions",
+          timestampMilliseconds: 125,
+        },
+      ],
+      outcome: "found",
+    });
+  });
+
   it("accepts the documented Workers AI forced-tool response envelope", async () => {
     const gateway = makeGateway(
       toolResponse("record_visual_evidence", validVisualSemantics)
@@ -4417,6 +4475,19 @@ describe("installed import provider adapters", () => {
             unknownProviderField: "must-not-escape",
           },
         ],
+      }),
+    ],
+    [
+      "unknown root metadata",
+      toolResponse("record_visual_evidence", {
+        observations: [{ confidence: 0.9, text: "2 onions" }],
+        unknownProviderField: "must-not-escape",
+      }),
+    ],
+    [
+      "non-numeric confidence text",
+      toolResponse("record_visual_evidence", {
+        observations: [{ confidence: "high", text: "2 onions" }],
       }),
     ],
     [
