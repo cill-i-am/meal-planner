@@ -196,7 +196,129 @@ const seedFailedRecipeImport = async (suffix: string) => {
   return { completedAt, extractionFingerprint, generation, importId };
 };
 
+const seedFailedVisualImport = async (suffix: string) => {
+  const importId = decodeImportId(`00000000-0000-4000-8000-${suffix}`);
+  const generation = decodeGeneration(1);
+  const dispatchId = decodeDispatchId(`visual:${importId}:${generation}`);
+  const createdAt = "2026-08-01T17:00:00.000Z";
+  const completedAt = "2026-08-01T17:00:30.000Z";
+  const evidence = JSON.stringify([
+    {
+      kind: "original_media",
+      referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
+    },
+    {
+      kind: "acquisition_manifest",
+      referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/manifest.json`,
+    },
+    {
+      kind: "speech_transcript",
+      referenceId: `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
+    },
+  ]);
+  await testEnv.MealPlannerDatabase.batch([
+    testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO recipe_imports (
+         acquisition_generation, canonical_source_id, compatibility_fingerprint,
+         created_at, evidence_references_json, id, recovery_action, source_kind,
+         status, status_code, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video', 'transcribed', NULL, ?)`
+    ).bind(
+      generation,
+      `failed-visual-${suffix}`,
+      "6".repeat(64),
+      createdAt,
+      evidence,
+      importId,
+      completedAt
+    ),
+    testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_transcriptions (
+         import_id, acquisition_generation, dispatch_id, source_media_sha256,
+         state, transcript_key, transcript_sha256, provider, model,
+         detected_language, usage_audio_milliseconds, usage_input_bytes,
+         estimated_cost_micro_usd, cost_currency, cost_certainty,
+         segments_count, failure_code, created_at, updated_at, completed_at
+       ) VALUES (?, ?, ?, ?, 'transcribed', ?, ?, 'fixture-provider',
+                 'fixture-speech', 'en', 1000, 3, 10, 'USD', 'known', 1,
+                 NULL, ?, ?, ?)`
+    ).bind(
+      importId,
+      generation,
+      `speech:${importId}:${generation}`,
+      "a".repeat(64),
+      `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
+      "b".repeat(64),
+      createdAt,
+      completedAt,
+      completedAt
+    ),
+    testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_visual_evidence (
+         import_id, acquisition_generation, dispatch_id, source_media_sha256,
+         state, failure_code, created_at, updated_at, completed_at
+       ) VALUES (?, ?, ?, ?, 'failed', 'visual_extraction_failed', ?, ?, ?)`
+    ).bind(
+      importId,
+      generation,
+      dispatchId,
+      "a".repeat(64),
+      createdAt,
+      completedAt,
+      completedAt
+    ),
+  ]);
+  return { completedAt, dispatchId, generation, importId };
+};
+
 describe("provider terminal recovery", () => {
+  it("adopts immutable terminal facts from an already-failed visual dispatch", async () => {
+    const seeded = await seedFailedVisualImport("000000000245");
+    const repository = makeD1ProviderTerminalCheckpointRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const first = await Effect.runPromise(
+      repository.persist({
+        acquisitionGeneration: seeded.generation,
+        completedAt: decodeImportTimestamp("2026-08-01T17:01:00.000Z"),
+        failureCode: "visual_extraction_failed",
+        importId: seeded.importId,
+        providerStage: "visual",
+      })
+    );
+
+    expect(first).toEqual({
+      acquisitionGeneration: seeded.generation,
+      completedAt: seeded.completedAt,
+      failureCode: "visual_extraction_failed",
+      importId: seeded.importId,
+      ownershipId: seeded.dispatchId,
+      providerStage: "visual",
+    });
+    await expect(
+      Effect.runPromise(
+        repository.persist({
+          acquisitionGeneration: seeded.generation,
+          completedAt: decodeImportTimestamp("2026-08-01T17:02:00.000Z"),
+          failureCode: "visual_extraction_failed",
+          importId: seeded.importId,
+          providerStage: "visual",
+        })
+      )
+    ).resolves.toEqual(first);
+    await expect(
+      Effect.runPromise(
+        repository.persist({
+          acquisitionGeneration: seeded.generation,
+          completedAt: decodeImportTimestamp("2026-08-01T17:03:00.000Z"),
+          failureCode: "outcome_unknown",
+          importId: seeded.importId,
+          providerStage: "visual",
+        })
+      )
+    ).rejects.toMatchObject({ code: "persistence_corrupt" });
+  });
+
   it("projects a recipe terminal checkpoint to the public import exactly once", async () => {
     const seeded = await seedDispatchingRecipeImport("000000000215");
     const repository = makeD1ProviderTerminalCheckpointRepository(
