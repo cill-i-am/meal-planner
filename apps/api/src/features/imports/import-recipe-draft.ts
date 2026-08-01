@@ -26,6 +26,7 @@ import {
   decodeRecipeExtraction,
   RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
+import { recipeEvidenceContains } from "./import-recipe-grounding.js";
 import { readVerifiedTranscriptEvidence } from "./import-speech-transcription.js";
 import { readVerifiedVisualEvidence } from "./import-visual-evidence.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
@@ -355,7 +356,11 @@ const extractionIsGrounded = (
           item.origin === citation.origin &&
           (fact.origin === "inferred" || fact.origin === citation.origin)
       ) &&
-      citedEvidence.some(({ item }) => item?.value.includes(String(fact.value)))
+      citedEvidence.some(({ item }) =>
+        item === undefined
+          ? false
+          : recipeEvidenceContains(item.value, String(fact.value))
+      )
     );
   });
   const listsAreConsistent = [

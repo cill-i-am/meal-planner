@@ -250,6 +250,19 @@ const supportedList = {
   state: "supported",
 } as const;
 
+const providerCitedString = (value: string) => ({
+  citations: [
+    {
+      confidence: 0.9,
+      evidenceId: "provider-selected-evidence",
+      origin: "creator_provided" as const,
+    },
+  ],
+  origin: "inferred" as const,
+  state: "supported" as const,
+  value,
+});
+
 const validRecipeSemantics = {
   author: unresolvedString,
   category: unresolvedString,
@@ -5304,6 +5317,66 @@ describe("installed import provider adapters", () => {
       "ingredient_units",
     ]);
     expect(JSON.stringify(output)).not.toContain("provider-invented");
+    expect(Schema.is(RecipeExtraction)(output)).toBe(true);
+  });
+
+  it("grounds harmless textual normalization while rejecting absent recipe facts", async () => {
+    const candidate = {
+      ...validRecipeSemantics,
+      ingredientLines: {
+        items: [
+          providerCitedString("TOMATOES!"),
+          providerCitedString("mushrooms"),
+        ],
+        state: "supported" as const,
+      },
+      instructions: {
+        items: [providerCitedString("CHOP TOMATOES!")],
+        state: "supported" as const,
+      },
+      name: providerCitedString("TOMATO PASTA!"),
+    };
+    const gateway = makeGateway(toolResponse("record_recipe", candidate));
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:transcript",
+            evidenceId: "transcript-evidence",
+            kind: "transcript",
+            origin: "creator_provided",
+            value:
+              "Tonight, we cook tomato pasta. Ingredients: tomatoes, pasta. Chop tomatoes, then boil pasta.",
+          },
+        ],
+      })
+    );
+
+    expect(output.name).toMatchObject({
+      state: "supported",
+      value: "TOMATO PASTA!",
+    });
+    expect(output.ingredientLines).toMatchObject({
+      items: [{ state: "supported", value: "TOMATOES!" }],
+      state: "supported",
+    });
+    expect(output.instructions).toMatchObject({
+      items: [{ state: "supported", value: "CHOP TOMATOES!" }],
+      state: "supported",
+    });
+    expect(hasMinimumRecipeEvidence(output)).toBe(true);
+    expect(JSON.stringify(output)).not.toContain("mushrooms");
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
   });
 
