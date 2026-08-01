@@ -149,16 +149,6 @@ export const VisualEvidenceProviderSemantics = Schema.Struct({
   ).pipe(Schema.check(Schema.isMaxLength(MaximumVisualObservations))),
 });
 
-const VisualProviderRootKeys = new Set(["observations", "outcome"]);
-const VisualProviderObservationKeys = new Set([
-  "confidence",
-  "frameIndex",
-  "kind",
-  "regions",
-  "text",
-  "timestampMilliseconds",
-]);
-
 const isUnknownRecord = (
   input: unknown
 ): input is Readonly<Record<string, unknown>> =>
@@ -183,38 +173,46 @@ const normalizeProviderConfidence = (input: unknown): unknown => {
 };
 
 /**
- * Project a closed provider response onto its authoritative semantic fields.
- * Known legacy transport fields are intentionally discarded before semantic
- * validation; an unknown key keeps the original value so strict decoding
- * still fails closed.
+ * Project an untrusted provider response onto the only semantic fields the
+ * adapter may use. Provider-owned metadata and malformed observations are
+ * discarded; an unusable payload therefore becomes honest empty visual
+ * evidence instead of acquiring authority or aborting transcript processing.
  */
 export const projectVisualProviderSemanticsInput = (
   input: unknown
 ): unknown => {
-  if (
-    !isUnknownRecord(input) ||
-    Object.keys(input).some((key) => !VisualProviderRootKeys.has(key)) ||
-    !Array.isArray(input["observations"])
-  ) {
-    return input;
+  if (!isUnknownRecord(input) || !Array.isArray(input["observations"])) {
+    return { observations: [] };
   }
 
   const observations: unknown[] = [];
-  for (const observation of input["observations"]) {
-    if (
-      !isUnknownRecord(observation) ||
-      Object.keys(observation).some(
-        (key) => !VisualProviderObservationKeys.has(key)
-      )
-    ) {
-      return input;
+  for (const observation of input["observations"].slice(
+    0,
+    MaximumVisualObservations
+  )) {
+    if (!isUnknownRecord(observation)) {
+      continue;
     }
+    const { text } = observation;
+    if (typeof text !== "string") {
+      continue;
+    }
+    const normalizedText = text.trim();
+    if (normalizedText.length < 1 || normalizedText.length > 4096) {
+      continue;
+    }
+    const normalizedConfidence = normalizeProviderConfidence(
+      observation["confidence"]
+    );
     observations.push({
-      confidence: normalizeProviderConfidence(observation["confidence"]),
-      text:
-        typeof observation["text"] === "string"
-          ? observation["text"].trim()
-          : observation["text"],
+      confidence:
+        typeof normalizedConfidence === "number" &&
+        Number.isFinite(normalizedConfidence) &&
+        normalizedConfidence >= 0 &&
+        normalizedConfidence <= 100
+          ? normalizedConfidence
+          : 0,
+      text: normalizedText,
     });
   }
 
