@@ -2161,6 +2161,41 @@ describe("stage-scoped terminal recipe recovery", () => {
       recoveryOrdinal: 8,
     });
 
+    const [recovery] = resumed;
+    if (recovery === undefined) {
+      throw new Error("expected the immutable eighth recovery");
+    }
+    const budget = makeD1PilotProviderBudgetRepository(
+      testEnv.MealPlannerDatabase,
+      "pilot-gaia-118"
+    );
+    const reservation = {
+      dispatchId: recovery.recoveryDispatchId,
+      maximumCostMicroUsd: 100_000,
+      providerStageId: decodeStageId("recipe-extraction"),
+      runId: decodeRunId(`gaia-118:recipe-recovery:${seeded.importId}`),
+      timestamp: decodeBudgetTimestamp("2026-07-30T00:24:00.000Z"),
+    };
+    const conservativeSettlement = {
+      ...reservation,
+      conservativeChargeMicroUsd: 100_000,
+      replay: {
+        evidenceFingerprint: recovery.evidenceFingerprint,
+        generation: recovery.acquisitionGeneration,
+        importId: recovery.importId,
+        valueJson: JSON.stringify("schema-valid-decoded-recipe"),
+        valueSha256: "f".repeat(64),
+      },
+    };
+    await Effect.runPromise(budget.reserve(reservation));
+    await Effect.runPromise(budget.beginInvocation(reservation));
+    await expect(
+      Effect.runPromise(budget.settleConservative(conservativeSettlement))
+    ).resolves.toMatchObject({ state: "settled_conservative" });
+    await expect(
+      Effect.runPromise(budget.settleConservative(conservativeSettlement))
+    ).resolves.toMatchObject({ state: "settled_conservative" });
+
     await expect(
       testEnv.MealPlannerDatabase.prepare(
         `SELECT state, settled_micro_usd, reserved_micro_usd,
@@ -2172,9 +2207,19 @@ describe("stage-scoped terminal recipe recovery", () => {
       invoking_dispatch_id: null,
       poison_dispatch_id: null,
       reserved_micro_usd: 0,
-      settled_micro_usd: 800_000,
+      settled_micro_usd: 900_000,
       state: "open",
     });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM pilot_provider_recipe_replay_values
+          WHERE runtime_stage = 'pilot-gaia-118'
+            AND dispatch_id = ?`
+      )
+        .bind(recovery.recoveryDispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
         `SELECT COUNT(*) AS count
