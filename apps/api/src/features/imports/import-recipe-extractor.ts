@@ -115,6 +115,136 @@ export const RecipeExtractionSemantics = Schema.Struct({
 });
 export type RecipeExtractionSemantics = typeof RecipeExtractionSemantics.Type;
 
+const RecipeProviderString = TrimmedNonEmptyString.pipe(
+  Schema.check(Schema.isMaxLength(4096))
+);
+
+/**
+ * Closed provider-facing selection contract.
+ *
+ * The model may select candidate values only. Source identity, citations,
+ * origins, unresolved bookkeeping, and evidence authority are derived by the
+ * trusted adapter after this shape decodes.
+ */
+export const RecipeProviderToolArguments = Schema.Struct({
+  category: Schema.NullOr(RecipeProviderString),
+  cookTimeMinutes: Schema.NullOr(SafeInteger),
+  cuisine: Schema.NullOr(RecipeProviderString),
+  description: Schema.NullOr(RecipeProviderString),
+  ingredientLines: Schema.Array(RecipeProviderString).pipe(
+    Schema.check(Schema.isMaxLength(256))
+  ),
+  instructions: Schema.Array(RecipeProviderString).pipe(
+    Schema.check(Schema.isMaxLength(256))
+  ),
+  name: Schema.NullOr(RecipeProviderString),
+  nutrition: Schema.NullOr(RecipeProviderString),
+  prepTimeMinutes: Schema.NullOr(SafeInteger),
+  supportedClaims: Schema.Array(RecipeProviderString).pipe(
+    Schema.check(Schema.isMaxLength(256))
+  ),
+  temperatureCelsius: Schema.NullOr(SafeInteger),
+  tools: Schema.Array(RecipeProviderString).pipe(
+    Schema.check(Schema.isMaxLength(256))
+  ),
+  totalTimeMinutes: Schema.NullOr(SafeInteger),
+  yield: Schema.NullOr(RecipeProviderString),
+});
+export type RecipeProviderToolArguments =
+  typeof RecipeProviderToolArguments.Type;
+
+const MissingProviderRecipeFact = {
+  citations: [],
+  origin: "unresolved",
+  reason: "not selected from available evidence",
+  state: "unresolved",
+} as const;
+const MissingProviderRecipeFactList = {
+  items: [],
+  reason: "not selected from available evidence",
+  state: "unresolved",
+} as const;
+
+const selectedProviderRecipeFact = <A>(value: A) => ({
+  citations: [
+    {
+      confidence: 0,
+      evidenceId: "adapter-provider-selection",
+      origin: "observed" as const,
+    },
+  ] as const,
+  origin: "inferred" as const,
+  state: "supported" as const,
+  value,
+});
+
+const selectedProviderRecipeFactList = (values: readonly string[]) => {
+  const selected = values.map(selectedProviderRecipeFact);
+  const [first, ...rest] = selected;
+  return first === undefined
+    ? MissingProviderRecipeFactList
+    : { items: [first, ...rest] as const, state: "supported" as const };
+};
+
+const ProviderUnresolvedFieldBySemanticKey = [
+  ["category", "category"],
+  ["cookTimeMinutes", "cook_time_minutes"],
+  ["cuisine", "cuisine"],
+  ["description", "description"],
+  ["ingredientLines", "ingredient_lines"],
+  ["instructions", "instructions"],
+  ["name", "name"],
+  ["nutrition", "nutrition"],
+  ["prepTimeMinutes", "prep_time_minutes"],
+  ["temperatureCelsius", "temperature_celsius"],
+  ["tools", "tools"],
+  ["totalTimeMinutes", "total_time_minutes"],
+  ["yield", "yield"],
+] as const satisfies readonly (readonly [
+  keyof RecipeProviderToolArguments,
+  RecipeUnresolvedField,
+])[];
+
+/** Lift a decoded provider selection into the existing trusted-grounding input. */
+export const projectRecipeProviderToolArguments = (
+  selection: RecipeProviderToolArguments
+): RecipeExtractionSemantics => {
+  const selectedFact = <A>(value: A | null) =>
+    value === null
+      ? MissingProviderRecipeFact
+      : selectedProviderRecipeFact(value);
+  const semantics = {
+    author: MissingProviderRecipeFact,
+    category: selectedFact(selection.category),
+    cookTimeMinutes: selectedFact(selection.cookTimeMinutes),
+    cuisine: selectedFact(selection.cuisine),
+    description: selectedFact(selection.description),
+    ingredientLines: selectedProviderRecipeFactList(selection.ingredientLines),
+    instructions: selectedProviderRecipeFactList(selection.instructions),
+    name: selectedFact(selection.name),
+    nutrition: selectedFact(selection.nutrition),
+    prepTimeMinutes: selectedFact(selection.prepTimeMinutes),
+    sourceUrl: MissingProviderRecipeFact,
+    supportedClaims: selectedProviderRecipeFactList(selection.supportedClaims),
+    temperatureCelsius: selectedFact(selection.temperatureCelsius),
+    tools: selectedProviderRecipeFactList(selection.tools),
+    totalTimeMinutes: selectedFact(selection.totalTimeMinutes),
+    yield: selectedFact(selection.yield),
+  };
+  return {
+    ...semantics,
+    unresolvedFields: [
+      ...ProviderUnresolvedFieldBySemanticKey.flatMap(
+        ([key, unresolvedField]) =>
+          semantics[key].state === "unresolved" ? [unresolvedField] : []
+      ),
+      "ingredient_quantities",
+      "ingredient_units",
+      "author",
+    ],
+  };
+};
+
 /** Strict provider-neutral recipe result. Raw adapter output is decoded here. */
 export const RecipeExtraction = Schema.Struct({
   ...RecipeExtractionSemantics.fields,
