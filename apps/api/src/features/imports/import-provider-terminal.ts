@@ -47,6 +47,8 @@ const RecipeTerminalOwnershipRow = Schema.Struct({
   state: Schema.Literals(["dispatching", "failed"]),
 });
 
+const VisualTerminalOwnershipRow = RecipeTerminalOwnershipRow;
+
 const SpeechRecoveryActivationRow = Schema.Struct({
   parent_status: Schema.String,
   recovery_dispatch_id: Schema.NullOr(Schema.String),
@@ -224,6 +226,43 @@ const readActiveRecipeOwnership = (
     )
   );
 
+const readActiveVisualOwnership = (
+  database: AnyD1Database,
+  input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly importId: ImportId;
+  }
+) =>
+  persistenceEffect<unknown | null>(
+    () =>
+      database
+        .prepare(
+          `SELECT dispatch_id AS ownership_id, state, failure_code, completed_at
+             FROM import_visual_evidence
+            WHERE import_id = ?
+              AND acquisition_generation = ?
+              AND state IN ('dispatching', 'failed')
+            ORDER BY updated_at DESC,
+                     CASE state WHEN 'dispatching' THEN 0 ELSE 1 END,
+                     dispatch_id DESC
+            LIMIT 1`
+        )
+        .bind(input.importId, input.acquisitionGeneration)
+        .first() as PromiseLike<unknown | null>
+  ).pipe(
+    Effect.flatMap((row) =>
+      row === null
+        ? Effect.fail(providerTerminalPersistenceError("persistence_corrupt"))
+        : Schema.decodeUnknownEffect(VisualTerminalOwnershipRow, {
+            onExcessProperty: "ignore",
+          })(row).pipe(
+            Effect.mapError(() =>
+              providerTerminalPersistenceError("persistence_corrupt")
+            )
+          )
+    )
+  );
+
 const readCheckpoint = (
   database: AnyD1Database,
   input: {
@@ -294,6 +333,152 @@ const readOptionalCheckpoint = (
     )
   );
 
+const resolveRecipeTerminalFacts = (
+  database: AnyD1Database,
+  input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly failureCode: string;
+    readonly importId: ImportId;
+    readonly providerStage: "recipe";
+  },
+  requestedCompletedAt: string
+) =>
+  Effect.gen(function* resolveRecipeFacts() {
+    const ownership = yield* readActiveRecipeOwnership(database, input);
+    if (ownership.state === "dispatching") {
+      return {
+        existingCheckpoint: null,
+        ownershipId: ownership.ownership_id,
+        terminalFacts: {
+          completedAt: requestedCompletedAt,
+          failureCode: input.failureCode,
+        },
+      } as const;
+    }
+
+    const existingCheckpoint = yield* readOptionalCheckpoint(database, {
+      ...input,
+      ownershipId: ownership.ownership_id,
+    });
+    if (existingCheckpoint !== null) {
+      if (
+        existingCheckpoint.failureCode !== input.failureCode ||
+        (ownership.failure_code !== "provider_error" &&
+          ownership.failure_code !== existingCheckpoint.failureCode) ||
+        ownership.completed_at !== existingCheckpoint.completedAt
+      ) {
+        return yield* Effect.fail(
+          providerTerminalPersistenceError("persistence_corrupt")
+        );
+      }
+      return {
+        existingCheckpoint,
+        ownershipId: ownership.ownership_id,
+        terminalFacts: {
+          completedAt: existingCheckpoint.completedAt,
+          failureCode: existingCheckpoint.failureCode,
+        },
+      } as const;
+    }
+
+    if (
+      ownership.failure_code !== input.failureCode ||
+      typeof ownership.completed_at !== "string" ||
+      ownership.completed_at.length === 0
+    ) {
+      return yield* Effect.fail(
+        providerTerminalPersistenceError("persistence_corrupt")
+      );
+    }
+    return {
+      existingCheckpoint: null,
+      ownershipId: ownership.ownership_id,
+      terminalFacts: {
+        completedAt: ownership.completed_at,
+        failureCode: ownership.failure_code,
+      },
+    } as const;
+  });
+
+const resolveVisualTerminalFacts = (
+  database: AnyD1Database,
+  input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly failureCode: string;
+    readonly importId: ImportId;
+    readonly providerStage: "visual";
+  },
+  requestedCompletedAt: string
+) =>
+  Effect.gen(function* resolveVisualFacts() {
+    const ownership = yield* readActiveVisualOwnership(database, input);
+    if (ownership.state === "dispatching") {
+      return {
+        existingCheckpoint: null,
+        ownershipId: ownership.ownership_id,
+        terminalFacts: {
+          completedAt: requestedCompletedAt,
+          failureCode: input.failureCode,
+        },
+      } as const;
+    }
+
+    const existingCheckpoint = yield* readOptionalCheckpoint(database, {
+      ...input,
+      ownershipId: ownership.ownership_id,
+    });
+    if (existingCheckpoint !== null) {
+      if (
+        existingCheckpoint.failureCode !== input.failureCode ||
+        ownership.failure_code !== existingCheckpoint.failureCode ||
+        ownership.completed_at !== existingCheckpoint.completedAt
+      ) {
+        return yield* Effect.fail(
+          providerTerminalPersistenceError("persistence_corrupt")
+        );
+      }
+      return {
+        existingCheckpoint,
+        ownershipId: ownership.ownership_id,
+        terminalFacts: {
+          completedAt: existingCheckpoint.completedAt,
+          failureCode: existingCheckpoint.failureCode,
+        },
+      } as const;
+    }
+
+    if (
+      ownership.failure_code === input.failureCode &&
+      typeof ownership.completed_at === "string" &&
+      ownership.completed_at.length > 0
+    ) {
+      return {
+        existingCheckpoint: null,
+        ownershipId: ownership.ownership_id,
+        terminalFacts: {
+          completedAt: ownership.completed_at,
+          failureCode: ownership.failure_code,
+        },
+      } as const;
+    }
+    if (
+      ownership.failure_code === "outcome_unknown" &&
+      input.failureCode === "visual_extraction_failed"
+    ) {
+      return {
+        existingCheckpoint: null,
+        ownershipId: ownership.ownership_id,
+        terminalFacts: {
+          completedAt: requestedCompletedAt,
+          failureCode: input.failureCode,
+        },
+      } as const;
+    }
+    return yield* Effect.fail(
+      providerTerminalPersistenceError("persistence_corrupt")
+    );
+  });
+
 export interface ProviderTerminalCheckpointRepository {
   readonly persist: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
@@ -313,52 +498,39 @@ export const makeD1ProviderTerminalCheckpointRepository = (
   persist: (input) =>
     Effect.gen(function* persistProviderTerminalCheckpoint() {
       const requestedCompletedAt = DateTime.formatIso(input.completedAt);
-      const recipeOwnership =
+      const recipeTerminal =
         input.providerStage === "recipe"
-          ? yield* readActiveRecipeOwnership(database, input)
+          ? yield* resolveRecipeTerminalFacts(
+              database,
+              { ...input, providerStage: "recipe" },
+              requestedCompletedAt
+            )
+          : undefined;
+      const visualTerminal =
+        input.providerStage === "visual"
+          ? yield* resolveVisualTerminalFacts(
+              database,
+              { ...input, providerStage: "visual" },
+              requestedCompletedAt
+            )
           : undefined;
       const ownershipId =
-        recipeOwnership?.ownership_id ??
+        recipeTerminal?.ownershipId ??
+        visualTerminal?.ownershipId ??
         (yield* readActiveOwnership(database, input));
-      if (recipeOwnership?.state === "failed") {
-        const existingCheckpoint = yield* readOptionalCheckpoint(database, {
-          ...input,
-          ownershipId,
-        });
-        if (existingCheckpoint !== null) {
-          if (
-            existingCheckpoint.failureCode !== input.failureCode ||
-            (recipeOwnership.failure_code !== "provider_error" &&
-              recipeOwnership.failure_code !==
-                existingCheckpoint.failureCode) ||
-            recipeOwnership.completed_at !== existingCheckpoint.completedAt
-          ) {
-            return yield* Effect.fail(
-              providerTerminalPersistenceError("persistence_corrupt")
-            );
-          }
-          return existingCheckpoint;
-        }
+      const existingCheckpoint =
+        recipeTerminal?.existingCheckpoint ??
+        visualTerminal?.existingCheckpoint;
+      if (existingCheckpoint) {
+        return existingCheckpoint;
       }
-      let terminalFacts = {
-        completedAt: requestedCompletedAt,
-        failureCode: input.failureCode,
-      };
-      if (recipeOwnership?.state === "failed") {
-        if (
-          recipeOwnership.failure_code !== input.failureCode ||
-          typeof recipeOwnership.completed_at !== "string" ||
-          recipeOwnership.completed_at.length === 0
-        ) {
-          return yield* Effect.fail(
-            providerTerminalPersistenceError("persistence_corrupt")
-          );
-        }
-        terminalFacts = {
-          completedAt: recipeOwnership.completed_at,
-          failureCode: recipeOwnership.failure_code,
-        };
-      }
+      const terminalFacts =
+        recipeTerminal?.terminalFacts ??
+        visualTerminal?.terminalFacts ??
+        ({
+          completedAt: requestedCompletedAt,
+          failureCode: input.failureCode,
+        } as const);
       yield* persistenceEffect(() =>
         database
           .prepare(
