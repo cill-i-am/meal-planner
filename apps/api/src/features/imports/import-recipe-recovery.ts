@@ -27,6 +27,7 @@ export const RecipeRecoveryIdentity = Schema.Literals([
   "recovery:5",
   "recovery:6",
   "recovery:7",
+  "recovery:8",
 ]);
 export type RecipeRecoveryIdentity = typeof RecipeRecoveryIdentity.Type;
 
@@ -40,7 +41,7 @@ const RecipeRecoveryRow = Schema.Struct({
   recovery_dispatch_id: PilotBudgetDispatchId,
   recovery_extraction_fingerprint: Sha256,
   recovery_identity: RecipeRecoveryIdentity,
-  recovery_ordinal: Schema.Literals([1, 2, 3, 4, 5, 6, 7]),
+  recovery_ordinal: Schema.Literals([1, 2, 3, 4, 5, 6, 7, 8]),
   runtime_stage: Schema.Literal(PilotProviderBudgetStage),
   transcript_sha256: Sha256,
   visual_manifest_sha256: Sha256,
@@ -56,7 +57,7 @@ export interface RecipeRecovery {
   readonly recoveryDispatchId: PilotBudgetDispatchId;
   readonly recoveryExtractionFingerprint: string;
   readonly recoveryIdentity: RecipeRecoveryIdentity;
-  readonly recoveryOrdinal: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  readonly recoveryOrdinal: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   readonly runtimeStage: typeof PilotProviderBudgetStage;
   readonly transcriptSha256: string;
   readonly visualManifestSha256: string;
@@ -194,6 +195,18 @@ const recipeRecoverySource = (
                        visual_manifest_sha256, evidence_references_json
                   FROM pilot_provider_recipe_seventh_recoveries`;
     }
+    case 8: {
+      return `SELECT runtime_stage, import_id, acquisition_generation,
+                       8 AS recovery_ordinal,
+                       'recovery:8' AS recovery_identity,
+                       seventh_recovery_dispatch_id AS original_dispatch_id,
+                       recovery_dispatch_id, evidence_fingerprint,
+                       seventh_recovery_extraction_fingerprint
+                         AS original_extraction_fingerprint,
+                       recovery_extraction_fingerprint, transcript_sha256,
+                       visual_manifest_sha256, evidence_references_json
+                  FROM pilot_provider_recipe_eighth_recoveries`;
+    }
     default: {
       const exhaustive: never = recoveryOrdinal;
       return exhaustive;
@@ -253,7 +266,7 @@ const readRecipeRecoveryForResume = (
   importId: ImportId,
   acquisitionGeneration: AcquisitionGeneration
 ) => {
-  const ordinals = [7, 6, 5, 4, 3, 2, 1] as const;
+  const ordinals = [8, 7, 6, 5, 4, 3, 2, 1] as const;
   const readLatestRecovery = (
     index: number
   ): Effect.Effect<RecipeRecovery, RecipeRecoveryPersistenceError> => {
@@ -1249,6 +1262,68 @@ const requireSeventhRecoveryCandidate = (
     )
   );
 
+const requireEighthRecoveryCandidate = (
+  database: AnyD1Database,
+  input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly importId: ImportId;
+    readonly seventhRecoveryDispatchId: PilotBudgetDispatchId;
+  }
+) =>
+  persistenceEffect(() =>
+    database
+      .prepare(
+        `SELECT 1 AS allowed
+           FROM pilot_provider_recipe_seventh_recoveries AS recovery
+           JOIN pilot_provider_budget_dispatches AS dispatch
+             ON dispatch.runtime_stage = recovery.runtime_stage
+            AND dispatch.dispatch_id = recovery.recovery_dispatch_id
+           JOIN pilot_provider_budget_reconciliations AS audit
+             ON audit.runtime_stage = dispatch.runtime_stage
+            AND audit.dispatch_id = dispatch.dispatch_id
+           JOIN pilot_provider_stage_budget AS stage
+             ON stage.runtime_stage = dispatch.runtime_stage
+          WHERE recovery.runtime_stage = ?
+            AND recovery.import_id = ?
+            AND recovery.acquisition_generation = ?
+            AND recovery.recovery_dispatch_id = ?
+            AND dispatch.run_id =
+                  'gaia-118:recipe-recovery:' || recovery.import_id
+            AND dispatch.provider_stage_id = 'recipe-extraction'
+            AND dispatch.state = 'settled_unknown'
+            AND dispatch.actual_cost_micro_usd IS NULL
+            AND dispatch.maximum_cost_micro_usd = 100000
+            AND audit.actual_cost_was_unknown = 1
+            AND audit.authority = 'authenticated_operator'
+            AND audit.conservative_charge_micro_usd = 100000
+            AND stage.state = 'open'
+            AND stage.reserved_micro_usd = 0
+            AND stage.invoking_dispatch_id IS NULL
+            AND stage.poison_dispatch_id IS NULL
+            AND stage.settled_micro_usd + 100000 <=
+                  stage.budget_cap_micro_usd
+            AND NOT EXISTS (
+              SELECT 1
+                FROM pilot_provider_recipe_replay_values AS replay
+               WHERE replay.runtime_stage = recovery.runtime_stage
+                 AND replay.dispatch_id = recovery.recovery_dispatch_id
+            )`
+      )
+      .bind(
+        PilotProviderBudgetStage,
+        input.importId,
+        input.acquisitionGeneration,
+        input.seventhRecoveryDispatchId
+      )
+      .first()
+  ).pipe(
+    Effect.flatMap((row) =>
+      row === null
+        ? Effect.fail(persistenceError("recovery_not_allowed"))
+        : Effect.void
+    )
+  );
+
 export interface RecipeRecoveryRepositoryShape {
   readonly prepare: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
@@ -1292,10 +1367,16 @@ export interface RecipeRecoveryRepositoryShape {
     readonly importId: ImportId;
     readonly sixthRecoveryDispatchId: PilotBudgetDispatchId;
   }) => Effect.Effect<RecipeRecovery, RecipeRecoveryPersistenceError>;
+  readonly prepareEighth: (input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly createdAt: ImportTimestamp;
+    readonly importId: ImportId;
+    readonly seventhRecoveryDispatchId: PilotBudgetDispatchId;
+  }) => Effect.Effect<RecipeRecovery, RecipeRecoveryPersistenceError>;
   readonly read: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
     readonly importId: ImportId;
-    readonly recoveryOrdinal?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+    readonly recoveryOrdinal?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   }) => Effect.Effect<RecipeRecovery, RecipeRecoveryPersistenceError>;
   readonly readResume: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
@@ -1847,6 +1928,138 @@ export const makeD1RecipeRecoveryRepository = (
         ? recovery
         : yield* Effect.fail(persistenceError("persistence_corrupt"));
     }),
+  prepareEighth: (input) =>
+    Effect.gen(function* prepareEighthRecipeRecovery() {
+      if (runtimeStage !== PilotProviderBudgetStage) {
+        return yield* Effect.fail(persistenceError("stage_not_allowed"));
+      }
+      const seventh = yield* readRecipeRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration,
+        7
+      );
+      if (seventh.recoveryDispatchId !== input.seventhRecoveryDispatchId) {
+        return yield* Effect.fail(persistenceError("recovery_not_allowed"));
+      }
+      const existing = yield* readRecipeRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration,
+        8
+      ).pipe(
+        Effect.map((recovery): RecipeRecovery | null => recovery),
+        Effect.catchTag("RecipeRecoveryPersistenceError", (error) =>
+          error.code === "recovery_not_allowed"
+            ? Effect.succeed(null)
+            : Effect.fail(error)
+        )
+      );
+      if (existing !== null) {
+        return existing.originalDispatchId === input.seventhRecoveryDispatchId
+          ? existing
+          : yield* Effect.fail(persistenceError("recovery_not_allowed"));
+      }
+      yield* requireEighthRecoveryCandidate(database, input);
+      const seventhRecoverySuffix = ":recovery:7";
+      const originalDispatchId = yield* Schema.decodeUnknownEffect(
+        PilotBudgetDispatchId
+      )(
+        seventh.recoveryDispatchId.endsWith(seventhRecoverySuffix)
+          ? seventh.recoveryDispatchId.slice(0, -seventhRecoverySuffix.length)
+          : null
+      ).pipe(Effect.mapError(() => persistenceError("persistence_corrupt")));
+      const firstRecoveryDispatchId = yield* Schema.decodeUnknownEffect(
+        PilotBudgetDispatchId
+      )(`${originalDispatchId}:recovery:1`).pipe(
+        Effect.mapError(() => persistenceError("persistence_corrupt"))
+      );
+      const secondRecoveryDispatchId = yield* Schema.decodeUnknownEffect(
+        PilotBudgetDispatchId
+      )(`${originalDispatchId}:recovery:2`).pipe(
+        Effect.mapError(() => persistenceError("persistence_corrupt"))
+      );
+      const thirdRecoveryDispatchId = yield* Schema.decodeUnknownEffect(
+        PilotBudgetDispatchId
+      )(`${originalDispatchId}:recovery:3`).pipe(
+        Effect.mapError(() => persistenceError("persistence_corrupt"))
+      );
+      const fourthRecoveryDispatchId = yield* Schema.decodeUnknownEffect(
+        PilotBudgetDispatchId
+      )(`${originalDispatchId}:recovery:4`).pipe(
+        Effect.mapError(() => persistenceError("persistence_corrupt"))
+      );
+      const fifthRecoveryDispatchId = yield* Schema.decodeUnknownEffect(
+        PilotBudgetDispatchId
+      )(`${originalDispatchId}:recovery:5`).pipe(
+        Effect.mapError(() => persistenceError("persistence_corrupt"))
+      );
+      const sixthRecoveryDispatchId = yield* Schema.decodeUnknownEffect(
+        PilotBudgetDispatchId
+      )(`${originalDispatchId}:recovery:6`).pipe(
+        Effect.mapError(() => persistenceError("persistence_corrupt"))
+      );
+      const recoveryDispatchId = yield* Schema.decodeUnknownEffect(
+        PilotBudgetDispatchId
+      )(`${originalDispatchId}:recovery:8`).pipe(
+        Effect.mapError(() => persistenceError("persistence_corrupt"))
+      );
+      const recoveryExtractionFingerprint =
+        yield* recipeRecoveryExtractionFingerprint(
+          seventh.recoveryExtractionFingerprint,
+          "recovery:8"
+        );
+      yield* persistenceEffect(() =>
+        database
+          .prepare(
+            `INSERT INTO pilot_provider_recipe_eighth_recoveries (
+               runtime_stage, import_id, acquisition_generation,
+               original_dispatch_id, first_recovery_dispatch_id,
+               second_recovery_dispatch_id, third_recovery_dispatch_id,
+               fourth_recovery_dispatch_id, fifth_recovery_dispatch_id,
+               sixth_recovery_dispatch_id, seventh_recovery_dispatch_id,
+               recovery_dispatch_id, evidence_fingerprint,
+               seventh_recovery_extraction_fingerprint,
+               recovery_extraction_fingerprint, transcript_sha256,
+               visual_manifest_sha256, evidence_references_json, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(
+               runtime_stage, import_id, acquisition_generation
+             ) DO NOTHING`
+          )
+          .bind(
+            PilotProviderBudgetStage,
+            input.importId,
+            input.acquisitionGeneration,
+            originalDispatchId,
+            firstRecoveryDispatchId,
+            secondRecoveryDispatchId,
+            thirdRecoveryDispatchId,
+            fourthRecoveryDispatchId,
+            fifthRecoveryDispatchId,
+            sixthRecoveryDispatchId,
+            seventh.recoveryDispatchId,
+            recoveryDispatchId,
+            seventh.evidenceFingerprint,
+            seventh.recoveryExtractionFingerprint,
+            recoveryExtractionFingerprint,
+            seventh.transcriptSha256,
+            seventh.visualManifestSha256,
+            seventh.evidenceReferencesJson,
+            DateTime.formatIso(input.createdAt)
+          )
+          .run()
+      );
+      const recovery = yield* readRecipeRecovery(
+        database,
+        input.importId,
+        input.acquisitionGeneration,
+        8
+      );
+      return recovery.originalDispatchId === input.seventhRecoveryDispatchId
+        ? recovery
+        : yield* Effect.fail(persistenceError("persistence_corrupt"));
+    }),
   prepareSecond: (input) =>
     Effect.gen(function* prepareSecondRecipeRecovery() {
       if (runtimeStage !== PilotProviderBudgetStage) {
@@ -2056,7 +2269,7 @@ export const RecipeRecoveryWorkflowInput = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   correlationId: ImportCorrelationId,
   importId: ImportId,
-  recoveryOrdinal: Schema.Literals([1, 2, 3, 4, 5, 6, 7]),
+  recoveryOrdinal: Schema.Literals([1, 2, 3, 4, 5, 6, 7, 8]),
   resumeOrdinal: Schema.optionalKey(Schema.Literal(1)),
 });
 export type RecipeRecoveryWorkflowInput =
@@ -2107,14 +2320,14 @@ export interface RecipeRecoveryWorkflowStarterShape {
 export const recipeRecoveryWorkflowInstanceId = (
   importId: ImportId,
   acquisitionGeneration: AcquisitionGeneration,
-  recoveryOrdinal: 1 | 2 | 3 | 4 | 5 | 6 | 7 = 1
+  recoveryOrdinal: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 = 1
 ) =>
   `import-recipe-recovery-${importId}-${acquisitionGeneration}-${recoveryOrdinal}`;
 
 export const recipeRecoveryResumeWorkflowInstanceId = (
   importId: ImportId,
   acquisitionGeneration: AcquisitionGeneration,
-  recoveryOrdinal: 1 | 2 | 3 | 4 | 5 | 6 | 7 = 1
+  recoveryOrdinal: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 = 1
 ) =>
   `${recipeRecoveryWorkflowInstanceId(importId, acquisitionGeneration, recoveryOrdinal)}-resume-1`;
 
