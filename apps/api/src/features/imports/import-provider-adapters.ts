@@ -1382,10 +1382,23 @@ const isValidRecipeCitationList = (value: unknown): boolean =>
 const isValidRecipeFactValue = (
   value: unknown,
   kind: "number" | "string"
-): boolean =>
+): value is number | string =>
   kind === "string"
     ? isTrimmedNonEmptyString(value) && value.length <= 4096
     : Number.isSafeInteger(value) && Number(value) >= 0;
+
+const provisionalProviderSelection = (value: number | string) => ({
+  citations: [
+    {
+      confidence: 0,
+      evidenceId: "adapter-provider-selection",
+      origin: "observed" as const,
+    },
+  ] as const,
+  origin: "inferred" as const,
+  state: "supported" as const,
+  value,
+});
 
 const canonicalizeRecipeFactWithMissingRepair = (
   value: unknown,
@@ -1409,9 +1422,15 @@ const canonicalizeRecipeFactWithMissingRepair = (
         isSupportedRecipeOrigin(canonical["origin"])) &&
       (!Object.hasOwn(canonical, "value") ||
         isValidRecipeFactValue(canonical["value"], kind));
-    return hasMissingKey || !presentMembersAreValid
-      ? { repaired: true, value: MissingRecipeFact }
-      : { repaired: false, value: canonical };
+    if (!hasMissingKey && presentMembersAreValid) {
+      return { repaired: false, value: canonical };
+    }
+    return isValidRecipeFactValue(canonical["value"], kind)
+      ? {
+          repaired: true,
+          value: provisionalProviderSelection(canonical["value"]),
+        }
+      : { repaired: true, value: MissingRecipeFact };
   }
 
   if (canonical["state"] === "unresolved") {

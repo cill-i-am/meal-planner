@@ -5393,6 +5393,75 @@ describe("installed import provider adapters", () => {
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
   });
 
+  it("grounds provider-selected values when the provider omits provenance members", async () => {
+    const candidate = {
+      ...validRecipeSemantics,
+      ingredientLines: {
+        items: [
+          { state: "supported" as const, value: "tomatoes" },
+          {
+            state: "supported" as const,
+            value: "provider-invented mushrooms",
+          },
+        ],
+        state: "supported" as const,
+      },
+      instructions: {
+        items: [{ state: "supported" as const, value: "Chop tomatoes." }],
+        state: "supported" as const,
+      },
+      name: { state: "supported" as const, value: "Tomato pasta" },
+    };
+    const gateway = makeGateway(toolResponse("record_recipe", candidate));
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:transcript",
+            evidenceId: "transcript-evidence",
+            kind: "transcript",
+            origin: "creator_provided",
+            value: "Tonight we make tomato pasta with tomatoes. Chop tomatoes.",
+          },
+        ],
+      })
+    );
+
+    expect(output.name).toMatchObject({
+      citations: [
+        {
+          evidenceId: "transcript-evidence",
+          origin: "creator_provided",
+        },
+      ],
+      state: "supported",
+      value: "Tomato pasta",
+    });
+    expect(output.ingredientLines).toMatchObject({
+      items: [{ state: "supported", value: "tomatoes" }],
+      state: "supported",
+    });
+    expect(output.instructions).toMatchObject({
+      items: [{ state: "supported", value: "Chop tomatoes." }],
+      state: "supported",
+    });
+    expect(hasMinimumRecipeEvidence(output)).toBe(true);
+    expect(JSON.stringify(output)).not.toContain("provider-invented");
+    expect(JSON.stringify(output)).not.toContain("adapter-provider-selection");
+    expect(Schema.is(RecipeExtraction)(output)).toBe(true);
+  });
+
   it("projects model-selected facts to exact cited evidence spans", async () => {
     const candidate = {
       ...validRecipeSemantics,
