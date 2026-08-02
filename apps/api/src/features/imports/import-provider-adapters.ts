@@ -138,6 +138,16 @@ const isSafeProviderFailureCode = (
 ): value is SafeProviderFailureCode =>
   typeof value === "string" && SafeProviderFailureCodes.has(value);
 
+type RecipeDispatchOutcome =
+  | {
+      readonly _tag: "Extracted";
+      readonly extraction: RecipeExtraction;
+    }
+  | {
+      readonly _tag: "Failed";
+      readonly code: SafeProviderFailureCode;
+    };
+
 interface ProviderDispatchRequest<A, E> {
   readonly conservativeReplay?: {
     readonly decode: (
@@ -341,7 +351,7 @@ const recipeConservativeReplay = (
   request: RecipeEvidenceAssembly
 ): NonNullable<
   ProviderDispatchRequest<
-    RecipeExtraction,
+    RecipeDispatchOutcome,
     SafeProviderFailureCode
   >["conservativeReplay"]
 > => ({
@@ -361,15 +371,34 @@ const recipeConservativeReplay = (
         catch: () => "malformed_response" as const,
         try: () => JSON.parse(replay.valueJson) as unknown,
       });
-      return yield* Schema.decodeUnknownEffect(RecipeExtraction, {
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "_tag" in parsed &&
+        parsed._tag === "Failed" &&
+        "code" in parsed &&
+        isSafeProviderFailureCode(parsed.code)
+      ) {
+        return {
+          _tag: "Failed" as const,
+          code: parsed.code,
+        };
+      }
+      const extraction = yield* Schema.decodeUnknownEffect(RecipeExtraction, {
         onExcessProperty: "error",
       })(parsed).pipe(Effect.mapError(() => "malformed_response" as const));
+      return {
+        _tag: "Extracted" as const,
+        extraction,
+      };
     }),
   encode: (value) =>
     Effect.gen(function* encodeRecipeReplay() {
-      const valueJson = JSON.stringify(
-        Schema.encodeSync(RecipeExtraction)(value)
-      );
+      const encodedValue =
+        value._tag === "Failed"
+          ? value
+          : Schema.encodeSync(RecipeExtraction)(value.extraction);
+      const valueJson = JSON.stringify(encodedValue);
       const valueByteLength = recipeReplayByteLength(valueJson);
       if (valueByteLength === 0 || valueByteLength > RecipeReplayMaximumBytes) {
         return yield* Effect.fail("malformed_response" as const);
@@ -2035,6 +2064,18 @@ const recipeJsonModeRequest = (request: RecipeEvidenceAssembly) => ({
   temperature: 0,
 });
 
+type RecipeJsonModeOutcome =
+  | {
+      readonly _tag: "Decoded";
+      readonly inputTokens: number | undefined;
+      readonly outputTokens: number | undefined;
+      readonly value: typeof RecipeExtractionSemantics.Type;
+    }
+  | {
+      readonly _tag: "Failed";
+      readonly code: SafeProviderFailureCode;
+    };
+
 const runRecipeJsonMode = (
   ai: WorkersAiBinding,
   model: string,
@@ -2057,12 +2098,23 @@ const runRecipeJsonMode = (
           )(model, recipeJsonModeRequest(request)),
       });
       if (!response.ok) {
-        return yield* Effect.fail({ status: response.status });
+        return {
+          _tag: "Failed" as const,
+          code: safeFailureCode(Cause.fail({ status: response.status })),
+        } satisfies RecipeJsonModeOutcome;
       }
-      const raw = yield* Effect.tryPromise({
-        catch: (error) => error,
-        try: () => response.json(),
-      });
+      const raw = Option.getOrUndefined(
+        yield* Effect.tryPromise({
+          catch: () => "malformed_response" as const,
+          try: () => response.json(),
+        }).pipe(Effect.option)
+      );
+      if (raw === undefined) {
+        return {
+          _tag: "Failed" as const,
+          code: "malformed_response" as const,
+        } satisfies RecipeJsonModeOutcome;
+      }
       const envelope = decodeRecipeJsonModeTransportEnvelope(raw);
       if (envelope._tag === "Failure") {
         yield* emitImportObservabilityEvent(
@@ -2076,7 +2128,10 @@ const runRecipeJsonMode = (
           },
           observability.traceStore
         );
-        return yield* Effect.fail("malformed_response" as const);
+        return {
+          _tag: "Failed" as const,
+          code: "malformed_response" as const,
+        } satisfies RecipeJsonModeOutcome;
       }
       const selection = decodeRecipeProviderSelection(
         envelope.success.response
@@ -2093,7 +2148,10 @@ const runRecipeJsonMode = (
           },
           observability.traceStore
         );
-        return yield* Effect.fail("malformed_response" as const);
+        return {
+          _tag: "Failed" as const,
+          code: "malformed_response" as const,
+        } satisfies RecipeJsonModeOutcome;
       }
       const usage =
         envelope.success.usage === undefined
@@ -2117,7 +2175,10 @@ const runRecipeJsonMode = (
           },
           observability.traceStore
         );
-        return yield* Effect.fail("malformed_response" as const);
+        return {
+          _tag: "Failed" as const,
+          code: "malformed_response" as const,
+        } satisfies RecipeJsonModeOutcome;
       }
       yield* emitImportObservabilityEvent(
         {
@@ -2129,10 +2190,11 @@ const runRecipeJsonMode = (
         observability.traceStore
       );
       return {
+        _tag: "Decoded" as const,
         inputTokens: usage?.prompt_tokens,
         outputTokens: usage?.completion_tokens,
         value: selection.success,
-      };
+      } satisfies RecipeJsonModeOutcome;
     }),
     {
       correlationId: observability.correlationId,
@@ -2385,11 +2447,23 @@ export const makeInstalledRecipeExtractor = (input: {
               `recipe:${request.importId}:${request.generation}:${request.evidenceFingerprint}`,
             invoke: Effect.gen(function* extractRecipeSemantics() {
               const startedAt = yield* Effect.sync(() => Date.now());
-              const { inputTokens, outputTokens, value } =
-                yield* runRecipeJsonMode(ai, model, request, {
-                  correlationId: input.correlationId,
-                  traceStore,
-                });
+              const result = yield* runRecipeJsonMode(ai, model, request, {
+                correlationId: input.correlationId,
+                traceStore,
+              });
+              if (result._tag === "Failed") {
+                return {
+                  cost: {
+                    _tag: "Conservative" as const,
+                    conservativeChargeMicroUsd: RecipeMaximumCostMicroUsd,
+                  },
+                  value: {
+                    _tag: "Failed" as const,
+                    code: result.code,
+                  } satisfies RecipeDispatchOutcome,
+                };
+              }
+              const { inputTokens, outputTokens, value } = result;
               const completedAt = yield* Effect.sync(() => Date.now());
               const meteredCost = pricedTokenUsage(inputTokens, outputTokens, {
                 inputMicroUsdPerToken: 0.29,
@@ -2413,20 +2487,23 @@ export const makeInstalledRecipeExtractor = (input: {
               return {
                 cost,
                 value: {
-                  ...deriveTrustedRecipeSemantics(value, request.items),
-                  cost: {
-                    certainty: "estimated" as const,
-                    currency: "USD" as const,
-                    estimatedMicroUsd,
+                  _tag: "Extracted" as const,
+                  extraction: {
+                    ...deriveTrustedRecipeSemantics(value, request.items),
+                    cost: {
+                      certainty: "estimated" as const,
+                      currency: "USD" as const,
+                      estimatedMicroUsd,
+                    },
+                    usage: {
+                      inputEvidenceItems: request.items.length,
+                      inputTokens: inputTokens ?? 0,
+                      latencyMilliseconds: Math.max(0, completedAt - startedAt),
+                      modelCalls: 1 as const,
+                      outputTokens: outputTokens ?? 0,
+                    },
                   },
-                  usage: {
-                    inputEvidenceItems: request.items.length,
-                    inputTokens: inputTokens ?? 0,
-                    latencyMilliseconds: Math.max(0, completedAt - startedAt),
-                    modelCalls: 1 as const,
-                    outputTokens: outputTokens ?? 0,
-                  },
-                },
+                } satisfies RecipeDispatchOutcome,
               };
             }),
             maximumCostMicroUsd: RecipeMaximumCostMicroUsd,
@@ -2434,6 +2511,11 @@ export const makeInstalledRecipeExtractor = (input: {
             providerStageId: "recipe-extraction",
           })
           .pipe(
+            Effect.flatMap((outcome) =>
+              outcome._tag === "Failed"
+                ? Effect.fail(outcome.code)
+                : Effect.succeed(outcome.extraction)
+            ),
             Effect.mapError(
               // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
               (error): RecipeExtractionFailure => {

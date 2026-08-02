@@ -3101,6 +3101,119 @@ describe("installed import provider adapters", () => {
     });
   });
 
+  it.each([
+    [
+      "an HTTP rejection",
+      () =>
+        Response.json(
+          { providerPrivateCanary: "must-not-escape" },
+          { status: 422 }
+        ),
+      "provider_unavailable",
+    ],
+    [
+      "an unreadable JSON body",
+      () =>
+        new Response("providerPrivateCanary=must-not-escape", {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+      "malformed_response",
+    ],
+    [
+      "a schema-invalid JSON result",
+      () =>
+        Response.json(
+          recipeJsonResponse({
+            ...emptyRecipeProviderSelection,
+            providerPrivateCanary: "must-not-escape",
+          })
+        ),
+      "malformed_response",
+    ],
+  ] as const)(
+    "conservatively settles %s while failing the recipe honestly",
+    async (_label, response, expectedCode) => {
+      const costs: unknown[] = [];
+      const gateway = makeRawGateway(response());
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledRecipeExtractor({
+          client: gateway.client,
+          correlationId,
+          dispatch: {
+            run: (input) =>
+              input.invoke.pipe(
+                Effect.tap(({ cost }) =>
+                  Effect.sync(() => {
+                    costs.push(cost);
+                  })
+                ),
+                Effect.map(({ value }) => value)
+              ),
+          },
+        }),
+        trace.service
+      );
+
+      const exit = await Effect.runPromiseExit(
+        adapter.extract(recipeEvidenceAssembly)
+      );
+
+      expect(exit._tag).toBe("Failure");
+      expect(JSON.stringify(exit)).toContain(expectedCode);
+      expect(costs).toEqual([
+        {
+          _tag: "Conservative",
+          conservativeChargeMicroUsd: 100_000,
+        },
+      ]);
+      expect(gateway.requests).toHaveLength(1);
+      expect(trace.events).toContainEqual({
+        correlationId,
+        event: "provider.response",
+        outcome: "received",
+        providerStage: "recipe",
+      });
+      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+        "must-not-escape"
+      );
+    }
+  );
+
+  it("keeps a recipe transport failure unknown to the settlement gate", async () => {
+    let completedInsideDispatch = false;
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: makeRejectedGateway({
+          message: "providerPrivateCanary=must-not-escape",
+          status: 503,
+        }),
+        correlationId,
+        dispatch: {
+          run: (input) =>
+            input.invoke.pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  completedInsideDispatch = true;
+                })
+              ),
+              Effect.map(({ value }) => value)
+            ),
+        },
+      })
+    );
+
+    const exit = await Effect.runPromiseExit(
+      adapter.extract(recipeEvidenceAssembly)
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("provider_unavailable");
+    expect(JSON.stringify(exit)).not.toContain("must-not-escape");
+    expect(completedInsideDispatch).toBe(false);
+  });
+
   it("discards model attempts to inject visual transport metadata", async () => {
     const gateway = makeGateway(
       toolResponse("record_visual_evidence", {
@@ -4556,9 +4669,10 @@ describe("installed import provider adapters", () => {
           if (input.conservativeReplay === undefined) {
             return yield* Effect.die("Missing conservative replay codec");
           }
-          const replay = yield* input.conservativeReplay.encode(
-            validRecipe as A
-          );
+          const replay = yield* input.conservativeReplay.encode({
+            _tag: "Extracted",
+            extraction: validRecipe,
+          } as A);
           return yield* input.conservativeReplay.decode({
             ...replay,
             valueSha256: "0".repeat(64),
@@ -4624,9 +4738,10 @@ describe("installed import provider adapters", () => {
           if (input.conservativeReplay === undefined) {
             return yield* Effect.die("Missing conservative replay codec");
           }
-          const replay = yield* input.conservativeReplay.encode(
-            validRecipe as A
-          );
+          const replay = yield* input.conservativeReplay.encode({
+            _tag: "Extracted",
+            extraction: validRecipe,
+          } as A);
           return yield* input.conservativeReplay.decode({
             ...replay,
             valueJson,
@@ -4697,9 +4812,10 @@ describe("installed import provider adapters", () => {
           if (input.conservativeReplay === undefined) {
             return yield* Effect.die("Missing conservative replay codec");
           }
-          const replay = yield* input.conservativeReplay.encode(
-            validRecipe as A
-          );
+          const replay = yield* input.conservativeReplay.encode({
+            _tag: "Extracted",
+            extraction: validRecipe,
+          } as A);
           return yield* input.conservativeReplay.decode({
             ...replay,
             valueJson,
