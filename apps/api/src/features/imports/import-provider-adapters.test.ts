@@ -27,7 +27,7 @@ import type { ProviderDispatchGate } from "./import-provider-adapters.js";
 import { hasMinimumRecipeEvidence } from "./import-recipe-draft.js";
 import {
   RecipeExtraction,
-  RecipeExtractionSemantics,
+  RecipeProviderToolArguments,
 } from "./import-recipe-extractor.js";
 
 const makeRawGateway = (response: Response) => {
@@ -5325,7 +5325,7 @@ describe("installed import provider adapters", () => {
     expect(request.body.tools[0]?.function.name).toBe("record_recipe");
     expect(request.body.tools[0]?.function.parameters).toEqual(
       Tool.getJsonSchema(
-        Tool.make("record_recipe", { parameters: RecipeExtractionSemantics })
+        Tool.make("record_recipe", { parameters: RecipeProviderToolArguments })
       )
     );
     expect(request.body.tools[0]?.function.parameters).toMatchObject(
@@ -5336,20 +5336,142 @@ describe("installed import provider adapters", () => {
     );
     const serializedRequest = JSON.stringify(request.body);
     expect(serializedRequest).toContain(
-      "Copy every supported value verbatim from at least one cited evidence item"
+      "Select only recipe values supported by the supplied evidence"
     );
     expect(serializedRequest).toContain(
-      "Use exactly the supplied evidenceId and origin in every citation"
+      "Select ingredientLines as individual ingredient phrases"
     );
     expect(serializedRequest).toContain(
-      "Include a numeric fact only when the exact number and unit occur in the cited evidence text"
+      "Include a numeric value only when the exact number and its unit occur in the evidence"
     );
-    expect(serializedRequest).toContain(
-      "Set sourceUrl to the exact source_url evidence value"
+    expect(serializedRequest).toContain("the trusted adapter derives those");
+  });
+
+  it("grounds the narrow provider-selection contract through the installed path", async () => {
+    const providerSelection = Schema.decodeUnknownSync(
+      RecipeProviderToolArguments
+    )({
+      category: "pasta",
+      cookTimeMinutes: 12,
+      cuisine: null,
+      description: "quick tomato pasta",
+      ingredientLines: ["tomatoes", "fresh pasta", "olive oil"],
+      instructions: [
+        "chop the tomatoes",
+        "boil the fresh pasta",
+        "add the tomatoes to the pan",
+      ],
+      name: "quick tomato pasta",
+      nutrition: null,
+      prepTimeMinutes: null,
+      supportedClaims: ["ready in 12 minutes"],
+      temperatureCelsius: null,
+      tools: ["pan"],
+      totalTimeMinutes: 12,
+      yield: null,
+    });
+    const gateway = makeGateway(
+      toolResponse("record_recipe", providerSelection)
     );
-    expect(serializedRequest).toContain(
-      "List every unresolved fact field exactly once in unresolvedFields"
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
     );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:transcript",
+            evidenceId: "transcript-evidence",
+            kind: "transcript",
+            origin: "creator_provided",
+            value:
+              "Quick tomato pasta is ready in 12 minutes. Use tomatoes, fresh pasta and olive oil. Chop the tomatoes, boil the fresh pasta, then add the tomatoes to the pan.",
+          },
+        ],
+      })
+    );
+
+    expect(output.ingredientLines).toMatchObject({
+      items: [
+        { state: "supported", value: "tomatoes" },
+        { state: "supported", value: "fresh pasta" },
+        { state: "supported", value: "olive oil" },
+      ],
+      state: "supported",
+    });
+    expect(output.instructions).toMatchObject({
+      items: [
+        { state: "supported", value: "chop the tomatoes" },
+        { state: "supported", value: "boil the fresh pasta" },
+        { state: "supported", value: "add the tomatoes to the pan" },
+      ],
+      state: "supported",
+    });
+    expect(output.sourceUrl.state).toBe("unresolved");
+    expect(output.author.state).toBe("unresolved");
+    expect(hasMinimumRecipeEvidence(output)).toBe(true);
+    expect(JSON.stringify(output)).not.toContain("adapter-provider-selection");
+    expect(Schema.is(RecipeExtraction)(output)).toBe(true);
+  });
+
+  it("keeps a narrow non-food provider selection below the recipe threshold", async () => {
+    const providerSelection = Schema.decodeUnknownSync(
+      RecipeProviderToolArguments
+    )({
+      category: null,
+      cookTimeMinutes: null,
+      cuisine: null,
+      description: null,
+      ingredientLines: [],
+      instructions: [],
+      name: null,
+      nutrition: null,
+      prepTimeMinutes: null,
+      supportedClaims: [],
+      temperatureCelsius: null,
+      tools: [],
+      totalTimeMinutes: null,
+      yield: null,
+    });
+    const gateway = makeGateway(
+      toolResponse("record_recipe", providerSelection)
+    );
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        client: gateway.client,
+        correlationId,
+        dispatch: localDispatchGate,
+      })
+    );
+
+    const output = await Effect.runPromise(
+      adapter.extract({
+        evidenceFingerprint: "fingerprint",
+        generation: 1 as never,
+        importId: "import-1" as never,
+        items: [
+          {
+            artifactReference: "private:transcript",
+            evidenceId: "transcript-evidence",
+            kind: "transcript",
+            origin: "creator_provided",
+            value: "A city walking tour with no food preparation.",
+          },
+        ],
+      })
+    );
+
+    expect(hasMinimumRecipeEvidence(output)).toBe(false);
+    expect(output.ingredientLines.state).toBe("unresolved");
+    expect(output.instructions.state).toBe("unresolved");
   });
 
   it("derives recipe grounding authority only from exact trusted evidence", async () => {

@@ -51,7 +51,9 @@ import {
   RecipeExtraction,
   RecipeExtractionSemantics,
   RecipeExtractorDescriptor,
+  RecipeProviderToolArguments,
   RecipeUnresolvedField,
+  projectRecipeProviderToolArguments,
 } from "./import-recipe-extractor.js";
 import {
   projectRecipeEvidenceSpan,
@@ -638,18 +640,16 @@ const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
 
 const recipePromptText = (input: RecipeEvidenceAssembly) =>
   [
-    "Extract only recipe facts supported by the supplied evidence. " +
-      "Use unresolved states for every unsupported field. " +
-      "If the accessible content is not food or not a recipe, keep recipe " +
-      "facts unresolved and return no invented ingredients or instructions.",
-    "Copy every supported value verbatim from at least one cited evidence item. " +
-      "Use exactly the supplied evidenceId and origin in every citation. " +
-      "Include a numeric fact only when the exact number and unit occur in the " +
-      "cited evidence text. Set sourceUrl to the exact source_url evidence value " +
-      "and cite that item. Set author only to an exact creator value and cite " +
-      "that item. List every unresolved fact field exactly once in " +
-      "unresolvedFields, including ingredient_quantities and ingredient_units " +
-      "when the evidence does not provide them.",
+    "Select only recipe values supported by the supplied evidence. " +
+      "Copy short exact phrases from the evidence whenever possible. " +
+      "Return null for an unsupported scalar and an empty array for an " +
+      "unsupported list. If the content is not food or not a recipe, return " +
+      "null scalars and empty ingredientLines and instructions.",
+    "Select ingredientLines as individual ingredient phrases and instructions " +
+      "as individual cooking-action phrases. Include a numeric value only when " +
+      "the exact number and its unit occur in the evidence. Do not return source " +
+      "identity, citations, provenance, confidence, state, reasons, or " +
+      "unresolved-field bookkeeping; the trusted adapter derives those.",
     ...input.items.map((item) =>
       JSON.stringify({
         evidenceId: item.evidenceId,
@@ -1215,6 +1215,20 @@ const decodeRecipeSemantics = Schema.decodeUnknownResult(
   }
 );
 
+const decodeRecipeProviderToolArguments = Schema.decodeUnknownResult(
+  RecipeProviderToolArguments,
+  { onExcessProperty: "error" }
+);
+
+const decodeRecipeProviderSelection = (
+  value: unknown
+): ReturnType<typeof decodeRecipeSemantics> => {
+  const decoded = decodeRecipeProviderToolArguments(value);
+  return decoded._tag === "Success"
+    ? decodeRecipeSemantics(projectRecipeProviderToolArguments(decoded.success))
+    : decodeRecipeSemantics(value);
+};
+
 const isSchemaValidRecipeSemantics = (value: unknown): boolean =>
   decodeRecipeSemantics(value)._tag === "Success";
 
@@ -1612,7 +1626,7 @@ const decodeCanonicalRecipeSemantics = (
 const decodeCanonicalNestedRecipeSemantics = (
   value: unknown
 ): ReturnType<typeof decodeRecipeSemantics> => {
-  const decoded = decodeRecipeSemantics(value);
+  const decoded = decodeRecipeProviderSelection(value);
   if (decoded._tag === "Success" || !isUnknownRecord(value)) {
     return decoded;
   }
@@ -1685,6 +1699,12 @@ const canonicalizeRecipeTransportRoot = (value: unknown): unknown => {
   }
   if (isSchemaValidRecipeSemantics(value)) {
     return { response: value };
+  }
+  const providerSelection = decodeRecipeProviderToolArguments(value);
+  if (providerSelection._tag === "Success") {
+    return {
+      response: projectRecipeProviderToolArguments(providerSelection.success),
+    };
   }
 
   const keys = Object.keys(value);
@@ -2200,6 +2220,7 @@ export const makeInstalledRecipeExtractor = (input: {
                     name: "record_recipe",
                     prompt: recipePromptText(request),
                     schema: RecipeExtractionSemantics,
+                    toolSchema: RecipeProviderToolArguments,
                   },
                   {
                     correlationId: input.correlationId,
