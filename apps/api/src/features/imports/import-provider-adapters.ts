@@ -3,7 +3,6 @@ import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
 import { Cause, Effect, Option, Schema } from "effect";
 import type { SchemaIssue } from "effect";
-import * as Clock from "effect/Clock";
 import type { LanguageModel, Prompt } from "effect/unstable/ai";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
@@ -404,10 +403,9 @@ const hasProviderErrorDescription = (
   description: string
 ): boolean => providerErrorDescription(error) === description;
 
-const providerNormalizationDecodeReason = (
-  error: unknown
+const providerNormalizationDecodeReasonFromDescription = (
+  description: string | undefined
 ): ProviderDecodeReason | undefined => {
-  const description = providerErrorDescription(error);
   if (
     description === ProviderNormalizationInvalidMessage ||
     description === ProviderNormalizationBodyInvalidMessage
@@ -423,6 +421,13 @@ const providerNormalizationDecodeReason = (
     ? (reason as ProviderNormalizationRecipeDecodeReason)
     : undefined;
 };
+
+const providerNormalizationDecodeReason = (
+  error: unknown
+): ProviderDecodeReason | undefined =>
+  providerNormalizationDecodeReasonFromDescription(
+    providerErrorDescription(error)
+  );
 
 const isProviderNormalizationFailure = (error: unknown): boolean =>
   providerNormalizationDecodeReason(error) !== undefined;
@@ -1194,8 +1199,16 @@ const RecipeTransportUsage = Schema.Struct({
   ),
   total_tokens: RecipeTransportTokenCount,
 });
+const RecipeJsonModeTransportEnvelope = Schema.Struct({
+  response: Schema.Unknown,
+  usage: Schema.optionalKey(Schema.Unknown),
+});
 const decodeRecipeTransportUsage = Schema.decodeUnknownOption(
   RecipeTransportUsage,
+  { onExcessProperty: "error" }
+);
+const decodeRecipeJsonModeTransportEnvelope = Schema.decodeUnknownResult(
+  RecipeJsonModeTransportEnvelope,
   { onExcessProperty: "error" }
 );
 
@@ -2012,6 +2025,168 @@ const noLogWorkersAiClient = (
   ) as QueryGatewayClient["raw"],
 });
 
+const recipeJsonModeRequest = (request: RecipeEvidenceAssembly) => ({
+  max_tokens: 16_384,
+  messages: [{ content: recipePromptText(request), role: "user" as const }],
+  response_format: {
+    json_schema: Tool.getJsonSchemaFromSchema(RecipeProviderToolArguments),
+    type: "json_schema" as const,
+  },
+  temperature: 0,
+});
+
+const runRecipeJsonMode = (
+  ai: WorkersAiBinding,
+  model: string,
+  request: RecipeEvidenceAssembly,
+  observability: {
+    readonly correlationId: ImportCorrelationId;
+    readonly traceStore: ImportObservabilityTraceStoreShape | undefined;
+  }
+) =>
+  failAfter(
+    Effect.gen(function* invokeRecipeJsonMode() {
+      const response = yield* Effect.tryPromise({
+        catch: (error) => error,
+        try: () =>
+          (
+            ai.run as unknown as (
+              model: string,
+              body: unknown
+            ) => Promise<Response>
+          )(model, recipeJsonModeRequest(request)),
+      });
+      if (!response.ok) {
+        return yield* Effect.fail({ status: response.status });
+      }
+      const raw = yield* Effect.tryPromise({
+        catch: (error) => error,
+        try: () => response.json(),
+      });
+      const envelope = decodeRecipeJsonModeTransportEnvelope(raw);
+      if (envelope._tag === "Failure") {
+        yield* emitImportObservabilityEvent(
+          {
+            correlationId: observability.correlationId,
+            decodeReason: "json_mode_envelope_invalid",
+            decodeStage: "json_mode_envelope",
+            event: "provider.decode",
+            outcome: "malformed",
+            providerStage: "recipe",
+          },
+          observability.traceStore
+        );
+        return yield* Effect.fail("malformed_response" as const);
+      }
+      const selection = decodeRecipeProviderSelection(
+        envelope.success.response
+      );
+      if (selection._tag === "Failure") {
+        yield* emitImportObservabilityEvent(
+          {
+            correlationId: observability.correlationId,
+            decodeReason: "json_mode_schema_invalid",
+            decodeStage: "recipe_schema",
+            event: "provider.decode",
+            outcome: "malformed",
+            providerStage: "recipe",
+          },
+          observability.traceStore
+        );
+        return yield* Effect.fail("malformed_response" as const);
+      }
+      const usage =
+        envelope.success.usage === undefined
+          ? undefined
+          : Option.getOrUndefined(
+              decodeRecipeTransportUsage(envelope.success.usage)
+            );
+      if (
+        envelope.success.usage !== undefined &&
+        (usage === undefined ||
+          usage.prompt_tokens + usage.completion_tokens !== usage.total_tokens)
+      ) {
+        yield* emitImportObservabilityEvent(
+          {
+            correlationId: observability.correlationId,
+            decodeReason: "json_mode_envelope_invalid",
+            decodeStage: "json_mode_envelope",
+            event: "provider.decode",
+            outcome: "malformed",
+            providerStage: "recipe",
+          },
+          observability.traceStore
+        );
+        return yield* Effect.fail("malformed_response" as const);
+      }
+      yield* emitImportObservabilityEvent(
+        {
+          correlationId: observability.correlationId,
+          event: "provider.decode",
+          outcome: "succeeded",
+          providerStage: "recipe",
+        },
+        observability.traceStore
+      );
+      return {
+        inputTokens: usage?.prompt_tokens,
+        outputTokens: usage?.completion_tokens,
+        value: selection.success,
+      };
+    }),
+    {
+      correlationId: observability.correlationId,
+      providerStage: "recipe",
+      traceStore: observability.traceStore,
+    }
+  ).pipe(
+    // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
+    Effect.tapError((error) => {
+      const decodeReason = providerNormalizationDecodeReasonFromDescription(
+        error instanceof Error ? error.message : providerErrorDescription(error)
+      );
+      return decodeReason === undefined
+        ? Effect.void
+        : emitImportObservabilityEvent(
+            {
+              correlationId: observability.correlationId,
+              decodeReason,
+              decodeStage: "provider_normalization",
+              event: "provider.decode",
+              outcome: "malformed",
+              providerStage: "recipe",
+            },
+            observability.traceStore
+          );
+    }),
+    // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
+    Effect.mapError((error) => {
+      if (typeof error === "string") {
+        return error;
+      }
+      if (
+        providerNormalizationDecodeReasonFromDescription(
+          error instanceof Error
+            ? error.message
+            : providerErrorDescription(error)
+        ) !== undefined
+      ) {
+        return "malformed_response" as const;
+      }
+      if (
+        (error instanceof Error
+          ? error.message
+          : providerErrorDescription(error)) ===
+        ProviderKnownZeroSetupFailureMessage
+      ) {
+        return pilotProviderKnownZeroCostFailure(
+          "provider_unavailable" as const
+        );
+      }
+      return safeFailureCode(Cause.fail(error));
+    })
+  );
+
 export const makeInstalledVisualEvidenceExtractor = (input: {
   readonly client: QueryGatewayClient;
   readonly correlationId: ImportCorrelationId;
@@ -2194,16 +2369,12 @@ export const makeInstalledRecipeExtractor = (input: {
       "recipe",
       traceStore
     );
-    const service = yield* Cloudflare.AI.makeLanguageModel({
-      client,
-      model,
-      parameters: { maxTokens: 16_384, temperature: 0 },
-    });
+    const ai = yield* client.raw;
     return {
       descriptor: Schema.decodeUnknownSync(RecipeExtractorDescriptor)({
         model,
         provider: ProviderName,
-        version: "installed-alchemy-forced-tool-v4",
+        version: "installed-workers-ai-json-schema-v1",
       }),
       extract: (request) =>
         input.dispatch
@@ -2213,26 +2384,13 @@ export const makeInstalledRecipeExtractor = (input: {
               request.dispatchId ??
               `recipe:${request.importId}:${request.generation}:${request.evidenceFingerprint}`,
             invoke: Effect.gen(function* extractRecipeSemantics() {
-              const startedAt = yield* Clock.currentTimeMillis;
+              const startedAt = yield* Effect.sync(() => Date.now());
               const { inputTokens, outputTokens, value } =
-                yield* oneForcedToolCall(
-                  service,
-                  {
-                    acceptUnwrappedObject: true,
-                    description:
-                      "Select supported recipe values from the supplied evidence.",
-                    name: "record_recipe",
-                    prompt: recipePromptText(request),
-                    schema: RecipeExtractionSemantics,
-                    toolSchema: RecipeProviderToolArguments,
-                  },
-                  {
-                    correlationId: input.correlationId,
-                    providerStage: "recipe",
-                    traceStore,
-                  }
-                );
-              const completedAt = yield* Clock.currentTimeMillis;
+                yield* runRecipeJsonMode(ai, model, request, {
+                  correlationId: input.correlationId,
+                  traceStore,
+                });
+              const completedAt = yield* Effect.sync(() => Date.now());
               const meteredCost = pricedTokenUsage(inputTokens, outputTokens, {
                 inputMicroUsdPerToken: 0.29,
                 outputMicroUsdPerToken: 2.25,
