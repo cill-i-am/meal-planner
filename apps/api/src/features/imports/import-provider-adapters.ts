@@ -646,10 +646,14 @@ const recipePromptText = (input: RecipeEvidenceAssembly) =>
       "unsupported list. If the content is not food or not a recipe, return " +
       "null scalars and empty ingredientLines and instructions.",
     "Select ingredientLines as individual ingredient phrases and instructions " +
-      "as individual cooking-action phrases. Include a numeric value only when " +
-      "the exact number and its unit occur in the evidence. Do not return source " +
-      "identity, citations, provenance, confidence, state, reasons, or " +
-      "unresolved-field bookkeeping; the trusted adapter derives those.",
+      "as individual cooking-action phrases. When the evidence contains both " +
+      "an ingredient phrase and a cooking-action phrase, ingredientLines and " +
+      "instructions must each contain at least one short exact supported phrase. " +
+      "Do not reject recipe narration merely because quantities, timings, title, " +
+      "or other fields are missing. Include a numeric value only when the exact " +
+      "number and its unit occur in the evidence. Do not return source identity, " +
+      "citations, provenance, confidence, state, reasons, or unresolved-field " +
+      "bookkeeping; the trusted adapter derives those.",
     ...input.items.map((item) =>
       JSON.stringify({
         evidenceId: item.evidenceId,
@@ -2216,7 +2220,7 @@ export const makeInstalledRecipeExtractor = (input: {
                   {
                     acceptUnwrappedObject: true,
                     description:
-                      "Record only provenance-backed recipe facts and unresolved fields.",
+                      "Select supported recipe values from the supplied evidence.",
                     name: "record_recipe",
                     prompt: recipePromptText(request),
                     schema: RecipeExtractionSemantics,
