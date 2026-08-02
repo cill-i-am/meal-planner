@@ -130,36 +130,21 @@ const readNumber = (
     )
   );
 
-const unresolvedString = {
-  citations: [],
-  origin: "unresolved",
-  reason: "not present in evidence",
-  state: "unresolved",
-} as const;
-const unresolvedNumber = unresolvedString;
-const unresolvedList = {
-  items: [],
-  reason: "not present in evidence",
-  state: "unresolved",
-} as const;
-const validRecipeSemantics = {
-  author: unresolvedString,
-  category: unresolvedString,
-  cookTimeMinutes: unresolvedNumber,
-  cuisine: unresolvedString,
-  description: unresolvedString,
-  ingredientLines: unresolvedList,
-  instructions: unresolvedList,
-  name: unresolvedString,
-  nutrition: unresolvedString,
-  prepTimeMinutes: unresolvedNumber,
-  sourceUrl: unresolvedString,
-  supportedClaims: unresolvedList,
-  temperatureCelsius: unresolvedNumber,
-  tools: unresolvedList,
-  totalTimeMinutes: unresolvedNumber,
-  unresolvedFields: ["name", "description", "ingredient_lines", "instructions"],
-  yield: unresolvedString,
+const emptyRecipeProviderSelection = {
+  category: null,
+  cookTimeMinutes: null,
+  cuisine: null,
+  description: null,
+  ingredientLines: [],
+  instructions: [],
+  name: null,
+  nutrition: null,
+  prepTimeMinutes: null,
+  supportedClaims: [],
+  temperatureCelsius: null,
+  tools: [],
+  totalTimeMinutes: null,
+  yield: null,
 } as const;
 
 const installedRecipeConservativeDispatch = (
@@ -213,15 +198,7 @@ const installedRecipeConservativeDispatch = (
             throw new Error("Gateway logging was not disabled");
           }
           await Effect.runPromise(increment(env, instanceId, "provider-calls"));
-          return Response.json({
-            response: "",
-            tool_calls: [
-              {
-                arguments: validRecipeSemantics,
-                name: "record_recipe",
-              },
-            ],
-          });
+          return Response.json({ response: emptyRecipeProviderSelection });
         },
       }),
       run: () => Effect.die("universal AI Gateway dispatch must not be used"),

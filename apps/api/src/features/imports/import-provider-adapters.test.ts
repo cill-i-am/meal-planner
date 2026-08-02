@@ -201,55 +201,12 @@ const unresolvedString = {
   reason: "not resolved from available evidence",
   state: "unresolved",
 } as const;
-const unresolvedStringWithoutReason = {
-  citations: [],
-  origin: "unresolved",
-  state: "unresolved",
-} as const;
 const unresolvedNumber = unresolvedString;
 const unresolvedList = {
   items: [],
   reason: "not resolved from available evidence",
   state: "unresolved",
 } as const;
-const normalizedMissingFact = {
-  citations: [],
-  origin: "unresolved",
-  reason: "not resolved from available evidence",
-  state: "unresolved",
-} as const;
-const normalizedMissingList = {
-  items: [],
-  reason: "not resolved from available evidence",
-  state: "unresolved",
-} as const;
-const firstCitation = {
-  confidence: 1,
-  evidenceId: "evidence-1",
-  origin: "creator_provided",
-} as const;
-const secondCitation = {
-  confidence: 1,
-  evidenceId: "evidence-1",
-  origin: "creator_provided",
-} as const;
-const supportedString = {
-  citations: [firstCitation],
-  origin: "creator_provided",
-  state: "supported",
-  value: "first supported value",
-} as const;
-const secondSupportedString = {
-  citations: [firstCitation],
-  origin: "creator_provided",
-  state: "supported",
-  value: "second supported value",
-} as const;
-const supportedList = {
-  items: [supportedString, secondSupportedString],
-  state: "supported",
-} as const;
-
 const providerCitedString = (value: string) => ({
   citations: [
     {
@@ -300,10 +257,6 @@ const validRecipeSemantics = {
   yield: unresolvedString,
 } as const;
 
-const recipeSemanticsWithoutAuthor = Object.fromEntries(
-  Object.entries(validRecipeSemantics).filter(([key]) => key !== "author")
-);
-
 const validRecipe = {
   ...validRecipeSemantics,
   cost: {
@@ -319,6 +272,23 @@ const validRecipe = {
     outputTokens: 10,
   },
 };
+
+const emptyRecipeProviderSelection = {
+  category: null,
+  cookTimeMinutes: null,
+  cuisine: null,
+  description: null,
+  ingredientLines: [],
+  instructions: [],
+  name: null,
+  nutrition: null,
+  prepTimeMinutes: null,
+  supportedClaims: [],
+  temperatureCelsius: null,
+  tools: [],
+  totalTimeMinutes: null,
+  yield: null,
+} as const;
 
 const citedRecipeString = (value: string) => ({
   citations: [
@@ -375,6 +345,14 @@ const toolResponse = (
       },
     },
   ],
+  ...(usage === null ? {} : { usage }),
+});
+
+const recipeJsonResponse = (
+  value: unknown,
+  usage: unknown | null = defaultVisualUsage
+) => ({
+  response: value,
   ...(usage === null ? {} : { usage }),
 });
 
@@ -3040,1567 +3018,88 @@ describe("installed import provider adapters", () => {
     }
   );
 
-  it("accepts one native forced recipe tool call beside non-authoritative response text", async () => {
-    const gateway = makeGateway({
-      response: "non-authoritative model text",
-      tool_calls: [
-        {
-          arguments: validRecipeSemantics,
-          name: "record_recipe",
-        },
-      ],
-      usage: defaultVisualUsage,
-    });
-    const trace = makeRecordingTraceStore();
-    const adapter = await runFactory(
-      makeInstalledRecipeExtractor({
-        client: gateway.client,
-        correlationId,
-        dispatch: localDispatchGate,
-      }),
-      trace.service
-    );
-
-    const output = await Effect.runPromise(
-      adapter.extract({
-        evidenceFingerprint: "fingerprint",
-        generation: 1 as never,
-        importId: "import-1" as never,
-        items: [
-          {
-            artifactReference: "private:evidence",
-            evidenceId: "evidence-1",
-            kind: "caption",
-            origin: "creator_provided",
-            value: "visible evidence",
-          },
-        ],
-      })
-    );
-
-    expect(output).toMatchObject(validRecipeSemantics);
-    expect(trace.events).toEqual([
-      {
-        correlationId,
-        event: "provider.response",
-        outcome: "received",
-        providerStage: "recipe",
-      },
-      {
-        correlationId,
-        event: "provider.decode",
-        outcome: "succeeded",
-        providerStage: "recipe",
-      },
-    ]);
-    expect(JSON.stringify(trace.events)).not.toContain(
-      "non-authoritative model text"
-    );
-  });
-
-  it.each([
-    ["schema-valid recipe semantics", validRecipeSemantics],
-    [
-      "one named recipe call with parameters",
-      { name: "record_recipe", parameters: validRecipeSemantics },
-    ],
-    [
-      "one named recipe call with arguments",
-      { arguments: validRecipeSemantics, name: "record_recipe" },
-    ],
-  ] as const)(
-    "accepts %s at the raw transport root",
-    async (_label, response) => {
-      const { exit, trace } = await runRecipeTransportRoot(response);
-
-      expect(exit).toMatchObject({
-        _tag: "Success",
-        value: validRecipeSemantics,
-      });
-      expect(trace.events).toEqual([
-        {
-          correlationId,
-          event: "provider.response",
-          outcome: "received",
-          providerStage: "recipe",
-        },
-        {
-          correlationId,
-          event: "provider.decode",
-          outcome: "succeeded",
-          providerStage: "recipe",
-        },
-      ]);
-    }
-  );
-
-  it.each([
-    [
-      "parameters",
-      {
-        name: "record_recipe",
-        parameters: validRecipeSemantics,
-        usage: defaultVisualUsage,
-      },
-    ],
-    [
-      "arguments",
-      {
-        arguments: validRecipeSemantics,
-        name: "record_recipe",
-        usage: {
-          ...defaultVisualUsage,
-          prompt_tokens_details: { cached_tokens: 5 },
-        },
-      },
-    ],
-  ] as const)(
-    "accepts one named recipe call with %s and allowlisted usage metadata",
-    async (_label, response) => {
-      const { exit, trace } = await runRecipeTransportRoot(response);
-
-      expect(exit).toMatchObject({
-        _tag: "Success",
-        value: {
-          ...validRecipeSemantics,
-          usage: {
-            inputTokens: 20,
-            outputTokens: 10,
-          },
-        },
-      });
-      expect(trace.events).toEqual([
-        {
-          correlationId,
-          event: "provider.response",
-          outcome: "received",
-          providerStage: "recipe",
-        },
-        {
-          correlationId,
-          event: "provider.decode",
-          outcome: "succeeded",
-          providerStage: "recipe",
-        },
-      ]);
-    }
-  );
-
-  it("accepts unwrapped recipe semantics with allowlisted usage metadata", async () => {
+  it("fails closed when strict recipe JSON mode adds transport metadata", async () => {
     const { exit, trace } = await runRecipeTransportRoot({
-      ...validRecipeSemantics,
-      usage: {
-        ...defaultVisualUsage,
-        prompt_tokens_details: { cached_tokens: 5 },
-      },
-    });
-
-    expect(exit).toMatchObject({
-      _tag: "Success",
-      value: {
-        ...validRecipeSemantics,
-        usage: {
-          inputTokens: 20,
-          outputTokens: 10,
-        },
-      },
-    });
-    expect(trace.events).toEqual([
-      {
-        correlationId,
-        event: "provider.response",
-        outcome: "received",
-        providerStage: "recipe",
-      },
-      {
-        correlationId,
-        event: "provider.decode",
-        outcome: "succeeded",
-        providerStage: "recipe",
-      },
-    ]);
-  });
-
-  it("discards one inert unwrapped provider sibling only after the known semantics independently decode", async () => {
-    const { exit, trace } = await runRecipeTransportRoot({
-      ...validRecipeSemantics,
-      provider_private_canary_key: "provider-private-canary-value",
-      usage: defaultVisualUsage,
-    });
-
-    expect(exit).toMatchObject({
-      _tag: "Success",
-      value: {
-        ...validRecipeSemantics,
-        usage: {
-          inputTokens: 20,
-          outputTokens: 10,
-        },
-      },
-    });
-    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      "provider_private_canary_key"
-    );
-    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      "provider-private-canary-value"
-    );
-  });
-
-  it("repairs one inert unwrapped provider sibling without inventing usage metadata", async () => {
-    const { exit, trace } = await runRecipeTransportRoot({
-      ...validRecipeSemantics,
-      provider_private_canary_key: "provider-private-canary-value",
-    });
-
-    expect(exit).toMatchObject({
-      _tag: "Success",
-      value: validRecipeSemantics,
-    });
-    expect(JSON.stringify(trace.events)).not.toContain(
-      "provider_private_canary_key"
-    );
-    expect(JSON.stringify(trace.events)).not.toContain(
-      "provider-private-canary-value"
-    );
-    expect(JSON.stringify(trace.events)).not.toContain(
-      "not present in evidence"
-    );
-  });
-
-  it("fails closed for inconsistent usage beside unwrapped recipe semantics", async () => {
-    const { exit, trace } = await runRecipeTransportRoot({
-      ...validRecipeSemantics,
-      usage: {
-        completion_tokens: 10,
-        prompt_tokens: 20,
-        total_tokens: 31,
-      },
+      ...recipeJsonResponse(emptyRecipeProviderSelection),
+      providerPrivateCanary: "must-not-escape",
     });
 
     expect(exit._tag).toBe("Failure");
     expect(JSON.stringify(exit)).toContain("malformed_response");
     expect(trace.events.at(-1)).toEqual({
       correlationId,
-      decodeReason: "provider_normalization_recipe_metadata_invalid",
-      decodeStage: "provider_normalization",
+      decodeReason: "json_mode_envelope_invalid",
+      decodeStage: "json_mode_envelope",
       event: "provider.decode",
       outcome: "malformed",
       providerStage: "recipe",
     });
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "must-not-escape"
+    );
   });
 
-  it.each([
-    ["a non-object usage container", "provider-private-canary"],
-    [
-      "a non-numeric prompt token count",
-      {
-        completion_tokens: 10,
-        prompt_tokens: "provider-private-canary",
-        total_tokens: 30,
-      },
-    ],
-    [
-      "a non-numeric completion token count",
-      {
-        completion_tokens: "provider-private-canary",
-        prompt_tokens: 20,
-        total_tokens: 30,
-      },
-    ],
-    [
-      "a missing total token count",
-      { completion_tokens: 10, prompt_tokens: 20 },
-    ],
-    [
-      "a non-numeric total token count",
-      {
-        completion_tokens: 10,
-        prompt_tokens: 20,
-        total_tokens: "provider-private-canary",
-      },
-    ],
-    [
-      "a negative total token count",
-      { completion_tokens: 10, prompt_tokens: 20, total_tokens: -1 },
-    ],
-    [
-      "a fractional total token count",
-      { completion_tokens: 10, prompt_tokens: 20, total_tokens: 30.5 },
-    ],
-    [
-      "an inconsistent total token count",
-      { completion_tokens: 10, prompt_tokens: 20, total_tokens: 31 },
-    ],
-    [
-      "an excess usage field",
-      {
-        ...defaultVisualUsage,
-        provider_private_canary: "provider-private-canary",
-      },
-    ],
-    [
-      "a non-object prompt token detail container",
-      {
-        ...defaultVisualUsage,
-        prompt_tokens_details: "provider-private-canary",
-      },
-    ],
-    [
-      "a non-numeric cached token count",
-      {
-        ...defaultVisualUsage,
-        prompt_tokens_details: { cached_tokens: "provider-private-canary" },
-      },
-    ],
-    [
-      "an excess prompt token detail field",
-      {
-        ...defaultVisualUsage,
-        prompt_tokens_details: {
-          cached_tokens: 5,
-          provider_private_canary: "provider-private-canary",
-        },
-      },
-    ],
-  ] as const)(
-    "fails closed through the public installed recipe extractor for %s",
-    async (_label, usage) => {
-      const { exit, trace } = await runRecipeTransportRoot({
-        name: "record_recipe",
-        parameters: validRecipeSemantics,
-        usage,
-      });
-
-      expect(exit._tag).toBe("Failure");
-      expect(JSON.stringify(exit)).toContain("malformed_response");
-      expect(trace.events.at(-1)).toEqual({
-        correlationId,
-        decodeReason: "provider_normalization_recipe_metadata_invalid",
-        decodeStage: "provider_normalization",
-        event: "provider.decode",
-        outcome: "malformed",
-        providerStage: "recipe",
-      });
-      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-        "provider-private-canary"
-      );
-      expect(JSON.stringify(trace.events)).not.toContain(
-        "provider_private_canary_key"
-      );
-      expect(JSON.stringify(trace.events)).not.toContain(
-        "not present in evidence"
-      );
-    }
-  );
-
-  it.each([
-    [
-      "a supported fact variant",
-      {
-        ...validRecipeSemantics,
-        name: {
-          ...supportedString,
-          provider_private_canary_key: "provider-private-canary",
-        },
-      },
-      { ...validRecipeSemantics, name: supportedString },
-    ],
-    [
-      "an unresolved fact variant",
-      {
-        ...validRecipeSemantics,
-        name: {
-          ...unresolvedString,
-          provider_private_canary_key: "provider-private-canary",
-        },
-      },
-      validRecipeSemantics,
-    ],
-    [
-      "an evidence citation",
-      {
-        ...validRecipeSemantics,
-        name: {
-          ...supportedString,
-          citations: [
-            {
-              ...firstCitation,
-              provider_private_canary_key: "provider-private-canary",
-            },
-            secondCitation,
-          ],
-        },
-      },
-      { ...validRecipeSemantics, name: supportedString },
-    ],
-    [
-      "a supported fact-list variant",
-      {
-        ...validRecipeSemantics,
-        ingredientLines: {
-          ...supportedList,
-          provider_private_canary_key: "provider-private-canary",
-        },
-      },
-      { ...validRecipeSemantics, ingredientLines: supportedList },
-    ],
-    [
-      "an unresolved fact-list variant",
-      {
-        ...validRecipeSemantics,
-        ingredientLines: {
-          ...unresolvedList,
-          provider_private_canary_key: "provider-private-canary",
-        },
-      },
-      validRecipeSemantics,
-    ],
-    [
-      "a supported fact-list item",
-      {
-        ...validRecipeSemantics,
-        ingredientLines: {
-          items: [
-            {
-              ...supportedString,
-              provider_private_canary_key: "provider-private-canary",
-            },
-            secondSupportedString,
-          ],
-          state: "supported",
-        },
-      },
-      { ...validRecipeSemantics, ingredientLines: supportedList },
-    ],
-    [
-      "an unresolved fact-list item",
-      {
-        ...validRecipeSemantics,
-        ingredientLines: {
-          items: [
-            {
-              ...unresolvedString,
-              provider_private_canary_key: "provider-private-canary",
-            },
-          ],
-          state: "supported",
-        },
-      },
-      {
-        ...validRecipeSemantics,
-        ingredientLines: {
-          items: [unresolvedString],
-          state: "supported",
-        },
-      },
-    ],
-  ] as const)(
-    "canonicalizes an inert nested property inside %s through the installed adapter",
-    async (_label, response, _expectedSemantics) => {
-      const { exit, trace } = await runRecipeTransportRoot(response);
-
-      expect(exit._tag).toBe("Success");
-      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-        "provider-private-canary"
-      );
-      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-        "provider_private_canary_key"
-      );
-    }
-  );
-
-  it("canonicalizes nested recipe semantics in the installed Alchemy tool-call path", async () => {
+  it("fails closed when strict recipe JSON mode violates its schema", async () => {
     const { exit, trace } = await runRecipeTransportRoot(
-      toolResponse("record_recipe", {
-        ...validRecipeSemantics,
-        ingredientLines: {
-          items: [
-            {
-              ...supportedString,
-              citations: [
-                {
-                  ...firstCitation,
-                  provider_private_canary_key: "provider-private-canary",
-                },
-                secondCitation,
-              ],
-              provider_private_canary_key: "provider-private-canary",
-            },
-            secondSupportedString,
-          ],
-          provider_private_canary_key: "provider-private-canary",
-          state: "supported",
-        },
+      recipeJsonResponse({
+        ...emptyRecipeProviderSelection,
+        providerPrivateCanary: "must-not-escape",
       })
     );
-
-    expect(exit._tag).toBe("Success");
-    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      "provider-private-canary"
-    );
-    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      "provider_private_canary_key"
-    );
-  });
-
-  it("canonicalizes a native recipe call beside non-authoritative OpenAI metadata", async () => {
-    const { exit, trace } = await runRecipeTransportRoot({
-      choices: [
-        {
-          finish_reason: "tool_calls",
-          message: { content: null, tool_calls: [] },
-        },
-      ],
-      tool_calls: [
-        {
-          arguments: {
-            ...validRecipeSemantics,
-            name: {
-              ...supportedString,
-              provider_private_canary_key: "provider-private-canary",
-            },
-          },
-          name: "record_recipe",
-        },
-      ],
-      usage: defaultVisualUsage,
-    });
-
-    expect(exit._tag).toBe("Success");
-    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      "provider-private-canary"
-    );
-    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      "provider_private_canary_key"
-    );
-  });
-
-  it.each([
-    [
-      "a missing root fact",
-      recipeSemanticsWithoutAuthor,
-      {
-        ...validRecipeSemantics,
-        author: normalizedMissingFact,
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
-      },
-    ],
-    [
-      "a missing unresolved-fact member",
-      {
-        ...validRecipeSemantics,
-        author: {
-          ...unresolvedStringWithoutReason,
-          provider_private_canary_key: "provider-private-canary",
-        },
-      },
-      {
-        ...validRecipeSemantics,
-        author: normalizedMissingFact,
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
-      },
-    ],
-    [
-      "a missing supported-fact member",
-      {
-        ...validRecipeSemantics,
-        author: {
-          origin: "observed",
-          state: "supported",
-          value: "provider-private-canary",
-        },
-      },
-      {
-        ...validRecipeSemantics,
-        author: normalizedMissingFact,
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
-      },
-    ],
-    [
-      "a missing supported-list member",
-      {
-        ...validRecipeSemantics,
-        tools: { state: "supported" },
-      },
-      {
-        ...validRecipeSemantics,
-        tools: normalizedMissingList,
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "tools"],
-      },
-    ],
-    [
-      "a missing supported-list item member",
-      {
-        ...validRecipeSemantics,
-        tools: {
-          items: [
-            {
-              origin: "observed",
-              state: "supported",
-              value: "provider-private-canary",
-            },
-          ],
-          state: "supported",
-        },
-      },
-      {
-        ...validRecipeSemantics,
-        tools: { items: [normalizedMissingFact], state: "supported" },
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "tools"],
-      },
-    ],
-    [
-      "a wrong supported-fact value type",
-      {
-        ...validRecipeSemantics,
-        author: { ...supportedString, value: 17 },
-      },
-      {
-        ...validRecipeSemantics,
-        author: normalizedMissingFact,
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
-      },
-    ],
-    [
-      "a wrong root fact type",
-      { ...validRecipeSemantics, author: 17 },
-      {
-        ...validRecipeSemantics,
-        author: normalizedMissingFact,
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
-      },
-    ],
-    [
-      "a wrong unresolved-fact reason type",
-      {
-        ...validRecipeSemantics,
-        author: { ...unresolvedString, reason: 17 },
-      },
-      {
-        ...validRecipeSemantics,
-        author: normalizedMissingFact,
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
-      },
-    ],
-    [
-      "a missing member beside a wrong supported-fact member",
-      {
-        ...validRecipeSemantics,
-        author: {
-          origin: 17,
-          state: "supported",
-          value: "provider-private-canary",
-        },
-      },
-      {
-        ...validRecipeSemantics,
-        author: normalizedMissingFact,
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "author"],
-      },
-    ],
-    [
-      "an empty supported fact list",
-      {
-        ...validRecipeSemantics,
-        tools: { items: [], state: "supported" },
-      },
-      {
-        ...validRecipeSemantics,
-        tools: normalizedMissingList,
-        unresolvedFields: [...validRecipeSemantics.unresolvedFields, "tools"],
-      },
-    ],
-    [
-      "the unresolved-fields summary",
-      Object.fromEntries(
-        Object.entries(validRecipeSemantics).filter(
-          ([key]) => key !== "unresolvedFields"
-        )
-      ),
-      {
-        ...validRecipeSemantics,
-        unresolvedFields: [
-          "author",
-          "category",
-          "cook_time_minutes",
-          "cuisine",
-          "description",
-          "ingredient_lines",
-          "instructions",
-          "name",
-          "nutrition",
-          "prep_time_minutes",
-          "temperature_celsius",
-          "tools",
-          "total_time_minutes",
-          "yield",
-        ],
-      },
-    ],
-    [
-      "an invalid unresolved-fields summary",
-      {
-        ...validRecipeSemantics,
-        unresolvedFields: ["provider-private-canary"],
-      },
-      {
-        ...validRecipeSemantics,
-        unresolvedFields: [
-          "author",
-          "category",
-          "cook_time_minutes",
-          "cuisine",
-          "description",
-          "ingredient_lines",
-          "instructions",
-          "name",
-          "nutrition",
-          "prep_time_minutes",
-          "temperature_celsius",
-          "tools",
-          "total_time_minutes",
-          "yield",
-        ],
-      },
-    ],
-  ] as const)(
-    "degrades %s to explicit unresolved semantics through the installed adapter",
-    async (_label, response, _expectedSemantics) => {
-      const { exit, trace } = await runRecipeTransportRoot(response);
-
-      expect(exit._tag).toBe("Success");
-      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-        "provider-private-canary"
-      );
-      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-        "provider_private_canary_key"
-      );
-    }
-  );
-
-  it("deduplicates an existing unresolved summary before adding a repaired field", async () => {
-    const { exit } = await runRecipeTransportRoot({
-      ...recipeSemanticsWithoutAuthor,
-      unresolvedFields: Array.from({ length: 16 }, () => "name"),
-    });
-
-    expect(exit).toMatchObject({
-      _tag: "Success",
-      value: validRecipeSemantics,
-    });
-  });
-
-  it("degrades a wrong fact type through the installed Alchemy tool-call path", async () => {
-    const { exit, trace } = await runRecipeTransportRoot(
-      toolResponse("record_recipe", {
-        ...validRecipeSemantics,
-        author: { ...supportedString, value: 17 },
-      })
-    );
-
-    expect(exit).toMatchObject({
-      _tag: "Success",
-      value: validRecipeSemantics,
-    });
-    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      "provider-private-canary"
-    );
-  });
-
-  it("fails closed when a supported fact carries an invalid unresolved-only member", async () => {
-    const { exit, trace } = await runRecipeTransportRoot({
-      ...validRecipeSemantics,
-      author: {
-        origin: "observed",
-        reason: 17,
-        state: "supported",
-        value: "provider-private-canary",
-      },
-    });
 
     expect(exit._tag).toBe("Failure");
     expect(JSON.stringify(exit)).toContain("malformed_response");
     expect(trace.events.at(-1)).toEqual({
       correlationId,
-      decodeReason:
-        "provider_normalization_recipe_semantics_wrong_type_or_constraint",
-      decodeStage: "provider_normalization",
-      event: "provider.decode",
-      outcome: "malformed",
-      providerStage: "recipe",
-    });
-    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      "provider-private-canary"
-    );
-  });
-
-  it("fails closed when an unresolved fact carries an invalid supported-only member", async () => {
-    const { exit, trace } = await runRecipeTransportRoot({
-      ...validRecipeSemantics,
-      author: {
-        citations: [],
-        origin: "unresolved",
-        reason: "not present in evidence",
-        state: "unresolved",
-        value: "provider-private-canary",
-      },
-    });
-
-    expect(exit._tag).toBe("Failure");
-    expect(JSON.stringify(exit)).toContain("malformed_response");
-    expect(trace.events.at(-1)).toEqual({
-      correlationId,
-      decodeReason:
-        "provider_normalization_recipe_semantics_wrong_type_or_constraint",
-      decodeStage: "provider_normalization",
-      event: "provider.decode",
-      outcome: "malformed",
-      providerStage: "recipe",
-    });
-    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      "provider-private-canary"
-    );
-  });
-
-  it("fails closed when a supported fact list carries an invalid unresolved-only member", async () => {
-    const { exit, trace } = await runRecipeTransportRoot({
-      ...validRecipeSemantics,
-      tools: {
-        items: [supportedString],
-        reason: 17,
-        state: "supported",
-      },
-    });
-
-    expect(exit._tag).toBe("Failure");
-    expect(JSON.stringify(exit)).toContain("malformed_response");
-    expect(trace.events.at(-1)).toEqual({
-      correlationId,
-      decodeReason:
-        "provider_normalization_recipe_semantics_wrong_type_or_constraint",
-      decodeStage: "provider_normalization",
-      event: "provider.decode",
-      outcome: "malformed",
-      providerStage: "recipe",
-    });
-  });
-
-  it.each([
-    [
-      "a missing fact discriminator with nested transport authority",
-      {
-        ...validRecipeSemantics,
-        name: { response: "provider-private-canary" },
-      },
-      "provider_normalization_recipe_authority_conflict",
-    ],
-    [
-      "an invalid unresolved summary with nested transport authority",
-      {
-        ...validRecipeSemantics,
-        unresolvedFields: [{ response: "provider-private-canary" }],
-      },
-      "provider_normalization_recipe_authority_conflict",
-    ],
-    [
-      "an invalid fact discriminator",
-      {
-        ...validRecipeSemantics,
-        name: {
-          ...unresolvedString,
-          provider_private_canary_key: "provider-private-canary",
-          state: "provider-private-canary",
-        },
-      },
-      "provider_normalization_recipe_semantics_wrong_type_or_constraint",
-    ],
-    [
-      "an invalid fact-list discriminator",
-      {
-        ...validRecipeSemantics,
-        ingredientLines: {
-          ...unresolvedList,
-          provider_private_canary_key: "provider-private-canary",
-          state: "provider-private-canary",
-        },
-      },
-      "provider_normalization_recipe_semantics_wrong_type_or_constraint",
-    ],
-    [
-      "a nested fact transport authority",
-      {
-        ...validRecipeSemantics,
-        name: {
-          ...unresolvedString,
-          provider_private_canary_key: "provider-private-canary",
-          response: "provider-private-canary",
-        },
-      },
-      "provider_normalization_recipe_authority_conflict",
-    ],
-    [
-      "a nested citation transport authority",
-      {
-        ...validRecipeSemantics,
-        name: {
-          ...supportedString,
-          citations: [
-            {
-              ...firstCitation,
-              provider_private_canary_key: "provider-private-canary",
-              tool_calls: "provider-private-canary",
-            },
-          ],
-        },
-      },
-      "provider_normalization_recipe_authority_conflict",
-    ],
-  ] as const)(
-    "fails closed without leaking provider data or key names for %s",
-    async (_label, response, decodeReason) => {
-      const { exit, trace } = await runRecipeTransportRoot(response);
-
-      expect(exit._tag).toBe("Failure");
-      expect(JSON.stringify(exit)).toContain("malformed_response");
-      expect(trace.events.at(-1)).toEqual({
-        correlationId,
-        decodeReason,
-        decodeStage: "provider_normalization",
-        event: "provider.decode",
-        outcome: "malformed",
-        providerStage: "recipe",
-      });
-      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-        "provider-private-canary"
-      );
-      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-        "provider_private_canary_key"
-      );
-    }
-  );
-
-  it.each([
-    [
-      "a wrong call name",
-      {
-        name: "record_visual_evidence",
-        parameters: validRecipeSemantics,
-      },
-      "provider_normalization_recipe_tool_name_invalid",
-    ],
-    [
-      "both call argument fields",
-      {
-        arguments: validRecipeSemantics,
-        name: "record_recipe",
-        parameters: validRecipeSemantics,
-      },
-      "provider_normalization_recipe_arguments_ambiguous",
-    ],
-    [
-      "an excess call field",
-      {
-        id: "provider-private-canary",
-        name: "record_recipe",
-        parameters: validRecipeSemantics,
-        usage: defaultVisualUsage,
-      },
-      "provider_normalization_recipe_metadata_invalid",
-    ],
-    [
-      "malformed recipe arguments",
-      {
-        name: "record_recipe",
-        parameters: {
-          ...validRecipeSemantics,
-          unexpected: "provider-private-canary",
-        },
-      },
-      "provider_normalization_recipe_arguments_schema_invalid",
-    ],
-    [
-      "missing recipe arguments",
-      { name: "record_recipe" },
-      "provider_normalization_recipe_arguments_missing",
-    ],
-    [
-      "recipe semantics mixed with a transport authority",
-      {
-        ...validRecipeSemantics,
-        response: "provider-private-canary",
-      },
-      "provider_normalization_recipe_authority_conflict",
-    ],
-    [
-      "multiple recipe authorities",
-      {
-        name: "record_recipe",
-        parameters: validRecipeSemantics,
-        tool_calls: [
-          {
-            arguments: validRecipeSemantics,
-            name: "record_recipe",
-          },
-        ],
-      },
-      "provider_normalization_recipe_authority_conflict",
-    ],
-  ] as const)(
-    "fails closed for %s at the raw recipe transport root",
-    async (_label, response, decodeReason) => {
-      const { exit, trace } = await runRecipeTransportRoot(response);
-
-      expect(exit._tag).toBe("Failure");
-      expect(JSON.stringify(exit)).toContain("malformed_response");
-      expect(trace.events.at(-1)).toEqual({
-        correlationId,
-        decodeReason,
-        decodeStage: "provider_normalization",
-        event: "provider.decode",
-        outcome: "malformed",
-        providerStage: "recipe",
-      });
-      expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-        "provider-private-canary"
-      );
-      expect(JSON.stringify(trace.events)).not.toContain(
-        "provider_private_canary_key"
-      );
-      expect(JSON.stringify(trace.events)).not.toContain(
-        "not present in evidence"
-      );
-    }
-  );
-
-  it("fails closed for an array at the raw recipe transport root", async () => {
-    const { exit, trace } = await runRecipeTransportRoot([
-      validRecipeSemantics,
-    ]);
-
-    expect(exit._tag).toBe("Failure");
-    expect(trace.events.at(-1)).toEqual({
-      correlationId,
-      decodeReason: "forced_tool_missing",
-      decodeStage: "forced_tool_envelope",
-      event: "provider.decode",
-      outcome: "malformed",
-      providerStage: "recipe",
-    });
-  });
-
-  it("leaves a non-recipe raw transport root unchanged", async () => {
-    const { exit, trace } = await runRecipeTransportRoot({
-      outcome: "not_a_recipe",
-    });
-
-    expect(exit._tag).toBe("Failure");
-    expect(trace.events.at(-1)).toEqual({
-      correlationId,
-      decodeReason: "forced_tool_missing",
-      decodeStage: "forced_tool_envelope",
-      event: "provider.decode",
-      outcome: "malformed",
-      providerStage: "recipe",
-    });
-  });
-
-  it("does not canonicalize a visual response at the raw transport root", async () => {
-    const trace = makeRecordingTraceStore();
-    const adapter = await runFactory(
-      makeInstalledVisualEvidenceExtractor({
-        client: makeGateway(validVisualSemantics).client,
-        correlationId,
-        dispatch: localDispatchGate,
-      }),
-      trace.service
-    );
-
-    const exit = await Effect.runPromiseExit(
-      adapter.extract({
-        dispatchId: "visual:import-1:1",
-        frames: [
-          {
-            bytes: new Uint8Array([1, 2, 3]),
-            height: 1,
-            mimeType: "image/jpeg",
-            sha256: "a".repeat(64),
-            timestampMilliseconds: 0,
-            width: 1,
-          },
-        ],
-        generation: 1 as never,
-        importId: "import-1" as never,
-        sourceMediaSha256: "b".repeat(64),
-      })
-    );
-
-    expect(exit._tag).toBe("Failure");
-    expect(trace.events.at(-1)).toEqual({
-      correlationId,
-      decodeReason: "forced_tool_missing",
-      decodeStage: "forced_tool_envelope",
-      event: "provider.decode",
-      outcome: "malformed",
-      providerStage: "visual",
-    });
-  });
-
-  it("accepts the installed singleton schema-valid bare recipe authority", async () => {
-    const gateway = makeGateway({
-      response: JSON.stringify(validRecipeSemantics),
-      usage: defaultVisualUsage,
-    });
-    const trace = makeRecordingTraceStore();
-    const adapter = await runFactory(
-      makeInstalledRecipeExtractor({
-        client: gateway.client,
-        correlationId,
-        dispatch: localDispatchGate,
-      }),
-      trace.service
-    );
-
-    const output = await Effect.runPromise(
-      adapter.extract({
-        evidenceFingerprint: "fingerprint",
-        generation: 1 as never,
-        importId: "import-1" as never,
-        items: [
-          {
-            artifactReference: "private:evidence",
-            evidenceId: "evidence-1",
-            kind: "caption",
-            origin: "creator_provided",
-            value: "visible evidence",
-          },
-        ],
-      })
-    );
-
-    expect(output).toMatchObject(validRecipeSemantics);
-    expect(trace.events.at(-1)).toEqual({
-      correlationId,
-      event: "provider.decode",
-      outcome: "succeeded",
-      providerStage: "recipe",
-    });
-  });
-
-  it.each([
-    ["a singleton-array bare object", JSON.stringify([validRecipeSemantics])],
-    [
-      "an excess-property bare object",
-      JSON.stringify({ ...validRecipeSemantics, unexpected: true }),
-    ],
-  ])("fails closed for %s", async (_label, response) => {
-    const trace = makeRecordingTraceStore();
-    const adapter = await runFactory(
-      makeInstalledRecipeExtractor({
-        client: makeGateway({
-          response,
-          usage: defaultVisualUsage,
-        }).client,
-        correlationId,
-        dispatch: localDispatchGate,
-      }),
-      trace.service
-    );
-
-    const exit = await Effect.runPromiseExit(
-      adapter.extract({
-        evidenceFingerprint: "fingerprint",
-        generation: 1 as never,
-        importId: "import-1" as never,
-        items: [
-          {
-            artifactReference: "private:evidence",
-            evidenceId: "evidence-1",
-            kind: "caption",
-            origin: "creator_provided",
-            value: "visible evidence",
-          },
-        ],
-      })
-    );
-
-    expect(exit._tag).toBe("Failure");
-    expect(trace.events.at(-1)).toEqual(
-      expect.objectContaining({
-        correlationId,
-        event: "provider.decode",
-        outcome: "malformed",
-        providerStage: "recipe",
-      })
-    );
-  });
-
-  it("keeps an installed recipe provider rejection out of normalization telemetry", async () => {
-    const trace = makeRecordingTraceStore();
-    const adapter = await runFactory(
-      makeInstalledRecipeExtractor({
-        client: makeRejectedGateway(
-          pilotProviderKnownZeroCostFailure("provider_unavailable" as const)
-        ),
-        correlationId,
-        dispatch: localDispatchGate,
-      }),
-      trace.service
-    );
-
-    const exit = await Effect.runPromiseExit(
-      adapter.extract({
-        evidenceFingerprint: "fingerprint",
-        generation: 1 as never,
-        importId: "import-1" as never,
-        items: [
-          {
-            artifactReference: "private:evidence",
-            evidenceId: "evidence-1",
-            kind: "caption",
-            origin: "creator_provided",
-            value: "visible evidence",
-          },
-        ],
-      })
-    );
-
-    expect(exit._tag).toBe("Failure");
-    expect(JSON.stringify(exit)).toContain("provider_unavailable");
-    expect(trace.events).toEqual([]);
-  });
-
-  it("accepts the installed mirrored structured and native forced recipe call", async () => {
-    const nativeResponseText = JSON.stringify({
-      name: "record_recipe",
-      parameters: validRecipeSemantics,
-    });
-    const gateway = makeGateway({
-      response: nativeResponseText,
-      tool_calls: [
-        {
-          arguments: validRecipeSemantics,
-          name: "record_recipe",
-        },
-      ],
-      usage: defaultVisualUsage,
-    });
-    const trace = makeRecordingTraceStore();
-    const adapter = await runFactory(
-      makeInstalledRecipeExtractor({
-        client: gateway.client,
-        correlationId,
-        dispatch: localDispatchGate,
-      }),
-      trace.service
-    );
-
-    const output = await Effect.runPromise(
-      adapter.extract({
-        evidenceFingerprint: "fingerprint",
-        generation: 1 as never,
-        importId: "import-1" as never,
-        items: [
-          {
-            artifactReference: "private:evidence",
-            evidenceId: "evidence-1",
-            kind: "caption",
-            origin: "creator_provided",
-            value: "visible evidence",
-          },
-        ],
-      })
-    );
-
-    expect(output).toMatchObject(validRecipeSemantics);
-    expect(trace.events.at(-1)).toEqual({
-      correlationId,
-      event: "provider.decode",
-      outcome: "succeeded",
-      providerStage: "recipe",
-    });
-    expect(JSON.stringify(trace.events)).not.toContain(nativeResponseText);
-  });
-
-  it("accepts the pinned installed native bare-object mirror beside the same tool call", async () => {
-    const privateCanary = "provider-private-canary";
-    const nativeArguments = {
-      ...validRecipeSemantics,
-      description: {
-        citations: [],
-        origin: "unresolved",
-        reason: privateCanary,
-        state: "unresolved",
-      },
-    } as const;
-    const gateway = makeGateway({
-      response: nativeArguments,
-      tool_calls: [
-        {
-          arguments: nativeArguments,
-          name: "record_recipe",
-        },
-      ],
-      usage: defaultVisualUsage,
-    });
-    const trace = makeRecordingTraceStore();
-    const adapter = await runFactory(
-      makeInstalledRecipeExtractor({
-        client: gateway.client,
-        correlationId,
-        dispatch: localDispatchGate,
-      }),
-      trace.service
-    );
-
-    const output = await Effect.runPromise(
-      adapter.extract({
-        evidenceFingerprint: "fingerprint",
-        generation: 1 as never,
-        importId: "import-1" as never,
-        items: [
-          {
-            artifactReference: "private:evidence",
-            evidenceId: "evidence-1",
-            kind: "caption",
-            origin: "creator_provided",
-            value: "visible evidence",
-          },
-        ],
-      })
-    );
-
-    expect(output).toMatchObject(validRecipeSemantics);
-    expect(trace.events.at(-1)).toEqual({
-      correlationId,
-      event: "provider.decode",
-      outcome: "succeeded",
-      providerStage: "recipe",
-    });
-    expect(JSON.stringify(trace.events)).not.toContain(privateCanary);
-  });
-
-  it.each(["parameters", "arguments"] as const)(
-    "accepts the installed native recipe response text with %s",
-    async (field) => {
-      const nativeResponseText = JSON.stringify({
-        [field]: validRecipeSemantics,
-        name: "record_recipe",
-      });
-      const gateway = makeGateway({
-        response: nativeResponseText,
-        usage: defaultVisualUsage,
-      });
-      const trace = makeRecordingTraceStore();
-      const adapter = await runFactory(
-        makeInstalledRecipeExtractor({
-          client: gateway.client,
-          correlationId,
-          dispatch: localDispatchGate,
-        }),
-        trace.service
-      );
-
-      const output = await Effect.runPromise(
-        adapter.extract({
-          evidenceFingerprint: "fingerprint",
-          generation: 1 as never,
-          importId: "import-1" as never,
-          items: [
-            {
-              artifactReference: "private:evidence",
-              evidenceId: "evidence-1",
-              kind: "caption",
-              origin: "creator_provided",
-              value: "visible evidence",
-            },
-          ],
-        })
-      );
-
-      expect(output).toMatchObject(validRecipeSemantics);
-      expect(trace.events.at(-1)).toEqual({
-        correlationId,
-        event: "provider.decode",
-        outcome: "succeeded",
-        providerStage: "recipe",
-      });
-      expect(JSON.stringify(trace.events)).not.toContain(nativeResponseText);
-    }
-  );
-
-  it.each(["parameters", "arguments"] as const)(
-    "accepts the installed singleton-array native recipe response text with %s",
-    async (field) => {
-      const nativeResponseText = JSON.stringify([
-        {
-          [field]: validRecipeSemantics,
-          name: "record_recipe",
-        },
-      ]);
-      const gateway = makeGateway({
-        response: nativeResponseText,
-        usage: defaultVisualUsage,
-      });
-      const trace = makeRecordingTraceStore();
-      const adapter = await runFactory(
-        makeInstalledRecipeExtractor({
-          client: gateway.client,
-          correlationId,
-          dispatch: localDispatchGate,
-        }),
-        trace.service
-      );
-
-      const output = await Effect.runPromise(
-        adapter.extract({
-          evidenceFingerprint: "fingerprint",
-          generation: 1 as never,
-          importId: "import-1" as never,
-          items: [
-            {
-              artifactReference: "private:evidence",
-              evidenceId: "evidence-1",
-              kind: "caption",
-              origin: "creator_provided",
-              value: "visible evidence",
-            },
-          ],
-        })
-      );
-
-      expect(output).toMatchObject(validRecipeSemantics);
-      expect(trace.events.at(-1)).toEqual({
-        correlationId,
-        event: "provider.decode",
-        outcome: "succeeded",
-        providerStage: "recipe",
-      });
-      expect(JSON.stringify(trace.events)).not.toContain(nativeResponseText);
-    }
-  );
-
-  it("fails closed when native recipe parameters violate the exact schema", async () => {
-    const nativeResponseText = JSON.stringify({
-      name: "record_recipe",
-      parameters: {
-        ...validRecipeSemantics,
-        unexpected: "must remain private",
-      },
-    });
-    const gateway = makeGateway({
-      response: nativeResponseText,
-      usage: defaultVisualUsage,
-    });
-    const trace = makeRecordingTraceStore();
-    const adapter = await runFactory(
-      makeInstalledRecipeExtractor({
-        client: gateway.client,
-        correlationId,
-        dispatch: localDispatchGate,
-      }),
-      trace.service
-    );
-
-    const exit = await Effect.runPromiseExit(
-      adapter.extract({
-        evidenceFingerprint: "fingerprint",
-        generation: 1 as never,
-        importId: "import-1" as never,
-        items: [
-          {
-            artifactReference: "private:evidence",
-            evidenceId: "evidence-1",
-            kind: "caption",
-            origin: "creator_provided",
-            value: "visible evidence",
-          },
-        ],
-      })
-    );
-
-    expect(exit._tag).toBe("Failure");
-    expect(trace.events.at(-1)).toEqual({
-      correlationId,
-      decodeReason: "forced_tool_arguments_schema_invalid",
+      decodeReason: "json_mode_schema_invalid",
       decodeStage: "recipe_schema",
       event: "provider.decode",
       outcome: "malformed",
       providerStage: "recipe",
     });
     expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      nativeResponseText
-    );
-    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
-      "must remain private"
+      "must-not-escape"
     );
   });
 
-  it.each([
-    [
-      "an invalid forced-tool envelope",
-      {
-        response: "{",
-        tool_calls: [
-          {
-            arguments: validRecipeSemantics,
-            name: "record_recipe",
-          },
-        ],
-        usage: defaultVisualUsage,
-      },
-      "forced_tool_envelope_invalid",
-      "malformed_response",
-    ],
-    [
-      "missing forced-tool content",
-      { usage: defaultVisualUsage },
-      "forced_tool_missing",
-      "insufficient_evidence",
-    ],
-  ] as const)(
-    "classifies %s without retaining provider data",
-    async (_label, response, decodeReason, failureCode) => {
-      const trace = makeRecordingTraceStore();
-      const adapter = await runFactory(
-        makeInstalledRecipeExtractor({
-          client: makeGateway(response).client,
-          correlationId,
-          dispatch: localDispatchGate,
-        }),
-        trace.service
-      );
+  it("classifies a missing strict recipe JSON response without retaining evidence", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      usage: defaultVisualUsage,
+    });
 
-      const exit = await Effect.runPromiseExit(
-        adapter.extract({
-          evidenceFingerprint: "fingerprint",
-          generation: 1 as never,
-          importId: "import-1" as never,
-          items: [
-            {
-              artifactReference: "private:evidence",
-              evidenceId: "evidence-1",
-              kind: "caption",
-              origin: "creator_provided",
-              value: "provider-private-input-canary",
-            },
-          ],
-        })
-      );
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      decodeReason: "json_mode_envelope_invalid",
+      decodeStage: "json_mode_envelope",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "recipe",
+    });
+    expect(JSON.stringify(trace.events)).not.toContain("visible evidence");
+  });
 
-      expect(JSON.stringify(exit)).toContain(failureCode);
-      expect(trace.events.at(-1)).toEqual({
-        correlationId,
-        decodeReason,
-        decodeStage: "forced_tool_envelope",
-        event: "provider.decode",
-        outcome: "malformed",
-        providerStage: "recipe",
-      });
-      expect(JSON.stringify(trace.events)).not.toContain(
-        "provider-private-input-canary"
-      );
-    }
-  );
+  it("fails closed for inconsistent strict recipe JSON usage", async () => {
+    const { exit, trace } = await runRecipeTransportRoot(
+      recipeJsonResponse(emptyRecipeProviderSelection, {
+        completion_tokens: 10,
+        prompt_tokens: 20,
+        total_tokens: 31,
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(trace.events.at(-1)).toEqual({
+      correlationId,
+      decodeReason: "json_mode_envelope_invalid",
+      decodeStage: "json_mode_envelope",
+      event: "provider.decode",
+      outcome: "malformed",
+      providerStage: "recipe",
+    });
+  });
 
   it("discards model attempts to inject visual transport metadata", async () => {
     const gateway = makeGateway(
@@ -5210,7 +3709,7 @@ describe("installed import provider adapters", () => {
     ],
     [
       "schema-invalid arguments",
-      toolResponse("record_recipe", {
+      recipeJsonResponse({
         ...validRecipeSemantics,
         name: { ...validRecipeSemantics.name, state: "invalid" },
       }),
@@ -5247,9 +3746,9 @@ describe("installed import provider adapters", () => {
     );
   });
 
-  it("accepts semantic-only recipe output and injects trusted transport usage", async () => {
+  it("requests strict recipe JSON mode and injects trusted transport usage", async () => {
     const gateway = makeGateway(
-      toolResponse("record_recipe", validRecipeSemantics)
+      recipeJsonResponse(emptyRecipeProviderSelection)
     );
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
@@ -5293,14 +3792,9 @@ describe("installed import provider adapters", () => {
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
     const request = gateway.requests[0] as {
       readonly body: {
+        readonly response_format?: unknown;
         readonly tool_choice?: unknown;
-        readonly tools: readonly {
-          readonly function: {
-            readonly description: string;
-            readonly name: string;
-            readonly parameters: unknown;
-          };
-        }[];
+        readonly tools?: unknown;
       };
       readonly options: {
         readonly gateway: {
@@ -5322,22 +3816,19 @@ describe("installed import provider adapters", () => {
     });
     expect(request.options.gateway).not.toHaveProperty("metadata");
     expect(request.options).not.toHaveProperty("headers");
-    expect(request.body.tool_choice).toBe("required");
-    expect(request.body.tools[0]?.function.name).toBe("record_recipe");
-    expect(request.body.tools[0]?.function.description).toBe(
-      "Select supported recipe values from the supplied evidence."
-    );
-    expect(request.body.tools[0]?.function.parameters).toEqual(
-      Tool.getJsonSchema(
-        Tool.make("record_recipe", { parameters: RecipeProviderToolArguments })
-      )
-    );
-    expect(request.body.tools[0]?.function.parameters).toMatchObject(
-      expect.objectContaining({
+    expect(request.body).not.toHaveProperty("tool_choice");
+    expect(request.body).not.toHaveProperty("tools");
+    expect(request.body.response_format).toEqual({
+      json_schema: Tool.getJsonSchemaFromSchema(RecipeProviderToolArguments),
+      type: "json_schema",
+    });
+    expect(request.body.response_format).toMatchObject({
+      json_schema: expect.objectContaining({
         additionalProperties: false,
         type: "object",
-      })
-    );
+      }),
+      type: "json_schema",
+    });
     const serializedRequest = JSON.stringify(request.body);
     expect(serializedRequest).toContain(
       "Select only recipe values supported by the supplied evidence"
@@ -5380,9 +3871,7 @@ describe("installed import provider adapters", () => {
       totalTimeMinutes: 12,
       yield: null,
     });
-    const gateway = makeGateway(
-      toolResponse("record_recipe", providerSelection)
-    );
+    const gateway = makeGateway(recipeJsonResponse(providerSelection));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -5451,9 +3940,7 @@ describe("installed import provider adapters", () => {
       totalTimeMinutes: null,
       yield: null,
     });
-    const gateway = makeGateway(
-      toolResponse("record_recipe", providerSelection)
-    );
+    const gateway = makeGateway(recipeJsonResponse(providerSelection));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -5523,9 +4010,7 @@ describe("installed import provider adapters", () => {
       unresolvedFields: ["author"],
       yield: supported("Serves 2"),
     };
-    const gateway = makeGateway(
-      toolResponse("record_recipe", groundedCandidate)
-    );
+    const gateway = makeGateway(recipeJsonResponse(groundedCandidate));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -5646,7 +4131,7 @@ describe("installed import provider adapters", () => {
       },
       name: providerCitedString("TOMATO PASTA!"),
     };
-    const gateway = makeGateway(toolResponse("record_recipe", candidate));
+    const gateway = makeGateway(recipeJsonResponse(candidate));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -5692,24 +4177,12 @@ describe("installed import provider adapters", () => {
 
   it("grounds provider-selected values when the provider omits provenance members", async () => {
     const candidate = {
-      ...validRecipeSemantics,
-      ingredientLines: {
-        items: [
-          { state: "supported" as const, value: "tomatoes" },
-          {
-            state: "supported" as const,
-            value: "provider-invented mushrooms",
-          },
-        ],
-        state: "supported" as const,
-      },
-      instructions: {
-        items: [{ state: "supported" as const, value: "Chop tomatoes." }],
-        state: "supported" as const,
-      },
-      name: { state: "supported" as const, value: "Tomato pasta" },
+      ...emptyRecipeProviderSelection,
+      ingredientLines: ["tomatoes", "provider-invented mushrooms"],
+      instructions: ["Chop tomatoes."],
+      name: "Tomato pasta",
     };
-    const gateway = makeGateway(toolResponse("record_recipe", candidate));
+    const gateway = makeGateway(recipeJsonResponse(candidate));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -5761,27 +4234,11 @@ describe("installed import provider adapters", () => {
 
   it("projects uncited provider-selected facts back to exact evidence spans", async () => {
     const candidate = {
-      ...validRecipeSemantics,
-      ingredientLines: {
-        items: [
-          {
-            state: "supported" as const,
-            value: "tomatoes and pasta",
-          },
-        ],
-        state: "supported" as const,
-      },
-      instructions: {
-        items: [
-          {
-            state: "supported" as const,
-            value: "add chopped tomatoes to the pan",
-          },
-        ],
-        state: "supported" as const,
-      },
+      ...emptyRecipeProviderSelection,
+      ingredientLines: ["tomatoes and pasta"],
+      instructions: ["add chopped tomatoes to the pan"],
     };
-    const gateway = makeGateway(toolResponse("record_recipe", candidate));
+    const gateway = makeGateway(recipeJsonResponse(candidate));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -5845,7 +4302,7 @@ describe("installed import provider adapters", () => {
         state: "supported" as const,
       },
     };
-    const gateway = makeGateway(toolResponse("record_recipe", candidate));
+    const gateway = makeGateway(recipeJsonResponse(candidate));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -5891,9 +4348,7 @@ describe("installed import provider adapters", () => {
   });
 
   it("uses the immutable recovery dispatch exactly once without changing evidence", async () => {
-    const gateway = makeGateway(
-      toolResponse("record_recipe", validRecipeSemantics)
-    );
+    const gateway = makeGateway(recipeJsonResponse(validRecipeSemantics));
     const dispatches: string[] = [];
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
@@ -5933,7 +4388,7 @@ describe("installed import provider adapters", () => {
   });
 
   it("rejects model attempts to inject recipe transport metadata", async () => {
-    const gateway = makeGateway(toolResponse("record_recipe", validRecipe));
+    const gateway = makeGateway(recipeJsonResponse(validRecipe));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
         client: gateway.client,
@@ -5963,7 +4418,7 @@ describe("installed import provider adapters", () => {
   });
 
   it("settles a schema-valid recipe without usage at the conservative maximum", async () => {
-    const response = toolResponse("record_recipe", validRecipeSemantics);
+    const response = recipeJsonResponse(validRecipeSemantics);
     delete (response as { usage?: unknown }).usage;
     const gateway = makeGateway(response);
     const costs: (
@@ -6085,9 +4540,7 @@ describe("installed import provider adapters", () => {
   });
 
   it("fails closed without invoking the provider when a conservative replay hash is corrupt", async () => {
-    const gateway = makeGateway(
-      toolResponse("record_recipe", validRecipeSemantics)
-    );
+    const gateway = makeGateway(recipeJsonResponse(validRecipeSemantics));
     const replayGate: ProviderDispatchGate = {
       run: <A, E>(input: {
         readonly conservativeReplay?: {
@@ -6144,9 +4597,7 @@ describe("installed import provider adapters", () => {
   });
 
   it("fails closed without invoking the provider when conservative replay JSON violates the schema", async () => {
-    const gateway = makeGateway(
-      toolResponse("record_recipe", validRecipeSemantics)
-    );
+    const gateway = makeGateway(recipeJsonResponse(validRecipeSemantics));
     const valueJson = JSON.stringify({ unexpected: true });
     const valueSha256 = [
       ...new Uint8Array(
@@ -6215,9 +4666,7 @@ describe("installed import provider adapters", () => {
   });
 
   it("fails closed without invoking the provider when a multibyte replay exceeds the byte cap", async () => {
-    const gateway = makeGateway(
-      toolResponse("record_recipe", validRecipeSemantics)
-    );
+    const gateway = makeGateway(recipeJsonResponse(validRecipeSemantics));
     const valueJson = JSON.stringify({ value: "é".repeat(140_000) });
     expect(valueJson.length).toBeLessThan(262_144);
     expect(new TextEncoder().encode(valueJson).byteLength).toBeGreaterThan(
