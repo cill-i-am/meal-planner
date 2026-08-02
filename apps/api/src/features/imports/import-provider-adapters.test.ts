@@ -5296,6 +5296,7 @@ describe("installed import provider adapters", () => {
         readonly tool_choice?: unknown;
         readonly tools: readonly {
           readonly function: {
+            readonly description: string;
             readonly name: string;
             readonly parameters: unknown;
           };
@@ -5323,6 +5324,9 @@ describe("installed import provider adapters", () => {
     expect(request.options).not.toHaveProperty("headers");
     expect(request.body.tool_choice).toBe("required");
     expect(request.body.tools[0]?.function.name).toBe("record_recipe");
+    expect(request.body.tools[0]?.function.description).toBe(
+      "Select supported recipe values from the supplied evidence."
+    );
     expect(request.body.tools[0]?.function.parameters).toEqual(
       Tool.getJsonSchema(
         Tool.make("record_recipe", { parameters: RecipeProviderToolArguments })
@@ -5340,6 +5344,12 @@ describe("installed import provider adapters", () => {
     );
     expect(serializedRequest).toContain(
       "Select ingredientLines as individual ingredient phrases"
+    );
+    expect(serializedRequest).toContain(
+      "ingredientLines and instructions must each contain at least one"
+    );
+    expect(serializedRequest).toContain(
+      "Do not reject recipe narration merely because quantities, timings, title, or other fields are missing"
     );
     expect(serializedRequest).toContain(
       "Include a numeric value only when the exact number and its unit occur in the evidence"
