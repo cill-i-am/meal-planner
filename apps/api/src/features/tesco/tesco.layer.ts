@@ -1,13 +1,21 @@
-import { Layer } from "effect";
+import { Effect, Layer } from "effect";
 
-import { TescoAuthSessionLive } from "./auth/auth-session.js";
-import { TescoSoftLoginAuthRefreshLive } from "./auth/soft-login-auth-refresh.js";
-import { TescoXapiCatalogueLive } from "./catalogue/xapi-catalogue.js";
+import { makeTescoAuthSessionLive } from "./auth/auth-session.js";
+import { makeTescoSoftLoginAuthRefreshLive } from "./auth/soft-login-auth-refresh.js";
+import { makeTescoXapiCatalogueLive } from "./catalogue/xapi-catalogue.js";
+import { loadTescoConfig } from "./tesco.config.js";
+import type { TescoConfig } from "./tesco.config.js";
 
-const TescoAuthLive = TescoAuthSessionLive.pipe(
-  Layer.provideMerge(TescoSoftLoginAuthRefreshLive)
-);
+export const makeTescoLive = (config: TescoConfig) => {
+  const authSessionLive = makeTescoAuthSessionLive(config.authBootstrap).pipe(
+    Layer.provide(makeTescoSoftLoginAuthRefreshLive(config.softLogin))
+  );
 
-export const TescoLive = TescoXapiCatalogueLive.pipe(
-  Layer.provideMerge(TescoAuthLive)
+  return makeTescoXapiCatalogueLive(config.catalogue).pipe(
+    Layer.provide(authSessionLive)
+  );
+};
+
+export const TescoLive = Layer.unwrap(
+  loadTescoConfig.pipe(Effect.map(makeTescoLive))
 );

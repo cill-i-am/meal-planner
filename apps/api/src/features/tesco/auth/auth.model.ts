@@ -1,20 +1,24 @@
 import { Schema } from "effect";
+import type { Redacted } from "effect";
 
 const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
 );
 
-export const TescoAuthorization = TrimmedNonEmptyString.pipe(
+export const TescoAuthorizationValue = TrimmedNonEmptyString.pipe(
   Schema.check(Schema.isPattern(/^Bearer \S+$/u)),
   Schema.brand("TescoAuthorization")
 );
-export type TescoAuthorization = typeof TescoAuthorization.Type;
+export type TescoAuthorizationValue = typeof TescoAuthorizationValue.Type;
+export type TescoAuthorization = Redacted.Redacted<TescoAuthorizationValue>;
 
-export const TescoAuthCookieHeader = TrimmedNonEmptyString.pipe(
+export const TescoAuthCookieHeaderValue = TrimmedNonEmptyString.pipe(
   Schema.check(Schema.isPattern(/(?:^|;\s*)OAuth\.TokensExpiryTime=/u)),
   Schema.brand("TescoAuthCookieHeader")
 );
-export type TescoAuthCookieHeader = typeof TescoAuthCookieHeader.Type;
+export type TescoAuthCookieHeaderValue = typeof TescoAuthCookieHeaderValue.Type;
+export type TescoAuthCookieHeader =
+  Redacted.Redacted<TescoAuthCookieHeaderValue>;
 
 export const OAuthTokenExpiryEpochMs = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0)),

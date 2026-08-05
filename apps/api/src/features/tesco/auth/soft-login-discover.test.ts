@@ -1,6 +1,7 @@
-import { Effect } from "effect";
+import { Effect, Equal, Redacted, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { TescoAuthorizationValue } from "./auth.model.js";
 import {
   authorizationFromDiscoverConfig,
   discoverJsonFromHtml,
@@ -31,7 +32,14 @@ describe("soft-login discover config", () => {
       ).pipe(Effect.flatMap(authorizationFromDiscoverConfig))
     );
 
-    expect(authorization).toBe("Bearer refreshed-token");
+    const expected = Redacted.make(
+      Schema.decodeUnknownSync(TescoAuthorizationValue)(
+        "Bearer refreshed-token"
+      )
+    );
+
+    expect(Equal.equals(authorization, expected)).toBe(true);
+    expect(String(authorization)).toBe("<redacted>");
   });
 
   it("rejects HTML without a discover config", async () => {

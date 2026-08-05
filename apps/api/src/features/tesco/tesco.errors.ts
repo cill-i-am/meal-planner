@@ -31,12 +31,24 @@ export class TescoRequestBodyError {
   ) {}
 }
 
+export type TescoAuthRefreshFailureReason =
+  | "access-token-not-renewed"
+  | "discover-authorization-missing"
+  | "discover-config-invalid-json"
+  | "discover-config-missing"
+  | "invalid-cookie-header"
+  | "invalid-oauth-expiry-json"
+  | "invalid-oauth-expiry-shape"
+  | "missing-oauth-expiry"
+  | "refresh-token-expired"
+  | "upstream-response-invalid";
+
 export class TescoAuthRefreshError {
   readonly _tag = "TescoAuthRefreshError" as const;
 
   constructor(
     readonly message: string,
     readonly status: number,
-    readonly cause: unknown = undefined
+    readonly reason: TescoAuthRefreshFailureReason
   ) {}
 }
