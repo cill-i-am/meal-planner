@@ -1,8 +1,8 @@
 import { createServer } from "node:http";
-import type { Server } from "node:http";
+import type { Server, ServerResponse } from "node:http";
 
 import { NodeHttpClient } from "@effect/platform-node";
-import { ConfigProvider, Effect, Layer, Schema } from "effect";
+import { ConfigProvider, Effect, Exit, Fiber, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { AppConfig, AppConfigDefinition } from "../../../app/config.js";
@@ -13,19 +13,29 @@ import {
 } from "./auth.model.js";
 import { TescoSoftLoginAuthRefreshLive } from "./soft-login-auth-refresh.js";
 
-const makeCookieHeader = (
+const makeOAuthExpiryCookieValue = (
   accessTokenExpiresAt: number,
   refreshTokenExpiresAt: number
 ) =>
+  encodeURIComponent(
+    JSON.stringify({
+      AccessToken: accessTokenExpiresAt,
+      RefreshToken: refreshTokenExpiresAt,
+    })
+  );
+
+const makeCookieHeader = (
+  accessTokenExpiresAt: number,
+  refreshTokenExpiresAt: number,
+  identityCookie = "other=value"
+) =>
   Schema.decodeUnknownSync(TescoAuthCookieHeader)(
     [
-      `${OAuthTokensExpiryTimeCookieName}=${encodeURIComponent(
-        JSON.stringify({
-          AccessToken: accessTokenExpiresAt,
-          RefreshToken: refreshTokenExpiresAt,
-        })
+      `${OAuthTokensExpiryTimeCookieName}=${makeOAuthExpiryCookieValue(
+        accessTokenExpiresAt,
+        refreshTokenExpiresAt
       )}`,
-      "other=value",
+      identityCookie,
     ].join("; ")
   );
 
@@ -68,7 +78,354 @@ const close = (server: Server): Promise<void> =>
     });
   });
 
+const sendRedirect = (
+  response: ServerResponse,
+  location: string,
+  cookie: string
+) => {
+  response.writeHead(302, {
+    location,
+    "set-cookie": cookie,
+  });
+  response.end();
+};
+
+const makeLive = async (
+  baseUrl: string,
+  initialCookieHeader: TescoAuthCookieHeader
+) => {
+  const config = await Effect.runPromise(
+    AppConfigDefinition.parse(
+      ConfigProvider.fromUnknown({
+        HOST: "127.0.0.1",
+        PORT: "3000",
+        TESCO_AUTHORIZATION: "Bearer initial-token",
+        TESCO_AUTH_COOKIE_HEADER: initialCookieHeader,
+        TESCO_AUTH_REFRESH_FROM_URL: `${baseUrl}/shop/en-IE`,
+        TESCO_LOCALE: "en-IE",
+        TESCO_MANGO_API_KEY: "test-api-key",
+        TESCO_MANGO_URL: "https://xapi.tesco.com/",
+        TESCO_REGION: "IE",
+        TESCO_SOFT_REFRESH_SIGN_IN_URL: `${baseUrl}/account/login/en-IE`,
+        TESCO_SUGGESTION_URL: "https://search.api.tesco.com/search/suggestion/",
+      })
+    )
+  );
+
+  return TescoSoftLoginAuthRefreshLive.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.succeed(AppConfig, AppConfig.of(config)),
+        NodeHttpClient.layerUndici
+      )
+    )
+  );
+};
+
 describe("TescoSoftLoginAuthRefreshLive", () => {
+  it("keeps concurrent refresh cookie transactions isolated", async () => {
+    const initialAccessTokenExpiresAt = Date.now() - 60_000;
+    const initialRefreshTokenExpiresAt = Date.now() + 3_600_000;
+    const refreshedAccessTokenExpiresAtA = Date.now() + 600_000;
+    const refreshedRefreshTokenExpiresAtA = Date.now() + 7_200_000;
+    const refreshedAccessTokenExpiresAtB = Date.now() + 900_000;
+    const refreshedRefreshTokenExpiresAtB = Date.now() + 10_800_000;
+    const initialCookieHeaderA = makeCookieHeader(
+      initialAccessTokenExpiresAt,
+      initialRefreshTokenExpiresAt,
+      "flow=A"
+    );
+    const initialCookieHeaderB = makeCookieHeader(
+      initialAccessTokenExpiresAt,
+      initialRefreshTokenExpiresAt,
+      "flow=B"
+    );
+    const firstRequestAReceived = Promise.withResolvers<null>();
+    let pendingInitialResponseA: ServerResponse | undefined;
+    let pendingInitialResponseB: ServerResponse | undefined;
+    const redirectCookies = new Map<string, string | null>();
+
+    const server = createServer((request, response) => {
+      const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+      const cookie = Array.isArray(request.headers.cookie)
+        ? request.headers.cookie.join("; ")
+        : (request.headers.cookie ?? null);
+
+      if (requestUrl.pathname === "/account/login/en-IE") {
+        if (cookie?.includes("flow=A") === true) {
+          pendingInitialResponseA = response;
+          firstRequestAReceived.resolve(null);
+          return;
+        }
+
+        if (cookie?.includes("flow=B") === true) {
+          pendingInitialResponseB = response;
+          if (pendingInitialResponseA === undefined) {
+            response.writeHead(500);
+            response.end("Flow A did not reach the barrier first");
+            return;
+          }
+          sendRedirect(
+            pendingInitialResponseA,
+            "/shop/en-IE?flow=A",
+            "mid=A-redirect; Path=/"
+          );
+          pendingInitialResponseA = undefined;
+          return;
+        }
+
+        response.writeHead(400);
+        response.end("Missing flow cookie");
+        return;
+      }
+
+      const flow = requestUrl.searchParams.get("flow");
+      if (flow !== "A" && flow !== "B") {
+        response.writeHead(400);
+        response.end("Missing flow query");
+        return;
+      }
+
+      redirectCookies.set(flow, cookie);
+      if (flow === "A") {
+        if (pendingInitialResponseB === undefined) {
+          response.writeHead(500);
+          response.end("Flow B did not reach the barrier");
+          return;
+        }
+        sendRedirect(
+          pendingInitialResponseB,
+          "/shop/en-IE?flow=B",
+          "mid=B-redirect; Path=/"
+        );
+        pendingInitialResponseB = undefined;
+      }
+
+      const accessTokenExpiresAt =
+        flow === "A"
+          ? refreshedAccessTokenExpiresAtA
+          : refreshedAccessTokenExpiresAtB;
+      const refreshTokenExpiresAt =
+        flow === "A"
+          ? refreshedRefreshTokenExpiresAtA
+          : refreshedRefreshTokenExpiresAtB;
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "set-cookie": [
+          `${OAuthTokensExpiryTimeCookieName}=${makeOAuthExpiryCookieValue(
+            accessTokenExpiresAt,
+            refreshTokenExpiresAt
+          )}; Path=/`,
+          `session=${flow}-renewed; Path=/`,
+        ],
+      });
+      response.end(discoverHtml(`Bearer refreshed-token-${flow}`));
+    });
+
+    const baseUrl = await listen(server);
+    try {
+      const Live = await makeLive(baseUrl, initialCookieHeaderA);
+
+      const [snapshotA, snapshotB] = await Effect.runPromise(
+        Effect.gen(function* () {
+          const authRefresh = yield* TescoAuthRefresh;
+          const fiberA = yield* Effect.forkChild(
+            authRefresh.refresh(initialCookieHeaderA)
+          );
+          yield* Effect.promise(() => firstRequestAReceived.promise);
+          const fiberB = yield* Effect.forkChild(
+            authRefresh.refresh(initialCookieHeaderB)
+          );
+          return yield* Effect.all([Fiber.join(fiberA), Fiber.join(fiberB)], {
+            concurrency: "unbounded",
+          });
+        }).pipe(Effect.provide(Live))
+      );
+
+      expect(snapshotA.authorization).toBe("Bearer refreshed-token-A");
+      expect(snapshotA.accessTokenExpiresAt).toBe(
+        refreshedAccessTokenExpiresAtA
+      );
+      expect(snapshotA.refreshTokenExpiresAt).toBe(
+        refreshedRefreshTokenExpiresAtA
+      );
+      expect(snapshotA.cookieHeader).toContain("flow=A");
+      expect(snapshotA.cookieHeader).not.toContain("flow=B");
+      expect(snapshotA.cookieHeader).toContain("mid=A-redirect");
+      expect(snapshotA.cookieHeader).not.toContain("mid=B-redirect");
+      expect(snapshotA.cookieHeader).toContain("session=A-renewed");
+      expect(snapshotA.cookieHeader).not.toContain("session=B-renewed");
+
+      expect(snapshotB.authorization).toBe("Bearer refreshed-token-B");
+      expect(snapshotB.accessTokenExpiresAt).toBe(
+        refreshedAccessTokenExpiresAtB
+      );
+      expect(snapshotB.refreshTokenExpiresAt).toBe(
+        refreshedRefreshTokenExpiresAtB
+      );
+      expect(snapshotB.cookieHeader).toContain("flow=B");
+      expect(snapshotB.cookieHeader).not.toContain("flow=A");
+      expect(snapshotB.cookieHeader).toContain("mid=B-redirect");
+      expect(snapshotB.cookieHeader).not.toContain("mid=A-redirect");
+      expect(snapshotB.cookieHeader).toContain("session=B-renewed");
+      expect(snapshotB.cookieHeader).not.toContain("session=A-renewed");
+
+      expect(redirectCookies.get("A")).toContain("flow=A");
+      expect(redirectCookies.get("A")).not.toContain("flow=B");
+      expect(redirectCookies.get("A")).toContain("mid=A-redirect");
+      expect(redirectCookies.get("A")).not.toContain("mid=B-redirect");
+      expect(redirectCookies.get("B")).toContain("flow=B");
+      expect(redirectCookies.get("B")).not.toContain("flow=A");
+      expect(redirectCookies.get("B")).toContain("mid=B-redirect");
+      expect(redirectCookies.get("B")).not.toContain("mid=A-redirect");
+    } finally {
+      await close(server);
+    }
+  });
+
+  it("keeps an interrupted refresh from contaminating a peer transaction", async () => {
+    const initialAccessTokenExpiresAt = Date.now() - 60_000;
+    const initialRefreshTokenExpiresAt = Date.now() + 3_600_000;
+    const refreshedAccessTokenExpiresAt = Date.now() + 900_000;
+    const refreshedRefreshTokenExpiresAt = Date.now() + 10_800_000;
+    const initialCookieHeaderA = makeCookieHeader(
+      initialAccessTokenExpiresAt,
+      initialRefreshTokenExpiresAt,
+      "flow=A"
+    );
+    const initialCookieHeaderB = makeCookieHeader(
+      initialAccessTokenExpiresAt,
+      initialRefreshTokenExpiresAt,
+      "flow=B"
+    );
+    const firstRequestAReceived = Promise.withResolvers<null>();
+    const firstRequestBReceived = Promise.withResolvers<null>();
+    const redirectRequestAReceived = Promise.withResolvers<null>();
+    const interruptedRequestAClosed = Promise.withResolvers<null>();
+    let pendingInitialResponseA: ServerResponse | undefined;
+    let pendingInitialResponseB: ServerResponse | undefined;
+    let redirectCookieB: string | null = null;
+
+    const server = createServer((request, response) => {
+      const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+      const cookie = Array.isArray(request.headers.cookie)
+        ? request.headers.cookie.join("; ")
+        : (request.headers.cookie ?? null);
+
+      if (requestUrl.pathname === "/account/login/en-IE") {
+        if (cookie?.includes("flow=A") === true) {
+          pendingInitialResponseA = response;
+          firstRequestAReceived.resolve(null);
+          return;
+        }
+
+        if (cookie?.includes("flow=B") === true) {
+          pendingInitialResponseB = response;
+          firstRequestBReceived.resolve(null);
+          if (pendingInitialResponseA === undefined) {
+            response.writeHead(500);
+            response.end("Flow A did not reach the barrier first");
+            return;
+          }
+          sendRedirect(
+            pendingInitialResponseA,
+            "/shop/en-IE?flow=A",
+            "interrupted=A; Path=/"
+          );
+          pendingInitialResponseA = undefined;
+          return;
+        }
+
+        response.writeHead(400);
+        response.end("Missing flow cookie");
+        return;
+      }
+
+      const flow = requestUrl.searchParams.get("flow");
+      if (flow === "A") {
+        response.once("close", () => interruptedRequestAClosed.resolve(null));
+        redirectRequestAReceived.resolve(null);
+        return;
+      }
+
+      if (flow !== "B") {
+        response.writeHead(400);
+        response.end("Missing flow query");
+        return;
+      }
+
+      redirectCookieB = cookie;
+      const refreshedExpiryCookie = makeOAuthExpiryCookieValue(
+        refreshedAccessTokenExpiresAt,
+        refreshedRefreshTokenExpiresAt
+      );
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "set-cookie": [
+          `${OAuthTokensExpiryTimeCookieName}=${refreshedExpiryCookie}; Path=/`,
+          "session=B-renewed; Path=/",
+        ],
+      });
+      response.end(discoverHtml("Bearer refreshed-token-B"));
+    });
+
+    const baseUrl = await listen(server);
+    try {
+      const Live = await makeLive(baseUrl, initialCookieHeaderA);
+
+      const { exitA, snapshotB } = await Effect.runPromise(
+        Effect.gen(function* () {
+          const authRefresh = yield* TescoAuthRefresh;
+          const fiberA = yield* Effect.forkChild(
+            authRefresh.refresh(initialCookieHeaderA)
+          );
+          yield* Effect.promise(() => firstRequestAReceived.promise);
+          const fiberB = yield* Effect.forkChild(
+            authRefresh.refresh(initialCookieHeaderB)
+          );
+          yield* Effect.promise(() => firstRequestBReceived.promise);
+          yield* Effect.promise(() => redirectRequestAReceived.promise);
+          yield* Fiber.interrupt(fiberA);
+          const interruptedExit = yield* Fiber.await(fiberA);
+          yield* Effect.promise(() => interruptedRequestAClosed.promise);
+          yield* Effect.sync(() => {
+            if (pendingInitialResponseB === undefined) {
+              throw new Error("Flow B did not reach the barrier");
+            }
+            sendRedirect(
+              pendingInitialResponseB,
+              "/shop/en-IE?flow=B",
+              "live=B; Path=/"
+            );
+            pendingInitialResponseB = undefined;
+          });
+          const peerSnapshot = yield* Fiber.join(fiberB);
+          return { exitA: interruptedExit, snapshotB: peerSnapshot };
+        }).pipe(Effect.provide(Live))
+      );
+
+      expect(Exit.hasInterrupts(exitA)).toBe(true);
+      expect(redirectCookieB).toContain("flow=B");
+      expect(redirectCookieB).toContain("live=B");
+      expect(redirectCookieB).not.toContain("flow=A");
+      expect(redirectCookieB).not.toContain("interrupted=A");
+      expect(snapshotB.authorization).toBe("Bearer refreshed-token-B");
+      expect(snapshotB.accessTokenExpiresAt).toBe(
+        refreshedAccessTokenExpiresAt
+      );
+      expect(snapshotB.refreshTokenExpiresAt).toBe(
+        refreshedRefreshTokenExpiresAt
+      );
+      expect(snapshotB.cookieHeader).toContain("flow=B");
+      expect(snapshotB.cookieHeader).toContain("live=B");
+      expect(snapshotB.cookieHeader).toContain("session=B-renewed");
+      expect(snapshotB.cookieHeader).not.toContain("flow=A");
+      expect(snapshotB.cookieHeader).not.toContain("interrupted=A");
+    } finally {
+      await close(server);
+    }
+  });
+
   it("refreshes through the Tesco soft-login HTTP flow", async () => {
     const initialAccessTokenExpiresAt = Date.now() - 60_000;
     const initialRefreshTokenExpiresAt = Date.now() + 3_600_000;
@@ -78,11 +435,9 @@ describe("TescoSoftLoginAuthRefreshLive", () => {
       initialAccessTokenExpiresAt,
       initialRefreshTokenExpiresAt
     );
-    const refreshedExpiryCookie = encodeURIComponent(
-      JSON.stringify({
-        AccessToken: refreshedAccessTokenExpiresAt,
-        RefreshToken: refreshedRefreshTokenExpiresAt,
-      })
+    const refreshedExpiryCookie = makeOAuthExpiryCookieValue(
+      refreshedAccessTokenExpiresAt,
+      refreshedRefreshTokenExpiresAt
     );
     const requests: {
       readonly url: URL;
@@ -117,32 +472,7 @@ describe("TescoSoftLoginAuthRefreshLive", () => {
 
     const baseUrl = await listen(server);
     try {
-      const config = await Effect.runPromise(
-        AppConfigDefinition.parse(
-          ConfigProvider.fromUnknown({
-            HOST: "127.0.0.1",
-            PORT: "3000",
-            TESCO_AUTHORIZATION: "Bearer initial-token",
-            TESCO_AUTH_COOKIE_HEADER: initialCookieHeader,
-            TESCO_AUTH_REFRESH_FROM_URL: `${baseUrl}/shop/en-IE`,
-            TESCO_LOCALE: "en-IE",
-            TESCO_MANGO_API_KEY: "test-api-key",
-            TESCO_MANGO_URL: "https://xapi.tesco.com/",
-            TESCO_REGION: "IE",
-            TESCO_SOFT_REFRESH_SIGN_IN_URL: `${baseUrl}/account/login/en-IE`,
-            TESCO_SUGGESTION_URL:
-              "https://search.api.tesco.com/search/suggestion/",
-          })
-        )
-      );
-      const Live = TescoSoftLoginAuthRefreshLive.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(AppConfig, AppConfig.of(config)),
-            NodeHttpClient.layerUndici
-          )
-        )
-      );
+      const Live = await makeLive(baseUrl, initialCookieHeader);
 
       const snapshot = await Effect.runPromise(
         Effect.gen(function* () {
