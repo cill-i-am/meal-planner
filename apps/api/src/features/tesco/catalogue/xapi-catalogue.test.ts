@@ -10,13 +10,9 @@ import { TescoAuthSession } from "../auth/auth-session.port.js";
 import { TescoAuthorizationValue } from "../auth/auth.model.js";
 import { TescoApiKeyValue, TescoLocale, TescoRegion } from "../tesco.config.js";
 import type { TescoCatalogueConfig } from "../tesco.config.js";
-import {
-  GraphQlDocument,
-  GraphQlOperationName,
-  RawGraphQlRequest,
-} from "./catalogue.model.js";
 import { TescoCatalogue } from "./catalogue.port.js";
 import { makeTescoXapiCatalogueLive } from "./xapi-catalogue.js";
+import { RawGraphQlRequest } from "./xapi.protocol.js";
 
 const FixtureApiKey = "fixture-api-key";
 const FixtureInitialAuthorization = "Bearer fixture-initial";
@@ -53,8 +49,8 @@ const makeConfig = (mangoUrl: URL): TescoCatalogueConfig => ({
 });
 
 const graphQlRequest = Schema.decodeUnknownSync(RawGraphQlRequest)({
-  operationName: Schema.decodeUnknownSync(GraphQlOperationName)("Fixture"),
-  query: Schema.decodeUnknownSync(GraphQlDocument)("query Fixture { ok }"),
+  operationName: "Fixture",
+  query: "query Fixture { ok }",
   variables: {},
 });
 
