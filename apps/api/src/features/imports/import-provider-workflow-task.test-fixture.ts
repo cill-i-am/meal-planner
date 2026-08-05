@@ -164,9 +164,10 @@ const installedRecipeConservativeDispatch = (
       env.MealPlannerDatabase,
       "pilot-gaia-118"
     );
+    const dispatchTimestamp = decodeTimestamp(new Date().toISOString());
     const dispatch = makePilotProviderDispatchGate({
       correlationId,
-      now: () => decodeTimestamp("2026-07-29T13:00:00.000Z"),
+      now: () => dispatchTimestamp,
       repository,
       runId: decodeRunId(
         recovery

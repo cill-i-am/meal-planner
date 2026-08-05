@@ -697,10 +697,11 @@ const seedRecipeReplayForSweep = async (suffix: string) => {
          created_at, dispatch_id, evidence_fingerprint, expires_at,
          generation, import_id, runtime_stage, value_json, value_sha256
        ) VALUES (
-         ?, ?, ?, '2026-08-05T18:00:00.000Z', 1, ?,
+         strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ?,
+         strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+7 days'), 1, ?,
          'pilot-gaia-118', '{"opaque":"recipe-replay"}', ?
        )`
-    ).bind(now, dispatchId, evidenceFingerprint, importId, "a".repeat(64)),
+    ).bind(dispatchId, evidenceFingerprint, importId, "a".repeat(64)),
   ]);
   return { dispatchId, importId };
 };
