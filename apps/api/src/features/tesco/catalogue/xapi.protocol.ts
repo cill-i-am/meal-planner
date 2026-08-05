@@ -17,31 +17,14 @@ import type {
   CategoryProductsInput,
   SearchCatalogueInput,
 } from "./catalogue.model.js";
+import { defineReadOnlyGraphQlOperation } from "./graphql-read-operation.js";
+import type { ReadOnlyGraphQlOperation } from "./graphql-read-operation.js";
 
 const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
 );
 
-const GraphQlOperationName = TrimmedNonEmptyString.pipe(
-  Schema.brand("GraphQlOperationName")
-);
-
-const GraphQlDocument = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/\S/u)),
-  Schema.brand("GraphQlDocument")
-);
-
-const GraphQlVariables = Schema.Record(Schema.String, Schema.Unknown);
-
-/** Temporary request contract for the raw GraphQL route owned by the structural slice. */
-export const RawGraphQlRequest = Schema.Struct({
-  operationName: GraphQlOperationName,
-  query: GraphQlDocument,
-  variables: GraphQlVariables.pipe(
-    Schema.withDecodingDefaultTypeKey(Effect.succeed({}))
-  ),
-});
-export type RawGraphQlRequest = typeof RawGraphQlRequest.Type;
+type GraphQlVariables = Readonly<Record<string, Schema.Json>>;
 
 const TescoGraphQlErrorMessage = Schema.Struct({
   message: TrimmedNonEmptyString,
@@ -81,12 +64,10 @@ const TescoSuggestionsResponseDto = Schema.Struct({
   results: Schema.Array(Schema.Struct({ query: SearchQuery })),
 });
 
-const SearchOperationName =
-  Schema.decodeUnknownSync(GraphQlOperationName)("Search");
-
 // GraphQL
-const SearchDocument = Schema.decodeUnknownSync(GraphQlDocument)(`
-  query Search($query: String!, $page: Int!, $count: Int!, $sortBy: String!) {
+const SearchReadOperation = defineReadOnlyGraphQlOperation({
+  document: `
+    query Search($query: String!, $page: Int!, $count: Int!, $sortBy: String!) {
     search(query: $query, page: $page, count: $count, sortBy: $sortBy) {
       pageInformation: info {
         total
@@ -125,20 +106,19 @@ const SearchDocument = Schema.decodeUnknownSync(GraphQlDocument)(`
       }
     }
   }
-`);
-
-const CategoryProductsOperationName = Schema.decodeUnknownSync(
-  GraphQlOperationName
-)("GetCategoryProducts");
+  `,
+  operationName: "Search",
+});
 
 // GraphQL
-const CategoryProductsDocument = Schema.decodeUnknownSync(GraphQlDocument)(`
-  query GetCategoryProducts(
-    $facet: ID!
-    $page: Int!
-    $count: Int!
-    $sortBy: String!
-  ) {
+const CategoryProductsReadOperation = defineReadOnlyGraphQlOperation({
+  document: `
+    query GetCategoryProducts(
+      $facet: ID!
+      $page: Int!
+      $count: Int!
+      $sortBy: String!
+    ) {
     category(page: $page, count: $count, sortBy: $sortBy, facet: $facet) {
       pageInformation: info {
         total
@@ -177,12 +157,15 @@ const CategoryProductsDocument = Schema.decodeUnknownSync(GraphQlDocument)(`
       }
     }
   }
-`);
+  `,
+  operationName: "GetCategoryProducts",
+});
 
 /** One named read-only Tesco GraphQL query and its stable projection. */
-export interface TescoGraphQlQuery<Input, Output> {
-  readonly request: (input: Input) => RawGraphQlRequest;
+interface TescoGraphQlQuery<Input, Output> {
   readonly decode: (input: unknown) => Effect.Effect<Output, TescoDecodeError>;
+  readonly operation: ReadOnlyGraphQlOperation;
+  readonly variables: (input: Input) => GraphQlVariables;
 }
 
 const decodeUnknown = <A, I, RD, RE>(
@@ -223,15 +206,12 @@ export const TescoSearchQuery: TescoGraphQlQuery<
     decodeUnknown(TescoSearchGraphQlResponseDto, input, "Tesco search").pipe(
       Effect.map(({ data }) => projectTescoListing(data.search))
     ),
-  request: (input) => ({
-    operationName: SearchOperationName,
-    query: SearchDocument,
-    variables: {
-      count: input.count,
-      page: input.page,
-      query: input.query,
-      sortBy: input.sortBy,
-    },
+  operation: SearchReadOperation,
+  variables: (input) => ({
+    count: input.count,
+    page: input.page,
+    query: input.query,
+    sortBy: input.sortBy,
   }),
 };
 
@@ -246,15 +226,12 @@ export const TescoCategoryProductsQuery: TescoGraphQlQuery<
       input,
       "Tesco category"
     ).pipe(Effect.map(({ data }) => projectTescoListing(data.category))),
-  request: (input) => ({
-    operationName: CategoryProductsOperationName,
-    query: CategoryProductsDocument,
-    variables: {
-      count: input.count,
-      facet: input.facet,
-      page: input.page,
-      sortBy: input.sortBy,
-    },
+  operation: CategoryProductsReadOperation,
+  variables: (input) => ({
+    count: input.count,
+    facet: input.facet,
+    page: input.page,
+    sortBy: input.sortBy,
   }),
 };
 

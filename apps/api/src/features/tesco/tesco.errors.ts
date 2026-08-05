@@ -9,8 +9,7 @@ export class TescoHttpError {
 
 export class TescoGraphQlError {
   readonly _tag = "TescoGraphQlError" as const;
-
-  constructor(readonly message: string) {}
+  readonly message = "Tesco GraphQL response reported errors";
 }
 
 export class TescoDecodeError {

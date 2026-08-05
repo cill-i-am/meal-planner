@@ -16,13 +16,15 @@ import type {
   SearchCatalogueInput,
 } from "./catalogue.model.js";
 import { TescoCatalogue } from "./catalogue.port.js";
+import type { ReadOnlyGraphQlOperation } from "./graphql-read-operation.js";
 import {
   TescoCategoryProductsQuery,
   TescoGraphQlErrorResponse,
   TescoSearchQuery,
   TescoSuggestionsEndpoint,
 } from "./xapi.protocol.js";
-import type { RawGraphQlRequest } from "./xapi.protocol.js";
+
+type GraphQlVariables = Readonly<Record<string, Schema.Json>>;
 
 const bodyJson = (body: unknown) =>
   HttpBody.json(body).pipe(
@@ -32,13 +34,8 @@ const bodyJson = (body: unknown) =>
     )
   );
 
-const graphQlErrorMessage = (value: unknown): string | null =>
-  Schema.decodeUnknownOption(TescoGraphQlErrorResponse)(value).pipe(
-    Option.match({
-      onNone: () => null,
-      onSome: (response) => response.errors[0].message,
-    })
-  );
+const hasGraphQlErrors = (value: unknown): boolean =>
+  Option.isSome(Schema.decodeUnknownOption(TescoGraphQlErrorResponse)(value));
 
 const mangoHeaders = (
   config: TescoCatalogueConfig,
@@ -74,14 +71,15 @@ export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
       const client = yield* HttpClient.HttpClient;
 
       const executeGraphQlOnce = (
-        request: RawGraphQlRequest,
+        operation: ReadOnlyGraphQlOperation,
+        variables: GraphQlVariables,
         authorization: TescoAuthorization
       ): Effect.Effect<Schema.Json, ApiError> =>
         Effect.gen(function* () {
           const requestBody = yield* bodyJson({
-            operationName: request.operationName,
-            query: request.query,
-            variables: request.variables,
+            operationName: operation.operationName,
+            query: operation.document,
+            variables,
           });
           const httpRequest = HttpClientRequest.post(config.mangoUrl, {
             body: requestBody,
@@ -113,19 +111,23 @@ export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
                 )
             )
           );
-          const graphQlError = graphQlErrorMessage(json);
-          if (graphQlError !== null) {
-            return yield* Effect.fail(new TescoGraphQlError(graphQlError));
+          if (hasGraphQlErrors(json)) {
+            return yield* Effect.fail(new TescoGraphQlError());
           }
           return json;
         });
 
-      const graphQl = (
-        request: RawGraphQlRequest
+      const executeReadGraphQl = (
+        operation: ReadOnlyGraphQlOperation,
+        variables: GraphQlVariables
       ): Effect.Effect<Schema.Json, ApiError> =>
         Effect.gen(function* () {
           const authorization = yield* authSession.authorization;
-          return yield* executeGraphQlOnce(request, authorization).pipe(
+          return yield* executeGraphQlOnce(
+            operation,
+            variables,
+            authorization
+          ).pipe(
             Effect.catchTag("TescoHttpError", (error) =>
               error.status === 401
                 ? Effect.gen(function* () {
@@ -134,7 +136,8 @@ export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
                         authorization
                       );
                     return yield* executeGraphQlOnce(
-                      request,
+                      operation,
+                      variables,
                       refreshedAuthorization
                     );
                   })
@@ -145,14 +148,18 @@ export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
 
       const search = (request: SearchCatalogueInput) =>
         Effect.gen(function* () {
-          const json = yield* graphQl(TescoSearchQuery.request(request));
+          const json = yield* executeReadGraphQl(
+            TescoSearchQuery.operation,
+            TescoSearchQuery.variables(request)
+          );
           return yield* TescoSearchQuery.decode(json);
         });
 
       const categoryProducts = (request: CategoryProductsInput) =>
         Effect.gen(function* () {
-          const json = yield* graphQl(
-            TescoCategoryProductsQuery.request(request)
+          const json = yield* executeReadGraphQl(
+            TescoCategoryProductsQuery.operation,
+            TescoCategoryProductsQuery.variables(request)
           );
           return yield* TescoCategoryProductsQuery.decode(json);
         });
@@ -206,7 +213,6 @@ export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
 
       return TescoCatalogue.of({
         categoryProducts,
-        graphQl,
         search,
         suggestions,
       });
