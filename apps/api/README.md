@@ -10,9 +10,8 @@ Effect v4 beta Node API for typed, read-only Tesco calls.
 - `GET /tesco/categories/:facet/products?page=1&count=24&sortBy=relevance`
 - `POST /tesco/categories/:facet/products`
 - `GET /tesco/suggestions?query=milk&limit=10`
-- `POST /tesco/graphql`
 
-`/tesco/graphql` is a typed escape hatch for reverse-engineering new operations. Keep it read-only unless a mutation has been explicitly reviewed.
+The production Tesco façade exposes only these named, read-only catalogue calls. It does not accept caller-supplied GraphQL documents.
 
 ## Environment
 

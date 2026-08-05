@@ -15,7 +15,6 @@ import {
   toCatalogueSuggestionsResponse,
 } from "./catalogue.http.js";
 import { TescoCatalogue } from "./catalogue.port.js";
-import { RawGraphQlRequest } from "./xapi.protocol.js";
 
 const getCategoryPathParams = HttpRouter.schemaPathParams(
   CategoryPathParams
@@ -84,17 +83,6 @@ export const TescoCatalogueRoutes = [
         return toCatalogueSuggestionsResponse(
           yield* tesco.suggestions(suggestions)
         );
-      })
-    )
-  ),
-  HttpRouter.route(
-    "POST",
-    "/tesco/graphql",
-    routeJson(
-      Effect.gen(function* () {
-        const tesco = yield* TescoCatalogue;
-        const request = yield* decodeBody(RawGraphQlRequest, "GraphQL");
-        return yield* tesco.graphQl(request);
       })
     )
   ),

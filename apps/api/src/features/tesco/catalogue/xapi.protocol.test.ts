@@ -7,7 +7,6 @@ import {
 } from "./catalogue.model.js";
 import {
   TescoCategoryProductsQuery,
-  RawGraphQlRequest,
   TescoSearchQuery,
   TescoSuggestionsEndpoint,
 } from "./xapi.protocol.js";
@@ -21,7 +20,7 @@ const searchInput = Schema.decodeUnknownSync(SearchCatalogueInput)({
 
 describe("Tesco XAPI catalogue protocol", () => {
   it("projects a Tesco search response into the stable catalogue result", async () => {
-    const request = TescoSearchQuery.request(searchInput);
+    const { operation } = TescoSearchQuery;
     const result = await Effect.runPromise(
       TescoSearchQuery.decode({
         data: {
@@ -56,8 +55,8 @@ describe("Tesco XAPI catalogue protocol", () => {
       })
     );
 
-    expect(request.operationName).toBe("Search");
-    expect(request.variables).toStrictEqual({
+    expect(operation.operationName).toBe("Search");
+    expect(TescoSearchQuery.variables(searchInput)).toStrictEqual({
       count: 24,
       page: 1,
       query: "milk",
@@ -108,7 +107,7 @@ describe("Tesco XAPI catalogue protocol", () => {
       page: 1,
       sortBy: "relevance",
     });
-    const request = TescoCategoryProductsQuery.request(input);
+    const { operation } = TescoCategoryProductsQuery;
     const result = await Effect.runPromise(
       TescoCategoryProductsQuery.decode({
         data: {
@@ -125,8 +124,8 @@ describe("Tesco XAPI catalogue protocol", () => {
       })
     );
 
-    expect(request.operationName).toBe("GetCategoryProducts");
-    expect(request.variables).toStrictEqual({
+    expect(operation.operationName).toBe("GetCategoryProducts");
+    expect(TescoCategoryProductsQuery.variables(input)).toStrictEqual({
       count: 24,
       facet: "fresh-food",
       page: 1,
@@ -149,20 +148,5 @@ describe("Tesco XAPI catalogue protocol", () => {
         TescoSearchQuery.decode({ data: { search: { results: [] } } })
       )
     ).rejects.toMatchObject({ _tag: "TescoDecodeError" });
-  });
-
-  it("temporarily owns the raw GraphQL request used by the structural slice", () => {
-    const decoded = Schema.decodeUnknownSync(RawGraphQlRequest)({
-      operationName: "Search",
-      query: "query Search { search { results { node { __typename } } } }",
-    });
-
-    expect(decoded.variables).toStrictEqual({});
-    expect(() =>
-      Schema.decodeUnknownSync(RawGraphQlRequest)({
-        operationName: "Search",
-        query: "  \n\t",
-      })
-    ).toThrow();
   });
 });

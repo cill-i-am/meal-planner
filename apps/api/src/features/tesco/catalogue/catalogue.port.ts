@@ -1,4 +1,4 @@
-import type { Effect, Schema } from "effect";
+import type { Effect } from "effect";
 import { Context } from "effect";
 
 import type { ApiError } from "../../../app/errors.js";
@@ -9,7 +9,6 @@ import type {
   CategoryProductsInput,
   SearchCatalogueInput,
 } from "./catalogue.model.js";
-import type { RawGraphQlRequest } from "./xapi.protocol.js";
 
 export interface TescoCatalogueShape {
   readonly search: (
@@ -21,9 +20,6 @@ export interface TescoCatalogueShape {
   readonly suggestions: (
     request: CatalogueSuggestionsInput
   ) => Effect.Effect<CatalogueSuggestions, ApiError>;
-  readonly graphQl: (
-    request: RawGraphQlRequest
-  ) => Effect.Effect<Schema.Json, ApiError>;
 }
 
 export class TescoCatalogue extends Context.Service<
