@@ -1,6 +1,4 @@
-import { Effect, Schema, SchemaGetter } from "effect";
-
-export const GraphQlVariables = Schema.Record(Schema.String, Schema.Unknown);
+import { Schema } from "effect";
 
 const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
@@ -13,25 +11,6 @@ const PositiveInteger = Schema.Int.pipe(
 const NonNegativeInteger = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0))
 );
-
-const PositiveIntegerFromString = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[1-9]\d*$/u)),
-  Schema.decodeTo(PositiveInteger, {
-    decode: SchemaGetter.transform(Number),
-    encode: SchemaGetter.transform(String),
-  })
-);
-
-export const GraphQlOperationName = TrimmedNonEmptyString.pipe(
-  Schema.brand("GraphQlOperationName")
-);
-export type GraphQlOperationName = typeof GraphQlOperationName.Type;
-
-export const GraphQlDocument = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/\S/u)),
-  Schema.brand("GraphQlDocument")
-);
-export type GraphQlDocument = typeof GraphQlDocument.Type;
 
 export const SearchQuery = TrimmedNonEmptyString.pipe(
   Schema.brand("SearchQuery")
@@ -47,21 +26,8 @@ export type SortBy = typeof SortBy.Type;
 export const PageNumber = PositiveInteger.pipe(Schema.brand("PageNumber"));
 export type PageNumber = typeof PageNumber.Type;
 
-export const DefaultPageNumber = Schema.decodeUnknownSync(PageNumber)(1);
-
-export const PageNumberFromString = PositiveIntegerFromString.pipe(
-  Schema.brand("PageNumber")
-);
-
 export const ResultCount = PositiveInteger.pipe(Schema.brand("ResultCount"));
 export type ResultCount = typeof ResultCount.Type;
-
-export const DefaultResultCount = Schema.decodeUnknownSync(ResultCount)(24);
-export const DefaultSuggestionLimit = Schema.decodeUnknownSync(ResultCount)(10);
-
-export const ResultCountFromString = PositiveIntegerFromString.pipe(
-  Schema.brand("ResultCount")
-);
 
 export const ProductId = TrimmedNonEmptyString.pipe(Schema.brand("ProductId"));
 export type ProductId = typeof ProductId.Type;
@@ -82,56 +48,30 @@ export const ImageUrl = Schema.String.pipe(
 );
 export type ImageUrl = typeof ImageUrl.Type;
 
-export const DefaultSortBy = Schema.decodeUnknownSync(SortBy)("relevance");
-
-const GraphQlVariablesWithDefault = GraphQlVariables.pipe(
-  Schema.withDecodingDefaultTypeKey(Effect.succeed({}))
-);
-
-const PageNumberWithDefault = PageNumber.pipe(
-  Schema.withDecodingDefaultTypeKey(Effect.succeed(DefaultPageNumber))
-);
-
-const ResultCountWithDefault = ResultCount.pipe(
-  Schema.withDecodingDefaultTypeKey(Effect.succeed(DefaultResultCount))
-);
-
-const SuggestionLimitWithDefault = ResultCount.pipe(
-  Schema.withDecodingDefaultTypeKey(Effect.succeed(DefaultSuggestionLimit))
-);
-
-const SortByWithDefault = SortBy.pipe(
-  Schema.withDecodingDefaultTypeKey(Effect.succeed(DefaultSortBy))
-);
-
-export const RawGraphQlRequest = Schema.Struct({
-  operationName: GraphQlOperationName,
-  query: GraphQlDocument,
-  variables: GraphQlVariablesWithDefault,
-});
-export type RawGraphQlRequest = typeof RawGraphQlRequest.Type;
-
-export const SearchRequest = Schema.Struct({
-  count: ResultCountWithDefault,
-  page: PageNumberWithDefault,
+/** Fully populated provider-free catalogue search input. */
+export const SearchCatalogueInput = Schema.Struct({
+  count: ResultCount,
+  page: PageNumber,
   query: SearchQuery,
-  sortBy: SortByWithDefault,
+  sortBy: SortBy,
 });
-export type SearchRequest = typeof SearchRequest.Type;
+export type SearchCatalogueInput = typeof SearchCatalogueInput.Type;
 
-export const CategoryProductsRequest = Schema.Struct({
-  count: ResultCountWithDefault,
+/** Fully populated provider-free category listing input. */
+export const CategoryProductsInput = Schema.Struct({
+  count: ResultCount,
   facet: FacetId,
-  page: PageNumberWithDefault,
-  sortBy: SortByWithDefault,
+  page: PageNumber,
+  sortBy: SortBy,
 });
-export type CategoryProductsRequest = typeof CategoryProductsRequest.Type;
+export type CategoryProductsInput = typeof CategoryProductsInput.Type;
 
-export const SuggestionRequest = Schema.Struct({
-  limit: SuggestionLimitWithDefault,
+/** Fully populated provider-free catalogue suggestions input. */
+export const CatalogueSuggestionsInput = Schema.Struct({
+  limit: ResultCount,
   query: SearchQuery,
 });
-export type SuggestionRequest = typeof SuggestionRequest.Type;
+export type CatalogueSuggestionsInput = typeof CatalogueSuggestionsInput.Type;
 
 export const PageQuery = Schema.Struct({
   actualTerm: Schema.optionalKey(Schema.String),
@@ -158,84 +98,22 @@ export const Product = Schema.Struct({
 });
 export type Product = typeof Product.Type;
 
-export const ProductResults = Schema.Struct({
+/** Stable provider-free catalogue listing result. */
+export const CatalogueProductResults = Schema.Struct({
   pageInformation: PageInformation,
   results: Schema.Array(Product),
   sortBy: Schema.optionalKey(SortBy),
 });
-export type ProductResults = typeof ProductResults.Type;
+export type CatalogueProductResults = typeof CatalogueProductResults.Type;
 
 export const Suggestion = Schema.Struct({
   query: SearchQuery,
 });
 export type Suggestion = typeof Suggestion.Type;
 
-export const SuggestionsResponse = Schema.Struct({
-  config: TrimmedNonEmptyString,
+/** Stable catalogue suggestions without provider metadata. */
+export const CatalogueSuggestions = Schema.Struct({
   results: Schema.Array(Suggestion),
 });
-export type SuggestionsResponse = typeof SuggestionsResponse.Type;
-
-const TescoProductNode = Schema.Struct({
-  __typename: ProductTypeName,
-  defaultImageUrl: Schema.optionalKey(Schema.NullishOr(ImageUrl)),
-  id: ProductId,
-  title: ProductTitle,
-});
-
-const TescoResultNode = Schema.Struct({
-  node: TescoProductNode,
-});
-
-const TescoOptions = Schema.Struct({
-  sortBy: Schema.optionalKey(SortBy),
-});
-
-const TescoListing = Schema.Struct({
-  options: Schema.optionalKey(TescoOptions),
-  pageInformation: PageInformation,
-  results: Schema.Array(TescoResultNode),
-});
-
-export const TescoSearchGraphQlResponse = Schema.Struct({
-  data: Schema.Struct({
-    search: TescoListing,
-  }),
-  status: Schema.optionalKey(Schema.Number),
-});
-export type TescoSearchGraphQlResponse = typeof TescoSearchGraphQlResponse.Type;
-
-export const TescoCategoryGraphQlResponse = Schema.Struct({
-  data: Schema.Struct({
-    category: TescoListing,
-  }),
-  status: Schema.optionalKey(Schema.Number),
-});
-export type TescoCategoryGraphQlResponse =
-  typeof TescoCategoryGraphQlResponse.Type;
-
-const TescoGraphQlErrorMessage = Schema.Struct({
-  message: TrimmedNonEmptyString,
-});
-
-export const TescoGraphQlErrorResponse = Schema.Struct({
-  errors: Schema.NonEmptyArray(TescoGraphQlErrorMessage),
-});
-export type TescoGraphQlErrorResponse = typeof TescoGraphQlErrorResponse.Type;
-
-export const mapTescoListing = (
-  listing: typeof TescoListing.Type
-): ProductResults => ({
-  pageInformation: listing.pageInformation,
-  results: listing.results.map(({ node }) => ({
-    id: node.id,
-    title: node.title,
-    type: node.__typename,
-    ...(node.defaultImageUrl === null || node.defaultImageUrl === undefined
-      ? {}
-      : { defaultImageUrl: node.defaultImageUrl }),
-  })),
-  ...(listing.options?.sortBy === undefined
-    ? {}
-    : { sortBy: listing.options.sortBy }),
-});
+/** Stable catalogue suggestions without provider metadata. */
+export type CatalogueSuggestions = typeof CatalogueSuggestions.Type;

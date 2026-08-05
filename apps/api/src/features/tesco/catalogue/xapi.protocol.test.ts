@@ -1,0 +1,168 @@
+import { Effect, Schema } from "effect";
+import { describe, expect, it } from "vitest";
+
+import {
+  CategoryProductsInput,
+  SearchCatalogueInput,
+} from "./catalogue.model.js";
+import {
+  TescoCategoryProductsQuery,
+  RawGraphQlRequest,
+  TescoSearchQuery,
+  TescoSuggestionsEndpoint,
+} from "./xapi.protocol.js";
+
+const searchInput = Schema.decodeUnknownSync(SearchCatalogueInput)({
+  count: 24,
+  page: 1,
+  query: "milk",
+  sortBy: "relevance",
+});
+
+describe("Tesco XAPI catalogue protocol", () => {
+  it("projects a Tesco search response into the stable catalogue result", async () => {
+    const request = TescoSearchQuery.request(searchInput);
+    const result = await Effect.runPromise(
+      TescoSearchQuery.decode({
+        data: {
+          search: {
+            options: { sortBy: "relevance" },
+            pageInformation: {
+              count: 1,
+              matchType: "exact",
+              pageNo: 1,
+              pageSize: 24,
+              query: {
+                actualTerm: "milk",
+                queryPhase: "primary",
+                searchTerm: "milk",
+              },
+              total: 1,
+            },
+            results: [
+              {
+                node: {
+                  __typename: "ProductType",
+                  defaultImageUrl:
+                    "https://digitalcontent.api.tesco.com/image.jpeg",
+                  id: "250005606",
+                  title: "Tesco Fresh Milk 2 Litre",
+                },
+              },
+            ],
+          },
+        },
+        ignoredProviderMetadata: { version: 2 },
+      })
+    );
+
+    expect(request.operationName).toBe("Search");
+    expect(request.variables).toStrictEqual({
+      count: 24,
+      page: 1,
+      query: "milk",
+      sortBy: "relevance",
+    });
+    expect(result).toStrictEqual({
+      pageInformation: {
+        count: 1,
+        matchType: "exact",
+        pageNo: 1,
+        pageSize: 24,
+        query: {
+          actualTerm: "milk",
+          queryPhase: "primary",
+          searchTerm: "milk",
+        },
+        total: 1,
+      },
+      results: [
+        {
+          defaultImageUrl: "https://digitalcontent.api.tesco.com/image.jpeg",
+          id: "250005606",
+          title: "Tesco Fresh Milk 2 Litre",
+          type: "ProductType",
+        },
+      ],
+      sortBy: "relevance",
+    });
+  });
+
+  it("drops suggestions metadata at the provider projection", async () => {
+    const result = await Effect.runPromise(
+      TescoSuggestionsEndpoint.decode({
+        config: { providerExperiment: "opaque" },
+        results: [{ query: "milk" }, { query: "oat milk" }],
+      })
+    );
+
+    expect(result).toStrictEqual({
+      results: [{ query: "milk" }, { query: "oat milk" }],
+    });
+  });
+
+  it("pairs the category document with its codec and stable projection", async () => {
+    const input = Schema.decodeUnknownSync(CategoryProductsInput)({
+      count: 24,
+      facet: "fresh-food",
+      page: 1,
+      sortBy: "relevance",
+    });
+    const request = TescoCategoryProductsQuery.request(input);
+    const result = await Effect.runPromise(
+      TescoCategoryProductsQuery.decode({
+        data: {
+          category: {
+            pageInformation: {
+              count: 0,
+              pageNo: 1,
+              pageSize: 24,
+              total: 0,
+            },
+            results: [],
+          },
+        },
+      })
+    );
+
+    expect(request.operationName).toBe("GetCategoryProducts");
+    expect(request.variables).toStrictEqual({
+      count: 24,
+      facet: "fresh-food",
+      page: 1,
+      sortBy: "relevance",
+    });
+    expect(result).toStrictEqual({
+      pageInformation: {
+        count: 0,
+        pageNo: 1,
+        pageSize: 24,
+        total: 0,
+      },
+      results: [],
+    });
+  });
+
+  it("contains provider drift as a typed decode failure", async () => {
+    await expect(
+      Effect.runPromise(
+        TescoSearchQuery.decode({ data: { search: { results: [] } } })
+      )
+    ).rejects.toMatchObject({ _tag: "TescoDecodeError" });
+  });
+
+  it("temporarily owns the raw GraphQL request used by the structural slice", () => {
+    const decoded = Schema.decodeUnknownSync(RawGraphQlRequest)({
+      operationName: "Search",
+      query: "query Search { search { results { node { __typename } } } }",
+    });
+
+    expect(decoded.variables).toStrictEqual({});
+    expect(() =>
+      Schema.decodeUnknownSync(RawGraphQlRequest)({
+        operationName: "Search",
+        query: "  \n\t",
+      })
+    ).toThrow();
+  });
+});

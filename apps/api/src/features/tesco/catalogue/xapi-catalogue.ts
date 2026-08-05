@@ -6,43 +6,23 @@ import { TescoAuthSession } from "../auth/auth-session.port.js";
 import type { TescoAuthorization } from "../auth/auth.model.js";
 import type { TescoCatalogueConfig } from "../tesco.config.js";
 import {
-  TescoDecodeError,
   TescoGraphQlError,
   TescoHttpError,
   TescoRequestBodyError,
 } from "../tesco.errors.js";
-import {
-  mapTescoListing,
-  TescoCategoryGraphQlResponse,
-  TescoGraphQlErrorResponse,
-  TescoSearchGraphQlResponse,
-  SuggestionsResponse as SuggestionsResponseSchema,
-} from "./catalogue.model.js";
 import type {
-  CategoryProductsRequest,
-  RawGraphQlRequest,
-  SearchRequest,
-  SuggestionRequest,
+  CatalogueSuggestionsInput,
+  CategoryProductsInput,
+  SearchCatalogueInput,
 } from "./catalogue.model.js";
 import { TescoCatalogue } from "./catalogue.port.js";
 import {
-  CategoryProductsOperationName,
-  CategoryProductsDocument,
-  SearchDocument,
-  SearchOperationName,
-} from "./graphql-documents.js";
-
-const decodeUnknown = <A, I, RD, RE>(
-  schema: Schema.Codec<A, I, RD, RE>,
-  input: unknown,
-  context: string
-): Effect.Effect<A, TescoDecodeError, RD> =>
-  Schema.decodeUnknownEffect(schema)(input).pipe(
-    Effect.mapError(
-      (cause) =>
-        new TescoDecodeError(`Unexpected ${context} response shape`, cause)
-    )
-  );
+  TescoCategoryProductsQuery,
+  TescoGraphQlErrorResponse,
+  TescoSearchQuery,
+  TescoSuggestionsEndpoint,
+} from "./xapi.protocol.js";
+import type { RawGraphQlRequest } from "./xapi.protocol.js";
 
 const bodyJson = (body: unknown) =>
   HttpBody.json(body).pipe(
@@ -85,22 +65,6 @@ const mangoHeaders = (
 
   return headers;
 };
-
-const searchVariables = (request: SearchRequest): Record<string, unknown> => ({
-  count: request.count,
-  page: request.page,
-  query: request.query,
-  sortBy: request.sortBy,
-});
-
-const categoryVariables = (
-  request: CategoryProductsRequest
-): Record<string, unknown> => ({
-  count: request.count,
-  facet: request.facet,
-  page: request.page,
-  sortBy: request.sortBy,
-});
 
 export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
   Layer.effect(
@@ -179,44 +143,31 @@ export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
           );
         });
 
-      const search = (request: SearchRequest) =>
+      const search = (request: SearchCatalogueInput) =>
         Effect.gen(function* () {
-          const json = yield* graphQl({
-            operationName: SearchOperationName,
-            query: SearchDocument,
-            variables: searchVariables(request),
-          });
-          const decoded = yield* decodeUnknown(
-            TescoSearchGraphQlResponse,
-            json,
-            "Tesco search"
-          );
-          return mapTescoListing(decoded.data.search);
+          const json = yield* graphQl(TescoSearchQuery.request(request));
+          return yield* TescoSearchQuery.decode(json);
         });
 
-      const categoryProducts = (request: CategoryProductsRequest) =>
+      const categoryProducts = (request: CategoryProductsInput) =>
         Effect.gen(function* () {
-          const json = yield* graphQl({
-            operationName: CategoryProductsOperationName,
-            query: CategoryProductsDocument,
-            variables: categoryVariables(request),
-          });
-          const decoded = yield* decodeUnknown(
-            TescoCategoryGraphQlResponse,
-            json,
-            "Tesco category"
+          const json = yield* graphQl(
+            TescoCategoryProductsQuery.request(request)
           );
-          return mapTescoListing(decoded.data.category);
+          return yield* TescoCategoryProductsQuery.decode(json);
         });
 
-      const suggestions = (request: SuggestionRequest) =>
+      const suggestions = (request: CatalogueSuggestionsInput) =>
         Effect.gen(function* () {
           const url = new URL(config.suggestionUrl);
-          url.searchParams.set("distchannel", "ghs");
-          url.searchParams.set("limit", String(request.limit));
-          url.searchParams.set("query", request.query);
-          url.searchParams.set("geo", config.region.toLowerCase());
-          url.searchParams.set("lang", config.locale.slice(0, 2));
+          const query = TescoSuggestionsEndpoint.request({
+            input: request,
+            locale: config.locale,
+            region: config.region,
+          });
+          for (const [name, value] of Object.entries(query)) {
+            url.searchParams.set(name, value);
+          }
 
           const response = yield* client
             .get(url, {
@@ -250,11 +201,7 @@ export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
                 )
             )
           );
-          return yield* decodeUnknown(
-            SuggestionsResponseSchema,
-            json,
-            "Tesco suggestions"
-          );
+          return yield* TescoSuggestionsEndpoint.decode(json);
         });
 
       return TescoCatalogue.of({

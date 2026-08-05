@@ -3,24 +3,24 @@ import { Context } from "effect";
 
 import type { ApiError } from "../../../app/errors.js";
 import type {
-  CategoryProductsRequest,
-  ProductResults,
-  RawGraphQlRequest,
-  SearchRequest,
-  SuggestionRequest,
-  SuggestionsResponse,
+  CatalogueProductResults,
+  CatalogueSuggestions,
+  CatalogueSuggestionsInput,
+  CategoryProductsInput,
+  SearchCatalogueInput,
 } from "./catalogue.model.js";
+import type { RawGraphQlRequest } from "./xapi.protocol.js";
 
 export interface TescoCatalogueShape {
   readonly search: (
-    request: SearchRequest
-  ) => Effect.Effect<ProductResults, ApiError>;
+    request: SearchCatalogueInput
+  ) => Effect.Effect<CatalogueProductResults, ApiError>;
   readonly categoryProducts: (
-    request: CategoryProductsRequest
-  ) => Effect.Effect<ProductResults, ApiError>;
+    request: CategoryProductsInput
+  ) => Effect.Effect<CatalogueProductResults, ApiError>;
   readonly suggestions: (
-    request: SuggestionRequest
-  ) => Effect.Effect<SuggestionsResponse, ApiError>;
+    request: CatalogueSuggestionsInput
+  ) => Effect.Effect<CatalogueSuggestions, ApiError>;
   readonly graphQl: (
     request: RawGraphQlRequest
   ) => Effect.Effect<Schema.Json, ApiError>;
