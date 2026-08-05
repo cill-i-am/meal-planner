@@ -8,12 +8,7 @@ import { TescoLive } from "../features/tesco/tesco.layer.js";
 import { AppConfig, AppConfigLive } from "./config.js";
 import { AppRoutes } from "./routes.js";
 
-const BaseLive = Layer.mergeAll(AppConfigLive, NodeHttpClient.layerUndici);
-
-const ServicesLive = Layer.mergeAll(
-  BaseLive,
-  TescoLive.pipe(Layer.provide(BaseLive))
-);
+const ServicesLive = TescoLive.pipe(Layer.provide(NodeHttpClient.layerUndici));
 
 const ServerLive = Layer.unwrap(
   AppConfig.useSync((config) =>

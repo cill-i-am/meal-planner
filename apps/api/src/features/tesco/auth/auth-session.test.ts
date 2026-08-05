@@ -1,15 +1,15 @@
-import { ConfigProvider, Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Redacted, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { AppConfig, AppConfigDefinition } from "../../../app/config.js";
+import type { TescoAuthBootstrapConfig } from "../tesco.config.js";
 import { TescoAuthRefresh } from "./auth-refresh.port.js";
-import { TescoAuthSessionLive } from "./auth-session.js";
+import { makeTescoAuthSessionLive } from "./auth-session.js";
 import { TescoAuthSession } from "./auth-session.port.js";
 import {
   OAuthTokenExpiryEpochMs,
   OAuthTokensExpiryTimeCookieName,
-  TescoAuthCookieHeader,
-  TescoAuthorization,
+  TescoAuthCookieHeaderValue,
+  TescoAuthorizationValue,
 } from "./auth.model.js";
 import type { TescoAuthSnapshot } from "./auth.model.js";
 
@@ -17,20 +17,22 @@ const makeCookieHeader = (
   accessTokenExpiresAt: number,
   refreshTokenExpiresAt: number
 ) =>
-  Schema.decodeUnknownSync(TescoAuthCookieHeader)(
-    [
-      `${OAuthTokensExpiryTimeCookieName}=${encodeURIComponent(
-        JSON.stringify({
-          AccessToken: accessTokenExpiresAt,
-          RefreshToken: refreshTokenExpiresAt,
-        })
-      )}`,
-      "other=value",
-    ].join("; ")
+  Redacted.make(
+    Schema.decodeUnknownSync(TescoAuthCookieHeaderValue)(
+      [
+        `${OAuthTokensExpiryTimeCookieName}=${encodeURIComponent(
+          JSON.stringify({
+            AccessToken: accessTokenExpiresAt,
+            RefreshToken: refreshTokenExpiresAt,
+          })
+        )}`,
+        "other=value",
+      ].join("; ")
+    )
   );
 
 const makeAuthorization = (value: string) =>
-  Schema.decodeUnknownSync(TescoAuthorization)(value);
+  Redacted.make(Schema.decodeUnknownSync(TescoAuthorizationValue)(value));
 
 const makeSnapshot = (
   authorization: string,
@@ -47,25 +49,12 @@ const makeSnapshot = (
   ),
 });
 
-const makeConfigLayer = (snapshot: TescoAuthSnapshot) =>
-  AppConfigDefinition.parse(
-    ConfigProvider.fromUnknown({
-      HOST: "127.0.0.1",
-      PORT: "3000",
-      TESCO_AUTHORIZATION: snapshot.authorization,
-      TESCO_AUTH_COOKIE_HEADER: snapshot.cookieHeader,
-      TESCO_AUTH_REFRESH_FROM_URL: "https://www.tesco.ie/shop/en-IE",
-      TESCO_LOCALE: "en-IE",
-      TESCO_MANGO_API_KEY: "test-api-key",
-      TESCO_MANGO_URL: "https://xapi.tesco.com/",
-      TESCO_REGION: "IE",
-      TESCO_SOFT_REFRESH_SIGN_IN_URL:
-        "https://www.tesco.ie/account/login/en-IE",
-      TESCO_SUGGESTION_URL: "https://search.api.tesco.com/search/suggestion/",
-    })
-  ).pipe(
-    Effect.map((config) => Layer.succeed(AppConfig, AppConfig.of(config)))
-  );
+const bootstrapConfig = (
+  snapshot: TescoAuthSnapshot
+): TescoAuthBootstrapConfig => ({
+  initialAuthorization: snapshot.authorization,
+  initialCookieHeader: snapshot.cookieHeader,
+});
 
 describe("TescoAuthSessionLive", () => {
   it("refreshes expired access tokens once for concurrent callers", async () => {
@@ -81,7 +70,6 @@ describe("TescoAuthSessionLive", () => {
     );
     let refreshCount = 0;
 
-    const ConfigLive = await Effect.runPromise(makeConfigLayer(initial));
     const RefreshLive = Layer.succeed(
       TescoAuthRefresh,
       TescoAuthRefresh.of({
@@ -97,8 +85,8 @@ describe("TescoAuthSessionLive", () => {
           ),
       })
     );
-    const SessionLive = TescoAuthSessionLive.pipe(
-      Layer.provide(Layer.mergeAll(ConfigLive, RefreshLive))
+    const SessionLive = makeTescoAuthSessionLive(bootstrapConfig(initial)).pipe(
+      Layer.provide(RefreshLive)
     );
 
     const authorizations = await Effect.runPromise(
@@ -118,6 +106,45 @@ describe("TescoAuthSessionLive", () => {
       refreshed.authorization,
       refreshed.authorization,
     ]);
+    expect(refreshCount).toBe(1);
+  });
+
+  it("refreshes after a 401 when the failed authorization has equal redacted content", async () => {
+    const initial = makeSnapshot(
+      "Bearer initial-token",
+      Date.now() + 300_000,
+      Date.now() + 3_600_000
+    );
+    const refreshed = makeSnapshot(
+      "Bearer refreshed-token",
+      Date.now() + 600_000,
+      Date.now() + 3_600_000
+    );
+    let refreshCount = 0;
+    const RefreshLive = Layer.succeed(
+      TescoAuthRefresh,
+      TescoAuthRefresh.of({
+        refresh: () =>
+          Effect.sync(() => {
+            refreshCount += 1;
+            return refreshed;
+          }),
+      })
+    );
+    const SessionLive = makeTescoAuthSessionLive(bootstrapConfig(initial)).pipe(
+      Layer.provide(RefreshLive)
+    );
+
+    const authorization = await Effect.runPromise(
+      Effect.gen(function* () {
+        const session = yield* TescoAuthSession;
+        return yield* session.refreshAfterUnauthorized(
+          makeAuthorization("Bearer initial-token")
+        );
+      }).pipe(Effect.provide(SessionLive))
+    );
+
+    expect(authorization).toEqual(refreshed.authorization);
     expect(refreshCount).toBe(1);
   });
 });
