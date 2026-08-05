@@ -1,6 +1,7 @@
-import { Config, Context, Effect, Layer, Schema } from "effect";
+/* eslint-disable max-classes-per-file -- Startup configuration owns its tagged failure and service. */
+import { Config, Context, Data, Effect, Layer, Schema } from "effect";
 
-import { AppConfigError } from "./errors.js";
+export class AppConfigError extends Data.TaggedError("AppConfigError") {}
 
 const ConfigText = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
@@ -31,9 +32,5 @@ export const AppConfigDefinition = Config.all({
 
 export const AppConfigLive = Layer.effect(
   AppConfig,
-  AppConfigDefinition.pipe(
-    Effect.mapError(
-      (cause) => new AppConfigError("Invalid application configuration", cause)
-    )
-  )
+  AppConfigDefinition.pipe(Effect.mapError(() => new AppConfigError()))
 );

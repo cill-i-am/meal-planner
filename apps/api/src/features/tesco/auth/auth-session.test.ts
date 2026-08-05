@@ -1,4 +1,4 @@
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Cause, Effect, Exit, Layer, Redacted, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { TescoAuthBootstrapConfig } from "../tesco.config.js";
@@ -57,6 +57,78 @@ const bootstrapConfig = (
 });
 
 describe("TescoAuthSessionLive", () => {
+  it("preserves interruption from soft-login refresh", async () => {
+    const initial = makeSnapshot(
+      "Bearer initial-token",
+      Date.now() - 60_000,
+      Date.now() + 3_600_000
+    );
+    const RefreshLive = Layer.succeed(
+      TescoAuthRefresh,
+      TescoAuthRefresh.of({ refresh: () => Effect.interrupt })
+    );
+    const SessionLive = makeTescoAuthSessionLive(bootstrapConfig(initial)).pipe(
+      Layer.provide(RefreshLive)
+    );
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* interruptedAuthorization() {
+        const session = yield* TescoAuthSession;
+        return yield* session.authorization;
+      }).pipe(Effect.provide(SessionLive))
+    );
+
+    expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
+  });
+
+  it("reports an expired refresh token precisely", async () => {
+    const initial = makeSnapshot(
+      "Bearer initial-token",
+      Date.now() - 60_000,
+      Date.now() - 1000
+    );
+    const RefreshLive = Layer.succeed(
+      TescoAuthRefresh,
+      TescoAuthRefresh.of({ refresh: () => Effect.succeed(initial) })
+    );
+    const SessionLive = makeTescoAuthSessionLive(bootstrapConfig(initial)).pipe(
+      Layer.provide(RefreshLive)
+    );
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* expiredRefreshToken() {
+          const session = yield* TescoAuthSession;
+          return yield* session.authorization;
+        }).pipe(Effect.provide(SessionLive))
+      )
+    ).rejects.toMatchObject({ _tag: "TescoRefreshTokenExpired" });
+  });
+
+  it("reports a soft login that does not renew the access token", async () => {
+    const initial = makeSnapshot(
+      "Bearer initial-token",
+      Date.now() - 60_000,
+      Date.now() + 3_600_000
+    );
+    const RefreshLive = Layer.succeed(
+      TescoAuthRefresh,
+      TescoAuthRefresh.of({ refresh: () => Effect.succeed(initial) })
+    );
+    const SessionLive = makeTescoAuthSessionLive(bootstrapConfig(initial)).pipe(
+      Layer.provide(RefreshLive)
+    );
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* staleRefresh() {
+          const session = yield* TescoAuthSession;
+          return yield* session.authorization;
+        }).pipe(Effect.provide(SessionLive))
+      )
+    ).rejects.toMatchObject({ _tag: "TescoAccessTokenNotRenewed" });
+  });
+
   it("refreshes expired access tokens once for concurrent callers", async () => {
     const initial = makeSnapshot(
       "Bearer initial-token",

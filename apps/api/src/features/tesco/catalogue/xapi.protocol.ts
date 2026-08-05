@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 
-import { TescoDecodeError } from "../tesco.errors.js";
+import { TescoCatalogueResponseInvalid } from "./catalogue.errors.js";
+import type { TescoCatalogueOperation } from "./catalogue.errors.js";
 import {
   ImageUrl,
   PageInformation,
@@ -20,19 +21,11 @@ import type {
 import { defineReadOnlyGraphQlOperation } from "./graphql-read-operation.js";
 import type { ReadOnlyGraphQlOperation } from "./graphql-read-operation.js";
 
-const TrimmedNonEmptyString = Schema.String.pipe(
-  Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
-);
-
 type GraphQlVariables = Readonly<Record<string, Schema.Json>>;
-
-const TescoGraphQlErrorMessage = Schema.Struct({
-  message: TrimmedNonEmptyString,
-});
 
 /** Provider error envelope decoded by the shared Tesco GraphQL executor. */
 export const TescoGraphQlErrorResponse = Schema.Struct({
-  errors: Schema.NonEmptyArray(TescoGraphQlErrorMessage),
+  errors: Schema.NonEmptyArray(Schema.Unknown),
 });
 
 const TescoProductNodeDto = Schema.Struct({
@@ -163,7 +156,9 @@ const CategoryProductsReadOperation = defineReadOnlyGraphQlOperation({
 
 /** One named read-only Tesco GraphQL query and its stable projection. */
 interface TescoGraphQlQuery<Input, Output> {
-  readonly decode: (input: unknown) => Effect.Effect<Output, TescoDecodeError>;
+  readonly decode: (
+    input: unknown
+  ) => Effect.Effect<Output, TescoCatalogueResponseInvalid>;
   readonly operation: ReadOnlyGraphQlOperation;
   readonly variables: (input: Input) => GraphQlVariables;
 }
@@ -171,13 +166,10 @@ interface TescoGraphQlQuery<Input, Output> {
 const decodeUnknown = <A, I, RD, RE>(
   schema: Schema.Codec<A, I, RD, RE>,
   input: unknown,
-  context: string
-): Effect.Effect<A, TescoDecodeError, RD> =>
+  operation: TescoCatalogueOperation
+): Effect.Effect<A, TescoCatalogueResponseInvalid, RD> =>
   Schema.decodeUnknownEffect(schema)(input).pipe(
-    Effect.mapError(
-      (cause) =>
-        new TescoDecodeError(`Unexpected ${context} response shape`, cause)
-    )
+    Effect.mapError(() => new TescoCatalogueResponseInvalid({ operation }))
   );
 
 const projectTescoListing = (
@@ -203,7 +195,7 @@ export const TescoSearchQuery: TescoGraphQlQuery<
   CatalogueProductResults
 > = {
   decode: (input) =>
-    decodeUnknown(TescoSearchGraphQlResponseDto, input, "Tesco search").pipe(
+    decodeUnknown(TescoSearchGraphQlResponseDto, input, "search").pipe(
       Effect.map(({ data }) => projectTescoListing(data.search))
     ),
   operation: SearchReadOperation,
@@ -224,7 +216,7 @@ export const TescoCategoryProductsQuery: TescoGraphQlQuery<
     decodeUnknown(
       TescoCategoryGraphQlResponseDto,
       input,
-      "Tesco category"
+      "category_products"
     ).pipe(Effect.map(({ data }) => projectTescoListing(data.category))),
   operation: CategoryProductsReadOperation,
   variables: (input) => ({
@@ -239,8 +231,8 @@ export const TescoCategoryProductsQuery: TescoGraphQlQuery<
 export const TescoSuggestionsEndpoint = {
   decode: (
     input: unknown
-  ): Effect.Effect<CatalogueSuggestions, TescoDecodeError> =>
-    decodeUnknown(TescoSuggestionsResponseDto, input, "Tesco suggestions").pipe(
+  ): Effect.Effect<CatalogueSuggestions, TescoCatalogueResponseInvalid> =>
+    decodeUnknown(TescoSuggestionsResponseDto, input, "suggestions").pipe(
       Effect.map(({ results }) => ({ results }))
     ),
   request: ({

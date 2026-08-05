@@ -1,6 +1,6 @@
 import { Effect, Redacted, Schema } from "effect";
 
-import { TescoAuthRefreshError } from "../tesco.errors.js";
+import { TescoSoftLoginResponseInvalid } from "./auth.errors.js";
 import { TescoAuthorizationValue } from "./auth.model.js";
 
 const TescoDiscoverAuthConfig = Schema.Struct({
@@ -18,27 +18,16 @@ const DiscoverScriptPattern =
 
 export const discoverJsonFromHtml = (
   html: string
-): Effect.Effect<unknown, TescoAuthRefreshError> =>
+): Effect.Effect<unknown, TescoSoftLoginResponseInvalid> =>
   Effect.gen(function* () {
     const match = DiscoverScriptPattern.exec(html);
     const jsonText = match?.groups?.["json"];
     if (jsonText === undefined) {
-      return yield* Effect.fail(
-        new TescoAuthRefreshError(
-          "Tesco soft login did not return discover config",
-          502,
-          "discover-config-missing"
-        )
-      );
+      return yield* Effect.fail(new TescoSoftLoginResponseInvalid());
     }
 
     return yield* Effect.try({
-      catch: () =>
-        new TescoAuthRefreshError(
-          "Tesco discover config is not valid JSON",
-          502,
-          "discover-config-invalid-json"
-        ),
+      catch: () => new TescoSoftLoginResponseInvalid(),
       try: () => JSON.parse(jsonText) as unknown,
     });
   });
@@ -50,12 +39,5 @@ export const authorizationFromDiscoverConfig = (value: unknown) =>
         discoverConfig["mfe-orchestrator"].props.config.authorization
       )
     ),
-    Effect.mapError(
-      () =>
-        new TescoAuthRefreshError(
-          "Tesco discover config is missing authorization",
-          502,
-          "discover-authorization-missing"
-        )
-    )
+    Effect.mapError(() => new TescoSoftLoginResponseInvalid())
   );

@@ -2,8 +2,17 @@ import { createServer } from "node:http";
 import type { Server, ServerResponse } from "node:http";
 
 import { NodeHttpClient } from "@effect/platform-node";
-import { Effect, Equal, Exit, Fiber, Layer, Redacted, Schema } from "effect";
-import { Cookies } from "effect/unstable/http";
+import {
+  Cause,
+  Effect,
+  Equal,
+  Exit,
+  Fiber,
+  Layer,
+  Redacted,
+  Schema,
+} from "effect";
+import { Cookies, HttpClient } from "effect/unstable/http";
 import { describe, expect, it } from "vitest";
 
 import { TescoLocale } from "../tesco.config.js";
@@ -102,14 +111,93 @@ const sendRedirect = (
   response.end();
 };
 
+const makeConfig = (baseUrl: string) => ({
+  locale: Schema.decodeUnknownSync(TescoLocale)("en-IE"),
+  refreshFromUrl: new URL(`${baseUrl}/shop/en-IE`),
+  signInUrl: new URL(`${baseUrl}/account/login/en-IE`),
+});
+
 const makeLive = (baseUrl: string) =>
-  makeTescoSoftLoginAuthRefreshLive({
-    locale: Schema.decodeUnknownSync(TescoLocale)("en-IE"),
-    refreshFromUrl: new URL(`${baseUrl}/shop/en-IE`),
-    signInUrl: new URL(`${baseUrl}/account/login/en-IE`),
-  }).pipe(Layer.provide(NodeHttpClient.layerUndici));
+  makeTescoSoftLoginAuthRefreshLive(makeConfig(baseUrl)).pipe(
+    Layer.provide(NodeHttpClient.layerUndici)
+  );
 
 describe("TescoSoftLoginAuthRefreshLive", () => {
+  it("preserves interruption from the HTTP client", async () => {
+    const cookieHeader = makeCookieHeader(
+      Date.now() - 60_000,
+      Date.now() + 3_600_000
+    );
+    const InterruptingHttpLive = Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make(() => Effect.interrupt)
+    );
+    const Live = makeTescoSoftLoginAuthRefreshLive(
+      makeConfig("https://tesco.invalid")
+    ).pipe(Layer.provide(InterruptingHttpLive));
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* interruptedRefresh() {
+        const authRefresh = yield* TescoAuthRefresh;
+        return yield* authRefresh.refresh(cookieHeader);
+      }).pipe(Effect.provide(Live))
+    );
+
+    expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
+  });
+
+  it("classifies an authentication rejection without exposing the response", async () => {
+    const cookieHeader = makeCookieHeader(
+      Date.now() - 60_000,
+      Date.now() + 3_600_000
+    );
+    const providerDetails = "provider details must remain private";
+    const server = createServer((_request, response) => {
+      response.writeHead(401, { "content-type": "text/plain" });
+      response.end(providerDetails);
+    });
+
+    const baseUrl = await listen(server);
+    try {
+      const error = await Effect.runPromise(
+        Effect.gen(function* rejectedRefresh() {
+          const authRefresh = yield* TescoAuthRefresh;
+          return yield* authRefresh.refresh(cookieHeader);
+        }).pipe(Effect.provide(makeLive(baseUrl)), Effect.flip)
+      );
+
+      expect(error).toMatchObject({ _tag: "TescoCredentialsRejected" });
+      expect(JSON.stringify(error)).not.toContain(providerDetails);
+    } finally {
+      await close(server);
+    }
+  });
+
+  it("classifies malformed soft-login HTML as an invalid response", async () => {
+    const cookieHeader = makeCookieHeader(
+      Date.now() - 60_000,
+      Date.now() + 3_600_000
+    );
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "text/html" });
+      response.end("<html>missing discover config</html>");
+    });
+
+    const baseUrl = await listen(server);
+    try {
+      await expect(
+        Effect.runPromise(
+          Effect.gen(function* invalidRefresh() {
+            const authRefresh = yield* TescoAuthRefresh;
+            return yield* authRefresh.refresh(cookieHeader);
+          }).pipe(Effect.provide(makeLive(baseUrl)))
+        )
+      ).rejects.toMatchObject({ _tag: "TescoSoftLoginResponseInvalid" });
+    } finally {
+      await close(server);
+    }
+  });
+
   it("keeps concurrent refresh cookie transactions isolated", async () => {
     const initialAccessTokenExpiresAt = Date.now() - 60_000;
     const initialRefreshTokenExpiresAt = Date.now() + 3_600_000;
@@ -545,9 +633,7 @@ describe("TescoSoftLoginAuthRefreshLive", () => {
         }).pipe(Effect.provide(Live), Effect.flip)
       );
 
-      expect(error._tag).toBe("TescoAuthRefreshError");
-      expect(error.reason).toBe("upstream-response-invalid");
-      expect(error.status).toBe(503);
+      expect(error._tag).toBe("TescoSoftLoginUnavailable");
       expect(Object.hasOwn(error, "cause")).toBe(false);
     } finally {
       await close(server);

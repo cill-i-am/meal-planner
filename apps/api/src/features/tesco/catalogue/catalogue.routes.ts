@@ -1,8 +1,16 @@
 import { Effect } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 
-import { BadRequestError } from "../../../app/errors.js";
+import {
+  InvalidRequest,
+  UpstreamAuthenticationUnavailable,
+  UpstreamInvalidResponse,
+  UpstreamRequestRejected,
+  UpstreamUnavailable,
+} from "../../../app/http/http-failure.js";
+import type { HttpFailure } from "../../../app/http/http-failure.js";
 import { decodeBody, routeJson } from "../../../app/http/responses.js";
+import type { TescoCatalogueError } from "./catalogue.errors.js";
 import {
   CategoryPathParams,
   CategoryProductsRequestBody,
@@ -18,11 +26,32 @@ import { TescoCatalogue } from "./catalogue.port.js";
 
 const getCategoryPathParams = HttpRouter.schemaPathParams(
   CategoryPathParams
-).pipe(
-  Effect.mapError(
-    (cause) => new BadRequestError(`Invalid category path: ${String(cause)}`)
-  )
-);
+).pipe(Effect.mapError(() => new InvalidRequest({ location: "path" })));
+
+const toHttpFailure = (error: TescoCatalogueError): HttpFailure => {
+  switch (error._tag) {
+    case "TescoCatalogueAuthenticationUnavailable": {
+      return new UpstreamAuthenticationUnavailable({ upstream: "tesco" });
+    }
+    case "TescoCatalogueUnavailable": {
+      return new UpstreamUnavailable({ upstream: "tesco" });
+    }
+    case "TescoCatalogueRequestRejected": {
+      return new UpstreamRequestRejected({ upstream: "tesco" });
+    }
+    case "TescoCatalogueResponseInvalid": {
+      return new UpstreamInvalidResponse({ upstream: "tesco" });
+    }
+    default: {
+      return error satisfies never;
+    }
+  }
+};
+
+const projectCatalogueFailure = <A, R>(
+  effect: Effect.Effect<A, TescoCatalogueError, R>
+): Effect.Effect<A, HttpFailure, R> =>
+  effect.pipe(Effect.mapError(toHttpFailure));
 
 export const TescoCatalogueRoutes = [
   HttpRouter.route("GET", "/tesco/search", (request) =>
@@ -30,7 +59,9 @@ export const TescoCatalogueRoutes = [
       Effect.gen(function* () {
         const tesco = yield* TescoCatalogue;
         const search = yield* searchInputFromUrl(request.url);
-        return toCatalogueProductResultsResponse(yield* tesco.search(search));
+        return toCatalogueProductResultsResponse(
+          yield* projectCatalogueFailure(tesco.search(search))
+        );
       })
     )
   ),
@@ -40,8 +71,10 @@ export const TescoCatalogueRoutes = [
     routeJson(
       Effect.gen(function* () {
         const tesco = yield* TescoCatalogue;
-        const search = yield* decodeBody(SearchRequestBody, "search");
-        return toCatalogueProductResultsResponse(yield* tesco.search(search));
+        const search = yield* decodeBody(SearchRequestBody);
+        return toCatalogueProductResultsResponse(
+          yield* projectCatalogueFailure(tesco.search(search))
+        );
       })
     )
   ),
@@ -52,7 +85,7 @@ export const TescoCatalogueRoutes = [
         const { facet } = yield* getCategoryPathParams;
         const category = yield* categoryInputFromUrl(request.url, facet);
         return toCatalogueProductResultsResponse(
-          yield* tesco.categoryProducts(category)
+          yield* projectCatalogueFailure(tesco.categoryProducts(category))
         );
       })
     )
@@ -64,13 +97,10 @@ export const TescoCatalogueRoutes = [
       Effect.gen(function* () {
         const tesco = yield* TescoCatalogue;
         const { facet } = yield* getCategoryPathParams;
-        const body = yield* decodeBody(
-          CategoryProductsRequestBody,
-          "category products"
-        );
+        const body = yield* decodeBody(CategoryProductsRequestBody);
         const category = categoryInputFromBody(facet, body);
         return toCatalogueProductResultsResponse(
-          yield* tesco.categoryProducts(category)
+          yield* projectCatalogueFailure(tesco.categoryProducts(category))
         );
       })
     )
@@ -81,7 +111,7 @@ export const TescoCatalogueRoutes = [
         const tesco = yield* TescoCatalogue;
         const suggestions = yield* suggestionsInputFromUrl(request.url);
         return toCatalogueSuggestionsResponse(
-          yield* tesco.suggestions(suggestions)
+          yield* projectCatalogueFailure(tesco.suggestions(suggestions))
         );
       })
     )
