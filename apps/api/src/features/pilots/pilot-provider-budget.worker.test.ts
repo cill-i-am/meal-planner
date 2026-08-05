@@ -29,7 +29,12 @@ const decodeProviderStageId = Schema.decodeUnknownSync(
 );
 const decodeDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
 const decodeTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
-const now = decodeTimestamp("2026-07-29T18:00:00.000Z");
+const replayLifetimeMilliseconds = 7 * 24 * 60 * 60 * 1000;
+const nowIso = new Date().toISOString();
+const now = decodeTimestamp(nowIso);
+const replayExpiresAt = new Date(
+  Date.parse(nowIso) + replayLifetimeMilliseconds
+).toISOString();
 const runtime = makePilotProviderBudgetRuntime("pilot-gaia-118");
 const evidenceFingerprint = "e".repeat(64);
 const conservativeReplay = (importId: string, value = "decoded-recipe") => ({
@@ -253,7 +258,7 @@ describe("pilot provider stage budget", () => {
         .first()
     ).resolves.toEqual({
       evidence_fingerprint: evidenceFingerprint,
-      expires_at: "2026-08-05T18:00:00.000Z",
+      expires_at: replayExpiresAt,
       generation: 1,
       import_id: "import-conservative",
       value_json: JSON.stringify("decoded-recipe"),
