@@ -2,13 +2,18 @@ import { Effect, Layer, Option, Ref } from "effect";
 import { Headers, HttpClient } from "effect/unstable/http";
 
 import type { TescoSoftLoginConfig } from "../tesco.config.js";
-import { TescoAuthRefreshError } from "../tesco.errors.js";
 import {
   cookieHeaderFromCookies,
   cookiesFromHeader,
   oauthExpiryFromCookies,
 } from "./auth-cookies.js";
 import { TescoAuthRefresh } from "./auth-refresh.port.js";
+import {
+  TescoCredentialsRejected,
+  TescoSoftLoginResponseInvalid,
+  TescoSoftLoginUnavailable,
+} from "./auth.errors.js";
+import type { TescoSoftLoginRefreshError } from "./auth.errors.js";
 import type { TescoAuthCookieHeader } from "./auth.model.js";
 import {
   authorizationFromDiscoverConfig,
@@ -27,7 +32,9 @@ export const makeTescoSoftLoginAuthRefreshLive = (
 
       const refresh = (cookieHeader: TescoAuthCookieHeader) =>
         Effect.gen(function* () {
-          const initialCookies = yield* cookiesFromHeader(cookieHeader);
+          const initialCookies = yield* cookiesFromHeader(cookieHeader).pipe(
+            Effect.mapError(() => new TescoCredentialsRejected())
+          );
           const cookieRef = yield* Ref.make(initialCookies);
           const refreshClient = client.pipe(
             HttpClient.withCookiesRef(cookieRef)
@@ -36,7 +43,7 @@ export const makeTescoSoftLoginAuthRefreshLive = (
           const requestSoftLoginHtml = (
             url: URL,
             remainingRedirects: number
-          ): Effect.Effect<string, TescoAuthRefreshError> =>
+          ): Effect.Effect<string, TescoSoftLoginRefreshError> =>
             Effect.gen(function* () {
               const response = yield* refreshClient
                 .get(url, {
@@ -46,64 +53,40 @@ export const makeTescoSoftLoginAuthRefreshLive = (
                     "accept-language": config.locale,
                   },
                 })
-                .pipe(
-                  Effect.mapError(
-                    () =>
-                      new TescoAuthRefreshError(
-                        "Tesco soft login request failed",
-                        502,
-                        "upstream-response-invalid"
-                      )
-                  )
-                );
+                .pipe(Effect.mapError(() => new TescoSoftLoginUnavailable()));
 
               if (response.status >= 300 && response.status < 400) {
                 if (remainingRedirects === 0) {
-                  return yield* Effect.fail(
-                    new TescoAuthRefreshError(
-                      "Tesco soft login exceeded redirect limit",
-                      502,
-                      "upstream-response-invalid"
-                    )
-                  );
+                  return yield* Effect.fail(new TescoSoftLoginUnavailable());
                 }
 
                 const location = Headers.get(response.headers, "location");
                 if (Option.isNone(location)) {
                   return yield* Effect.fail(
-                    new TescoAuthRefreshError(
-                      "Tesco soft login redirect is missing Location",
-                      502,
-                      "upstream-response-invalid"
-                    )
+                    new TescoSoftLoginResponseInvalid()
                   );
                 }
 
+                const redirectUrl = yield* Effect.try({
+                  catch: () => new TescoSoftLoginResponseInvalid(),
+                  try: () => new URL(location.value, url),
+                });
                 return yield* requestSoftLoginHtml(
-                  new URL(location.value, url),
+                  redirectUrl,
                   remainingRedirects - 1
                 );
               }
 
               if (response.status < 200 || response.status >= 300) {
                 return yield* Effect.fail(
-                  new TescoAuthRefreshError(
-                    "Tesco soft login returned a non-success status",
-                    response.status,
-                    "upstream-response-invalid"
-                  )
+                  response.status === 401 || response.status === 403
+                    ? new TescoCredentialsRejected()
+                    : new TescoSoftLoginUnavailable()
                 );
               }
 
               return yield* response.text.pipe(
-                Effect.mapError(
-                  () =>
-                    new TescoAuthRefreshError(
-                      "Tesco soft login returned unreadable HTML",
-                      502,
-                      "upstream-response-invalid"
-                    )
-                )
+                Effect.mapError(() => new TescoSoftLoginResponseInvalid())
               );
             });
 
@@ -119,9 +102,12 @@ export const makeTescoSoftLoginAuthRefreshLive = (
           const authorization =
             yield* authorizationFromDiscoverConfig(discoverJson);
           const refreshedCookies = yield* Ref.get(cookieRef);
-          const refreshedCookieHeader =
-            yield* cookieHeaderFromCookies(refreshedCookies);
-          const expiry = yield* oauthExpiryFromCookies(refreshedCookies);
+          const refreshedCookieHeader = yield* cookieHeaderFromCookies(
+            refreshedCookies
+          ).pipe(Effect.mapError(() => new TescoSoftLoginResponseInvalid()));
+          const expiry = yield* oauthExpiryFromCookies(refreshedCookies).pipe(
+            Effect.mapError(() => new TescoSoftLoginResponseInvalid())
+          );
 
           return {
             accessTokenExpiresAt: expiry.accessTokenExpiresAt,

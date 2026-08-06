@@ -1,6 +1,7 @@
 import { Effect, Schema, SchemaGetter } from "effect";
 
-import { BadRequestError } from "../../../app/errors.js";
+import { InvalidRequest } from "../../../app/http/http-failure.js";
+import type { RequestLocation } from "../../../app/http/http-failure.js";
 import {
   optionalParam,
   requiredParam,
@@ -78,19 +79,17 @@ export const CategoryProductsRequestBody = Schema.Struct({
 
 const decodeRequest = <A, I, RD, RE>(
   schema: Schema.Codec<A, I, RD, RE>,
-  name: string,
+  location: RequestLocation,
   value: unknown
-): Effect.Effect<A, BadRequestError, RD> =>
+): Effect.Effect<A, InvalidRequest, RD> =>
   Schema.decodeUnknownEffect(schema)(value).pipe(
-    Effect.mapError(
-      (cause) => new BadRequestError(`Invalid ${name}: ${String(cause)}`)
-    )
+    Effect.mapError(() => new InvalidRequest({ location }))
   );
 
 /** Decode one search URL into a fully populated stable catalogue input. */
 export const searchInputFromUrl = (
   requestUrl: string
-): Effect.Effect<SearchCatalogueInput, BadRequestError> =>
+): Effect.Effect<SearchCatalogueInput, InvalidRequest> =>
   Effect.gen(function* decodeSearchUrl() {
     const url = urlFromRequest(requestUrl);
     const query = yield* requiredParam(url, "query", SearchQuery);
@@ -98,7 +97,7 @@ export const searchInputFromUrl = (
     const count = yield* optionalParam(url, "count", ResultCountFromString);
     const sortBy = yield* optionalParam(url, "sortBy", SortBy);
 
-    return yield* decodeRequest(SearchRequestBody, "search query", {
+    return yield* decodeRequest(SearchRequestBody, "query", {
       query,
       ...(page === undefined ? {} : { page }),
       ...(count === undefined ? {} : { count }),
@@ -110,21 +109,17 @@ export const searchInputFromUrl = (
 export const categoryInputFromUrl = (
   requestUrl: string,
   facet: FacetId
-): Effect.Effect<CategoryProductsInput, BadRequestError> =>
+): Effect.Effect<CategoryProductsInput, InvalidRequest> =>
   Effect.gen(function* decodeCategoryUrl() {
     const url = urlFromRequest(requestUrl);
     const page = yield* optionalParam(url, "page", PageNumberFromString);
     const count = yield* optionalParam(url, "count", ResultCountFromString);
     const sortBy = yield* optionalParam(url, "sortBy", SortBy);
-    const body = yield* decodeRequest(
-      CategoryProductsRequestBody,
-      "category query",
-      {
-        ...(page === undefined ? {} : { page }),
-        ...(count === undefined ? {} : { count }),
-        ...(sortBy === undefined ? {} : { sortBy }),
-      }
-    );
+    const body = yield* decodeRequest(CategoryProductsRequestBody, "query", {
+      ...(page === undefined ? {} : { page }),
+      ...(count === undefined ? {} : { count }),
+      ...(sortBy === undefined ? {} : { sortBy }),
+    });
     return { facet, ...body };
   });
 
@@ -137,7 +132,7 @@ export const categoryInputFromBody = (
 /** Decode one suggestions URL into a fully populated stable catalogue input. */
 export const suggestionsInputFromUrl = (
   requestUrl: string
-): Effect.Effect<CatalogueSuggestionsInput, BadRequestError> =>
+): Effect.Effect<CatalogueSuggestionsInput, InvalidRequest> =>
   Effect.gen(function* decodeSuggestionsUrl() {
     const url = urlFromRequest(requestUrl);
     const query = yield* requiredParam(url, "query", SearchQuery);
@@ -145,7 +140,7 @@ export const suggestionsInputFromUrl = (
 
     return yield* decodeRequest(
       Schema.Struct({ limit: SuggestionLimitWithDefault, query: SearchQuery }),
-      "suggestions query",
+      "query",
       {
         query,
         ...(limit === undefined ? {} : { limit }),

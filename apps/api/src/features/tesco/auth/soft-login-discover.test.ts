@@ -46,8 +46,7 @@ describe("soft-login discover config", () => {
     await expect(
       Effect.runPromise(discoverJsonFromHtml("<html></html>"))
     ).rejects.toMatchObject({
-      _tag: "TescoAuthRefreshError",
-      status: 502,
+      _tag: "TescoSoftLoginResponseInvalid",
     });
   });
 
@@ -59,8 +58,7 @@ describe("soft-login discover config", () => {
         )
       )
     ).rejects.toMatchObject({
-      _tag: "TescoAuthRefreshError",
-      status: 502,
+      _tag: "TescoSoftLoginResponseInvalid",
     });
   });
 });

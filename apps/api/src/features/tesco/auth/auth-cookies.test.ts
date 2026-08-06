@@ -71,11 +71,7 @@ describe("Tesco auth cookies", () => {
       Effect.flip(oauthExpiryFromCookieHeader(cookieHeader))
     );
 
-    expect(error).toMatchObject({
-      _tag: "TescoAuthRefreshError",
-      reason: "invalid-oauth-expiry-json",
-      status: 401,
-    });
+    expect(error).toMatchObject({ _tag: "TescoAuthCookieInvalid" });
     expect(error).not.toHaveProperty("cause");
     expect(JSON.stringify(error)).not.toContain(malformedValue);
   });

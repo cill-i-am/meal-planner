@@ -4,14 +4,26 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
 import { NodeHttpClient } from "@effect/platform-node";
 import { Effect, Layer, Redacted, Schema } from "effect";
+import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { describe, expect, it } from "vitest";
 
 import { TescoAuthSession } from "../auth/auth-session.port.js";
+import { TescoCredentialsRejected } from "../auth/auth.errors.js";
 import { TescoAuthorizationValue } from "../auth/auth.model.js";
 import type { TescoAuthorization } from "../auth/auth.model.js";
 import { TescoApiKeyValue, TescoLocale, TescoRegion } from "../tesco.config.js";
 import type { TescoCatalogueConfig } from "../tesco.config.js";
+import { makeTescoAuthenticatedGraphQlTransportLive } from "./authenticated-graphql-transport.js";
 import {
+  TescoAuthenticatedGraphQlTransport,
+  TescoAuthenticatedRequestUnavailable,
+} from "./authenticated-graphql-transport.port.js";
+import type {
+  AuthenticatedGraphQlRead,
+  TescoAuthenticatedGraphQlTransportError,
+} from "./authenticated-graphql-transport.port.js";
+import {
+  CatalogueSuggestionsInput,
   CategoryProductsInput,
   SearchCatalogueInput,
 } from "./catalogue.model.js";
@@ -91,8 +103,13 @@ const makeLive = (
     })
   );
 
-  return makeTescoXapiCatalogueLive(makeConfig(mangoUrl)).pipe(
+  const config = makeConfig(mangoUrl);
+  const TransportLive = makeTescoAuthenticatedGraphQlTransportLive(config).pipe(
     Layer.provide(Layer.mergeAll(AuthSessionTest, NodeHttpClient.layerUndici))
+  );
+
+  return makeTescoXapiCatalogueLive(config).pipe(
+    Layer.provide(Layer.mergeAll(TransportLive, NodeHttpClient.layerUndici))
   );
 };
 
@@ -152,12 +169,135 @@ const categoryResponse = {
   },
 };
 
+const suggestionsRequest = Schema.decodeUnknownSync(CatalogueSuggestionsInput)({
+  limit: 10,
+  query: "milk",
+});
+
+const makeUnitLive = (
+  execute: (
+    operation: AuthenticatedGraphQlRead
+  ) => Effect.Effect<Schema.Json, TescoAuthenticatedGraphQlTransportError>,
+  response = Response.json({ results: [] })
+) => {
+  const config = makeConfig(new URL("https://xapi.tesco.test/graphql"));
+  const TransportTest = Layer.succeed(
+    TescoAuthenticatedGraphQlTransport,
+    TescoAuthenticatedGraphQlTransport.of({ execute })
+  );
+  const HttpTest = Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(request, response))
+    )
+  );
+  return makeTescoXapiCatalogueLive(config).pipe(
+    Layer.provide(Layer.mergeAll(TransportTest, HttpTest))
+  );
+};
+
 const respondJson = (response: ServerResponse, body: unknown): void => {
   response.writeHead(200, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
 };
 
 describe("makeTescoXapiCatalogueLive", () => {
+  it("maps authenticated transport failures to semantic catalogue failures", async () => {
+    const cases = [
+      {
+        expected: "TescoCatalogueUnavailable",
+        failure: new TescoAuthenticatedRequestUnavailable({
+          operation: "search",
+        }),
+      },
+      {
+        expected: "TescoCatalogueAuthenticationUnavailable",
+        failure: new TescoCredentialsRejected(),
+      },
+    ] as const;
+
+    await Promise.all(
+      cases.map(async ({ expected, failure }) => {
+        const Live = makeUnitLive(() => Effect.fail(failure));
+        const effect = Effect.gen(function* runMappedFailure() {
+          const catalogue = yield* TescoCatalogue;
+          return yield* catalogue.search(searchRequest("milk"));
+        }).pipe(Effect.provide(Live));
+
+        await expect(Effect.runPromise(effect)).rejects.toMatchObject({
+          _tag: expected,
+          operation: "search",
+        });
+      })
+    );
+  });
+
+  it("rejects an undecodable successful search without provider detail", async () => {
+    const canary = "provider-secret-invalid-search";
+    const Live = makeUnitLive(() => Effect.succeed({ providerDetail: canary }));
+    const effect = Effect.gen(function* runInvalidSearch() {
+      const catalogue = yield* TescoCatalogue;
+      return yield* catalogue.search(searchRequest("milk"));
+    }).pipe(Effect.provide(Live));
+    const failure: unknown = await Effect.runPromise(effect).then(
+      () => null,
+      (error: unknown) => error
+    );
+
+    expect(failure).toMatchObject({
+      _tag: "TescoCatalogueResponseInvalid",
+      operation: "search",
+    });
+    expect(JSON.stringify(failure)).not.toContain(canary);
+  });
+
+  it.each([
+    { expected: "TescoCatalogueUnavailable", status: 429 },
+    { expected: "TescoCatalogueUnavailable", status: 503 },
+    { expected: "TescoCatalogueRequestRejected", status: 403 },
+  ])(
+    "maps suggestion status $status to $expected",
+    async ({ expected, status }) => {
+      const Live = makeUnitLive(
+        () => Effect.die("Unexpected authenticated request"),
+        new Response("{}", { status })
+      );
+      const effect = Effect.gen(function* runSuggestionFailure() {
+        const catalogue = yield* TescoCatalogue;
+        return yield* catalogue.suggestions(suggestionsRequest);
+      }).pipe(Effect.provide(Live));
+
+      await expect(Effect.runPromise(effect)).rejects.toMatchObject({
+        _tag: expected,
+        operation: "suggestions",
+      });
+    }
+  );
+
+  it("classifies invalid suggestion JSON without provider leakage", async () => {
+    const canary = "provider-secret-invalid-suggestions";
+    const Live = makeUnitLive(
+      () => Effect.die("Unexpected authenticated request"),
+      Response.json({ providerDetail: canary })
+    );
+    const effect = Effect.gen(function* runInvalidSuggestions() {
+      const catalogue = yield* TescoCatalogue;
+      return yield* catalogue.suggestions(suggestionsRequest);
+    }).pipe(Effect.provide(Live));
+    const failure: unknown = await Effect.runPromise(effect).then(
+      () => null,
+      (error: unknown) => error
+    );
+
+    expect(failure).toMatchObject({
+      _tag: "TescoCatalogueResponseInvalid",
+      operation: "suggestions",
+    });
+    expect(JSON.stringify(failure)).not.toContain(canary);
+    expect(failure).not.toHaveProperty("cause");
+    expect(failure).not.toHaveProperty("status");
+  });
+
   it("unwraps credentials only for the outbound Mango request", async () => {
     let sawAuthorization = false;
     let sawApiKey = false;
@@ -404,11 +544,11 @@ describe("makeTescoXapiCatalogueLive", () => {
         }).pipe(Effect.provide(Live), Effect.flip)
       );
 
-      expect(error._tag).toBe("TescoHttpError");
-      if (error._tag !== "TescoHttpError") {
-        throw new Error("Expected TescoHttpError");
-      }
-      expect(error.status).toBe(401);
+      expect(error).toMatchObject({
+        _tag: "TescoCatalogueAuthenticationUnavailable",
+        operation: "search",
+      });
+      expect(error).not.toHaveProperty("status");
       expect(requestCount).toBe(2);
       expect(refreshCount).toBe(1);
     } finally {
@@ -434,8 +574,12 @@ describe("makeTescoXapiCatalogueLive", () => {
         }).pipe(Effect.flip, Effect.provide(Live))
       );
 
-      expect(error._tag).toBe("TescoGraphQlError");
-      expect(error.message).toBe("Tesco GraphQL response reported errors");
+      expect(error).toMatchObject({
+        _tag: "TescoCatalogueRequestRejected",
+        operation: "search",
+      });
+      expect(error).not.toHaveProperty("cause");
+      expect(error).not.toHaveProperty("status");
       if (JSON.stringify(error).includes(providerDetail)) {
         throw new Error("Adapter exposed provider GraphQL error detail");
       }

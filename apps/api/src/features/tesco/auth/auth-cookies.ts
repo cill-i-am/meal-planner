@@ -1,7 +1,7 @@
 import { Effect, Redacted, Schema } from "effect";
 import { Cookies } from "effect/unstable/http";
 
-import { TescoAuthRefreshError } from "../tesco.errors.js";
+import { TescoAuthCookieInvalid } from "./auth.errors.js";
 import {
   OAuthTokensExpiryTime,
   OAuthTokensExpiryTimeCookieName,
@@ -11,79 +11,45 @@ import type { TescoAuthCookieHeader, TescoAuthSnapshot } from "./auth.model.js";
 
 export const cookiesFromHeader = (
   cookieHeader: TescoAuthCookieHeader
-): Effect.Effect<Cookies.Cookies, TescoAuthRefreshError> =>
+): Effect.Effect<Cookies.Cookies, TescoAuthCookieInvalid> =>
   Effect.forEach(
     Object.entries(Cookies.parseHeader(Redacted.value(cookieHeader))),
     ([name, value]) =>
       Effect.fromResult(Cookies.makeCookie(name, value)).pipe(
-        Effect.mapError(
-          () =>
-            new TescoAuthRefreshError(
-              "Invalid Tesco auth cookie header",
-              401,
-              "invalid-cookie-header"
-            )
-        )
+        Effect.mapError(() => new TescoAuthCookieInvalid())
       )
   ).pipe(Effect.map(Cookies.fromIterable));
 
 export const cookieHeaderFromCookies = (
   cookies: Cookies.Cookies
-): Effect.Effect<TescoAuthCookieHeader, TescoAuthRefreshError> =>
+): Effect.Effect<TescoAuthCookieHeader, TescoAuthCookieInvalid> =>
   Schema.decodeUnknownEffect(TescoAuthCookieHeaderValue)(
     Cookies.toCookieHeader(cookies)
   ).pipe(
     Effect.map(Redacted.make),
-    Effect.mapError(
-      () =>
-        new TescoAuthRefreshError(
-          "Tesco auth cookies are missing expiry metadata",
-          401,
-          "missing-oauth-expiry"
-        )
-    )
+    Effect.mapError(() => new TescoAuthCookieInvalid())
   );
 
 export const oauthExpiryFromCookies = (
   cookies: Cookies.Cookies
 ): Effect.Effect<
   Pick<TescoAuthSnapshot, "accessTokenExpiresAt" | "refreshTokenExpiresAt">,
-  TescoAuthRefreshError
+  TescoAuthCookieInvalid
 > =>
   Effect.gen(function* () {
     const cookieRecord = Cookies.toRecord(cookies);
     const expiryValue = cookieRecord[OAuthTokensExpiryTimeCookieName];
     if (expiryValue === undefined) {
-      return yield* Effect.fail(
-        new TescoAuthRefreshError(
-          "Tesco auth cookies are missing OAuth expiry metadata",
-          401,
-          "missing-oauth-expiry"
-        )
-      );
+      return yield* Effect.fail(new TescoAuthCookieInvalid());
     }
 
     const parsed = yield* Effect.try({
-      catch: () =>
-        new TescoAuthRefreshError(
-          "Tesco OAuth expiry cookie is not valid JSON",
-          401,
-          "invalid-oauth-expiry-json"
-        ),
+      catch: () => new TescoAuthCookieInvalid(),
       try: () => JSON.parse(expiryValue) as unknown,
     });
     const decoded = yield* Schema.decodeUnknownEffect(OAuthTokensExpiryTime)(
       parsed
-    ).pipe(
-      Effect.mapError(
-        () =>
-          new TescoAuthRefreshError(
-            "Tesco OAuth expiry cookie has an unexpected shape",
-            401,
-            "invalid-oauth-expiry-shape"
-          )
-      )
-    );
+    ).pipe(Effect.mapError(() => new TescoAuthCookieInvalid()));
 
     return {
       accessTokenExpiresAt: decoded.AccessToken,
@@ -95,6 +61,6 @@ export const oauthExpiryFromCookieHeader = (
   cookieHeader: TescoAuthCookieHeader
 ): Effect.Effect<
   Pick<TescoAuthSnapshot, "accessTokenExpiresAt" | "refreshTokenExpiresAt">,
-  TescoAuthRefreshError
+  TescoAuthCookieInvalid
 > =>
   cookiesFromHeader(cookieHeader).pipe(Effect.flatMap(oauthExpiryFromCookies));

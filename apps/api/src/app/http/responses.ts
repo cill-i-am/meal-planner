@@ -2,31 +2,27 @@ import type { Schema } from "effect";
 import { Effect } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
-import { BadRequestError, statusForError, toErrorBody } from "../errors.js";
-import type { ApiError } from "../errors.js";
+import { InvalidRequest, toHttpFailureResponse } from "./http-failure.js";
+import type { HttpFailure } from "./http-failure.js";
 
 export const json = (body: unknown, status = 200) =>
   HttpServerResponse.json(body, { status }).pipe(Effect.orDie);
 
 export const routeJson = <A, R>(
-  effect: Effect.Effect<A, ApiError, R>
+  effect: Effect.Effect<A, HttpFailure, R>
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R> =>
   effect.pipe(
     Effect.flatMap((body) => json(body)),
-    Effect.catch((error) => json(toErrorBody(error), statusForError(error)))
+    Effect.catch((error) => {
+      const response = toHttpFailureResponse(error);
+      return json(response.body, response.status);
+    })
   );
 
-const badBody =
-  (name: string) =>
-  (cause: unknown): BadRequestError =>
-    new BadRequestError(`Invalid ${name} request body: ${String(cause)}`);
+const invalidBody = (): InvalidRequest =>
+  new InvalidRequest({ location: "body" });
 
 export const decodeBody = <A, I, RD, RE>(
-  schema: Schema.Codec<A, I, RD, RE>,
-  name: string
-): Effect.Effect<
-  A,
-  BadRequestError,
-  HttpServerRequest.HttpServerRequest | RD
-> =>
-  HttpServerRequest.schemaBodyJson(schema).pipe(Effect.mapError(badBody(name)));
+  schema: Schema.Codec<A, I, RD, RE>
+): Effect.Effect<A, InvalidRequest, HttpServerRequest.HttpServerRequest | RD> =>
+  HttpServerRequest.schemaBodyJson(schema).pipe(Effect.mapError(invalidBody));

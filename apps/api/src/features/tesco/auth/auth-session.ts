@@ -1,10 +1,13 @@
 import { Clock, Effect, Equal, Layer, Ref, Semaphore } from "effect";
 
 import type { TescoAuthBootstrapConfig } from "../tesco.config.js";
-import { TescoAuthRefreshError } from "../tesco.errors.js";
 import { oauthExpiryFromCookieHeader } from "./auth-cookies.js";
 import { TescoAuthRefresh } from "./auth-refresh.port.js";
 import { TescoAuthSession } from "./auth-session.port.js";
+import {
+  TescoAccessTokenNotRenewed,
+  TescoRefreshTokenExpired,
+} from "./auth.errors.js";
 import type { TescoAuthorization, TescoAuthSnapshot } from "./auth.model.js";
 
 const AccessTokenRefreshSkewMs = 120_000;
@@ -37,25 +40,13 @@ export const makeTescoAuthSessionLive = (config: TescoAuthBootstrapConfig) =>
         Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
           if (!hasUsableRefreshToken(state, now)) {
-            return yield* Effect.fail(
-              new TescoAuthRefreshError(
-                "Tesco refresh token is expired",
-                401,
-                "refresh-token-expired"
-              )
-            );
+            return yield* Effect.fail(new TescoRefreshTokenExpired());
           }
 
           const refreshed = yield* authRefresh.refresh(state.cookieHeader);
           const refreshedAt = yield* Clock.currentTimeMillis;
           if (!hasUsableAccessToken(refreshed, refreshedAt)) {
-            return yield* Effect.fail(
-              new TescoAuthRefreshError(
-                "Tesco soft login did not renew the access token",
-                401,
-                "access-token-not-renewed"
-              )
-            );
+            return yield* Effect.fail(new TescoAccessTokenNotRenewed());
           }
 
           yield* Ref.set(stateRef, refreshed);

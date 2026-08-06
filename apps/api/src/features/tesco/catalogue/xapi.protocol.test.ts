@@ -143,10 +143,21 @@ describe("Tesco XAPI catalogue protocol", () => {
   });
 
   it("contains provider drift as a typed decode failure", async () => {
-    await expect(
-      Effect.runPromise(
-        TescoSearchQuery.decode({ data: { search: { results: [] } } })
-      )
-    ).rejects.toMatchObject({ _tag: "TescoDecodeError" });
+    const canary = "provider-secret-schema-detail";
+    const failure: unknown = await Effect.runPromise(
+      TescoSearchQuery.decode({
+        data: { search: { providerDetail: canary, results: [] } },
+      })
+    ).then(
+      () => null,
+      (error: unknown) => error
+    );
+
+    expect(failure).toMatchObject({
+      _tag: "TescoCatalogueResponseInvalid",
+      operation: "search",
+    });
+    expect(JSON.stringify(failure)).not.toContain(canary);
+    expect(failure).not.toHaveProperty("cause");
   });
 });

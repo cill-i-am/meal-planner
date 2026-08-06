@@ -1,4 +1,4 @@
-import { ConfigProvider, Effect, Redacted } from "effect";
+import { Cause, ConfigProvider, Effect, Exit, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { loadTescoConfig } from "./tesco.config.js";
@@ -20,6 +20,14 @@ const loadConfig = (source: Record<string, string>) =>
   loadTescoConfig.pipe(
     Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(source)))
   );
+
+const renderConfigFailure = async (source: Record<string, string>) => {
+  const exit = await Effect.runPromiseExit(loadConfig(source));
+  if (Exit.isSuccess(exit)) {
+    throw new Error("Expected Tesco configuration to fail");
+  }
+  return Cause.pretty(exit.cause);
+};
 
 describe("TescoConfigDefinition", () => {
   it("parses secrets once into redacted consumer-shaped configuration", async () => {
@@ -61,6 +69,35 @@ describe("TescoConfigDefinition", () => {
     expect(JSON.stringify(error)).not.toContain(invalidSecret);
     expect(error).not.toHaveProperty("cause");
   });
+
+  it.each([
+    {
+      canary: "Bearer malformed-authorization-canary extra",
+      key: "TESCO_AUTHORIZATION",
+      name: "authorization",
+    },
+    {
+      canary: "Malformed.Cookie=malformed-cookie-canary",
+      key: "TESCO_AUTH_COOKIE_HEADER",
+      name: "cookie",
+    },
+    {
+      canary: " malformed-api-key-canary ",
+      key: "TESCO_MANGO_API_KEY",
+      name: "API key",
+    },
+  ])(
+    "does not render a malformed Tesco $name value",
+    async ({ key, canary }) => {
+      const diagnostic = await renderConfigFailure({
+        ...validConfig,
+        [key]: canary,
+      });
+
+      expect(diagnostic).toContain("Invalid Tesco configuration");
+      expect(diagnostic).not.toContain(canary);
+    }
+  );
 
   it("distinguishes a missing allowlisted environment variable", async () => {
     const { TESCO_MANGO_API_KEY: _apiKey, ...withoutApiKey } = validConfig;

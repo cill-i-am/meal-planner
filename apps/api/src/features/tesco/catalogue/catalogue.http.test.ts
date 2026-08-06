@@ -74,6 +74,6 @@ describe("catalogue HTTP contracts", () => {
           "https://meal-planner.test/tesco/search?query=milk&count=1.5"
         )
       )
-    ).rejects.toMatchObject({ _tag: "BadRequestError" });
+    ).rejects.toMatchObject({ _tag: "InvalidRequest", location: "query" });
   });
 });
