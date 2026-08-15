@@ -8,7 +8,10 @@ import {
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
-import { acquireStoreVerify } from "./import-media-acquirer.js";
+import {
+  VerifiedPreparedMediaArtifact,
+  acquireStoreVerify,
+} from "./import-media-acquirer.js";
 import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
@@ -20,10 +23,18 @@ import type { AcquisitionMediaObjectStub } from "./import-media-acquisition-obje
 import {
   AcquisitionGeneration,
   MaximumR2OperationMilliseconds,
+  MediaArtifactId,
+  MediaByteCount,
+  MediaDurationSeconds,
+  Sha256Hex,
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
-import { ImportId, SourceCanonicalId } from "./import.contracts.js";
+import {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "./import.contracts.js";
 
 interface TestR2Object {
   readonly arrayBuffer: () => Promise<ArrayBuffer>;
@@ -58,7 +69,6 @@ const testEnv = env as unknown as {
 const mediaBytes = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]);
 const sha256 =
   "d9f1cb99ee21291800d5e62bd9bca07850461d7d8096afc4150a52dc8554d49f";
-const now = () => new Date("2026-07-20T12:00:00.000Z");
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
 
 const id = (suffix: number) =>
@@ -273,10 +283,15 @@ describe("derived provider evidence", () => {
     };
 
     await Effect.runPromise(
-      persistDerivedProviderEvidence(bucket(), mediaObject, prepared, {
-        generation,
-        importId,
-      })
+      persistDerivedProviderEvidence(
+        bucket(),
+        mediaObject,
+        Schema.decodeUnknownSync(VerifiedPreparedMediaArtifact)(prepared),
+        {
+          generation,
+          importId,
+        }
+      )
     );
 
     const manifestObject = await testEnv.ImportEvidenceBucket.get(
@@ -385,8 +400,7 @@ describe("derived provider evidence", () => {
             artifactId: "derived-audio-414",
             bytes: 1,
             durationMilliseconds: 1000,
-            sha256:
-              "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7c9ec3941b6d1f",
+            sha256: "a".repeat(64),
           },
           frames: [
             {
@@ -443,13 +457,14 @@ describe("derived provider evidence", () => {
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
-      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+      expect(
+        Option.getOrThrow(Cause.findErrorOption(exit.cause))
+      ).toMatchObject({
         _tag: "RetryableAcquisitionFailure",
         reason: "container_rpc",
         stage: "store",
@@ -502,13 +517,38 @@ describe("native R2 generation commit", () => {
         Effect.die("derived evidence must remain untouched"),
     };
     const mediaObject = makeAcquisitionMediaObject(stub);
+    let observedVerifiedPreparedArtifact = false;
 
     const first = await Effect.runPromise(
       acquireStoreVerify(acquisitionBucket, mediaObject, {
+        beforeCleanup: (prepared) =>
+          Effect.sync(() => {
+            const {
+              artifactId,
+              bytes,
+              durationSeconds: duration,
+              metadata: { observedAt },
+              sha256: hash,
+            }: {
+              readonly artifactId: typeof MediaArtifactId.Type;
+              readonly bytes: typeof MediaByteCount.Type;
+              readonly durationSeconds: typeof MediaDurationSeconds.Type;
+              readonly metadata: {
+                readonly observedAt: typeof ImportTimestamp.Type;
+              };
+              readonly sha256: typeof Sha256Hex.Type;
+            } = prepared;
+
+            expect(Schema.is(MediaArtifactId)(artifactId)).toBe(true);
+            expect(Schema.is(MediaByteCount)(bytes)).toBe(true);
+            expect(Schema.is(MediaDurationSeconds)(duration)).toBe(true);
+            expect(Schema.is(ImportTimestamp)(observedAt)).toBe(true);
+            expect(Schema.is(Sha256Hex)(hash)).toBe(true);
+            observedVerifiedPreparedArtifact = true;
+          }),
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
     const mediaKey = mediaObjectKey(importId, generation);
@@ -523,6 +563,7 @@ describe("native R2 generation commit", () => {
         sha256: expectedSha256,
       },
     });
+    expect(observedVerifiedPreparedArtifact).toBe(true);
     expect(storedMedia).not.toBeNull();
     expect(storedManifest).not.toBeNull();
     if (storedMedia === null || storedManifest === null) {
@@ -569,7 +610,6 @@ describe("native R2 generation commit", () => {
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
     const listed = await testEnv.ImportEvidenceBucket.list({
@@ -613,7 +653,6 @@ describe("native R2 generation commit", () => {
             canonicalId,
             generation,
             importId,
-            now,
           })
         )
       )
@@ -678,7 +717,6 @@ describe("native R2 generation commit", () => {
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
 
@@ -737,7 +775,6 @@ describe("native R2 generation commit", () => {
           canonicalId,
           generation: currentGeneration,
           importId,
-          now,
         })
       )
     ).resolves.toMatchObject({
@@ -776,7 +813,6 @@ describe("native R2 generation commit", () => {
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
 
@@ -814,7 +850,6 @@ describe("native R2 generation commit", () => {
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
     const listed = await testEnv.ImportEvidenceBucket.list({
@@ -848,7 +883,6 @@ describe("native R2 generation commit", () => {
           canonicalId,
           generation: oldGeneration,
           importId,
-          now,
         })
       );
 
@@ -863,7 +897,9 @@ describe("native R2 generation commit", () => {
       const exit = await result;
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
-        expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+        expect(
+          Option.getOrThrow(Cause.findErrorOption(exit.cause))
+        ).toMatchObject({
           _tag: "RetryableAcquisitionFailure",
           reason: "acquisition_timeout",
           stage: "store",
@@ -876,7 +912,6 @@ describe("native R2 generation commit", () => {
             canonicalId,
             generation: currentGeneration,
             importId,
-            now,
           })
         )
       ).resolves.toMatchObject({
@@ -942,13 +977,14 @@ describe("native R2 generation commit", () => {
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
-      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+      expect(
+        Option.getOrThrow(Cause.findErrorOption(exit.cause))
+      ).toMatchObject({
         _tag: "RetryableAcquisitionFailure",
         reason: "container_rpc",
         stage: "store",
@@ -990,13 +1026,14 @@ describe("native R2 generation commit", () => {
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
-      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+      expect(
+        Option.getOrThrow(Cause.findErrorOption(exit.cause))
+      ).toMatchObject({
         _tag: "RetryableAcquisitionFailure",
         reason: "container_rpc",
         stage: "store",
@@ -1036,7 +1073,6 @@ describe("native R2 generation commit", () => {
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
 
@@ -1068,7 +1104,6 @@ describe("native R2 generation commit", () => {
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
     await cleanupStarted.promise;
@@ -1104,14 +1139,13 @@ describe("native R2 generation commit", () => {
         canonicalId,
         generation,
         importId,
-        now,
       })
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
       const error = Option.getOrThrow(Cause.findErrorOption(exit.cause));
-      expect(error).toEqual({
+      expect(error).toMatchObject({
         _tag: "RetryableAcquisitionFailure",
         reason: "container_rpc",
         stage: "container",

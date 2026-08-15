@@ -105,7 +105,7 @@ describe("bounded media process execution", () => {
         failure: "retryable",
       })
     );
-    expect(exitFailure).toEqual({
+    expect(exitFailure).toMatchObject({
       _tag: "RetryableAcquisitionFailure",
       reason: "container_exit",
       stage: "process",
@@ -160,7 +160,7 @@ describe("bounded media process execution", () => {
       const result = await Promise.race([completion, deadlineMissed.promise]);
       clearTimeout(timeout);
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         _tag: "Settled",
         failure: {
           _tag: "RetryableAcquisitionFailure",
@@ -253,7 +253,7 @@ describe("bounded media process execution", () => {
         }
         expect(
           Option.getOrThrow(Cause.findErrorOption(result.exit.cause))
-        ).toEqual({
+        ).toMatchObject({
           _tag: "RetryableAcquisitionFailure",
           reason: "container_process_timeout",
           stage: "process",
@@ -505,7 +505,7 @@ describe("bounded media process execution", () => {
           workspaceRoot: root,
         })
       );
-      expect(failure).toEqual({
+      expect(failure).toMatchObject({
         _tag: "TerminalMedia",
         code: "limit_exceeded",
         stage: "process",

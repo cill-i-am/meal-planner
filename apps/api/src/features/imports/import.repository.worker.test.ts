@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   AcquisitionGeneration,
+  VerifiedAcquisitionEvidence,
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
@@ -35,6 +36,9 @@ const decodeId = Schema.decodeUnknownSync(ImportId);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
+const decodeAcquisitionEvidence = Schema.decodeUnknownSync(
+  VerifiedAcquisitionEvidence
+);
 const fixtureHash = (value: string) =>
   Array.from(new TextEncoder().encode(value), (byte) =>
     byte.toString(16).padStart(2, "0")
@@ -130,23 +134,24 @@ const failCurrentTranscription = async (
   );
   const acquiredAt = decodeTimestamp("2026-07-20T10:05:00.000Z");
   const sourceMediaSha256 = fixtureHash(`media-${command.candidate.view.id}`);
+  const evidence = decodeAcquisitionEvidence({
+    acquiredAt: Schema.encodeUnknownSync(ImportTimestamp)(acquiredAt),
+    audioStreams: [{ codec: "aac", index: 1 }],
+    bytes: 1024,
+    deleteAt: "2026-07-27T10:05:00.000Z",
+    durationSeconds: 1,
+    generation,
+    manifestKey: manifestObjectKey(command.candidate.view.id, generation),
+    mediaKey: mediaObjectKey(command.candidate.view.id, generation),
+    sha256: sourceMediaSha256,
+    videoStreams: [{ codec: "h264", index: 0 }],
+  });
   await Effect.runPromise(
     repository.recordAcquired(
       command.candidate.view.id,
       generation,
-      {
-        acquiredAt,
-        audioStreams: [{ codec: "aac", index: 1 }],
-        bytes: 1024,
-        deleteAt: decodeTimestamp("2026-07-27T10:05:00.000Z"),
-        durationSeconds: 1,
-        generation,
-        manifestKey: manifestObjectKey(command.candidate.view.id, generation),
-        mediaKey: mediaObjectKey(command.candidate.view.id, generation),
-        sha256: sourceMediaSha256,
-        videoStreams: [{ codec: "h264", index: 0 }],
-      },
-      acquiredAt
+      evidence,
+      evidence.acquiredAt
     )
   );
   const transcriptionRepository = makeD1SpeechTranscriptionRepository(
@@ -574,25 +579,25 @@ describe("D1 import repository in workerd", () => {
       repository.beginAcquisitionAttempt(command.candidate.view.id)
     );
     const acquiredAt = decodeTimestamp("2026-07-20T10:05:00.000Z");
-    const evidence = {
-      acquiredAt,
+    const evidence = decodeAcquisitionEvidence({
+      acquiredAt: Schema.encodeUnknownSync(ImportTimestamp)(acquiredAt),
       audioStreams: [{ codec: "aac", index: 1 }],
       bytes: 1024,
-      deleteAt: decodeTimestamp("2026-07-27T10:05:00.000Z"),
+      deleteAt: "2026-07-27T10:05:00.000Z",
       durationSeconds: 1,
       generation,
       manifestKey: manifestObjectKey(command.candidate.view.id, generation),
       mediaKey: mediaObjectKey(command.candidate.view.id, generation),
       sha256: fixtureHash("media"),
       videoStreams: [{ codec: "h264", index: 0 }],
-    } as const;
+    });
     await expect(
       Effect.runPromise(
         repository.recordAcquired(
           command.candidate.view.id,
           generation,
           evidence,
-          acquiredAt
+          evidence.acquiredAt
         )
       )
     ).resolves.toBe("Recorded");
@@ -602,7 +607,7 @@ describe("D1 import repository in workerd", () => {
           command.candidate.view.id,
           generation,
           evidence,
-          acquiredAt
+          evidence.acquiredAt
         )
       )
     ).resolves.toBe("Recorded");
@@ -651,25 +656,25 @@ describe("D1 import repository in workerd", () => {
     const acquiredAt = decodeTimestamp("2026-07-20T10:05:00.000Z");
     await Promise.all(
       staleGenerations.map((generation) => {
-        const staleEvidence = {
-          acquiredAt,
+        const staleEvidence = decodeAcquisitionEvidence({
+          acquiredAt: Schema.encodeUnknownSync(ImportTimestamp)(acquiredAt),
           audioStreams: [{ codec: "aac", index: 1 }],
           bytes: 1024,
-          deleteAt: decodeTimestamp("2026-07-27T10:05:00.000Z"),
+          deleteAt: "2026-07-27T10:05:00.000Z",
           durationSeconds: 1,
           generation,
           manifestKey: manifestObjectKey(command.candidate.view.id, generation),
           mediaKey: mediaObjectKey(command.candidate.view.id, generation),
           sha256: fixtureHash(`stale-media-${generation}`),
           videoStreams: [{ codec: "h264", index: 0 }],
-        } as const;
+        });
         return expect(
           Effect.runPromise(
             repository.recordAcquired(
               command.candidate.view.id,
               generation,
               staleEvidence,
-              acquiredAt
+              staleEvidence.acquiredAt
             )
           )
         ).resolves.toBe("Superseded");
@@ -801,11 +806,11 @@ describe("D1 import repository in workerd", () => {
         repository.recordAcquired(
           command.candidate.view.id,
           generation,
-          {
-            acquiredAt,
+          decodeAcquisitionEvidence({
+            acquiredAt: Schema.encodeUnknownSync(ImportTimestamp)(acquiredAt),
             audioStreams: [{ codec: "aac", index: 1 }],
             bytes: 1024,
-            deleteAt: decodeTimestamp("2026-07-27T10:05:00.000Z"),
+            deleteAt: "2026-07-27T10:05:00.000Z",
             durationSeconds: 1,
             generation,
             manifestKey: manifestObjectKey(
@@ -815,7 +820,7 @@ describe("D1 import repository in workerd", () => {
             mediaKey: mediaObjectKey(command.candidate.view.id, generation),
             sha256: fixtureHash("expired-media"),
             videoStreams: [{ codec: "h264", index: 0 }],
-          },
+          }),
           acquiredAt
         )
       )

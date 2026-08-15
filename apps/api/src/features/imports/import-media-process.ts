@@ -6,6 +6,10 @@ import { join, resolve as resolvePath, sep } from "node:path";
 
 import { Context, Effect, Exit } from "effect";
 
+import {
+  RetryableAcquisitionError,
+  TerminalMediaError,
+} from "./import-media.errors.js";
 import type {
   RetryableAcquisitionFailure,
   TerminalMediaFailure,
@@ -126,21 +130,15 @@ export const makeTemporaryArtifactStore = (
 
 const retryableProcess = (
   reason?: RetryableAcquisitionFailure["reason"]
-): RetryableAcquisitionFailure => ({
-  _tag: "RetryableAcquisitionFailure",
-  ...(reason === undefined ? {} : { reason }),
-  stage: "process",
-});
-const terminalProcess = (): TerminalMediaFailure => ({
-  _tag: "TerminalMedia",
-  code: "invalid_media",
-  stage: "process",
-});
-const limitExceeded = (): TerminalMediaFailure => ({
-  _tag: "TerminalMedia",
-  code: "limit_exceeded",
-  stage: "process",
-});
+): RetryableAcquisitionFailure =>
+  new RetryableAcquisitionError({
+    ...(reason === undefined ? {} : { reason }),
+    stage: "process",
+  });
+const terminalProcess = (): TerminalMediaFailure =>
+  new TerminalMediaError({ code: "invalid_media", stage: "process" });
+const limitExceeded = (): TerminalMediaFailure =>
+  new TerminalMediaError({ code: "limit_exceeded", stage: "process" });
 
 const OutputLimitExceeded = Symbol("OutputLimitExceeded");
 const ProcessExited = Symbol("ProcessExited");
@@ -182,43 +180,43 @@ const temporaryWorkspaceEntryKind = (
   return "other";
 };
 
-export const validateTemporaryWorkspaceEntries = (
+export const validateTemporaryWorkspaceEntries = Effect.fn(
+  "ImportMedia.validateTemporaryWorkspaceEntries"
+)(function* validateTemporaryWorkspaceEntriesEffect(
   entries: readonly TemporaryWorkspaceEntry[],
   root: string
-) =>
-  Effect.gen(function* validateWorkspace() {
-    const resolvedRoot = resolvePath(root);
-    let bytes = 0;
-    let files = 0;
-    for (const entry of entries) {
-      const resolvedPath = resolvePath(entry.path);
+) {
+  const resolvedRoot = resolvePath(root);
+  let bytes = 0;
+  let files = 0;
+  for (const entry of entries) {
+    const resolvedPath = resolvePath(entry.path);
+    if (
+      (resolvedPath !== resolvedRoot &&
+        !resolvedPath.startsWith(`${resolvedRoot}${sep}`)) ||
+      (entry.kind !== "file" && entry.kind !== "directory") ||
+      !Number.isSafeInteger(entry.size) ||
+      entry.size < 0
+    ) {
+      return yield* Effect.fail(limitExceeded());
+    }
+    if (entry.kind === "file") {
+      files += 1;
+      bytes += entry.size;
       if (
-        (resolvedPath !== resolvedRoot &&
-          !resolvedPath.startsWith(`${resolvedRoot}${sep}`)) ||
-        (entry.kind !== "file" && entry.kind !== "directory") ||
-        !Number.isSafeInteger(entry.size) ||
-        entry.size < 0
+        files > MaximumTemporaryFiles ||
+        entry.size > MaximumTemporaryFileBytes ||
+        bytes > MaximumTemporaryBytes
       ) {
         return yield* Effect.fail(limitExceeded());
       }
-      if (entry.kind === "file") {
-        files += 1;
-        bytes += entry.size;
-        if (
-          files > MaximumTemporaryFiles ||
-          entry.size > MaximumTemporaryFileBytes ||
-          bytes > MaximumTemporaryBytes
-        ) {
-          return yield* Effect.fail(limitExceeded());
-        }
-      }
     }
-  });
+  }
+});
 
-export const scanTemporaryWorkspace = (
-  root: string,
-  cancellation?: AbortSignal
-) =>
+export const scanTemporaryWorkspace = Effect.fn(
+  "ImportMedia.scanTemporaryWorkspace"
+)((root: string, cancellation?: AbortSignal) =>
   Effect.tryPromise({
     catch: limitExceeded,
     try: async () => {
@@ -257,7 +255,8 @@ export const scanTemporaryWorkspace = (
     Effect.flatMap((entries) =>
       validateTemporaryWorkspaceEntries(entries, root)
     )
-  );
+  )
+);
 
 type TemporaryWorkspaceScanner = (
   root: string,
@@ -268,7 +267,7 @@ export const makeMediaProcessRunner = (
   execute: CommandExecutor,
   scanWorkspace: TemporaryWorkspaceScanner = scanTemporaryWorkspace
 ): MediaProcessRunnerShape => ({
-  run: (command, args, options) =>
+  run: Effect.fn("ImportMedia.runProcess")((command, args, options) =>
     Effect.callback<
       MediaProcessResult,
       RetryableAcquisitionFailure | TerminalMediaFailure
@@ -415,7 +414,8 @@ export const makeMediaProcessRunner = (
       };
       const observation = observeCompletion();
       return Effect.promise(() => observation);
-    }),
+    })
+  ),
 });
 
 export const NodeCommandExecutor: CommandExecutor = ({

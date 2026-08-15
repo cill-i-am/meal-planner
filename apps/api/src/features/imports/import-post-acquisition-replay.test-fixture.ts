@@ -299,7 +299,9 @@ const makeWorkflowExport = (runtimeContext: InstalledRuntimeContext) => ({
                   canonicalId: stored.canonicalSourceId,
                   generation: stored.acquisitionGeneration,
                   importId,
-                  now: () => new Date("2026-07-28T10:01:00.000Z"),
+                  observedAt: Schema.decodeUnknownSync(ImportTimestamp)(
+                    "2026-07-28T10:01:00.000Z"
+                  ),
                 }),
             }).pipe(
               Effect.orDie,

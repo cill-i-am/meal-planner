@@ -4,11 +4,12 @@ import type {
   AcquisitionBucketLike,
   AcquisitionPutOptions,
 } from "./import-media-acquirer.js";
-import type { RetryableAcquisitionFailure } from "./import-media.model.js";
+import { RetryableAcquisitionError } from "./import-media.errors.js";
 import {
   MaximumLocalCleanupMilliseconds,
   MaximumR2OperationMilliseconds,
 } from "./import-media.model.js";
+import type { RetryableAcquisitionFailure } from "./import-media.model.js";
 
 interface UploadTransport {
   readonly controller: AbortController;
@@ -18,44 +19,45 @@ interface UploadTransport {
 
 const retryableUploadFailure = (
   reason: NonNullable<RetryableAcquisitionFailure["reason"]>
-): RetryableAcquisitionFailure => ({
-  _tag: "RetryableAcquisitionFailure",
-  reason,
-  stage: "store",
-});
+): RetryableAcquisitionFailure =>
+  new RetryableAcquisitionError({ reason, stage: "store" });
 
-const acquireTransport = (input: {
-  readonly options: AcquisitionPutOptions;
-  readonly stream: Stream.Stream<Uint8Array, RetryableAcquisitionFailure>;
-}): Effect.Effect<UploadTransport, RetryableAcquisitionFailure> =>
-  Effect.try({
-    catch: () => retryableUploadFailure("container_rpc"),
-    try: () => {
-      const FixedLengthStreamConstructor = (
-        globalThis as unknown as {
-          readonly FixedLengthStream: new (length: number) => {
-            readonly readable: ReadableStream;
-            readonly writable: WritableStream<Uint8Array>;
-          };
-        }
-      ).FixedLengthStream;
-      const controller = new AbortController();
-      const fixedLength = new FixedLengthStreamConstructor(
-        input.options.contentLength
-      );
-      return {
-        controller,
-        piping: Stream.toReadableStream(input.stream).pipeTo(
-          fixedLength.writable,
-          { signal: controller.signal }
-        ),
-        readable: fixedLength.readable,
-      };
-    },
-  });
+const acquireTransport = Effect.fn("ImportMedia.acquireUploadTransport")(
+  (input: {
+    readonly options: AcquisitionPutOptions;
+    readonly stream: Stream.Stream<Uint8Array, RetryableAcquisitionFailure>;
+  }): Effect.Effect<UploadTransport, RetryableAcquisitionFailure> =>
+    Effect.try({
+      catch: () => retryableUploadFailure("container_rpc"),
+      try: () => {
+        // SAFETY: Cloudflare Workers installs FixedLengthStream on globalThis;
+        // this adapter is the single host-specific cast for the upload transport.
+        const FixedLengthStreamConstructor = (
+          globalThis as unknown as {
+            readonly FixedLengthStream: new (length: number) => {
+              readonly readable: ReadableStream;
+              readonly writable: WritableStream<Uint8Array>;
+            };
+          }
+        ).FixedLengthStream;
+        const controller = new AbortController();
+        const fixedLength = new FixedLengthStreamConstructor(
+          input.options.contentLength
+        );
+        return {
+          controller,
+          piping: Stream.toReadableStream(input.stream).pipeTo(
+            fixedLength.writable,
+            { signal: controller.signal }
+          ),
+          readable: fixedLength.readable,
+        };
+      },
+    })
+);
 
-const settleTransport = (transport: UploadTransport) =>
-  Effect.gen(function* settleUploadTransport() {
+const settleTransport = Effect.fn("ImportMedia.settleUploadTransport")(
+  function* settleUploadTransport(transport: UploadTransport) {
     transport.controller.abort();
     yield* Effect.tryPromise({
       catch: () => null,
@@ -65,7 +67,11 @@ const settleTransport = (transport: UploadTransport) =>
       catch: () => null,
       try: () => transport.piping,
     }).pipe(Effect.ignore);
-  }).pipe(
+  }
+);
+
+const boundedSettlement = (transport: UploadTransport) =>
+  settleTransport(transport).pipe(
     Effect.timeoutOrElse({
       duration: MaximumLocalCleanupMilliseconds,
       orElse: () => Effect.void,
@@ -107,6 +113,6 @@ export const putPrivateArtifact = Effect.fn("ImportMedia.putPrivateArtifact")(
           })
         ),
       (transport, exit) =>
-        Exit.isSuccess(exit) ? Effect.void : settleTransport(transport)
+        Exit.isSuccess(exit) ? Effect.void : boundedSettlement(transport)
     )
 );

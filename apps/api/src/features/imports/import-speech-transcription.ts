@@ -1,4 +1,4 @@
-import { DateTime, Effect, Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
@@ -281,7 +281,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       canonicalId: stored.canonicalSourceId,
       generation: stored.acquisitionGeneration,
       importId: input.importId,
-      now: () => new Date(DateTime.toEpochMillis(now)),
+      observedAt: now,
     }).pipe(Effect.mapError(() => pipelineFailure("source_evidence_invalid")));
     if (evidence === null) {
       return yield* Effect.fail(pipelineFailure("source_evidence_invalid"));

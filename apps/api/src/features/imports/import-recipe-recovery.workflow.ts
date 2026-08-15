@@ -11,7 +11,7 @@ import {
   makePilotProviderBudgetRuntime,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
+import { adaptAcquisitionBucket } from "./import-media-acquirer.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import { ImportObservabilityTraceStore } from "./import-observability.js";
 import {
@@ -90,7 +90,7 @@ export default class ImportRecipeRecoveryWorkflow extends Cloudflare.Workflow<Im
             `extract-recipe-recovery-${recoveryTaskVersion}`,
             "recipe",
             produceRecipeDraftForImport({
-              bucket: rawBucket as unknown as AcquisitionBucketLike,
+              bucket: adaptAcquisitionBucket(rawBucket),
               extractor,
               importId: recovery.importId,
               importRepository: makeD1ImportRepository(database),

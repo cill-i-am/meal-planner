@@ -33,18 +33,21 @@ describe("private derived provider evidence", () => {
     const first = new Uint8Array([4, 5]);
     const second = new Uint8Array([6, 7]);
     const sourceMediaSha256 = "a".repeat(64);
+    const audioKey = `imports/${importId}/generations/${generation}/provider-audio.wav`;
+    const firstFrameKey = `imports/${importId}/generations/${generation}/provider-frame-0.jpg`;
+    const secondFrameKey = `imports/${importId}/generations/${generation}/provider-frame-1.jpg`;
     const manifest = {
       audio: {
         bytes: audio.byteLength,
         durationMilliseconds: 60_000,
-        key: "private/audio",
+        key: audioKey,
         sha256: await hash(audio),
       },
       frames: [
         {
           bytes: first.byteLength,
           height: 20,
-          key: "private/frame-0",
+          key: firstFrameKey,
           sha256: await hash(first),
           timestampMilliseconds: 12_000,
           width: 10,
@@ -52,7 +55,7 @@ describe("private derived provider evidence", () => {
         {
           bytes: second.byteLength,
           height: 20,
-          key: "private/frame-1",
+          key: secondFrameKey,
           sha256: await hash(second),
           timestampMilliseconds: 30_000,
           width: 10,
@@ -68,9 +71,9 @@ describe("private derived provider evidence", () => {
         `imports/${importId}/generations/${generation}/provider-evidence.json`,
         new TextEncoder().encode(JSON.stringify(manifest)),
       ],
-      ["private/audio", audio],
-      ["private/frame-0", first],
-      ["private/frame-1", second],
+      [audioKey, audio],
+      [firstFrameKey, first],
+      [secondFrameKey, second],
     ]);
     const bucket = {
       get: (key: string) => {
@@ -113,14 +116,14 @@ describe("private derived provider evidence", () => {
       audio: {
         bytes: 1,
         durationMilliseconds: 1000,
-        key: "private/audio",
+        key: `imports/${importId}/generations/${generation}/provider-audio.wav`,
         sha256: "b".repeat(64),
       },
       frames: [
         {
           bytes: 1,
           height: 1,
-          key: "private/frame",
+          key: `imports/${importId}/generations/${generation}/provider-frame-0.jpg`,
           sha256: "c".repeat(64),
           timestampMilliseconds: 0,
           width: 1,

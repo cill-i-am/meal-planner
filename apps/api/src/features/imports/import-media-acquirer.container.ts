@@ -8,7 +8,7 @@ import { BlockList, isIP } from "node:net";
 import { join } from "node:path";
 import { checkServerIdentity } from "node:tls";
 
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 
 import type { MediaAcquirerShape } from "./import-media-acquirer.js";
 import type { MediaProcessRunnerShape } from "./import-media-process.js";
@@ -17,6 +17,10 @@ import {
   hasIsoBaseMediaFileType,
   validateMediaProbe,
 } from "./import-media-validation.js";
+import {
+  RetryableAcquisitionError,
+  TerminalMediaError,
+} from "./import-media.errors.js";
 import type {
   AcquisitionFailureReason,
   TerminalMediaFailure,
@@ -32,17 +36,14 @@ import { mediaSessionCookieHeader } from "./import-source-session.js";
 
 const terminal = (
   code: "invalid_media" | "limit_exceeded" | "unsupported_streams"
-): TerminalMediaFailure => ({
-  _tag: "TerminalMedia",
-  code,
-  stage: "validation",
-});
+): TerminalMediaFailure =>
+  new TerminalMediaError({ code, stage: "validation" });
 
-const retryableDownload = (reason?: AcquisitionFailureReason) => ({
-  _tag: "RetryableAcquisitionFailure" as const,
-  ...(reason === undefined ? {} : { reason }),
-  stage: "container" as const,
-});
+const retryableDownload = (reason?: AcquisitionFailureReason) =>
+  new RetryableAcquisitionError({
+    ...(reason === undefined ? {} : { reason }),
+    stage: "container",
+  });
 const UnsafeMediaDestination = Symbol("UnsafeMediaDestination");
 const MediaDownloadLimitExceeded = Symbol("MediaDownloadLimitExceeded");
 const MediaDownloadDnsFailure = Symbol("MediaDownloadDnsFailure");
@@ -303,67 +304,69 @@ const requestSafeMedia = async (
 export const makeSecureMediaDownloader = (
   client: SecureMediaDownloadClient
 ): SecureMediaDownloader => ({
-  download: (locator, destination, maximumBytes, requestHeaders, session) =>
-    Effect.tryPromise({
-      catch: downloadFailure,
-      try: async (signal) => {
-        const file = await open(destination, "wx");
-        let completed = false;
-        try {
-          const response = await requestSafeMedia(
-            client,
-            locator,
-            0,
-            signal,
-            requestHeaders ?? {},
-            session
-          );
-          if (response.statusCode !== 200) {
-            response.destroy();
-            throw [401, 403, 404, 410].includes(response.statusCode)
-              ? MediaDownloadSourceUnavailable
-              : MediaDownloadHttpResponseFailure;
-          }
-          if (
-            response.contentLength !== null &&
-            response.contentLength > maximumBytes
-          ) {
-            response.destroy();
-            throw MediaDownloadLimitExceeded;
-          }
-          let bytes = 0;
+  download: Effect.fn("ImportMedia.download")(
+    (locator, destination, maximumBytes, requestHeaders, session) =>
+      Effect.tryPromise({
+        catch: downloadFailure,
+        try: async (signal) => {
+          const file = await open(destination, "wx");
+          let completed = false;
           try {
-            for await (const chunk of response.body) {
-              bytes += chunk.byteLength;
-              if (bytes > maximumBytes) {
-                response.destroy();
-                throw MediaDownloadLimitExceeded;
+            const response = await requestSafeMedia(
+              client,
+              locator,
+              0,
+              signal,
+              requestHeaders ?? {},
+              session
+            );
+            if (response.statusCode !== 200) {
+              response.destroy();
+              throw [401, 403, 404, 410].includes(response.statusCode)
+                ? MediaDownloadSourceUnavailable
+                : MediaDownloadHttpResponseFailure;
+            }
+            if (
+              response.contentLength !== null &&
+              response.contentLength > maximumBytes
+            ) {
+              response.destroy();
+              throw MediaDownloadLimitExceeded;
+            }
+            let bytes = 0;
+            try {
+              for await (const chunk of response.body) {
+                bytes += chunk.byteLength;
+                if (bytes > maximumBytes) {
+                  response.destroy();
+                  throw MediaDownloadLimitExceeded;
+                }
+                await file.write(chunk);
               }
-              await file.write(chunk);
+            } catch (error) {
+              if (error === MediaDownloadLimitExceeded) {
+                throw error;
+              }
+              throw isAbortError(error)
+                ? MediaDownloadTimeout
+                : MediaDownloadStreamOrTlsFailure;
             }
-          } catch (error) {
-            if (error === MediaDownloadLimitExceeded) {
-              throw error;
+            if (bytes === 0) {
+              throw MediaDownloadLimitExceeded;
             }
-            throw isAbortError(error)
-              ? MediaDownloadTimeout
-              : MediaDownloadStreamOrTlsFailure;
+            completed = true;
+          } finally {
+            await file.close();
+            if (!completed) {
+              await rm(destination, { force: true });
+            }
           }
-          if (bytes === 0) {
-            throw MediaDownloadLimitExceeded;
-          }
-          completed = true;
-        } finally {
-          await file.close();
-          if (!completed) {
-            await rm(destination, { force: true });
-          }
-        }
-      },
-    }),
+        },
+      })
+  ),
 });
 
-const checksumFile = (filePath: string) =>
+const checksumFile = Effect.fn("ImportMedia.checksumFile")((filePath: string) =>
   Effect.tryPromise({
     catch: () => terminal("invalid_media"),
     try: async () => {
@@ -373,7 +376,8 @@ const checksumFile = (filePath: string) =>
       }
       return digest.digest("hex");
     },
-  });
+  })
+);
 
 export const makeContainerMediaAcquirer = (
   processRunner: MediaProcessRunnerShape,
@@ -381,10 +385,13 @@ export const makeContainerMediaAcquirer = (
     NodeSecureMediaDownloadClient
   )
 ): MediaAcquirerShape => ({
-  acquire: (source, limits, workspaceRoot) =>
+  acquire: Effect.fn("ImportMedia.acquire")((source, limits, workspaceRoot) =>
     Effect.gen(function* acquireMedia() {
-      const deadlineAt = Date.now() + MaximumMediaProcessMilliseconds;
-      const remainingMilliseconds = () => Math.max(1, deadlineAt - Date.now());
+      const deadlineAt =
+        (yield* Clock.currentTimeMillis) + MaximumMediaProcessMilliseconds;
+      const remainingMilliseconds = Clock.currentTimeMillis.pipe(
+        Effect.map((now) => Math.max(1, deadlineAt - now))
+      );
       yield* scanTemporaryWorkspace(workspaceRoot);
       const downloadPath = join(workspaceRoot, "source.download");
       yield* downloader
@@ -397,7 +404,7 @@ export const makeContainerMediaAcquirer = (
         )
         .pipe(
           Effect.timeoutOrElse({
-            duration: remainingMilliseconds(),
+            duration: yield* remainingMilliseconds,
             orElse: () => Effect.fail(retryableDownload("download_timeout")),
           })
         );
@@ -431,7 +438,7 @@ export const makeContainerMediaAcquirer = (
           mediaPath,
         ],
         {
-          deadlineMilliseconds: remainingMilliseconds(),
+          deadlineMilliseconds: yield* remainingMilliseconds,
           failure: "terminal",
           workspaceRoot,
         }
@@ -468,7 +475,7 @@ export const makeContainerMediaAcquirer = (
           mediaPath,
         ],
         {
-          deadlineMilliseconds: remainingMilliseconds(),
+          deadlineMilliseconds: yield* remainingMilliseconds,
           failure: "terminal",
           workspaceRoot,
         }
@@ -494,11 +501,13 @@ export const makeContainerMediaAcquirer = (
       Effect.timeoutOrElse({
         duration: MaximumMediaProcessMilliseconds,
         orElse: () =>
-          Effect.fail({
-            _tag: "RetryableAcquisitionFailure" as const,
-            reason: "container_process_timeout" as const,
-            stage: "process" as const,
-          }),
+          Effect.fail(
+            new RetryableAcquisitionError({
+              reason: "container_process_timeout" as const,
+              stage: "process" as const,
+            })
+          ),
       })
-    ),
+    )
+  ),
 });
