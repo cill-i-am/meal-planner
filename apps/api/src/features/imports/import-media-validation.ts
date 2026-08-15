@@ -1,5 +1,7 @@
 import { Effect, Schema } from "effect";
 
+import { TerminalMediaError } from "./import-media.errors.js";
+import { MediaByteCount, MediaDurationSeconds } from "./import-media.model.js";
 import type { TerminalMediaFailure } from "./import-media.model.js";
 
 const ProbeOutput = Schema.Struct({
@@ -19,11 +21,8 @@ const ProbeOutput = Schema.Struct({
 
 const invalidMedia = (
   code: "invalid_media" | "limit_exceeded" | "unsupported_streams"
-): TerminalMediaFailure => ({
-  _tag: "TerminalMedia",
-  code,
-  stage: "validation",
-});
+): TerminalMediaFailure =>
+  new TerminalMediaError({ code, stage: "validation" });
 
 export const hasIsoBaseMediaFileType = (header: Uint8Array) =>
   header.length >= 8 &&
@@ -32,15 +31,15 @@ export const hasIsoBaseMediaFileType = (header: Uint8Array) =>
   header[6] === 0x79 &&
   header[7] === 0x70;
 
-export const validateMediaProbe = (
-  input: unknown,
-  limits: {
-    readonly actualBytes: number;
-    readonly maximumBytes: number;
-    readonly maximumDurationSeconds: number;
-  }
-) =>
-  Effect.gen(function* validateProbe() {
+export const validateMediaProbe = Effect.fn("ImportMedia.validateMediaProbe")(
+  function* validateMediaProbeEffect(
+    input: unknown,
+    limits: {
+      readonly actualBytes: number;
+      readonly maximumBytes: number;
+      readonly maximumDurationSeconds: number;
+    }
+  ) {
     const probe = yield* Schema.decodeUnknownEffect(ProbeOutput)(input).pipe(
       Effect.mapError(() => invalidMedia("invalid_media"))
     );
@@ -86,16 +85,25 @@ export const validateMediaProbe = (
     if (audioStreams.length === 0 || videoStreams.length === 0) {
       return yield* Effect.fail(invalidMedia("unsupported_streams"));
     }
+    const bytes = yield* Schema.decodeUnknownEffect(MediaByteCount)(
+      limits.actualBytes
+    ).pipe(Effect.mapError(() => invalidMedia("limit_exceeded")));
+    const validatedDurationSeconds = yield* Schema.decodeUnknownEffect(
+      MediaDurationSeconds
+    )(durationSeconds).pipe(
+      Effect.mapError(() => invalidMedia("limit_exceeded"))
+    );
     return {
       audioStreams: audioStreams as [
         (typeof audioStreams)[number],
         ...(typeof audioStreams)[number][],
       ],
-      bytes: limits.actualBytes,
-      durationSeconds,
+      bytes,
+      durationSeconds: validatedDurationSeconds,
       videoStreams: videoStreams as [
         (typeof videoStreams)[number],
         ...(typeof videoStreams)[number][],
       ],
     };
-  });
+  }
+);

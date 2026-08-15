@@ -13,6 +13,7 @@ import {
   AcquisitionTaskOutcome,
   MaximumAcquisitionAttemptSeconds,
   MaximumLocalCleanupMilliseconds,
+  VerifiedAcquisitionEvidence,
   acquisitionArtifactId,
   manifestObjectKey,
   mediaObjectKey,
@@ -22,7 +23,7 @@ import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
 } from "./import-observability.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
+import { ImportId } from "./import.contracts.js";
 import {
   ensureImportWorkflowStarted,
   importWorkflowInstanceId,
@@ -46,22 +47,18 @@ const verifiedAcquisition = (
   generation: typeof AcquisitionGeneration.Type
 ): AcquisitionTaskOutcome => ({
   _tag: "VerifiedAcquisition",
-  evidence: {
-    acquiredAt: Schema.decodeUnknownSync(ImportTimestamp)(
-      "2026-07-29T12:00:00.000Z"
-    ),
+  evidence: Schema.decodeUnknownSync(VerifiedAcquisitionEvidence)({
+    acquiredAt: "2026-07-29T12:00:00.000Z",
     audioStreams: [{ codec: "aac", index: 1 }],
     bytes: 24,
-    deleteAt: Schema.decodeUnknownSync(ImportTimestamp)(
-      "2026-08-05T12:00:00.000Z"
-    ),
+    deleteAt: "2026-08-05T12:00:00.000Z",
     durationSeconds: 1,
     generation,
-    manifestKey: "opaque-manifest-key",
-    mediaKey: "opaque-media-key",
+    manifestKey: manifestObjectKey(importId, generation),
+    mediaKey: mediaObjectKey(importId, generation),
     sha256: "a".repeat(64),
     videoStreams: [{ codec: "h264", index: 0 }],
-  },
+  }),
   generation,
 });
 

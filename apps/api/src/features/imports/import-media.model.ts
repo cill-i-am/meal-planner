@@ -31,6 +31,90 @@ export const AcquisitionGeneration = Schema.Number.pipe(
 );
 export type AcquisitionGeneration = typeof AcquisitionGeneration.Type;
 
+const ImportUuidPattern =
+  "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+
+export const MediaArtifactId = Schema.String.pipe(
+  Schema.check(
+    Schema.isMaxLength(256),
+    Schema.isPattern(/^[a-z\d][a-z\d:-]*$/iu)
+  ),
+  Schema.brand("MediaArtifactId")
+);
+export type MediaArtifactId = typeof MediaArtifactId.Type;
+
+export const MediaObjectKey = Schema.String.pipe(
+  Schema.check(
+    Schema.isPattern(
+      new RegExp(
+        `^imports/${ImportUuidPattern}/acquisition/v1/generations/[0-9]+/original\\.mp4$`,
+        "iu"
+      )
+    )
+  ),
+  Schema.brand("MediaObjectKey")
+);
+export type MediaObjectKey = typeof MediaObjectKey.Type;
+
+export const ManifestObjectKey = Schema.String.pipe(
+  Schema.check(
+    Schema.isPattern(
+      new RegExp(
+        `^imports/${ImportUuidPattern}/acquisition/v1/generations/[0-9]+/manifest\\.json$`,
+        "iu"
+      )
+    )
+  ),
+  Schema.brand("ManifestObjectKey")
+);
+export type ManifestObjectKey = typeof ManifestObjectKey.Type;
+
+export const Sha256Hex = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u)),
+  Schema.brand("Sha256Hex")
+);
+export type Sha256Hex = typeof Sha256Hex.Type;
+
+export const MediaByteCount = Schema.Number.pipe(
+  Schema.check(
+    Schema.isInt(),
+    Schema.isGreaterThan(0),
+    Schema.isLessThanOrEqualTo(MaximumMediaBytes)
+  ),
+  Schema.brand("MediaByteCount")
+);
+export type MediaByteCount = typeof MediaByteCount.Type;
+
+export const MediaDurationSeconds = Schema.Number.pipe(
+  Schema.check(
+    Schema.isFinite(),
+    Schema.isGreaterThan(0),
+    Schema.isLessThanOrEqualTo(MaximumMediaDurationSeconds)
+  ),
+  Schema.brand("MediaDurationSeconds")
+);
+export type MediaDurationSeconds = typeof MediaDurationSeconds.Type;
+
+export const MediaDurationMilliseconds = Schema.Number.pipe(
+  Schema.check(
+    Schema.isInt(),
+    Schema.isGreaterThan(0),
+    Schema.isLessThanOrEqualTo(MaximumMediaDurationSeconds * 1000)
+  ),
+  Schema.brand("MediaDurationMilliseconds")
+);
+export type MediaDurationMilliseconds = typeof MediaDurationMilliseconds.Type;
+
+export const FrameTimestampMilliseconds = Schema.Number.pipe(
+  Schema.check(
+    Schema.isInt(),
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(MaximumMediaDurationSeconds * 1000)
+  ),
+  Schema.brand("FrameTimestampMilliseconds")
+);
+export type FrameTimestampMilliseconds = typeof FrameTimestampMilliseconds.Type;
+
 export const AcquisitionStage = Schema.Literals([
   "container",
   "process",
@@ -66,10 +150,6 @@ export const MediaStreamSummary = Schema.Struct({
   ),
 });
 export type MediaStreamSummary = typeof MediaStreamSummary.Type;
-
-const Sha256Hex = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
-);
 
 /** Verified public attribution carried by the private acquisition manifest. */
 export const VerifiedSourceMetadata = Schema.Struct({
@@ -108,24 +188,12 @@ export type VerifiedSourceMetadata = typeof VerifiedSourceMetadata.Type;
 export const VerifiedAcquisitionEvidence = Schema.Struct({
   acquiredAt: ImportTimestamp,
   audioStreams: Schema.NonEmptyArray(MediaStreamSummary),
-  bytes: Schema.Number.pipe(
-    Schema.check(
-      Schema.isInt(),
-      Schema.isGreaterThan(0),
-      Schema.isLessThanOrEqualTo(MaximumMediaBytes)
-    )
-  ),
+  bytes: MediaByteCount,
   deleteAt: ImportTimestamp,
-  durationSeconds: Schema.Number.pipe(
-    Schema.check(
-      Schema.isFinite(),
-      Schema.isGreaterThan(0),
-      Schema.isLessThanOrEqualTo(MaximumMediaDurationSeconds)
-    )
-  ),
+  durationSeconds: MediaDurationSeconds,
   generation: AcquisitionGeneration,
-  manifestKey: Schema.String,
-  mediaKey: Schema.String,
+  manifestKey: ManifestObjectKey,
+  mediaKey: MediaObjectKey,
   sha256: Sha256Hex,
   source: Schema.optionalKey(VerifiedSourceMetadata),
   videoStreams: Schema.NonEmptyArray(MediaStreamSummary),
@@ -223,16 +291,25 @@ const generationPrefix = (
 export const acquisitionArtifactId = (
   importId: ImportId,
   generation: AcquisitionGeneration
-) => `${importId}:acquisition-generation:${generation}`;
+) =>
+  Schema.decodeUnknownSync(MediaArtifactId)(
+    `${importId}:acquisition-generation:${generation}`
+  );
 
 export const mediaObjectKey = (
   importId: ImportId,
   generation: AcquisitionGeneration
-) => `${generationPrefix(importId, generation)}/original.mp4`;
+) =>
+  Schema.decodeUnknownSync(MediaObjectKey)(
+    `${generationPrefix(importId, generation)}/original.mp4`
+  );
 export const manifestObjectKey = (
   importId: ImportId,
   generation: AcquisitionGeneration
-) => `${generationPrefix(importId, generation)}/manifest.json`;
+) =>
+  Schema.decodeUnknownSync(ManifestObjectKey)(
+    `${generationPrefix(importId, generation)}/manifest.json`
+  );
 
 export const MediaLimits = Schema.Struct({
   maximumDurationSeconds: Schema.Literal(MaximumMediaDurationSeconds),

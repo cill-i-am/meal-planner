@@ -4,6 +4,7 @@ import type * as HttpServerResponse from "effect/unstable/http/HttpServerRespons
 
 import type { AcquisitionMediaObjectLike } from "./import-media-acquirer.js";
 import { privateMediaArtifactPath } from "./import-media-artifact-transport.js";
+import { RetryableAcquisitionError } from "./import-media.errors.js";
 import type { RetryableAcquisitionFailure } from "./import-media.model.js";
 
 type AcquisitionControlPlane = Pick<
@@ -18,11 +19,11 @@ export type AcquisitionMediaObjectStub = AcquisitionControlPlane & {
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse, unknown>;
 };
 
-const privateArtifactFailure = (): RetryableAcquisitionFailure => ({
-  _tag: "RetryableAcquisitionFailure",
-  reason: "container_rpc",
-  stage: "container",
-});
+const privateArtifactFailure = (): RetryableAcquisitionFailure =>
+  new RetryableAcquisitionError({
+    reason: "container_rpc",
+    stage: "container",
+  });
 
 const openPrivateArtifact = Effect.fn(
   "ImportMediaAcquisitionObject.openPrivateArtifact"

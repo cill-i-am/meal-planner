@@ -1,14 +1,6 @@
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import {
-  DateTime,
-  Effect,
-  Layer,
-  Option,
-  Redacted,
-  Schema,
-  Stream,
-} from "effect";
+import { Effect, Layer, Option, Redacted, Schema, Stream } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -135,7 +127,6 @@ const decodeBudgetRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
 const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
 
 const generation = decodeGeneration(1);
-const acquiredAt = decodeTimestamp("2026-07-21T10:00:00.000Z");
 const transcribedAt = decodeTimestamp("2026-07-21T10:01:00.000Z");
 const extractedAt = decodeTimestamp("2026-07-21T10:02:00.000Z");
 const sourceMedia = new Uint8Array([
@@ -279,7 +270,6 @@ const makeTranscribedImport = async (
       canonicalId,
       generation,
       importId,
-      now: () => new Date(DateTime.toEpochMillis(acquiredAt)),
     })
   );
   if (outcome._tag !== "VerifiedAcquisition") {
@@ -953,13 +943,22 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
     });
     const manifestText = await manifest?.text();
     expect(manifestText).not.toMatch(/providerBody|authorization|token/iu);
+    const acquisitionManifestObject = await testEnv.ImportEvidenceBucket.get(
+      manifestObjectKey(importId, generation)
+    );
+    const acquisitionManifestJson: unknown = JSON.parse(
+      (await acquisitionManifestObject?.text()) ?? "{}"
+    );
+    const acquisitionManifest = Schema.decodeUnknownSync(
+      Schema.Struct({ deleteAt: Schema.String })
+    )(acquisitionManifestJson);
     expect(JSON.parse(manifestText ?? "{}")).toMatchObject({
       retention: {
         configuredAgeSeconds: 604_800,
         policy: "r2_bucket_object_age",
       },
       schemaVersion: 1,
-      sourceEvidenceDeleteAt: "2026-07-28T10:00:00.000Z",
+      sourceEvidenceDeleteAt: acquisitionManifest.deleteAt,
     });
 
     const duplicate = await Effect.runPromise(

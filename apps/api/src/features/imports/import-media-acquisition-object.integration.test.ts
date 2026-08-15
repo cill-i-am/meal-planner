@@ -401,7 +401,9 @@ describe("installed acquisition Durable Object boundary", () => {
 
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
-        expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+        expect(
+          Option.getOrThrow(Cause.findErrorOption(exit.cause))
+        ).toMatchObject({
           _tag: "RetryableAcquisitionFailure",
           reason: "container_process_timeout",
           stage: "process",
@@ -441,7 +443,7 @@ describe("installed acquisition Durable Object boundary", () => {
       throw new Error("Expected temporary workspace allocation to fail");
     }
     const failure = Option.getOrThrow(Cause.findErrorOption(exit.cause));
-    expect(failure).toEqual({
+    expect(failure).toMatchObject({
       _tag: "RetryableAcquisitionFailure",
       reason: "temporary_workspace_unavailable",
       stage: "container",
@@ -566,7 +568,6 @@ describe("installed acquisition Durable Object boundary", () => {
               canonicalId: identity.canonicalId,
               generation: identity.generation,
               importId: identity.importId,
-              now: () => new Date("2026-07-26T12:00:00.000Z"),
             }
           )
         );
@@ -575,7 +576,7 @@ describe("installed acquisition Durable Object boundary", () => {
           throw new Error("Expected a closed RPC failure");
         }
         const failure = Option.getOrThrow(Cause.findErrorOption(exit.cause));
-        expect(failure).toEqual({
+        expect(failure).toMatchObject({
           _tag: "RetryableAcquisitionFailure",
           reason: "container_rpc",
           stage: "container",
@@ -647,7 +648,6 @@ describe("installed acquisition Durable Object boundary", () => {
                 canonicalId: allocation.canonicalSourceId,
                 generation: allocation.generation,
                 importId: identity.importId,
-                now: () => new Date("2026-07-26T12:00:00.000Z"),
               }
             ),
           { correlationId }
@@ -790,7 +790,6 @@ describe("installed acquisition Durable Object boundary", () => {
                 canonicalId: allocation.canonicalSourceId,
                 generation: allocation.generation,
                 importId: identity.importId,
-                now: () => new Date("2026-07-26T12:00:00.000Z"),
               }
             )
         )

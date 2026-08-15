@@ -1,6 +1,6 @@
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Cause, DateTime, Effect, Exit, Option, Schema, Stream } from "effect";
+import { Cause, Effect, Exit, Option, Schema, Stream } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -104,7 +104,6 @@ const decodeSourceLocatorHash = Schema.decodeUnknownSync(SourceLocatorHash);
 const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000110");
 const canonicalId = decodeCanonicalId("7520000000000000110");
 const generation = decodeGeneration(1);
-const acquiredAt = decodeTimestamp("2026-07-21T10:00:00.000Z");
 const transcribedAt = decodeTimestamp("2026-07-21T10:01:00.000Z");
 const sourceMedia = new Uint8Array([
   0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
@@ -332,14 +331,12 @@ const makeAcquiredImport = async ({
       canonicalId: fixtureCanonicalId,
       generation,
       importId: fixtureImportId,
-      now: () => new Date(DateTime.toEpochMillis(acquiredAt)),
     })
   );
   if (outcome._tag !== "VerifiedAcquisition") {
     throw new Error("Expected deterministic acquired evidence");
   }
   expect(outcome.evidence).toMatchObject({
-    acquiredAt,
     generation,
     manifestKey: manifestObjectKey(fixtureImportId, generation),
     mediaKey: mediaObjectKey(fixtureImportId, generation),

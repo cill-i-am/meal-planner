@@ -257,7 +257,9 @@ describe("TikTok source resolver adapter", () => {
       if (Exit.isSuccess(exit)) {
         throw new Error("Expected missing session failure");
       }
-      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+      expect(
+        Option.getOrThrow(Cause.findErrorOption(exit.cause))
+      ).toMatchObject({
         _tag: "RetryableAcquisitionFailure",
         reason: "media_session_invalid",
         stage: "resolve",
@@ -314,7 +316,7 @@ describe("TikTok source resolver adapter", () => {
     if (Exit.isSuccess(exit)) {
       throw new Error("Expected unsupported carousel");
     }
-    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
       _tag: "UnsupportedCarousel",
       code: "unsupported_carousel",
     });
@@ -691,7 +693,7 @@ describe("TikTok source resolver adapter", () => {
           throw new Error("Expected classified download failure");
         }
         const error = Option.getOrThrow(Cause.findErrorOption(exit.cause));
-        expect(error).toEqual({
+        expect(error).toMatchObject({
           _tag: "RetryableAcquisitionFailure",
           reason: expected,
           stage: "container",

@@ -42,10 +42,10 @@ import {
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
 import {
+  adaptAcquisitionBucket,
   acquireStoreVerify,
   readVerifiedAcquisitionEvidence,
 } from "./import-media-acquirer.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { makeAcquisitionMediaObject } from "./import-media-acquisition-object.client.js";
 import { ImportMediaAcquisitionObject } from "./import-media-acquisition-object.js";
 import {
@@ -606,10 +606,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   "extract-visual-evidence-v1",
                   "visual",
                   extractVisualEvidenceForTranscribedImport({
-                    bucket: rawBucket as unknown as AcquisitionBucketLike,
+                    bucket: adaptAcquisitionBucket(rawBucket),
                     extractor: visualExtractor,
                     frameSampler: makeR2VisualFrameSampler(
-                      rawBucket as unknown as AcquisitionBucketLike
+                      adaptAcquisitionBucket(rawBucket)
                     ),
                     importId,
                     importRepository: repository,
@@ -636,7 +636,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 "extract-recipe-v1",
                 "recipe",
                 produceRecipeDraftForImport({
-                  bucket: rawBucket as unknown as AcquisitionBucketLike,
+                  bucket: adaptAcquisitionBucket(rawBucket),
                   extractor: recipeExtractor,
                   importId,
                   importRepository: repository,
@@ -673,7 +673,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             });
           }
           const stagedCarousel = yield* loadStagedOperatorCarousel({
-            bucket: rawBucket as unknown as AcquisitionBucketLike,
+            bucket: adaptAcquisitionBucket(rawBucket),
             importId,
           }).pipe(Effect.orDie);
           if (stagedCarousel !== null) {
@@ -682,7 +682,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               "visual",
               prepareTikTokCarouselEvidence({
                 adapter: stagedCarousel.adapter,
-                bucket: rawBucket as unknown as AcquisitionBucketLike,
+                bucket: adaptAcquisitionBucket(rawBucket),
                 carouselRepository: makeD1CarouselEvidenceRepository(database),
                 descriptor: stagedCarousel.descriptor,
                 importId,
@@ -706,7 +706,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               "extract-carousel-recipe-v1",
               "recipe",
               produceTikTokCarouselRecipeDraft({
-                bucket: rawBucket as unknown as AcquisitionBucketLike,
+                bucket: adaptAcquisitionBucket(rawBucket),
                 descriptor: stagedCarousel.descriptor,
                 evidence: carouselEvidence.evidence,
                 extractor: recipeExtractor,
@@ -747,12 +747,11 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               importId,
               readEvidence: (stored) =>
                 readVerifiedAcquisitionEvidence(
-                  rawBucket as unknown as AcquisitionBucketLike,
+                  adaptAcquisitionBucket(rawBucket),
                   {
                     canonicalId: stored.canonicalSourceId,
                     generation: stored.acquisitionGeneration,
                     importId,
-                    now: () => new Date(),
                   }
                 ),
             }).pipe(
@@ -769,7 +768,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         (allocation) =>
                           allocation.canonicalSourceId === claim.canonicalId
                             ? acquireStoreVerify(
-                                rawBucket as unknown as AcquisitionBucketLike,
+                                adaptAcquisitionBucket(rawBucket),
                                 mediaObject,
                                 {
                                   beforeCleanup: (
@@ -777,7 +776,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                                     acquisitionMediaObject
                                   ) =>
                                     persistDerivedProviderEvidence(
-                                      rawBucket as unknown as AcquisitionBucketLike,
+                                      adaptAcquisitionBucket(rawBucket),
                                       acquisitionMediaObject,
                                       prepared,
                                       {
@@ -788,7 +787,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                                   canonicalId: allocation.canonicalSourceId,
                                   generation: allocation.generation,
                                   importId,
-                                  now: () => new Date(),
                                 }
                               )
                             : Effect.die(
@@ -876,9 +874,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         transcribeAcquiredImport({
                           acquisitionRepository: repository,
                           audioExtractor: makeR2SpeechAudioExtractor(
-                            rawBucket as unknown as AcquisitionBucketLike
+                            adaptAcquisitionBucket(rawBucket)
                           ),
-                          bucket: rawBucket as unknown as AcquisitionBucketLike,
+                          bucket: adaptAcquisitionBucket(rawBucket),
                           dispatchId: speechDispatchId,
                           importId,
                           now,
