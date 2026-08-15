@@ -10,38 +10,16 @@ import type {
   CanonicalSourceIdentityResolverShape,
 } from "./source-identity.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
-
-type Fetcher = (
-  input: RequestInfo | URL,
-  init?: RequestInit
-) => Promise<Response>;
-
-const allowedTikTokHosts = new Set([
-  "m.tiktok.com",
-  "tiktok.com",
-  "vm.tiktok.com",
-  "vt.tiktok.com",
-  "www.tiktok.com",
-]);
-
-const shortLinkHosts = new Set(["vm.tiktok.com", "vt.tiktok.com"]);
-const MaximumHandoffBodyBytes = 512 * 1024;
-
-const ignoreCancellation = async (cancellation: Promise<unknown>) => {
-  try {
-    await cancellation;
-  } catch {
-    // Best-effort release failures stay private.
-  }
-};
-
-const cancelBestEffort = (cancel: () => Promise<unknown>) => {
-  try {
-    void ignoreCancellation(cancel());
-  } catch {
-    // Best-effort release must remain finite and privacy-safe.
-  }
-};
+import {
+  isTikTokShortLink,
+  makeTikTokHttpTransport,
+  parseTikTokHttpUrl,
+} from "./tiktok-http.transport.js";
+import type {
+  TikTokFetcher,
+  TikTokHttpPolicyOptions,
+  TikTokTransportFailure,
+} from "./tiktok-http.transport.js";
 
 const TikTokHandoffMetadata = Schema.Struct({
   __DEFAULT_SCOPE__: Schema.Struct({
@@ -72,40 +50,9 @@ const TikTokHandoffItemMetadata = Schema.Struct({
 const TikTokHandlePattern = /^[A-Za-z0-9._]{1,24}$/u;
 const TikTokCanonicalIdPattern = /^\d+$/u;
 
-const parseAllowedTikTokUrl = (input: string): URL | undefined => {
-  let url: URL;
-  try {
-    url = new URL(input);
-  } catch {
-    return undefined;
-  }
-
-  if (
-    url.protocol !== "https:" ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.port !== "" ||
-    !allowedTikTokHosts.has(url.hostname)
-  ) {
-    return undefined;
-  }
-  return url;
-};
-
 const sanitizeLocator = (url: URL): string => {
   const path = url.pathname.replace(/\/+$/u, "") || "/";
   return `${url.origin}${path}`;
-};
-
-const resolveRedirectLocation = (
-  location: string,
-  current: URL
-): string | undefined => {
-  try {
-    return new URL(location, current).toString();
-  } catch {
-    return undefined;
-  }
 };
 
 const makeIdentity = (canonicalId: string): CanonicalSourceIdentity => ({
@@ -151,83 +98,6 @@ const parseCanonicalPath = (
   }
   return undefined;
 };
-
-const fetchManual = (fetcher: Fetcher, url: string) =>
-  Effect.tryPromise({
-    catch: sourceIdentityUnavailable,
-    try: (signal) =>
-      fetcher(url, {
-        method: "GET",
-        redirect: "manual",
-        signal,
-      }),
-  });
-
-const cancelResponseBody = (response: Response) => {
-  const { body } = response;
-  if (body === null) {
-    return Effect.void;
-  }
-  return Effect.tryPromise({
-    catch: sourceIdentityUnavailable,
-    try: () => body.cancel(),
-  }).pipe(Effect.ignore);
-};
-
-const readBoundedResponseBody = (response: Response) =>
-  Effect.tryPromise({
-    catch: sourceIdentityUnavailable,
-    try: async (signal) => {
-      const { body } = response;
-      const contentLength = response.headers.get("content-length");
-      if (
-        contentLength !== null &&
-        (!/^\d+$/u.test(contentLength) ||
-          Number(contentLength) > MaximumHandoffBodyBytes)
-      ) {
-        if (body !== null) {
-          cancelBestEffort(() => body.cancel());
-        }
-        throw new Error("TikTok handoff body exceeds the resolution limit");
-      }
-
-      if (body === null) {
-        throw new Error("TikTok handoff body is unavailable");
-      }
-
-      const reader = body.getReader();
-      const cancelForInterruption = async () => {
-        try {
-          await reader.cancel();
-        } catch {
-          // The owning resolution is already interrupted.
-        }
-      };
-      signal.addEventListener("abort", cancelForInterruption, { once: true });
-
-      try {
-        const decoder = new TextDecoder();
-        let bytesRead = 0;
-        let text = "";
-
-        while (true) {
-          // eslint-disable-next-line no-await-in-loop -- A response stream must be consumed serially under one byte budget.
-          const next = await reader.read();
-          if (next.done) {
-            return `${text}${decoder.decode()}`;
-          }
-          bytesRead += next.value.byteLength;
-          if (bytesRead > MaximumHandoffBodyBytes) {
-            cancelBestEffort(() => reader.cancel());
-            throw new Error("TikTok handoff body exceeds the resolution limit");
-          }
-          text += decoder.decode(next.value, { stream: true });
-        }
-      } finally {
-        signal.removeEventListener("abort", cancelForInterruption);
-      }
-    },
-  });
 
 const getAttribute = (
   element: DefaultTreeAdapterTypes.Element,
@@ -325,7 +195,7 @@ const parseHandoffItem = (
     return undefined;
   }
 
-  const canonicalUrl = parseAllowedTikTokUrl(
+  const canonicalUrl = parseTikTokHttpUrl(
     `https://www.tiktok.com/@${item.author.uniqueId}/${hasVideo ? "video" : "photo"}/${item.id}`
   );
   return canonicalUrl === undefined
@@ -341,15 +211,8 @@ const resolutionsMatch = (
   left.identity.kind === right.identity.kind &&
   left.identity.canonicalId === right.identity.canonicalId;
 
-const resolveHandoffResponse = (response: Response) =>
+const resolveHandoffResponse = (html: string) =>
   Effect.gen(function* resolveHandoffResponseEffect() {
-    const contentType = response.headers.get("content-type");
-    if (contentType === null || !/^text\/html(?:\s*;|$)/iu.test(contentType)) {
-      yield* cancelResponseBody(response);
-      return yield* Effect.fail(sourceIdentityUnavailable());
-    }
-
-    const html = yield* readBoundedResponseBody(response);
     const metadata = parseHandoffMetadata(html);
     if (metadata === undefined) {
       return yield* Effect.fail(sourceIdentityUnavailable());
@@ -358,7 +221,7 @@ const resolveHandoffResponse = (response: Response) =>
     const canonical = parseHandoffCanonical(metadata);
 
     if (canonical !== undefined) {
-      const canonicalUrl = parseAllowedTikTokUrl(canonical);
+      const canonicalUrl = parseTikTokHttpUrl(canonical);
       if (canonicalUrl === undefined) {
         return yield* Effect.fail(invalidSource());
       }
@@ -376,61 +239,50 @@ const resolveHandoffResponse = (response: Response) =>
       : item;
   });
 
-const resolveShortLink = (fetcher: Fetcher, initial: URL) =>
+const mapTransportFailure = (failure: TikTokTransportFailure) =>
+  failure._tag === "TikTokTransportInvalidTarget"
+    ? invalidSource()
+    : sourceIdentityUnavailable();
+
+const resolveShortLink = (
+  transport: ReturnType<typeof makeTikTokHttpTransport>,
+  initial: URL
+) =>
   Effect.gen(function* resolveShortLinkEffect() {
-    let current = initial;
-
-    for (let hop = 0; hop < 5; hop += 1) {
-      const response = yield* fetchManual(fetcher, current.toString());
-      if (response.status === 200) {
-        return yield* resolveHandoffResponse(response);
-      }
-      if (response.status < 300 || response.status >= 400) {
-        yield* cancelResponseBody(response);
-        return yield* Effect.fail(sourceIdentityUnavailable());
-      }
-
-      yield* cancelResponseBody(response);
-      const location = response.headers.get("location");
-      if (location === null) {
-        return yield* Effect.fail(sourceIdentityUnavailable());
-      }
-
-      const redirectLocation = resolveRedirectLocation(location, current);
-      const next =
-        redirectLocation === undefined
-          ? undefined
-          : parseAllowedTikTokUrl(redirectLocation);
-      if (next === undefined) {
-        return yield* Effect.fail(invalidSource());
-      }
-      current = next;
-
-      const parsed = parseCanonicalPath(current);
-      if (parsed !== undefined) {
-        return parsed;
-      }
+    const handoff = yield* transport
+      .resolveHandoff(initial)
+      .pipe(Effect.mapError(mapTransportFailure));
+    if (handoff._tag === "HandoffHtml") {
+      return yield* resolveHandoffResponse(handoff.body);
     }
-
-    return yield* Effect.fail(sourceIdentityUnavailable());
+    const parsed = parseCanonicalPath(handoff.url);
+    return parsed === undefined
+      ? yield* Effect.fail(sourceIdentityUnavailable())
+      : parsed;
   });
 
 export const makeTikTokCanonicalSourceIdentityResolver = (
-  fetcher: Fetcher
-): CanonicalSourceIdentityResolverShape => ({
-  resolve: (source) => {
-    const url = parseAllowedTikTokUrl(source.url);
-    if (url === undefined) {
-      return Effect.fail(invalidSource());
-    }
+  fetcher: TikTokFetcher,
+  options?: TikTokHttpPolicyOptions
+): CanonicalSourceIdentityResolverShape => {
+  const transport = makeTikTokHttpTransport(fetcher, options);
+  return {
+    resolve: Effect.fn("TikTokCanonicalSourceIdentityResolver.resolve")(
+      function* resolve(source) {
+        const url = parseTikTokHttpUrl(source.url);
+        if (url === undefined) {
+          return yield* Effect.fail(invalidSource());
+        }
 
-    const parsed = parseCanonicalPath(url);
-    if (parsed !== undefined) {
-      return Effect.succeed(parsed);
-    }
-    if (!shortLinkHosts.has(url.hostname)) {
-      return Effect.fail(invalidSource());
-    }
-    return resolveShortLink(fetcher, url);
-  },
-});
+        const parsed = parseCanonicalPath(url);
+        if (parsed !== undefined) {
+          return parsed;
+        }
+        if (!isTikTokShortLink(url)) {
+          return yield* Effect.fail(invalidSource());
+        }
+        return yield* resolveShortLink(transport, url);
+      }
+    ),
+  };
+};

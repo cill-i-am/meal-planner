@@ -1,4 +1,4 @@
-import { Context, Duration, Effect, Option, Schema } from "effect";
+import { Context, Effect, Option, Schema } from "effect";
 
 import { AcquisitionGeneration } from "./import-media.model.js";
 import type {
@@ -18,8 +18,6 @@ import {
   idempotencyConflict,
   importNotFound,
   incompatibleDuplicate,
-  sourceIdentityUnavailable,
-  sourceValidationUnavailable,
 } from "./import.errors.js";
 import type {
   CreateImportError,
@@ -46,25 +44,6 @@ import type {
 } from "./source-identity.js";
 
 const CompatibilityFingerprintSource = "meal-planner-import:v1:no-options";
-const ProviderDeadlineMilliseconds = 5000;
-
-const finiteProviderDeadline = (override: number | undefined) => {
-  const duration = override ?? ProviderDeadlineMilliseconds;
-  if (!Number.isFinite(duration) || duration <= 0) {
-    throw new Error("Provider deadline must be a positive finite duration");
-  }
-  return duration;
-};
-
-const withProviderBudget = <A, E, R, E2>(
-  effect: Effect.Effect<A, E, R>,
-  durationMilliseconds: number,
-  onTimeout: () => E2
-): Effect.Effect<A, E | E2, R> =>
-  Effect.timeoutOrElse(effect, {
-    duration: Duration.millis(durationMilliseconds),
-    orElse: () => Effect.fail(onTimeout()),
-  });
 
 const digestSha256 = (value: string) =>
   Effect.promise(async () => {
@@ -95,8 +74,7 @@ type InitialImportStatus =
 
 const statusForResolution = (
   resolution: CanonicalIdentityResolution,
-  availabilityValidator: SourceAvailabilityValidatorShape,
-  providerDeadlineMilliseconds: number
+  availabilityValidator: SourceAvailabilityValidatorShape
 ): Effect.Effect<InitialImportStatus, SourceValidationUnavailable> =>
   resolution._tag === "UnsupportedIdentity"
     ? Effect.succeed<InitialImportStatus>({
@@ -105,14 +83,10 @@ const statusForResolution = (
         recovery: "submit_supported_public_video",
       })
     : Effect.map(
-        withProviderBudget(
-          availabilityValidator.validate({
-            identity: resolution.identity,
-            videoUrl: resolution.videoUrl,
-          }),
-          providerDeadlineMilliseconds,
-          sourceValidationUnavailable
-        ),
+        availabilityValidator.validate({
+          identity: resolution.identity,
+          videoUrl: resolution.videoUrl,
+        }),
         (availability): InitialImportStatus =>
           availability._tag === "Available"
             ? { kind: "queued" }
@@ -134,8 +108,6 @@ export interface MakeImportServiceOptions {
   readonly identityResolver: CanonicalSourceIdentityResolverShape;
   readonly newId: () => ImportId;
   readonly now: () => ImportTimestamp;
-  /** Finite test-only override for the code-owned five-second provider budget. */
-  readonly providerDeadlineMilliseconds?: number;
   readonly repository: ImportRepositoryShape;
   readonly workflowStarter: ImportWorkflowStarterShape;
 }
@@ -155,13 +127,9 @@ export const makeImportService = ({
   identityResolver,
   newId,
   now,
-  providerDeadlineMilliseconds: providerDeadlineOverride,
   repository,
   workflowStarter,
 }: MakeImportServiceOptions): ImportServiceShape => {
-  const providerDeadlineMilliseconds = finiteProviderDeadline(
-    providerDeadlineOverride
-  );
   const shouldEnsureWorkflowStarted = (stored: StoredImport) => {
     if (isAcquisitionRecoverableStatus(stored.view.status)) {
       return Effect.succeed(true);
@@ -201,6 +169,12 @@ export const makeImportService = ({
           existingRequest.value.sourceLocatorHash === sourceLocatorHash
         ) {
           if (
+            existingRequest.value.import.compatibilityFingerprint !==
+            compatibilityFingerprint
+          ) {
+            return yield* Effect.fail(incompatibleDuplicate());
+          }
+          if (
             yield* shouldEnsureWorkflowStarted(existingRequest.value.import)
           ) {
             yield* ensureImportWorkflowStarted(
@@ -214,11 +188,7 @@ export const makeImportService = ({
           };
         }
 
-        const resolution = yield* withProviderBudget(
-          identityResolver.resolve(request.source),
-          providerDeadlineMilliseconds,
-          sourceIdentityUnavailable
-        );
+        const resolution = yield* identityResolver.resolve(request.source);
         const requestFingerprint = yield* requestFingerprintFor(
           resolution.identity,
           compatibilityFingerprint
@@ -258,8 +228,7 @@ export const makeImportService = ({
         } else {
           const status = yield* statusForResolution(
             resolution,
-            availabilityValidator,
-            providerDeadlineMilliseconds
+            availabilityValidator
           );
           const timestamp = now();
           const view: ImportView = {

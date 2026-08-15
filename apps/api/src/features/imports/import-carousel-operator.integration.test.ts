@@ -240,10 +240,17 @@ describe("operator carousel HTTP integration", () => {
       recipeFixture
     );
     const repository = makeD1ImportRepository(database);
+    const liveIdentityResolver = makeTikTokCanonicalSourceIdentityResolver(() =>
+      Promise.reject(new Error("Network must not be used"))
+    );
+    let identityResolutionCalls = 0;
     const service = makeOperatorCarouselImportService({
-      identityResolver: makeTikTokCanonicalSourceIdentityResolver(() =>
-        Promise.reject(new Error("Network must not be used"))
-      ),
+      identityResolver: {
+        resolve: (source) => {
+          identityResolutionCalls += 1;
+          return liveIdentityResolver.resolve(source);
+        },
+      },
       newId: () => importId,
       now: () => timestamp,
       pipeline: {
@@ -322,6 +329,7 @@ describe("operator carousel HTTP integration", () => {
         disposition: "idempotency_replay",
         import: { id: importId, status: { kind: "needs_review" } },
       });
+      expect(identityResolutionCalls).toBe(1);
       expect(visual.calls).toHaveLength(1);
       expect(recipe.calls).toHaveLength(1);
       expect(
@@ -374,6 +382,25 @@ describe("operator carousel HTTP integration", () => {
       });
       expect(JSON.stringify(manifest)).not.toContain("https://");
       expect(JSON.stringify(manifest)).not.toContain("tracking=discard");
+
+      await database
+        .prepare(
+          "UPDATE recipe_imports SET compatibility_fingerprint = ? WHERE id = ?"
+        )
+        .bind("0".repeat(64), importId)
+        .run();
+      const obsoleteReplay = await postBundle(
+        app.handler,
+        body,
+        "operator-valid"
+      );
+      expect(obsoleteReplay.status).toBe(409);
+      await expect(obsoleteReplay.json()).resolves.toMatchObject({
+        error: { code: "incompatible_duplicate" },
+      });
+      expect(identityResolutionCalls).toBe(1);
+      expect(visual.calls).toHaveLength(1);
+      expect(recipe.calls).toHaveLength(1);
 
       const invalid = await postBundle(
         app.handler,
