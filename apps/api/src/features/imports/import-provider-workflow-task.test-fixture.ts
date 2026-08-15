@@ -23,17 +23,15 @@ import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-bu
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
-import {
-  makeInstalledRecipeExtractor,
-  makeInstalledSpeechTranscriber,
-  makeInstalledVisualEvidenceExtractor,
-  makePilotProviderDispatchGate,
-} from "./import-provider-adapters.js";
+import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
+import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
+import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
 import { makeD1ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
 import {
   makeD1ProviderTerminalCheckpointRepository,
   makeD1ProviderTerminalRecoveryRepository,
 } from "./import-provider-terminal.js";
+import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import { runProviderTask } from "./import-provider-workflow-task.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import { makeImportAuthorizer } from "./import.auth.js";

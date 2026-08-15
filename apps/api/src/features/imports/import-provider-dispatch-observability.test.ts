@@ -17,7 +17,7 @@ import {
 import {
   failAfter,
   makePilotProviderDispatchGate,
-} from "./import-provider-adapters.js";
+} from "./import-provider-kernel.js";
 
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"

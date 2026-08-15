@@ -14,10 +14,8 @@ import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-bu
 import { adaptAcquisitionBucket } from "./import-media-acquirer.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import { ImportObservabilityTraceStore } from "./import-observability.js";
-import {
-  makeInstalledRecipeExtractor,
-  makePilotProviderDispatchGate,
-} from "./import-provider-adapters.js";
+import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
+import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { ProviderTaskCheckpoint } from "./import-provider-workflow-checkpoint.js";
 import { runProviderTask } from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";

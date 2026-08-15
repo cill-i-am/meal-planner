@@ -72,16 +72,14 @@ import {
 } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
 import { resolvePreparedVisualRecovery } from "./import-prepared-visual-recovery.js";
-import {
-  makeInstalledRecipeExtractor,
-  makeInstalledSpeechTranscriber,
-  makeInstalledVisualEvidenceExtractor,
-  makePilotProviderDispatchGate,
-} from "./import-provider-adapters.js";
+import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
+import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
+import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
 import {
   makeD1ProviderTerminalCheckpointRepository,
   makeD1ProviderTerminalRecoveryRepository,
 } from "./import-provider-terminal.js";
+import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import {
   ProviderTaskCheckpoint,
   SpeechProviderTaskCheckpoint,
