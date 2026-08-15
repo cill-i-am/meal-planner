@@ -16,10 +16,8 @@ import {
   observeImportQueueReceipt,
   observeImportWorkflowStart,
 } from "./import-observability.js";
-import {
-  makeInstalledVisualEvidenceExtractor,
-  makePilotProviderDispatchGate,
-} from "./import-provider-adapters.js";
+import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
+import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import type { ImportId as ImportIdType } from "./import.contracts.js";
 import { ImportId } from "./import.contracts.js";
 import { makeImportWorkflowStarter } from "./import.workflow.js";

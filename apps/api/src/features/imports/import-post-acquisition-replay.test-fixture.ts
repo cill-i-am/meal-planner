@@ -29,13 +29,11 @@ import {
   ImportObservabilityTraceStore,
   observeImportWorkflowStart,
 } from "./import-observability.js";
-import {
-  makeInstalledRecipeExtractor,
-  makeInstalledSpeechTranscriber,
-  makeInstalledVisualEvidenceExtractor,
-  makePilotProviderDispatchGate,
-} from "./import-provider-adapters.js";
+import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
+import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
+import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
 import { makeD1ProviderTerminalRecoveryRepository } from "./import-provider-terminal.js";
+import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import { SpeechProviderTaskCheckpoint } from "./import-provider-workflow-checkpoint.js";
 import {
   ProviderTaskStepConfig,
