@@ -1,5 +1,6 @@
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
+import { ClientAbort } from "effect/unstable/http/HttpServerError";
 
 /** Minimal AbortSignal capability needed by the Worker request boundary. */
 export interface RequestCancellationSignal {
@@ -12,6 +13,12 @@ export interface RequestCancellationSignal {
   readonly removeEventListener: (type: "abort", listener: () => void) => void;
 }
 
+const clientAbort = Effect.withFiber((fiber) =>
+  Effect.failCause(
+    Cause.annotate(Cause.interrupt(fiber.id), ClientAbort.annotation)
+  )
+);
+
 /** Interrupts request work when the original caller-owned signal aborts. */
 export const raceWithRequestSignal = <A, E, R>(
   signal: RequestCancellationSignal,
@@ -19,12 +26,12 @@ export const raceWithRequestSignal = <A, E, R>(
 ): Effect.Effect<A, E, R> =>
   Effect.suspend(() => {
     if (signal.aborted) {
-      return Effect.interrupt;
+      return clientAbort;
     }
 
     const requestAborted = Effect.callback<never>((resume) => {
       if (signal.aborted) {
-        resume(Effect.interrupt);
+        resume(clientAbort);
         return;
       }
 
@@ -35,7 +42,7 @@ export const raceWithRequestSignal = <A, E, R>(
         }
         removed = true;
         signal.removeEventListener("abort", onAbort);
-        resume(Effect.interrupt);
+        resume(clientAbort);
       };
       const removeListener = () => {
         if (removed) {
