@@ -2169,12 +2169,15 @@ describe("stage-scoped terminal recipe recovery", () => {
       testEnv.MealPlannerDatabase,
       "pilot-gaia-118"
     );
+    const reservationTimestamp = decodeBudgetTimestamp(
+      new Date().toISOString()
+    );
     const reservation = {
       dispatchId: recovery.recoveryDispatchId,
       maximumCostMicroUsd: 100_000,
       providerStageId: decodeStageId("recipe-extraction"),
       runId: decodeRunId(`gaia-118:recipe-recovery:${seeded.importId}`),
-      timestamp: decodeBudgetTimestamp("2026-07-30T00:24:00.000Z"),
+      timestamp: reservationTimestamp,
     };
     const conservativeSettlement = {
       ...reservation,
@@ -2596,8 +2599,9 @@ describe("stage-scoped terminal recipe recovery", () => {
              created_at, dispatch_id, evidence_fingerprint, expires_at,
              generation, import_id, runtime_stage, value_json, value_sha256
            ) VALUES (
-             '2026-07-30T00:18:30.000Z', ?, ?,
-             '2026-08-06T00:18:30.000Z', ?, ?, 'pilot-gaia-118',
+             strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ?,
+             strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+7 days'),
+             ?, ?, 'pilot-gaia-118',
              '{"opaque":"replay"}', ?
            )`
         ).bind(
@@ -2697,7 +2701,8 @@ describe("stage-scoped terminal recipe recovery", () => {
          created_at, dispatch_id, evidence_fingerprint, expires_at, generation,
          import_id, runtime_stage, value_json, value_sha256
        ) VALUES (
-         '2026-07-30T00:16:00.000Z', ?, ?, '2026-08-06T00:16:00.000Z',
+         strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ?,
+         strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+7 days'),
          ?, ?, 'pilot-gaia-118', '{"title":"replay"}', ?
        )`
     )

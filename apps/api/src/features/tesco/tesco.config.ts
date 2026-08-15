@@ -211,8 +211,11 @@ const issueReason = (issue: SchemaIssue.Issue): TescoConfigIssue["reason"] => {
     return "missing";
   }
 
-  const actual = SchemaIssue.getActual(issue);
-  return Option.isSome(actual) && actual.value === undefined
+  if (issue._tag === "InvalidType" && !SchemaIssue.hasInput(issue)) {
+    return "missing";
+  }
+
+  return SchemaIssue.hasInput(issue) && issue.input === undefined
     ? "missing"
     : "invalid";
 };

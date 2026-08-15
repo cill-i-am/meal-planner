@@ -64,7 +64,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
     expect(workerSource).not.toContain("invocationLogs: true");
     expect(workerSource).not.toMatch(/traces:\s*\{[^}]*enabled:\s*true/u);
-    expect(workerSource).toContain("url: false");
+    expect(workerSource).toContain("workersDev: false");
     expect(workerSource).toContain("HealthRoutes");
     expect(workerSource).toContain("ImportRouteDefinitions");
     expect(stackSource).toContain("apiUrl: api.url");

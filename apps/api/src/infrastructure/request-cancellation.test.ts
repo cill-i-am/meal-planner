@@ -22,6 +22,10 @@ import {
 } from "./request-cancellation.js";
 
 type RequestCancellationSignal = Parameters<typeof raceWithRequestSignal>[0];
+type AlchemyRequest = Parameters<typeof Cloudflare.makeRequestEffect>[0];
+
+const asAlchemyRequest = (request: Request): AlchemyRequest =>
+  request as unknown as AlchemyRequest;
 
 class RecordingSignal implements RequestCancellationSignal {
   readonly registered = Promise.withResolvers<boolean>();
@@ -184,7 +188,7 @@ describe("request cancellation", () => {
     );
     const handler = withCurrentRequestCancellation(provider);
     const responsePromise = Effect.runPromise(
-      Cloudflare.makeRequestEffect(request, handler)
+      Cloudflare.makeRequestEffect(asAlchemyRequest(request), handler)
     );
 
     await providerStarted.promise;
@@ -282,7 +286,7 @@ describe("request cancellation", () => {
     );
     const responsePromise = Effect.runPromise(
       Cloudflare.makeRequestEffect(
-        request,
+        asAlchemyRequest(request),
         withCurrentRequestCancellation(
           Effect.gen(function* importRequest() {
             const originalRequest = yield* Cloudflare.Request;

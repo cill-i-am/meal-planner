@@ -303,7 +303,7 @@ const ProductionTikTokMediaContainerRuntime = Effect.sync(() => {
 
 export default TikTokMediaContainer.make(
   {
-    dockerfile: TikTokMediaContainerDockerfile,
+    dockerfile: { content: TikTokMediaContainerDockerfile },
     instanceType: "standard-1",
     main: import.meta.url,
     maxInstances: 2,

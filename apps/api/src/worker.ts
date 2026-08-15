@@ -105,7 +105,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         enabled: false,
       },
     },
-    url: false,
+    workersDev: false,
   },
   Effect.gen(function* MealPlannerApiWorker() {
     const queryDatabase =

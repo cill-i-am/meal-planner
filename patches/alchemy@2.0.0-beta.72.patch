@@ -1,62 +1,5 @@
-diff --git a/lib/Apply.js b/lib/Apply.js
-index a01c0faaf46fac0063f04303744900c94f52f637..2d103ea0b71fad57ad2c768872bb32a3990f4db0 100644
---- a/lib/Apply.js
-+++ b/lib/Apply.js
-@@ -354,7 +354,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
-                 resourceType: node.resource.Type,
-                 props: news,
-                 attr,
--                bindings: excludeDeletedBindings(node.bindings),
-+                bindings: bindingOutputs,
-                 providerVersion: node.provider.version ?? 0,
-                 downstream: node.downstream,
-                 removalPolicy: node.resource.RemovalPolicy,
-@@ -450,6 +450,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
-                     ...node.state,
-                     attr,
-                     props: news,
-+                    bindings: bindingOutputs,
-                 });
-             }
-             else {
-@@ -461,7 +462,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
-                     resourceType: node.resource.Type,
-                     props: news,
-                     attr,
--                    bindings: excludeDeletedBindings(node.bindings),
-+                    bindings: bindingOutputs,
-                     providerVersion: node.provider.version ?? 0,
-                     downstream: node.downstream,
-                     removalPolicy: node.resource.RemovalPolicy,
-@@ -639,7 +640,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
-                     props: news,
-                     attr,
-                     providerVersion: node.provider.version ?? 0,
--                    bindings: excludeDeletedBindings(node.bindings),
-+                    bindings: bindingOutputs,
-                     downstream: node.downstream,
-                     removalPolicy: node.resource.RemovalPolicy,
-                 });
-@@ -656,7 +657,7 @@ const executeNode = (fqn, node, tracker, ready, readyStable, terminalStatuses, s
-                     props: news,
-                     attr,
-                     providerVersion: node.provider.version ?? 0,
--                    bindings: excludeDeletedBindings(node.bindings),
-+                    bindings: bindingOutputs,
-                     downstream: node.downstream,
-                     // Preserve the remaining backlog exactly as-is. GC is responsible for
-                     // popping one generation at a time until the chain is exhausted.
-@@ -904,7 +905,7 @@ const converge = Effect.fn(function* (plan, tracker, terminalStatuses, session,
-                     props: newProps,
-                     attr,
-                     providerVersion: node.provider.version ?? 0,
--                    bindings: excludeDeletedBindings(node.bindings),
-+                    bindings: newBindings,
-                     downstream: node.downstream,
-                     namespace,
-                     removalPolicy: node.resource.RemovalPolicy,
 diff --git a/lib/Cloudflare/D1/ApplyMigrations.js b/lib/Cloudflare/D1/ApplyMigrations.js
-index ba1c3be608856556930a5895497c1071cec015c1..f2ccfa888c1a6ca6d532fd3a042d355e1894ffdd 100644
+index 28df29458fd33b178660429915cb8c9ae4c7abe9..7109661959ea066e8adce95848729b6a6deda874 100644
 --- a/lib/Cloudflare/D1/ApplyMigrations.js
 +++ b/lib/Cloudflare/D1/ApplyMigrations.js
 @@ -1,5 +1,6 @@
@@ -64,43 +7,55 @@ index ba1c3be608856556930a5895497c1071cec015c1..f2ccfa888c1a6ca6d532fd3a042d355e
  import * as Effect from "effect/Effect";
 +import { importD1Database } from "./ImportDatabase.js";
  /**
-  * Apply pending D1 migrations in order. Uses the wrangler-compatible
-  * 3-column schema `(id TEXT PK, name TEXT, applied_at TEXT)`.
-@@ -14,18 +15,23 @@ export const applyMigrations = (options) => Effect.gen(function* () {
+  * Apply pending D1 migrations in order against the live cloud API. Uses the
+  * wrangler-compatible 3-column schema `(id TEXT PK, name TEXT, applied_at
+@@ -12,13 +13,19 @@ export const applyMigrations = (options) => Effect.gen(function* () {
+         databaseId: options.databaseId,
+         sql,
+     });
+-    yield* applyMigrationsWith(executor, options);
++    const importMigration = (sql) => importD1Database({
++        accountId: options.accountId,
++        databaseId: options.databaseId,
++        sqlData: sql,
++    }).pipe(Effect.asVoid);
++    yield* applyMigrationsWithExecutors(executor, importMigration, options);
+ });
+ /**
+  * Apply pending D1 migrations in order through the given SQL executor —
+  * the executor-agnostic core shared by the cloud and local flows.
+  */
+-export const applyMigrationsWith = (executor, options) => Effect.gen(function* () {
++export const applyMigrationsWith = (executor, options) => applyMigrationsWithExecutors(executor, (sql) => executor(sql).pipe(Effect.asVoid), options);
++const applyMigrationsWithExecutors = (executor, applyMigration, options) => Effect.gen(function* () {
+     const { migrationsTable, migrationsFiles } = options;
+     yield* ensureMigrationsTable(executor, migrationsTable);
+     const applied = yield* getAppliedMigrations(executor, migrationsTable);
+@@ -28,14 +35,15 @@ export const applyMigrationsWith = (executor, options) => Effect.gen(function* (
              continue;
          const migrationId = nextSeq.toString().padStart(5, "0");
          nextSeq += 1;
 -        // D1 over HTTP doesn't support transactions; run migration + record
 -        // in a single batched query.
--        yield* executeSQL(accountId, databaseId, [
+-        yield* executor([
 -            migration.sql,
--            `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
--        ].join("\n"));
-+        // SQL-file imports preserve compound statements and roll back the
-+        // migration record when any statement fails.
-+        yield* importD1Database({
-+            accountId,
-+            databaseId,
-+            sqlData: [
-+                ...splitMigrationStatements(migration.sql),
-+                `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
-+            ].join("\n"),
-+        });
++        // D1 SQL-file imports preserve compound statements such as triggers
++        // and commit the migration ledger in the same atomic import.
++        yield* applyMigration([
++            ...splitMigrationStatements(migration.sql),
+             `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
+         ].join("\n"));
      }
  });
- const executeSQL = (accountId, databaseId, sql) => Effect.gen(function* () {
-     const queryDb = yield* d1.queryDatabase;
-     return yield* queryDb({ accountId, databaseId, sql });
- });
 +const splitMigrationStatements = (sql) => sql.split(/--> statement-breakpoint(?:\r?\n)?/u).map((statement) => statement.trim()).filter((statement) => statement.length > 0);
- const detectSchema = (accountId, databaseId, migrationsTable) => Effect.gen(function* () {
-     const result = yield* executeSQL(accountId, databaseId, `PRAGMA table_info(${migrationsTable});`).pipe(Effect.option);
+ const detectSchema = (executor, migrationsTable) => Effect.gen(function* () {
+     const result = yield* executor(`PRAGMA table_info(${migrationsTable});`).pipe(Effect.option);
      const columns = [];
 diff --git a/lib/Cloudflare/Queues/Consumer.d.ts b/lib/Cloudflare/Queues/Consumer.d.ts
-index bec1997c5fc2cfe7f7d6554848ca93118831f2d1..bd414ce0adf35e028aaef2ee660c4a32bef1e318 100644
+index 03318b2a63c07d3033ccbd93ddcb687709bbe980..60b240e2611bf4ee7de4773b34ab0fe2d89c1d36 100644
 --- a/lib/Cloudflare/Queues/Consumer.d.ts
 +++ b/lib/Cloudflare/Queues/Consumer.d.ts
-@@ -16,6 +16,14 @@ export type ConsumerProps = {
+@@ -20,6 +20,14 @@ export type ConsumerProps = {
       * Optional dead letter queue name for failed messages.
       */
      deadLetterQueue?: string;
@@ -116,10 +71,10 @@ index bec1997c5fc2cfe7f7d6554848ca93118831f2d1..bd414ce0adf35e028aaef2ee660c4a32
       * Consumer settings.
       */
 diff --git a/lib/Cloudflare/Queues/Consumer.js b/lib/Cloudflare/Queues/Consumer.js
-index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bfc363cd31 100644
+index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd33a1cc0b 100644
 --- a/lib/Cloudflare/Queues/Consumer.js
 +++ b/lib/Cloudflare/Queues/Consumer.js
-@@ -63,6 +63,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
+@@ -97,6 +97,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
  // consumer yet" — the caller falls through to createConsumer, which
  // retries QueueNotFound until the queue propagates.
  Effect.catchTag("QueueNotFound", () => Effect.succeed(undefined)));
@@ -142,7 +97,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
  export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
      // The `consumerId` is not marked as stable because if you start in dev mode, the ID will change on first deploy.
      stables: ["accountId"],
-@@ -104,13 +120,13 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -138,13 +154,13 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
          Effect.catchTag(["QueueNotFound", "InvalidRoute"], () => Effect.succeed([]))), { concurrency: 10 });
          return rows.flat();
      }),
@@ -160,7 +115,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
              return { action: "update" };
          }
          if ((output?.accountId ?? accountId) !== accountId) {
-@@ -121,6 +137,21 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -155,6 +171,21 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
          if (output?.queueId && news.queueId !== output.queueId) {
              return { action: "replace", deleteFirst: true };
          }
@@ -182,7 +137,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
          // Settings / DLQ / script drift is an update. We DON'T
          // escalate scriptName changes to `replace` because the
          // engine resolves cross-resource Output<string> refs (a
-@@ -132,16 +163,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -166,16 +197,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
          // we detect script drift and rebuild the consumer in
          // place (Cloudflare's PUT silently ignores `script_name`
          // changes, so reconcile does delete-then-create).
@@ -195,7 +150,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
                  (news.deadLetterQueue ?? undefined) ||
 -            (output?.scriptName !== undefined &&
 -                news.scriptName !== output.scriptName)) {
-+            (observed.script !== undefined && news.scriptName !== observed.script)) {
++            (observed.scriptName !== undefined && news.scriptName !== observed.scriptName)) {
              return { action: "update" };
          }
      }),
@@ -204,18 +159,27 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
          const { accountId } = yield* yield* CloudflareEnvironment;
          const acct = output?.accountId ?? accountId;
          // Only use `output.queueId` if it's a live ID (i.e. no `dev:` prefix).
-@@ -302,19 +332,87 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -224,7 +254,7 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+         if (!observed) {
+             observed = yield* findWorkerConsumer(acct, queueId);
+         }
+-        // Owned consumer pointing at a different script: rebuild
++        // Owned consumer pointing at a different scriptName: rebuild
+         // it in place. Cloudflare's PUT consumer silently ignores
+         // `script_name` changes on existing consumers (the live
+         // record stays pinned to the original worker), and the
+@@ -368,19 +398,87 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
              while: (e) => e._tag === "QueueHandlerMissing",
              schedule: queueHandlerReadinessSchedule,
          }));
--        yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(Effect.flatMap((fetched) => toObserved(fetched)?.script === news.scriptName
+-        yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(Effect.flatMap((fetched) => toObserved(fetched)?.scriptName === news.scriptName
 -            ? Effect.void
 -            : Effect.fail("ScriptUnbound")), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
 +        let converged = yield* queues
 +            .getConsumer({ accountId: acct, queueId, consumerId })
 +            .pipe(Effect.flatMap((fetched) => {
 +            const observed = toObserved(fetched);
-+            return observed?.script === news.scriptName
++            return observed?.scriptName === news.scriptName
 +                ? Effect.succeed(observed)
 +                : Effect.fail("ScriptUnbound");
 +        }), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
@@ -232,13 +196,13 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
 +            owned &&
 +            observed?.consumerId === consumerId &&
 +            output?.consumerId === consumerId &&
-+            observed.script === news.scriptName &&
++            observed.scriptName === news.scriptName &&
 +            observed.deadLetterQueue === undefined &&
 +            JSON.stringify(normalizeConsumerSettings(observed.settings)) ===
 +                JSON.stringify(normalizeConsumerSettings(news.settings)) &&
 +            desiredDeadLetterQueue !== undefined &&
 +            converged.consumerId === consumerId &&
-+            converged.script === news.scriptName &&
++            converged.scriptName === news.scriptName &&
 +            converged.deadLetterQueue === undefined &&
 +            settingsConverged;
 +        if (canReplaceForMissingDeadLetterQueue) {
@@ -279,7 +243,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
 +            consumerId = replacementConsumerId;
 +        }
 +        if (converged.consumerId !== consumerId ||
-+            converged.script !== news.scriptName ||
++            converged.scriptName !== news.scriptName ||
 +            converged.deadLetterQueue !== desiredDeadLetterQueue ||
 +            JSON.stringify(normalizeConsumerSettings(converged.settings)) !==
 +                JSON.stringify(normalizeConsumerSettings(news.settings))) {
@@ -290,7 +254,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
 +            consumerId: converged.consumerId,
              queueId,
 -            scriptName: news.scriptName,
-+            scriptName: converged.script,
++            scriptName: converged.scriptName,
              accountId: acct,
 -            deadLetterQueue: news.deadLetterQueue,
 -            settings: news.settings,
@@ -299,7 +263,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
          };
      }),
      delete: Effect.fn(function* ({ output }) {
-@@ -356,16 +454,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -422,14 +520,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
                  consumerId: output.consumerId,
              })
                  .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
@@ -310,10 +274,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
 -                    consumerId: fetched.consumerId,
 +                    consumerId: observed.consumerId,
                      queueId: output.queueId,
--                    scriptName: ("scriptName" in fetched && typeof fetched.scriptName === "string"
--                        ? fetched.scriptName
--                        : output.scriptName) ?? output.scriptName,
-+                    scriptName: observed.script ?? output.scriptName,
+                     scriptName: toObserved(fetched)?.scriptName ?? output.scriptName,
                      accountId: output.accountId,
 -                    deadLetterQueue: output.deadLetterQueue,
 -                    settings: output.settings,
@@ -322,9 +283,9 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
                  };
              }
          }
-@@ -381,8 +478,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -445,8 +544,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
                      queueId: output.queueId,
-                     scriptName: match.script ?? output.scriptName,
+                     scriptName: match.scriptName ?? output.scriptName,
                      accountId: output.accountId,
 -                    deadLetterQueue: output.deadLetterQueue,
 -                    settings: output.settings,
@@ -333,15 +294,15 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
                  };
              }
          }
-@@ -390,8 +487,101 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -454,8 +553,101 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
      }),
  });
  const toObserved = (c) => c.consumerId && c.type === "worker"
--    ? { consumerId: c.consumerId, script: c.scriptName ?? undefined }
+-    ? { consumerId: c.consumerId, scriptName: c.scriptName ?? undefined }
 +    ? {
 +        consumerId: c.consumerId,
 +        deadLetterQueue: c.deadLetterQueue ?? undefined,
-+        script: c.scriptName ?? undefined,
++        scriptName: c.scriptName ?? undefined,
 +        settings: c.settings
 +            ? {
 +                batchSize: c.settings.batchSize ?? undefined,
@@ -382,7 +343,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
 +        sourceQueue.consumersTotalCount !== 1 ||
 +        workerConsumers.length !== 1 ||
 +        workerConsumers[0]?.consumerId !== options.consumerId ||
-+        workerConsumers[0]?.script !== options.scriptName ||
++        workerConsumers[0]?.scriptName !== options.scriptName ||
 +        workerConsumers[0]?.deadLetterQueue !== undefined ||
 +        JSON.stringify(normalizeConsumerSettings(workerConsumers[0]?.settings)) !==
 +            JSON.stringify(normalizeConsumerSettings(options.settings))) {
@@ -426,7 +387,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
 +    .getConsumer(options)
 +    .pipe(Effect.flatMap((fetched) => {
 +    const observed = toObserved(fetched);
-+    return observed?.script === options.scriptName
++    return observed?.scriptName === options.scriptName
 +        ? Effect.succeed(observed)
 +        : Effect.fail("ScriptUnbound");
 +}), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
@@ -437,7 +398,7 @@ index baf95aedd6b6fd2c4126f9ac4fe1b15c231a2bd4..dec67d864b3c95c3c6e2137fe0a832bf
  // but a fresh container/asset deploy can stretch that.
  const queueHandlerReadinessSchedule = Schedule.max([
 diff --git a/lib/Cloudflare/Queues/EventSource.d.ts b/lib/Cloudflare/Queues/EventSource.d.ts
-index 0b609cf9379d242927208a40d24f11d9938f0b38..50613559495aa7d032bf0237de749834d20b17e7 100644
+index 0b609cf9379d242927208a40d24f11d9938f0b38..40d78bef82f1fa96d11e43c36f664bb835faf89d 100644
 --- a/lib/Cloudflare/Queues/EventSource.d.ts
 +++ b/lib/Cloudflare/Queues/EventSource.d.ts
 @@ -4,6 +4,7 @@ import * as Duration from "effect/Duration";
@@ -460,7 +421,7 @@ index 0b609cf9379d242927208a40d24f11d9938f0b38..50613559495aa7d032bf0237de749834
  /**
   * Convert a {@link MessagesProps} (with `Duration.Input` time fields)
 diff --git a/lib/Cloudflare/Queues/EventSource.js b/lib/Cloudflare/Queues/EventSource.js
-index 4f79fdff1eebd98f888781ee9f3655750f72879b..cfab533151025e4320c51c75eca91b1d78470d68 100644
+index 4f79fdff1eebd98f888781ee9f3655750f72879b..2f47114f8fe187350a08fe770c9a7079c10a8c77 100644
 --- a/lib/Cloudflare/Queues/EventSource.js
 +++ b/lib/Cloudflare/Queues/EventSource.js
 @@ -68,6 +68,7 @@ export const EventSourceLive = Layer.effect(EventSource, Effect.gen(function* ()
@@ -472,19 +433,18 @@ index 4f79fdff1eebd98f888781ee9f3655750f72879b..cfab533151025e4320c51c75eca91b1d
              }));
          }
 diff --git a/lib/Cloudflare/Workers/WorkerProvider.js b/lib/Cloudflare/Workers/WorkerProvider.js
-index 320992f8eec3bd3319666ef8f793cc1700ff6c6e..4826e7c20163f698e57d67ae7f4fbabc9462b412 100644
+index d2ea997936a918ee7eb707a67312c95362ca55b2..455d58aa8c8c993d6d038fefb72acadce3634a92 100644
 --- a/lib/Cloudflare/Workers/WorkerProvider.js
 +++ b/lib/Cloudflare/Workers/WorkerProvider.js
-@@ -288,17 +288,24 @@ const workerAssetConfigForHash = (assets) => {
+@@ -687,18 +687,20 @@ const workerAssetConfigForHash = (assets) => {
   * the bundle/vite/asset-content hashes, so a change to e.g. a compatibility
   * flag or observability config planned as a noop and silently never deployed.
   */
--const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, }) => resolveMetadataHashValue({
-+/**
-+ * @internal exported for provider-path regression testing.
-+ */
-+export const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, }) => resolveMetadataHashValue({
+-const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl, }) => resolveMetadataHashValue({
++/** @internal exported for provider-path regression testing. */
++export const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl, }) => resolveMetadataHashValue({
      accountId,
+     selfUrl,
      stack: { name: stack.name, stage: stack.stage },
      compatibility: getCompatibility(props),
      env: props.env,
@@ -492,12 +452,9 @@ index 320992f8eec3bd3319666ef8f793cc1700ff6c6e..4826e7c20163f698e57d67ae7f4fbabc
 -        sid: binding.sid,
 -        data: binding.data,
 -    })),
-+    // Hash the live Worker metadata contributed by bindings, not each
-+    // resource binding's whole internal data object. Resource providers add
-+    // plan/apply-only fields (for example databaseId, bucketName, or a
-+    // Container's local `dev` image) as their Outputs resolve. Those fields
-+    // are not themselves sent to the Worker API and can differ between plan
-+    // phases, which made an unchanged Worker plan as an update forever.
++    // Hash only the metadata Alchemy sends to the Worker API. Provider-only
++    // resource attributes can change between plan phases without changing the
++    // live Worker and must not manufacture a perpetual update.
 +    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
 +    containers: Array.from(new Set(bindings.flatMap((binding) => (binding.data.containers ?? []).map((container) => container.className)))).sort(),
      assets: workerAssetConfigForHash(props.assets),
@@ -506,14 +463,13 @@ index 320992f8eec3bd3319666ef8f793cc1700ff6c6e..4826e7c20163f698e57d67ae7f4fbabc
      limits: props.limits,
      logpush: props.logpush,
      observability: props.observability,
-@@ -1566,7 +1573,10 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
-         }),
-         diff: Effect.fn(function* ({ id, news, olds, output, newBindings }) {
-             const { accountId } = yield* yield* CloudflareEnvironment;
+@@ -3074,7 +3076,9 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
+             // form against the stripped stored props and re-plans an update
+             // forever (#874).
+             const news = stripEffects(desired);
 -            if (!isResolved(news))
-+            // Plan calls diff once while resolving resource expressions and
-+            // again after all binding Outputs resolve. Never hash the
-+            // provisional binding shape from the first pass.
++            // Plan invokes diff before and after binding Outputs resolve. Hash
++            // only the final binding shape used by reconcile.
 +            if (!isResolved(news) || !isResolved(newBindings))
                  return undefined;
              if ((output?.accountId ?? accountId) !== accountId) {
@@ -541,7 +497,7 @@ index 864ff33d0f64a904add83f48bab0cd2401ee7c0c..457b84cee93a28343fe16140de7fc124
   * Encode a `Stream` as a lazy NDJSON byte stream for an HTTP response body.
   * No peeking, so nothing is held open across the handler→body-streaming
 diff --git a/lib/Rpc.js b/lib/Rpc.js
-index 4a6c6b8073b85eea2a5ee390b41bb15b2b51d493..faa098452ed74ef24b2c3dd640fea3d62b930517 100644
+index 4a6c6b8073b85eea2a5ee390b41bb15b2b51d493..63bb6eb9d947ed294555509947721e135138d60e 100644
 --- a/lib/Rpc.js
 +++ b/lib/Rpc.js
 @@ -1,9 +1,10 @@
@@ -606,116 +562,89 @@ index 4a6c6b8073b85eea2a5ee390b41bb15b2b51d493..faa098452ed74ef24b2c3dd640fea3d6
      const failReason = cause.reasons.find(Cause.isFailReason);
      if (failReason) {
          return Effect.succeed({
-diff --git a/src/Apply.ts b/src/Apply.ts
-index a025189e33b794e4288ffa2780033f0f311fbf72..8976101a998b319766b7a58c0740c9cc4907c7a0 100644
---- a/src/Apply.ts
-+++ b/src/Apply.ts
-@@ -680,7 +680,7 @@ const executeNode = (
-           resourceType: node.resource.Type,
-           props: news,
-           attr,
--          bindings: excludeDeletedBindings(node.bindings),
-+          bindings: bindingOutputs,
-           providerVersion: node.provider.version ?? 0,
-           downstream: node.downstream,
-           removalPolicy: node.resource.RemovalPolicy,
-@@ -802,6 +802,7 @@ const executeNode = (
-             ...node.state,
-             attr,
-             props: news,
-+            bindings: bindingOutputs,
-           });
-         } else {
-           yield* commit<UpdatedResourceState>({
-@@ -812,7 +813,7 @@ const executeNode = (
-             resourceType: node.resource.Type,
-             props: news,
-             attr,
--            bindings: excludeDeletedBindings(node.bindings),
-+            bindings: bindingOutputs,
-             providerVersion: node.provider.version ?? 0,
-             downstream: node.downstream,
-             removalPolicy: node.resource.RemovalPolicy,
-@@ -1039,7 +1040,7 @@ const executeNode = (
-             props: news,
-             attr,
-             providerVersion: node.provider.version ?? 0,
--            bindings: excludeDeletedBindings(node.bindings),
-+            bindings: bindingOutputs,
-             downstream: node.downstream,
-             removalPolicy: node.resource.RemovalPolicy,
-           });
-@@ -1055,7 +1056,7 @@ const executeNode = (
-             props: news,
-             attr,
-             providerVersion: node.provider.version ?? 0,
--            bindings: excludeDeletedBindings(node.bindings),
-+            bindings: bindingOutputs,
-             downstream: node.downstream,
-             // Preserve the remaining backlog exactly as-is. GC is responsible for
-             // popping one generation at a time until the chain is exhausted.
-@@ -1422,7 +1423,7 @@ const converge = Effect.fn(function* (
-           props: newProps,
-           attr,
-           providerVersion: node.provider.version ?? 0,
--          bindings: excludeDeletedBindings(node.bindings),
-+          bindings: newBindings,
-           downstream: node.downstream,
-           namespace,
-           removalPolicy: node.resource.RemovalPolicy,
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
-index abf4a2e53a8793ad521ed70719bde153f72511de..8b763d891f00fc02056249ba5c5b1698a69a28b8 100644
+index d43ec61be953a0b95770b43a735c792c15b43d64..f873754ae7157c9f7a4e933575550872126cbd28 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
 +++ b/src/Cloudflare/D1/ApplyMigrations.ts
-@@ -3,6 +3,7 @@ import * as d1 from "@distilled.cloud/cloudflare/d1";
+@@ -1,6 +1,7 @@
+ import * as d1 from "@distilled.cloud/cloudflare/d1";
  import * as Effect from "effect/Effect";
- import type * as HttpClient from "effect/unstable/http/HttpClient";
- import type { SqlFile } from "../../Sql/SqlFile.ts";
+ import type { SqlFile } from "../../SQL/SqlFile.ts";
 +import { importD1Database } from "./ImportDatabase.ts";
-
- export interface ApplyMigrationsOptions {
-   accountId: string;
-@@ -30,16 +31,16 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
+ 
+ /**
+  * The minimal query surface the migration flow needs: run (possibly
+@@ -45,7 +46,13 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
+         databaseId: options.databaseId,
+         sql,
+       });
+-    yield* applyMigrationsWith(executor, options);
++    const importMigration = (sql: string) =>
++      importD1Database({
++        accountId: options.accountId,
++        databaseId: options.databaseId,
++        sqlData: sql,
++      }).pipe(Effect.asVoid);
++    yield* applyMigrationsWithExecutors(executor, importMigration, options);
+   });
+ 
+ /**
+@@ -59,6 +66,22 @@ export const applyMigrationsWith = <E, R>(
+     migrationsFiles: ReadonlyArray<SqlFile>;
+   },
+ ): Effect.Effect<void, E, R> =>
++  applyMigrationsWithExecutors(
++    executor,
++    (sql) => executor(sql).pipe(Effect.asVoid),
++    options,
++  );
++
++const applyMigrationsWithExecutors = <QueryE, QueryR, MigrationE, MigrationR>(
++  executor: D1SqlExecutor<QueryE, QueryR>,
++  applyMigration: (
++    sql: string,
++  ) => Effect.Effect<void, MigrationE, MigrationR>,
++  options: {
++    migrationsTable: string;
++    migrationsFiles: ReadonlyArray<SqlFile>;
++  },
++): Effect.Effect<void, QueryE | MigrationE, QueryR | MigrationR> =>
+   Effect.gen(function* () {
+     const { migrationsTable, migrationsFiles } = options;
+     yield* ensureMigrationsTable(executor, migrationsTable);
+@@ -69,17 +92,23 @@ export const applyMigrationsWith = <E, R>(
        if (applied.has(migration.id)) continue;
        const migrationId = nextSeq.toString().padStart(5, "0");
        nextSeq += 1;
 -      // D1 over HTTP doesn't support transactions; run migration + record
 -      // in a single batched query.
--      yield* executeSQL(
-+      // SQL-file imports preserve compound statements and roll back the
-+      // migration record when any statement fails.
-+      yield* importD1Database({
-         accountId,
-         databaseId,
--        [
+-      yield* executor(
++      // D1 SQL-file imports preserve compound statements such as triggers
++      // and commit the migration ledger in the same atomic import.
++      yield* applyMigration(
+         [
 -          migration.sql,
-+        sqlData: [
 +          ...splitMigrationStatements(migration.sql),
            `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
          ].join("\n"),
--      );
-+      });
+       );
      }
    });
-
-@@ -71,6 +72,12 @@ const executeSQL = (
-     return yield* queryDb({ accountId, databaseId, sql });
-   });
-
-+const splitMigrationStatements = (sql: string): ReadonlyArray<string> =>
+ 
++const splitMigrationStatements = (sql: string): readonly string[] =>
 +  sql
 +    .split(/--> statement-breakpoint(?:\r?\n)?/u)
 +    .map((statement) => statement.trim())
 +    .filter((statement) => statement.length > 0);
 +
- const detectSchema = (
-   accountId: string,
-   databaseId: string,
+ interface TableColumn {
+   name: string;
+   type: string;
 diff --git a/src/Cloudflare/Queues/Consumer.ts b/src/Cloudflare/Queues/Consumer.ts
-index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf94d67320f 100644
+index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf41d8a09e2 100644
 --- a/src/Cloudflare/Queues/Consumer.ts
 +++ b/src/Cloudflare/Queues/Consumer.ts
-@@ -30,6 +30,14 @@ export type ConsumerProps = {
+@@ -34,6 +34,14 @@ export type ConsumerProps = {
     * Optional dead letter queue name for failed messages.
     */
    deadLetterQueue?: string;
@@ -730,10 +659,10 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
    /**
     * Consumer settings.
     */
-@@ -137,6 +145,29 @@ const findWorkerConsumer = (acct: string, queueId: string) =>
+@@ -218,6 +226,29 @@ const findWorkerConsumer = (acct: string, queueId: string) =>
      Effect.catchTag("QueueNotFound", () => Effect.succeed(undefined)),
    );
-
+ 
 +const observeWorkerConsumer = Effect.fn(function* (options: {
 +  accountId: string;
 +  queueId: string;
@@ -760,7 +689,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
  export const ConsumerProviderLive = () =>
    Provider.succeed(Consumer, {
      // The `consumerId` is not marked as stable because if you start in dev mode, the ID will change on first deploy.
-@@ -199,12 +230,12 @@ export const ConsumerProviderLive = () =>
+@@ -280,12 +311,12 @@ export const ConsumerProviderLive = () =>
        );
        return rows.flat();
      }),
@@ -777,7 +706,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
          return { action: "update" };
        }
        if ((output?.accountId ?? accountId) !== accountId) {
-@@ -215,6 +246,23 @@ export const ConsumerProviderLive = () =>
+@@ -296,6 +327,23 @@ export const ConsumerProviderLive = () =>
        if (output?.queueId && news.queueId !== output.queueId) {
          return { action: "replace", deleteFirst: true } as const;
        }
@@ -801,7 +730,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
        // Settings / DLQ / script drift is an update. We DON'T
        // escalate scriptName changes to `replace` because the
        // engine resolves cross-resource Output<string> refs (a
-@@ -227,17 +275,16 @@ export const ConsumerProviderLive = () =>
+@@ -308,17 +356,16 @@ export const ConsumerProviderLive = () =>
        // place (Cloudflare's PUT silently ignores `script_name`
        // changes, so reconcile does delete-then-create).
        if (
@@ -814,7 +743,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
            (news.deadLetterQueue ?? undefined) ||
 -        (output?.scriptName !== undefined &&
 -          news.scriptName !== output.scriptName)
-+        (observed.script !== undefined && news.scriptName !== observed.script)
++        (observed.scriptName !== undefined && news.scriptName !== observed.scriptName)
        ) {
          return { action: "update" } as const;
        }
@@ -824,13 +753,22 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
        const { accountId } = yield* yield* CloudflareEnvironment;
        const acct = output?.accountId ?? accountId;
        // Only use `output.queueId` if it's a live ID (i.e. no `dev:` prefix).
-@@ -436,28 +483,107 @@ export const ConsumerProviderLive = () =>
+@@ -379,7 +426,7 @@ export const ConsumerProviderLive = () =>
+         observed = yield* findWorkerConsumer(acct, queueId);
+       }
+ 
+-      // Owned consumer pointing at a different script: rebuild
++      // Owned consumer pointing at a different scriptName: rebuild
+       // it in place. Cloudflare's PUT consumer silently ignores
+       // `script_name` changes on existing consumers (the live
+       // record stays pinned to the original worker), and the
+@@ -556,28 +603,107 @@ export const ConsumerProviderLive = () =>
            }),
          );
-
+ 
 -      yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(
 -        Effect.flatMap((fetched) =>
--          toObserved(fetched)?.script === news.scriptName
+-          toObserved(fetched)?.scriptName === news.scriptName
 -            ? Effect.void
 -            : Effect.fail("ScriptUnbound" as const),
 -        ),
@@ -847,7 +785,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
 +        .pipe(
 +          Effect.flatMap((fetched) => {
 +            const observed = toObserved(fetched);
-+            return observed?.script === news.scriptName
++            return observed?.scriptName === news.scriptName
 +              ? Effect.succeed(observed)
 +              : Effect.fail("ScriptUnbound" as const);
 +          }),
@@ -873,13 +811,13 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
 +        owned &&
 +        observed?.consumerId === consumerId &&
 +        output?.consumerId === consumerId &&
-+        observed.script === news.scriptName &&
++        observed.scriptName === news.scriptName &&
 +        observed.deadLetterQueue === undefined &&
 +        JSON.stringify(normalizeConsumerSettings(observed.settings)) ===
 +          JSON.stringify(normalizeConsumerSettings(news.settings)) &&
 +        desiredDeadLetterQueue !== undefined &&
 +        converged.consumerId === consumerId &&
-+        converged.script === news.scriptName &&
++        converged.scriptName === news.scriptName &&
 +        converged.deadLetterQueue === undefined &&
 +        settingsConverged;
 +
@@ -928,20 +866,20 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
 +
 +      if (
 +        converged.consumerId !== consumerId ||
-+        converged.script !== news.scriptName ||
++        converged.scriptName !== news.scriptName ||
 +        converged.deadLetterQueue !== desiredDeadLetterQueue ||
 +        JSON.stringify(normalizeConsumerSettings(converged.settings)) !==
 +          JSON.stringify(normalizeConsumerSettings(news.settings))
 +      ) {
 +        return yield* Effect.fail("ConsumerUnconverged" as const);
 +      }
-
+ 
        return {
 -        consumerId,
 +        consumerId: converged.consumerId,
          queueId,
 -        scriptName: news.scriptName!,
-+        scriptName: converged.script,
++        scriptName: converged.scriptName,
          accountId: acct,
 -        deadLetterQueue: news.deadLetterQueue,
 -        settings: news.settings,
@@ -950,7 +888,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
        };
      }),
      delete: Effect.fn(function* ({ output }) {
-@@ -509,17 +635,15 @@ export const ConsumerProviderLive = () =>
+@@ -629,14 +755,15 @@ export const ConsumerProviderLive = () =>
                Effect.succeed(undefined),
              ),
            );
@@ -961,11 +899,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
 -            consumerId: fetched.consumerId!,
 +            consumerId: observed.consumerId,
              queueId: output.queueId,
--            scriptName:
--              ("scriptName" in fetched && typeof fetched.scriptName === "string"
--                ? fetched.scriptName
--                : output.scriptName) ?? output.scriptName,
-+            scriptName: observed.script ?? output.scriptName,
+             scriptName: toObserved(fetched)?.scriptName ?? output.scriptName,
              accountId: output.accountId,
 -            deadLetterQueue: output.deadLetterQueue,
 -            settings: output.settings,
@@ -974,9 +908,9 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
            };
          }
        }
-@@ -538,8 +662,8 @@ export const ConsumerProviderLive = () =>
+@@ -655,8 +782,8 @@ export const ConsumerProviderLive = () =>
              queueId: output.queueId,
-             scriptName: match.script ?? output.scriptName,
+             scriptName: match.scriptName ?? output.scriptName,
              accountId: output.accountId,
 -            deadLetterQueue: output.deadLetterQueue,
 -            settings: output.settings,
@@ -985,16 +919,16 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
            };
          }
        }
-@@ -548,19 +672,175 @@ export const ConsumerProviderLive = () =>
+@@ -665,19 +792,175 @@ export const ConsumerProviderLive = () =>
    });
-
+ 
  type ObservedConsumer = {
 +  deadLetterQueue: string | undefined;
    consumerId: string;
 +  settings: ConsumerSettings | undefined;
-   script: string | undefined;
+   scriptName: string | undefined;
  };
-
+ 
  const toObserved = (c: {
 +  deadLetterQueue?: string | null;
    consumerId?: string | null;
@@ -1009,11 +943,11 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
    type?: "worker" | "http_pull" | null;
  }): ObservedConsumer | undefined =>
    c.consumerId && c.type === "worker"
--    ? { consumerId: c.consumerId, script: c.scriptName ?? undefined }
+-    ? { consumerId: c.consumerId, scriptName: c.scriptName ?? undefined }
 +    ? {
 +        consumerId: c.consumerId,
 +        deadLetterQueue: c.deadLetterQueue ?? undefined,
-+        script: c.scriptName ?? undefined,
++        scriptName: c.scriptName ?? undefined,
 +        settings: c.settings
 +          ? {
 +              batchSize: c.settings.batchSize ?? undefined,
@@ -1025,7 +959,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
 +          : undefined,
 +      }
      : undefined;
-
+ 
 +const normalizeConsumerSettings = (
 +  settings: ConsumerSettings | undefined,
 +): Required<Pick<ConsumerSettings, "batchSize" | "maxRetries" | "maxWaitTimeMs">> &
@@ -1071,7 +1005,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
 +    sourceQueue.consumersTotalCount !== 1 ||
 +    workerConsumers.length !== 1 ||
 +    workerConsumers[0]?.consumerId !== options.consumerId ||
-+    workerConsumers[0]?.script !== options.scriptName ||
++    workerConsumers[0]?.scriptName !== options.scriptName ||
 +    workerConsumers[0]?.deadLetterQueue !== undefined ||
 +    JSON.stringify(
 +      normalizeConsumerSettings(workerConsumers[0]?.settings),
@@ -1146,7 +1080,7 @@ index e157f1fc5c8388c10039cc6c038f080712087cfc..4ef1374ed0a184a82f96df75437b0cf9
 +    .pipe(
 +      Effect.flatMap((fetched) => {
 +        const observed = toObserved(fetched);
-+        return observed?.script === options.scriptName
++        return observed?.scriptName === options.scriptName
 +          ? Effect.succeed(observed)
 +          : Effect.fail("ScriptUnbound" as const);
 +      }),
@@ -1183,7 +1117,7 @@ index 94fe8e726cbbe5f9c7ea92cd69f49112dc137c48..720bddc00fe7eea6e8f6dae990c089ae
 +  /** Physical ID paired with `deadLetterQueue` for guarded reconciliation. */
 +  deadLetterQueueId?: Input<string>;
  }
-
+ 
  /**
 @@ -211,6 +214,7 @@ export const EventSourceLive = Layer.effect(
                scriptName: host.workerName,
@@ -1194,22 +1128,20 @@ index 94fe8e726cbbe5f9c7ea92cd69f49112dc137c48..720bddc00fe7eea6e8f6dae990c089ae
            }),
          );
 diff --git a/src/Cloudflare/Workers/WorkerProvider.ts b/src/Cloudflare/Workers/WorkerProvider.ts
-index 6ae1973c0463c1e103f2de857c1736b96ffe8624..179d5c9d8bf51daeec866081b527ed75a2c0c611 100644
+index 1687f8d0007cf2a97ecf73d2071d9658f22e0b9b..0a0f4733766ac2a0df8d939e469c4e8bf9dee072 100644
 --- a/src/Cloudflare/Workers/WorkerProvider.ts
 +++ b/src/Cloudflare/Workers/WorkerProvider.ts
-@@ -398,7 +398,10 @@ const workerAssetConfigForHash = (assets: WorkerProps["assets"]) => {
+@@ -992,7 +992,8 @@ const workerAssetConfigForHash = (assets: WorkerProps["assets"]) => {
   * the bundle/vite/asset-content hashes, so a change to e.g. a compatibility
   * flag or observability config planned as a noop and silently never deployed.
   */
 -const resolveWorkerMetadataHash = ({
-+/**
-+ * @internal exported for provider-path regression testing.
-+ */
++/** @internal exported for provider-path regression testing. */
 +export const resolveWorkerMetadataHash = ({
    props,
    bindings,
    accountId,
-@@ -409,12 +412,24 @@ const resolveWorkerMetadataHash = ({
+@@ -1005,12 +1006,21 @@ const resolveWorkerMetadataHash = ({
      stack: { name: stack.name, stage: stack.stage },
      compatibility: getCompatibility(props),
      env: props.env,
@@ -1217,12 +1149,9 @@ index 6ae1973c0463c1e103f2de857c1736b96ffe8624..179d5c9d8bf51daeec866081b527ed75
 -      sid: binding.sid,
 -      data: binding.data,
 -    })),
-+    // Hash the live Worker metadata contributed by bindings, not each
-+    // resource binding's whole internal data object. Resource providers add
-+    // plan/apply-only fields (for example databaseId, bucketName, or a
-+    // Container's local `dev` image) as their Outputs resolve. Those fields
-+    // are not themselves sent to the Worker API and can differ between plan
-+    // phases, which made an unchanged Worker plan as an update forever.
++    // Hash only the metadata Alchemy sends to the Worker API. Provider-only
++    // resource attributes can change between plan phases without changing the
++    // live Worker and must not manufacture a perpetual update.
 +    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
 +    containers: Array.from(
 +      new Set(
@@ -1239,14 +1168,13 @@ index 6ae1973c0463c1e103f2de857c1736b96ffe8624..179d5c9d8bf51daeec866081b527ed75
      limits: props.limits,
      logpush: props.logpush,
      observability: props.observability,
-@@ -2174,7 +2189,10 @@ export const LiveWorkerProvider = () =>
-           }),
-         diff: Effect.fn(function* ({ id, news, olds, output, newBindings }) {
-           const { accountId } = yield* yield* CloudflareEnvironment;
+@@ -4139,7 +4149,9 @@ export const LiveWorkerProvider = () =>
+           // form against the stripped stored props and re-plans an update
+           // forever (#874).
+           const news = stripEffects(desired);
 -          if (!isResolved(news)) return undefined;
-+          // Plan calls diff once while resolving resource expressions and
-+          // again after all binding Outputs resolve. Never hash the
-+          // provisional binding shape from the first pass.
++          // Plan invokes diff before and after binding Outputs resolve. Hash
++          // only the final binding shape used by reconcile.
 +          if (!isResolved(news) || !isResolved(newBindings)) return undefined;
            if ((output?.accountId ?? accountId) !== accountId) {
              return { action: "replace" };
@@ -1271,7 +1199,7 @@ index 2c0b1d33cdfff9538a3f193100c034205b15fdaa..44514373db47740d915e4fa7f961b0e9
 @@ -257,36 +258,57 @@ const appendStreamErrors = <R>(s: Stream.Stream<string, unknown, R>) =>
      ),
    );
-
+ 
 -export const toRpcStream = (stream: Stream.Stream<any, any, any>) =>
 -  Effect.scoped(
 -    Effect.gen(function* () {

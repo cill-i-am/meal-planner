@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
+import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
 import * as Bundle from "alchemy/Bundle";
 import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
@@ -18,20 +19,6 @@ const temporaryDirectories: string[] = [];
 let runtime: Miniflare;
 
 const buildFixture = async (outputDirectory: string) => {
-  type BundlePlugin = NonNullable<
-    Parameters<typeof Bundle.build>[0]["plugins"]
-  >;
-  const alchemyEntry = import.meta.resolve("alchemy");
-  const pluginModule = new URL(
-    "../../@distilled.cloud/cloudflare-rolldown-plugin/dist/plugin.js",
-    alchemyEntry
-  );
-  const { default: cloudflareRolldown } = (await import(pluginModule.href)) as {
-    readonly default: (options: {
-      readonly compatibilityDate: string;
-      readonly compatibilityFlags: string[];
-    }) => BundlePlugin;
-  };
   const output = await Effect.runPromise(
     Bundle.build(
       {
