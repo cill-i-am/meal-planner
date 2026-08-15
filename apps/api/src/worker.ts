@@ -1,11 +1,22 @@
 import * as Cloudflare from "alchemy/Cloudflare";
+import type { AnyD1Database } from "drizzle-orm/d1";
 import { Config, Layer, Schema, Stream } from "effect";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { HealthRoutes } from "./features/health/health.routes.js";
-import { ImportBatchQueueMessage } from "./features/imports/import-batch.contracts.js";
+import {
+  ImportBatchDeliveryAttempt,
+  ImportBatchId,
+  ImportBatchItemId,
+  ImportBatchQueueMessage,
+} from "./features/imports/import-batch.contracts.js";
+import { ImportBatchRouteDefinitions } from "./features/imports/import-batch.routes.js";
+import {
+  ImportBatchService,
+  makeImportBatchService,
+} from "./features/imports/import-batch.service.js";
 import {
   OperatorCarouselImportService,
   makeOperatorCarouselImportService,
@@ -17,13 +28,17 @@ import {
   ImportObservabilityTraceStore,
   observeImportQueueReceipt,
 } from "./features/imports/import-observability.js";
+import type { ImportCorrelationId } from "./features/imports/import-observability.js";
 import { DeadLetterReplayClaimId } from "./features/imports/import-operations.js";
 import {
   ProviderTerminalSettlementService,
   makeD1ProviderTerminalSettlementService,
 } from "./features/imports/import-provider-terminal-settlement.js";
 import { ProviderTerminalSettlementRouteDefinitions } from "./features/imports/import-provider-terminal-settlement.routes.js";
-import { makeD1ImportQueueAcceptance } from "./features/imports/import-queue-acceptance.d1.js";
+import {
+  makeD1ImportBatchStore,
+  makeD1ImportQueueAcceptance,
+} from "./features/imports/import-queue-acceptance.d1.js";
 import { makeRecipeRecoveryWorkflowStarter } from "./features/imports/import-recipe-recovery.js";
 import ImportRecipeRecoveryWorkflow from "./features/imports/import-recipe-recovery.workflow.js";
 import {
@@ -37,7 +52,6 @@ import {
   makeImportAuthorizer,
 } from "./features/imports/import.auth.js";
 import {
-  CreateImportRequest,
   ImportId,
   ImportTimestamp,
 } from "./features/imports/import.contracts.js";
@@ -63,6 +77,7 @@ import {
 import {
   ImportBatchDeadLetterQueue,
   ImportBatchQueue,
+  makeCloudflareImportBatchQueue,
 } from "./infrastructure/import-batch-queue.js";
 import { ImportEvidenceBucket } from "./infrastructure/import-evidence-bucket.js";
 import { MealPlannerDatabase } from "./infrastructure/meal-planner-database.js";
@@ -76,6 +91,7 @@ const notFound = HttpServerResponse.json(
 const MealPlannerWorkerRoutes = HttpRouter.addAll([
   ...HealthRoutes,
   ...ImportRouteDefinitions,
+  ...ImportBatchRouteDefinitions,
   ...ProviderTerminalSettlementRouteDefinitions,
   ...RecipeReviewRouteDefinitions,
   HttpRouter.route("*", "*", notFound),
@@ -83,7 +99,24 @@ const MealPlannerWorkerRoutes = HttpRouter.addAll([
 
 const currentIsoTimestamp = () => new Date().toISOString();
 
-/** Effect-native Cloudflare host for health and authenticated recipe imports. */
+const ImportBatchQueueDelivery = Schema.Struct({
+  deliveryAttempt: ImportBatchDeliveryAttempt,
+  message: ImportBatchQueueMessage,
+});
+
+const decodeImportBatchQueueDelivery = (body: unknown, attempts: number) =>
+  Schema.decodeUnknownEffect(ImportBatchQueueDelivery)(
+    { deliveryAttempt: attempts, message: body },
+    { onExcessProperty: "error" }
+  ).pipe(
+    Effect.mapError(
+      (): { readonly _tag: "InvalidImportBatchQueueMessage" } => ({
+        _tag: "InvalidImportBatchQueueMessage",
+      })
+    )
+  );
+
+/** Effect-native Cloudflare host for health and authenticated import routes. */
 export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   "MealPlannerApi",
   {
@@ -119,6 +152,37 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const importRecipeRecoveryWorkflow = yield* ImportRecipeRecoveryWorkflow;
     const importBatchQueue = yield* ImportBatchQueue;
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
+    const importBatchQueueWriter =
+      yield* Cloudflare.Queues.WriteQueue(importBatchQueue);
+    const makeBatchQueueAcceptance = (
+      database: AnyD1Database,
+      correlationId?: ImportCorrelationId
+    ) =>
+      makeD1ImportQueueAcceptance({
+        database,
+        imports: makeImportService({
+          availabilityValidator: makeTikTokSourceAvailabilityValidator(
+            globalThis.fetch
+          ),
+          identityResolver: makeTikTokCanonicalSourceIdentityResolver(
+            globalThis.fetch
+          ),
+          newId: () => Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
+          now: () =>
+            Schema.decodeUnknownSync(ImportTimestamp)(currentIsoTimestamp()),
+          repository: makeD1ImportRepository(database),
+          workflowStarter: makeImportWorkflowStarter(
+            importAcquisitionWorkflow,
+            correlationId === undefined ? undefined : { correlationId }
+          ),
+        }),
+        newReplayClaimId: () =>
+          Schema.decodeUnknownSync(DeadLetterReplayClaimId)(
+            crypto.randomUUID()
+          ),
+        now: currentIsoTimestamp,
+        replayClaimLeaseMilliseconds: 60_000,
+      });
     yield* Cloudflare.Queues.consumeQueueMessages(
       importBatchQueue,
       {
@@ -129,7 +193,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         maxRetries: 3,
       },
       (messages) =>
-        Stream.runForEach(messages, ({ body }) =>
+        Stream.runForEach(messages, ({ attempts, body }) =>
           Effect.gen(function* consumeImportBatchMessage() {
             const database = yield* queryDatabase.raw;
             const traceStore = makeD1ImportObservabilityTraceStore(
@@ -137,56 +201,41 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
               currentIsoTimestamp
             );
             yield* Effect.gen(function* consumeObservedImportBatchMessage() {
-              const message = yield* Schema.decodeUnknownEffect(
-                ImportBatchQueueMessage
-              )(body, { onExcessProperty: "error" }).pipe(
-                Effect.mapError(
-                  (): { readonly _tag: "InvalidImportBatchQueueMessage" } => ({
-                    _tag: "InvalidImportBatchQueueMessage",
-                  })
-                )
-              );
+              const { deliveryAttempt, message } =
+                yield* decodeImportBatchQueueDelivery(body, attempts);
               const correlationId = yield* observeImportQueueReceipt();
-              const imports = makeImportService({
-                availabilityValidator: makeTikTokSourceAvailabilityValidator(
-                  globalThis.fetch
-                ),
-                identityResolver: makeTikTokCanonicalSourceIdentityResolver(
-                  globalThis.fetch
-                ),
-                newId: () =>
-                  Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
-                now: () =>
-                  Schema.decodeUnknownSync(ImportTimestamp)(
-                    currentIsoTimestamp()
-                  ),
-                repository: makeD1ImportRepository(database),
-                workflowStarter: makeImportWorkflowStarter(
-                  importAcquisitionWorkflow,
-                  { correlationId }
-                ),
-              });
-              yield* makeD1ImportQueueAcceptance({
-                database,
-                imports,
-                maximumDeliveryAttempts: 3,
-                newReplayClaimId: () =>
-                  Schema.decodeUnknownSync(DeadLetterReplayClaimId)(
-                    crypto.randomUUID()
-                  ),
-                now: currentIsoTimestamp,
-                replayClaimLeaseMilliseconds: 60_000,
-                sourceRequestForCanonicalId: (canonicalId) =>
-                  Schema.decodeUnknownSync(CreateImportRequest)({
-                    source: {
-                      kind: "tiktok",
-                      url: `https://www.tiktok.com/@source/video/${canonicalId}`,
-                    },
-                  }),
-              }).consume(message);
+              yield* makeBatchQueueAcceptance(database, correlationId).consume(
+                message,
+                deliveryAttempt
+              );
             }).pipe(
               Effect.provideService(ImportObservabilityTraceStore, traceStore)
             );
+          }).pipe(
+            Effect.provideService(
+              PilotProviderBudgetRuntime,
+              pilotProviderBudgetRuntime
+            )
+          )
+        )
+    );
+    yield* Cloudflare.Queues.consumeQueueMessages(
+      importBatchDeadLetterQueue,
+      { batchSize: 1, maxConcurrency: 1 },
+      (messages) =>
+        Stream.runForEach(messages, ({ body }) =>
+          Effect.gen(function* consumeImportBatchDeadLetter() {
+            const database = yield* queryDatabase.raw;
+            const message = yield* Schema.decodeUnknownEffect(
+              ImportBatchQueueMessage
+            )(body, { onExcessProperty: "error" }).pipe(
+              Effect.mapError(
+                (): { readonly _tag: "InvalidImportBatchQueueMessage" } => ({
+                  _tag: "InvalidImportBatchQueueMessage",
+                })
+              )
+            );
+            yield* makeBatchQueueAcceptance(database).deadLetter(message);
           }).pipe(
             Effect.provideService(
               PilotProviderBudgetRuntime,
@@ -226,6 +275,31 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             Effect.gen(function* handleMealPlannerRequest() {
               const database = yield* queryDatabase.raw;
               const rawBucket = yield* evidenceBucket.raw;
+              const rawImportBatchQueue = yield* importBatchQueueWriter.raw;
+              const importBatchServiceLive = Layer.succeed(
+                ImportBatchService,
+                ImportBatchService.of(
+                  makeImportBatchService({
+                    identityResolver: makeTikTokCanonicalSourceIdentityResolver(
+                      globalThis.fetch
+                    ),
+                    newBatchId: () =>
+                      Schema.decodeUnknownSync(ImportBatchId)(
+                        crypto.randomUUID()
+                      ),
+                    newItemId: () =>
+                      Schema.decodeUnknownSync(ImportBatchItemId)(
+                        crypto.randomUUID()
+                      ),
+                    now: () =>
+                      Schema.decodeUnknownSync(ImportTimestamp)(
+                        currentIsoTimestamp()
+                      ),
+                    queue: makeCloudflareImportBatchQueue(rawImportBatchQueue),
+                    store: makeD1ImportBatchStore(database),
+                  })
+                )
+              );
               const importObservabilityTraceStoreLive = Layer.succeed(
                 ImportObservabilityTraceStore,
                 makeD1ImportObservabilityTraceStore(
@@ -346,6 +420,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                   Effect.provide(
                     Layer.mergeAll(
                       authorizerLive,
+                      importBatchServiceLive,
                       operatorCarouselServiceLive,
                       importObservabilityTraceStoreLive,
                       providerTerminalSettlementServiceLive,
@@ -369,7 +444,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       Layer.mergeAll(
         Cloudflare.D1.QueryDatabaseBinding,
         Cloudflare.R2.ReadWriteBucketBinding,
-        Cloudflare.Queues.EventSourceLive
+        Cloudflare.Queues.EventSourceLive,
+        Cloudflare.Queues.WriteQueueBinding
       )
     )
   )

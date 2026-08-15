@@ -4,37 +4,92 @@ import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Cause, Deferred, Effect, Exit, Fiber, Schema } from "effect";
+import { Effect, Exit, Layer, Redacted, Schema } from "effect";
+import { HttpRouter } from "effect/unstable/http";
 import { Miniflare } from "miniflare";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-
 import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+import { makeCloudflareImportBatchQueue } from "../../infrastructure/import-batch-queue.js";
+import {
+  ImportBatchDeliveryAttempt,
   ImportBatchId,
   ImportBatchItemId,
   ImportBatchQueueMessage,
 } from "./import-batch.contracts.js";
+import { ImportBatchRoutes } from "./import-batch.routes.js";
 import {
-  DeadLetterReplayClaimId,
-  OperationalCorrelation,
-  OperationalPrincipal,
-  makeImportOperationsService,
-} from "./import-operations.js";
+  ImportBatchService,
+  makeImportBatchService,
+} from "./import-batch.service.js";
+import { DeadLetterReplayClaimId } from "./import-operations.js";
 import { makeD1ImportQueueAcceptance } from "./import-queue-acceptance.d1.js";
-import { IdempotencyKey, SourceDescriptor } from "./import.contracts.js";
+import type { ImportAuthorizerShape } from "./import.auth.js";
+import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
+import {
+  CreateImportRequest,
+  ImportTimestamp,
+  ImportView,
+  SourceCanonicalId,
+} from "./import.contracts.js";
+import { invalidSource, sourceValidationUnavailable } from "./import.errors.js";
+import { makeDeterministicOrdinaryImportService } from "./import.fake.js";
+import type { ImportServiceShape } from "./import.service.js";
 import { makeProviderFreeSyntheticImportService } from "./import.synthetic.js";
+import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
+import { ValidatedVideoUrl } from "./source-identity.js";
 
+const apiToken = "durable-queue-test-token";
+const primaryQueueName = "durable-import-batches";
+const deadLetterQueueName = "durable-import-batches-dlq";
+const timestampText = "2026-08-15T10:00:00.000Z";
+const timestamp = Schema.decodeUnknownSync(ImportTimestamp)(timestampText);
+const decodeBatchId = Schema.decodeUnknownSync(ImportBatchId);
+const decodeItemId = Schema.decodeUnknownSync(ImportBatchItemId);
+const decodeDeliveryAttempt = Schema.decodeUnknownSync(
+  ImportBatchDeliveryAttempt
+);
+const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
+const decodeVideoUrl = Schema.decodeUnknownSync(ValidatedVideoUrl);
+const decodeImportView = Schema.decodeUnknownSync(ImportView);
+const decodeQueueMessage = Schema.decodeUnknownSync(ImportBatchQueueMessage);
+const decodeCreateRequest = Schema.decodeUnknownSync(CreateImportRequest);
+
+let authorizer: ImportAuthorizerShape;
 let database: AnyD1Database;
 let persistenceDirectory: string;
 let runtime: Miniflare;
+const applications: { readonly dispose: () => Promise<void> }[] = [];
+let replayClaimSequence = 0;
 
-const acceptanceNow = () => "2026-07-23T08:00:00.000Z" as const;
-let replayClaimIdSequence = 0;
-const newReplayClaimId = () => {
-  replayClaimIdSequence += 1;
-  return Schema.decodeUnknownSync(DeadLetterReplayClaimId)(
-    `018f47ad-91aa-7c35-b6fe-${String(replayClaimIdSequence).padStart(12, "0")}`
-  );
-};
+const queueRecordingWorker = `
+export default {
+  fetch() {
+    return new Response("local queue test");
+  },
+  async queue(batch, env) {
+    for (const message of batch.messages) {
+      await env.MealPlannerDatabase.prepare(
+        "INSERT INTO test_queue_deliveries (queue_name, body_json, attempt) VALUES (?, ?, ?)"
+      ).bind(batch.queue, JSON.stringify(message.body), message.attempts).run();
+      const configuredFailure = batch.queue === "${primaryQueueName}"
+        ? await env.MealPlannerDatabase.prepare(
+            "SELECT item_id FROM test_queue_failures WHERE item_id = ?"
+          ).bind(message.body.itemId).first()
+        : null;
+      if (configuredFailure === null) message.ack();
+      else message.retry({ delaySeconds: 0 });
+    }
+  }
+};`;
 
 const runSequentially = <A>(
   values: readonly A[],
@@ -48,15 +103,30 @@ const runSequentially = <A>(
 
 beforeAll(async () => {
   persistenceDirectory = await mkdtemp(
-    `${tmpdir()}/meal-planner-gaia-117-queue-`
+    `${tmpdir()}/meal-planner-durable-batch-queue-`
   );
   runtime = new Miniflare({
     compatibilityDate: "2026-07-14",
-    d1Databases: { MealPlannerDatabase: "gaia-117-queue-acceptance" },
+    d1Databases: { MealPlannerDatabase: "durable-batch-queue" },
     d1Persist: persistenceDirectory,
     modules: true,
-    script:
-      "export default { fetch() { return new Response('local D1 test'); } }",
+    queueConsumers: {
+      [deadLetterQueueName]: {
+        maxBatchSize: 1,
+        maxBatchTimeout: 0,
+      },
+      [primaryQueueName]: {
+        deadLetterQueue: deadLetterQueueName,
+        maxBatchSize: 1,
+        maxBatchTimeout: 0,
+        maxRetries: 2,
+        retryDelay: 0,
+      },
+    },
+    queueProducers: {
+      PRIMARY_QUEUE: { queueName: primaryQueueName },
+    },
+    script: queueRecordingWorker,
   });
   database = await runtime.getD1Database("MealPlannerDatabase");
   await database
@@ -79,613 +149,562 @@ beforeAll(async () => {
         .bind(migration.name),
     ]);
   });
+  await database.batch([
+    database.prepare(
+      `CREATE TABLE test_queue_deliveries (
+         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+         queue_name TEXT NOT NULL,
+         body_json TEXT NOT NULL,
+         attempt INTEGER NOT NULL
+       )`
+    ),
+    database.prepare(
+      `CREATE TABLE test_queue_failures (
+         item_id TEXT PRIMARY KEY NOT NULL
+       )`
+    ),
+  ]);
+  authorizer = await Effect.runPromise(
+    makeImportAuthorizer(Redacted.make(apiToken))
+  );
 }, 30_000);
+
+beforeEach(async () => {
+  replayClaimSequence = 0;
+  await database.batch([
+    database.prepare("DELETE FROM test_queue_failures"),
+    database.prepare("DELETE FROM test_queue_deliveries"),
+    database.prepare("DELETE FROM import_dead_letters"),
+    database.prepare("DELETE FROM import_batch_items"),
+    database.prepare("DELETE FROM import_batches"),
+    database.prepare("DELETE FROM import_requests"),
+    database.prepare("DELETE FROM recipe_imports"),
+  ]);
+});
+
+afterEach(async () => {
+  await Promise.all(applications.splice(0).map(({ dispose }) => dispose()));
+});
 
 afterAll(async () => {
   await runtime.dispose();
   await rm(persistenceDirectory, { force: true, recursive: true });
 });
 
-describe("durable provider-free queue acceptance", () => {
-  it("installs the ordered batch, dead-letter, and operational audit boundary", async () => {
-    const tables = await database
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-      )
-      .all<{ readonly name: string }>();
-    const ledger = await database
-      .prepare("SELECT name FROM d1_migrations ORDER BY id")
-      .all<{ readonly name: string }>();
-    const itemColumns = await database
-      .prepare("PRAGMA table_info(import_batch_items)")
-      .all<{ readonly name: string }>();
+const batchIdFor = (sequence: number) =>
+  decodeBatchId(
+    `018f47ad-91aa-7c35-b6fe-${String(500_000 + sequence).padStart(12, "0")}`
+  );
 
-    expect(
-      tables.results.map(({ name }: { readonly name: string }) => name)
-    ).toEqual(
-      expect.arrayContaining([
-        "import_batches",
-        "import_batch_items",
-        "import_dead_letters",
-        "import_operational_events",
-      ])
-    );
-    expect(
-      ledger.results.map(({ name }: { readonly name: string }) => name)
-    ).toEqual([
-      "0000_recipe_imports.sql",
-      "0001_import_media_acquisition.sql",
-      "0002_import_speech_transcription.sql",
-      "0003_import_visual_evidence.sql",
-      "0004_import_recipe_extractions.sql",
-      "0005_recipe_reviews.sql",
-      "0006_import_carousel_evidence.sql",
-      "0007_import_queue_acceptance.sql",
-      "0008_pilot_provider_budget.sql",
-      "0009_provider_terminal_recovery.sql",
-      "0010_provider_recovery_stage_key.sql",
-      "0011_provider_visual_recovery.sql",
-      "0012_provider_visual_recovery_completion_guard.sql",
-      "0013_provider_visual_retry_exhaustion_projection.sql",
-      "0014_provider_visual_second_recovery.sql",
-      "0015_provider_visual_unknown_outcome_second_recovery.sql",
-      "0016_recipe_terminal_projection.sql",
-      "0017_recipe_recovery.sql",
-      "0018_recipe_second_recovery.sql",
-      "0019_recipe_third_recovery.sql",
-      "0020_recipe_fourth_recovery.sql",
-      "0021_recipe_fifth_recovery.sql",
-      "0022_recipe_sixth_recovery.sql",
-      "0023_recipe_seventh_recovery.sql",
-      "0024_recipe_eighth_recovery.sql",
-      "0025_recipe_terminal_truth.sql",
-    ]);
-    expect(
-      itemColumns.results.map(({ name }: { readonly name: string }) => name)
-    ).not.toContain("source_url");
-  });
+const itemIdFor = (sequence: number) =>
+  decodeItemId(
+    `018f47ad-91aa-7c35-b6fe-${String(600_000 + sequence).padStart(12, "0")}`
+  );
 
-  it("rolls back an adversarial seed atomically without corrupting migration history or foreign keys", async () => {
-    const batchId = Schema.decodeUnknownSync(ImportBatchId)(
-      "018f47ad-91aa-7c35-b6fe-000000000711"
-    );
-    const duplicateItemId = Schema.decodeUnknownSync(ImportBatchItemId)(
-      "018f47ad-91aa-7c35-b6fe-000000000712"
-    );
-    const source = Schema.decodeUnknownSync(SourceDescriptor)({
-      kind: "tiktok",
-      url: "https://synthetic.invalid/imports/7520000000000000712",
-    });
-    const idempotencyKey = Schema.decodeUnknownSync(IdempotencyKey)(
-      "gaia-117:atomic-seed:712"
-    );
-    const batchIdempotencyKey = Schema.decodeUnknownSync(IdempotencyKey)(
-      "gaia-117:atomic-batch:711"
-    );
-    const ordinary = makeProviderFreeSyntheticImportService({
-      database,
-      now: acceptanceNow,
-    });
-    const acceptance = makeD1ImportQueueAcceptance({
-      database,
-      imports: ordinary,
-      maximumDeliveryAttempts: 3,
-      newReplayClaimId,
-      now: acceptanceNow,
-      replayClaimLeaseMilliseconds: 60_000,
-    });
+const newReplayClaimId = () => {
+  replayClaimSequence += 1;
+  return Schema.decodeUnknownSync(DeadLetterReplayClaimId)(
+    `018f47ad-91aa-7c35-b6fe-${String(700_000 + replayClaimSequence).padStart(12, "0")}`
+  );
+};
 
-    const failedSeed = await Effect.runPromiseExit(
-      acceptance.seedBatch({
-        batchId,
-        idempotencyKey: batchIdempotencyKey,
-        items: [
-          {
-            deliveryMode: "ordinary",
-            id: duplicateItemId,
-            idempotencyKey,
-            source,
-          },
-          {
-            deliveryMode: "ordinary",
-            id: duplicateItemId,
-            idempotencyKey: Schema.decodeUnknownSync(IdempotencyKey)(
-              "gaia-117:atomic-seed:713"
-            ),
-            source,
-          },
-        ],
-      })
-    );
-    expect(Exit.isFailure(failedSeed)).toBe(true);
-
-    const partialBatch = await database
-      .prepare(
-        `SELECT
-           (SELECT COUNT(*) FROM import_batches WHERE id = ?) AS batches,
-           (SELECT COUNT(*) FROM import_batch_items WHERE batch_id = ?) AS items`
-      )
-      .bind(batchId, batchId)
-      .first<{ readonly batches: number; readonly items: number }>();
-    expect(partialBatch).toEqual({ batches: 0, items: 0 });
-    await expect(
-      database
-        .prepare(
-          `INSERT INTO import_batch_items (
-             id, batch_id, idempotency_key, source_kind, source_canonical_id,
-             delivery_mode, correlation_json, status, failure_code,
-             attempt_count, import_id, canonical_source_id,
-             import_status_json, disposition, created_at, updated_at
-           ) VALUES (?, ?, ?, 'tiktok', ?, 'ordinary', NULL, 'queued', NULL,
-                     0, NULL, NULL, NULL, NULL, ?, ?)`
-        )
-        .bind(
-          duplicateItemId,
-          batchId,
-          idempotencyKey,
-          "7520000000000000712",
-          "2026-07-23T08:00:00.000Z",
-          "2026-07-23T08:00:00.000Z"
-        )
-        .run()
-    ).rejects.toThrow();
-
-    const ledger = await database
-      .prepare(
-        `SELECT name, COUNT(*) AS count
-           FROM d1_migrations
-          GROUP BY name
-          ORDER BY name`
-      )
-      .all<{ readonly name: string; readonly count: number }>();
-    expect(ledger.results).toHaveLength(26);
-    expect(
-      ledger.results.every(
-        ({ count }: { readonly count: number }) => count === 1
-      )
-    ).toBe(true);
-    const foreignKeyViolations = await database
-      .prepare("PRAGMA foreign_key_check")
-      .all();
-    expect(foreignKeyViolations.results).toEqual([]);
-  });
-
-  it("survives redelivery and replays one poisoned item through the ordinary service exactly once", async () => {
-    let currentTimeEpochMilliseconds = Date.parse(acceptanceNow());
-    const currentAcceptanceTime = () =>
-      new Date(currentTimeEpochMilliseconds).toISOString();
-    const batchId = Schema.decodeUnknownSync(ImportBatchId)(
-      "018f47ad-91aa-7c35-b6fe-000000000701"
-    );
-    const happyItemId = Schema.decodeUnknownSync(ImportBatchItemId)(
-      "018f47ad-91aa-7c35-b6fe-000000000702"
-    );
-    const poisonItemId = Schema.decodeUnknownSync(ImportBatchItemId)(
-      "018f47ad-91aa-7c35-b6fe-000000000703"
-    );
-    const happySource = Schema.decodeUnknownSync(SourceDescriptor)({
-      kind: "tiktok",
-      url: "https://synthetic.invalid/imports/7520000000000000702",
-    });
-    const poisonSource = Schema.decodeUnknownSync(SourceDescriptor)({
-      kind: "tiktok",
-      url: "https://synthetic.invalid/imports/7520000000000000703",
-    });
-    const happyKey =
-      Schema.decodeUnknownSync(IdempotencyKey)("gaia-117:happy:702");
-    const poisonKey = Schema.decodeUnknownSync(IdempotencyKey)(
-      "gaia-117:poison:703"
-    );
-    const batchIdempotencyKey =
-      Schema.decodeUnknownSync(IdempotencyKey)("gaia-117:batch:701");
-    const correlation = Schema.decodeUnknownSync(OperationalCorrelation)({
-      batchId,
-      evidence: {
-        kind: "recipe_draft",
-        referenceId: "synthetic-evidence:gaia-117:703",
-      },
-      importId: "018f47ad-91aa-7c35-b6fe-000000000703",
-      mealPlanId: "synthetic-meal-plan:gaia-117",
-      recipeId: "018f47ad-91aa-7c35-b6fe-000000000703",
-    });
-    const operator = Schema.decodeUnknownSync(OperationalPrincipal)({
-      actorId: "gaia-117-synthetic-operator",
-      role: "operator",
-    });
-    const viewer = Schema.decodeUnknownSync(OperationalPrincipal)({
-      actorId: "gaia-117-synthetic-viewer",
-      role: "viewer",
-    });
-    const providerFreeObservations = {
-      availabilityValidations: 0,
-      identityResolutions: 0,
-      workflowReconciliations: 0,
-    };
-    const ordinary = makeProviderFreeSyntheticImportService({
-      database,
-      now: currentAcceptanceTime,
-      observe: {
-        availabilityValidation: () => {
-          providerFreeObservations.availabilityValidations += 1;
-        },
-        identityResolution: () => {
-          providerFreeObservations.identityResolutions += 1;
-        },
-        workflowReconciliation: () => {
-          providerFreeObservations.workflowReconciliations += 1;
-        },
-      },
-    });
-    const acceptance = makeD1ImportQueueAcceptance({
-      database,
-      imports: ordinary,
-      maximumDeliveryAttempts: 3,
-      newReplayClaimId,
-      now: currentAcceptanceTime,
-      replayClaimLeaseMilliseconds: 60_000,
-    });
-
-    await Effect.runPromise(
-      acceptance.seedBatch({
-        batchId,
-        idempotencyKey: batchIdempotencyKey,
-        items: [
-          {
-            deliveryMode: "ordinary",
-            id: happyItemId,
-            idempotencyKey: happyKey,
-            source: happySource,
-          },
-          {
-            correlation,
-            deliveryMode: "poison",
-            id: poisonItemId,
-            idempotencyKey: poisonKey,
-            source: poisonSource,
-          },
-        ],
-      })
-    );
-
-    const happyMessage = Schema.decodeUnknownSync(ImportBatchQueueMessage)({
-      batchId,
-      itemId: happyItemId,
-    });
-    let ordinaryCreateCalls = 0;
-    const interrupted = makeD1ImportQueueAcceptance({
-      database,
-      imports: {
-        create: (request, idempotencyKey) =>
-          ordinary.create(request, idempotencyKey).pipe(
-            Effect.tap(() =>
-              Effect.sync(() => {
-                ordinaryCreateCalls += 1;
-              })
-            ),
-            Effect.andThen(Effect.interrupt)
-          ),
-        get: ordinary.get,
-      },
-      maximumDeliveryAttempts: 3,
-      newReplayClaimId,
-      now: currentAcceptanceTime,
-      replayClaimLeaseMilliseconds: 60_000,
-    });
-    const interruptedExit = await Effect.runPromiseExit(
-      interrupted.consume(happyMessage)
-    );
-    expect(
-      Exit.isFailure(interruptedExit) &&
-        Cause.hasInterrupts(interruptedExit.cause)
-    ).toBe(true);
-
-    ordinaryCreateCalls = 0;
-    const redelivered = makeD1ImportQueueAcceptance({
-      database,
-      imports: {
-        create: (request, idempotencyKey) => {
-          ordinaryCreateCalls += 1;
-          return ordinary.create(request, idempotencyKey);
-        },
-        get: ordinary.get,
-      },
-      maximumDeliveryAttempts: 3,
-      newReplayClaimId,
-      now: currentAcceptanceTime,
-      replayClaimLeaseMilliseconds: 60_000,
-    });
-    await Effect.runPromise(redelivered.consume(happyMessage));
-    await Effect.runPromise(redelivered.consume(happyMessage));
-    expect(ordinaryCreateCalls).toBe(1);
-
-    const poisonMessage = Schema.decodeUnknownSync(ImportBatchQueueMessage)({
-      batchId,
-      itemId: poisonItemId,
-    });
-    await runSequentially([1, 2, 3], async () => {
-      const exit = await Effect.runPromiseExit(
-        acceptance.consume(poisonMessage)
-      );
-      expect(Exit.isFailure(exit)).toBe(true);
-    });
-    const deadLetterState = await database
-      .prepare(
-        `SELECT i.attempt_count AS attemptCount,
-                i.status,
-                d.replay_state AS replayState
-           FROM import_batch_items i
-           JOIN import_dead_letters d ON d.item_id = i.id
-          WHERE i.id = ?`
-      )
-      .bind(poisonItemId)
-      .first<{
-        readonly attemptCount: number;
-        readonly replayState: string;
-        readonly status: string;
-      }>();
-    expect(deadLetterState).toEqual({
-      attemptCount: 3,
-      replayState: "ready",
-      status: "failed",
-    });
-    await expect(
-      Effect.runPromise(acceptance.getBatch(batchId))
-    ).resolves.toMatchObject({
-      counts: { failed: 1, succeeded: 1, total: 2 },
-      status: "partial_failure",
-    });
-
-    const denied = await Effect.runPromiseExit(
-      makeImportOperationsService({
-        artifacts: { expireDue: () => Effect.succeed([]) },
-        deadLetters: acceptance.deadLetters,
-        events: acceptance.events,
-        imports: ordinary,
-        replayQuotaLimit: 1,
-      }).inspectDeadLetter({ itemId: poisonItemId, principal: viewer })
-    );
-    expect(Exit.isFailure(denied)).toBe(true);
-
-    const operations = makeImportOperationsService({
-      artifacts: { expireDue: () => Effect.succeed([]) },
-      deadLetters: acceptance.deadLetters,
-      events: acceptance.events,
-      imports: ordinary,
-      replayQuotaLimit: 1,
-    });
-    const inspection = await Effect.runPromise(
-      operations.inspectDeadLetter({
-        itemId: poisonItemId,
-        principal: operator,
-      })
-    );
-    expect(inspection).toEqual({
-      code: "workflow_start_unavailable",
-      correlation,
-      itemId: poisonItemId,
-    });
-
-    const interruptedReplay = await Effect.runPromiseExit(
-      makeImportOperationsService({
-        artifacts: { expireDue: () => Effect.succeed([]) },
-        deadLetters: acceptance.deadLetters,
-        events: acceptance.events,
-        imports: {
-          create: () => Effect.interrupt,
-          get: ordinary.get,
-        },
-        replayQuotaLimit: 1,
-      }).replayDeadLetter({
-        itemId: poisonItemId,
-        principal: operator,
-        quotaUnits: 1,
-      })
-    );
-    expect(
-      Exit.isFailure(interruptedReplay) &&
-        Cause.hasInterrupts(interruptedReplay.cause)
-    ).toBe(true);
-    const releasedClaim = await database
-      .prepare(
-        "SELECT replay_state AS replayState FROM import_dead_letters WHERE item_id = ?"
-      )
-      .bind(poisonItemId)
-      .first<{ readonly replayState: string }>();
-    expect(releasedClaim).toEqual({ replayState: "ready" });
-
-    const abandonedClaim = await Effect.runPromise(
-      acceptance.deadLetters.claimReplay(poisonItemId)
-    );
-    expect(abandonedClaim._tag).toBe("Ready");
-    if (abandonedClaim._tag !== "Ready") {
-      throw new Error("Expected an unreplayed dead letter");
+const identityResolver: CanonicalSourceIdentityResolverShape = {
+  resolve: (source) => {
+    const match = /\/(?<kind>photo|video)\/(?<id>\d+)/u.exec(source.url);
+    const canonicalId = match?.groups?.["id"];
+    if (canonicalId === undefined) {
+      return Effect.fail(invalidSource());
     }
-    const abandonedImport = await Effect.runPromise(
-      ordinary.create(abandonedClaim.request, abandonedClaim.idempotencyKey)
-    );
-    const observationsBeforeRecovery = { ...providerFreeObservations };
-
-    const concurrentClaimFailure = await Effect.runPromise(
-      Effect.flip(acceptance.deadLetters.claimReplay(poisonItemId))
-    );
-    expect(concurrentClaimFailure).toEqual({
-      _tag: "DeadLetterReplayInProgress",
-      itemId: poisonItemId,
+    const identity = {
+      canonicalId: decodeCanonicalId(canonicalId),
+      kind: "tiktok" as const,
+    };
+    if (match?.groups?.["kind"] === "photo") {
+      return Effect.succeed({
+        _tag: "UnsupportedIdentity" as const,
+        identity,
+      });
+    }
+    return Effect.succeed({
+      _tag: "VideoIdentity" as const,
+      identity,
+      videoUrl: decodeVideoUrl(source.url),
     });
+  },
+};
 
-    currentTimeEpochMilliseconds += 60_001;
-    const recoveredAcceptance = makeD1ImportQueueAcceptance({
+const makeHttpHarness = async () => {
+  const sender = await runtime.getQueueProducer<unknown>("PRIMARY_QUEUE");
+  let nextBatchId = 0;
+  let nextItemId = 0;
+  const service = makeImportBatchService({
+    identityResolver,
+    newBatchId: () => {
+      nextBatchId += 1;
+      return batchIdFor(nextBatchId);
+    },
+    newItemId: () => {
+      nextItemId += 1;
+      return itemIdFor(nextItemId);
+    },
+    now: () => timestamp,
+    queue: makeCloudflareImportBatchQueue({
+      sendBatch: (messages) => sender.sendBatch(messages),
+    }),
+    store: makeD1ImportQueueAcceptance({
       database,
-      imports: ordinary,
-      maximumDeliveryAttempts: 3,
+      imports: makeDeterministicOrdinaryImportService({ attempts: [] }).service,
       newReplayClaimId,
-      now: currentAcceptanceTime,
+      now: () => timestampText,
       replayClaimLeaseMilliseconds: 60_000,
-    });
-    const expiredOwnerCompletionFailure = await Effect.runPromise(
-      Effect.flip(
-        acceptance.deadLetters.completeReplay(
-          poisonItemId,
-          abandonedClaim.claimId,
-          abandonedImport.import
-        )
-      )
-    );
-    expect(expiredOwnerCompletionFailure).toEqual({
-      _tag: "DeadLetterReplayInProgress",
-      itemId: poisonItemId,
-    });
-    let recoveredCreateCalls = 0;
-    const replayStarted = await Effect.runPromise(Deferred.make<null>());
-    const continueReplay = await Effect.runPromise(Deferred.make<null>());
-    const replayOperations = makeImportOperationsService({
-      artifacts: { expireDue: () => Effect.succeed([]) },
-      deadLetters: recoveredAcceptance.deadLetters,
-      events: recoveredAcceptance.events,
-      imports: {
-        create: (request, idempotencyKey) =>
-          Effect.gen(function* controlledReplay() {
-            recoveredCreateCalls += 1;
-            yield* Deferred.succeed(replayStarted, null);
-            yield* Deferred.await(continueReplay);
-            return yield* ordinary.create(request, idempotencyKey);
-          }),
-        get: ordinary.get,
+    }).store,
+  });
+  const app = HttpRouter.toWebHandler(
+    Layer.mergeAll(
+      ImportBatchRoutes,
+      Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+      Layer.succeed(ImportBatchService, ImportBatchService.of(service))
+    ),
+    { disableLogger: true }
+  );
+  applications.push(app);
+  return app;
+};
+
+const postBatchSources = (
+  app: Awaited<ReturnType<typeof makeHttpHarness>>,
+  idempotencyKey: string,
+  sourcePaths: readonly string[]
+) =>
+  app.handler(
+    new Request("https://meal-planner.test/import-batches", {
+      body: JSON.stringify({
+        items: sourcePaths.map((sourcePath, index) => ({
+          idempotencyKey: `${idempotencyKey}-item-${index + 1}`,
+          source: {
+            kind: "tiktok",
+            url: `https://www.tiktok.com/@cook/${sourcePath}`,
+          },
+        })),
+      }),
+      headers: {
+        authorization: `Bearer ${apiToken}`,
+        "content-type": "application/json",
+        "idempotency-key": idempotencyKey,
       },
-      replayQuotaLimit: 1,
+      method: "POST",
+    })
+  );
+
+const postBatch = (
+  app: Awaited<ReturnType<typeof makeHttpHarness>>,
+  idempotencyKey: string,
+  canonicalIds: readonly string[]
+) =>
+  postBatchSources(
+    app,
+    idempotencyKey,
+    canonicalIds.map((canonicalId) => `video/${canonicalId}`)
+  );
+
+const getBatch = (
+  app: Awaited<ReturnType<typeof makeHttpHarness>>,
+  batchId: string
+) =>
+  app.handler(
+    new Request(`https://meal-planner.test/import-batches/${batchId}`, {
+      headers: { authorization: `Bearer ${apiToken}` },
+    })
+  );
+
+interface RecordedDelivery {
+  readonly attempt: number;
+  readonly bodyJson: string;
+  readonly queueName: string;
+}
+
+const recordedDeliveries = () =>
+  database
+    .prepare(
+      `SELECT attempt, body_json AS bodyJson, queue_name AS queueName
+         FROM test_queue_deliveries
+        ORDER BY id`
+    )
+    .all<RecordedDelivery>();
+
+const waitForDeliveries = (
+  queueName: string,
+  minimum: number
+): Promise<readonly RecordedDelivery[]> =>
+  vi.waitFor(
+    async () => {
+      const { results } = await recordedDeliveries();
+      const rows = results.filter(
+        (delivery: RecordedDelivery) => delivery.queueName === queueName
+      );
+      expect(rows.length).toBeGreaterThanOrEqual(minimum);
+      return rows;
+    },
+    { interval: 20, timeout: 10_000 }
+  );
+
+const messageFrom = (delivery: RecordedDelivery) =>
+  decodeQueueMessage(JSON.parse(delivery.bodyJson));
+
+const queuedImport = (canonicalId: string, importSuffix: number) =>
+  decodeImportView({
+    createdAt: timestampText,
+    evidence: [],
+    id: `018f47ad-91aa-7c35-b6fe-${String(800_000 + importSuffix).padStart(12, "0")}`,
+    source: { canonicalId, kind: "tiktok" },
+    status: { kind: "queued" },
+    updatedAt: timestampText,
+  });
+
+const makeAcceptance = (imports: ImportServiceShape) =>
+  makeD1ImportQueueAcceptance({
+    database,
+    imports,
+    newReplayClaimId,
+    now: () => timestampText,
+    replayClaimLeaseMilliseconds: 60_000,
+  });
+
+describe("durable import batch queue acceptance", () => {
+  it("preserves a photo identity through D1 and Queue consumption", async () => {
+    const app = await makeHttpHarness();
+    const canonicalId = "7520000000000000051";
+    const ordinary = makeDeterministicOrdinaryImportService({
+      attempts: [
+        {
+          idempotencyKey: "batch-photo-item-1",
+          outcome: {
+            _tag: "Success",
+            import: queuedImport(canonicalId, 51),
+          },
+        },
+      ],
     });
-    const quotaRejected = await Effect.runPromiseExit(
-      replayOperations.replayDeadLetter({
-        itemId: poisonItemId,
-        principal: operator,
-        quotaUnits: 2,
-      })
-    );
-    expect(Exit.isFailure(quotaRejected)).toBe(true);
-    expect(recoveredCreateCalls).toBe(0);
+    const acceptance = makeAcceptance(ordinary.service);
 
-    const firstReplayFiber = Effect.runFork(
-      replayOperations.replayDeadLetter({
-        itemId: poisonItemId,
-        principal: operator,
-        quotaUnits: 1,
-      })
-    );
-    await Effect.runPromise(Deferred.await(replayStarted));
-
+    const admitted = await postBatchSources(app, "batch-photo", [
+      `photo/${canonicalId}`,
+    ]);
+    const [delivery] = await waitForDeliveries(primaryQueueName, 1);
+    if (delivery === undefined) {
+      throw new Error("Expected photo queue delivery");
+    }
+    const stored = await database
+      .prepare(
+        `SELECT source_canonical_id AS canonicalId,
+                source_identity_kind AS identityKind
+           FROM import_batch_items
+          WHERE id = ?`
+      )
+      .bind(messageFrom(delivery).itemId)
+      .first();
     await Effect.runPromise(
-      acceptance.deadLetters.releaseReplay(poisonItemId, abandonedClaim.claimId)
+      acceptance.consume(
+        messageFrom(delivery),
+        decodeDeliveryAttempt(delivery.attempt)
+      )
     );
-    const staleCompletionFailure = await Effect.runPromise(
-      Effect.flip(
-        acceptance.deadLetters.completeReplay(
-          poisonItemId,
-          abandonedClaim.claimId,
-          abandonedImport.import
+
+    expect(admitted.status).toBe(202);
+    expect(stored).toEqual({
+      canonicalId,
+      identityKind: "unsupported",
+    });
+    expect(ordinary.calls[0]?.request.source.url).toBe(
+      `https://www.tiktok.com/@source/photo/${canonicalId}`
+    );
+    expect(ordinary.calls[0]?.request.source.url).not.toContain("/video/");
+  });
+
+  it("proves HTTP to D1 to workerd Queue to unordered consumer to D1 to GET", async () => {
+    const app = await makeHttpHarness();
+    const ordinary = makeDeterministicOrdinaryImportService({
+      attempts: [
+        {
+          idempotencyKey: "batch-partial-item-1",
+          outcome: {
+            _tag: "Success",
+            import: queuedImport("7520000000000000101", 1),
+          },
+        },
+        {
+          idempotencyKey: "batch-partial-item-2",
+          outcome: {
+            _tag: "Failure",
+            error: sourceValidationUnavailable(),
+          },
+        },
+      ],
+    });
+    const acceptance = makeAcceptance(ordinary.service);
+
+    const admitted = await postBatch(app, "batch-partial", [
+      "7520000000000000101",
+      "7520000000000000102",
+    ]);
+    const primaryDeliveries = await waitForDeliveries(primaryQueueName, 2);
+    const messages = primaryDeliveries.map(messageFrom);
+
+    expect(admitted.status).toBe(202);
+    expect(messages).toEqual([
+      { batchId: batchIdFor(1), itemId: itemIdFor(1) },
+      { batchId: batchIdFor(1), itemId: itemIdFor(2) },
+    ]);
+    expect(JSON.stringify(messages)).not.toMatch(/tiktok|url|source/iu);
+
+    await runSequentially(primaryDeliveries.toReversed(), (delivery) =>
+      Effect.runPromise(
+        acceptance.consume(
+          messageFrom(delivery),
+          decodeDeliveryAttempt(delivery.attempt)
         )
       )
     );
-    expect(staleCompletionFailure).toEqual({
-      _tag: "DeadLetterReplayInProgress",
-      itemId: poisonItemId,
+    await runSequentially(primaryDeliveries, (delivery) =>
+      Effect.runPromise(
+        acceptance.consume(
+          messageFrom(delivery),
+          decodeDeliveryAttempt(delivery.attempt)
+        )
+      )
+    );
+
+    const polled = await getBatch(app, batchIdFor(1));
+    expect(polled.status).toBe(200);
+    await expect(polled.json()).resolves.toMatchObject({
+      batch: {
+        counts: { failed: 1, queued: 0, running: 0, succeeded: 1, total: 2 },
+        items: [
+          {
+            canonicalId: "7520000000000000101",
+            disposition: "created",
+            id: itemIdFor(1),
+            status: "succeeded",
+          },
+          {
+            code: "source_validation_unavailable",
+            deadLettered: false,
+            id: itemIdFor(2),
+            status: "failed",
+          },
+        ],
+        status: "partial_failure",
+      },
     });
-    const recoveredClaimState = await database
+    expect(ordinary.calls).toHaveLength(2);
+  });
+
+  it("recovers an interrupted settlement through ordinary-import idempotency", async () => {
+    const app = await makeHttpHarness();
+    const admitted = await postBatch(app, "batch-redelivery", [
+      "7520000000000000201",
+    ]);
+    const [delivery] = await waitForDeliveries(primaryQueueName, 1);
+    if (delivery === undefined) {
+      throw new Error("Expected queue delivery");
+    }
+    const ordinary = makeProviderFreeSyntheticImportService({
+      database,
+      now: () => timestampText,
+    });
+    let calls = 0;
+    const interruptedAfterCreate: ImportServiceShape = {
+      ...ordinary,
+      create: (request, idempotencyKey) =>
+        ordinary.create(request, idempotencyKey).pipe(
+          Effect.flatMap((result) => {
+            calls += 1;
+            return calls === 1 ? Effect.interrupt : Effect.succeed(result);
+          })
+        ),
+    };
+    const acceptance = makeD1ImportQueueAcceptance({
+      database,
+      imports: interruptedAfterCreate,
+      newReplayClaimId,
+      now: () => timestampText,
+      replayClaimLeaseMilliseconds: 60_000,
+      sourceRequestForCanonicalId: (canonicalId) =>
+        decodeCreateRequest({
+          source: {
+            kind: "tiktok",
+            url: `https://synthetic.invalid/imports/${canonicalId}`,
+          },
+        }),
+    });
+    const message = messageFrom(delivery);
+
+    expect(admitted.status).toBe(202);
+    const interrupted = await Effect.runPromiseExit(
+      acceptance.consume(message, decodeDeliveryAttempt(1))
+    );
+    expect(Exit.isFailure(interrupted)).toBe(true);
+    await Effect.runPromise(
+      acceptance.consume(message, decodeDeliveryAttempt(2))
+    );
+    await Effect.runPromise(
+      acceptance.consume(message, decodeDeliveryAttempt(1))
+    );
+    await Effect.runPromise(
+      acceptance.consume(message, decodeDeliveryAttempt(2))
+    );
+
+    const polled = await getBatch(app, batchIdFor(1));
+    await expect(polled.json()).resolves.toMatchObject({
+      batch: {
+        counts: { failed: 0, queued: 0, running: 0, succeeded: 1, total: 1 },
+        items: [
+          {
+            disposition: "idempotency_replay",
+            status: "succeeded",
+          },
+        ],
+        status: "completed",
+      },
+    });
+    expect(calls).toBe(2);
+    const ordinaryRows = await database
+      .prepare("SELECT COUNT(*) AS count FROM recipe_imports")
+      .first<{ readonly count: number }>();
+    expect(ordinaryRows?.count).toBe(1);
+  });
+
+  it("retains the ordinary canonical-duplicate disposition", async () => {
+    const app = await makeHttpHarness();
+    await postBatch(app, "batch-canonical-duplicate", [
+      "7520000000000000251",
+      "7520000000000000251",
+    ]);
+    const primaryDeliveries = await waitForDeliveries(primaryQueueName, 2);
+    const ordinary = makeDeterministicOrdinaryImportService({
+      attempts: [
+        {
+          idempotencyKey: "batch-canonical-duplicate-item-1",
+          outcome: {
+            _tag: "Success",
+            import: queuedImport("7520000000000000251", 251),
+          },
+        },
+        {
+          idempotencyKey: "batch-canonical-duplicate-item-2",
+          outcome: {
+            _tag: "Success",
+            import: queuedImport("7520000000000000251", 252),
+          },
+        },
+      ],
+    });
+    const acceptance = makeAcceptance(ordinary.service);
+
+    await runSequentially(primaryDeliveries, (delivery) =>
+      Effect.runPromise(
+        acceptance.consume(
+          messageFrom(delivery),
+          decodeDeliveryAttempt(delivery.attempt)
+        )
+      )
+    );
+
+    const polled = await getBatch(app, batchIdFor(1));
+    await expect(polled.json()).resolves.toMatchObject({
+      batch: {
+        counts: { failed: 0, queued: 0, running: 0, succeeded: 2, total: 2 },
+        items: [
+          { disposition: "created", status: "succeeded" },
+          { disposition: "canonical_duplicate", status: "succeeded" },
+        ],
+        status: "completed",
+      },
+    });
+    expect(ordinary.ordinaryImportsCreated).toBe(1);
+  });
+
+  it("surfaces a real Queue retry exhaustion through the durable DLQ", async () => {
+    const app = await makeHttpHarness();
+    const doomedItemId = itemIdFor(1);
+    await database
+      .prepare("INSERT INTO test_queue_failures (item_id) VALUES (?)")
+      .bind(doomedItemId)
+      .run();
+
+    const admitted = await postBatch(app, "batch-dlq", ["7520000000000000301"]);
+    const primaryDeliveries = await waitForDeliveries(primaryQueueName, 2);
+    const [deadLetterDelivery] = await waitForDeliveries(
+      deadLetterQueueName,
+      1
+    );
+    if (deadLetterDelivery === undefined) {
+      throw new Error("Expected final dead-letter delivery");
+    }
+    const acceptance = makeAcceptance(
+      makeDeterministicOrdinaryImportService({ attempts: [] }).service
+    );
+    const message = messageFrom(deadLetterDelivery);
+
+    expect(admitted.status).toBe(202);
+    expect(primaryDeliveries.map(({ attempt }) => attempt)).toEqual(
+      expect.arrayContaining([1, 2])
+    );
+    expect(message).toEqual({
+      batchId: batchIdFor(1),
+      itemId: doomedItemId,
+    });
+    await Effect.runPromise(acceptance.deadLetter(message));
+    await Effect.runPromise(acceptance.deadLetter(message));
+
+    const polled = await getBatch(app, batchIdFor(1));
+    await expect(polled.json()).resolves.toMatchObject({
+      batch: {
+        counts: { failed: 1, queued: 0, running: 0, succeeded: 0, total: 1 },
+        items: [
+          {
+            code: "workflow_start_unavailable",
+            deadLettered: true,
+            id: doomedItemId,
+            status: "failed",
+          },
+        ],
+        status: "failed",
+      },
+    });
+    const deadLetters = await database
       .prepare(
-        `SELECT replay_claim_id AS replayClaimId,
-                replay_state AS replayState
+        `SELECT failure_code AS failureCode, replay_state AS replayState
            FROM import_dead_letters
           WHERE item_id = ?`
       )
-      .bind(poisonItemId)
-      .first<{
-        readonly replayClaimId: string;
-        readonly replayState: string;
-      }>();
-    expect(recoveredClaimState?.replayState).toBe("claimed");
-    expect(recoveredClaimState?.replayClaimId).not.toBe(abandonedClaim.claimId);
-    const recoveredConcurrentFailure = await Effect.runPromise(
-      Effect.flip(recoveredAcceptance.deadLetters.claimReplay(poisonItemId))
-    );
-    expect(recoveredConcurrentFailure).toEqual({
-      _tag: "DeadLetterReplayInProgress",
-      itemId: poisonItemId,
-    });
-
-    await Effect.runPromise(Deferred.succeed(continueReplay, null));
-    const firstReplay = await Effect.runPromise(Fiber.join(firstReplayFiber));
-    const duplicateReplay = await Effect.runPromise(
-      replayOperations.replayDeadLetter({
-        itemId: poisonItemId,
-        principal: operator,
-        quotaUnits: 1,
-      })
-    );
-    expect(firstReplay.disposition).toBe("replayed");
-    expect(duplicateReplay.disposition).toBe("already_replayed");
-    expect(recoveredCreateCalls).toBe(1);
-    expect(providerFreeObservations.availabilityValidations).toBe(
-      observationsBeforeRecovery.availabilityValidations
-    );
-    expect(providerFreeObservations.identityResolutions).toBe(
-      observationsBeforeRecovery.identityResolutions
-    );
-    expect(providerFreeObservations).toEqual({
-      availabilityValidations: 2,
-      identityResolutions: 2,
-      workflowReconciliations: 4,
-    });
-
-    const finalBatch = await Effect.runPromise(acceptance.getBatch(batchId));
-    expect(finalBatch).toMatchObject({
-      counts: {
-        failed: 0,
-        queued: 0,
-        running: 0,
-        succeeded: 2,
-        total: 2,
-      },
-      status: "completed",
-    });
-
-    const importRows = await database
-      .prepare(
-        `SELECT canonical_source_id AS canonicalSourceId, COUNT(*) AS count
-         FROM recipe_imports
-        WHERE canonical_source_id IN (?, ?)
-        GROUP BY canonical_source_id
-        ORDER BY canonical_source_id`
-      )
-      .bind("7520000000000000702", "7520000000000000703")
-      .all<{ readonly canonicalSourceId: string; readonly count: number }>();
-    expect(importRows.results).toEqual([
-      { canonicalSourceId: "7520000000000000702", count: 1 },
-      { canonicalSourceId: "7520000000000000703", count: 1 },
-    ]);
-
-    const eventRows = await database
-      .prepare(
-        "SELECT event_json AS eventJson FROM import_operational_events ORDER BY id"
-      )
-      .all<{ readonly eventJson: string }>();
-    const serializedEvents = eventRows.results
-      .map(({ eventJson }: { readonly eventJson: string }) => eventJson)
-      .join("\n");
-    expect(serializedEvents).toContain("DeadLetterReplayDenied");
-    expect(serializedEvents).toContain("DeadLetterReplayQuotaRejected");
-    expect(serializedEvents).toContain("DeadLetterReplayed");
-    expect(
-      eventRows.results.filter(
-        ({ eventJson }: { readonly eventJson: string }) =>
-          eventJson.includes('"DeadLetterReplayed"')
-      )
-    ).toHaveLength(1);
-    expect(serializedEvents).not.toContain("synthetic.invalid");
-    expect(serializedEvents).not.toContain(happyKey);
-    expect(serializedEvents).not.toContain(poisonKey);
-
-    const foreignKeyViolations = await database
-      .prepare("PRAGMA foreign_key_check")
+      .bind(doomedItemId)
       .all();
-    expect(foreignKeyViolations.results).toEqual([]);
+    expect(deadLetters.results).toEqual([
+      {
+        failureCode: "workflow_start_unavailable",
+        replayState: "ready",
+      },
+    ]);
+  });
+
+  it("rejects a queue identity that was never admitted", async () => {
+    const acceptance = makeAcceptance(
+      makeDeterministicOrdinaryImportService({ attempts: [] }).service
+    );
+    const missing = decodeQueueMessage({
+      batchId: batchIdFor(99),
+      itemId: itemIdFor(99),
+    });
+
+    const failure = await Effect.runPromise(
+      Effect.flip(acceptance.consume(missing, decodeDeliveryAttempt(1)))
+    );
+
+    expect(failure).toEqual({
+      _tag: "ImportBatchQueueMessageNotFound",
+      batchId: batchIdFor(99),
+      itemId: itemIdFor(99),
+    });
   });
 });

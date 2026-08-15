@@ -17,7 +17,7 @@ interface ImportBatchQueueSender {
       readonly body: unknown;
       readonly contentType: "json";
     }[]
-  ) => Promise<void>;
+  ) => Promise<unknown>;
 }
 
 /** Adapt a Cloudflare queue sender to the provider-neutral batch queue seam. */
@@ -33,5 +33,5 @@ export const makeCloudflareImportBatchQueue = (
         sender.sendBatch(
           messages.map((body) => ({ body, contentType: "json" }))
         ),
-    }),
+    }).pipe(Effect.asVoid),
 });

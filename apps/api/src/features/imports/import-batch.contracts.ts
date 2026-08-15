@@ -98,6 +98,7 @@ export type ImportBatchItemFailureCode = typeof ImportBatchItemFailureCode.Type;
 
 const FailedImportBatchItem = Schema.Struct({
   code: ImportBatchItemFailureCode,
+  deadLettered: Schema.Boolean,
   id: ImportBatchItemId,
   idempotencyKey: IdempotencyKey,
   sourceKind: Schema.Literal("tiktok"),
@@ -182,3 +183,11 @@ export const ImportBatchQueueMessage = Schema.Struct({
 });
 /** ID-only queue message; source locators remain in coordinator-owned state. */
 export type ImportBatchQueueMessage = typeof ImportBatchQueueMessage.Type;
+
+/** One-based Cloudflare Queue delivery attempt used for durable claiming. */
+export const ImportBatchDeliveryAttempt = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+  Schema.brand("ImportBatchDeliveryAttempt")
+);
+/** One-based Cloudflare Queue delivery attempt used for durable claiming. */
+export type ImportBatchDeliveryAttempt = typeof ImportBatchDeliveryAttempt.Type;
