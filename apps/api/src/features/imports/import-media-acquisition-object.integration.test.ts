@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Cause, Context, Effect, Exit, Option, Schema, Stream } from "effect";
+import { Cause, Context, Effect, Exit, Option, Schema } from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { describe, expect, it, vi } from "vitest";
@@ -28,10 +28,11 @@ import type {
   SecureMediaDownloadResponse,
 } from "./import-media-acquirer.container.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
-import type {
-  AcquisitionBucketLike,
-  AcquisitionMediaObjectLike,
-} from "./import-media-acquirer.js";
+import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
+import {
+  makeAcquisitionMediaObject,
+  type AcquisitionMediaObjectStub,
+} from "./import-media-acquisition-object.client.js";
 import { ImportMediaAcquisitionObjectRuntime } from "./import-media-acquisition-object.js";
 import { TikTokMediaContainer } from "./import-media-container.js";
 import { makeTikTokMediaContainerRuntime } from "./import-media-container.runtime.js";
@@ -162,9 +163,16 @@ const makeContainerFetcher = (
   runtime: ReturnType<typeof makeTikTokMediaContainerRuntime>,
   rpcFailure?: Error
 ) => {
+  const runtimeWithFetch = runtime as typeof runtime & {
+    readonly fetch: Effect.Effect<
+      HttpServerResponse.HttpServerResponse,
+      never,
+      HttpServerRequest.HttpServerRequest
+    >;
+  };
   const handler = Cloudflare.serveRpc(
     runtime as unknown as Record<string, unknown>,
-    Effect.succeed(HttpServerResponse.text("ready"))
+    runtimeWithFetch.fetch
   );
   return Cloudflare.fromCloudflareFetcher({
     connect: () => {
@@ -191,9 +199,11 @@ const makeContainerFetcher = (
   });
 };
 
+type InstalledAcquisitionBoundary = AcquisitionMediaObjectStub;
+
 const withInstalledAcquisitionBoundary = async <A>(
   runtime: ReturnType<typeof makeTikTokMediaContainerRuntime>,
-  use: (stub: AcquisitionMediaObjectLike) => Promise<A>,
+  use: (stub: InstalledAcquisitionBoundary) => Promise<A>,
   rpcFailure?: Error
 ) => {
   const bindingKey = "~alchemy/Container/Binding";
@@ -257,7 +267,7 @@ const withInstalledAcquisitionBoundary = async <A>(
       }
     )("ImportMediaAcquisitionObject");
     const object = new Bridge(state as never, {});
-    const stub = Cloudflare.makeRpcStub<AcquisitionMediaObjectLike>(object);
+    const stub = Cloudflare.makeRpcStub<InstalledAcquisitionBoundary>(object);
     return await use(stub);
   } finally {
     await Promise.allSettled(pending);
@@ -275,7 +285,95 @@ const untouchedBucket = (): AcquisitionBucketLike => ({
   put: () => Promise.reject(new Error("bucket must remain untouched")),
 });
 
+const runContainerRequest = (
+  runtime: ReturnType<typeof makeTikTokMediaContainerRuntime>,
+  request: Request
+) => {
+  const runtimeWithFetch = runtime as typeof runtime & {
+    readonly fetch: Effect.Effect<
+      HttpServerResponse.HttpServerResponse,
+      never,
+      HttpServerRequest.HttpServerRequest
+    >;
+  };
+  return Effect.runPromise(
+    Effect.scoped(
+      runtimeWithFetch.fetch.pipe(
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(request)
+        )
+      )
+    )
+  ).then((response) => HttpServerResponse.toWeb(response));
+};
+
 describe("installed acquisition Durable Object boundary", () => {
+  it("streams a registered private artifact above 128 KiB exactly", async () => {
+    const root = await mkdtemp(join(tmpdir(), "private-artifact-read-"));
+    const artifactId = "018f47ad-91aa-7c35-b6fe-000000000001:1:source";
+    const artifactPath = join(root, "source.mp4");
+    const artifacts = makeTemporaryArtifactStore((artifactRoot) =>
+      rm(artifactRoot, { force: true, recursive: true })
+    );
+    const runtime = makeTikTokMediaContainerRuntime({
+      acquirer: { acquire: () => Effect.die("acquirer must remain untouched") },
+      artifacts,
+      processRunner: makeProcessRunner(),
+      resolver: { resolve: () => Effect.die("resolver must remain untouched") },
+    });
+
+    try {
+      await writeFile(artifactPath, mediaBytes);
+      artifacts.registerPath(artifactId, root, artifactPath, "video/mp4");
+
+      const response = await runContainerRequest(
+        runtime,
+        new Request(
+          `http://container.invalid/artifacts/${encodeURIComponent(artifactId)}`
+        )
+      );
+      const received = new Uint8Array(await response.arrayBuffer());
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("content-length")).toBe(
+        String(mediaBytes.byteLength)
+      );
+      expect(response.headers.get("content-type")).toBe("video/mp4");
+      expect(received.byteLength).toBe(mediaBytes.byteLength);
+      expect(received).toEqual(mediaBytes);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it.each([
+    ["missing", "/artifacts/missing:artifact", 404],
+    ["malformed", "/artifacts/%00", 400],
+    ["traversal", "/artifacts/..%2Fsource.mp4", 400],
+  ])(
+    "fails closed for a %s private artifact id",
+    async (_case, path, status) => {
+      const failureCanary = "opaque-artifact-read-canary";
+      const runtime = makeTikTokMediaContainerRuntime({
+        acquirer: { acquire: () => Effect.die(failureCanary) },
+        artifacts: makeTemporaryArtifactStore(() => Promise.resolve()),
+        processRunner: makeProcessRunner(),
+        resolver: { resolve: () => Effect.die(failureCanary) },
+      });
+
+      const response = await runContainerRequest(
+        runtime,
+        new Request(`http://container.invalid${path}`)
+      );
+
+      expect(response.status).toBe(status);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(await response.text()).not.toContain(failureCanary);
+    }
+  );
+
   it("classifies the container-wide process deadline as a timeout", async () => {
     const root = await mkdtemp(join(tmpdir(), "gaia-204-container-timeout-"));
     try {
@@ -423,12 +521,19 @@ describe("installed acquisition Durable Object boundary", () => {
         expect(await readFile(String(stored?.path))).toEqual(
           Buffer.from(mediaBytes)
         );
-        const streamed = await Effect.runPromise(
-          stub.stream(prepared.artifactId).pipe(Stream.runCollect)
+        const artifactResponse = await Effect.runPromise(
+          stub.fetch(
+            HttpServerRequest.fromWeb(
+              new Request(
+                `http://acquisition-object.invalid/artifacts/${encodeURIComponent(prepared.artifactId)}`
+              )
+            )
+          )
         );
-        const streamedBytes = Buffer.concat(
-          Array.from(streamed, (chunk) => Buffer.from(chunk))
+        const streamedBytes = Buffer.from(
+          await HttpServerResponse.toWeb(artifactResponse).arrayBuffer()
         );
+        expect(artifactResponse.status).toBe(200);
         expect(streamedBytes.byteLength).toBe(mediaBytes.byteLength);
         expect(streamedBytes.equals(Buffer.from(mediaBytes))).toBe(true);
         await Effect.runPromise(stub.cleanup(prepared.artifactId));
@@ -452,12 +557,16 @@ describe("installed acquisition Durable Object boundary", () => {
       runtime,
       async (stub) => {
         const exit = await Effect.runPromiseExit(
-          acquireStoreVerify(untouchedBucket(), stub, {
-            canonicalId: identity.canonicalId,
-            generation: identity.generation,
-            importId: identity.importId,
-            now: () => new Date("2026-07-26T12:00:00.000Z"),
-          })
+          acquireStoreVerify(
+            untouchedBucket(),
+            makeAcquisitionMediaObject(stub),
+            {
+              canonicalId: identity.canonicalId,
+              generation: identity.generation,
+              importId: identity.importId,
+              now: () => new Date("2026-07-26T12:00:00.000Z"),
+            }
+          )
         );
         expect(Exit.isFailure(exit)).toBe(true);
         if (Exit.isSuccess(exit)) {
@@ -529,12 +638,16 @@ describe("installed acquisition Durable Object boundary", () => {
               ),
             })),
           (allocation) =>
-            acquireStoreVerify(untouchedBucket(), stub, {
-              canonicalId: allocation.canonicalSourceId,
-              generation: allocation.generation,
-              importId: identity.importId,
-              now: () => new Date("2026-07-26T12:00:00.000Z"),
-            }),
+            acquireStoreVerify(
+              untouchedBucket(),
+              makeAcquisitionMediaObject(stub),
+              {
+                canonicalId: allocation.canonicalSourceId,
+                generation: allocation.generation,
+                importId: identity.importId,
+                now: () => new Date("2026-07-26T12:00:00.000Z"),
+              }
+            ),
           { correlationId }
         );
       const exhausted = await Effect.runPromise(
@@ -668,12 +781,16 @@ describe("installed acquisition Durable Object boundary", () => {
               ),
             })),
           (allocation) =>
-            acquireStoreVerify(untouchedBucket(), stub, {
-              canonicalId: allocation.canonicalSourceId,
-              generation: allocation.generation,
-              importId: identity.importId,
-              now: () => new Date("2026-07-26T12:00:00.000Z"),
-            })
+            acquireStoreVerify(
+              untouchedBucket(),
+              makeAcquisitionMediaObject(stub),
+              {
+                canonicalId: allocation.canonicalSourceId,
+                generation: allocation.generation,
+                importId: identity.importId,
+                now: () => new Date("2026-07-26T12:00:00.000Z"),
+              }
+            )
         )
       );
 

@@ -1,5 +1,5 @@
 import * as Cloudflare from "alchemy/Cloudflare";
-import type { Effect, Stream } from "effect";
+import type { Effect } from "effect";
 
 import type {
   ContainerAcquisitionError,
@@ -39,8 +39,5 @@ export class TikTokMediaContainer extends Cloudflare.Container<
       },
       RetryableAcquisitionFailure
     >;
-    readonly stream: (
-      artifactId: string
-    ) => Stream.Stream<Uint8Array, RetryableAcquisitionFailure>;
   }
 >()("TikTokMediaContainer") {}

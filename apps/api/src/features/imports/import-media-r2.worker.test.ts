@@ -1,6 +1,6 @@
-import { fromRpcStreamEnvelope, toRpcStream } from "alchemy/Rpc";
 import { env } from "cloudflare:test";
-import { Cause, Effect, Exit, Option, Schema, Stream } from "effect";
+import { Cause, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -15,7 +15,10 @@ import type {
   AcquisitionPutOptions,
   PreparedMediaArtifact,
 } from "./import-media-acquirer.js";
-import type { RetryableAcquisitionFailure } from "./import-media.model.js";
+import {
+  makeAcquisitionMediaObject,
+  type AcquisitionMediaObjectStub,
+} from "./import-media-acquisition-object.client.js";
 import {
   AcquisitionGeneration,
   MaximumR2OperationMilliseconds,
@@ -75,6 +78,25 @@ const bucket = (): AcquisitionBucketLike => ({
     testEnv.ImportEvidenceBucket.put(key, value, options),
 });
 
+const consumingBucket = (): AcquisitionBucketLike => ({
+  get: () => Promise.reject(new Error("read must remain untouched")),
+  head: () => Promise.reject(new Error("head must remain untouched")),
+  put: async (_key, value) => {
+    if (!(value instanceof ReadableStream)) {
+      throw new Error("Expected a streamed artifact");
+    }
+    const reader = value.getReader();
+    try {
+      while (!(await reader.read()).done) {
+        // Drain with native backpressure until completion, failure, or interruption.
+      }
+      return null;
+    } finally {
+      reader.releaseLock();
+    }
+  },
+});
+
 const digest = async (bytes: Uint8Array) => {
   const value = await crypto.subtle.digest(
     "SHA-256",
@@ -129,7 +151,7 @@ const makeMediaObject = (
         preparedInputs.push(input);
         return prepared;
       }),
-    stream: () => Stream.make(artifactBytes),
+    readArtifact: () => Stream.make(artifactBytes),
   };
   return {
     cleanupCalls: () => cleanupCalls,
@@ -159,11 +181,15 @@ describe("derived provider evidence", () => {
   it("round-trips strict current-generation evidence without container artifact ids", async () => {
     const importId = id(411);
     const generation = decodeGeneration(2);
-    const audioBytes = new Uint8Array([82, 73, 70, 70, 1, 2, 3, 4]);
-    const frameBytes = [
-      new Uint8Array([255, 216, 0, 255, 217]),
-      new Uint8Array([255, 216, 1, 255, 217]),
-    ] as const;
+    const audioBytes = new Uint8Array(128 * 1024 + 31).fill(7);
+    audioBytes.set([82, 73, 70, 70]);
+    const firstFrame = new Uint8Array(128 * 1024 + 17).fill(11);
+    const secondFrame = new Uint8Array(128 * 1024 + 29).fill(13);
+    firstFrame.set([255, 216]);
+    firstFrame.set([255, 217], firstFrame.byteLength - 2);
+    secondFrame.set([255, 216]);
+    secondFrame.set([255, 217], secondFrame.byteLength - 2);
+    const frameBytes = [firstFrame, secondFrame] as const;
     const audioSha256 = await digest(audioBytes);
     const [firstFrameSha256, secondFrameSha256] = await Promise.all([
       digest(frameBytes[0]),
@@ -230,7 +256,7 @@ describe("derived provider evidence", () => {
             },
           ],
         }),
-      stream: (artifactId) => {
+      readArtifact: (artifactId) => {
         const bytes = artifacts.get(artifactId);
         return bytes === undefined
           ? Stream.fail({
@@ -336,10 +362,102 @@ describe("derived provider evidence", () => {
       },
     ]);
   });
+
+  it("settles a rejected derived read before workflow cleanup", async () => {
+    const importId = id(414);
+    const generation = decodeGeneration(1);
+    const fake = makeMediaObject();
+    const events: string[] = [];
+    const mediaObject: AcquisitionMediaObjectLike = {
+      ...fake.object,
+      cleanup: () =>
+        Effect.sync(() => {
+          events.push("cleanup");
+        }),
+      prepareProviderEvidence: () =>
+        Effect.succeed({
+          audio: {
+            artifactId: "derived-audio-414",
+            bytes: 1,
+            durationMilliseconds: 1000,
+            sha256:
+              "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7c9ec3941b6d1f",
+          },
+          frames: [
+            {
+              artifactId: "derived-frame-414",
+              bytes: 1,
+              height: 1,
+              sha256:
+                "dbc1b4c900ffe48d575b5da5c638040125f65db0fe3e24494b76ea986457d986",
+              timestampMilliseconds: 0,
+              width: 1,
+            },
+          ],
+        }),
+      readArtifact: (artifactId) =>
+        artifactId === "derived-audio-414"
+          ? Stream.never.pipe(
+              Stream.ensuring(
+                Effect.sync(() => {
+                  events.push("derived-finalized");
+                })
+              )
+            )
+          : Stream.make(mediaBytes),
+    };
+    const rejectingDerivedBucket: AcquisitionBucketLike = {
+      get: () => Promise.reject(new Error("read must remain untouched")),
+      head: () => Promise.reject(new Error("head must remain untouched")),
+      put: async (key, value) => {
+        if (key.endsWith("/provider-audio.wav")) {
+          throw new Error("synthetic derived R2 rejection");
+        }
+        if (!(value instanceof ReadableStream)) {
+          throw new Error("Expected a streamed source artifact");
+        }
+        const reader = value.getReader();
+        try {
+          while (!(await reader.read()).done) {
+            // Drain the source before derived generation starts.
+          }
+        } finally {
+          reader.releaseLock();
+        }
+        return { size: mediaBytes.byteLength };
+      },
+    };
+
+    const exit = await Effect.runPromiseExit(
+      acquireStoreVerify(rejectingDerivedBucket, mediaObject, {
+        beforeCleanup: (prepared, acquisition) =>
+          persistDerivedProviderEvidence(
+            rejectingDerivedBucket,
+            acquisition,
+            prepared,
+            { generation, importId }
+          ),
+        canonicalId,
+        generation,
+        importId,
+        now,
+      })
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+        _tag: "RetryableAcquisitionFailure",
+        reason: "container_rpc",
+        stage: "store",
+      });
+    }
+    expect(events).toEqual(["derived-finalized", "cleanup"]);
+  });
 });
 
 describe("native R2 generation commit", () => {
-  it("preserves the installed RPC byte stream through real R2 media and manifest commits", async () => {
+  it("preserves a private fetch stream above 128 KiB through real R2 commits", async () => {
     const importId = id(410);
     const generation = decodeGeneration(1);
     const chunks = [
@@ -366,23 +484,21 @@ describe("native R2 generation commit", () => {
         return Promise.reject(new Error("acquisition must never delete"));
       },
     };
-    const mediaObject: AcquisitionMediaObjectLike = {
-      ...fake.object,
-      stream: () =>
-        Stream.unwrap(
-          toRpcStream(Stream.fromIterable(chunks)).pipe(
-            Effect.map(fromRpcStreamEnvelope)
-          )
-        ).pipe(
-          Stream.mapError(
-            (): RetryableAcquisitionFailure => ({
-              _tag: "RetryableAcquisitionFailure",
-              reason: "container_rpc",
-              stage: "container",
-            })
-          )
+    const stub: AcquisitionMediaObjectStub = {
+      cleanup: fake.object.cleanup,
+      fetch: () =>
+        Effect.succeed(
+          HttpServerResponse.stream(Stream.fromIterable(chunks), {
+            contentLength: expectedBytes.byteLength,
+            contentType: "video/mp4",
+            headers: { "cache-control": "private, no-store" },
+          })
         ),
+      prepare: fake.object.prepare,
+      prepareProviderEvidence: () =>
+        Effect.die("derived evidence must remain untouched"),
     };
+    const mediaObject = makeAcquisitionMediaObject(stub);
 
     const first = await Effect.runPromise(
       acquireStoreVerify(acquisitionBucket, mediaObject, {
@@ -687,7 +803,7 @@ describe("native R2 generation commit", () => {
           code: "private_or_unavailable",
         });
       },
-      stream: () => Stream.empty,
+      readArtifact: () => Stream.empty,
     };
 
     const result = await Effect.runPromise(
@@ -792,7 +908,7 @@ describe("native R2 generation commit", () => {
         Effect.sync(() => {
           events.push("cleanup");
         }),
-      stream: () =>
+      readArtifact: () =>
         Stream.never.pipe(
           Stream.ensuring(
             Effect.sync(() => {
@@ -823,6 +939,95 @@ describe("native R2 generation commit", () => {
         stage: "store",
       });
     }
+    expect(events).toEqual(["stream-finalized", "cleanup"]);
+  });
+
+  it("settles a mid-body read failure before cleanup", async () => {
+    const importId = id(412);
+    const generation = decodeGeneration(1);
+    const fake = makeMediaObject();
+    const events: string[] = [];
+    const mediaObject: AcquisitionMediaObjectLike = {
+      ...fake.object,
+      cleanup: () =>
+        Effect.sync(() => {
+          events.push("cleanup");
+        }),
+      readArtifact: () =>
+        Stream.make(mediaBytes.slice(0, 4)).pipe(
+          Stream.concat(
+            Stream.fail({
+              _tag: "RetryableAcquisitionFailure" as const,
+              reason: "container_rpc" as const,
+              stage: "container" as const,
+            })
+          ),
+          Stream.ensuring(
+            Effect.sync(() => {
+              events.push("stream-finalized");
+            })
+          )
+        ),
+    };
+
+    const exit = await Effect.runPromiseExit(
+      acquireStoreVerify(consumingBucket(), mediaObject, {
+        canonicalId,
+        generation,
+        importId,
+        now,
+      })
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+        _tag: "RetryableAcquisitionFailure",
+        reason: "container_rpc",
+        stage: "store",
+      });
+    }
+    expect(events).toEqual(["stream-finalized", "cleanup"]);
+  });
+
+  it("interrupts the private read before workflow cleanup", async () => {
+    const importId = id(413);
+    const generation = decodeGeneration(1);
+    const fake = makeMediaObject();
+    const events: string[] = [];
+    const streamStarted = Promise.withResolvers<void>();
+    const mediaObject: AcquisitionMediaObjectLike = {
+      ...fake.object,
+      cleanup: () =>
+        Effect.sync(() => {
+          events.push("cleanup");
+        }),
+      readArtifact: () =>
+        Stream.fromEffect(
+          Effect.sync(() => {
+            streamStarted.resolve();
+          })
+        ).pipe(
+          Stream.flatMap(() => Stream.never),
+          Stream.ensuring(
+            Effect.sync(() => {
+              events.push("stream-finalized");
+            })
+          )
+        ),
+    };
+    const fiber = Effect.runFork(
+      acquireStoreVerify(consumingBucket(), mediaObject, {
+        canonicalId,
+        generation,
+        importId,
+        now,
+      })
+    );
+
+    await streamStarted.promise;
+    await Effect.runPromise(Fiber.interrupt(fiber));
+
     expect(events).toEqual(["stream-finalized", "cleanup"]);
   });
 

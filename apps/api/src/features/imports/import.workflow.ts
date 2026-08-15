@@ -46,6 +46,7 @@ import {
   readVerifiedAcquisitionEvidence,
 } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
+import { makeAcquisitionMediaObject } from "./import-media-acquisition-object.client.js";
 import { ImportMediaAcquisitionObject } from "./import-media-acquisition-object.js";
 import {
   AcquisitionGeneration,
@@ -737,6 +738,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             return { _tag: "NoAcquisitionRequired" as const };
           }
           const stub = mediaObjects.getByName(importId);
+          const mediaObject = makeAcquisitionMediaObject(stub);
           const encodedOutcome = yield* Cloudflare.Workflows.task(
             "resolve-acquire-store-verify-v2",
             recoverVerifiedAcquisitionCheckpoint({
@@ -768,21 +770,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                           allocation.canonicalSourceId === claim.canonicalId
                             ? acquireStoreVerify(
                                 rawBucket as unknown as AcquisitionBucketLike,
-                                {
-                                  cleanup: (artifactId) =>
-                                    stub.cleanup(artifactId),
-                                  prepare: (input) => stub.prepare(input),
-                                  prepareProviderEvidence: (
-                                    artifactId,
-                                    durationSeconds
-                                  ) =>
-                                    stub.prepareProviderEvidence(
-                                      artifactId,
-                                      durationSeconds
-                                    ),
-                                  stream: (artifactId) =>
-                                    stub.stream(artifactId),
-                                },
+                                mediaObject,
                                 {
                                   beforeCleanup: (prepared, mediaObject) =>
                                     persistDerivedProviderEvidence(

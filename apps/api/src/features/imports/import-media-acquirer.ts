@@ -1,5 +1,6 @@
 import { Context, DateTime, Effect, Option, Schema, Stream } from "effect";
 
+import { putPrivateArtifact } from "./import-media-r2-upload.js";
 import type {
   AcquisitionFailureReason,
   AcquisitionGeneration,
@@ -91,7 +92,7 @@ export interface PreparedMediaArtifact {
   }[];
 }
 
-interface R2ObjectLike {
+export interface R2ObjectLike {
   readonly checksums?: { readonly sha256?: ArrayBuffer };
   readonly customMetadata?: Record<string, string>;
   readonly httpMetadata?: {
@@ -158,7 +159,7 @@ export interface AcquisitionMediaObjectLike {
     },
     RetryableAcquisitionFailure
   >;
-  readonly stream: (
+  readonly readArtifact: (
     artifactId: string
   ) => Stream.Stream<Uint8Array, RetryableAcquisitionFailure>;
 }
@@ -393,86 +394,25 @@ const putMediaObject = (
     readonly mediaKey: string;
   }
 ) =>
-  Effect.callback<R2ObjectLike | null, RetryableAcquisitionFailure>(
-    (resume) => {
-      let completed = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const controller = new AbortController();
-      const finish = (
-        effect: Effect.Effect<R2ObjectLike | null, RetryableAcquisitionFailure>
-      ) => {
-        if (completed) {
-          return;
-        }
-        completed = true;
-        if (timer !== undefined) {
-          clearTimeout(timer);
-        }
-        resume(effect);
-      };
-      try {
-        const FixedLengthStreamConstructor = (
-          globalThis as unknown as {
-            readonly FixedLengthStream: new (length: number) => {
-              readonly readable: ReadableStream;
-              readonly writable: WritableStream<Uint8Array>;
-            };
-          }
-        ).FixedLengthStream;
-        const fixedLength = new FixedLengthStreamConstructor(prepared.bytes);
-        const piping = Stream.toReadableStream(
-          mediaObject.stream(prepared.artifactId)
-        ).pipeTo(fixedLength.writable, { signal: controller.signal });
-        const putting = bucket.put(input.mediaKey, fixedLength.readable, {
-          contentLength: prepared.bytes,
-          customMetadata: objectMetadata(
-            input.importId,
-            input.generation,
-            "media",
-            prepared.sha256
-          ),
-          httpMetadata: {
-            cacheControl: "private, no-store",
-            contentType: "video/mp4",
-          },
-          onlyIf: { etagDoesNotMatch: "*" },
-          sha256: sha256Bytes(prepared.sha256),
-        });
-        void (async () => {
-          try {
-            const [stored] = await Promise.all([putting, piping]);
-            finish(Effect.succeed(stored));
-          } catch {
-            controller.abort();
-            const localDeadline = setTimeout(
-              () => finish(Effect.fail(retryableAt("store", "container_rpc"))),
-              MaximumLocalCleanupMilliseconds
-            );
-            try {
-              await piping;
-            } catch {
-              // The local stream cancellation is expected on a failed put.
-            }
-            clearTimeout(localDeadline);
-            finish(Effect.fail(retryableAt("store", "container_rpc")));
-          }
-        })();
-        timer = setTimeout(() => {
-          controller.abort();
-          finish(Effect.fail(retryableAt("store", "acquisition_timeout")));
-        }, MaximumR2OperationMilliseconds);
-      } catch {
-        controller.abort();
-        finish(Effect.fail(retryableAt("store", "container_rpc")));
-      }
-      return Effect.sync(() => {
-        if (timer !== undefined) {
-          clearTimeout(timer);
-        }
-        controller.abort();
-      });
-    }
-  );
+  putPrivateArtifact(bucket, {
+    key: input.mediaKey,
+    options: {
+      contentLength: prepared.bytes,
+      customMetadata: objectMetadata(
+        input.importId,
+        input.generation,
+        "media",
+        prepared.sha256
+      ),
+      httpMetadata: {
+        cacheControl: "private, no-store",
+        contentType: "video/mp4",
+      },
+      onlyIf: { etagDoesNotMatch: "*" },
+      sha256: sha256Bytes(prepared.sha256),
+    },
+    stream: mediaObject.readArtifact(prepared.artifactId),
+  });
 
 const readCommittedPair = (
   bucket: AcquisitionBucketLike,
