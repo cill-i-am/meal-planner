@@ -52,6 +52,28 @@ const digestSha256 = (value: string) =>
     ).join("");
   });
 
+const requestFingerprintFor = (
+  bundle: OperatorCarouselBundle,
+  canonicalId: StoredImport["canonicalSourceId"],
+  compatibilityFingerprint: StoredImport["compatibilityFingerprint"]
+) =>
+  Effect.map(
+    digestSha256(
+      JSON.stringify({
+        canonicalId,
+        compatibilityFingerprint,
+        declaredPageCount: bundle.declaredPageCount,
+        images: bundle.images.map(({ height, orderIndex, sha256, width }) => ({
+          height,
+          orderIndex,
+          sha256,
+          width,
+        })),
+      })
+    ),
+    Schema.decodeUnknownSync(RequestFingerprint)
+  );
+
 export interface OperatorCarouselPipelineInput {
   readonly adapter: ReturnType<typeof makeOperatorCarouselAdapter>;
   readonly canonicalId: StoredImport["canonicalSourceId"];
@@ -103,13 +125,9 @@ export const makeOperatorCarouselImportService = (input: {
   readonly now: () => ImportTimestamp;
   readonly pipeline: OperatorCarouselPipelineShape;
   readonly repository: ImportRepositoryShape;
-}): OperatorCarouselImportServiceShape => ({
-  admit: (bundle, idempotencyKey) =>
-    Effect.gen(function* admitOperatorCarousel() {
-      const resolution = yield* input.identityResolver.resolve(bundle.source);
-      if (resolution._tag !== "UnsupportedIdentity") {
-        return yield* Effect.fail(invalidSource());
-      }
+}): OperatorCarouselImportServiceShape => {
+  const admit = Effect.fn("OperatorCarouselImportService.admit")(
+    function* admitOperatorCarousel(bundle, idempotencyKey) {
       const canonicalUrl = Schema.decodeUnknownSync(SourceUrl)(
         new URL(bundle.source.url).origin + new URL(bundle.source.url).pathname
       );
@@ -119,38 +137,56 @@ export const makeOperatorCarouselImportService = (input: {
       const idempotencyKeyHash = Schema.decodeUnknownSync(IdempotencyKeyHash)(
         yield* digestSha256(`idempotency-key:v1:${idempotencyKey}`)
       );
-      const requestFingerprint = Schema.decodeUnknownSync(RequestFingerprint)(
-        yield* digestSha256(
-          JSON.stringify({
-            canonicalId: resolution.identity.canonicalId,
-            compatibilityFingerprint,
-            declaredPageCount: bundle.declaredPageCount,
-            images: bundle.images.map(
-              ({ height, orderIndex, sha256, width }) => ({
-                height,
-                orderIndex,
-                sha256,
-                width,
-              })
-            ),
-          })
-        )
-      );
       const sourceLocatorHash = Schema.decodeUnknownSync(SourceLocatorHash)(
         yield* digestSha256(
-          `source-locator:v1:${resolution.identity.kind}:${resolution.identity.canonicalId}`
+          `source-locator:v1:${bundle.source.kind}:${bundle.source.url}`
         )
       );
+      const existingRequest =
+        yield* input.repository.findRequest(idempotencyKeyHash);
+      const isExactLocatorReplay =
+        Option.isSome(existingRequest) &&
+        existingRequest.value.sourceLocatorHash === sourceLocatorHash;
+
+      let canonicalId: StoredImport["canonicalSourceId"];
+      if (isExactLocatorReplay) {
+        if (
+          existingRequest.value.import.compatibilityFingerprint !==
+          compatibilityFingerprint
+        ) {
+          return yield* Effect.fail(incompatibleDuplicate());
+        }
+        canonicalId = existingRequest.value.import.canonicalSourceId;
+      } else {
+        const resolution = yield* input.identityResolver.resolve(bundle.source);
+        if (resolution._tag !== "UnsupportedIdentity") {
+          return yield* Effect.fail(invalidSource());
+        }
+        ({ canonicalId } = resolution.identity);
+      }
+
+      const requestFingerprint = yield* requestFingerprintFor(
+        bundle,
+        canonicalId,
+        compatibilityFingerprint
+      );
+      if (
+        Option.isSome(existingRequest) &&
+        existingRequest.value.requestFingerprint !== requestFingerprint
+      ) {
+        return yield* Effect.fail(idempotencyConflict());
+      }
+
       const receivedAt = input.now();
       const adapter = makeOperatorCarouselAdapter({
         bundle,
-        canonicalId: resolution.identity.canonicalId,
+        canonicalId,
         receivedAt: Schema.encodeSync(ImportTimestamp)(receivedAt),
         sourceUrl: canonicalUrl,
       });
       yield* adapter
         .acquire({
-          canonicalId: resolution.identity.canonicalId,
+          canonicalId,
           declaredPageCount: bundle.declaredPageCount,
           kind: "tiktok_carousel",
           sourceUrl: canonicalUrl,
@@ -159,14 +195,6 @@ export const makeOperatorCarouselImportService = (input: {
       if (input.pipeline.preflight !== undefined) {
         yield* input.pipeline.preflight();
       }
-      const existingRequest =
-        yield* input.repository.findRequest(idempotencyKeyHash);
-      if (
-        Option.isSome(existingRequest) &&
-        existingRequest.value.requestFingerprint !== requestFingerprint
-      ) {
-        return yield* Effect.fail(idempotencyConflict());
-      }
 
       let accepted: StoredImport;
       let disposition: CreateImportResponse["disposition"];
@@ -174,9 +202,10 @@ export const makeOperatorCarouselImportService = (input: {
         accepted = existingRequest.value.import;
         disposition = "idempotency_replay";
       } else {
-        const canonical = yield* input.repository.findByCanonicalIdentity(
-          resolution.identity
-        );
+        const canonical = yield* input.repository.findByCanonicalIdentity({
+          canonicalId,
+          kind: "tiktok",
+        });
         if (
           Option.isSome(canonical) &&
           canonical.value.compatibilityFingerprint !== compatibilityFingerprint
@@ -189,14 +218,14 @@ export const makeOperatorCarouselImportService = (input: {
               acquisitionGeneration: Schema.decodeUnknownSync(
                 AcquisitionGeneration
               )(0),
-              canonicalSourceId: resolution.identity.canonicalId,
+              canonicalSourceId: canonicalId,
               compatibilityFingerprint,
-              sourceKind: resolution.identity.kind,
+              sourceKind: "tiktok",
               view: {
                 createdAt: receivedAt,
                 evidence: [],
                 id: input.newId(),
-                source: resolution.identity,
+                source: { canonicalId, kind: "tiktok" },
                 status: { kind: "queued" },
                 updatedAt: receivedAt,
               },
@@ -230,8 +259,11 @@ export const makeOperatorCarouselImportService = (input: {
         onNone: () => Effect.fail(carouselProcessingUnavailable()),
         onSome: (value) => Effect.succeed({ disposition, import: value.view }),
       });
-    }),
-});
+    }
+  );
+
+  return { admit };
+};
 
 export class OperatorCarouselImportService extends Context.Service<
   OperatorCarouselImportService,

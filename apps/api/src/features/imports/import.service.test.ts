@@ -11,11 +11,7 @@ import {
   SourceCanonicalId,
 } from "./import.contracts.js";
 import type { ImportView } from "./import.contracts.js";
-import {
-  idempotencyConflict,
-  incompatibleDuplicate,
-  sourceIdentityUnavailable,
-} from "./import.errors.js";
+import { idempotencyConflict, incompatibleDuplicate } from "./import.errors.js";
 import type {
   AcceptImportResult,
   ImportRepositoryError,
@@ -23,6 +19,7 @@ import type {
   StoredImport,
   StoredImportRequest,
 } from "./import.repository.js";
+import { CompatibilityFingerprint } from "./import.repository.js";
 import { makeImportService } from "./import.service.js";
 import type { ImportWorkflowStarterShape } from "./import.workflow.js";
 import type {
@@ -39,6 +36,9 @@ const decodeKey = Schema.decodeUnknownSync(IdempotencyKey);
 const decodeId = Schema.decodeUnknownSync(ImportId);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
+const decodeCompatibilityFingerprint = Schema.decodeUnknownSync(
+  CompatibilityFingerprint
+);
 const decodeVideoUrl = Schema.decodeUnknownSync(ValidatedVideoUrl);
 
 const now = decodeTimestamp("2026-07-20T10:00:00.000Z");
@@ -150,10 +150,34 @@ const makeRepository = () => {
     }
   };
 
+  const markCompatibilityObsolete = (id: ImportId) => {
+    const obsoleteCompatibility = decodeCompatibilityFingerprint(
+      "0".repeat(64)
+    );
+    const replace = (stored: StoredImport): StoredImport => ({
+      ...stored,
+      compatibilityFingerprint: obsoleteCompatibility,
+    });
+    for (const [key, stored] of imports) {
+      if (stored.view.id === id) {
+        imports.set(key, replace(stored));
+      }
+    }
+    for (const [key, storedRequest] of requests) {
+      if (storedRequest.import.view.id === id) {
+        requests.set(key, {
+          ...storedRequest,
+          import: replace(storedRequest.import),
+        });
+      }
+    }
+  };
+
   return {
     acceptCalls: () => acceptCalls,
     audioExtractionRecoveryEligibleIds,
     imports,
+    markCompatibilityObsolete,
     markTranscriptionFailed,
     repository,
     requests,
@@ -371,6 +395,34 @@ describe("ImportService", () => {
       replay.import.id,
       replay.import.id,
     ]);
+  });
+
+  it("rejects an obsolete exact-locator replay without provider or workflow work", async () => {
+    const fixture = makeFixture();
+    const request = videoRequest();
+    const first = await Effect.runPromise(
+      fixture.service.create(request, decodeKey("K1"))
+    );
+    fixture.repository.markCompatibilityObsolete(first.import.id);
+    fixture.workflow.started.length = 0;
+    const identityCalls = fixture.identity.calls();
+    const availabilityCalls = fixture.availability.calls();
+
+    const exit = await Effect.runPromiseExit(
+      fixture.service.create(request, decodeKey("K1"))
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected incompatible duplicate");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))._tag).toBe(
+      "IncompatibleDuplicate"
+    );
+    expect(fixture.identity.calls()).toBe(identityCalls);
+    expect(fixture.availability.calls()).toBe(availabilityCalls);
+    expect(fixture.repository.acceptCalls()).toBe(1);
+    expect(fixture.workflow.started).toEqual([]);
   });
 
   it("restarts a URL replay only when its transcription failure is locally audio-extraction eligible", async () => {
@@ -660,37 +712,42 @@ describe("ImportService", () => {
     const fixture = makeFixture();
     let providerAborted = false;
     const started = Promise.withResolvers<boolean>();
+    const identityResolver = makeTikTokCanonicalSourceIdentityResolver(
+      (_input, init) => {
+        const pending = Promise.withResolvers<Response>();
+        started.resolve(true);
+        init?.signal?.addEventListener(
+          "abort",
+          () => {
+            providerAborted = true;
+            pending.reject(new DOMException("aborted", "AbortError"));
+          },
+          { once: true }
+        );
+        return pending.promise;
+      },
+      { deadlineMilliseconds: 100 }
+    );
     const service = makeImportService({
       availabilityValidator: fixture.availability.validator,
-      identityResolver: {
-        resolve: () =>
-          Effect.tryPromise({
-            catch: sourceIdentityUnavailable,
-            try: (signal) => {
-              const pending = Promise.withResolvers<never>();
-              started.resolve(true);
-              signal.addEventListener(
-                "abort",
-                () => {
-                  providerAborted = true;
-                  pending.reject(new DOMException("aborted", "AbortError"));
-                },
-                { once: true }
-              );
-              return pending.promise;
-            },
-          }),
-      },
+      identityResolver,
       newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000001"),
       now: () => now,
-      providerDeadlineMilliseconds: 100,
       repository: fixture.repository.repository,
       workflowStarter: fixture.workflow.workflow,
     });
     const exit = await Effect.runPromise(
       Effect.gen(function* timeoutIdentity() {
         const fiber = yield* Effect.forkChild(
-          service.create(videoRequest(), decodeKey("K1"))
+          service.create(
+            decodeRequest({
+              source: {
+                kind: "tiktok",
+                url: "https://vm.tiktok.com/pending",
+              },
+            }),
+            decodeKey("K1")
+          )
         );
         yield* Effect.promise(() => started.promise);
         yield* TestClock.adjust(100);
@@ -717,29 +774,30 @@ describe("ImportService", () => {
     const reading = Promise.withResolvers<boolean>();
     const pendingRead = Promise.withResolvers<undefined>();
     const pendingCancel = Promise.withResolvers<undefined>();
-    const availabilityValidator = makeTikTokSourceAvailabilityValidator(() =>
-      Promise.resolve(
-        new Response(
-          new ReadableStream<Uint8Array>({
-            cancel: () => {
-              cancelRequested = true;
-              return pendingCancel.promise;
-            },
-            pull: () => {
-              reading.resolve(true);
-              return pendingRead.promise;
-            },
-          }),
-          { status: 200 }
-        )
-      )
+    const availabilityValidator = makeTikTokSourceAvailabilityValidator(
+      () =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              cancel: () => {
+                cancelRequested = true;
+                return pendingCancel.promise;
+              },
+              pull: () => {
+                reading.resolve(true);
+                return pendingRead.promise;
+              },
+            }),
+            { status: 200 }
+          )
+        ),
+      { deadlineMilliseconds: 100 }
     );
     const service = makeImportService({
       availabilityValidator,
       identityResolver: fixture.identity.resolver,
       newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000001"),
       now: () => now,
-      providerDeadlineMilliseconds: 100,
       repository: fixture.repository.repository,
       workflowStarter: fixture.workflow.workflow,
     });
@@ -762,78 +820,6 @@ describe("ImportService", () => {
       _tag: "SourceValidationUnavailable",
     });
     expect(cancelRequested).toBe(true);
-    expect(fixture.repository.acceptCalls()).toBe(0);
-    expect(fixture.workflow.started).toEqual([]);
-  }, 1000);
-
-  it("gives availability its own finite deadline after slow identity resolution", async () => {
-    const fixture = makeFixture();
-    const identityStarted = Promise.withResolvers<boolean>();
-    const availabilityStarted = Promise.withResolvers<boolean>();
-    let availabilityInterrupted = false;
-    const service = makeImportService({
-      availabilityValidator: {
-        validate: () =>
-          Effect.sync(() => {
-            availabilityStarted.resolve(true);
-          }).pipe(
-            Effect.andThen(Effect.never),
-            Effect.ensuring(
-              Effect.sync(() => {
-                availabilityInterrupted = true;
-              })
-            )
-          ),
-      },
-      identityResolver: {
-        resolve: () =>
-          Effect.sync(() => {
-            identityStarted.resolve(true);
-          }).pipe(
-            Effect.andThen(Effect.sleep("80 millis")),
-            Effect.as({
-              _tag: "VideoIdentity" as const,
-              identity: {
-                canonicalId: decodeCanonicalId("7520000000000000000"),
-                kind: "tiktok" as const,
-              },
-              videoUrl: decodeVideoUrl(
-                "https://www.tiktok.com/@cook/video/7520000000000000000"
-              ),
-            })
-          ),
-      },
-      newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000001"),
-      now: () => now,
-      providerDeadlineMilliseconds: 100,
-      repository: fixture.repository.repository,
-      workflowStarter: fixture.workflow.workflow,
-    });
-    const exit = await Effect.runPromise(
-      Effect.gen(function* independentDeadlines() {
-        const fiber = yield* Effect.forkChild(
-          service.create(videoRequest(), decodeKey("K1"))
-        );
-        yield* Effect.promise(() => identityStarted.promise);
-        yield* TestClock.adjust("80 millis");
-        yield* Effect.promise(() => availabilityStarted.promise);
-        yield* TestClock.adjust("20 millis");
-        expect(availabilityInterrupted).toBe(false);
-        yield* TestClock.adjust("79 millis");
-        expect(availabilityInterrupted).toBe(false);
-        yield* TestClock.adjust("1 millis");
-        return yield* Fiber.await(fiber);
-      }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
-    );
-
-    expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isSuccess(exit)) {
-      throw new Error("Expected bounded availability deadline");
-    }
-    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
-      _tag: "SourceValidationUnavailable",
-    });
-    expect(availabilityInterrupted).toBe(true);
     expect(fixture.repository.acceptCalls()).toBe(0);
     expect(fixture.workflow.started).toEqual([]);
   }, 1000);

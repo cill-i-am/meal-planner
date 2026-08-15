@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 
 import { SourceCanonicalId } from "./import.contracts.js";
 import type { SourceAvailabilityError } from "./import.errors.js";
-import { sourceValidationUnavailable } from "./import.errors.js";
 import { makeTikTokSourceAvailabilityValidator } from "./source-availability.tiktok.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
 
@@ -81,6 +80,16 @@ describe("TikTok availability validation", () => {
       expect(failure._tag).toBe("SourceValidationUnavailable");
     }
   );
+
+  it("classifies an oEmbed transport rejection as validation unavailable", async () => {
+    const validator = makeTikTokSourceAvailabilityValidator(() =>
+      Promise.reject(new Error("private provider fragment"))
+    );
+
+    const failure = await getFailure(validator.validate(resolvedVideo));
+
+    expect(failure._tag).toBe("SourceValidationUnavailable");
+  });
 
   it.each([301, 302, 307, 308])(
     "classifies oEmbed %s as transient without following it",
@@ -204,32 +213,29 @@ describe("TikTok availability validation", () => {
     const reading = Promise.withResolvers<boolean>();
     const pendingRead = Promise.withResolvers<undefined>();
     const pendingCancel = Promise.withResolvers<undefined>();
-    const validator = makeTikTokSourceAvailabilityValidator(() =>
-      resolvedResponse(
-        new Response(
-          new ReadableStream<Uint8Array>({
-            cancel: () => {
-              cancelRequested = true;
-              return pendingCancel.promise;
-            },
-            pull: () => {
-              reading.resolve(true);
-              return pendingRead.promise;
-            },
-          }),
-          { status: 200 }
-        )
-      )
+    const validator = makeTikTokSourceAvailabilityValidator(
+      () =>
+        resolvedResponse(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              cancel: () => {
+                cancelRequested = true;
+                return pendingCancel.promise;
+              },
+              pull: () => {
+                reading.resolve(true);
+                return pendingRead.promise;
+              },
+            }),
+            { status: 200 }
+          )
+        ),
+      { deadlineMilliseconds: 100 }
     );
     const exit = await Effect.runPromise(
       Effect.gen(function* deadline() {
         const fiber = yield* Effect.forkChild(
-          validator.validate(resolvedVideo).pipe(
-            Effect.timeoutOrElse({
-              duration: "100 millis",
-              orElse: () => Effect.fail(sourceValidationUnavailable()),
-            })
-          )
+          validator.validate(resolvedVideo)
         );
         yield* Effect.promise(() => reading.promise);
         yield* TestClock.adjust("100 millis");

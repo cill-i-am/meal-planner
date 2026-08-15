@@ -1,4 +1,5 @@
 import { Cause, Effect, Exit, Fiber, Option, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
 import { SourceDescriptor } from "./import.contracts.js";
@@ -586,6 +587,46 @@ describe("TikTok canonical identity", () => {
     }
     expect(Option.isNone(Cause.findErrorOption(exit.cause))).toBe(true);
   });
+
+  it("times out and aborts a pending redirect request with a typed failure", async () => {
+    let aborted = false;
+    const started = Promise.withResolvers<boolean>();
+    const resolver = makeTikTokCanonicalSourceIdentityResolver(
+      (_input, init) => {
+        const pending = Promise.withResolvers<Response>();
+        started.resolve(true);
+        init?.signal?.addEventListener(
+          "abort",
+          () => {
+            aborted = true;
+            pending.reject(new DOMException("aborted", "AbortError"));
+          },
+          { once: true }
+        );
+        return pending.promise;
+      },
+      { deadlineMilliseconds: 100 }
+    );
+    const exit = await Effect.runPromise(
+      Effect.gen(function* timeoutRedirect() {
+        const fiber = yield* Effect.forkChild(
+          resolver.resolve(source("https://vm.tiktok.com/pending"))
+        );
+        yield* Effect.promise(() => started.promise);
+        yield* TestClock.adjust("100 millis");
+        return yield* Fiber.await(fiber);
+      }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected identity timeout");
+    }
+    expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
+      _tag: "SourceIdentityUnavailable",
+    });
+    expect(aborted).toBe(true);
+  }, 1000);
 
   it("preserves caller interruption while a handoff body is pending", async () => {
     let cancelled = false;
