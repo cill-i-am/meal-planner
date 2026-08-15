@@ -14,11 +14,9 @@ import {
   makeRecordingTraceStore,
   recipeEvidenceAssembly,
   runRecipeTransportRoot,
-  providerCitedString,
   validRecipeSemantics,
   validRecipe,
   emptyRecipeProviderSelection,
-  citedRecipeString,
   defaultVisualUsage,
   toolResponse,
   recipeJsonResponse,
@@ -27,8 +25,8 @@ import type { ProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { hasMinimumRecipeEvidence } from "./import-recipe-draft.js";
 import {
+  RecipeCandidate,
   RecipeExtraction,
-  RecipeProviderToolArguments,
 } from "./import-recipe-extractor.js";
 
 describe("installed recipe provider adapter", () => {
@@ -423,7 +421,7 @@ describe("installed recipe provider adapter", () => {
     expect(request.body).not.toHaveProperty("tool_choice");
     expect(request.body).not.toHaveProperty("tools");
     expect(request.body.response_format).toEqual({
-      json_schema: Tool.getJsonSchemaFromSchema(RecipeProviderToolArguments),
+      json_schema: Tool.getJsonSchemaFromSchema(RecipeCandidate),
       type: "json_schema",
     });
     expect(request.body.response_format).toMatchObject({
@@ -453,9 +451,7 @@ describe("installed recipe provider adapter", () => {
   });
 
   it("grounds the narrow provider-selection contract through the installed path", async () => {
-    const providerSelection = Schema.decodeUnknownSync(
-      RecipeProviderToolArguments
-    )({
+    const providerSelection = Schema.decodeUnknownSync(RecipeCandidate)({
       category: "pasta",
       cookTimeMinutes: 12,
       cuisine: null,
@@ -526,9 +522,7 @@ describe("installed recipe provider adapter", () => {
   });
 
   it("keeps a narrow non-food provider selection below the recipe threshold", async () => {
-    const providerSelection = Schema.decodeUnknownSync(
-      RecipeProviderToolArguments
-    )({
+    const providerSelection = Schema.decodeUnknownSync(RecipeCandidate)({
       category: null,
       cookTimeMinutes: null,
       cuisine: null,
@@ -576,43 +570,17 @@ describe("installed recipe provider adapter", () => {
   });
 
   it("derives recipe grounding authority only from exact trusted evidence", async () => {
-    const untrustedCitation = {
-      confidence: 0.1,
-      evidenceId: "provider-invented-evidence",
-      origin: "creator_provided" as const,
-    };
-    const supported = <A>(value: A) => ({
-      citations: [untrustedCitation],
-      origin: "inferred" as const,
-      state: "supported" as const,
-      value,
-    });
     const groundedCandidate = {
-      ...validRecipeSemantics,
-      author: supported("provider-invented-author"),
-      category: supported("provider-invented-category"),
-      description: supported("A red tomato pasta dish."),
-      ingredientLines: {
-        items: [supported("tomatoes"), supported("pasta")],
-        state: "supported" as const,
-      },
-      instructions: {
-        items: [supported("Chop tomatoes."), supported("Boil pasta.")],
-        state: "supported" as const,
-      },
-      name: supported("tomato pasta"),
-      sourceUrl: supported("https://provider.invalid/private"),
-      supportedClaims: {
-        items: [supported("A red tomato pasta dish.")],
-        state: "supported" as const,
-      },
-      tools: {
-        items: [supported("pot")],
-        state: "supported" as const,
-      },
-      totalTimeMinutes: supported(10),
-      unresolvedFields: ["author"],
-      yield: supported("Serves 2"),
+      ...emptyRecipeProviderSelection,
+      category: "provider-invented-category",
+      description: "A red tomato pasta dish.",
+      ingredientLines: ["tomatoes", "pasta"],
+      instructions: ["Chop tomatoes.", "Boil pasta."],
+      name: "tomato pasta",
+      supportedClaims: ["A red tomato pasta dish."],
+      tools: ["pot"],
+      totalTimeMinutes: 10,
+      yield: "Serves 2",
     };
     const gateway = makeGateway(recipeJsonResponse(groundedCandidate));
     const adapter = await runFactory(
@@ -721,19 +689,10 @@ describe("installed recipe provider adapter", () => {
 
   it("grounds harmless textual normalization while rejecting absent recipe facts", async () => {
     const candidate = {
-      ...validRecipeSemantics,
-      ingredientLines: {
-        items: [
-          providerCitedString("TOMATOES!"),
-          providerCitedString("mushrooms"),
-        ],
-        state: "supported" as const,
-      },
-      instructions: {
-        items: [providerCitedString("CHOP TOMATOES!")],
-        state: "supported" as const,
-      },
-      name: providerCitedString("TOMATO PASTA!"),
+      ...emptyRecipeProviderSelection,
+      ingredientLines: ["TOMATOES!", "mushrooms"],
+      instructions: ["CHOP TOMATOES!"],
+      name: "TOMATO PASTA!",
     };
     const gateway = makeGateway(recipeJsonResponse(candidate));
     const adapter = await runFactory(
@@ -891,68 +850,10 @@ describe("installed recipe provider adapter", () => {
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
   });
 
-  it("projects model-selected facts to exact cited evidence spans", async () => {
-    const candidate = {
-      ...validRecipeSemantics,
-      ingredientLines: {
-        items: [
-          citedRecipeString("tomatoes and pasta"),
-          citedRecipeString("mushrooms"),
-        ],
-        state: "supported" as const,
-      },
-      instructions: {
-        items: [citedRecipeString("add tomatoes to pan")],
-        state: "supported" as const,
-      },
-    };
-    const gateway = makeGateway(recipeJsonResponse(candidate));
-    const adapter = await runFactory(
-      makeInstalledRecipeExtractor({
-        client: gateway.client,
-        correlationId,
-        dispatch: localDispatchGate,
-      })
-    );
-
-    const output = await Effect.runPromise(
-      adapter.extract({
-        evidenceFingerprint: "fingerprint",
-        generation: 1 as never,
-        importId: "import-1" as never,
-        items: [
-          {
-            artifactReference: "private:transcript",
-            evidenceId: "transcript-evidence",
-            kind: "transcript",
-            origin: "creator_provided",
-            value:
-              "Ingredients include tomatoes, plus fresh pasta. First, start by adding the chopped tomatoes to the pan, then boil the fresh pasta until tender.",
-          },
-        ],
-      })
-    );
-
-    expect(output.ingredientLines).toMatchObject({
-      items: [{ state: "supported", value: "tomatoes, plus fresh pasta" }],
-      state: "supported",
-    });
-    expect(output.instructions).toMatchObject({
-      items: [
-        {
-          state: "supported",
-          value: "adding the chopped tomatoes to the pan",
-        },
-      ],
-      state: "supported",
-    });
-    expect(hasMinimumRecipeEvidence(output)).toBe(true);
-    expect(JSON.stringify(output)).not.toContain("mushrooms");
-    expect(Schema.is(RecipeExtraction)(output)).toBe(true);
-  });
-
   it("uses the immutable recovery dispatch exactly once without changing evidence", async () => {
-    const gateway = makeGateway(recipeJsonResponse(validRecipeSemantics));
+    const gateway = makeGateway(
+      recipeJsonResponse(emptyRecipeProviderSelection)
+    );
     const dispatches: string[] = [];
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
@@ -1022,7 +923,7 @@ describe("installed recipe provider adapter", () => {
   });
 
   it("settles a schema-valid recipe without usage at the conservative maximum", async () => {
-    const response = recipeJsonResponse(validRecipeSemantics);
+    const response = recipeJsonResponse(emptyRecipeProviderSelection);
     delete (response as { usage?: unknown }).usage;
     const gateway = makeGateway(response);
     const costs: (

@@ -1,11 +1,12 @@
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { DateTime, Effect, Schema } from "effect";
 
-import { AcquisitionGeneration } from "./import-media.model.js";
+import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import {
   RecipeExtraction,
   RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
+import type { DurableRecipeExtractionFailureCode } from "./import-recipe-extractor.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import {
   importPersistenceCorrupt,
@@ -13,10 +14,6 @@ import {
   importTransitionRejected,
 } from "./import.errors.js";
 import type { ImportTransitionError } from "./import.repository.js";
-
-const Sha256Hex = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
-);
 
 const RecipeDraftV1 = Schema.Struct({
   createdAt: ImportTimestamp,
@@ -77,11 +74,7 @@ const D1BatchResults = Schema.Array(
   Schema.Struct({ results: Schema.Array(Schema.Unknown) })
 );
 
-export type RecipeExtractionFailureCode =
-  | "insufficient_evidence"
-  | "invalid_schema"
-  | "model_refusal"
-  | "provider_error";
+export type RecipeExtractionFailureCode = DurableRecipeExtractionFailureCode;
 
 export type RecipeDispatchClaim =
   | { readonly _tag: "DispatchClaimed" }
