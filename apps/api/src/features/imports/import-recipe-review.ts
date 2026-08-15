@@ -1,4 +1,4 @@
-import { Context, Effect, Option, Schema } from "effect";
+import { Context, DateTime, Effect, Option, Schema } from "effect";
 
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
 import { RecipeUnresolvedField } from "./import-recipe-extractor.js";
@@ -44,6 +44,40 @@ export const RecipeCorrectionValue = Schema.Union([
   Schema.NonEmptyArray(ShortText).pipe(Schema.check(Schema.isMaxLength(256))),
 ]);
 export type RecipeCorrectionValue = typeof RecipeCorrectionValue.Type;
+
+const TextRecipeCorrectionField = Schema.Literals([
+  "author",
+  "category",
+  "cuisine",
+  "description",
+  "name",
+  "nutrition",
+  "yield",
+]);
+const IntegerRecipeCorrectionField = Schema.Literals([
+  "cook_time_minutes",
+  "prep_time_minutes",
+  "temperature_celsius",
+  "total_time_minutes",
+]);
+const ListRecipeCorrectionField = Schema.Literals([
+  "ingredient_lines",
+  "ingredient_quantities",
+  "ingredient_units",
+  "instructions",
+  "tools",
+]);
+
+const RecipeCorrectionDetails = {
+  actorId: RecipeReviewerActorId,
+  correctedAt: ImportTimestamp,
+  reason: ShortText,
+  version: RecipeReviewVersion,
+} as const;
+
+const RecipeCorrectionRequestDetails = {
+  reason: ShortText,
+} as const;
 
 export const PlanningDietaryFit = Schema.Literals([
   "household_match",
@@ -93,26 +127,91 @@ export const PlanningTags = Schema.Struct({
 });
 export type PlanningTags = typeof PlanningTags.Type;
 
-export const RecipeCorrection = Schema.Struct({
-  actorId: RecipeReviewerActorId,
-  after: RecipeCorrectionValue,
-  before: Schema.NullOr(RecipeCorrectionValue),
-  correctedAt: ImportTimestamp,
-  field: RecipeUnresolvedField,
-  reason: ShortText,
-  version: RecipeReviewVersion,
-});
+export const RecipeCorrection = Schema.Union([
+  Schema.Struct({
+    ...RecipeCorrectionDetails,
+    after: ShortText,
+    before: Schema.NullOr(ShortText),
+    field: TextRecipeCorrectionField,
+  }),
+  Schema.Struct({
+    ...RecipeCorrectionDetails,
+    after: SafeInteger,
+    before: Schema.NullOr(SafeInteger),
+    field: IntegerRecipeCorrectionField,
+  }),
+  Schema.Struct({
+    ...RecipeCorrectionDetails,
+    after: Schema.NonEmptyArray(ShortText).pipe(
+      Schema.check(Schema.isMaxLength(256))
+    ),
+    before: Schema.NullOr(
+      Schema.NonEmptyArray(ShortText).pipe(
+        Schema.check(Schema.isMaxLength(256))
+      )
+    ),
+    field: ListRecipeCorrectionField,
+  }),
+]);
 export type RecipeCorrection = typeof RecipeCorrection.Type;
 
-export const RecipeReviewTransition = Schema.Struct({
+const RecipeReviewTransitionDetails = {
   actorId: RecipeReviewerActorId,
-  from: Schema.Literals(["needs_review", "approved", "rejected"]),
   reason: ShortText,
-  to: Schema.Literals(["needs_review", "approved", "rejected"]),
   transitionedAt: ImportTimestamp,
   version: RecipeReviewVersion,
-});
+} as const;
+
+export const RecipeReviewTransition = Schema.Union([
+  Schema.Struct({
+    ...RecipeReviewTransitionDetails,
+    from: Schema.Literal("needs_review"),
+    to: Schema.Literal("approved"),
+  }),
+  Schema.Struct({
+    ...RecipeReviewTransitionDetails,
+    from: Schema.Literal("needs_review"),
+    to: Schema.Literal("rejected"),
+  }),
+  Schema.Struct({
+    ...RecipeReviewTransitionDetails,
+    from: Schema.Literal("approved"),
+    to: Schema.Literal("needs_review"),
+  }),
+  Schema.Struct({
+    ...RecipeReviewTransitionDetails,
+    from: Schema.Literal("rejected"),
+    to: Schema.Literal("needs_review"),
+  }),
+]);
 export type RecipeReviewTransition = typeof RecipeReviewTransition.Type;
+
+export const RecipeReviewTransitionPolicy = Schema.Union([
+  Schema.Struct({
+    from: Schema.Literal("needs_review"),
+    to: Schema.Literal("approved"),
+  }),
+  Schema.Struct({
+    from: Schema.Literal("needs_review"),
+    to: Schema.Literal("rejected"),
+  }),
+  Schema.Struct({
+    from: Schema.Literal("approved"),
+    to: Schema.Literal("needs_review"),
+  }),
+  Schema.Struct({
+    from: Schema.Literal("rejected"),
+    to: Schema.Literal("needs_review"),
+  }),
+]);
+export type RecipeReviewTransitionPolicy =
+  typeof RecipeReviewTransitionPolicy.Type;
+
+export const recipeReviewTransitionPolicy = (
+  from: RecipeReviewLifecycle,
+  to: RecipeReviewLifecycle
+): Option.Option<RecipeReviewTransitionPolicy> =>
+  Schema.decodeUnknownOption(RecipeReviewTransitionPolicy)({ from, to });
 
 export const RecipeReviewLifecycle = Schema.Literals([
   "needs_review",
@@ -160,16 +259,26 @@ export const RecipeReviewView = Schema.Struct({
 });
 export type RecipeReviewView = typeof RecipeReviewView.Type;
 
-export const GetRecipeReviewResponse = Schema.Struct({
-  review: RecipeReviewView,
-});
-
 export const CorrectRecipeDraftRequest = Schema.Struct({
-  correction: Schema.Struct({
-    field: RecipeUnresolvedField,
-    reason: ShortText,
-    value: RecipeCorrectionValue,
-  }),
+  correction: Schema.Union([
+    Schema.Struct({
+      ...RecipeCorrectionRequestDetails,
+      field: TextRecipeCorrectionField,
+      value: ShortText,
+    }),
+    Schema.Struct({
+      ...RecipeCorrectionRequestDetails,
+      field: IntegerRecipeCorrectionField,
+      value: SafeInteger,
+    }),
+    Schema.Struct({
+      ...RecipeCorrectionRequestDetails,
+      field: ListRecipeCorrectionField,
+      value: Schema.NonEmptyArray(ShortText).pipe(
+        Schema.check(Schema.isMaxLength(256))
+      ),
+    }),
+  ]),
   expectedVersion: RecipeReviewVersion,
   tags: PlanningTags,
 });
@@ -181,10 +290,6 @@ export const TransitionRecipeDraftRequest = Schema.Struct({
 });
 export type TransitionRecipeDraftRequest =
   typeof TransitionRecipeDraftRequest.Type;
-
-export const RecipeReviewMutationResponse = Schema.Struct({
-  review: RecipeReviewView,
-});
 
 export const ApprovedRecipe = Schema.Struct({
   approvedAt: ImportTimestamp,
@@ -203,6 +308,36 @@ export const ApprovedRecipe = Schema.Struct({
   version: RecipeReviewVersion,
 });
 export type ApprovedRecipe = typeof ApprovedRecipe.Type;
+
+export const Review = Schema.TaggedUnion({
+  Approved: {
+    ...RecipeReviewView.fields,
+    actorId: RecipeReviewerActorId,
+    approvedAt: ImportTimestamp,
+    evidence: Schema.Array(EvidenceReference),
+    lifecycle: Schema.Literal("approved"),
+    recipe: ApprovedRecipe.fields.recipe,
+    tags: PlanningTags,
+  },
+  NeedsReview: {
+    ...RecipeReviewView.fields,
+    lifecycle: Schema.Literal("needs_review"),
+  },
+  Rejected: {
+    ...RecipeReviewView.fields,
+    lifecycle: Schema.Literal("rejected"),
+  },
+});
+export type Review = typeof Review.Type;
+export type ApprovedReview = Extract<Review, { readonly _tag: "Approved" }>;
+
+export const GetRecipeReviewResponse = Schema.Struct({
+  review: Review,
+});
+
+export const RecipeReviewMutationResponse = Schema.Struct({
+  review: Review,
+});
 
 export const ApprovedRecipeBankResponse = Schema.Struct({
   recipes: Schema.Array(ApprovedRecipe),
@@ -276,109 +411,132 @@ export const applyCorrectionOverlay = (
   for (const correction of corrections) {
     switch (correction.field) {
       case "author": {
-        recipe.author = correction.after as string;
+        recipe.author = correction.after;
         break;
       }
       case "category": {
-        recipe.category = correction.after as string;
+        recipe.category = correction.after;
         break;
       }
       case "cook_time_minutes": {
-        recipe.cookTimeMinutes = correction.after as number;
+        recipe.cookTimeMinutes = correction.after;
         break;
       }
       case "cuisine": {
-        recipe.cuisine = correction.after as string;
+        recipe.cuisine = correction.after;
         break;
       }
       case "description": {
-        recipe.description = correction.after as string;
+        recipe.description = correction.after;
         break;
       }
       case "ingredient_lines": {
-        recipe.ingredientLines = correction.after as readonly [
-          string,
-          ...string[],
-        ];
+        recipe.ingredientLines = correction.after;
         break;
       }
       case "ingredient_quantities": {
-        recipe.ingredientQuantities = correction.after as readonly [
-          string,
-          ...string[],
-        ];
+        recipe.ingredientQuantities = correction.after;
         break;
       }
       case "ingredient_units": {
-        recipe.ingredientUnits = correction.after as readonly [
-          string,
-          ...string[],
-        ];
+        recipe.ingredientUnits = correction.after;
         break;
       }
       case "instructions": {
-        recipe.instructions = correction.after as readonly [
-          string,
-          ...string[],
-        ];
+        recipe.instructions = correction.after;
         break;
       }
       case "name": {
-        recipe.name = correction.after as string;
+        recipe.name = correction.after;
         break;
       }
       case "nutrition": {
-        recipe.nutrition = correction.after as string;
+        recipe.nutrition = correction.after;
         break;
       }
       case "prep_time_minutes": {
-        recipe.prepTimeMinutes = correction.after as number;
+        recipe.prepTimeMinutes = correction.after;
         break;
       }
       case "temperature_celsius": {
-        recipe.temperatureCelsius = correction.after as number;
+        recipe.temperatureCelsius = correction.after;
         break;
       }
       case "tools": {
-        recipe.tools = correction.after as readonly [string, ...string[]];
+        recipe.tools = correction.after;
         break;
       }
       case "total_time_minutes": {
-        recipe.totalTimeMinutes = correction.after as number;
+        recipe.totalTimeMinutes = correction.after;
         break;
       }
       case "yield": {
-        recipe.yield = correction.after as string;
+        recipe.yield = correction.after;
         break;
       }
       default: {
-        correction.field satisfies never;
+        correction satisfies never;
       }
     }
   }
   return recipe;
 };
 
-const correctionValueMatchesField = (
-  field: RecipeUnresolvedField,
-  value: RecipeCorrectionValue
-) => {
-  switch (field) {
-    case "cook_time_minutes":
-    case "prep_time_minutes":
-    case "temperature_celsius":
-    case "total_time_minutes": {
-      return typeof value === "number";
+export const refineRecipeReview = (
+  review: RecipeReviewView
+): Option.Option<Review> => {
+  switch (review.lifecycle) {
+    case "needs_review": {
+      return Option.some(
+        Review.make({
+          ...review,
+          _tag: "NeedsReview",
+          lifecycle: "needs_review",
+        })
+      );
     }
-    case "ingredient_lines":
-    case "ingredient_quantities":
-    case "ingredient_units":
-    case "instructions":
-    case "tools": {
-      return Array.isArray(value);
+    case "rejected": {
+      return Option.some(
+        Review.make({
+          ...review,
+          _tag: "Rejected",
+          lifecycle: "rejected",
+        })
+      );
+    }
+    case "approved": {
+      const approval = review.transitions.at(-1);
+      const recipe = applyCorrectionOverlay(review.draft, review.corrections);
+      const { tags } = review;
+      if (
+        approval === undefined ||
+        approval.to !== "approved" ||
+        approval.version !== review.version ||
+        tags === null ||
+        recipe.name === null ||
+        recipe.ingredientLines === null ||
+        recipe.instructions === null
+      ) {
+        return Option.none();
+      }
+      return Option.some(
+        Review.make({
+          ...review,
+          _tag: "Approved",
+          actorId: approval.actorId,
+          approvedAt: approval.transitionedAt,
+          lifecycle: "approved",
+          recipe: {
+            ingredientLines: recipe.ingredientLines,
+            instructions: recipe.instructions,
+            name: recipe.name,
+          },
+          tags,
+        })
+      );
     }
     default: {
-      return typeof value === "string";
+      return review.lifecycle satisfies never;
     }
   }
 };
@@ -477,22 +635,19 @@ export interface RecipeReviewRepositoryShape {
     readonly extractionFingerprint: string;
     readonly previousTags: PlanningTags | null;
     readonly tags: PlanningTags;
-  }) => Effect.Effect<RecipeReviewView, RecipeReviewWriteError>;
+  }) => Effect.Effect<Review, RecipeReviewWriteError>;
   readonly find: (
     importId: ImportId
-  ) => Effect.Effect<
-    Option.Option<RecipeReviewView>,
-    RecipeReviewPersistenceError
-  >;
+  ) => Effect.Effect<Option.Option<Review>, RecipeReviewPersistenceError>;
   readonly listApproved: () => Effect.Effect<
-    readonly RecipeReviewView[],
+    readonly Review[],
     RecipeReviewPersistenceError
   >;
   readonly transition: (input: {
     readonly expectedVersion: RecipeReviewVersion;
     readonly extractionFingerprint: string;
     readonly transition: RecipeReviewTransition;
-  }) => Effect.Effect<RecipeReviewView, RecipeReviewWriteError>;
+  }) => Effect.Effect<Review, RecipeReviewWriteError>;
 }
 
 export const authenticatedRecipeReviewer = Schema.decodeUnknownSync(
@@ -500,7 +655,7 @@ export const authenticatedRecipeReviewer = Schema.decodeUnknownSync(
 )("private_api_credential");
 
 const currentValueFor = (
-  review: RecipeReviewView,
+  review: Review,
   field: RecipeUnresolvedField
 ): RecipeCorrectionValue | null => {
   const recipe = applyCorrectionOverlay(review.draft, review.corrections);
@@ -573,7 +728,7 @@ const getReview = (
   );
 
 const assertExpectedVersion = (
-  review: RecipeReviewView,
+  review: Review,
   expectedVersion: RecipeReviewVersion
 ) =>
   review.version === expectedVersion
@@ -585,15 +740,15 @@ export interface RecipeReviewServiceShape {
     importId: ImportId,
     request: TransitionRecipeDraftRequest,
     actorId: RecipeReviewerActorId
-  ) => Effect.Effect<RecipeReviewView, RecipeReviewServiceError>;
+  ) => Effect.Effect<Review, RecipeReviewServiceError>;
   readonly correct: (
     importId: ImportId,
     request: CorrectRecipeDraftRequest,
     actorId: RecipeReviewerActorId
-  ) => Effect.Effect<RecipeReviewView, RecipeReviewServiceError>;
+  ) => Effect.Effect<Review, RecipeReviewServiceError>;
   readonly get: (
     importId: ImportId
-  ) => Effect.Effect<RecipeReviewView, RecipeReviewServiceError>;
+  ) => Effect.Effect<Review, RecipeReviewServiceError>;
   readonly listApproved: () => Effect.Effect<
     readonly ApprovedRecipe[],
     RecipeReviewServiceError
@@ -602,47 +757,37 @@ export interface RecipeReviewServiceShape {
     importId: ImportId,
     request: TransitionRecipeDraftRequest,
     actorId: RecipeReviewerActorId
-  ) => Effect.Effect<RecipeReviewView, RecipeReviewServiceError>;
+  ) => Effect.Effect<Review, RecipeReviewServiceError>;
   readonly returnToReview: (
     importId: ImportId,
     request: TransitionRecipeDraftRequest,
     actorId: RecipeReviewerActorId
-  ) => Effect.Effect<RecipeReviewView, RecipeReviewServiceError>;
+  ) => Effect.Effect<Review, RecipeReviewServiceError>;
 }
+
+export const projectApprovedReview = (
+  review: ApprovedReview
+): ApprovedRecipe => ({
+  approvedAt: review.approvedAt,
+  extractionFingerprint: review.draft.extractionFingerprint,
+  importId: review.draft.importId,
+  recipe: review.recipe,
+  source: {
+    evidenceFingerprint: review.draft.evidenceFingerprint,
+    sourceUrl: factValue(review.draft.extraction.sourceUrl),
+  },
+  tags: review.tags,
+  version: review.version,
+});
 
 export const projectApprovedRecipe = (
   review: RecipeReviewView
 ): ApprovedRecipe => {
-  const recipe = applyCorrectionOverlay(review.draft, review.corrections);
-  const approved = [...review.transitions]
-    .toReversed()
-    .find(({ to }) => to === "approved");
-  if (
-    review.lifecycle !== "approved" ||
-    review.tags === null ||
-    approved === undefined ||
-    recipe.name === null ||
-    recipe.ingredientLines === null ||
-    recipe.instructions === null
-  ) {
+  const refined = refineRecipeReview(review);
+  if (Option.isNone(refined) || refined.value._tag !== "Approved") {
     throw new Error("Approved recipe invariant was not satisfied");
   }
-  return {
-    approvedAt: approved.transitionedAt,
-    extractionFingerprint: review.draft.extractionFingerprint,
-    importId: review.draft.importId,
-    recipe: {
-      ingredientLines: recipe.ingredientLines,
-      instructions: recipe.instructions,
-      name: recipe.name,
-    },
-    source: {
-      evidenceFingerprint: review.draft.evidenceFingerprint,
-      sourceUrl: factValue(review.draft.extraction.sourceUrl),
-    },
-    tags: review.tags,
-    version: review.version,
-  };
+  return projectApprovedReview(refined.value);
 };
 
 export const makeRecipeReviewService = (input: {
@@ -658,11 +803,8 @@ export const makeRecipeReviewService = (input: {
     Effect.gen(function* transitionRecipeReview() {
       const review = yield* getReview(input.repository, importId);
       yield* assertExpectedVersion(review, request.expectedVersion);
-      const allowed =
-        (to === "approved" && review.lifecycle === "needs_review") ||
-        (to === "rejected" && review.lifecycle === "needs_review") ||
-        (to === "needs_review" && review.lifecycle !== "needs_review");
-      if (!allowed) {
+      const policy = recipeReviewTransitionPolicy(review.lifecycle, to);
+      if (Option.isNone(policy)) {
         return yield* Effect.fail(
           recipeReviewTransitionRejected(review.lifecycle)
         );
@@ -683,14 +825,14 @@ export const makeRecipeReviewService = (input: {
       return yield* input.repository.transition({
         expectedVersion: request.expectedVersion,
         extractionFingerprint: review.draft.extractionFingerprint,
-        transition: {
+        transition: Schema.decodeUnknownSync(RecipeReviewTransition)({
           actorId,
-          from: review.lifecycle,
+          from: policy.value.from,
           reason: request.reason,
-          to,
-          transitionedAt: input.now(),
+          to: policy.value.to,
+          transitionedAt: DateTime.formatIso(input.now()),
           version: nextVersion,
-        },
+        }),
       });
     });
 
@@ -706,27 +848,17 @@ export const makeRecipeReviewService = (input: {
             recipeReviewTransitionRejected(review.lifecycle)
           );
         }
-        if (
-          !correctionValueMatchesField(
-            request.correction.field,
-            request.correction.value
-          )
-        ) {
-          return yield* Effect.fail(
-            invalidRecipeCorrection(request.correction.field)
-          );
-        }
         const nextVersion = request.expectedVersion + 1;
         return yield* input.repository.correct({
-          correction: {
+          correction: Schema.decodeUnknownSync(RecipeCorrection)({
             actorId,
             after: request.correction.value,
             before: currentValueFor(review, request.correction.field),
-            correctedAt: input.now(),
+            correctedAt: DateTime.formatIso(input.now()),
             field: request.correction.field,
             reason: request.correction.reason,
             version: nextVersion,
-          },
+          }),
           expectedVersion: request.expectedVersion,
           extractionFingerprint: review.draft.extractionFingerprint,
           previousTags: review.tags,
@@ -737,15 +869,11 @@ export const makeRecipeReviewService = (input: {
     listApproved: () =>
       input.repository.listApproved().pipe(
         Effect.filterOrFail(
-          (reviews) =>
-            reviews.every((review) => review.lifecycle === "approved"),
+          (reviews) => reviews.every((review) => review._tag === "Approved"),
           importPersistenceCorrupt
         ),
-        Effect.flatMap((reviews) =>
-          Effect.try({
-            catch: importPersistenceCorrupt,
-            try: () => reviews.map(projectApprovedRecipe),
-          })
+        Effect.map((reviews) =>
+          reviews.map((review) => projectApprovedReview(review))
         )
       ),
     reject: (importId, request, actorId) =>

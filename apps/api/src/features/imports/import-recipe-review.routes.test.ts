@@ -163,4 +163,40 @@ describe("recipe review routes", () => {
       },
     });
   });
+
+  it("rejects a field/value mismatch at the HTTP boundary", async () => {
+    let calls = 0;
+    const app = makeApp(
+      unreachableService(() => {
+        calls += 1;
+      })
+    );
+    apps.push(app);
+    const response = await app.handler(
+      new Request(`https://meal-planner.test/recipe-drafts/${importId}`, {
+        body: JSON.stringify({
+          ...validCorrection,
+          correction: {
+            ...validCorrection.correction,
+            field: "cook_time_minutes",
+            value: "twenty minutes",
+          },
+        }),
+        headers: {
+          authorization: "Bearer test-review-token",
+          "content-type": "application/json",
+        },
+        method: "PATCH",
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(calls).toBe(0);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "invalid_request",
+        message: "The review request is invalid.",
+      },
+    });
+  });
 });
