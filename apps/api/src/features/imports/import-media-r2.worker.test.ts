@@ -15,10 +15,8 @@ import type {
   AcquisitionPutOptions,
   PreparedMediaArtifact,
 } from "./import-media-acquirer.js";
-import {
-  makeAcquisitionMediaObject,
-  type AcquisitionMediaObjectStub,
-} from "./import-media-acquisition-object.client.js";
+import { makeAcquisitionMediaObject } from "./import-media-acquisition-object.client.js";
+import type { AcquisitionMediaObjectStub } from "./import-media-acquisition-object.client.js";
 import {
   AcquisitionGeneration,
   MaximumR2OperationMilliseconds,
@@ -78,6 +76,15 @@ const bucket = (): AcquisitionBucketLike => ({
     testEnv.ImportEvidenceBucket.put(key, value, options),
 });
 
+const drainReadable = async (
+  reader: ReadableStreamDefaultReader<unknown>
+): Promise<void> => {
+  const result = await reader.read();
+  if (!result.done) {
+    await drainReadable(reader);
+  }
+};
+
 const consumingBucket = (): AcquisitionBucketLike => ({
   get: () => Promise.reject(new Error("read must remain untouched")),
   head: () => Promise.reject(new Error("head must remain untouched")),
@@ -87,9 +94,7 @@ const consumingBucket = (): AcquisitionBucketLike => ({
     }
     const reader = value.getReader();
     try {
-      while (!(await reader.read()).done) {
-        // Drain with native backpressure until completion, failure, or interruption.
-      }
+      await drainReadable(reader);
       return null;
     } finally {
       reader.releaseLock();
@@ -418,9 +423,7 @@ describe("derived provider evidence", () => {
         }
         const reader = value.getReader();
         try {
-          while (!(await reader.read()).done) {
-            // Drain the source before derived generation starts.
-          }
+          await drainReadable(reader);
         } finally {
           reader.releaseLock();
         }
@@ -902,21 +905,33 @@ describe("native R2 generation commit", () => {
     const generation = decodeGeneration(1);
     const fake = makeMediaObject();
     const events: string[] = [];
-    const mediaObject: AcquisitionMediaObjectLike = {
-      ...fake.object,
+    const stub: AcquisitionMediaObjectStub = {
       cleanup: () =>
         Effect.sync(() => {
           events.push("cleanup");
         }),
-      readArtifact: () =>
-        Stream.never.pipe(
-          Stream.ensuring(
-            Effect.sync(() => {
-              events.push("stream-finalized");
-            })
+      fetch: () =>
+        Effect.succeed(
+          HttpServerResponse.stream(
+            Stream.never.pipe(
+              Stream.ensuring(
+                Effect.sync(() => {
+                  events.push("stream-finalized");
+                })
+              )
+            ),
+            {
+              contentLength: fake.prepared.bytes,
+              contentType: "video/mp4",
+              headers: { "cache-control": "private, no-store" },
+            }
           )
         ),
+      prepare: fake.object.prepare,
+      prepareProviderEvidence: () =>
+        Effect.die("derived evidence must remain untouched"),
     };
+    const mediaObject = makeAcquisitionMediaObject(stub);
     const rejecting: AcquisitionBucketLike = {
       ...bucket(),
       put: () => Promise.reject(new Error("synthetic R2 rejection")),
@@ -995,7 +1010,7 @@ describe("native R2 generation commit", () => {
     const generation = decodeGeneration(1);
     const fake = makeMediaObject();
     const events: string[] = [];
-    const streamStarted = Promise.withResolvers<void>();
+    const streamStarted = Promise.withResolvers<null>();
     const mediaObject: AcquisitionMediaObjectLike = {
       ...fake.object,
       cleanup: () =>
@@ -1005,7 +1020,7 @@ describe("native R2 generation commit", () => {
       readArtifact: () =>
         Stream.fromEffect(
           Effect.sync(() => {
-            streamStarted.resolve();
+            streamStarted.resolve(null);
           })
         ).pipe(
           Stream.flatMap(() => Stream.never),

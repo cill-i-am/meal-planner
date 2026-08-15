@@ -58,20 +58,19 @@ const settleTransport = (transport: UploadTransport) =>
   Effect.gen(function* settleUploadTransport() {
     transport.controller.abort();
     yield* Effect.tryPromise({
-      catch: () => undefined,
+      catch: () => null,
       try: () => transport.readable.cancel(),
     }).pipe(Effect.ignore);
     yield* Effect.tryPromise({
-      catch: () => undefined,
+      catch: () => null,
       try: () => transport.piping,
-    }).pipe(
-      Effect.ignore,
-      Effect.timeoutOrElse({
-        duration: MaximumLocalCleanupMilliseconds,
-        orElse: () => Effect.void,
-      })
-    );
-  });
+    }).pipe(Effect.ignore);
+  }).pipe(
+    Effect.timeoutOrElse({
+      duration: MaximumLocalCleanupMilliseconds,
+      orElse: () => Effect.void,
+    })
+  );
 
 /** Adapt one private Effect byte stream to the R2 host upload boundary. */
 export const putPrivateArtifact = Effect.fn("ImportMedia.putPrivateArtifact")(
@@ -100,7 +99,7 @@ export const putPrivateArtifact = Effect.fn("ImportMedia.putPrivateArtifact")(
           },
           { concurrency: "unbounded" }
         ).pipe(
-          Effect.map(({ stored }) => stored),
+          Effect.map(({ stored }) => stored !== null),
           Effect.timeoutOrElse({
             duration: MaximumR2OperationMilliseconds,
             orElse: () =>

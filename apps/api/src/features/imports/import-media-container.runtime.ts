@@ -97,7 +97,7 @@ export const makeTikTokMediaContainerRuntime = ({
 
   const readRegisteredArtifact = Effect.fn(
     "ImportMediaContainer.readRegisteredArtifact"
-  )(function* (artifactId: string) {
+  )(function* readRegisteredArtifactEffect(artifactId: string) {
     const artifact = artifacts.get(artifactId);
     if (
       artifact === undefined ||

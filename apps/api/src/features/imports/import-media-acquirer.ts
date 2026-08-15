@@ -1,4 +1,5 @@
-import { Context, DateTime, Effect, Option, Schema, Stream } from "effect";
+import { Context, DateTime, Effect, Option, Schema } from "effect";
+import type { Stream } from "effect";
 
 import { putPrivateArtifact } from "./import-media-r2-upload.js";
 import type {
@@ -92,7 +93,7 @@ export interface PreparedMediaArtifact {
   }[];
 }
 
-export interface R2ObjectLike {
+interface R2ObjectLike {
   readonly checksums?: { readonly sha256?: ArrayBuffer };
   readonly customMetadata?: Record<string, string>;
   readonly httpMetadata?: {
@@ -629,7 +630,7 @@ export const acquireStoreVerify = (
         importId: input.importId,
         mediaKey,
       });
-      if (storedMedia === null) {
+      if (!storedMedia) {
         return yield* Effect.fail(retryableAt("store"));
       }
       if (input.beforeCleanup !== undefined) {

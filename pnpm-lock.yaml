@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  alchemy@2.0.0-beta.72: 1f4c599f05af535b45f9482fc4b62c2e1f15cc565000c7a122a39afaaf356997
+  alchemy@2.0.0-beta.72: 9a92c9dbfdbbe8ff9363b006ac7daee6c887099b0bd6709901bd8445c1dcd05d
 
 importers:
 
@@ -19,7 +19,7 @@ importers:
         version: 24.13.2
       alchemy:
         specifier: 2.0.0-beta.72
-        version: 2.0.0-beta.72(patch_hash=1f4c599f05af535b45f9482fc4b62c2e1f15cc565000c7a122a39afaaf356997)(@effect/platform-node@4.0.0-rc.109(effect@4.0.0-rc.109)(redis@6.2.1))(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260814.1)(@effect/sql-d1@4.0.0-rc.109(effect@4.0.0-rc.109))(@effect/sql-sqlite-do@4.0.0-rc.109(effect@4.0.0-rc.109))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-rc.109)(mysql2@3.23.3(@types/node@24.13.2))(pg@8.22.0)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3))(effect@4.0.0-rc.109)(mysql2@3.23.3(@types/node@24.13.2))(pg@8.22.0)(typescript@5.9.3)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.13.2)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(ws@8.21.3)
+        version: 2.0.0-beta.72(patch_hash=9a92c9dbfdbbe8ff9363b006ac7daee6c887099b0bd6709901bd8445c1dcd05d)(@effect/platform-node@4.0.0-rc.109(effect@4.0.0-rc.109)(redis@6.2.1))(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260814.1)(@effect/sql-d1@4.0.0-rc.109(effect@4.0.0-rc.109))(@effect/sql-sqlite-do@4.0.0-rc.109(effect@4.0.0-rc.109))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-rc.109)(mysql2@3.23.3(@types/node@24.13.2))(pg@8.22.0)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3))(effect@4.0.0-rc.109)(mysql2@3.23.3(@types/node@24.13.2))(pg@8.22.0)(typescript@5.9.3)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.13.2)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(ws@8.21.3)
       effect:
         specifier: 4.0.0-rc.109
         version: 4.0.0-rc.109
@@ -4759,7 +4759,7 @@ snapshots:
       json-schema-traverse: 0.4.1
       uri-js: 4.4.1
 
-  alchemy@2.0.0-beta.72(patch_hash=1f4c599f05af535b45f9482fc4b62c2e1f15cc565000c7a122a39afaaf356997)(@effect/platform-node@4.0.0-rc.109(effect@4.0.0-rc.109)(redis@6.2.1))(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260814.1)(@effect/sql-d1@4.0.0-rc.109(effect@4.0.0-rc.109))(@effect/sql-sqlite-do@4.0.0-rc.109(effect@4.0.0-rc.109))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-rc.109)(mysql2@3.23.3(@types/node@24.13.2))(pg@8.22.0)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3))(effect@4.0.0-rc.109)(mysql2@3.23.3(@types/node@24.13.2))(pg@8.22.0)(typescript@5.9.3)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.13.2)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(ws@8.21.3):
+  alchemy@2.0.0-beta.72(patch_hash=9a92c9dbfdbbe8ff9363b006ac7daee6c887099b0bd6709901bd8445c1dcd05d)(@effect/platform-node@4.0.0-rc.109(effect@4.0.0-rc.109)(redis@6.2.1))(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260814.1)(@effect/sql-d1@4.0.0-rc.109(effect@4.0.0-rc.109))(@effect/sql-sqlite-do@4.0.0-rc.109(effect@4.0.0-rc.109))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-rc.109)(mysql2@3.23.3(@types/node@24.13.2))(pg@8.22.0)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3))(effect@4.0.0-rc.109)(mysql2@3.23.3(@types/node@24.13.2))(pg@8.22.0)(typescript@5.9.3)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.13.2)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(ws@8.21.3):
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.72(@distilled.cloud/cloudflare@1.0.0-rc.4(effect@4.0.0-rc.109))(@effect/platform-node@4.0.0-rc.109(effect@4.0.0-rc.109)(redis@6.2.1))(effect@4.0.0-rc.109)(rolldown@1.1.5)(typescript@5.9.3)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       '@alchemy.run/node-utils': 0.0.5

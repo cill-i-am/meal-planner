@@ -26,7 +26,10 @@ const privateArtifactFailure = (): RetryableAcquisitionFailure => ({
 
 const openPrivateArtifact = Effect.fn(
   "ImportMediaAcquisitionObject.openPrivateArtifact"
-)(function* (stub: AcquisitionMediaObjectStub, artifactId: string) {
+)(function* openPrivateArtifactEffect(
+  stub: AcquisitionMediaObjectStub,
+  artifactId: string
+) {
   const request = HttpServerRequest.fromWeb(
     new Request(
       `http://acquisition-object.invalid${privateMediaArtifactPath(artifactId)}`

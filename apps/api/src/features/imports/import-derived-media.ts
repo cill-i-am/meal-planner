@@ -98,7 +98,7 @@ const putStream = (
     stream: mediaObject.readArtifact(input.artifactId),
   }).pipe(
     Effect.flatMap((stored) =>
-      stored === null ? Effect.fail(derivedFailure) : Effect.void
+      stored ? Effect.void : Effect.fail(derivedFailure)
     )
   );
 

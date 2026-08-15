@@ -772,10 +772,13 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                                 rawBucket as unknown as AcquisitionBucketLike,
                                 mediaObject,
                                 {
-                                  beforeCleanup: (prepared, mediaObject) =>
+                                  beforeCleanup: (
+                                    prepared,
+                                    acquisitionMediaObject
+                                  ) =>
                                     persistDerivedProviderEvidence(
                                       rawBucket as unknown as AcquisitionBucketLike,
-                                      mediaObject,
+                                      acquisitionMediaObject,
                                       prepared,
                                       {
                                         generation: allocation.generation,

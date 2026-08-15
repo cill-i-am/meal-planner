@@ -29,10 +29,8 @@ import type {
 } from "./import-media-acquirer.container.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
-import {
-  makeAcquisitionMediaObject,
-  type AcquisitionMediaObjectStub,
-} from "./import-media-acquisition-object.client.js";
+import { makeAcquisitionMediaObject } from "./import-media-acquisition-object.client.js";
+import type { AcquisitionMediaObjectStub } from "./import-media-acquisition-object.client.js";
 import { ImportMediaAcquisitionObjectRuntime } from "./import-media-acquisition-object.js";
 import { TikTokMediaContainer } from "./import-media-container.js";
 import { makeTikTokMediaContainerRuntime } from "./import-media-container.runtime.js";
@@ -305,7 +303,7 @@ const runContainerRequest = (
         )
       )
     )
-  ).then((response) => HttpServerResponse.toWeb(response));
+  ).then((serverResponse) => HttpServerResponse.toWeb(serverResponse));
 };
 
 describe("installed acquisition Durable Object boundary", () => {
@@ -327,20 +325,22 @@ describe("installed acquisition Durable Object boundary", () => {
       await writeFile(artifactPath, mediaBytes);
       artifacts.registerPath(artifactId, root, artifactPath, "video/mp4");
 
-      const response = await runContainerRequest(
+      const artifactResponse = await runContainerRequest(
         runtime,
         new Request(
           `http://container.invalid/artifacts/${encodeURIComponent(artifactId)}`
         )
       );
-      const received = new Uint8Array(await response.arrayBuffer());
+      const received = new Uint8Array(await artifactResponse.arrayBuffer());
 
-      expect(response.status).toBe(200);
-      expect(response.headers.get("cache-control")).toBe("private, no-store");
-      expect(response.headers.get("content-length")).toBe(
+      expect(artifactResponse.status).toBe(200);
+      expect(artifactResponse.headers.get("cache-control")).toBe(
+        "private, no-store"
+      );
+      expect(artifactResponse.headers.get("content-length")).toBe(
         String(mediaBytes.byteLength)
       );
-      expect(response.headers.get("content-type")).toBe("video/mp4");
+      expect(artifactResponse.headers.get("content-type")).toBe("video/mp4");
       expect(received.byteLength).toBe(mediaBytes.byteLength);
       expect(received).toEqual(mediaBytes);
     } finally {
@@ -363,14 +363,16 @@ describe("installed acquisition Durable Object boundary", () => {
         resolver: { resolve: () => Effect.die(failureCanary) },
       });
 
-      const response = await runContainerRequest(
+      const closedResponse = await runContainerRequest(
         runtime,
         new Request(`http://container.invalid${path}`)
       );
 
-      expect(response.status).toBe(status);
-      expect(response.headers.get("cache-control")).toBe("private, no-store");
-      expect(await response.text()).not.toContain(failureCanary);
+      expect(closedResponse.status).toBe(status);
+      expect(closedResponse.headers.get("cache-control")).toBe(
+        "private, no-store"
+      );
+      expect(await closedResponse.text()).not.toContain(failureCanary);
     }
   );
 
