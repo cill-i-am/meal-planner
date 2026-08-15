@@ -191,15 +191,67 @@ describe("import routes", () => {
   it.each([
     [{ kind: "queued" }, 202],
     [{ kind: "acquiring" }, 202],
+    [{ kind: "acquired" }, 200],
+    [{ kind: "transcribing" }, 202],
+    [{ kind: "transcribed" }, 200],
     [{ kind: "extracting_visual" }, 202],
     [{ kind: "visual_evidence_empty" }, 200],
     [{ kind: "visual_evidence_found" }, 200],
     [{ kind: "visual_evidence_low_confidence" }, 200],
+    [{ kind: "needs_review" }, 200],
+    [
+      {
+        code: "private_or_unavailable",
+        kind: "failed",
+        recovery: "check_source_visibility",
+      },
+      422,
+    ],
     [
       {
         code: "acquisition_temporarily_unavailable",
         kind: "failed",
         recovery: "retry_later",
+      },
+      422,
+    ],
+    [
+      {
+        code: "invalid_or_unsupported_media",
+        kind: "failed",
+        recovery: "submit_supported_public_video",
+      },
+      422,
+    ],
+    [
+      {
+        code: "transcription_failed",
+        kind: "failed",
+        recovery: "retry_later",
+      },
+      422,
+    ],
+    [
+      {
+        code: "visual_evidence_failed",
+        kind: "failed",
+        recovery: "operator_reconcile",
+      },
+      422,
+    ],
+    [
+      {
+        code: "recipe_extraction_failed",
+        kind: "failed",
+        recovery: "operator_reconcile",
+      },
+      422,
+    ],
+    [
+      {
+        code: "unsupported_post_type",
+        kind: "unsupported",
+        recovery: "submit_supported_public_video",
       },
       422,
     ],
@@ -211,15 +263,30 @@ describe("import routes", () => {
         { kind: "acquisition_manifest", referenceId: "private-acquisition" },
         { kind: "speech_transcript", referenceId: "private-transcript" },
         { kind: "visual_evidence_manifest", referenceId: "private-visual" },
+        { kind: "recipe_draft", referenceId: "private-recipe-draft" },
       ];
       let evidence: readonly unknown[] = [];
-      if (status.kind === "extracting_visual") {
+      if (
+        status.kind === "acquired" ||
+        status.kind === "transcribing" ||
+        (status.kind === "failed" && status.code === "transcription_failed")
+      ) {
+        evidence = visualEvidence.slice(0, 2);
+      } else if (
+        status.kind === "extracting_visual" ||
+        status.kind === "transcribed" ||
+        (status.kind === "failed" &&
+          (status.code === "visual_evidence_failed" ||
+            status.code === "recipe_extraction_failed"))
+      ) {
         evidence = visualEvidence.slice(0, 3);
       } else if (
         status.kind === "visual_evidence_empty" ||
         status.kind === "visual_evidence_found" ||
         status.kind === "visual_evidence_low_confidence"
       ) {
+        evidence = visualEvidence.slice(0, 4);
+      } else if (status.kind === "needs_review") {
         evidence = visualEvidence;
       }
       const statusView = Schema.decodeUnknownSync(ImportView)({
@@ -254,6 +321,10 @@ describe("import routes", () => {
       );
 
       expect(response.status).toBe(expected);
+      await expect(response.json()).resolves.toMatchObject({
+        disposition: "idempotency_replay",
+        import: { id: importId, status },
+      });
     }
   );
 
