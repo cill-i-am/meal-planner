@@ -532,6 +532,7 @@ describe("bounded media process execution", () => {
       "synthetic removal failure"
     );
     expect(artifacts.get("artifact")).toEqual({
+      contentType: null,
       path: null,
       root: "/tmp/task-owned-artifact",
     });
@@ -556,6 +557,7 @@ describe("bounded media process execution", () => {
     await cleanup;
 
     expect(artifacts.get("artifact")).toEqual({
+      contentType: null,
       path: null,
       root: "/tmp/new-generation",
     });

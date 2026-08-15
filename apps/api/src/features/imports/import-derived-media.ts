@@ -1,10 +1,11 @@
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Schema } from "effect";
 
 import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
   PreparedMediaArtifact,
 } from "./import-media-acquirer.js";
+import { putPrivateArtifact } from "./import-media-r2-upload.js";
 import type { AcquisitionGeneration } from "./import-media.model.js";
 import type { SpeechAudioExtractorShape } from "./import-speech-transcriber.js";
 import type { VisualFrameSamplerShape } from "./import-visual-evidence-extractor.js";
@@ -79,40 +80,27 @@ const putStream = (
     readonly sha256: string;
   }
 ) =>
-  Effect.tryPromise({
-    catch: () => derivedFailure,
-    try: async () => {
-      const FixedLengthStreamConstructor = (
-        globalThis as unknown as {
-          readonly FixedLengthStream: new (length: number) => {
-            readonly readable: ReadableStream;
-            readonly writable: WritableStream<Uint8Array>;
-          };
-        }
-      ).FixedLengthStream;
-      const fixed = new FixedLengthStreamConstructor(input.bytes);
-      const piping = Stream.toReadableStream(
-        mediaObject.stream(input.artifactId)
-      ).pipeTo(fixed.writable);
-      const stored = await bucket.put(input.key, fixed.readable, {
-        contentLength: input.bytes,
-        customMetadata: {
-          kind: "provider-evidence",
-          sha256: input.sha256,
-        },
-        httpMetadata: {
-          cacheControl: "private, no-store",
-          contentType: input.contentType,
-        },
-        onlyIf: { etagDoesNotMatch: "*" },
-        sha256: sha256Bytes(input.sha256),
-      });
-      await piping;
-      if (stored === null) {
-        throw new Error("Derived evidence was not stored");
-      }
+  putPrivateArtifact(bucket, {
+    key: input.key,
+    options: {
+      contentLength: input.bytes,
+      customMetadata: {
+        kind: "provider-evidence",
+        sha256: input.sha256,
+      },
+      httpMetadata: {
+        cacheControl: "private, no-store",
+        contentType: input.contentType,
+      },
+      onlyIf: { etagDoesNotMatch: "*" },
+      sha256: sha256Bytes(input.sha256),
     },
-  });
+    stream: mediaObject.readArtifact(input.artifactId),
+  }).pipe(
+    Effect.flatMap((stored) =>
+      stored ? Effect.void : Effect.fail(derivedFailure)
+    )
+  );
 
 /** Derive and privately persist bounded provider inputs before container cleanup. */
 export const persistDerivedProviderEvidence = (

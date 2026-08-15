@@ -59,6 +59,7 @@ export class MediaProcessRunner extends Context.Service<
 >()("meal-planner/MediaProcessRunner") {}
 
 interface TemporaryArtifact {
+  readonly contentType: string | null;
   readonly path: string | null;
   readonly root: string;
 }
@@ -80,21 +81,26 @@ export const makeTemporaryArtifactStore = (
     }
   };
   const register = (artifactId: string, root: string) => {
-    artifacts.set(artifactId, { path: null, root });
+    artifacts.set(artifactId, { contentType: null, path: null, root });
   };
   return {
     cleanup,
     get: (artifactId: string) => artifacts.get(artifactId),
     register,
-    registerPath: (artifactId: string, root: string, path: string) => {
-      artifacts.set(artifactId, { path, root });
+    registerPath: (
+      artifactId: string,
+      root: string,
+      path: string,
+      contentType: string
+    ) => {
+      artifacts.set(artifactId, { contentType, path, root });
     },
-    setPath: (artifactId: string, path: string) => {
+    setPath: (artifactId: string, path: string, contentType: string) => {
       const artifact = artifacts.get(artifactId);
       if (artifact === undefined) {
         throw new Error("Temporary artifact is not registered");
       }
-      artifacts.set(artifactId, { path, root: artifact.root });
+      artifacts.set(artifactId, { contentType, path, root: artifact.root });
     },
     use: <A, E, R, E2, R2>(
       artifactId: string,

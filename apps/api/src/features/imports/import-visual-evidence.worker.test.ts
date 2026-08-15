@@ -272,7 +272,7 @@ const makeTranscribedImport = async (
   const mediaObject: AcquisitionMediaObjectLike = {
     cleanup: () => Effect.void,
     prepare: () => Effect.succeed(prepared),
-    stream: () => Stream.make(sourceMedia),
+    readArtifact: () => Stream.make(sourceMedia),
   };
   const outcome = await Effect.runPromise(
     acquireStoreVerify(acquisitionBucket(), mediaObject, {

@@ -6,11 +6,13 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { Readable } from "node:stream";
 
-import { Effect, Stream } from "effect";
+import { Effect, Option, Schema, Stream } from "effect";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { makeContainerMediaAcquirer } from "./import-media-acquirer.container.js";
 import type { MediaAcquirerShape } from "./import-media-acquirer.js";
+import { PrivateMediaArtifactPathPrefix } from "./import-media-artifact-transport.js";
 import { TikTokMediaContainer } from "./import-media-container.js";
 import {
   makeMediaProcessRunner,
@@ -53,6 +55,24 @@ const temporaryWorkspaceUnavailable = () => ({
   stage: "container" as const,
 });
 
+const RegisteredArtifactId = Schema.String.pipe(
+  Schema.check(
+    Schema.isMaxLength(256),
+    Schema.isPattern(/^[a-z\d][a-z\d:-]*$/iu)
+  )
+);
+
+const privateArtifactHeaders = {
+  "cache-control": "private, no-store",
+  "x-content-type-options": "nosniff",
+} as const;
+
+const closedArtifactResponse = (status: number) =>
+  HttpServerResponse.empty({ headers: privateArtifactHeaders, status });
+
+const registeredArtifactMissing = () =>
+  ({ _tag: "RegisteredArtifactMissing" }) as const;
+
 export interface TikTokMediaContainerRuntimeDependencies {
   readonly acquirer: MediaAcquirerShape;
   readonly artifacts: ReturnType<typeof makeTemporaryArtifactStore>;
@@ -75,9 +95,83 @@ export const makeTikTokMediaContainerRuntime = ({
       try: () => artifacts.cleanup(artifactId),
     }).pipe(Effect.orDie);
 
+  const readRegisteredArtifact = Effect.fn(
+    "ImportMediaContainer.readRegisteredArtifact"
+  )(function* readRegisteredArtifactEffect(artifactId: string) {
+    const artifact = artifacts.get(artifactId);
+    if (
+      artifact === undefined ||
+      artifact.contentType === null ||
+      artifact.path === null
+    ) {
+      return yield* Effect.fail(registeredArtifactMissing());
+    }
+    const { contentType, path: artifactPath, root } = artifact;
+    yield* scanTemporaryWorkspace(root).pipe(
+      Effect.mapError(registeredArtifactMissing)
+    );
+    const artifactStats = yield* Effect.tryPromise({
+      catch: registeredArtifactMissing,
+      try: () => stat(artifactPath),
+    });
+    if (!artifactStats.isFile() || !Number.isSafeInteger(artifactStats.size)) {
+      return yield* Effect.fail(registeredArtifactMissing());
+    }
+    const stream = Stream.fromReadableStream({
+      evaluate: () =>
+        Readable.toWeb(
+          createReadStream(artifactPath)
+        ) as ReadableStream<Uint8Array>,
+      onError: retryableContainer,
+    });
+    return { bytes: artifactStats.size, contentType, stream } as const;
+  });
+
+  const fetch = Effect.gen(function* privateArtifactFetch() {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = new URL(request.url, "http://container.invalid");
+    if (url.pathname === "/containerstarthealthcheck") {
+      return HttpServerResponse.text("ready", {
+        headers: privateArtifactHeaders,
+      });
+    }
+    if (
+      request.method !== "GET" ||
+      !url.pathname.startsWith(PrivateMediaArtifactPathPrefix)
+    ) {
+      return closedArtifactResponse(404);
+    }
+    const encodedArtifactId = url.pathname.slice(
+      PrivateMediaArtifactPathPrefix.length
+    );
+    const artifactId = yield* Effect.sync(() => {
+      try {
+        return Schema.decodeUnknownOption(RegisteredArtifactId)(
+          decodeURIComponent(encodedArtifactId)
+        );
+      } catch {
+        return Option.none<string>();
+      }
+    });
+    if (Option.isNone(artifactId)) {
+      return closedArtifactResponse(400);
+    }
+    return yield* readRegisteredArtifact(artifactId.value).pipe(
+      Effect.match({
+        onFailure: () => closedArtifactResponse(404),
+        onSuccess: ({ bytes, contentType, stream }) =>
+          HttpServerResponse.stream(stream, {
+            contentLength: bytes,
+            contentType,
+            headers: privateArtifactHeaders,
+          }),
+      })
+    );
+  });
+
   return TikTokMediaContainer.of({
     cleanup,
-    fetch: Effect.succeed(HttpServerResponse.text("ready")),
+    fetch,
     prepare: (request) =>
       Effect.gen(function* prepareMedia() {
         const artifactId = acquisitionArtifactId(
@@ -99,7 +193,7 @@ export const makeTikTokMediaContainerRuntime = ({
                 ProductionMediaLimits,
                 root
               );
-              artifacts.setPath(artifactId, artifact.filePath);
+              artifacts.setPath(artifactId, artifact.filePath, "video/mp4");
               return {
                 artifactId,
                 audioStreams: artifact.audioStreams,
@@ -230,7 +324,8 @@ export const makeTikTokMediaContainerRuntime = ({
               artifacts.registerPath(
                 derivedArtifactId,
                 artifact.root,
-                framePath
+                framePath,
+                "image/jpeg"
               );
               return {
                 artifactId: derivedArtifactId,
@@ -255,7 +350,12 @@ export const makeTikTokMediaContainerRuntime = ({
           return yield* Effect.fail(retryableContainer());
         }
         const audioArtifactId = `${artifactId}:audio`;
-        artifacts.registerPath(audioArtifactId, artifact.root, audioPath);
+        artifacts.registerPath(
+          audioArtifactId,
+          artifact.root,
+          audioPath,
+          "audio/wav"
+        );
         return {
           audio: {
             artifactId: audioArtifactId,
@@ -266,25 +366,6 @@ export const makeTikTokMediaContainerRuntime = ({
           frames,
         };
       }),
-    stream: (artifactId) => {
-      const artifact = artifacts.get(artifactId);
-      if (artifact === undefined || artifact.path === null) {
-        return Stream.fail(retryableContainer());
-      }
-      const { path: artifactPath, root } = artifact;
-      return Stream.fromEffect(scanTemporaryWorkspace(root)).pipe(
-        Stream.flatMap(() =>
-          Stream.fromReadableStream({
-            evaluate: () =>
-              Readable.toWeb(
-                createReadStream(artifactPath)
-              ) as ReadableStream<Uint8Array>,
-            onError: retryableContainer,
-          })
-        ),
-        Stream.mapError(retryableContainer)
-      );
-    },
   });
 };
 
