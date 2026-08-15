@@ -28,6 +28,7 @@ import {
   VisualEvidenceProviderToolArguments,
   visualEvidenceOutcomeForObservations,
 } from "./import-visual-evidence-extractor.js";
+
 export const InstalledVisualModel =
   "@cf/meta/llama-4-scout-17b-16e-instruct" as const;
 

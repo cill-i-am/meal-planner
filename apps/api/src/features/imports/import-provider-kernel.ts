@@ -719,6 +719,77 @@ export class ProviderNormalizationRejectionError extends Error {
   }
 }
 
+interface OpenAiToolAuthority {
+  readonly authority: RawToolCallAuthority;
+  readonly choice?: {
+    readonly choice: Record<string, unknown>;
+    readonly message: Record<string, unknown>;
+  };
+}
+
+const decodeOpenAiToolAuthority = (choices: unknown): OpenAiToolAuthority => {
+  if (choices === undefined || choices === null) {
+    return { authority: { _tag: "Absent" } };
+  }
+  if (!Array.isArray(choices) || choices.length > 1) {
+    throw new Error(ProviderNormalizationInvalidMessage);
+  }
+  const [choice] = choices;
+  if (choice === undefined) {
+    return { authority: { _tag: "Absent" } };
+  }
+  if (!isUnknownRecord(choice)) {
+    throw new Error(ProviderNormalizationInvalidMessage);
+  }
+  const { message } = choice;
+  if (!isUnknownRecord(message)) {
+    throw new Error(ProviderNormalizationInvalidMessage);
+  }
+  const authority = decodeRawToolCalls(message["tool_calls"]);
+  if (authority._tag === "Invalid") {
+    throw new Error(ProviderNormalizationInvalidMessage);
+  }
+  return { authority, choice: { choice, message } };
+};
+
+const canonicalToolCall = (
+  call: ProviderRawToolCall,
+  normalizer: ProviderTransportNormalizer | undefined
+): ProviderRawToolCall => normalizer?.toolCall?.(call) ?? call;
+
+const withOpenAiToolCall = (
+  value: Record<string, unknown>,
+  openAiChoice: NonNullable<OpenAiToolAuthority["choice"]>,
+  call: ProviderRawToolCall
+): Record<string, unknown> => {
+  const { tool_calls: _nativeToolCalls, ...withoutNativeToolCalls } = value;
+  return {
+    ...withoutNativeToolCalls,
+    choices: [
+      {
+        ...openAiChoice.choice,
+        message: {
+          ...openAiChoice.message,
+          tool_calls: [call.call],
+        },
+      },
+    ],
+  };
+};
+
+const withNativeToolCall = (
+  value: Record<string, unknown>,
+  choices: unknown,
+  call: ProviderRawToolCall
+): Record<string, unknown> => {
+  const canonicalNative = { ...value, tool_calls: [call.call] };
+  return Array.isArray(choices) && choices.length === 0
+    ? Object.fromEntries(
+        Object.entries(canonicalNative).filter(([key]) => key !== "choices")
+      )
+    : canonicalNative;
+};
+
 const normalizeRawToolShape = (
   value: unknown,
   normalizer: ProviderTransportNormalizer | undefined
@@ -733,88 +804,29 @@ const normalizeRawToolShape = (
     throw new Error(ProviderNormalizationInvalidMessage);
   }
 
-  let openAiAuthority: RawToolCallAuthority = { _tag: "Absent" };
-  let openAiChoice:
-    | {
-        readonly choice: Record<string, unknown>;
-        readonly message: Record<string, unknown>;
-      }
-    | undefined;
-  if (choices !== undefined && choices !== null) {
-    if (!Array.isArray(choices) || choices.length > 1) {
-      throw new Error(ProviderNormalizationInvalidMessage);
-    }
-    const [choice] = choices;
-    if (choice !== undefined) {
-      if (!isUnknownRecord(choice)) {
-        throw new Error(ProviderNormalizationInvalidMessage);
-      }
-      const { message } = choice;
-      if (!isUnknownRecord(message)) {
-        throw new Error(ProviderNormalizationInvalidMessage);
-      }
-      openAiChoice = { choice, message };
-      openAiAuthority = decodeRawToolCalls(message["tool_calls"]);
-      if (openAiAuthority._tag === "Invalid") {
-        throw new Error(ProviderNormalizationInvalidMessage);
-      }
-    }
-  }
+  const openAi = decodeOpenAiToolAuthority(choices);
 
   if (
-    openAiAuthority._tag === "Call" &&
+    openAi.authority._tag === "Call" &&
     nativeAuthority._tag === "Call" &&
-    !sameRawToolAuthority(openAiAuthority, nativeAuthority)
+    !sameRawToolAuthority(openAi.authority, nativeAuthority)
   ) {
     throw new Error(ProviderNormalizationInvalidMessage);
   }
 
-  if (openAiAuthority._tag === "Call" && openAiChoice !== undefined) {
-    const canonicalCall =
-      normalizer?.toolCall?.(openAiAuthority) ?? openAiAuthority;
-    const { tool_calls: _nativeToolCalls, ...withoutNativeToolCalls } = value;
-    return {
-      ...withoutNativeToolCalls,
-      choices: [
-        {
-          ...openAiChoice.choice,
-          message: {
-            ...openAiChoice.message,
-            tool_calls: [canonicalCall.call],
-          },
-        },
-      ],
-    };
+  if (openAi.authority._tag === "Call" && openAi.choice !== undefined) {
+    return withOpenAiToolCall(
+      value,
+      openAi.choice,
+      canonicalToolCall(openAi.authority, normalizer)
+    );
   }
 
   if (nativeAuthority._tag === "Call") {
-    const canonicalCall =
-      normalizer?.toolCall?.(nativeAuthority) ?? nativeAuthority;
-    const canonicalNative = {
-      ...value,
-      tool_calls: [canonicalCall.call],
-    };
-    if (openAiChoice === undefined) {
-      return Array.isArray(choices) && choices.length === 0
-        ? Object.fromEntries(
-            Object.entries(canonicalNative).filter(([key]) => key !== "choices")
-          )
-        : canonicalNative;
-    }
-    const { tool_calls: _nativeToolCalls, ...withoutNativeToolCalls } =
-      canonicalNative;
-    return {
-      ...withoutNativeToolCalls,
-      choices: [
-        {
-          ...openAiChoice.choice,
-          message: {
-            ...openAiChoice.message,
-            tool_calls: [canonicalCall.call],
-          },
-        },
-      ],
-    };
+    const call = canonicalToolCall(nativeAuthority, normalizer);
+    return openAi.choice === undefined
+      ? withNativeToolCall(value, choices, call)
+      : withOpenAiToolCall(value, openAi.choice, call);
   }
 
   return value;
