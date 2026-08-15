@@ -4,6 +4,7 @@ CREATE TABLE `__new_import_batch_items` (
   `idempotency_key` text NOT NULL,
   `source_kind` text DEFAULT 'tiktok' NOT NULL,
   `source_canonical_id` text NOT NULL,
+  `source_identity_kind` text DEFAULT 'video' NOT NULL,
   `delivery_mode` text DEFAULT 'ordinary' NOT NULL,
   `correlation_json` text,
   `status` text DEFAULT 'queued' NOT NULL,
@@ -21,6 +22,8 @@ CREATE TABLE `__new_import_batch_items` (
     UNIQUE (`batch_id`, `idempotency_key`),
   CONSTRAINT `import_batch_items_source_kind_check`
     CHECK (`source_kind` = 'tiktok'),
+  CONSTRAINT `import_batch_items_source_identity_kind_check`
+    CHECK (`source_identity_kind` IN ('unsupported', 'video')),
   CONSTRAINT `import_batch_items_delivery_mode_check`
     CHECK (`delivery_mode` IN ('ordinary', 'poison')),
   CONSTRAINT `import_batch_items_correlation_check`
@@ -60,13 +63,14 @@ CREATE TABLE `__new_import_batch_items` (
 
 INSERT INTO `__new_import_batch_items` (
   `id`, `batch_id`, `idempotency_key`, `source_kind`,
-  `source_canonical_id`, `delivery_mode`, `correlation_json`, `status`,
-  `failure_code`, `attempt_count`, `import_id`, `canonical_source_id`,
-  `import_status_json`, `disposition`, `created_at`, `updated_at`
+  `source_canonical_id`, `source_identity_kind`, `delivery_mode`,
+  `correlation_json`, `status`, `failure_code`, `attempt_count`, `import_id`,
+  `canonical_source_id`, `import_status_json`, `disposition`, `created_at`,
+  `updated_at`
 )
 SELECT
   `id`, `batch_id`, `idempotency_key`, `source_kind`,
-  `source_canonical_id`, `delivery_mode`, `correlation_json`, `status`,
+  `source_canonical_id`, 'video', `delivery_mode`, `correlation_json`, `status`,
   `failure_code`, `attempt_count`, `import_id`, `canonical_source_id`,
   `import_status_json`, `disposition`, `created_at`, `updated_at`
 FROM `import_batch_items`;

@@ -44,6 +44,14 @@ export const ImportBatchRequestFingerprint = Sha256Hex.pipe(
 export type ImportBatchRequestFingerprint =
   typeof ImportBatchRequestFingerprint.Type;
 
+/** Durable discriminator for the admitted source identity resolution. */
+export const ImportBatchSourceIdentityKind = Schema.Literals([
+  "unsupported",
+  "video",
+]);
+export type ImportBatchSourceIdentityKind =
+  typeof ImportBatchSourceIdentityKind.Type;
+
 /** The batch idempotency key was reused for a different request. */
 export interface ImportBatchIdempotencyConflict {
   readonly _tag: "ImportBatchIdempotencyConflict";
@@ -101,6 +109,7 @@ export interface ImportBatchAdmissionCommand {
     readonly id: ImportBatchItemId;
     readonly idempotencyKey: IdempotencyKey;
     readonly sourceCanonicalId: SourceCanonicalId;
+    readonly sourceIdentityKind: ImportBatchSourceIdentityKind;
   }[];
   readonly requestFingerprint: ImportBatchRequestFingerprint;
   readonly timestamp: ImportTimestamp;
@@ -225,6 +234,10 @@ export const makeImportBatchService = (
             id: options.newItemId(),
             idempotencyKey: item.idempotencyKey,
             sourceCanonicalId: resolution.identity.canonicalId,
+            sourceIdentityKind:
+              resolution._tag === "UnsupportedIdentity"
+                ? ("unsupported" as const)
+                : ("video" as const),
           }))
         ),
       { concurrency: MaximumConcurrentIdentityResolutions }

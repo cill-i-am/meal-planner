@@ -20,10 +20,12 @@ import type {
   ImportBatchAdmissionProjection,
   ImportBatchNotFound,
   ImportBatchQueueMessageNotFound,
+  ImportBatchSourceIdentityKind,
   ImportBatchStoreShape,
 } from "./import-batch.service.js";
 import {
   ImportBatchRequestFingerprint,
+  ImportBatchSourceIdentityKind as ImportBatchSourceIdentityKindSchema,
   importBatchConflict,
 } from "./import-batch.service.js";
 import type {
@@ -74,6 +76,7 @@ const QueueItemRow = Schema.Struct({
   id: ImportBatchItemIdSchema,
   idempotencyKey: Schema.String,
   sourceCanonicalId: Schema.String,
+  sourceIdentityKind: ImportBatchSourceIdentityKindSchema,
   status: Schema.Literals(["queued", "running", "succeeded", "failed"]),
 });
 
@@ -96,6 +99,7 @@ const DeadLetterRow = Schema.Struct({
   replayImportJson: Schema.NullOr(Schema.String),
   replayState: Schema.Literals(["ready", "claimed", "replayed"]),
   sourceCanonicalId: Schema.String,
+  sourceIdentityKind: ImportBatchSourceIdentityKindSchema,
 });
 
 export type ImportQueueAcceptanceError =
@@ -153,6 +157,7 @@ const selectQueueItem = (database: AnyD1Database) =>
             id,
             idempotency_key AS idempotencyKey,
             source_canonical_id AS sourceCanonicalId,
+            source_identity_kind AS sourceIdentityKind,
             status
        FROM import_batch_items
       WHERE batch_id = ? AND id = ?`
@@ -200,11 +205,14 @@ const failureCodeFor = (
   }
 };
 
-const sourceRequest = (canonicalId: string): CreateImportRequest =>
+const sourceRequest = (
+  canonicalId: string,
+  sourceIdentityKind: ImportBatchSourceIdentityKind
+): CreateImportRequest =>
   Schema.decodeUnknownSync(CreateImportRequestSchema)({
     source: {
       kind: "tiktok",
-      url: `https://www.tiktok.com/@source/video/${encodeURIComponent(canonicalId)}`,
+      url: `https://www.tiktok.com/@source/${sourceIdentityKind === "video" ? "video" : "photo"}/${encodeURIComponent(canonicalId)}`,
     },
   });
 
@@ -451,11 +459,11 @@ export const makeD1ImportBatchStore = (
             .prepare(
               `INSERT INTO import_batch_items (
                  id, batch_id, idempotency_key, source_kind,
-                 source_canonical_id, delivery_mode, correlation_json,
-                 status, failure_code, attempt_count, import_id,
-                 canonical_source_id, import_status_json, disposition,
-                 created_at, updated_at
-               ) VALUES (?, ?, ?, 'tiktok', ?, 'ordinary', NULL, 'queued',
+                 source_canonical_id, source_identity_kind, delivery_mode,
+                 correlation_json, status, failure_code, attempt_count,
+                 import_id, canonical_source_id, import_status_json,
+                 disposition, created_at, updated_at
+               ) VALUES (?, ?, ?, 'tiktok', ?, ?, 'ordinary', NULL, 'queued',
                          NULL, 0, NULL, NULL, NULL, NULL, ?, ?)`
             )
             .bind(
@@ -463,6 +471,7 @@ export const makeD1ImportBatchStore = (
               command.batchId,
               item.idempotencyKey,
               item.sourceCanonicalId,
+              item.sourceIdentityKind,
               timestamp,
               timestamp
             )
@@ -524,7 +533,10 @@ const makeD1OperationalAdapters = (
   newReplayClaimId: () => DeadLetterReplayClaimId,
   now: () => string,
   replayClaimLeaseMilliseconds: number,
-  sourceRequestForCanonicalId: (canonicalId: string) => CreateImportRequest
+  sourceRequestForCanonicalId: (
+    canonicalId: string,
+    sourceIdentityKind: ImportBatchSourceIdentityKind
+  ) => CreateImportRequest
 ): {
   readonly deadLetters: DeadLetterStoreShape;
   readonly events: OperationalEventSinkShape;
@@ -538,7 +550,8 @@ const makeD1OperationalAdapters = (
                   i.idempotency_key AS idempotencyKey,
                   d.replay_import_json AS replayImportJson,
                   d.replay_state AS replayState,
-                  i.source_canonical_id AS sourceCanonicalId
+                  i.source_canonical_id AS sourceCanonicalId,
+                  i.source_identity_kind AS sourceIdentityKind
              FROM import_dead_letters d
              JOIN import_batch_items i ON i.id = d.item_id
             WHERE d.item_id = ?`
@@ -603,7 +616,8 @@ const makeD1OperationalAdapters = (
                       i.idempotency_key AS idempotencyKey,
                       d.replay_import_json AS replayImportJson,
                       d.replay_state AS replayState,
-                      i.source_canonical_id AS sourceCanonicalId
+                      i.source_canonical_id AS sourceCanonicalId,
+                      i.source_identity_kind AS sourceIdentityKind
                  FROM import_dead_letters d
                  JOIN import_batch_items i ON i.id = d.item_id
                 WHERE d.item_id = ?`
@@ -655,7 +669,10 @@ const makeD1OperationalAdapters = (
               idempotencyKey: Schema.decodeUnknownSync(IdempotencyKeySchema)(
                 row.idempotencyKey
               ),
-              request: sourceRequestForCanonicalId(row.sourceCanonicalId),
+              request: sourceRequestForCanonicalId(
+                row.sourceCanonicalId,
+                row.sourceIdentityKind
+              ),
             });
           }
         )
@@ -828,7 +845,8 @@ export const makeD1ImportQueueAcceptance = (input: {
   readonly now: () => string;
   readonly replayClaimLeaseMilliseconds: number;
   readonly sourceRequestForCanonicalId?: (
-    canonicalId: string
+    canonicalId: string,
+    sourceIdentityKind: ImportBatchSourceIdentityKind
   ) => CreateImportRequest;
 }) => {
   if (
@@ -878,6 +896,7 @@ export const makeD1ImportQueueAcceptance = (input: {
                       id,
                       idempotency_key AS idempotencyKey,
                       source_canonical_id AS sourceCanonicalId,
+                      source_identity_kind AS sourceIdentityKind,
                       status`
           )
           .bind(
@@ -1004,8 +1023,10 @@ export const makeD1ImportQueueAcceptance = (input: {
     const request = yield* Effect.try({
       catch: importPersistenceCorrupt,
       try: () =>
-        input.sourceRequestForCanonicalId?.(item.sourceCanonicalId) ??
-        sourceRequest(item.sourceCanonicalId),
+        input.sourceRequestForCanonicalId?.(
+          item.sourceCanonicalId,
+          item.sourceIdentityKind
+        ) ?? sourceRequest(item.sourceCanonicalId, item.sourceIdentityKind),
     });
     yield* input.imports.create(request, idempotencyKey).pipe(
       Effect.matchEffect({

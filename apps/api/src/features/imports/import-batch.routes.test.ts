@@ -226,7 +226,9 @@ describe("durable import batch routes", () => {
     const body = await response.json();
     const persisted = await database
       .prepare(
-        `SELECT source_canonical_id AS canonicalId, delivery_mode AS deliveryMode
+        `SELECT source_canonical_id AS canonicalId,
+                source_identity_kind AS identityKind,
+                delivery_mode AS deliveryMode
            FROM import_batch_items`
       )
       .first();
@@ -249,6 +251,7 @@ describe("durable import batch routes", () => {
     expect(persisted).toEqual({
       canonicalId: "7520000000000000001",
       deliveryMode: "ordinary",
+      identityKind: "video",
     });
     expect(
       columns.results.map(({ name }: { readonly name: string }) => name)

@@ -210,16 +210,24 @@ const newReplayClaimId = () => {
 
 const identityResolver: CanonicalSourceIdentityResolverShape = {
   resolve: (source) => {
-    const canonicalId = /\/video\/(?<id>\d+)/u.exec(source.url)?.groups?.["id"];
+    const match = /\/(?<kind>photo|video)\/(?<id>\d+)/u.exec(source.url);
+    const canonicalId = match?.groups?.["id"];
     if (canonicalId === undefined) {
       return Effect.fail(invalidSource());
     }
+    const identity = {
+      canonicalId: decodeCanonicalId(canonicalId),
+      kind: "tiktok" as const,
+    };
+    if (match?.groups?.["kind"] === "photo") {
+      return Effect.succeed({
+        _tag: "UnsupportedIdentity" as const,
+        identity,
+      });
+    }
     return Effect.succeed({
       _tag: "VideoIdentity" as const,
-      identity: {
-        canonicalId: decodeCanonicalId(canonicalId),
-        kind: "tiktok" as const,
-      },
+      identity,
       videoUrl: decodeVideoUrl(source.url),
     });
   },
@@ -263,19 +271,19 @@ const makeHttpHarness = async () => {
   return app;
 };
 
-const postBatch = (
+const postBatchSources = (
   app: Awaited<ReturnType<typeof makeHttpHarness>>,
   idempotencyKey: string,
-  canonicalIds: readonly string[]
+  sourcePaths: readonly string[]
 ) =>
   app.handler(
     new Request("https://meal-planner.test/import-batches", {
       body: JSON.stringify({
-        items: canonicalIds.map((canonicalId, index) => ({
+        items: sourcePaths.map((sourcePath, index) => ({
           idempotencyKey: `${idempotencyKey}-item-${index + 1}`,
           source: {
             kind: "tiktok",
-            url: `https://www.tiktok.com/@cook/video/${canonicalId}`,
+            url: `https://www.tiktok.com/@cook/${sourcePath}`,
           },
         })),
       }),
@@ -286,6 +294,17 @@ const postBatch = (
       },
       method: "POST",
     })
+  );
+
+const postBatch = (
+  app: Awaited<ReturnType<typeof makeHttpHarness>>,
+  idempotencyKey: string,
+  canonicalIds: readonly string[]
+) =>
+  postBatchSources(
+    app,
+    idempotencyKey,
+    canonicalIds.map((canonicalId) => `video/${canonicalId}`)
   );
 
 const getBatch = (
@@ -352,6 +371,56 @@ const makeAcceptance = (imports: ImportServiceShape) =>
   });
 
 describe("durable import batch queue acceptance", () => {
+  it("preserves a photo identity through D1 and Queue consumption", async () => {
+    const app = await makeHttpHarness();
+    const canonicalId = "7520000000000000051";
+    const ordinary = makeDeterministicOrdinaryImportService({
+      attempts: [
+        {
+          idempotencyKey: "batch-photo-item-1",
+          outcome: {
+            _tag: "Success",
+            import: queuedImport(canonicalId, 51),
+          },
+        },
+      ],
+    });
+    const acceptance = makeAcceptance(ordinary.service);
+
+    const admitted = await postBatchSources(app, "batch-photo", [
+      `photo/${canonicalId}`,
+    ]);
+    const [delivery] = await waitForDeliveries(primaryQueueName, 1);
+    if (delivery === undefined) {
+      throw new Error("Expected photo queue delivery");
+    }
+    const stored = await database
+      .prepare(
+        `SELECT source_canonical_id AS canonicalId,
+                source_identity_kind AS identityKind
+           FROM import_batch_items
+          WHERE id = ?`
+      )
+      .bind(messageFrom(delivery).itemId)
+      .first();
+    await Effect.runPromise(
+      acceptance.consume(
+        messageFrom(delivery),
+        decodeDeliveryAttempt(delivery.attempt)
+      )
+    );
+
+    expect(admitted.status).toBe(202);
+    expect(stored).toEqual({
+      canonicalId,
+      identityKind: "unsupported",
+    });
+    expect(ordinary.calls[0]?.request.source.url).toBe(
+      `https://www.tiktok.com/@source/photo/${canonicalId}`
+    );
+    expect(ordinary.calls[0]?.request.source.url).not.toContain("/video/");
+  });
+
   it("proves HTTP to D1 to workerd Queue to unordered consumer to D1 to GET", async () => {
     const app = await makeHttpHarness();
     const ordinary = makeDeterministicOrdinaryImportService({

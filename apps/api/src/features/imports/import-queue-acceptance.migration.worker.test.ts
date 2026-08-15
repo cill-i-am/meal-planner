@@ -128,7 +128,8 @@ describe("import batch canonical duplicate migration", () => {
 
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        `SELECT id, status, disposition
+        `SELECT id, status, disposition,
+                source_identity_kind AS sourceIdentityKind
            FROM import_batch_items
           ORDER BY id`
       ).all()
@@ -137,10 +138,21 @@ describe("import batch canonical duplicate migration", () => {
         {
           disposition: "canonical_duplicate",
           id: candidateItemId,
+          sourceIdentityKind: "video",
           status: "succeeded",
         },
-        { disposition: "created", id: retainedItemId, status: "succeeded" },
-        { disposition: null, id: deadLetterItemId, status: "failed" },
+        {
+          disposition: "created",
+          id: retainedItemId,
+          sourceIdentityKind: "video",
+          status: "succeeded",
+        },
+        {
+          disposition: null,
+          id: deadLetterItemId,
+          sourceIdentityKind: "video",
+          status: "failed",
+        },
       ],
     });
     await expect(
