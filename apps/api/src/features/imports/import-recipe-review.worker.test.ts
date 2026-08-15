@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
 import {
+  CorrectRecipeDraftRequest,
   PlanningTags,
   RecipeReviewView,
   RecipeReviewerActorId,
@@ -43,7 +44,32 @@ const tags = decodeTags({
   totalTimeBand: "30_to_60_minutes",
 });
 
+const correctionPairs = [
+  { field: "author", value: "Corrected author" },
+  { field: "category", value: "Corrected category" },
+  { field: "cook_time_minutes", value: 21 },
+  { field: "cuisine", value: "Corrected cuisine" },
+  { field: "description", value: "Corrected description" },
+  { field: "ingredient_lines", value: ["1 corrected ingredient"] },
+  { field: "ingredient_quantities", value: ["1"] },
+  { field: "ingredient_units", value: ["cup"] },
+  { field: "instructions", value: ["Follow the corrected instruction."] },
+  { field: "name", value: "Corrected name" },
+  { field: "nutrition", value: "Corrected nutrition" },
+  { field: "prep_time_minutes", value: 11 },
+  { field: "temperature_celsius", value: 180 },
+  { field: "tools", value: ["Corrected tool"] },
+  { field: "total_time_minutes", value: 31 },
+  { field: "yield", value: "3 servings" },
+];
+const correctionCases = correctionPairs.map((correction, index) => ({
+  ...correction,
+  index,
+}));
+
 const fixtureHash = (character: string) => character.repeat(64);
+const fixtureFingerprint = (index: number) =>
+  index.toString(16).padStart(64, "0");
 const citation = {
   citations: [
     {
@@ -68,7 +94,11 @@ const unresolved = (reason: string) => ({
   state: "unresolved" as const,
 });
 
-const makeDraft = (importId: ImportId, fingerprintCharacter: string) =>
+const makeDraft = (
+  importId: ImportId,
+  extractionFingerprint: string,
+  nameResolved = false
+) =>
   Schema.decodeUnknownSync(RecipeDraft)({
     createdAt: "2026-07-22T10:00:00.000Z",
     evidenceFingerprint: fixtureHash("a"),
@@ -88,7 +118,9 @@ const makeDraft = (importId: ImportId, fingerprintCharacter: string) =>
         "Chop the onion.",
         "Simmer for 20 minutes.",
       ]),
-      name: unresolved("The title was not visible."),
+      name: nameResolved
+        ? supportedString("Tomato and Onion Stew")
+        : unresolved("The title was not visible."),
       nutrition: unresolved("Nutrition was not stated."),
       prepTimeMinutes: supportedNumber(10),
       sourceUrl: supportedString(
@@ -98,13 +130,20 @@ const makeDraft = (importId: ImportId, fingerprintCharacter: string) =>
       temperatureCelsius: unresolved("Temperature was not stated."),
       tools: supportedList(["Saucepan"]),
       totalTimeMinutes: supportedNumber(30),
-      unresolvedFields: [
-        "name",
-        "nutrition",
-        "temperature_celsius",
-        "ingredient_quantities",
-        "ingredient_units",
-      ],
+      unresolvedFields: nameResolved
+        ? [
+            "nutrition",
+            "temperature_celsius",
+            "ingredient_quantities",
+            "ingredient_units",
+          ]
+        : [
+            "name",
+            "nutrition",
+            "temperature_celsius",
+            "ingredient_quantities",
+            "ingredient_units",
+          ],
       usage: {
         inputEvidenceItems: 1,
         inputTokens: 0,
@@ -114,7 +153,7 @@ const makeDraft = (importId: ImportId, fingerprintCharacter: string) =>
       },
       yield: supportedString("2 servings"),
     },
-    extractionFingerprint: fixtureHash(fingerprintCharacter),
+    extractionFingerprint,
     extractor: {
       model: "fixture-v1",
       provider: "deterministic_fake",
@@ -188,11 +227,52 @@ beforeAll(async () => {
 });
 
 describe("provider-free D1 recipe review tracer", () => {
+  it.each(correctionCases)(
+    "round-trips the schema-valid $field correction pairing through D1",
+    async ({ index, ...correction }) => {
+      const repository = makeD1RecipeReviewRepository(
+        testEnv.MealPlannerDatabase
+      );
+      const service = makeRecipeReviewService({
+        now: () => decodeTimestamp("2026-07-22T10:00:00.000Z"),
+        repository,
+      });
+      const importId = decodeImportId(
+        `018f47ad-91aa-7c35-b6fe-${String(index + 320).padStart(12, "0")}`
+      );
+      const draft = makeDraft(importId, fixtureFingerprint(index + 320));
+      await seedDraft(draft, `7520000000000000${index + 320}`);
+      const request = Schema.decodeUnknownSync(CorrectRecipeDraftRequest)({
+        correction: {
+          ...correction,
+          reason: "The correction is visible in the cited caption frame.",
+        },
+        expectedVersion: 0,
+        tags,
+      });
+
+      const corrected = await Effect.runPromise(
+        service.correct(importId, request, actorId)
+      );
+      expect(corrected).toMatchObject({
+        corrections: [
+          expect.objectContaining({
+            after: correction.value,
+            field: correction.field,
+          }),
+        ],
+        version: 1,
+      });
+      const roundTripped = await Effect.runPromise(service.get(importId));
+      expect(roundTripped).toEqual(corrected);
+    }
+  );
+
   it("audits correction and approval with stale-write rejection and approved-only reads", async () => {
     const approvedId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000311");
     const rejectedId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000312");
-    const approvedDraft = makeDraft(approvedId, "b");
-    const rejectedDraft = makeDraft(rejectedId, "d");
+    const approvedDraft = makeDraft(approvedId, fixtureHash("b"));
+    const rejectedDraft = makeDraft(rejectedId, fixtureHash("d"));
     await seedDraft(approvedDraft, "7520000000000000311");
     await seedDraft(rejectedDraft, "7520000000000000312");
 
@@ -262,6 +342,7 @@ describe("provider-free D1 recipe review tracer", () => {
 
     const initial = await Effect.runPromise(service.get(approvedId));
     expect(initial).toMatchObject({
+      _tag: "NeedsReview",
       corrections: [],
       draft: {
         evidenceFingerprint: approvedDraft.evidenceFingerprint,
@@ -302,6 +383,7 @@ describe("provider-free D1 recipe review tracer", () => {
       )
     );
     expect(corrected).toMatchObject({
+      _tag: "NeedsReview",
       corrections: [
         {
           actorId,
@@ -349,6 +431,7 @@ describe("provider-free D1 recipe review tracer", () => {
       )
     );
     expect(approved).toMatchObject({
+      _tag: "Approved",
       lifecycle: "approved",
       transitions: [
         {
@@ -368,7 +451,11 @@ describe("provider-free D1 recipe review tracer", () => {
         actorId
       )
     );
-    expect(rejected).toMatchObject({ lifecycle: "rejected", version: 1 });
+    expect(rejected).toMatchObject({
+      _tag: "Rejected",
+      lifecycle: "rejected",
+      version: 1,
+    });
     expect(rejected.draft).toEqual(rejectedDraft);
     expect(rejected.evidence).toHaveLength(3);
 
@@ -402,7 +489,7 @@ describe("provider-free D1 recipe review tracer", () => {
 
   it("preserves immutable extraction evidence and append-only review history", async () => {
     const id = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000313");
-    const draft = makeDraft(id, "e");
+    const draft = makeDraft(id, fixtureHash("e"));
     await seedDraft(draft, "7520000000000000313");
     const repository = makeD1RecipeReviewRepository(
       testEnv.MealPlannerDatabase
@@ -425,7 +512,11 @@ describe("provider-free D1 recipe review tracer", () => {
         actorId
       )
     );
-    expect(returned).toMatchObject({ lifecycle: "needs_review", version: 2 });
+    expect(returned).toMatchObject({
+      _tag: "NeedsReview",
+      lifecycle: "needs_review",
+      version: 2,
+    });
     expect(returned.draft).toEqual(draft);
 
     await expect(
@@ -444,5 +535,96 @@ describe("provider-free D1 recipe review tracer", () => {
         .bind(draft.extractionFingerprint)
         .run()
     ).rejects.toThrow(/append-only/u);
+  });
+
+  it("classifies an approved current row with rejected terminal history as corruption", async () => {
+    const id = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000336");
+    const draft = makeDraft(id, fixtureFingerprint(336), true);
+    await seedDraft(draft, "7520000000000000336");
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO recipe_reviews (
+         extraction_fingerprint, lifecycle, version, tags_json,
+         last_mutation_id, created_at, updated_at
+       ) VALUES (?, 'needs_review', 0, ?, NULL, ?, ?)`
+    )
+      .bind(
+        draft.extractionFingerprint,
+        JSON.stringify(Schema.encodeSync(PlanningTags)(tags)),
+        "2026-07-22T10:20:00.000Z",
+        "2026-07-22T10:20:00.000Z"
+      )
+      .run();
+    const repository = makeD1RecipeReviewRepository(
+      testEnv.MealPlannerDatabase
+    );
+    let tick = 0;
+    const service = makeRecipeReviewService({
+      now: () => {
+        tick += 1;
+        return decodeTimestamp(`2026-07-22T10:2${tick}:00.000Z`);
+      },
+      repository,
+    });
+
+    const approved = await Effect.runPromise(
+      service.approve(
+        id,
+        { expectedVersion: 0, reason: "Ready for planning." },
+        actorId
+      )
+    );
+    expect(approved).toMatchObject({
+      _tag: "Approved",
+      transitions: [expect.objectContaining({ to: "approved", version: 1 })],
+      version: 1,
+    });
+    const returned = await Effect.runPromise(
+      service.returnToReview(
+        id,
+        { expectedVersion: 1, reason: "Returned for correction." },
+        actorId
+      )
+    );
+    expect(returned).toMatchObject({
+      _tag: "NeedsReview",
+      transitions: [
+        expect.objectContaining({ to: "approved", version: 1 }),
+        expect.objectContaining({ to: "needs_review", version: 2 }),
+      ],
+      version: 2,
+    });
+    const rejected = await Effect.runPromise(
+      service.reject(
+        id,
+        { expectedVersion: 2, reason: "Rejected after review." },
+        actorId
+      )
+    );
+    expect(rejected).toMatchObject({
+      _tag: "Rejected",
+      transitions: [
+        expect.objectContaining({ to: "approved", version: 1 }),
+        expect.objectContaining({ to: "needs_review", version: 2 }),
+        expect.objectContaining({ to: "rejected", version: 3 }),
+      ],
+      version: 3,
+    });
+
+    await testEnv.MealPlannerDatabase.prepare(
+      `UPDATE recipe_reviews
+          SET lifecycle = 'approved'
+        WHERE extraction_fingerprint = ?`
+    )
+      .bind(draft.extractionFingerprint)
+      .run();
+
+    await expect(Effect.runPromise(service.get(id))).rejects.toMatchObject({
+      _tag: "ImportPersistenceCorrupt",
+    });
+    await expect(
+      Effect.runPromise(service.listApproved())
+    ).rejects.toMatchObject({
+      _tag: "ImportPersistenceCorrupt",
+    });
   });
 });

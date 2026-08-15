@@ -9,6 +9,7 @@ import {
   RecipeReviewLifecycle,
   RecipeReviewTransition,
   RecipeReviewVersion,
+  refineRecipeReview,
   recipeReviewNullablePolicy,
   recipeReviewTransitionRejected,
   recipeReviewVersionConflict,
@@ -16,6 +17,7 @@ import {
 import type {
   RecipeReviewRepositoryShape,
   RecipeReviewWriteError,
+  Review,
   RecipeReviewView,
 } from "./import-recipe-review.js";
 import { EvidenceReference, ImportId } from "./import.contracts.js";
@@ -154,7 +156,7 @@ const reviewFromRows = (
       source.tags_json === null
         ? null
         : yield* decodeJson(PlanningTags, source.tags_json);
-    return {
+    const view = {
       corrections,
       draft,
       evidence,
@@ -165,6 +167,10 @@ const reviewFromRows = (
       unresolvedRequiredFields: unresolvedRequiredFields(draft, corrections),
       version,
     } satisfies RecipeReviewView;
+    return yield* Option.match(refineRecipeReview(view), {
+      onNone: () => Effect.fail(importPersistenceCorrupt()),
+      onSome: Effect.succeed,
+    });
   });
 
 const sourceSelect = (where: string) => `
@@ -230,7 +236,7 @@ const readReview = (
     const results = yield* decode(D1BatchResults, raw);
     const source = results[0]?.results[0];
     if (source === undefined) {
-      return Option.none<RecipeReviewView>();
+      return Option.none<Review>();
     }
     return Option.some(
       yield* reviewFromRows(
@@ -247,7 +253,7 @@ const reviewAfterCas = (
   expectedVersion: RecipeReviewVersion,
   expectedLifecycle: RecipeReviewLifecycle,
   updated: boolean
-): Effect.Effect<RecipeReviewView, RecipeReviewWriteError> =>
+): Effect.Effect<Review, RecipeReviewWriteError> =>
   Effect.gen(function* readAfterReviewCas() {
     const reviewOption = yield* readReview(binding, {
       extractionFingerprint,
