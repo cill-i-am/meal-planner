@@ -8,7 +8,10 @@ import {
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
-import { acquireStoreVerify } from "./import-media-acquirer.js";
+import {
+  VerifiedPreparedMediaArtifact,
+  acquireStoreVerify,
+} from "./import-media-acquirer.js";
 import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
@@ -20,10 +23,18 @@ import type { AcquisitionMediaObjectStub } from "./import-media-acquisition-obje
 import {
   AcquisitionGeneration,
   MaximumR2OperationMilliseconds,
+  MediaArtifactId,
+  MediaByteCount,
+  MediaDurationSeconds,
+  Sha256Hex,
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
-import { ImportId, SourceCanonicalId } from "./import.contracts.js";
+import {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "./import.contracts.js";
 
 interface TestR2Object {
   readonly arrayBuffer: () => Promise<ArrayBuffer>;
@@ -272,10 +283,15 @@ describe("derived provider evidence", () => {
     };
 
     await Effect.runPromise(
-      persistDerivedProviderEvidence(bucket(), mediaObject, prepared, {
-        generation,
-        importId,
-      })
+      persistDerivedProviderEvidence(
+        bucket(),
+        mediaObject,
+        Schema.decodeUnknownSync(VerifiedPreparedMediaArtifact)(prepared),
+        {
+          generation,
+          importId,
+        }
+      )
     );
 
     const manifestObject = await testEnv.ImportEvidenceBucket.get(
@@ -501,9 +517,35 @@ describe("native R2 generation commit", () => {
         Effect.die("derived evidence must remain untouched"),
     };
     const mediaObject = makeAcquisitionMediaObject(stub);
+    let observedVerifiedPreparedArtifact = false;
 
     const first = await Effect.runPromise(
       acquireStoreVerify(acquisitionBucket, mediaObject, {
+        beforeCleanup: (prepared) =>
+          Effect.sync(() => {
+            const {
+              artifactId,
+              bytes,
+              durationSeconds: duration,
+              metadata: { observedAt },
+              sha256: hash,
+            }: {
+              readonly artifactId: typeof MediaArtifactId.Type;
+              readonly bytes: typeof MediaByteCount.Type;
+              readonly durationSeconds: typeof MediaDurationSeconds.Type;
+              readonly metadata: {
+                readonly observedAt: typeof ImportTimestamp.Type;
+              };
+              readonly sha256: typeof Sha256Hex.Type;
+            } = prepared;
+
+            expect(Schema.is(MediaArtifactId)(artifactId)).toBe(true);
+            expect(Schema.is(MediaByteCount)(bytes)).toBe(true);
+            expect(Schema.is(MediaDurationSeconds)(duration)).toBe(true);
+            expect(Schema.is(ImportTimestamp)(observedAt)).toBe(true);
+            expect(Schema.is(Sha256Hex)(hash)).toBe(true);
+            observedVerifiedPreparedArtifact = true;
+          }),
         canonicalId,
         generation,
         importId,
@@ -521,6 +563,7 @@ describe("native R2 generation commit", () => {
         sha256: expectedSha256,
       },
     });
+    expect(observedVerifiedPreparedArtifact).toBe(true);
     expect(storedMedia).not.toBeNull();
     expect(storedManifest).not.toBeNull();
     if (storedMedia === null || storedManifest === null) {

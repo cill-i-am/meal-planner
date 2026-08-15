@@ -220,7 +220,7 @@ const AcquisitionManifest = Schema.Struct({
   ytDlpVersion: Schema.Literal("2026.07.04"),
 });
 
-const PreparedMediaArtifactTransport = Schema.Struct({
+export const VerifiedPreparedMediaArtifact = Schema.Struct({
   artifactId: MediaArtifactIdSchema,
   audioStreams: Schema.NonEmptyArray(MediaStreamSummary),
   bytes: MediaByteCountSchema,
@@ -250,6 +250,8 @@ const PreparedMediaArtifactTransport = Schema.Struct({
   sha256: Sha256HexSchema,
   videoStreams: Schema.NonEmptyArray(MediaStreamSummary),
 });
+export type VerifiedPreparedMediaArtifact =
+  typeof VerifiedPreparedMediaArtifact.Type;
 
 const isCanonicalUrlFor = (value: string, canonicalId: SourceCanonicalId) => {
   try {
@@ -453,7 +455,7 @@ const putMediaObject = Effect.fn("ImportMedia.putMediaObject")(
   (
     bucket: AcquisitionBucketLike,
     mediaObject: AcquisitionMediaObjectLike,
-    prepared: PreparedMediaArtifact,
+    prepared: VerifiedPreparedMediaArtifact,
     input: {
       readonly generation: AcquisitionGeneration;
       readonly importId: ImportId;
@@ -667,7 +669,7 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
     mediaObject: AcquisitionMediaObjectLike,
     input: {
       readonly beforeCleanup?: (
-        prepared: PreparedMediaArtifact,
+        prepared: VerifiedPreparedMediaArtifact,
         mediaObject: AcquisitionMediaObjectLike
       ) => Effect.Effect<void, RetryableAcquisitionFailure>;
       readonly canonicalId: SourceCanonicalId;
@@ -693,14 +695,16 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
       return preparedTransport;
     }
     const decodedPrepared = yield* Schema.decodeUnknownEffect(
-      PreparedMediaArtifactTransport
+      VerifiedPreparedMediaArtifact
     )(preparedTransport).pipe(
       Effect.mapError(() => retryableAt("container", "container_rpc"))
     );
-    const observedAt = yield* Schema.encodeUnknownEffect(ImportTimestamp)(
-      decodedPrepared.metadata.observedAt
-    ).pipe(Effect.mapError(() => retryableAt("container", "container_rpc")));
-    const publishedAt =
+    const observedAtTransport = yield* Schema.encodeUnknownEffect(
+      ImportTimestamp
+    )(decodedPrepared.metadata.observedAt).pipe(
+      Effect.mapError(() => retryableAt("container", "container_rpc"))
+    );
+    const publishedAtTransport =
       decodedPrepared.metadata.publishedAt === null
         ? null
         : yield* Schema.encodeUnknownEffect(ImportTimestamp)(
@@ -708,14 +712,7 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
           ).pipe(
             Effect.mapError(() => retryableAt("container", "container_rpc"))
           );
-    const prepared: PreparedMediaArtifact = {
-      ...decodedPrepared,
-      metadata: {
-        ...decodedPrepared.metadata,
-        observedAt,
-        publishedAt,
-      },
-    };
+    const prepared: VerifiedPreparedMediaArtifact = decodedPrepared;
     return yield* Effect.gen(function* storePrepared() {
       const acquiredAtDate = new Date(yield* Clock.currentTimeMillis);
       const acquiredAt = acquiredAtDate.toISOString();
@@ -753,10 +750,10 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
         manifestKey,
         mediaKey,
         mediaType: "video/mp4",
-        observedAt: prepared.metadata.observedAt,
+        observedAt: observedAtTransport,
         originalStreamsRemuxedToMp4: true,
         provenance: prepared.metadata.provenance,
-        publishedAt: prepared.metadata.publishedAt,
+        publishedAt: publishedAtTransport,
         schemaVersion: 1,
         sha256: prepared.sha256,
         videoStreams: prepared.videoStreams,

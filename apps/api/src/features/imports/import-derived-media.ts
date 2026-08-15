@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect";
 import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
-  PreparedMediaArtifact,
+  VerifiedPreparedMediaArtifact,
 } from "./import-media-acquirer.js";
 import { putPrivateArtifact } from "./import-media-r2-upload.js";
 import { RetryableAcquisitionError } from "./import-media.errors.js";
@@ -204,7 +204,7 @@ export const persistDerivedProviderEvidence = Effect.fn(
 )(function* persistProviderEvidenceEffect(
   bucket: AcquisitionBucketLike,
   mediaObject: AcquisitionMediaObjectLike,
-  prepared: PreparedMediaArtifact,
+  prepared: VerifiedPreparedMediaArtifact,
   input: {
     readonly generation: AcquisitionGenerationType;
     readonly importId: ImportIdType;
