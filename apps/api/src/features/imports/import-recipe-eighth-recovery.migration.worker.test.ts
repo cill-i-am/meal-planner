@@ -64,17 +64,12 @@ describe("recipe eighth recovery migration", () => {
          created_at, dispatch_id, evidence_fingerprint, expires_at, generation,
          import_id, runtime_stage, value_json, value_sha256
        ) VALUES (
-         ?, ?, ?, '2026-08-06T10:00:00.000Z', 1, ?,
+         strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?, ?,
+         strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+7 days'), 1, ?,
          'pilot-gaia-118', '{"title":"retained"}', ?
        )`
     )
-      .bind(
-        timestamp,
-        dispatchId,
-        evidenceFingerprint,
-        importId,
-        "b".repeat(64)
-      )
+      .bind(dispatchId, evidenceFingerprint, importId, "b".repeat(64))
       .run();
 
     const migration = testEnv.TEST_MIGRATIONS[migrationIndex];
