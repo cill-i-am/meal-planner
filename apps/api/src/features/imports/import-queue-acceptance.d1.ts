@@ -1,20 +1,37 @@
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 
 import type {
+  ImportBatchDeliveryAttempt,
   ImportBatchId,
+  ImportBatchItemFailureCode,
   ImportBatchItemId,
   ImportBatchQueueMessage,
   ImportBatchView,
 } from "./import-batch.contracts.js";
-import { ImportBatchView as ImportBatchViewSchema } from "./import-batch.contracts.js";
+import {
+  ImportBatchId as ImportBatchIdSchema,
+  ImportBatchItemId as ImportBatchItemIdSchema,
+  ImportBatchQueueMessage as ImportBatchQueueMessageSchema,
+  ImportBatchView as ImportBatchViewSchema,
+} from "./import-batch.contracts.js";
+import type {
+  ImportBatchAdmissionCommand,
+  ImportBatchAdmissionProjection,
+  ImportBatchNotFound,
+  ImportBatchQueueMessageNotFound,
+  ImportBatchStoreShape,
+} from "./import-batch.service.js";
+import {
+  ImportBatchRequestFingerprint,
+  importBatchConflict,
+} from "./import-batch.service.js";
 import type {
   DeadLetterNotFound,
   DeadLetterReplayClaim,
   DeadLetterReplayClaimId,
   DeadLetterReplayInProgress,
   DeadLetterStoreShape,
-  OperationalCorrelation,
   OperationalEvent,
   OperationalEventSinkShape,
 } from "./import-operations.js";
@@ -22,23 +39,53 @@ import {
   DeadLetterInspection,
   OperationalCorrelation as OperationalCorrelationSchema,
 } from "./import-operations.js";
-import type { IdempotencyKey, SourceDescriptor } from "./import.contracts.js";
+import type { CreateImportRequest } from "./import.contracts.js";
 import {
   CreateImportRequest as CreateImportRequestSchema,
   IdempotencyKey as IdempotencyKeySchema,
   ImportView as ImportViewSchema,
 } from "./import.contracts.js";
+import {
+  importPersistenceCorrupt,
+  importPersistenceUnavailable,
+} from "./import.errors.js";
+import type {
+  CreateImportError,
+  ImportPersistenceCorrupt,
+  ImportPersistenceUnavailable,
+} from "./import.errors.js";
 import type { ImportServiceShape } from "./import.service.js";
 
+const NonNegativeInteger = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+);
+
+const BatchRow = Schema.Struct({
+  createdAt: Schema.String,
+  id: ImportBatchIdSchema,
+  requestFingerprint: ImportBatchRequestFingerprint,
+  updatedAt: Schema.String,
+});
+
 const QueueItemRow = Schema.Struct({
-  attemptCount: Schema.Number,
-  batchId: Schema.String,
-  correlationJson: Schema.NullOr(Schema.String),
-  deliveryMode: Schema.Literals(["ordinary", "poison"]),
+  attemptCount: NonNegativeInteger,
+  batchId: ImportBatchIdSchema,
+  failureCode: Schema.NullOr(Schema.String),
+  id: ImportBatchItemIdSchema,
+  idempotencyKey: Schema.String,
+  sourceCanonicalId: Schema.String,
+  status: Schema.Literals(["queued", "running", "succeeded", "failed"]),
+});
+
+const ProjectionItemRow = Schema.Struct({
+  canonicalSourceId: Schema.NullOr(Schema.String),
+  deadLetterItemId: Schema.NullOr(Schema.String),
+  disposition: Schema.NullOr(Schema.String),
   failureCode: Schema.NullOr(Schema.String),
   id: Schema.String,
   idempotencyKey: Schema.String,
-  sourceCanonicalId: Schema.String,
+  importId: Schema.NullOr(Schema.String),
+  importStatusJson: Schema.NullOr(Schema.String),
   status: Schema.Literals(["queued", "running", "succeeded", "failed"]),
 });
 
@@ -51,61 +98,28 @@ const DeadLetterRow = Schema.Struct({
   sourceCanonicalId: Schema.String,
 });
 
-export interface ImportQueueAcceptanceMessageNotFound {
-  readonly _tag: "ImportQueueAcceptanceMessageNotFound";
-  readonly itemId: ImportBatchItemId;
-}
-
-export interface ImportQueueAcceptancePoisoned {
-  readonly _tag: "ImportQueueAcceptancePoisoned";
-  readonly itemId: ImportBatchItemId;
-}
-
 export type ImportQueueAcceptanceError =
-  | ImportQueueAcceptanceMessageNotFound
-  | ImportQueueAcceptancePoisoned;
-
-type SyntheticBatchItem =
-  | {
-      readonly deliveryMode: "ordinary";
-      readonly id: ImportBatchItemId;
-      readonly idempotencyKey: IdempotencyKey;
-      readonly source: SourceDescriptor;
-    }
-  | {
-      readonly correlation: OperationalCorrelation;
-      readonly deliveryMode: "poison";
-      readonly id: ImportBatchItemId;
-      readonly idempotencyKey: IdempotencyKey;
-      readonly source: SourceDescriptor;
-    };
-
-interface SeedSyntheticBatch {
-  readonly batchId: ImportBatchId;
-  readonly idempotencyKey: IdempotencyKey;
-  readonly items: readonly SyntheticBatchItem[];
-}
+  | ImportBatchQueueMessageNotFound
+  | ImportPersistenceCorrupt
+  | ImportPersistenceUnavailable;
 
 const databaseEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({
-    catch: (cause) =>
-      new Error("Durable import queue persistence failed", { cause }),
+    catch: importPersistenceUnavailable,
     try: operation,
-  }).pipe(Effect.orDie);
-
-const digestSha256 = (value: string) =>
-  Effect.promise(async () => {
-    const digest = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(value)
-    );
-    return Array.from(new Uint8Array(digest), (byte) =>
-      byte.toString(16).padStart(2, "0")
-    ).join("");
   });
 
-const decodeQueueItem = (value: unknown) =>
-  Schema.decodeUnknownSync(QueueItemRow)(value);
+const operationalDatabaseEffect = <A>(operation: () => PromiseLike<A>) =>
+  databaseEffect(operation).pipe(Effect.orDie);
+
+const decodePersisted = <S extends Schema.ConstraintDecoder<unknown>>(
+  schema: S,
+  value: unknown
+): Effect.Effect<S["Type"], ImportPersistenceCorrupt> =>
+  Effect.try({
+    catch: importPersistenceCorrupt,
+    try: () => Schema.decodeUnknownSync(schema)(value),
+  });
 
 const updateBatchProjection = (
   database: AnyD1Database,
@@ -117,12 +131,11 @@ const updateBatchProjection = (
       `UPDATE import_batches
           SET status = (
                 SELECT CASE
+                  WHEN SUM(status = 'running') > 0 THEN 'running'
+                  WHEN SUM(status = 'queued') > 0 THEN 'queued'
                   WHEN COUNT(*) = SUM(status = 'succeeded') THEN 'completed'
                   WHEN COUNT(*) = SUM(status = 'failed') THEN 'failed'
-                  WHEN SUM(status = 'succeeded') > 0
-                   AND SUM(status = 'failed') > 0 THEN 'partial_failure'
-                  WHEN SUM(status = 'running') > 0 THEN 'running'
-                  ELSE 'queued'
+                  ELSE 'partial_failure'
                 END
                   FROM import_batch_items
                  WHERE batch_id = ?
@@ -136,8 +149,6 @@ const selectQueueItem = (database: AnyD1Database) =>
   database.prepare(
     `SELECT attempt_count AS attemptCount,
             batch_id AS batchId,
-            correlation_json AS correlationJson,
-            delivery_mode AS deliveryMode,
             failure_code AS failureCode,
             id,
             idempotency_key AS idempotencyKey,
@@ -148,60 +159,96 @@ const selectQueueItem = (database: AnyD1Database) =>
   );
 
 const failureForMissingMessage = (
-  itemId: ImportBatchItemId
-): ImportQueueAcceptanceMessageNotFound => ({
-  _tag: "ImportQueueAcceptanceMessageNotFound",
-  itemId,
+  message: ImportBatchQueueMessage
+): ImportBatchQueueMessageNotFound => ({
+  _tag: "ImportBatchQueueMessageNotFound",
+  batchId: message.batchId,
+  itemId: message.itemId,
 });
 
-const poisonFailure = (
-  itemId: ImportBatchItemId
-): ImportQueueAcceptancePoisoned => ({
-  _tag: "ImportQueueAcceptancePoisoned",
-  itemId,
-});
+const failureCodeFor = (
+  error: CreateImportError
+): ImportBatchItemFailureCode => {
+  switch (error._tag) {
+    case "IdempotencyConflict": {
+      return "idempotency_conflict";
+    }
+    case "ImportPersistenceCorrupt": {
+      return "persistence_corrupt";
+    }
+    case "ImportPersistenceUnavailable": {
+      return "persistence_unavailable";
+    }
+    case "IncompatibleDuplicate": {
+      return "incompatible_duplicate";
+    }
+    case "InvalidSource": {
+      return "invalid_source";
+    }
+    case "SourceIdentityUnavailable": {
+      return "source_identity_unavailable";
+    }
+    case "SourceValidationUnavailable": {
+      return "source_validation_unavailable";
+    }
+    case "WorkflowStartUnavailable": {
+      return "workflow_start_unavailable";
+    }
+    default: {
+      return error satisfies never;
+    }
+  }
+};
 
-const sourceRequest = (canonicalId: string) =>
+const sourceRequest = (canonicalId: string): CreateImportRequest =>
   Schema.decodeUnknownSync(CreateImportRequestSchema)({
     source: {
       kind: "tiktok",
-      url: `https://synthetic.invalid/imports/${canonicalId}`,
+      url: `https://www.tiktok.com/@source/video/${encodeURIComponent(canonicalId)}`,
     },
   });
 
-const syntheticCanonicalId = (source: SourceDescriptor) => {
-  const canonicalId =
-    /^https:\/\/synthetic\.invalid\/imports\/(?<canonicalId>\d{19})$/u.exec(
-      source.url
-    )?.groups?.["canonicalId"];
-  if (canonicalId === undefined) {
-    throw new Error("Synthetic acceptance requires an inert local source");
+const aggregateStatus = (counts: {
+  readonly failed: number;
+  readonly queued: number;
+  readonly running: number;
+  readonly succeeded: number;
+}) => {
+  if (counts.running > 0) {
+    return "running" as const;
   }
-  return canonicalId;
+  if (counts.queued > 0) {
+    return "queued" as const;
+  }
+  if (counts.failed === 0) {
+    return "completed" as const;
+  }
+  if (counts.succeeded === 0) {
+    return "failed" as const;
+  }
+  return "partial_failure" as const;
 };
 
-const itemView = (row: {
-  readonly canonicalSourceId: string | null;
-  readonly disposition: string | null;
-  readonly failureCode: string | null;
-  readonly id: string;
-  readonly idempotencyKey: string;
-  readonly importId: string | null;
-  readonly importStatusJson: string | null;
-  readonly status: string;
-}) => {
+const itemView = (row: typeof ProjectionItemRow.Type) => {
   const base = {
     id: row.id,
     idempotencyKey: row.idempotencyKey,
     sourceKind: "tiktok" as const,
   };
   switch (row.status) {
-    case "queued":
+    case "queued": {
+      return { ...base, status: row.status };
+    }
     case "running": {
       return { ...base, status: row.status };
     }
     case "failed": {
-      return { ...base, code: row.failureCode, status: "failed" as const };
+      return {
+        ...base,
+        code: row.failureCode,
+        deadLettered: row.deadLetterItemId !== null,
+        status: "failed" as const,
+      };
     }
     case "succeeded": {
       return {
@@ -217,22 +264,273 @@ const itemView = (row: {
       };
     }
     default: {
-      throw new Error("Unsupported persisted batch item status");
+      return row.status satisfies never;
     }
   }
 };
+
+type ProjectionReadError =
+  | ImportBatchNotFound
+  | ImportPersistenceCorrupt
+  | ImportPersistenceUnavailable;
+
+const readBatchProjection = (
+  database: AnyD1Database,
+  batchId: ImportBatchId
+): Effect.Effect<ImportBatchView, ProjectionReadError> =>
+  Effect.gen(function* readProjection() {
+    const [batchResult, itemResult] = yield* databaseEffect<
+      readonly { readonly results: readonly unknown[] }[]
+    >(() =>
+      database.batch([
+        database
+          .prepare(
+            `SELECT created_at AS createdAt,
+                    id,
+                    request_fingerprint AS requestFingerprint,
+                    updated_at AS updatedAt
+               FROM import_batches
+              WHERE id = ?`
+          )
+          .bind(batchId),
+        database
+          .prepare(
+            `SELECT i.canonical_source_id AS canonicalSourceId,
+                    d.item_id AS deadLetterItemId,
+                    i.disposition,
+                    i.failure_code AS failureCode,
+                    i.id,
+                    i.idempotency_key AS idempotencyKey,
+                    i.import_id AS importId,
+                    i.import_status_json AS importStatusJson,
+                    i.status
+               FROM import_batch_items i
+               LEFT JOIN import_dead_letters d ON d.item_id = i.id
+              WHERE i.batch_id = ?
+              ORDER BY i.created_at, i.id`
+          )
+          .bind(batchId),
+      ])
+    );
+    if (batchResult === undefined || itemResult === undefined) {
+      return yield* Effect.fail(importPersistenceCorrupt());
+    }
+    const [rawBatch] = batchResult.results;
+    if (rawBatch === undefined) {
+      return yield* Effect.fail<ImportBatchNotFound>({
+        _tag: "ImportBatchNotFound",
+        batchId,
+      });
+    }
+    const batch = yield* decodePersisted(BatchRow, rawBatch);
+    const items = yield* Effect.forEach((row) =>
+      decodePersisted(ProjectionItemRow, row)
+    )(itemResult.results);
+    const counts = {
+      failed: 0,
+      queued: 0,
+      running: 0,
+      succeeded: 0,
+      total: items.length,
+    };
+    for (const item of items) {
+      counts[item.status] += 1;
+    }
+    const projection = yield* Effect.try({
+      catch: importPersistenceCorrupt,
+      try: () => ({
+        counts,
+        createdAt: batch.createdAt,
+        id: batch.id,
+        items: items.map(itemView),
+        status: aggregateStatus(counts),
+        updatedAt: batch.updatedAt,
+      }),
+    });
+    return yield* decodePersisted(ImportBatchViewSchema, projection);
+  });
+
+const pendingMessages = (
+  database: AnyD1Database,
+  batchId: ImportBatchId
+): Effect.Effect<
+  readonly ImportBatchQueueMessage[],
+  ImportPersistenceCorrupt | ImportPersistenceUnavailable
+> =>
+  databaseEffect<{
+    readonly results: readonly Record<string, unknown>[];
+  }>(() =>
+    database
+      .prepare(
+        `SELECT batch_id AS batchId, id AS itemId
+           FROM import_batch_items
+          WHERE batch_id = ? AND status = 'queued'
+          ORDER BY created_at, id`
+      )
+      .bind(batchId)
+      .all<Record<string, unknown>>()
+  ).pipe(
+    Effect.flatMap(({ results }) =>
+      Effect.forEach((row) =>
+        decodePersisted(ImportBatchQueueMessageSchema, row)
+      )(results)
+    )
+  );
+
+const admissionProjection = (
+  database: AnyD1Database,
+  batchId: ImportBatchId
+): Effect.Effect<ImportBatchAdmissionProjection, ProjectionReadError> =>
+  Effect.all({
+    batch: readBatchProjection(database, batchId),
+    messages: pendingMessages(database, batchId),
+  });
+
+/** D1 is the sole durable truth for HTTP batch admission and polling. */
+export const makeD1ImportBatchStore = (
+  database: AnyD1Database
+): ImportBatchStoreShape => {
+  const findReplay: ImportBatchStoreShape["findReplay"] = Effect.fn(
+    "ImportBatchStore.findReplay"
+  )(function* findReplay(idempotencyKeyHash, requestFingerprint) {
+    const row = yield* databaseEffect(() =>
+      database
+        .prepare(
+          `SELECT id, request_fingerprint AS requestFingerprint
+             FROM import_batches
+            WHERE idempotency_key_hash = ?`
+        )
+        .bind(idempotencyKeyHash)
+        .first<Record<string, unknown>>()
+    );
+    if (row === null) {
+      return Option.none();
+    }
+    const existing = yield* decodePersisted(
+      Schema.Struct({
+        id: ImportBatchIdSchema,
+        requestFingerprint: ImportBatchRequestFingerprint,
+      }),
+      row
+    );
+    if (existing.requestFingerprint !== requestFingerprint) {
+      return yield* Effect.fail(importBatchConflict());
+    }
+    const projection = yield* admissionProjection(database, existing.id).pipe(
+      Effect.catchTag("ImportBatchNotFound", () =>
+        Effect.fail(importPersistenceCorrupt())
+      )
+    );
+    return Option.some(projection);
+  });
+
+  const admit: ImportBatchStoreShape["admit"] = (
+    command: ImportBatchAdmissionCommand
+  ) => {
+    const timestamp = DateTime.formatIso(command.timestamp);
+    const status = command.items.length === 0 ? "completed" : "queued";
+    const inserted = databaseEffect(() =>
+      database.batch([
+        database
+          .prepare(
+            `INSERT INTO import_batches (
+               id, idempotency_key_hash, request_fingerprint,
+               status, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?)`
+          )
+          .bind(
+            command.batchId,
+            command.idempotencyKeyHash,
+            command.requestFingerprint,
+            status,
+            timestamp,
+            timestamp
+          ),
+        ...command.items.map((item) =>
+          database
+            .prepare(
+              `INSERT INTO import_batch_items (
+                 id, batch_id, idempotency_key, source_kind,
+                 source_canonical_id, delivery_mode, correlation_json,
+                 status, failure_code, attempt_count, import_id,
+                 canonical_source_id, import_status_json, disposition,
+                 created_at, updated_at
+               ) VALUES (?, ?, ?, 'tiktok', ?, 'ordinary', NULL, 'queued',
+                         NULL, 0, NULL, NULL, NULL, NULL, ?, ?)`
+            )
+            .bind(
+              item.id,
+              command.batchId,
+              item.idempotencyKey,
+              item.sourceCanonicalId,
+              timestamp,
+              timestamp
+            )
+        ),
+      ])
+    ).pipe(
+      Effect.flatMap(() =>
+        admissionProjection(database, command.batchId).pipe(
+          Effect.catchTag("ImportBatchNotFound", () =>
+            Effect.fail(importPersistenceCorrupt())
+          ),
+          Effect.map((projection) => ({
+            ...projection,
+            disposition: "created" as const,
+          }))
+        )
+      )
+    );
+
+    return inserted.pipe(
+      Effect.catchTag("ImportPersistenceUnavailable", (failure) =>
+        findReplay(command.idempotencyKeyHash, command.requestFingerprint).pipe(
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.fail(failure),
+              onSome: (projection) =>
+                Effect.succeed({
+                  ...projection,
+                  disposition: "idempotency_replay" as const,
+                }),
+            })
+          )
+        )
+      )
+    );
+  };
+
+  return {
+    admit,
+    findReplay,
+    get: (batchId) =>
+      readBatchProjection(database, batchId).pipe(
+        Effect.map((batch) => ({ batch }))
+      ),
+  };
+};
+
+const correlationFor = (message: ImportBatchQueueMessage) =>
+  Schema.decodeUnknownSync(OperationalCorrelationSchema)({
+    batchId: message.batchId,
+    evidence: { kind: "recipe_draft", referenceId: message.itemId },
+    importId: message.itemId,
+    mealPlanId: `import-batch:${message.batchId}`,
+    recipeId: message.itemId,
+  });
 
 const makeD1OperationalAdapters = (
   database: AnyD1Database,
   newReplayClaimId: () => DeadLetterReplayClaimId,
   now: () => string,
-  replayClaimLeaseMilliseconds: number
+  replayClaimLeaseMilliseconds: number,
+  sourceRequestForCanonicalId: (canonicalId: string) => CreateImportRequest
 ): {
   readonly deadLetters: DeadLetterStoreShape;
   readonly events: OperationalEventSinkShape;
 } => {
   const readDeadLetter = (itemId: ImportBatchItemId) =>
-    databaseEffect(() =>
+    operationalDatabaseEffect(() =>
       database
         .prepare(
           `SELECT d.correlation_json AS correlationJson,
@@ -268,7 +566,7 @@ const makeD1OperationalAdapters = (
       const claimId = newReplayClaimId();
       const expiresAtEpochMilliseconds =
         claimedAtEpochMilliseconds + replayClaimLeaseMilliseconds;
-      return databaseEffect<
+      return operationalDatabaseEffect<
         readonly {
           readonly results: readonly unknown[];
         }[]
@@ -357,7 +655,7 @@ const makeD1OperationalAdapters = (
               idempotencyKey: Schema.decodeUnknownSync(IdempotencyKeySchema)(
                 row.idempotencyKey
               ),
-              request: sourceRequest(row.sourceCanonicalId),
+              request: sourceRequestForCanonicalId(row.sourceCanonicalId),
             });
           }
         )
@@ -372,7 +670,7 @@ const makeD1OperationalAdapters = (
           "Replay completion time must be a valid ISO timestamp"
         );
       }
-      return databaseEffect<
+      return operationalDatabaseEffect<
         readonly {
           readonly results: readonly unknown[];
         }[]
@@ -434,12 +732,11 @@ const makeD1OperationalAdapters = (
               `UPDATE import_batches
                   SET status = (
                         SELECT CASE
+                          WHEN SUM(status = 'running') > 0 THEN 'running'
+                          WHEN SUM(status = 'queued') > 0 THEN 'queued'
                           WHEN COUNT(*) = SUM(status = 'succeeded') THEN 'completed'
                           WHEN COUNT(*) = SUM(status = 'failed') THEN 'failed'
-                          WHEN SUM(status = 'succeeded') > 0
-                           AND SUM(status = 'failed') > 0 THEN 'partial_failure'
-                          WHEN SUM(status = 'running') > 0 THEN 'running'
-                          ELSE 'queued'
+                          ELSE 'partial_failure'
                         END
                           FROM import_batch_items
                          WHERE batch_id = (
@@ -483,7 +780,7 @@ const makeD1OperationalAdapters = (
         )
       ),
     releaseReplay: (itemId, claimId) =>
-      databaseEffect(() =>
+      operationalDatabaseEffect(() =>
         database
           .prepare(
             `UPDATE import_dead_letters
@@ -502,7 +799,7 @@ const makeD1OperationalAdapters = (
 
   const events: OperationalEventSinkShape = {
     emit: (event: OperationalEvent) =>
-      databaseEffect(() =>
+      operationalDatabaseEffect(() =>
         database
           .prepare(
             `INSERT INTO import_operational_events (
@@ -523,24 +820,17 @@ const makeD1OperationalAdapters = (
   return { deadLetters, events };
 };
 
-/** Build the D1-backed, provider-free queue coordinator used by staging acceptance. */
+/** Build the D1-backed queue consumer, DLQ, and operations adapters. */
 export const makeD1ImportQueueAcceptance = (input: {
   readonly database: AnyD1Database;
   readonly imports: ImportServiceShape;
-  readonly maximumDeliveryAttempts: number;
   readonly newReplayClaimId: () => DeadLetterReplayClaimId;
   readonly now: () => string;
   readonly replayClaimLeaseMilliseconds: number;
   readonly sourceRequestForCanonicalId?: (
     canonicalId: string
-  ) => typeof CreateImportRequestSchema.Type;
+  ) => CreateImportRequest;
 }) => {
-  if (
-    !Number.isInteger(input.maximumDeliveryAttempts) ||
-    input.maximumDeliveryAttempts < 1
-  ) {
-    throw new Error("maximumDeliveryAttempts must be a positive integer");
-  }
   if (
     !Number.isInteger(input.replayClaimLeaseMilliseconds) ||
     input.replayClaimLeaseMilliseconds < 1
@@ -551,27 +841,118 @@ export const makeD1ImportQueueAcceptance = (input: {
     input.database,
     input.newReplayClaimId,
     input.now,
-    input.replayClaimLeaseMilliseconds
+    input.replayClaimLeaseMilliseconds,
+    input.sourceRequestForCanonicalId ?? sourceRequest
+  );
+  const store = makeD1ImportBatchStore(input.database);
+
+  const claim = Effect.fn("ImportBatchQueue.claim")(function* claimDelivery(
+    message: ImportBatchQueueMessage,
+    deliveryAttempt: ImportBatchDeliveryAttempt
+  ) {
+    const updatedAt = input.now();
+    const [claimed] = yield* databaseEffect<
+      readonly { readonly results: readonly unknown[] }[]
+    >(() =>
+      input.database.batch([
+        input.database
+          .prepare(
+            `UPDATE import_batch_items
+                SET status = 'running',
+                    attempt_count = ?,
+                    updated_at = ?
+              WHERE batch_id = ?
+                AND id = ?
+                AND delivery_mode = 'ordinary'
+                AND (
+                  (status = 'queued' AND attempt_count < ?)
+                  OR (
+                    status = 'running'
+                    AND ? > 1
+                    AND attempt_count < ?
+                  )
+                )
+            RETURNING attempt_count AS attemptCount,
+                      batch_id AS batchId,
+                      failure_code AS failureCode,
+                      id,
+                      idempotency_key AS idempotencyKey,
+                      source_canonical_id AS sourceCanonicalId,
+                      status`
+          )
+          .bind(
+            deliveryAttempt,
+            updatedAt,
+            message.batchId,
+            message.itemId,
+            deliveryAttempt,
+            deliveryAttempt,
+            deliveryAttempt
+          ),
+        updateBatchProjection(input.database, message.batchId, updatedAt),
+      ])
+    );
+    const rawClaimed = claimed?.results[0];
+    if (rawClaimed !== undefined) {
+      return Option.some(yield* decodePersisted(QueueItemRow, rawClaimed));
+    }
+
+    const stored = yield* databaseEffect(() =>
+      selectQueueItem(input.database)
+        .bind(message.batchId, message.itemId)
+        .first()
+    );
+    if (stored === null) {
+      return yield* Effect.fail(failureForMissingMessage(message));
+    }
+    yield* decodePersisted(QueueItemRow, stored);
+    return Option.none();
+  });
+
+  const settleFailure = Effect.fn("ImportBatchQueue.settleFailure")(
+    function* settleFailedItem(
+      message: ImportBatchQueueMessage,
+      deliveryAttempt: ImportBatchDeliveryAttempt,
+      code: ImportBatchItemFailureCode
+    ) {
+      const updatedAt = input.now();
+      yield* databaseEffect(() =>
+        input.database.batch([
+          input.database
+            .prepare(
+              `UPDATE import_batch_items
+                  SET status = 'failed',
+                      failure_code = ?,
+                      updated_at = ?
+                WHERE batch_id = ?
+                  AND id = ?
+                  AND status = 'running'
+                  AND attempt_count = ?`
+            )
+            .bind(
+              code,
+              updatedAt,
+              message.batchId,
+              message.itemId,
+              deliveryAttempt
+            ),
+          updateBatchProjection(input.database, message.batchId, updatedAt),
+        ])
+      );
+    }
   );
 
-  const consume = (
-    message: ImportBatchQueueMessage
-  ): Effect.Effect<void, ImportQueueAcceptanceError> =>
-    Effect.gen(function* consumeMessage() {
-      const stored = yield* databaseEffect(() =>
-        selectQueueItem(input.database)
-          .bind(message.batchId, message.itemId)
-          .first<typeof QueueItemRow.Type>()
-      );
-      if (stored === null) {
-        return yield* Effect.fail(failureForMissingMessage(message.itemId));
-      }
-      const existing = decodeQueueItem(stored);
-      if (existing.status === "succeeded") {
-        return;
-      }
-      if (existing.status === "failed") {
-        return yield* Effect.fail(poisonFailure(message.itemId));
+  const settleSuccess = Effect.fn("ImportBatchQueue.settleSuccess")(
+    function* settleSuccessfulItem(
+      message: ImportBatchQueueMessage,
+      deliveryAttempt: ImportBatchDeliveryAttempt,
+      result: Effect.Success<ReturnType<ImportServiceShape["create"]>>
+    ) {
+      const { canonicalId } = result.import.source;
+      if (canonicalId === undefined) {
+        return yield* Effect.die(
+          "A successful queued import must retain its canonical identity"
+        );
       }
       const updatedAt = input.now();
       yield* databaseEffect(() =>
@@ -579,223 +960,128 @@ export const makeD1ImportQueueAcceptance = (input: {
           input.database
             .prepare(
               `UPDATE import_batch_items
-                  SET status = 'running',
-                      attempt_count = attempt_count + 1,
-                      updated_at = ?
-                WHERE batch_id = ?
-                  AND id = ?
-                  AND status IN ('queued', 'running')`
-            )
-            .bind(updatedAt, message.batchId, message.itemId),
-          input.database
-            .prepare(
-              `UPDATE import_batches
-                  SET status = 'running', updated_at = ?
-                WHERE id = ? AND status = 'queued'`
-            )
-            .bind(updatedAt, message.batchId),
-        ])
-      );
-      const running = yield* databaseEffect(() =>
-        selectQueueItem(input.database)
-          .bind(message.batchId, message.itemId)
-          .first<typeof QueueItemRow.Type>()
-      );
-      if (running === null) {
-        return yield* Effect.fail(failureForMissingMessage(message.itemId));
-      }
-      const item = decodeQueueItem(running);
-      if (item.deliveryMode === "poison") {
-        if (
-          item.attemptCount >= input.maximumDeliveryAttempts &&
-          item.correlationJson !== null
-        ) {
-          yield* databaseEffect(() =>
-            input.database.batch([
-              input.database
-                .prepare(
-                  `UPDATE import_batch_items
-                      SET status = 'failed',
-                          failure_code = 'workflow_start_unavailable',
-                          updated_at = ?
-                    WHERE id = ? AND status = 'running'`
-                )
-                .bind(updatedAt, message.itemId),
-              input.database
-                .prepare(
-                  `INSERT INTO import_dead_letters (
-                     item_id, failure_code, correlation_json, replay_state,
-                     replay_import_json, created_at, updated_at
-                   ) VALUES (?, 'workflow_start_unavailable', ?, 'ready', NULL, ?, ?)
-                   ON CONFLICT(item_id) DO NOTHING`
-                )
-                .bind(
-                  message.itemId,
-                  item.correlationJson,
-                  updatedAt,
-                  updatedAt
-                ),
-              updateBatchProjection(input.database, message.batchId, updatedAt),
-            ])
-          );
-        }
-        return yield* Effect.fail(poisonFailure(message.itemId));
-      }
-      const result = yield* input.imports
-        .create(
-          input.sourceRequestForCanonicalId?.(item.sourceCanonicalId) ??
-            sourceRequest(item.sourceCanonicalId),
-          Schema.decodeUnknownSync(IdempotencyKeySchema)(item.idempotencyKey)
-        )
-        .pipe(Effect.mapError(() => poisonFailure(message.itemId)));
-      yield* databaseEffect(() =>
-        input.database.batch([
-          input.database
-            .prepare(
-              `UPDATE import_batch_items
                   SET status = 'succeeded',
+                      failure_code = NULL,
                       import_id = ?,
                       canonical_source_id = ?,
                       import_status_json = ?,
                       disposition = ?,
                       updated_at = ?
-                WHERE id = ? AND status = 'running'`
+                WHERE batch_id = ?
+                  AND id = ?
+                  AND status = 'running'
+                  AND attempt_count = ?`
             )
             .bind(
               result.import.id,
-              result.import.source.canonicalId,
+              canonicalId,
               JSON.stringify(result.import.status),
               result.disposition,
               updatedAt,
+              message.batchId,
+              message.itemId,
+              deliveryAttempt
+            ),
+          updateBatchProjection(input.database, message.batchId, updatedAt),
+        ])
+      );
+    }
+  );
+
+  const consume = Effect.fn("ImportBatchQueue.consume")(function* consumeBatch(
+    message: ImportBatchQueueMessage,
+    deliveryAttempt: ImportBatchDeliveryAttempt
+  ) {
+    const claimed = yield* claim(message, deliveryAttempt);
+    if (Option.isNone(claimed)) {
+      return;
+    }
+    const item = claimed.value;
+    const idempotencyKey = yield* decodePersisted(
+      IdempotencyKeySchema,
+      item.idempotencyKey
+    );
+    const request = yield* Effect.try({
+      catch: importPersistenceCorrupt,
+      try: () =>
+        input.sourceRequestForCanonicalId?.(item.sourceCanonicalId) ??
+        sourceRequest(item.sourceCanonicalId),
+    });
+    yield* input.imports.create(request, idempotencyKey).pipe(
+      Effect.matchEffect({
+        onFailure: (error) =>
+          settleFailure(message, deliveryAttempt, failureCodeFor(error)),
+        onSuccess: (result) => settleSuccess(message, deliveryAttempt, result),
+      })
+    );
+  });
+
+  const deadLetter = Effect.fn("ImportBatchQueue.deadLetter")(
+    function* deadLetterBatch(message: ImportBatchQueueMessage) {
+      const updatedAt = input.now();
+      const correlationJson = JSON.stringify(correlationFor(message));
+      const [failed] = yield* databaseEffect<
+        readonly { readonly results: readonly unknown[] }[]
+      >(() =>
+        input.database.batch([
+          input.database
+            .prepare(
+              `UPDATE import_batch_items
+                SET status = 'failed',
+                    failure_code = 'workflow_start_unavailable',
+                    updated_at = ?
+              WHERE batch_id = ?
+                AND id = ?
+                AND status IN ('queued', 'running')
+            RETURNING id`
+            )
+            .bind(updatedAt, message.batchId, message.itemId),
+          input.database
+            .prepare(
+              `INSERT INTO import_dead_letters (
+               item_id, failure_code, correlation_json, replay_state,
+               replay_import_json, created_at, updated_at
+             )
+             SELECT id, 'workflow_start_unavailable', ?, 'ready', NULL, ?, ?
+               FROM import_batch_items
+              WHERE batch_id = ?
+                AND id = ?
+                AND status = 'failed'
+                AND failure_code = 'workflow_start_unavailable'
+             ON CONFLICT(item_id) DO NOTHING`
+            )
+            .bind(
+              correlationJson,
+              updatedAt,
+              updatedAt,
+              message.batchId,
               message.itemId
             ),
           updateBatchProjection(input.database, message.batchId, updatedAt),
         ])
       );
-    });
+      if ((failed?.results.length ?? 0) > 0) {
+        return;
+      }
+      const existing = yield* databaseEffect(() =>
+        selectQueueItem(input.database)
+          .bind(message.batchId, message.itemId)
+          .first()
+      );
+      if (existing === null) {
+        return yield* Effect.fail(failureForMissingMessage(message));
+      }
+      yield* decodePersisted(QueueItemRow, existing);
+    }
+  );
 
   return {
     consume,
+    deadLetter,
     deadLetters: operational.deadLetters,
     events: operational.events,
-    getBatch: (batchId: ImportBatchId): Effect.Effect<ImportBatchView> =>
-      databaseEffect(async () => {
-        const batch = await input.database
-          .prepare(
-            `SELECT created_at AS createdAt, id, status, updated_at AS updatedAt
-               FROM import_batches WHERE id = ?`
-          )
-          .bind(batchId)
-          .first<{
-            readonly createdAt: string;
-            readonly id: string;
-            readonly status: string;
-            readonly updatedAt: string;
-          }>();
-        if (batch === null) {
-          throw new Error("Import batch not found");
-        }
-        const items = await input.database
-          .prepare(
-            `SELECT canonical_source_id AS canonicalSourceId,
-                    disposition,
-                    failure_code AS failureCode,
-                    id,
-                    idempotency_key AS idempotencyKey,
-                    import_id AS importId,
-                    import_status_json AS importStatusJson,
-                    status
-               FROM import_batch_items
-              WHERE batch_id = ?
-              ORDER BY id`
-          )
-          .bind(batchId)
-          .all<{
-            readonly canonicalSourceId: string | null;
-            readonly disposition: string | null;
-            readonly failureCode: string | null;
-            readonly id: string;
-            readonly idempotencyKey: string;
-            readonly importId: string | null;
-            readonly importStatusJson: string | null;
-            readonly status: string;
-          }>();
-        const counts = {
-          failed: 0,
-          queued: 0,
-          running: 0,
-          succeeded: 0,
-          total: items.results.length,
-        };
-        for (const item of items.results) {
-          if (item.status in counts && item.status !== "total") {
-            counts[item.status as keyof Omit<typeof counts, "total">] += 1;
-          }
-        }
-        return Schema.decodeUnknownSync(ImportBatchViewSchema)({
-          ...batch,
-          counts,
-          items: items.results.map(itemView),
-        });
-      }),
-    seedBatch: (batch: SeedSyntheticBatch) =>
-      Effect.gen(function* seedBatch() {
-        const timestamp = input.now();
-        const idempotencyKeyHash = yield* digestSha256(
-          `batch-idempotency:v1:${batch.idempotencyKey}`
-        );
-        const requestFingerprint = yield* digestSha256(
-          JSON.stringify(
-            batch.items.map((item) => ({
-              deliveryMode: item.deliveryMode,
-              id: item.id,
-              idempotencyKey: item.idempotencyKey,
-              source: item.source,
-            }))
-          )
-        );
-        yield* databaseEffect(() =>
-          input.database.batch([
-            input.database
-              .prepare(
-                `INSERT INTO import_batches (
-                   id, idempotency_key_hash, request_fingerprint,
-                   status, created_at, updated_at
-                 ) VALUES (?, ?, ?, 'queued', ?, ?)`
-              )
-              .bind(
-                batch.batchId,
-                idempotencyKeyHash,
-                requestFingerprint,
-                timestamp,
-                timestamp
-              ),
-            ...batch.items.map((item) =>
-              input.database
-                .prepare(
-                  `INSERT INTO import_batch_items (
-                     id, batch_id, idempotency_key, source_kind, source_canonical_id,
-                     delivery_mode, correlation_json, status, failure_code,
-                     attempt_count, import_id, canonical_source_id,
-                     import_status_json, disposition, created_at, updated_at
-                   ) VALUES (?, ?, ?, 'tiktok', ?, ?, ?, 'queued', NULL, 0,
-                             NULL, NULL, NULL, NULL, ?, ?)`
-                )
-                .bind(
-                  item.id,
-                  batch.batchId,
-                  item.idempotencyKey,
-                  syntheticCanonicalId(item.source),
-                  item.deliveryMode,
-                  item.deliveryMode === "poison"
-                    ? JSON.stringify(item.correlation)
-                    : null,
-                  timestamp,
-                  timestamp
-                )
-            ),
-          ])
-        );
-      }),
+    getBatch: (batchId: ImportBatchId) =>
+      readBatchProjection(input.database, batchId),
+    store,
   };
 };

@@ -1,4 +1,4 @@
-import { Context, Effect, Schema, Semaphore } from "effect";
+import { Context, Duration, Effect, Option, Schema } from "effect";
 
 import { CreateImportBatchRequest } from "./import-batch.contracts.js";
 import type {
@@ -6,15 +6,43 @@ import type {
   GetImportBatchResponse,
   ImportBatchId,
   ImportBatchItemId,
-  ImportBatchItemFailureCode,
-  ImportBatchItemRequest,
-  ImportBatchItemView,
   ImportBatchQueueMessage,
   ImportBatchView,
 } from "./import-batch.contracts.js";
-import type { IdempotencyKey, ImportTimestamp } from "./import.contracts.js";
-import type { CreateImportError } from "./import.errors.js";
-import type { ImportServiceShape } from "./import.service.js";
+import type {
+  IdempotencyKey,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "./import.contracts.js";
+import { sourceIdentityUnavailable } from "./import.errors.js";
+import type {
+  ImportPersistenceCorrupt,
+  ImportPersistenceUnavailable,
+  InvalidSource,
+  SourceIdentityUnavailable,
+} from "./import.errors.js";
+import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
+
+const ProviderDeadlineMilliseconds = 5000;
+const MaximumConcurrentIdentityResolutions = 5;
+
+const Sha256Hex = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+);
+
+/** Privacy-safe digest of the batch idempotency key stored by D1. */
+export const ImportBatchIdempotencyKeyHash = Sha256Hex.pipe(
+  Schema.brand("ImportBatchIdempotencyKeyHash")
+);
+export type ImportBatchIdempotencyKeyHash =
+  typeof ImportBatchIdempotencyKeyHash.Type;
+
+/** Stable digest of the exact parsed batch request. */
+export const ImportBatchRequestFingerprint = Sha256Hex.pipe(
+  Schema.brand("ImportBatchRequestFingerprint")
+);
+export type ImportBatchRequestFingerprint =
+  typeof ImportBatchRequestFingerprint.Type;
 
 /** The batch idempotency key was reused for a different request. */
 export interface ImportBatchIdempotencyConflict {
@@ -42,13 +70,17 @@ export interface ImportBatchQueueMessageNotFound {
 /** Expected failures when creating an import batch. */
 export type CreateImportBatchError =
   | ImportBatchIdempotencyConflict
-  | ImportBatchQueueUnavailable;
+  | ImportBatchQueueUnavailable
+  | ImportPersistenceCorrupt
+  | ImportPersistenceUnavailable
+  | InvalidSource
+  | SourceIdentityUnavailable;
 
 /** Expected failures when polling an import batch. */
-export type GetImportBatchError = ImportBatchNotFound;
-
-/** Expected failures while consuming provider queue deliveries. */
-export type ConsumeImportBatchError = ImportBatchQueueMessageNotFound;
+export type GetImportBatchError =
+  | ImportBatchNotFound
+  | ImportPersistenceCorrupt
+  | ImportPersistenceUnavailable;
 
 /** Provider-neutral enqueue capability used by the batch coordinator. */
 export interface ImportBatchQueueShape {
@@ -57,21 +89,61 @@ export interface ImportBatchQueueShape {
   ) => Effect.Effect<void, ImportBatchQueueUnavailable>;
 }
 
-/** Construction options for the provider-free batch coordinator. */
+export interface ImportBatchAdmissionProjection {
+  readonly batch: ImportBatchView;
+  readonly messages: readonly ImportBatchQueueMessage[];
+}
+
+export interface ImportBatchAdmissionCommand {
+  readonly batchId: ImportBatchId;
+  readonly idempotencyKeyHash: ImportBatchIdempotencyKeyHash;
+  readonly items: readonly {
+    readonly id: ImportBatchItemId;
+    readonly idempotencyKey: IdempotencyKey;
+    readonly sourceCanonicalId: SourceCanonicalId;
+  }[];
+  readonly requestFingerprint: ImportBatchRequestFingerprint;
+  readonly timestamp: ImportTimestamp;
+}
+
+/** Durable batch persistence contract consumed by the application service. */
+export interface ImportBatchStoreShape {
+  readonly admit: (command: ImportBatchAdmissionCommand) => Effect.Effect<
+    ImportBatchAdmissionProjection & {
+      readonly disposition: "created" | "idempotency_replay";
+    },
+    | ImportBatchIdempotencyConflict
+    | ImportPersistenceCorrupt
+    | ImportPersistenceUnavailable
+  >;
+  readonly findReplay: (
+    idempotencyKeyHash: ImportBatchIdempotencyKeyHash,
+    requestFingerprint: ImportBatchRequestFingerprint
+  ) => Effect.Effect<
+    Option.Option<ImportBatchAdmissionProjection>,
+    | ImportBatchIdempotencyConflict
+    | ImportPersistenceCorrupt
+    | ImportPersistenceUnavailable
+  >;
+  readonly get: (
+    id: ImportBatchId
+  ) => Effect.Effect<GetImportBatchResponse, GetImportBatchError>;
+}
+
+/** Construction options for the D1-backed batch application workflow. */
 export interface MakeImportBatchServiceOptions {
-  readonly concurrency: number;
-  readonly imports: ImportServiceShape;
+  readonly identityResolver: CanonicalSourceIdentityResolverShape;
   readonly newBatchId: () => ImportBatchId;
   readonly newItemId: () => ImportBatchItemId;
   readonly now: () => ImportTimestamp;
+  /** Finite test-only override for the code-owned five-second provider budget. */
+  readonly providerDeadlineMilliseconds?: number;
   readonly queue: ImportBatchQueueShape;
+  readonly store: ImportBatchStoreShape;
 }
 
-/** Application service contract shared by HTTP and a future queue consumer. */
+/** Application service contract mounted by the authenticated HTTP routes. */
 export interface ImportBatchServiceShape {
-  readonly consume: (
-    messages: readonly ImportBatchQueueMessage[]
-  ) => Effect.Effect<void, ConsumeImportBatchError>;
   readonly create: (
     request: CreateImportBatchRequest,
     idempotencyKey: IdempotencyKey
@@ -81,247 +153,106 @@ export interface ImportBatchServiceShape {
   ) => Effect.Effect<GetImportBatchResponse, GetImportBatchError>;
 }
 
-interface StoredBatchItem {
-  readonly request: ImportBatchItemRequest;
-  view: ImportBatchItemView;
-}
+export const importBatchConflict = (): ImportBatchIdempotencyConflict => ({
+  _tag: "ImportBatchIdempotencyConflict",
+});
 
-interface StoredBatch {
-  readonly createdAt: ImportTimestamp;
-  readonly fingerprint: string;
-  readonly id: ImportBatchId;
-  readonly items: Map<ImportBatchItemId, StoredBatchItem>;
-  updatedAt: ImportTimestamp;
-}
+const digestSha256 = (value: string) =>
+  Effect.promise(async () => {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(value)
+    );
+    return Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join("");
+  });
 
-const failureCode = (error: CreateImportError): ImportBatchItemFailureCode => {
-  switch (error._tag) {
-    case "IdempotencyConflict": {
-      return "idempotency_conflict";
-    }
-    case "ImportPersistenceCorrupt": {
-      return "persistence_corrupt";
-    }
-    case "ImportPersistenceUnavailable": {
-      return "persistence_unavailable";
-    }
-    case "IncompatibleDuplicate": {
-      return "incompatible_duplicate";
-    }
-    case "InvalidSource": {
-      return "invalid_source";
-    }
-    case "SourceIdentityUnavailable": {
-      return "source_identity_unavailable";
-    }
-    case "SourceValidationUnavailable": {
-      return "source_validation_unavailable";
-    }
-    case "WorkflowStartUnavailable": {
-      return "workflow_start_unavailable";
-    }
-    default: {
-      return error satisfies never;
-    }
+const finiteProviderDeadline = (override: number | undefined) => {
+  const duration = override ?? ProviderDeadlineMilliseconds;
+  if (!Number.isFinite(duration) || duration <= 0) {
+    throw new Error("Provider deadline must be a positive finite duration");
   }
+  return duration;
 };
 
-const projectBatch = (stored: StoredBatch): ImportBatchView => {
-  const items = Array.from(stored.items.values(), ({ view }) => view);
-  const counts = {
-    failed: items.filter(({ status }) => status === "failed").length,
-    queued: items.filter(({ status }) => status === "queued").length,
-    running: items.filter(({ status }) => status === "running").length,
-    succeeded: items.filter(({ status }) => status === "succeeded").length,
-    total: items.length,
-  };
-  let status: ImportBatchView["status"];
-  if (counts.running > 0) {
-    status = "running";
-  } else if (counts.queued > 0) {
-    status = "queued";
-  } else if (counts.failed === 0) {
-    status = "completed";
-  } else if (counts.succeeded === 0) {
-    status = "failed";
-  } else {
-    status = "partial_failure";
-  }
-  return {
-    counts,
-    createdAt: stored.createdAt,
-    id: stored.id,
-    items,
-    status,
-    updatedAt: stored.updatedAt,
-  };
-};
+const enqueuePending = (
+  queue: ImportBatchQueueShape,
+  messages: readonly ImportBatchQueueMessage[]
+) => (messages.length === 0 ? Effect.void : queue.enqueue(messages));
 
-/** Build the in-memory provider-free tracer behind the stable service seam. */
+/** Build the bounded HTTP admission workflow over durable D1 state. */
 export const makeImportBatchService = (
   options: MakeImportBatchServiceOptions
 ): ImportBatchServiceShape => {
-  if (!Number.isSafeInteger(options.concurrency) || options.concurrency < 1) {
-    throw new Error("Import batch concurrency must be a positive integer");
-  }
+  const providerDeadlineMilliseconds = finiteProviderDeadline(
+    options.providerDeadlineMilliseconds
+  );
 
-  const batches = new Map<ImportBatchId, StoredBatch>();
-  const batchesByKey = new Map<IdempotencyKey, ImportBatchId>();
-  const importPermits = Semaphore.makeUnsafe(options.concurrency);
+  const create = Effect.fn("ImportBatchService.create")(function* createBatch(
+    request: CreateImportBatchRequest,
+    idempotencyKey: IdempotencyKey
+  ) {
+    const encodedRequest = Schema.encodeSync(CreateImportBatchRequest)(request);
+    const idempotencyKeyHash = Schema.decodeUnknownSync(
+      ImportBatchIdempotencyKeyHash
+    )(yield* digestSha256(`batch-idempotency:v1:${idempotencyKey}`));
+    const requestFingerprint = Schema.decodeUnknownSync(
+      ImportBatchRequestFingerprint
+    )(yield* digestSha256(JSON.stringify(encodedRequest)));
 
-  const consumeOne = (message: ImportBatchQueueMessage) =>
-    Effect.suspend(() => {
-      const batch = batches.get(message.batchId);
-      const item = batch?.items.get(message.itemId);
-      if (batch === undefined || item === undefined) {
-        return Effect.fail<ImportBatchQueueMessageNotFound>({
-          _tag: "ImportBatchQueueMessageNotFound",
-          batchId: message.batchId,
-          itemId: message.itemId,
-        });
-      }
-      if (item.view.status === "succeeded" || item.view.status === "running") {
-        return Effect.void;
-      }
-      item.view = {
-        id: item.view.id,
-        idempotencyKey: item.view.idempotencyKey,
-        sourceKind: item.view.sourceKind,
-        status: "running",
-      };
-      batch.updatedAt = options.now();
-      return options.imports
-        .create({ source: item.request.source }, item.request.idempotencyKey)
-        .pipe(
-          Effect.match({
-            onFailure: (error): ImportBatchItemView => ({
-              code: failureCode(error),
-              id: item.view.id,
-              idempotencyKey: item.view.idempotencyKey,
-              sourceKind: item.view.sourceKind,
-              status: "failed",
-            }),
-            onSuccess: (response): ImportBatchItemView => {
-              const { canonicalId } = response.import.source;
-              if (canonicalId === undefined) {
-                throw new Error(
-                  "Ordinary import succeeded without a canonical identity"
-                );
-              }
-              return {
-                canonicalId,
-                disposition: response.disposition,
-                id: item.view.id,
-                idempotencyKey: item.view.idempotencyKey,
-                importId: response.import.id,
-                importStatus: response.import.status,
-                sourceKind: item.view.sourceKind,
-                status: "succeeded",
-              };
-            },
-          }),
-          Effect.tap((view) =>
-            Effect.sync(() => {
-              item.view = view;
-              batch.updatedAt = options.now();
-            })
-          ),
-          Effect.asVoid
-        );
-    });
-
-  const create: ImportBatchServiceShape["create"] = (request, idempotencyKey) =>
-    Effect.suspend(
-      (): Effect.Effect<CreateImportBatchResponse, CreateImportBatchError> => {
-        const fingerprint = JSON.stringify(
-          Schema.encodeSync(CreateImportBatchRequest)(request)
-        );
-        const existingId = batchesByKey.get(idempotencyKey);
-        if (existingId !== undefined) {
-          const existing = batches.get(existingId);
-          if (existing === undefined || existing.fingerprint !== fingerprint) {
-            return Effect.fail<ImportBatchIdempotencyConflict>({
-              _tag: "ImportBatchIdempotencyConflict",
-            });
-          }
-          return Effect.succeed({
-            batch: projectBatch(existing),
-            disposition: "idempotency_replay" as const,
-          });
-        }
-        const timestamp = options.now();
-        const batchId = options.newBatchId();
-        if (batches.has(batchId)) {
-          throw new Error(
-            "Import batch id generator produced a duplicate identity"
-          );
-        }
-        const stored: StoredBatch = {
-          createdAt: timestamp,
-          fingerprint,
-          id: batchId,
-          items: new Map(),
-          updatedAt: timestamp,
-        };
-        for (const item of request.items) {
-          const itemId = options.newItemId();
-          if (stored.items.has(itemId)) {
-            throw new Error(
-              "Import batch item id generator produced a duplicate identity"
-            );
-          }
-          stored.items.set(itemId, {
-            request: item,
-            view: {
-              id: itemId,
-              idempotencyKey: item.idempotencyKey,
-              sourceKind: item.source.kind,
-              status: "queued",
-            },
-          });
-        }
-        batches.set(stored.id, stored);
-        batchesByKey.set(idempotencyKey, stored.id);
-        const messages = Array.from(stored.items.keys(), (itemId) => ({
-          batchId: stored.id,
-          itemId,
-        }));
-        return options.queue.enqueue(messages).pipe(
-          Effect.tapError(() =>
-            Effect.sync(() => {
-              batches.delete(stored.id);
-              batchesByKey.delete(idempotencyKey);
-            })
-          ),
-          Effect.as({
-            batch: projectBatch(stored),
-            disposition: "created" as const,
-          })
-        );
-      }
+    const replay = yield* options.store.findReplay(
+      idempotencyKeyHash,
+      requestFingerprint
     );
+    if (Option.isSome(replay)) {
+      yield* enqueuePending(options.queue, replay.value.messages);
+      return {
+        batch: replay.value.batch,
+        disposition: "idempotency_replay" as const,
+      };
+    }
+
+    const resolvedItems = yield* Effect.forEach(
+      request.items,
+      (item) =>
+        options.identityResolver.resolve(item.source).pipe(
+          Effect.timeoutOrElse({
+            duration: Duration.millis(providerDeadlineMilliseconds),
+            orElse: () => Effect.fail(sourceIdentityUnavailable()),
+          }),
+          Effect.map((resolution) => ({
+            id: options.newItemId(),
+            idempotencyKey: item.idempotencyKey,
+            sourceCanonicalId: resolution.identity.canonicalId,
+          }))
+        ),
+      { concurrency: MaximumConcurrentIdentityResolutions }
+    );
+    const itemIds = new Set(resolvedItems.map(({ id }) => id));
+    if (itemIds.size !== resolvedItems.length) {
+      return yield* Effect.die(
+        "Import batch item id generator produced a duplicate identity"
+      );
+    }
+
+    const admitted = yield* options.store.admit({
+      batchId: options.newBatchId(),
+      idempotencyKeyHash,
+      items: resolvedItems,
+      requestFingerprint,
+      timestamp: options.now(),
+    });
+    yield* enqueuePending(options.queue, admitted.messages);
+    return {
+      batch: admitted.batch,
+      disposition: admitted.disposition,
+    };
+  });
 
   return {
-    consume: (messages) =>
-      Effect.forEach(
-        messages,
-        (message) => importPermits.withPermit(consumeOne(message)),
-        {
-          concurrency: options.concurrency,
-          discard: true,
-        }
-      ),
     create,
-    get: (id) =>
-      Effect.suspend(() => {
-        const stored = batches.get(id);
-        return stored === undefined
-          ? Effect.fail<ImportBatchNotFound>({
-              _tag: "ImportBatchNotFound",
-              batchId: id,
-            })
-          : Effect.succeed({ batch: projectBatch(stored) });
-      }),
+    get: options.store.get,
   };
 };
 

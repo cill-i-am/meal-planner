@@ -78,6 +78,30 @@ const respondError = (error: BatchRouteError) => {
     case "ImportBatchNotFound": {
       return problem(404, "not_found", "The import batch was not found.");
     }
+    case "InvalidSource": {
+      return problem(400, "invalid_source", "The source is not supported.");
+    }
+    case "SourceIdentityUnavailable": {
+      return problem(
+        503,
+        "source_resolution_unavailable",
+        "Source resolution is temporarily unavailable."
+      );
+    }
+    case "ImportPersistenceUnavailable": {
+      return problem(
+        503,
+        "persistence_unavailable",
+        "Import persistence is temporarily unavailable."
+      );
+    }
+    case "ImportPersistenceCorrupt": {
+      return problem(
+        500,
+        "internal_error",
+        "The import batch could not be processed."
+      );
+    }
     case "ImportBatchQueueUnavailable": {
       return problem(
         503,
