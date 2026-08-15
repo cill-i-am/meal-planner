@@ -46,24 +46,29 @@ const decodeOperatorCarouselRequest = HttpServerRequest.schemaBodyJson(
 );
 
 const createImportStatusCode = (response: typeof CreateImportResponse.Type) => {
-  if (
-    response.import.status.kind === "acquired" ||
-    response.import.status.kind === "transcribed" ||
-    response.import.status.kind === "visual_evidence_empty" ||
-    response.import.status.kind === "visual_evidence_found" ||
-    response.import.status.kind === "visual_evidence_low_confidence"
-  ) {
-    return 200;
+  switch (response.import.status.kind) {
+    case "acquired":
+    case "needs_review":
+    case "transcribed":
+    case "visual_evidence_empty":
+    case "visual_evidence_found":
+    case "visual_evidence_low_confidence": {
+      return 200;
+    }
+    case "acquiring":
+    case "extracting_visual":
+    case "queued":
+    case "transcribing": {
+      return 202;
+    }
+    case "failed":
+    case "unsupported": {
+      return 422;
+    }
+    default: {
+      return response.import.status satisfies never;
+    }
   }
-  if (
-    response.import.status.kind === "queued" ||
-    response.import.status.kind === "acquiring" ||
-    response.import.status.kind === "extracting_visual" ||
-    response.import.status.kind === "transcribing"
-  ) {
-    return 202;
-  }
-  return 422;
 };
 
 const CoreImportRouteDefinitions = [
