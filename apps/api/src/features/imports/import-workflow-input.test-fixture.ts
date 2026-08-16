@@ -75,7 +75,7 @@ const workflowExport = {
             ),
           read: () => Effect.succeed([]),
         });
-        yield* observeImportWorkflowStart(input.correlationId).pipe(
+        yield* observeImportWorkflowStart(input.trace).pipe(
           Effect.provideService(ImportObservabilityTraceStore, traceStore)
         );
         return yield* task(
@@ -83,7 +83,7 @@ const workflowExport = {
           Effect.promise(async () => {
             await env.LEGACY_WORKFLOW_STATE.put(
               stateKey(event.instanceId, `correlation:${String(workflowRun)}`),
-              input.correlationId
+              input.trace.correlationId
             );
             return input;
           })

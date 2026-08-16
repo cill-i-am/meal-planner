@@ -9,7 +9,9 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import { ImportTraceContext } from "./import-observability.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
+import { deriveLegacyImportCorrelationId } from "./import-workflow-input.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -52,6 +54,9 @@ const decodeCompatibilityFingerprint = Schema.decodeUnknownSync(
 const decodeIdempotencyKeyHash = Schema.decodeUnknownSync(IdempotencyKeyHash);
 const decodeRequestFingerprint = Schema.decodeUnknownSync(RequestFingerprint);
 const decodeSourceLocatorHash = Schema.decodeUnknownSync(SourceLocatorHash);
+const trace = Schema.decodeUnknownSync(ImportTraceContext)({
+  correlationId: "10000000-0000-4000-8000-000000000001",
+});
 
 const expectCorrupt = async <A>(effect: Effect.Effect<A, unknown>) => {
   const exit = await Effect.runPromiseExit(effect);
@@ -70,12 +75,14 @@ const makeCommand = ({
   id = "018f47ad-91aa-7c35-b6fe-000000000001",
   key = "key-1",
   requestFingerprint = "request-1",
+  trace: candidateTrace = trace,
 }: {
   readonly canonicalId?: string;
   readonly compatibilityFingerprint?: string;
   readonly id?: string;
   readonly key?: string;
   readonly requestFingerprint?: string;
+  readonly trace?: ImportTraceContext;
 } = {}): AcceptImportCommand => {
   const timestamp = decodeTimestamp("2026-07-20T10:00:00.000Z");
   const candidate: StoredImport = {
@@ -85,6 +92,7 @@ const makeCommand = ({
       fixtureHash(compatibilityFingerprint)
     ),
     sourceKind: "tiktok",
+    trace: candidateTrace,
     view: {
       createdAt: timestamp,
       evidence: [],
@@ -195,6 +203,14 @@ describe("D1 import repository in workerd", () => {
         "recipe_imports",
       ])
     );
+    const importColumns = await testEnv.MealPlannerDatabase.prepare(
+      "PRAGMA table_info(recipe_imports)"
+    ).all<{ name: string; notnull: number }>();
+    expect(importColumns.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "correlation_id", notnull: 0 }),
+      ])
+    );
 
     const insertValidImport = testEnv.MealPlannerDatabase.prepare(
       `INSERT INTO recipe_imports (
@@ -270,6 +286,88 @@ describe("D1 import repository in workerd", () => {
     )
       .bind("constraint-probe")
       .run();
+  });
+
+  it("persists one canonical trace and reuses it for a later duplicate", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const originalTrace = Schema.decodeUnknownSync(ImportTraceContext)({
+      correlationId: "30000000-0000-4000-8000-000000000001",
+    });
+    const laterTrace = Schema.decodeUnknownSync(ImportTraceContext)({
+      correlationId: "40000000-0000-4000-8000-000000000001",
+    });
+    const original = makeCommand({
+      canonicalId: "7520000000000000291",
+      id: "018f47ad-91aa-7c35-b6fe-000000000291",
+      key: "trace-original",
+      trace: originalTrace,
+    });
+    const duplicate = makeCommand({
+      canonicalId: "7520000000000000291",
+      id: "018f47ad-91aa-7c35-b6fe-000000000292",
+      key: "trace-later",
+      trace: laterTrace,
+    });
+
+    const accepted = await Effect.runPromise(
+      repository.acceptRequest(original)
+    );
+    const replay = await Effect.runPromise(repository.acceptRequest(duplicate));
+    const storedRow = await testEnv.MealPlannerDatabase.prepare(
+      "SELECT correlation_id FROM recipe_imports WHERE id = ?"
+    )
+      .bind(original.candidate.view.id)
+      .first<{ correlation_id: string | null }>();
+
+    expect(accepted.import.trace).toEqual(originalTrace);
+    expect(replay.disposition).toBe("canonical_duplicate");
+    expect(replay.import.view.id).toBe(original.candidate.view.id);
+    expect(replay.import.trace).toEqual(originalTrace);
+    expect(storedRow?.correlation_id).toBe(originalTrace.correlationId);
+  });
+
+  it("derives one deterministic trace for a legacy NULL row", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const command = makeCommand({
+      canonicalId: "7520000000000000293",
+      id: "018f47ad-91aa-7c35-b6fe-000000000293",
+      key: "trace-legacy-null",
+    });
+    await Effect.runPromise(repository.acceptRequest(command));
+    await testEnv.MealPlannerDatabase.prepare(
+      "UPDATE recipe_imports SET correlation_id = NULL WHERE id = ?"
+    )
+      .bind(command.candidate.view.id)
+      .run();
+
+    const first = Option.getOrThrow(
+      await Effect.runPromise(repository.findById(command.candidate.view.id))
+    );
+    const second = Option.getOrThrow(
+      await Effect.runPromise(repository.findById(command.candidate.view.id))
+    );
+
+    expect(first.trace.correlationId).toBe(
+      deriveLegacyImportCorrelationId(command.candidate.view.id)
+    );
+    expect(second.trace).toEqual(first.trace);
+  });
+
+  it("fails a malformed persisted trace as ImportPersistenceCorrupt", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const command = makeCommand({
+      canonicalId: "7520000000000000294",
+      id: "018f47ad-91aa-7c35-b6fe-000000000294",
+      key: "trace-malformed",
+    });
+    await Effect.runPromise(repository.acceptRequest(command));
+    await testEnv.MealPlannerDatabase.prepare(
+      "UPDATE recipe_imports SET correlation_id = ? WHERE id = ?"
+    )
+      .bind("not-a-correlation-id", command.candidate.view.id)
+      .run();
+
+    await expectCorrupt(repository.findById(command.candidate.view.id));
   });
 
   it("rolls back a speech child transition when its public parent cannot advance", async () => {

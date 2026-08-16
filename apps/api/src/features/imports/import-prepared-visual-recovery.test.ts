@@ -2,6 +2,7 @@ import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { AcquisitionGeneration } from "./import-media.model.js";
+import { ImportTraceContext } from "./import-observability.js";
 import { resolvePreparedVisualRecovery } from "./import-prepared-visual-recovery.js";
 import { runPreparedVisualRecoveryWorkflowBranch } from "./import-runtime-composition.js";
 import {
@@ -23,6 +24,9 @@ const timestamp = Schema.decodeUnknownSync(ImportTimestamp)(
 );
 const canonicalSourceId =
   Schema.decodeUnknownSync(SourceCanonicalId)("opaque:208");
+const trace = Schema.decodeUnknownSync(ImportTraceContext)({
+  correlationId: "10000000-0000-4000-8000-000000000003",
+});
 
 const storedImport = (
   status: "extracting_visual" | "transcribed"
@@ -33,6 +37,7 @@ const storedImport = (
     "a".repeat(64)
   ),
   sourceKind: "tiktok",
+  trace,
   view: {
     createdAt: timestamp,
     evidence: [

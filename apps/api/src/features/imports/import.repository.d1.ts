@@ -14,7 +14,9 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import { ImportCorrelationId } from "./import-observability.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
+import { deriveLegacyImportCorrelationId } from "./import-workflow-input.js";
 import {
   EvidenceReference,
   ImportView,
@@ -64,6 +66,7 @@ const DatabaseImportRow = Schema.Struct({
   carouselManifestKey: NullableString,
   carouselUpdatedAt: NullableString,
   compatibilityFingerprint: CompatibilityFingerprint,
+  correlationId: NullableString,
   createdAt: Schema.String,
   evidenceReferencesJson: Schema.String,
   id: Schema.String,
@@ -114,6 +117,7 @@ const importSelection = {
        AND ${importCarouselEvidence.state} = 'completed'
   )`.as("carousel_updated_at"),
   compatibilityFingerprint: recipeImports.compatibilityFingerprint,
+  correlationId: recipeImports.correlationId,
   createdAt: recipeImports.createdAt,
   evidenceReferencesJson: sql<string>`COALESCE(
     (
@@ -464,19 +468,25 @@ const decodeStoredImport = (input: unknown) =>
       )(JSON.parse(row.evidenceReferencesJson));
       const visualProjection = decodeVisualProjection(row, baseEvidence);
       const projection = decodeRecipeProjection(row, visualProjection);
+      const view = Schema.decodeUnknownSync(ImportView)({
+        createdAt: row.createdAt,
+        evidence: projection.evidence,
+        id: row.id,
+        source: { canonicalId: canonicalSourceId, kind: row.sourceKind },
+        status: projection.status,
+        updatedAt: projection.updatedAt,
+      });
+      const correlationId =
+        row.correlationId === null
+          ? deriveLegacyImportCorrelationId(view.id)
+          : Schema.decodeUnknownSync(ImportCorrelationId)(row.correlationId);
       return {
         acquisitionGeneration: row.acquisitionGeneration,
         canonicalSourceId,
         compatibilityFingerprint: row.compatibilityFingerprint,
         sourceKind: row.sourceKind,
-        view: Schema.decodeUnknownSync(ImportView)({
-          createdAt: row.createdAt,
-          evidence: projection.evidence,
-          id: row.id,
-          source: { canonicalId: canonicalSourceId, kind: row.sourceKind },
-          status: projection.status,
-          updatedAt: projection.updatedAt,
-        }),
+        trace: { correlationId },
+        view,
       };
     },
   });
@@ -697,6 +707,7 @@ export const makeD1ImportRepository = (
               ${command.candidate.acquisitionGeneration},
               ${command.candidate.canonicalSourceId},
               ${command.candidate.compatibilityFingerprint},
+              ${command.candidate.trace.correlationId},
               ${createdAt},
               ${JSON.stringify(command.candidate.view.evidence)},
               ${command.candidate.view.id},

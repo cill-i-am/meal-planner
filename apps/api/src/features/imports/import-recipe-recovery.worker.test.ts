@@ -12,6 +12,8 @@ import {
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
+import { ImportTraceContext } from "./import-observability.js";
+import type { ImportTraceContext as ImportTraceContextType } from "./import-observability.js";
 import {
   ProviderTerminalSettlementService,
   makeD1ProviderTerminalSettlementService,
@@ -21,12 +23,14 @@ import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-te
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import {
   makeD1RecipeRecoveryRepository,
+  makeRecipeRecoveryWorkflowStarter,
   recipeRecoveryExtractionFingerprint,
 } from "./import-recipe-recovery.js";
 import type {
   RecipeRecoveryAttempt,
   RecipeRecoveryFailure,
 } from "./import-recipe-recovery.js";
+import { deriveLegacyImportCorrelationId } from "./import-workflow-input.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
@@ -79,6 +83,7 @@ interface RootSeed {
   readonly extractionFingerprint: string;
   readonly generation: typeof AcquisitionGeneration.Type;
   readonly importId: typeof ImportId.Type;
+  readonly trace: ImportTraceContextType;
 }
 
 const seedRoot = async (
@@ -90,6 +95,9 @@ const seedRoot = async (
 ): Promise<RootSeed> => {
   const database = testEnv.MealPlannerDatabase;
   const importId = decodeImportId(`00000000-0000-4000-8000-${suffix}`);
+  const trace = Schema.decodeUnknownSync(ImportTraceContext)({
+    correlationId: `50000000-0000-4000-8000-${suffix}`,
+  });
   const generation = decodeGeneration(1);
   const now = "2026-08-09T00:00:00.000Z";
   const sourceSha256 = "a".repeat(64);
@@ -120,16 +128,17 @@ const seedRoot = async (
       .prepare(
         `INSERT INTO recipe_imports (
            acquisition_generation, canonical_source_id,
-           compatibility_fingerprint, created_at, evidence_references_json,
+           compatibility_fingerprint, correlation_id, created_at, evidence_references_json,
            id, recovery_action, source_kind, status, status_code, updated_at
          ) VALUES (
-           ?, ?, ?, ?, ?, ?, NULL, 'tiktok_video', 'transcribed', NULL, ?
+           ?, ?, ?, ?, ?, ?, ?, NULL, 'tiktok', 'transcribed', NULL, ?
          )`
       )
       .bind(
         generation,
         `s09-recovery-${suffix}`,
         "f".repeat(64),
+        trace.correlationId,
         now,
         evidenceReferencesJson,
         importId,
@@ -280,6 +289,7 @@ const seedRoot = async (
     extractionFingerprint,
     generation,
     importId,
+    trace,
   };
 };
 
@@ -426,19 +436,27 @@ const corruptSourceIdentity = async (
   }
 };
 
-const makeApp = async (started: RecipeRecoveryAttempt[]) => {
+const makeApp = async (started: unknown[]) => {
   const authorizer = await Effect.runPromise(
     makeImportAuthorizer(Redacted.make("test-import-token"))
   );
   const service = makeD1ProviderTerminalSettlementService({
     database: testEnv.MealPlannerDatabase,
     now: () => decodeImportTimestamp("2026-08-09T00:02:00.000Z"),
-    recipeRecoveryStarter: {
-      start: (attempt) =>
+    recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter({
+      createBatch: (batch) =>
         Effect.sync(() => {
-          started.push(attempt);
+          started.push(batch[0]?.params);
+          return [
+            {
+              restart: () => Effect.void,
+              sendEvent: () => Effect.void,
+              status: () => Effect.succeed({ status: "running" }),
+            },
+          ];
         }),
-    },
+      get: () => Effect.die("new recovery must not reconcile"),
+    }),
     runtimeStage,
   });
   return HttpRouter.toWebHandler(
@@ -1014,7 +1032,10 @@ describe("recipe recovery attempt ledger", () => {
 
   it("exposes one generic prepare and resume route", async () => {
     const seeded = await seedRoot("000000000313");
-    const started: RecipeRecoveryAttempt[] = [];
+    const operatorTrace = Schema.decodeUnknownSync(ImportTraceContext)({
+      correlationId: "60000000-0000-4000-8000-000000000313",
+    });
+    const started: unknown[] = [];
     const app = await makeApp(started);
 
     const prepared = await postOperation(
@@ -1031,7 +1052,7 @@ describe("recipe recovery attempt ledger", () => {
     });
     expect(started).toHaveLength(1);
 
-    const resumedStarted: RecipeRecoveryAttempt[] = [];
+    const resumedStarted: unknown[] = [];
     const reconstructedApp = await makeApp(resumedStarted);
     const resumed = await postOperation(
       reconstructedApp,
@@ -1048,5 +1069,34 @@ describe("recipe recovery attempt ledger", () => {
 
     expect(started).toHaveLength(1);
     expect(resumedStarted).toHaveLength(1);
+    expect(started[0]).toMatchObject({ trace: seeded.trace });
+    expect(resumedStarted[0]).toMatchObject({ trace: seeded.trace });
+    expect(started[0]).not.toMatchObject({ trace: operatorTrace });
+  });
+
+  it("uses the deterministic legacy trace for recovery from a NULL import row", async () => {
+    const seeded = await seedRoot("000000000316");
+    await testEnv.MealPlannerDatabase.prepare(
+      "UPDATE recipe_imports SET correlation_id = NULL WHERE id = ?"
+    )
+      .bind(seeded.importId)
+      .run();
+    const started: unknown[] = [];
+    const app = await makeApp(started);
+
+    const prepared = await postOperation(
+      app,
+      seeded,
+      "prepare_recipe_recovery"
+    );
+
+    expect(prepared.status).toBe(200);
+    expect(started).toEqual([
+      expect.objectContaining({
+        trace: {
+          correlationId: deriveLegacyImportCorrelationId(seeded.importId),
+        },
+      }),
+    ]);
   });
 });

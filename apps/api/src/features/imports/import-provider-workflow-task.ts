@@ -1,7 +1,7 @@
 import { WorkflowStepContext, task } from "alchemy/Cloudflare/Workflows";
 import { Effect, Schema } from "effect";
 
-import type { ImportCorrelationId } from "./import-observability.js";
+import type { ImportTraceContext } from "./import-observability.js";
 import { emitImportObservabilityEvent } from "./import-observability.js";
 import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 
@@ -80,7 +80,7 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
   stage: ProviderTaskStage,
   effect: Effect.Effect<Value, Failure>,
   onSuccess: (value: Value) => Success,
-  correlationId?: ImportCorrelationId
+  trace?: ImportTraceContext
 ) =>
   effect.pipe(
     Effect.matchEffect({
@@ -89,10 +89,10 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
         const reasonCode = providerTaskFailureReasonCode(error);
         if (!isRetryableProviderTaskFailure(code)) {
           return (
-            correlationId === undefined
+            trace === undefined
               ? Effect.void
               : emitImportObservabilityEvent({
-                  correlationId,
+                  correlationId: trace.correlationId,
                   event: "provider.terminal",
                   outcome: "failed",
                   providerStage: stage,
@@ -107,17 +107,17 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
             context.config.retries?.limit ??
             ProviderTaskStepConfig.retries.limit;
           if (context.attempt >= retryLimit + 1) {
-            if (correlationId !== undefined) {
+            if (trace !== undefined) {
               yield* emitImportObservabilityEvent({
                 attempt: context.attempt,
-                correlationId,
+                correlationId: trace.correlationId,
                 event: "provider.retry_exhausted",
                 outcome: "exhausted",
                 providerStage: stage,
               });
               yield* emitImportObservabilityEvent({
                 attempt: context.attempt,
-                correlationId,
+                correlationId: trace.correlationId,
                 event: "provider.terminal",
                 outcome: "failed",
                 providerStage: stage,
@@ -126,10 +126,10 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
             return retryExhaustedCheckpoint(stage);
           }
 
-          if (correlationId !== undefined) {
+          if (trace !== undefined) {
             yield* emitImportObservabilityEvent({
               attempt: context.attempt,
-              correlationId,
+              correlationId: trace.correlationId,
               event: "provider.retry",
               outcome: "retrying",
               providerStage: stage,
@@ -141,10 +141,10 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
         });
       },
       onSuccess: (value) =>
-        (correlationId === undefined
+        (trace === undefined
           ? Effect.void
           : emitImportObservabilityEvent({
-              correlationId,
+              correlationId: trace.correlationId,
               event: "provider.terminal",
               outcome: "succeeded",
               providerStage: stage,
@@ -158,10 +158,10 @@ export const runProviderTask = <Value, Failure, Success>(
   stage: ProviderTaskStage,
   effect: Effect.Effect<Value, Failure>,
   onSuccess: (value: Value) => Success,
-  correlationId?: ImportCorrelationId
+  trace?: ImportTraceContext
 ) =>
   task(
     name,
-    runProviderTaskAttempt(stage, effect, onSuccess, correlationId),
+    runProviderTaskAttempt(stage, effect, onSuccess, trace),
     ProviderTaskStepConfig
   );

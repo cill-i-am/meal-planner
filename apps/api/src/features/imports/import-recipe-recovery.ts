@@ -1,6 +1,6 @@
 /* eslint-disable max-classes-per-file -- This module owns one closed, Schema-backed recovery failure family. */
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Cause, DateTime, Effect, Option, Schema } from "effect";
+import { Cause, Data, DateTime, Effect, Option, Schema } from "effect";
 
 import {
   PilotBudgetDispatchId,
@@ -9,7 +9,7 @@ import {
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import {
   ImportCorrelationId,
-  makeImportCorrelationId,
+  ImportTraceContext,
 } from "./import-observability.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { workflowStartUnavailable } from "./import.errors.js";
@@ -1110,11 +1110,43 @@ export const makeD1RecipeRecoveryRepository = (
 export const RecipeRecoveryWorkflowInput = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   attemptOrdinal: RecipeRecoveryOrdinal,
-  correlationId: ImportCorrelationId,
   importId: ImportId,
+  trace: ImportTraceContext,
 });
 export type RecipeRecoveryWorkflowInput =
   typeof RecipeRecoveryWorkflowInput.Type;
+
+const LegacyRecipeRecoveryWorkflowInput = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
+  attemptOrdinal: RecipeRecoveryOrdinal,
+  correlationId: ImportCorrelationId,
+  importId: ImportId,
+});
+
+export class InvalidRecipeRecoveryWorkflowInput extends Data.TaggedError(
+  "InvalidRecipeRecoveryWorkflowInput"
+) {}
+
+export const resolveRecipeRecoveryWorkflowInput = (rawInput: unknown) =>
+  Schema.decodeUnknownEffect(
+    Schema.Union([
+      RecipeRecoveryWorkflowInput,
+      LegacyRecipeRecoveryWorkflowInput,
+    ]),
+    { onExcessProperty: "error" }
+  )(rawInput).pipe(
+    Effect.mapError(() => new InvalidRecipeRecoveryWorkflowInput()),
+    Effect.map((input) =>
+      "trace" in input
+        ? input
+        : {
+            acquisitionGeneration: input.acquisitionGeneration,
+            attemptOrdinal: input.attemptOrdinal,
+            importId: input.importId,
+            trace: { correlationId: input.correlationId },
+          }
+    )
+  );
 
 export const RecipeRecoveryAuthorization = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
@@ -1192,7 +1224,8 @@ const reconcileWorkflowInstance = (
 
 export interface RecipeRecoveryWorkflowStarterShape {
   readonly start: (
-    attempt: RecipeRecoveryAttempt
+    attempt: RecipeRecoveryAttempt,
+    trace: ImportTraceContext
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
 }
 
@@ -1202,22 +1235,22 @@ export const recipeRecoveryWorkflowInstanceId = (
 ) => `import-recipe-recovery-${importId}-${acquisitionGeneration}`;
 
 export const makeRecipeRecoveryWorkflowStarter = (
-  workflow: WorkflowHandleLike,
-  newCorrelationId: () => ImportCorrelationId = makeImportCorrelationId
+  workflow: WorkflowHandleLike
 ): RecipeRecoveryWorkflowStarterShape => ({
   start: Effect.fn("RecipeRecoveryWorkflowStarter.start")(
-    function* startRecipeRecoveryWorkflow(attempt) {
+    function* startRecipeRecoveryWorkflow(attempt, trace) {
       const id = recipeRecoveryWorkflowInstanceId(
         attempt.importId,
         attempt.acquisitionGeneration
       );
       const params = yield* Schema.decodeUnknownEffect(
-        RecipeRecoveryWorkflowInput
+        RecipeRecoveryWorkflowInput,
+        { onExcessProperty: "error" }
       )({
         acquisitionGeneration: attempt.acquisitionGeneration,
         attemptOrdinal: attempt.ordinal,
-        correlationId: newCorrelationId(),
         importId: attempt.importId,
+        trace,
       }).pipe(Effect.mapError(() => workflowStartUnavailable()));
       return yield* workflow.createBatch([{ id, params }]).pipe(
         Effect.flatMap((created) => {

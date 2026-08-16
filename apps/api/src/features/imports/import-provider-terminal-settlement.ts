@@ -1,5 +1,5 @@
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Context, DateTime, Effect, Schema } from "effect";
+import { Context, DateTime, Effect, Option, Schema } from "effect";
 
 import {
   PilotBudgetDispatchId,
@@ -17,6 +17,7 @@ import type {
 } from "./import-recipe-recovery.js";
 import { ImportId } from "./import.contracts.js";
 import type { ImportTimestamp } from "./import.contracts.js";
+import { makeD1ImportRepository } from "./import.repository.d1.js";
 import type { ImportWorkflowStarterShape } from "./import.workflow.js";
 
 const TerminalUnknownSettlementRequest = Schema.Struct({
@@ -2345,6 +2346,30 @@ interface ProviderTerminalSettlementServiceInput {
   >;
 }
 
+const readAuthoritativeImportTrace = (
+  database: AnyD1Database,
+  importId: ImportId
+) =>
+  makeD1ImportRepository(database)
+    .findById(importId)
+    .pipe(
+      // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.mapError preserves the typed persistence error channel.
+      Effect.mapError((error) =>
+        providerTerminalSettlementError(
+          error._tag === "ImportPersistenceUnavailable"
+            ? "persistence_unavailable"
+            : "persistence_corrupt"
+        )
+      ),
+      Effect.flatMap(
+        Option.match({
+          onNone: () =>
+            Effect.fail(providerTerminalSettlementError("persistence_corrupt")),
+          onSome: (stored) => Effect.succeed(stored.trace),
+        })
+      )
+    );
+
 const prepareSpeechRecovery = (
   input: ProviderTerminalSettlementServiceInput,
   request: typeof SpeechRecoveryActivationRequest.Type
@@ -2500,7 +2525,11 @@ export const makeD1ProviderTerminalSettlementService = (
             providerTerminalSettlementError("persistence_unavailable")
           );
         }
-        yield* start(recovery).pipe(
+        const trace = yield* readAuthoritativeImportTrace(
+          input.database,
+          recovery.importId
+        );
+        yield* start(recovery, trace).pipe(
           Effect.mapError(() =>
             providerTerminalSettlementError("persistence_unavailable")
           )
@@ -2540,7 +2569,11 @@ export const makeD1ProviderTerminalSettlementService = (
             providerTerminalSettlementError("persistence_unavailable")
           );
         }
-        yield* start(recovery).pipe(
+        const trace = yield* readAuthoritativeImportTrace(
+          input.database,
+          recovery.importId
+        );
+        yield* start(recovery, trace).pipe(
           Effect.mapError(() =>
             providerTerminalSettlementError("persistence_unavailable")
           )

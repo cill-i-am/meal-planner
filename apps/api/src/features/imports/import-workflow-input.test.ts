@@ -12,10 +12,18 @@ const importId = "00000000-0000-4000-8000-000000000188";
 const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2188";
 
 describe("import workflow input", () => {
-  it("preserves the exact current correlation input", async () => {
+  it("preserves the exact current trace context", async () => {
+    await expect(
+      Effect.runPromise(
+        resolveImportWorkflowInput({ importId, trace: { correlationId } })
+      )
+    ).resolves.toEqual({ importId, trace: { correlationId } });
+  });
+
+  it("normalizes the legacy correlation input at the durable boundary", async () => {
     await expect(
       Effect.runPromise(resolveImportWorkflowInput({ correlationId, importId }))
-    ).resolves.toEqual({ correlationId, importId });
+    ).resolves.toEqual({ importId, trace: { correlationId } });
   });
 
   it("preserves only the typed private prepared-visual recovery input", async () => {
@@ -28,9 +36,9 @@ describe("import workflow input", () => {
         })
       )
     ).resolves.toEqual({
-      correlationId,
       importId,
       resume: "prepared_visual_recovery",
+      trace: { correlationId },
     });
   });
 
@@ -78,8 +86,10 @@ describe("import workflow input", () => {
       await expect(
         Effect.runPromise(resolveImportWorkflowInput({ importId }))
       ).resolves.toEqual({
-        correlationId: "b44d09c6-67ca-527c-a2c7-86628ffc08a6",
         importId,
+        trace: {
+          correlationId: "b44d09c6-67ca-527c-a2c7-86628ffc08a6",
+        },
       });
     } finally {
       if (cryptoDescriptor === undefined) {
@@ -94,6 +104,10 @@ describe("import workflow input", () => {
     {},
     { importId, sourceUrl: "sensitive-source-sentinel" },
     { correlationId, importId, transcript: "sensitive-text-sentinel" },
+    {
+      importId,
+      trace: { correlationId, sourceUrl: "sensitive-source-sentinel" },
+    },
     { correlationId, importId, resume: "unknown_recovery" },
     { correlationId: "not-a-uuid", importId },
     { importId: "not-a-uuid" },

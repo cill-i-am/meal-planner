@@ -8,6 +8,12 @@ export const ImportCorrelationId = Schema.String.pipe(
 );
 export type ImportCorrelationId = typeof ImportCorrelationId.Type;
 
+/** Privacy-safe import trace state admitted once and preserved at every hop. */
+export const ImportTraceContext = Schema.Struct({
+  correlationId: ImportCorrelationId,
+});
+export type ImportTraceContext = typeof ImportTraceContext.Type;
+
 export const ImportObservabilityEventName = Schema.Literals([
   "acquisition.decode",
   "acquisition.dispatch",
@@ -194,6 +200,13 @@ const decodeEvent = Schema.decodeUnknownSync(ImportObservabilityEvent, {
 export const makeImportCorrelationId = (): ImportCorrelationId =>
   Schema.decodeUnknownSync(ImportCorrelationId)(crypto.randomUUID());
 
+export const makeImportTraceContext = (
+  newCorrelationId: () => ImportCorrelationId = makeImportCorrelationId
+): ImportTraceContext =>
+  Schema.decodeUnknownSync(ImportTraceContext, {
+    onExcessProperty: "error",
+  })({ correlationId: newCorrelationId() });
+
 export const metadataOnlyGatewayHeaders = (
   correlationId: ImportCorrelationId
 ) =>
@@ -278,19 +291,17 @@ export const emitImportObservabilityEvent = (
 export const observeImportQueueReceipt = (
   newCorrelationId: () => ImportCorrelationId = makeImportCorrelationId
 ) => {
-  const correlationId = newCorrelationId();
+  const trace = makeImportTraceContext(newCorrelationId);
   return emitImportObservabilityEvent({
-    correlationId,
+    correlationId: trace.correlationId,
     event: "queue.received",
     outcome: "received",
-  }).pipe(Effect.as(correlationId));
+  }).pipe(Effect.as(trace));
 };
 
-export const observeImportWorkflowStart = (
-  correlationId: ImportCorrelationId
-) =>
+export const observeImportWorkflowStart = (trace: ImportTraceContext) =>
   emitImportObservabilityEvent({
-    correlationId,
+    correlationId: trace.correlationId,
     event: "workflow.started",
     outcome: "started",
   });

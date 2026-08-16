@@ -23,6 +23,7 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import { ImportTraceContext } from "./import-observability.js";
 import {
   ProviderTerminalSettlementService,
   makeD1ProviderTerminalSettlementService,
@@ -70,6 +71,10 @@ import {
   RequestFingerprint,
   SourceLocatorHash,
 } from "./import.repository.js";
+
+const trace = Schema.decodeUnknownSync(ImportTraceContext)({
+  correlationId: "10000000-0000-4000-8000-000000000006",
+});
 
 const transcriptObjectKey = (importId: string, generation: number) =>
   `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`;
@@ -220,6 +225,7 @@ const makeTranscribedImport = async (
       fixtureHash(`${identity}:visual-tracer-compatibility`)
     ),
     sourceKind: "tiktok",
+    trace,
     view: {
       createdAt,
       evidence: [],

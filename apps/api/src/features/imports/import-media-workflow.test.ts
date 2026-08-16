@@ -324,7 +324,7 @@ const makeWorkflow = (
   };
   return {
     calls,
-    starter: makeImportWorkflowStarter(workflow, { correlationId }),
+    starter: makeImportWorkflowStarter(workflow),
   };
 };
 
@@ -334,7 +334,7 @@ describe("import Workflow start reconciliation", () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
 
     await expect(
-      Effect.runPromise(starter.ensureStarted(importId))
+      Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
     ).resolves.toBe("created");
     expect(importWorkflowInstanceId(importId)).toBe(
       `import-acquisition-${importId}`
@@ -343,7 +343,7 @@ describe("import Workflow start reconciliation", () => {
       [
         {
           id: `import-acquisition-${importId}`,
-          params: { correlationId, importId },
+          params: { importId, trace: { correlationId } },
         },
       ],
     ]);
@@ -368,7 +368,7 @@ describe("import Workflow start reconciliation", () => {
       const { calls, starter } = makeWorkflow(status);
 
       await expect(
-        Effect.runPromise(starter.ensureStarted(importId))
+        Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
       ).resolves.toBe("already_active");
       expect(calls.restart).toBe(0);
     }
@@ -378,7 +378,7 @@ describe("import Workflow start reconciliation", () => {
     const { calls, starter } = makeWorkflow("paused");
 
     await expect(
-      Effect.runPromise(starter.ensureStarted(importId))
+      Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
     ).resolves.toBe("paused");
     expect(calls.restart).toBe(0);
   });
@@ -505,18 +505,20 @@ describe("import Workflow start reconciliation", () => {
       const { calls, starter } = makeWorkflow(status);
 
       await expect(
-        Effect.runPromise(starter.ensureStarted(importId))
+        Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
       ).resolves.toBe("restarted");
       expect(calls.restart).toBe(1);
     }
   );
 
   it("maps unknown status, binding defects, and impossible batches to a safe typed failure", async () => {
-    const unknown = makeWorkflow("unknown").starter.ensureStarted(importId);
+    const unknown = makeWorkflow("unknown").starter.ensureStarted(importId, {
+      correlationId,
+    });
     const defect = makeImportWorkflowStarter({
       createBatch: () => Effect.die("provider-secret-fragment"),
       get: () => Effect.die("unreachable"),
-    }).ensureStarted(importId);
+    }).ensureStarted(importId, { correlationId });
     const impossibleInstance = {
       restart: () => Effect.void,
       status: () => Effect.succeed({ status: "queued" }),
@@ -525,7 +527,7 @@ describe("import Workflow start reconciliation", () => {
       createBatch: () =>
         Effect.succeed([impossibleInstance, impossibleInstance]),
       get: () => Effect.die("unreachable"),
-    }).ensureStarted(importId);
+    }).ensureStarted(importId, { correlationId });
 
     await Promise.all(
       [unknown, defect, impossible].map(async (effect) => {
@@ -562,16 +564,18 @@ describe("import Workflow start reconciliation", () => {
     const starter = makeImportWorkflowStarter(workflow);
 
     await expect(
-      Effect.runPromise(starter.ensureStarted(importId))
+      Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
     ).resolves.toBe("already_active");
     await expect(
-      Effect.runPromise(starter.ensureStarted(importId))
+      Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
     ).resolves.toBe("already_active");
   });
 
   it("fails a missing starter method instead of silently stranding a queued import", async () => {
     await expect(
-      Effect.runPromise(ensureImportWorkflowStarted({}, importId))
+      Effect.runPromise(
+        ensureImportWorkflowStarted({}, importId, { correlationId })
+      )
     ).rejects.toMatchObject({ _tag: "WorkflowStartUnavailable" });
   });
 });

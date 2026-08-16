@@ -58,8 +58,8 @@ const attempt = (ordinal: RecipeRecoveryOrdinal): RecipeRecoveryAttempt => ({
 const input = (attemptOrdinal: RecipeRecoveryOrdinal) => ({
   acquisitionGeneration: generation,
   attemptOrdinal,
-  correlationId,
   importId,
+  trace: { correlationId },
 });
 
 describe("bounded recipe recovery workflow", () => {

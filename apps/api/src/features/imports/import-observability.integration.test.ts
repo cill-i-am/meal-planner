@@ -1,6 +1,6 @@
 import { RuntimeContext } from "alchemy";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
-import { Effect, Schema } from "effect";
+import { Effect, Schema, Tracer } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -13,6 +13,7 @@ import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
+  emitImportObservabilityEvent,
   observeImportQueueReceipt,
   observeImportWorkflowStart,
 } from "./import-observability.js";
@@ -147,6 +148,14 @@ const activeInstance = {
 describe("opaque import correlation continuity", () => {
   it("traverses queue, workflow, installed transport, budget and settlement without diverging on reconciliation", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const spans: Tracer.NativeSpan[] = [];
+    const tracer = Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options);
+        spans.push(span);
+        return span;
+      },
+    });
     const events: ImportObservabilityEvent[] = [];
     const traceStore = ImportObservabilityTraceStore.of({
       append: (event) =>
@@ -157,17 +166,14 @@ describe("opaque import correlation continuity", () => {
         Effect.succeed(events.filter((event) => event.correlationId === id)),
     });
     let workflowParams: unknown;
-    const createdStarter = makeImportWorkflowStarter(
-      {
-        createBatch: (batch) =>
-          Effect.sync(() => {
-            workflowParams = batch[0]?.params;
-            return [activeInstance];
-          }),
-        get: () => Effect.die("created workflow must not reconcile"),
-      },
-      { correlationId }
-    );
+    const createdStarter = makeImportWorkflowStarter({
+      createBatch: (batch) =>
+        Effect.sync(() => {
+          workflowParams = batch[0]?.params;
+          return [activeInstance];
+        }),
+      get: () => Effect.die("created workflow must not reconcile"),
+    });
     const dispatch = makePilotProviderDispatchGate({
       correlationId,
       now: () => now,
@@ -178,21 +184,24 @@ describe("opaque import correlation continuity", () => {
 
     await Effect.runPromise(
       Effect.gen(function* correlatedPath() {
-        const receivedCorrelationId = yield* observeImportQueueReceipt(
-          () => correlationId
-        );
-        expect(receivedCorrelationId).toBe(correlationId);
-        yield* createdStarter.ensureStarted(importId);
+        let creations = 0;
+        const trace = yield* observeImportQueueReceipt(() => {
+          creations += 1;
+          return correlationId;
+        });
+        expect(creations).toBe(1);
+        expect(trace).toEqual({ correlationId });
+        yield* createdStarter.ensureStarted(importId, trace);
         const input = Schema.decodeUnknownSync(
           Schema.Struct({
-            correlationId: ImportCorrelationId,
             importId: ImportId,
+            trace: Schema.Struct({ correlationId: ImportCorrelationId }),
           })
         )(workflowParams);
-        yield* observeImportWorkflowStart(input.correlationId);
+        yield* observeImportWorkflowStart(input.trace);
         const adapter = yield* makeInstalledVisualEvidenceExtractor({
           client: gatewayClient,
-          correlationId: input.correlationId,
+          correlationId: input.trace.correlationId,
           dispatch,
         });
         yield* adapter.extract({
@@ -213,6 +222,7 @@ describe("opaque import correlation continuity", () => {
         });
       }).pipe(
         Effect.provideService(ImportObservabilityTraceStore, traceStore),
+        Effect.provideService(Tracer.Tracer, tracer),
         Effect.provideService(RuntimeContext, testRuntimeContext)
       )
     );
@@ -230,6 +240,29 @@ describe("opaque import correlation continuity", () => {
     expect(events.every((event) => event.correlationId === correlationId)).toBe(
       true
     );
+    const allowedTraceAttributeKeys = new Set([
+      "attempt",
+      "correlationId",
+      "decodeReason",
+      "decodeStage",
+      "event",
+      "outcome",
+      "providerStage",
+      "reasonCode",
+      "speechEnvelopeFailure",
+      "speechEnvelopeFamily",
+      "speechEnvelopeUnsupportedLocation",
+      "speechEnvelopeUnsupportedRootProperty",
+    ]);
+    const importSpans = spans.filter(({ name }) => name.startsWith("import."));
+    expect(importSpans.length).toBeGreaterThan(0);
+    expect(
+      importSpans.every((span) =>
+        [...span.attributes].every(([key]) =>
+          allowedTraceAttributeKeys.has(key)
+        )
+      )
+    ).toBe(true);
     expect(gatewayRequests).toHaveLength(1);
     const { options } = Schema.decodeUnknownSync(
       Schema.Struct({
@@ -255,17 +288,16 @@ describe("opaque import correlation continuity", () => {
       /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
     );
 
-    const reconciliationStarter = makeImportWorkflowStarter(
-      {
-        createBatch: () => Effect.succeed([]),
-        get: (_id: string) => Effect.succeed(activeInstance),
-      },
-      { correlationId: reconciliationCorrelationId }
-    );
+    const reconciliationStarter = makeImportWorkflowStarter({
+      createBatch: () => Effect.succeed([]),
+      get: (_id: string) => Effect.succeed(activeInstance),
+    });
     await Effect.runPromise(
       Effect.gen(function* reconcileExistingWorkflow() {
         yield* observeImportQueueReceipt(() => reconciliationCorrelationId);
-        yield* reconciliationStarter.ensureStarted(importId);
+        yield* reconciliationStarter.ensureStarted(importId, {
+          correlationId: reconciliationCorrelationId,
+        });
       }).pipe(Effect.provideService(ImportObservabilityTraceStore, traceStore))
     );
 
@@ -288,6 +320,45 @@ describe("opaque import correlation continuity", () => {
         (workflowParams as { readonly importId: ImportIdType }).importId
       )
     ).toBe(true);
+    log.mockRestore();
+  });
+
+  it("fails closed and redacted when unapproved context reaches observability", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const events: ImportObservabilityEvent[] = [];
+    const spans: Tracer.NativeSpan[] = [];
+    const tracer = Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options);
+        spans.push(span);
+        return span;
+      },
+    });
+    const traceStore = ImportObservabilityTraceStore.of({
+      append: (event) =>
+        Effect.sync(() => events.push(event)).pipe(Effect.asVoid),
+      read: () => Effect.succeed(events),
+    });
+
+    await expect(
+      Effect.runPromise(
+        emitImportObservabilityEvent({
+          authorization: "Bearer private-token",
+          correlationId,
+          event: "workflow.started",
+          outcome: "started",
+          providerPayload: { transcript: "private transcript" },
+          requestBody: { sourceUrl: "https://private.example/tiktok" },
+        }).pipe(
+          Effect.provideService(ImportObservabilityTraceStore, traceStore),
+          Effect.provideService(Tracer.Tracer, tracer)
+        )
+      )
+    ).resolves.toBeUndefined();
+
+    expect(events).toEqual([]);
+    expect(log.mock.calls).toEqual([]);
+    expect(spans).toEqual([]);
     log.mockRestore();
   });
 });

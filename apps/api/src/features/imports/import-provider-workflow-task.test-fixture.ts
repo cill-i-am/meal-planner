@@ -898,10 +898,12 @@ const providerWorkflowExport = {
             {
               acquisitionGeneration: generation,
               attemptOrdinal: 1,
-              correlationId: decodeCorrelationId(
-                "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2206"
-              ),
               importId,
+              trace: {
+                correlationId: decodeCorrelationId(
+                  "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2206"
+                ),
+              },
             },
             {
               persistUnknown: (_attempt, durableTaskName) =>

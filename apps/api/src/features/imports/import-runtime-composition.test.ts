@@ -39,19 +39,19 @@ describe("import runtime composition", () => {
             Effect.sync(() => {
               calls.push("acquire");
               return {
-                consume: (message, deliveryAttempt, observedCorrelationId) =>
+                consume: (message, deliveryAttempt, trace) =>
                   Effect.sync(() => {
                     calls.push("consume");
                     received.push({
-                      correlationId: observedCorrelationId,
                       deliveryAttempt,
                       message,
+                      trace,
                     });
                   }),
                 observeReceipt: () =>
                   Effect.sync(() => {
                     calls.push("observe");
-                    return correlationId;
+                    return { correlationId };
                   }),
               };
             }),
@@ -62,11 +62,11 @@ describe("import runtime composition", () => {
     expect(calls).toEqual(["acquire", "observe", "consume"]);
     expect(received).toEqual([
       {
-        correlationId,
         deliveryAttempt: Schema.decodeUnknownSync(ImportBatchDeliveryAttempt)(
           2
         ),
         message: { batchId, itemId },
+        trace: { correlationId },
       },
     ]);
   });
@@ -90,7 +90,7 @@ describe("import runtime composition", () => {
               downstreamCalls += 1;
               return {
                 consume: () => Effect.void,
-                observeReceipt: () => Effect.succeed(correlationId),
+                observeReceipt: () => Effect.succeed({ correlationId }),
               };
             }),
         }
@@ -188,7 +188,7 @@ describe("import runtime composition", () => {
           acquire: () =>
             Effect.succeed({
               consume: () => Effect.void,
-              observeReceipt: () => Effect.succeed(correlationId),
+              observeReceipt: () => Effect.succeed({ correlationId }),
             }),
         }
       ).pipe(Effect.provideService(Tracer.Tracer, tracer))

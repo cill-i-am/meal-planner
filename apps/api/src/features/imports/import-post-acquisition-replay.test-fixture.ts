@@ -220,15 +220,16 @@ const makeWorkflowExport = (runtimeContext: InstalledRuntimeContext) => ({
     return Effect.succeed((rawInput: unknown) =>
       Effect.gen(function* runPostAcquisitionReplay() {
         const event = yield* WorkflowEvent;
-        const { correlationId, importId } = yield* resolveImportWorkflowInput(
+        const { importId, trace } = yield* resolveImportWorkflowInput(
           rawInput
         ).pipe(Effect.orDie);
+        const { correlationId } = trace;
         const traceStore = makeD1ImportObservabilityTraceStore(
           env.MealPlannerDatabase,
           () => "2026-07-28T10:01:00.000Z"
         );
         return yield* Effect.gen(function* runObservedPostAcquisitionReplay() {
-          yield* observeImportWorkflowStart(correlationId);
+          yield* observeImportWorkflowStart(trace);
           const fixture = replayProviderFixture(env, event.instanceId);
           const dispatch = makePilotProviderDispatchGate({
             correlationId,
@@ -396,7 +397,7 @@ const makeWorkflowExport = (runtimeContext: InstalledRuntimeContext) => ({
                           _tag: "Succeeded" as const,
                           stage: "speech" as const,
                         }),
-                        correlationId
+                        trace
                       )
                     )
                   ),

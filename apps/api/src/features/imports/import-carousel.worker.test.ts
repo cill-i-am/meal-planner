@@ -16,6 +16,7 @@ import {
 import { makeD1CarouselEvidenceRepository } from "./import-carousel.repository.d1.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
+import { ImportTraceContext } from "./import-observability.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
 import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
@@ -79,6 +80,9 @@ const decodeCompatibilityFingerprint = Schema.decodeUnknownSync(
 const decodeIdempotencyKeyHash = Schema.decodeUnknownSync(IdempotencyKeyHash);
 const decodeRequestFingerprint = Schema.decodeUnknownSync(RequestFingerprint);
 const decodeSourceLocatorHash = Schema.decodeUnknownSync(SourceLocatorHash);
+const trace = Schema.decodeUnknownSync(ImportTraceContext)({
+  correlationId: "10000000-0000-4000-8000-000000000004",
+});
 
 const generation = decodeGeneration(0);
 const createdAt = decodeTimestamp("2026-07-22T08:00:00.000Z");
@@ -112,6 +116,7 @@ const seedQueuedImport = async (identity: string) => {
       fixtureHash(`${identity}:carousel-compatibility`)
     ),
     sourceKind: "tiktok",
+    trace,
     view: {
       createdAt,
       evidence: [],
@@ -739,6 +744,7 @@ describe("provider-free TikTok carousel tracer", () => {
           }).pipe(Effect.asVoid),
       },
       repository,
+      trace,
     });
     const bundle = Schema.decodeUnknownSync(OperatorCarouselBundle)({
       declaredPageCount: 2,

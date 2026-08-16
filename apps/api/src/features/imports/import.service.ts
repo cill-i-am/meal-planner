@@ -1,6 +1,7 @@
 import { Context, Effect, Option, Schema } from "effect";
 
 import { AcquisitionGeneration } from "./import-media.model.js";
+import type { ImportTraceContext } from "./import-observability.js";
 import type {
   CreateImportRequest,
   CreateImportResponse,
@@ -109,6 +110,7 @@ export interface MakeImportServiceOptions {
   readonly newId: () => ImportId;
   readonly now: () => ImportTimestamp;
   readonly repository: ImportRepositoryShape;
+  readonly trace: ImportTraceContext;
   readonly workflowStarter: ImportWorkflowStarterShape;
 }
 
@@ -128,6 +130,7 @@ export const makeImportService = ({
   newId,
   now,
   repository,
+  trace,
   workflowStarter,
 }: MakeImportServiceOptions): ImportServiceShape => {
   const shouldEnsureWorkflowStarted = (stored: StoredImport) => {
@@ -179,7 +182,8 @@ export const makeImportService = ({
           ) {
             yield* ensureImportWorkflowStarted(
               workflowStarter,
-              existingRequest.value.import.view.id
+              existingRequest.value.import.view.id,
+              existingRequest.value.import.trace
             );
           }
           return {
@@ -203,7 +207,8 @@ export const makeImportService = ({
           ) {
             yield* ensureImportWorkflowStarted(
               workflowStarter,
-              existingRequest.value.import.view.id
+              existingRequest.value.import.view.id,
+              existingRequest.value.import.trace
             );
           }
           return {
@@ -246,6 +251,7 @@ export const makeImportService = ({
             canonicalSourceId: resolution.identity.canonicalId,
             compatibilityFingerprint,
             sourceKind: resolution.identity.kind,
+            trace,
             view,
           };
         }
@@ -260,7 +266,8 @@ export const makeImportService = ({
         if (yield* shouldEnsureWorkflowStarted(accepted.import)) {
           yield* ensureImportWorkflowStarted(
             workflowStarter,
-            accepted.import.view.id
+            accepted.import.view.id,
+            accepted.import.trace
           );
         }
 
