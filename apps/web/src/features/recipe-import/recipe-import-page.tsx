@@ -120,7 +120,7 @@ export const RecipeImportPage = ({
     retry: false,
   });
 
-  const progress = statusQuery.data?.ok ? statusQuery.data.value : submitted;
+  const progress = statusQuery.data?.ok ? statusQuery.data.value : undefined;
   const draftId =
     progress?.status.kind === "needs_review" ? progress.draftId : undefined;
   const reviewQuery = useQuery({

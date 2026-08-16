@@ -151,6 +151,32 @@ describe("RecipeImportPage", () => {
     ).toBeVisible();
   });
 
+  it("stops rendering processing when polling fails after submit", async () => {
+    renderPage(
+      makeOperations({
+        poll: async () => ({
+          error: {
+            code: "unavailable",
+            message:
+              "Recipe importing is temporarily unavailable. Please try again.",
+            retryable: true,
+          },
+          ok: false,
+        }),
+      })
+    );
+    await submitWithKeyboard();
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "This link couldn’t be imported",
+      })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Working on your recipe" })
+    ).not.toBeInTheDocument();
+  });
+
   it("reviews one draft, approves it, and renders one matching bank result", async () => {
     let approved = false;
     const operations = makeOperations({
