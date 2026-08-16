@@ -91,8 +91,8 @@ export const RecipeUnresolvedField = Schema.Literals([
 ]);
 export type RecipeUnresolvedField = typeof RecipeUnresolvedField.Type;
 
-/** Strict model-owned recipe semantics, excluding adapter transport metadata. */
-export const RecipeExtractionSemantics = Schema.Struct({
+/** Evidence-grounded recipe facts. Provider candidates can never inhabit it. */
+export const GroundedRecipeFacts = Schema.Struct({
   author: RecipeStringFact,
   category: RecipeStringFact,
   cookTimeMinutes: RecipeNumberFact,
@@ -113,7 +113,7 @@ export const RecipeExtractionSemantics = Schema.Struct({
   ),
   yield: RecipeStringFact,
 });
-export type RecipeExtractionSemantics = typeof RecipeExtractionSemantics.Type;
+export type GroundedRecipeFacts = typeof GroundedRecipeFacts.Type;
 
 const RecipeProviderString = TrimmedNonEmptyString.pipe(
   Schema.check(Schema.isMaxLength(4096))
@@ -126,7 +126,7 @@ const RecipeProviderString = TrimmedNonEmptyString.pipe(
  * origins, unresolved bookkeeping, and evidence authority are derived by the
  * trusted adapter after this shape decodes.
  */
-export const RecipeProviderToolArguments = Schema.Struct({
+export const RecipeCandidate = Schema.Struct({
   category: Schema.NullOr(RecipeProviderString),
   cookTimeMinutes: Schema.NullOr(SafeInteger),
   cuisine: Schema.NullOr(RecipeProviderString),
@@ -150,104 +150,11 @@ export const RecipeProviderToolArguments = Schema.Struct({
   totalTimeMinutes: Schema.NullOr(SafeInteger),
   yield: Schema.NullOr(RecipeProviderString),
 });
-export type RecipeProviderToolArguments =
-  typeof RecipeProviderToolArguments.Type;
-
-const MissingProviderRecipeFact = {
-  citations: [],
-  origin: "unresolved",
-  reason: "not selected from available evidence",
-  state: "unresolved",
-} as const;
-const MissingProviderRecipeFactList = {
-  items: [],
-  reason: "not selected from available evidence",
-  state: "unresolved",
-} as const;
-
-const selectedProviderRecipeFact = <A>(value: A) => ({
-  citations: [
-    {
-      confidence: 0,
-      evidenceId: "adapter-provider-selection",
-      origin: "observed" as const,
-    },
-  ] as const,
-  origin: "inferred" as const,
-  state: "supported" as const,
-  value,
-});
-
-const selectedProviderRecipeFactList = (values: readonly string[]) => {
-  const selected = values.map(selectedProviderRecipeFact);
-  const [first, ...rest] = selected;
-  return first === undefined
-    ? MissingProviderRecipeFactList
-    : { items: [first, ...rest] as const, state: "supported" as const };
-};
-
-const ProviderUnresolvedFieldBySemanticKey = [
-  ["category", "category"],
-  ["cookTimeMinutes", "cook_time_minutes"],
-  ["cuisine", "cuisine"],
-  ["description", "description"],
-  ["ingredientLines", "ingredient_lines"],
-  ["instructions", "instructions"],
-  ["name", "name"],
-  ["nutrition", "nutrition"],
-  ["prepTimeMinutes", "prep_time_minutes"],
-  ["temperatureCelsius", "temperature_celsius"],
-  ["tools", "tools"],
-  ["totalTimeMinutes", "total_time_minutes"],
-  ["yield", "yield"],
-] as const satisfies readonly (readonly [
-  keyof RecipeProviderToolArguments,
-  RecipeUnresolvedField,
-])[];
-
-/** Lift a decoded provider selection into the existing trusted-grounding input. */
-export const projectRecipeProviderToolArguments = (
-  selection: RecipeProviderToolArguments
-): RecipeExtractionSemantics => {
-  const selectedFact = <A>(value: A | null) =>
-    value === null
-      ? MissingProviderRecipeFact
-      : selectedProviderRecipeFact(value);
-  const semantics = {
-    author: MissingProviderRecipeFact,
-    category: selectedFact(selection.category),
-    cookTimeMinutes: selectedFact(selection.cookTimeMinutes),
-    cuisine: selectedFact(selection.cuisine),
-    description: selectedFact(selection.description),
-    ingredientLines: selectedProviderRecipeFactList(selection.ingredientLines),
-    instructions: selectedProviderRecipeFactList(selection.instructions),
-    name: selectedFact(selection.name),
-    nutrition: selectedFact(selection.nutrition),
-    prepTimeMinutes: selectedFact(selection.prepTimeMinutes),
-    sourceUrl: MissingProviderRecipeFact,
-    supportedClaims: selectedProviderRecipeFactList(selection.supportedClaims),
-    temperatureCelsius: selectedFact(selection.temperatureCelsius),
-    tools: selectedProviderRecipeFactList(selection.tools),
-    totalTimeMinutes: selectedFact(selection.totalTimeMinutes),
-    yield: selectedFact(selection.yield),
-  };
-  return {
-    ...semantics,
-    unresolvedFields: [
-      ...ProviderUnresolvedFieldBySemanticKey.flatMap(
-        ([key, unresolvedField]) =>
-          semantics[key].state === "unresolved" ? [unresolvedField] : []
-      ),
-      "ingredient_quantities",
-      "ingredient_units",
-      "author",
-    ],
-  };
-};
+export type RecipeCandidate = typeof RecipeCandidate.Type;
 
 /** Strict provider-neutral recipe result. Raw adapter output is decoded here. */
 export const RecipeExtraction = Schema.Struct({
-  ...RecipeExtractionSemantics.fields,
+  ...GroundedRecipeFacts.fields,
   cost: Schema.Struct({
     certainty: Schema.Literals(["estimated", "known"]),
     currency: Schema.Literal("USD"),
@@ -297,18 +204,37 @@ export const RecipeExtractorDescriptor = Schema.Struct({
 });
 export type RecipeExtractorDescriptor = typeof RecipeExtractorDescriptor.Type;
 
+export const RecipeExtractionFailureCode = Schema.Literals([
+  "insufficient_evidence",
+  "malformed_response",
+  "model_refusal",
+  "outcome_unknown",
+  "provider_error",
+  "provider_unavailable",
+  "throttled",
+  "timeout",
+]);
+export type RecipeExtractionFailureCode =
+  typeof RecipeExtractionFailureCode.Type;
+
+export const DurableRecipeExtractionFailureCode = Schema.Literals([
+  "insufficient_evidence",
+  "invalid_schema",
+  "model_refusal",
+  "provider_error",
+]);
+export type DurableRecipeExtractionFailureCode =
+  typeof DurableRecipeExtractionFailureCode.Type;
+
 export interface RecipeExtractionFailure {
   readonly _tag: "RecipeExtractionFailure";
-  readonly code:
-    | "insufficient_evidence"
-    | "malformed_response"
-    | "model_refusal"
-    | "outcome_unknown"
-    | "provider_error"
-    | "provider_unavailable"
-    | "throttled"
-    | "timeout";
+  readonly code: RecipeExtractionFailureCode;
 }
+export const RecipeExtractionFailure =
+  // eslint-disable-next-line unicorn/throw-new-error -- Schema.TaggedError is Effect's constructor factory, not a thrown expression.
+  Schema.TaggedError<RecipeExtractionFailure>()("RecipeExtractionFailure", {
+    code: RecipeExtractionFailureCode,
+  });
 
 export interface RecipeExtractorShape {
   readonly descriptor: RecipeExtractorDescriptor;

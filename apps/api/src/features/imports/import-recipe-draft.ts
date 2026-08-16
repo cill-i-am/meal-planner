@@ -6,15 +6,16 @@ import type {
   VerifiedAcquisitionEvidence,
   VerifiedSourceMetadata,
 } from "./import-media.model.js";
-import type { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
+import { Sha256Hex } from "./import-media.model.js";
+import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
   RecipeDispatchClaim,
   RecipeDraftRepositoryShape,
-  RecipeExtractionFailureCode,
 } from "./import-recipe-draft.repository.d1.js";
 import type {
   RecipeEvidenceAssembly,
   RecipeEvidenceItem,
+  RecipeExtractionFailureCode,
   RecipeExtraction,
   RecipeExtractorShape,
   RecipeExtractorDescriptor as RecipeExtractorDescriptorType,
@@ -23,6 +24,7 @@ import type {
   RecipeUnresolvedField,
 } from "./import-recipe-extractor.js";
 import {
+  DurableRecipeExtractionFailureCode,
   decodeRecipeExtraction,
   RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
@@ -35,53 +37,109 @@ import type {
   ImportTransitionError,
 } from "./import.repository.js";
 
+export const RecipeDraftPipelineFailureCode = Schema.Union([
+  DurableRecipeExtractionFailureCode,
+  Schema.Literals([
+    "outcome_unknown",
+    "provider_unavailable",
+    "source_evidence_invalid",
+    "throttled",
+    "timeout",
+  ]),
+]);
+export type RecipeDraftPipelineFailureCode =
+  typeof RecipeDraftPipelineFailureCode.Type;
+
 export interface RecipeDraftPipelineFailure {
   readonly _tag: "RecipeDraftPipelineFailure";
-  readonly code:
-    | RecipeExtractionFailureCode
-    | "outcome_unknown"
-    | "provider_unavailable"
-    | "source_evidence_invalid"
-    | "throttled"
-    | "timeout";
+  readonly code: RecipeDraftPipelineFailureCode;
   readonly reasonCode?: ProviderTaskDiagnosticReasonCode;
 }
+export const RecipeDraftPipelineFailure =
+  // eslint-disable-next-line unicorn/throw-new-error -- Schema.TaggedError is Effect's constructor factory, not a thrown expression.
+  Schema.TaggedError<RecipeDraftPipelineFailure>()(
+    "RecipeDraftPipelineFailure",
+    {
+      code: RecipeDraftPipelineFailureCode,
+      reasonCode: Schema.optionalKey(ProviderTaskDiagnosticReasonCode),
+    }
+  );
 
 const pipelineFailure = (
   code: RecipeDraftPipelineFailure["code"],
   reasonCode?: ProviderTaskDiagnosticReasonCode
-): RecipeDraftPipelineFailure => ({
-  _tag: "RecipeDraftPipelineFailure",
-  code,
-  ...(reasonCode === undefined ? {} : { reasonCode }),
-});
+): RecipeDraftPipelineFailure =>
+  new RecipeDraftPipelineFailure({
+    code,
+    ...(reasonCode === undefined ? {} : { reasonCode }),
+  });
 
-const recipeProviderFailureCode = (
-  code: RecipeExtractorShape["extract"] extends (
-    ...arguments_: never[]
-  ) => Effect.Effect<unknown, infer Failure>
-    ? Failure extends { readonly code: infer Code }
-      ? Code
-      : never
-    : never
-): RecipeDraftPipelineFailure["code"] => {
-  switch (code) {
-    case "insufficient_evidence":
-    case "model_refusal":
-    case "outcome_unknown":
-    case "provider_error": {
-      return code;
-    }
-    case "provider_unavailable":
-    case "throttled":
-    case "timeout": {
-      return code;
-    }
-    default: {
-      return "provider_error";
-    }
-  }
-};
+export const RecipeFailureRecoveryPolicy = Schema.Literals([
+  "dispatch_retry",
+  "durable_recovery",
+  "none",
+  "operator_reconcile",
+]);
+
+export const RecipeExtractionFailureDisposition = Schema.Struct({
+  durableCode: Schema.NullOr(DurableRecipeExtractionFailureCode),
+  pipelineCode: RecipeDraftPipelineFailureCode,
+  recoveryPolicy: RecipeFailureRecoveryPolicy,
+});
+export type RecipeExtractionFailureDisposition =
+  typeof RecipeExtractionFailureDisposition.Type;
+
+const RecipeExtractionFailureDispositionByCode = {
+  insufficient_evidence: {
+    durableCode: "insufficient_evidence",
+    pipelineCode: "insufficient_evidence",
+    recoveryPolicy: "none",
+  },
+  malformed_response: {
+    durableCode: "invalid_schema",
+    pipelineCode: "invalid_schema",
+    recoveryPolicy: "none",
+  },
+  model_refusal: {
+    durableCode: "model_refusal",
+    pipelineCode: "model_refusal",
+    recoveryPolicy: "none",
+  },
+  outcome_unknown: {
+    durableCode: null,
+    pipelineCode: "outcome_unknown",
+    recoveryPolicy: "operator_reconcile",
+  },
+  provider_error: {
+    durableCode: "provider_error",
+    pipelineCode: "provider_error",
+    recoveryPolicy: "durable_recovery",
+  },
+  provider_unavailable: {
+    durableCode: null,
+    pipelineCode: "provider_unavailable",
+    recoveryPolicy: "dispatch_retry",
+  },
+  throttled: {
+    durableCode: null,
+    pipelineCode: "throttled",
+    recoveryPolicy: "dispatch_retry",
+  },
+  timeout: {
+    durableCode: null,
+    pipelineCode: "timeout",
+    recoveryPolicy: "dispatch_retry",
+  },
+} as const satisfies Record<
+  RecipeExtractionFailureCode,
+  RecipeExtractionFailureDisposition
+>;
+
+/** Total, compile-time exhaustive projection into persistence and recovery. */
+export const projectRecipeExtractionFailure = (
+  code: RecipeExtractionFailureCode
+): RecipeExtractionFailureDisposition =>
+  RecipeExtractionFailureDispositionByCode[code];
 
 const completedVisualStatuses = new Set([
   "visual_evidence_empty",
@@ -146,7 +204,10 @@ const bytesToHex = (value: ArrayBuffer) =>
 const sha256Text = (value: string) =>
   Effect.promise(() =>
     crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-  ).pipe(Effect.map(bytesToHex));
+  ).pipe(
+    Effect.map(bytesToHex),
+    Effect.map(Schema.decodeUnknownSync(Sha256Hex))
+  );
 
 const sourceEvidenceItems = (evidence: VerifiedAcquisitionEvidence) => {
   const { source } = evidence;
@@ -448,17 +509,24 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
   )(input.extractor.descriptor).pipe(
     Effect.mapError(() => pipelineFailure("invalid_schema"))
   );
-  const extractionFingerprint =
-    input.extractionFingerprint ??
-    (yield* sha256Text(
-      JSON.stringify({
-        evidenceFingerprint: input.assembly.evidenceFingerprint,
-        extractor: descriptor,
-      })
-    ));
+  const evidenceFingerprint = yield* Schema.decodeUnknownEffect(Sha256Hex)(
+    input.assembly.evidenceFingerprint
+  ).pipe(Effect.mapError(() => pipelineFailure("invalid_schema")));
+  const extractionFingerprintEffect =
+    input.extractionFingerprint === undefined
+      ? sha256Text(
+          JSON.stringify({
+            evidenceFingerprint,
+            extractor: descriptor,
+          })
+        )
+      : Schema.decodeUnknownEffect(Sha256Hex)(input.extractionFingerprint).pipe(
+          Effect.mapError(() => pipelineFailure("invalid_schema"))
+        );
+  const extractionFingerprint = yield* extractionFingerprintEffect;
   const claim = yield* input.claim({
     descriptor,
-    evidenceFingerprint: input.assembly.evidenceFingerprint,
+    evidenceFingerprint,
     extractionFingerprint,
   });
   if (claim._tag === "NeedsReview") {
@@ -472,26 +540,19 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
   }
 
   const raw = yield* input.extractor.extract(input.assembly).pipe(
-    Effect.mapError((failure) =>
-      pipelineFailure(recipeProviderFailureCode(failure.code))
-    ),
-    Effect.catch((error) =>
-      error.code === "outcome_unknown" ||
-      error.code === "provider_unavailable" ||
-      error.code === "throttled" ||
-      error.code === "timeout"
-        ? Effect.fail(error)
+    Effect.catch((error) => {
+      const disposition = projectRecipeExtractionFailure(error.code);
+      const pipelineError = pipelineFailure(disposition.pipelineCode);
+      return disposition.durableCode === null
+        ? Effect.fail(pipelineError)
         : input.recipeRepository
             .fail({
               completedAt: input.now,
               extractionFingerprint,
-              failureCode:
-                error.code === "model_refusal"
-                  ? "model_refusal"
-                  : "provider_error",
+              failureCode: disposition.durableCode,
             })
-            .pipe(Effect.andThen(Effect.fail(error)))
-    )
+            .pipe(Effect.andThen(Effect.fail(pipelineError)));
+    })
   );
   const extraction = yield* decodeRecipeExtraction(raw).pipe(
     Effect.mapError(() => pipelineFailure("invalid_schema")),
@@ -525,7 +586,7 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
     input.transcript.route === "video_v1"
       ? {
           createdAt: input.now,
-          evidenceFingerprint: input.assembly.evidenceFingerprint,
+          evidenceFingerprint,
           extraction,
           extractionFingerprint,
           extractor: descriptor,
@@ -536,7 +597,7 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
         }
       : {
           createdAt: input.now,
-          evidenceFingerprint: input.assembly.evidenceFingerprint,
+          evidenceFingerprint,
           extraction,
           extractionFingerprint,
           extractor: descriptor,

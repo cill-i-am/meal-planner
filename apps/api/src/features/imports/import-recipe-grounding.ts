@@ -1,3 +1,10 @@
+import type {
+  GroundedRecipeFacts,
+  RecipeCandidate,
+  RecipeEvidenceItem,
+  RecipeUnresolvedField,
+} from "./import-recipe-extractor.js";
+
 /**
  * Textual grounding permits presentation-only differences while retaining a
  * strict contiguous-substring evidence boundary.
@@ -207,4 +214,207 @@ export const projectRecipeEvidenceSpan = (
   return best === undefined
     ? null
     : evidence.slice(best.start, best.end).trim();
+};
+
+const MissingRecipeSemanticReason =
+  "not resolved from available evidence" as const;
+const MissingRecipeFact = {
+  citations: [],
+  origin: "unresolved",
+  reason: MissingRecipeSemanticReason,
+  state: "unresolved",
+} as const;
+const MissingRecipeFactList = {
+  items: [],
+  reason: MissingRecipeSemanticReason,
+  state: "unresolved",
+} as const;
+
+const trustedRecipeCitation = (item: RecipeEvidenceItem) => ({
+  confidence: 1,
+  evidenceId: item.evidenceId,
+  origin: item.origin,
+});
+
+const trustedSupportedRecipeFact = <A>(value: A, item: RecipeEvidenceItem) => ({
+  citations: [trustedRecipeCitation(item)] as const,
+  origin: item.origin,
+  state: "supported" as const,
+  value,
+});
+
+const groundedStringEvidence = (
+  value: string,
+  items: readonly RecipeEvidenceItem[]
+) => {
+  const exact = items.find((item) => recipeEvidenceContains(item.value, value));
+  if (exact !== undefined) {
+    return { item: exact, value } as const;
+  }
+  for (const item of items) {
+    if (
+      item.kind !== "caption" &&
+      item.kind !== "transcript" &&
+      item.kind !== "visual_observation"
+    ) {
+      continue;
+    }
+    const projected = projectRecipeEvidenceSpan(item.value, value);
+    if (projected !== null) {
+      return { item, value: projected } as const;
+    }
+  }
+  return null;
+};
+
+const groundRecipeStringFact = (
+  value: string | null,
+  items: readonly RecipeEvidenceItem[]
+) => {
+  if (value === null) {
+    return MissingRecipeFact;
+  }
+  const grounded = groundedStringEvidence(value, items);
+  return grounded === null
+    ? MissingRecipeFact
+    : trustedSupportedRecipeFact(grounded.value, grounded.item);
+};
+
+const exactTimeEvidence = (
+  items: readonly RecipeEvidenceItem[],
+  value: number
+) =>
+  items.find((item) =>
+    new RegExp(`\\b${value}\\s*(?:minutes?|mins?)\\b`, "iu").test(item.value)
+  );
+
+const exactTemperatureEvidence = (
+  items: readonly RecipeEvidenceItem[],
+  value: number
+) =>
+  items.find((item) =>
+    new RegExp(`\\b${value}\\s*(?:°\\s*)?c\\b`, "iu").test(item.value)
+  );
+
+const groundRecipeNumberFact = (
+  value: number | null,
+  items: readonly RecipeEvidenceItem[],
+  findEvidence: (
+    evidence: readonly RecipeEvidenceItem[],
+    candidate: number
+  ) => RecipeEvidenceItem | undefined
+) => {
+  if (value === null) {
+    return MissingRecipeFact;
+  }
+  const evidence = findEvidence(items, value);
+  return evidence === undefined
+    ? MissingRecipeFact
+    : trustedSupportedRecipeFact(value, evidence);
+};
+
+const groundRecipeFactList = (
+  values: readonly string[],
+  items: readonly RecipeEvidenceItem[]
+) => {
+  const grounded = values.flatMap((value) => {
+    const groundedFact = groundedStringEvidence(value, items);
+    return groundedFact === null
+      ? []
+      : [trustedSupportedRecipeFact(groundedFact.value, groundedFact.item)];
+  });
+  const unique = grounded.filter(
+    (fact, index) =>
+      grounded.findIndex((candidate) => candidate.value === fact.value) ===
+      index
+  );
+  const [first, ...rest] = unique;
+  return first === undefined
+    ? MissingRecipeFactList
+    : { items: [first, ...rest] as const, state: "supported" as const };
+};
+
+const trustedEvidenceFact = (
+  items: readonly RecipeEvidenceItem[],
+  kind: "creator" | "source_url"
+) => {
+  const evidence = items.find((item) => item.kind === kind);
+  return evidence === undefined
+    ? MissingRecipeFact
+    : trustedSupportedRecipeFact(evidence.value, evidence);
+};
+
+const UnresolvedFieldByGroundedKey = [
+  ["author", "author"],
+  ["category", "category"],
+  ["cookTimeMinutes", "cook_time_minutes"],
+  ["cuisine", "cuisine"],
+  ["description", "description"],
+  ["ingredientLines", "ingredient_lines"],
+  ["instructions", "instructions"],
+  ["name", "name"],
+  ["nutrition", "nutrition"],
+  ["prepTimeMinutes", "prep_time_minutes"],
+  ["temperatureCelsius", "temperature_celsius"],
+  ["tools", "tools"],
+  ["totalTimeMinutes", "total_time_minutes"],
+  ["yield", "yield"],
+] as const satisfies readonly (readonly [
+  keyof Omit<GroundedRecipeFacts, "unresolvedFields">,
+  RecipeUnresolvedField,
+])[];
+
+/**
+ * The sole authority boundary from decoded provider selections to landed,
+ * evidence-cited recipe facts. Unresolved bookkeeping is derived here once.
+ */
+export const groundRecipeCandidate = (
+  candidate: RecipeCandidate,
+  items: readonly RecipeEvidenceItem[]
+): GroundedRecipeFacts => {
+  const grounded = {
+    author: trustedEvidenceFact(items, "creator"),
+    category: groundRecipeStringFact(candidate.category, items),
+    cookTimeMinutes: groundRecipeNumberFact(
+      candidate.cookTimeMinutes,
+      items,
+      exactTimeEvidence
+    ),
+    cuisine: groundRecipeStringFact(candidate.cuisine, items),
+    description: groundRecipeStringFact(candidate.description, items),
+    ingredientLines: groundRecipeFactList(candidate.ingredientLines, items),
+    instructions: groundRecipeFactList(candidate.instructions, items),
+    name: groundRecipeStringFact(candidate.name, items),
+    nutrition: groundRecipeStringFact(candidate.nutrition, items),
+    prepTimeMinutes: groundRecipeNumberFact(
+      candidate.prepTimeMinutes,
+      items,
+      exactTimeEvidence
+    ),
+    sourceUrl: trustedEvidenceFact(items, "source_url"),
+    supportedClaims: groundRecipeFactList(candidate.supportedClaims, items),
+    temperatureCelsius: groundRecipeNumberFact(
+      candidate.temperatureCelsius,
+      items,
+      exactTemperatureEvidence
+    ),
+    tools: groundRecipeFactList(candidate.tools, items),
+    totalTimeMinutes: groundRecipeNumberFact(
+      candidate.totalTimeMinutes,
+      items,
+      exactTimeEvidence
+    ),
+    yield: groundRecipeStringFact(candidate.yield, items),
+  };
+  const unresolvedFields = UnresolvedFieldByGroundedKey.flatMap(
+    ([key, field]) => (grounded[key].state === "unresolved" ? [field] : [])
+  );
+  return {
+    ...grounded,
+    unresolvedFields: [
+      ...unresolvedFields,
+      "ingredient_quantities",
+      "ingredient_units",
+    ],
+  };
 };

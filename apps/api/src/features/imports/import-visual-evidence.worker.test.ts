@@ -19,6 +19,7 @@ import type {
 } from "./import-media-acquirer.js";
 import {
   AcquisitionGeneration,
+  Sha256Hex,
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
@@ -136,12 +137,14 @@ const sourceMediaSha256 =
   "c43403fe022af967a0b859d3e14ea12d6633f4c8ad475816b0c55d85896e8e35";
 
 const fixtureHash = (value: string) =>
-  Array.from(new TextEncoder().encode(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  )
-    .join("")
-    .padEnd(64, "0")
-    .slice(0, 64);
+  Schema.decodeUnknownSync(Sha256Hex)(
+    Array.from(new TextEncoder().encode(value), (byte) =>
+      byte.toString(16).padStart(2, "0")
+    )
+      .join("")
+      .padEnd(64, "0")
+      .slice(0, 64)
+  );
 
 const makeRecipeExtractorDescriptor = (version: "schema-1" | "schema-2") => ({
   model: "fixture-recipe-v1",

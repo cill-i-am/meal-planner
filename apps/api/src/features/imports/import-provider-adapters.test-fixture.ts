@@ -193,19 +193,6 @@ export const unresolvedList = {
   state: "unresolved",
 } as const;
 
-export const providerCitedString = (value: string) => ({
-  citations: [
-    {
-      confidence: 0.9,
-      evidenceId: "provider-selected-evidence",
-      origin: "creator_provided" as const,
-    },
-  ],
-  origin: "inferred" as const,
-  state: "supported" as const,
-  value,
-});
-
 export const validRecipeSemantics = {
   author: unresolvedString,
   category: unresolvedString,
@@ -275,19 +262,6 @@ export const emptyRecipeProviderSelection = {
   totalTimeMinutes: null,
   yield: null,
 } as const;
-
-export const citedRecipeString = (value: string) => ({
-  citations: [
-    {
-      confidence: 0.9,
-      evidenceId: "transcript-evidence",
-      origin: "creator_provided" as const,
-    },
-  ],
-  origin: "inferred" as const,
-  state: "supported" as const,
-  value,
-});
 
 export const validVisual = {
   cost: {
