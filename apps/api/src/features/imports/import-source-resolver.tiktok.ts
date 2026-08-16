@@ -3,7 +3,7 @@ import { open, rm } from "node:fs/promises";
 // eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
 import { join } from "node:path";
 
-import { Clock, Effect } from "effect";
+import { Clock, Effect, Schema } from "effect";
 
 import type { MediaProcessRunnerShape } from "./import-media-process.js";
 import {
@@ -47,6 +47,29 @@ const invalidMetadata = (): TerminalMediaFailure =>
   new TerminalMediaError({ code: "invalid_media", stage: "resolve" });
 const sourceLimitExceeded = (): TerminalMediaFailure =>
   new TerminalMediaError({ code: "limit_exceeded", stage: "resolve" });
+
+const TikTokProviderMetadataEnvelope = Schema.Struct({
+  _type: Schema.optionalKey(Schema.Unknown),
+  availability: Schema.optionalKey(Schema.Unknown),
+  description: Schema.optionalKey(Schema.Unknown),
+  duration: Schema.optionalKey(Schema.Unknown),
+  entries: Schema.optionalKey(Schema.Unknown),
+  http_headers: Schema.optionalKey(Schema.Unknown),
+  id: Schema.optionalKey(Schema.Unknown),
+  timestamp: Schema.optionalKey(Schema.Unknown),
+  title: Schema.optionalKey(Schema.Unknown),
+  uploader: Schema.optionalKey(Schema.Unknown),
+  uploader_id: Schema.optionalKey(Schema.Unknown),
+  uploader_url: Schema.optionalKey(Schema.Unknown),
+  url: Schema.optionalKey(Schema.Unknown),
+  webpage_url: Schema.optionalKey(Schema.Unknown),
+});
+type TikTokProviderMetadataEnvelope =
+  typeof TikTokProviderMetadataEnvelope.Type;
+
+const decodeTikTokProviderMetadataEnvelope = Schema.decodeUnknownSync(
+  Schema.fromJsonString(TikTokProviderMetadataEnvelope)
+);
 
 const stringOrNull = (value: unknown) =>
   typeof value === "string" && value.trim().length > 0 ? value : null;
@@ -104,10 +127,7 @@ const safeTikTokReferer = (value: string | undefined) => {
   }
 };
 
-const mediaRequestHeaders = (
-  record: Record<string, unknown>
-): MediaRequestHeaders => {
-  const raw = record["http_headers"];
+const mediaRequestHeaders = (raw: unknown): MediaRequestHeaders => {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     return {};
   }
@@ -145,22 +165,14 @@ export const isSafeTikTokMediaLocator = (value: string) => {
   }
 };
 
-const decodeMetadataRecord = (input: Uint8Array) => {
-  const parsed: unknown = JSON.parse(new TextDecoder().decode(input));
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("invalid metadata");
-  }
-  return parsed as Record<string, unknown>;
-};
-
-const classifyMetadata = (record: Record<string, unknown>) => {
-  if (record["_type"] === "playlist" || Array.isArray(record["entries"])) {
+const classifyMetadata = (metadata: TikTokProviderMetadataEnvelope) => {
+  if (metadata._type === "playlist" || Array.isArray(metadata.entries)) {
     return "carousel" as const;
   }
   if (
-    record["availability"] === "needs_auth" ||
-    record["availability"] === "private" ||
-    record["availability"] === "subscriber_only"
+    metadata.availability === "needs_auth" ||
+    metadata.availability === "private" ||
+    metadata.availability === "subscriber_only"
   ) {
     return "unavailable" as const;
   }
@@ -168,12 +180,12 @@ const classifyMetadata = (record: Record<string, unknown>) => {
 };
 
 const validatedSourceFields = (
-  record: Record<string, unknown>,
+  metadata: TikTokProviderMetadataEnvelope,
   identity: TikTokIdentity
 ) => {
-  const id = stringOrNull(record["id"]);
-  const canonicalUrl = stringOrNull(record["webpage_url"]);
-  const mediaLocator = stringOrNull(record["url"]);
+  const id = stringOrNull(metadata.id);
+  const canonicalUrl = stringOrNull(metadata.webpage_url);
+  const mediaLocator = stringOrNull(metadata.url);
   if (
     id !== identity.canonicalId ||
     canonicalUrl === null ||
@@ -203,13 +215,75 @@ const validatedSourceFields = (
   };
 };
 
-const creatorHandle = (record: Record<string, unknown>) => {
-  const uploaderUrl = stringOrNull(record["uploader_url"]);
+const creatorHandle = (uploaderUrlValue: unknown) => {
+  const uploaderUrl = stringOrNull(uploaderUrlValue);
   if (uploaderUrl === null) {
     return null;
   }
   const match = /^\/@(?<handle>[^/]+)$/u.exec(new URL(uploaderUrl).pathname);
   return match?.groups?.["handle"] ?? null;
+};
+
+type TikTokProviderMetadata =
+  | { readonly _tag: "carousel" }
+  | { readonly _tag: "limit" }
+  | { readonly _tag: "unavailable" }
+  | {
+      readonly _tag: "video";
+      readonly canonicalUrl: string;
+      readonly caption: string | null;
+      readonly creator: {
+        readonly displayName: string | null;
+        readonly handle: string | null;
+        readonly id: string | null;
+      };
+      readonly mediaLocator: string;
+      readonly publishedAt: string | null;
+      readonly requestHeaders: MediaRequestHeaders;
+    };
+
+const decodeTikTokProviderMetadata = (
+  input: Uint8Array,
+  identity: TikTokIdentity
+): TikTokProviderMetadata => {
+  const metadata = decodeTikTokProviderMetadataEnvelope(
+    new TextDecoder().decode(input)
+  );
+  const classification = classifyMetadata(metadata);
+  if (classification === "carousel") {
+    return { _tag: "carousel" };
+  }
+  if (classification === "unavailable") {
+    return { _tag: "unavailable" };
+  }
+  const { canonicalUrl, mediaLocator } = validatedSourceFields(
+    metadata,
+    identity
+  );
+  if (
+    typeof metadata.duration === "number" &&
+    Number.isFinite(metadata.duration) &&
+    metadata.duration > MaximumMediaDurationSeconds
+  ) {
+    return { _tag: "limit" };
+  }
+  const { timestamp } = metadata;
+  return {
+    _tag: "video",
+    canonicalUrl,
+    caption: stringOrNull(metadata.description) ?? stringOrNull(metadata.title),
+    creator: {
+      displayName: stringOrNull(metadata.uploader),
+      handle: creatorHandle(metadata.uploader_url),
+      id: stringOrNull(metadata.uploader_id),
+    },
+    mediaLocator,
+    publishedAt:
+      typeof timestamp === "number" && Number.isSafeInteger(timestamp)
+        ? new Date(timestamp * 1000).toISOString()
+        : null,
+    requestHeaders: mediaRequestHeaders(metadata.http_headers),
+  };
 };
 
 const parseMetadata = Effect.fn("ImportMedia.parseTikTokMetadata")(
@@ -218,70 +292,43 @@ const parseMetadata = Effect.fn("ImportMedia.parseTikTokMetadata")(
     identity: TikTokIdentity
   ) {
     const currentTimeMillis = yield* Clock.currentTimeMillis;
-    return yield* Effect.try({
+    const decoded = yield* Effect.try({
       catch: invalidMetadata,
-      try: () => {
-        const record = decodeMetadataRecord(input);
-        const classification = classifyMetadata(record);
-        if (classification === "carousel") {
-          return { _tag: "carousel" as const };
-        }
-        if (classification === "unavailable") {
-          return { _tag: "unavailable" as const };
-        }
-        const { canonicalUrl, mediaLocator } = validatedSourceFields(
-          record,
-          identity
-        );
-        const requestHeaders = mediaRequestHeaders(record);
-        if (
-          typeof record["duration"] === "number" &&
-          Number.isFinite(record["duration"]) &&
-          record["duration"] > MaximumMediaDurationSeconds
-        ) {
-          return { _tag: "limit" as const };
-        }
-        const { timestamp } = record;
-        const publishedAt =
-          typeof timestamp === "number" && Number.isSafeInteger(timestamp)
-            ? new Date(timestamp * 1000).toISOString()
-            : null;
-        const caption =
-          stringOrNull(record["description"]) ?? stringOrNull(record["title"]);
-        const displayName = stringOrNull(record["uploader"]);
-        const creatorId = stringOrNull(record["uploader_id"]);
-        const handle = creatorHandle(record);
-        return {
-          _tag: "video" as const,
-          mediaLocator,
-          metadata: {
-            canonicalId: identity.canonicalId,
-            canonicalUrl,
-            caption,
-            creator: {
-              displayName,
-              handle,
-              id: creatorId,
-            },
-            observedAt: new Date(currentTimeMillis).toISOString(),
-            provenance: {
-              canonicalUrl: "provider_observed" as const,
-              caption: caption === null ? null : ("creator_provided" as const),
-              creator: {
-                displayName:
-                  displayName === null ? null : ("provider_observed" as const),
-                handle: handle === null ? null : ("provider_observed" as const),
-                id: creatorId === null ? null : ("provider_observed" as const),
-              },
-              publishedAt:
-                publishedAt === null ? null : ("provider_observed" as const),
-            },
-            publishedAt,
-          },
-          requestHeaders,
-        };
-      },
+      try: () => decodeTikTokProviderMetadata(input, identity),
     });
+    if (decoded._tag !== "video") {
+      return decoded;
+    }
+    const { canonicalUrl, caption, creator, mediaLocator, publishedAt } =
+      decoded;
+    return {
+      _tag: "video" as const,
+      mediaLocator,
+      metadata: {
+        canonicalId: identity.canonicalId,
+        canonicalUrl,
+        caption,
+        creator,
+        observedAt: new Date(currentTimeMillis).toISOString(),
+        provenance: {
+          canonicalUrl: "provider_observed" as const,
+          caption: caption === null ? null : ("creator_provided" as const),
+          creator: {
+            displayName:
+              creator.displayName === null
+                ? null
+                : ("provider_observed" as const),
+            handle:
+              creator.handle === null ? null : ("provider_observed" as const),
+            id: creator.id === null ? null : ("provider_observed" as const),
+          },
+          publishedAt:
+            publishedAt === null ? null : ("provider_observed" as const),
+        },
+        publishedAt,
+      },
+      requestHeaders: decoded.requestHeaders,
+    };
   }
 );
 

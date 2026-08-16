@@ -327,6 +327,9 @@ describe("TikTok source resolver adapter", () => {
       [
         { availability: "needs_auth", id: identity.canonicalId },
         { malformed: "provider-secret-fragment" },
+        null,
+        ["provider-secret-fragment"],
+        "provider-secret-fragment",
       ].map(async (metadata) => {
         const fixture = makeRunner(metadata);
         const exit = await Effect.runPromiseExit(
