@@ -1,6 +1,20 @@
+import type {
+  CanonicalTikTokUrl,
+  Instant,
+  RecipeImportIntent,
+  RecipeImportIntentId,
+  SourceUrl,
+} from "@meal-planner/recipe-import-api";
 import type { Effect, Option } from "effect";
 import { Context, Schema } from "effect";
 
+import type {
+  ImportPrincipal,
+  RecipeImportIntentIdempotencyConflict,
+  RecipeImportIntentNotFound,
+  RecipeImportIntentRedirected,
+  RecipeImportIntentTransitionRejected,
+} from "./import-intent.js";
 import type {
   AcquisitionGeneration,
   ClassifiedAcquisitionFailure,
@@ -72,6 +86,70 @@ export interface AcceptImportCommand {
 export interface AcceptImportResult {
   readonly disposition: ImportDisposition;
   readonly import: StoredImport;
+}
+
+export interface StoredImportIntentRequest {
+  readonly idempotencyKeyHash: IdempotencyKeyHash;
+  readonly intent: RecipeImportIntent;
+  readonly requestFingerprint: RequestFingerprint;
+}
+
+export interface AdmitImportIntentCommand {
+  readonly createdAt: Instant;
+  readonly idempotencyKeyHash: IdempotencyKeyHash;
+  readonly intentId: RecipeImportIntentId;
+  readonly principal: ImportPrincipal;
+  readonly requestFingerprint: RequestFingerprint;
+  readonly sourceLocatorHash: SourceLocatorHash;
+  readonly submittedSourceUrl: SourceUrl;
+}
+
+export interface AdmitImportIntentResult {
+  readonly disposition: "created" | "idempotency_replay";
+  readonly intent: RecipeImportIntent;
+}
+
+export interface ResolveImportIntentSourceCommand {
+  readonly canonicalSourceId: SourceCanonicalId;
+  readonly canonicalUrl: CanonicalTikTokUrl;
+  readonly intentId: RecipeImportIntentId;
+  readonly resolvedAt: Instant;
+  readonly sourceKind: "video" | "carousel";
+}
+
+export type ImportIntentRepositoryError =
+  | ImportPersistenceCorrupt
+  | ImportPersistenceUnavailable
+  | RecipeImportIntentIdempotencyConflict
+  | RecipeImportIntentNotFound
+  | RecipeImportIntentRedirected
+  | RecipeImportIntentTransitionRejected;
+
+export interface ImportIntentRepositoryShape {
+  readonly admitIntent: (
+    command: AdmitImportIntentCommand
+  ) => Effect.Effect<AdmitImportIntentResult, ImportIntentRepositoryError>;
+  readonly findIntent: (
+    principal: ImportPrincipal,
+    intentId: RecipeImportIntentId
+  ) => Effect.Effect<
+    Option.Option<RecipeImportIntent>,
+    ImportPersistenceCorrupt | ImportPersistenceUnavailable
+  >;
+  readonly requireMutableIntent: (
+    principal: ImportPrincipal,
+    intentId: RecipeImportIntentId
+  ) => Effect.Effect<
+    RecipeImportIntent,
+    | ImportPersistenceCorrupt
+    | ImportPersistenceUnavailable
+    | RecipeImportIntentNotFound
+    | RecipeImportIntentRedirected
+  >;
+  readonly resolveIntentSource: (
+    principal: ImportPrincipal,
+    command: ResolveImportIntentSourceCommand
+  ) => Effect.Effect<RecipeImportIntent, ImportIntentRepositoryError>;
 }
 
 export type ImportRepositoryError =

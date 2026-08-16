@@ -5,12 +5,12 @@ resource identity is the `MealPlannerApi` Cloudflare Worker. Recipe imports add
 the `MealPlannerDatabase` D1 resource. Changing any of these logical IDs is a
 resource-identity decision and must not be treated as a cosmetic rename.
 
-The pinned infrastructure toolchain is Alchemy `2.0.0-beta.63`, Effect and
-`@effect/platform-node` `4.0.0-beta.99`, Node `>=22.18.0`, and pnpm `11.7.0`.
+The pinned infrastructure toolchain is Alchemy `2.0.0-beta.72`, Effect and
+`@effect/platform-node` `4.0.0-rc.109`, Node `>=22.18.0`, and pnpm `11.7.0`.
 CI runs Node `22.19.0`.
 
 Version-sensitive APIs were checked against the installed package and the
-official [`v2.0.0-beta.63` source tag](https://github.com/alchemy-run/alchemy/tree/v2.0.0-beta.63).
+official [`v2.0.0-beta.72` source tag](https://github.com/alchemy-run/alchemy/tree/v2.0.0-beta.72).
 
 ## Stages, profiles, and accounts
 
@@ -48,7 +48,7 @@ Before the first real command, an operator must:
 1. name the Cloudflare account and profile;
 2. independently verify the account selected by the profile;
 3. obtain explicit approval for the state bootstrap or upgrade;
-4. follow the command printed by the pinned Alchemy CLI (v2.0.0-beta.63 uses
+4. follow the command printed by the pinned Alchemy CLI (v2.0.0-beta.72 uses
    `pnpm alchemy cloudflare bootstrap --profile <profile>`); and
 5. record the created shared state infrastructure and its owner.
 

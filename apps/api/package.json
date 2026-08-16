@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-rc.109",
+    "@meal-planner/recipe-import-api": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "4.0.0-rc.109",
     "graphql": "16.11.0",

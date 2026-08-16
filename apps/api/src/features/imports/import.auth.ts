@@ -1,5 +1,7 @@
 import { Context, Effect, Redacted } from "effect";
 
+import { LegacyPrivateImportPrincipal } from "./import-intent.js";
+import type { ImportPrincipal } from "./import-intent.js";
 import { unauthorizedImportCaller } from "./import.errors.js";
 import type { UnauthorizedImportCaller } from "./import.errors.js";
 
@@ -26,7 +28,7 @@ const bearerToken = (authorization: string | undefined) => {
 export interface ImportAuthorizerShape {
   readonly authorize: (
     authorization: string | undefined
-  ) => Effect.Effect<void, UnauthorizedImportCaller>;
+  ) => Effect.Effect<ImportPrincipal, UnauthorizedImportCaller>;
 }
 
 export const makeImportAuthorizer = (
@@ -63,7 +65,9 @@ export const makeImportAuthorizer = (
             );
           }),
           (matches) =>
-            matches ? Effect.void : Effect.fail(unauthorizedImportCaller())
+            matches
+              ? Effect.succeed(LegacyPrivateImportPrincipal)
+              : Effect.fail(unauthorizedImportCaller())
         );
       },
     })

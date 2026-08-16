@@ -1,3 +1,8 @@
+import { PlanningTags as PlanningTagsSchema } from "@meal-planner/recipe-import-api";
+import type {
+  CorrectedRecipe as CorrectedRecipeType,
+  PlanningTags as PlanningTagsType,
+} from "@meal-planner/recipe-import-api";
 import { Context, DateTime, Effect, Option, Schema } from "effect";
 
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
@@ -14,6 +19,15 @@ import type {
 import { importPersistenceCorrupt } from "./import.errors.js";
 
 export { importPersistenceUnavailable as recipeReviewPersistenceUnavailable } from "./import.errors.js";
+export {
+  CorrectedRecipe,
+  PlanningDietaryFit,
+  PlanningDifficulty,
+  PlanningLeftovers,
+  PlanningMealType,
+  PlanningTags,
+  PlanningTotalTimeBand,
+} from "@meal-planner/recipe-import-api";
 
 const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
@@ -93,54 +107,6 @@ const RecipeCorrectionDetails = {
 const RecipeCorrectionRequestDetails = {
   reason: ShortText,
 } as const;
-
-export const PlanningDietaryFit = Schema.Literals([
-  "household_match",
-  "needs_adaptation",
-  "not_suitable",
-]);
-export type PlanningDietaryFit = typeof PlanningDietaryFit.Type;
-
-export const PlanningDifficulty = Schema.Literals(["easy", "medium", "hard"]);
-export type PlanningDifficulty = typeof PlanningDifficulty.Type;
-
-export const PlanningLeftovers = Schema.Literals([
-  "none",
-  "one_meal",
-  "two_plus_meals",
-]);
-export type PlanningLeftovers = typeof PlanningLeftovers.Type;
-
-export const PlanningMealType = Schema.Literals([
-  "breakfast",
-  "lunch",
-  "dinner",
-  "snack",
-  "dessert",
-]);
-export type PlanningMealType = typeof PlanningMealType.Type;
-
-export const PlanningTotalTimeBand = Schema.Literals([
-  "under_30_minutes",
-  "30_to_60_minutes",
-  "over_60_minutes",
-  "unknown",
-]);
-export type PlanningTotalTimeBand = typeof PlanningTotalTimeBand.Type;
-
-export const PlanningTags = Schema.Struct({
-  cuisines: Schema.NonEmptyArray(TrimmedNonEmptyString).pipe(
-    Schema.check(Schema.isMaxLength(8))
-  ),
-  dietaryFit: PlanningDietaryFit,
-  difficulty: PlanningDifficulty,
-  leftovers: PlanningLeftovers,
-  mealTypes: Schema.NonEmptyArray(PlanningMealType).pipe(
-    Schema.check(Schema.isMaxLength(5))
-  ),
-  totalTimeBand: PlanningTotalTimeBand,
-});
-export type PlanningTags = typeof PlanningTags.Type;
 
 export const RecipeCorrection = Schema.Union([
   Schema.Struct({
@@ -235,26 +201,6 @@ export const RecipeReviewLifecycle = Schema.Literals([
 ]);
 export type RecipeReviewLifecycle = typeof RecipeReviewLifecycle.Type;
 
-export const CorrectedRecipe = Schema.Struct({
-  author: Schema.NullOr(ShortText),
-  category: Schema.NullOr(ShortText),
-  cookTimeMinutes: Schema.NullOr(SafeInteger),
-  cuisine: Schema.NullOr(ShortText),
-  description: Schema.NullOr(ShortText),
-  ingredientLines: Schema.NullOr(Schema.NonEmptyArray(ShortText)),
-  ingredientQuantities: Schema.NullOr(Schema.NonEmptyArray(ShortText)),
-  ingredientUnits: Schema.NullOr(Schema.NonEmptyArray(ShortText)),
-  instructions: Schema.NullOr(Schema.NonEmptyArray(ShortText)),
-  name: Schema.NullOr(ShortText),
-  nutrition: Schema.NullOr(ShortText),
-  prepTimeMinutes: Schema.NullOr(SafeInteger),
-  temperatureCelsius: Schema.NullOr(SafeInteger),
-  tools: Schema.NullOr(Schema.NonEmptyArray(ShortText)),
-  totalTimeMinutes: Schema.NullOr(SafeInteger),
-  yield: Schema.NullOr(ShortText),
-});
-export type CorrectedRecipe = typeof CorrectedRecipe.Type;
-
 export const ApprovalBlockers = Schema.Struct({
   invalidFields: Schema.Array(RecipeUnresolvedField),
   unresolvedRequiredFields: Schema.Array(RecipeUnresolvedField),
@@ -267,7 +213,7 @@ export const RecipeReviewView = Schema.Struct({
   evidence: Schema.Array(EvidenceReference),
   lifecycle: RecipeReviewLifecycle,
   nullablePolicy: Schema.Array(RecipeUnresolvedField),
-  tags: Schema.NullOr(PlanningTags),
+  tags: Schema.NullOr(PlanningTagsSchema),
   transitions: Schema.Array(RecipeReviewTransition),
   unresolvedRequiredFields: Schema.Array(RecipeUnresolvedField),
   version: RecipeReviewVersion,
@@ -296,7 +242,7 @@ export const CorrectRecipeDraftRequest = Schema.Struct({
   ]),
   expectedVersion: RecipeReviewVersion,
   mutationId: RecipeReviewMutationId,
-  tags: PlanningTags,
+  tags: PlanningTagsSchema,
 });
 export type CorrectRecipeDraftRequest = typeof CorrectRecipeDraftRequest.Type;
 
@@ -316,7 +262,7 @@ export const RecipeReviewCommand = Schema.TaggedUnion({
     extractionFingerprint: Schema.String.pipe(
       Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
     ),
-    tags: PlanningTags,
+    tags: PlanningTagsSchema,
   },
   Transition: {
     actorId: RecipeReviewerActorId,
@@ -401,7 +347,7 @@ export const ApprovedRecipe = Schema.Struct({
     evidenceFingerprint: Schema.String,
     sourceUrl: Schema.NullOr(ShortText),
   }),
-  tags: PlanningTags,
+  tags: PlanningTagsSchema,
   version: RecipeReviewVersion,
 });
 export type ApprovedRecipe = typeof ApprovedRecipe.Type;
@@ -414,7 +360,7 @@ export const Review = Schema.TaggedUnion({
     evidence: Schema.Array(EvidenceReference),
     lifecycle: Schema.Literal("approved"),
     recipe: ApprovedRecipe.fields.recipe,
-    tags: PlanningTags,
+    tags: PlanningTagsSchema,
   },
   NeedsReview: {
     ...RecipeReviewView.fields,
@@ -493,13 +439,13 @@ const listValue = (fact: RecipeDraft["extraction"]["ingredientLines"]) =>
     : null;
 
 type MutableCorrectedRecipe = {
-  -readonly [K in keyof CorrectedRecipe]: CorrectedRecipe[K];
+  -readonly [K in keyof CorrectedRecipeType]: CorrectedRecipeType[K];
 };
 
 export const applyCorrectionOverlay = (
   draft: RecipeDraft,
   corrections: readonly RecipeCorrection[]
-): CorrectedRecipe => {
+): CorrectedRecipeType => {
   const { extraction } = draft;
   const recipe: MutableCorrectedRecipe = {
     author: factValue(extraction.author),
@@ -759,8 +705,8 @@ export interface RecipeReviewRepositoryShape {
     readonly expectedVersion: RecipeReviewVersion;
     readonly extractionFingerprint: string;
     readonly mutationId: RecipeReviewMutationId;
-    readonly previousTags: PlanningTags | null;
-    readonly tags: PlanningTags;
+    readonly previousTags: PlanningTagsType | null;
+    readonly tags: PlanningTagsType;
   }) => Effect.Effect<RecipeReviewMutationOutcome, RecipeReviewWriteError>;
   readonly find: (
     importId: ImportId

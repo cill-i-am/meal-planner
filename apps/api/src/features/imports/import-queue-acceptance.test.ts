@@ -177,8 +177,6 @@ beforeEach(async () => {
     database.prepare("DELETE FROM import_dead_letters"),
     database.prepare("DELETE FROM import_batch_items"),
     database.prepare("DELETE FROM import_batches"),
-    database.prepare("DELETE FROM import_requests"),
-    database.prepare("DELETE FROM recipe_imports"),
   ]);
 });
 
