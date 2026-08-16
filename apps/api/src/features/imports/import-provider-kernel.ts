@@ -569,12 +569,78 @@ export const isUnknownRecord = (
 ): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const WorkersAiProviderResponseEnvelope = Schema.Struct({
+  choices: Schema.optionalKey(Schema.Unknown),
+  tool_calls: Schema.optionalKey(Schema.Unknown),
+});
+type WorkersAiProviderResponseEnvelope =
+  typeof WorkersAiProviderResponseEnvelope.Type;
+const decodeWorkersAiProviderResponseEnvelope = Schema.decodeUnknownOption(
+  WorkersAiProviderResponseEnvelope,
+  { onExcessProperty: "preserve" }
+);
+
+const ProviderToolCallEnvelope = Schema.Struct({
+  arguments: Schema.optionalKey(Schema.Unknown),
+  function: Schema.optionalKey(Schema.Unknown),
+  id: Schema.optionalKey(Schema.Unknown),
+  name: Schema.optionalKey(Schema.Unknown),
+  type: Schema.optionalKey(Schema.Unknown),
+});
+type ProviderToolCallEnvelope = typeof ProviderToolCallEnvelope.Type;
+const decodeProviderToolCallEnvelope = Schema.decodeUnknownOption(
+  ProviderToolCallEnvelope
+);
+
+const ProviderToolFunctionEnvelope = Schema.Struct({
+  arguments: Schema.optionalKey(Schema.Unknown),
+  name: Schema.optionalKey(Schema.Unknown),
+});
+type ProviderToolFunctionEnvelope = typeof ProviderToolFunctionEnvelope.Type;
+const decodeProviderToolFunctionEnvelope = Schema.decodeUnknownOption(
+  ProviderToolFunctionEnvelope
+);
+
+const OpenAiProviderChoiceEnvelope = Schema.Struct({
+  message: Schema.Unknown,
+});
+type OpenAiProviderChoiceEnvelope = typeof OpenAiProviderChoiceEnvelope.Type;
+const decodeOpenAiProviderChoiceEnvelope = Schema.decodeUnknownOption(
+  OpenAiProviderChoiceEnvelope,
+  { onExcessProperty: "preserve" }
+);
+
+const OpenAiProviderMessageEnvelope = Schema.Struct({
+  tool_calls: Schema.optionalKey(Schema.Unknown),
+});
+type OpenAiProviderMessageEnvelope = typeof OpenAiProviderMessageEnvelope.Type;
+const decodeOpenAiProviderMessageEnvelope = Schema.decodeUnknownOption(
+  OpenAiProviderMessageEnvelope,
+  { onExcessProperty: "preserve" }
+);
+
+type CanonicalProviderToolCall =
+  | {
+      readonly arguments?: unknown;
+      readonly id?: string;
+      readonly name: string;
+      readonly type?: string;
+    }
+  | {
+      readonly function: {
+        readonly arguments?: unknown;
+        readonly name: string;
+      };
+      readonly id?: string;
+      readonly type?: string;
+    };
+
 type RawToolCallAuthority =
   | { readonly _tag: "Absent" }
   | {
       readonly _tag: "Call";
       readonly arguments: unknown;
-      readonly call: Record<string, unknown>;
+      readonly call: CanonicalProviderToolCall;
       readonly name: string;
     }
   | { readonly _tag: "Invalid" };
@@ -596,7 +662,7 @@ export const comparableToolArguments = (value: unknown): unknown => {
 };
 
 const decodeFlatRawToolCall = (
-  value: Record<string, unknown>
+  value: ProviderToolCallEnvelope
 ): RawToolCallAuthority => {
   const { arguments: toolArguments, id, name, type } = value;
   if (typeof name !== "string" || name.length === 0) {
@@ -617,8 +683,8 @@ const decodeFlatRawToolCall = (
 };
 
 const decodeNestedRawToolCall = (
-  value: Record<string, unknown>,
-  functionValue: Record<string, unknown>
+  value: ProviderToolCallEnvelope,
+  functionValue: ProviderToolFunctionEnvelope
 ): RawToolCallAuthority => {
   const { arguments: flatArguments, id, name: flatName, type } = value;
   const hasFlatName = Object.hasOwn(value, "name");
@@ -669,15 +735,18 @@ const decodeNestedRawToolCall = (
 };
 
 const decodeRawToolCall = (value: unknown): RawToolCallAuthority => {
-  if (!isUnknownRecord(value)) {
+  const decoded = decodeProviderToolCallEnvelope(value);
+  if (Option.isNone(decoded)) {
     return { _tag: "Invalid" };
   }
-  const { function: functionValue } = value;
+  const providerCall = decoded.value;
+  const { function: functionValue } = providerCall;
   if (functionValue === undefined || functionValue === null) {
-    return decodeFlatRawToolCall(value);
+    return decodeFlatRawToolCall(providerCall);
   }
-  return isUnknownRecord(functionValue)
-    ? decodeNestedRawToolCall(value, functionValue)
+  const decodedFunction = decodeProviderToolFunctionEnvelope(functionValue);
+  return Option.isSome(decodedFunction)
+    ? decodeNestedRawToolCall(providerCall, decodedFunction.value)
     : { _tag: "Invalid" };
 };
 
@@ -707,23 +776,11 @@ const sameRawToolAuthority = (
     comparableToolArguments(right.arguments)
   );
 
-export interface ProviderTransportNormalizer {
-  readonly root?: (value: unknown) => unknown;
-  readonly toolCall?: (call: ProviderRawToolCall) => ProviderRawToolCall;
-}
-
-export class ProviderNormalizationRejectionError extends Error {
-  constructor(decodeReason: ProviderDecodeReason) {
-    super(`${ProviderNormalizationInvalidMessage}:${decodeReason}`);
-    this.name = "ProviderNormalizationRejectionError";
-  }
-}
-
 interface OpenAiToolAuthority {
   readonly authority: RawToolCallAuthority;
   readonly choice?: {
-    readonly choice: Record<string, unknown>;
-    readonly message: Record<string, unknown>;
+    readonly choice: OpenAiProviderChoiceEnvelope;
+    readonly message: OpenAiProviderMessageEnvelope;
   };
 }
 
@@ -738,27 +795,31 @@ const decodeOpenAiToolAuthority = (choices: unknown): OpenAiToolAuthority => {
   if (choice === undefined) {
     return { authority: { _tag: "Absent" } };
   }
-  if (!isUnknownRecord(choice)) {
+  const decodedChoice = decodeOpenAiProviderChoiceEnvelope(choice);
+  if (Option.isNone(decodedChoice)) {
     throw new Error(ProviderNormalizationInvalidMessage);
   }
-  const { message } = choice;
-  if (!isUnknownRecord(message)) {
+  const decodedMessage = decodeOpenAiProviderMessageEnvelope(
+    decodedChoice.value.message
+  );
+  if (Option.isNone(decodedMessage)) {
     throw new Error(ProviderNormalizationInvalidMessage);
   }
-  const authority = decodeRawToolCalls(message["tool_calls"]);
+  const authority = decodeRawToolCalls(decodedMessage.value.tool_calls);
   if (authority._tag === "Invalid") {
     throw new Error(ProviderNormalizationInvalidMessage);
   }
-  return { authority, choice: { choice, message } };
+  return {
+    authority,
+    choice: {
+      choice: decodedChoice.value,
+      message: decodedMessage.value,
+    },
+  };
 };
 
-const canonicalToolCall = (
-  call: ProviderRawToolCall,
-  normalizer: ProviderTransportNormalizer | undefined
-): ProviderRawToolCall => normalizer?.toolCall?.(call) ?? call;
-
 const withOpenAiToolCall = (
-  value: Record<string, unknown>,
+  value: WorkersAiProviderResponseEnvelope,
   openAiChoice: NonNullable<OpenAiToolAuthority["choice"]>,
   call: ProviderRawToolCall
 ): Record<string, unknown> => {
@@ -778,7 +839,7 @@ const withOpenAiToolCall = (
 };
 
 const withNativeToolCall = (
-  value: Record<string, unknown>,
+  value: WorkersAiProviderResponseEnvelope,
   choices: unknown,
   call: ProviderRawToolCall
 ): Record<string, unknown> => {
@@ -790,15 +851,14 @@ const withNativeToolCall = (
     : canonicalNative;
 };
 
-const normalizeRawToolShape = (
-  value: unknown,
-  normalizer: ProviderTransportNormalizer | undefined
-): unknown => {
-  if (!isUnknownRecord(value)) {
+const normalizeRawToolShape = (value: unknown): unknown => {
+  const decoded = decodeWorkersAiProviderResponseEnvelope(value);
+  if (Option.isNone(decoded)) {
     return value;
   }
 
-  const { choices, tool_calls: nativeToolCalls } = value;
+  const providerResponse = decoded.value;
+  const { choices, tool_calls: nativeToolCalls } = providerResponse;
   const nativeAuthority = decodeRawToolCalls(nativeToolCalls);
   if (nativeAuthority._tag === "Invalid") {
     throw new Error(ProviderNormalizationInvalidMessage);
@@ -816,26 +876,22 @@ const normalizeRawToolShape = (
 
   if (openAi.authority._tag === "Call" && openAi.choice !== undefined) {
     return withOpenAiToolCall(
-      value,
+      providerResponse,
       openAi.choice,
-      canonicalToolCall(openAi.authority, normalizer)
+      openAi.authority
     );
   }
 
   if (nativeAuthority._tag === "Call") {
-    const call = canonicalToolCall(nativeAuthority, normalizer);
     return openAi.choice === undefined
-      ? withNativeToolCall(value, choices, call)
-      : withOpenAiToolCall(value, openAi.choice, call);
+      ? withNativeToolCall(providerResponse, choices, nativeAuthority)
+      : withOpenAiToolCall(providerResponse, openAi.choice, nativeAuthority);
   }
 
-  return value;
+  return providerResponse;
 };
 
-const withProviderNormalizationBoundary = (
-  response: Response,
-  normalizer: ProviderTransportNormalizer | undefined
-): Response => {
+const withProviderNormalizationBoundary = (response: Response): Response => {
   const parseJson = response.json.bind(response);
   return new Proxy(response, {
     get: (target, property) => {
@@ -851,16 +907,11 @@ const withProviderNormalizationBoundary = (
             throw new Error(ProviderNormalizationBodyInvalidMessage);
           }
           try {
-            const normalizedRoot = normalizer?.root?.(raw) ?? raw;
-            return normalizeRawToolShape(normalizedRoot, normalizer);
-          } catch (error) {
+            return normalizeRawToolShape(raw);
+          } catch {
             // Provider payloads and parser details must not cross the
             // observability boundary. Alchemy preserves this closed
             // description inside its typed AiError.UnknownError.
-            if (error instanceof ProviderNormalizationRejectionError) {
-              throw error;
-            }
-            // eslint-disable-next-line preserve-caught-error -- Provider payloads and parser details must not cross this privacy boundary, including as Error.cause.
             throw new Error(ProviderNormalizationInvalidMessage);
           }
         };
@@ -882,8 +933,7 @@ export const noLogWorkersAiClient = (
   client: QueryGatewayClient,
   correlationId: ImportCorrelationId,
   providerStage: "recipe" | "visual",
-  traceStore: ImportObservabilityTraceStoreShape | undefined,
-  normalizer?: ProviderTransportNormalizer
+  traceStore: ImportObservabilityTraceStoreShape | undefined
 ): QueryGatewayClient => ({
   ...client,
   raw: Effect.all([client.raw, client.id]).pipe(
@@ -917,7 +967,7 @@ export const noLogWorkersAiClient = (
                 traceStore
               )
             );
-            return withProviderNormalizationBoundary(response, normalizer);
+            return withProviderNormalizationBoundary(response);
           },
         }) as WorkersAiBinding
     )
