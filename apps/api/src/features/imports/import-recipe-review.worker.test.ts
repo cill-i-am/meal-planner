@@ -8,8 +8,10 @@ import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
 import {
   CorrectRecipeDraftRequest,
   PlanningTags,
+  RecipeReviewMutationId,
   RecipeReviewView,
   RecipeReviewerActorId,
+  TransitionRecipeDraftRequest,
   makeRecipeReviewService,
   recipeReviewNullablePolicy,
 } from "./import-recipe-review.js";
@@ -32,6 +34,7 @@ const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
 const decodeActor = Schema.decodeUnknownSync(RecipeReviewerActorId);
+const decodeMutationId = Schema.decodeUnknownSync(RecipeReviewMutationId);
 const decodeTags = Schema.decodeUnknownSync(PlanningTags);
 
 const actorId = decodeActor("private_api_credential");
@@ -43,6 +46,14 @@ const tags = decodeTags({
   mealTypes: ["dinner"],
   totalTimeBand: "30_to_60_minutes",
 });
+
+const expectAppliedReview = (outcome: {
+  readonly _tag: "Applied" | "Replayed";
+  readonly review: RecipeReviewView;
+}) => {
+  expect(outcome._tag).toBe("Applied");
+  return outcome.review;
+};
 
 const correctionPairs = [
   { field: "author", value: "Corrected author" },
@@ -227,6 +238,29 @@ beforeAll(async () => {
 });
 
 describe("provider-free D1 recipe review tracer", () => {
+  it("installs the fresh review schema with only the durable mutation ledger identity", async () => {
+    const reviewColumns = await testEnv.MealPlannerDatabase.prepare(
+      "PRAGMA table_info(recipe_reviews)"
+    ).all<{ readonly name: string }>();
+    expect(
+      reviewColumns.results.map((row: { readonly name: string }) => row.name)
+    ).not.toContain("last_mutation_id");
+
+    const mutationColumns = await testEnv.MealPlannerDatabase.prepare(
+      "PRAGMA table_info(recipe_review_mutations)"
+    ).all<{ readonly name: string }>();
+    expect(
+      mutationColumns.results.map((row: { readonly name: string }) => row.name)
+    ).toEqual([
+      "extraction_fingerprint",
+      "mutation_id",
+      "command_kind",
+      "command_digest",
+      "resulting_version",
+      "applied_at",
+    ]);
+  });
+
   it.each(correctionCases)(
     "round-trips the schema-valid $field correction pairing through D1",
     async ({ index, ...correction }) => {
@@ -248,12 +282,15 @@ describe("provider-free D1 recipe review tracer", () => {
           reason: "The correction is visible in the cited caption frame.",
         },
         expectedVersion: 0,
+        mutationId: `correction-${index + 320}`,
         tags,
       });
 
-      const corrected = await Effect.runPromise(
+      const outcome = await Effect.runPromise(
         service.correct(importId, request, actorId)
       );
+      expect(outcome._tag).toBe("Applied");
+      const corrected = outcome.review;
       expect(corrected).toMatchObject({
         corrections: [
           expect.objectContaining({
@@ -267,6 +304,316 @@ describe("provider-free D1 recipe review tracer", () => {
       expect(roundTripped).toEqual(corrected);
     }
   );
+
+  it("replays one correction identity without advancing audit history and rejects changed-command reuse", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000337");
+    const draft = makeDraft(importId, fixtureFingerprint(337));
+    await seedDraft(draft, "7520000000000000337");
+    const repository = makeD1RecipeReviewRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const service = makeRecipeReviewService({
+      now: () => decodeTimestamp("2026-07-22T10:30:00.000Z"),
+      repository,
+    });
+    const request = Schema.decodeUnknownSync(CorrectRecipeDraftRequest)({
+      correction: {
+        field: "name",
+        reason: "The title is visible in the cited caption frame.",
+        value: "Tomato and Onion Stew",
+      },
+      expectedVersion: 0,
+      mutationId: "correction-retry-337",
+      tags,
+    });
+
+    const applied = await Effect.runPromise(
+      service.correct(importId, request, actorId)
+    );
+    expect(applied).toMatchObject({
+      _tag: "Applied",
+      mutationId: decodeMutationId("correction-retry-337"),
+      review: { version: 1 },
+    });
+
+    const replayed = await Effect.runPromise(
+      service.correct(importId, request, actorId)
+    );
+    expect(replayed).toMatchObject({
+      _tag: "Replayed",
+      mutationId: decodeMutationId("correction-retry-337"),
+      review: { version: 1 },
+    });
+
+    const conflictingRequest = Schema.decodeUnknownSync(
+      CorrectRecipeDraftRequest
+    )({
+      correction: {
+        field: "name",
+        reason: request.correction.reason,
+        value: "A conflicting title",
+      },
+      expectedVersion: request.expectedVersion,
+      mutationId: request.mutationId,
+      tags: request.tags,
+    });
+
+    await expect(
+      Effect.runPromise(service.correct(importId, conflictingRequest, actorId))
+    ).rejects.toMatchObject({
+      _tag: "RecipeReviewMutationConflict",
+      mutationId: decodeMutationId("correction-retry-337"),
+    });
+
+    const reconstructed = makeRecipeReviewService({
+      now: () => decodeTimestamp("2026-07-22T11:30:00.000Z"),
+      repository: makeD1RecipeReviewRepository(testEnv.MealPlannerDatabase),
+    });
+    await expect(
+      Effect.runPromise(reconstructed.correct(importId, request, actorId))
+    ).resolves.toMatchObject({ _tag: "Replayed", review: { version: 1 } });
+
+    await expect(
+      Effect.runPromise(
+        service.correct(
+          importId,
+          {
+            ...request,
+            mutationId: decodeMutationId("different-correction-337"),
+          },
+          actorId
+        )
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeReviewVersionConflict",
+      actualVersion: 1,
+      expectedVersion: 0,
+    });
+
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT
+           (SELECT count(*) FROM recipe_reviews
+             WHERE extraction_fingerprint = ?) AS reviews,
+           (SELECT count(*) FROM recipe_review_corrections
+             WHERE extraction_fingerprint = ?) AS corrections,
+           (SELECT count(*) FROM recipe_review_mutations
+             WHERE extraction_fingerprint = ?) AS mutations,
+           (SELECT version FROM recipe_reviews
+             WHERE extraction_fingerprint = ?) AS version`
+      )
+        .bind(
+          draft.extractionFingerprint,
+          draft.extractionFingerprint,
+          draft.extractionFingerprint,
+          draft.extractionFingerprint
+        )
+        .first()
+    ).resolves.toEqual({
+      corrections: 1,
+      mutations: 1,
+      reviews: 1,
+      version: 1,
+    });
+
+    const ledgerRow = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT mutation_id, command_kind, command_digest, resulting_version,
+              applied_at
+         FROM recipe_review_mutations
+        WHERE extraction_fingerprint = ?`
+    )
+      .bind(draft.extractionFingerprint)
+      .first();
+    expect(ledgerRow).toEqual({
+      applied_at: "2026-07-22T10:30:00.000Z",
+      command_digest: expect.stringMatching(/^[a-f\d]{64}$/u),
+      command_kind: "correction",
+      mutation_id: "correction-retry-337",
+      resulting_version: 1,
+    });
+    expect(JSON.stringify(ledgerRow)).not.toContain(request.correction.reason);
+    expect(JSON.stringify(ledgerRow)).not.toContain(request.correction.value);
+  });
+
+  it("serializes concurrent duplicate corrections into one applied and one replayed outcome", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000338");
+    const draft = makeDraft(importId, fixtureFingerprint(338));
+    await seedDraft(draft, "7520000000000000338");
+    let tick = 0;
+    const service = makeRecipeReviewService({
+      now: () => {
+        tick += 1;
+        return decodeTimestamp(`2026-07-22T10:4${tick}:00.000Z`);
+      },
+      repository: makeD1RecipeReviewRepository(testEnv.MealPlannerDatabase),
+    });
+    const request = Schema.decodeUnknownSync(CorrectRecipeDraftRequest)({
+      correction: {
+        field: "name",
+        reason: "The title is visible in the cited caption frame.",
+        value: "Tomato and Onion Stew",
+      },
+      expectedVersion: 0,
+      mutationId: "concurrent-correction-338",
+      tags,
+    });
+
+    const outcomes = await Promise.all([
+      Effect.runPromise(service.correct(importId, request, actorId)),
+      Effect.runPromise(service.correct(importId, request, actorId)),
+    ]);
+    expect(outcomes.map(({ _tag }) => _tag).toSorted()).toEqual([
+      "Applied",
+      "Replayed",
+    ]);
+    expect(outcomes.map(({ resultingVersion }) => resultingVersion)).toEqual([
+      1, 1,
+    ]);
+    expect(outcomes.every(({ review }) => review.version === 1)).toBe(true);
+
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT
+           (SELECT count(*) FROM recipe_review_corrections
+             WHERE extraction_fingerprint = ?) AS corrections,
+           (SELECT count(*) FROM recipe_review_mutations
+             WHERE extraction_fingerprint = ?) AS mutations,
+           (SELECT version FROM recipe_reviews
+             WHERE extraction_fingerprint = ?) AS version`
+      )
+        .bind(
+          draft.extractionFingerprint,
+          draft.extractionFingerprint,
+          draft.extractionFingerprint
+        )
+        .first()
+    ).resolves.toEqual({ corrections: 1, mutations: 1, version: 1 });
+  });
+
+  it("replays, collides, and serializes transition mutation identities exactly once", async () => {
+    const sequentialId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000339");
+    const concurrentId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000340");
+    const sequentialDraft = makeDraft(sequentialId, fixtureFingerprint(339));
+    const concurrentDraft = makeDraft(concurrentId, fixtureFingerprint(340));
+    await seedDraft(sequentialDraft, "7520000000000000339");
+    await seedDraft(concurrentDraft, "7520000000000000340");
+    let tick = 0;
+    const service = makeRecipeReviewService({
+      now: () => {
+        tick += 1;
+        return decodeTimestamp(`2026-07-22T10:5${tick}:00.000Z`);
+      },
+      repository: makeD1RecipeReviewRepository(testEnv.MealPlannerDatabase),
+    });
+    const request = Schema.decodeUnknownSync(TransitionRecipeDraftRequest)({
+      expectedVersion: 0,
+      mutationId: "transition-retry-339",
+      reason: "Insufficient recipe detail.",
+    });
+
+    await expect(
+      Effect.runPromise(service.reject(sequentialId, request, actorId))
+    ).resolves.toMatchObject({
+      _tag: "Applied",
+      resultingVersion: 1,
+      review: { lifecycle: "rejected", version: 1 },
+    });
+    await expect(
+      Effect.runPromise(service.reject(sequentialId, request, actorId))
+    ).resolves.toMatchObject({
+      _tag: "Replayed",
+      resultingVersion: 1,
+      review: { lifecycle: "rejected", version: 1 },
+    });
+    await expect(
+      Effect.runPromise(
+        service.reject(
+          sequentialId,
+          Schema.decodeUnknownSync(TransitionRecipeDraftRequest)({
+            ...Schema.encodeSync(TransitionRecipeDraftRequest)(request),
+            reason: "A different rejection reason.",
+          }),
+          actorId
+        )
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeReviewMutationConflict",
+      mutationId: decodeMutationId("transition-retry-339"),
+    });
+    await expect(
+      Effect.runPromise(
+        service.reject(
+          sequentialId,
+          {
+            ...request,
+            mutationId: decodeMutationId("different-transition-339"),
+          },
+          actorId
+        )
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeReviewVersionConflict",
+      actualVersion: 1,
+      expectedVersion: 0,
+    });
+
+    const concurrentRequest = Schema.decodeUnknownSync(
+      TransitionRecipeDraftRequest
+    )({
+      expectedVersion: 0,
+      mutationId: "concurrent-transition-340",
+      reason: "Insufficient recipe detail.",
+    });
+    const concurrentOutcomes = await Promise.all([
+      Effect.runPromise(
+        service.reject(concurrentId, concurrentRequest, actorId)
+      ),
+      Effect.runPromise(
+        service.reject(concurrentId, concurrentRequest, actorId)
+      ),
+    ]);
+    expect(concurrentOutcomes.map(({ _tag }) => _tag).toSorted()).toEqual([
+      "Applied",
+      "Replayed",
+    ]);
+
+    await Promise.all(
+      [sequentialDraft, concurrentDraft].map((draft) =>
+        expect(
+          testEnv.MealPlannerDatabase.prepare(
+            `SELECT
+               (SELECT count(*) FROM recipe_review_transitions
+                 WHERE extraction_fingerprint = ?) AS transitions,
+               (SELECT count(*) FROM recipe_review_mutations
+                 WHERE extraction_fingerprint = ?) AS mutations,
+               (SELECT version FROM recipe_reviews
+                 WHERE extraction_fingerprint = ?) AS version`
+          )
+            .bind(
+              draft.extractionFingerprint,
+              draft.extractionFingerprint,
+              draft.extractionFingerprint
+            )
+            .first()
+        ).resolves.toEqual({ mutations: 1, transitions: 1, version: 1 })
+      )
+    );
+
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT mutation_id, command_kind, command_digest, resulting_version
+           FROM recipe_review_mutations
+          WHERE extraction_fingerprint = ?`
+      )
+        .bind(sequentialDraft.extractionFingerprint)
+        .first()
+    ).resolves.toEqual({
+      command_digest: expect.stringMatching(/^[a-f\d]{64}$/u),
+      command_kind: "transition",
+      mutation_id: "transition-retry-339",
+      resulting_version: 1,
+    });
+  });
 
   it("audits correction and approval with stale-write rejection and approved-only reads", async () => {
     const approvedId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000311");
@@ -357,7 +704,11 @@ describe("provider-free D1 recipe review tracer", () => {
       Effect.runPromise(
         service.approve(
           approvedId,
-          { expectedVersion: 0, reason: "Ready for the recipe bank." },
+          {
+            expectedVersion: 0,
+            mutationId: decodeMutationId("approve-blocked-311"),
+            reason: "Ready for the recipe bank.",
+          },
           actorId
         )
       )
@@ -367,7 +718,7 @@ describe("provider-free D1 recipe review tracer", () => {
       tagsRequired: true,
     });
 
-    const corrected = await Effect.runPromise(
+    const correctedOutcome = await Effect.runPromise(
       service.correct(
         approvedId,
         {
@@ -377,11 +728,13 @@ describe("provider-free D1 recipe review tracer", () => {
             value: "Tomato and Onion Stew",
           },
           expectedVersion: 0,
+          mutationId: decodeMutationId("correction-311"),
           tags,
         },
         actorId
       )
     );
+    const corrected = expectAppliedReview(correctedOutcome);
     expect(corrected).toMatchObject({
       _tag: "NeedsReview",
       corrections: [
@@ -412,6 +765,7 @@ describe("provider-free D1 recipe review tracer", () => {
               value: "Stale title",
             },
             expectedVersion: 0,
+            mutationId: decodeMutationId("stale-correction-311"),
             tags,
           },
           actorId
@@ -423,13 +777,18 @@ describe("provider-free D1 recipe review tracer", () => {
       expectedVersion: 0,
     });
 
-    const approved = await Effect.runPromise(
+    const approvedOutcome = await Effect.runPromise(
       service.approve(
         approvedId,
-        { expectedVersion: 1, reason: "Validated and ready for planning." },
+        {
+          expectedVersion: 1,
+          mutationId: decodeMutationId("approve-311"),
+          reason: "Validated and ready for planning.",
+        },
         actorId
       )
     );
+    const approved = expectAppliedReview(approvedOutcome);
     expect(approved).toMatchObject({
       _tag: "Approved",
       lifecycle: "approved",
@@ -444,13 +803,18 @@ describe("provider-free D1 recipe review tracer", () => {
       version: 2,
     });
 
-    const rejected = await Effect.runPromise(
+    const rejectedOutcome = await Effect.runPromise(
       service.reject(
         rejectedId,
-        { expectedVersion: 0, reason: "Insufficient recipe detail." },
+        {
+          expectedVersion: 0,
+          mutationId: decodeMutationId("reject-312"),
+          reason: "Insufficient recipe detail.",
+        },
         actorId
       )
     );
+    const rejected = expectAppliedReview(rejectedOutcome);
     expect(rejected).toMatchObject({
       _tag: "Rejected",
       lifecycle: "rejected",
@@ -501,17 +865,26 @@ describe("provider-free D1 recipe review tracer", () => {
     await Effect.runPromise(
       service.reject(
         id,
-        { expectedVersion: 0, reason: "Return after evidence review." },
+        {
+          expectedVersion: 0,
+          mutationId: decodeMutationId("reject-313"),
+          reason: "Return after evidence review.",
+        },
         actorId
       )
     );
-    const returned = await Effect.runPromise(
+    const returnedOutcome = await Effect.runPromise(
       service.returnToReview(
         id,
-        { expectedVersion: 1, reason: "Evidence is available for correction." },
+        {
+          expectedVersion: 1,
+          mutationId: decodeMutationId("return-313"),
+          reason: "Evidence is available for correction.",
+        },
         actorId
       )
     );
+    const returned = expectAppliedReview(returnedOutcome);
     expect(returned).toMatchObject({
       _tag: "NeedsReview",
       lifecycle: "needs_review",
@@ -535,6 +908,23 @@ describe("provider-free D1 recipe review tracer", () => {
         .bind(draft.extractionFingerprint)
         .run()
     ).rejects.toThrow(/append-only/u);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `UPDATE recipe_review_mutations
+            SET command_digest = ?
+          WHERE extraction_fingerprint = ? AND mutation_id = ?`
+      )
+        .bind("f".repeat(64), draft.extractionFingerprint, "reject-313")
+        .run()
+    ).rejects.toThrow(/append-only/u);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `DELETE FROM recipe_review_mutations
+          WHERE extraction_fingerprint = ? AND mutation_id = ?`
+      )
+        .bind(draft.extractionFingerprint, "return-313")
+        .run()
+    ).rejects.toThrow(/append-only/u);
   });
 
   it("classifies an approved current row with rejected terminal history as corruption", async () => {
@@ -544,8 +934,8 @@ describe("provider-free D1 recipe review tracer", () => {
     await testEnv.MealPlannerDatabase.prepare(
       `INSERT INTO recipe_reviews (
          extraction_fingerprint, lifecycle, version, tags_json,
-         last_mutation_id, created_at, updated_at
-       ) VALUES (?, 'needs_review', 0, ?, NULL, ?, ?)`
+         created_at, updated_at
+       ) VALUES (?, 'needs_review', 0, ?, ?, ?)`
     )
       .bind(
         draft.extractionFingerprint,
@@ -566,25 +956,35 @@ describe("provider-free D1 recipe review tracer", () => {
       repository,
     });
 
-    const approved = await Effect.runPromise(
+    const approvedOutcome = await Effect.runPromise(
       service.approve(
         id,
-        { expectedVersion: 0, reason: "Ready for planning." },
+        {
+          expectedVersion: 0,
+          mutationId: decodeMutationId("approve-336"),
+          reason: "Ready for planning.",
+        },
         actorId
       )
     );
+    const approved = expectAppliedReview(approvedOutcome);
     expect(approved).toMatchObject({
       _tag: "Approved",
       transitions: [expect.objectContaining({ to: "approved", version: 1 })],
       version: 1,
     });
-    const returned = await Effect.runPromise(
+    const returnedOutcome = await Effect.runPromise(
       service.returnToReview(
         id,
-        { expectedVersion: 1, reason: "Returned for correction." },
+        {
+          expectedVersion: 1,
+          mutationId: decodeMutationId("return-336"),
+          reason: "Returned for correction.",
+        },
         actorId
       )
     );
+    const returned = expectAppliedReview(returnedOutcome);
     expect(returned).toMatchObject({
       _tag: "NeedsReview",
       transitions: [
@@ -593,13 +993,18 @@ describe("provider-free D1 recipe review tracer", () => {
       ],
       version: 2,
     });
-    const rejected = await Effect.runPromise(
+    const rejectedOutcome = await Effect.runPromise(
       service.reject(
         id,
-        { expectedVersion: 2, reason: "Rejected after review." },
+        {
+          expectedVersion: 2,
+          mutationId: decodeMutationId("reject-336"),
+          reason: "Rejected after review.",
+        },
         actorId
       )
     );
+    const rejected = expectAppliedReview(rejectedOutcome);
     expect(rejected).toMatchObject({
       _tag: "Rejected",
       transitions: [

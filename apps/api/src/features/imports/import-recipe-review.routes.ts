@@ -51,7 +51,7 @@ export const RecipeReviewRouteDefinitions = [
       const { id } = yield* decodeImportId;
       const body = yield* decodeCorrection;
       const service = yield* RecipeReviewService;
-      return { review: yield* service.correct(id, body, actorId) };
+      return { outcome: yield* service.correct(id, body, actorId) };
     }).pipe((effect) =>
       respondRecipeReview(effect, RecipeReviewMutationResponse, 200)
     )
@@ -62,7 +62,7 @@ export const RecipeReviewRouteDefinitions = [
       const { id } = yield* decodeImportId;
       const body = yield* decodeTransition;
       const service = yield* RecipeReviewService;
-      return { review: yield* service.approve(id, body, actorId) };
+      return { outcome: yield* service.approve(id, body, actorId) };
     }).pipe((effect) =>
       respondRecipeReview(effect, RecipeReviewMutationResponse, 200)
     )
@@ -73,7 +73,7 @@ export const RecipeReviewRouteDefinitions = [
       const { id } = yield* decodeImportId;
       const body = yield* decodeTransition;
       const service = yield* RecipeReviewService;
-      return { review: yield* service.reject(id, body, actorId) };
+      return { outcome: yield* service.reject(id, body, actorId) };
     }).pipe((effect) =>
       respondRecipeReview(effect, RecipeReviewMutationResponse, 200)
     )
@@ -84,7 +84,7 @@ export const RecipeReviewRouteDefinitions = [
       const { id } = yield* decodeImportId;
       const body = yield* decodeTransition;
       const service = yield* RecipeReviewService;
-      return { review: yield* service.returnToReview(id, body, actorId) };
+      return { outcome: yield* service.returnToReview(id, body, actorId) };
     }).pipe((effect) =>
       respondRecipeReview(effect, RecipeReviewMutationResponse, 200)
     )
