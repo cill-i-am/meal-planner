@@ -1,3 +1,4 @@
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {
@@ -30,6 +31,7 @@ import {
   recoverVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
 import {
+  runImportCarouselVisualAndRecipeWorkflow,
   runImportVisualAndRecipeWorkflow,
   runPreparedVisualRecoveryWorkflowBranch,
 } from "./import-application-workflows.js";
@@ -44,6 +46,14 @@ import {
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
+import { runCurrentImportIntentExecution } from "./import-intent-execution.js";
+import type { ImportIntentWorkflowTerminatorShape } from "./import-intent-execution.js";
+import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
+import {
+  makeImportIntentWorkflowTransitions,
+  publicIntentFailureForAcquisitionOutcome,
+  publicIntentFailureForProviderStage,
+} from "./import-intent-workflow-transitions.js";
 import {
   adaptAcquisitionBucket,
   acquireStoreVerify,
@@ -91,13 +101,17 @@ import {
   runProviderTask,
   runProviderTaskAttempt,
 } from "./import-provider-workflow-task.js";
+import type { ProviderTaskRetryLifecycle } from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
-import { resolveImportWorkflowInput } from "./import-workflow-input.js";
+import {
+  ImportWorkflowInput,
+  resolveImportWorkflowInput,
+} from "./import-workflow-input.js";
 import {
   PostAcquisitionJournalCheckpoint,
   postAcquisitionRestartOptions,
@@ -256,7 +270,10 @@ export const runAcquisitionTask = <
   attempt: (
     allocation: Allocation
   ) => Effect.Effect<AcquisitionTaskOutcome, RetryableAcquisitionFailure>,
-  options?: { readonly correlationId?: ImportCorrelationId }
+  options?: {
+    readonly correlationId?: ImportCorrelationId;
+    readonly lifecycle?: ProviderTaskRetryLifecycle;
+  }
 ) =>
   Effect.suspend(() => {
     let confirmedGeneration: AcquisitionGeneration | undefined;
@@ -264,7 +281,12 @@ export const runAcquisitionTask = <
     let executionNumber = 0;
     const runAttempt = Effect.suspend(() => {
       executionNumber += 1;
-      return allocate().pipe(
+      const begin =
+        executionNumber > 1 && options?.lifecycle !== undefined
+          ? options.lifecycle.working(executionNumber)
+          : Effect.void;
+      return begin.pipe(
+        Effect.andThen(allocate()),
         Effect.mapError(
           (): UnconfirmedAcquisitionRetry => ({
             _tag: "UnconfirmedAcquisitionRetry",
@@ -334,38 +356,39 @@ export const runAcquisitionTask = <
                 }),
         }),
         // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.tapError is a typed Effect combinator, not Promise callback control flow.
-        Effect.tapError((error) => {
-          if (
-            options?.correlationId === undefined ||
-            error._tag !== "ConfirmedAcquisitionRetry"
-          ) {
-            return Effect.void;
-          }
-          const reasonCode = acquisitionFailureReasonCode(error);
-          const response = emitImportObservabilityEvent({
-            attempt: attemptNumber,
-            correlationId: options.correlationId,
-            event:
-              reasonCode === "timeout"
-                ? "acquisition.timeout"
-                : "acquisition.response",
-            outcome: reasonCode === "timeout" ? "timed_out" : "failed",
-            reasonCode,
-          });
-          return executionNumber < 3
-            ? response.pipe(
-                Effect.andThen(
-                  emitImportObservabilityEvent({
-                    attempt: attemptNumber,
-                    correlationId: options.correlationId,
-                    event: "acquisition.retry",
-                    outcome: "retrying",
-                    reasonCode,
-                  })
-                )
-              )
-            : response;
-        })
+        Effect.tapError((error) =>
+          Effect.gen(function* observeAcquisitionFailure() {
+            if (executionNumber < 3 && options?.lifecycle !== undefined) {
+              yield* options.lifecycle.retrying(executionNumber);
+            }
+            if (
+              options?.correlationId === undefined ||
+              error._tag !== "ConfirmedAcquisitionRetry"
+            ) {
+              return;
+            }
+            const reasonCode = acquisitionFailureReasonCode(error);
+            yield* emitImportObservabilityEvent({
+              attempt: attemptNumber,
+              correlationId: options.correlationId,
+              event:
+                reasonCode === "timeout"
+                  ? "acquisition.timeout"
+                  : "acquisition.response",
+              outcome: reasonCode === "timeout" ? "timed_out" : "failed",
+              reasonCode,
+            });
+            if (executionNumber < 3) {
+              yield* emitImportObservabilityEvent({
+                attempt: attemptNumber,
+                correlationId: options.correlationId,
+                event: "acquisition.retry",
+                outcome: "retrying",
+                reasonCode,
+              });
+            }
+          })
+        )
       );
     });
 
@@ -457,406 +480,537 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
         const traceStore = makeD1ImportObservabilityTraceStore(database, () =>
           new Date().toISOString()
         );
-        return yield* Effect.gen(function* runImportAcquisitionWorkflow() {
-          const { importId, trace } = workflowInput;
-          const { correlationId } = trace;
-          yield* observeImportWorkflowStart(trace);
-          const rawBucket = yield* evidenceBucket.raw;
-          const repository = makeD1ImportRepository(database);
-          const terminalCheckpoints =
-            makeD1ProviderTerminalCheckpointRepository(database);
-          const terminalRecovery = makeD1ProviderTerminalRecoveryRepository(
-            database,
-            pilotProviderBudgetRuntime.runtimeStage
-          );
-          const now = currentPilotBudgetTimestamp;
-          const dispatch = makePilotProviderDispatchGate({
-            correlationId,
-            now,
-            repository: makeD1PilotProviderBudgetRepository(
-              database,
-              pilotProviderBudgetRuntime.runtimeStage
-            ),
-            runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
-              `gaia-118:${importId}`
-            ),
-            runtime: pilotProviderBudgetRuntime,
-          });
-          const speechTranscriber = yield* makeInstalledSpeechTranscriber({
-            client: providerGateway,
-            correlationId,
-            dispatch,
-          }).pipe(Effect.provideService(RuntimeContext, runtimeContext));
-          const visualExtractor = yield* makeInstalledVisualEvidenceExtractor({
-            client: providerGateway,
-            correlationId,
-            dispatch,
-          });
-          const recipeExtractor = yield* makeInstalledRecipeExtractor({
-            client: providerGateway,
-            correlationId,
-            dispatch,
-          });
-          const task = <A, E>(
-            name: string,
-            stage: "recipe" | "speech" | "visual",
-            effect: Effect.Effect<A, E>
-          ) =>
-            runProviderTask(
-              name,
-              stage,
-              effect,
-              () => ({
-                _tag: "Succeeded" as const,
-                stage,
-              }),
-              trace
-            ).pipe(
-              Effect.flatMap((value) =>
-                Schema.decodeUnknownEffect(ProviderTaskCheckpoint, {
-                  onExcessProperty: "error",
-                })(value)
-              ),
-              Effect.orDie
-            );
-          const persistTerminal = (
-            failure: typeof ProviderTaskCheckpoint.Type & {
-              readonly _tag: "Failed";
-            },
-            generation: AcquisitionGeneration
-          ) =>
-            Cloudflare.Workflows.task(
-              `persist-${failure.stage}-terminal-v1`,
-              terminalCheckpoints
-                .persist({
-                  acquisitionGeneration: generation,
-                  completedAt: now(),
-                  failureCode: failure.code,
-                  importId,
-                  providerStage: failure.stage,
-                })
-                .pipe(Effect.orDie)
-            );
-          const completeVisualAndRecipe = (
-            acquisitionGeneration: AcquisitionGeneration,
-            preparedDispatchIds?: {
-              readonly speechDispatchId: string;
-              readonly visualDispatchId: string;
-            }
-          ) =>
-            runImportVisualAndRecipeWorkflow({
-              persistTerminal: (failure) =>
-                persistTerminal(failure, acquisitionGeneration),
-              recipe: task(
-                "extract-recipe-v1",
-                "recipe",
-                produceRecipeDraftForImport({
-                  bucket: adaptAcquisitionBucket(rawBucket),
-                  extractor: recipeExtractor,
-                  importId,
-                  importRepository: repository,
-                  now,
-                  recipeRepository: makeD1RecipeDraftRepository(database),
-                })
-              ),
-              visual: (() => {
-                const continueVisual = ({
-                  speechDispatchId,
-                  visualDispatchId,
-                }: {
+        const { executionGeneration, importId, trace } = workflowInput;
+        const { correlationId } = trace;
+        const intentId =
+          Schema.decodeUnknownSync(RecipeImportIntentId)(importId);
+        const repository = makeD1ImportRepository(database);
+        return yield* runCurrentImportIntentExecution(
+          repository,
+          intentId,
+          executionGeneration,
+          () =>
+            Effect.gen(function* runCurrentImportAcquisitionWorkflow() {
+              yield* observeImportWorkflowStart(trace);
+              const rawBucket = yield* evidenceBucket.raw;
+              const intentTransitions = makeImportIntentWorkflowTransitions({
+                executionGeneration,
+                intentId,
+                repository,
+              });
+              const recipeLifecycle = {
+                grounding: intentTransitions
+                  .advanceStage("grounding_recipe")
+                  .pipe(Effect.orDie),
+                preparingReview: intentTransitions
+                  .advanceStage("preparing_review")
+                  .pipe(Effect.orDie),
+                reviewAvailable: (
+                  actionId: Parameters<
+                    typeof intentTransitions.requireAction
+                  >[0]
+                ) =>
+                  intentTransitions.requireAction(actionId).pipe(Effect.orDie),
+              };
+              const retryLifecycle = (
+                boundary: "acquisition" | "speech" | "visual" | "recipe"
+              ): ProviderTaskRetryLifecycle => ({
+                retrying: (attempt) =>
+                  intentTransitions
+                    .setActivity(boundary, attempt, "retrying")
+                    .pipe(Effect.orDie),
+                working: (attempt) =>
+                  intentTransitions
+                    .setActivity(boundary, attempt, "working")
+                    .pipe(Effect.orDie),
+              });
+              const terminalCheckpoints =
+                makeD1ProviderTerminalCheckpointRepository(database);
+              const terminalRecovery = makeD1ProviderTerminalRecoveryRepository(
+                database,
+                pilotProviderBudgetRuntime.runtimeStage
+              );
+              const now = currentPilotBudgetTimestamp;
+              const dispatch = makePilotProviderDispatchGate({
+                correlationId,
+                now,
+                repository: makeD1PilotProviderBudgetRepository(
+                  database,
+                  pilotProviderBudgetRuntime.runtimeStage
+                ),
+                runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
+                  `gaia-118:${importId}`
+                ),
+                runtime: pilotProviderBudgetRuntime,
+              });
+              const speechTranscriber = yield* makeInstalledSpeechTranscriber({
+                client: providerGateway,
+                correlationId,
+                dispatch,
+              }).pipe(Effect.provideService(RuntimeContext, runtimeContext));
+              const visualExtractor =
+                yield* makeInstalledVisualEvidenceExtractor({
+                  client: providerGateway,
+                  correlationId,
+                  dispatch,
+                });
+              const recipeExtractor = yield* makeInstalledRecipeExtractor({
+                client: providerGateway,
+                correlationId,
+                dispatch,
+              });
+              const task = <A, E>(
+                name: string,
+                stage: "recipe" | "speech" | "visual",
+                effect: Effect.Effect<A, E>
+              ) =>
+                runProviderTask(
+                  name,
+                  stage,
+                  effect,
+                  () => ({
+                    _tag: "Succeeded" as const,
+                    stage,
+                  }),
+                  trace,
+                  retryLifecycle(stage)
+                ).pipe(
+                  Effect.flatMap((value) =>
+                    Schema.decodeUnknownEffect(ProviderTaskCheckpoint, {
+                      onExcessProperty: "error",
+                    })(value)
+                  ),
+                  Effect.orDie
+                );
+              const persistTerminal = (
+                failure: typeof ProviderTaskCheckpoint.Type & {
+                  readonly _tag: "Failed";
+                },
+                generation: AcquisitionGeneration
+              ) =>
+                Cloudflare.Workflows.task(
+                  `persist-${failure.stage}-terminal-v1`,
+                  terminalCheckpoints
+                    .persist({
+                      acquisitionGeneration: generation,
+                      completedAt: now(),
+                      failureCode: failure.code,
+                      importId,
+                      providerStage: failure.stage,
+                    })
+                    .pipe(Effect.orDie)
+                );
+              const completeVisualAndRecipe = (
+                acquisitionGeneration: AcquisitionGeneration,
+                preparedDispatchIds?: {
                   readonly speechDispatchId: string;
                   readonly visualDispatchId: string;
-                }) =>
-                  task(
-                    "extract-visual-evidence-v1",
-                    "visual",
-                    extractVisualEvidenceForTranscribedImport({
+                }
+              ) =>
+                runImportVisualAndRecipeWorkflow({
+                  lifecycle: {
+                    beforeRecipe: intentTransitions
+                      .advanceStage("extracting_recipe")
+                      .pipe(Effect.orDie),
+                    beforeVisual: intentTransitions
+                      .advanceComponent("visuals", "processing")
+                      .pipe(Effect.orDie),
+                    failurePersisted: (failure) =>
+                      intentTransitions
+                        .fail(
+                          failure.stage,
+                          publicIntentFailureForProviderStage(failure.stage)
+                        )
+                        .pipe(Effect.orDie),
+                    visualCompleted: intentTransitions
+                      .advanceComponent("visuals", "completed")
+                      .pipe(Effect.orDie),
+                  },
+                  persistTerminal: (failure) =>
+                    persistTerminal(failure, acquisitionGeneration),
+                  recipe: task(
+                    "extract-recipe-v1",
+                    "recipe",
+                    produceRecipeDraftForImport({
                       bucket: adaptAcquisitionBucket(rawBucket),
-                      extractor: visualExtractor,
-                      frameSampler: makeR2VisualFrameSampler(
-                        adaptAcquisitionBucket(rawBucket)
-                      ),
+                      extractor: recipeExtractor,
                       importId,
                       importRepository: repository,
+                      lifecycle: recipeLifecycle,
                       now,
+                      recipeRepository: makeD1RecipeDraftRepository(database),
+                    })
+                  ),
+                  visual: (() => {
+                    const continueVisual = ({
                       speechDispatchId,
                       visualDispatchId,
-                      visualRepository:
-                        makeD1VisualEvidenceRepository(database),
-                    })
-                  );
-                return preparedDispatchIds === undefined
-                  ? continueVisualFromSettledSpeech({
-                      acquisitionGeneration,
-                      continueVisual,
-                      importId,
-                      terminalRecovery,
-                    })
-                  : continueVisual(preparedDispatchIds);
-              })(),
-            });
-          if ("resume" in workflowInput) {
-            return yield* runPreparedVisualRecoveryWorkflowBranch({
-              completeVisualAndRecipe: (recovery) =>
-                completeVisualAndRecipe(
-                  recovery.acquisitionGeneration,
-                  recovery
-                ),
-              findStored: repository.findById(importId).pipe(Effect.orDie),
-              importId,
-              resolveDispatchIds: (stored) =>
-                Effect.all({
-                  speechDispatchId: terminalRecovery.speechDispatchId({
-                    acquisitionGeneration: stored.acquisitionGeneration,
-                    importId,
-                  }),
-                  visualDispatchId: terminalRecovery.visualDispatchId({
-                    acquisitionGeneration: stored.acquisitionGeneration,
-                    importId,
-                  }),
-                }).pipe(Effect.orDie),
-            });
-          }
-          const stagedCarousel = yield* loadStagedOperatorCarousel({
-            bucket: adaptAcquisitionBucket(rawBucket),
-            importId,
-          }).pipe(Effect.orDie);
-          if (stagedCarousel !== null) {
-            const encodedCarouselEvidence = yield* runProviderTask(
-              "extract-carousel-visual-evidence-v1",
-              "visual",
-              prepareTikTokCarouselEvidence({
-                adapter: stagedCarousel.adapter,
-                bucket: adaptAcquisitionBucket(rawBucket),
-                carouselRepository: makeD1CarouselEvidenceRepository(database),
-                descriptor: stagedCarousel.descriptor,
-                importId,
-                now,
-                visualExtractor,
-              }),
-              (evidence) => ({
-                _tag: "Succeeded" as const,
-                evidence,
-                stage: "visual" as const,
-              }),
-              trace
-            );
-            const carouselEvidence = yield* Schema.decodeUnknownEffect(
-              CarouselEvidenceTaskCheckpoint
-            )(encodedCarouselEvidence).pipe(Effect.orDie);
-            if (carouselEvidence._tag === "Failed") {
-              return carouselEvidence;
-            }
-            const recipe = yield* task(
-              "extract-carousel-recipe-v1",
-              "recipe",
-              produceTikTokCarouselRecipeDraft({
-                bucket: adaptAcquisitionBucket(rawBucket),
-                descriptor: stagedCarousel.descriptor,
-                evidence: carouselEvidence.evidence,
-                extractor: recipeExtractor,
-                importId,
-                now,
-                recipeRepository: makeD1RecipeDraftRepository(database),
-              })
-            );
-            return recipe;
-          }
-          const rawClaim = yield* Cloudflare.Workflows.task(
-            "claim-acquisition-v1",
-            repository.claimAcquisition(importId).pipe(
-              Effect.map((claim) =>
-                claim._tag === "Finished"
-                  ? ({ _tag: "Finished" } as const)
-                  : {
-                      _tag: "Acquiring" as const,
-                      canonicalId: claim.import.canonicalSourceId,
-                    }
-              ),
-              Effect.orDie
-            )
-          );
-          const claim = yield* Schema.decodeUnknownEffect(
-            AcquisitionClaimCheckpoint
-          )(rawClaim).pipe(Effect.orDie);
-          if (claim._tag === "Finished") {
-            return { _tag: "NoAcquisitionRequired" as const };
-          }
-          const stub = mediaObjects.getByName(importId);
-          const mediaObject = makeAcquisitionMediaObject(stub);
-          const encodedOutcome = yield* Cloudflare.Workflows.task(
-            "resolve-acquire-store-verify-v2",
-            recoverVerifiedAcquisitionCheckpoint({
-              expectedCanonicalId: claim.canonicalId,
-              findStored: repository.findById(importId),
-              importId,
-              readEvidence: (stored) =>
-                readVerifiedAcquisitionEvidence(
-                  adaptAcquisitionBucket(rawBucket),
-                  {
-                    canonicalId: stored.canonicalSourceId,
-                    generation: stored.acquisitionGeneration,
-                    importId,
-                  }
-                ),
-            }).pipe(
-              Effect.flatMap(
-                (
-                  recovered
-                ): Effect.Effect<
-                  AcquisitionTaskOutcome | AcquisitionCheckpointRejected,
-                  UnconfirmedAcquisitionRetry
-                > =>
-                  recovered === null
-                    ? runAcquisitionTask(
-                        () => repository.beginAcquisitionAttempt(importId),
-                        (allocation) =>
-                          allocation.canonicalSourceId === claim.canonicalId
-                            ? acquireStoreVerify(
-                                adaptAcquisitionBucket(rawBucket),
-                                mediaObject,
-                                {
-                                  beforeCleanup: (
-                                    prepared,
-                                    acquisitionMediaObject
-                                  ) =>
-                                    persistDerivedProviderEvidence(
-                                      adaptAcquisitionBucket(rawBucket),
-                                      acquisitionMediaObject,
-                                      prepared,
-                                      {
-                                        generation: allocation.generation,
-                                        importId,
-                                      }
-                                    ),
-                                  canonicalId: allocation.canonicalSourceId,
-                                  generation: allocation.generation,
-                                  importId,
-                                }
-                              )
-                            : Effect.die(
-                                "Persisted canonical identity changed"
-                              ),
-                        { correlationId }
-                      )
-                    : Effect.succeed(recovered)
-              ),
-              Effect.map((outcome) =>
-                outcome._tag === "AcquisitionCheckpointRejected"
-                  ? outcome
-                  : Schema.encodeSync(AcquisitionTaskOutcome)(outcome)
-              ),
-              Effect.orDie
-            ),
-            AcquisitionTaskStepConfig
-          );
-          const decodedCheckpoint = decodeAcquisitionCheckpoint(encodedOutcome);
-          yield* observeAcquisitionCheckpoint(correlationId, decodedCheckpoint);
-          if (decodedCheckpoint._tag === "AcquisitionCheckpointRejected") {
-            return decodedCheckpoint;
-          }
-          const { outcome } = decodedCheckpoint;
-          const encodedFinalization = yield* Cloudflare.Workflows.task(
-            "record-acquisition-v2",
-            (outcome._tag === "VerifiedAcquisition"
-              ? continueAcquisitionCheckpoint({
-                  findStored: repository.findById(importId),
-                  importId,
-                  onAccepted: () => Effect.succeed<"Recorded">("Recorded"),
-                  outcome,
-                }).pipe(
-                  Effect.flatMap((continuation) =>
-                    continuation === "Recorded"
-                      ? Effect.succeed(continuation)
-                      : repository.recordAcquired(
-                          importId,
-                          outcome.generation,
-                          outcome.evidence,
-                          outcome.evidence.acquiredAt
-                        )
-                  )
-                )
-              : repository.recordAcquisitionFailure(
-                  importId,
-                  outcome.generation,
-                  outcome,
-                  Schema.decodeUnknownSync(ImportTimestamp)(
-                    new Date().toISOString()
-                  )
-                )
-            ).pipe(
-              Effect.map(Schema.encodeSync(AcquisitionFinalizationResult)),
-              Effect.orDie
-            )
-          );
-          const finalization = yield* Schema.decodeUnknownEffect(
-            AcquisitionFinalizationResult
-          )(encodedFinalization).pipe(Effect.orDie);
-          yield* observeAcquisitionSettlement(
-            correlationId,
-            outcome,
-            finalization
-          );
-          if (outcome._tag !== "VerifiedAcquisition") {
-            return encodedOutcome;
-          }
-          const encodedSpeech = yield* Cloudflare.Workflows.task(
-            "transcribe-video-v1",
-            continueAcquisitionCheckpoint({
-              findStored: repository.findById(importId),
-              importId,
-              onAccepted: () =>
-                terminalRecovery
-                  .speechDispatchId({
-                    acquisitionGeneration: outcome.generation,
-                    importId,
-                  })
-                  .pipe(
-                    Effect.orDie,
-                    Effect.flatMap((speechDispatchId) =>
-                      runProviderTaskAttempt(
-                        "speech",
-                        transcribeAcquiredImport({
-                          acquisitionRepository: repository,
-                          audioExtractor: makeR2SpeechAudioExtractor(
+                    }: {
+                      readonly speechDispatchId: string;
+                      readonly visualDispatchId: string;
+                    }) =>
+                      task(
+                        "extract-visual-evidence-v1",
+                        "visual",
+                        extractVisualEvidenceForTranscribedImport({
+                          bucket: adaptAcquisitionBucket(rawBucket),
+                          extractor: visualExtractor,
+                          frameSampler: makeR2VisualFrameSampler(
                             adaptAcquisitionBucket(rawBucket)
                           ),
-                          bucket: adaptAcquisitionBucket(rawBucket),
-                          dispatchId: speechDispatchId,
                           importId,
+                          importRepository: repository,
                           now,
-                          speechTranscriber,
-                          transcriptionRepository:
-                            makeD1SpeechTranscriptionRepository(database),
-                        }),
-                        () => ({
-                          _tag: "Succeeded" as const,
-                          stage: "speech" as const,
-                        }),
-                        trace
+                          speechDispatchId,
+                          visualDispatchId,
+                          visualRepository:
+                            makeD1VisualEvidenceRepository(database),
+                        })
+                      );
+                    return preparedDispatchIds === undefined
+                      ? continueVisualFromSettledSpeech({
+                          acquisitionGeneration,
+                          continueVisual,
+                          importId,
+                          terminalRecovery,
+                        })
+                      : continueVisual(preparedDispatchIds);
+                  })(),
+                });
+              if ("resume" in workflowInput) {
+                return yield* runPreparedVisualRecoveryWorkflowBranch({
+                  completeVisualAndRecipe: (recovery) =>
+                    completeVisualAndRecipe(
+                      recovery.acquisitionGeneration,
+                      recovery
+                    ),
+                  findStored: repository.findById(importId).pipe(Effect.orDie),
+                  importId,
+                  resolveDispatchIds: (stored) =>
+                    Effect.all({
+                      speechDispatchId: terminalRecovery.speechDispatchId({
+                        acquisitionGeneration: stored.acquisitionGeneration,
+                        importId,
+                      }),
+                      visualDispatchId: terminalRecovery.visualDispatchId({
+                        acquisitionGeneration: stored.acquisitionGeneration,
+                        importId,
+                      }),
+                    }).pipe(Effect.orDie),
+                });
+              }
+              const stagedCarousel = yield* loadStagedOperatorCarousel({
+                bucket: adaptAcquisitionBucket(rawBucket),
+                importId,
+              }).pipe(Effect.orDie);
+              if (stagedCarousel !== null) {
+                const carouselResult =
+                  yield* runImportCarouselVisualAndRecipeWorkflow({
+                    lifecycle: {
+                      beforeRecipe: intentTransitions
+                        .advanceStage("extracting_recipe")
+                        .pipe(Effect.orDie),
+                      beforeVisual: Effect.gen(
+                        function* beginCarouselAnalysis() {
+                          yield* intentTransitions.advanceStage(
+                            "analyzing_evidence"
+                          );
+                          yield* intentTransitions.advanceComponent(
+                            "speech",
+                            "skipped"
+                          );
+                          yield* intentTransitions.advanceComponent(
+                            "visuals",
+                            "processing"
+                          );
+                        }
+                      ).pipe(Effect.orDie),
+                      visualCompleted: intentTransitions
+                        .advanceComponent("visuals", "completed")
+                        .pipe(Effect.orDie),
+                    },
+                    recipe: (carouselEvidence) =>
+                      task(
+                        "extract-carousel-recipe-v1",
+                        "recipe",
+                        produceTikTokCarouselRecipeDraft({
+                          bucket: adaptAcquisitionBucket(rawBucket),
+                          descriptor: stagedCarousel.descriptor,
+                          evidence: carouselEvidence.evidence,
+                          extractor: recipeExtractor,
+                          importId,
+                          lifecycle: recipeLifecycle,
+                          now,
+                          recipeRepository:
+                            makeD1RecipeDraftRepository(database),
+                        })
+                      ),
+                    visual: runProviderTask(
+                      "extract-carousel-visual-evidence-v1",
+                      "visual",
+                      prepareTikTokCarouselEvidence({
+                        adapter: stagedCarousel.adapter,
+                        bucket: adaptAcquisitionBucket(rawBucket),
+                        carouselRepository:
+                          makeD1CarouselEvidenceRepository(database),
+                        descriptor: stagedCarousel.descriptor,
+                        importId,
+                        now,
+                        visualExtractor,
+                      }),
+                      (evidence) => ({
+                        _tag: "Succeeded" as const,
+                        evidence,
+                        stage: "visual" as const,
+                      }),
+                      trace,
+                      retryLifecycle("visual")
+                    ).pipe(
+                      Effect.flatMap((value) =>
+                        Schema.decodeUnknownEffect(
+                          CarouselEvidenceTaskCheckpoint
+                        )(value)
+                      ),
+                      Effect.orDie
+                    ),
+                  });
+                if (carouselResult._tag === "Failed") {
+                  yield* intentTransitions
+                    .fail(
+                      carouselResult.stage,
+                      publicIntentFailureForProviderStage(carouselResult.stage)
+                    )
+                    .pipe(Effect.orDie);
+                }
+                return carouselResult;
+              }
+              const rawClaim = yield* Cloudflare.Workflows.task(
+                "claim-acquisition-v1",
+                repository.claimAcquisition(importId).pipe(
+                  Effect.map((claim) =>
+                    claim._tag === "Finished"
+                      ? ({ _tag: "Finished" } as const)
+                      : {
+                          _tag: "Acquiring" as const,
+                          canonicalId: claim.import.canonicalSourceId,
+                        }
+                  ),
+                  Effect.orDie
+                )
+              );
+              const claim = yield* Schema.decodeUnknownEffect(
+                AcquisitionClaimCheckpoint
+              )(rawClaim).pipe(Effect.orDie);
+              if (claim._tag === "Finished") {
+                return { _tag: "NoAcquisitionRequired" as const };
+              }
+              const stub = mediaObjects.getByName(importId);
+              const mediaObject = makeAcquisitionMediaObject(stub);
+              const encodedOutcome = yield* Cloudflare.Workflows.task(
+                "resolve-acquire-store-verify-v2",
+                recoverVerifiedAcquisitionCheckpoint({
+                  expectedCanonicalId: claim.canonicalId,
+                  findStored: repository.findById(importId),
+                  importId,
+                  readEvidence: (stored) =>
+                    readVerifiedAcquisitionEvidence(
+                      adaptAcquisitionBucket(rawBucket),
+                      {
+                        canonicalId: stored.canonicalSourceId,
+                        generation: stored.acquisitionGeneration,
+                        importId,
+                      }
+                    ),
+                }).pipe(
+                  Effect.flatMap(
+                    (
+                      recovered
+                    ): Effect.Effect<
+                      AcquisitionTaskOutcome | AcquisitionCheckpointRejected,
+                      UnconfirmedAcquisitionRetry
+                    > =>
+                      recovered === null
+                        ? runAcquisitionTask(
+                            () => repository.beginAcquisitionAttempt(importId),
+                            (allocation) =>
+                              allocation.canonicalSourceId === claim.canonicalId
+                                ? acquireStoreVerify(
+                                    adaptAcquisitionBucket(rawBucket),
+                                    mediaObject,
+                                    {
+                                      beforeCleanup: (
+                                        prepared,
+                                        acquisitionMediaObject
+                                      ) =>
+                                        persistDerivedProviderEvidence(
+                                          adaptAcquisitionBucket(rawBucket),
+                                          acquisitionMediaObject,
+                                          prepared,
+                                          {
+                                            generation: allocation.generation,
+                                            importId,
+                                          }
+                                        ),
+                                      canonicalId: allocation.canonicalSourceId,
+                                      generation: allocation.generation,
+                                      importId,
+                                    }
+                                  )
+                                : Effect.die(
+                                    "Persisted canonical identity changed"
+                                  ),
+                            {
+                              correlationId,
+                              lifecycle: retryLifecycle("acquisition"),
+                            }
+                          )
+                        : Effect.succeed(recovered)
+                  ),
+                  Effect.map((outcome) =>
+                    outcome._tag === "AcquisitionCheckpointRejected"
+                      ? outcome
+                      : Schema.encodeSync(AcquisitionTaskOutcome)(outcome)
+                  ),
+                  Effect.orDie
+                ),
+                AcquisitionTaskStepConfig
+              );
+              const decodedCheckpoint =
+                decodeAcquisitionCheckpoint(encodedOutcome);
+              yield* observeAcquisitionCheckpoint(
+                correlationId,
+                decodedCheckpoint
+              );
+              if (decodedCheckpoint._tag === "AcquisitionCheckpointRejected") {
+                return decodedCheckpoint;
+              }
+              const { outcome } = decodedCheckpoint;
+              const encodedFinalization = yield* Cloudflare.Workflows.task(
+                "record-acquisition-v2",
+                (outcome._tag === "VerifiedAcquisition"
+                  ? continueAcquisitionCheckpoint({
+                      findStored: repository.findById(importId),
+                      importId,
+                      onAccepted: () => Effect.succeed<"Recorded">("Recorded"),
+                      outcome,
+                    }).pipe(
+                      Effect.flatMap((continuation) =>
+                        continuation === "Recorded"
+                          ? Effect.succeed(continuation)
+                          : repository.recordAcquired(
+                              importId,
+                              outcome.generation,
+                              outcome.evidence,
+                              outcome.evidence.acquiredAt
+                            )
                       )
                     )
-                  ),
-              outcome,
-            }).pipe(Effect.orDie),
-            ProviderTaskStepConfig
-          );
-          const speech = yield* Schema.decodeUnknownEffect(
-            SpeechProviderTaskCheckpoint
-          )(encodedSpeech).pipe(Effect.orDie);
-          if (speech._tag === "AcquisitionCheckpointRejected") {
-            return speech;
-          }
-          if (speech._tag === "Failed") {
-            yield* persistTerminal(speech, outcome.generation);
-            return speech;
-          }
-          const failure = yield* completeVisualAndRecipe(outcome.generation);
-          if (failure !== null) {
-            return failure;
-          }
-          return encodedOutcome;
-        }).pipe(
+                  : repository.recordAcquisitionFailure(
+                      importId,
+                      outcome.generation,
+                      outcome,
+                      Schema.decodeUnknownSync(ImportTimestamp)(
+                        new Date().toISOString()
+                      )
+                    )
+                ).pipe(
+                  Effect.map(Schema.encodeSync(AcquisitionFinalizationResult)),
+                  Effect.orDie
+                )
+              );
+              const finalization = yield* Schema.decodeUnknownEffect(
+                AcquisitionFinalizationResult
+              )(encodedFinalization).pipe(Effect.orDie);
+              yield* observeAcquisitionSettlement(
+                correlationId,
+                outcome,
+                finalization
+              );
+              if (outcome._tag !== "VerifiedAcquisition") {
+                if (finalization === "Recorded") {
+                  yield* intentTransitions
+                    .fail(
+                      "acquisition",
+                      publicIntentFailureForAcquisitionOutcome(outcome)
+                    )
+                    .pipe(Effect.orDie);
+                }
+                return encodedOutcome;
+              }
+              yield* intentTransitions
+                .advanceStage("analyzing_evidence")
+                .pipe(Effect.orDie);
+              yield* intentTransitions
+                .advanceComponent("speech", "processing")
+                .pipe(Effect.orDie);
+              const encodedSpeech = yield* Cloudflare.Workflows.task(
+                "transcribe-video-v1",
+                continueAcquisitionCheckpoint({
+                  findStored: repository.findById(importId),
+                  importId,
+                  onAccepted: () =>
+                    terminalRecovery
+                      .speechDispatchId({
+                        acquisitionGeneration: outcome.generation,
+                        importId,
+                      })
+                      .pipe(
+                        Effect.orDie,
+                        Effect.flatMap((speechDispatchId) =>
+                          runProviderTaskAttempt(
+                            "speech",
+                            transcribeAcquiredImport({
+                              acquisitionRepository: repository,
+                              audioExtractor: makeR2SpeechAudioExtractor(
+                                adaptAcquisitionBucket(rawBucket)
+                              ),
+                              bucket: adaptAcquisitionBucket(rawBucket),
+                              dispatchId: speechDispatchId,
+                              importId,
+                              now,
+                              speechTranscriber,
+                              transcriptionRepository:
+                                makeD1SpeechTranscriptionRepository(database),
+                            }),
+                            () => ({
+                              _tag: "Succeeded" as const,
+                              stage: "speech" as const,
+                            }),
+                            trace,
+                            retryLifecycle("speech")
+                          )
+                        )
+                      ),
+                  outcome,
+                }).pipe(Effect.orDie),
+                ProviderTaskStepConfig
+              );
+              const speech = yield* Schema.decodeUnknownEffect(
+                SpeechProviderTaskCheckpoint
+              )(encodedSpeech).pipe(Effect.orDie);
+              if (speech._tag === "AcquisitionCheckpointRejected") {
+                return speech;
+              }
+              if (speech._tag === "Failed") {
+                yield* persistTerminal(speech, outcome.generation);
+                yield* intentTransitions
+                  .fail("speech", publicIntentFailureForProviderStage("speech"))
+                  .pipe(Effect.orDie);
+                return speech;
+              }
+              yield* intentTransitions
+                .advanceComponent("speech", "completed")
+                .pipe(Effect.orDie);
+              const failure = yield* completeVisualAndRecipe(
+                outcome.generation
+              );
+              if (failure !== null) {
+                return failure;
+              }
+              return encodedOutcome;
+            })
+        ).pipe(
+          Effect.orDie,
           Effect.provideService(ImportObservabilityTraceStore, traceStore)
         );
       }).pipe(
@@ -884,12 +1038,14 @@ export const EnsureStartedResult = Schema.Literals([
 ]);
 export type EnsureStartedResult = typeof EnsureStartedResult.Type;
 
-export const importWorkflowInstanceId = (importId: ImportId) =>
-  `import-acquisition-${importId}`;
+export const importWorkflowInstanceId = (
+  importId: ImportId | RecipeImportIntentId
+) => `import-acquisition-${importId}`;
 
 export interface ImportWorkflowStarterShape {
   readonly ensureStarted?: (
     importId: ImportId,
+    executionGeneration: ImportIntentExecutionGeneration,
     trace: ImportTraceContext
   ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
   /** Compatibility-only shape for unchanged cancellation fixtures. */
@@ -906,6 +1062,7 @@ export interface ImportWorkflowStarterShape {
 export interface ImportWorkflowReconcilerShape extends ImportWorkflowStarterShape {
   readonly ensureStarted: (
     importId: ImportId,
+    executionGeneration: ImportIntentExecutionGeneration,
     trace: ImportTraceContext
   ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
 }
@@ -933,6 +1090,23 @@ interface WorkflowHandleLike {
   ) => Effect.Effect<readonly WorkflowInstanceLike[]>;
   readonly get: (id: string) => Effect.Effect<WorkflowInstanceLike>;
 }
+
+interface WorkflowTerminationHandleLike {
+  readonly get: (id: string) => Effect.Effect<{
+    readonly terminate: () => Effect.Effect<void, unknown>;
+  }>;
+}
+
+export const makeImportWorkflowTerminator = (
+  workflow: WorkflowTerminationHandleLike
+): ImportIntentWorkflowTerminatorShape => ({
+  terminate: Effect.fn("ImportWorkflow.terminate")(
+    (intentId: RecipeImportIntentId) =>
+      workflow
+        .get(importWorkflowInstanceId(intentId))
+        .pipe(Effect.flatMap((instance) => instance.terminate()))
+  ),
+});
 
 const reconcileExisting = (instance: WorkflowInstanceLike) =>
   Effect.flatMap(
@@ -1041,11 +1215,19 @@ export const makeImportWorkflowStarter = (
     );
 
   return {
-    ensureStarted: (importId, trace) => {
+    ensureStarted: (importId, executionGeneration, trace) => {
       const instanceId = importWorkflowInstanceId(importId);
       return Effect.gen(function* ensureStarted() {
+        const input = yield* Schema.decodeUnknownEffect(ImportWorkflowInput, {
+          onExcessProperty: "error",
+        })({ executionGeneration, importId, trace }).pipe(
+          Effect.mapError(() => workflowStartUnavailable())
+        );
+        const params = yield* Schema.encodeEffect(ImportWorkflowInput)(
+          input
+        ).pipe(Effect.mapError(() => workflowStartUnavailable()));
         const createOutcome = yield* workflow
-          .createBatch([{ id: instanceId, params: { importId, trace } }])
+          .createBatch([{ id: instanceId, params }])
           .pipe(
             Effect.map((created) => ({
               _tag: "Created" as const,
@@ -1097,6 +1279,7 @@ export const makeImportWorkflowStarter = (
 export const ensureImportWorkflowStarted = (
   starter: ImportWorkflowStarterShape,
   importId: ImportId,
+  executionGeneration: ImportIntentExecutionGeneration,
   trace: ImportTraceContext
 ) => {
   if (starter.ensureStarted === undefined) {
@@ -1104,7 +1287,7 @@ export const ensureImportWorkflowStarted = (
       ? Effect.fail(workflowStartUnavailable())
       : Effect.as(starter.start(importId), "already_active" as const);
   }
-  return starter.ensureStarted(importId, trace);
+  return starter.ensureStarted(importId, executionGeneration, trace);
 };
 
 // eslint-disable-next-line max-classes-per-file -- The Workflow host and its service tag form one frozen module contract.

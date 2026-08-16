@@ -3,11 +3,14 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { Cause, Effect, Exit, Fiber, Option, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { Miniflare } from "miniflare";
 import { describe, expect, it, vi } from "vitest";
 
+import { runCurrentImportIntentExecution } from "./import-intent-execution.js";
+import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   AcquisitionGeneration,
   AcquisitionTaskOutcome,
@@ -23,10 +26,15 @@ import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
 } from "./import-observability.js";
+import {
+  LegacyImportWorkflowExecutionGeneration,
+  resolveImportWorkflowInput,
+} from "./import-workflow-input.js";
 import { ImportId } from "./import.contracts.js";
 import {
   ensureImportWorkflowStarted,
   importWorkflowInstanceId,
+  makeImportWorkflowTerminator,
   makeImportWorkflowStarter,
   AcquisitionTaskStepConfig,
   MaximumAbsoluteWorkflowSeconds,
@@ -40,9 +48,13 @@ import {
 const importId = Schema.decodeUnknownSync(ImportId)(
   "018f47ad-91aa-7c35-b6fe-000000000001"
 );
+const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(importId);
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
 );
+const executionGeneration = Schema.decodeUnknownSync(
+  ImportIntentExecutionGeneration
+)(1);
 const verifiedAcquisition = (
   generation: typeof AcquisitionGeneration.Type
 ): AcquisitionTaskOutcome => ({
@@ -67,6 +79,46 @@ const nodePath = require("node:path") as {
   readonly join: (...paths: readonly string[]) => string;
 };
 const MiniflareOperationTimeoutMilliseconds = 5000;
+
+describe("intent execution preflight", () => {
+  it("does not evaluate provider work for a superseded generation and preserves legacy g0", async () => {
+    let checks = 0;
+    let providerCalls = 0;
+    const repository = {
+      isIntentExecutionCurrent: () => {
+        checks += 1;
+        return Effect.succeed(false);
+      },
+    };
+    const providerWork = () =>
+      Effect.sync(() => {
+        providerCalls += 1;
+        return "acquired" as const;
+      });
+
+    const superseded = await Effect.runPromise(
+      runCurrentImportIntentExecution(
+        repository,
+        intentId,
+        executionGeneration,
+        providerWork
+      )
+    );
+    const legacy = await Effect.runPromise(
+      runCurrentImportIntentExecution(
+        repository,
+        intentId,
+        LegacyImportWorkflowExecutionGeneration,
+        providerWork
+      )
+    );
+
+    expect(superseded).toEqual({ _tag: "ImportIntentExecutionSuperseded" });
+    expect(legacy).toBe("acquired");
+    expect(checks).toBe(1);
+    expect(providerCalls).toBe(1);
+  });
+});
 
 const runWithin = async <Value>(
   operation: Promise<Value>,
@@ -296,7 +348,10 @@ const makeWorkflow = (
   created = false
 ) => {
   const calls = {
-    createBatch: [] as unknown[],
+    createBatch: [] as (readonly {
+      readonly id?: string;
+      readonly params?: unknown;
+    }[])[],
     get: [] as string[],
     restart: 0,
     restartOptions: [] as unknown[],
@@ -311,7 +366,9 @@ const makeWorkflow = (
     status: () => Effect.succeed({ status }),
   };
   const workflow = {
-    createBatch: (input: readonly unknown[]) =>
+    createBatch: (
+      input: readonly { readonly id?: string; readonly params?: unknown }[]
+    ) =>
       Effect.sync(() => {
         calls.createBatch.push(input);
         return created ? [instance] : [];
@@ -329,12 +386,38 @@ const makeWorkflow = (
 };
 
 describe("import Workflow start reconciliation", () => {
+  it("terminates the one deterministic Workflow instance for a cancelled intent", async () => {
+    const calls = { get: [] as string[], terminate: 0 };
+    const terminator = makeImportWorkflowTerminator({
+      get: (id) =>
+        Effect.sync(() => {
+          calls.get.push(id);
+          return {
+            terminate: () =>
+              Effect.sync(() => {
+                calls.terminate += 1;
+              }),
+          };
+        }),
+    });
+
+    await expect(
+      Effect.runPromise(terminator.terminate(intentId))
+    ).resolves.toBeUndefined();
+    expect(calls).toEqual({
+      get: [`import-acquisition-${intentId}`],
+      terminate: 1,
+    });
+  });
+
   it("uses one deterministic, privacy-safe Workflow input", async () => {
     const { calls, starter } = makeWorkflow("queued", true);
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
 
     await expect(
-      Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
+      Effect.runPromise(
+        starter.ensureStarted(importId, executionGeneration, { correlationId })
+      )
     ).resolves.toBe("created");
     expect(importWorkflowInstanceId(importId)).toBe(
       `import-acquisition-${importId}`
@@ -343,10 +426,23 @@ describe("import Workflow start reconciliation", () => {
       [
         {
           id: `import-acquisition-${importId}`,
-          params: { importId, trace: { correlationId } },
+          params: {
+            executionGeneration,
+            importId,
+            trace: { correlationId },
+          },
         },
       ],
     ]);
+    await expect(
+      Effect.runPromise(
+        resolveImportWorkflowInput(calls.createBatch[0]?.[0]?.params)
+      )
+    ).resolves.toEqual({
+      executionGeneration,
+      importId,
+      trace: { correlationId },
+    });
     expect(JSON.stringify(calls.createBatch)).not.toMatch(
       /url|locator|caption/iu
     );
@@ -368,7 +464,11 @@ describe("import Workflow start reconciliation", () => {
       const { calls, starter } = makeWorkflow(status);
 
       await expect(
-        Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
+        Effect.runPromise(
+          starter.ensureStarted(importId, executionGeneration, {
+            correlationId,
+          })
+        )
       ).resolves.toBe("already_active");
       expect(calls.restart).toBe(0);
     }
@@ -378,7 +478,11 @@ describe("import Workflow start reconciliation", () => {
     const { calls, starter } = makeWorkflow("paused");
 
     await expect(
-      Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
+      Effect.runPromise(
+        starter.ensureStarted(importId, executionGeneration, {
+          correlationId,
+        })
+      )
     ).resolves.toBe("paused");
     expect(calls.restart).toBe(0);
   });
@@ -505,20 +609,26 @@ describe("import Workflow start reconciliation", () => {
       const { calls, starter } = makeWorkflow(status);
 
       await expect(
-        Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
+        Effect.runPromise(
+          starter.ensureStarted(importId, executionGeneration, {
+            correlationId,
+          })
+        )
       ).resolves.toBe("restarted");
       expect(calls.restart).toBe(1);
     }
   );
 
   it("maps unknown status, binding defects, and impossible batches to a safe typed failure", async () => {
-    const unknown = makeWorkflow("unknown").starter.ensureStarted(importId, {
-      correlationId,
-    });
+    const unknown = makeWorkflow("unknown").starter.ensureStarted(
+      importId,
+      executionGeneration,
+      { correlationId }
+    );
     const defect = makeImportWorkflowStarter({
       createBatch: () => Effect.die("provider-secret-fragment"),
       get: () => Effect.die("unreachable"),
-    }).ensureStarted(importId, { correlationId });
+    }).ensureStarted(importId, executionGeneration, { correlationId });
     const impossibleInstance = {
       restart: () => Effect.void,
       status: () => Effect.succeed({ status: "queued" }),
@@ -527,7 +637,7 @@ describe("import Workflow start reconciliation", () => {
       createBatch: () =>
         Effect.succeed([impossibleInstance, impossibleInstance]),
       get: () => Effect.die("unreachable"),
-    }).ensureStarted(importId, { correlationId });
+    }).ensureStarted(importId, executionGeneration, { correlationId });
 
     await Promise.all(
       [unknown, defect, impossible].map(async (effect) => {
@@ -564,17 +674,27 @@ describe("import Workflow start reconciliation", () => {
     const starter = makeImportWorkflowStarter(workflow);
 
     await expect(
-      Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
+      Effect.runPromise(
+        starter.ensureStarted(importId, executionGeneration, {
+          correlationId,
+        })
+      )
     ).resolves.toBe("already_active");
     await expect(
-      Effect.runPromise(starter.ensureStarted(importId, { correlationId }))
+      Effect.runPromise(
+        starter.ensureStarted(importId, executionGeneration, {
+          correlationId,
+        })
+      )
     ).resolves.toBe("already_active");
   });
 
   it("fails a missing starter method instead of silently stranding a queued import", async () => {
     await expect(
       Effect.runPromise(
-        ensureImportWorkflowStarted({}, importId, { correlationId })
+        ensureImportWorkflowStarted({}, importId, executionGeneration, {
+          correlationId,
+        })
       )
     ).rejects.toMatchObject({ _tag: "WorkflowStartUnavailable" });
   });
@@ -663,6 +783,7 @@ describe("import acquisition retry contract", () => {
   }, 15_000);
 
   it("runs typed retryable failures three total times after exact 1s and 2s delays", async () => {
+    const activity: string[] = [];
     const generations: number[] = [];
     let attempts = 0;
     const effect = runAcquisitionTask(
@@ -685,6 +806,14 @@ describe("import acquisition retry contract", () => {
               code: "private_or_unavailable" as const,
               generation,
             });
+      },
+      {
+        lifecycle: {
+          retrying: (attempt) =>
+            Effect.sync(() => activity.push(`retrying:${attempt}`)),
+          working: (attempt) =>
+            Effect.sync(() => activity.push(`working:${attempt}`)),
+        },
       }
     );
     const result = await Effect.runPromise(
@@ -708,6 +837,12 @@ describe("import acquisition retry contract", () => {
       generation: 3,
     });
     expect(generations).toEqual([1, 2, 3]);
+    expect(activity).toEqual([
+      "retrying:1",
+      "working:2",
+      "retrying:2",
+      "working:3",
+    ]);
   });
 
   it("encodes the final closed retry reason while semantic outcomes execute once", async () => {

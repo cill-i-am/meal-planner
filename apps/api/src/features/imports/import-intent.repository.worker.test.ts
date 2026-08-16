@@ -1,7 +1,9 @@
 import {
   CanonicalTikTokUrl,
+  CancelRecipeImportIntentRequest,
   CreateRecipeImportIntentRequest,
   IdempotencyKey,
+  Instant,
   RecipeImportActionId,
   RecipeImportIntentId,
   RecipeId,
@@ -13,12 +15,20 @@ import { TestClock } from "effect/testing";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
+  ImportIntentWorkflowTerminator,
+  runCurrentImportIntentExecution,
+} from "./import-intent-execution.js";
+import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
+import {
   ImportIntentIdGenerator,
   ImportPrincipal,
+  ReconcileStalledImportIntentStartsRequest,
   makeImportIntentApplication,
 } from "./import-intent.js";
 import { SourceCanonicalId } from "./import.contracts.js";
+import { workflowStartUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
+import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
 
 const testEnv = env as unknown as {
   readonly MealPlannerDatabase: AnyD1Database;
@@ -31,14 +41,25 @@ const d1Results = <A>(promise: PromiseLike<unknown>) =>
   promise as PromiseLike<{ readonly results: readonly A[] }>;
 
 const decodeRequest = Schema.decodeUnknownSync(CreateRecipeImportIntentRequest);
+const decodeCancelRequest = Schema.decodeUnknownSync(
+  CancelRecipeImportIntentRequest
+);
 const decodeKey = Schema.decodeUnknownSync(IdempotencyKey);
+const decodeInstant = Schema.decodeUnknownSync(Instant);
 const decodeCanonicalUrl = Schema.decodeUnknownSync(CanonicalTikTokUrl);
 const decodeIntentId = Schema.decodeUnknownSync(RecipeImportIntentId);
 const decodeActionId = Schema.decodeUnknownSync(RecipeImportActionId);
 const decodeRecipeId = Schema.decodeUnknownSync(RecipeId);
 const decodeCanonicalSourceId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodePrincipal = Schema.decodeUnknownSync(ImportPrincipal);
-
+const decodeExecutionGeneration = Schema.decodeUnknownSync(
+  ImportIntentExecutionGeneration
+);
+const decodeReconciliationRequest = Schema.decodeUnknownSync(
+  ReconcileStalledImportIntentStartsRequest
+);
+const importWorkflowInstanceId = (importId: string) =>
+  `import-acquisition-${importId}`;
 const householdA = decodePrincipal({
   actorId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   householdScopeId:
@@ -113,7 +134,63 @@ beforeAll(async () => {
 describe("canonical recipe import intent repository in workerd", () => {
   it("admits, scopes, resolves, redirects, and converges atomically", async () => {
     const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
-    const application = makeImportIntentApplication(repository);
+    const activeInstanceIds = new Set<string>();
+    const workflowStarts: {
+      readonly correlationId: string;
+      readonly executionGeneration: number;
+      readonly importId: string;
+      readonly instanceId: string;
+    }[] = [];
+    const workflowStarter: Pick<
+      ImportWorkflowReconcilerShape,
+      "ensureStarted"
+    > = {
+      ensureStarted: (importId, executionGeneration, trace) =>
+        Effect.gen(function* recordDurableStart() {
+          const committed = yield* Effect.promise<{
+            execution_generation: number;
+            history_count: number;
+            intent_version: number;
+            public_stage: string;
+            public_status: string;
+          } | null>(() =>
+            testEnv.MealPlannerDatabase.prepare(
+              `SELECT execution_generation, intent_version,
+                      public_stage, public_status,
+                      (SELECT count(*)
+                         FROM recipe_import_intent_history h
+                        WHERE h.intent_id = recipe_imports.id
+                          AND h.event_type = 'source_resolved') AS history_count
+                 FROM recipe_imports WHERE id = ?`
+            )
+              .bind(importId)
+              .first()
+          );
+          expect(committed).toMatchObject({
+            execution_generation: executionGeneration,
+            history_count: 1,
+            intent_version: 2,
+            public_stage: "acquiring_media",
+            public_status: "processing",
+          });
+          const instanceId = importWorkflowInstanceId(importId);
+          workflowStarts.push({
+            correlationId: trace.correlationId,
+            executionGeneration,
+            importId,
+            instanceId,
+          });
+          if (activeInstanceIds.has(instanceId)) {
+            return "already_active" as const;
+          }
+          activeInstanceIds.add(instanceId);
+          return "created" as const;
+        }),
+    };
+    const application = makeImportIntentApplication(
+      repository,
+      workflowStarter
+    );
     let nextId = 1;
     const idLayer = Layer.succeed(
       ImportIntentIdGenerator,
@@ -351,18 +428,29 @@ describe("canonical recipe import intent repository in workerd", () => {
           source: { resolution: "resolved" },
           status: "processing",
         });
-        const claimSnapshot = yield* Effect.promise(() =>
+        const claimSnapshot = yield* Effect.promise<{
+          execution_generation: number;
+          intent_version: number;
+          public_stage_started_at: string;
+          updated_at: string;
+        } | null>(() =>
           testEnv.MealPlannerDatabase.prepare(
-            `SELECT intent_version, public_stage_started_at, updated_at
+            `SELECT execution_generation, intent_version,
+                    public_stage_started_at, updated_at
                FROM recipe_imports WHERE id = ?`
           )
             .bind(admitted.intent.id)
-            .first<{
-              intent_version: number;
-              public_stage_started_at: string;
-              updated_at: string;
-            }>()
+            .first()
         );
+        expect(claimSnapshot?.execution_generation).toBe(1);
+        expect(workflowStarts).toEqual([
+          {
+            correlationId: expect.any(String),
+            executionGeneration: 1,
+            importId: admitted.intent.id,
+            instanceId: importWorkflowInstanceId(admitted.intent.id),
+          },
+        ]);
         const claimReplay = yield* application.resolveSource(householdA, {
           canonicalSourceId: canonicalSourceIdFor(1),
           canonicalUrl: canonicalUrlFor(1),
@@ -370,10 +458,18 @@ describe("canonical recipe import intent repository in workerd", () => {
           sourceKind: "video",
         });
         expect(claimReplay).toEqual(claimed);
+        expect(workflowStarts.slice(0, 2)).toEqual([
+          workflowStarts[0],
+          workflowStarts[0],
+        ]);
+        expect(activeInstanceIds).toEqual(
+          new Set([importWorkflowInstanceId(admitted.intent.id)])
+        );
         expect(
           yield* Effect.promise(() =>
             testEnv.MealPlannerDatabase.prepare(
-              `SELECT intent_version, public_stage_started_at, updated_at
+              `SELECT execution_generation, intent_version,
+                      public_stage_started_at, updated_at
                  FROM recipe_imports WHERE id = ?`
             )
               .bind(admitted.intent.id)
@@ -420,12 +516,12 @@ describe("canonical recipe import intent repository in workerd", () => {
           {
             actor_category: "system",
             actor_identity_hash: null,
-            command_digest: null,
+            command_digest: expect.stringMatching(/^[a-f\d]{64}$/u),
             event_type: "source_resolved",
             from_public_stage: "resolving_source",
             from_public_status: "processing",
             intent_version: 2,
-            mutation_id: null,
+            mutation_id: expect.stringMatching(/^[a-f\d]{64}$/u),
             to_public_stage: "acquiring_media",
             to_public_status: "processing",
           },
@@ -445,7 +541,9 @@ describe("canonical recipe import intent repository in workerd", () => {
             Option.getOrThrow(
               Cause.findErrorOption(conflictingResolution.cause)
             )
-          ).toMatchObject({ _tag: "RecipeImportIntentTransitionRejected" });
+          ).toMatchObject({
+            _tag: "ImportIntentTransitionMutationConflict",
+          });
         }
 
         for (const hiddenMutation of [
@@ -466,6 +564,7 @@ describe("canonical recipe import intent repository in workerd", () => {
           }
         }
 
+        const startsBeforeRedirect = workflowStarts.length;
         const duplicate = yield* application.admit(
           householdA,
           requestFor(1),
@@ -490,6 +589,7 @@ describe("canonical recipe import intent repository in workerd", () => {
           sourceKind: "video",
         });
         expect(redirectReplay).toEqual(redirected);
+        expect(workflowStarts).toHaveLength(startsBeforeRedirect);
         expect(
           (yield* Effect.promise(() =>
             d1Results<{
@@ -530,12 +630,12 @@ describe("canonical recipe import intent repository in workerd", () => {
           {
             actor_category: "system",
             actor_identity_hash: null,
-            command_digest: null,
+            command_digest: expect.stringMatching(/^[a-f\d]{64}$/u),
             event_type: "intent_redirected",
             from_public_stage: "resolving_source",
             from_public_status: "processing",
             intent_version: 2,
-            mutation_id: null,
+            mutation_id: expect.stringMatching(/^[a-f\d]{64}$/u),
             to_public_stage: null,
             to_public_status: "redirected",
           },
@@ -722,5 +822,410 @@ describe("canonical recipe import intent repository in workerd", () => {
         expect(foreignKeyViolations.results).toEqual([]);
       })
     );
+  });
+
+  it("keeps the durable owner claim when Workflow start fails", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const intentId = decodeIntentId("00000000-0000-4000-8000-000000000099");
+    const idLayer = Layer.succeed(
+      ImportIntentIdGenerator,
+      ImportIntentIdGenerator.of({ next: Effect.succeed(intentId) })
+    );
+    const application = makeImportIntentApplication(repository, {
+      ensureStarted: () => Effect.fail(workflowStartUnavailable()),
+    });
+
+    await Effect.runPromise(
+      Effect.gen(function* failedStartTracer() {
+        yield* TestClock.setTime(Date.parse("2026-08-16T11:30:00.000Z"));
+        const admitted = yield* application.admit(
+          householdA,
+          requestFor(99),
+          decodeKey("start-failure-key")
+        );
+        const exit = yield* Effect.exit(
+          application.resolveSource(householdA, {
+            canonicalSourceId: canonicalSourceIdFor(99),
+            canonicalUrl: canonicalUrlFor(99),
+            intentId: admitted.intent.id,
+            sourceKind: "video",
+          })
+        );
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+            _tag: "WorkflowStartUnavailable",
+          });
+        }
+        const committed = yield* Effect.promise<{
+          execution_generation: number;
+          history_count: number;
+          intent_version: number;
+          public_stage: string;
+          public_status: string;
+        } | null>(() =>
+          testEnv.MealPlannerDatabase.prepare(
+            `SELECT execution_generation, intent_version,
+                    public_stage, public_status,
+                    (SELECT count(*)
+                       FROM recipe_import_intent_history h
+                      WHERE h.intent_id = recipe_imports.id
+                        AND h.event_type = 'source_resolved') AS history_count
+               FROM recipe_imports WHERE id = ?`
+          )
+            .bind(intentId)
+            .first()
+        );
+        expect(committed).toEqual({
+          execution_generation: 1,
+          history_count: 1,
+          intent_version: 2,
+          public_stage: "acquiring_media",
+          public_status: "processing",
+        });
+      }).pipe(Effect.provide([idLayer, TestClock.layer()]))
+    );
+  });
+
+  it("reconstructs and reconciles bounded stalled starts in deterministic order", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const intentIdForOrdinal = (ordinal: number) =>
+      decodeIntentId(
+        `00000000-0000-4000-8000-${ordinal.toString().padStart(12, "0")}`
+      );
+    const skippedIntentId = intentIdForOrdinal(201);
+    const failedIntentId = intentIdForOrdinal(202);
+    const successfulIntentId = intentIdForOrdinal(204);
+    const recentIntentId = intentIdForOrdinal(203);
+    const intentIds = [
+      skippedIntentId,
+      failedIntentId,
+      successfulIntentId,
+      recentIntentId,
+    ];
+    let nextIntentIndex = 0;
+    let reconciling = false;
+    const activeInstanceIds = new Set<string>();
+    const starts: {
+      readonly executionGeneration: number;
+      readonly importId: string;
+      readonly correlationId: string;
+    }[] = [];
+    const workflowStarter: Pick<
+      ImportWorkflowReconcilerShape,
+      "ensureStarted"
+    > = {
+      ensureStarted: (importId, executionGeneration, trace) => {
+        if (!reconciling) {
+          return Effect.succeed("already_active" as const);
+        }
+        starts.push({
+          correlationId: trace.correlationId,
+          executionGeneration,
+          importId,
+        });
+        if (String(importId) === failedIntentId) {
+          return Effect.fail(workflowStartUnavailable());
+        }
+        const instanceId = importWorkflowInstanceId(importId);
+        const created = !activeInstanceIds.has(instanceId);
+        activeInstanceIds.add(instanceId);
+        return Effect.succeed(
+          created ? ("created" as const) : ("already_active" as const)
+        );
+      },
+    };
+    const repositoryWithRecheckSkip = {
+      ...repository,
+      isIntentExecutionCurrent: (
+        intentId: Parameters<typeof repository.isIntentExecutionCurrent>[0],
+        executionGeneration: Parameters<
+          typeof repository.isIntentExecutionCurrent
+        >[1]
+      ) =>
+        intentId === skippedIntentId
+          ? Effect.succeed(false)
+          : repository.isIntentExecutionCurrent(intentId, executionGeneration),
+    };
+    const application = makeImportIntentApplication(
+      repositoryWithRecheckSkip,
+      workflowStarter
+    );
+    const idLayer = Layer.succeed(
+      ImportIntentIdGenerator,
+      ImportIntentIdGenerator.of({
+        next: Effect.sync(() => {
+          const next = intentIds[nextIntentIndex];
+          nextIntentIndex += 1;
+          if (next === undefined) {
+            throw new Error("stalled intent ID fixture exhausted");
+          }
+          return next;
+        }),
+      })
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* stalledStartTracer() {
+        yield* TestClock.setTime(Date.parse("2026-08-15T12:00:00.000Z"));
+        for (const ordinal of [201, 202, 204]) {
+          const admitted = yield* application.admit(
+            householdA,
+            requestFor(ordinal),
+            decodeKey(`stalled-${ordinal}`)
+          );
+          yield* application.resolveSource(householdA, {
+            canonicalSourceId: canonicalSourceIdFor(ordinal),
+            canonicalUrl: canonicalUrlFor(ordinal),
+            intentId: admitted.intent.id,
+            sourceKind: "video",
+          });
+        }
+
+        yield* TestClock.setTime(Date.parse("2026-08-15T12:09:00.000Z"));
+        const recent = yield* application.admit(
+          householdA,
+          requestFor(203),
+          decodeKey("recent-203")
+        );
+        yield* application.resolveSource(householdA, {
+          canonicalSourceId: canonicalSourceIdFor(203),
+          canonicalUrl: canonicalUrlFor(203),
+          intentId: recent.intent.id,
+          sourceKind: "video",
+        });
+
+        const reconstructedRepository = makeD1ImportRepository(
+          testEnv.MealPlannerDatabase
+        );
+        const one = yield* reconstructedRepository.listStalledIntentStarts(
+          decodeInstant("2026-08-15T12:05:00.000Z"),
+          decodeReconciliationRequest({
+            limit: 1,
+            minimumAgeMilliseconds: 300_000,
+          }).limit
+        );
+        expect(one.map(({ intentId }) => intentId)).toEqual([skippedIntentId]);
+
+        const reconstructed =
+          yield* reconstructedRepository.listStalledIntentStarts(
+            decodeInstant("2026-08-15T12:05:00.000Z"),
+            decodeReconciliationRequest({
+              limit: 10,
+              minimumAgeMilliseconds: 300_000,
+            }).limit
+          );
+        expect(
+          reconstructed.map(({ executionGeneration, intentId, updatedAt }) => ({
+            executionGeneration,
+            intentId,
+            updatedAt,
+          }))
+        ).toEqual(
+          [skippedIntentId, failedIntentId, successfulIntentId].map(
+            (intentId) => ({
+              executionGeneration: 1,
+              intentId,
+              updatedAt: decodeInstant("2026-08-15T12:00:00.000Z"),
+            })
+          )
+        );
+
+        reconciling = true;
+        yield* TestClock.setTime(Date.parse("2026-08-15T12:10:00.000Z"));
+        const request = decodeReconciliationRequest({
+          limit: 10,
+          minimumAgeMilliseconds: 300_000,
+        });
+        const first = yield* application.reconcileStalledStarts(request);
+        const replay = yield* application.reconcileStalledStarts(request);
+        expect(first).toEqual({
+          ensured: 1,
+          examined: 3,
+          skipped: 1,
+          startFailures: 1,
+        });
+        expect(replay).toEqual(first);
+        expect(activeInstanceIds).toEqual(
+          new Set([importWorkflowInstanceId(successfulIntentId)])
+        );
+        expect(starts).toHaveLength(4);
+        expect(
+          starts.map(({ executionGeneration, importId }) => ({
+            executionGeneration,
+            importId,
+          }))
+        ).toEqual([
+          { executionGeneration: 1, importId: failedIntentId },
+          { executionGeneration: 1, importId: successfulIntentId },
+          { executionGeneration: 1, importId: failedIntentId },
+          { executionGeneration: 1, importId: successfulIntentId },
+        ]);
+        expect(starts[1]?.correlationId).toBe(starts[3]?.correlationId);
+      }).pipe(Effect.provide([idLayer, TestClock.layer()]))
+    );
+  });
+
+  it("stops a just-created stale Workflow before provider work when cancellation wins the race", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const intentId = decodeIntentId("00000000-0000-4000-8000-000000000205");
+    let reconciling = false;
+    let startedWorkflows = 0;
+    let providerCalls = 0;
+    let terminationCalls = 0;
+    let preflightResult: unknown;
+    const applicationReference: {
+      current?: ReturnType<typeof makeImportIntentApplication>;
+    } = {};
+    const terminator = ImportIntentWorkflowTerminator.of({
+      terminate: () =>
+        Effect.sync(() => {
+          terminationCalls += 1;
+        }),
+    });
+    const workflowStarter: Pick<
+      ImportWorkflowReconcilerShape,
+      "ensureStarted"
+    > = {
+      ensureStarted: (importId, executionGeneration) => {
+        if (!reconciling) {
+          return Effect.succeed("already_active" as const);
+        }
+        return Effect.gen(function* cancelBeforeCreate() {
+          const application = applicationReference.current;
+          if (application === undefined) {
+            return yield* Effect.die("missing cancellation race application");
+          }
+          yield* application.cancel(
+            householdA,
+            intentId,
+            decodeCancelRequest({ expectedIntentVersion: 2 }),
+            decodeKey("cancel-before-stalled-create")
+          );
+          startedWorkflows += 1;
+          preflightResult = yield* runCurrentImportIntentExecution(
+            repository,
+            intentId,
+            executionGeneration,
+            () =>
+              Effect.sync(() => {
+                providerCalls += 1;
+                return "provider-ran" as const;
+              })
+          );
+          expect(importId).toBe(intentId);
+          return "created" as const;
+        }).pipe(
+          Effect.provideService(ImportIntentWorkflowTerminator, terminator),
+          Effect.orDie
+        );
+      },
+    };
+    const application = makeImportIntentApplication(
+      repository,
+      workflowStarter
+    );
+    applicationReference.current = application;
+    const idLayer = Layer.succeed(
+      ImportIntentIdGenerator,
+      ImportIntentIdGenerator.of({ next: Effect.succeed(intentId) })
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* cancellationRaceTracer() {
+        yield* TestClock.setTime(Date.parse("2026-08-14T13:00:00.000Z"));
+        const admitted = yield* application.admit(
+          householdA,
+          requestFor(205),
+          decodeKey("stalled-cancel-race")
+        );
+        yield* application.resolveSource(householdA, {
+          canonicalSourceId: canonicalSourceIdFor(205),
+          canonicalUrl: canonicalUrlFor(205),
+          intentId: admitted.intent.id,
+          sourceKind: "video",
+        });
+
+        yield* TestClock.setTime(Date.parse("2026-08-14T13:10:00.000Z"));
+        reconciling = true;
+        const summary = yield* application.reconcileStalledStarts(
+          decodeReconciliationRequest({
+            limit: 10,
+            minimumAgeMilliseconds: 300_000,
+          })
+        );
+        expect(summary).toEqual({
+          ensured: 1,
+          examined: 1,
+          skipped: 0,
+          startFailures: 0,
+        });
+        expect(startedWorkflows).toBe(1);
+        expect(terminationCalls).toBe(1);
+        expect(preflightResult).toEqual({
+          _tag: "ImportIntentExecutionSuperseded",
+        });
+        expect(providerCalls).toBe(0);
+        expect(
+          yield* repository.isIntentExecutionCurrent(
+            intentId,
+            decodeExecutionGeneration(1)
+          )
+        ).toBe(false);
+
+        const cancelled = yield* application.get(householdA, intentId);
+        expect(cancelled.status).toBe("cancelled");
+        expect(
+          yield* application.reconcileStalledStarts(
+            decodeReconciliationRequest({
+              limit: 10,
+              minimumAgeMilliseconds: 300_000,
+            })
+          )
+        ).toEqual({
+          ensured: 0,
+          examined: 0,
+          skipped: 0,
+          startFailures: 0,
+        });
+      }).pipe(Effect.provide([idLayer, TestClock.layer()]))
+    );
+  });
+
+  it("types malformed stalled-start rows as persistence corruption", async () => {
+    const statement = {
+      all: () =>
+        Promise.resolve({
+          results: [
+            {
+              executionGeneration: "not-a-generation",
+              intentId: "00000000-0000-4000-8000-000000000299",
+              updatedAt: "2026-08-16T13:00:00.000Z",
+            },
+          ],
+        }),
+      bind: () => statement,
+    };
+    const corruptRepository = makeD1ImportRepository({
+      prepare: () => statement,
+    } as unknown as AnyD1Database);
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        corruptRepository.listStalledIntentStarts(
+          decodeInstant("2026-08-16T14:00:00.000Z"),
+          decodeReconciliationRequest({
+            limit: 1,
+            minimumAgeMilliseconds: 300_000,
+          }).limit
+        )
+      )
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toEqual({
+        _tag: "ImportPersistenceCorrupt",
+      });
+    }
   });
 });

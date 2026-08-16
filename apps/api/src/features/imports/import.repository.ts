@@ -1,19 +1,27 @@
+import { Instant, RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import type {
   CanonicalTikTokUrl,
-  Instant,
   RecipeImportIntent,
-  RecipeImportIntentId,
+  RecipeImportTimeline,
   SourceUrl,
 } from "@meal-planner/recipe-import-api";
 import type { Effect, Option } from "effect";
 import { Context, Schema } from "effect";
 
 import type {
+  ImportIntentTransitionCommand,
+  ImportIntentTransitionMutationConflict,
+  ImportIntentTransitionOutcome,
+} from "./import-intent-transition.js";
+import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
+import type {
+  CancelImportIntentCommand,
   ImportPrincipal,
   RecipeImportIntentIdempotencyConflict,
   RecipeImportIntentNotFound,
   RecipeImportIntentRedirected,
   RecipeImportIntentTransitionRejected,
+  RecipeImportIntentVersionConflict,
 } from "./import-intent.js";
 import type {
   AcquisitionGeneration,
@@ -109,31 +117,107 @@ export interface AdmitImportIntentResult {
   readonly intent: RecipeImportIntent;
 }
 
+export interface CancelImportIntentResult {
+  readonly disposition: "applied" | "replayed";
+  readonly intent: RecipeImportIntent;
+}
+
 export interface ResolveImportIntentSourceCommand {
   readonly canonicalSourceId: SourceCanonicalId;
   readonly canonicalUrl: CanonicalTikTokUrl;
+  readonly commandDigest: ImportIntentTransitionCommand["commandDigest"];
   readonly intentId: RecipeImportIntentId;
+  readonly mutationId: ImportIntentTransitionCommand["mutationId"];
   readonly resolvedAt: Instant;
   readonly sourceKind: "video" | "carousel";
 }
 
+export type ResolveImportIntentSourceResult =
+  | {
+      readonly _tag: "Owner";
+      readonly disposition: "claimed" | "replayed";
+      readonly executionGeneration: ImportIntentTransitionCommand["executionGeneration"];
+      readonly intent: RecipeImportIntent;
+    }
+  | {
+      readonly _tag: "Redirected";
+      readonly disposition: "redirected" | "replayed";
+      readonly intent: RecipeImportIntent;
+    }
+  | {
+      readonly _tag: "NoStart";
+      readonly disposition: "replayed";
+      readonly intent: RecipeImportIntent;
+    };
+
 export type ImportIntentRepositoryError =
   | ImportPersistenceCorrupt
   | ImportPersistenceUnavailable
+  | ImportIntentTransitionMutationConflict
   | RecipeImportIntentIdempotencyConflict
   | RecipeImportIntentNotFound
   | RecipeImportIntentRedirected
   | RecipeImportIntentTransitionRejected;
 
+export const StalledImportIntentStartLimit = Schema.Int.pipe(
+  Schema.check(
+    Schema.isGreaterThanOrEqualTo(1),
+    Schema.isLessThanOrEqualTo(100)
+  ),
+  Schema.brand("StalledImportIntentStartLimit")
+);
+export type StalledImportIntentStartLimit =
+  typeof StalledImportIntentStartLimit.Type;
+
+export const StalledImportIntentStartCandidate = Schema.Struct({
+  executionGeneration: ImportIntentExecutionGeneration,
+  intentId: RecipeImportIntentId,
+  updatedAt: Instant,
+});
+export type StalledImportIntentStartCandidate =
+  typeof StalledImportIntentStartCandidate.Type;
+
+export type InternalImportIntentTransitionError =
+  | ImportPersistenceCorrupt
+  | ImportPersistenceUnavailable
+  | ImportIntentTransitionMutationConflict
+  | RecipeImportIntentNotFound;
+
 export interface ImportIntentRepositoryShape {
   readonly admitIntent: (
     command: AdmitImportIntentCommand
   ) => Effect.Effect<AdmitImportIntentResult, ImportIntentRepositoryError>;
+  readonly cancelIntent: (
+    command: CancelImportIntentCommand
+  ) => Effect.Effect<
+    CancelImportIntentResult,
+    | ImportPersistenceCorrupt
+    | ImportPersistenceUnavailable
+    | ImportIntentTransitionMutationConflict
+    | RecipeImportIntentNotFound
+    | RecipeImportIntentRedirected
+    | RecipeImportIntentTransitionRejected
+    | RecipeImportIntentVersionConflict
+  >;
   readonly findIntent: (
     principal: ImportPrincipal,
     intentId: RecipeImportIntentId
   ) => Effect.Effect<
     Option.Option<RecipeImportIntent>,
+    ImportPersistenceCorrupt | ImportPersistenceUnavailable
+  >;
+  readonly isIntentExecutionCurrent: (
+    intentId: RecipeImportIntentId,
+    executionGeneration: ImportIntentTransitionCommand["executionGeneration"]
+  ) => Effect.Effect<
+    boolean,
+    ImportPersistenceCorrupt | ImportPersistenceUnavailable
+  >;
+  readonly listStalledIntentStarts: (
+    cutoff: Instant,
+    limit: StalledImportIntentStartLimit
+  ) => Effect.Effect<
+    readonly StalledImportIntentStartCandidate[],
     ImportPersistenceCorrupt | ImportPersistenceUnavailable
   >;
   readonly requireMutableIntent: (
@@ -146,10 +230,28 @@ export interface ImportIntentRepositoryShape {
     | RecipeImportIntentNotFound
     | RecipeImportIntentRedirected
   >;
+  readonly readIntentTimeline: (
+    principal: ImportPrincipal,
+    intentId: RecipeImportIntentId
+  ) => Effect.Effect<
+    RecipeImportTimeline,
+    | ImportPersistenceCorrupt
+    | ImportPersistenceUnavailable
+    | RecipeImportIntentNotFound
+  >;
   readonly resolveIntentSource: (
     principal: ImportPrincipal,
     command: ResolveImportIntentSourceCommand
-  ) => Effect.Effect<RecipeImportIntent, ImportIntentRepositoryError>;
+  ) => Effect.Effect<
+    ResolveImportIntentSourceResult,
+    ImportIntentRepositoryError
+  >;
+  readonly transitionIntent: (
+    command: ImportIntentTransitionCommand
+  ) => Effect.Effect<
+    ImportIntentTransitionOutcome,
+    InternalImportIntentTransitionError
+  >;
 }
 
 export type ImportRepositoryError =

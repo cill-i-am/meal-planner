@@ -12,18 +12,42 @@ const importId = "00000000-0000-4000-8000-000000000188";
 const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2188";
 
 describe("import workflow input", () => {
-  it("preserves the exact current trace context", async () => {
+  it("preserves the exact current generation and trace context", async () => {
+    await expect(
+      Effect.runPromise(
+        resolveImportWorkflowInput({
+          executionGeneration: 1,
+          importId,
+          trace: { correlationId },
+        })
+      )
+    ).resolves.toEqual({
+      executionGeneration: 1,
+      importId,
+      trace: { correlationId },
+    });
+  });
+
+  it("defaults legacy traced input to generation zero", async () => {
     await expect(
       Effect.runPromise(
         resolveImportWorkflowInput({ importId, trace: { correlationId } })
       )
-    ).resolves.toEqual({ importId, trace: { correlationId } });
+    ).resolves.toEqual({
+      executionGeneration: 0,
+      importId,
+      trace: { correlationId },
+    });
   });
 
   it("normalizes the legacy correlation input at the durable boundary", async () => {
     await expect(
       Effect.runPromise(resolveImportWorkflowInput({ correlationId, importId }))
-    ).resolves.toEqual({ importId, trace: { correlationId } });
+    ).resolves.toEqual({
+      executionGeneration: 0,
+      importId,
+      trace: { correlationId },
+    });
   });
 
   it("preserves only the typed private prepared-visual recovery input", async () => {
@@ -36,6 +60,7 @@ describe("import workflow input", () => {
         })
       )
     ).resolves.toEqual({
+      executionGeneration: 0,
       importId,
       resume: "prepared_visual_recovery",
       trace: { correlationId },
@@ -86,6 +111,7 @@ describe("import workflow input", () => {
       await expect(
         Effect.runPromise(resolveImportWorkflowInput({ importId }))
       ).resolves.toEqual({
+        executionGeneration: 0,
         importId,
         trace: {
           correlationId: "b44d09c6-67ca-527c-a2c7-86628ffc08a6",

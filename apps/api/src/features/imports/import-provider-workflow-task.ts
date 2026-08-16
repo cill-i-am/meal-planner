@@ -21,6 +21,11 @@ export type ProviderTaskFailureCheckpoint =
   typeof ProviderTaskFailureCheckpoint.Type;
 export type ProviderTaskStage = ProviderTaskFailureCheckpoint["stage"];
 
+export interface ProviderTaskRetryLifecycle {
+  readonly retrying: (attempt: number) => Effect.Effect<void>;
+  readonly working: (attempt: number) => Effect.Effect<void>;
+}
+
 export const providerTaskFailureCode = (error: unknown): string => {
   if (typeof error === "string") {
     return error;
@@ -80,88 +85,100 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
   stage: ProviderTaskStage,
   effect: Effect.Effect<Value, Failure>,
   onSuccess: (value: Value) => Success,
-  trace?: ImportTraceContext
+  trace?: ImportTraceContext,
+  lifecycle?: ProviderTaskRetryLifecycle
 ) =>
-  effect.pipe(
-    Effect.matchEffect({
-      onFailure: (error) => {
-        const code = providerTaskFailureCode(error);
-        const reasonCode = providerTaskFailureReasonCode(error);
-        if (!isRetryableProviderTaskFailure(code)) {
-          return (
-            trace === undefined
-              ? Effect.void
-              : emitImportObservabilityEvent({
+  Effect.gen(function* runProviderAttempt() {
+    const context = yield* WorkflowStepContext;
+    if (context.attempt > 1 && lifecycle !== undefined) {
+      yield* lifecycle.working(context.attempt);
+    }
+    return yield* effect.pipe(
+      Effect.matchEffect({
+        onFailure: (error) => {
+          const code = providerTaskFailureCode(error);
+          const reasonCode = providerTaskFailureReasonCode(error);
+          if (!isRetryableProviderTaskFailure(code)) {
+            return (
+              trace === undefined
+                ? Effect.void
+                : emitImportObservabilityEvent({
+                    correlationId: trace.correlationId,
+                    event: "provider.terminal",
+                    outcome: "failed",
+                    providerStage: stage,
+                    ...(reasonCode === undefined ? {} : { reasonCode }),
+                  })
+            ).pipe(
+              Effect.as(terminalFailureCheckpoint(stage, code, reasonCode))
+            );
+          }
+
+          return Effect.gen(function* handleRetryableProviderFailure() {
+            const retryLimit =
+              context.config.retries?.limit ??
+              ProviderTaskStepConfig.retries.limit;
+            if (context.attempt >= retryLimit + 1) {
+              if (trace !== undefined) {
+                yield* emitImportObservabilityEvent({
+                  attempt: context.attempt,
+                  correlationId: trace.correlationId,
+                  event: "provider.retry_exhausted",
+                  outcome: "exhausted",
+                  providerStage: stage,
+                });
+                yield* emitImportObservabilityEvent({
+                  attempt: context.attempt,
                   correlationId: trace.correlationId,
                   event: "provider.terminal",
                   outcome: "failed",
                   providerStage: stage,
-                  ...(reasonCode === undefined ? {} : { reasonCode }),
-                })
-          ).pipe(Effect.as(terminalFailureCheckpoint(stage, code, reasonCode)));
-        }
+                });
+              }
+              return retryExhaustedCheckpoint(stage);
+            }
 
-        return Effect.gen(function* handleRetryableProviderFailure() {
-          const context = yield* WorkflowStepContext;
-          const retryLimit =
-            context.config.retries?.limit ??
-            ProviderTaskStepConfig.retries.limit;
-          if (context.attempt >= retryLimit + 1) {
+            if (lifecycle !== undefined) {
+              yield* lifecycle.retrying(context.attempt);
+            }
             if (trace !== undefined) {
               yield* emitImportObservabilityEvent({
                 attempt: context.attempt,
                 correlationId: trace.correlationId,
-                event: "provider.retry_exhausted",
-                outcome: "exhausted",
-                providerStage: stage,
-              });
-              yield* emitImportObservabilityEvent({
-                attempt: context.attempt,
-                correlationId: trace.correlationId,
-                event: "provider.terminal",
-                outcome: "failed",
+                event: "provider.retry",
+                outcome: "retrying",
                 providerStage: stage,
               });
             }
-            return retryExhaustedCheckpoint(stage);
-          }
-
-          if (trace !== undefined) {
-            yield* emitImportObservabilityEvent({
-              attempt: context.attempt,
-              correlationId: trace.correlationId,
-              event: "provider.retry",
-              outcome: "retrying",
-              providerStage: stage,
-            });
-          }
-          return yield* Effect.die(
-            new Error(`Retryable provider task failure: ${code}`)
-          );
-        });
-      },
-      onSuccess: (value) =>
-        (trace === undefined
-          ? Effect.void
-          : emitImportObservabilityEvent({
-              correlationId: trace.correlationId,
-              event: "provider.terminal",
-              outcome: "succeeded",
-              providerStage: stage,
-            })
-        ).pipe(Effect.as(onSuccess(value))),
-    })
-  );
+            return yield* Effect.die(
+              new Error(`Retryable provider task failure: ${code}`)
+            );
+          });
+        },
+        onSuccess: (value) =>
+          (trace === undefined
+            ? Effect.void
+            : emitImportObservabilityEvent({
+                correlationId: trace.correlationId,
+                event: "provider.terminal",
+                outcome: "succeeded",
+                providerStage: stage,
+              })
+          ).pipe(Effect.as(onSuccess(value))),
+      })
+    );
+  });
 
 export const runProviderTask = <Value, Failure, Success>(
   name: string,
   stage: ProviderTaskStage,
   effect: Effect.Effect<Value, Failure>,
   onSuccess: (value: Value) => Success,
-  trace?: ImportTraceContext
+  trace?: ImportTraceContext,
+  lifecycle?: ProviderTaskRetryLifecycle
 ) =>
   task(
     name,
-    runProviderTaskAttempt(stage, effect, onSuccess, trace),
+    runProviderTaskAttempt(stage, effect, onSuccess, trace, lifecycle),
     ProviderTaskStepConfig
   );

@@ -12,6 +12,13 @@ const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
 );
 
+const providerStepContext = (attempt: number) =>
+  Effect.provideService(WorkflowStepContext, {
+    attempt,
+    config: ProviderTaskStepConfig,
+    step: { count: 1, name: "transcribe-video-v1" },
+  });
+
 const captureAttempt = async (attempt: number) => {
   const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
   const exit = await Effect.runPromiseExit(
@@ -87,6 +94,36 @@ describe("provider task observability", () => {
         },
       ],
     ]);
+  });
+
+  it("reports truthful retry recovery around the exact native Workflow attempt", async () => {
+    const activity: string[] = [];
+    const lifecycle = {
+      retrying: (attempt: number) =>
+        Effect.sync(() => activity.push(`retrying:${attempt}`)),
+      working: (attempt: number) =>
+        Effect.sync(() => activity.push(`working:${attempt}`)),
+    };
+    await Effect.runPromiseExit(
+      runProviderTaskAttempt(
+        "speech",
+        Effect.fail({ code: "timeout" }),
+        () => "unused",
+        undefined,
+        lifecycle
+      ).pipe(providerStepContext(1))
+    );
+    await Effect.runPromise(
+      runProviderTaskAttempt(
+        "speech",
+        Effect.succeed("private-provider-result"),
+        () => "checkpointed",
+        undefined,
+        lifecycle
+      ).pipe(providerStepContext(2))
+    );
+
+    expect(activity).toEqual(["retrying:1", "working:2"]);
   });
 
   it("preserves only a closed evidence reason on a terminal checkpoint", async () => {
