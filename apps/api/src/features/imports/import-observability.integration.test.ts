@@ -166,17 +166,14 @@ describe("opaque import correlation continuity", () => {
         Effect.succeed(events.filter((event) => event.correlationId === id)),
     });
     let workflowParams: unknown;
-    const createdStarter = makeImportWorkflowStarter(
-      {
-        createBatch: (batch) =>
-          Effect.sync(() => {
-            workflowParams = batch[0]?.params;
-            return [activeInstance];
-          }),
-        get: () => Effect.die("created workflow must not reconcile"),
-      },
-      { correlationId }
-    );
+    const createdStarter = makeImportWorkflowStarter({
+      createBatch: (batch) =>
+        Effect.sync(() => {
+          workflowParams = batch[0]?.params;
+          return [activeInstance];
+        }),
+      get: () => Effect.die("created workflow must not reconcile"),
+    });
     const dispatch = makePilotProviderDispatchGate({
       correlationId,
       now: () => now,
@@ -194,7 +191,7 @@ describe("opaque import correlation continuity", () => {
         });
         expect(creations).toBe(1);
         expect(trace).toEqual({ correlationId });
-        yield* createdStarter.ensureStarted(importId);
+        yield* createdStarter.ensureStarted(importId, trace);
         const input = Schema.decodeUnknownSync(
           Schema.Struct({
             importId: ImportId,
@@ -291,17 +288,16 @@ describe("opaque import correlation continuity", () => {
       /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
     );
 
-    const reconciliationStarter = makeImportWorkflowStarter(
-      {
-        createBatch: () => Effect.succeed([]),
-        get: (_id: string) => Effect.succeed(activeInstance),
-      },
-      { correlationId: reconciliationCorrelationId }
-    );
+    const reconciliationStarter = makeImportWorkflowStarter({
+      createBatch: () => Effect.succeed([]),
+      get: (_id: string) => Effect.succeed(activeInstance),
+    });
     await Effect.runPromise(
       Effect.gen(function* reconcileExistingWorkflow() {
         yield* observeImportQueueReceipt(() => reconciliationCorrelationId);
-        yield* reconciliationStarter.ensureStarted(importId);
+        yield* reconciliationStarter.ensureStarted(importId, {
+          correlationId: reconciliationCorrelationId,
+        });
       }).pipe(Effect.provideService(ImportObservabilityTraceStore, traceStore))
     );
 

@@ -24,6 +24,7 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import { ImportTraceContext } from "./import-observability.js";
 import type {
   SpeechAudioExtractorShape,
   SpeechTranscriptionFailure,
@@ -49,6 +50,10 @@ import {
   RequestFingerprint,
   SourceLocatorHash,
 } from "./import.repository.js";
+
+const trace = Schema.decodeUnknownSync(ImportTraceContext)({
+  correlationId: "10000000-0000-4000-8000-000000000005",
+});
 
 const transcriptObjectKey = (importId: string, generation: number) =>
   `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`;
@@ -265,6 +270,7 @@ const makeAcquiredImport = async ({
       fixtureHash(`${fixtureIdentity}:speech-tracer-compatibility`)
     ),
     sourceKind: "tiktok",
+    trace,
     view: {
       createdAt,
       evidence: [],

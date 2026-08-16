@@ -1224,7 +1224,8 @@ const reconcileWorkflowInstance = (
 
 export interface RecipeRecoveryWorkflowStarterShape {
   readonly start: (
-    attempt: RecipeRecoveryAttempt
+    attempt: RecipeRecoveryAttempt,
+    trace: ImportTraceContext
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
 }
 
@@ -1234,11 +1235,10 @@ export const recipeRecoveryWorkflowInstanceId = (
 ) => `import-recipe-recovery-${importId}-${acquisitionGeneration}`;
 
 export const makeRecipeRecoveryWorkflowStarter = (
-  workflow: WorkflowHandleLike,
-  trace: ImportTraceContext
+  workflow: WorkflowHandleLike
 ): RecipeRecoveryWorkflowStarterShape => ({
   start: Effect.fn("RecipeRecoveryWorkflowStarter.start")(
-    function* startRecipeRecoveryWorkflow(attempt) {
+    function* startRecipeRecoveryWorkflow(attempt, trace) {
       const id = recipeRecoveryWorkflowInstanceId(
         attempt.importId,
         attempt.acquisitionGeneration

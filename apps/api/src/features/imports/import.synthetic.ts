@@ -1,6 +1,7 @@
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 
+import { makeImportTraceContext } from "./import-observability.js";
 import type {
   CreateImportRequest,
   SourceDescriptor,
@@ -85,6 +86,7 @@ export const makeProviderFreeSyntheticImportService = (input: {
         deterministicSyntheticImportId(canonicalId ?? "0000000000000000000"),
       now: () => Schema.decodeUnknownSync(ImportTimestamp)(input.now()),
       repository,
+      trace: makeImportTraceContext(),
       workflowStarter: {
         ensureStarted: () =>
           Effect.sync(() => {

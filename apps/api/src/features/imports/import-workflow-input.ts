@@ -60,15 +60,16 @@ const LegacyCorrelationNamespace = "d7342998-b4f0-5df2-8f6f-8c6b3195d98a";
  * a restart. The namespaced derivation needs no new historical step, contains
  * no source or provider data, and remains stable across reconstruction.
  */
-export const makeLegacyImportCorrelationId = (importId: ImportId) =>
-  Effect.sync(() =>
-    Schema.decodeUnknownSync(ImportCorrelationId)(
-      uuidv5(
-        `meal-planner/import-workflow/${importId}`,
-        LegacyCorrelationNamespace
-      )
+export const deriveLegacyImportCorrelationId = (importId: ImportId) =>
+  Schema.decodeUnknownSync(ImportCorrelationId)(
+    uuidv5(
+      `meal-planner/import-workflow/${importId}`,
+      LegacyCorrelationNamespace
     )
   );
+
+export const makeLegacyImportCorrelationId = (importId: ImportId) =>
+  Effect.sync(() => deriveLegacyImportCorrelationId(importId));
 
 export const resolveImportWorkflowInput = (rawInput: unknown) =>
   Effect.gen(function* resolveInput() {

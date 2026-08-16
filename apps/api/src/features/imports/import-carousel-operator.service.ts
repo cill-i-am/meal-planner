@@ -3,6 +3,7 @@ import { Context, Effect, Option, Schema } from "effect";
 import type { OperatorCarouselBundle } from "./import-carousel-operator.js";
 import { makeOperatorCarouselAdapter } from "./import-carousel-operator.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
+import type { ImportTraceContext } from "./import-observability.js";
 import type {
   CreateImportResponse,
   IdempotencyKey,
@@ -80,6 +81,7 @@ export interface OperatorCarouselPipelineInput {
   readonly declaredPageCount: number;
   readonly importId: ImportId;
   readonly sourceUrl: SourceUrl;
+  readonly trace: ImportTraceContext;
 }
 
 export interface OperatorCarouselPipelineShape {
@@ -125,6 +127,7 @@ export const makeOperatorCarouselImportService = (input: {
   readonly now: () => ImportTimestamp;
   readonly pipeline: OperatorCarouselPipelineShape;
   readonly repository: ImportRepositoryShape;
+  readonly trace: ImportTraceContext;
 }): OperatorCarouselImportServiceShape => {
   const admit = Effect.fn("OperatorCarouselImportService.admit")(
     function* admitOperatorCarousel(bundle, idempotencyKey) {
@@ -221,6 +224,7 @@ export const makeOperatorCarouselImportService = (input: {
               canonicalSourceId: canonicalId,
               compatibilityFingerprint,
               sourceKind: "tiktok",
+              trace: input.trace,
               view: {
                 createdAt: receivedAt,
                 evidence: [],
@@ -252,6 +256,7 @@ export const makeOperatorCarouselImportService = (input: {
           declaredPageCount: bundle.declaredPageCount,
           importId: accepted.view.id,
           sourceUrl: canonicalUrl,
+          trace: accepted.trace,
         })
         .pipe(Effect.mapError(pipelineError));
       const stored = yield* input.repository.findById(accepted.view.id);

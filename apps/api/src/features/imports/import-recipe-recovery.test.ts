@@ -98,18 +98,15 @@ describe("recipe recovery workflow authority", () => {
 
   it("creates one workflow identity for the D1 cursor", async () => {
     const batches: unknown[] = [];
-    const starter = makeRecipeRecoveryWorkflowStarter(
-      {
-        createBatch: (batch) => {
-          batches.push(batch);
-          return Effect.succeed([instance("running", [])]);
-        },
-        get: () => Effect.die("unexpected reconciliation"),
+    const starter = makeRecipeRecoveryWorkflowStarter({
+      createBatch: (batch) => {
+        batches.push(batch);
+        return Effect.succeed([instance("running", [])]);
       },
-      { correlationId }
-    );
+      get: () => Effect.die("unexpected reconciliation"),
+    });
 
-    await Effect.runPromise(starter.start(attempt(1)));
+    await Effect.runPromise(starter.start(attempt(1), { correlationId }));
 
     expect(batches).toEqual([
       [
@@ -164,30 +161,24 @@ describe("recipe recovery workflow authority", () => {
 
   it("signals an existing workflow with the authorized ledger ordinal", async () => {
     const calls: string[] = [];
-    const starter = makeRecipeRecoveryWorkflowStarter(
-      {
-        createBatch: () => Effect.succeed([]),
-        get: () => Effect.succeed(instance("waiting", calls)),
-      },
-      { correlationId }
-    );
+    const starter = makeRecipeRecoveryWorkflowStarter({
+      createBatch: () => Effect.succeed([]),
+      get: () => Effect.succeed(instance("waiting", calls)),
+    });
 
-    await Effect.runPromise(starter.start(attempt(2)));
+    await Effect.runPromise(starter.start(attempt(2), { correlationId }));
 
     expect(calls).toEqual([recipeRecoveryAuthorizationEventType(2)]);
   });
 
   it("restarts an errored instance so native checkpoints are replayed", async () => {
     const calls: string[] = [];
-    const starter = makeRecipeRecoveryWorkflowStarter(
-      {
-        createBatch: () => Effect.succeed([]),
-        get: () => Effect.succeed(instance("errored", calls)),
-      },
-      { correlationId }
-    );
+    const starter = makeRecipeRecoveryWorkflowStarter({
+      createBatch: () => Effect.succeed([]),
+      get: () => Effect.succeed(instance("errored", calls)),
+    });
 
-    await Effect.runPromise(starter.start(attempt(4)));
+    await Effect.runPromise(starter.start(attempt(4), { correlationId }));
 
     expect(calls).toEqual(["restart", recipeRecoveryAuthorizationEventType(4)]);
   });

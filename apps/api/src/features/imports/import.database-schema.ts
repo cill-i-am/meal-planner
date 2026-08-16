@@ -18,6 +18,7 @@ export const recipeImports = sqliteTable(
       .default(0),
     canonicalSourceId: text("canonical_source_id").notNull(),
     compatibilityFingerprint: text("compatibility_fingerprint").notNull(),
+    correlationId: text("correlation_id"),
     createdAt: text("created_at").notNull(),
     evidenceReferencesJson: text("evidence_references_json").notNull(),
     id: text("id").notNull(),

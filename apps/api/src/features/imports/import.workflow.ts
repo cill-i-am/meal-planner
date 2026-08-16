@@ -889,7 +889,8 @@ export const importWorkflowInstanceId = (importId: ImportId) =>
 
 export interface ImportWorkflowStarterShape {
   readonly ensureStarted?: (
-    importId: ImportId
+    importId: ImportId,
+    trace: ImportTraceContext
   ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
   /** Compatibility-only shape for unchanged cancellation fixtures. */
   readonly start?: (importId: ImportId) => Effect.Effect<void>;
@@ -904,7 +905,8 @@ export interface ImportWorkflowStarterShape {
 
 export interface ImportWorkflowReconcilerShape extends ImportWorkflowStarterShape {
   readonly ensureStarted: (
-    importId: ImportId
+    importId: ImportId,
+    trace: ImportTraceContext
   ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
 }
 
@@ -1013,8 +1015,7 @@ const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
   );
 
 export const makeImportWorkflowStarter = (
-  workflow: WorkflowHandleLike,
-  trace: ImportTraceContext
+  workflow: WorkflowHandleLike
 ): ImportWorkflowReconcilerShape => {
   const restartPostAcquisition = (
     importId: ImportId,
@@ -1040,7 +1041,7 @@ export const makeImportWorkflowStarter = (
     );
 
   return {
-    ensureStarted: (importId) => {
+    ensureStarted: (importId, trace) => {
       const instanceId = importWorkflowInstanceId(importId);
       return Effect.gen(function* ensureStarted() {
         const createOutcome = yield* workflow
@@ -1095,14 +1096,15 @@ export const makeImportWorkflowStarter = (
 
 export const ensureImportWorkflowStarted = (
   starter: ImportWorkflowStarterShape,
-  importId: ImportId
+  importId: ImportId,
+  trace: ImportTraceContext
 ) => {
   if (starter.ensureStarted === undefined) {
     return starter.start === undefined
       ? Effect.fail(workflowStartUnavailable())
       : Effect.as(starter.start(importId), "already_active" as const);
   }
-  return starter.ensureStarted(importId);
+  return starter.ensureStarted(importId, trace);
 };
 
 // eslint-disable-next-line max-classes-per-file -- The Workflow host and its service tag form one frozen module contract.

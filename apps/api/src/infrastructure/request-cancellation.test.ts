@@ -3,6 +3,7 @@ import { Cause, Effect, Exit, Logger, Option, Redacted, Schema } from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { describe, expect, it } from "vitest";
 
+import { makeImportTraceContext } from "../features/imports/import-observability.js";
 import { makeImportAuthorizer } from "../features/imports/import.auth.js";
 import {
   IdempotencyKey,
@@ -261,6 +262,7 @@ describe("request cancellation", () => {
       now: () =>
         Schema.decodeUnknownSync(ImportTimestamp)("2026-07-20T10:00:00.000Z"),
       repository,
+      trace: makeImportTraceContext(),
       workflowStarter,
     });
     const authorizer = await Effect.runPromise(

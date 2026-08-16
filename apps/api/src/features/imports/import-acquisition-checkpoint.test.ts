@@ -13,6 +13,7 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
+import { ImportTraceContext } from "./import-observability.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -27,6 +28,9 @@ const importId = Schema.decodeUnknownSync(ImportId)(
 const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
 const acquiredAt = "2026-07-28T10:00:00.000Z";
 const historicalCheckpoint = historicalAcquisitionCheckpointFixture(importId);
+const trace = Schema.decodeUnknownSync(ImportTraceContext)({
+  correlationId: "10000000-0000-4000-8000-000000000002",
+});
 
 const verifiedOutcome = () => {
   const decoded = decodeAcquisitionCheckpoint(historicalCheckpoint);
@@ -48,6 +52,7 @@ const storedImport = (overrides: Partial<StoredImport> = {}): StoredImport => ({
     "b".repeat(64)
   ),
   sourceKind: "tiktok",
+  trace,
   view: {
     createdAt: Schema.decodeUnknownSync(ImportTimestamp)(
       "2026-07-28T09:59:00.000Z"

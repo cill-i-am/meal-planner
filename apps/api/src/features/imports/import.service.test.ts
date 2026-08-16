@@ -3,6 +3,7 @@ import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
 import { manifestObjectKey, mediaObjectKey } from "./import-media.model.js";
+import { ImportTraceContext } from "./import-observability.js";
 import {
   CreateImportRequest,
   IdempotencyKey,
@@ -40,6 +41,12 @@ const decodeCompatibilityFingerprint = Schema.decodeUnknownSync(
   CompatibilityFingerprint
 );
 const decodeVideoUrl = Schema.decodeUnknownSync(ValidatedVideoUrl);
+const ingressTrace = Schema.decodeUnknownSync(ImportTraceContext)({
+  correlationId: "10000000-0000-4000-8000-000000000007",
+});
+const laterIngressTrace = Schema.decodeUnknownSync(ImportTraceContext)({
+  correlationId: "20000000-0000-4000-8000-000000000007",
+});
 
 const now = decodeTimestamp("2026-07-20T10:00:00.000Z");
 
@@ -230,14 +237,16 @@ const makeAvailability = (outcome?: SourceAvailability) => {
 
 const makeWorkflow = () => {
   const started: string[] = [];
+  const traces: ImportTraceContext[] = [];
   const workflow: ImportWorkflowStarterShape = {
-    ensureStarted: (importId) =>
+    ensureStarted: (importId, trace) =>
       Effect.sync(() => {
         started.push(importId);
+        traces.push(trace);
         return "already_active" as const;
       }),
   };
-  return { started, workflow };
+  return { started, traces, workflow };
 };
 
 const makeFixture = (outcome?: SourceAvailability) => {
@@ -246,22 +255,25 @@ const makeFixture = (outcome?: SourceAvailability) => {
   const availability = makeAvailability(outcome);
   const workflow = makeWorkflow();
   let nextId = 1;
-  const service = makeImportService({
-    availabilityValidator: availability.validator,
-    identityResolver: identity.resolver,
-    newId: () => {
-      const id = decodeId(
-        `018f47ad-91aa-7c35-b6fe-${String(nextId).padStart(12, "0")}`
-      );
-      nextId += 1;
-      return id;
-    },
-    now: () => now,
-    repository: repository.repository,
-    workflowStarter: workflow.workflow,
-  });
+  const makeService = (trace = ingressTrace) =>
+    makeImportService({
+      availabilityValidator: availability.validator,
+      identityResolver: identity.resolver,
+      newId: () => {
+        const id = decodeId(
+          `018f47ad-91aa-7c35-b6fe-${String(nextId).padStart(12, "0")}`
+        );
+        nextId += 1;
+        return id;
+      },
+      now: () => now,
+      repository: repository.repository,
+      trace,
+      workflowStarter: workflow.workflow,
+    });
+  const service = makeService();
 
-  return { availability, identity, repository, service, workflow };
+  return { availability, identity, makeService, repository, service, workflow };
 };
 
 const videoRequest = (canonicalId = "7520000000000000000", user = "cook") =>
@@ -357,6 +369,7 @@ const makeItemHandoffFixture = (
     newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000100"),
     now: () => now,
     repository: fixture.repository.repository,
+    trace: ingressTrace,
     workflowStarter: fixture.workflow.workflow,
   });
 
@@ -375,6 +388,9 @@ describe("ImportService", () => {
     expect(result.import.status).toEqual({ kind: "queued" });
     expect(fixture.repository.imports).toHaveLength(1);
     expect(fixture.workflow.started).toEqual([result.import.id]);
+    expect(fixture.workflow.traces).toEqual([ingressTrace]);
+    expect(result).not.toHaveProperty("trace");
+    expect(result.import).not.toHaveProperty("trace");
   });
 
   it("replays the same K1 locator with zero provider calls", async () => {
@@ -530,6 +546,26 @@ describe("ImportService", () => {
       first.import.id,
       first.import.id,
     ]);
+    expect(fixture.workflow.traces).toEqual([ingressTrace, ingressTrace]);
+  });
+
+  it("reuses the canonical stored trace under a later ingress", async () => {
+    const fixture = makeFixture();
+    const first = await Effect.runPromise(
+      fixture.service.create(videoRequest(), decodeKey("K1"))
+    );
+    const laterService = fixture.makeService(laterIngressTrace);
+
+    const duplicate = await Effect.runPromise(
+      laterService.create(videoRequest(undefined, "another"), decodeKey("K2"))
+    );
+
+    expect(duplicate.disposition).toBe("canonical_duplicate");
+    expect(duplicate.import.id).toBe(first.import.id);
+    expect(fixture.workflow.traces).toEqual([ingressTrace, ingressTrace]);
+    expect([...fixture.repository.imports.values()][0]?.trace).toEqual(
+      ingressTrace
+    );
   });
 
   it("persists private/unavailable and unsupported states without starting work", async () => {
@@ -579,6 +615,7 @@ describe("ImportService", () => {
       newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000099"),
       now: () => now,
       repository: fixture.repository.repository,
+      trace: ingressTrace,
       workflowStarter: fixture.workflow.workflow,
     });
 
@@ -691,6 +728,7 @@ describe("ImportService", () => {
       newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000001"),
       now: () => now,
       repository: fixture.repository.repository,
+      trace: ingressTrace,
       workflowStarter: fixture.workflow.workflow,
     });
     const exit = await Effect.runPromise(
@@ -734,6 +772,7 @@ describe("ImportService", () => {
       newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000001"),
       now: () => now,
       repository: fixture.repository.repository,
+      trace: ingressTrace,
       workflowStarter: fixture.workflow.workflow,
     });
     const exit = await Effect.runPromise(
@@ -799,6 +838,7 @@ describe("ImportService", () => {
       newId: () => decodeId("018f47ad-91aa-7c35-b6fe-000000000001"),
       now: () => now,
       repository: fixture.repository.repository,
+      trace: ingressTrace,
       workflowStarter: fixture.workflow.workflow,
     });
     const exit = await Effect.runPromise(

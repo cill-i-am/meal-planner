@@ -103,10 +103,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       makeImportBatchQueueAcceptance({
         database,
         importWorkflowStarter: makeImportWorkflowStarter(
-          importAcquisitionWorkflow,
-          trace
+          importAcquisitionWorkflow
         ),
         now: currentIsoTimestamp,
+        trace,
       });
     yield* Cloudflare.Queues.consumeQueueMessages(
       importBatchQueue,
@@ -199,17 +199,16 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                       database,
                       importApiToken,
                       importWorkflowStarter: makeImportWorkflowStarter(
-                        importAcquisitionWorkflow,
-                        trace
+                        importAcquisitionWorkflow
                       ),
                       now: currentIsoTimestamp,
                       queue:
                         makeCloudflareImportBatchQueue(rawImportBatchQueue),
                       recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
-                        importRecipeRecoveryWorkflow,
-                        trace
+                        importRecipeRecoveryWorkflow
                       ),
                       runtimeStage,
+                      trace,
                     })
                   )
                 )

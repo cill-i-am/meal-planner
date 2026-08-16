@@ -6,6 +6,7 @@ import type {
   ClassifiedAcquisitionFailure,
   VerifiedAcquisitionEvidence,
 } from "./import-media.model.js";
+import type { ImportTraceContext } from "./import-observability.js";
 import type {
   ImportDisposition,
   ImportId,
@@ -51,6 +52,7 @@ export interface StoredImport {
   readonly canonicalSourceId: SourceCanonicalId;
   readonly compatibilityFingerprint: CompatibilityFingerprint;
   readonly sourceKind: "tiktok";
+  readonly trace: ImportTraceContext;
   readonly view: ImportView;
 }
 

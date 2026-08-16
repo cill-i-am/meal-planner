@@ -216,6 +216,14 @@ const failedRecoveryCheckpoint = (code: string): RecoveryCheckpoint => ({
 const nextRecoveryOrdinal = (ordinal: RecipeRecoveryOrdinal) =>
   Schema.decodeUnknownOption(RecipeRecoveryOrdinal)(ordinal + 1);
 
+const normalizeDurableRecoveryAuthorization = (input: unknown): unknown => {
+  try {
+    return structuredClone(input);
+  } catch {
+    return undefined;
+  }
+};
+
 /**
  * Run the bounded recipe recovery application workflow while the host owns
  * every versioned Cloudflare task and authorization-wait primitive.
@@ -262,7 +270,7 @@ export const runRecipeRecoveryLoop = Effect.fn(
     const authorization = Schema.decodeUnknownOption(
       RecipeRecoveryAuthorization,
       { onExcessProperty: "error" }
-    )(rawAuthorization);
+    )(normalizeDurableRecoveryAuthorization(rawAuthorization));
     if (
       Option.isNone(authorization) ||
       authorization.value.importId !== input.importId ||
@@ -429,6 +437,7 @@ export interface ImportWorkerRequestLayerInput {
   readonly queue: ImportBatchQueueShape;
   readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarterShape;
   readonly runtimeStage: string;
+  readonly trace: ImportTraceContext;
 }
 
 const timestamp = (now: () => string) =>
@@ -494,12 +503,14 @@ export const makeImportWorkerRequestLayer = (
             }).pipe(
               Effect.andThen(
                 input.importWorkflowStarter.ensureStarted(
-                  pipelineInput.importId
+                  pipelineInput.importId,
+                  pipelineInput.trace
                 )
               )
             ),
         },
         repository: makeD1ImportRepository(input.database),
+        trace: input.trace,
       })
     )
   );
@@ -534,6 +545,7 @@ export const makeImportWorkerRequestLayer = (
           newId: () => Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
           now: () => timestamp(input.now),
           repository: yield* ImportRepository,
+          trace: input.trace,
           workflowStarter: input.importWorkflowStarter,
         })
       );
@@ -573,6 +585,7 @@ export const makeImportBatchQueueAcceptance = (input: {
   readonly database: AnyD1Database;
   readonly importWorkflowStarter: ImportWorkflowStarterShape;
   readonly now: () => string;
+  readonly trace: ImportTraceContext;
 }) =>
   makeD1ImportQueueAcceptance({
     database: input.database,
@@ -586,6 +599,7 @@ export const makeImportBatchQueueAcceptance = (input: {
       newId: () => Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
       now: () => timestamp(input.now),
       repository: makeD1ImportRepository(input.database),
+      trace: input.trace,
       workflowStarter: input.importWorkflowStarter,
     }),
     newReplayClaimId: () =>

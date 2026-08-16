@@ -17,6 +17,7 @@ import {
 } from "./import-carousel.js";
 import { makeD1CarouselEvidenceRepository } from "./import-carousel.repository.d1.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
+import { makeImportTraceContext } from "./import-observability.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
 import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
@@ -273,6 +274,7 @@ describe("operator carousel HTTP integration", () => {
           }).pipe(Effect.asVoid),
       },
       repository,
+      trace: makeImportTraceContext(),
     });
     const authorizer = await Effect.runPromise(
       makeImportAuthorizer(Redacted.make(apiToken))

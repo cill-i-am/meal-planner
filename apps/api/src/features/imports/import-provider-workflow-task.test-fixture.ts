@@ -1309,39 +1309,32 @@ export default {
                 Redacted.make("test-import-token")
               );
               yield* authorizer.authorize(command.authorization);
-              const workflowStarter = makeImportWorkflowStarter(
-                {
-                  createBatch: () =>
-                    Effect.die("Recovery must not create a workflow instance"),
-                  get: (id) =>
-                    Effect.promise(async () => {
-                      const instance = await workflow.get(id);
-                      return {
-                        restart: (options) =>
-                          options === undefined
-                            ? Effect.die(
-                                "Speech recovery must identify its restart checkpoint"
-                              )
-                            : Effect.promise(() => instance.restart(options)),
-                        status: () =>
-                          Effect.promise(() => instance.status()).pipe(
-                            Effect.flatMap(
-                              Schema.decodeUnknownEffect(
-                                Schema.Struct({ status: Schema.String }),
-                                { onExcessProperty: "ignore" }
-                              )
-                            ),
-                            Effect.orDie
+              const workflowStarter = makeImportWorkflowStarter({
+                createBatch: () =>
+                  Effect.die("Recovery must not create a workflow instance"),
+                get: (id) =>
+                  Effect.promise(async () => {
+                    const instance = await workflow.get(id);
+                    return {
+                      restart: (options) =>
+                        options === undefined
+                          ? Effect.die(
+                              "Speech recovery must identify its restart checkpoint"
+                            )
+                          : Effect.promise(() => instance.restart(options)),
+                      status: () =>
+                        Effect.promise(() => instance.status()).pipe(
+                          Effect.flatMap(
+                            Schema.decodeUnknownEffect(
+                              Schema.Struct({ status: Schema.String }),
+                              { onExcessProperty: "ignore" }
+                            )
                           ),
-                      };
-                    }),
-                },
-                {
-                  correlationId: decodeCorrelationId(
-                    "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2206"
-                  ),
-                }
-              );
+                          Effect.orDie
+                        ),
+                    };
+                  }),
+              });
               const activation = yield* makeD1ProviderTerminalSettlementService(
                 {
                   database: env.MealPlannerDatabase,

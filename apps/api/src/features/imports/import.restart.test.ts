@@ -9,6 +9,11 @@ import { HttpRouter } from "effect/unstable/http";
 import { Miniflare } from "miniflare";
 import { afterEach, describe, expect, it } from "vitest";
 
+import {
+  ImportTraceContext,
+  makeImportTraceContext,
+} from "./import-observability.js";
+import { deriveLegacyImportCorrelationId } from "./import-workflow-input.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import {
   CreateImportResponse,
@@ -62,6 +67,7 @@ interface ApplicationCounters {
   identityProviderCalls: number;
   newIds: number;
   readonly workflowStarts: string[];
+  readonly workflowTraces: ImportTraceContext[];
 }
 
 const makeCounters = (): ApplicationCounters => ({
@@ -70,12 +76,14 @@ const makeCounters = (): ApplicationCounters => ({
   identityProviderCalls: 0,
   newIds: 0,
   workflowStarts: [],
+  workflowTraces: [],
 });
 
 const makeApplication = async (
   database: AnyD1Database,
   counters: ApplicationCounters,
-  identityResolverOverride?: CanonicalSourceIdentityResolverShape
+  identityResolverOverride?: CanonicalSourceIdentityResolverShape,
+  admissionTrace: ImportTraceContext = makeImportTraceContext()
 ) => {
   const d1Repository = makeD1ImportRepository(database);
   const repository: ImportRepositoryShape = {
@@ -113,9 +121,10 @@ const makeApplication = async (
       }),
   };
   const workflowStarter: ImportWorkflowStarterShape = {
-    ensureStarted: (importId) =>
+    ensureStarted: (importId, trace) =>
       Effect.sync(() => {
         counters.workflowStarts.push(importId);
+        counters.workflowTraces.push(trace);
         return "already_active" as const;
       }),
   };
@@ -130,6 +139,7 @@ const makeApplication = async (
     },
     now: () => timestamp,
     repository,
+    trace: admissionTrace,
     workflowStarter,
   });
   const authorizer = await Effect.runPromise(
@@ -516,7 +526,15 @@ describe("D1 restart persistence", () => {
       )
     );
     const countersA = makeCounters();
-    const applicationA = await makeApplication(databaseA, countersA);
+    const originalTrace = Schema.decodeUnknownSync(ImportTraceContext)({
+      correlationId: "70000000-0000-4000-8000-000000000001",
+    });
+    const applicationA = await makeApplication(
+      databaseA,
+      countersA,
+      undefined,
+      originalTrace
+    );
     let created: Awaited<ReturnType<typeof postImport>>;
     let duplicate: Awaited<ReturnType<typeof postImport>>;
     try {
@@ -539,6 +557,11 @@ describe("D1 restart persistence", () => {
         created.body.import.id,
         created.body.import.id,
       ]);
+      expect(countersA.workflowTraces).toEqual([originalTrace, originalTrace]);
+      await databaseA
+        .prepare("UPDATE recipe_imports SET correlation_id = NULL WHERE id = ?")
+        .bind(created.body.import.id)
+        .run();
     } finally {
       await applicationA.dispose();
       await runtimeA.dispose();
@@ -547,7 +570,15 @@ describe("D1 restart persistence", () => {
     const runtimeB = makeRuntime(persistenceDirectory);
     const databaseB = await runtimeB.getD1Database("MealPlannerDatabase");
     const countersB = makeCounters();
-    const applicationB = await makeApplication(databaseB, countersB);
+    const laterTrace = Schema.decodeUnknownSync(ImportTraceContext)({
+      correlationId: "80000000-0000-4000-8000-000000000001",
+    });
+    const applicationB = await makeApplication(
+      databaseB,
+      countersB,
+      undefined,
+      laterTrace
+    );
     try {
       const polled = await getImport(
         applicationB.handler,
@@ -569,6 +600,11 @@ describe("D1 restart persistence", () => {
         created.body.import.id,
         created.body.import.id,
       ]);
+      const legacyTrace = {
+        correlationId: deriveLegacyImportCorrelationId(created.body.import.id),
+      };
+      expect(countersB.workflowTraces).toEqual([legacyTrace, legacyTrace]);
+      expect(countersB.workflowTraces).not.toContainEqual(laterTrace);
       expect(countersB.newIds).toBe(0);
     } finally {
       await applicationB.dispose();
