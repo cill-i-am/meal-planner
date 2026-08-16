@@ -1074,9 +1074,9 @@ const readRecipeCheckpointRepairProtectedRows = (input: {
       .first(),
     testEnv.MealPlannerDatabase.prepare(
       `SELECT *
-         FROM pilot_provider_recipe_recoveries
+         FROM pilot_provider_recipe_recovery_attempts
         WHERE runtime_stage = 'pilot-gaia-118'
-          AND original_dispatch_id = ?`
+          AND root_dispatch_id = ?`
     )
       .bind(input.dispatchId)
       .all()

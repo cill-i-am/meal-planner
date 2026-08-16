@@ -4,6 +4,7 @@ import {
   WorkflowEvent,
   makeWorkflowBridge,
   task,
+  waitForEvent,
 } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
@@ -14,13 +15,14 @@ import {
   PilotBudgetProviderStageId,
   PilotBudgetRunId,
   PilotBudgetTimestamp,
+  PilotProviderBudgetStage,
   PilotProviderBudgetRuntime,
   makePilotProviderBudgetRuntime,
   pilotProviderKnownZeroCostFailure,
   runPilotProviderDispatch,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
-import { AcquisitionGeneration } from "./import-media.model.js";
+import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
 import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
@@ -33,6 +35,15 @@ import {
 } from "./import-provider-terminal.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import { runProviderTask } from "./import-provider-workflow-task.js";
+import {
+  recipeRecoveryAuthorizationEventType,
+  recipeRecoveryDurableTaskNames,
+} from "./import-recipe-recovery.js";
+import type {
+  RecipeRecoveryAttempt,
+  RecipeRecoveryOrdinal,
+} from "./import-recipe-recovery.js";
+import { runRecipeRecoveryLoop } from "./import-recipe-recovery.workflow.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import { makeImportAuthorizer } from "./import.auth.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
@@ -45,6 +56,10 @@ interface ProviderWorkflowInput {
     | "retry_exhausted"
     | "recipe_conservative_crash_replay"
     | "recipe_conservative_success"
+    | "recipe_recovery_loop_bounded"
+    | "recipe_recovery_loop_non_retryable"
+    | "recipe_recovery_loop_reconciliation_wait"
+    | "recipe_recovery_loop_success"
     | "recipe_recovery_native_replay"
     | "speech_terminal_recovery"
     | "speech_terminal_recovery_poison"
@@ -79,7 +94,7 @@ interface ProviderWorkflowTestEnv {
     readonly unsafeStopIntrospection: (sessionId: string) => Promise<void>;
     readonly unsafeWaitForStatus: (
       id: string,
-      status: "complete"
+      status: "complete" | "errored"
     ) => Promise<void>;
   };
 }
@@ -103,6 +118,7 @@ const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeImportTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeCorrelationId = Schema.decodeUnknownSync(ImportCorrelationId);
+const decodeSha256 = Schema.decodeUnknownSync(Sha256Hex);
 
 const stateKey = (instanceId: string, name: string) => `${instanceId}:${name}`;
 
@@ -127,6 +143,72 @@ const readNumber = (
       (await env.PROVIDER_WORKFLOW_STATE.get(stateKey(instanceId, name))) ?? "0"
     )
   );
+
+const waitForNumber = async (
+  env: ProviderWorkflowTestEnv,
+  instanceId: string,
+  name: string,
+  expected: number,
+  attempt = 0
+) => {
+  if (attempt >= 200) {
+    throw new Error(`Timed out waiting for ${name}`);
+  }
+  const value = Number(
+    (await env.PROVIDER_WORKFLOW_STATE.get(stateKey(instanceId, name))) ?? "0"
+  );
+  if (value >= expected) {
+    return;
+  }
+  await Effect.runPromise(Effect.sleep(10));
+  return waitForNumber(env, instanceId, name, expected, attempt + 1);
+};
+
+const nativeRecipeRecoveryAttempt = (
+  importId: ImportId,
+  ordinal: RecipeRecoveryOrdinal
+): RecipeRecoveryAttempt => {
+  const generation = decodeGeneration(1);
+  const evidenceFingerprint = decodeSha256("e".repeat(64));
+  const rootDispatchId = decodeDispatchId(
+    `recipe:${importId}:${generation}:${evidenceFingerprint}`
+  );
+  const rootExtractionFingerprint = decodeSha256("f".repeat(64));
+  return {
+    acquisitionGeneration: generation,
+    createdAt: decodeImportTimestamp("2026-08-16T00:00:00.000Z"),
+    currentDispatchId: decodeDispatchId(
+      `${rootDispatchId}:recovery:${ordinal}`
+    ),
+    currentExtractionFingerprint: decodeSha256(String(ordinal).repeat(64)),
+    evidenceFingerprint,
+    evidenceReferencesJson: JSON.stringify(["source", "transcript", "visual"]),
+    importId,
+    ordinal,
+    predecessorDispatchId: decodeDispatchId(
+      ordinal === 1
+        ? rootDispatchId
+        : `${rootDispatchId}:recovery:${ordinal - 1}`
+    ),
+    predecessorExtractionFingerprint:
+      ordinal === 1
+        ? rootExtractionFingerprint
+        : decodeSha256(String(ordinal - 1).repeat(64)),
+    predecessorOutcome: "outcome_unknown",
+    predecessorReconciliationCreatedAt: decodeImportTimestamp(
+      "2026-08-16T00:00:00.000Z"
+    ),
+    rootDispatchId,
+    rootExtractionFingerprint,
+    runtimeStage: PilotProviderBudgetStage,
+    sourceMediaSha256: decodeSha256("a".repeat(64)),
+    terminalCheckpointCompletedAt: decodeImportTimestamp(
+      "2026-08-16T00:00:00.000Z"
+    ),
+    transcriptSha256: decodeSha256("b".repeat(64)),
+    visualManifestSha256: decodeSha256("c".repeat(64)),
+  };
+};
 
 const emptyRecipeProviderSelection = {
   category: null,
@@ -772,6 +854,10 @@ const directProviderEffect = (
 const providerStageByScenario = {
   recipe_conservative_crash_replay: "recipe",
   recipe_conservative_success: "recipe",
+  recipe_recovery_loop_bounded: "recipe",
+  recipe_recovery_loop_non_retryable: "recipe",
+  recipe_recovery_loop_reconciliation_wait: "recipe",
+  recipe_recovery_loop_success: "recipe",
   recipe_recovery_native_replay: "recipe",
   retry_exhausted: "speech",
   speech_terminal_recovery: "speech",
@@ -797,6 +883,90 @@ const providerWorkflowExport = {
       Effect.gen(function* runProviderWorkflow() {
         const event = yield* WorkflowEvent;
         yield* increment(env, event.instanceId, "workflow-runs");
+        if (
+          input.scenario === "recipe_recovery_loop_bounded" ||
+          input.scenario === "recipe_recovery_loop_non_retryable" ||
+          input.scenario === "recipe_recovery_loop_reconciliation_wait" ||
+          input.scenario === "recipe_recovery_loop_success"
+        ) {
+          if (input.importId === undefined) {
+            return yield* Effect.die("Missing recovery loop import ID");
+          }
+          const importId = decodeImportId(input.importId);
+          const generation = decodeGeneration(1);
+          return yield* runRecipeRecoveryLoop(
+            {
+              acquisitionGeneration: generation,
+              attemptOrdinal: 1,
+              correlationId: decodeCorrelationId(
+                "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2206"
+              ),
+              importId,
+            },
+            {
+              persistUnknown: (_attempt, durableTaskName) =>
+                task(
+                  durableTaskName,
+                  Effect.gen(function* persistNativeRecoveryTerminal() {
+                    yield* increment(
+                      env,
+                      event.instanceId,
+                      "recovery-loop-terminal-persistences"
+                    );
+                    yield* increment(env, event.instanceId, durableTaskName);
+                  })
+                ),
+              readAttempt: (ordinal) =>
+                Effect.succeed(nativeRecipeRecoveryAttempt(importId, ordinal)),
+              runAttempt: (_attempt, durableTaskName) =>
+                task(
+                  durableTaskName,
+                  Effect.gen(function* runNativeRecoveryProvider() {
+                    yield* increment(
+                      env,
+                      event.instanceId,
+                      "recovery-loop-provider-calls"
+                    );
+                    yield* increment(env, event.instanceId, durableTaskName);
+                    if (input.scenario === "recipe_recovery_loop_success") {
+                      return {
+                        _tag: "Succeeded" as const,
+                        stage: "recipe" as const,
+                      };
+                    }
+                    if (
+                      input.scenario === "recipe_recovery_loop_non_retryable"
+                    ) {
+                      return {
+                        _tag: "Failed" as const,
+                        code: "invalid_schema",
+                        stage: "recipe" as const,
+                      };
+                    }
+                    return {
+                      _tag: "Failed" as const,
+                      code: "outcome_unknown",
+                      stage: "recipe" as const,
+                    };
+                  })
+                ),
+              waitForAuthorization: (ordinal) =>
+                input.scenario === "recipe_recovery_loop_reconciliation_wait"
+                  ? waitForEvent<unknown>(
+                      `authorize-recipe-recovery-${ordinal}`,
+                      { type: recipeRecoveryAuthorizationEventType(ordinal) }
+                    ).pipe(Effect.map(({ payload }) => payload))
+                  : task(
+                      `authorize-recipe-recovery-${ordinal}`,
+                      Effect.succeed({
+                        acquisitionGeneration: generation,
+                        attemptOrdinal: ordinal,
+                        importId,
+                      })
+                    ),
+            }
+          );
+        }
         if (
           input.scenario === "speech_terminal_recovery" ||
           input.scenario === "speech_terminal_recovery_poison"
@@ -977,8 +1147,21 @@ const providerWorkflowExport = {
           if (input.importId === undefined) {
             return yield* Effect.die("Missing recovery recipe import ID");
           }
+          const durableTaskNames = recipeRecoveryDurableTaskNames(1);
+          yield* Effect.promise(() =>
+            env.PROVIDER_WORKFLOW_STATE.put(
+              stateKey(event.instanceId, "recipe-recovery-extraction-task"),
+              durableTaskNames.extraction
+            )
+          );
+          yield* Effect.promise(() =>
+            env.PROVIDER_WORKFLOW_STATE.put(
+              stateKey(event.instanceId, "recipe-recovery-terminal-task"),
+              durableTaskNames.terminal
+            )
+          );
           const checkpoint = yield* runProviderTask(
-            "extract-recipe-recovery-v1",
+            durableTaskNames.extraction,
             "recipe",
             installedRecipeConservativeDispatch(
               env,
@@ -1090,6 +1273,11 @@ const readRequest = (request: Request) =>
     | { readonly action: "restart-visual"; readonly id: string }
     | {
         readonly action: "run";
+        readonly id: string;
+        readonly input: ProviderWorkflowInput;
+      }
+    | {
+        readonly action: "run-waiting";
         readonly id: string;
         readonly input: ProviderWorkflowInput;
       }
@@ -1243,7 +1431,7 @@ export default {
         );
         return Response.json({ outcome: "settled_known_zero" });
       }
-      if (command.action === "run") {
+      if (command.action === "run" || command.action === "run-waiting") {
         if (sessionId === undefined) {
           throw new Error("Workflow run requires an introspection session");
         }
@@ -1273,7 +1461,24 @@ export default {
       }
 
       const instance = await workflow.get(command.id);
-      await workflow.unsafeWaitForStatus(command.id, "complete");
+      if (command.action === "run-waiting") {
+        await waitForNumber(
+          env,
+          command.id,
+          "recovery-loop-terminal-persistences",
+          1
+        );
+      } else if (
+        command.action === "run" &&
+        command.input.scenario.startsWith("recipe_recovery_loop_")
+      ) {
+        await Promise.race([
+          workflow.unsafeWaitForStatus(command.id, "complete"),
+          workflow.unsafeWaitForStatus(command.id, "errored"),
+        ]);
+      } else {
+        await workflow.unsafeWaitForStatus(command.id, "complete");
+      }
       return Response.json(await instance.status());
     } finally {
       if (sessionId !== undefined) {
