@@ -63,6 +63,14 @@ const publicErrorResponse = (error: PublicRecipeReviewError) => {
         }
       );
     }
+    case "RecipeReviewMutationConflict": {
+      return problem(
+        409,
+        "mutation_conflict",
+        "The mutation identity was already used for a different review command.",
+        { mutationId: error.mutationId }
+      );
+    }
     case "RecipeReviewTransitionRejected": {
       return problem(
         409,

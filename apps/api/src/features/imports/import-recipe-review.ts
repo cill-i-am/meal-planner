@@ -38,6 +38,21 @@ export const RecipeReviewerActorId = TrimmedNonEmptyString.pipe(
 );
 export type RecipeReviewerActorId = typeof RecipeReviewerActorId.Type;
 
+export const RecipeReviewMutationId = TrimmedNonEmptyString.pipe(
+  Schema.check(
+    Schema.isMaxLength(128),
+    Schema.isPattern(/^[a-z\d][a-z\d._:-]*$/iu)
+  ),
+  Schema.brand("RecipeReviewMutationId")
+);
+export type RecipeReviewMutationId = typeof RecipeReviewMutationId.Type;
+
+export const RecipeReviewCommandDigest = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u)),
+  Schema.brand("RecipeReviewCommandDigest")
+);
+export type RecipeReviewCommandDigest = typeof RecipeReviewCommandDigest.Type;
+
 export const RecipeCorrectionValue = Schema.Union([
   ShortText,
   SafeInteger,
@@ -280,16 +295,98 @@ export const CorrectRecipeDraftRequest = Schema.Struct({
     }),
   ]),
   expectedVersion: RecipeReviewVersion,
+  mutationId: RecipeReviewMutationId,
   tags: PlanningTags,
 });
 export type CorrectRecipeDraftRequest = typeof CorrectRecipeDraftRequest.Type;
 
 export const TransitionRecipeDraftRequest = Schema.Struct({
   expectedVersion: RecipeReviewVersion,
+  mutationId: RecipeReviewMutationId,
   reason: ShortText,
 });
 export type TransitionRecipeDraftRequest =
   typeof TransitionRecipeDraftRequest.Type;
+
+export const RecipeReviewCommand = Schema.TaggedUnion({
+  Correction: {
+    actorId: RecipeReviewerActorId,
+    correction: CorrectRecipeDraftRequest.fields.correction,
+    expectedVersion: RecipeReviewVersion,
+    extractionFingerprint: Schema.String.pipe(
+      Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+    ),
+    tags: PlanningTags,
+  },
+  Transition: {
+    actorId: RecipeReviewerActorId,
+    expectedVersion: RecipeReviewVersion,
+    extractionFingerprint: Schema.String.pipe(
+      Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+    ),
+    reason: ShortText,
+    to: RecipeReviewLifecycle,
+  },
+});
+export type RecipeReviewCommand = typeof RecipeReviewCommand.Type;
+
+const canonicalRecipeReviewCommand = (command: RecipeReviewCommand): string => {
+  switch (command._tag) {
+    case "Correction": {
+      return JSON.stringify({
+        actorId: command.actorId,
+        correction: {
+          field: command.correction.field,
+          reason: command.correction.reason,
+          value: command.correction.value,
+        },
+        expectedVersion: command.expectedVersion,
+        kind: "correction",
+        reviewIdentity: command.extractionFingerprint,
+        tags: {
+          cuisines: command.tags.cuisines,
+          dietaryFit: command.tags.dietaryFit,
+          difficulty: command.tags.difficulty,
+          leftovers: command.tags.leftovers,
+          mealTypes: command.tags.mealTypes,
+          totalTimeBand: command.tags.totalTimeBand,
+        },
+      });
+    }
+    case "Transition": {
+      return JSON.stringify({
+        actorId: command.actorId,
+        expectedVersion: command.expectedVersion,
+        kind: "transition",
+        reason: command.reason,
+        reviewIdentity: command.extractionFingerprint,
+        to: command.to,
+      });
+    }
+    default: {
+      return command satisfies never;
+    }
+  }
+};
+
+const bytesToHex = (value: ArrayBuffer) =>
+  Array.from(new Uint8Array(value), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+
+export const recipeReviewCommandDigest = Effect.fn(
+  "RecipeReview.commandDigest"
+)((command: RecipeReviewCommand) =>
+  Effect.promise(() =>
+    crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(canonicalRecipeReviewCommand(command))
+    )
+  ).pipe(
+    Effect.map(bytesToHex),
+    Effect.map(Schema.decodeUnknownSync(RecipeReviewCommandDigest))
+  )
+);
 
 export const ApprovedRecipe = Schema.Struct({
   approvedAt: ImportTimestamp,
@@ -331,12 +428,27 @@ export const Review = Schema.TaggedUnion({
 export type Review = typeof Review.Type;
 export type ApprovedReview = Extract<Review, { readonly _tag: "Approved" }>;
 
+export const RecipeReviewMutationOutcome = Schema.TaggedUnion({
+  Applied: {
+    mutationId: RecipeReviewMutationId,
+    resultingVersion: RecipeReviewVersion,
+    review: Review,
+  },
+  Replayed: {
+    mutationId: RecipeReviewMutationId,
+    resultingVersion: RecipeReviewVersion,
+    review: Review,
+  },
+});
+export type RecipeReviewMutationOutcome =
+  typeof RecipeReviewMutationOutcome.Type;
+
 export const GetRecipeReviewResponse = Schema.Struct({
   review: Review,
 });
 
 export const RecipeReviewMutationResponse = Schema.Struct({
-  review: Review,
+  outcome: RecipeReviewMutationOutcome,
 });
 
 export const ApprovedRecipeBankResponse = Schema.Struct({
@@ -586,6 +698,17 @@ export interface RecipeApprovalBlocked {
   readonly tagsRequired: boolean;
 }
 
+export interface RecipeReviewMutationConflict {
+  readonly _tag: "RecipeReviewMutationConflict";
+  readonly mutationId: RecipeReviewMutationId;
+}
+export const RecipeReviewMutationConflict =
+  // eslint-disable-next-line unicorn/throw-new-error -- Schema.TaggedError is Effect's constructor factory, not a thrown expression.
+  Schema.TaggedError<RecipeReviewMutationConflict>()(
+    "RecipeReviewMutationConflict",
+    { mutationId: RecipeReviewMutationId }
+  );
+
 export const recipeReviewNotFound = (): RecipeReviewNotFound => ({
   _tag: "RecipeReviewNotFound",
 });
@@ -620,6 +743,7 @@ export type RecipeReviewPersistenceError =
   | ImportPersistenceUnavailable;
 export type RecipeReviewWriteError =
   | RecipeReviewPersistenceError
+  | RecipeReviewMutationConflict
   | RecipeReviewTransitionRejected
   | RecipeReviewVersionConflict;
 export type RecipeReviewServiceError =
@@ -630,24 +754,36 @@ export type RecipeReviewServiceError =
 
 export interface RecipeReviewRepositoryShape {
   readonly correct: (input: {
+    readonly commandDigest: RecipeReviewCommandDigest;
     readonly correction: RecipeCorrection;
     readonly expectedVersion: RecipeReviewVersion;
     readonly extractionFingerprint: string;
+    readonly mutationId: RecipeReviewMutationId;
     readonly previousTags: PlanningTags | null;
     readonly tags: PlanningTags;
-  }) => Effect.Effect<Review, RecipeReviewWriteError>;
+  }) => Effect.Effect<RecipeReviewMutationOutcome, RecipeReviewWriteError>;
   readonly find: (
     importId: ImportId
   ) => Effect.Effect<Option.Option<Review>, RecipeReviewPersistenceError>;
+  readonly findMutationOutcome: (input: {
+    readonly commandDigest: RecipeReviewCommandDigest;
+    readonly extractionFingerprint: string;
+    readonly mutationId: RecipeReviewMutationId;
+  }) => Effect.Effect<
+    Option.Option<RecipeReviewMutationOutcome>,
+    RecipeReviewMutationConflict | RecipeReviewPersistenceError
+  >;
   readonly listApproved: () => Effect.Effect<
     readonly Review[],
     RecipeReviewPersistenceError
   >;
   readonly transition: (input: {
+    readonly commandDigest: RecipeReviewCommandDigest;
     readonly expectedVersion: RecipeReviewVersion;
     readonly extractionFingerprint: string;
+    readonly mutationId: RecipeReviewMutationId;
     readonly transition: RecipeReviewTransition;
-  }) => Effect.Effect<Review, RecipeReviewWriteError>;
+  }) => Effect.Effect<RecipeReviewMutationOutcome, RecipeReviewWriteError>;
 }
 
 export const authenticatedRecipeReviewer = Schema.decodeUnknownSync(
@@ -740,12 +876,12 @@ export interface RecipeReviewServiceShape {
     importId: ImportId,
     request: TransitionRecipeDraftRequest,
     actorId: RecipeReviewerActorId
-  ) => Effect.Effect<Review, RecipeReviewServiceError>;
+  ) => Effect.Effect<RecipeReviewMutationOutcome, RecipeReviewServiceError>;
   readonly correct: (
     importId: ImportId,
     request: CorrectRecipeDraftRequest,
     actorId: RecipeReviewerActorId
-  ) => Effect.Effect<Review, RecipeReviewServiceError>;
+  ) => Effect.Effect<RecipeReviewMutationOutcome, RecipeReviewServiceError>;
   readonly get: (
     importId: ImportId
   ) => Effect.Effect<Review, RecipeReviewServiceError>;
@@ -757,12 +893,12 @@ export interface RecipeReviewServiceShape {
     importId: ImportId,
     request: TransitionRecipeDraftRequest,
     actorId: RecipeReviewerActorId
-  ) => Effect.Effect<Review, RecipeReviewServiceError>;
+  ) => Effect.Effect<RecipeReviewMutationOutcome, RecipeReviewServiceError>;
   readonly returnToReview: (
     importId: ImportId,
     request: TransitionRecipeDraftRequest,
     actorId: RecipeReviewerActorId
-  ) => Effect.Effect<Review, RecipeReviewServiceError>;
+  ) => Effect.Effect<RecipeReviewMutationOutcome, RecipeReviewServiceError>;
 }
 
 export const projectApprovedReview = (
@@ -794,14 +930,40 @@ export const makeRecipeReviewService = (input: {
   readonly now: () => ImportTimestamp;
   readonly repository: RecipeReviewRepositoryShape;
 }): RecipeReviewServiceShape => {
-  const transition = (
-    importId: ImportId,
-    request: TransitionRecipeDraftRequest,
-    actorId: RecipeReviewerActorId,
-    to: RecipeReviewLifecycle
-  ) =>
-    Effect.gen(function* transitionRecipeReview() {
+  const transition = Effect.fn("RecipeReview.transition")(
+    function* transitionRecipeReview(
+      importId: ImportId,
+      request: TransitionRecipeDraftRequest,
+      actorId: RecipeReviewerActorId,
+      to: RecipeReviewLifecycle
+    ) {
       const review = yield* getReview(input.repository, importId);
+      const command = RecipeReviewCommand.make({
+        _tag: "Transition",
+        actorId,
+        expectedVersion: request.expectedVersion,
+        extractionFingerprint: review.draft.extractionFingerprint,
+        reason: request.reason,
+        to,
+      });
+      const commandDigest = yield* recipeReviewCommandDigest(command);
+      yield* Effect.annotateCurrentSpan({
+        "recipeReview.commandDigest": commandDigest,
+        "recipeReview.mutationId": request.mutationId,
+        "recipeReview.reviewIdentity": review.draft.extractionFingerprint,
+      });
+      const existing = yield* input.repository.findMutationOutcome({
+        commandDigest,
+        extractionFingerprint: review.draft.extractionFingerprint,
+        mutationId: request.mutationId,
+      });
+      if (Option.isSome(existing)) {
+        yield* Effect.annotateCurrentSpan(
+          "recipeReview.result",
+          existing.value._tag
+        );
+        return existing.value;
+      }
       yield* assertExpectedVersion(review, request.expectedVersion);
       const policy = recipeReviewTransitionPolicy(review.lifecycle, to);
       if (Option.isNone(policy)) {
@@ -822,9 +984,11 @@ export const makeRecipeReviewService = (input: {
         }
       }
       const nextVersion = request.expectedVersion + 1;
-      return yield* input.repository.transition({
+      const outcome = yield* input.repository.transition({
+        commandDigest,
         expectedVersion: request.expectedVersion,
         extractionFingerprint: review.draft.extractionFingerprint,
+        mutationId: request.mutationId,
         transition: Schema.decodeUnknownSync(RecipeReviewTransition)({
           actorId,
           from: policy.value.from,
@@ -834,37 +998,77 @@ export const makeRecipeReviewService = (input: {
           version: nextVersion,
         }),
       });
-    });
+      yield* Effect.annotateCurrentSpan("recipeReview.result", outcome._tag);
+      return outcome;
+    }
+  );
+
+  const correct = Effect.fn("RecipeReview.correct")(
+    function* correctRecipeReview(
+      importId: ImportId,
+      request: CorrectRecipeDraftRequest,
+      actorId: RecipeReviewerActorId
+    ) {
+      const review = yield* getReview(input.repository, importId);
+      const command = RecipeReviewCommand.make({
+        _tag: "Correction",
+        actorId,
+        correction: request.correction,
+        expectedVersion: request.expectedVersion,
+        extractionFingerprint: review.draft.extractionFingerprint,
+        tags: request.tags,
+      });
+      const commandDigest = yield* recipeReviewCommandDigest(command);
+      yield* Effect.annotateCurrentSpan({
+        "recipeReview.commandDigest": commandDigest,
+        "recipeReview.mutationId": request.mutationId,
+        "recipeReview.reviewIdentity": review.draft.extractionFingerprint,
+      });
+      const existing = yield* input.repository.findMutationOutcome({
+        commandDigest,
+        extractionFingerprint: review.draft.extractionFingerprint,
+        mutationId: request.mutationId,
+      });
+      if (Option.isSome(existing)) {
+        yield* Effect.annotateCurrentSpan(
+          "recipeReview.result",
+          existing.value._tag
+        );
+        return existing.value;
+      }
+      yield* assertExpectedVersion(review, request.expectedVersion);
+      if (review.lifecycle !== "needs_review") {
+        return yield* Effect.fail(
+          recipeReviewTransitionRejected(review.lifecycle)
+        );
+      }
+      const nextVersion = request.expectedVersion + 1;
+      const outcome = yield* input.repository.correct({
+        commandDigest,
+        correction: Schema.decodeUnknownSync(RecipeCorrection)({
+          actorId,
+          after: request.correction.value,
+          before: currentValueFor(review, request.correction.field),
+          correctedAt: DateTime.formatIso(input.now()),
+          field: request.correction.field,
+          reason: request.correction.reason,
+          version: nextVersion,
+        }),
+        expectedVersion: request.expectedVersion,
+        extractionFingerprint: review.draft.extractionFingerprint,
+        mutationId: request.mutationId,
+        previousTags: review.tags,
+        tags: request.tags,
+      });
+      yield* Effect.annotateCurrentSpan("recipeReview.result", outcome._tag);
+      return outcome;
+    }
+  );
 
   return {
     approve: (importId, request, actorId) =>
       transition(importId, request, actorId, "approved"),
-    correct: (importId, request, actorId) =>
-      Effect.gen(function* correctRecipeDraft() {
-        const review = yield* getReview(input.repository, importId);
-        yield* assertExpectedVersion(review, request.expectedVersion);
-        if (review.lifecycle !== "needs_review") {
-          return yield* Effect.fail(
-            recipeReviewTransitionRejected(review.lifecycle)
-          );
-        }
-        const nextVersion = request.expectedVersion + 1;
-        return yield* input.repository.correct({
-          correction: Schema.decodeUnknownSync(RecipeCorrection)({
-            actorId,
-            after: request.correction.value,
-            before: currentValueFor(review, request.correction.field),
-            correctedAt: DateTime.formatIso(input.now()),
-            field: request.correction.field,
-            reason: request.correction.reason,
-            version: nextVersion,
-          }),
-          expectedVersion: request.expectedVersion,
-          extractionFingerprint: review.draft.extractionFingerprint,
-          previousTags: review.tags,
-          tags: request.tags,
-        });
-      }),
+    correct,
     get: (importId) => getReview(input.repository, importId),
     listApproved: () =>
       input.repository.listApproved().pipe(

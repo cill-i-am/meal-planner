@@ -1,4 +1,4 @@
-import { Effect, Layer, Redacted } from "effect";
+import { Effect, Layer, Redacted, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -8,6 +8,8 @@ import type {
 } from "./import-recipe-review.js";
 import {
   RecipeReviewService,
+  RecipeReviewMutationConflict,
+  RecipeReviewMutationId,
   recipeReviewVersionConflict,
 } from "./import-recipe-review.js";
 import { RecipeReviewRoutes } from "./import-recipe-review.routes.js";
@@ -22,6 +24,7 @@ const validCorrection = {
     value: "Tomato and Onion Stew",
   },
   expectedVersion: 0,
+  mutationId: "route-correction-321",
   tags: {
     cuisines: ["Irish"],
     dietaryFit: "household_match",
@@ -90,17 +93,29 @@ describe("recipe review routes", () => {
     [
       "POST",
       `/recipe-drafts/${importId}/approve`,
-      { expectedVersion: 1, reason: "Approved." },
+      {
+        expectedVersion: 1,
+        mutationId: "route-approve-321",
+        reason: "Approved.",
+      },
     ],
     [
       "POST",
       `/recipe-drafts/${importId}/reject`,
-      { expectedVersion: 1, reason: "Rejected." },
+      {
+        expectedVersion: 1,
+        mutationId: "route-reject-321",
+        reason: "Rejected.",
+      },
     ],
     [
       "POST",
       `/recipe-drafts/${importId}/return-to-review`,
-      { expectedVersion: 1, reason: "Review again." },
+      {
+        expectedVersion: 1,
+        mutationId: "route-return-321",
+        reason: "Review again.",
+      },
     ],
     ["GET", "/recipe-bank", undefined],
   ] as const)(
@@ -132,10 +147,12 @@ describe("recipe review routes", () => {
 
   it("attributes an authorized write to the configured private credential", async () => {
     let auditedActor: RecipeReviewerActorId | undefined;
+    let auditedMutationId: string | undefined;
     const service: RecipeReviewServiceShape = {
       ...unreachableService(() => {}),
-      correct: (_id, _request, actorId) => {
+      correct: (_id, request, actorId) => {
         auditedActor = actorId;
+        auditedMutationId = request.mutationId;
         return Effect.fail(recipeReviewVersionConflict(0, 1));
       },
     };
@@ -154,6 +171,7 @@ describe("recipe review routes", () => {
 
     expect(response.status).toBe(409);
     expect(auditedActor).toBe("private_api_credential");
+    expect(auditedMutationId).toBe(validCorrection.mutationId);
     await expect(response.json()).resolves.toEqual({
       error: {
         actualVersion: 1,
@@ -162,6 +180,39 @@ describe("recipe review routes", () => {
         message: "The recipe draft changed before this write was applied.",
       },
     });
+  });
+
+  it("preserves a caller-owned transition mutation identity through the route", async () => {
+    let auditedMutationId: string | undefined;
+    const service: RecipeReviewServiceShape = {
+      ...unreachableService(() => {}),
+      approve: (_id, request) => {
+        auditedMutationId = request.mutationId;
+        return Effect.fail(recipeReviewVersionConflict(0, 1));
+      },
+    };
+    const app = makeApp(service);
+    apps.push(app);
+    const response = await app.handler(
+      new Request(
+        `https://meal-planner.test/recipe-drafts/${importId}/approve`,
+        {
+          body: JSON.stringify({
+            expectedVersion: 0,
+            mutationId: "route-transition-321",
+            reason: "Ready for the recipe bank.",
+          }),
+          headers: {
+            authorization: "Bearer test-review-token",
+            "content-type": "application/json",
+          },
+          method: "POST",
+        }
+      )
+    );
+
+    expect(response.status).toBe(409);
+    expect(auditedMutationId).toBe("route-transition-321");
   });
 
   it("rejects a field/value mismatch at the HTTP boundary", async () => {
@@ -196,6 +247,40 @@ describe("recipe review routes", () => {
       error: {
         code: "invalid_request",
         message: "The review request is invalid.",
+      },
+    });
+  });
+
+  it("maps changed-command mutation identity reuse to a safe HTTP 409", async () => {
+    const mutationId = Schema.decodeUnknownSync(RecipeReviewMutationId)(
+      validCorrection.mutationId
+    );
+    const service: RecipeReviewServiceShape = {
+      ...unreachableService(() => {}),
+      correct: () =>
+        Effect.fail(new RecipeReviewMutationConflict({ mutationId })),
+    };
+    const app = makeApp(service);
+    apps.push(app);
+
+    const response = await app.handler(
+      new Request(`https://meal-planner.test/recipe-drafts/${importId}`, {
+        body: JSON.stringify(validCorrection),
+        headers: {
+          authorization: "Bearer test-review-token",
+          "content-type": "application/json",
+        },
+        method: "PATCH",
+      })
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "mutation_conflict",
+        message:
+          "The mutation identity was already used for a different review command.",
+        mutationId,
       },
     });
   });

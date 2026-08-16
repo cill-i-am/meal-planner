@@ -6,7 +6,10 @@ import {
   PlanningTags,
   RecipeCorrection,
   RecipeCorrectionValue,
+  RecipeReviewCommandDigest,
   RecipeReviewLifecycle,
+  RecipeReviewMutationConflict,
+  RecipeReviewMutationOutcome,
   RecipeReviewTransition,
   RecipeReviewVersion,
   refineRecipeReview,
@@ -15,6 +18,7 @@ import {
   recipeReviewVersionConflict,
 } from "./import-recipe-review.js";
 import type {
+  RecipeReviewMutationId,
   RecipeReviewRepositoryShape,
   RecipeReviewWriteError,
   Review,
@@ -62,6 +66,12 @@ const D1BatchResults = Schema.Array(
 );
 
 const ApprovedImportRow = Schema.Struct({ import_id: ImportId });
+
+const MutationRow = Schema.Struct({
+  command_digest: RecipeReviewCommandDigest,
+  command_kind: Schema.Literals(["correction", "transition"]),
+  resulting_version: RecipeReviewVersion,
+});
 
 const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({
@@ -247,33 +257,100 @@ const readReview = (
     );
   });
 
-const reviewAfterCas = (
+const readMutationOutcome = (
   binding: AnyD1Database,
-  extractionFingerprint: string,
-  expectedVersion: RecipeReviewVersion,
-  expectedLifecycle: RecipeReviewLifecycle,
-  updated: boolean
-): Effect.Effect<Review, RecipeReviewWriteError> =>
-  Effect.gen(function* readAfterReviewCas() {
+  input: {
+    readonly commandDigest: RecipeReviewCommandDigest;
+    readonly extractionFingerprint: string;
+    readonly mutationId: RecipeReviewMutationId;
+  }
+) =>
+  Effect.gen(function* readRecipeReviewMutationOutcome() {
+    const raw = yield* persistenceEffect(() =>
+      binding
+        .prepare(
+          `SELECT command_digest, command_kind, resulting_version
+             FROM recipe_review_mutations
+            WHERE extraction_fingerprint = ? AND mutation_id = ?`
+        )
+        .bind(input.extractionFingerprint, input.mutationId)
+        .first()
+    );
+    if (raw === null) {
+      return Option.none<RecipeReviewMutationOutcome>();
+    }
+    const row = yield* decode(MutationRow, raw);
+    if (row.command_digest !== input.commandDigest) {
+      return yield* Effect.fail(
+        new RecipeReviewMutationConflict({ mutationId: input.mutationId })
+      );
+    }
     const reviewOption = yield* readReview(binding, {
-      extractionFingerprint,
+      extractionFingerprint: input.extractionFingerprint,
+    });
+    if (Option.isNone(reviewOption)) {
+      return yield* Effect.fail(importPersistenceCorrupt());
+    }
+    const review = reviewOption.value;
+    if (review.version < row.resulting_version) {
+      return yield* Effect.fail(importPersistenceCorrupt());
+    }
+    return Option.some(
+      RecipeReviewMutationOutcome.make({
+        _tag: "Replayed",
+        mutationId: input.mutationId,
+        resultingVersion: row.resulting_version,
+        review,
+      })
+    );
+  });
+
+const mutationOutcomeAfterCas = (
+  binding: AnyD1Database,
+  input: {
+    readonly commandDigest: RecipeReviewCommandDigest;
+    readonly expectedLifecycle: RecipeReviewLifecycle;
+    readonly expectedVersion: RecipeReviewVersion;
+    readonly extractionFingerprint: string;
+    readonly mutationId: RecipeReviewMutationId;
+  },
+  updated: boolean
+): Effect.Effect<RecipeReviewMutationOutcome, RecipeReviewWriteError> =>
+  Effect.gen(function* readAfterRecipeReviewCas() {
+    const replay = yield* readMutationOutcome(binding, input);
+    if (Option.isSome(replay)) {
+      if (
+        updated &&
+        replay.value.resultingVersion !== input.expectedVersion + 1
+      ) {
+        return yield* Effect.fail(importPersistenceCorrupt());
+      }
+      return updated
+        ? RecipeReviewMutationOutcome.make({
+            ...replay.value,
+            _tag: "Applied",
+          })
+        : replay.value;
+    }
+    const reviewOption = yield* readReview(binding, {
+      extractionFingerprint: input.extractionFingerprint,
     });
     if (Option.isNone(reviewOption)) {
       return yield* Effect.fail(importPersistenceCorrupt());
     }
     const review = reviewOption.value;
     if (updated) {
-      return review;
+      return yield* Effect.fail(importPersistenceCorrupt());
     }
-    if (review.version !== expectedVersion) {
+    if (review.version !== input.expectedVersion) {
       return yield* Effect.fail(
-        recipeReviewVersionConflict(expectedVersion, review.version)
+        recipeReviewVersionConflict(input.expectedVersion, review.version)
       );
     }
     return yield* Effect.fail(
       recipeReviewTransitionRejected(
-        review.lifecycle === expectedLifecycle
-          ? expectedLifecycle
+        review.lifecycle === input.expectedLifecycle
+          ? input.expectedLifecycle
           : review.lifecycle
       )
     );
@@ -283,10 +360,9 @@ const reviewAfterCas = (
 export const makeD1RecipeReviewRepository = (
   binding: AnyD1Database
 ): RecipeReviewRepositoryShape => ({
-  correct: (input) =>
-    Effect.gen(function* correctRecipeReview() {
+  correct: Effect.fn("RecipeReviewRepository.correct")(
+    function* correctRecipeReview(input) {
       const correctedAt = DateTime.formatIso(input.correction.correctedAt);
-      const mutationId = `${input.correction.actorId}:${correctedAt}:${input.correction.version}:correction`;
       const tagsAfter = JSON.stringify(
         Schema.encodeSync(PlanningTags)(input.tags)
       );
@@ -301,9 +377,9 @@ export const makeD1RecipeReviewRepository = (
             .prepare(
               `INSERT INTO recipe_reviews (
                  extraction_fingerprint, lifecycle, version, tags_json,
-                 last_mutation_id, created_at, updated_at
+                 created_at, updated_at
                )
-               SELECT extraction_fingerprint, 'needs_review', 0, NULL, NULL, ?, ?
+               SELECT extraction_fingerprint, 'needs_review', 0, NULL, ?, ?
                  FROM import_recipe_extractions
                 WHERE extraction_fingerprint = ? AND is_current = 1
                   AND state = 'needs_review'
@@ -314,7 +390,7 @@ export const makeD1RecipeReviewRepository = (
             .prepare(
               `UPDATE recipe_reviews
                   SET version = version + 1, tags_json = ?,
-                      last_mutation_id = ?, updated_at = ?
+                      updated_at = ?
                 WHERE extraction_fingerprint = ? AND version = ?
                   AND lifecycle = 'needs_review'
                   AND EXISTS (
@@ -326,25 +402,40 @@ export const makeD1RecipeReviewRepository = (
             )
             .bind(
               tagsAfter,
-              mutationId,
               correctedAt,
               input.extractionFingerprint,
               input.expectedVersion
             ),
           binding
             .prepare(
-              `INSERT OR IGNORE INTO recipe_review_corrections (
+              `INSERT INTO recipe_review_mutations (
+                 extraction_fingerprint, mutation_id, command_kind,
+                 command_digest, resulting_version, applied_at
+               )
+               SELECT ?, ?, 'correction', ?, ?, ?
+                WHERE changes() = 1
+               RETURNING resulting_version`
+            )
+            .bind(
+              input.extractionFingerprint,
+              input.mutationId,
+              input.commandDigest,
+              input.correction.version,
+              correctedAt
+            ),
+          binding
+            .prepare(
+              `INSERT INTO recipe_review_corrections (
                  extraction_fingerprint, version, actor_id, field,
                  before_json, after_json, reason, tags_before_json,
                  tags_after_json, corrected_at
                )
-               SELECT extraction_fingerprint, version, ?, ?, ?, ?, ?,
-                      ?, ?, ?
-                 FROM recipe_reviews
-                WHERE extraction_fingerprint = ? AND version = ?
-                  AND last_mutation_id = ?`
+               SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                WHERE changes() = 1`
             )
             .bind(
+              input.extractionFingerprint,
+              input.correction.version,
               input.correction.actorId,
               input.correction.field,
               JSON.stringify(input.correction.before),
@@ -352,23 +443,40 @@ export const makeD1RecipeReviewRepository = (
               input.correction.reason,
               tagsBefore,
               tagsAfter,
-              correctedAt,
-              input.extractionFingerprint,
-              input.correction.version,
-              mutationId
+              correctedAt
             ),
         ])
       );
       const results = yield* decode(D1BatchResults, raw);
-      return yield* reviewAfterCas(
+      return yield* mutationOutcomeAfterCas(
         binding,
-        input.extractionFingerprint,
-        input.expectedVersion,
-        "needs_review",
+        {
+          commandDigest: input.commandDigest,
+          expectedLifecycle: "needs_review",
+          expectedVersion: input.expectedVersion,
+          extractionFingerprint: input.extractionFingerprint,
+          mutationId: input.mutationId,
+        },
         (results[1]?.results.length ?? 0) === 1
       );
-    }),
+    }
+  ),
   find: (importId) => readReview(binding, { importId }),
+  findMutationOutcome: Effect.fn("RecipeReviewRepository.findMutationOutcome")(
+    function* findRecipeReviewMutationOutcome(input) {
+      yield* Effect.annotateCurrentSpan({
+        "recipeReview.commandDigest": input.commandDigest,
+        "recipeReview.mutationId": input.mutationId,
+        "recipeReview.reviewIdentity": input.extractionFingerprint,
+      });
+      const outcome = yield* readMutationOutcome(binding, input);
+      yield* Effect.annotateCurrentSpan(
+        "recipeReview.result",
+        Option.isSome(outcome) ? outcome.value._tag : "NotFound"
+      );
+      return outcome;
+    }
+  ),
   listApproved: () =>
     Effect.gen(function* listApprovedRecipeReviews() {
       const raw = yield* persistenceEffect(() =>
@@ -395,20 +503,19 @@ export const makeD1RecipeReviewRepository = (
         Option.isSome(review) ? [review.value] : []
       );
     }),
-  transition: (input) =>
-    Effect.gen(function* transitionRecipeReview() {
+  transition: Effect.fn("RecipeReviewRepository.transition")(
+    function* transitionRecipeReview(input) {
       const { transition } = input;
       const transitionedAt = DateTime.formatIso(transition.transitionedAt);
-      const mutationId = `${transition.actorId}:${transitionedAt}:${transition.version}:${transition.to}`;
       const raw = yield* persistenceEffect(() =>
         binding.batch([
           binding
             .prepare(
               `INSERT INTO recipe_reviews (
                  extraction_fingerprint, lifecycle, version, tags_json,
-                 last_mutation_id, created_at, updated_at
+                 created_at, updated_at
                )
-               SELECT extraction_fingerprint, 'needs_review', 0, NULL, NULL, ?, ?
+               SELECT extraction_fingerprint, 'needs_review', 0, NULL, ?, ?
                  FROM import_recipe_extractions
                 WHERE extraction_fingerprint = ? AND is_current = 1
                   AND state = 'needs_review'
@@ -419,7 +526,7 @@ export const makeD1RecipeReviewRepository = (
             .prepare(
               `UPDATE recipe_reviews
                   SET lifecycle = ?, version = version + 1,
-                      last_mutation_id = ?, updated_at = ?
+                      updated_at = ?
                 WHERE extraction_fingerprint = ? AND version = ?
                   AND lifecycle = ?
                   AND EXISTS (
@@ -431,7 +538,6 @@ export const makeD1RecipeReviewRepository = (
             )
             .bind(
               transition.to,
-              mutationId,
               transitionedAt,
               input.extractionFingerprint,
               input.expectedVersion,
@@ -439,34 +545,53 @@ export const makeD1RecipeReviewRepository = (
             ),
           binding
             .prepare(
-              `INSERT OR IGNORE INTO recipe_review_transitions (
+              `INSERT INTO recipe_review_mutations (
+                 extraction_fingerprint, mutation_id, command_kind,
+                 command_digest, resulting_version, applied_at
+               )
+               SELECT ?, ?, 'transition', ?, ?, ?
+                WHERE changes() = 1
+               RETURNING resulting_version`
+            )
+            .bind(
+              input.extractionFingerprint,
+              input.mutationId,
+              input.commandDigest,
+              transition.version,
+              transitionedAt
+            ),
+          binding
+            .prepare(
+              `INSERT INTO recipe_review_transitions (
                  extraction_fingerprint, version, actor_id, from_lifecycle,
                  to_lifecycle, reason, transitioned_at
                )
-               SELECT extraction_fingerprint, version, ?, ?, ?, ?, ?
-                 FROM recipe_reviews
-                WHERE extraction_fingerprint = ? AND version = ?
-                  AND last_mutation_id = ?`
+               SELECT ?, ?, ?, ?, ?, ?, ?
+                WHERE changes() = 1`
             )
             .bind(
+              input.extractionFingerprint,
+              transition.version,
               transition.actorId,
               transition.from,
               transition.to,
               transition.reason,
-              transitionedAt,
-              input.extractionFingerprint,
-              transition.version,
-              mutationId
+              transitionedAt
             ),
         ])
       );
       const results = yield* decode(D1BatchResults, raw);
-      return yield* reviewAfterCas(
+      return yield* mutationOutcomeAfterCas(
         binding,
-        input.extractionFingerprint,
-        input.expectedVersion,
-        transition.from,
+        {
+          commandDigest: input.commandDigest,
+          expectedLifecycle: transition.from,
+          expectedVersion: input.expectedVersion,
+          extractionFingerprint: input.extractionFingerprint,
+          mutationId: input.mutationId,
+        },
         (results[1]?.results.length ?? 0) === 1
       );
-    }),
+    }
+  ),
 });

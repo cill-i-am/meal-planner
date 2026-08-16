@@ -648,7 +648,6 @@ export const recipeReviews = sqliteTable(
   {
     createdAt: text("created_at").notNull(),
     extractionFingerprint: text("extraction_fingerprint").notNull(),
-    lastMutationId: text("last_mutation_id"),
     lifecycle: text("lifecycle", {
       enum: ["needs_review", "approved", "rejected"],
     }).notNull(),
@@ -681,9 +680,51 @@ export const recipeReviews = sqliteTable(
       "recipe_reviews_tags_check",
       sql`(${table.tagsJson} IS NULL OR json_valid(${table.tagsJson})) AND (${table.lifecycle} <> 'approved' OR ${table.tagsJson} IS NOT NULL)`
     ),
+  ]
+);
+
+export const recipeReviewMutations = sqliteTable(
+  "recipe_review_mutations",
+  {
+    appliedAt: text("applied_at").notNull(),
+    commandDigest: text("command_digest").notNull(),
+    commandKind: text("command_kind", {
+      enum: ["correction", "transition"],
+    }).notNull(),
+    extractionFingerprint: text("extraction_fingerprint").notNull(),
+    mutationId: text("mutation_id").notNull(),
+    resultingVersion: integer("resulting_version").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.extractionFingerprint, table.mutationId],
+    }),
+    foreignKey({
+      columns: [table.extractionFingerprint],
+      foreignColumns: [recipeReviews.extractionFingerprint],
+      name: "recipe_review_mutations_review_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    uniqueIndex("recipe_review_mutations_review_version_unique").on(
+      table.extractionFingerprint,
+      table.resultingVersion
+    ),
     check(
-      "recipe_reviews_mutation_check",
-      sql`${table.lastMutationId} IS NULL OR length(${table.lastMutationId}) BETWEEN 1 AND 512`
+      "recipe_review_mutations_identity_check",
+      sql`length(${table.mutationId}) BETWEEN 1 AND 128`
+    ),
+    check(
+      "recipe_review_mutations_kind_check",
+      sql`${table.commandKind} IN ('correction', 'transition')`
+    ),
+    check(
+      "recipe_review_mutations_digest_check",
+      sql`length(${table.commandDigest}) = 64 AND ${table.commandDigest} NOT GLOB '*[^0-9a-f]*'`
+    ),
+    check(
+      "recipe_review_mutations_version_check",
+      sql`typeof(${table.resultingVersion}) = 'integer' AND ${table.resultingVersion} > 0 AND ${table.resultingVersion} <= 9007199254740991`
     ),
   ]
 );
