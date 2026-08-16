@@ -2,12 +2,9 @@ import { Effect, Layer, Redacted, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type {
-  RecipeReviewServiceShape,
-  RecipeReviewerActorId,
-} from "./import-recipe-review.js";
+import type { RecipeReviewCompatibilityShape } from "./import-recipe-review.compatibility.js";
+import { RecipeReviewCompatibility } from "./import-recipe-review.compatibility.js";
 import {
-  RecipeReviewService,
   RecipeReviewMutationConflict,
   RecipeReviewMutationId,
   recipeReviewVersionConflict,
@@ -43,17 +40,22 @@ beforeAll(async () => {
   );
 });
 
-const makeApp = (service: RecipeReviewServiceShape) =>
+const makeApp = (service: RecipeReviewCompatibilityShape) =>
   HttpRouter.toWebHandler(
     Layer.mergeAll(
       RecipeReviewRoutes,
       Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
-      Layer.succeed(RecipeReviewService, RecipeReviewService.of(service))
+      Layer.succeed(
+        RecipeReviewCompatibility,
+        RecipeReviewCompatibility.of(service)
+      )
     ),
     { disableLogger: true }
   );
 
-const unreachableService = (called: () => void): RecipeReviewServiceShape => ({
+const unreachableService = (
+  called: () => void
+): RecipeReviewCompatibilityShape => ({
   approve: () => {
     called();
     return Effect.die("unreachable");
@@ -146,12 +148,14 @@ describe("recipe review routes", () => {
   );
 
   it("attributes an authorized write to the configured private credential", async () => {
-    let auditedActor: RecipeReviewerActorId | undefined;
+    let auditedActor: string | undefined;
+    let auditedHousehold: string | undefined;
     let auditedMutationId: string | undefined;
-    const service: RecipeReviewServiceShape = {
+    const service: RecipeReviewCompatibilityShape = {
       ...unreachableService(() => {}),
-      correct: (_id, request, actorId) => {
-        auditedActor = actorId;
+      correct: (principal, _id, request) => {
+        auditedActor = principal.actorId;
+        auditedHousehold = principal.householdScopeId;
         auditedMutationId = request.mutationId;
         return Effect.fail(recipeReviewVersionConflict(0, 1));
       },
@@ -170,7 +174,8 @@ describe("recipe review routes", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(auditedActor).toBe("private_api_credential");
+    expect(auditedActor).toBe("0".repeat(64));
+    expect(auditedHousehold).toBe("1".repeat(64));
     expect(auditedMutationId).toBe(validCorrection.mutationId);
     await expect(response.json()).resolves.toEqual({
       error: {
@@ -184,9 +189,9 @@ describe("recipe review routes", () => {
 
   it("preserves a caller-owned transition mutation identity through the route", async () => {
     let auditedMutationId: string | undefined;
-    const service: RecipeReviewServiceShape = {
+    const service: RecipeReviewCompatibilityShape = {
       ...unreachableService(() => {}),
-      approve: (_id, request) => {
+      approve: (_principal, _id, request) => {
         auditedMutationId = request.mutationId;
         return Effect.fail(recipeReviewVersionConflict(0, 1));
       },
@@ -255,7 +260,7 @@ describe("recipe review routes", () => {
     const mutationId = Schema.decodeUnknownSync(RecipeReviewMutationId)(
       validCorrection.mutationId
     );
-    const service: RecipeReviewServiceShape = {
+    const service: RecipeReviewCompatibilityShape = {
       ...unreachableService(() => {}),
       correct: () =>
         Effect.fail(new RecipeReviewMutationConflict({ mutationId })),

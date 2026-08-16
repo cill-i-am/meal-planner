@@ -222,7 +222,7 @@ const readReview = (
                   ? "extraction.import_id = ? AND extraction.is_current = 1"
                   : "extraction.extraction_fingerprint = ?"
               }
-              ORDER BY correction.version`
+              ORDER BY correction.version, correction.ordinal`
           )
           .bind(value),
         binding

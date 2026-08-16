@@ -1,6 +1,10 @@
-import { Schema } from "effect";
+/* eslint-disable max-classes-per-file -- This shared protocol module owns its related Schema-backed middleware and client service tags. */
+import type { Redacted } from "effect";
+import { Context, Layer, Schema } from "effect";
+import { HttpClientRequest } from "effect/unstable/http";
 import {
   HttpApi,
+  HttpApiClient,
   HttpApiEndpoint,
   HttpApiGroup,
   HttpApiMiddleware,
@@ -74,6 +78,29 @@ export const RecipeId = Schema.String.pipe(
 );
 export type RecipeId = typeof RecipeId.Type;
 
+const RecipeImportPrincipalDigest = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+);
+export const RecipeImportActorId = RecipeImportPrincipalDigest.pipe(
+  Schema.brand("RecipeImportActorId")
+);
+export type RecipeImportActorId = typeof RecipeImportActorId.Type;
+export const RecipeImportHouseholdScopeId = RecipeImportPrincipalDigest.pipe(
+  Schema.brand("RecipeImportHouseholdScopeId")
+);
+export type RecipeImportHouseholdScopeId =
+  typeof RecipeImportHouseholdScopeId.Type;
+export const RecipeImportPrincipal = Schema.Struct({
+  actorId: RecipeImportActorId,
+  householdScopeId: RecipeImportHouseholdScopeId,
+});
+export type RecipeImportPrincipal = typeof RecipeImportPrincipal.Type;
+
+export class RecipeImportCurrentPrincipal extends Context.Service<
+  RecipeImportCurrentPrincipal,
+  RecipeImportPrincipal
+>()("meal-planner/RecipeImportCurrentPrincipal") {}
+
 export const Instant = Schema.DateTimeUtcFromString.pipe(
   Schema.brand("RecipeImportInstant")
 );
@@ -109,6 +136,7 @@ export const CanonicalTikTokUrl = Schema.String.pipe(
             url.protocol === "https:" &&
             (url.hostname === "tiktok.com" ||
               url.hostname.endsWith(".tiktok.com")) &&
+            url.port === "" &&
             url.username === "" &&
             url.password === "" &&
             url.search === "" &&
@@ -465,6 +493,17 @@ export const RecipeReviewAnswer = Schema.Union([
 ]);
 export type RecipeReviewAnswer = typeof RecipeReviewAnswer.Type;
 
+const UniqueRecipeReviewAnswers = Schema.NonEmptyArray(RecipeReviewAnswer).pipe(
+  Schema.check(
+    Schema.makeFilter<readonly RecipeReviewAnswer[]>(
+      (answers) =>
+        new Set(answers.map(({ field }) => field)).size === answers.length,
+      { expected: "one answer per editable recipe field" },
+      true
+    )
+  )
+);
+
 export const RecipeReviewActionView = Schema.Struct({
   answers: Schema.Array(RecipeReviewAnswer),
   blockers: Schema.Struct({
@@ -504,7 +543,7 @@ export const RecipeImportAction = Schema.Union([
 export type RecipeImportAction = typeof RecipeImportAction.Type;
 
 export const AnswerReviewRecipeActionRequest = Schema.Struct({
-  answers: Schema.NonEmptyArray(RecipeReviewAnswer),
+  answers: UniqueRecipeReviewAnswers,
   expectedActionVersion: RecipeImportActionVersion,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type AnswerReviewRecipeActionRequest =
@@ -712,16 +751,26 @@ const InternalProblem = asProblemJson(InternalErrorProblemDetails).pipe(
   HttpApiSchema.status(500)
 );
 
-export class RecipeImportBearerAuth extends HttpApiMiddleware.Service<RecipeImportBearerAuth>()(
-  "RecipeImportBearerAuth",
-  {
-    error: UnauthorizedProblem,
-    security: {
-      bearerAuth: HttpApiSecurity.bearer.pipe(
-        HttpApiSecurity.annotate(OpenApi.Format, "opaque")
-      ),
-    },
-  }
+export class RecipeImportBearerAuth extends HttpApiMiddleware.Service<
+  RecipeImportBearerAuth,
+  { provides: RecipeImportCurrentPrincipal }
+>()("RecipeImportBearerAuth", {
+  error: UnauthorizedProblem,
+  requiredForClient: true,
+  security: {
+    bearerAuth: HttpApiSecurity.bearer.pipe(
+      HttpApiSecurity.annotate(OpenApi.Format, "opaque")
+    ),
+  },
+}) {}
+
+export class RecipeImportSchemaErrors extends HttpApiMiddleware.Service<RecipeImportSchemaErrors>()(
+  "RecipeImportSchemaErrors",
+  { error: BadRequestProblem }
+) {}
+
+export class RecipeImportDefectBoundary extends HttpApiMiddleware.Service<RecipeImportDefectBoundary>()(
+  "RecipeImportDefectBoundary"
 ) {}
 
 const IdParams = { id: RecipeImportIntentId };
@@ -776,7 +825,7 @@ const RecipeImportIntentsGroup = HttpApiGroup.make("recipeImportIntents")
         headers: IdempotencyHeader,
         params: ActionParams,
         payload: AnswerReviewRecipeActionRequest,
-        success: RecipeImportAction,
+        success: RequiresActionRecipeImportIntent,
       }
     ),
     HttpApiEndpoint.post(
@@ -829,6 +878,8 @@ const RecipesGroup = HttpApiGroup.make("recipes")
 
 export const RecipeImportApi = HttpApi.make("recipeImportApi")
   .add(RecipeImportIntentsGroup, RecipesGroup)
+  .middleware(RecipeImportSchemaErrors)
+  .middleware(RecipeImportDefectBoundary)
   .annotateMerge(
     OpenApi.annotations({
       description:
@@ -837,3 +888,28 @@ export const RecipeImportApi = HttpApi.make("recipeImportApi")
       version: "1.0.0",
     })
   );
+
+export type RecipeImportApiClientShape = HttpApiClient.ForApi<
+  typeof RecipeImportApi
+>;
+
+export class RecipeImportApiClient extends Context.Service<
+  RecipeImportApiClient,
+  RecipeImportApiClientShape
+>()("meal-planner/RecipeImportApiClient") {}
+
+export const makeRecipeImportBearerAuthClientLayer = (
+  token: Redacted.Redacted<string>
+) =>
+  HttpApiMiddleware.layerClient(RecipeImportBearerAuth, ({ next, request }) =>
+    next(HttpClientRequest.bearerToken(request, token))
+  );
+
+export const makeRecipeImportApiClientLayer = (options: {
+  readonly baseUrl: string | URL;
+  readonly token: Redacted.Redacted<string>;
+}) =>
+  Layer.effect(
+    RecipeImportApiClient,
+    HttpApiClient.make(RecipeImportApi, { baseUrl: options.baseUrl })
+  ).pipe(Layer.provide(makeRecipeImportBearerAuthClientLayer(options.token)));

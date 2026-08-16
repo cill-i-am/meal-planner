@@ -1293,7 +1293,10 @@ export const makeD1ImportRepository = (
                 SET canonical_source_id = ?,
                     resolved_canonical_source_id = ?, public_source_url = ?,
                     public_source_kind = ?, public_status = ?,
-                    active_action_id = ?, public_stage = ?,
+                    active_action_id = ?,
+                    active_action_version = CASE
+                      WHEN ? = 'requires_action' THEN 1 ELSE NULL END,
+                    public_stage = ?,
                     public_stage_started_at = ?, public_activity = ?,
                     public_next_attempt_at = ?, public_speech = ?,
                     public_visuals = ?, public_recipe_id = NULL,
@@ -1319,6 +1322,7 @@ export const makeD1ImportRepository = (
                 next.sourceKind,
                 next.status,
                 next.activeActionId,
+                next.status,
                 next.stage,
                 next.stageStartedAt === null
                   ? null

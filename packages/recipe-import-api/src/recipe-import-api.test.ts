@@ -345,6 +345,11 @@ describe("RecipeImportIntent protocol", () => {
         status: "processing",
       })
     ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(Protocol.CanonicalTikTokUrl)(
+        "https://www.tiktok.com:8443/@household/video/123"
+      )
+    ).toThrow();
   });
 
   it("keeps the full safe review, answers, tags, and version on the action", () => {
@@ -384,6 +389,18 @@ describe("RecipeImportIntent protocol", () => {
         action: { ...action, actionVersion: 3, review },
         source: canonicalSource,
         status: "requires_action",
+      })
+    ).toThrow();
+  });
+
+  it("rejects duplicate answer fields before invoking an action mutation", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(Protocol.AnswerReviewRecipeActionRequest)({
+        answers: [
+          { field: "name", value: "First name" },
+          { field: "name", value: "Second name" },
+        ],
+        expectedActionVersion: 1,
       })
     ).toThrow();
   });
@@ -520,6 +537,7 @@ describe("RecipeImportIntent protocol", () => {
 });
 
 describe("RecipeImportApi HttpApi declaration", () => {
+  // eslint-disable-next-line complexity -- One compact table-driven check keeps every operation's semantic OpenAPI contract together.
   it("declares the approved complete unmounted surface and safe metadata", () => {
     const document = OpenApi.fromApi(RecipeImportApi);
     expect(document.info).toMatchObject({
@@ -536,43 +554,119 @@ describe("RecipeImportApi HttpApi declaration", () => {
       "/v1/recipe-import-intents/{id}/timeline",
       "/v1/recipes/{recipeId}",
     ]);
-    expect(document.paths["/v1/recipe-import-intents"]?.post).toMatchObject({
-      responses: {
-        "201": {
-          content: { "application/json": expect.any(Object) },
-          headers: {
-            location: expect.any(Object),
-            "retry-after": expect.any(Object),
-          },
-        },
-        "409": {
-          content: { "application/problem+json": expect.any(Object) },
-        },
-      },
-      security: [{ bearerAuth: [] }],
-    });
     expect(document.components.securitySchemes).toEqual({
       bearerAuth: { bearerFormat: "opaque", scheme: "Bearer", type: "http" },
     });
-    expect(
-      document.paths["/v1/recipe-import-intents/{id}"]?.get?.responses
-    ).toHaveProperty("404.content.application/problem+json");
-    expect(
-      document.paths["/v1/recipe-import-intents/{id}"]?.get?.responses?.["200"]
-        ?.headers
-    ).toHaveProperty("retry-after");
 
-    for (const [path, method] of [
-      ["/v1/recipe-import-intents/{id}/actions/{actionId}", "get"],
-      ["/v1/recipe-import-intents/{id}/actions/{actionId}/answers", "post"],
-      ["/v1/recipe-import-intents/{id}/actions/{actionId}/confirm", "post"],
-      ["/v1/recipe-import-intents/{id}/cancel", "post"],
-    ] as const) {
+    const operations = [
+      {
+        errors: [400, 401, 409, 500],
+        idempotent: true,
+        method: "post",
+        path: "/v1/recipe-import-intents",
+        success: 201,
+        successHeaders: ["location", "retry-after"],
+      },
+      {
+        errors: [400, 401, 404, 500],
+        idempotent: false,
+        method: "get",
+        path: "/v1/recipe-import-intents/{id}",
+        success: 200,
+        successHeaders: ["retry-after"],
+      },
+      {
+        errors: [400, 401, 404, 500],
+        idempotent: false,
+        method: "get",
+        path: "/v1/recipe-import-intents/{id}/actions/{actionId}",
+        success: 200,
+        successHeaders: [],
+      },
+      {
+        errors: [400, 401, 404, 409, 500],
+        idempotent: true,
+        method: "post",
+        path: "/v1/recipe-import-intents/{id}/actions/{actionId}/answers",
+        success: 200,
+        successHeaders: [],
+      },
+      {
+        errors: [400, 401, 404, 409, 500],
+        idempotent: true,
+        method: "post",
+        path: "/v1/recipe-import-intents/{id}/actions/{actionId}/confirm",
+        success: 200,
+        successHeaders: [],
+      },
+      {
+        errors: [400, 401, 404, 409, 500],
+        idempotent: true,
+        method: "post",
+        path: "/v1/recipe-import-intents/{id}/cancel",
+        success: 200,
+        successHeaders: [],
+      },
+      {
+        errors: [400, 401, 404, 500],
+        idempotent: false,
+        method: "get",
+        path: "/v1/recipe-import-intents/{id}/timeline",
+        success: 200,
+        successHeaders: [],
+      },
+      {
+        errors: [400, 401, 404, 500],
+        idempotent: false,
+        method: "get",
+        path: "/v1/recipes/{recipeId}",
+        success: 200,
+        successHeaders: [],
+      },
+    ] as const;
+
+    for (const operation of operations) {
+      const declaration = document.paths[operation.path]?.[operation.method];
+      expect(declaration?.security).toEqual([{ bearerAuth: [] }]);
+      expect(Object.keys(declaration?.responses ?? {}).toSorted()).toEqual(
+        [operation.success, ...operation.errors].map(String).toSorted()
+      );
       expect(
-        document.paths[path]?.[method]?.responses?.["200"]?.headers?.[
-          "retry-after"
-        ]
-      ).toBeUndefined();
+        Object.keys(
+          declaration?.responses?.[operation.success]?.headers ?? {}
+        ).toSorted()
+      ).toEqual([...operation.successHeaders].toSorted());
+      expect(
+        declaration?.responses?.[operation.success]?.content
+      ).toHaveProperty("application/json");
+      for (const status of operation.errors) {
+        expect(declaration?.responses?.[status]?.content).toEqual({
+          "application/problem+json": expect.any(Object),
+        });
+      }
+      expect(
+        declaration?.parameters?.some(
+          (parameter) =>
+            "in" in parameter &&
+            parameter.in === "header" &&
+            parameter.name === "idempotency-key"
+        ) ?? false
+      ).toBe(operation.idempotent);
+    }
+
+    const serializedDocument = JSON.stringify(document);
+    for (const privateField of [
+      "actorId",
+      "compatibilityFingerprint",
+      "evidenceReferences",
+      "householdScopeId",
+      "model",
+      "provider",
+      "r2Reference",
+      "submittedUrl",
+      "transcript",
+    ]) {
+      expect(serializedDocument).not.toContain(`"${privateField}"`);
     }
 
     expect(
@@ -589,5 +683,54 @@ describe("RecipeImportApi HttpApi declaration", () => {
         },
       },
     });
+
+    const answerSchema =
+      document.paths[
+        "/v1/recipe-import-intents/{id}/actions/{actionId}/answers"
+      ]?.post?.responses?.["200"]?.content?.["application/json"]?.schema;
+    const answerReference =
+      typeof answerSchema === "object" &&
+      answerSchema !== null &&
+      "$ref" in answerSchema &&
+      typeof answerSchema["$ref"] === "string"
+        ? answerSchema["$ref"].split("/").at(-1)
+        : undefined;
+    const resolvedAnswerSchema =
+      answerReference === undefined
+        ? answerSchema
+        : document.components.schemas[answerReference];
+    expect(resolvedAnswerSchema).toMatchObject({
+      properties: {
+        action: expect.any(Object),
+        object: expect.any(Object),
+        status: { enum: ["requires_action"], type: "string" },
+      },
+      type: "object",
+    });
+    expect(JSON.stringify(resolvedAnswerSchema)).not.toContain(
+      '"actionVersion"'
+    );
+
+    const objectSchema =
+      typeof resolvedAnswerSchema === "object" &&
+      resolvedAnswerSchema !== null &&
+      "properties" in resolvedAnswerSchema &&
+      typeof resolvedAnswerSchema["properties"] === "object" &&
+      resolvedAnswerSchema["properties"] !== null &&
+      "object" in resolvedAnswerSchema["properties"]
+        ? resolvedAnswerSchema["properties"]["object"]
+        : undefined;
+    const objectReference =
+      typeof objectSchema === "object" &&
+      objectSchema !== null &&
+      "$ref" in objectSchema &&
+      typeof objectSchema["$ref"] === "string"
+        ? objectSchema["$ref"].split("/").at(-1)
+        : undefined;
+    expect(
+      objectReference === undefined
+        ? objectSchema
+        : document.components.schemas[objectReference]
+    ).toMatchObject({ enum: ["recipe_import_intent"], type: "string" });
   });
 });

@@ -117,8 +117,39 @@ the Workflow instance. Termination failure cannot undo cancellation. Later
 executor commands are terminal-fenced, and generation-positive Workflow runs
 recheck the intent before constructing or executing acquisition/provider work.
 Cancellation does not reject or otherwise mutate the private review ledger. A
-later confirmation slice will insert one immutable household-owned recipe,
-associate it with the intent, and succeed without shadowing review authority.
+concurrent correction or confirmation races cancellation through the same
+guarded intent row, so exactly one command wins.
+
+## Review actions and recipe results
+
+The current `needs_review` row remains the only review authority. A public
+review action is a strict safe projection of that row: it contains only the
+editable recipe values, planning tags, blockers, versions, and stable public
+identifiers. Evidence references, source URLs, extraction fingerprints,
+provider metadata, actors, mutation provenance, and review-ledger internals
+remain private.
+
+Correction and confirmation are separate idempotent mutations. Both compare
+the active action version and atomically advance the intent and review ledgers
+through one composite D1 batch. The final review-mutation receipt is inserted
+last; database triggers abort the whole batch unless the root, history, review,
+correction or approval details, provenance, and result shape are complete. An
+exact replay preserves the original response and timestamps, a changed command
+under the same idempotency key conflicts, and a distinct stale command loses its
+version race without leaving partial state.
+
+A correction advances exactly one intent version and one review/action version.
+Confirmation commits `processing` / `finalizing_recipe`, review approval, then
+`succeeded` in that order as one atomic unit. There is no cancellable or visible
+gap between approval and success. The succeeded sub-transition uses a derived
+mutation identity so both ordered history events remain independently unique.
+
+The recipe result is not a new table or copied document. `RecipeId` is the
+intent/import UUID, and the succeeded intent stores only that branded reference.
+`GET /v1/recipes/:recipeId` household-scopes through the succeeded intent and
+projects the existing approved review. A missing or malformed owned projection
+is persistence corruption and maps to a safe internal error; another
+household sees the same not-found response as an unknown recipe.
 
 ## History and execution boundaries
 
@@ -149,18 +180,26 @@ heartbeat, lifecycle version, or second orchestrator. The capability is
 deliberately unscheduled and unmounted in this slice: there is no cron, queue,
 route, or deployment wiring.
 
-## API and deferred scope
+## API and compatibility boundary
 
 `@meal-planner/recipe-import-api` owns only the shared Effect Schema, HttpApi,
-OpenAPI metadata, and safe Problem Details contract. It declares the complete
-approved `/v1` intent, action, timeline, cancellation, confirmation, and recipe
-surface, but this foundation slice deliberately does not mount those handlers
-in the production Worker. Legacy entry points continue through the same
-aggregate owner until a coherent later vertical switch is complete.
+generated client, OpenAPI metadata, and safe Problem Details contract. The
+production Worker mounts the complete approved `/v1` intent, action, timeline,
+cancellation, confirmation, and recipe surface as one Effect HttpApi. Bearer
+authentication establishes a typed household principal before payload decoding;
+credentials remain redacted and are never persisted or logged. Contract decode
+failures and domain errors map exhaustively to safe typed Problem Details.
+
+Legacy `/imports`, `/recipe-drafts`, and `/recipe-bank` routes remain temporary
+transport adapters for the current web proof of concept. Intent-managed writes
+delegate to the same atomic intent/review capabilities. Legacy reject and reopen
+operations are fenced with a safe conflict for intent-managed rows rather than
+creating a second lifecycle writer. Operator, batch, and provider callback
+routes remain private compatibility surfaces until their own replacements
+exist.
 
 Uploads, generic source extension hooks, similarity matching, recipe forks,
-batch fields, frontend/TanStack Query work, action answers, confirmation,
-public cancellation and timeline handlers, recipe-result handlers, recovery
+batch fields, frontend/TanStack Query adoption, legacy-route removal, recovery
 scheduling, provider operations, and cloud deployment are deferred. Durable
 intent/action/recipe metadata lives in D1; private evidence remains in
 short-retention R2. A future batch resource may group independently addressable

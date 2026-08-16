@@ -17,6 +17,7 @@ export const recipeImports = sqliteTable(
       .notNull()
       .default(0),
     activeActionId: text("active_action_id"),
+    activeActionVersion: integer("active_action_version"),
     actorId: text("actor_id")
       .notNull()
       .default(
@@ -886,6 +887,7 @@ export const recipeReviewMutations = sqliteTable(
       enum: ["correction", "transition"],
     }).notNull(),
     extractionFingerprint: text("extraction_fingerprint").notNull(),
+    itemCount: integer("item_count"),
     mutationId: text("mutation_id").notNull(),
     resultingVersion: integer("resulting_version").notNull(),
   },
@@ -907,6 +909,10 @@ export const recipeReviewMutations = sqliteTable(
     check(
       "recipe_review_mutations_identity_check",
       sql`length(${table.mutationId}) BETWEEN 1 AND 128`
+    ),
+    check(
+      "recipe_review_mutations_item_count_check",
+      sql`${table.itemCount} IS NULL OR (typeof(${table.itemCount}) = 'integer' AND ${table.itemCount} > 0 AND ${table.itemCount} <= 9007199254740991)`
     ),
     check(
       "recipe_review_mutations_kind_check",
@@ -932,13 +938,16 @@ export const recipeReviewCorrections = sqliteTable(
     correctedAt: text("corrected_at").notNull(),
     extractionFingerprint: text("extraction_fingerprint").notNull(),
     field: text("field").notNull(),
+    ordinal: integer("ordinal").notNull().default(0),
     reason: text("reason").notNull(),
     tagsAfterJson: text("tags_after_json").notNull(),
     tagsBeforeJson: text("tags_before_json").notNull(),
     version: integer("version").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.extractionFingerprint, table.version] }),
+    primaryKey({
+      columns: [table.extractionFingerprint, table.version, table.ordinal],
+    }),
     foreignKey({
       columns: [table.extractionFingerprint],
       foreignColumns: [recipeReviews.extractionFingerprint],
@@ -951,12 +960,16 @@ export const recipeReviewCorrections = sqliteTable(
       sql`typeof(${table.version}) = 'integer' AND ${table.version} > 0 AND ${table.version} <= 9007199254740991`
     ),
     check(
+      "recipe_review_corrections_ordinal_check",
+      sql`typeof(${table.ordinal}) = 'integer' AND ${table.ordinal} >= 0 AND ${table.ordinal} <= 9007199254740991`
+    ),
+    check(
       "recipe_review_corrections_actor_check",
       sql`length(${table.actorId}) BETWEEN 1 AND 128`
     ),
     check(
       "recipe_review_corrections_field_check",
-      sql`${table.field} IN ('author', 'category', 'cook_time_minutes', 'cuisine', 'description', 'ingredient_lines', 'ingredient_quantities', 'ingredient_units', 'instructions', 'name', 'nutrition', 'prep_time_minutes', 'temperature_celsius', 'tools', 'total_time_minutes', 'yield')`
+      sql`${table.field} IN ('author', 'category', 'cook_time_minutes', 'cuisine', 'description', 'ingredient_lines', 'ingredient_quantities', 'ingredient_units', 'instructions', 'name', 'nutrition', 'prep_time_minutes', 'tags', 'temperature_celsius', 'tools', 'total_time_minutes', 'yield')`
     ),
     check(
       "recipe_review_corrections_json_check",

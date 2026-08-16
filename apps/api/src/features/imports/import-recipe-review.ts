@@ -71,6 +71,7 @@ export const RecipeCorrectionValue = Schema.Union([
   ShortText,
   SafeInteger,
   Schema.NonEmptyArray(ShortText).pipe(Schema.check(Schema.isMaxLength(256))),
+  PlanningTagsSchema,
 ]);
 export type RecipeCorrectionValue = typeof RecipeCorrectionValue.Type;
 
@@ -132,6 +133,12 @@ export const RecipeCorrection = Schema.Union([
       )
     ),
     field: ListRecipeCorrectionField,
+  }),
+  Schema.Struct({
+    ...RecipeCorrectionDetails,
+    after: PlanningTagsSchema,
+    before: Schema.NullOr(PlanningTagsSchema),
+    field: Schema.Literal("tags"),
   }),
 ]);
 export type RecipeCorrection = typeof RecipeCorrection.Type;
@@ -530,6 +537,9 @@ export const applyCorrectionOverlay = (
       }
       case "yield": {
         recipe.yield = correction.after;
+        break;
+      }
+      case "tags": {
         break;
       }
       default: {

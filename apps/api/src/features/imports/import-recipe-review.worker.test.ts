@@ -258,6 +258,7 @@ describe("provider-free D1 recipe review tracer", () => {
       "command_digest",
       "resulting_version",
       "applied_at",
+      "item_count",
     ]);
   });
 
