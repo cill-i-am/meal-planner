@@ -1,0 +1,45 @@
+{
+  "name": "@meal-planner/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "check": "tsc --noEmit",
+    "dev": "vite dev",
+    "fake-api": "tsx scripts/poc-fake-api.ts",
+    "preview": "vite preview",
+    "start": "node .output/server/index.mjs",
+    "test": "vitest --config vitest.config.ts run"
+  },
+  "dependencies": {
+    "@radix-ui/react-label": "2.1.15",
+    "@tanstack/react-form": "1.33.5",
+    "@tanstack/react-query": "5.101.4",
+    "@tanstack/react-router": "1.170.29",
+    "@tanstack/react-router-ssr-query": "1.167.1",
+    "@tanstack/react-start": "1.168.46",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "effect": "4.0.0-rc.109",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwind-merge": "3.6.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.4",
+    "@types/node": "24.13.2",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "jsdom": "30.0.1",
+    "nitro": "3.0.260610-beta",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.22.4",
+    "typescript": "5.9.3",
+    "vite": "8.2.1",
+    "vitest": "4.1.9"
+  }
+}
