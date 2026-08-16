@@ -33,6 +33,18 @@ import {
   makeOperatorCarouselImportService,
 } from "./import-carousel-operator.service.js";
 import { stageOperatorCarouselForWorkflow } from "./import-carousel-staging.js";
+import { RecipeImportIntentApplication } from "./import-intent-api.http.js";
+import { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
+import type { ImportIntentWorkflowTerminatorShape } from "./import-intent-execution.js";
+import {
+  RecipeImportIntentReviewApplication,
+  makeRecipeImportIntentReviewApplication,
+} from "./import-intent-review.js";
+import { makeD1RecipeImportIntentReviewRepository } from "./import-intent-review.repository.d1.js";
+import {
+  ImportIntentIdGenerator,
+  makeImportIntentApplication,
+} from "./import-intent.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { adaptAcquisitionBucket } from "./import-media-acquirer.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
@@ -73,9 +85,11 @@ import type {
   RecipeRecoveryWorkflowStarterShape,
 } from "./import-recipe-recovery.js";
 import {
-  RecipeReviewService,
-  makeRecipeReviewService,
-} from "./import-recipe-review.js";
+  RecipeReviewCompatibility,
+  makeRecipeReviewCompatibility,
+  makeRecipeReviewCompatibilityRepositoryD1,
+} from "./import-recipe-review.compatibility.js";
+import { makeRecipeReviewService } from "./import-recipe-review.js";
 import { makeD1RecipeReviewRepository } from "./import-recipe-review.repository.d1.js";
 import { LegacyImportWorkflowExecutionGeneration } from "./import-workflow-input.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
@@ -434,6 +448,7 @@ export interface ImportWorkerRequestLayerInput {
   readonly database: AnyD1Database;
   readonly importApiToken: Redacted.Redacted<string>;
   readonly importWorkflowStarter: ImportWorkflowReconcilerShape;
+  readonly importWorkflowTerminator: ImportIntentWorkflowTerminatorShape;
   readonly now: () => string;
   readonly queue: ImportBatchQueueShape;
   readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarterShape;
@@ -448,6 +463,7 @@ const timestamp = (now: () => string) =>
 export const makeImportWorkerRequestLayer = (
   input: ImportWorkerRequestLayerInput
 ) => {
+  const d1ImportRepository = makeD1ImportRepository(input.database);
   const identityResolverLive = Layer.succeed(
     CanonicalSourceIdentityResolver,
     CanonicalSourceIdentityResolver.of(
@@ -460,7 +476,7 @@ export const makeImportWorkerRequestLayer = (
   );
   const repositoryLive = Layer.succeed(
     ImportRepository,
-    ImportRepository.of(makeD1ImportRepository(input.database))
+    ImportRepository.of(d1ImportRepository)
   );
   const batch = Layer.succeed(
     ImportBatchService,
@@ -528,12 +544,20 @@ export const makeImportWorkerRequestLayer = (
       })
     )
   );
-  const review = Layer.succeed(
-    RecipeReviewService,
-    RecipeReviewService.of(
-      makeRecipeReviewService({
-        now: () => timestamp(input.now),
-        repository: makeD1RecipeReviewRepository(input.database),
+  const legacyRecipeReview = makeRecipeReviewService({
+    now: () => timestamp(input.now),
+    repository: makeD1RecipeReviewRepository(input.database),
+  });
+  const intentReview = makeRecipeImportIntentReviewApplication(
+    makeD1RecipeImportIntentReviewRepository(input.database)
+  );
+  const reviewCompatibility = Layer.succeed(
+    RecipeReviewCompatibility,
+    RecipeReviewCompatibility.of(
+      makeRecipeReviewCompatibility({
+        intentReviews: intentReview,
+        legacy: legacyRecipeReview,
+        repository: makeRecipeReviewCompatibilityRepositoryD1(input.database),
       })
     )
   );
@@ -570,6 +594,24 @@ export const makeImportWorkerRequestLayer = (
         ImportAuthorizer.of
       )
     ),
+    ImportIntentIdGenerator.live,
+    Layer.succeed(
+      ImportIntentWorkflowTerminator,
+      ImportIntentWorkflowTerminator.of(input.importWorkflowTerminator)
+    ),
+    Layer.succeed(
+      RecipeImportIntentApplication,
+      RecipeImportIntentApplication.of(
+        makeImportIntentApplication(
+          d1ImportRepository,
+          input.importWorkflowStarter
+        )
+      )
+    ),
+    Layer.succeed(
+      RecipeImportIntentReviewApplication,
+      RecipeImportIntentReviewApplication.of(intentReview)
+    ),
     batch,
     carousel,
     Layer.succeed(
@@ -577,7 +619,7 @@ export const makeImportWorkerRequestLayer = (
       makeD1ImportObservabilityTraceStore(input.database, input.now)
     ),
     settlement,
-    review,
+    reviewCompatibility,
     service
   );
 };

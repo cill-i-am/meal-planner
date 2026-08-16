@@ -698,7 +698,8 @@ describe("canonical recipe import intent repository in workerd", () => {
                 `UPDATE recipe_imports
                     SET public_status = 'requires_action', public_stage = NULL,
                         public_stage_started_at = NULL, public_activity = NULL,
-                        active_action_id = ?, intent_version = intent_version + 1,
+                        active_action_id = ?, active_action_version = 1,
+                        intent_version = intent_version + 1,
                         updated_at = ?
                   WHERE id = ?`
               )

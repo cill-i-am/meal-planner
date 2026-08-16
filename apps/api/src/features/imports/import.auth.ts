@@ -7,6 +7,7 @@ import type { UnauthorizedImportCaller } from "./import.errors.js";
 
 const hmacAlgorithm = { hash: "SHA-256", name: "HMAC" } as const;
 const challenge = new TextEncoder().encode("meal-planner-import-auth-v1");
+const rejectUnauthorized = () => Effect.fail(unauthorizedImportCaller());
 
 const importHmacKey = (value: string) =>
   crypto.subtle.importKey(
@@ -22,12 +23,16 @@ const bearerToken = (authorization: string | undefined) => {
     return;
   }
   const match = /^Bearer (?<token>[^\s]+)$/u.exec(authorization);
-  return match?.groups?.["token"];
+  const token = match?.groups?.["token"];
+  return token === undefined ? undefined : Redacted.make(token);
 };
 
 export interface ImportAuthorizerShape {
   readonly authorize: (
     authorization: string | undefined
+  ) => Effect.Effect<ImportPrincipal, UnauthorizedImportCaller>;
+  readonly authorizeBearer: (
+    token: Redacted.Redacted<string>
   ) => Effect.Effect<ImportPrincipal, UnauthorizedImportCaller>;
 }
 
@@ -37,21 +42,22 @@ export const makeImportAuthorizer = (
   const expectedValue = Redacted.value(expectedToken);
   if (expectedValue.length === 0) {
     return Effect.succeed({
-      authorize: () => Effect.fail(unauthorizedImportCaller()),
+      authorize: rejectUnauthorized,
+      authorizeBearer: rejectUnauthorized,
     });
   }
 
   return Effect.map(
     Effect.promise(() => importHmacKey(expectedValue)),
-    (key) => ({
-      authorize: (authorization) => {
-        const suppliedToken = bearerToken(authorization);
-        if (suppliedToken === undefined) {
+    (key) => {
+      const authorizeBearer = (token: Redacted.Redacted<string>) => {
+        const suppliedValue = Redacted.value(token);
+        if (suppliedValue.length === 0) {
           return Effect.fail(unauthorizedImportCaller());
         }
         return Effect.flatMap(
           Effect.promise(async () => {
-            const suppliedKey = await importHmacKey(suppliedToken);
+            const suppliedKey = await importHmacKey(suppliedValue);
             const signature = await crypto.subtle.sign(
               hmacAlgorithm,
               suppliedKey,
@@ -69,8 +75,17 @@ export const makeImportAuthorizer = (
               ? Effect.succeed(LegacyPrivateImportPrincipal)
               : Effect.fail(unauthorizedImportCaller())
         );
-      },
-    })
+      };
+      return {
+        authorize: (authorization: string | undefined) => {
+          const token = bearerToken(authorization);
+          return token === undefined
+            ? Effect.fail(unauthorizedImportCaller())
+            : authorizeBearer(token);
+        },
+        authorizeBearer,
+      };
+    }
   );
 };
 

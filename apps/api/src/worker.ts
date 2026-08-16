@@ -7,6 +7,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { HealthRoutes } from "./features/health/health.routes.js";
 import { ImportBatchRouteDefinitions } from "./features/imports/import-batch.routes.js";
+import { makeMealPlannerWorkerHttpLayer } from "./features/imports/import-intent-api.http.js";
 import type { AcquisitionBucketLike } from "./features/imports/import-media-acquirer.js";
 import { makeD1ImportObservabilityTraceStore } from "./features/imports/import-observability.d1.js";
 import {
@@ -27,6 +28,7 @@ import {
 } from "./features/imports/import-runtime-composition.js";
 import { ImportRouteDefinitions } from "./features/imports/import.routes.js";
 import ImportAcquisitionWorkflow, {
+  makeImportWorkflowTerminator,
   makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
 import {
@@ -47,14 +49,16 @@ const notFound = HttpServerResponse.json(
   { status: 404 }
 ).pipe(Effect.orDie);
 
-const MealPlannerWorkerRoutes = HttpRouter.addAll([
+const LegacyMealPlannerWorkerRoutes = [
   ...HealthRoutes,
   ...ImportRouteDefinitions,
   ...ImportBatchRouteDefinitions,
   ...ProviderTerminalSettlementRouteDefinitions,
   ...RecipeReviewRouteDefinitions,
+] as const;
+const MealPlannerWorkerFallbackRoutes = [
   HttpRouter.route("*", "*", notFound),
-]);
+] as const;
 
 const currentIsoTimestamp = () => new Date().toISOString();
 
@@ -182,43 +186,43 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       "MEAL_PLANNER_IMPORT_API_TOKEN"
     );
     return {
-      fetch: Effect.scoped(
-        Effect.map(
-          HttpRouter.toHttpEffect(MealPlannerWorkerRoutes),
-          (routeHandler) =>
-            Effect.gen(function* handleMealPlannerRequest() {
-              const database = yield* queryDatabase.raw;
-              const rawBucket = yield* evidenceBucket.raw;
-              const rawImportBatchQueue = yield* importBatchQueueWriter.raw;
-              const trace = makeImportTraceContext();
-              return yield* withCurrentRequestCancellation(
-                routeHandler.pipe(
-                  Effect.provide(
-                    makeImportWorkerRequestLayer({
-                      bucket: rawBucket as unknown as AcquisitionBucketLike,
-                      database,
-                      importApiToken,
-                      importWorkflowStarter: makeImportWorkflowStarter(
-                        importAcquisitionWorkflow
-                      ),
-                      now: currentIsoTimestamp,
-                      queue:
-                        makeCloudflareImportBatchQueue(rawImportBatchQueue),
-                      recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
-                        importRecipeRecoveryWorkflow
-                      ),
-                      runtimeStage,
-                      trace,
-                    })
-                  )
-                )
-              );
-            }).pipe(
-              Effect.provideService(
-                PilotProviderBudgetRuntime,
-                pilotProviderBudgetRuntime
-              )
-            )
+      fetch: Effect.gen(function* handleMealPlannerRequest() {
+        const database = yield* queryDatabase.raw;
+        const rawBucket = yield* evidenceBucket.raw;
+        const rawImportBatchQueue = yield* importBatchQueueWriter.raw;
+        const trace = makeImportTraceContext();
+        const requestLayer = makeImportWorkerRequestLayer({
+          bucket: rawBucket as unknown as AcquisitionBucketLike,
+          database,
+          importApiToken,
+          importWorkflowStarter: makeImportWorkflowStarter(
+            importAcquisitionWorkflow
+          ),
+          importWorkflowTerminator: makeImportWorkflowTerminator(
+            importAcquisitionWorkflow
+          ),
+          now: currentIsoTimestamp,
+          queue: makeCloudflareImportBatchQueue(rawImportBatchQueue),
+          recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
+            importRecipeRecoveryWorkflow
+          ),
+          runtimeStage,
+          trace,
+        });
+        const routeHandler = yield* HttpRouter.toHttpEffect(
+          makeMealPlannerWorkerHttpLayer({
+            fallbackRoutes: MealPlannerWorkerFallbackRoutes,
+            legacyRoutes: LegacyMealPlannerWorkerRoutes,
+          }).pipe(
+            Layer.provide(requestLayer),
+            HttpRouter.provideRequest(requestLayer)
+          )
+        );
+        return yield* withCurrentRequestCancellation(routeHandler);
+      }).pipe(
+        Effect.provideService(
+          PilotProviderBudgetRuntime,
+          pilotProviderBudgetRuntime
         )
       ),
     };

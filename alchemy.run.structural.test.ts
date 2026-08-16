@@ -135,6 +135,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "0029_import_lifecycle_trace.sql",
       "0030_recipe_import_intent_foundation.sql",
       "0031_recipe_import_intent_executor_transitions.sql",
+      "0032_recipe_import_intent_review_actions.sql",
     ]);
   });
 
