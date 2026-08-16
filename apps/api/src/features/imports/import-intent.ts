@@ -6,13 +6,18 @@ import {
   RedirectedRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
 import type {
+  CancelRecipeImportIntentRequest,
   CreateRecipeImportIntentRequest,
   IdempotencyKey,
   RecipeImportRedirect as RecipeImportRedirectType,
   RedirectedRecipeImportIntent as RedirectedRecipeImportIntentType,
 } from "@meal-planner/recipe-import-api";
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect";
+import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect";
 
+import {
+  ImportIntentTransitionCommandDigest,
+  ImportIntentTransitionMutationId,
+} from "./import-intent-transition.js";
 import type {
   ImportIntentRepositoryShape,
   ResolveImportIntentSourceCommand,
@@ -84,6 +89,16 @@ export const RecipeImportIntentTransitionRejected =
     {}
   );
 
+export interface RecipeImportIntentVersionConflict {
+  readonly _tag: "RecipeImportIntentVersionConflict";
+}
+export const RecipeImportIntentVersionConflict =
+  // eslint-disable-next-line unicorn/throw-new-error -- Schema.TaggedError is Effect's constructor factory, not a thrown expression.
+  Schema.TaggedError<RecipeImportIntentVersionConflict>()(
+    "RecipeImportIntentVersionConflict",
+    {}
+  );
+
 export interface RecipeImportIntentRedirected {
   readonly _tag: "RecipeImportIntentRedirected";
   readonly intent: RedirectedRecipeImportIntentType;
@@ -112,6 +127,28 @@ export class ImportIntentIdGenerator extends Context.Service<
     })
   );
 }
+
+export interface ImportIntentWorkflowTerminatorShape {
+  readonly terminate: (
+    intentId: RecipeImportIntentId
+  ) => Effect.Effect<void, unknown>;
+}
+
+export class ImportIntentWorkflowTerminator extends Context.Service<
+  ImportIntentWorkflowTerminator,
+  ImportIntentWorkflowTerminatorShape
+>()("meal-planner/ImportIntentWorkflowTerminator") {}
+
+export const CancelImportIntentCommand = Schema.Struct({
+  cancelledAt: Instant,
+  commandDigest: ImportIntentTransitionCommandDigest,
+  expectedIntentVersion: RecipeImportIntentVersion,
+  intentId: RecipeImportIntentId,
+  mutationId: ImportIntentTransitionMutationId,
+  principal: ImportPrincipal,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type CancelImportIntentCommand =
+  typeof CancelImportIntentCommand.Type;
 
 const sha256Hex = (value: string) =>
   Effect.promise(async () => {
@@ -152,6 +189,30 @@ const sourceLocatorHash = (request: CreateRecipeImportIntentRequest) =>
     Schema.decodeUnknownSync(SourceLocatorHash)
   );
 
+const cancelMutationId = (
+  principal: ImportPrincipal,
+  intentId: RecipeImportIntentId,
+  key: IdempotencyKey
+) =>
+  Effect.map(
+    sha256Hex(
+      `recipe-import-intent-cancel-mutation:v1:${principal.actorId}:${intentId}:${key}`
+    ),
+    Schema.decodeUnknownSync(ImportIntentTransitionMutationId)
+  );
+
+const cancelCommandDigest = (
+  principal: ImportPrincipal,
+  intentId: RecipeImportIntentId,
+  request: CancelRecipeImportIntentRequest
+) =>
+  Effect.map(
+    sha256Hex(
+      `recipe-import-intent-cancel-command:v1:${principal.householdScopeId}:${principal.actorId}:${intentId}:${request.expectedIntentVersion}`
+    ),
+    Schema.decodeUnknownSync(ImportIntentTransitionCommandDigest)
+  );
+
 export const makeImportIntentApplication = (
   repository: ImportIntentRepositoryShape
 ) => ({
@@ -189,9 +250,47 @@ export const makeImportIntentApplication = (
       onSome: Effect.succeed,
     });
   }),
+  cancel: Effect.fn("RecipeImportIntent.cancel")(function* cancel(
+    principal: ImportPrincipal,
+    intentId: RecipeImportIntentId,
+    request: CancelRecipeImportIntentRequest,
+    key: IdempotencyKey
+  ) {
+    const [cancelledAt, mutationId, commandDigest] = yield* Effect.all([
+      currentInstant,
+      cancelMutationId(principal, intentId, key),
+      cancelCommandDigest(principal, intentId, request),
+    ]);
+    const command = yield* Schema.decodeUnknownEffect(
+      CancelImportIntentCommand,
+      { onExcessProperty: "error" }
+    )({
+      cancelledAt: Schema.encodeSync(Instant)(cancelledAt),
+      commandDigest,
+      expectedIntentVersion: request.expectedIntentVersion,
+      intentId,
+      mutationId,
+      principal,
+    }).pipe(Effect.orDie);
+    const result = yield* repository.cancelIntent(command);
+    if (result.disposition === "applied") {
+      const terminator = yield* ImportIntentWorkflowTerminator;
+      yield* terminator.terminate(intentId).pipe(
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterrupts(cause),
+          () => Effect.void
+        )
+      );
+    }
+    return result.intent;
+  }),
   requireMutable: Effect.fn("RecipeImportIntent.requireMutable")(
     (principal: ImportPrincipal, intentId: RecipeImportIntentId) =>
       repository.requireMutableIntent(principal, intentId)
+  ),
+  timeline: Effect.fn("RecipeImportIntent.timeline")(
+    (principal: ImportPrincipal, intentId: RecipeImportIntentId) =>
+      repository.readIntentTimeline(principal, intentId)
   ),
   resolveSource: Effect.fn("RecipeImportIntent.resolveSource")(
     function* resolveSource(

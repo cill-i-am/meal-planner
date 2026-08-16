@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { Cause, Effect, Exit, Fiber, Option, Schema } from "effect";
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { TestClock } from "effect/testing";
 import { Miniflare } from "miniflare";
 import { describe, expect, it, vi } from "vitest";
@@ -27,6 +28,7 @@ import { ImportId } from "./import.contracts.js";
 import {
   ensureImportWorkflowStarted,
   importWorkflowInstanceId,
+  makeImportWorkflowTerminator,
   makeImportWorkflowStarter,
   AcquisitionTaskStepConfig,
   MaximumAbsoluteWorkflowSeconds,
@@ -40,6 +42,7 @@ import {
 const importId = Schema.decodeUnknownSync(ImportId)(
   "018f47ad-91aa-7c35-b6fe-000000000001"
 );
+const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(importId);
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
 );
@@ -329,6 +332,30 @@ const makeWorkflow = (
 };
 
 describe("import Workflow start reconciliation", () => {
+  it("terminates the one deterministic Workflow instance for a cancelled intent", async () => {
+    const calls = { get: [] as string[], terminate: 0 };
+    const terminator = makeImportWorkflowTerminator({
+      get: (id) =>
+        Effect.sync(() => {
+          calls.get.push(id);
+          return {
+            terminate: () =>
+              Effect.sync(() => {
+                calls.terminate += 1;
+              }),
+          };
+        }),
+    });
+
+    await expect(
+      Effect.runPromise(terminator.terminate(intentId))
+    ).resolves.toBeUndefined();
+    expect(calls).toEqual({
+      get: [`import-acquisition-${intentId}`],
+      terminate: 1,
+    });
+  });
+
   it("uses one deterministic, privacy-safe Workflow input", async () => {
     const { calls, starter } = makeWorkflow("queued", true);
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
@@ -663,6 +690,7 @@ describe("import acquisition retry contract", () => {
   }, 15_000);
 
   it("runs typed retryable failures three total times after exact 1s and 2s delays", async () => {
+    const activity: string[] = [];
     const generations: number[] = [];
     let attempts = 0;
     const effect = runAcquisitionTask(
@@ -683,8 +711,16 @@ describe("import acquisition retry contract", () => {
           : Effect.succeed({
               _tag: "Unavailable" as const,
               code: "private_or_unavailable" as const,
-              generation,
-            });
+            generation,
+          });
+      },
+      {
+        lifecycle: {
+          retrying: (attempt) =>
+            Effect.sync(() => activity.push(`retrying:${attempt}`)),
+          working: (attempt) =>
+            Effect.sync(() => activity.push(`working:${attempt}`)),
+        },
       }
     );
     const result = await Effect.runPromise(
@@ -708,6 +744,12 @@ describe("import acquisition retry contract", () => {
       generation: 3,
     });
     expect(generations).toEqual([1, 2, 3]);
+    expect(activity).toEqual([
+      "retrying:1",
+      "working:2",
+      "retrying:2",
+      "working:3",
+    ]);
   });
 
   it("encodes the final closed retry reason while semantic outcomes execute once", async () => {

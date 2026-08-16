@@ -246,6 +246,19 @@ describe("recipe import intent foundation migration", () => {
       import_id: processingId,
     });
 
+    const executorMigration = testEnv.TEST_MIGRATIONS.find(
+      ({ name }) =>
+        name === "0031_recipe_import_intent_executor_transitions.sql"
+    );
+    if (executorMigration === undefined) {
+      throw new Error("Missing recipe import intent executor migration");
+    }
+    await testEnv.MealPlannerDatabase.batch(
+      executorMigration.queries.map((query) =>
+        testEnv.MealPlannerDatabase.prepare(query)
+      )
+    );
+
     const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
     const readLegacy = (id: string) =>
       Effect.runPromise(

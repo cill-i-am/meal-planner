@@ -89,6 +89,43 @@ describe("provider task observability", () => {
     ]);
   });
 
+  it("reports truthful retry recovery around the exact native Workflow attempt", async () => {
+    const activity: string[] = [];
+    const lifecycle = {
+      retrying: (attempt: number) =>
+        Effect.sync(() => activity.push(`retrying:${attempt}`)),
+      working: (attempt: number) =>
+        Effect.sync(() => activity.push(`working:${attempt}`)),
+    };
+    const context = (attempt: number) =>
+      Effect.provideService(WorkflowStepContext, {
+        attempt,
+        config: ProviderTaskStepConfig,
+        step: { count: 1, name: "transcribe-video-v1" },
+      });
+
+    await Effect.runPromiseExit(
+      runProviderTaskAttempt(
+        "speech",
+        Effect.fail({ code: "timeout" }),
+        () => "unused",
+        undefined,
+        lifecycle
+      ).pipe(context(1))
+    );
+    await Effect.runPromise(
+      runProviderTaskAttempt(
+        "speech",
+        Effect.succeed("private-provider-result"),
+        () => "checkpointed",
+        undefined,
+        lifecycle
+      ).pipe(context(2))
+    );
+
+    expect(activity).toEqual(["retrying:1", "working:2"]);
+  });
+
   it("preserves only a closed evidence reason on a terminal checkpoint", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
     const checkpoint = await Effect.runPromise(

@@ -1,3 +1,4 @@
+import { RecipeImportActionId } from "@meal-planner/recipe-import-api";
 import { Effect, Option, Schema } from "effect";
 
 import type { PilotBudgetDispatchId } from "../pilots/pilot-provider-budget.js";
@@ -546,6 +547,13 @@ interface ProduceRecipeDraftFromEvidenceInput {
   ) => Effect.Effect<RecipeDispatchClaim, ImportTransitionError>;
   readonly extractor: RecipeExtractorShape;
   readonly extractionFingerprint?: string;
+  readonly lifecycle?: {
+    readonly grounding: Effect.Effect<void>;
+    readonly preparingReview: Effect.Effect<void>;
+    readonly reviewAvailable: (
+      actionId: typeof RecipeImportActionId.Type
+    ) => Effect.Effect<void>;
+  };
   readonly now: ImportTimestamp;
   readonly recipeRepository: RecipeDraftRepositoryShape;
   readonly source: VerifiedSourceMetadata;
@@ -591,6 +599,15 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
     extractionFingerprint,
   });
   if (claim._tag === "NeedsReview") {
+    if (input.lifecycle !== undefined) {
+      yield* input.lifecycle.grounding;
+      yield* input.lifecycle.preparingReview;
+      yield* input.lifecycle.reviewAvailable(
+        Schema.decodeUnknownSync(RecipeImportActionId)(
+          claim.draft.extractionFingerprint
+        )
+      );
+    }
     return claim.draft;
   }
   if (claim._tag === "Failed") {
@@ -627,6 +644,9 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
         .pipe(Effect.andThen(Effect.fail(error)))
     )
   );
+  if (input.lifecycle !== undefined) {
+    yield* input.lifecycle.grounding;
+  }
   if (!extractionIsGrounded(extraction, input.assembly, input.source)) {
     yield* input.recipeRepository.fail({
       completedAt: input.now,
@@ -643,7 +663,10 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
     });
     return yield* Effect.fail(pipelineFailure("insufficient_evidence"));
   }
-  return yield* input.recipeRepository.complete(
+  if (input.lifecycle !== undefined) {
+    yield* input.lifecycle.preparingReview;
+  }
+  const draft = yield* input.recipeRepository.complete(
     input.transcript.route === "video_v1"
       ? {
           createdAt: input.now,
@@ -670,8 +693,16 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
             reason: input.transcript.reason,
             status: input.transcript.status,
           },
-        }
+      }
   );
+  if (input.lifecycle !== undefined) {
+    yield* input.lifecycle.reviewAvailable(
+      Schema.decodeUnknownSync(RecipeImportActionId)(
+        draft.extractionFingerprint
+      )
+    );
+  }
+  return draft;
 });
 
 /** Run one provider-free evidence-to-reviewable-recipe tracer. */
@@ -682,6 +713,7 @@ export const produceRecipeDraftForImport = Effect.fn(
   readonly extractor: RecipeExtractorShape;
   readonly importId: ImportId;
   readonly importRepository: ImportRepositoryShape;
+  readonly lifecycle?: ProduceRecipeDraftFromEvidenceInput["lifecycle"];
   readonly now: () => ImportTimestamp;
   readonly recovery?: {
     readonly acquisitionGeneration: AcquisitionGeneration;
@@ -835,6 +867,7 @@ export const produceRecipeDraftForImport = Effect.fn(
         visualManifestSha256: visual.value.sha256,
       }),
     extractor: input.extractor,
+    ...(input.lifecycle === undefined ? {} : { lifecycle: input.lifecycle }),
     ...(input.recovery === undefined
       ? {}
       : { extractionFingerprint: input.recovery.extractionFingerprint }),

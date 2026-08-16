@@ -1,14 +1,19 @@
-import { Instant, RecipeImportIntent } from "@meal-planner/recipe-import-api";
+import {
+  Instant,
+  RecipeImportIntent,
+} from "@meal-planner/recipe-import-api";
 import type {
   RecipeImportIntent as RecipeImportIntentType,
   RecipeImportIntentId,
+  RecipeImportTimeline as RecipeImportTimelineType,
 } from "@meal-planner/recipe-import-api";
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { DateTime, Effect, Option, Schema } from "effect";
+import { Cause, DateTime, Effect, Exit, Option, Schema } from "effect";
 
 import {
+  CancelImportIntentCommand,
   InitialRecipeImportIntentVersion,
   LegacyPrivateImportActorId,
   LegacyPrivateHouseholdScopeId,
@@ -16,8 +21,23 @@ import {
   RecipeImportIntentNotFound,
   RecipeImportIntentRedirected,
   RecipeImportIntentTransitionRejected,
+  RecipeImportIntentVersionConflict,
 } from "./import-intent.js";
 import type { ImportPrincipal } from "./import-intent.js";
+import {
+  ImportIntentHistoryRow,
+  projectImportIntentHistoryRow,
+} from "./import-intent-timeline.js";
+import {
+  ImportIntentExecutionGeneration,
+  ImportIntentTransitionCommand,
+  ImportIntentTransitionCommandDigest,
+  ImportIntentTransitionMutationConflict,
+  ImportIntentTransitionMutationId,
+  ImportIntentTransitionSnapshot,
+  applyImportIntentTransition,
+} from "./import-intent-transition.js";
+import type { ImportIntentTransitionOutcome } from "./import-intent-transition.js";
 import type {
   AcquisitionGeneration,
   ClassifiedAcquisitionFailure,
@@ -63,6 +83,7 @@ import type {
   AcceptImportCommand,
   ClaimAcquisitionResult,
   ImportIntentRepositoryShape,
+  InternalImportIntentTransitionError,
   ImportRepositoryShape,
   ImportTransitionError,
   StoredImport,
@@ -534,6 +555,7 @@ const DatabaseIntentRow = Schema.Struct({
   activeActionId: NullableString,
   cancelledAt: NullableString,
   createdAt: Schema.String,
+  executionGeneration: ImportIntentExecutionGeneration,
   failedAt: NullableString,
   id: Schema.String,
   intentVersion: Schema.Number,
@@ -544,6 +566,9 @@ const DatabaseIntentRow = Schema.Struct({
   publicNextAttemptAt: NullableString,
   publicRecipeId: NullableString,
   publicRecovery: NullableString,
+  publicSpeech: Schema.NullOr(
+    Schema.Literals(["not_started", "processing", "completed", "skipped"])
+  ),
   publicSourceKind: Schema.NullOr(Schema.Literals(["video", "carousel"])),
   publicSourceUrl: NullableString,
   publicStage: NullableString,
@@ -556,6 +581,9 @@ const DatabaseIntentRow = Schema.Struct({
     "cancelled",
     "redirected",
   ]),
+  publicVisuals: Schema.NullOr(
+    Schema.Literals(["not_started", "processing", "completed", "skipped"])
+  ),
   redirectedAt: NullableString,
   redirectedToImportId: NullableString,
   resolvedCanonicalSourceId: NullableString,
@@ -568,6 +596,7 @@ const intentRowSelection = `
   active_action_id AS activeActionId,
   cancelled_at AS cancelledAt,
   created_at AS createdAt,
+  execution_generation AS executionGeneration,
   failed_at AS failedAt,
   id,
   intent_version AS intentVersion,
@@ -578,11 +607,13 @@ const intentRowSelection = `
   public_next_attempt_at AS publicNextAttemptAt,
   public_recipe_id AS publicRecipeId,
   public_recovery AS publicRecovery,
+  public_speech AS publicSpeech,
   public_source_kind AS publicSourceKind,
   public_source_url AS publicSourceUrl,
   public_stage AS publicStage,
   public_stage_started_at AS publicStageStartedAt,
   public_status AS publicStatus,
+  public_visuals AS publicVisuals,
   redirected_at AS redirectedAt,
   redirected_to_import_id AS redirectedToImportId,
   resolved_canonical_source_id AS resolvedCanonicalSourceId,
@@ -618,20 +649,6 @@ const processingActivityFor = (row: DatabaseIntentRow) => {
     : { type: "working" as const };
 };
 
-const speechProgressFor = (legacyStatus: string) => {
-  switch (legacyStatus) {
-    case "transcribed": {
-      return "completed" as const;
-    }
-    case "transcribing": {
-      return "processing" as const;
-    }
-    default: {
-      return "not_started" as const;
-    }
-  }
-};
-
 const processingStageFor = (row: DatabaseIntentRow): unknown => {
   if (row.publicStage === null || row.publicStageStartedAt === null) {
     throw new Error("Processing stage is missing");
@@ -654,11 +671,14 @@ const processingStageFor = (row: DatabaseIntentRow): unknown => {
       };
     }
     case "analyzing_evidence": {
+      if (row.publicSpeech === null || row.publicVisuals === null) {
+        throw new Error("Analysis component progress is missing");
+      }
       return {
-        speech: speechProgressFor(row.legacyStatus),
+        speech: row.publicSpeech,
         startedAt: row.publicStageStartedAt,
         type: "analyzing_evidence",
-        visuals: "not_started",
+        visuals: row.publicVisuals,
       };
     }
     case "extracting_recipe":
@@ -1024,6 +1044,326 @@ export const makeD1ImportRepository = (
       })
     );
 
+  const requireInternalIntentRow = (intentId: RecipeImportIntentId) =>
+    Effect.gen(function* requireInternalIntentRowEffect() {
+      const row = yield* persistenceEffect(
+        () =>
+          binding
+            .prepare(
+              `SELECT ${intentRowSelection}
+                 FROM recipe_imports
+                WHERE id = ?
+                LIMIT 1`
+            )
+            .bind(intentId)
+            .first() as PromiseLike<unknown | null>
+      );
+      if (row === null) {
+        return yield* Effect.fail(new RecipeImportIntentNotFound());
+      }
+      return yield* Effect.try({
+        catch: importPersistenceCorrupt,
+        try: () => Schema.decodeUnknownSync(DatabaseIntentRow)(row),
+      });
+    });
+
+  const transitionSnapshotFor = (row: DatabaseIntentRow) =>
+    Effect.try({
+      catch: importPersistenceCorrupt,
+      try: () =>
+        Schema.decodeUnknownSync(ImportIntentTransitionSnapshot)({
+          activeActionId: row.activeActionId,
+          activity: row.publicActivity,
+          executionGeneration: row.executionGeneration,
+          failedAt: row.failedAt,
+          failureCode: row.publicFailureCode,
+          failureMessage: row.publicFailureMessage,
+          failureRecovery: row.publicRecovery,
+          intentVersion: row.intentVersion,
+          nextAttemptAt: row.publicNextAttemptAt,
+          sourceKind: row.publicSourceKind,
+          speech: row.publicSpeech,
+          stage: row.publicStage,
+          stageStartedAt: row.publicStageStartedAt,
+          status: row.publicStatus,
+          updatedAt: row.updatedAt,
+          visuals: row.publicVisuals,
+        }),
+    });
+
+  const recordedTransition = (
+    intentId: RecipeImportIntentId,
+    mutationId: typeof ImportIntentTransitionMutationId.Type
+  ) =>
+    Effect.gen(function* recordedTransitionEffect() {
+      const row = yield* persistenceEffect(
+        () =>
+          binding
+            .prepare(
+              `SELECT command_digest AS commandDigest
+                 FROM recipe_import_intent_history
+                WHERE intent_id = ? AND mutation_id = ?
+                LIMIT 1`
+            )
+            .bind(intentId, mutationId)
+            .first() as PromiseLike<unknown | null>
+      );
+      if (row === null) {
+        return Option.none<typeof ImportIntentTransitionCommandDigest.Type>();
+      }
+      return Option.some(
+        yield* Effect.try({
+          catch: importPersistenceCorrupt,
+          try: () =>
+            Schema.decodeUnknownSync(
+              Schema.Struct({
+                commandDigest: ImportIntentTransitionCommandDigest,
+              })
+            )(row).commandDigest,
+        })
+      );
+    });
+
+  const replayOutcome = (
+    command: ImportIntentTransitionCommand,
+    digest: typeof ImportIntentTransitionCommandDigest.Type,
+    principal?: ImportPrincipal
+  ) =>
+    Effect.gen(function* replayOutcomeEffect() {
+      if (digest !== command.commandDigest) {
+        return yield* Effect.fail(
+          new ImportIntentTransitionMutationConflict()
+        );
+      }
+      const snapshot = yield* transitionSnapshotFor(
+        yield* (principal === undefined
+          ? requireInternalIntentRow(command.intentId)
+          : requireIntentRow(principal, command.intentId))
+      );
+      return {
+        _tag: "NoOp",
+        reason: "replayed_mutation",
+        snapshot,
+      } satisfies ImportIntentTransitionOutcome;
+    });
+
+  const transitionIntentAttempt = (
+    command: ImportIntentTransitionCommand,
+    retriesRemaining: number,
+    principal?: ImportPrincipal
+  ): Effect.Effect<
+    ImportIntentTransitionOutcome,
+    InternalImportIntentTransitionError
+  > =>
+    Effect.gen(function* transitionIntentAttemptEffect() {
+      const row = yield* (principal === undefined
+        ? requireInternalIntentRow(command.intentId)
+        : requireIntentRow(principal, command.intentId));
+      const recorded = yield* recordedTransition(
+        command.intentId,
+        command.mutationId
+      );
+      if (Option.isSome(recorded)) {
+        return yield* replayOutcome(command, recorded.value, principal);
+      }
+
+      const current = yield* transitionSnapshotFor(row);
+      const outcome = applyImportIntentTransition(current, command);
+      if (outcome._tag !== "Applied") {
+        return outcome;
+      }
+      const next = outcome.snapshot;
+      const update = yield* Effect.exit(
+        persistenceEffect<D1MutationResult>(() =>
+          binding
+            .prepare(
+              `UPDATE recipe_imports
+                SET public_status = ?, active_action_id = ?, public_stage = ?,
+                    public_stage_started_at = ?, public_activity = ?,
+                    public_next_attempt_at = ?, public_speech = ?,
+                    public_visuals = ?, public_recipe_id = NULL,
+                    public_failure_code = ?, public_failure_message = ?,
+                    public_recovery = ?, failed_at = ?, cancelled_at = ?,
+                    transition_mutation_id = ?,
+                    transition_command_digest = ?,
+                    transition_actor_category = ?,
+                    transition_actor_identity_hash = ?,
+                    transition_provenance_version = ?, intent_version = ?,
+                    updated_at = ?
+              WHERE id = ? AND intent_version = ?
+                AND execution_generation = ?`
+            )
+            .bind(
+              next.status,
+              next.activeActionId,
+              next.stage,
+              next.stageStartedAt === null
+                ? null
+                : encodeInstant(next.stageStartedAt),
+              next.activity,
+              next.nextAttemptAt === null
+                ? null
+                : encodeInstant(next.nextAttemptAt),
+              next.speech,
+              next.visuals,
+              next.failureCode,
+              next.failureMessage,
+              next.failureRecovery,
+              next.failedAt === null ? null : encodeInstant(next.failedAt),
+              command._tag === "Cancel"
+                ? encodeInstant(command.occurredAt)
+                : row.cancelledAt,
+              command.mutationId,
+              command.commandDigest,
+              principal === undefined ? "system" : "household_member",
+              principal?.actorId ?? null,
+              next.intentVersion,
+              next.intentVersion,
+              encodeInstant(next.updatedAt),
+              command.intentId,
+              current.intentVersion,
+              command.executionGeneration
+            )
+            .run() as PromiseLike<D1MutationResult>
+        )
+      );
+      if (Exit.isSuccess(update) && update.value.meta.changes > 0) {
+        return outcome;
+      }
+      const raced = yield* recordedTransition(
+        command.intentId,
+        command.mutationId
+      );
+      if (Option.isSome(raced)) {
+        return yield* replayOutcome(command, raced.value, principal);
+      }
+      if (Exit.isFailure(update)) {
+        return yield* Effect.fail(
+          Option.getOrThrow(Cause.findErrorOption(update.cause))
+        );
+      }
+      if (retriesRemaining > 0) {
+        return yield* transitionIntentAttempt(
+          command,
+          retriesRemaining - 1,
+          principal
+        );
+      }
+      return yield* Effect.fail(importPersistenceUnavailable());
+    });
+
+  const transitionIntent = (command: ImportIntentTransitionCommand) =>
+    transitionIntentAttempt(command, 1);
+
+  const readIntentTimeline = (
+    principal: ImportPrincipal,
+    intentId: RecipeImportIntentId
+  ) =>
+    Effect.gen(function* readIntentTimelineEffect() {
+      yield* requireIntentRow(principal, intentId);
+      const rows = yield* persistenceEffect(
+        () =>
+          binding
+            .prepare(
+              `SELECT action_id AS actionId, occurred_at AS at,
+                      event_type AS eventType, failure_code AS failureCode,
+                      intent_id AS intentId, intent_version AS intentVersion,
+                      public_next_attempt_at AS publicNextAttemptAt,
+                      public_source_kind AS publicSourceKind,
+                      public_source_url AS publicSourceUrl,
+                      public_speech AS publicSpeech,
+                      public_stage AS publicStage,
+                      public_stage_started_at AS publicStageStartedAt,
+                      public_visuals AS publicVisuals, recipe_id AS recipeId,
+                      redirected_to_import_id AS redirectedToIntentId
+                 FROM recipe_import_intent_history
+                WHERE intent_id = ?
+                ORDER BY intent_version ASC`
+            )
+            .bind(intentId)
+            .all() as PromiseLike<{ readonly results: readonly unknown[] }>
+      );
+      return yield* Effect.try({
+        catch: importPersistenceCorrupt,
+        try: (): RecipeImportTimelineType => ({
+          data: rows.results.flatMap((rawRow) => {
+            const row = Schema.decodeUnknownSync(ImportIntentHistoryRow, {
+              onExcessProperty: "error",
+            })(rawRow);
+            return Option.match(projectImportIntentHistoryRow(row), {
+              onNone: () => [],
+              onSome: (event) => [event],
+            });
+          }),
+          object: "list",
+        }),
+      });
+    });
+
+  const cancelIntent = (rawCommand: CancelImportIntentCommand) =>
+    Effect.gen(function* cancelIntentEffect() {
+      const command = yield* Effect.try({
+        catch: importPersistenceCorrupt,
+        try: () =>
+          Schema.decodeUnknownSync(CancelImportIntentCommand, {
+            onExcessProperty: "error",
+          })(Schema.encodeSync(CancelImportIntentCommand)(rawCommand)),
+      });
+      const currentRow = yield* requireIntentRow(
+        command.principal,
+        command.intentId
+      );
+      const currentIntent = yield* decodePublicIntent(currentRow);
+      if (currentIntent.status === "redirected") {
+        return yield* Effect.fail(
+          new RecipeImportIntentRedirected({
+            intent: currentIntent,
+            redirect: currentIntent.redirect,
+          })
+        );
+      }
+      const transition = yield* Effect.try({
+        catch: importPersistenceCorrupt,
+        try: () =>
+          Schema.decodeUnknownSync(ImportIntentTransitionCommand, {
+            onExcessProperty: "error",
+          })({
+            _tag: "Cancel",
+            commandDigest: command.commandDigest,
+            executionGeneration: currentRow.executionGeneration,
+            expectedIntentVersion: command.expectedIntentVersion,
+            intentId: command.intentId,
+            mutationId: command.mutationId,
+            occurredAt: encodeInstant(command.cancelledAt),
+          }),
+      });
+      const outcome = yield* transitionIntentAttempt(
+        transition,
+        1,
+        command.principal
+      );
+      if (outcome._tag === "Rejected") {
+        return yield* Effect.fail(
+          outcome.reason === "intent_version_conflict"
+            ? new RecipeImportIntentVersionConflict()
+            : new RecipeImportIntentTransitionRejected()
+        );
+      }
+      if (
+        outcome._tag === "NoOp" &&
+        outcome.reason !== "replayed_mutation"
+      ) {
+        return yield* Effect.fail(new RecipeImportIntentTransitionRejected());
+      }
+      return {
+        disposition:
+          outcome._tag === "NoOp" ? ("replayed" as const) : ("applied" as const),
+        intent: yield* decodePublicIntent(
+          yield* requireIntentRow(command.principal, command.intentId)
+        ),
+      };
+    });
+
   const redirectResolvedIntent = (
     principal: ImportPrincipal,
     command: Parameters<ImportIntentRepositoryShape["resolveIntentSource"]>[1]
@@ -1109,6 +1449,7 @@ export const makeD1ImportRepository = (
                     public_stage_started_at = ?,
                     public_activity = 'working',
                     public_next_attempt_at = NULL,
+                    execution_generation = execution_generation + 1,
                     transition_mutation_id = NULL,
                     transition_command_digest = NULL,
                     transition_actor_category = 'system',
@@ -1264,7 +1605,9 @@ export const makeD1ImportRepository = (
           intent: yield* initialPublicIntent(request.id, request.createdAt),
         };
       }),
+    cancelIntent,
     findIntent,
+    readIntentTimeline,
     requireMutableIntent: (principal, intentId) =>
       Effect.gen(function* requireMutableIntent() {
         const row = yield* requireIntentRow(principal, intentId);
@@ -1279,6 +1622,7 @@ export const makeD1ImportRepository = (
         }
         return intent;
       }),
+    transitionIntent,
     resolveIntentSource: (principal, command) =>
       Effect.gen(function* resolveIntentSource() {
         const current = yield* requireIntentRow(principal, command.intentId);

@@ -57,6 +57,9 @@ export const recipeImports = sqliteTable(
     publicRecovery: text("public_recovery", {
       enum: ["create_new_intent", "contact_support", "none"],
     }),
+    publicSpeech: text("public_speech", {
+      enum: ["not_started", "processing", "completed", "skipped"],
+    }),
     publicSourceKind: text("public_source_kind", {
       enum: ["video", "carousel"],
     }),
@@ -85,6 +88,9 @@ export const recipeImports = sqliteTable(
     })
       .notNull()
       .default("processing"),
+    publicVisuals: text("public_visuals", {
+      enum: ["not_started", "processing", "completed", "skipped"],
+    }),
     recoveryAction: text("recovery_action", {
       enum: [
         "check_source_visibility",
@@ -338,8 +344,12 @@ export const recipeImportIntentHistory = sqliteTable(
     occurredAt: text("occurred_at").notNull(),
     publicActivity: text("public_activity"),
     publicNextAttemptAt: text("public_next_attempt_at"),
+    publicSourceKind: text("public_source_kind", {
+      enum: ["video", "carousel"],
+    }),
     publicSourceUrl: text("public_source_url"),
     publicStage: text("public_stage"),
+    publicStageStartedAt: text("public_stage_started_at"),
     publicStatus: text("public_status", {
       enum: [
         "processing",

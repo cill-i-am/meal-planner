@@ -1,4 +1,4 @@
-import { Effect, Exit, Schema, Tracer } from "effect";
+import { Cause, Effect, Exit, Option, Schema, Tracer } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -145,6 +145,50 @@ describe("import runtime composition", () => {
 
     expect(result).toEqual(failure);
     expect(calls).toEqual(["visual", "persist:visual"]);
+  });
+
+  it("does not report public failure when private terminal persistence fails", async () => {
+    const calls: string[] = [];
+    const persistenceFailure = {
+      _tag: "TestTerminalPersistenceFailure" as const,
+    };
+    const exit = await Effect.runPromiseExit(
+      runImportVisualAndRecipeWorkflow({
+        lifecycle: {
+          beforeRecipe: Effect.void,
+          beforeVisual: Effect.void,
+          failurePersisted: () =>
+            Effect.sync(() => {
+              calls.push("public-failure");
+            }),
+          visualCompleted: Effect.void,
+        },
+        persistTerminal: () =>
+          Effect.sync(() => {
+            calls.push("persist");
+          }).pipe(Effect.andThen(Effect.fail(persistenceFailure))),
+        recipe: Effect.succeed({
+          _tag: "Succeeded" as const,
+          stage: "recipe" as const,
+        }),
+        visual: Effect.sync(() => {
+          calls.push("visual");
+          return {
+            _tag: "Failed" as const,
+            code: "provider_error",
+            stage: "visual" as const,
+          };
+        }),
+      })
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toBe(
+        persistenceFailure
+      );
+    }
+    expect(calls).toEqual(["visual", "persist"]);
   });
 
   it("runs visual then recipe exactly once on the success path", async () => {

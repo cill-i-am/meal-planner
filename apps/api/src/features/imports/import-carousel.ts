@@ -804,6 +804,9 @@ export const produceTikTokCarouselRecipeDraft = Effect.fn(
   readonly evidence: CompletedCarouselEvidence;
   readonly extractor: RecipeExtractorShape;
   readonly importId: ImportId;
+  readonly lifecycle?: Parameters<
+    typeof produceRecipeDraftFromEvidence
+  >[0]["lifecycle"];
   readonly now: () => ImportTimestamp;
   readonly recipeRepository: RecipeDraftRepositoryShape;
 }) {
@@ -848,6 +851,7 @@ export const produceTikTokCarouselRecipeDraft = Effect.fn(
         startedAt: now,
       }),
     extractor: input.extractor,
+    ...(input.lifecycle === undefined ? {} : { lifecycle: input.lifecycle }),
     now,
     recipeRepository: input.recipeRepository,
     source,

@@ -5,14 +5,28 @@ import {
   ImportCorrelationId,
   ImportTraceContext,
 } from "./import-observability.js";
+import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { ImportId } from "./import.contracts.js";
 
 export const ImportWorkflowInput = Schema.Struct({
+  executionGeneration: ImportIntentExecutionGeneration,
   importId: ImportId,
   trace: ImportTraceContext,
 });
 
 export const PreparedVisualRecoveryWorkflowInput = Schema.Struct({
+  executionGeneration: ImportIntentExecutionGeneration,
+  importId: ImportId,
+  resume: Schema.Literal("prepared_visual_recovery"),
+  trace: ImportTraceContext,
+});
+
+const LegacyTracedImportWorkflowInput = Schema.Struct({
+  importId: ImportId,
+  trace: ImportTraceContext,
+});
+
+const LegacyTracedPreparedVisualRecoveryWorkflowInput = Schema.Struct({
   importId: ImportId,
   resume: Schema.Literal("prepared_visual_recovery"),
   trace: ImportTraceContext,
@@ -36,6 +50,8 @@ const LegacyCorrelatedPreparedVisualRecoveryWorkflowInput = Schema.Struct({
 const AcceptedImportWorkflowInput = Schema.Union([
   PreparedVisualRecoveryWorkflowInput,
   ImportWorkflowInput,
+  LegacyTracedPreparedVisualRecoveryWorkflowInput,
+  LegacyTracedImportWorkflowInput,
   LegacyCorrelatedPreparedVisualRecoveryWorkflowInput,
   LegacyCorrelatedImportWorkflowInput,
   LegacyImportWorkflowInput,
@@ -74,14 +90,19 @@ export const makeLegacyImportCorrelationId = (importId: ImportId) =>
 export const resolveImportWorkflowInput = (rawInput: unknown) =>
   Effect.gen(function* resolveInput() {
     const input = yield* decodeImportWorkflowInput(rawInput);
-    if ("trace" in input) {
+    if ("trace" in input && "executionGeneration" in input) {
       return input;
     }
     const correlationId =
-      "correlationId" in input
+      "trace" in input
+        ? input.trace.correlationId
+        : "correlationId" in input
         ? input.correlationId
         : yield* makeLegacyImportCorrelationId(input.importId);
     return {
+      executionGeneration: Schema.decodeUnknownSync(
+        ImportIntentExecutionGeneration
+      )(0),
       importId: input.importId,
       ...("resume" in input ? { resume: input.resume } : {}),
       trace: { correlationId },

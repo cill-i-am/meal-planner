@@ -97,6 +97,7 @@ const makeRecordingRepository = (): {
           requests.set(requestKey, stored);
           return Effect.succeed({ disposition: "created" as const, intent });
         }),
+      cancelIntent: () => Effect.die("not used by this tracer"),
       findIntent: (principal, intentId) =>
         Effect.succeed(
           Option.fromNullishOr(
@@ -116,7 +117,9 @@ const makeRecordingRepository = (): {
             onSome: Effect.succeed,
           })
         ),
+      readIntentTimeline: () => Effect.die("not used by this tracer"),
       resolveIntentSource: () => Effect.die("not used by this tracer"),
+      transitionIntent: () => Effect.die("not used by this tracer"),
     },
   };
 };

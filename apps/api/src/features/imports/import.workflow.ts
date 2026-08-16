@@ -1,5 +1,6 @@
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import {
   Cause,
   Config,
@@ -30,9 +31,16 @@ import {
   recoverVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
 import {
+  runImportCarouselVisualAndRecipeWorkflow,
   runImportVisualAndRecipeWorkflow,
   runPreparedVisualRecoveryWorkflowBranch,
 } from "./import-application-workflows.js";
+import {
+  makeImportIntentWorkflowTransitions,
+  publicIntentFailureForAcquisitionOutcome,
+  publicIntentFailureForProviderStage,
+} from "./import-intent-workflow-transitions.js";
+import type { ImportIntentWorkflowTerminatorShape } from "./import-intent.js";
 import { loadStagedOperatorCarousel } from "./import-carousel-staging.js";
 import {
   prepareTikTokCarouselEvidence,
@@ -91,6 +99,7 @@ import {
   runProviderTask,
   runProviderTaskAttempt,
 } from "./import-provider-workflow-task.js";
+import type { ProviderTaskRetryLifecycle } from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
@@ -256,7 +265,10 @@ export const runAcquisitionTask = <
   attempt: (
     allocation: Allocation
   ) => Effect.Effect<AcquisitionTaskOutcome, RetryableAcquisitionFailure>,
-  options?: { readonly correlationId?: ImportCorrelationId }
+  options?: {
+    readonly correlationId?: ImportCorrelationId;
+    readonly lifecycle?: ProviderTaskRetryLifecycle;
+  }
 ) =>
   Effect.suspend(() => {
     let confirmedGeneration: AcquisitionGeneration | undefined;
@@ -264,7 +276,12 @@ export const runAcquisitionTask = <
     let executionNumber = 0;
     const runAttempt = Effect.suspend(() => {
       executionNumber += 1;
-      return allocate().pipe(
+      const begin =
+        executionNumber > 1 && options?.lifecycle !== undefined
+          ? options.lifecycle.working(executionNumber)
+          : Effect.void;
+      return begin.pipe(
+        Effect.andThen(allocate()),
         Effect.mapError(
           (): UnconfirmedAcquisitionRetry => ({
             _tag: "UnconfirmedAcquisitionRetry",
@@ -334,38 +351,39 @@ export const runAcquisitionTask = <
                 }),
         }),
         // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.tapError is a typed Effect combinator, not Promise callback control flow.
-        Effect.tapError((error) => {
-          if (
-            options?.correlationId === undefined ||
-            error._tag !== "ConfirmedAcquisitionRetry"
-          ) {
-            return Effect.void;
-          }
-          const reasonCode = acquisitionFailureReasonCode(error);
-          const response = emitImportObservabilityEvent({
-            attempt: attemptNumber,
-            correlationId: options.correlationId,
-            event:
-              reasonCode === "timeout"
-                ? "acquisition.timeout"
-                : "acquisition.response",
-            outcome: reasonCode === "timeout" ? "timed_out" : "failed",
-            reasonCode,
-          });
-          return executionNumber < 3
-            ? response.pipe(
-                Effect.andThen(
-                  emitImportObservabilityEvent({
-                    attempt: attemptNumber,
-                    correlationId: options.correlationId,
-                    event: "acquisition.retry",
-                    outcome: "retrying",
-                    reasonCode,
-                  })
-                )
-              )
-            : response;
-        })
+        Effect.tapError((error) =>
+          Effect.gen(function* observeAcquisitionFailure() {
+            if (executionNumber < 3 && options?.lifecycle !== undefined) {
+              yield* options.lifecycle.retrying(executionNumber);
+            }
+            if (
+              options?.correlationId === undefined ||
+              error._tag !== "ConfirmedAcquisitionRetry"
+            ) {
+              return;
+            }
+            const reasonCode = acquisitionFailureReasonCode(error);
+            yield* emitImportObservabilityEvent({
+              attempt: attemptNumber,
+              correlationId: options.correlationId,
+              event:
+                reasonCode === "timeout"
+                  ? "acquisition.timeout"
+                  : "acquisition.response",
+              outcome: reasonCode === "timeout" ? "timed_out" : "failed",
+              reasonCode,
+            });
+            if (executionNumber < 3) {
+              yield* emitImportObservabilityEvent({
+                attempt: attemptNumber,
+                correlationId: options.correlationId,
+                event: "acquisition.retry",
+                outcome: "retrying",
+                reasonCode,
+              });
+            }
+          })
+        )
       );
     });
 
@@ -458,11 +476,39 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           new Date().toISOString()
         );
         return yield* Effect.gen(function* runImportAcquisitionWorkflow() {
-          const { importId, trace } = workflowInput;
+          const { executionGeneration, importId, trace } = workflowInput;
           const { correlationId } = trace;
           yield* observeImportWorkflowStart(trace);
           const rawBucket = yield* evidenceBucket.raw;
           const repository = makeD1ImportRepository(database);
+          const intentTransitions = makeImportIntentWorkflowTransitions({
+            executionGeneration,
+            intentId: Schema.decodeUnknownSync(RecipeImportIntentId)(importId),
+            repository,
+          });
+          const recipeLifecycle = {
+            grounding: intentTransitions
+              .advanceStage("grounding_recipe")
+              .pipe(Effect.orDie),
+            preparingReview: intentTransitions
+              .advanceStage("preparing_review")
+              .pipe(Effect.orDie),
+            reviewAvailable: (actionId: Parameters<
+              typeof intentTransitions.requireAction
+            >[0]) => intentTransitions.requireAction(actionId).pipe(Effect.orDie),
+          };
+          const retryLifecycle = (
+            boundary: "acquisition" | "speech" | "visual" | "recipe"
+          ): ProviderTaskRetryLifecycle => ({
+            retrying: (attempt) =>
+              intentTransitions
+                .setActivity(boundary, attempt, "retrying")
+                .pipe(Effect.orDie),
+            working: (attempt) =>
+              intentTransitions
+                .setActivity(boundary, attempt, "working")
+                .pipe(Effect.orDie),
+          });
           const terminalCheckpoints =
             makeD1ProviderTerminalCheckpointRepository(database);
           const terminalRecovery = makeD1ProviderTerminalRecoveryRepository(
@@ -510,7 +556,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 _tag: "Succeeded" as const,
                 stage,
               }),
-              trace
+              trace,
+              retryLifecycle(stage)
             ).pipe(
               Effect.flatMap((value) =>
                 Schema.decodeUnknownEffect(ProviderTaskCheckpoint, {
@@ -545,6 +592,24 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             }
           ) =>
             runImportVisualAndRecipeWorkflow({
+              lifecycle: {
+                beforeRecipe: intentTransitions
+                  .advanceStage("extracting_recipe")
+                  .pipe(Effect.orDie),
+                beforeVisual: intentTransitions
+                  .advanceComponent("visuals", "processing")
+                  .pipe(Effect.orDie),
+                failurePersisted: (failure) =>
+                  intentTransitions
+                    .fail(
+                      failure.stage,
+                      publicIntentFailureForProviderStage(failure.stage)
+                    )
+                    .pipe(Effect.orDie),
+                visualCompleted: intentTransitions
+                  .advanceComponent("visuals", "completed")
+                  .pipe(Effect.orDie),
+              },
               persistTerminal: (failure) =>
                 persistTerminal(failure, acquisitionGeneration),
               recipe: task(
@@ -555,6 +620,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   extractor: recipeExtractor,
                   importId,
                   importRepository: repository,
+                  lifecycle: recipeLifecycle,
                   now,
                   recipeRepository: makeD1RecipeDraftRepository(database),
                 })
@@ -622,45 +688,80 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             importId,
           }).pipe(Effect.orDie);
           if (stagedCarousel !== null) {
-            const encodedCarouselEvidence = yield* runProviderTask(
-              "extract-carousel-visual-evidence-v1",
-              "visual",
-              prepareTikTokCarouselEvidence({
-                adapter: stagedCarousel.adapter,
-                bucket: adaptAcquisitionBucket(rawBucket),
-                carouselRepository: makeD1CarouselEvidenceRepository(database),
-                descriptor: stagedCarousel.descriptor,
-                importId,
-                now,
-                visualExtractor,
-              }),
-              (evidence) => ({
-                _tag: "Succeeded" as const,
-                evidence,
-                stage: "visual" as const,
-              }),
-              trace
-            );
-            const carouselEvidence = yield* Schema.decodeUnknownEffect(
-              CarouselEvidenceTaskCheckpoint
-            )(encodedCarouselEvidence).pipe(Effect.orDie);
-            if (carouselEvidence._tag === "Failed") {
-              return carouselEvidence;
+            const carouselResult =
+              yield* runImportCarouselVisualAndRecipeWorkflow({
+              lifecycle: {
+                beforeRecipe: intentTransitions
+                  .advanceStage("extracting_recipe")
+                  .pipe(Effect.orDie),
+                beforeVisual: Effect.gen(function* beginCarouselAnalysis() {
+                  yield* intentTransitions.advanceStage("analyzing_evidence");
+                  yield* intentTransitions.advanceComponent(
+                    "speech",
+                    "skipped"
+                  );
+                  yield* intentTransitions.advanceComponent(
+                    "visuals",
+                    "processing"
+                  );
+                }).pipe(Effect.orDie),
+                visualCompleted: intentTransitions
+                  .advanceComponent("visuals", "completed")
+                  .pipe(Effect.orDie),
+              },
+              recipe: (carouselEvidence) =>
+                task(
+                  "extract-carousel-recipe-v1",
+                  "recipe",
+                  produceTikTokCarouselRecipeDraft({
+                    bucket: adaptAcquisitionBucket(rawBucket),
+                    descriptor: stagedCarousel.descriptor,
+                    evidence: carouselEvidence.evidence,
+                    extractor: recipeExtractor,
+                    importId,
+                    lifecycle: recipeLifecycle,
+                    now,
+                    recipeRepository: makeD1RecipeDraftRepository(database),
+                  })
+                ),
+              visual: runProviderTask(
+                "extract-carousel-visual-evidence-v1",
+                "visual",
+                prepareTikTokCarouselEvidence({
+                  adapter: stagedCarousel.adapter,
+                  bucket: adaptAcquisitionBucket(rawBucket),
+                  carouselRepository:
+                    makeD1CarouselEvidenceRepository(database),
+                  descriptor: stagedCarousel.descriptor,
+                  importId,
+                  now,
+                  visualExtractor,
+                }),
+                (evidence) => ({
+                  _tag: "Succeeded" as const,
+                  evidence,
+                  stage: "visual" as const,
+                }),
+                trace,
+                retryLifecycle("visual")
+              ).pipe(
+                Effect.flatMap((value) =>
+                  Schema.decodeUnknownEffect(CarouselEvidenceTaskCheckpoint)(
+                    value
+                  )
+                ),
+                Effect.orDie
+              ),
+              });
+            if (carouselResult._tag === "Failed") {
+              yield* intentTransitions
+                .fail(
+                  carouselResult.stage,
+                  publicIntentFailureForProviderStage(carouselResult.stage)
+                )
+                .pipe(Effect.orDie);
             }
-            const recipe = yield* task(
-              "extract-carousel-recipe-v1",
-              "recipe",
-              produceTikTokCarouselRecipeDraft({
-                bucket: adaptAcquisitionBucket(rawBucket),
-                descriptor: stagedCarousel.descriptor,
-                evidence: carouselEvidence.evidence,
-                extractor: recipeExtractor,
-                importId,
-                now,
-                recipeRepository: makeD1RecipeDraftRepository(database),
-              })
-            );
-            return recipe;
+            return carouselResult;
           }
           const rawClaim = yield* Cloudflare.Workflows.task(
             "claim-acquisition-v1",
@@ -737,7 +838,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                             : Effect.die(
                                 "Persisted canonical identity changed"
                               ),
-                        { correlationId }
+                        {
+                          correlationId,
+                          lifecycle: retryLifecycle("acquisition"),
+                        }
                       )
                     : Effect.succeed(recovered)
               ),
@@ -798,8 +902,22 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             finalization
           );
           if (outcome._tag !== "VerifiedAcquisition") {
+            if (finalization === "Recorded") {
+              yield* intentTransitions
+                .fail(
+                  "acquisition",
+                  publicIntentFailureForAcquisitionOutcome(outcome)
+                )
+                .pipe(Effect.orDie);
+            }
             return encodedOutcome;
           }
+          yield* intentTransitions
+            .advanceStage("analyzing_evidence")
+            .pipe(Effect.orDie);
+          yield* intentTransitions
+            .advanceComponent("speech", "processing")
+            .pipe(Effect.orDie);
           const encodedSpeech = yield* Cloudflare.Workflows.task(
             "transcribe-video-v1",
             continueAcquisitionCheckpoint({
@@ -833,7 +951,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                           _tag: "Succeeded" as const,
                           stage: "speech" as const,
                         }),
-                        trace
+                        trace,
+                        retryLifecycle("speech")
                       )
                     )
                   ),
@@ -849,8 +968,17 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           }
           if (speech._tag === "Failed") {
             yield* persistTerminal(speech, outcome.generation);
+            yield* intentTransitions
+              .fail(
+                "speech",
+                publicIntentFailureForProviderStage("speech")
+              )
+              .pipe(Effect.orDie);
             return speech;
           }
+          yield* intentTransitions
+            .advanceComponent("speech", "completed")
+            .pipe(Effect.orDie);
           const failure = yield* completeVisualAndRecipe(outcome.generation);
           if (failure !== null) {
             return failure;
@@ -884,7 +1012,9 @@ export const EnsureStartedResult = Schema.Literals([
 ]);
 export type EnsureStartedResult = typeof EnsureStartedResult.Type;
 
-export const importWorkflowInstanceId = (importId: ImportId) =>
+export const importWorkflowInstanceId = (
+  importId: ImportId | RecipeImportIntentId
+) =>
   `import-acquisition-${importId}`;
 
 export interface ImportWorkflowStarterShape {
@@ -933,6 +1063,23 @@ interface WorkflowHandleLike {
   ) => Effect.Effect<readonly WorkflowInstanceLike[]>;
   readonly get: (id: string) => Effect.Effect<WorkflowInstanceLike>;
 }
+
+interface WorkflowTerminationHandleLike {
+  readonly get: (id: string) => Effect.Effect<{
+    readonly terminate: () => Effect.Effect<void, unknown>;
+  }>;
+}
+
+export const makeImportWorkflowTerminator = (
+  workflow: WorkflowTerminationHandleLike
+): ImportIntentWorkflowTerminatorShape => ({
+  terminate: Effect.fn("ImportWorkflow.terminate")(
+    (intentId: RecipeImportIntentId) =>
+      workflow
+        .get(importWorkflowInstanceId(intentId))
+        .pipe(Effect.flatMap((instance) => instance.terminate()))
+  ),
+});
 
 const reconcileExisting = (instance: WorkflowInstanceLike) =>
   Effect.flatMap(
