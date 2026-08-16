@@ -10,6 +10,7 @@ export const ProviderTaskDiagnosticReasonCode = Schema.Literals([
   "parent_state_invalid",
   "recovery_assembly_fingerprint_mismatch",
   "recovery_generation_mismatch",
+  "recovery_source_hash_mismatch",
   "recovery_transcript_hash_mismatch",
   "recovery_visual_hash_mismatch",
   "source_metadata_missing",

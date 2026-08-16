@@ -359,23 +359,14 @@ describe("pilot provider stage budget", () => {
       providerStageId: decodeProviderStageId("recipe-extraction"),
     };
 
-    await Effect.runPromise(repository.reserve(command));
-    await Effect.runPromise(repository.beginInvocation(command));
-
     await expect(
-      Effect.runPromise(
-        repository.settleConservative({
-          ...command,
-          conservativeChargeMicroUsd: 100_000,
-          replay: conservativeReplay(importId),
-        })
-      )
-    ).rejects.toMatchObject({ code: "cost_exceeds_reservation" });
+      Effect.runPromise(repository.reserve(command))
+    ).rejects.toMatchObject({ code: "persistence_unavailable" });
     await expect(
       Effect.runPromise(repository.readStage())
     ).resolves.toMatchObject({
-      reservedMicroUsd: 100_000,
-      state: "invoking",
+      reservedMicroUsd: 0,
+      state: "open",
     });
   });
 

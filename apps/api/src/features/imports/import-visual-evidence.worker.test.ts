@@ -1488,13 +1488,21 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
       recipeRepository,
       recovery: {
         acquisitionGeneration: generation,
-        dispatchId: `recipe:${importId}:${generation}:${initial.evidenceFingerprint}:recovery:1`,
+        dispatchId: decodeBudgetDispatchId(
+          `recipe:${importId}:${generation}:${initial.evidenceFingerprint}:recovery:1`
+        ),
         evidenceFingerprint: initial.evidenceFingerprint,
         extractionFingerprint: fixtureHash(
           `${importId}:missing-native-recovery`
         ),
-        transcriptSha256: hashes.transcript_sha256,
-        visualManifestSha256: hashes.manifest_sha256,
+        sourceMediaSha256:
+          Schema.decodeUnknownSync(Sha256Hex)(sourceMediaSha256),
+        transcriptSha256: Schema.decodeUnknownSync(Sha256Hex)(
+          hashes.transcript_sha256
+        ),
+        visualManifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
+          hashes.manifest_sha256
+        ),
       },
     };
   };
@@ -1618,13 +1626,51 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
           importRepository,
           now: () => decodeTimestamp("2026-07-21T10:04:00.000Z"),
           recipeRepository,
-          recovery: { ...recovery, transcriptSha256: "0".repeat(64) },
+          recovery: {
+            ...recovery,
+            transcriptSha256: Schema.decodeUnknownSync(Sha256Hex)(
+              "0".repeat(64)
+            ),
+          },
         })
       )
     ).rejects.toMatchObject({
       _tag: "RecipeDraftPipelineFailure",
       code: "source_evidence_invalid",
       reasonCode: "transcript_native_checksum_missing",
+    });
+    expect(extractor.calls).toEqual([]);
+  });
+
+  it("fails closed before extraction when immutable recovery source identity changes", async () => {
+    const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000243");
+    const canonicalId = decodeCanonicalId("7520000000000000243");
+    const { importRepository, recipeRepository, recovery } =
+      await prepareRecoveryFixture(importId, canonicalId);
+    const extractor = makeDeterministicRecipeExtractor(
+      makeRecipeExtractorDescriptor("schema-2"),
+      (input: RecipeEvidenceAssembly) => makeRecipeFixture(input, canonicalId)
+    );
+
+    await expect(
+      Effect.runPromise(
+        produceRecipeDraftForImport({
+          bucket: acquisitionBucket(),
+          extractor: extractor.service,
+          importId,
+          importRepository,
+          now: () => decodeTimestamp("2026-07-21T10:04:00.000Z"),
+          recipeRepository,
+          recovery: {
+            ...recovery,
+            sourceMediaSha256: fixtureHash("changed-recovery-source"),
+          },
+        })
+      )
+    ).rejects.toMatchObject({
+      _tag: "RecipeDraftPipelineFailure",
+      code: "source_evidence_invalid",
+      reasonCode: "recovery_source_hash_mismatch",
     });
     expect(extractor.calls).toEqual([]);
   });

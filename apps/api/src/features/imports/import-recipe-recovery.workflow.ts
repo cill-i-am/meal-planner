@@ -1,6 +1,6 @@
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Config, Effect, Layer, Schema } from "effect";
+import { Config, Effect, Layer, Option, Schema } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
@@ -21,18 +21,105 @@ import { runProviderTask } from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import {
+  RecipeRecoveryAuthorization,
+  RecipeRecoveryOrdinal,
   RecipeRecoveryWorkflowInput,
   makeD1RecipeRecoveryRepository,
+  recipeRecoveryAuthorizationEventType,
+  recipeRecoveryDurableTaskNames,
 } from "./import-recipe-recovery.js";
+import type { RecipeRecoveryAttempt } from "./import-recipe-recovery.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
+
+type RecoveryCheckpoint = typeof ProviderTaskCheckpoint.Type;
+
+export interface RecipeRecoveryLoopDependencies<R = never> {
+  readonly persistUnknown: (
+    attempt: RecipeRecoveryAttempt,
+    durableTaskName: string
+  ) => Effect.Effect<void, never, R>;
+  readonly readAttempt: (
+    ordinal: RecipeRecoveryOrdinal
+  ) => Effect.Effect<RecipeRecoveryAttempt | null, never, R>;
+  readonly runAttempt: (
+    attempt: RecipeRecoveryAttempt,
+    durableTaskName: string
+  ) => Effect.Effect<RecoveryCheckpoint, never, R>;
+  readonly waitForAuthorization: (
+    ordinal: RecipeRecoveryOrdinal
+  ) => Effect.Effect<unknown, never, R>;
+}
+
+const failedCheckpoint = (code: string): RecoveryCheckpoint => ({
+  _tag: "Failed",
+  code,
+  stage: "recipe",
+});
+
+const nextOrdinal = (ordinal: RecipeRecoveryOrdinal) =>
+  Schema.decodeUnknownOption(RecipeRecoveryOrdinal)(ordinal + 1);
+
+/** One bounded recovery algorithm; D1 and an explicit event gate every hop. */
+export const runRecipeRecoveryLoop = Effect.fn("RecipeRecoveryWorkflow.run")(
+  function* runRecipeRecoveryLoopEffect<R>(
+    input: typeof RecipeRecoveryWorkflowInput.Type,
+    dependencies: RecipeRecoveryLoopDependencies<R>
+  ) {
+    let ordinal = input.attemptOrdinal;
+    for (let visited = 0; visited < 8; visited += 1) {
+      const attempt = yield* dependencies.readAttempt(ordinal);
+      if (
+        attempt === null ||
+        attempt.importId !== input.importId ||
+        attempt.acquisitionGeneration !== input.acquisitionGeneration ||
+        attempt.ordinal !== ordinal
+      ) {
+        return failedCheckpoint("recovery_attempt_unavailable");
+      }
+
+      const durableTaskNames = recipeRecoveryDurableTaskNames(ordinal);
+      const checkpoint = yield* dependencies.runAttempt(
+        attempt,
+        durableTaskNames.extraction
+      );
+      if (checkpoint._tag === "Succeeded") {
+        return checkpoint;
+      }
+      if (checkpoint.code !== "outcome_unknown") {
+        return checkpoint;
+      }
+
+      yield* dependencies.persistUnknown(attempt, durableTaskNames.terminal);
+      const next = nextOrdinal(ordinal);
+      if (Option.isNone(next)) {
+        return checkpoint;
+      }
+
+      const rawAuthorization = yield* dependencies.waitForAuthorization(
+        next.value
+      );
+      const authorization = Schema.decodeUnknownOption(
+        RecipeRecoveryAuthorization
+      )(rawAuthorization);
+      if (
+        Option.isNone(authorization) ||
+        authorization.value.importId !== input.importId ||
+        authorization.value.acquisitionGeneration !==
+          input.acquisitionGeneration ||
+        authorization.value.attemptOrdinal !== next.value
+      ) {
+        return failedCheckpoint("recovery_authorization_invalid");
+      }
+      ordinal = next.value;
+    }
+    return failedCheckpoint("recovery_attempt_limit_reached");
+  }
+);
 
 const currentTimestamp = () =>
   Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
 
-/**
- * A recipe-only recovery host. It deliberately has no acquisition object,
- * source resolver, speech transcriber, visual extractor, or source queue.
- */
+/** A recipe-only host with no acquisition, source, speech, or visual adapter. */
 export default class ImportRecipeRecoveryWorkflow extends Cloudflare.Workflow<ImportRecipeRecoveryWorkflow>()(
   "ImportRecipeRecoveryWorkflow",
   Effect.gen(function* ImportRecipeRecoveryWorkflowInit() {
@@ -54,77 +141,87 @@ export default class ImportRecipeRecoveryWorkflow extends Cloudflare.Workflow<Im
           { onExcessProperty: "error" }
         )(rawInput).pipe(Effect.orDie);
         const database = yield* queryDatabase.raw;
-        return yield* Effect.gen(function* runRecipeRecoveryWorkflow() {
-          const rawBucket = yield* evidenceBucket.raw;
-          const recoveryRepository = makeD1RecipeRecoveryRepository(
+        const rawBucket = yield* evidenceBucket.raw;
+        const recoveryRepository = makeD1RecipeRecoveryRepository(
+          database,
+          runtimeStage
+        );
+        const dispatch = makePilotProviderDispatchGate({
+          correlationId: workflowInput.correlationId,
+          now: currentTimestamp,
+          repository: makeD1PilotProviderBudgetRepository(
             database,
             runtimeStage
-          );
-          const recovery = yield* (
-            workflowInput.resumeOrdinal === 1
-              ? recoveryRepository.readResume(workflowInput)
-              : recoveryRepository.read(workflowInput)
-          ).pipe(Effect.orDie);
-          const recoveryTaskVersion = `v${recovery.recoveryOrdinal}`;
-          const dispatch = makePilotProviderDispatchGate({
-            correlationId: workflowInput.correlationId,
-            now: currentTimestamp,
-            repository: makeD1PilotProviderBudgetRepository(
-              database,
-              runtimeStage
-            ),
-            runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
-              `gaia-118:recipe-recovery:${recovery.importId}`
-            ),
-            runtime: budgetRuntime,
-          });
-          const extractor = yield* makeInstalledRecipeExtractor({
-            client: providerGateway,
-            correlationId: workflowInput.correlationId,
-            dispatch,
-          }).pipe(Effect.provideService(RuntimeContext, runtimeContext));
-          const recipeRepository = makeD1RecipeDraftRepository(database);
-          const encoded = yield* runProviderTask(
-            `extract-recipe-recovery-${recoveryTaskVersion}`,
-            "recipe",
-            produceRecipeDraftForImport({
-              bucket: adaptAcquisitionBucket(rawBucket),
-              extractor,
-              importId: recovery.importId,
-              importRepository: makeD1ImportRepository(database),
-              now: currentTimestamp,
-              recipeRepository,
-              recovery: {
-                acquisitionGeneration: recovery.acquisitionGeneration,
-                dispatchId: recovery.recoveryDispatchId,
-                evidenceFingerprint: recovery.evidenceFingerprint,
-                extractionFingerprint: recovery.recoveryExtractionFingerprint,
-                transcriptSha256: recovery.transcriptSha256,
-                visualManifestSha256: recovery.visualManifestSha256,
-              },
-            }),
-            () => ({
-              _tag: "Succeeded" as const,
-              stage: "recipe" as const,
-            }),
-            workflowInput.correlationId
-          );
-          const checkpoint = yield* Schema.decodeUnknownEffect(
-            ProviderTaskCheckpoint
-          )(encoded).pipe(Effect.orDie);
-          if (checkpoint._tag === "Failed") {
-            yield* Cloudflare.Workflows.task(
-              `persist-recipe-recovery-terminal-${recoveryTaskVersion}`,
+          ),
+          runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
+            `gaia-118:recipe-recovery:${workflowInput.importId}`
+          ),
+          runtime: budgetRuntime,
+        });
+        const extractor = yield* makeInstalledRecipeExtractor({
+          client: providerGateway,
+          correlationId: workflowInput.correlationId,
+          dispatch,
+        }).pipe(Effect.provideService(RuntimeContext, runtimeContext));
+        const recipeRepository = makeD1RecipeDraftRepository(database);
+
+        return yield* runRecipeRecoveryLoop(workflowInput, {
+          persistUnknown: (attempt, durableTaskName) =>
+            Cloudflare.Workflows.task(
+              durableTaskName,
               recipeRepository
                 .fail({
                   completedAt: currentTimestamp(),
-                  extractionFingerprint: recovery.recoveryExtractionFingerprint,
+                  extractionFingerprint: attempt.currentExtractionFingerprint,
                   failureCode: "provider_error",
                 })
                 .pipe(Effect.orDie)
-            );
-          }
-          return checkpoint;
+            ),
+          readAttempt: (ordinal) =>
+            recoveryRepository
+              .readAttempt({
+                acquisitionGeneration: workflowInput.acquisitionGeneration,
+                importId: workflowInput.importId,
+                ordinal,
+              })
+              .pipe(Effect.map(Option.getOrNull), Effect.orDie),
+          runAttempt: (attempt, durableTaskName) =>
+            runProviderTask(
+              durableTaskName,
+              "recipe",
+              produceRecipeDraftForImport({
+                bucket: adaptAcquisitionBucket(rawBucket),
+                extractor,
+                importId: attempt.importId,
+                importRepository: makeD1ImportRepository(database),
+                now: currentTimestamp,
+                recipeRepository,
+                recovery: {
+                  acquisitionGeneration: attempt.acquisitionGeneration,
+                  dispatchId: attempt.currentDispatchId,
+                  evidenceFingerprint: attempt.evidenceFingerprint,
+                  extractionFingerprint: attempt.currentExtractionFingerprint,
+                  sourceMediaSha256: attempt.sourceMediaSha256,
+                  transcriptSha256: attempt.transcriptSha256,
+                  visualManifestSha256: attempt.visualManifestSha256,
+                },
+              }),
+              () => ({
+                _tag: "Succeeded" as const,
+                stage: "recipe" as const,
+              }),
+              workflowInput.correlationId
+            ).pipe(
+              Effect.flatMap((encoded) =>
+                Schema.decodeUnknownEffect(ProviderTaskCheckpoint)(encoded)
+              ),
+              Effect.orDie
+            ),
+          waitForAuthorization: (ordinal) =>
+            Cloudflare.Workflows.waitForEvent<unknown>(
+              `authorize-recipe-recovery-${ordinal}`,
+              { type: recipeRecoveryAuthorizationEventType(ordinal) }
+            ).pipe(Effect.map(({ payload }) => payload)),
         }).pipe(
           Effect.provideService(
             ImportObservabilityTraceStore,

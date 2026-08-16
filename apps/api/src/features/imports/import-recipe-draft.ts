@@ -1,8 +1,10 @@
 import { Effect, Option, Schema } from "effect";
 
+import type { PilotBudgetDispatchId } from "../pilots/pilot-provider-budget.js";
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import type {
+  AcquisitionGeneration,
   VerifiedAcquisitionEvidence,
   VerifiedSourceMetadata,
 } from "./import-media.model.js";
@@ -224,17 +226,22 @@ const isRecipeEvidenceReadyStatus = (
 };
 
 const recoveryEvidenceMismatchReason = (input: {
-  readonly actualEvidenceFingerprint: string;
-  readonly actualGeneration: number;
-  readonly actualTranscriptSha256: string;
-  readonly actualVisualManifestSha256: string;
-  readonly expectedEvidenceFingerprint: string;
-  readonly expectedGeneration: number;
-  readonly expectedTranscriptSha256: string;
-  readonly expectedVisualManifestSha256: string;
+  readonly actualEvidenceFingerprint: Sha256Hex;
+  readonly actualGeneration: AcquisitionGeneration;
+  readonly actualSourceMediaSha256: Sha256Hex;
+  readonly actualTranscriptSha256: Sha256Hex;
+  readonly actualVisualManifestSha256: Sha256Hex;
+  readonly expectedEvidenceFingerprint: Sha256Hex;
+  readonly expectedGeneration: AcquisitionGeneration;
+  readonly expectedSourceMediaSha256: Sha256Hex;
+  readonly expectedTranscriptSha256: Sha256Hex;
+  readonly expectedVisualManifestSha256: Sha256Hex;
 }): ProviderTaskDiagnosticReasonCode | null => {
   if (input.actualGeneration !== input.expectedGeneration) {
     return "recovery_generation_mismatch";
+  }
+  if (input.actualSourceMediaSha256 !== input.expectedSourceMediaSha256) {
+    return "recovery_source_hash_mismatch";
   }
   if (input.actualTranscriptSha256 !== input.expectedTranscriptSha256) {
     return "recovery_transcript_hash_mismatch";
@@ -677,12 +684,13 @@ export const produceRecipeDraftForImport = Effect.fn(
   readonly importRepository: ImportRepositoryShape;
   readonly now: () => ImportTimestamp;
   readonly recovery?: {
-    readonly acquisitionGeneration: number;
-    readonly dispatchId: string;
-    readonly evidenceFingerprint: string;
-    readonly extractionFingerprint: string;
-    readonly transcriptSha256: string;
-    readonly visualManifestSha256: string;
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly dispatchId: PilotBudgetDispatchId;
+    readonly evidenceFingerprint: Sha256Hex;
+    readonly extractionFingerprint: Sha256Hex;
+    readonly sourceMediaSha256: Sha256Hex;
+    readonly transcriptSha256: Sha256Hex;
+    readonly visualManifestSha256: Sha256Hex;
   };
   readonly recipeRepository: RecipeDraftRepositoryShape;
 }) {
@@ -726,9 +734,7 @@ export const produceRecipeDraftForImport = Effect.fn(
         ...(input.recovery === undefined
           ? {}
           : {
-              recoverySha256: Schema.decodeUnknownSync(Sha256Hex)(
-                input.recovery.transcriptSha256
-              ),
+              recoverySha256: input.recovery.transcriptSha256,
             }),
         sourceMediaSha256: evidence.sha256,
       })
@@ -751,9 +757,7 @@ export const produceRecipeDraftForImport = Effect.fn(
         ...(input.recovery === undefined
           ? {}
           : {
-              recoverySha256: Schema.decodeUnknownSync(Sha256Hex)(
-                input.recovery.visualManifestSha256
-              ),
+              recoverySha256: input.recovery.visualManifestSha256,
             }),
         sourceEvidenceDeleteAt: evidence.deleteAt,
         sourceMediaSha256: evidence.sha256,
@@ -788,10 +792,12 @@ export const produceRecipeDraftForImport = Effect.fn(
     const mismatchReason = recoveryEvidenceMismatchReason({
       actualEvidenceFingerprint: assembly.evidenceFingerprint,
       actualGeneration: evidence.generation,
+      actualSourceMediaSha256: evidence.sha256,
       actualTranscriptSha256: transcript.value.sha256,
       actualVisualManifestSha256: visual.value.sha256,
       expectedEvidenceFingerprint: input.recovery.evidenceFingerprint,
       expectedGeneration: input.recovery.acquisitionGeneration,
+      expectedSourceMediaSha256: input.recovery.sourceMediaSha256,
       expectedTranscriptSha256: input.recovery.transcriptSha256,
       expectedVisualManifestSha256: input.recovery.visualManifestSha256,
     });
