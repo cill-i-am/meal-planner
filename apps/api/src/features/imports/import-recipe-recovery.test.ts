@@ -12,6 +12,7 @@ import {
   recipeRecoveryAuthorizationEventType,
   recipeRecoveryExtractionFingerprint,
   recipeRecoveryWorkflowInstanceId,
+  resolveRecipeRecoveryWorkflowInput,
 } from "./import-recipe-recovery.js";
 import type {
   RecipeRecoveryAttempt,
@@ -105,7 +106,7 @@ describe("recipe recovery workflow authority", () => {
         },
         get: () => Effect.die("unexpected reconciliation"),
       },
-      () => correlationId
+      { correlationId }
     );
 
     await Effect.runPromise(starter.start(attempt(1)));
@@ -117,20 +118,59 @@ describe("recipe recovery workflow authority", () => {
           params: {
             acquisitionGeneration,
             attemptOrdinal: 1,
-            correlationId,
             importId,
+            trace: { correlationId },
           },
         },
       ],
     ]);
   });
 
+  it("normalizes only the legacy durable recovery shape and preserves its identifier", async () => {
+    await expect(
+      Effect.runPromise(
+        resolveRecipeRecoveryWorkflowInput({
+          acquisitionGeneration,
+          attemptOrdinal: 1,
+          correlationId,
+          importId,
+        })
+      )
+    ).resolves.toEqual({
+      acquisitionGeneration,
+      attemptOrdinal: 1,
+      importId,
+      trace: { correlationId },
+    });
+  });
+
+  it("rejects malformed recovery context before downstream acquisition and redacts it", async () => {
+    const exit = await Effect.runPromiseExit(
+      resolveRecipeRecoveryWorkflowInput({
+        acquisitionGeneration,
+        attemptOrdinal: 1,
+        importId,
+        trace: {
+          correlationId,
+          sourceUrl: "https://private.example/tiktok",
+        },
+      })
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).not.toContain("private.example");
+    expect(JSON.stringify(exit)).not.toContain("tiktok");
+  });
+
   it("signals an existing workflow with the authorized ledger ordinal", async () => {
     const calls: string[] = [];
-    const starter = makeRecipeRecoveryWorkflowStarter({
-      createBatch: () => Effect.succeed([]),
-      get: () => Effect.succeed(instance("waiting", calls)),
-    });
+    const starter = makeRecipeRecoveryWorkflowStarter(
+      {
+        createBatch: () => Effect.succeed([]),
+        get: () => Effect.succeed(instance("waiting", calls)),
+      },
+      { correlationId }
+    );
 
     await Effect.runPromise(starter.start(attempt(2)));
 
@@ -139,10 +179,13 @@ describe("recipe recovery workflow authority", () => {
 
   it("restarts an errored instance so native checkpoints are replayed", async () => {
     const calls: string[] = [];
-    const starter = makeRecipeRecoveryWorkflowStarter({
-      createBatch: () => Effect.succeed([]),
-      get: () => Effect.succeed(instance("errored", calls)),
-    });
+    const starter = makeRecipeRecoveryWorkflowStarter(
+      {
+        createBatch: () => Effect.succeed([]),
+        get: () => Effect.succeed(instance("errored", calls)),
+      },
+      { correlationId }
+    );
 
     await Effect.runPromise(starter.start(attempt(4)));
 

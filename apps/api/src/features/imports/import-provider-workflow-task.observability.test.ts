@@ -19,7 +19,7 @@ const captureAttempt = async (attempt: number) => {
       "speech",
       Effect.fail({ code: "timeout" }),
       () => "unused",
-      correlationId
+      { correlationId }
     ).pipe(
       Effect.provideService(WorkflowStepContext, {
         attempt,
@@ -45,7 +45,7 @@ describe("provider task observability", () => {
         "speech",
         Effect.succeed("private-provider-result"),
         () => "checkpointed",
-        correlationId
+        { correlationId }
       ).pipe(
         Effect.provideService(WorkflowStepContext, {
           attempt: 1,
@@ -100,7 +100,7 @@ describe("provider task observability", () => {
           sourceUrl: "https://forbidden.example/private",
         }),
         () => "unused",
-        correlationId
+        { correlationId }
       ).pipe(
         Effect.provideService(WorkflowStepContext, {
           attempt: 1,

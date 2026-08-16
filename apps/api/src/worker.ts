@@ -11,9 +11,10 @@ import type { AcquisitionBucketLike } from "./features/imports/import-media-acqu
 import { makeD1ImportObservabilityTraceStore } from "./features/imports/import-observability.d1.js";
 import {
   ImportObservabilityTraceStore,
+  makeImportTraceContext,
   observeImportQueueReceipt,
 } from "./features/imports/import-observability.js";
-import type { ImportCorrelationId } from "./features/imports/import-observability.js";
+import type { ImportTraceContext } from "./features/imports/import-observability.js";
 import { ProviderTerminalSettlementRouteDefinitions } from "./features/imports/import-provider-terminal-settlement.routes.js";
 import { makeRecipeRecoveryWorkflowStarter } from "./features/imports/import-recipe-recovery.js";
 import ImportRecipeRecoveryWorkflow from "./features/imports/import-recipe-recovery.workflow.js";
@@ -97,14 +98,13 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       yield* Cloudflare.Queues.WriteQueue(importBatchQueue);
     const makeBatchQueueAcceptance = (
       database: AnyD1Database,
-      correlationId?: ImportCorrelationId
+      trace: ImportTraceContext
     ) =>
       makeImportBatchQueueAcceptance({
-        ...(correlationId === undefined ? {} : { correlationId }),
         database,
         importWorkflowStarter: makeImportWorkflowStarter(
           importAcquisitionWorkflow,
-          correlationId === undefined ? undefined : { correlationId }
+          trace
         ),
         now: currentIsoTimestamp,
       });
@@ -130,8 +130,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                     currentIsoTimestamp
                   );
                   return {
-                    consume: (message, deliveryAttempt, correlationId) =>
-                      makeBatchQueueAcceptance(database, correlationId)
+                    consume: (message, deliveryAttempt, trace) =>
+                      makeBatchQueueAcceptance(database, trace)
                         .consume(message, deliveryAttempt)
                         .pipe(
                           Effect.provideService(
@@ -164,9 +164,11 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         Stream.runForEach(messages, ({ body }) =>
           consumeImportBatchDeadLetterDelivery(body, (message) =>
             queryDatabase.raw.pipe(
-              Effect.flatMap((database) =>
-                makeBatchQueueAcceptance(database).deadLetter(message)
-              )
+              Effect.flatMap((database) => {
+                const trace = makeImportTraceContext();
+                const acceptance = makeBatchQueueAcceptance(database, trace);
+                return acceptance.deadLetter(message);
+              })
             )
           ).pipe(
             Effect.provideService(
@@ -188,6 +190,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
               const database = yield* queryDatabase.raw;
               const rawBucket = yield* evidenceBucket.raw;
               const rawImportBatchQueue = yield* importBatchQueueWriter.raw;
+              const trace = makeImportTraceContext();
               return yield* withCurrentRequestCancellation(
                 routeHandler.pipe(
                   Effect.provide(
@@ -196,13 +199,15 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                       database,
                       importApiToken,
                       importWorkflowStarter: makeImportWorkflowStarter(
-                        importAcquisitionWorkflow
+                        importAcquisitionWorkflow,
+                        trace
                       ),
                       now: currentIsoTimestamp,
                       queue:
                         makeCloudflareImportBatchQueue(rawImportBatchQueue),
                       recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
-                        importRecipeRecoveryWorkflow
+                        importRecipeRecoveryWorkflow,
+                        trace
                       ),
                       runtimeStage,
                     })

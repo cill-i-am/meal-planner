@@ -343,7 +343,7 @@ describe("import Workflow start reconciliation", () => {
       [
         {
           id: `import-acquisition-${importId}`,
-          params: { correlationId, importId },
+          params: { importId, trace: { correlationId } },
         },
       ],
     ]);
@@ -423,10 +423,13 @@ describe("import Workflow start reconciliation", () => {
         }),
       status: () => Effect.sync(() => ({ status })),
     };
-    const starter = makeImportWorkflowStarter({
-      createBatch: () => Effect.die("not used"),
-      get: () => Effect.succeed(instance),
-    });
+    const starter = makeImportWorkflowStarter(
+      {
+        createBatch: () => Effect.die("not used"),
+        get: () => Effect.succeed(instance),
+      },
+      { correlationId }
+    );
 
     await expect(
       Effect.runPromise(
@@ -446,10 +449,13 @@ describe("import Workflow start reconciliation", () => {
         }),
       status: () => Effect.succeed({ status: "errored" }),
     };
-    const starter = makeImportWorkflowStarter({
-      createBatch: () => Effect.die("not used"),
-      get: () => Effect.succeed(instance),
-    });
+    const starter = makeImportWorkflowStarter(
+      {
+        createBatch: () => Effect.die("not used"),
+        get: () => Effect.succeed(instance),
+      },
+      { correlationId }
+    );
 
     await expect(
       Effect.runPromise(
@@ -513,19 +519,25 @@ describe("import Workflow start reconciliation", () => {
 
   it("maps unknown status, binding defects, and impossible batches to a safe typed failure", async () => {
     const unknown = makeWorkflow("unknown").starter.ensureStarted(importId);
-    const defect = makeImportWorkflowStarter({
-      createBatch: () => Effect.die("provider-secret-fragment"),
-      get: () => Effect.die("unreachable"),
-    }).ensureStarted(importId);
+    const defect = makeImportWorkflowStarter(
+      {
+        createBatch: () => Effect.die("provider-secret-fragment"),
+        get: () => Effect.die("unreachable"),
+      },
+      { correlationId }
+    ).ensureStarted(importId);
     const impossibleInstance = {
       restart: () => Effect.void,
       status: () => Effect.succeed({ status: "queued" }),
     };
-    const impossible = makeImportWorkflowStarter({
-      createBatch: () =>
-        Effect.succeed([impossibleInstance, impossibleInstance]),
-      get: () => Effect.die("unreachable"),
-    }).ensureStarted(importId);
+    const impossible = makeImportWorkflowStarter(
+      {
+        createBatch: () =>
+          Effect.succeed([impossibleInstance, impossibleInstance]),
+        get: () => Effect.die("unreachable"),
+      },
+      { correlationId }
+    ).ensureStarted(importId);
 
     await Promise.all(
       [unknown, defect, impossible].map(async (effect) => {
@@ -559,7 +571,7 @@ describe("import Workflow start reconciliation", () => {
         }),
       get: () => Effect.succeed(instance),
     };
-    const starter = makeImportWorkflowStarter(workflow);
+    const starter = makeImportWorkflowStarter(workflow, { correlationId });
 
     await expect(
       Effect.runPromise(starter.ensureStarted(importId))

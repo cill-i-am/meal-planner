@@ -169,8 +169,8 @@ describe("native workflow legacy correlation input", () => {
     );
   });
 
-  it("preserves a supplied current correlation ID", async () => {
-    const id = "gaia-191-native-current-input";
+  it("normalizes a supplied legacy correlation ID once", async () => {
+    const id = "s11-native-legacy-correlated-input";
     const importId = "00000000-0000-4000-8000-000000000189";
     const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2188";
 
@@ -182,7 +182,25 @@ describe("native workflow legacy correlation input", () => {
         input: { correlationId, importId },
       })
     ).resolves.toMatchObject({
-      output: { correlationId, importId },
+      output: { importId, trace: { correlationId } },
+      status: "complete",
+    });
+  });
+
+  it("preserves a supplied current trace context", async () => {
+    const id = "s11-native-current-trace-input";
+    const importId = "00000000-0000-4000-8000-000000000190";
+    const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2190";
+
+    await expect(
+      commandWorkflow({
+        action: "run",
+        expectedStatus: "complete",
+        id,
+        input: { importId, trace: { correlationId } },
+      })
+    ).resolves.toMatchObject({
+      output: { importId, trace: { correlationId } },
       status: "complete",
     });
   });

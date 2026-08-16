@@ -66,11 +66,11 @@ import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.j
 import type {
   AcquisitionDiagnosticReasonCode,
   ImportCorrelationId,
+  ImportTraceContext,
 } from "./import-observability.js";
 import {
   ImportObservabilityTraceStore,
   emitImportObservabilityEvent,
-  makeImportCorrelationId,
   observeImportWorkflowStart,
 } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
@@ -450,16 +450,17 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
 
     return (rawInput: unknown) =>
       Effect.gen(function* initializeImportAcquisitionWorkflow() {
+        const workflowInput = yield* resolveImportWorkflowInput(rawInput).pipe(
+          Effect.orDie
+        );
         const database = yield* queryDatabase.raw;
         const traceStore = makeD1ImportObservabilityTraceStore(database, () =>
           new Date().toISOString()
         );
         return yield* Effect.gen(function* runImportAcquisitionWorkflow() {
-          const workflowInput = yield* resolveImportWorkflowInput(
-            rawInput
-          ).pipe(Effect.orDie);
-          const { correlationId, importId } = workflowInput;
-          yield* observeImportWorkflowStart(correlationId);
+          const { importId, trace } = workflowInput;
+          const { correlationId } = trace;
+          yield* observeImportWorkflowStart(trace);
           const rawBucket = yield* evidenceBucket.raw;
           const repository = makeD1ImportRepository(database);
           const terminalCheckpoints =
@@ -509,10 +510,12 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 _tag: "Succeeded" as const,
                 stage,
               }),
-              correlationId
+              trace
             ).pipe(
               Effect.flatMap((value) =>
-                Schema.decodeUnknownEffect(ProviderTaskCheckpoint)(value)
+                Schema.decodeUnknownEffect(ProviderTaskCheckpoint, {
+                  onExcessProperty: "error",
+                })(value)
               ),
               Effect.orDie
             );
@@ -636,7 +639,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 evidence,
                 stage: "visual" as const,
               }),
-              correlationId
+              trace
             );
             const carouselEvidence = yield* Schema.decodeUnknownEffect(
               CarouselEvidenceTaskCheckpoint
@@ -830,7 +833,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                           _tag: "Succeeded" as const,
                           stage: "speech" as const,
                         }),
-                        correlationId
+                        trace
                       )
                     )
                   ),
@@ -1011,10 +1014,7 @@ const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
 
 export const makeImportWorkflowStarter = (
   workflow: WorkflowHandleLike,
-  options?: {
-    readonly correlationId?: ImportCorrelationId;
-    readonly newCorrelationId?: () => ImportCorrelationId;
-  }
+  trace: ImportTraceContext
 ): ImportWorkflowReconcilerShape => {
   const restartPostAcquisition = (
     importId: ImportId,
@@ -1042,14 +1042,9 @@ export const makeImportWorkflowStarter = (
   return {
     ensureStarted: (importId) => {
       const instanceId = importWorkflowInstanceId(importId);
-      const correlationId =
-        options?.correlationId ??
-        (options?.newCorrelationId ?? makeImportCorrelationId)();
       return Effect.gen(function* ensureStarted() {
         const createOutcome = yield* workflow
-          .createBatch([
-            { id: instanceId, params: { correlationId, importId } },
-          ])
+          .createBatch([{ id: instanceId, params: { importId, trace } }])
           .pipe(
             Effect.map((created) => ({
               _tag: "Created" as const,
@@ -1073,7 +1068,7 @@ export const makeImportWorkflowStarter = (
         const { created } = createOutcome;
         if (created.length === 1) {
           yield* emitImportObservabilityEvent({
-            correlationId,
+            correlationId: trace.correlationId,
             event: "import.accepted",
             outcome: "accepted",
           });

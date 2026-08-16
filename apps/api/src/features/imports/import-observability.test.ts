@@ -34,14 +34,22 @@ describe("private import observability", () => {
   });
 
   it.each([
+    "actorId",
     "authorization",
+    "binding",
+    "config",
     "cookie",
+    "cookies",
     "credential",
+    "env",
+    "evidenceContent",
     "headers",
+    "idempotencyKey",
     "media",
     "objectKey",
     "prompt",
     "providerPayload",
+    "requestBody",
     "rawError",
     "rawStderr",
     "rawStdout",
@@ -52,6 +60,7 @@ describe("private import observability", () => {
     "stdout",
     "transcript",
     "url",
+    "userId",
   ])("rejects the sensitive %s field at the logging boundary", (field) => {
     const decode = Schema.decodeUnknownSync(ImportObservabilityEvent, {
       onExcessProperty: "error",
