@@ -33,10 +33,7 @@ import {
   makeDeterministicSpeechAudioExtractor,
   makeDeterministicSpeechTranscriber,
 } from "./import-speech-transcription.fake.js";
-import {
-  transcribeAcquiredImport,
-  transcriptObjectKey,
-} from "./import-speech-transcription.js";
+import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import {
   ImportId,
@@ -52,6 +49,9 @@ import {
   RequestFingerprint,
   SourceLocatorHash,
 } from "./import.repository.js";
+
+const transcriptObjectKey = (importId: string, generation: number) =>
+  `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`;
 
 interface TestR2Object {
   readonly checksums?: { readonly sha256?: ArrayBuffer };

@@ -1,8 +1,7 @@
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option } from "effect";
 
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
-import { AcquisitionGeneration } from "./import-media.model.js";
 import type { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
   SpeechAudioExtractorShape,
@@ -10,42 +9,20 @@ import type {
 } from "./import-speech-transcriber.js";
 import {
   decodeSpeechTranscript,
-  SpeechTranscript,
   validateSpeechAudioArtifact,
 } from "./import-speech-transcriber.js";
 import type {
   CompletedTranscriptEvidence,
   SpeechTranscriptionRepositoryShape,
 } from "./import-speech-transcription.repository.d1.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
+import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { importTransitionRejected } from "./import.errors.js";
 import type { ImportRepositoryShape } from "./import.repository.js";
-
-const Sha256Hex = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
-);
-
-/** Private R2 evidence document produced by the normalized speech boundary. */
-export const TranscriptEvidenceDocument = Schema.Struct({
-  acquisitionGeneration: AcquisitionGeneration,
-  cost: SpeechTranscript.fields.cost,
-  createdAt: ImportTimestamp,
-  deleteAt: ImportTimestamp,
-  detectedLanguage: SpeechTranscript.fields.detectedLanguage,
-  dispatchId: Schema.String,
-  importId: ImportId,
-  model: SpeechTranscript.fields.model,
-  provider: SpeechTranscript.fields.provider,
-  schemaVersion: Schema.Literal(1),
-  segments: SpeechTranscript.fields.segments,
-  sourceMediaSha256: Sha256Hex,
-  text: SpeechTranscript.fields.text,
-  usage: SpeechTranscript.fields.usage,
-});
-export type TranscriptEvidenceDocument = typeof TranscriptEvidenceDocument.Type;
-
-/** Maximum private normalized transcript document accepted from R2. */
-export const MaximumTranscriptEvidenceBytes = 2_097_152;
+import type { TranscriptEvidenceDocument } from "./transcript-evidence-store.js";
+import {
+  TranscriptEvidenceStore,
+  TranscriptEvidenceStoreLive,
+} from "./transcript-evidence-store.js";
 
 /** Safe pipeline failure recorded without raw provider bodies or secrets. */
 export interface SpeechPipelineFailure {
@@ -62,13 +39,6 @@ export interface SpeechPipelineFailure {
     | "transcript_evidence_unknown";
   readonly reasonCode?: ProviderTaskDiagnosticReasonCode;
 }
-
-/** Generation-scoped private transcript evidence key. */
-export const transcriptObjectKey = (
-  importId: ImportId,
-  generation: AcquisitionGeneration
-) =>
-  `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`;
 
 const pipelineFailure = (
   code: SpeechPipelineFailure["code"],
@@ -89,148 +59,10 @@ const sha256Hex = (bytes: Uint8Array) =>
     crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer)
   ).pipe(Effect.map(bytesToHex));
 
-const sha256Bytes = (hex: string) => {
-  const bytes = new Uint8Array(32);
-  for (let index = 0; index < bytes.length; index += 1) {
-    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-  }
-  return bytes.buffer;
-};
-
-/** Re-verify private normalized transcript evidence before downstream use. */
-export const readVerifiedTranscriptEvidence = (
-  bucket: AcquisitionBucketLike,
-  expected: {
-    readonly dispatchId: string;
-    readonly recoverySha256?: string;
-    readonly generation: AcquisitionGeneration;
-    readonly importId: ImportId;
-    readonly sourceMediaSha256: string;
-  }
-) =>
-  Effect.gen(function* readTranscript() {
-    const key = transcriptObjectKey(expected.importId, expected.generation);
-    const object = yield* Effect.tryPromise({
-      catch: () => pipelineFailure("transcript_evidence_unknown"),
-      try: () => bucket.get(key),
-    });
-    if (object === null) {
-      return Option.none<{
-        readonly document: TranscriptEvidenceDocument;
-        readonly sha256: string;
-      }>();
-    }
-    if (object.size <= 0 || object.size > MaximumTranscriptEvidenceBytes) {
-      return yield* Effect.fail(pipelineFailure("transcript_evidence_failed"));
-    }
-    const text = yield* Effect.tryPromise({
-      catch: () => pipelineFailure("transcript_evidence_unknown"),
-      try: () => object.text(),
-    });
-    const bytes = new TextEncoder().encode(text);
-    const digest = yield* sha256Hex(bytes);
-    const parsed = yield* Effect.try({
-      catch: () => pipelineFailure("transcript_evidence_failed"),
-      try: () => JSON.parse(text) as unknown,
-    });
-    const document = yield* Schema.decodeUnknownEffect(
-      TranscriptEvidenceDocument,
-      { onExcessProperty: "error" }
-    )(parsed).pipe(
-      Effect.mapError(() => pipelineFailure("transcript_evidence_failed"))
-    );
-    const metadata = object.customMetadata ?? {};
-    const nativeChecksum = object.checksums?.sha256;
-    if (nativeChecksum !== undefined && bytesToHex(nativeChecksum) !== digest) {
-      return yield* Effect.fail(
-        pipelineFailure(
-          "transcript_evidence_failed",
-          "transcript_native_checksum_mismatch"
-        )
-      );
-    }
-    if (nativeChecksum === undefined && expected.recoverySha256 !== digest) {
-      return yield* Effect.fail(
-        pipelineFailure(
-          "transcript_evidence_failed",
-          "transcript_native_checksum_missing"
-        )
-      );
-    }
-    const checksumMatches =
-      nativeChecksum !== undefined || expected.recoverySha256 === digest;
-    const matchesExpectedEvidence = [
-      object.size === bytes.byteLength,
-      checksumMatches,
-      object.httpMetadata?.contentType === "application/json",
-      object.httpMetadata?.cacheControl === "private, no-store",
-      metadata["importId"] === expected.importId,
-      metadata["generation"] === String(expected.generation),
-      metadata["kind"] === "speech_transcript",
-      metadata["sha256"] === digest,
-      metadata["sourceMediaSha256"] === expected.sourceMediaSha256,
-      document.importId === expected.importId,
-      document.acquisitionGeneration === expected.generation,
-      document.dispatchId === expected.dispatchId,
-      document.sourceMediaSha256 === expected.sourceMediaSha256,
-    ].every(Boolean);
-    if (!matchesExpectedEvidence) {
-      return yield* Effect.fail(pipelineFailure("transcript_evidence_failed"));
-    }
-    return Option.some({ document, sha256: digest });
-  });
-
-const storeTranscriptDocument = (
-  bucket: AcquisitionBucketLike,
-  document: TranscriptEvidenceDocument
-) =>
-  Effect.gen(function* storeTranscript() {
-    const bytes = new TextEncoder().encode(
-      JSON.stringify(Schema.encodeSync(TranscriptEvidenceDocument)(document))
-    );
-    if (bytes.byteLength > MaximumTranscriptEvidenceBytes) {
-      return yield* Effect.fail(pipelineFailure("transcript_evidence_failed"));
-    }
-    const sha256 = yield* sha256Hex(bytes);
-    const key = transcriptObjectKey(
-      document.importId,
-      document.acquisitionGeneration
-    );
-    yield* Effect.tryPromise({
-      catch: () => null,
-      try: () =>
-        bucket.put(key, bytes, {
-          contentLength: bytes.byteLength,
-          customMetadata: {
-            generation: String(document.acquisitionGeneration),
-            importId: document.importId,
-            kind: "speech_transcript",
-            sha256,
-            sourceMediaSha256: document.sourceMediaSha256,
-          },
-          httpMetadata: {
-            cacheControl: "private, no-store",
-            contentType: "application/json",
-          },
-          onlyIf: { etagDoesNotMatch: "*" },
-          sha256: sha256Bytes(sha256),
-        }),
-    }).pipe(Effect.exit);
-    const verified = yield* readVerifiedTranscriptEvidence(bucket, {
-      dispatchId: document.dispatchId,
-      generation: document.acquisitionGeneration,
-      importId: document.importId,
-      sourceMediaSha256: document.sourceMediaSha256,
-    });
-    return yield* Option.match(verified, {
-      onNone: () => Effect.fail(pipelineFailure("transcript_evidence_unknown")),
-      onSome: Effect.succeed,
-    });
-  });
-
 const completedFromDocument = (
   document: TranscriptEvidenceDocument,
-  transcriptSha256: string
+  transcriptSha256: string,
+  transcriptKey: string
 ): CompletedTranscriptEvidence => ({
   completedAt: document.createdAt,
   cost: document.cost,
@@ -242,10 +74,7 @@ const completedFromDocument = (
   provider: document.provider,
   segmentsCount: document.segments.length,
   sourceMediaSha256: document.sourceMediaSha256,
-  transcriptKey: transcriptObjectKey(
-    document.importId,
-    document.acquisitionGeneration
-  ),
+  transcriptKey,
   transcriptSha256,
   usage: document.usage,
 });
@@ -307,17 +136,23 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       return yield* Effect.fail(pipelineFailure("outcome_unknown"));
     }
     if (claim._tag === "ResumeDispatch") {
-      const recovered = yield* readVerifiedTranscriptEvidence(input.bucket, {
-        dispatchId,
-        generation: evidence.generation,
-        importId: input.importId,
-        sourceMediaSha256: evidence.sha256,
-      });
+      const recovered = yield* TranscriptEvidenceStore.pipe(
+        Effect.flatMap((store) =>
+          store.readVerified({
+            dispatchId,
+            generation: evidence.generation,
+            importId: input.importId,
+            sourceMediaSha256: evidence.sha256,
+          })
+        ),
+        Effect.provide(TranscriptEvidenceStoreLive(input.bucket))
+      );
       if (Option.isSome(recovered)) {
         const completed = yield* input.transcriptionRepository.complete(
           completedFromDocument(
             recovered.value.document,
-            recovered.value.sha256
+            recovered.value.sha256,
+            recovered.value.key
           )
         );
         return {
@@ -396,9 +231,23 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
         text: transcript.text,
         usage: transcript.usage,
       };
-      const committed = yield* storeTranscriptDocument(input.bucket, document);
+      const committed = yield* TranscriptEvidenceStore.pipe(
+        Effect.flatMap((store) => store.putVerified({ document })),
+        Effect.provide(TranscriptEvidenceStoreLive(input.bucket)),
+        Effect.mapError((error) =>
+          pipelineFailure(
+            error.code === "storage_failure"
+              ? "transcript_evidence_unknown"
+              : "transcript_evidence_failed"
+          )
+        )
+      );
       return yield* input.transcriptionRepository.complete(
-        completedFromDocument(committed.document, committed.sha256)
+        completedFromDocument(
+          committed.document,
+          committed.sha256,
+          committed.key
+        )
       );
     });
 

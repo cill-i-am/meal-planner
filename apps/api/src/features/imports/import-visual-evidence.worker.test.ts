@@ -41,10 +41,7 @@ import {
   makeDeterministicSpeechAudioExtractor,
   makeDeterministicSpeechTranscriber,
 } from "./import-speech-transcription.fake.js";
-import {
-  transcribeAcquiredImport,
-  transcriptObjectKey,
-} from "./import-speech-transcription.js";
+import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import type { VisualEvidenceExtractorShape } from "./import-visual-evidence-extractor.js";
 import { VisualEvidence } from "./import-visual-evidence-extractor.js";
@@ -52,11 +49,7 @@ import {
   makeDeterministicFrameSampler,
   makeDeterministicVisualEvidenceExtractor,
 } from "./import-visual-evidence.fake.js";
-import {
-  extractVisualEvidenceForTranscribedImport,
-  visualEvidenceManifestObjectKey,
-  visualFrameObjectKey,
-} from "./import-visual-evidence.js";
+import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import {
@@ -77,6 +70,21 @@ import {
   RequestFingerprint,
   SourceLocatorHash,
 } from "./import.repository.js";
+
+const transcriptObjectKey = (importId: string, generation: number) =>
+  `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`;
+const visualGenerationPrefix = (importId: string, generation: number) =>
+  `imports/${importId}/visual/v1/generations/${generation}`;
+const visualEvidenceManifestObjectKey = (
+  importId: string,
+  generation: number
+) => `${visualGenerationPrefix(importId, generation)}/manifest.json`;
+const visualFrameObjectKey = (
+  importId: string,
+  generation: number,
+  frameIndex: number
+) =>
+  `${visualGenerationPrefix(importId, generation)}/frames/${String(frameIndex).padStart(2, "0")}.jpg`;
 
 interface TestR2Object {
   readonly checksums?: { readonly sha256?: ArrayBuffer };

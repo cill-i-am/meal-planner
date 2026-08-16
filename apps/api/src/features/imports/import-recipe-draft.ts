@@ -29,13 +29,19 @@ import {
   RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
 import { recipeEvidenceContains } from "./import-recipe-grounding.js";
-import { readVerifiedTranscriptEvidence } from "./import-speech-transcription.js";
-import { readVerifiedVisualEvidence } from "./import-visual-evidence.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type {
   ImportRepositoryShape,
   ImportTransitionError,
 } from "./import.repository.js";
+import {
+  TranscriptEvidenceStore,
+  TranscriptEvidenceStoreLive,
+} from "./transcript-evidence-store.js";
+import {
+  VisualEvidenceStore,
+  VisualEvidenceStoreLive,
+} from "./visual-evidence-store.js";
 
 export const RecipeDraftPipelineFailureCode = Schema.Union([
   DurableRecipeExtractionFailureCode,
@@ -50,9 +56,23 @@ export const RecipeDraftPipelineFailureCode = Schema.Union([
 export type RecipeDraftPipelineFailureCode =
   typeof RecipeDraftPipelineFailureCode.Type;
 
+const EvidenceStoreFailureCode = Schema.Literals([
+  "storage_failure",
+  "malformed",
+  "oversized",
+  "checksum_unavailable",
+  "checksum_mismatch",
+  "identity_mismatch",
+  "metadata_mismatch",
+  "invalid_frame",
+  "invalid_manifest",
+]);
+type EvidenceStoreFailureCode = typeof EvidenceStoreFailureCode.Type;
+
 export interface RecipeDraftPipelineFailure {
   readonly _tag: "RecipeDraftPipelineFailure";
   readonly code: RecipeDraftPipelineFailureCode;
+  readonly evidenceStoreFailureCode?: EvidenceStoreFailureCode;
   readonly reasonCode?: ProviderTaskDiagnosticReasonCode;
 }
 export const RecipeDraftPipelineFailure =
@@ -61,18 +81,50 @@ export const RecipeDraftPipelineFailure =
     "RecipeDraftPipelineFailure",
     {
       code: RecipeDraftPipelineFailureCode,
+      evidenceStoreFailureCode: Schema.optionalKey(EvidenceStoreFailureCode),
       reasonCode: Schema.optionalKey(ProviderTaskDiagnosticReasonCode),
     }
   );
 
 const pipelineFailure = (
   code: RecipeDraftPipelineFailure["code"],
-  reasonCode?: ProviderTaskDiagnosticReasonCode
+  reasonCode?: ProviderTaskDiagnosticReasonCode,
+  evidenceStoreFailureCode?: EvidenceStoreFailureCode
 ): RecipeDraftPipelineFailure =>
   new RecipeDraftPipelineFailure({
     code,
     ...(reasonCode === undefined ? {} : { reasonCode }),
+    ...(evidenceStoreFailureCode === undefined
+      ? {}
+      : { evidenceStoreFailureCode }),
   });
+
+const transcriptEvidenceReason = (error: {
+  readonly reasonCode?: string;
+}): ProviderTaskDiagnosticReasonCode => {
+  if (error.reasonCode === "transcript_native_checksum_mismatch") {
+    return "transcript_native_checksum_mismatch";
+  }
+  if (error.reasonCode === "transcript_native_checksum_missing") {
+    return "transcript_native_checksum_missing";
+  }
+  return "transcript_evidence_invalid";
+};
+
+const visualEvidenceReason = (error: {
+  readonly reasonCode?: string;
+}): ProviderTaskDiagnosticReasonCode => {
+  if (error.reasonCode === "visual_manifest_native_checksum_mismatch") {
+    return "visual_manifest_native_checksum_mismatch";
+  }
+  if (error.reasonCode === "visual_manifest_native_checksum_missing") {
+    return "visual_manifest_native_checksum_missing";
+  }
+  if (error.reasonCode === "visual_frame_native_checksum_mismatch") {
+    return "visual_frame_native_checksum_mismatch";
+  }
+  return "visual_evidence_invalid";
+};
 
 export const RecipeFailureRecoveryPolicy = Schema.Literals([
   "dispatch_retry",
@@ -505,7 +557,9 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
 )(function* produceFromEvidence(input: ProduceRecipeDraftFromEvidenceInput) {
   const descriptor = yield* Schema.decodeUnknownEffect(
     RecipeExtractorDescriptor,
-    { onExcessProperty: "error" }
+    {
+      onExcessProperty: "error",
+    }
   )(input.extractor.descriptor).pipe(
     Effect.mapError(() => pipelineFailure("invalid_schema"))
   );
@@ -663,36 +717,54 @@ export const produceRecipeDraftForImport = Effect.fn(
       pipelineFailure("source_evidence_invalid", "acquisition_evidence_missing")
     );
   }
-  const transcript = yield* readVerifiedTranscriptEvidence(input.bucket, {
-    dispatchId: `speech:${input.importId}:${evidence.generation}`,
-    generation: evidence.generation,
-    importId: input.importId,
-    ...(input.recovery === undefined
-      ? {}
-      : { recoverySha256: input.recovery.transcriptSha256 }),
-    sourceMediaSha256: evidence.sha256,
-  }).pipe(
+  const transcript = yield* TranscriptEvidenceStore.pipe(
+    Effect.flatMap((store) =>
+      store.readVerified({
+        dispatchId: `speech:${input.importId}:${evidence.generation}`,
+        generation: evidence.generation,
+        importId: input.importId,
+        ...(input.recovery === undefined
+          ? {}
+          : {
+              recoverySha256: Schema.decodeUnknownSync(Sha256Hex)(
+                input.recovery.transcriptSha256
+              ),
+            }),
+        sourceMediaSha256: evidence.sha256,
+      })
+    ),
+    Effect.provide(TranscriptEvidenceStoreLive(input.bucket)),
     Effect.mapError((error) =>
       pipelineFailure(
         "source_evidence_invalid",
-        error.reasonCode ?? "transcript_evidence_invalid"
+        transcriptEvidenceReason(error),
+        error.code
       )
     )
   );
-  const visual = yield* readVerifiedVisualEvidence(input.bucket, {
-    dispatchId: `visual:${input.importId}:${evidence.generation}`,
-    generation: evidence.generation,
-    importId: input.importId,
-    ...(input.recovery === undefined
-      ? {}
-      : { recoverySha256: input.recovery.visualManifestSha256 }),
-    sourceEvidenceDeleteAt: evidence.deleteAt,
-    sourceMediaSha256: evidence.sha256,
-  }).pipe(
+  const visual = yield* VisualEvidenceStore.pipe(
+    Effect.flatMap((store) =>
+      store.readVerified({
+        dispatchId: `visual:${input.importId}:${evidence.generation}`,
+        generation: evidence.generation,
+        importId: input.importId,
+        ...(input.recovery === undefined
+          ? {}
+          : {
+              recoverySha256: Schema.decodeUnknownSync(Sha256Hex)(
+                input.recovery.visualManifestSha256
+              ),
+            }),
+        sourceEvidenceDeleteAt: evidence.deleteAt,
+        sourceMediaSha256: evidence.sha256,
+      })
+    ),
+    Effect.provide(VisualEvidenceStoreLive(input.bucket)),
     Effect.mapError((error) =>
       pipelineFailure(
         "source_evidence_invalid",
-        error.reasonCode ?? "visual_evidence_invalid"
+        visualEvidenceReason(error),
+        error.code
       )
     )
   );
