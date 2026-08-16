@@ -3,6 +3,7 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { LegacyPrivateImportActorId } from "./import-intent.js";
 import {
   AcquisitionGeneration,
   VerifiedAcquisitionEvidence,
@@ -281,11 +282,6 @@ describe("D1 import repository in workerd", () => {
       "PRAGMA foreign_key_check"
     ).all();
     expect(foreignKeyViolations.results).toEqual([]);
-    await testEnv.MealPlannerDatabase.prepare(
-      "DELETE FROM recipe_imports WHERE id = ?"
-    )
-      .bind("constraint-probe")
-      .run();
   });
 
   it("persists one canonical trace and reuses it for a later duplicate", async () => {
@@ -318,12 +314,35 @@ describe("D1 import repository in workerd", () => {
     )
       .bind(original.candidate.view.id)
       .first<{ correlation_id: string | null }>();
+    const admissionHistory = await testEnv.MealPlannerDatabase.prepare(
+      `SELECT actor_category, actor_identity_hash, command_digest, event_type,
+              from_public_stage, from_public_status, intent_version,
+              mutation_id, to_public_stage, to_public_status
+         FROM recipe_import_intent_history
+        WHERE intent_id = ?`
+    )
+      .bind(original.candidate.view.id)
+      .all();
 
     expect(accepted.import.trace).toEqual(originalTrace);
     expect(replay.disposition).toBe("canonical_duplicate");
     expect(replay.import.view.id).toBe(original.candidate.view.id);
     expect(replay.import.trace).toEqual(originalTrace);
     expect(storedRow?.correlation_id).toBe(originalTrace.correlationId);
+    expect(admissionHistory.results).toEqual([
+      {
+        actor_category: "household_member",
+        actor_identity_hash: LegacyPrivateImportActorId,
+        command_digest: original.requestFingerprint,
+        event_type: "intent_admitted",
+        from_public_stage: null,
+        from_public_status: null,
+        intent_version: 1,
+        mutation_id: original.idempotencyKeyHash,
+        to_public_stage: "acquiring_media",
+        to_public_status: "processing",
+      },
+    ]);
   });
 
   it("derives one deterministic trace for a legacy NULL row", async () => {
@@ -438,11 +457,6 @@ describe("D1 import repository in workerd", () => {
     ).resolves.toEqual({ failure_code: null, state: "dispatching" });
     await testEnv.MealPlannerDatabase.prepare(
       "DELETE FROM import_transcriptions WHERE import_id = ?"
-    )
-      .bind(parentId)
-      .run();
-    await testEnv.MealPlannerDatabase.prepare(
-      "DELETE FROM recipe_imports WHERE id = ?"
     )
       .bind(parentId)
       .run();

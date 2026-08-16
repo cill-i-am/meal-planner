@@ -16,12 +16,75 @@ export const recipeImports = sqliteTable(
     acquisitionGeneration: integer("acquisition_generation")
       .notNull()
       .default(0),
+    activeActionId: text("active_action_id"),
+    actorId: text("actor_id")
+      .notNull()
+      .default(
+        "0000000000000000000000000000000000000000000000000000000000000000"
+      ),
+    cancelledAt: text("cancelled_at"),
     canonicalSourceId: text("canonical_source_id").notNull(),
     compatibilityFingerprint: text("compatibility_fingerprint").notNull(),
     correlationId: text("correlation_id"),
     createdAt: text("created_at").notNull(),
     evidenceReferencesJson: text("evidence_references_json").notNull(),
+    executionGeneration: integer("execution_generation").notNull().default(0),
+    executorOwnerId: text("executor_owner_id"),
+    failedAt: text("failed_at"),
+    householdScopeId: text("household_scope_id")
+      .notNull()
+      .default(
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ),
     id: text("id").notNull(),
+    intentVersion: integer("intent_version").notNull().default(1),
+    publicActivity: text("public_activity", {
+      enum: ["working", "retrying"],
+    }),
+    publicFailureCode: text("public_failure_code", {
+      enum: [
+        "source_unavailable",
+        "unsupported_source",
+        "invalid_media",
+        "analysis_failed",
+        "recipe_extraction_failed",
+        "internal_error",
+      ],
+    }),
+    publicFailureMessage: text("public_failure_message"),
+    publicNextAttemptAt: text("public_next_attempt_at"),
+    publicRecipeId: text("public_recipe_id"),
+    publicRecovery: text("public_recovery", {
+      enum: ["create_new_intent", "contact_support", "none"],
+    }),
+    publicSourceKind: text("public_source_kind", {
+      enum: ["video", "carousel"],
+    }),
+    publicSourceUrl: text("public_source_url"),
+    publicStage: text("public_stage", {
+      enum: [
+        "resolving_source",
+        "acquiring_media",
+        "analyzing_evidence",
+        "extracting_recipe",
+        "grounding_recipe",
+        "preparing_review",
+        "finalizing_recipe",
+      ],
+    }),
+    publicStageStartedAt: text("public_stage_started_at"),
+    publicStatus: text("public_status", {
+      enum: [
+        "processing",
+        "requires_action",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "redirected",
+      ],
+    })
+      .notNull()
+      .default("processing"),
     recoveryAction: text("recovery_action", {
       enum: [
         "check_source_visibility",
@@ -29,6 +92,9 @@ export const recipeImports = sqliteTable(
         "submit_supported_public_video",
       ],
     }),
+    redirectedAt: text("redirected_at"),
+    redirectedToImportId: text("redirected_to_import_id"),
+    resolvedCanonicalSourceId: text("resolved_canonical_source_id"),
     sourceKind: text("source_kind", { enum: ["tiktok"] }).notNull(),
     status: text("status", {
       enum: [
@@ -50,18 +116,45 @@ export const recipeImports = sqliteTable(
         "unsupported_post_type",
       ],
     }),
+    submittedSourceUrl: text("submitted_source_url"),
+    succeededAt: text("succeeded_at"),
+    transitionActorCategory: text("transition_actor_category", {
+      enum: ["household_member", "system", "support"],
+    }),
+    transitionActorIdentityHash: text("transition_actor_identity_hash"),
+    transitionCommandDigest: text("transition_command_digest"),
+    transitionMutationId: text("transition_mutation_id"),
+    transitionProvenanceVersion: integer("transition_provenance_version"),
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.id] }),
-    uniqueIndex("recipe_imports_canonical_identity_unique").on(
-      table.sourceKind,
-      table.canonicalSourceId
-    ),
+    uniqueIndex("recipe_imports_legacy_canonical_identity_unique")
+      .on(table.sourceKind, table.canonicalSourceId)
+      .where(sql`${table.submittedSourceUrl} IS NULL`),
+    uniqueIndex("recipe_imports_household_live_canonical_unique")
+      .on(table.householdScopeId, table.resolvedCanonicalSourceId)
+      .where(
+        sql`${table.resolvedCanonicalSourceId} IS NOT NULL AND ${table.publicStatus} IN ('processing', 'requires_action', 'succeeded')`
+      ),
     uniqueIndex("recipe_imports_id_generation_unique").on(
       table.id,
       table.acquisitionGeneration
     ),
+    index("recipe_imports_household_id_index").on(
+      table.householdScopeId,
+      table.id
+    ),
+    index("recipe_imports_redirect_target_index").on(
+      table.redirectedToImportId
+    ),
+    foreignKey({
+      columns: [table.redirectedToImportId],
+      foreignColumns: [table.id],
+      name: "recipe_imports_redirect_target_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     check(
       "recipe_imports_evidence_json_check",
       sql`json_valid(${table.evidenceReferencesJson})`
@@ -183,12 +276,102 @@ export const importRequests = sqliteTable(
   "import_requests",
   {
     createdAt: text("created_at").notNull(),
-    idempotencyKeyHash: text("idempotency_key_hash").notNull().primaryKey(),
+    householdScopeId: text("household_scope_id")
+      .notNull()
+      .default(
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ),
+    idempotencyKeyHash: text("idempotency_key_hash").notNull(),
     importId: text("import_id").notNull(),
     requestFingerprint: text("request_fingerprint").notNull(),
     sourceLocatorHash: text("source_locator_hash").notNull(),
   },
-  (table) => [index("import_requests_import_id_index").on(table.importId)]
+  (table) => [
+    primaryKey({
+      columns: [table.householdScopeId, table.idempotencyKeyHash],
+    }),
+    index("import_requests_import_id_index").on(table.importId),
+    foreignKey({
+      columns: [table.importId],
+      foreignColumns: [recipeImports.id],
+      name: "import_requests_import_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check(
+      "import_requests_household_scope_check",
+      sql`length(${table.householdScopeId}) = 64 AND ${table.householdScopeId} NOT GLOB '*[^0-9a-f]*'`
+    ),
+  ]
+);
+
+export const recipeImportIntentHistory = sqliteTable(
+  "recipe_import_intent_history",
+  {
+    actionId: text("action_id"),
+    actorCategory: text("actor_category", {
+      enum: ["migration", "household_member", "system", "support"],
+    }).notNull(),
+    actorIdentityHash: text("actor_identity_hash"),
+    commandDigest: text("command_digest"),
+    eventType: text("event_type", {
+      enum: [
+        "migration_snapshot",
+        "intent_admitted",
+        "source_resolved",
+        "intent_redirected",
+        "processing_stage_changed",
+        "retrying",
+        "recovered",
+        "action_available",
+        "intent_succeeded",
+        "intent_failed",
+        "intent_cancelled",
+      ],
+    }).notNull(),
+    failureCode: text("failure_code"),
+    fromPublicStage: text("from_public_stage"),
+    fromPublicStatus: text("from_public_status"),
+    intentId: text("intent_id").notNull(),
+    intentVersion: integer("intent_version").notNull(),
+    mutationId: text("mutation_id"),
+    occurredAt: text("occurred_at").notNull(),
+    publicActivity: text("public_activity"),
+    publicNextAttemptAt: text("public_next_attempt_at"),
+    publicSourceUrl: text("public_source_url"),
+    publicStage: text("public_stage"),
+    publicStatus: text("public_status", {
+      enum: [
+        "processing",
+        "requires_action",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "redirected",
+      ],
+    }).notNull(),
+    recipeId: text("recipe_id"),
+    redirectedToImportId: text("redirected_to_import_id"),
+    toPublicStage: text("to_public_stage"),
+    toPublicStatus: text("to_public_status").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.intentId, table.intentVersion] }),
+    uniqueIndex("recipe_import_intent_history_mutation_unique")
+      .on(table.intentId, table.mutationId)
+      .where(sql`${table.mutationId} IS NOT NULL`),
+    foreignKey({
+      columns: [table.intentId],
+      foreignColumns: [recipeImports.id],
+      name: "recipe_import_intent_history_intent_fk",
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check(
+      "recipe_import_intent_history_version_check",
+      sql`typeof(${table.intentVersion}) = 'integer' AND ${table.intentVersion} >= 1`
+    ),
+  ]
 );
 
 export const importTranscriptions = sqliteTable(

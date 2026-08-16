@@ -13,6 +13,7 @@ Drafts remain inactive until explicitly approved.
 
 ## Product And Engineering
 
+- [Recipe import intent authority and lifecycle](architecture/recipe-import-intent.md)
 - [TikTok recipe-import feasibility report](tiktok-recipe-import-feasibility.html)
 - [Real-source recipe quality pilot runbook](real-source-pilot-runbook.md)
 - [Real-source pilot input package](real-source-pilot-input-package.md)

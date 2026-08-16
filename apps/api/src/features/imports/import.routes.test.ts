@@ -2,6 +2,7 @@ import { Effect, Exit, Layer, Redacted, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { LegacyPrivateImportPrincipal } from "./import-intent.js";
 import type { ImportAuthorizerShape } from "./import.auth.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import {
@@ -82,7 +83,7 @@ describe("import routes", () => {
 
     await expect(
       Effect.runPromise(configured.authorize("Bearer expected-token"))
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual(LegacyPrivateImportPrincipal);
     const exits = await Promise.all(
       [
         undefined,
