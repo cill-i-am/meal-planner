@@ -1,27 +1,12 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Config, Layer, Schema, Stream } from "effect";
+import { Config, Layer, Stream } from "effect";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { HealthRoutes } from "./features/health/health.routes.js";
-import {
-  ImportBatchDeliveryAttempt,
-  ImportBatchId,
-  ImportBatchItemId,
-  ImportBatchQueueMessage,
-} from "./features/imports/import-batch.contracts.js";
 import { ImportBatchRouteDefinitions } from "./features/imports/import-batch.routes.js";
-import {
-  ImportBatchService,
-  makeImportBatchService,
-} from "./features/imports/import-batch.service.js";
-import {
-  OperatorCarouselImportService,
-  makeOperatorCarouselImportService,
-} from "./features/imports/import-carousel-operator.service.js";
-import { stageOperatorCarouselForWorkflow } from "./features/imports/import-carousel-staging.js";
 import type { AcquisitionBucketLike } from "./features/imports/import-media-acquirer.js";
 import { makeD1ImportObservabilityTraceStore } from "./features/imports/import-observability.d1.js";
 import {
@@ -29,47 +14,20 @@ import {
   observeImportQueueReceipt,
 } from "./features/imports/import-observability.js";
 import type { ImportCorrelationId } from "./features/imports/import-observability.js";
-import { DeadLetterReplayClaimId } from "./features/imports/import-operations.js";
-import {
-  ProviderTerminalSettlementService,
-  makeD1ProviderTerminalSettlementService,
-} from "./features/imports/import-provider-terminal-settlement.js";
 import { ProviderTerminalSettlementRouteDefinitions } from "./features/imports/import-provider-terminal-settlement.routes.js";
-import {
-  makeD1ImportBatchStore,
-  makeD1ImportQueueAcceptance,
-} from "./features/imports/import-queue-acceptance.d1.js";
 import { makeRecipeRecoveryWorkflowStarter } from "./features/imports/import-recipe-recovery.js";
 import ImportRecipeRecoveryWorkflow from "./features/imports/import-recipe-recovery.workflow.js";
-import {
-  RecipeReviewService,
-  makeRecipeReviewService,
-} from "./features/imports/import-recipe-review.js";
-import { makeD1RecipeReviewRepository } from "./features/imports/import-recipe-review.repository.d1.js";
 import { RecipeReviewRouteDefinitions } from "./features/imports/import-recipe-review.routes.js";
 import {
-  ImportAuthorizer,
-  makeImportAuthorizer,
-} from "./features/imports/import.auth.js";
-import {
-  ImportId,
-  ImportTimestamp,
-} from "./features/imports/import.contracts.js";
-import { makeD1ImportRepository } from "./features/imports/import.repository.d1.js";
-import { ImportRepository } from "./features/imports/import.repository.js";
+  consumeImportBatchDeadLetterDelivery,
+  consumeImportBatchQueueDelivery,
+  makeImportBatchQueueAcceptance,
+  makeImportWorkerRequestLayer,
+} from "./features/imports/import-runtime-composition.js";
 import { ImportRouteDefinitions } from "./features/imports/import.routes.js";
-import {
-  ImportService,
-  makeImportService,
-} from "./features/imports/import.service.js";
 import ImportAcquisitionWorkflow, {
-  ImportWorkflowStarter,
   makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
-import { SourceAvailabilityValidator } from "./features/imports/source-availability.js";
-import { makeTikTokSourceAvailabilityValidator } from "./features/imports/source-availability.tiktok.js";
-import { CanonicalSourceIdentityResolver } from "./features/imports/source-identity.js";
-import { makeTikTokCanonicalSourceIdentityResolver } from "./features/imports/source-identity.tiktok.js";
 import {
   PilotProviderBudgetRuntime,
   makePilotProviderBudgetRuntime,
@@ -98,23 +56,6 @@ const MealPlannerWorkerRoutes = HttpRouter.addAll([
 ]);
 
 const currentIsoTimestamp = () => new Date().toISOString();
-
-const ImportBatchQueueDelivery = Schema.Struct({
-  deliveryAttempt: ImportBatchDeliveryAttempt,
-  message: ImportBatchQueueMessage,
-});
-
-const decodeImportBatchQueueDelivery = (body: unknown, attempts: number) =>
-  Schema.decodeUnknownEffect(ImportBatchQueueDelivery)(
-    { deliveryAttempt: attempts, message: body },
-    { onExcessProperty: "error" }
-  ).pipe(
-    Effect.mapError(
-      (): { readonly _tag: "InvalidImportBatchQueueMessage" } => ({
-        _tag: "InvalidImportBatchQueueMessage",
-      })
-    )
-  );
 
 /** Effect-native Cloudflare host for health and authenticated import routes. */
 export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
@@ -158,30 +99,14 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       database: AnyD1Database,
       correlationId?: ImportCorrelationId
     ) =>
-      makeD1ImportQueueAcceptance({
+      makeImportBatchQueueAcceptance({
+        ...(correlationId === undefined ? {} : { correlationId }),
         database,
-        imports: makeImportService({
-          availabilityValidator: makeTikTokSourceAvailabilityValidator(
-            globalThis.fetch
-          ),
-          identityResolver: makeTikTokCanonicalSourceIdentityResolver(
-            globalThis.fetch
-          ),
-          newId: () => Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
-          now: () =>
-            Schema.decodeUnknownSync(ImportTimestamp)(currentIsoTimestamp()),
-          repository: makeD1ImportRepository(database),
-          workflowStarter: makeImportWorkflowStarter(
-            importAcquisitionWorkflow,
-            correlationId === undefined ? undefined : { correlationId }
-          ),
-        }),
-        newReplayClaimId: () =>
-          Schema.decodeUnknownSync(DeadLetterReplayClaimId)(
-            crypto.randomUUID()
-          ),
+        importWorkflowStarter: makeImportWorkflowStarter(
+          importAcquisitionWorkflow,
+          correlationId === undefined ? undefined : { correlationId }
+        ),
         now: currentIsoTimestamp,
-        replayClaimLeaseMilliseconds: 60_000,
       });
     yield* Cloudflare.Queues.consumeQueueMessages(
       importBatchQueue,
@@ -194,24 +119,37 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       },
       (messages) =>
         Stream.runForEach(messages, ({ attempts, body }) =>
-          Effect.gen(function* consumeImportBatchMessage() {
-            const database = yield* queryDatabase.raw;
-            const traceStore = makeD1ImportObservabilityTraceStore(
-              database,
-              currentIsoTimestamp
-            );
-            yield* Effect.gen(function* consumeObservedImportBatchMessage() {
-              const { deliveryAttempt, message } =
-                yield* decodeImportBatchQueueDelivery(body, attempts);
-              const correlationId = yield* observeImportQueueReceipt();
-              yield* makeBatchQueueAcceptance(database, correlationId).consume(
-                message,
-                deliveryAttempt
-              );
-            }).pipe(
-              Effect.provideService(ImportObservabilityTraceStore, traceStore)
-            );
-          }).pipe(
+          consumeImportBatchQueueDelivery(
+            { attempts, body },
+            {
+              acquire: () =>
+                Effect.gen(function* acquireImportBatchQueueRuntime() {
+                  const database = yield* queryDatabase.raw;
+                  const traceStore = makeD1ImportObservabilityTraceStore(
+                    database,
+                    currentIsoTimestamp
+                  );
+                  return {
+                    consume: (message, deliveryAttempt, correlationId) =>
+                      makeBatchQueueAcceptance(database, correlationId)
+                        .consume(message, deliveryAttempt)
+                        .pipe(
+                          Effect.provideService(
+                            ImportObservabilityTraceStore,
+                            traceStore
+                          )
+                        ),
+                    observeReceipt: () =>
+                      observeImportQueueReceipt().pipe(
+                        Effect.provideService(
+                          ImportObservabilityTraceStore,
+                          traceStore
+                        )
+                      ),
+                  };
+                }),
+            }
+          ).pipe(
             Effect.provideService(
               PilotProviderBudgetRuntime,
               pilotProviderBudgetRuntime
@@ -224,19 +162,13 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       { batchSize: 1, maxConcurrency: 1 },
       (messages) =>
         Stream.runForEach(messages, ({ body }) =>
-          Effect.gen(function* consumeImportBatchDeadLetter() {
-            const database = yield* queryDatabase.raw;
-            const message = yield* Schema.decodeUnknownEffect(
-              ImportBatchQueueMessage
-            )(body, { onExcessProperty: "error" }).pipe(
-              Effect.mapError(
-                (): { readonly _tag: "InvalidImportBatchQueueMessage" } => ({
-                  _tag: "InvalidImportBatchQueueMessage",
-                })
+          consumeImportBatchDeadLetterDelivery(body, (message) =>
+            queryDatabase.raw.pipe(
+              Effect.flatMap((database) =>
+                makeBatchQueueAcceptance(database).deadLetter(message)
               )
-            );
-            yield* makeBatchQueueAcceptance(database).deadLetter(message);
-          }).pipe(
+            )
+          ).pipe(
             Effect.provideService(
               PilotProviderBudgetRuntime,
               pilotProviderBudgetRuntime
@@ -247,26 +179,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const importApiToken = yield* Config.redacted(
       "MEAL_PLANNER_IMPORT_API_TOKEN"
     );
-    const identityResolverLive = Layer.succeed(
-      CanonicalSourceIdentityResolver,
-      CanonicalSourceIdentityResolver.of(
-        makeTikTokCanonicalSourceIdentityResolver(globalThis.fetch)
-      )
-    );
-    const availabilityValidatorLive = Layer.succeed(
-      SourceAvailabilityValidator,
-      makeTikTokSourceAvailabilityValidator(globalThis.fetch)
-    );
-    const authorizerLive = Layer.effect(
-      ImportAuthorizer,
-      Effect.map(makeImportAuthorizer(importApiToken), ImportAuthorizer.of)
-    );
-    const workflowStarterLive = Layer.succeed(
-      ImportWorkflowStarter,
-      ImportWorkflowStarter.of(
-        makeImportWorkflowStarter(importAcquisitionWorkflow)
-      )
-    );
     return {
       fetch: Effect.scoped(
         Effect.map(
@@ -276,157 +188,24 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
               const database = yield* queryDatabase.raw;
               const rawBucket = yield* evidenceBucket.raw;
               const rawImportBatchQueue = yield* importBatchQueueWriter.raw;
-              const importBatchServiceLive = Layer.succeed(
-                ImportBatchService,
-                ImportBatchService.of(
-                  makeImportBatchService({
-                    identityResolver: makeTikTokCanonicalSourceIdentityResolver(
-                      globalThis.fetch
-                    ),
-                    newBatchId: () =>
-                      Schema.decodeUnknownSync(ImportBatchId)(
-                        crypto.randomUUID()
-                      ),
-                    newItemId: () =>
-                      Schema.decodeUnknownSync(ImportBatchItemId)(
-                        crypto.randomUUID()
-                      ),
-                    now: () =>
-                      Schema.decodeUnknownSync(ImportTimestamp)(
-                        currentIsoTimestamp()
-                      ),
-                    queue: makeCloudflareImportBatchQueue(rawImportBatchQueue),
-                    store: makeD1ImportBatchStore(database),
-                  })
-                )
-              );
-              const importObservabilityTraceStoreLive = Layer.succeed(
-                ImportObservabilityTraceStore,
-                makeD1ImportObservabilityTraceStore(
-                  database,
-                  currentIsoTimestamp
-                )
-              );
-              const repositoryLive = Layer.succeed(
-                ImportRepository,
-                ImportRepository.of(makeD1ImportRepository(database))
-              );
-              const operatorCarouselServiceLive = Layer.succeed(
-                OperatorCarouselImportService,
-                OperatorCarouselImportService.of(
-                  makeOperatorCarouselImportService({
-                    identityResolver: makeTikTokCanonicalSourceIdentityResolver(
-                      globalThis.fetch
-                    ),
-                    newId: () =>
-                      Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
-                    now: () =>
-                      Schema.decodeUnknownSync(ImportTimestamp)(
-                        new Date().toISOString()
-                      ),
-                    pipeline: {
-                      preflight: () => Effect.void,
-                      process: (pipelineInput) =>
-                        stageOperatorCarouselForWorkflow({
-                          adapter: pipelineInput.adapter,
-                          bucket: rawBucket as unknown as AcquisitionBucketLike,
-                          descriptor: {
-                            canonicalId: pipelineInput.canonicalId,
-                            declaredPageCount: pipelineInput.declaredPageCount,
-                            kind: "tiktok_carousel",
-                            sourceUrl: pipelineInput.sourceUrl,
-                          },
-                          importId: pipelineInput.importId,
-                        }).pipe(
-                          Effect.andThen(
-                            makeImportWorkflowStarter(
-                              importAcquisitionWorkflow
-                            ).ensureStarted(pipelineInput.importId)
-                          )
-                        ),
-                    },
-                    repository: makeD1ImportRepository(database),
-                  })
-                )
-              );
-              const recipeReviewServiceLive = Layer.succeed(
-                RecipeReviewService,
-                RecipeReviewService.of(
-                  makeRecipeReviewService({
-                    now: () =>
-                      Schema.decodeUnknownSync(ImportTimestamp)(
-                        new Date().toISOString()
-                      ),
-                    repository: makeD1RecipeReviewRepository(database),
-                  })
-                )
-              );
-              const providerTerminalSettlementServiceLive = Layer.succeed(
-                ProviderTerminalSettlementService,
-                ProviderTerminalSettlementService.of(
-                  makeD1ProviderTerminalSettlementService({
-                    database,
-                    now: () =>
-                      Schema.decodeUnknownSync(ImportTimestamp)(
-                        new Date().toISOString()
-                      ),
-                    recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
-                      importRecipeRecoveryWorkflow
-                    ),
-                    runtimeStage,
-                    workflowStarter: makeImportWorkflowStarter(
-                      importAcquisitionWorkflow
-                    ),
-                  })
-                )
-              );
-              const serviceLive = Layer.effect(
-                ImportService,
-                Effect.gen(function* ImportServiceLive() {
-                  const storedRepository = yield* ImportRepository;
-                  const identityResolver =
-                    yield* CanonicalSourceIdentityResolver;
-                  const availabilityValidator =
-                    yield* SourceAvailabilityValidator;
-                  const workflowStarter = yield* ImportWorkflowStarter;
-                  return ImportService.of(
-                    makeImportService({
-                      availabilityValidator,
-                      identityResolver,
-                      newId: () =>
-                        Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
-                      now: () =>
-                        Schema.decodeUnknownSync(ImportTimestamp)(
-                          new Date().toISOString()
-                        ),
-                      repository: storedRepository,
-                      workflowStarter,
-                    })
-                  );
-                })
-              ).pipe(
-                Layer.provide(
-                  Layer.mergeAll(
-                    repositoryLive,
-                    identityResolverLive,
-                    availabilityValidatorLive,
-                    workflowStarterLive
-                  )
-                )
-              );
-
               return yield* withCurrentRequestCancellation(
                 routeHandler.pipe(
                   Effect.provide(
-                    Layer.mergeAll(
-                      authorizerLive,
-                      importBatchServiceLive,
-                      operatorCarouselServiceLive,
-                      importObservabilityTraceStoreLive,
-                      providerTerminalSettlementServiceLive,
-                      recipeReviewServiceLive,
-                      serviceLive
-                    )
+                    makeImportWorkerRequestLayer({
+                      bucket: rawBucket as unknown as AcquisitionBucketLike,
+                      database,
+                      importApiToken,
+                      importWorkflowStarter: makeImportWorkflowStarter(
+                        importAcquisitionWorkflow
+                      ),
+                      now: currentIsoTimestamp,
+                      queue:
+                        makeCloudflareImportBatchQueue(rawImportBatchQueue),
+                      recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
+                        importRecipeRecoveryWorkflow
+                      ),
+                      runtimeStage,
+                    })
                   )
                 )
               );

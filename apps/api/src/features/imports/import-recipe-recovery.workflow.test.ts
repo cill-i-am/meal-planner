@@ -11,7 +11,7 @@ import type {
   RecipeRecoveryAttempt,
   RecipeRecoveryOrdinal,
 } from "./import-recipe-recovery.js";
-import { runRecipeRecoveryLoop } from "./import-recipe-recovery.workflow.js";
+import { runRecipeRecoveryLoop } from "./import-runtime-composition.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
 const importId = Schema.decodeUnknownSync(ImportId)(

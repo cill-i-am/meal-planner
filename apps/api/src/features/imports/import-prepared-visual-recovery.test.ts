@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { resolvePreparedVisualRecovery } from "./import-prepared-visual-recovery.js";
+import { runPreparedVisualRecoveryWorkflowBranch } from "./import-runtime-composition.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -10,7 +11,6 @@ import {
 } from "./import.contracts.js";
 import type { StoredImport } from "./import.repository.js";
 import { CompatibilityFingerprint } from "./import.repository.js";
-import { runPreparedVisualRecoveryWorkflowBranch } from "./import.workflow.js";
 
 const importId = Schema.decodeUnknownSync(ImportId)(
   "00000000-0000-4000-8000-000000000208"
