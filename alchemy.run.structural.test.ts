@@ -13,6 +13,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const workflowSource = readRepoFile(
       "./apps/api/src/features/imports/import.workflow.ts"
     );
+    const compositionSource = readRepoFile(
+      "./apps/api/src/features/imports/import-runtime-composition.ts"
+    );
     const providerTaskSource = readRepoFile(
       "./apps/api/src/features/imports/import-provider-workflow-task.ts"
     );
@@ -33,7 +36,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workflowSource).toContain("runProviderTask,");
     expect(workflowSource).toContain("runProviderTaskAttempt,");
     expect(providerTaskSource).toContain("ProviderTaskStepConfig");
-    expect(workerSource).toContain("stageOperatorCarouselForWorkflow");
+    expect(compositionSource).toContain("stageOperatorCarouselForWorkflow");
     expect(workerSource).not.toContain("carouselProcessingUnavailable");
     expect(gatewaySource).toContain('"ImportProviderGateway"');
     expect(gatewaySource).toContain("collectLogs: false");
@@ -213,6 +216,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
   it("declares isolated queues with bounded primary and dead-letter consumers", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
+    const compositionSource = readRepoFile(
+      "./apps/api/src/features/imports/import-runtime-composition.ts"
+    );
     const queueSource = readRepoFile(
       "./apps/api/src/infrastructure/import-batch-queue.ts"
     );
@@ -223,7 +229,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(queueSource).not.toContain("Consumer(");
     expect(queueSource).not.toContain("consumeQueueMessages");
     expect(workerSource.match(/consumeQueueMessages/gu)).toHaveLength(2);
-    expect(workerSource).toContain("ImportBatchQueueMessage");
+    expect(compositionSource).toContain("ImportBatchQueueMessage");
     expect(workerSource).toContain("ImportBatchDeadLetterQueue");
     expect(workerSource).toContain(
       "deadLetterQueue: importBatchDeadLetterQueue.queueName"
