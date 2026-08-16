@@ -260,34 +260,18 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const bucketSource = readRepoFile(
       "./apps/api/src/infrastructure/import-evidence-bucket.ts"
     );
-    const modelSource = readRepoFile(
-      "./apps/api/src/features/imports/import-media.model.ts"
-    );
 
     expect(workflowSource).toContain('"claim-acquisition-v1"');
     expect(workflowSource).toContain('"resolve-acquire-store-verify-v2"');
     expect(workflowSource).toContain('"record-acquisition-v2"');
     expect(workflowSource).toContain("beginAcquisitionAttempt(importId)");
     expect(workflowSource).toContain("evidenceBucket.raw");
-    expect(workflowSource).toContain(
-      'retries: { limit: 3, delay: "2 seconds", backoff: "exponential" }'
-    );
-    expect(workflowSource).toContain(
-      "export const MaximumNestedAcquisitionAttempts = 9"
-    );
-    expect(workflowSource).toContain(
-      "export const MaximumScheduledWorkflowSeconds = 2985"
-    );
-    expect(workflowSource).toContain(
-      "export const MaximumAbsoluteWorkflowSeconds = 3066"
-    );
     expect(workflowSource).not.toContain("Miniflare");
     expect(workflowSource).not.toMatch(
       /export const Maximum\w+ = (?:12|3986|4094)/u
     );
     expect(workflowSource).not.toContain('"resolve-acquire-store-verify-v1"');
     expect(workflowSource).not.toContain('"record-acquisition-v1"');
-    expect(modelSource).toMatch(/\/generations\/\$\{generation\}/u);
     expect(acquirerSource).not.toMatch(/\.delete\s*\(/u);
     expect(acquirerSource).not.toContain("acquisition/v1/original.mp4");
     expect(acquirerSource).not.toContain("acquisition/v1/manifest.json");

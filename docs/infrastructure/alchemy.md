@@ -151,9 +151,12 @@ store is not stage-owned cleanup and must not be deleted with a preview or
 developer stack. Report failed cleanup and retained resources exactly; do not
 fall back to state clearing, adoption, broad deletion, or unsafe nuke.
 
-The repository's Vitest coverage for the stack is structural and non-mutating.
-It proves source contracts, guard behavior, and the health router, but it does
-not prove Cloudflare provider lifecycle, Worker bundling, workerd behavior,
-remote state access, account selection, or a deployed URL. Real Alchemy stack
-and provider tests create cloud resources and require separate, action-time
+The repository's non-mutating Vitest coverage deliberately has two layers:
+structural checks retain static configuration, privacy, policy, and deployment
+identity guards that cannot be supplied by a local runtime; semantic tests
+exercise import contracts such as immutable generation-scoped evidence keys and
+the bounded retry behavior through their public helpers and local runtime.
+Neither layer proves Cloudflare provider lifecycle, Worker bundling, remote
+state access, account selection, or a deployed URL. Real Alchemy stack and
+provider tests create cloud resources and require separate, action-time
 approval plus an isolated stage and cleanup plan.
