@@ -1,5 +1,5 @@
-import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
-import { Schema } from "effect";
+import { Instant, RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,12 +8,17 @@ import {
   ImportIntentTransitionSnapshot,
   applyImportIntentTransition,
 } from "./import-intent-transition.js";
+import { resolveImportWorkflowInput } from "./import-workflow-input.js";
 
 const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
   "00000000-0000-4000-8000-000000000201"
 );
 const at = "2026-08-16T14:00:00.000Z";
+const atInstant = Schema.decodeUnknownSync(Instant)(at);
 const generation = Schema.decodeUnknownSync(ImportIntentExecutionGeneration)(3);
+const resolvingGeneration = Schema.decodeUnknownSync(
+  ImportIntentExecutionGeneration
+)(0);
 const decodeSnapshot = Schema.decodeUnknownSync(ImportIntentTransitionSnapshot);
 const decodeSnapshotType = Schema.decodeUnknownSync(
   Schema.toType(ImportIntentTransitionSnapshot)
@@ -30,23 +35,53 @@ const metadata = (ordinal: number) => ({
   occurredAt: at,
 });
 
-const acquiring = () =>
+const acquiring = (
+  executionGeneration: typeof ImportIntentExecutionGeneration.Type = generation
+) =>
   decodeSnapshot({
     activeActionId: null,
     activity: "working",
-    executionGeneration: generation,
+    executionGeneration,
     failedAt: null,
     failureCode: null,
     failureMessage: null,
     failureRecovery: null,
     intentVersion: 2,
     nextAttemptAt: null,
+    redirectedAt: null,
+    redirectedToIntentId: null,
+    resolvedCanonicalSourceId: "7462850912345678901",
     sourceKind: "video",
+    sourceUrl: "https://www.tiktok.com/@cook/video/7462850912345678901",
     speech: null,
     stage: "acquiring_media",
     stageStartedAt: "2026-08-16T13:59:00.000Z",
     status: "processing",
     updatedAt: "2026-08-16T13:59:00.000Z",
+    visuals: null,
+  });
+
+const resolving = () =>
+  decodeSnapshot({
+    activeActionId: null,
+    activity: "working",
+    executionGeneration: resolvingGeneration,
+    failedAt: null,
+    failureCode: null,
+    failureMessage: null,
+    failureRecovery: null,
+    intentVersion: 1,
+    nextAttemptAt: null,
+    redirectedAt: null,
+    redirectedToIntentId: null,
+    resolvedCanonicalSourceId: null,
+    sourceKind: null,
+    sourceUrl: null,
+    speech: null,
+    stage: "resolving_source",
+    stageStartedAt: "2026-08-16T13:58:00.000Z",
+    status: "processing",
+    updatedAt: "2026-08-16T13:58:00.000Z",
     visuals: null,
   });
 
@@ -63,6 +98,65 @@ const advanceAnalyzing = (snapshot: ReturnType<typeof acquiring>) =>
   });
 
 describe("recipe import intent transition policy", () => {
+  it("claims a resolved source and allocates the next execution generation", () => {
+    const claimed = apply(resolving(), {
+      _tag: "ResolveSource",
+      ...metadata(20),
+      canonicalSourceId: "7462850912345678901",
+      canonicalUrl: "https://www.tiktok.com/@cook/video/7462850912345678901",
+      executionGeneration: resolvingGeneration,
+      sourceKind: "video",
+    });
+
+    expect(claimed).toMatchObject({
+      _tag: "Applied",
+      snapshot: {
+        activity: "working",
+        executionGeneration: 1,
+        intentVersion: 2,
+        redirectedAt: null,
+        redirectedToIntentId: null,
+        resolvedCanonicalSourceId: "7462850912345678901",
+        sourceKind: "video",
+        sourceUrl: "https://www.tiktok.com/@cook/video/7462850912345678901",
+        stage: "acquiring_media",
+        stageStartedAt: atInstant,
+        status: "processing",
+      },
+    });
+  });
+
+  it("settles a duplicate source as a terminal redirect without allocating execution", () => {
+    const winnerIntentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
+      "00000000-0000-4000-8000-000000000202"
+    );
+    const redirected = apply(resolving(), {
+      _tag: "Redirect",
+      ...metadata(21),
+      canonicalSourceId: "7462850912345678901",
+      canonicalUrl: "https://www.tiktok.com/@cook/video/7462850912345678901",
+      executionGeneration: resolvingGeneration,
+      redirectedToIntentId: winnerIntentId,
+      sourceKind: "video",
+    });
+
+    expect(redirected).toMatchObject({
+      _tag: "Applied",
+      snapshot: {
+        activity: null,
+        executionGeneration: 0,
+        intentVersion: 2,
+        redirectedAt: atInstant,
+        redirectedToIntentId: winnerIntentId,
+        resolvedCanonicalSourceId: "7462850912345678901",
+        sourceKind: "video",
+        sourceUrl: "https://www.tiktok.com/@cook/video/7462850912345678901",
+        stage: null,
+        status: "redirected",
+      },
+    });
+  });
+
   it("decodes a closed branded command at the runtime boundary", () => {
     expect(() =>
       decodeCommand({
@@ -72,6 +166,50 @@ describe("recipe import intent transition policy", () => {
         stage: "analyzing_evidence",
       })
     ).toThrow();
+  });
+
+  it("uses the decoded Workflow generation to fence executor transitions", async () => {
+    const input = await Effect.runPromise(
+      resolveImportWorkflowInput({
+        executionGeneration: 1,
+        importId: intentId,
+        trace: {
+          correlationId: "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2201",
+        },
+      })
+    );
+    const snapshot = acquiring(input.executionGeneration);
+    const current = apply(snapshot, {
+      _tag: "AdvanceStage",
+      commandDigest: "a".repeat(64),
+      executionGeneration: input.executionGeneration,
+      intentId,
+      mutationId: "b".repeat(64),
+      occurredAt: at,
+      stage: "analyzing_evidence",
+    });
+    expect(current).toMatchObject({
+      _tag: "Applied",
+      snapshot: {
+        executionGeneration: 1,
+        stage: "analyzing_evidence",
+      },
+    });
+
+    const stale = apply(snapshot, {
+      _tag: "AdvanceStage",
+      commandDigest: "c".repeat(64),
+      executionGeneration: 0,
+      intentId,
+      mutationId: "d".repeat(64),
+      occurredAt: at,
+      stage: "analyzing_evidence",
+    });
+    expect(stale).toEqual({
+      _tag: "NoOp",
+      reason: "stale_generation",
+      snapshot,
+    });
   });
 
   it.each([
@@ -140,8 +278,8 @@ describe("recipe import intent transition policy", () => {
     const stale = apply(analyzing.snapshot, {
       _tag: "AdvanceComponent",
       ...metadata(3),
-      executionGeneration: 2,
       component: "speech",
+      executionGeneration: 2,
       progress: "processing",
     });
     expect(stale).toEqual({

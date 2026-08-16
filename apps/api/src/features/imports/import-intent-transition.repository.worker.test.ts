@@ -23,13 +23,13 @@ import {
 import { TestClock } from "effect/testing";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
+import { ImportIntentTransitionCommand } from "./import-intent-transition.js";
 import {
   ImportIntentIdGenerator,
   ImportPrincipal,
-  ImportIntentWorkflowTerminator,
   makeImportIntentApplication,
 } from "./import-intent.js";
-import { ImportIntentTransitionCommand } from "./import-intent-transition.js";
 import { SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 
@@ -57,6 +57,9 @@ const decodeTransition = Schema.decodeUnknownSync(
 );
 const encodeTransition = Schema.encodeSync(ImportIntentTransitionCommand);
 const encodeTimeline = Schema.encodeSync(RecipeImportTimeline);
+const workflowStarter = {
+  ensureStarted: () => Effect.succeed("already_active" as const),
+};
 
 const keysOf = (value: unknown): readonly string[] => {
   if (Array.isArray(value)) {
@@ -92,9 +95,7 @@ describe("recipe import intent transition repository in workerd", () => {
   ] as const)(
     "atomically converges %s then %s with fenced replay-safe history",
     async (first, second, ordinal) => {
-      const repository = makeD1ImportRepository(
-        testEnv.MealPlannerDatabase
-      );
+      const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
       const intentId = decodeIntentId(
         `00000000-0000-4000-8000-${ordinal.toString().padStart(12, "0")}`
       );
@@ -102,8 +103,13 @@ describe("recipe import intent transition repository in workerd", () => {
         ImportIntentIdGenerator,
         ImportIntentIdGenerator.of({ next: Effect.succeed(intentId) })
       );
-      const application = makeImportIntentApplication(repository);
-      const run = <A, E>(effect: Effect.Effect<A, E, ImportIntentIdGenerator>) =>
+      const application = makeImportIntentApplication(
+        repository,
+        workflowStarter
+      );
+      const run = <A, E>(
+        effect: Effect.Effect<A, E, ImportIntentIdGenerator>
+      ) =>
         Effect.runPromise(
           effect.pipe(Effect.provide([idLayer, TestClock.layer()]))
         );
@@ -167,7 +173,8 @@ describe("recipe import intent transition repository in workerd", () => {
             _tag: "Applied",
             snapshot: { intentVersion: 3, stage: "analyzing_evidence" },
           });
-          const replayedStage = yield* repository.transitionIntent(stageCommand);
+          const replayedStage =
+            yield* repository.transitionIntent(stageCommand);
           expect(replayedStage).toMatchObject({
             _tag: "NoOp",
             reason: "replayed_mutation",
@@ -344,7 +351,9 @@ describe("recipe import intent transition repository in workerd", () => {
                 "UPDATE recipe_imports SET updated_at = updated_at WHERE id = ?"
               )
                 .bind("00000000-0000-4000-8000-999999999999")
-                .run() as PromiseLike<{ readonly meta: { readonly changes: number } }>
+                .run() as PromiseLike<{
+                readonly meta: { readonly changes: number };
+              }>
           );
           expect(zeroRowUpdate.meta.changes).toBe(0);
         })
@@ -354,16 +363,19 @@ describe("recipe import intent transition repository in workerd", () => {
 
   it("persists replay-stable retry recovery and safe terminal failure", async () => {
     const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
-    const intentId = decodeIntentId(
-      "00000000-0000-4000-8000-000000000303"
-    );
+    const intentId = decodeIntentId("00000000-0000-4000-8000-000000000303");
     const idLayer = Layer.succeed(
       ImportIntentIdGenerator,
       ImportIntentIdGenerator.of({ next: Effect.succeed(intentId) })
     );
-    const application = makeImportIntentApplication(repository);
+    const application = makeImportIntentApplication(
+      repository,
+      workflowStarter
+    );
     const run = <A, E>(effect: Effect.Effect<A, E, ImportIntentIdGenerator>) =>
-      Effect.runPromise(effect.pipe(Effect.provide([idLayer, TestClock.layer()])));
+      Effect.runPromise(
+        effect.pipe(Effect.provide([idLayer, TestClock.layer()]))
+      );
     const command = (ordinal: number, body: Record<string, unknown>) =>
       decodeTransition({
         ...body,
@@ -494,34 +506,35 @@ describe("recipe import intent transition repository in workerd", () => {
           intentVersion: 7,
           status: "failed",
         });
-        const events = yield* Effect.promise(() =>
-          testEnv.MealPlannerDatabase.prepare(
-            `SELECT event_type, intent_version, public_stage,
+        const events = yield* Effect.promise(
+          () =>
+            testEnv.MealPlannerDatabase.prepare(
+              `SELECT event_type, intent_version, public_stage,
                     public_activity, public_speech, public_visuals, failure_code
                FROM recipe_import_intent_history
               WHERE intent_id = ? AND intent_version >= 5
               ORDER BY intent_version`
-          )
-            .bind(intentId)
-            .all<{
-              event_type: string;
-              failure_code: string | null;
-              intent_version: number;
-              public_activity: string | null;
-              public_speech: string | null;
-              public_stage: string | null;
-              public_visuals: string | null;
-            }>() as PromiseLike<{
-            readonly results: readonly {
-              readonly event_type: string;
-              readonly failure_code: string | null;
-              readonly intent_version: number;
-              readonly public_activity: string | null;
-              readonly public_speech: string | null;
-              readonly public_stage: string | null;
-              readonly public_visuals: string | null;
-            }[];
-          }>
+            )
+              .bind(intentId)
+              .all<{
+                event_type: string;
+                failure_code: string | null;
+                intent_version: number;
+                public_activity: string | null;
+                public_speech: string | null;
+                public_stage: string | null;
+                public_visuals: string | null;
+              }>() as PromiseLike<{
+              readonly results: readonly {
+                readonly event_type: string;
+                readonly failure_code: string | null;
+                readonly intent_version: number;
+                readonly public_activity: string | null;
+                readonly public_speech: string | null;
+                readonly public_stage: string | null;
+                readonly public_visuals: string | null;
+              }[];
+            }>
         );
         expect(events.results).toEqual([
           {
@@ -601,7 +614,8 @@ describe("recipe import intent transition repository in workerd", () => {
         expect(
           encodeTimeline(
             yield* makeImportIntentApplication(
-              makeD1ImportRepository(testEnv.MealPlannerDatabase)
+              makeD1ImportRepository(testEnv.MealPlannerDatabase),
+              workflowStarter
             ).timeline(principal, intentId)
           )
         ).toEqual(encodedTimeline);
@@ -712,7 +726,10 @@ describe("recipe import intent transition repository in workerd", () => {
           ),
       })
     );
-    const application = makeImportIntentApplication(repository);
+    const application = makeImportIntentApplication(
+      repository,
+      workflowStarter
+    );
     const run = <A, E>(
       effect: Effect.Effect<
         A,
@@ -751,7 +768,7 @@ describe("recipe import intent transition repository in workerd", () => {
           intentId,
           sourceKind: "video",
         });
-        const delayedGate = yield* Deferred.make<void>();
+        const delayedGate = yield* Deferred.make<null>();
         const delayedTransition = decodeTransition({
           _tag: "AdvanceStage",
           commandDigest: "a".repeat(64),
@@ -791,7 +808,7 @@ describe("recipe import intent transition repository in workerd", () => {
           },
         ]);
 
-        yield* Deferred.succeed(delayedGate, undefined);
+        yield* Deferred.succeed(delayedGate, null);
         expect(yield* Fiber.join(delayedFiber)).toMatchObject({
           _tag: "NoOp",
           reason: "terminal_state",
@@ -861,8 +878,7 @@ describe("recipe import intent transition repository in workerd", () => {
           }
         }
 
-        const winnerId = ids[1];
-        const redirectedId = ids[2];
+        const [, winnerId, redirectedId] = ids;
         if (winnerId === undefined || redirectedId === undefined) {
           return yield* Effect.die("missing redirected cancellation IDs");
         }
@@ -941,25 +957,26 @@ describe("recipe import intent transition repository in workerd", () => {
           "https://www.tiktok.com/@cook/video/7520000000000001305"
         );
 
-        const history = yield* Effect.promise(() =>
-          testEnv.MealPlannerDatabase.prepare(
-            `SELECT actor_category, actor_identity_hash, command_digest,
+        const history = yield* Effect.promise(
+          () =>
+            testEnv.MealPlannerDatabase.prepare(
+              `SELECT actor_category, actor_identity_hash, command_digest,
                     event_type, intent_version, mutation_id, occurred_at
                FROM recipe_import_intent_history
               WHERE intent_id = ? AND event_type = 'intent_cancelled'`
-          )
-            .bind(intentId)
-            .all<{
-              actor_category: string;
-              actor_identity_hash: string | null;
-              command_digest: string | null;
-              event_type: string;
-              intent_version: number;
-              mutation_id: string | null;
-              occurred_at: string;
-            }>() as PromiseLike<{
-            readonly results: readonly Record<string, unknown>[];
-          }>
+            )
+              .bind(intentId)
+              .all<{
+                actor_category: string;
+                actor_identity_hash: string | null;
+                command_digest: string | null;
+                event_type: string;
+                intent_version: number;
+                mutation_id: string | null;
+                occurred_at: string;
+              }>() as PromiseLike<{
+              readonly results: readonly Record<string, unknown>[];
+            }>
         );
         expect(history.results).toEqual([
           expect.objectContaining({
@@ -979,9 +996,7 @@ describe("recipe import intent transition repository in workerd", () => {
 
   it("cancels requires-action without mutating the private review ledger", async () => {
     const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
-    const intentId = decodeIntentId(
-      "00000000-0000-4000-8000-000000000307"
-    );
+    const intentId = decodeIntentId("00000000-0000-4000-8000-000000000307");
     const actionId = decodeActionId("f".repeat(64));
     const idLayer = Layer.succeed(
       ImportIntentIdGenerator,
@@ -997,7 +1012,10 @@ describe("recipe import intent transition repository in workerd", () => {
           }),
       })
     );
-    const application = makeImportIntentApplication(repository);
+    const application = makeImportIntentApplication(
+      repository,
+      workflowStarter
+    );
     const transition = (ordinal: number, body: Record<string, unknown>) =>
       repository.transitionIntent(
         decodeTransition({
@@ -1166,9 +1184,7 @@ describe("recipe import intent transition repository in workerd", () => {
           },
         ]);
         expect(JSON.stringify(timeline)).not.toContain(fingerprint);
-      }).pipe(
-        Effect.provide([idLayer, terminatorLayer, TestClock.layer()])
-      )
+      }).pipe(Effect.provide([idLayer, terminatorLayer, TestClock.layer()]))
     );
   });
 });

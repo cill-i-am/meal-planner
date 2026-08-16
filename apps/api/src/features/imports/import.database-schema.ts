@@ -57,13 +57,13 @@ export const recipeImports = sqliteTable(
     publicRecovery: text("public_recovery", {
       enum: ["create_new_intent", "contact_support", "none"],
     }),
-    publicSpeech: text("public_speech", {
-      enum: ["not_started", "processing", "completed", "skipped"],
-    }),
     publicSourceKind: text("public_source_kind", {
       enum: ["video", "carousel"],
     }),
     publicSourceUrl: text("public_source_url"),
+    publicSpeech: text("public_speech", {
+      enum: ["not_started", "processing", "completed", "skipped"],
+    }),
     publicStage: text("public_stage", {
       enum: [
         "resolving_source",

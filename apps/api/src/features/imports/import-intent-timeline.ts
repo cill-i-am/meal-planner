@@ -72,25 +72,23 @@ const required = <A>(value: A | null, field: string): A => {
 
 const processingStage = (row: ImportIntentHistoryRow): ProcessingStageType => {
   const startedAt = required(row.publicStageStartedAt, "stage start");
-  switch (required(row.publicStage, "stage")) {
+  const stage = required(row.publicStage, "stage");
+  switch (stage) {
     case "resolving_source": {
-      return Schema.decodeUnknownSync(
-        ProcessingStage
-      )({ startedAt, type: "resolving_source" });
+      return Schema.decodeUnknownSync(ProcessingStage)({
+        startedAt,
+        type: "resolving_source",
+      });
     }
     case "acquiring_media": {
-      return Schema.decodeUnknownSync(
-        ProcessingStage
-      )({
+      return Schema.decodeUnknownSync(ProcessingStage)({
         sourceKind: required(row.publicSourceKind, "source kind"),
         startedAt,
         type: "acquiring_media",
       });
     }
     case "analyzing_evidence": {
-      return Schema.decodeUnknownSync(
-        ProcessingStage
-      )({
+      return Schema.decodeUnknownSync(ProcessingStage)({
         speech: required(row.publicSpeech, "speech progress"),
         startedAt,
         type: "analyzing_evidence",
@@ -101,9 +99,13 @@ const processingStage = (row: ImportIntentHistoryRow): ProcessingStageType => {
     case "finalizing_recipe":
     case "grounding_recipe":
     case "preparing_review": {
-      return Schema.decodeUnknownSync(
-        ProcessingStage
-      )({ startedAt, type: row.publicStage });
+      return Schema.decodeUnknownSync(ProcessingStage)({
+        startedAt,
+        type: stage,
+      });
+    }
+    default: {
+      return stage satisfies never;
     }
   }
 };
@@ -152,9 +154,7 @@ export const projectImportIntentHistoryRow = (
       return Option.some(
         decodeEvent({
           ...common,
-          processing: Schema.encodeSync(
-            ProcessingStage
-          )(processingStage(row)),
+          processing: Schema.encodeSync(ProcessingStage)(processingStage(row)),
           type: row.eventType,
         })
       );
@@ -205,6 +205,9 @@ export const projectImportIntentHistoryRow = (
           type: row.eventType,
         })
       );
+    }
+    default: {
+      return row.eventType satisfies never;
     }
   }
 };

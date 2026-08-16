@@ -17,12 +17,12 @@ import {
   applyImportIntentTransition,
 } from "./import-intent-transition.js";
 import type { ImportIntentTransitionCommand } from "./import-intent-transition.js";
-import { AcquisitionGeneration } from "./import-media.model.js";
 import {
   makeImportIntentWorkflowTransitions,
   publicIntentFailureForAcquisitionOutcome,
   publicIntentFailureForProviderStage,
 } from "./import-intent-workflow-transitions.js";
+import { AcquisitionGeneration } from "./import-media.model.js";
 import {
   ProviderTaskStepConfig,
   runProviderTaskAttempt,
@@ -34,6 +34,12 @@ const decodeGeneration = Schema.decodeUnknownSync(
   ImportIntentExecutionGeneration
 );
 const decodeSnapshot = Schema.decodeUnknownSync(ImportIntentTransitionSnapshot);
+const providerStepContext = (attempt: number) =>
+  Effect.provideService(WorkflowStepContext, {
+    attempt,
+    config: ProviderTaskStepConfig,
+    step: { count: 1, name: "transcribe-video-v1" },
+  });
 
 describe("recipe import intent Workflow lifecycle", () => {
   it.each([
@@ -112,7 +118,11 @@ describe("recipe import intent Workflow lifecycle", () => {
       failureRecovery: null,
       intentVersion: 5,
       nextAttemptAt: null,
+      redirectedAt: null,
+      redirectedToIntentId: null,
+      resolvedCanonicalSourceId: "7462850912345678901",
       sourceKind: "video",
+      sourceUrl: "https://www.tiktok.com/@cook/video/7462850912345678901",
       speech: "processing",
       stage: "analyzing_evidence",
       stageStartedAt: "2026-08-16T16:20:00.000Z",
@@ -137,7 +147,8 @@ describe("recipe import intent Workflow lifecycle", () => {
             }
             const outcome = applyImportIntentTransition(snapshot, command);
             if (outcome._tag === "Applied") {
-              snapshot = outcome.snapshot;
+              const { snapshot: nextSnapshot } = outcome;
+              snapshot = nextSnapshot;
               recorded.set(command.mutationId, command.commandDigest);
             }
             return outcome;
@@ -179,7 +190,11 @@ describe("recipe import intent Workflow lifecycle", () => {
       failureRecovery: null,
       intentVersion: 5,
       nextAttemptAt: null,
+      redirectedAt: null,
+      redirectedToIntentId: null,
+      resolvedCanonicalSourceId: "7462850912345678901",
       sourceKind: "video",
+      sourceUrl: "https://www.tiktok.com/@cook/video/7462850912345678901",
       speech: "processing",
       stage: "analyzing_evidence",
       stageStartedAt: "2026-08-16T16:20:00.000Z",
@@ -204,7 +219,8 @@ describe("recipe import intent Workflow lifecycle", () => {
             }
             const outcome = applyImportIntentTransition(snapshot, command);
             if (outcome._tag === "Applied") {
-              snapshot = outcome.snapshot;
+              const { snapshot: nextSnapshot } = outcome;
+              snapshot = nextSnapshot;
               recorded.set(command.mutationId, command.commandDigest);
             }
             return outcome;
@@ -213,29 +229,21 @@ describe("recipe import intent Workflow lifecycle", () => {
     });
     const lifecycle = {
       retrying: (attempt: number) =>
-        transitions.setActivity("speech", attempt, "retrying").pipe(
-          Effect.orDie,
-          Effect.asVoid
-        ),
+        transitions
+          .setActivity("speech", attempt, "retrying")
+          .pipe(Effect.orDie, Effect.asVoid),
       working: (attempt: number) =>
-        transitions.setActivity("speech", attempt, "working").pipe(
-          Effect.orDie,
-          Effect.asVoid
-        ),
+        transitions
+          .setActivity("speech", attempt, "working")
+          .pipe(Effect.orDie, Effect.asVoid),
     };
-    const context = (attempt: number) =>
-      Effect.provideService(WorkflowStepContext, {
-        attempt,
-        config: ProviderTaskStepConfig,
-        step: { count: 1, name: "transcribe-video-v1" },
-      });
     const retry = runProviderTaskAttempt(
       "speech",
       Effect.fail({ code: "timeout" }),
       () => "unused",
       undefined,
       lifecycle
-    ).pipe(context(1));
+    ).pipe(providerStepContext(1));
 
     await Effect.runPromiseExit(retry);
     await Effect.runPromiseExit(retry);
@@ -246,7 +254,7 @@ describe("recipe import intent Workflow lifecycle", () => {
         () => "checkpointed",
         undefined,
         lifecycle
-      ).pipe(context(2))
+      ).pipe(providerStepContext(2))
     );
 
     expect(commands).toHaveLength(3);
@@ -279,7 +287,11 @@ describe("recipe import intent Workflow lifecycle", () => {
       failureRecovery: null,
       intentVersion: 5,
       nextAttemptAt: null,
+      redirectedAt: null,
+      redirectedToIntentId: null,
+      resolvedCanonicalSourceId: "7462850912345678901",
       sourceKind: "video",
+      sourceUrl: "https://www.tiktok.com/@cook/video/7462850912345678901",
       speech: "completed",
       stage: "analyzing_evidence",
       stageStartedAt: "2026-08-16T16:20:00.000Z",
@@ -304,7 +316,8 @@ describe("recipe import intent Workflow lifecycle", () => {
             }
             const outcome = applyImportIntentTransition(snapshot, command);
             if (outcome._tag === "Applied") {
-              snapshot = outcome.snapshot;
+              const { snapshot: nextSnapshot } = outcome;
+              snapshot = nextSnapshot;
               recorded.set(command.mutationId, command.commandDigest);
             }
             return outcome;
@@ -383,7 +396,11 @@ describe("recipe import intent Workflow lifecycle", () => {
       failureRecovery: null,
       intentVersion: 2,
       nextAttemptAt: null,
+      redirectedAt: null,
+      redirectedToIntentId: null,
+      resolvedCanonicalSourceId: "7462850912345678901",
       sourceKind: "video",
+      sourceUrl: "https://www.tiktok.com/@cook/video/7462850912345678901",
       speech: null,
       stage: "acquiring_media",
       stageStartedAt: "2026-08-16T16:00:00.000Z",
@@ -408,7 +425,8 @@ describe("recipe import intent Workflow lifecycle", () => {
           }
           const outcome = applyImportIntentTransition(snapshot, command);
           if (outcome._tag === "Applied") {
-            snapshot = outcome.snapshot;
+            const { snapshot: nextSnapshot } = outcome;
+            snapshot = nextSnapshot;
             recorded.set(command.mutationId, command.commandDigest);
           }
           return outcome;
@@ -433,10 +451,9 @@ describe("recipe import intent Workflow lifecycle", () => {
           beforeVisual: transitions
             .advanceComponent("visuals", "processing")
             .pipe(Effect.orDie),
-          visualCompleted: transitions.advanceComponent(
-            "visuals",
-            "completed"
-          ).pipe(Effect.orDie),
+          visualCompleted: transitions
+            .advanceComponent("visuals", "completed")
+            .pipe(Effect.orDie),
         },
         persistTerminal: () => Effect.void,
         recipe: Effect.gen(function* recipeLifecycleTracer() {
@@ -462,18 +479,33 @@ describe("recipe import intent Workflow lifecycle", () => {
 
     const semanticOrder = commands.slice(0, 9).map((command) => {
       switch (command._tag) {
-        case "AdvanceStage":
+        case "ResolveSource": {
+          return `source:${command.sourceKind}`;
+        }
+        case "Redirect": {
+          return `redirect:${command.redirectedToIntentId}`;
+        }
+        case "AdvanceStage": {
           return `stage:${command.stage}`;
-        case "AdvanceComponent":
+        }
+        case "AdvanceComponent": {
           return `component:${command.component}:${command.progress}`;
-        case "RequireAction":
+        }
+        case "RequireAction": {
           return `action:${command.actionId}`;
-        case "SetActivity":
+        }
+        case "SetActivity": {
           return `activity:${command.activity}`;
-        case "Fail":
+        }
+        case "Fail": {
           return `failure:${command.code}`;
-        case "Cancel":
+        }
+        case "Cancel": {
           return "cancelled";
+        }
+        default: {
+          return command satisfies never;
+        }
       }
     });
     expect(semanticOrder).toEqual([
@@ -519,7 +551,11 @@ describe("recipe import intent Workflow lifecycle", () => {
       failureRecovery: null,
       intentVersion: 2,
       nextAttemptAt: null,
+      redirectedAt: null,
+      redirectedToIntentId: null,
+      resolvedCanonicalSourceId: "7462850912345678902",
       sourceKind: "carousel",
+      sourceUrl: "https://www.tiktok.com/@cook/video/7462850912345678902",
       speech: null,
       stage: "acquiring_media",
       stageStartedAt: "2026-08-16T16:10:00.000Z",
@@ -547,7 +583,8 @@ describe("recipe import intent Workflow lifecycle", () => {
             }
             const outcome = applyImportIntentTransition(snapshot, command);
             if (outcome._tag === "Applied") {
-              snapshot = outcome.snapshot;
+              const { snapshot: nextSnapshot } = outcome;
+              snapshot = nextSnapshot;
               recorded.set(command.mutationId, command.commandDigest);
             }
             return outcome;
@@ -557,49 +594,63 @@ describe("recipe import intent Workflow lifecycle", () => {
     const actionId = decodeActionId("5".repeat(64));
 
     const runCarousel = runImportCarouselVisualAndRecipeWorkflow({
-        lifecycle: {
-          beforeRecipe: transitions
-            .advanceStage("extracting_recipe")
-            .pipe(Effect.orDie),
-          beforeVisual: Effect.gen(function* beginCarouselAnalysis() {
-            yield* transitions.advanceStage("analyzing_evidence");
-            yield* transitions.advanceComponent("speech", "skipped");
-            yield* transitions.advanceComponent("visuals", "processing");
-          }).pipe(Effect.orDie),
-          visualCompleted: transitions.advanceComponent(
-            "visuals",
-            "completed"
-          ).pipe(Effect.orDie),
-        },
-        recipe: () =>
-          Effect.gen(function* carouselRecipeLifecycleTracer() {
-            yield* transitions.advanceStage("grounding_recipe");
-            yield* transitions.advanceStage("preparing_review");
-            yield* transitions.requireAction(actionId);
-            return { _tag: "RecipeReady" as const };
-          }).pipe(Effect.orDie),
-        visual: Effect.succeed({
-          _tag: "Succeeded" as const,
-          evidence: { imageCount: 4 },
-        }),
-      });
+      lifecycle: {
+        beforeRecipe: transitions
+          .advanceStage("extracting_recipe")
+          .pipe(Effect.orDie),
+        beforeVisual: Effect.gen(function* beginCarouselAnalysis() {
+          yield* transitions.advanceStage("analyzing_evidence");
+          yield* transitions.advanceComponent("speech", "skipped");
+          yield* transitions.advanceComponent("visuals", "processing");
+        }).pipe(Effect.orDie),
+        visualCompleted: transitions
+          .advanceComponent("visuals", "completed")
+          .pipe(Effect.orDie),
+      },
+      recipe: () =>
+        Effect.gen(function* carouselRecipeLifecycleTracer() {
+          yield* transitions.advanceStage("grounding_recipe");
+          yield* transitions.advanceStage("preparing_review");
+          yield* transitions.requireAction(actionId);
+          return { _tag: "RecipeReady" as const };
+        }).pipe(Effect.orDie),
+      visual: Effect.succeed({
+        _tag: "Succeeded" as const,
+        evidence: { imageCount: 4 },
+      }),
+    });
     await Effect.runPromise(runCarousel.pipe(Effect.andThen(runCarousel)));
 
     expect(
       commands.slice(0, 8).map((command) => {
         switch (command._tag) {
-          case "AdvanceStage":
+          case "ResolveSource": {
+            return `source:${command.sourceKind}`;
+          }
+          case "Redirect": {
+            return `redirect:${command.redirectedToIntentId}`;
+          }
+          case "AdvanceStage": {
             return `stage:${command.stage}`;
-          case "AdvanceComponent":
+          }
+          case "AdvanceComponent": {
             return `component:${command.component}:${command.progress}`;
-          case "RequireAction":
+          }
+          case "RequireAction": {
             return `action:${command.actionId}`;
-          case "SetActivity":
+          }
+          case "SetActivity": {
             return `activity:${command.activity}`;
-          case "Fail":
+          }
+          case "Fail": {
             return `failure:${command.code}`;
-          case "Cancel":
+          }
+          case "Cancel": {
             return "cancelled";
+          }
+          default: {
+            return command satisfies never;
+          }
         }
       })
     ).toEqual([

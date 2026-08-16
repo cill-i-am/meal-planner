@@ -239,7 +239,7 @@ const makeWorkflow = () => {
   const started: string[] = [];
   const traces: ImportTraceContext[] = [];
   const workflow: ImportWorkflowStarterShape = {
-    ensureStarted: (importId, trace) =>
+    ensureStarted: (importId, _executionGeneration, trace) =>
       Effect.sync(() => {
         started.push(importId);
         traces.push(trace);

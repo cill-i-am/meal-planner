@@ -77,6 +77,7 @@ import {
   makeRecipeReviewService,
 } from "./import-recipe-review.js";
 import { makeD1RecipeReviewRepository } from "./import-recipe-review.repository.d1.js";
+import { LegacyImportWorkflowExecutionGeneration } from "./import-workflow-input.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
@@ -504,6 +505,7 @@ export const makeImportWorkerRequestLayer = (
               Effect.andThen(
                 input.importWorkflowStarter.ensureStarted(
                   pipelineInput.importId,
+                  LegacyImportWorkflowExecutionGeneration,
                   pipelineInput.trace
                 )
               )

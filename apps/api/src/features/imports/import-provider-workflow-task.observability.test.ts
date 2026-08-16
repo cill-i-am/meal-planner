@@ -12,6 +12,13 @@ const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
 );
 
+const providerStepContext = (attempt: number) =>
+  Effect.provideService(WorkflowStepContext, {
+    attempt,
+    config: ProviderTaskStepConfig,
+    step: { count: 1, name: "transcribe-video-v1" },
+  });
+
 const captureAttempt = async (attempt: number) => {
   const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
   const exit = await Effect.runPromiseExit(
@@ -97,13 +104,6 @@ describe("provider task observability", () => {
       working: (attempt: number) =>
         Effect.sync(() => activity.push(`working:${attempt}`)),
     };
-    const context = (attempt: number) =>
-      Effect.provideService(WorkflowStepContext, {
-        attempt,
-        config: ProviderTaskStepConfig,
-        step: { count: 1, name: "transcribe-video-v1" },
-      });
-
     await Effect.runPromiseExit(
       runProviderTaskAttempt(
         "speech",
@@ -111,7 +111,7 @@ describe("provider task observability", () => {
         () => "unused",
         undefined,
         lifecycle
-      ).pipe(context(1))
+      ).pipe(providerStepContext(1))
     );
     await Effect.runPromise(
       runProviderTaskAttempt(
@@ -120,7 +120,7 @@ describe("provider task observability", () => {
         () => "checkpointed",
         undefined,
         lifecycle
-      ).pipe(context(2))
+      ).pipe(providerStepContext(2))
     );
 
     expect(activity).toEqual(["retrying:1", "working:2"]);

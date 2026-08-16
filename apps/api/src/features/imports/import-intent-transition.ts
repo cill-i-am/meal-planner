@@ -1,4 +1,5 @@
 import {
+  CanonicalTikTokUrl,
   Instant,
   RecoveryGuidance,
   RecipeImportActionId,
@@ -8,6 +9,8 @@ import {
   StepProgress,
 } from "@meal-planner/recipe-import-api";
 import { Schema } from "effect";
+
+import { SourceCanonicalId } from "./import.contracts.js";
 
 const SafeInteger = Schema.Number.pipe(
   Schema.check(
@@ -90,6 +93,21 @@ const TransitionMetadata = {
 
 export const ImportIntentTransitionCommand = Schema.Union([
   Schema.Struct({
+    _tag: Schema.Literal("ResolveSource"),
+    ...TransitionMetadata,
+    canonicalSourceId: SourceCanonicalId,
+    canonicalUrl: CanonicalTikTokUrl,
+    sourceKind: Schema.Literals(["video", "carousel"]),
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Redirect"),
+    ...TransitionMetadata,
+    canonicalSourceId: SourceCanonicalId,
+    canonicalUrl: CanonicalTikTokUrl,
+    redirectedToIntentId: RecipeImportIntentId,
+    sourceKind: Schema.Literals(["video", "carousel"]),
+  }),
+  Schema.Struct({
     _tag: Schema.Literal("AdvanceStage"),
     ...TransitionMetadata,
     stage: ImportIntentProcessingStageName,
@@ -149,7 +167,11 @@ export const ImportIntentTransitionSnapshot = Schema.Struct({
   failureRecovery: Schema.NullOr(RecoveryGuidance),
   intentVersion: RecipeImportIntentVersion,
   nextAttemptAt: Schema.NullOr(Instant),
+  redirectedAt: Schema.NullOr(Instant),
+  redirectedToIntentId: Schema.NullOr(RecipeImportIntentId),
+  resolvedCanonicalSourceId: Schema.NullOr(SourceCanonicalId),
   sourceKind: Schema.NullOr(Schema.Literals(["video", "carousel"])),
+  sourceUrl: Schema.NullOr(CanonicalTikTokUrl),
   speech: Schema.NullOr(StepProgress),
   stage: Schema.NullOr(ImportIntentProcessingStageName),
   stageStartedAt: Schema.NullOr(Instant),
@@ -193,26 +215,38 @@ export type ImportIntentTransitionOutcome =
         | "invalid_action_transition"
         | "invalid_cancel_transition"
         | "illegal_component_transition"
-        | "non_sequential_stage";
+        | "non_sequential_stage"
+        | "source_already_resolved"
+        | "source_resolution_not_active";
       readonly snapshot: ImportIntentTransitionSnapshot;
     };
 
 const stageOrdinal = (stage: ImportIntentProcessingStageName) => {
   switch (stage) {
-    case "resolving_source":
+    case "resolving_source": {
       return 0;
-    case "acquiring_media":
+    }
+    case "acquiring_media": {
       return 1;
-    case "analyzing_evidence":
+    }
+    case "analyzing_evidence": {
       return 2;
-    case "extracting_recipe":
+    }
+    case "extracting_recipe": {
       return 3;
-    case "grounding_recipe":
+    }
+    case "grounding_recipe": {
       return 4;
-    case "preparing_review":
+    }
+    case "preparing_review": {
       return 5;
-    case "finalizing_recipe":
+    }
+    case "finalizing_recipe": {
       return 6;
+    }
+    default: {
+      return stage satisfies never;
+    }
   }
 };
 
@@ -237,16 +271,12 @@ const applied = (
 
 const noOp = (
   snapshot: ImportIntentTransitionSnapshot,
-  reason: Extract<ImportIntentTransitionOutcome, { _tag: "NoOp" }>[
-    "reason"
-  ]
+  reason: Extract<ImportIntentTransitionOutcome, { _tag: "NoOp" }>["reason"]
 ): ImportIntentTransitionOutcome => ({ _tag: "NoOp", reason, snapshot });
 
 const rejected = (
   snapshot: ImportIntentTransitionSnapshot,
-  reason: Extract<ImportIntentTransitionOutcome, { _tag: "Rejected" }>[
-    "reason"
-  ]
+  reason: Extract<ImportIntentTransitionOutcome, { _tag: "Rejected" }>["reason"]
 ): ImportIntentTransitionOutcome => ({ _tag: "Rejected", reason, snapshot });
 
 const advanceStage = (
@@ -279,24 +309,79 @@ const advanceStage = (
   });
 };
 
+const resolveSource = (
+  snapshot: ImportIntentTransitionSnapshot,
+  command: Extract<ImportIntentTransitionCommand, { _tag: "ResolveSource" }>
+): ImportIntentTransitionOutcome => {
+  if (snapshot.stage !== "resolving_source") {
+    return rejected(snapshot, "source_resolution_not_active");
+  }
+  if (snapshot.resolvedCanonicalSourceId !== null) {
+    return rejected(snapshot, "source_already_resolved");
+  }
+  return applied(snapshot, command.occurredAt, {
+    activity: "working",
+    executionGeneration: Schema.decodeUnknownSync(
+      ImportIntentExecutionGeneration
+    )(snapshot.executionGeneration + 1),
+    redirectedAt: null,
+    redirectedToIntentId: null,
+    resolvedCanonicalSourceId: command.canonicalSourceId,
+    sourceKind: command.sourceKind,
+    sourceUrl: command.canonicalUrl,
+    stage: "acquiring_media",
+    stageStartedAt: command.occurredAt,
+  });
+};
+
+const redirect = (
+  snapshot: ImportIntentTransitionSnapshot,
+  command: Extract<ImportIntentTransitionCommand, { _tag: "Redirect" }>
+): ImportIntentTransitionOutcome => {
+  if (snapshot.stage !== "resolving_source") {
+    return rejected(snapshot, "source_resolution_not_active");
+  }
+  if (snapshot.resolvedCanonicalSourceId !== null) {
+    return rejected(snapshot, "source_already_resolved");
+  }
+  return applied(snapshot, command.occurredAt, {
+    activeActionId: null,
+    activity: null,
+    nextAttemptAt: null,
+    redirectedAt: command.occurredAt,
+    redirectedToIntentId: command.redirectedToIntentId,
+    resolvedCanonicalSourceId: command.canonicalSourceId,
+    sourceKind: command.sourceKind,
+    sourceUrl: command.canonicalUrl,
+    speech: null,
+    stage: null,
+    stageStartedAt: null,
+    status: "redirected",
+    visuals: null,
+  });
+};
+
 const progressOrdinal = (progress: StepProgress) => {
   switch (progress) {
-    case "not_started":
+    case "not_started": {
       return 0;
-    case "processing":
+    }
+    case "processing": {
       return 1;
+    }
     case "completed":
-    case "skipped":
+    case "skipped": {
       return 2;
+    }
+    default: {
+      return progress satisfies never;
+    }
   }
 };
 
 const advanceComponent = (
   snapshot: ImportIntentTransitionSnapshot,
-  command: Extract<
-    ImportIntentTransitionCommand,
-    { _tag: "AdvanceComponent" }
-  >
+  command: Extract<ImportIntentTransitionCommand, { _tag: "AdvanceComponent" }>
 ): ImportIntentTransitionOutcome => {
   if (snapshot.stage !== "analyzing_evidence") {
     if (
@@ -446,15 +531,29 @@ export const applyImportIntentTransition = (
     return rejected(snapshot, "future_generation");
   }
   switch (command._tag) {
-    case "AdvanceStage":
+    case "ResolveSource": {
+      return resolveSource(snapshot, command);
+    }
+    case "Redirect": {
+      return redirect(snapshot, command);
+    }
+    case "AdvanceStage": {
       return advanceStage(snapshot, command);
-    case "AdvanceComponent":
+    }
+    case "AdvanceComponent": {
       return advanceComponent(snapshot, command);
-    case "RequireAction":
+    }
+    case "RequireAction": {
       return requireAction(snapshot, command);
-    case "SetActivity":
+    }
+    case "SetActivity": {
       return setActivity(snapshot, command);
-    case "Fail":
+    }
+    case "Fail": {
       return fail(snapshot, command);
+    }
+    default: {
+      return command satisfies never;
+    }
   }
 };

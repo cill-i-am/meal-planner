@@ -121,7 +121,7 @@ const makeApplication = async (
       }),
   };
   const workflowStarter: ImportWorkflowStarterShape = {
-    ensureStarted: (importId, trace) =>
+    ensureStarted: (importId, _executionGeneration, trace) =>
       Effect.sync(() => {
         counters.workflowStarts.push(importId);
         counters.workflowTraces.push(trace);

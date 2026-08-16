@@ -12,8 +12,7 @@ const decodeRow = Schema.decodeUnknownSync(ImportIntentHistoryRow, {
 });
 const encodeEvent = Schema.encodeSync(RecipeImportTimelineEvent);
 const at = "2026-08-16T16:00:00.000Z";
-const canonicalUrl =
-  "https://www.tiktok.com/@cook/video/7520000000000001400";
+const canonicalUrl = "https://www.tiktok.com/@cook/video/7520000000000001400";
 const redirectedToIntentId = "00000000-0000-4000-8000-000000000401";
 const actionId = "f".repeat(64);
 const recipeId = "00000000-0000-4000-8000-000000000402";
@@ -183,27 +182,30 @@ describe("recipe import intent timeline projection", () => {
       },
       { at, intentVersion: 8, type: "intent_cancelled" },
     ],
-  ] as const)("maps %s without private provenance", (eventType, input, expected) => {
-    const projected = project(eventType, {
-      ...input,
-      intentId: "00000000-0000-4000-8000-000000000400",
-    });
-    expect(Option.getOrThrow(projected)).toEqual(expected);
-    const encodedKeys = keysOf(Option.getOrThrow(projected));
-    for (const forbidden of [
-      "actorCategory",
-      "actorIdentityHash",
-      "commandDigest",
-      "evidence",
-      "mutationId",
-      "provider",
-      "r2Key",
-      "rawUrl",
-      "transcript",
-    ]) {
-      expect(encodedKeys).not.toContain(forbidden);
+  ] as const)(
+    "maps %s without private provenance",
+    (eventType, input, expected) => {
+      const projected = project(eventType, {
+        ...input,
+        intentId: "00000000-0000-4000-8000-000000000400",
+      });
+      expect(Option.getOrThrow(projected)).toEqual(expected);
+      const encodedKeys = keysOf(Option.getOrThrow(projected));
+      for (const forbidden of [
+        "actorCategory",
+        "actorIdentityHash",
+        "commandDigest",
+        "evidence",
+        "mutationId",
+        "provider",
+        "r2Key",
+        "rawUrl",
+        "transcript",
+      ]) {
+        expect(encodedKeys).not.toContain(forbidden);
+      }
     }
-  });
+  );
 
   it("omits the non-public migration snapshot", () => {
     expect(project("migration_snapshot")).toEqual(Option.none());

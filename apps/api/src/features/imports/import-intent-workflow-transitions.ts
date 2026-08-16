@@ -1,15 +1,15 @@
+import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import {
   Instant,
   RecoveryGuidance,
   RecipeImportActionId,
-  RecipeImportIntentId,
   StablePublicErrorCode,
   StepProgress,
 } from "@meal-planner/recipe-import-api";
 import { Clock, Effect, Schema } from "effect";
 
+import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
-  ImportIntentExecutionGeneration,
   ImportIntentProcessingStageName,
   ImportIntentTransitionCommand,
   ImportIntentTransitionCommandDigest,
@@ -18,7 +18,10 @@ import {
 } from "./import-intent-transition.js";
 import type { AcquisitionTaskOutcome } from "./import-media.model.js";
 import type { ProviderTaskStage } from "./import-provider-workflow-task.js";
-import type { ImportIntentRepositoryShape } from "./import.repository.js";
+import type {
+  ImportIntentRepositoryShape,
+  InternalImportIntentTransitionError,
+} from "./import.repository.js";
 
 export const PublicIntentFailure = Schema.Struct({
   code: StablePublicErrorCode,
@@ -46,22 +49,29 @@ export const publicIntentFailureForAcquisitionOutcome = (
   >
 ): PublicIntentFailure => {
   switch (outcome._tag) {
-    case "Unavailable":
+    case "Unavailable": {
       return sourceUnavailable("The source is unavailable.");
-    case "UnsupportedCarousel":
+    }
+    case "UnsupportedCarousel": {
       return {
         code: "unsupported_source",
         message: "This source type is not supported.",
         recovery: "create_new_intent",
       };
-    case "TerminalMedia":
+    }
+    case "TerminalMedia": {
       return {
         code: "invalid_media",
         message: "The source does not contain supported media.",
         recovery: "create_new_intent",
       };
-    case "RetryExhausted":
+    }
+    case "RetryExhausted": {
       return sourceUnavailable("The source is temporarily unavailable.");
+    }
+    default: {
+      return outcome satisfies never;
+    }
   }
 };
 
@@ -132,16 +142,24 @@ const sha256 = (value: string) =>
 
 const semanticKeyFor = (payload: WorkflowTransitionPayload) => {
   switch (payload._tag) {
-    case "AdvanceStage":
+    case "AdvanceStage": {
       return `stage:${payload.stage}`;
-    case "AdvanceComponent":
+    }
+    case "AdvanceComponent": {
       return `component:${payload.component}:${payload.progress}`;
-    case "RequireAction":
+    }
+    case "RequireAction": {
       return `action:${payload.actionId}`;
-    case "SetActivity":
+    }
+    case "SetActivity": {
       return `activity:${payload.boundary}:${payload.attempt}:${payload.activity}`;
-    case "Fail":
+    }
+    case "Fail": {
       return `failure:${payload.boundary}:${payload.code}`;
+    }
+    default: {
+      return payload satisfies never;
+    }
   }
 };
 
@@ -162,26 +180,31 @@ export const ImportIntentWorkflowTransitionRejected =
     { reason: Schema.String }
   );
 
+export type ImportIntentWorkflowTransitionError =
+  | ImportIntentWorkflowTransitionRejected
+  | InternalImportIntentTransitionError
+  | Schema.SchemaError;
+
 export interface ImportIntentWorkflowTransitionsShape {
   readonly advanceComponent: (
     component: "speech" | "visuals",
     progress: "not_started" | "processing" | "completed" | "skipped"
-  ) => Effect.Effect<void, unknown>;
+  ) => Effect.Effect<void, ImportIntentWorkflowTransitionError>;
   readonly advanceStage: (
     stage: typeof ImportIntentProcessingStageName.Type
-  ) => Effect.Effect<void, unknown>;
+  ) => Effect.Effect<void, ImportIntentWorkflowTransitionError>;
   readonly requireAction: (
     actionId: typeof RecipeImportActionId.Type
-  ) => Effect.Effect<void, unknown>;
+  ) => Effect.Effect<void, ImportIntentWorkflowTransitionError>;
   readonly setActivity: (
     boundary: typeof ImportIntentWorkflowBoundary.Type,
     attempt: number,
     activity: "working" | "retrying"
-  ) => Effect.Effect<void, unknown>;
+  ) => Effect.Effect<void, ImportIntentWorkflowTransitionError>;
   readonly fail: (
     boundary: typeof ImportIntentWorkflowBoundary.Type,
     failure: PublicIntentFailure
-  ) => Effect.Effect<void, unknown>;
+  ) => Effect.Effect<void, ImportIntentWorkflowTransitionError>;
 }
 
 /** Build and apply replay-stable, provider-neutral executor transitions. */
@@ -235,10 +258,9 @@ export const makeImportIntentWorkflowTransitions = (input: {
     advanceComponent: (component, progress) =>
       apply({ _tag: "AdvanceComponent", component, progress }),
     advanceStage: (stage) => apply({ _tag: "AdvanceStage", stage }),
+    fail: (boundary, failure) => apply({ _tag: "Fail", boundary, ...failure }),
     requireAction: (actionId) => apply({ _tag: "RequireAction", actionId }),
     setActivity: (boundary, attempt, activity) =>
       apply({ _tag: "SetActivity", activity, attempt, boundary }),
-    fail: (boundary, failure) =>
-      apply({ _tag: "Fail", boundary, ...failure }),
   };
 };

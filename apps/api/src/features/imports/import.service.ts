@@ -2,6 +2,7 @@ import { Context, Effect, Option, Schema } from "effect";
 
 import { AcquisitionGeneration } from "./import-media.model.js";
 import type { ImportTraceContext } from "./import-observability.js";
+import { LegacyImportWorkflowExecutionGeneration } from "./import-workflow-input.js";
 import type {
   CreateImportRequest,
   CreateImportResponse,
@@ -183,6 +184,7 @@ export const makeImportService = ({
             yield* ensureImportWorkflowStarted(
               workflowStarter,
               existingRequest.value.import.view.id,
+              LegacyImportWorkflowExecutionGeneration,
               existingRequest.value.import.trace
             );
           }
@@ -208,6 +210,7 @@ export const makeImportService = ({
             yield* ensureImportWorkflowStarted(
               workflowStarter,
               existingRequest.value.import.view.id,
+              LegacyImportWorkflowExecutionGeneration,
               existingRequest.value.import.trace
             );
           }
@@ -267,6 +270,7 @@ export const makeImportService = ({
           yield* ensureImportWorkflowStarted(
             workflowStarter,
             accepted.import.view.id,
+            LegacyImportWorkflowExecutionGeneration,
             accepted.import.trace
           );
         }

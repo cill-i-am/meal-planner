@@ -693,7 +693,7 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
             reason: input.transcript.reason,
             status: input.transcript.status,
           },
-      }
+        }
   );
   if (input.lifecycle !== undefined) {
     yield* input.lifecycle.reviewAvailable(

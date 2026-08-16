@@ -1,11 +1,11 @@
 import { Data, Effect, Schema } from "effect";
 import { v5 as uuidv5 } from "uuid";
 
+import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   ImportCorrelationId,
   ImportTraceContext,
 } from "./import-observability.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { ImportId } from "./import.contracts.js";
 
 export const ImportWorkflowInput = Schema.Struct({
@@ -13,6 +13,10 @@ export const ImportWorkflowInput = Schema.Struct({
   importId: ImportId,
   trace: ImportTraceContext,
 });
+
+export const LegacyImportWorkflowExecutionGeneration = Schema.decodeUnknownSync(
+  ImportIntentExecutionGeneration
+)(0);
 
 export const PreparedVisualRecoveryWorkflowInput = Schema.Struct({
   executionGeneration: ImportIntentExecutionGeneration,
@@ -93,16 +97,19 @@ export const resolveImportWorkflowInput = (rawInput: unknown) =>
     if ("trace" in input && "executionGeneration" in input) {
       return input;
     }
-    const correlationId =
-      "trace" in input
-        ? input.trace.correlationId
-        : "correlationId" in input
-        ? input.correlationId
-        : yield* makeLegacyImportCorrelationId(input.importId);
+    let correlationId: ImportCorrelationId;
+    if ("trace" in input) {
+      const {
+        trace: { correlationId: tracedCorrelationId },
+      } = input;
+      correlationId = tracedCorrelationId;
+    } else if ("correlationId" in input) {
+      ({ correlationId } = input);
+    } else {
+      correlationId = yield* makeLegacyImportCorrelationId(input.importId);
+    }
     return {
-      executionGeneration: Schema.decodeUnknownSync(
-        ImportIntentExecutionGeneration
-      )(0),
+      executionGeneration: LegacyImportWorkflowExecutionGeneration,
       importId: input.importId,
       ...("resume" in input ? { resume: input.resume } : {}),
       trace: { correlationId },

@@ -14,10 +14,13 @@ import type {
 } from "@meal-planner/recipe-import-api";
 import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect";
 
+import { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
 import {
   ImportIntentTransitionCommandDigest,
   ImportIntentTransitionMutationId,
 } from "./import-intent-transition.js";
+import { deriveLegacyImportCorrelationId } from "./import-workflow-input.js";
+import { ImportId } from "./import.contracts.js";
 import type {
   ImportIntentRepositoryShape,
   ResolveImportIntentSourceCommand,
@@ -26,11 +29,48 @@ import {
   IdempotencyKeyHash,
   RequestFingerprint,
   SourceLocatorHash,
+  StalledImportIntentStartLimit,
 } from "./import.repository.js";
+import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
 
 const OpaqueSha256 = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
 );
+const PositiveSafeInteger = Schema.Int.pipe(
+  Schema.check(
+    Schema.isGreaterThanOrEqualTo(1),
+    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+  )
+);
+const NonNegativeSafeInteger = Schema.Int.pipe(
+  Schema.check(
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+  )
+);
+
+export const StalledImportIntentStartMinimumAgeMilliseconds =
+  PositiveSafeInteger.pipe(
+    Schema.brand("StalledImportIntentStartMinimumAgeMilliseconds")
+  );
+export type StalledImportIntentStartMinimumAgeMilliseconds =
+  typeof StalledImportIntentStartMinimumAgeMilliseconds.Type;
+
+export const ReconcileStalledImportIntentStartsRequest = Schema.Struct({
+  limit: StalledImportIntentStartLimit,
+  minimumAgeMilliseconds: StalledImportIntentStartMinimumAgeMilliseconds,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type ReconcileStalledImportIntentStartsRequest =
+  typeof ReconcileStalledImportIntentStartsRequest.Type;
+
+export const ReconcileStalledImportIntentStartsResult = Schema.Struct({
+  ensured: NonNegativeSafeInteger,
+  examined: NonNegativeSafeInteger,
+  skipped: NonNegativeSafeInteger,
+  startFailures: NonNegativeSafeInteger,
+});
+export type ReconcileStalledImportIntentStartsResult =
+  typeof ReconcileStalledImportIntentStartsResult.Type;
 
 export const HouseholdScopeId = OpaqueSha256.pipe(
   Schema.brand("HouseholdScopeId")
@@ -128,17 +168,6 @@ export class ImportIntentIdGenerator extends Context.Service<
   );
 }
 
-export interface ImportIntentWorkflowTerminatorShape {
-  readonly terminate: (
-    intentId: RecipeImportIntentId
-  ) => Effect.Effect<void, unknown>;
-}
-
-export class ImportIntentWorkflowTerminator extends Context.Service<
-  ImportIntentWorkflowTerminator,
-  ImportIntentWorkflowTerminatorShape
->()("meal-planner/ImportIntentWorkflowTerminator") {}
-
 export const CancelImportIntentCommand = Schema.Struct({
   cancelledAt: Instant,
   commandDigest: ImportIntentTransitionCommandDigest,
@@ -147,8 +176,7 @@ export const CancelImportIntentCommand = Schema.Struct({
   mutationId: ImportIntentTransitionMutationId,
   principal: ImportPrincipal,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-export type CancelImportIntentCommand =
-  typeof CancelImportIntentCommand.Type;
+export type CancelImportIntentCommand = typeof CancelImportIntentCommand.Type;
 
 const sha256Hex = (value: string) =>
   Effect.promise(async () => {
@@ -213,8 +241,29 @@ const cancelCommandDigest = (
     Schema.decodeUnknownSync(ImportIntentTransitionCommandDigest)
   );
 
+const resolveSourceMutationId = (intentId: RecipeImportIntentId) =>
+  Effect.map(
+    sha256Hex(`recipe-import-intent-resolve-source-mutation:v1:${intentId}`),
+    Schema.decodeUnknownSync(ImportIntentTransitionMutationId)
+  );
+
+const resolveSourceCommandDigest = (
+  principal: ImportPrincipal,
+  input: Omit<
+    ResolveImportIntentSourceCommand,
+    "commandDigest" | "mutationId" | "resolvedAt"
+  >
+) =>
+  Effect.map(
+    sha256Hex(
+      `recipe-import-intent-resolve-source-command:v1:${principal.householdScopeId}:${input.intentId}:${input.canonicalSourceId}:${input.canonicalUrl}:${input.sourceKind}`
+    ),
+    Schema.decodeUnknownSync(ImportIntentTransitionCommandDigest)
+  );
+
 export const makeImportIntentApplication = (
-  repository: ImportIntentRepositoryShape
+  repository: ImportIntentRepositoryShape,
+  workflowStarter: Pick<ImportWorkflowReconcilerShape, "ensureStarted">
 ) => ({
   admit: Effect.fn("RecipeImportIntent.admit")(function* admit(
     principal: ImportPrincipal,
@@ -238,16 +287,6 @@ export const makeImportIntentApplication = (
       requestFingerprint: fingerprint,
       sourceLocatorHash: locatorHash,
       submittedSourceUrl: request.source.url,
-    });
-  }),
-  get: Effect.fn("RecipeImportIntent.get")(function* get(
-    principal: ImportPrincipal,
-    intentId: RecipeImportIntentId
-  ) {
-    const stored = yield* repository.findIntent(principal, intentId);
-    return yield* Option.match(stored, {
-      onNone: () => Effect.fail(new RecipeImportIntentNotFound()),
-      onSome: Effect.succeed,
     });
   }),
   cancel: Effect.fn("RecipeImportIntent.cancel")(function* cancel(
@@ -284,25 +323,110 @@ export const makeImportIntentApplication = (
     }
     return result.intent;
   }),
+  get: Effect.fn("RecipeImportIntent.get")(function* get(
+    principal: ImportPrincipal,
+    intentId: RecipeImportIntentId
+  ) {
+    const stored = yield* repository.findIntent(principal, intentId);
+    return yield* Option.match(stored, {
+      onNone: () => Effect.fail(new RecipeImportIntentNotFound()),
+      onSome: Effect.succeed,
+    });
+  }),
+  reconcileStalledStarts: Effect.fn(
+    "RecipeImportIntent.reconcileStalledStarts"
+  )(function* reconcileStalledStarts(
+    rawRequest: ReconcileStalledImportIntentStartsRequest
+  ) {
+    const request = yield* Schema.decodeUnknownEffect(
+      ReconcileStalledImportIntentStartsRequest,
+      { onExcessProperty: "error" }
+    )(rawRequest).pipe(Effect.orDie);
+    const currentTimeMillis = yield* Clock.currentTimeMillis;
+    const cutoff = yield* Schema.decodeUnknownEffect(Instant)(
+      new Date(currentTimeMillis - request.minimumAgeMilliseconds).toISOString()
+    ).pipe(Effect.orDie);
+    const candidates = yield* repository.listStalledIntentStarts(
+      cutoff,
+      request.limit
+    );
+    const summary = {
+      ensured: 0,
+      examined: candidates.length,
+      skipped: 0,
+      startFailures: 0,
+    };
+    for (const candidate of candidates) {
+      const isCurrent = yield* repository.isIntentExecutionCurrent(
+        candidate.intentId,
+        candidate.executionGeneration
+      );
+      if (!isCurrent) {
+        summary.skipped += 1;
+        continue;
+      }
+      const importId = yield* Schema.decodeUnknownEffect(ImportId)(
+        candidate.intentId
+      ).pipe(Effect.orDie);
+      const started = yield* workflowStarter
+        .ensureStarted(importId, candidate.executionGeneration, {
+          correlationId: deriveLegacyImportCorrelationId(importId),
+        })
+        .pipe(
+          Effect.match({
+            onFailure: () => false,
+            onSuccess: () => true,
+          })
+        );
+      if (started) {
+        summary.ensured += 1;
+      } else {
+        summary.startFailures += 1;
+      }
+    }
+    return yield* Schema.decodeUnknownEffect(
+      ReconcileStalledImportIntentStartsResult
+    )(summary).pipe(Effect.orDie);
+  }),
   requireMutable: Effect.fn("RecipeImportIntent.requireMutable")(
     (principal: ImportPrincipal, intentId: RecipeImportIntentId) =>
       repository.requireMutableIntent(principal, intentId)
   ),
-  timeline: Effect.fn("RecipeImportIntent.timeline")(
-    (principal: ImportPrincipal, intentId: RecipeImportIntentId) =>
-      repository.readIntentTimeline(principal, intentId)
-  ),
   resolveSource: Effect.fn("RecipeImportIntent.resolveSource")(
     function* resolveSource(
       principal: ImportPrincipal,
-      input: Omit<ResolveImportIntentSourceCommand, "resolvedAt">
+      input: Omit<
+        ResolveImportIntentSourceCommand,
+        "commandDigest" | "mutationId" | "resolvedAt"
+      >
     ) {
-      const resolvedAt = yield* currentInstant;
-      return yield* repository.resolveIntentSource(principal, {
+      const [resolvedAt, mutationId, commandDigest] = yield* Effect.all([
+        currentInstant,
+        resolveSourceMutationId(input.intentId),
+        resolveSourceCommandDigest(principal, input),
+      ]);
+      const result = yield* repository.resolveIntentSource(principal, {
         ...input,
+        commandDigest,
+        mutationId,
         resolvedAt,
       });
+      if (result._tag === "Owner") {
+        const importId = yield* Schema.decodeUnknownEffect(ImportId)(
+          result.intent.id
+        ).pipe(Effect.orDie);
+        yield* workflowStarter.ensureStarted(
+          importId,
+          result.executionGeneration,
+          { correlationId: deriveLegacyImportCorrelationId(importId) }
+        );
+      }
+      return result.intent;
     }
+  ),
+  timeline: Effect.fn("RecipeImportIntent.timeline")(
+    (principal: ImportPrincipal, intentId: RecipeImportIntentId) =>
+      repository.readIntentTimeline(principal, intentId)
   ),
 });
 

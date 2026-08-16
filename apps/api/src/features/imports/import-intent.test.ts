@@ -31,6 +31,9 @@ const firstIntentId = decodeIntentId("00000000-0000-4000-8000-000000000001");
 const secondIntentId = decodeIntentId("00000000-0000-4000-8000-000000000002");
 const thirdIntentId = decodeIntentId("00000000-0000-4000-8000-000000000003");
 const submittedUrl = "https://www.tiktok.com/@cook/video/7520000000000001001";
+const workflowStarter = {
+  ensureStarted: () => Effect.succeed("already_active" as const),
+};
 
 const makeRecordingRepository = (): {
   readonly admissions: StoredImportIntentRequest[];
@@ -104,6 +107,9 @@ const makeRecordingRepository = (): {
             intents.get(`${principal.householdScopeId}:${intentId}`)
           )
         ),
+      isIntentExecutionCurrent: () => Effect.succeed(false),
+      listStalledIntentStarts: () => Effect.succeed([]),
+      readIntentTimeline: () => Effect.die("not used by this tracer"),
       requireMutableIntent: (principal, intentId) =>
         Effect.flatMap(
           Effect.succeed(
@@ -117,7 +123,6 @@ const makeRecordingRepository = (): {
             onSome: Effect.succeed,
           })
         ),
-      readIntentTimeline: () => Effect.die("not used by this tracer"),
       resolveIntentSource: () => Effect.die("not used by this tracer"),
       transitionIntent: () => Effect.die("not used by this tracer"),
     },
@@ -127,7 +132,10 @@ const makeRecordingRepository = (): {
 describe("recipe import intent application foundation", () => {
   it("uses Effect Clock and ID services for immediate unresolved admission and exact replay", async () => {
     const recording = makeRecordingRepository();
-    const application = makeImportIntentApplication(recording.repository);
+    const application = makeImportIntentApplication(
+      recording.repository,
+      workflowStarter
+    );
     const ids = [firstIntentId, secondIntentId, thirdIntentId];
     const idLayer = Layer.succeed(
       ImportIntentIdGenerator,

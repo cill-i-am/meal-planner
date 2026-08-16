@@ -19,6 +19,7 @@ import {
 } from "./import-observability.js";
 import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
+import { LegacyImportWorkflowExecutionGeneration } from "./import-workflow-input.js";
 import type { ImportId as ImportIdType } from "./import.contracts.js";
 import { ImportId } from "./import.contracts.js";
 import { makeImportWorkflowStarter } from "./import.workflow.js";
@@ -191,9 +192,14 @@ describe("opaque import correlation continuity", () => {
         });
         expect(creations).toBe(1);
         expect(trace).toEqual({ correlationId });
-        yield* createdStarter.ensureStarted(importId, trace);
+        yield* createdStarter.ensureStarted(
+          importId,
+          LegacyImportWorkflowExecutionGeneration,
+          trace
+        );
         const input = Schema.decodeUnknownSync(
           Schema.Struct({
+            executionGeneration: Schema.Literal(0),
             importId: ImportId,
             trace: Schema.Struct({ correlationId: ImportCorrelationId }),
           })
@@ -295,9 +301,11 @@ describe("opaque import correlation continuity", () => {
     await Effect.runPromise(
       Effect.gen(function* reconcileExistingWorkflow() {
         yield* observeImportQueueReceipt(() => reconciliationCorrelationId);
-        yield* reconciliationStarter.ensureStarted(importId, {
-          correlationId: reconciliationCorrelationId,
-        });
+        yield* reconciliationStarter.ensureStarted(
+          importId,
+          LegacyImportWorkflowExecutionGeneration,
+          { correlationId: reconciliationCorrelationId }
+        );
       }).pipe(Effect.provideService(ImportObservabilityTraceStore, traceStore))
     );
 
