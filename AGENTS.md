@@ -21,6 +21,14 @@ This file governs the whole repository. Put narrower instructions in a nested `A
 - Never expose Tesco credentials, cookie material, authorization values, raw provider responses, or other secrets in source, logs, issues, PRs, or agent handoffs.
 - Tesco mutations, basket changes, checkout, payment, publishing, and external messages require the explicit approval boundary documented by the relevant issue or household workflow.
 
+## Greenfield Architecture
+
+- Treat this repository as a greenfield product unless the user explicitly identifies production data, external consumers, or a compatibility contract that must be preserved.
+- Prefer the best current architecture and clearest domain model over preserving experimental structures. Substantial refactors, schema resets, and replacement of prototypes are acceptable when they improve the design.
+- Do not add compatibility shims, legacy adapters, dual-write paths, staged migrations, backwards-compatibility behavior, or portability machinery without first explaining the concrete need and receiving the user's explicit approval. This is an approval boundary, even when an agent believes the compatibility work would be prudent.
+- Exploration is encouraged, but converge by deleting superseded paths rather than carrying multiple architectures forward. Keep reusable domain knowledge and proven behavior; do not preserve accidental implementation shape.
+- Design clean boundaries and stable domain identifiers where they are intrinsically valuable, but do not confuse future portability with an obligation to maintain current experimental APIs or storage layouts.
+
 ## Agent Skills
 
 - Read [`docs/agents/linear-workflow.md`](docs/agents/linear-workflow.md) for the durable Project, Issue, blocker, thread, PR, and evidence loop.
