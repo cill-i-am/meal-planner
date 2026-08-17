@@ -35,12 +35,20 @@ export interface ImportAuthorizerShape {
   ) => Effect.Effect<ImportPrincipal, UnauthorizedImportCaller>;
 }
 
-export const makeImportAuthorizer = (options: {
-  readonly expectedToken: Redacted.Redacted<string>;
+/** One server-configured secret mapped to its authenticated import authority. */
+export interface ConfiguredImportPrincipal {
   readonly principal: ImportPrincipal;
+  readonly token: Redacted.Redacted<string>;
+}
+
+/** Construct a closed bearer-token registry without exposing its secrets. */
+export const makeImportAuthorizer = (options: {
+  readonly configuredPrincipals: readonly ConfiguredImportPrincipal[];
 }): Effect.Effect<ImportAuthorizerShape> => {
-  const expectedValue = Redacted.value(options.expectedToken);
-  if (expectedValue.length === 0) {
+  const configuredPrincipals = options.configuredPrincipals.filter(
+    ({ token }) => Redacted.value(token).length > 0
+  );
+  if (configuredPrincipals.length === 0) {
     return Effect.succeed({
       authorize: rejectUnauthorized,
       authorizeBearer: rejectUnauthorized,
@@ -48,8 +56,15 @@ export const makeImportAuthorizer = (options: {
   }
 
   return Effect.map(
-    Effect.promise(() => importHmacKey(expectedValue)),
-    (key) => {
+    Effect.promise(() =>
+      Promise.all(
+        configuredPrincipals.map(async ({ principal, token }) => ({
+          key: await importHmacKey(Redacted.value(token)),
+          principal,
+        }))
+      )
+    ),
+    (configuredKeys) => {
       const authorizeBearer = (token: Redacted.Redacted<string>) => {
         const suppliedValue = Redacted.value(token);
         if (suppliedValue.length === 0) {
@@ -63,17 +78,20 @@ export const makeImportAuthorizer = (options: {
               suppliedKey,
               challenge
             );
-            return crypto.subtle.verify(
-              hmacAlgorithm,
-              key,
-              signature,
-              challenge
+            const matches = await Promise.all(
+              configuredKeys.map(({ key }) =>
+                crypto.subtle.verify(hmacAlgorithm, key, signature, challenge)
+              )
             );
+            const matchIndex = matches.findIndex(Boolean);
+            return matchIndex === -1
+              ? undefined
+              : configuredKeys[matchIndex]?.principal;
           }),
-          (matches) =>
-            matches
-              ? Effect.succeed(options.principal)
-              : Effect.fail(unauthorizedImportCaller())
+          (principal) =>
+            principal === undefined
+              ? Effect.fail(unauthorizedImportCaller())
+              : Effect.succeed(principal)
         );
       };
       return {

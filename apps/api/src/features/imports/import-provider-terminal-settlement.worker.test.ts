@@ -19,6 +19,7 @@ import {
 import { ProviderTerminalSettlementRoutes } from "./import-provider-terminal-settlement.routes.js";
 import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-terminal.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
+import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import type { VisualEvidenceFailureCode } from "./import-visual-evidence.repository.d1.js";
 import { ImportAuthorizer } from "./import.auth.js";
 import {
@@ -576,6 +577,10 @@ const makeApp = async (
     Layer.mergeAll(
       ProviderTerminalSettlementRoutes,
       Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+      Layer.succeed(
+        ImportSystemAuthorizer,
+        ImportSystemAuthorizer.of(authorizer)
+      ),
       Layer.succeed(
         ProviderTerminalSettlementService,
         ProviderTerminalSettlementService.of(service)

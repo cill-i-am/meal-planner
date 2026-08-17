@@ -86,7 +86,9 @@ import type {
   RecipeRecoveryWorkflowInput,
   RecipeRecoveryWorkflowStarterShape,
 } from "./import-recipe-recovery.js";
+import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
+import type { ConfiguredImportPrincipal } from "./import.auth.js";
 import { ImportTimestamp } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
@@ -425,15 +427,16 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
 /** Inputs required to construct the import HTTP route services once. */
 export interface ImportWorkerRequestLayerInput {
   readonly bucket: AcquisitionBucketLike;
+  readonly configuredPrincipals: readonly ConfiguredImportPrincipal[];
   readonly database: AnyD1Database;
-  readonly importApiToken: Redacted.Redacted<string>;
   readonly importWorkflowStarter: ImportWorkflowReconcilerShape;
   readonly importWorkflowTerminator: ImportIntentWorkflowTerminatorShape;
   readonly now: () => string;
-  readonly principal: ImportPrincipal;
   readonly queue: ImportBatchQueueShape;
   readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarterShape;
   readonly runtimeStage: string;
+  readonly systemApiToken: Redacted.Redacted<string>;
+  readonly systemPrincipal: ImportPrincipal;
   readonly trace: ImportTraceContext;
 }
 
@@ -516,10 +519,23 @@ export const makeImportWorkerRequestLayer = (
       ImportAuthorizer,
       Effect.map(
         makeImportAuthorizer({
-          expectedToken: input.importApiToken,
-          principal: input.principal,
+          configuredPrincipals: input.configuredPrincipals,
         }),
         ImportAuthorizer.of
+      )
+    ),
+    Layer.effect(
+      ImportSystemAuthorizer,
+      Effect.map(
+        makeImportAuthorizer({
+          configuredPrincipals: [
+            {
+              principal: input.systemPrincipal,
+              token: input.systemApiToken,
+            },
+          ],
+        }),
+        ImportSystemAuthorizer.of
       )
     ),
     ImportIntentIdGenerator.live,

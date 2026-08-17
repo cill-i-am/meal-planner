@@ -26,6 +26,7 @@ import {
 } from "./import-batch.service.js";
 import type { ImportBatchQueueShape } from "./import-batch.service.js";
 import { makeD1ImportBatchStore } from "./import-queue-acceptance.d1.js";
+import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import { ImportAuthorizer } from "./import.auth.js";
 import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
 import { invalidSource } from "./import.errors.js";
@@ -175,6 +176,10 @@ const makeHarness = async () => {
     Layer.mergeAll(
       ImportBatchRoutes,
       Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+      Layer.succeed(
+        ImportSystemAuthorizer,
+        ImportSystemAuthorizer.of(authorizer)
+      ),
       Layer.succeed(ImportBatchService, ImportBatchService.of(service))
     ),
     { disableLogger: true }

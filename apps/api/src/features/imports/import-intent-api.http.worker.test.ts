@@ -35,13 +35,12 @@ import {
 } from "./import-intent.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
-import { ImportAuthorizer } from "./import.auth.js";
+import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import { ImportId, SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import {
   TestImportPrincipal,
   TestImportTrace,
-  makeTestImportAuthorizer,
 } from "./import.test-fixtures.js";
 import {
   CanonicalSourceIdentityResolver,
@@ -62,14 +61,43 @@ const submittedUrl =
 const canonicalUrl =
   "https://www.tiktok.com/@fixture/video/7520000000000000901";
 const canonicalSourceId = "7520000000000000901";
+const cancellationSubmittedUrl =
+  "https://www.tiktok.com/t/http-worker-private-cancellation";
+const cancellationCanonicalUrl =
+  "https://www.tiktok.com/@fixture/video/7520000000000000902";
+const cancellationCanonicalSourceId = "7520000000000000902";
 const privateProvider = "http-worker-private-provider";
 const privateModel = "http-worker-private-model";
 const privateTranscript = "http-worker-private-transcript";
 const extractionFingerprint = "d".repeat(64);
 const evidenceFingerprint = "e".repeat(64);
 const actionId = Schema.decodeUnknownSync(RecipeImportActionId)("c".repeat(64));
+const secondActionId = Schema.decodeUnknownSync(RecipeImportActionId)(
+  "f".repeat(64)
+);
 const foreignHouseholdScopeId = "9".repeat(64);
+const secondBearerToken = "http-worker-second-private-bearer";
+const secondActorId = "8".repeat(64);
+const secondExtractionFingerprint = "6".repeat(64);
+const secondEvidenceFingerprint = "7".repeat(64);
 const instant = "2026-08-16T18:00:00.000Z";
+
+interface ReviewFixture {
+  readonly actionId: typeof RecipeImportActionId.Type;
+  readonly evidenceFingerprint: string;
+  readonly extractionFingerprint: string;
+}
+
+const firstReviewFixture: ReviewFixture = {
+  actionId,
+  evidenceFingerprint,
+  extractionFingerprint,
+};
+const secondReviewFixture: ReviewFixture = {
+  actionId: secondActionId,
+  evidenceFingerprint: secondEvidenceFingerprint,
+  extractionFingerprint: secondExtractionFingerprint,
+};
 
 const citation = {
   citations: [
@@ -108,10 +136,10 @@ const privateR2References = (intentId: string) => [
   `imports/${intentId}/transcription/v1/generations/1/transcript.json`,
 ];
 
-const makeDraft = (importId: typeof ImportId.Type) =>
+const makeDraft = (importId: typeof ImportId.Type, fixture: ReviewFixture) =>
   Schema.decodeUnknownSync(RecipeDraft)({
     createdAt: instant,
-    evidenceFingerprint,
+    evidenceFingerprint: fixture.evidenceFingerprint,
     extraction: {
       author: supportedString("Fixture Cook"),
       category: supportedString("Dinner"),
@@ -152,7 +180,7 @@ const makeDraft = (importId: typeof ImportId.Type) =>
       },
       yield: supportedString("2 servings"),
     },
-    extractionFingerprint,
+    extractionFingerprint: fixture.extractionFingerprint,
     extractor: {
       model: privateModel,
       provider: privateProvider,
@@ -166,10 +194,13 @@ const makeDraft = (importId: typeof ImportId.Type) =>
 
 const seedRequiresAction = async (
   database: AnyD1Database,
-  intentId: string
+  intentId: string,
+  fixture: ReviewFixture
 ) => {
   const importId = Schema.decodeUnknownSync(ImportId)(intentId);
-  const encodedDraft = Schema.encodeSync(RecipeDraft)(makeDraft(importId));
+  const encodedDraft = Schema.encodeSync(RecipeDraft)(
+    makeDraft(importId, fixture)
+  );
   const [originalMedia, manifest, transcript] = privateR2References(importId);
   const evidence = [
     { kind: "original_media", referenceId: originalMedia },
@@ -190,7 +221,7 @@ const seedRequiresAction = async (
                 intent_version = intent_version + 1, updated_at = ?
           WHERE id = ?`
       )
-      .bind(JSON.stringify(evidence), actionId, instant, importId),
+      .bind(JSON.stringify(evidence), fixture.actionId, instant, importId),
     database
       .prepare(
         `INSERT INTO import_recipe_extractions (
@@ -204,9 +235,9 @@ const seedRequiresAction = async (
                    1, 0, 0, 1, 0, 0, 'USD', 'known', 1, ?, ?, ?)`
       )
       .bind(
-        extractionFingerprint,
+        fixture.extractionFingerprint,
         importId,
-        evidenceFingerprint,
+        fixture.evidenceFingerprint,
         privateProvider,
         privateModel,
         JSON.stringify(encodedDraft),
@@ -221,7 +252,7 @@ const seedRequiresAction = async (
            created_at, updated_at
          ) VALUES (?, 'needs_review', 0, NULL, ?, ?)`
       )
-      .bind(extractionFingerprint, instant, instant),
+      .bind(fixture.extractionFingerprint, instant, instant),
   ]);
 };
 
@@ -235,7 +266,11 @@ const failureValue = (exit: Exit.Exit<unknown, unknown>) => {
   return error._tag === "Some" ? error.value : undefined;
 };
 
-const auditConfirmation = (database: AnyD1Database, intentId: string) =>
+const auditConfirmation = (
+  database: AnyD1Database,
+  intentId: string,
+  fixtureExtractionFingerprint = extractionFingerprint
+) =>
   database
     .prepare(
       `SELECT
@@ -248,11 +283,11 @@ const auditConfirmation = (database: AnyD1Database, intentId: string) =>
          (SELECT public_recipe_id FROM recipe_imports WHERE id = ?) AS recipe_id`
     )
     .bind(
-      extractionFingerprint,
-      extractionFingerprint,
-      extractionFingerprint,
+      fixtureExtractionFingerprint,
+      fixtureExtractionFingerprint,
+      fixtureExtractionFingerprint,
       intentId,
-      extractionFingerprint,
+      fixtureExtractionFingerprint,
       intentId,
       intentId
     )
@@ -264,7 +299,9 @@ const assertNoPrivateTransport = (
 ): void => {
   const sentinels = [
     submittedUrl,
+    cancellationSubmittedUrl,
     bearerToken,
+    secondBearerToken,
     privateProvider,
     privateModel,
     privateTranscript,
@@ -272,6 +309,8 @@ const assertNoPrivateTransport = (
     extractionFingerprint,
     TestImportPrincipal.actorId,
     TestImportPrincipal.householdScopeId,
+    secondActorId,
+    foreignHouseholdScopeId,
     ...additionalSentinels,
   ];
   if (typeof value === "string") {
@@ -303,7 +342,7 @@ beforeAll(async () => {
 });
 
 describe("recipe import intent HTTP API with real D1", () => {
-  it("round-trips durable admission and review without exposing private transport", async () => {
+  it("isolates two configured households through one Worker and one D1 database", async () => {
     const app: {
       current?: ReturnType<typeof HttpRouter.toWebHandler>;
     } = {};
@@ -312,7 +351,22 @@ describe("recipe import intent HTTP API with real D1", () => {
       const started: string[] = [];
       const activeWorkflowIds = new Set<string>();
       const terminated: string[] = [];
-      const authorizer = yield* makeTestImportAuthorizer(bearerToken);
+      const secondPrincipal = Schema.decodeUnknownSync(ImportPrincipal)({
+        actorId: secondActorId,
+        householdScopeId: foreignHouseholdScopeId,
+      });
+      const authorizer = yield* makeImportAuthorizer({
+        configuredPrincipals: [
+          {
+            principal: TestImportPrincipal,
+            token: Redacted.make(bearerToken),
+          },
+          {
+            principal: secondPrincipal,
+            token: Redacted.make(secondBearerToken),
+          },
+        ],
+      });
       const intentApplication = makeImportIntentApplication(
         makeD1ImportRepository(database),
         {
@@ -354,18 +408,22 @@ describe("recipe import intent HTTP API with real D1", () => {
         Layer.succeed(
           CanonicalSourceIdentityResolver,
           CanonicalSourceIdentityResolver.of({
-            resolve: () =>
+            resolve: (source) =>
               Effect.succeed({
                 _tag: "VideoIdentity" as const,
                 identity: {
-                  canonicalId:
-                    Schema.decodeUnknownSync(SourceCanonicalId)(
-                      canonicalSourceId
-                    ),
+                  canonicalId: Schema.decodeUnknownSync(SourceCanonicalId)(
+                    source.url === cancellationSubmittedUrl
+                      ? cancellationCanonicalSourceId
+                      : canonicalSourceId
+                  ),
                   kind: "tiktok" as const,
                 },
-                videoUrl:
-                  Schema.decodeUnknownSync(ValidatedVideoUrl)(canonicalUrl),
+                videoUrl: Schema.decodeUnknownSync(ValidatedVideoUrl)(
+                  source.url === cancellationSubmittedUrl
+                    ? cancellationCanonicalUrl
+                    : canonicalUrl
+                ),
               }),
           })
         )
@@ -389,12 +447,15 @@ describe("recipe import intent HTTP API with real D1", () => {
           )
         )
       );
-      const clientLayer = makeRecipeImportApiClientLayer({
-        baseUrl: "http://meal-planner.test",
-        token: Redacted.make(bearerToken),
-      }).pipe(
-        Layer.provide(Layer.succeed(HttpClient.HttpClient, webHttpClient))
-      );
+      const makeClientLayer = (token: string) =>
+        makeRecipeImportApiClientLayer({
+          baseUrl: "http://meal-planner.test",
+          token: Redacted.make(token),
+        }).pipe(
+          Layer.provide(Layer.succeed(HttpClient.HttpClient, webHttpClient))
+        );
+      const firstClientLayer = makeClientLayer(bearerToken);
+      const secondClientLayer = makeClientLayer(secondBearerToken);
       const request = Schema.decodeUnknownSync(CreateRecipeImportIntentRequest)(
         {
           source: { kind: "tiktok", url: submittedUrl },
@@ -408,26 +469,12 @@ describe("recipe import intent HTTP API with real D1", () => {
           url: "https://www.tiktok.com/t/http-worker-changed-command",
         },
       });
-      const foreignRequest = Schema.decodeUnknownSync(
+      const cancellationRequest = Schema.decodeUnknownSync(
         CreateRecipeImportIntentRequest
       )({
-        source: {
-          kind: "tiktok",
-          url: "https://www.tiktok.com/t/http-worker-foreign-intent",
-        },
+        source: { kind: "tiktok", url: cancellationSubmittedUrl },
       });
       const idempotencyKey = Schema.decodeUnknownSync(IdempotencyKey);
-      const foreignPrincipal = Schema.decodeUnknownSync(ImportPrincipal)({
-        actorId: "8".repeat(64),
-        householdScopeId: foreignHouseholdScopeId,
-      });
-      const foreignAdmission = yield* intentApplication
-        .admit(
-          foreignPrincipal,
-          foreignRequest,
-          idempotencyKey("http-worker-foreign-admission")
-        )
-        .pipe(Effect.provide(ImportIntentIdGenerator.live));
 
       const results = yield* Effect.gen(function* generatedClientScenario() {
         const client = yield* RecipeImportApiClient;
@@ -458,6 +505,29 @@ describe("recipe import intent HTTP API with real D1", () => {
           },
           payload: request,
         });
+        const redirected = yield* client.recipeImportIntents.create({
+          headers: {
+            "idempotency-key": idempotencyKey(
+              "http-worker-same-household-duplicate"
+            ),
+          },
+          payload: request,
+        });
+        let redirectedIntent = yield* client.recipeImportIntents.get({
+          params: { id: redirected.body.id },
+        });
+        for (
+          let attempt = 0;
+          attempt < 20 &&
+          redirectedIntent.body.status === "processing" &&
+          redirectedIntent.body.processing.type === "resolving_source";
+          attempt += 1
+        ) {
+          yield* Effect.sleep("1 millis");
+          redirectedIntent = yield* client.recipeImportIntents.get({
+            params: { id: redirected.body.id },
+          });
+        }
         const conflictExit = yield* Effect.exit(
           client.recipeImportIntents.create({
             headers: {
@@ -468,15 +538,8 @@ describe("recipe import intent HTTP API with real D1", () => {
         );
         const conflict = failureValue(conflictExit);
 
-        const foreignReadExit = yield* Effect.exit(
-          client.recipeImportIntents.get({
-            params: { id: foreignAdmission.intent.id },
-          })
-        );
-        const foreignNotFound = failureValue(foreignReadExit);
-
         yield* Effect.promise(() =>
-          seedRequiresAction(database, created.body.id)
+          seedRequiresAction(database, created.body.id, firstReviewFixture)
         );
         const requiresAction = yield* client.recipeImportIntents.get({
           params: { id: created.body.id },
@@ -541,12 +604,235 @@ describe("recipe import intent HTTP API with real D1", () => {
           conflict,
           continued,
           created,
-          foreignNotFound,
           recipe,
+          redirected,
+          redirectedIntent,
           replayed,
           requiresAction,
         };
-      }).pipe(Effect.provide(clientLayer));
+      }).pipe(Effect.provide(firstClientLayer));
+
+      const secondResults = yield* Effect.gen(
+        function* secondGeneratedClientScenario() {
+          const client = yield* RecipeImportApiClient;
+          const created = yield* client.recipeImportIntents.create({
+            headers: {
+              "idempotency-key": idempotencyKey(
+                "http-worker-second-household-admission"
+              ),
+            },
+            payload: request,
+          });
+          let continued = yield* client.recipeImportIntents.get({
+            params: { id: created.body.id },
+          });
+          for (
+            let attempt = 0;
+            attempt < 20 &&
+            continued.body.status === "processing" &&
+            continued.body.processing.type === "resolving_source";
+            attempt += 1
+          ) {
+            yield* Effect.sleep("1 millis");
+            continued = yield* client.recipeImportIntents.get({
+              params: { id: created.body.id },
+            });
+          }
+
+          yield* Effect.promise(() =>
+            seedRequiresAction(database, created.body.id, secondReviewFixture)
+          );
+          const requiresAction = yield* client.recipeImportIntents.get({
+            params: { id: created.body.id },
+          });
+          const activeAction = yield* client.recipeImportIntents.getAction({
+            params: { actionId: secondActionId, id: created.body.id },
+          });
+          const answered = yield* client.recipeImportIntents.answerAction({
+            headers: {
+              "idempotency-key": idempotencyKey(
+                "http-worker-second-household-answer"
+              ),
+            },
+            params: { actionId: secondActionId, id: created.body.id },
+            payload: Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest)({
+              answers: [
+                { field: "name", value: "Second Household Stew" },
+                { field: "tags", value: reviewTags },
+              ],
+              expectedActionVersion: 1,
+            }),
+          });
+          const confirmRequest = Schema.decodeUnknownSync(
+            ConfirmRecipeImportActionRequest
+          )({ expectedActionVersion: 2 });
+          const confirmed = yield* client.recipeImportIntents.confirmAction({
+            headers: {
+              "idempotency-key": idempotencyKey(
+                "http-worker-second-household-confirm"
+              ),
+            },
+            params: { actionId: secondActionId, id: created.body.id },
+            payload: confirmRequest,
+          });
+          const afterConfirm = yield* Effect.promise(() =>
+            auditConfirmation(
+              database,
+              created.body.id,
+              secondExtractionFingerprint
+            )
+          );
+          const completedAction = yield* client.recipeImportIntents.getAction({
+            params: { actionId: secondActionId, id: created.body.id },
+          });
+          const recipe = yield* client.recipes.get({
+            params: { recipeId: confirmed.result.recipeId },
+          });
+          const timeline = yield* client.recipeImportIntents.timeline({
+            params: { id: created.body.id },
+          });
+          const firstIntentRead = failureValue(
+            yield* Effect.exit(
+              client.recipeImportIntents.get({
+                params: { id: results.created.body.id },
+              })
+            )
+          );
+          const firstActionRead = failureValue(
+            yield* Effect.exit(
+              client.recipeImportIntents.getAction({
+                params: { actionId, id: results.created.body.id },
+              })
+            )
+          );
+          const firstRecipeRead = failureValue(
+            yield* Effect.exit(
+              client.recipes.get({
+                params: { recipeId: results.confirmed.result.recipeId },
+              })
+            )
+          );
+          const firstAnswerMutation = failureValue(
+            yield* Effect.exit(
+              client.recipeImportIntents.answerAction({
+                headers: {
+                  "idempotency-key": idempotencyKey(
+                    "http-worker-cross-household-answer"
+                  ),
+                },
+                params: { actionId, id: results.created.body.id },
+                payload: Schema.decodeUnknownSync(
+                  AnswerReviewRecipeActionRequest
+                )({
+                  answers: [{ field: "name", value: "Hidden mutation" }],
+                  expectedActionVersion: 2,
+                }),
+              })
+            )
+          );
+          const firstConfirmMutation = failureValue(
+            yield* Effect.exit(
+              client.recipeImportIntents.confirmAction({
+                headers: {
+                  "idempotency-key": idempotencyKey(
+                    "http-worker-cross-household-confirm"
+                  ),
+                },
+                params: { actionId, id: results.created.body.id },
+                payload: Schema.decodeUnknownSync(
+                  ConfirmRecipeImportActionRequest
+                )({ expectedActionVersion: 2 }),
+              })
+            )
+          );
+          const firstCancelMutation = failureValue(
+            yield* Effect.exit(
+              client.recipeImportIntents.cancel({
+                headers: {
+                  "idempotency-key": idempotencyKey(
+                    "http-worker-cross-household-cancel"
+                  ),
+                },
+                params: { id: results.created.body.id },
+                payload: {
+                  expectedIntentVersion: results.confirmed.intentVersion,
+                },
+              })
+            )
+          );
+          const cancellationCreated = yield* client.recipeImportIntents.create({
+            headers: {
+              "idempotency-key": idempotencyKey(
+                "http-worker-second-household-cancellation-admission"
+              ),
+            },
+            payload: cancellationRequest,
+          });
+          const cancellable = yield* client.recipeImportIntents.get({
+            params: { id: cancellationCreated.body.id },
+          });
+          if (cancellable.body.status !== "processing") {
+            return yield* Effect.die(
+              "The provider-free cancellation fixture must remain mutable"
+            );
+          }
+          const cancelled = yield* client.recipeImportIntents.cancel({
+            headers: {
+              "idempotency-key": idempotencyKey(
+                "http-worker-second-household-cancel"
+              ),
+            },
+            params: { id: cancellable.body.id },
+            payload: {
+              expectedIntentVersion: cancellable.body.intentVersion,
+            },
+          });
+          const cancellationTimeline =
+            yield* client.recipeImportIntents.timeline({
+              params: { id: cancellationCreated.body.id },
+            });
+          const succeededAfterCancellation =
+            yield* client.recipeImportIntents.get({
+              params: { id: created.body.id },
+            });
+
+          return {
+            activeAction,
+            afterConfirm,
+            answered,
+            cancellable,
+            cancellationCreated,
+            cancellationTimeline,
+            cancelled,
+            completedAction,
+            confirmed,
+            continued,
+            created,
+            firstActionRead,
+            firstAnswerMutation,
+            firstCancelMutation,
+            firstConfirmMutation,
+            firstIntentRead,
+            firstRecipeRead,
+            recipe,
+            requiresAction,
+            succeededAfterCancellation,
+            timeline,
+          };
+        }
+      ).pipe(Effect.provide(secondClientLayer));
+      const firstHouseholdCancellationRead = yield* Effect.gen(
+        function* firstHouseholdCancellationIsolation() {
+          const client = yield* RecipeImportApiClient;
+          return failureValue(
+            yield* Effect.exit(
+              client.recipeImportIntents.get({
+                params: { id: secondResults.cancellationCreated.body.id },
+              })
+            )
+          );
+        }
+      ).pipe(Effect.provide(firstClientLayer));
 
       expect(results.created.body).toMatchObject({ status: "processing" });
       expect(results.created.body).toMatchObject({
@@ -562,13 +848,14 @@ describe("recipe import intent HTTP API with real D1", () => {
         results.created.body.id
       );
       expect(results.replayed).toEqual(results.created);
+      expect(results.redirectedIntent.body).toMatchObject({
+        redirect: { intentId: results.created.body.id },
+        status: "redirected",
+      });
+      expect(results.redirected.body.id).not.toBe(results.created.body.id);
       expect(results.conflict).toMatchObject({
         code: "idempotency_conflict",
         status: 409,
-      });
-      expect(results.foreignNotFound).toMatchObject({
-        code: "intent_not_found",
-        status: 404,
       });
       expect(results.requiresAction.body).toMatchObject({
         source: { canonicalUrl, resolution: "resolved" },
@@ -612,12 +899,106 @@ describe("recipe import intent HTTP API with real D1", () => {
         recipe: { name: "Tomato and Onion Stew" },
         tags: reviewTags,
       });
+      expect(secondResults.created.body.id).not.toBe(results.created.body.id);
+      expect(secondResults.created.body).toMatchObject({
+        source: { resolution: "pending" },
+        status: "processing",
+      });
+      expect(secondResults.continued.body).toMatchObject({
+        processing: { sourceKind: "video", type: "acquiring_media" },
+        source: { canonicalUrl, resolution: "resolved" },
+        status: "processing",
+      });
+      expect(secondResults.requiresAction.body).toMatchObject({
+        source: { canonicalUrl, resolution: "resolved" },
+        status: "requires_action",
+      });
+      expect(secondResults.activeAction).toMatchObject({
+        actionVersion: 1,
+        id: secondActionId,
+        status: "active",
+      });
+      expect(secondResults.answered).toMatchObject({
+        action: { id: secondActionId },
+        status: "requires_action",
+      });
+      expect(secondResults.confirmed).toMatchObject({
+        id: secondResults.created.body.id,
+        result: { recipeId: secondResults.created.body.id },
+        status: "succeeded",
+      });
+      expect(secondResults.completedAction).toMatchObject({
+        completion: { type: "confirmed" },
+        id: secondActionId,
+        status: "completed",
+      });
+      expect(secondResults.recipe).toMatchObject({
+        id: secondResults.created.body.id,
+        recipe: { name: "Second Household Stew" },
+        tags: reviewTags,
+      });
+      expect(secondResults.afterConfirm).toEqual({
+        corrections: 2,
+        history: 6,
+        mutations: 2,
+        public_status: "succeeded",
+        recipe_id: secondResults.created.body.id,
+        review_version: 2,
+        transitions: 1,
+      });
+      expect(secondResults.timeline.data.at(-1)).toMatchObject({
+        recipeId: secondResults.created.body.id,
+        type: "intent_succeeded",
+      });
+      expect(secondResults.firstIntentRead).toMatchObject({
+        code: "intent_not_found",
+        status: 404,
+      });
+      expect(secondResults.firstActionRead).toMatchObject({
+        code: "action_not_found",
+        status: 404,
+      });
+      expect(secondResults.firstRecipeRead).toMatchObject({
+        code: "recipe_not_found",
+        status: 404,
+      });
+      expect(secondResults.firstAnswerMutation).toMatchObject({
+        code: "action_not_found",
+        status: 404,
+      });
+      expect(secondResults.firstConfirmMutation).toMatchObject({
+        code: "action_not_found",
+        status: 404,
+      });
+      expect(secondResults.firstCancelMutation).toMatchObject({
+        code: "intent_not_found",
+        status: 404,
+      });
+      expect(secondResults.cancellable.body).toMatchObject({
+        source: { resolution: "pending" },
+        status: "processing",
+      });
+      expect(secondResults.cancelled).toMatchObject({
+        id: secondResults.cancellationCreated.body.id,
+        status: "cancelled",
+      });
+      expect(secondResults.cancellationTimeline.data.at(-1)).toMatchObject({
+        type: "intent_cancelled",
+      });
+      expect(secondResults.succeededAfterCancellation.body).toEqual(
+        secondResults.confirmed
+      );
+      expect(firstHouseholdCancellationRead).toMatchObject({
+        code: "intent_not_found",
+        status: 404,
+      });
       const publicPayloads = [
         results.created,
         results.continued,
         results.replayed,
+        results.redirected,
+        results.redirectedIntent,
         results.conflict,
-        results.foreignNotFound,
         results.requiresAction,
         results.activeAction,
         results.answered,
@@ -625,16 +1006,40 @@ describe("recipe import intent HTTP API with real D1", () => {
         results.confirmReplay,
         results.completedAction,
         results.recipe,
+        secondResults.created,
+        secondResults.continued,
+        secondResults.requiresAction,
+        secondResults.activeAction,
+        secondResults.answered,
+        secondResults.confirmed,
+        secondResults.completedAction,
+        secondResults.recipe,
+        secondResults.timeline,
+        secondResults.firstIntentRead,
+        secondResults.firstActionRead,
+        secondResults.firstRecipeRead,
+        secondResults.firstAnswerMutation,
+        secondResults.firstConfirmMutation,
+        secondResults.firstCancelMutation,
+        secondResults.cancellationCreated,
+        secondResults.cancellable,
+        secondResults.cancelled,
+        secondResults.cancellationTimeline,
+        secondResults.succeededAfterCancellation,
+        firstHouseholdCancellationRead,
       ];
       for (const payload of publicPayloads) {
-        assertNoPrivateTransport(
-          payload,
-          privateR2References(results.created.body.id)
-        );
+        assertNoPrivateTransport(payload, [
+          ...privateR2References(results.created.body.id),
+          ...privateR2References(secondResults.created.body.id),
+        ]);
       }
       expect(JSON.stringify(publicPayloads)).toContain(canonicalUrl);
-      expect(started).toEqual([results.created.body.id]);
-      expect(terminated).toEqual([]);
+      expect(started).toEqual([
+        results.created.body.id,
+        secondResults.created.body.id,
+      ]);
+      expect(terminated).toEqual([secondResults.cancellationCreated.body.id]);
     });
     try {
       await Effect.runPromise(program);

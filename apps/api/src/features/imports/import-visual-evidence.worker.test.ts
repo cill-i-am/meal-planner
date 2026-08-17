@@ -44,6 +44,7 @@ import {
 } from "./import-speech-transcription.fake.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
+import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import type { VisualEvidenceExtractorShape } from "./import-visual-evidence-extractor.js";
 import { VisualEvidence } from "./import-visual-evidence-extractor.js";
 import {
@@ -566,6 +567,10 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
       Layer.mergeAll(
         ProviderTerminalSettlementRoutes,
         Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+        Layer.succeed(
+          ImportSystemAuthorizer,
+          ImportSystemAuthorizer.of(authorizer)
+        ),
         Layer.succeed(
           ProviderTerminalSettlementService,
           ProviderTerminalSettlementService.of(service)

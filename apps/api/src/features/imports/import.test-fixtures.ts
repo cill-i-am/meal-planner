@@ -35,8 +35,9 @@ export const TestImportTrace = Schema.decodeUnknownSync(ImportTraceContext)({
 
 export const makeTestImportAuthorizer = (token: string) =>
   makeImportAuthorizer({
-    expectedToken: Redacted.make(token),
-    principal: TestImportPrincipal,
+    configuredPrincipals: [
+      { principal: TestImportPrincipal, token: Redacted.make(token) },
+    ],
   });
 
 export const admitResolvedTestImport = (input: {

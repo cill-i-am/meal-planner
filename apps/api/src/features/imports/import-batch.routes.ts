@@ -16,7 +16,7 @@ import type {
   GetImportBatchError,
 } from "./import-batch.service.js";
 import { ImportBatchService } from "./import-batch.service.js";
-import { ImportAuthorizer } from "./import.auth.js";
+import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import { IdempotencyKey } from "./import.contracts.js";
 import { invalidImportId, invalidImportRequest } from "./import.errors.js";
 import type { UnauthorizedImportCaller } from "./import.errors.js";
@@ -134,7 +134,7 @@ const respond = <S extends Schema.ConstraintEncoder<unknown>, R>(
 export const ImportBatchRouteDefinitions = [
   HttpRouter.route("POST", "/import-batches", (request) =>
     Effect.gen(function* createImportBatch() {
-      const authorizer = yield* ImportAuthorizer;
+      const authorizer = yield* ImportSystemAuthorizer;
       yield* authorizer.authorize(request.headers["authorization"]);
       const idempotencyKey = yield* decodeIdempotencyKey(
         request.headers["idempotency-key"]
@@ -150,7 +150,7 @@ export const ImportBatchRouteDefinitions = [
   ),
   HttpRouter.route("GET", "/import-batches/:id", (request) =>
     Effect.gen(function* getImportBatch() {
-      const authorizer = yield* ImportAuthorizer;
+      const authorizer = yield* ImportSystemAuthorizer;
       yield* authorizer.authorize(request.headers["authorization"]);
       const { id } = yield* decodeBatchId;
       const service = yield* ImportBatchService;

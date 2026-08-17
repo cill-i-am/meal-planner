@@ -35,6 +35,7 @@ import type { RecipeImportIntentReviewApplicationShape } from "./import-intent-r
 import { ImportIntentIdGenerator } from "./import-intent.js";
 import { ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
 import { ProviderTerminalSettlementRouteDefinitions } from "./import-provider-terminal-settlement.routes.js";
+import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import { TestImportPrincipal } from "./import.test-fixtures.js";
 import { CanonicalSourceIdentityResolver } from "./source-identity.js";
@@ -183,8 +184,22 @@ interface MakeAppOptions {
 const makeApp = async (options: MakeAppOptions = {}) => {
   const authorizer = await Effect.runPromise(
     makeImportAuthorizer({
-      expectedToken: Redacted.make("test-import-token"),
-      principal: TestImportPrincipal,
+      configuredPrincipals: [
+        {
+          principal: TestImportPrincipal,
+          token: Redacted.make("test-import-token"),
+        },
+      ],
+    })
+  );
+  const systemAuthorizer = await Effect.runPromise(
+    makeImportAuthorizer({
+      configuredPrincipals: [
+        {
+          principal: TestImportPrincipal,
+          token: Redacted.make("system-import-token"),
+        },
+      ],
     })
   );
   const intentApplication = {
@@ -229,6 +244,10 @@ const makeApp = async (options: MakeAppOptions = {}) => {
     ),
     Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
     Layer.succeed(
+      ImportSystemAuthorizer,
+      ImportSystemAuthorizer.of(systemAuthorizer)
+    ),
+    Layer.succeed(
       RecipeImportIntentApplication,
       RecipeImportIntentApplication.of(intentApplication)
     ),
@@ -260,6 +279,17 @@ const makeApp = async (options: MakeAppOptions = {}) => {
     { disableLogger: true }
   );
 };
+
+const makeSystemOnlyRequest = (path: string, token: string) =>
+  new Request(`https://meal-planner.test${path}`, {
+    body: "{not-json",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      "idempotency-key": "operator-test",
+    },
+    method: "POST",
+  });
 
 describe("recipe import HttpApi boundary", () => {
   const apps: Awaited<ReturnType<typeof makeApp>>[] = [];
@@ -638,6 +668,41 @@ describe("recipe import HttpApi boundary", () => {
     await expect(response.json()).resolves.toEqual(
       OpenApi.fromApi(RecipeImportApi)
     );
+  });
+
+  it("keeps browser principals out of the system-only import surfaces", async () => {
+    const app = await makeApp({
+      operationalRoutes: [
+        ...ImportBatchRouteDefinitions,
+        ...ProviderTerminalSettlementRouteDefinitions,
+      ],
+    });
+    apps.push(app);
+
+    const systemOnlyPaths = [
+      "/import-batches",
+      "/imports/operator-provider-terminal-settlement",
+    ];
+    const [browserPrincipalResponses, systemPrincipalResponses] =
+      await Promise.all([
+        Promise.all(
+          systemOnlyPaths.map((path) =>
+            app.handler(makeSystemOnlyRequest(path, "test-import-token"))
+          )
+        ),
+        Promise.all(
+          systemOnlyPaths.map((path) =>
+            app.handler(makeSystemOnlyRequest(path, "system-import-token"))
+          )
+        ),
+      ]);
+
+    expect(browserPrincipalResponses.map(({ status }) => status)).toEqual([
+      401, 401,
+    ]);
+    expect(systemPrincipalResponses.map(({ status }) => status)).toEqual([
+      400, 400,
+    ]);
   });
 
   it("keeps the security principal schema at the shared protocol boundary", () => {
