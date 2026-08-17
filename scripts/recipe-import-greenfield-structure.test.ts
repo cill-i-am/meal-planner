@@ -100,9 +100,9 @@ describe("greenfield recipe-import architecture", () => {
     ).toEqual([]);
   });
 
-  it("keeps web runtime configuration at the server composition boundary", async () => {
+  it("keeps browser and website worker code free of runtime secrets", async () => {
     const sources = await loadSources(
-      [`${repositoryRoot}/apps/web/src/features/recipe-import/server`],
+      [`${repositoryRoot}/apps/web/src`],
       isProductionSource
     );
     const forbidden = [/\bprocess\.env\b/u, /\bRedacted\.make\b/u] as const;
