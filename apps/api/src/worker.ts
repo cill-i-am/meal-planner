@@ -28,8 +28,8 @@ import {
   consumeImportBatchDeadLetterDelivery,
   consumeImportBatchQueueDelivery,
   makeImportBatchQueueAcceptance,
-  makeImportWorkerRequestLayer,
 } from "./features/imports/import-runtime-composition.js";
+import { makeImportWorkerRequestLayer } from "./features/imports/import-worker-request-layer.js";
 import { ImportAuthorizationConfig } from "./features/imports/import.auth.config.js";
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowTerminator,
