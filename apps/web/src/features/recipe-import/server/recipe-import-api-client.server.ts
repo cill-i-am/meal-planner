@@ -7,7 +7,6 @@ import type { RecipeImportApiClientShape } from "@meal-planner/recipe-import-api
 import {
   Config,
   Context,
-  Data,
   Effect,
   Equivalence,
   Layer,
@@ -25,18 +24,11 @@ import type {
   RecipeImportProfileAlias as RecipeImportProfileAliasType,
   RecipeImportPublicProfileConfiguration as RecipeImportPublicProfileConfigurationType,
 } from "../profiles.js";
+import { RecipeImportProfileSelectionError } from "./recipe-import-profile-selection-error.server.js";
+import { RecipeImportRuntimeConfigurationError } from "./recipe-import-runtime-configuration-error.server.js";
 
-export class RecipeImportProfileSelectionError extends Data.TaggedError(
-  "RecipeImportProfileSelectionError"
-) {
-  override readonly message = "Recipe import profile is unavailable.";
-}
-
-export class RecipeImportRuntimeConfigurationError extends Data.TaggedError(
-  "RecipeImportRuntimeConfigurationError"
-) {
-  override readonly message = "Recipe import runtime configuration is invalid.";
-}
+export { RecipeImportProfileSelectionError } from "./recipe-import-profile-selection-error.server.js";
+export { RecipeImportRuntimeConfigurationError } from "./recipe-import-runtime-configuration-error.server.js";
 
 const RequiredSecret = Schema.Redacted(
   Schema.String.pipe(Schema.check(Schema.isTrimmed(), Schema.isNonEmpty()))
