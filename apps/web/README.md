@@ -12,7 +12,7 @@ RECIPE_IMPORT_API_TOKEN=your-server-credential \
 pnpm --filter @meal-planner/web dev
 ```
 
-The app composes the generated `RecipeImportApiClient` from `@meal-planner/recipe-import-api` inside a server-only module. TanStack Start server functions read the API base URL and bearer credential at request time, retain the credential as `Redacted`, and return only schema-encoded canonical data. The browser supplies neither an upstream URL/method/path/header nor a credential, and it contains no handwritten `fetch` client or copied API DTOs.
+The app composes the generated `RecipeImportApiClient` from `@meal-planner/recipe-import-api` inside a server-only module. Its Effect-managed server runtime decodes the required API base URL and bearer credential once when first acquired, retains the credential as `Redacted`, and reuses the configured client for subsequent server-function calls. The server functions return only schema-encoded canonical data. The browser supplies neither an upstream URL/method/path/header nor a credential, and it contains no handwritten `fetch` client or copied API DTOs.
 
 ## Deliberate limitations
 

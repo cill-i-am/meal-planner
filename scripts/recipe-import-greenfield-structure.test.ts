@@ -100,6 +100,18 @@ describe("greenfield recipe-import architecture", () => {
     ).toEqual([]);
   });
 
+  it("keeps web runtime configuration at the server composition boundary", async () => {
+    const sources = await loadSources(
+      [`${repositoryRoot}/apps/web/src/features/recipe-import/server`],
+      isProductionSource
+    );
+    const forbidden = [/\bprocess\.env\b/u, /\bRedacted\.make\b/u] as const;
+
+    expect(
+      forbidden.flatMap((pattern) => violations(sources, pattern))
+    ).toEqual([]);
+  });
+
   it("installs only the fresh canonical D1 schema", async () => {
     const sources = await loadSources(
       [`${repositoryRoot}/apps/api/migrations`],
