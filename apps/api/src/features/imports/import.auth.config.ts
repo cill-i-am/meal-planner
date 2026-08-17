@@ -50,3 +50,28 @@ export const ImportConfiguredPrincipalsConfig: Effect.Effect<
     )
   )
 );
+
+const hasUnambiguousAuthorityTokens = ({
+  configuredPrincipals,
+  systemApiToken,
+}: {
+  readonly configuredPrincipals: readonly ConfiguredImportPrincipal[];
+  readonly systemApiToken: Redacted.Redacted<string>;
+}) => {
+  const authorityTokens = [
+    Redacted.value(systemApiToken),
+    ...configuredPrincipals.map(({ token }) => Redacted.value(token)),
+  ];
+  return new Set(authorityTokens).size === authorityTokens.length;
+};
+
+/** Decode the complete authorization configuration at Worker startup. */
+export const ImportAuthorizationConfig = Effect.all({
+  configuredPrincipals: ImportConfiguredPrincipalsConfig,
+  systemApiToken: Config.redacted("MEAL_PLANNER_IMPORT_API_TOKEN"),
+}).pipe(
+  Effect.filterOrFail(
+    hasUnambiguousAuthorityTokens,
+    () => new ImportConfiguredPrincipalsConfigError()
+  )
+);

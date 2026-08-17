@@ -30,7 +30,7 @@ import {
   makeImportBatchQueueAcceptance,
   makeImportWorkerRequestLayer,
 } from "./features/imports/import-runtime-composition.js";
-import { ImportConfiguredPrincipalsConfig } from "./features/imports/import.auth.config.js";
+import { ImportAuthorizationConfig } from "./features/imports/import.auth.config.js";
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowTerminator,
   makeImportWorkflowStarter,
@@ -95,9 +95,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
     const importBatchQueueWriter =
       yield* Cloudflare.Queues.WriteQueue(importBatchQueue);
-    const importSystemApiToken = yield* Config.redacted(
-      "MEAL_PLANNER_IMPORT_API_TOKEN"
-    );
+    const {
+      configuredPrincipals: importConfiguredPrincipals,
+      systemApiToken: importSystemApiToken,
+    } = yield* ImportAuthorizationConfig.pipe(Effect.orDie);
     const importSystemActorId = Schema.decodeUnknownSync(ImportActorId)(
       yield* Config.string("MEAL_PLANNER_IMPORT_ACTOR_ID")
     );
@@ -108,8 +109,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       actorId: importSystemActorId,
       householdScopeId: importSystemHouseholdScopeId,
     });
-    const importConfiguredPrincipals =
-      yield* ImportConfiguredPrincipalsConfig.pipe(Effect.orDie);
     const makeBatchQueueAcceptance = (
       database: AnyD1Database,
       trace: ImportTraceContext
