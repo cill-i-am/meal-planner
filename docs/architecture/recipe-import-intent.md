@@ -15,6 +15,31 @@ does not store or project a second public status. Provider terminal settlement
 records that checkpoint and advances the intent through the canonical reducer
 and public history in one atomic operation.
 
+## Household tenancy and configured profiles
+
+All recipe-import households share the single `MealPlannerDatabase` D1
+database. `household_scope_id` scopes the canonical aggregate and its import
+requests, idempotency records, history, actions, recipes, deduplication, and
+safe not-found behavior. A household does not own or map one-to-one to a
+Durable Object. `ImportMediaAcquisitionObject` is addressed by the globally
+random `importId` for per-import media/container coordination and transports
+private acquired media and artifacts. It does not use its own Durable Object
+storage: durable lifecycle and domain state stay in D1, while private artifacts
+stay in R2. It is not a tenancy or household-storage boundary.
+
+The proof-of-concept household switcher uses an app-local, server-side web
+profile registry pending Better Auth. Each configured profile maps an opaque UI
+alias and display label to a Redacted bearer token and the shared API base URL.
+Only the safe alias and label cross into the browser. Bearer tokens, actor IDs,
+household-scope values or digests, and raw server configuration remain private.
+Browser selection cannot supply a principal, tenancy header, or operational
+credential.
+
+The public Effect HttpApi and generated `RecipeImportApiClient` contract remain
+unchanged. Web server functions select the configured profile's generated
+client; the browser does not restate the wire contract or construct a separate
+HTTP client.
+
 ## Admission, ownership, and duplicate handling
 
 Admission creates the intent immediately, before source resolution. One D1
@@ -131,7 +156,11 @@ Authentication establishes the typed household principal before request-body
 decoding. Schema failures and typed domain failures map exhaustively to safe
 Problem Details. The production Worker composes this API with explicitly named
 health, batch, operator-carousel, and provider-settlement routes, followed by
-one final 404 handler.
+one final 404 handler. Batch routes and provider terminal settlement authorize
+one explicitly configured system principal. Operator-carousel remains
+household-principal scoped; associating it with operational routes does not
+grant it system authority. Browser profile selection cannot control either
+system-only surface.
 
 The TanStack Start application calls the generated client only from server
 functions through an injected Effect Layer. TanStack Query owns browser

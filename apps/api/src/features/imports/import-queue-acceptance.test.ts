@@ -34,6 +34,7 @@ import {
 import { makeImportIntentApplication } from "./import-intent.js";
 import { DeadLetterReplayClaimId } from "./import-operations.js";
 import { makeD1ImportQueueAcceptance } from "./import-queue-acceptance.d1.js";
+import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import type { ImportAuthorizerShape } from "./import.auth.js";
 import { ImportAuthorizer } from "./import.auth.js";
 import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
@@ -290,6 +291,10 @@ const makeHttpHarness = async () => {
     Layer.mergeAll(
       ImportBatchRoutes,
       Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+      Layer.succeed(
+        ImportSystemAuthorizer,
+        ImportSystemAuthorizer.of(authorizer)
+      ),
       Layer.succeed(ImportBatchService, ImportBatchService.of(service))
     ),
     { disableLogger: true }

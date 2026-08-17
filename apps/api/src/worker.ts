@@ -28,8 +28,9 @@ import {
   consumeImportBatchDeadLetterDelivery,
   consumeImportBatchQueueDelivery,
   makeImportBatchQueueAcceptance,
-  makeImportWorkerRequestLayer,
 } from "./features/imports/import-runtime-composition.js";
+import { makeImportWorkerRequestLayer } from "./features/imports/import-worker-request-layer.js";
+import { ImportAuthorizationConfig } from "./features/imports/import.auth.config.js";
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowTerminator,
   makeImportWorkflowStarter,
@@ -94,18 +95,19 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
     const importBatchQueueWriter =
       yield* Cloudflare.Queues.WriteQueue(importBatchQueue);
-    const importApiToken = yield* Config.redacted(
-      "MEAL_PLANNER_IMPORT_API_TOKEN"
-    );
-    const importActorId = Schema.decodeUnknownSync(ImportActorId)(
+    const {
+      configuredPrincipals: importConfiguredPrincipals,
+      systemApiToken: importSystemApiToken,
+    } = yield* ImportAuthorizationConfig.pipe(Effect.orDie);
+    const importSystemActorId = Schema.decodeUnknownSync(ImportActorId)(
       yield* Config.string("MEAL_PLANNER_IMPORT_ACTOR_ID")
     );
-    const importHouseholdScopeId = Schema.decodeUnknownSync(HouseholdScopeId)(
-      yield* Config.string("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID")
-    );
-    const importPrincipal = Schema.decodeUnknownSync(ImportPrincipal)({
-      actorId: importActorId,
-      householdScopeId: importHouseholdScopeId,
+    const importSystemHouseholdScopeId = Schema.decodeUnknownSync(
+      HouseholdScopeId
+    )(yield* Config.string("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID"));
+    const importSystemPrincipal = Schema.decodeUnknownSync(ImportPrincipal)({
+      actorId: importSystemActorId,
+      householdScopeId: importSystemHouseholdScopeId,
     });
     const makeBatchQueueAcceptance = (
       database: AnyD1Database,
@@ -117,7 +119,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           importAcquisitionWorkflow
         ),
         now: currentIsoTimestamp,
-        principal: importPrincipal,
+        principal: importSystemPrincipal,
         trace,
       });
     yield* Cloudflare.Queues.consumeQueueMessages(
@@ -198,8 +200,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const trace = makeImportTraceContext();
         const requestLayer = makeImportWorkerRequestLayer({
           bucket: rawBucket as unknown as AcquisitionBucketLike,
+          configuredPrincipals: importConfiguredPrincipals,
           database,
-          importApiToken,
           importWorkflowStarter: makeImportWorkflowStarter(
             importAcquisitionWorkflow
           ),
@@ -207,12 +209,13 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             importAcquisitionWorkflow
           ),
           now: currentIsoTimestamp,
-          principal: importPrincipal,
           queue: makeCloudflareImportBatchQueue(rawImportBatchQueue),
           recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
             importRecipeRecoveryWorkflow
           ),
           runtimeStage,
+          systemApiToken: importSystemApiToken,
+          systemPrincipal: importSystemPrincipal,
           trace,
         });
         const routeHandler = yield* HttpRouter.toHttpEffect(

@@ -14,7 +14,9 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Schema } from "effect";
+import { useEffect, useMemo } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
 import { Badge } from "../../components/ui/badge.js";
@@ -23,7 +25,17 @@ import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
 import { Separator } from "../../components/ui/separator.js";
 import { Skeleton } from "../../components/ui/skeleton.js";
+import { recipeImportIntentRedirectSearch } from "./navigation.js";
 import type { RecipeImportOperations } from "./operations.js";
+import {
+  makeRecipeImportProfileSession,
+  recipeImportQueryKeys,
+} from "./profile-query-isolation.js";
+import { RecipeImportProfileAlias } from "./profiles.js";
+import type {
+  RecipeImportProfileAlias as RecipeImportProfileAliasType,
+  RecipeImportPublicProfile,
+} from "./profiles.js";
 
 type ActiveReviewAction = Extract<
   RecipeImportAction,
@@ -140,23 +152,272 @@ const NameAnswerForm = ({
   );
 };
 
+const TagsAnswerForm = ({
+  action,
+  isPending,
+  makeRequestId,
+  submit,
+}: {
+  readonly action: ActiveReviewAction;
+  readonly isPending: boolean;
+  readonly makeRequestId: () => string;
+  readonly submit: (
+    input: Parameters<RecipeImportOperations["answerAction"]>[0]
+  ) => void;
+}) => {
+  const { tags } = action.review;
+  const form = useForm({
+    defaultValues: {
+      cuisine: tags?.cuisines.join(", ") ?? action.review.recipe.cuisine ?? "",
+      dietaryFit: tags?.dietaryFit ?? ("household_match" as const),
+      difficulty: tags?.difficulty ?? ("easy" as const),
+      leftovers: tags?.leftovers ?? ("one_meal" as const),
+      mealType: tags?.mealTypes[0] ?? ("dinner" as const),
+      totalTimeBand: tags?.totalTimeBand ?? ("30_to_60_minutes" as const),
+    },
+    onSubmit: ({ value }) => {
+      const request = Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest)(
+        {
+          answers: [
+            {
+              field: "tags",
+              value: {
+                cuisines: [value.cuisine.trim()],
+                dietaryFit: value.dietaryFit,
+                difficulty: value.difficulty,
+                leftovers: value.leftovers,
+                mealTypes: [value.mealType],
+                totalTimeBand: value.totalTimeBand,
+              },
+            },
+          ],
+          expectedActionVersion: action.actionVersion,
+        }
+      );
+      submit({
+        actionId: action.id,
+        idempotencyKey: idempotencyKey(makeRequestId),
+        intentId: action.intentId,
+        request,
+      });
+    },
+  });
+
+  return (
+    <form
+      className="field-stack planning-tags-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void form.handleSubmit();
+      }}
+    >
+      <h3>Planning tags</h3>
+      <form.Field name="cuisine">
+        {(field) => (
+          <div className="field-stack">
+            <Label htmlFor={`cuisine-${action.id}`}>Cuisine</Label>
+            <Input
+              id={`cuisine-${action.id}`}
+              name={field.name}
+              onBlur={field.handleBlur}
+              onChange={(event) => field.handleChange(event.target.value)}
+              value={field.state.value}
+            />
+          </div>
+        )}
+      </form.Field>
+      <div className="planning-tags-grid">
+        <form.Field name="mealType">
+          {(field) => (
+            <div className="field-stack">
+              <Label htmlFor={`mealType-${action.id}`}>Meal type</Label>
+              <select
+                className="field-select"
+                id={`mealType-${action.id}`}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) =>
+                  field.handleChange(
+                    event.target.value as typeof field.state.value
+                  )
+                }
+                value={field.state.value}
+              >
+                <option value="breakfast">Breakfast</option>
+                <option value="lunch">Lunch</option>
+                <option value="dinner">Dinner</option>
+                <option value="snack">Snack</option>
+                <option value="dessert">Dessert</option>
+              </select>
+            </div>
+          )}
+        </form.Field>
+        <form.Field name="dietaryFit">
+          {(field) => (
+            <div className="field-stack">
+              <Label htmlFor={`dietaryFit-${action.id}`}>Dietary fit</Label>
+              <select
+                className="field-select"
+                id={`dietaryFit-${action.id}`}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) =>
+                  field.handleChange(
+                    event.target.value as typeof field.state.value
+                  )
+                }
+                value={field.state.value}
+              >
+                <option value="household_match">Household match</option>
+                <option value="needs_adaptation">Needs adaptation</option>
+                <option value="not_suitable">Not suitable</option>
+              </select>
+            </div>
+          )}
+        </form.Field>
+        <form.Field name="difficulty">
+          {(field) => (
+            <div className="field-stack">
+              <Label htmlFor={`difficulty-${action.id}`}>Difficulty</Label>
+              <select
+                className="field-select"
+                id={`difficulty-${action.id}`}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) =>
+                  field.handleChange(
+                    event.target.value as typeof field.state.value
+                  )
+                }
+                value={field.state.value}
+              >
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+            </div>
+          )}
+        </form.Field>
+        <form.Field name="leftovers">
+          {(field) => (
+            <div className="field-stack">
+              <Label htmlFor={`leftovers-${action.id}`}>Leftovers</Label>
+              <select
+                className="field-select"
+                id={`leftovers-${action.id}`}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) =>
+                  field.handleChange(
+                    event.target.value as typeof field.state.value
+                  )
+                }
+                value={field.state.value}
+              >
+                <option value="none">None</option>
+                <option value="one_meal">One meal</option>
+                <option value="two_plus_meals">Two or more meals</option>
+              </select>
+            </div>
+          )}
+        </form.Field>
+        <form.Field name="totalTimeBand">
+          {(field) => (
+            <div className="field-stack">
+              <Label htmlFor={`totalTimeBand-${action.id}`}>Total time</Label>
+              <select
+                className="field-select"
+                id={`totalTimeBand-${action.id}`}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) =>
+                  field.handleChange(
+                    event.target.value as typeof field.state.value
+                  )
+                }
+                value={field.state.value}
+              >
+                <option value="under_30_minutes">Under 30 minutes</option>
+                <option value="30_to_60_minutes">30 to 60 minutes</option>
+                <option value="over_60_minutes">Over 60 minutes</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </div>
+          )}
+        </form.Field>
+      </div>
+      <form.Subscribe
+        selector={(state) => ({
+          canSubmit: state.canSubmit,
+          cuisine: state.values.cuisine,
+        })}
+      >
+        {({ canSubmit, cuisine }) => (
+          <Button
+            disabled={!canSubmit || cuisine.trim().length === 0 || isPending}
+            type="submit"
+          >
+            Save planning tags
+          </Button>
+        )}
+      </form.Subscribe>
+    </form>
+  );
+};
+
 export const RecipeImportPage = ({
   initialIntentId,
   makeRequestId = () => crypto.randomUUID(),
+  onProfileChange,
   operations,
   pollIntervalMs = 650,
+  profileAlias,
+  profiles,
 }: {
   readonly initialIntentId?: RecipeImportIntentId;
   readonly makeRequestId?: () => string;
+  readonly onProfileChange: (
+    profileAlias: RecipeImportProfileAliasType
+  ) => Promise<void>;
   readonly operations: RecipeImportOperations;
   readonly pollIntervalMs?: number;
+  readonly profileAlias: RecipeImportProfileAliasType;
+  readonly profiles: readonly RecipeImportPublicProfile[];
 }) => {
   const queryClient = useQueryClient();
+  const profileSession = useMemo(
+    () => makeRecipeImportProfileSession(),
+    [profileAlias]
+  );
+  useEffect(() => {
+    profileSession.mount();
+    return profileSession.unmount;
+  }, [profileSession]);
+  const changeProfile = async (nextAlias: RecipeImportProfileAliasType) => {
+    if (nextAlias === profileAlias) {
+      return;
+    }
+    profileSession.beginSwitch();
+    try {
+      await onProfileChange(nextAlias);
+    } catch {
+      profileSession.recover();
+    }
+  };
+  const activeProfile = profiles.find(
+    (profile) => profile.alias === profileAlias
+  );
+  if (activeProfile === undefined) {
+    throw new Error("Recipe import profile is unavailable.");
+  }
   const createMutation = useMutation({
     mutationFn: operations.create,
     retry: false,
   });
-  const createdIntent = createMutation.data;
+  const createdIntent = profileSession.isActive()
+    ? createMutation.data
+    : undefined;
   const activeIntentId = createdIntent?.id ?? initialIntentId;
   const intentQuery = useQuery({
     enabled: activeIntentId !== undefined,
@@ -165,7 +426,7 @@ export const RecipeImportPage = ({
       activeIntentId === undefined
         ? skipToken
         : () => operations.getIntent({ intentId: activeIntentId }),
-    queryKey: ["recipe-import-intent", activeIntentId],
+    queryKey: recipeImportQueryKeys.intent(profileAlias, activeIntentId),
     refetchInterval: (query) =>
       query.state.data?.status === "processing" ? pollIntervalMs : false,
     retry: false,
@@ -184,7 +445,11 @@ export const RecipeImportPage = ({
               actionId: actionReference.id,
               intentId: actionIntentId,
             }),
-    queryKey: ["recipe-import-action", actionIntentId, actionReference?.id],
+    queryKey: recipeImportQueryKeys.action(
+      profileAlias,
+      actionIntentId,
+      actionReference?.id
+    ),
     retry: false,
   });
   const recipeId =
@@ -195,18 +460,21 @@ export const RecipeImportPage = ({
       recipeId === undefined
         ? skipToken
         : () => operations.getRecipe({ recipeId }),
-    queryKey: ["recipe", recipeId],
+    queryKey: recipeImportQueryKeys.recipe(profileAlias, recipeId),
     retry: false,
   });
   const confirmMutation = useMutation({
     mutationFn: operations.confirmAction,
     onSuccess: (succeeded) => {
+      if (!profileSession.isActive()) {
+        return;
+      }
       queryClient.setQueryData(
-        ["recipe-import-intent", succeeded.id],
+        recipeImportQueryKeys.intent(profileAlias, succeeded.id),
         succeeded
       );
       return queryClient.invalidateQueries({
-        queryKey: ["recipe-import-action", succeeded.id],
+        queryKey: recipeImportQueryKeys.actions(profileAlias, succeeded.id),
       });
     },
     retry: false,
@@ -214,13 +482,19 @@ export const RecipeImportPage = ({
   const answerMutation = useMutation({
     mutationFn: operations.answerAction,
     onSuccess: (updated) => {
-      queryClient.setQueryData(["recipe-import-intent", updated.id], updated);
+      if (!profileSession.isActive()) {
+        return;
+      }
+      queryClient.setQueryData(
+        recipeImportQueryKeys.intent(profileAlias, updated.id),
+        updated
+      );
       return Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["recipe-import-intent", updated.id],
+          queryKey: recipeImportQueryKeys.intent(profileAlias, updated.id),
         }),
         queryClient.invalidateQueries({
-          queryKey: ["recipe-import-action", updated.id],
+          queryKey: recipeImportQueryKeys.actions(profileAlias, updated.id),
         }),
       ]);
     },
@@ -228,11 +502,15 @@ export const RecipeImportPage = ({
   });
   const cancelMutation = useMutation({
     mutationFn: operations.cancel,
-    onSuccess: (cancelled) =>
-      queryClient.setQueryData(
-        ["recipe-import-intent", cancelled.id],
+    onSuccess: (cancelled) => {
+      if (!profileSession.isActive()) {
+        return;
+      }
+      return queryClient.setQueryData(
+        recipeImportQueryKeys.intent(profileAlias, cancelled.id),
         cancelled
-      ),
+      );
+    },
     retry: false,
   });
 
@@ -248,13 +526,14 @@ export const RecipeImportPage = ({
   });
 
   const hasRequestFailure =
-    createMutation.isError ||
-    intentQuery.isError ||
-    actionQuery.isError ||
-    answerMutation.isError ||
-    confirmMutation.isError ||
-    cancelMutation.isError ||
-    recipeQuery.isError;
+    profileSession.isActive() &&
+    (createMutation.isError ||
+      intentQuery.isError ||
+      actionQuery.isError ||
+      answerMutation.isError ||
+      confirmMutation.isError ||
+      cancelMutation.isError ||
+      recipeQuery.isError);
   const isProcessing = intent?.status === "processing";
   const isCancelled = intent?.status === "cancelled";
   const isFailed = intent?.status === "failed";
@@ -266,6 +545,32 @@ export const RecipeImportPage = ({
     <main className="app-shell">
       <header className="topbar">
         <span className="wordmark">Meal Planner</span>
+        <div className="profile-control">
+          <Label className="profile-label" htmlFor="recipe-import-profile">
+            Household
+          </Label>
+          <select
+            aria-describedby="active-recipe-import-profile"
+            className="profile-select"
+            id="recipe-import-profile"
+            onChange={(event) => {
+              const nextAlias = Schema.decodeUnknownSync(
+                RecipeImportProfileAlias
+              )(event.target.value);
+              void changeProfile(nextAlias);
+            }}
+            value={profileAlias}
+          >
+            {profiles.map((profile) => (
+              <option key={profile.alias} value={profile.alias}>
+                {profile.label}
+              </option>
+            ))}
+          </select>
+          <span className="active-profile" id="active-recipe-import-profile">
+            Viewing {activeProfile.label}
+          </span>
+        </div>
       </header>
 
       <div className="workspace">
@@ -401,9 +706,19 @@ export const RecipeImportPage = ({
               <Alert>
                 <h2>An existing import is already in progress</h2>
                 <p>This request was redirected to the canonical import.</p>
-                <a href={`/?intentId=${intent.redirect.intentId}`}>
+                <Link
+                  from="/"
+                  search={(previous) =>
+                    recipeImportIntentRedirectSearch(
+                      previous,
+                      profileAlias,
+                      intent.redirect.intentId
+                    )
+                  }
+                  to="/"
+                >
                   View existing import
-                </a>
+                </Link>
               </Alert>
             )}
 
@@ -456,6 +771,15 @@ export const RecipeImportPage = ({
                     action={action}
                     isPending={answerMutation.isPending}
                     key={`${action.id}:${action.actionVersion}`}
+                    makeRequestId={makeRequestId}
+                    submit={answerMutation.mutate}
+                  />
+                )}
+                {action.review.editableFields.includes("tags") && (
+                  <TagsAnswerForm
+                    action={action}
+                    isPending={answerMutation.isPending}
+                    key={`${action.id}:${action.actionVersion}:tags`}
                     makeRequestId={makeRequestId}
                     submit={answerMutation.mutate}
                   />

@@ -7,7 +7,7 @@ import {
   ProviderTerminalSettlementService,
 } from "./import-provider-terminal-settlement.js";
 import type { ProviderTerminalSettlementError } from "./import-provider-terminal-settlement.js";
-import { ImportAuthorizer } from "./import.auth.js";
+import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import {
   importPersistenceCorrupt,
   importPersistenceUnavailable,
@@ -45,7 +45,7 @@ export const ProviderTerminalSettlementRouteDefinitions = [
     "/imports/operator-provider-terminal-settlement",
     (request) =>
       Effect.gen(function* settleTerminalUnknownProviderCostRoute() {
-        const authorizer = yield* ImportAuthorizer;
+        const authorizer = yield* ImportSystemAuthorizer;
         yield* authorizer.authorize(request.headers["authorization"]);
         const body = yield* decodeRequest;
         const service = yield* ProviderTerminalSettlementService;

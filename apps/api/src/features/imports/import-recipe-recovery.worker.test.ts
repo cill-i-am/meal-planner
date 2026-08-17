@@ -30,6 +30,7 @@ import type {
   RecipeRecoveryAttempt,
   RecipeRecoveryFailure,
 } from "./import-recipe-recovery.js";
+import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import { ImportAuthorizer } from "./import.auth.js";
 import {
   ImportId,
@@ -463,6 +464,10 @@ const makeApp = async (started: unknown[]) => {
     Layer.mergeAll(
       ProviderTerminalSettlementRoutes,
       Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+      Layer.succeed(
+        ImportSystemAuthorizer,
+        ImportSystemAuthorizer.of(authorizer)
+      ),
       Layer.succeed(
         ProviderTerminalSettlementService,
         ProviderTerminalSettlementService.of(service)
