@@ -1,21 +1,17 @@
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Cause, Effect, Exit, Logger, Option, Redacted, Schema } from "effect";
+import { Cause, Effect, Exit, Logger, Option, Schema } from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { describe, expect, it } from "vitest";
 
+import { OperatorCarouselBundle } from "../features/imports/import-carousel-operator.js";
+import { makeOperatorCarouselImportService } from "../features/imports/import-carousel-operator.service.js";
+import { makeImportIntentApplication } from "../features/imports/import-intent.js";
 import { makeImportTraceContext } from "../features/imports/import-observability.js";
-import { makeImportAuthorizer } from "../features/imports/import.auth.js";
-import {
-  IdempotencyKey,
-  ImportId,
-  ImportTimestamp,
-  SourceUrl,
-} from "../features/imports/import.contracts.js";
+import { IdempotencyKey } from "../features/imports/import.contracts.js";
 import { sourceIdentityUnavailable } from "../features/imports/import.errors.js";
-import type { ImportRepositoryShape } from "../features/imports/import.repository.js";
-import { makeImportService } from "../features/imports/import.service.js";
-import type { ImportWorkflowStarterShape } from "../features/imports/import.workflow.js";
-import type { SourceAvailabilityValidatorShape } from "../features/imports/source-availability.js";
+import type { ImportIntentRepositoryShape } from "../features/imports/import.repository.js";
+import { makeTestImportAuthorizer } from "../features/imports/import.test-fixtures.js";
 import type { CanonicalSourceIdentityResolverShape } from "../features/imports/source-identity.js";
 import {
   raceWithRequestSignal,
@@ -201,23 +197,35 @@ describe("request cancellation", () => {
     expect(providerFinalized).toBe(true);
   });
 
-  it("aborts the real import service before repository acceptance or workflow start", async () => {
+  it("aborts current source resolution before durable admission or workflow start", async () => {
     const controller = new AbortController();
     const providerStarted = Promise.withResolvers<boolean>();
     const logs: unknown[] = [];
     let providerAborted = false;
-    let acceptRequests = 0;
-    let availabilityCalls = 0;
+    let admissionRequests = 0;
+    let pipelineStarts = 0;
     let workflowStarts = 0;
-    const repository: ImportRepositoryShape = {
-      acceptRequest: () => {
-        acceptRequests += 1;
-        return Effect.die("repository acceptance must not start");
+    const repository: ImportIntentRepositoryShape = {
+      admitIntent: () => {
+        admissionRequests += 1;
+        return Effect.die("durable admission must not start");
       },
-      findByCanonicalIdentity: () => Effect.succeed(Option.none()),
-      findById: () => Effect.succeed(Option.none()),
-      findRequest: () => Effect.succeed(Option.none()),
-      isAudioExtractionRecoveryEligible: () => Effect.succeed(false),
+      cancelIntent: () => Effect.die("cancellation must not start"),
+      findIntent: () => Effect.die("intent lookup must not start"),
+      findPendingSourceResolution: () =>
+        Effect.die("pending source lookup must not start"),
+      isIntentExecutionCurrent: () =>
+        Effect.die("generation lookup must not start"),
+      listStalledIntentStarts: () =>
+        Effect.die("stalled-start lookup must not start"),
+      listStalledSourceResolutions: () =>
+        Effect.die("stalled source lookup must not start"),
+      readIntentTimeline: () => Effect.die("timeline lookup must not start"),
+      requireMutableIntent: () =>
+        Effect.die("mutable-intent lookup must not start"),
+      resolveIntentSource: () =>
+        Effect.die("source resolution persistence must not start"),
+      transitionIntent: () => Effect.die("transition must not start"),
     };
     const identityResolver: CanonicalSourceIdentityResolverShape = {
       resolve: () =>
@@ -240,49 +248,65 @@ describe("request cancellation", () => {
           },
         }),
     };
-    const availabilityValidator: SourceAvailabilityValidatorShape = {
-      validate: () => {
-        availabilityCalls += 1;
-        return Effect.die("availability must not start");
-      },
-    };
-    const workflowStarter: ImportWorkflowStarterShape = {
-      start: () => {
+    const workflowStarter = {
+      ensureStarted: () => {
         workflowStarts += 1;
         return Effect.die("workflow must not start");
       },
     };
-    const service = makeImportService({
-      availabilityValidator,
+    const service = makeOperatorCarouselImportService({
+      application: makeImportIntentApplication(
+        repository,
+        workflowStarter,
+        makeImportTraceContext()
+      ),
       identityResolver,
-      newId: () =>
-        Schema.decodeUnknownSync(ImportId)(
+      newIntentId: () =>
+        Schema.decodeUnknownSync(RecipeImportIntentId)(
           "018f47ad-91aa-7c35-b6fe-000000000001"
         ),
-      now: () =>
-        Schema.decodeUnknownSync(ImportTimestamp)("2026-07-20T10:00:00.000Z"),
-      repository,
-      trace: makeImportTraceContext(),
-      workflowStarter,
+      now: () => "2026-07-20T10:00:00.000Z",
+      pipeline: {
+        stage: () => {
+          pipelineStarts += 1;
+          return Effect.die("pipeline must not start");
+        },
+      },
+    });
+    const bundle = Schema.decodeUnknownSync(OperatorCarouselBundle)({
+      declaredPageCount: 1,
+      images: [
+        {
+          height: 3,
+          jpegBase64:
+            "/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAADAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z",
+          orderIndex: 0,
+          sha256:
+            "7f593180ed96b891629067143da2fb44eb996b1a45e7561870a5754d5bba506e",
+          width: 2,
+        },
+      ],
+      source: {
+        kind: "tiktok",
+        url: "https://www.tiktok.com/@cook/photo/7520000000000000001",
+      },
     });
     const authorizer = await Effect.runPromise(
-      makeImportAuthorizer(Redacted.make("request-cancellation-token"))
+      makeTestImportAuthorizer("request-cancellation-token")
     );
-    const request = new Request("https://meal-planner.test/imports", {
-      body: JSON.stringify({
-        source: {
-          kind: "tiktok",
-          url: "https://vm.tiktok.com/pending-provider",
+    const request = new Request(
+      "https://meal-planner.test/imports/operator-carousel",
+      {
+        body: JSON.stringify(bundle),
+        headers: {
+          authorization: "Bearer request-cancellation-token",
+          "content-type": "application/json",
+          "idempotency-key": "K1",
         },
-      }),
-      headers: {
-        authorization: "Bearer request-cancellation-token",
-        "content-type": "application/json",
-        "idempotency-key": "K1",
-      },
-      method: "POST",
-      signal: controller.signal,
-    });
+        method: "POST",
+        signal: controller.signal,
+      }
+    );
     const recordingLogger = Logger.make<unknown, number>((event) =>
       logs.push(event.message)
     );
@@ -292,18 +316,12 @@ describe("request cancellation", () => {
         withCurrentRequestCancellation(
           Effect.gen(function* importRequest() {
             const originalRequest = yield* Cloudflare.Request;
-            yield* authorizer.authorize(
+            const principal = yield* authorizer.authorize(
               originalRequest.headers.get("authorization") ?? undefined
             );
-            yield* service.create(
-              {
-                source: {
-                  kind: "tiktok",
-                  url: Schema.decodeUnknownSync(SourceUrl)(
-                    "https://vm.tiktok.com/pending-provider"
-                  ),
-                },
-              },
+            yield* service.admit(
+              principal,
+              bundle,
               Schema.decodeUnknownSync(IdempotencyKey)("K1")
             );
             return HttpServerResponse.text("unexpected success");
@@ -318,8 +336,8 @@ describe("request cancellation", () => {
 
     expect(response.status).toBe(499);
     expect(providerAborted).toBe(true);
-    expect(acceptRequests).toBe(0);
-    expect(availabilityCalls).toBe(0);
+    expect(admissionRequests).toBe(0);
+    expect(pipelineStarts).toBe(0);
     expect(workflowStarts).toBe(0);
     expect(logs).toEqual([]);
   });

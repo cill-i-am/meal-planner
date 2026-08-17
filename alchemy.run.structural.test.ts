@@ -69,7 +69,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workerSource).not.toMatch(/traces:\s*\{[^}]*enabled:\s*true/u);
     expect(workerSource).toContain("workersDev: false");
     expect(workerSource).toContain("HealthRoutes");
-    expect(workerSource).toContain("ImportRouteDefinitions");
+    expect(workerSource).toContain("makeRecipeImportWorkerHttpLayer");
+    expect(workerSource).toContain("OperatorCarouselRouteDefinitions");
+    expect(workerSource).toContain("ImportBatchRouteDefinitions");
+    expect(workerSource).toContain(
+      "ProviderTerminalSettlementRouteDefinitions"
+    );
     expect(stackSource).toContain("apiUrl: api.url");
     expect(stackSource).toContain("apiWorkerName: api.workerName");
     expect(stackSource).toContain("databaseName: database.databaseName");
@@ -87,8 +92,23 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(databaseSource).toContain('"MealPlannerDatabase"');
     expect(databaseSource).toContain('migrationsDir: "./apps/api/migrations"');
     expect(databaseSource).toContain('migrationsTable: "d1_migrations"');
-    expect(migration).toContain("CREATE TABLE `recipe_imports`");
-    expect(migration).toContain("CREATE TABLE `import_requests`");
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "recipe_imports"');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "import_requests"');
+    expect(migration).toContain(
+      "CREATE TABLE `import_recipe_executor_terminal_checkpoints`"
+    );
+    expect(migration).toContain("`correlation_id` text NOT NULL");
+    expect(migration).toContain(
+      "`execution_generation` integer NOT NULL DEFAULT 1"
+    );
+    expect(migration).toContain("`intent_id` text");
+    expect(migration).toContain("`replay_intent_id` text");
+    expect(migration).toContain("`item_count` integer NOT NULL");
+    expect(migration).toContain("INSERT INTO `pilot_provider_stage_budget`");
+    expect(migration).not.toMatch(/`canonical_source_id`/u);
+    expect(migration).not.toContain("__new_");
+    expect(migration).not.toContain("migration_snapshot");
+    expect(migration).not.toContain("import_recipe_terminal_projections");
   });
 
   it("keeps exactly the reviewed deployable SQL migrations", () => {
@@ -102,80 +122,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       .filter((path) => path.endsWith(".sql"))
       .toSorted();
 
-    expect(sqlFiles).toEqual([
-      "0000_recipe_imports.sql",
-      "0001_import_media_acquisition.sql",
-      "0002_import_speech_transcription.sql",
-      "0003_import_visual_evidence.sql",
-      "0004_import_recipe_extractions.sql",
-      "0005_recipe_reviews.sql",
-      "0006_import_carousel_evidence.sql",
-      "0007_import_queue_acceptance.sql",
-      "0008_pilot_provider_budget.sql",
-      "0009_provider_terminal_recovery.sql",
-      "0010_provider_recovery_stage_key.sql",
-      "0011_provider_visual_recovery.sql",
-      "0012_provider_visual_recovery_completion_guard.sql",
-      "0013_provider_visual_retry_exhaustion_projection.sql",
-      "0014_provider_visual_second_recovery.sql",
-      "0015_provider_visual_unknown_outcome_second_recovery.sql",
-      "0016_recipe_terminal_projection.sql",
-      "0017_recipe_recovery.sql",
-      "0018_recipe_second_recovery.sql",
-      "0019_recipe_third_recovery.sql",
-      "0020_recipe_fourth_recovery.sql",
-      "0021_recipe_fifth_recovery.sql",
-      "0022_recipe_sixth_recovery.sql",
-      "0023_recipe_seventh_recovery.sql",
-      "0024_recipe_eighth_recovery.sql",
-      "0025_recipe_terminal_truth.sql",
-      "0026_import_batch_canonical_duplicate.sql",
-      "0027_recipe_review_mutation_ledger.sql",
-      "0028_recipe_recovery_attempt_ledger.sql",
-      "0029_import_lifecycle_trace.sql",
-      "0030_recipe_import_intent_foundation.sql",
-      "0031_recipe_import_intent_executor_transitions.sql",
-      "0032_recipe_import_intent_review_actions.sql",
-    ]);
-  });
-
-  it("keeps the generated migration and snapshot byte-correlated for acquisition generations", () => {
-    const migration = readRepoFile(
-      "./apps/api/migrations/0001_import_media_acquisition.sql"
-    );
-    const snapshot = readRepoFile(
-      "./apps/api/migrations/meta/20260720143000_import_media_acquisition/snapshot.json"
-    );
-    const parsedSnapshot = JSON.parse(snapshot) as {
-      readonly ddl: readonly Record<string, unknown>[];
-    };
-    expect(migration).toContain(
-      "`acquisition_generation` integer DEFAULT 0 NOT NULL"
-    );
-    expect(parsedSnapshot.ddl).toContainEqual(
-      expect.objectContaining({
-        default: 0,
-        entityType: "columns",
-        name: "acquisition_generation",
-        notNull: true,
-        table: "recipe_imports",
-        type: "integer",
-      })
-    );
-    const requiredFragments = [
-      'typeof("acquisition_generation") = \'integer\' AND "acquisition_generation" >= 0 AND "acquisition_generation" <= 9007199254740991',
-      "'/acquisition/v1/generations/' || \"acquisition_generation\" || '/original.mp4'",
-      "'/acquisition/v1/generations/' || \"acquisition_generation\" || '/manifest.json'",
-    ] as const;
-
-    for (const fragment of requiredFragments) {
-      expect(migration).toContain(fragment);
-      expect(snapshot).toContain(JSON.stringify(fragment).slice(1, -1));
-    }
-    expect(migration).toContain(
-      "`acquisition_generation`) SELECT `canonical_source_id`"
-    );
-    expect(migration).toContain(", 0 FROM `recipe_imports`");
+    expect(sqlFiles).toEqual(["0000_recipe_imports.sql"]);
   });
 
   it("binds the least-privilege acquisition resources without Images or Sharp", () => {
@@ -213,6 +160,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
     expect(workerSource).toMatch(
       /Config\.redacted\(\s*"MEAL_PLANNER_IMPORT_API_TOKEN"\s*\)/u
+    );
+    expect(workerSource).toContain(
+      'Config.string("MEAL_PLANNER_IMPORT_ACTOR_ID")'
+    );
+    expect(workerSource).toContain(
+      'Config.string("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID")'
     );
     expect(allSource).not.toMatch(/Cloudflare\.Images|Images\.|sharp/iu);
   });

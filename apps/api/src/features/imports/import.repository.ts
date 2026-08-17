@@ -28,19 +28,16 @@ import type {
   ClassifiedAcquisitionFailure,
   VerifiedAcquisitionEvidence,
 } from "./import-media.model.js";
-import type { ImportTraceContext } from "./import-observability.js";
+import { ImportTraceContext } from "./import-observability.js";
 import type {
-  ImportDisposition,
   ImportId,
   ImportTimestamp,
   ImportView,
   SourceCanonicalId,
 } from "./import.contracts.js";
 import type {
-  IdempotencyConflict,
   ImportPersistenceCorrupt,
   ImportPersistenceUnavailable,
-  IncompatibleDuplicate,
   ImportNotFound,
   ImportTransitionRejected,
 } from "./import.errors.js";
@@ -48,11 +45,6 @@ import type {
 const Sha256Hex = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
 );
-
-export const CompatibilityFingerprint = Sha256Hex.pipe(
-  Schema.brand("CompatibilityFingerprint")
-);
-export type CompatibilityFingerprint = typeof CompatibilityFingerprint.Type;
 
 export const IdempotencyKeyHash = Sha256Hex.pipe(
   Schema.brand("IdempotencyKeyHash")
@@ -72,28 +64,9 @@ export type SourceLocatorHash = typeof SourceLocatorHash.Type;
 export interface StoredImport {
   readonly acquisitionGeneration: AcquisitionGeneration;
   readonly canonicalSourceId: SourceCanonicalId;
-  readonly compatibilityFingerprint: CompatibilityFingerprint;
   readonly sourceKind: "tiktok";
   readonly trace: ImportTraceContext;
   readonly view: ImportView;
-}
-
-export interface StoredImportRequest {
-  readonly import: StoredImport;
-  readonly requestFingerprint: RequestFingerprint;
-  readonly sourceLocatorHash: SourceLocatorHash;
-}
-
-export interface AcceptImportCommand {
-  readonly candidate: StoredImport;
-  readonly idempotencyKeyHash: IdempotencyKeyHash;
-  readonly requestFingerprint: RequestFingerprint;
-  readonly sourceLocatorHash: SourceLocatorHash;
-}
-
-export interface AcceptImportResult {
-  readonly disposition: ImportDisposition;
-  readonly import: StoredImport;
 }
 
 export interface StoredImportIntentRequest {
@@ -110,6 +83,7 @@ export interface AdmitImportIntentCommand {
   readonly requestFingerprint: RequestFingerprint;
   readonly sourceLocatorHash: SourceLocatorHash;
   readonly submittedSourceUrl: SourceUrl;
+  readonly trace: ImportTraceContext;
 }
 
 export interface AdmitImportIntentResult {
@@ -172,10 +146,20 @@ export type StalledImportIntentStartLimit =
 export const StalledImportIntentStartCandidate = Schema.Struct({
   executionGeneration: ImportIntentExecutionGeneration,
   intentId: RecipeImportIntentId,
+  trace: ImportTraceContext,
   updatedAt: Instant,
 });
 export type StalledImportIntentStartCandidate =
   typeof StalledImportIntentStartCandidate.Type;
+
+export interface PendingImportIntentSourceResolution {
+  readonly executionGeneration: ImportIntentExecutionGeneration;
+  readonly intentId: RecipeImportIntentId;
+  readonly principal: ImportPrincipal;
+  readonly submittedSourceUrl: SourceUrl;
+  readonly trace: ImportTraceContext;
+  readonly updatedAt: Instant;
+}
 
 export type InternalImportIntentTransitionError =
   | ImportPersistenceCorrupt
@@ -206,6 +190,13 @@ export interface ImportIntentRepositoryShape {
     Option.Option<RecipeImportIntent>,
     ImportPersistenceCorrupt | ImportPersistenceUnavailable
   >;
+  readonly findPendingSourceResolution: (
+    principal: ImportPrincipal,
+    intentId: RecipeImportIntentId
+  ) => Effect.Effect<
+    Option.Option<PendingImportIntentSourceResolution>,
+    ImportPersistenceCorrupt | ImportPersistenceUnavailable
+  >;
   readonly isIntentExecutionCurrent: (
     intentId: RecipeImportIntentId,
     executionGeneration: ImportIntentTransitionCommand["executionGeneration"]
@@ -218,6 +209,13 @@ export interface ImportIntentRepositoryShape {
     limit: StalledImportIntentStartLimit
   ) => Effect.Effect<
     readonly StalledImportIntentStartCandidate[],
+    ImportPersistenceCorrupt | ImportPersistenceUnavailable
+  >;
+  readonly listStalledSourceResolutions: (
+    cutoff: Instant,
+    limit: StalledImportIntentStartLimit
+  ) => Effect.Effect<
+    readonly PendingImportIntentSourceResolution[],
     ImportPersistenceCorrupt | ImportPersistenceUnavailable
   >;
   readonly requireMutableIntent: (
@@ -254,12 +252,6 @@ export interface ImportIntentRepositoryShape {
   >;
 }
 
-export type ImportRepositoryError =
-  | IdempotencyConflict
-  | ImportPersistenceCorrupt
-  | ImportPersistenceUnavailable
-  | IncompatibleDuplicate;
-
 export type ImportTransitionError =
   | ImportNotFound
   | ImportPersistenceCorrupt
@@ -283,26 +275,10 @@ export type AcquisitionFinalizationResult =
   typeof AcquisitionFinalizationResult.Type;
 
 export interface ImportRepositoryShape {
-  readonly acceptRequest: (
-    command: AcceptImportCommand
-  ) => Effect.Effect<AcceptImportResult, ImportRepositoryError>;
-  readonly findByCanonicalIdentity: (identity: {
-    readonly canonicalId: SourceCanonicalId;
-    readonly kind: "tiktok";
-  }) => Effect.Effect<
-    Option.Option<StoredImport>,
-    ImportPersistenceCorrupt | ImportPersistenceUnavailable
-  >;
   readonly findById: (
     id: ImportId
   ) => Effect.Effect<
     Option.Option<StoredImport>,
-    ImportPersistenceCorrupt | ImportPersistenceUnavailable
-  >;
-  readonly findRequest: (
-    idempotencyKeyHash: IdempotencyKeyHash
-  ) => Effect.Effect<
-    Option.Option<StoredImportRequest>,
     ImportPersistenceCorrupt | ImportPersistenceUnavailable
   >;
   readonly isAudioExtractionRecoveryEligible: (

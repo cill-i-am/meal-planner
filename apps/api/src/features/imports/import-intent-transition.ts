@@ -321,9 +321,6 @@ const resolveSource = (
   }
   return applied(snapshot, command.occurredAt, {
     activity: "working",
-    executionGeneration: Schema.decodeUnknownSync(
-      ImportIntentExecutionGeneration
-    )(snapshot.executionGeneration + 1),
     redirectedAt: null,
     redirectedToIntentId: null,
     resolvedCanonicalSourceId: command.canonicalSourceId,

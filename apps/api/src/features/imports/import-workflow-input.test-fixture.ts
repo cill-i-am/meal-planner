@@ -10,14 +10,14 @@ import {
   ImportObservabilityTraceStore,
   observeImportWorkflowStart,
 } from "./import-observability.js";
-import { resolveImportWorkflowInput } from "./import-workflow-input.js";
+import { decodeImportWorkflowInput } from "./import-workflow-input.js";
 
-interface LegacyInputWorkflowTestEnv {
-  readonly LEGACY_WORKFLOW_STATE: {
+interface CurrentInputWorkflowTestEnv {
+  readonly CURRENT_WORKFLOW_STATE: {
     readonly get: (key: string) => Promise<string | null>;
     readonly put: (key: string, value: string) => Promise<void>;
   };
-  readonly LegacyInputWorkflow: {
+  readonly CurrentInputWorkflow: {
     readonly create: (options: {
       readonly id: string;
       readonly params: unknown;
@@ -39,36 +39,41 @@ interface LegacyInputWorkflowTestEnv {
 
 const stateKey = (instanceId: string, name: string) => `${instanceId}:${name}`;
 
-const increment = (
-  env: LegacyInputWorkflowTestEnv,
+const incrementStoredValue = async (
+  env: CurrentInputWorkflowTestEnv,
   instanceId: string,
   name: string
-) =>
-  Effect.promise(async () => {
-    const key = stateKey(instanceId, name);
-    const value = Number((await env.LEGACY_WORKFLOW_STATE.get(key)) ?? "0");
-    const next = value + 1;
-    await env.LEGACY_WORKFLOW_STATE.put(key, String(next));
-    return next;
-  });
+) => {
+  const key = stateKey(instanceId, name);
+  const value = Number((await env.CURRENT_WORKFLOW_STATE.get(key)) ?? "0");
+  const next = value + 1;
+  await env.CURRENT_WORKFLOW_STATE.put(key, String(next));
+  return next;
+};
+
+const increment = (
+  env: CurrentInputWorkflowTestEnv,
+  instanceId: string,
+  name: string
+) => Effect.promise(() => incrementStoredValue(env, instanceId, name));
 
 const workflowExport = {
   kind: "workflow" as const,
   make: (rawEnv: unknown) => {
-    const env = rawEnv as LegacyInputWorkflowTestEnv;
+    const env = rawEnv as CurrentInputWorkflowTestEnv;
     return Effect.succeed((rawInput: unknown) =>
-      Effect.gen(function* runLegacyInputWorkflow() {
+      Effect.gen(function* runCurrentInputWorkflow() {
         const event = yield* WorkflowEvent;
         const workflowRun = yield* increment(
           env,
           event.instanceId,
           "workflow-runs"
         );
-        const input = yield* resolveImportWorkflowInput(rawInput);
+        const input = yield* decodeImportWorkflowInput(rawInput);
         const traceStore = ImportObservabilityTraceStore.of({
           append: (observabilityEvent) =>
             Effect.promise(() =>
-              env.LEGACY_WORKFLOW_STATE.put(
+              env.CURRENT_WORKFLOW_STATE.put(
                 stateKey(event.instanceId, `event:${String(workflowRun)}`),
                 JSON.stringify(observabilityEvent)
               )
@@ -81,7 +86,12 @@ const workflowExport = {
         return yield* task(
           "requested-provider-boundary-v1",
           Effect.promise(async () => {
-            await env.LEGACY_WORKFLOW_STATE.put(
+            await incrementStoredValue(
+              env,
+              event.instanceId,
+              "provider-boundary-runs"
+            );
+            await env.CURRENT_WORKFLOW_STATE.put(
               stateKey(event.instanceId, `correlation:${String(workflowRun)}`),
               input.trace.correlationId
             );
@@ -95,17 +105,17 @@ const workflowExport = {
 
 const entrypoint = Effect.succeed({
   RuntimeContext: {
-    exports: Effect.succeed({ LegacyInputWorkflow: workflowExport }),
+    exports: Effect.succeed({ CurrentInputWorkflow: workflowExport }),
     shape: () => ({}),
   },
 });
 
-const LegacyInputWorkflowBridge = makeWorkflowBridge(WorkflowEntrypoint, {
+const CurrentInputWorkflowBridge = makeWorkflowBridge(WorkflowEntrypoint, {
   entrypoint,
   stack: { name: "meal-planner", stage: "test" },
-})("LegacyInputWorkflow");
+})("CurrentInputWorkflow");
 
-export class LegacyInputWorkflow extends LegacyInputWorkflowBridge {}
+export class CurrentInputWorkflow extends CurrentInputWorkflowBridge {}
 
 const readRequest = (request: Request) =>
   request.json() as Promise<
@@ -127,22 +137,25 @@ const readRequest = (request: Request) =>
 
 export default {
   fetch: async (request: Request, rawEnv: unknown) => {
-    const env = rawEnv as LegacyInputWorkflowTestEnv;
+    const env = rawEnv as CurrentInputWorkflowTestEnv;
     const command = await readRequest(request);
     if (command.action === "read") {
       const read = (name: string) =>
-        env.LEGACY_WORKFLOW_STATE.get(stateKey(command.id, name));
+        env.CURRENT_WORKFLOW_STATE.get(stateKey(command.id, name));
       return Response.json({
         correlations: await Promise.all([
           read("correlation:1"),
           read("correlation:2"),
         ]),
         events: await Promise.all([read("event:1"), read("event:2")]),
+        providerBoundaryRuns: Number(
+          (await read("provider-boundary-runs")) ?? "0"
+        ),
         workflowRuns: Number((await read("workflow-runs")) ?? "0"),
       });
     }
 
-    const workflow = env.LegacyInputWorkflow;
+    const workflow = env.CurrentInputWorkflow;
     const sessionId = await workflow.unsafeStartIntrospection();
     try {
       if (command.action === "run") {

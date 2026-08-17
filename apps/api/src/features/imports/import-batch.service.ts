@@ -46,7 +46,7 @@ export type ImportBatchRequestFingerprint =
 
 /** Durable discriminator for the admitted source identity resolution. */
 export const ImportBatchSourceIdentityKind = Schema.Literals([
-  "unsupported",
+  "carousel",
   "video",
 ]);
 export type ImportBatchSourceIdentityKind =
@@ -236,7 +236,7 @@ export const makeImportBatchService = (
             sourceCanonicalId: resolution.identity.canonicalId,
             sourceIdentityKind:
               resolution._tag === "UnsupportedIdentity"
-                ? ("unsupported" as const)
+                ? ("carousel" as const)
                 : ("video" as const),
           }))
         ),

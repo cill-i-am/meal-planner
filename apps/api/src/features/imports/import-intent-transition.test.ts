@@ -8,7 +8,7 @@ import {
   ImportIntentTransitionSnapshot,
   applyImportIntentTransition,
 } from "./import-intent-transition.js";
-import { resolveImportWorkflowInput } from "./import-workflow-input.js";
+import { decodeImportWorkflowInput } from "./import-workflow-input.js";
 
 const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
   "00000000-0000-4000-8000-000000000201"
@@ -18,7 +18,7 @@ const atInstant = Schema.decodeUnknownSync(Instant)(at);
 const generation = Schema.decodeUnknownSync(ImportIntentExecutionGeneration)(3);
 const resolvingGeneration = Schema.decodeUnknownSync(
   ImportIntentExecutionGeneration
-)(0);
+)(1);
 const decodeSnapshot = Schema.decodeUnknownSync(ImportIntentTransitionSnapshot);
 const decodeSnapshotType = Schema.decodeUnknownSync(
   Schema.toType(ImportIntentTransitionSnapshot)
@@ -98,7 +98,7 @@ const advanceAnalyzing = (snapshot: ReturnType<typeof acquiring>) =>
   });
 
 describe("recipe import intent transition policy", () => {
-  it("claims a resolved source and allocates the next execution generation", () => {
+  it("claims a resolved source without replacing its execution generation", () => {
     const claimed = apply(resolving(), {
       _tag: "ResolveSource",
       ...metadata(20),
@@ -126,7 +126,7 @@ describe("recipe import intent transition policy", () => {
     });
   });
 
-  it("settles a duplicate source as a terminal redirect without allocating execution", () => {
+  it("settles a duplicate source as a terminal redirect without replacing execution", () => {
     const winnerIntentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
       "00000000-0000-4000-8000-000000000202"
     );
@@ -144,7 +144,7 @@ describe("recipe import intent transition policy", () => {
       _tag: "Applied",
       snapshot: {
         activity: null,
-        executionGeneration: 0,
+        executionGeneration: 1,
         intentVersion: 2,
         redirectedAt: atInstant,
         redirectedToIntentId: winnerIntentId,
@@ -170,7 +170,7 @@ describe("recipe import intent transition policy", () => {
 
   it("uses the decoded Workflow generation to fence executor transitions", async () => {
     const input = await Effect.runPromise(
-      resolveImportWorkflowInput({
+      decodeImportWorkflowInput({
         executionGeneration: 1,
         importId: intentId,
         trace: {

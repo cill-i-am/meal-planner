@@ -43,13 +43,7 @@ import {
 } from "./import.contracts.js";
 import { importPersistenceUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type { AcceptImportCommand, StoredImport } from "./import.repository.js";
-import {
-  CompatibilityFingerprint,
-  IdempotencyKeyHash,
-  RequestFingerprint,
-  SourceLocatorHash,
-} from "./import.repository.js";
+import { admitResolvedTestImport } from "./import.test-fixtures.js";
 
 const trace = Schema.decodeUnknownSync(ImportTraceContext)({
   correlationId: "10000000-0000-4000-8000-000000000005",
@@ -99,12 +93,6 @@ const decodeBudgetProviderStageId = Schema.decodeUnknownSync(
 );
 const decodeBudgetRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
 const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
-const decodeCompatibilityFingerprint = Schema.decodeUnknownSync(
-  CompatibilityFingerprint
-);
-const decodeIdempotencyKeyHash = Schema.decodeUnknownSync(IdempotencyKeyHash);
-const decodeRequestFingerprint = Schema.decodeUnknownSync(RequestFingerprint);
-const decodeSourceLocatorHash = Schema.decodeUnknownSync(SourceLocatorHash);
 
 const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000110");
 const canonicalId = decodeCanonicalId("7520000000000000110");
@@ -115,14 +103,6 @@ const sourceMedia = new Uint8Array([
 ]);
 const sourceMediaSha256 =
   "c43403fe022af967a0b859d3e14ea12d6633f4c8ad475816b0c55d85896e8e35";
-
-const fixtureHash = (value: string) =>
-  Array.from(new TextEncoder().encode(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  )
-    .join("")
-    .padEnd(64, "0")
-    .slice(0, 64);
 
 const acquisitionBucket = (): AcquisitionBucketLike => ({
   get: (key) => testEnv.ImportEvidenceBucket.get(key),
@@ -261,38 +241,15 @@ const makeAcquiredImport = async ({
   const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase, () =>
     Date.parse("2026-07-21T09:59:00.000Z")
   );
-  const createdAt = decodeTimestamp("2026-07-21T09:58:00.000Z");
-  const fixtureIdentity = fixtureImportId.slice(-6);
-  const candidate: StoredImport = {
-    acquisitionGeneration: decodeGeneration(0),
-    canonicalSourceId: fixtureCanonicalId,
-    compatibilityFingerprint: decodeCompatibilityFingerprint(
-      fixtureHash(`${fixtureIdentity}:speech-tracer-compatibility`)
-    ),
-    sourceKind: "tiktok",
-    trace,
-    view: {
-      createdAt,
-      evidence: [],
-      id: fixtureImportId,
-      source: { canonicalId: fixtureCanonicalId, kind: "tiktok" },
-      status: { kind: "queued" },
-      updatedAt: createdAt,
-    },
-  };
-  const command: AcceptImportCommand = {
-    candidate,
-    idempotencyKeyHash: decodeIdempotencyKeyHash(
-      fixtureHash(`${fixtureIdentity}:speech-tracer-idempotency`)
-    ),
-    requestFingerprint: decodeRequestFingerprint(
-      fixtureHash(`${fixtureIdentity}:speech-tracer-request`)
-    ),
-    sourceLocatorHash: decodeSourceLocatorHash(
-      fixtureHash(`${fixtureIdentity}:speech-tracer-locator`)
-    ),
-  };
-  await Effect.runPromise(repository.acceptRequest(command));
+  await Effect.runPromise(
+    admitResolvedTestImport({
+      canonicalId: fixtureCanonicalId,
+      importId: fixtureImportId,
+      repository,
+      sourceKind: "video",
+      trace,
+    })
+  );
   await Effect.runPromise(repository.claimAcquisition(fixtureImportId));
   await expect(
     Effect.runPromise(repository.beginAcquisitionAttempt(fixtureImportId))

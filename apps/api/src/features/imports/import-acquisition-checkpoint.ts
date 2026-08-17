@@ -5,19 +5,14 @@ import {
   EvidenceRetentionSeconds,
   manifestObjectKey,
   mediaObjectKey,
-  VerifiedAcquisitionEvidence,
-  VerifiedSourceMetadata,
 } from "./import-media.model.js";
-import type {
-  ImportId,
-  ImportTimestamp,
-  SourceCanonicalId,
-} from "./import.contracts.js";
+import type { VerifiedAcquisitionEvidence } from "./import-media.model.js";
+import type { ImportId, SourceCanonicalId } from "./import.contracts.js";
 import type { StoredImport } from "./import.repository.js";
 
 export const AcquisitionCheckpointRejected = Schema.Struct({
   _tag: Schema.Literal("AcquisitionCheckpointRejected"),
-  code: Schema.Literal("historical_acquisition_checkpoint_invalid"),
+  code: Schema.Literal("acquisition_checkpoint_invalid"),
 });
 export type AcquisitionCheckpointRejected =
   typeof AcquisitionCheckpointRejected.Type;
@@ -44,50 +39,8 @@ export type DecodedAcquisitionCheckpoint =
 
 const rejected = (): AcquisitionCheckpointRejected => ({
   _tag: "AcquisitionCheckpointRejected",
-  code: "historical_acquisition_checkpoint_invalid",
+  code: "acquisition_checkpoint_invalid",
 });
-
-const PersistedHistoricalTimestamp = Schema.Struct({
-  epochMilliseconds: Schema.Number.pipe(
-    Schema.check(Schema.isFinite(), Schema.isInt())
-  ),
-});
-type PersistedHistoricalTimestamp = typeof PersistedHistoricalTimestamp.Type;
-
-const isValidHistoricalTimestamp = (value: PersistedHistoricalTimestamp) => {
-  try {
-    return (
-      Number.isSafeInteger(value.epochMilliseconds) &&
-      Date.parse(new Date(value.epochMilliseconds).toISOString()) ===
-        value.epochMilliseconds
-    );
-  } catch {
-    return false;
-  }
-};
-
-const HistoricalVerifiedSourceMetadata = Schema.Struct({
-  ...VerifiedSourceMetadata.fields,
-  observedAt: PersistedHistoricalTimestamp,
-  publishedAt: Schema.NullOr(PersistedHistoricalTimestamp),
-});
-
-const HistoricalVerifiedAcquisitionEvidence = Schema.Struct({
-  ...VerifiedAcquisitionEvidence.fields,
-  acquiredAt: PersistedHistoricalTimestamp,
-  deleteAt: PersistedHistoricalTimestamp,
-  source: Schema.optionalKey(HistoricalVerifiedSourceMetadata),
-});
-
-const HistoricalVerifiedAcquisition = Schema.Struct({
-  _tag: Schema.Literal("VerifiedAcquisition"),
-  evidence: HistoricalVerifiedAcquisitionEvidence,
-  generation: VerifiedAcquisitionEvidence.fields.generation,
-});
-
-const timestampFromHistoricalCheckpoint = (
-  value: PersistedHistoricalTimestamp
-) => DateTime.makeUnsafe(value.epochMilliseconds) as ImportTimestamp;
 
 const normalizeDurableCheckpoint = (raw: unknown): unknown => {
   try {
@@ -97,82 +50,16 @@ const normalizeDurableCheckpoint = (raw: unknown): unknown => {
   }
 };
 
-const decodeVerifiedCheckpoint = (
-  raw: unknown
-): DecodedAcquisitionCheckpoint => {
-  const decoded = Schema.decodeUnknownOption(HistoricalVerifiedAcquisition, {
-    onExcessProperty: "error",
-  })(normalizeDurableCheckpoint(raw));
-  if (Option.isNone(decoded)) {
-    return rejected();
-  }
-  const historical = decoded.value;
-  const { acquiredAt, deleteAt, source, ...evidence } = historical.evidence;
-  if (
-    !isValidHistoricalTimestamp(acquiredAt) ||
-    !isValidHistoricalTimestamp(deleteAt) ||
-    (source !== undefined &&
-      (!isValidHistoricalTimestamp(source.observedAt) ||
-        (source.publishedAt !== null &&
-          !isValidHistoricalTimestamp(source.publishedAt))))
-  ) {
-    return rejected();
-  }
-  const decodedSource =
-    source === undefined
-      ? {}
-      : {
-          source: {
-            ...source,
-            observedAt: timestampFromHistoricalCheckpoint(source.observedAt),
-            publishedAt:
-              source.publishedAt === null
-                ? null
-                : timestampFromHistoricalCheckpoint(source.publishedAt),
-          },
-        };
-  const candidate: AcquisitionTaskOutcome = {
-    ...historical,
-    evidence: {
-      ...evidence,
-      ...decodedSource,
-      acquiredAt: timestampFromHistoricalCheckpoint(acquiredAt),
-      deleteAt: timestampFromHistoricalCheckpoint(deleteAt),
-    },
-  };
-  return {
-    _tag: "Accepted",
-    outcome: candidate,
-  };
-};
-
-/**
- * Decodes the one proven historical Workflow checkpoint representation.
- *
- * This deliberately does not change the application-wide timestamp or source
- * schemas. Verified acquisition checkpoints must carry the exact
- * `epochMilliseconds` object left after a historical Effect DateTime crossed
- * the native Workflow structured-clone boundary.
- */
 export const decodeAcquisitionCheckpoint = (
   raw: unknown
 ): DecodedAcquisitionCheckpoint => {
-  const durableCheckpoint = normalizeDurableCheckpoint(raw);
-  const current = Schema.decodeUnknownOption(AcquisitionTaskOutcome, {
+  const decoded = Schema.decodeUnknownOption(AcquisitionTaskOutcome, {
     onExcessProperty: "error",
-  })(durableCheckpoint);
-  if (Option.isSome(current)) {
-    return { _tag: "Accepted", outcome: current.value };
-  }
-  if (
-    typeof durableCheckpoint === "object" &&
-    durableCheckpoint !== null &&
-    "_tag" in durableCheckpoint &&
-    durableCheckpoint._tag === "VerifiedAcquisition"
-  ) {
-    return decodeVerifiedCheckpoint(durableCheckpoint);
-  }
-  return rejected();
+  })(normalizeDurableCheckpoint(raw));
+  return Option.match(decoded, {
+    onNone: rejected,
+    onSome: (outcome) => ({ _tag: "Accepted", outcome }),
+  });
 };
 
 const ownsSpeechContinuation = (stored: StoredImport) =>

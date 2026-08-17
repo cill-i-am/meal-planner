@@ -16,7 +16,6 @@ import { Option, Schema } from "effect";
 
 const NullableString = Schema.NullOr(Schema.String);
 const EventType = Schema.Literals([
-  "migration_snapshot",
   "intent_admitted",
   "source_resolved",
   "intent_redirected",
@@ -119,9 +118,6 @@ export const projectImportIntentHistoryRow = (
 ): Option.Option<RecipeImportTimelineEventType> => {
   const common = { at: row.at, intentVersion: row.intentVersion };
   switch (row.eventType) {
-    case "migration_snapshot": {
-      return Option.none();
-    }
     case "intent_admitted": {
       return Option.some(decodeEvent({ ...common, type: row.eventType }));
     }

@@ -1,30 +1,53 @@
-import { Effect, Layer, Redacted, Schema } from "effect";
+import {
+  ProcessingRecipeImportIntent,
+  RecipeImportIntentId,
+} from "@meal-planner/recipe-import-api";
+import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { OperatorCarouselImportService } from "./import-carousel-operator.service.js";
-import type { OperatorCarouselImportServiceShape } from "./import-carousel-operator.service.js";
-import type { ImportAuthorizerShape } from "./import.auth.js";
-import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
-import {
-  ImportId,
-  ImportTimestamp,
-  SourceCanonicalId,
-} from "./import.contracts.js";
-import { invalidCarouselBundle } from "./import.errors.js";
 import {
   MaximumOperatorCarouselRequestBytes,
   OperatorCarouselRoutes,
-} from "./import.routes.js";
+} from "./import-carousel-operator.routes.js";
+import { OperatorCarouselImportService } from "./import-carousel-operator.service.js";
+import type { OperatorCarouselImportServiceShape } from "./import-carousel-operator.service.js";
+import type { ImportAuthorizerShape } from "./import.auth.js";
+import { ImportAuthorizer } from "./import.auth.js";
+import { invalidCarouselBundle } from "./import.errors.js";
+import {
+  makeTestImportAuthorizer,
+  TestImportPrincipal,
+} from "./import.test-fixtures.js";
 
-const importId = Schema.decodeUnknownSync(ImportId)(
+const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
   "018f47ad-91aa-7c35-b6fe-000000000162"
 );
-const timestamp = Schema.decodeUnknownSync(ImportTimestamp)(
-  "2026-07-25T20:00:00.000Z"
-);
-const canonicalId = Schema.decodeUnknownSync(SourceCanonicalId)(
-  "7520000000000000162"
+const timestamp = "2026-07-25T20:00:00.000Z";
+const processingIntent = Schema.decodeUnknownSync(ProcessingRecipeImportIntent)(
+  {
+    activity: { type: "working" },
+    createdAt: timestamp,
+    id: intentId,
+    intentVersion: 2,
+    links: {
+      self: `/v1/recipe-import-intents/${intentId}`,
+      timeline: `/v1/recipe-import-intents/${intentId}/timeline`,
+    },
+    object: "recipe_import_intent",
+    processing: {
+      sourceKind: "carousel",
+      startedAt: timestamp,
+      type: "acquiring_media",
+    },
+    source: {
+      canonicalUrl: "https://www.tiktok.com/@cook/photo/7520000000000000162",
+      kind: "tiktok",
+      resolution: "resolved",
+    },
+    status: "processing",
+    updatedAt: timestamp,
+  }
 );
 const completeJpegBase64 =
   "/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAADAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z";
@@ -33,7 +56,7 @@ let authorizer: ImportAuthorizerShape;
 
 beforeAll(async () => {
   authorizer = await Effect.runPromise(
-    makeImportAuthorizer(Redacted.make("test-import-token"))
+    makeTestImportAuthorizer("test-import-token")
   );
 });
 
@@ -58,28 +81,12 @@ describe("operator carousel route", () => {
   });
 
   it("authenticates and admits a bounded typed bundle", async () => {
-    const calls: unknown[] = [];
+    const calls: unknown[][] = [];
     const app = makeApp({
-      admit: (bundle) =>
+      admit: (principal, bundle, idempotencyKey) =>
         Effect.sync(() => {
-          calls.push(bundle);
-          return {
-            disposition: "created",
-            import: {
-              createdAt: timestamp,
-              evidence: [
-                {
-                  kind: "carousel_evidence_manifest",
-                  referenceId: "private-manifest",
-                },
-                { kind: "recipe_draft", referenceId: "private-draft" },
-              ],
-              id: importId,
-              source: { canonicalId, kind: "tiktok" },
-              status: { kind: "needs_review" },
-              updatedAt: timestamp,
-            },
-          };
+          calls.push([principal, bundle, idempotencyKey]);
+          return processingIntent;
         }),
     });
     apps.push(app);
@@ -124,12 +131,20 @@ describe("operator carousel route", () => {
     );
 
     expect(unauthorized.status).toBe(401);
-    expect(admitted.status).toBe(200);
+    expect(admitted.status).toBe(202);
     await expect(admitted.json()).resolves.toMatchObject({
-      disposition: "created",
-      import: { id: importId, status: { kind: "needs_review" } },
+      id: intentId,
+      processing: { sourceKind: "carousel", type: "acquiring_media" },
+      source: { resolution: "resolved" },
+      status: "processing",
     });
-    expect(calls).toHaveLength(1);
+    expect(calls).toEqual([
+      [
+        TestImportPrincipal,
+        expect.objectContaining({ declaredPageCount: 1 }),
+        "operator-162",
+      ],
+    ]);
   });
 
   it("rejects the body before decoding when it exceeds the route limit", async () => {

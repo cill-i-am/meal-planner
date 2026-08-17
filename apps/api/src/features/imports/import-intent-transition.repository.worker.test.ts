@@ -32,6 +32,7 @@ import {
 } from "./import-intent.js";
 import { SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
+import { TestImportTrace } from "./import.test-fixtures.js";
 
 const testEnv = env as unknown as {
   readonly MealPlannerDatabase: AnyD1Database;
@@ -105,7 +106,8 @@ describe("recipe import intent transition repository in workerd", () => {
       );
       const application = makeImportIntentApplication(
         repository,
-        workflowStarter
+        workflowStarter,
+        TestImportTrace
       );
       const run = <A, E>(
         effect: Effect.Effect<A, E, ImportIntentIdGenerator>
@@ -370,7 +372,8 @@ describe("recipe import intent transition repository in workerd", () => {
     );
     const application = makeImportIntentApplication(
       repository,
-      workflowStarter
+      workflowStarter,
+      TestImportTrace
     );
     const run = <A, E>(effect: Effect.Effect<A, E, ImportIntentIdGenerator>) =>
       Effect.runPromise(
@@ -615,7 +618,8 @@ describe("recipe import intent transition repository in workerd", () => {
           encodeTimeline(
             yield* makeImportIntentApplication(
               makeD1ImportRepository(testEnv.MealPlannerDatabase),
-              workflowStarter
+              workflowStarter,
+              TestImportTrace
             ).timeline(principal, intentId)
           )
         ).toEqual(encodedTimeline);
@@ -728,7 +732,8 @@ describe("recipe import intent transition repository in workerd", () => {
     );
     const application = makeImportIntentApplication(
       repository,
-      workflowStarter
+      workflowStarter,
+      TestImportTrace
     );
     const run = <A, E>(
       effect: Effect.Effect<
@@ -1014,7 +1019,8 @@ describe("recipe import intent transition repository in workerd", () => {
     );
     const application = makeImportIntentApplication(
       repository,
-      workflowStarter
+      workflowStarter,
+      TestImportTrace
     );
     const transition = (ordinal: number, body: Record<string, unknown>) =>
       repository.transitionIntent(

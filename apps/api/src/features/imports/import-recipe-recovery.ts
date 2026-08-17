@@ -7,10 +7,7 @@ import {
   PilotProviderBudgetStage,
 } from "../pilots/pilot-provider-budget.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
-import {
-  ImportCorrelationId,
-  ImportTraceContext,
-} from "./import-observability.js";
+import { ImportTraceContext } from "./import-observability.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { workflowStartUnavailable } from "./import.errors.js";
 import type { WorkflowStartUnavailable } from "./import.errors.js";
@@ -426,9 +423,6 @@ const AuthorityRow = Schema.Struct({
   predecessor_run_id: Schema.NullOr(Schema.String),
   predecessor_state: Schema.NullOr(Schema.String),
   projection_evidence_references_json: Schema.NullOr(Schema.String),
-  projection_recovery_action: Schema.NullOr(Schema.String),
-  projection_status: Schema.NullOr(Schema.String),
-  projection_status_code: Schema.NullOr(Schema.String),
   replay_count: Schema.Number,
   root_completed_at: Schema.NullOr(ImportTimestamp),
   root_failure_code: Schema.NullOr(Schema.String),
@@ -467,9 +461,6 @@ const readAuthority = (
                 checkpoint.ownership_id AS checkpoint_ownership_id,
                 checkpoint.failure_code AS checkpoint_failure_code,
                 checkpoint.completed_at AS checkpoint_completed_at,
-                projection.status AS projection_status,
-                projection.status_code AS projection_status_code,
-                projection.recovery_action AS projection_recovery_action,
                 projection.evidence_references_json
                   AS projection_evidence_references_json,
                 dispatch.run_id AS predecessor_run_id,
@@ -517,12 +508,12 @@ const readAuthority = (
             AND checkpoint.acquisition_generation = ?
             AND checkpoint.provider_stage = 'recipe'
             AND checkpoint.ownership_id = ?
-           LEFT JOIN import_recipe_terminal_projections AS projection
+           LEFT JOIN import_recipe_executor_terminal_checkpoints AS projection
              ON projection.import_id = checkpoint.import_id
             AND projection.acquisition_generation =
                   checkpoint.acquisition_generation
             AND projection.ownership_id = checkpoint.ownership_id
-            AND projection.projected_at = checkpoint.completed_at
+            AND projection.checkpointed_at = checkpoint.completed_at
            LEFT JOIN pilot_provider_budget_dispatches AS dispatch
              ON dispatch.runtime_stage = ?
             AND dispatch.dispatch_id = ?
@@ -643,10 +634,7 @@ const requireRootAuthority = (
     !DateTime.Equivalence(
       authority.checkpoint_completed_at,
       authority.root_completed_at
-    ) ||
-    authority.projection_status !== "failed" ||
-    authority.projection_status_code !== "recipe_extraction_failed" ||
-    authority.projection_recovery_action !== "operator_reconcile"
+    )
   ) {
     return Effect.fail(
       new RecipeRecoveryOutcomeUnknown({
@@ -1116,36 +1104,15 @@ export const RecipeRecoveryWorkflowInput = Schema.Struct({
 export type RecipeRecoveryWorkflowInput =
   typeof RecipeRecoveryWorkflowInput.Type;
 
-const LegacyRecipeRecoveryWorkflowInput = Schema.Struct({
-  acquisitionGeneration: AcquisitionGeneration,
-  attemptOrdinal: RecipeRecoveryOrdinal,
-  correlationId: ImportCorrelationId,
-  importId: ImportId,
-});
-
 export class InvalidRecipeRecoveryWorkflowInput extends Data.TaggedError(
   "InvalidRecipeRecoveryWorkflowInput"
 ) {}
 
 export const resolveRecipeRecoveryWorkflowInput = (rawInput: unknown) =>
-  Schema.decodeUnknownEffect(
-    Schema.Union([
-      RecipeRecoveryWorkflowInput,
-      LegacyRecipeRecoveryWorkflowInput,
-    ]),
-    { onExcessProperty: "error" }
-  )(rawInput).pipe(
-    Effect.mapError(() => new InvalidRecipeRecoveryWorkflowInput()),
-    Effect.map((input) =>
-      "trace" in input
-        ? input
-        : {
-            acquisitionGeneration: input.acquisitionGeneration,
-            attemptOrdinal: input.attemptOrdinal,
-            importId: input.importId,
-            trace: { correlationId: input.correlationId },
-          }
-    )
+  Schema.decodeUnknownEffect(RecipeRecoveryWorkflowInput, {
+    onExcessProperty: "error",
+  })(rawInput).pipe(
+    Effect.mapError(() => new InvalidRecipeRecoveryWorkflowInput())
   );
 
 export const RecipeRecoveryAuthorization = Schema.Struct({

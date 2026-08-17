@@ -2,37 +2,31 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
-  CreateImportRequest,
   IdempotencyKey,
   ImportView,
+  SourceDescriptor,
   SourceUrl,
 } from "./import.contracts.js";
 
-const decodeCreate = Schema.decodeUnknownSync(CreateImportRequest);
+const decodeSource = Schema.decodeUnknownSync(SourceDescriptor);
 const decodeImport = Schema.decodeUnknownSync(ImportView);
 
 describe("import contracts", () => {
   it("accepts the source-agnostic TikTok request envelope", () => {
     expect(
-      decodeCreate({
-        source: {
-          kind: "tiktok",
-          url: "https://www.tiktok.com/@cook/video/7520000000000000000",
-        },
-      })
-    ).toStrictEqual({
-      source: {
+      decodeSource({
         kind: "tiktok",
         url: "https://www.tiktok.com/@cook/video/7520000000000000000",
-      },
+      })
+    ).toStrictEqual({
+      kind: "tiktok",
+      url: "https://www.tiktok.com/@cook/video/7520000000000000000",
     });
 
     expect(() =>
-      decodeCreate({ source: { kind: "youtube", url: "https://example.test" } })
+      decodeSource({ kind: "youtube", url: "https://example.test" })
     ).toThrow();
-    expect(() =>
-      decodeCreate({ source: { kind: "tiktok", url: "" } })
-    ).toThrow();
+    expect(() => decodeSource({ kind: "tiktok", url: "" })).toThrow();
   });
 
   it("requires a trimmed idempotency key between one and 128 characters", () => {

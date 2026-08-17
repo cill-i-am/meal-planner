@@ -1,13 +1,18 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Config, Layer, Stream } from "effect";
+import { Config, Layer, Schema, Stream } from "effect";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { HealthRoutes } from "./features/health/health.routes.js";
 import { ImportBatchRouteDefinitions } from "./features/imports/import-batch.routes.js";
-import { makeMealPlannerWorkerHttpLayer } from "./features/imports/import-intent-api.http.js";
+import { OperatorCarouselRouteDefinitions } from "./features/imports/import-carousel-operator.routes.js";
+import { makeRecipeImportWorkerHttpLayer } from "./features/imports/import-intent-api.http.js";
+import {
+  HouseholdScopeId,
+  ImportActorId,
+  ImportPrincipal,
+} from "./features/imports/import-intent.js";
 import type { AcquisitionBucketLike } from "./features/imports/import-media-acquirer.js";
 import { makeD1ImportObservabilityTraceStore } from "./features/imports/import-observability.d1.js";
 import {
@@ -19,14 +24,12 @@ import type { ImportTraceContext } from "./features/imports/import-observability
 import { ProviderTerminalSettlementRouteDefinitions } from "./features/imports/import-provider-terminal-settlement.routes.js";
 import { makeRecipeRecoveryWorkflowStarter } from "./features/imports/import-recipe-recovery.js";
 import ImportRecipeRecoveryWorkflow from "./features/imports/import-recipe-recovery.workflow.js";
-import { RecipeReviewRouteDefinitions } from "./features/imports/import-recipe-review.routes.js";
 import {
   consumeImportBatchDeadLetterDelivery,
   consumeImportBatchQueueDelivery,
   makeImportBatchQueueAcceptance,
   makeImportWorkerRequestLayer,
 } from "./features/imports/import-runtime-composition.js";
-import { ImportRouteDefinitions } from "./features/imports/import.routes.js";
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowTerminator,
   makeImportWorkflowStarter,
@@ -44,20 +47,11 @@ import { ImportEvidenceBucket } from "./infrastructure/import-evidence-bucket.js
 import { MealPlannerDatabase } from "./infrastructure/meal-planner-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
 
-const notFound = HttpServerResponse.json(
-  { error: { code: "not_found", message: "The route was not found." } },
-  { status: 404 }
-).pipe(Effect.orDie);
-
-const LegacyMealPlannerWorkerRoutes = [
+const MealPlannerOperationalRoutes = [
   ...HealthRoutes,
-  ...ImportRouteDefinitions,
+  ...OperatorCarouselRouteDefinitions,
   ...ImportBatchRouteDefinitions,
   ...ProviderTerminalSettlementRouteDefinitions,
-  ...RecipeReviewRouteDefinitions,
-] as const;
-const MealPlannerWorkerFallbackRoutes = [
-  HttpRouter.route("*", "*", notFound),
 ] as const;
 
 const currentIsoTimestamp = () => new Date().toISOString();
@@ -100,6 +94,19 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
     const importBatchQueueWriter =
       yield* Cloudflare.Queues.WriteQueue(importBatchQueue);
+    const importApiToken = yield* Config.redacted(
+      "MEAL_PLANNER_IMPORT_API_TOKEN"
+    );
+    const importActorId = Schema.decodeUnknownSync(ImportActorId)(
+      yield* Config.string("MEAL_PLANNER_IMPORT_ACTOR_ID")
+    );
+    const importHouseholdScopeId = Schema.decodeUnknownSync(HouseholdScopeId)(
+      yield* Config.string("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID")
+    );
+    const importPrincipal = Schema.decodeUnknownSync(ImportPrincipal)({
+      actorId: importActorId,
+      householdScopeId: importHouseholdScopeId,
+    });
     const makeBatchQueueAcceptance = (
       database: AnyD1Database,
       trace: ImportTraceContext
@@ -110,6 +117,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           importAcquisitionWorkflow
         ),
         now: currentIsoTimestamp,
+        principal: importPrincipal,
         trace,
       });
     yield* Cloudflare.Queues.consumeQueueMessages(
@@ -182,9 +190,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           )
         )
     );
-    const importApiToken = yield* Config.redacted(
-      "MEAL_PLANNER_IMPORT_API_TOKEN"
-    );
     return {
       fetch: Effect.gen(function* handleMealPlannerRequest() {
         const database = yield* queryDatabase.raw;
@@ -202,6 +207,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             importAcquisitionWorkflow
           ),
           now: currentIsoTimestamp,
+          principal: importPrincipal,
           queue: makeCloudflareImportBatchQueue(rawImportBatchQueue),
           recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
             importRecipeRecoveryWorkflow
@@ -210,9 +216,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           trace,
         });
         const routeHandler = yield* HttpRouter.toHttpEffect(
-          makeMealPlannerWorkerHttpLayer({
-            fallbackRoutes: MealPlannerWorkerFallbackRoutes,
-            legacyRoutes: LegacyMealPlannerWorkerRoutes,
+          makeRecipeImportWorkerHttpLayer({
+            operationalRoutes: MealPlannerOperationalRoutes,
           }).pipe(
             Layer.provide(requestLayer),
             HttpRouter.provideRequest(requestLayer)

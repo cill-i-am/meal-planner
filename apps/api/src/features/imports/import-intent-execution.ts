@@ -2,7 +2,6 @@ import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { Context, Effect, Schema } from "effect";
 
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
-import { LegacyImportWorkflowExecutionGeneration } from "./import-workflow-input.js";
 import type { ImportIntentRepositoryShape } from "./import.repository.js";
 
 export interface ImportIntentWorkflowTerminatorShape {
@@ -41,9 +40,6 @@ export const runCurrentImportIntentExecution = Effect.fn(
   executionGeneration: ImportIntentExecutionGeneration,
   run: () => Effect.Effect<Success, Failure, Requirements>
 ) {
-  if (executionGeneration === LegacyImportWorkflowExecutionGeneration) {
-    return yield* run();
-  }
   const isCurrent = yield* repository.isIntentExecutionCurrent(
     intentId,
     executionGeneration

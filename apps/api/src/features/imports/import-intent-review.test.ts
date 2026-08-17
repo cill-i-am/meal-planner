@@ -14,19 +14,14 @@ import {
   recipeImportActionMutationId,
   succeededRecipeMutationId,
 } from "./import-intent-review.js";
-import {
-  ImportPrincipal,
-  LegacyPrivateImportPrincipal,
-} from "./import-intent.js";
+import { TestImportPrincipal } from "./import.test-fixtures.js";
 
 const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
   "05c75f4c-41cc-43bd-bc9e-b344aa6abb1f"
 );
 const actionId = Schema.decodeUnknownSync(RecipeImportActionId)("a".repeat(64));
 const idempotencyKey = Schema.decodeUnknownSync(IdempotencyKey)("action-key");
-const principal = Schema.decodeUnknownSync(ImportPrincipal)(
-  LegacyPrivateImportPrincipal
-);
+const principal = TestImportPrincipal;
 
 const answerRequest = (reverse = false) =>
   Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest)({

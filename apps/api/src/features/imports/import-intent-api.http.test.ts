@@ -14,25 +14,30 @@ import {
   makeRecipeImportApiClientLayer,
 } from "@meal-planner/recipe-import-api";
 import { Effect, Layer, Redacted, Schema } from "effect";
-import {
-  FetchHttpClient,
-  HttpRouter,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { FetchHttpClient, HttpRouter } from "effect/unstable/http";
 import { OpenApi } from "effect/unstable/httpapi";
 import { afterAll, describe, expect, it } from "vitest";
 
+import { HealthRoutes } from "../health/health.routes.js";
+import { ImportBatchRouteDefinitions } from "./import-batch.routes.js";
+import { ImportBatchService } from "./import-batch.service.js";
+import { OperatorCarouselRouteDefinitions } from "./import-carousel-operator.routes.js";
+import { OperatorCarouselImportService } from "./import-carousel-operator.service.js";
 import {
   RecipeImportIntentApplication,
-  makeMealPlannerWorkerHttpLayer,
   makeRecipeImportHttpApiLayer,
+  makeRecipeImportWorkerHttpLayer,
 } from "./import-intent-api.http.js";
 import type { RecipeImportIntentApplicationShape } from "./import-intent-api.http.js";
 import { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
 import { RecipeImportIntentReviewApplication } from "./import-intent-review.js";
 import type { RecipeImportIntentReviewApplicationShape } from "./import-intent-review.js";
 import { ImportIntentIdGenerator } from "./import-intent.js";
+import { ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
+import { ProviderTerminalSettlementRouteDefinitions } from "./import-provider-terminal-settlement.routes.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
+import { TestImportPrincipal } from "./import.test-fixtures.js";
+import { CanonicalSourceIdentityResolver } from "./source-identity.js";
 
 const intentId = "018f47ad-91aa-7c35-b6fe-000000000001";
 const actionId = "a".repeat(64);
@@ -170,21 +175,36 @@ const unused = () => Effect.die("not used by this HTTP boundary test");
 type AnyHttpRoute = HttpRouter.Route<any, any>;
 
 interface MakeAppOptions {
-  readonly fallbackRoutes?: readonly AnyHttpRoute[];
   readonly intent?: Partial<RecipeImportIntentApplicationShape>;
-  readonly legacyRoutes?: readonly AnyHttpRoute[];
+  readonly operationalRoutes?: readonly AnyHttpRoute[];
   readonly review?: Partial<RecipeImportIntentReviewApplicationShape>;
 }
 
 const makeApp = async (options: MakeAppOptions = {}) => {
   const authorizer = await Effect.runPromise(
-    makeImportAuthorizer(Redacted.make("test-import-token"))
+    makeImportAuthorizer({
+      expectedToken: Redacted.make("test-import-token"),
+      principal: TestImportPrincipal,
+    })
   );
   const intentApplication = {
     admit: unused,
     cancel: unused,
+    continueSourceResolution: () =>
+      Effect.succeed({
+        disposition: "no_op" as const,
+        intent: requiresActionIntent,
+      }),
     get: unused,
-    reconcileStalledStarts: unused,
+    reconcileStalledContinuations: () =>
+      Effect.succeed({
+        continuationFailures: 0,
+        continued: 0,
+        ensured: 0,
+        examined: 0,
+        skipped: 0,
+        startFailures: 0,
+      }),
     requireMutable: unused,
     resolveSource: unused,
     timeline: unused,
@@ -200,6 +220,10 @@ const makeApp = async (options: MakeAppOptions = {}) => {
   const services = Layer.mergeAll(
     ImportIntentIdGenerator.live,
     Layer.succeed(
+      CanonicalSourceIdentityResolver,
+      CanonicalSourceIdentityResolver.of({ resolve: unused })
+    ),
+    Layer.succeed(
       ImportIntentWorkflowTerminator,
       ImportIntentWorkflowTerminator.of({ terminate: () => Effect.void })
     ),
@@ -211,14 +235,25 @@ const makeApp = async (options: MakeAppOptions = {}) => {
     Layer.succeed(
       RecipeImportIntentReviewApplication,
       RecipeImportIntentReviewApplication.of(reviewApplication)
+    ),
+    Layer.succeed(
+      ImportBatchService,
+      ImportBatchService.of({ create: unused, get: unused })
+    ),
+    Layer.succeed(
+      OperatorCarouselImportService,
+      OperatorCarouselImportService.of({ admit: unused })
+    ),
+    Layer.succeed(
+      ProviderTerminalSettlementService,
+      ProviderTerminalSettlementService.of({ settle: unused })
     )
   );
   const apiLayer =
-    options.legacyRoutes === undefined
+    options.operationalRoutes === undefined
       ? makeRecipeImportHttpApiLayer()
-      : makeMealPlannerWorkerHttpLayer({
-          fallbackRoutes: options.fallbackRoutes ?? [],
-          legacyRoutes: options.legacyRoutes,
+      : makeRecipeImportWorkerHttpLayer({
+          operationalRoutes: options.operationalRoutes,
         });
   return HttpRouter.toWebHandler(
     apiLayer.pipe(Layer.provide(services), HttpRouter.provideRequest(services)),
@@ -520,41 +555,75 @@ describe("recipe import HttpApi boundary", () => {
     expect(results.retryAfter).toEqual({ create: 2, read: 2 });
   });
 
-  it("keeps typed routes, legacy routes, and the wildcard fallback side by side", async () => {
+  it("mounts only the canonical and current operational surface before a safe wildcard 404", async () => {
     const app = await makeApp({
-      fallbackRoutes: [
-        HttpRouter.route(
-          "*",
-          "*",
-          HttpServerResponse.text("legacy fallback", { status: 404 })
-        ),
-      ],
       intent: { get: () => Effect.succeed(processingIntent) },
-      legacyRoutes: [
-        HttpRouter.route(
-          "GET",
-          "/legacy-proof",
-          HttpServerResponse.empty({ status: 204 })
-        ),
+      operationalRoutes: [
+        ...HealthRoutes,
+        ...OperatorCarouselRouteDefinitions,
+        ...ImportBatchRouteDefinitions,
+        ...ProviderTerminalSettlementRouteDefinitions,
       ],
     });
     apps.push(app);
 
-    const [legacy, typed, fallback] = await Promise.all([
-      app.handler(new Request("https://meal-planner.test/legacy-proof")),
+    const [health, typed, carousel, batch, settlement] = await Promise.all([
+      app.handler(new Request("https://meal-planner.test/health")),
       app.handler(
         new Request(
           `https://meal-planner.test/v1/recipe-import-intents/${intentId}`,
           { headers: { authorization: "Bearer test-import-token" } }
         )
       ),
-      app.handler(new Request("https://meal-planner.test/not-a-route")),
+      app.handler(
+        new Request("https://meal-planner.test/imports/operator-carousel", {
+          method: "POST",
+        })
+      ),
+      app.handler(
+        new Request("https://meal-planner.test/import-batches", {
+          method: "POST",
+        })
+      ),
+      app.handler(
+        new Request(
+          "https://meal-planner.test/imports/operator-provider-terminal-settlement",
+          { method: "POST" }
+        )
+      ),
     ]);
 
-    expect(legacy.status).toBe(204);
+    expect(health.status).toBe(200);
     expect(typed.status).toBe(200);
-    expect(fallback.status).toBe(404);
-    await expect(fallback.text()).resolves.toBe("legacy fallback");
+    expect(carousel.status).toBe(401);
+    expect(batch.status).toBe(401);
+    expect(settlement.status).toBe(401);
+
+    const removedRequests = [
+      new Request("https://meal-planner.test/imports", { method: "POST" }),
+      new Request("https://meal-planner.test/imports/legacy-id"),
+      new Request("https://meal-planner.test/recipe-drafts/legacy-id"),
+      new Request("https://meal-planner.test/recipe-drafts/legacy-id", {
+        method: "PATCH",
+      }),
+      new Request("https://meal-planner.test/recipe-bank"),
+      new Request("https://meal-planner.test/not-a-route"),
+    ];
+    const removedResponses = await Promise.all(
+      removedRequests.map((request) => app.handler(request))
+    );
+    const removedBodies = await Promise.all(
+      removedResponses.map((response) => response.json())
+    );
+    for (const [index, response] of removedResponses.entries()) {
+      expect(response.status).toBe(404);
+      expect(removedBodies[index]).toEqual({
+        error: {
+          code: "not_found",
+          message: "The route was not found.",
+        },
+      });
+    }
   });
 
   it("serves the exact generated contract from the mounted endpoint", async () => {

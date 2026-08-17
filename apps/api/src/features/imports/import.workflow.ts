@@ -33,7 +33,6 @@ import {
 import {
   runImportCarouselVisualAndRecipeWorkflow,
   runImportVisualAndRecipeWorkflow,
-  runPreparedVisualRecoveryWorkflowBranch,
 } from "./import-application-workflows.js";
 import { loadStagedOperatorCarousel } from "./import-carousel-staging.js";
 import {
@@ -109,8 +108,8 @@ import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcripti
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import {
+  decodeImportWorkflowInput,
   ImportWorkflowInput,
-  resolveImportWorkflowInput,
 } from "./import-workflow-input.js";
 import {
   PostAcquisitionJournalCheckpoint,
@@ -473,7 +472,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
 
     return (rawInput: unknown) =>
       Effect.gen(function* initializeImportAcquisitionWorkflow() {
-        const workflowInput = yield* resolveImportWorkflowInput(rawInput).pipe(
+        const workflowInput = yield* decodeImportWorkflowInput(rawInput).pipe(
           Effect.orDie
         );
         const database = yield* queryDatabase.raw;
@@ -677,28 +676,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                       : continueVisual(preparedDispatchIds);
                   })(),
                 });
-              if ("resume" in workflowInput) {
-                return yield* runPreparedVisualRecoveryWorkflowBranch({
-                  completeVisualAndRecipe: (recovery) =>
-                    completeVisualAndRecipe(
-                      recovery.acquisitionGeneration,
-                      recovery
-                    ),
-                  findStored: repository.findById(importId).pipe(Effect.orDie),
-                  importId,
-                  resolveDispatchIds: (stored) =>
-                    Effect.all({
-                      speechDispatchId: terminalRecovery.speechDispatchId({
-                        acquisitionGeneration: stored.acquisitionGeneration,
-                        importId,
-                      }),
-                      visualDispatchId: terminalRecovery.visualDispatchId({
-                        acquisitionGeneration: stored.acquisitionGeneration,
-                        importId,
-                      }),
-                    }).pipe(Effect.orDie),
-                });
-              }
               const stagedCarousel = yield* loadStagedOperatorCarousel({
                 bucket: adaptAcquisitionBucket(rawBucket),
                 importId,
@@ -1043,13 +1020,11 @@ export const importWorkflowInstanceId = (
 ) => `import-acquisition-${importId}`;
 
 export interface ImportWorkflowStarterShape {
-  readonly ensureStarted?: (
+  readonly ensureStarted: (
     importId: ImportId,
     executionGeneration: ImportIntentExecutionGeneration,
     trace: ImportTraceContext
   ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
-  /** Compatibility-only shape for unchanged cancellation fixtures. */
-  readonly start?: (importId: ImportId) => Effect.Effect<void>;
   readonly restartFromSpeech?: (
     importId: ImportId
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
@@ -1281,14 +1256,7 @@ export const ensureImportWorkflowStarted = (
   importId: ImportId,
   executionGeneration: ImportIntentExecutionGeneration,
   trace: ImportTraceContext
-) => {
-  if (starter.ensureStarted === undefined) {
-    return starter.start === undefined
-      ? Effect.fail(workflowStartUnavailable())
-      : Effect.as(starter.start(importId), "already_active" as const);
-  }
-  return starter.ensureStarted(importId, executionGeneration, trace);
-};
+) => starter.ensureStarted(importId, executionGeneration, trace);
 
 // eslint-disable-next-line max-classes-per-file -- The Workflow host and its service tag form one frozen module contract.
 export class ImportWorkflowStarter extends Context.Service<

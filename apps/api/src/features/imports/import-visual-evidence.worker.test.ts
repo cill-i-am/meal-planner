@@ -1,6 +1,6 @@
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Layer, Option, Redacted, Schema, Stream } from "effect";
+import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -52,7 +52,7 @@ import {
 } from "./import-visual-evidence.fake.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
-import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
+import { ImportAuthorizer } from "./import.auth.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -61,16 +61,13 @@ import {
 import { importPersistenceUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import type {
-  AcceptImportCommand,
   ImportRepositoryShape,
   StoredImport,
 } from "./import.repository.js";
 import {
-  CompatibilityFingerprint,
-  IdempotencyKeyHash,
-  RequestFingerprint,
-  SourceLocatorHash,
-} from "./import.repository.js";
+  admitResolvedTestImport,
+  makeTestImportAuthorizer,
+} from "./import.test-fixtures.js";
 
 const trace = Schema.decodeUnknownSync(ImportTraceContext)({
   correlationId: "10000000-0000-4000-8000-000000000006",
@@ -127,12 +124,6 @@ const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
-const decodeCompatibilityFingerprint = Schema.decodeUnknownSync(
-  CompatibilityFingerprint
-);
-const decodeIdempotencyKeyHash = Schema.decodeUnknownSync(IdempotencyKeyHash);
-const decodeRequestFingerprint = Schema.decodeUnknownSync(RequestFingerprint);
-const decodeSourceLocatorHash = Schema.decodeUnknownSync(SourceLocatorHash);
 const decodeBudgetDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
 const decodeBudgetProviderStageId = Schema.decodeUnknownSync(
   PilotBudgetProviderStageId
@@ -216,38 +207,15 @@ const makeTranscribedImport = async (
   const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase, () =>
     Date.parse("2026-07-21T09:59:00.000Z")
   );
-  const createdAt = decodeTimestamp("2026-07-21T09:58:00.000Z");
-  const identity = importId.slice(-6);
-  const candidate: StoredImport = {
-    acquisitionGeneration: decodeGeneration(0),
-    canonicalSourceId: canonicalId,
-    compatibilityFingerprint: decodeCompatibilityFingerprint(
-      fixtureHash(`${identity}:visual-tracer-compatibility`)
-    ),
-    sourceKind: "tiktok",
-    trace,
-    view: {
-      createdAt,
-      evidence: [],
-      id: importId,
-      source: { canonicalId, kind: "tiktok" },
-      status: { kind: "queued" },
-      updatedAt: createdAt,
-    },
-  };
-  const command: AcceptImportCommand = {
-    candidate,
-    idempotencyKeyHash: decodeIdempotencyKeyHash(
-      fixtureHash(`${identity}:visual-tracer-idempotency`)
-    ),
-    requestFingerprint: decodeRequestFingerprint(
-      fixtureHash(`${identity}:visual-tracer-request`)
-    ),
-    sourceLocatorHash: decodeSourceLocatorHash(
-      fixtureHash(`${identity}:visual-tracer-locator`)
-    ),
-  };
-  await Effect.runPromise(repository.acceptRequest(command));
+  await Effect.runPromise(
+    admitResolvedTestImport({
+      canonicalId,
+      importId,
+      repository,
+      sourceKind: "video",
+      trace,
+    })
+  );
   await Effect.runPromise(repository.claimAcquisition(importId));
   await Effect.runPromise(repository.beginAcquisitionAttempt(importId));
 
@@ -587,7 +555,7 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
     ]);
 
     const authorizer = await Effect.runPromise(
-      makeImportAuthorizer(Redacted.make("test-import-token"))
+      makeTestImportAuthorizer("test-import-token")
     );
     const service = makeD1ProviderTerminalSettlementService({
       database: testEnv.MealPlannerDatabase,
@@ -976,25 +944,6 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
       },
       schemaVersion: 1,
       sourceEvidenceDeleteAt: acquisitionManifest.deleteAt,
-    });
-
-    const duplicate = await Effect.runPromise(
-      importRepository.acceptRequest({
-        candidate: stored,
-        idempotencyKeyHash: decodeIdempotencyKeyHash(
-          fixtureHash("visual-complete-canonical-duplicate")
-        ),
-        requestFingerprint: decodeRequestFingerprint(
-          fixtureHash("visual-complete-canonical-request")
-        ),
-        sourceLocatorHash: decodeSourceLocatorHash(
-          fixtureHash("visual-complete-canonical-locator")
-        ),
-      })
-    );
-    expect(duplicate).toMatchObject({
-      disposition: "canonical_duplicate",
-      import: { view: { status: { kind: "visual_evidence_found" } } },
     });
 
     const replayFrames = makeDeterministicFrameSampler([]);
@@ -1779,29 +1728,6 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
       )
     ).resolves.toEqual(draft);
     expect(replay.calls).toEqual([]);
-
-    const reviewable = Option.getOrThrow(
-      await Effect.runPromise(importRepository.findById(importId))
-    );
-    await expect(
-      Effect.runPromise(
-        importRepository.acceptRequest({
-          candidate: reviewable,
-          idempotencyKeyHash: decodeIdempotencyKeyHash(
-            fixtureHash("recipe-review-canonical-duplicate")
-          ),
-          requestFingerprint: decodeRequestFingerprint(
-            fixtureHash("recipe-review-canonical-request")
-          ),
-          sourceLocatorHash: decodeSourceLocatorHash(
-            fixtureHash("recipe-review-canonical-locator")
-          ),
-        })
-      )
-    ).resolves.toMatchObject({
-      disposition: "canonical_duplicate",
-      import: { view: { id: importId, status: { kind: "needs_review" } } },
-    });
 
     const updatedDescriptor = { ...descriptor, version: "schema-2" };
     const updatedExtractor = makeDeterministicRecipeExtractor(

@@ -26,13 +26,9 @@ import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
 } from "./import-observability.js";
-import {
-  LegacyImportWorkflowExecutionGeneration,
-  resolveImportWorkflowInput,
-} from "./import-workflow-input.js";
+import { decodeImportWorkflowInput } from "./import-workflow-input.js";
 import { ImportId } from "./import.contracts.js";
 import {
-  ensureImportWorkflowStarted,
   importWorkflowInstanceId,
   makeImportWorkflowTerminator,
   makeImportWorkflowStarter,
@@ -81,7 +77,7 @@ const nodePath = require("node:path") as {
 const MiniflareOperationTimeoutMilliseconds = 5000;
 
 describe("intent execution preflight", () => {
-  it("does not evaluate provider work for a superseded generation and preserves legacy g0", async () => {
+  it("does not evaluate provider work for a superseded generation", async () => {
     let checks = 0;
     let providerCalls = 0;
     const repository = {
@@ -104,19 +100,9 @@ describe("intent execution preflight", () => {
         providerWork
       )
     );
-    const legacy = await Effect.runPromise(
-      runCurrentImportIntentExecution(
-        repository,
-        intentId,
-        LegacyImportWorkflowExecutionGeneration,
-        providerWork
-      )
-    );
-
     expect(superseded).toEqual({ _tag: "ImportIntentExecutionSuperseded" });
-    expect(legacy).toBe("acquired");
     expect(checks).toBe(1);
-    expect(providerCalls).toBe(1);
+    expect(providerCalls).toBe(0);
   });
 });
 
@@ -436,7 +422,7 @@ describe("import Workflow start reconciliation", () => {
     ]);
     await expect(
       Effect.runPromise(
-        resolveImportWorkflowInput(calls.createBatch[0]?.[0]?.params)
+        decodeImportWorkflowInput(calls.createBatch[0]?.[0]?.params)
       )
     ).resolves.toEqual({
       executionGeneration,
@@ -687,16 +673,6 @@ describe("import Workflow start reconciliation", () => {
         })
       )
     ).resolves.toBe("already_active");
-  });
-
-  it("fails a missing starter method instead of silently stranding a queued import", async () => {
-    await expect(
-      Effect.runPromise(
-        ensureImportWorkflowStarted({}, importId, executionGeneration, {
-          correlationId,
-        })
-      )
-    ).rejects.toMatchObject({ _tag: "WorkflowStartUnavailable" });
   });
 });
 
@@ -979,7 +955,7 @@ describe("import acquisition retry contract", () => {
       Effect.gen(function* observeClosedAcquisitionLifecycle() {
         yield* observeAcquisitionCheckpoint(correlationId, {
           _tag: "AcquisitionCheckpointRejected",
-          code: "historical_acquisition_checkpoint_invalid",
+          code: "acquisition_checkpoint_invalid",
         });
         yield* observeAcquisitionCheckpoint(correlationId, {
           _tag: "Accepted",

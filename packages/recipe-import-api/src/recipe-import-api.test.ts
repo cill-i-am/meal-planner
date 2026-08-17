@@ -271,21 +271,6 @@ describe("RecipeImportIntent protocol", () => {
     ).toEqual(["action"]);
   });
 
-  it("accepts only the canonical public create parameters", () => {
-    const decode = Schema.decodeUnknownSync(CreateRecipeImportIntentRequest);
-    expect(
-      decode({
-        source: { kind: "tiktok", url: "https://www.tiktok.com/t/abc" },
-      })
-    ).toBeDefined();
-    expect(() =>
-      decode({
-        compatibilityFingerprint: "engine-v2",
-        source: { kind: "tiktok", url: "https://www.tiktok.com/t/abc" },
-      })
-    ).toThrow();
-  });
-
   it("rejects excess properties at every public mutation boundary by default", () => {
     for (const [schema, value] of [
       [
@@ -657,7 +642,6 @@ describe("RecipeImportApi HttpApi declaration", () => {
     const serializedDocument = JSON.stringify(document);
     for (const privateField of [
       "actorId",
-      "compatibilityFingerprint",
       "evidenceReferences",
       "householdScopeId",
       "model",

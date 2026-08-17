@@ -21,7 +21,12 @@ import { AcquisitionGeneration } from "./import-media.model.js";
 import { makeD1ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
 import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-terminal.js";
 import { makeD1RecipeRecoveryRepository } from "./import-recipe-recovery.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
+import {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "./import.contracts.js";
+import { seedResolvedTestImportExecution } from "./import.test-fixtures.js";
 
 interface ProviderWorkflowInput {
   readonly failureCode?: string;
@@ -51,6 +56,7 @@ const fixturePath = fileURLToPath(
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare;
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
+const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
 const decodeImportTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
@@ -137,7 +143,7 @@ const prepareRecipeRecovery = async (importIdValue: string) => {
   const dispatchId = decodeDispatchId(
     `recipe:${importId}:${generation}:${evidenceFingerprint}`
   );
-  const evidenceReferencesJson = JSON.stringify([
+  const evidence = [
     {
       kind: "original_media",
       referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
@@ -150,27 +156,17 @@ const prepareRecipeRecovery = async (importIdValue: string) => {
       kind: "speech_transcript",
       referenceId: `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
     },
-  ]);
+  ] as const;
+  await seedResolvedTestImportExecution({
+    acquisitionGeneration: generation,
+    canonicalId: decodeCanonicalId(`recovery-canonical-${importId}`),
+    database,
+    evidence,
+    importId,
+    status: { kind: "transcribed" },
+    updatedAt: decodeImportTimestamp(now),
+  });
   await database.batch([
-    database
-      .prepare(
-        `INSERT INTO recipe_imports (
-           acquisition_generation, canonical_source_id,
-           compatibility_fingerprint, created_at, evidence_references_json,
-           id, recovery_action, source_kind, status, status_code, updated_at
-         ) VALUES (
-           ?, ?, ?, ?, ?, ?, NULL, 'tiktok_video', 'transcribed', NULL, ?
-         )`
-      )
-      .bind(
-        generation,
-        `recovery-canonical-${importId}`,
-        "9".repeat(64),
-        now,
-        evidenceReferencesJson,
-        importId,
-        now
-      ),
     database
       .prepare(
         `INSERT INTO import_transcriptions (
@@ -676,7 +672,7 @@ describe("provider workflow task retry exhaustion", () => {
     const recoveryDispatchId = `${originalDispatchId}:recovery:1`;
     const now = "2026-07-27T09:10:00.000Z";
     const database = await runtime.getD1Database("MealPlannerDatabase");
-    const evidence = JSON.stringify([
+    const evidence = [
       {
         kind: "original_media",
         referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
@@ -685,26 +681,16 @@ describe("provider workflow task retry exhaustion", () => {
         kind: "acquisition_manifest",
         referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/manifest.json`,
       },
-    ]);
-    await database
-      .prepare(
-        `INSERT INTO recipe_imports (
-           acquisition_generation, canonical_source_id,
-           compatibility_fingerprint, created_at,
-           evidence_references_json, id, recovery_action, source_kind,
-           status, status_code, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video', 'acquired', NULL, ?)`
-      )
-      .bind(
-        generation,
-        "canonical-gaia-178-native-recovery",
-        "f".repeat(64),
-        now,
-        evidence,
-        importId,
-        now
-      )
-      .run();
+    ] as const;
+    await seedResolvedTestImportExecution({
+      acquisitionGeneration: decodeGeneration(generation),
+      canonicalId: decodeCanonicalId("canonical-gaia-178-native-recovery"),
+      database,
+      evidence,
+      importId: decodeImportId(importId),
+      status: { kind: "acquired" },
+      updatedAt: decodeImportTimestamp(now),
+    });
     await database
       .prepare(
         `INSERT INTO import_transcriptions (
@@ -926,7 +912,7 @@ describe("provider workflow task retry exhaustion", () => {
     const recoveryDispatchId = `${originalDispatchId}:recovery:1`;
     const now = "2026-07-27T09:20:00.000Z";
     const database = await runtime.getD1Database("MealPlannerDatabase");
-    const evidence = JSON.stringify([
+    const evidence = [
       {
         kind: "original_media",
         referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
@@ -935,26 +921,18 @@ describe("provider workflow task retry exhaustion", () => {
         kind: "acquisition_manifest",
         referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/manifest.json`,
       },
-    ]);
-    await database
-      .prepare(
-        `INSERT INTO recipe_imports (
-           acquisition_generation, canonical_source_id,
-           compatibility_fingerprint, created_at,
-           evidence_references_json, id, recovery_action, source_kind,
-           status, status_code, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video', 'acquired', NULL, ?)`
-      )
-      .bind(
-        generation,
-        "canonical-gaia-187-native-poisoned-recovery",
-        "e".repeat(64),
-        now,
-        evidence,
-        importId,
-        now
-      )
-      .run();
+    ] as const;
+    await seedResolvedTestImportExecution({
+      acquisitionGeneration: decodeGeneration(generation),
+      canonicalId: decodeCanonicalId(
+        "canonical-gaia-187-native-poisoned-recovery"
+      ),
+      database,
+      evidence,
+      importId: decodeImportId(importId),
+      status: { kind: "acquired" },
+      updatedAt: decodeImportTimestamp(now),
+    });
     await database
       .prepare(
         `INSERT INTO import_transcriptions (
@@ -1224,7 +1202,7 @@ describe("provider workflow task retry exhaustion", () => {
     if (stageBefore === null) {
       throw new Error("Pilot provider budget baseline is missing");
     }
-    const evidence = JSON.stringify([
+    const evidence = [
       {
         kind: "original_media",
         referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
@@ -1237,7 +1215,19 @@ describe("provider workflow task retry exhaustion", () => {
         kind: "speech_transcript",
         referenceId: `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
       },
-    ]);
+    ] as const;
+
+    await seedResolvedTestImportExecution({
+      acquisitionGeneration: decodeGeneration(generation),
+      canonicalId: decodeCanonicalId(
+        "canonical-gaia-200-native-visual-recovery"
+      ),
+      database,
+      evidence,
+      importId: decodeImportId(importId),
+      status: { kind: "transcribed" },
+      updatedAt: decodeImportTimestamp(completedAt),
+    });
 
     await database.batch([
       database.prepare(
@@ -1248,25 +1238,6 @@ describe("provider workflow task retry exhaustion", () => {
                 poison_dispatch_id = NULL
           WHERE runtime_stage = 'pilot-gaia-118'`
       ),
-      database
-        .prepare(
-          `INSERT INTO recipe_imports (
-             acquisition_generation, canonical_source_id,
-             compatibility_fingerprint, created_at,
-             evidence_references_json, id, recovery_action, source_kind,
-             status, status_code, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video',
-                     'transcribed', NULL, ?)`
-        )
-        .bind(
-          generation,
-          "canonical-gaia-200-native-visual-recovery",
-          "f".repeat(64),
-          now,
-          evidence,
-          importId,
-          completedAt
-        ),
       database
         .prepare(
           `INSERT INTO import_transcriptions (

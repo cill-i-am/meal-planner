@@ -61,18 +61,18 @@ beforeAll(async () => {
   runtime = new Miniflare({
     compatibilityDate,
     compatibilityFlags,
-    kvNamespaces: ["LEGACY_WORKFLOW_STATE"],
+    kvNamespaces: ["CURRENT_WORKFLOW_STATE"],
     modules: [
       {
         contents: fixtureScript,
-        path: "legacy-input-workflow-fixture.js",
+        path: "current-input-workflow-fixture.js",
         type: "ESModule",
       },
     ],
     workflows: {
-      LegacyInputWorkflow: {
-        className: "LegacyInputWorkflow",
-        name: "legacy-input-workflow",
+      CurrentInputWorkflow: {
+        className: "CurrentInputWorkflow",
+        name: "current-input-workflow",
       },
     },
   });
@@ -112,21 +112,26 @@ const commandWorkflow = async (
   return response.json();
 };
 
-describe("native workflow legacy correlation input", () => {
-  it("persists one opaque correlation before the requested boundary and reuses it on restart", async () => {
-    const id = "gaia-191-native-legacy-input";
+describe("native current workflow input", () => {
+  it("persists the supplied opaque correlation at the provider boundary and reuses it on restart", async () => {
+    const id = "current-input-restart";
     const importId = "00000000-0000-4000-8000-000000000188";
-    const expectedCorrelationId = "b44d09c6-67ca-527c-a2c7-86628ffc08a6";
+    const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2188";
+    const input = {
+      executionGeneration: 1,
+      importId,
+      trace: { correlationId },
+    };
 
     await expect(
       commandWorkflow({
         action: "run",
         expectedStatus: "complete",
         id,
-        input: { importId },
+        input,
       })
     ).resolves.toMatchObject({
-      output: { importId },
+      output: input,
       status: "complete",
     });
     await expect(
@@ -142,14 +147,13 @@ describe("native workflow legacy correlation input", () => {
     })) as {
       readonly correlations: readonly [string, string];
       readonly events: readonly [string, string];
+      readonly providerBoundaryRuns: number;
       readonly workflowRuns: number;
     };
     expect(evidence.workflowRuns).toBe(2);
-    expect(Schema.is(ImportCorrelationId)(expectedCorrelationId)).toBe(true);
-    expect(evidence.correlations).toEqual([
-      expectedCorrelationId,
-      expectedCorrelationId,
-    ]);
+    expect(evidence.providerBoundaryRuns).toBe(2);
+    expect(Schema.is(ImportCorrelationId)(correlationId)).toBe(true);
+    expect(evidence.correlations).toEqual([correlationId, correlationId]);
     expect(
       evidence.events.map((event) => JSON.parse(event) as unknown)
     ).toEqual([
@@ -169,39 +173,52 @@ describe("native workflow legacy correlation input", () => {
     );
   });
 
-  it("normalizes a supplied legacy correlation ID once", async () => {
-    const id = "s11-native-legacy-correlated-input";
+  it("rejects missing execution generation before the provider boundary", async () => {
+    const id = "current-input-missing-generation";
     const importId = "00000000-0000-4000-8000-000000000189";
     const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2188";
 
     await expect(
       commandWorkflow({
         action: "run",
-        expectedStatus: "complete",
-        id,
-        input: { correlationId, importId },
-      })
-    ).resolves.toMatchObject({
-      output: { importId, trace: { correlationId } },
-      status: "complete",
-    });
-  });
-
-  it("preserves a supplied current trace context", async () => {
-    const id = "s11-native-current-trace-input";
-    const importId = "00000000-0000-4000-8000-000000000190";
-    const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2190";
-
-    await expect(
-      commandWorkflow({
-        action: "run",
-        expectedStatus: "complete",
+        expectedStatus: "errored",
         id,
         input: { importId, trace: { correlationId } },
       })
     ).resolves.toMatchObject({
-      output: { importId, trace: { correlationId } },
-      status: "complete",
+      status: "errored",
+    });
+    await expect(
+      commandWorkflow({ action: "read", id })
+    ).resolves.toMatchObject({
+      correlations: [null, null],
+      events: [null, null],
+      providerBoundaryRuns: 0,
+      workflowRuns: 1,
+    });
+  });
+
+  it("rejects missing trace before the provider boundary", async () => {
+    const id = "current-input-missing-trace";
+    const importId = "00000000-0000-4000-8000-000000000190";
+
+    await expect(
+      commandWorkflow({
+        action: "run",
+        expectedStatus: "errored",
+        id,
+        input: { executionGeneration: 1, importId },
+      })
+    ).resolves.toMatchObject({
+      status: "errored",
+    });
+    await expect(
+      commandWorkflow({ action: "read", id })
+    ).resolves.toMatchObject({
+      correlations: [null, null],
+      events: [null, null],
+      providerBoundaryRuns: 0,
+      workflowRuns: 1,
     });
   });
 });

@@ -28,10 +28,6 @@ export interface IdempotencyConflict {
   readonly _tag: "IdempotencyConflict";
 }
 
-export interface IncompatibleDuplicate {
-  readonly _tag: "IncompatibleDuplicate";
-}
-
 export interface ImportNotFound {
   readonly _tag: "ImportNotFound";
   readonly importId: ImportId;
@@ -65,21 +61,6 @@ export type SourceIdentityError = InvalidSource | SourceIdentityUnavailable;
 
 export type SourceAvailabilityError = SourceValidationUnavailable;
 
-export type CreateImportError =
-  | IdempotencyConflict
-  | ImportPersistenceCorrupt
-  | ImportPersistenceUnavailable
-  | IncompatibleDuplicate
-  | InvalidSource
-  | SourceIdentityUnavailable
-  | SourceValidationUnavailable
-  | WorkflowStartUnavailable;
-
-export type GetImportError =
-  | ImportNotFound
-  | ImportPersistenceCorrupt
-  | ImportPersistenceUnavailable;
-
 export const invalidImportRequest = (): InvalidImportRequest => ({
   _tag: "InvalidImportRequest",
 });
@@ -104,10 +85,6 @@ export const unauthorizedImportCaller = (): UnauthorizedImportCaller => ({
 
 export const idempotencyConflict = (): IdempotencyConflict => ({
   _tag: "IdempotencyConflict",
-});
-
-export const incompatibleDuplicate = (): IncompatibleDuplicate => ({
-  _tag: "IncompatibleDuplicate",
 });
 
 export const importNotFound = (importId: ImportId): ImportNotFound => ({

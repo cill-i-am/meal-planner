@@ -569,7 +569,7 @@ export const makeD1ProviderTerminalCheckpointRepository = (
     }),
 });
 
-const readLegacyRecovery = (
+const readPreparedRecovery = (
   database: AnyD1Database,
   importId: ImportId,
   acquisitionGeneration: AcquisitionGeneration
@@ -680,17 +680,17 @@ const readRecovery = (
   importId: ImportId,
   acquisitionGeneration: AcquisitionGeneration
 ) => {
-  const readSettledAfterMissingLegacyRecovery = (
+  const readSettledAfterMissingPreparedRecovery = (
     error: ProviderTerminalPersistenceError
   ) =>
     error.code === "recovery_not_allowed"
       ? readSettledRecovery(database, importId, acquisitionGeneration)
       : Effect.fail(error);
 
-  return readLegacyRecovery(database, importId, acquisitionGeneration).pipe(
+  return readPreparedRecovery(database, importId, acquisitionGeneration).pipe(
     Effect.catchTag(
       "ProviderTerminalPersistenceError",
-      readSettledAfterMissingLegacyRecovery
+      readSettledAfterMissingPreparedRecovery
     )
   );
 };
@@ -739,7 +739,7 @@ const assertSpeechRecoveryActivatable = (
           )
     ),
     Effect.flatMap((row) => {
-      const legacyPrepared =
+      const checkpointPrepared =
         row.parent_status === "acquired" &&
         row.recovery_dispatch_id === null &&
         row.transcription_state === null;
@@ -751,7 +751,7 @@ const assertSpeechRecoveryActivatable = (
         row.parent_status === "transcribed" &&
         row.recovery_dispatch_id === input.recovery.recoveryDispatchId &&
         row.transcription_state === "transcribed";
-      if (legacyPrepared || settledPrepared) {
+      if (checkpointPrepared || settledPrepared) {
         return Effect.succeed<SpeechProviderRecoveryActivation>({
           _tag: "Prepared",
           recovery: input.recovery,

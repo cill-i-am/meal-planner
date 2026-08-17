@@ -23,6 +23,7 @@ import { AcquisitionGeneration } from "./import-media.model.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
 import { ImportId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
+import { TestImportTrace } from "./import.test-fixtures.js";
 
 const testEnv = env as unknown as {
   readonly MealPlannerDatabase: AnyD1Database;
@@ -172,20 +173,19 @@ const seedAction = async () => {
   await testEnv.MealPlannerDatabase.batch([
     testEnv.MealPlannerDatabase.prepare(
       `INSERT INTO recipe_imports (
-         id, acquisition_generation, actor_id, canonical_source_id,
-         compatibility_fingerprint, created_at, evidence_references_json,
+         id, acquisition_generation, actor_id, correlation_id,
+         created_at, evidence_references_json, execution_generation,
          household_scope_id, recovery_action, resolved_canonical_source_id,
          source_kind, status, status_code, submitted_source_url,
          public_source_url, public_source_kind, public_status, public_stage,
          public_stage_started_at, public_activity, updated_at
-       ) VALUES (?, 1, ?, ?, ?, ?, ?, ?, NULL, ?, 'tiktok', 'transcribed',
+       ) VALUES (?, 1, ?, ?, ?, ?, 1, ?, NULL, ?, 'tiktok', 'transcribed',
                  NULL, ?, ?, 'video', 'processing', 'preparing_review', ?,
                  'working', ?)`
     ).bind(
       importId,
       principal.actorId,
-      "7520000000000000701",
-      "f".repeat(64),
+      TestImportTrace.correlationId,
       instant,
       JSON.stringify(evidence),
       principal.householdScopeId,
@@ -296,20 +296,19 @@ const seedDistinctAction = async (
   await testEnv.MealPlannerDatabase.batch([
     testEnv.MealPlannerDatabase.prepare(
       `INSERT INTO recipe_imports (
-         id, acquisition_generation, actor_id, canonical_source_id,
-         compatibility_fingerprint, created_at, evidence_references_json,
+         id, acquisition_generation, actor_id, correlation_id,
+         created_at, evidence_references_json, execution_generation,
          household_scope_id, recovery_action, resolved_canonical_source_id,
          source_kind, status, status_code, submitted_source_url,
          public_source_url, public_source_kind, public_status, public_stage,
          public_stage_started_at, public_activity, updated_at
-       ) VALUES (?, 1, ?, ?, ?, ?, ?, ?, NULL, ?, 'tiktok', 'transcribed',
+       ) VALUES (?, 1, ?, ?, ?, ?, 1, ?, NULL, ?, 'tiktok', 'transcribed',
                  NULL, ?, ?, 'video', 'processing', 'preparing_review', ?,
                  'working', ?)`
     ).bind(
       fixtureImportId,
       principal.actorId,
-      `${videoId}`,
-      ordinalHex.padStart(64, "f"),
+      TestImportTrace.correlationId,
       instant,
       JSON.stringify(evidence),
       principal.householdScopeId,
@@ -732,7 +731,8 @@ describe("recipe import action composite D1 repository", () => {
       const fixture = await seedDistinctAction(ordinal, { confirmable });
       const cancellation = makeImportIntentApplication(
         makeD1ImportRepository(testEnv.MealPlannerDatabase),
-        { ensureStarted: () => Effect.succeed("already_active" as const) }
+        { ensureStarted: () => Effect.succeed("already_active" as const) },
+        TestImportTrace
       );
       const terminator = ImportIntentWorkflowTerminator.of({
         terminate: () => Effect.void,
