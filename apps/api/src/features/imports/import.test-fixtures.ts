@@ -3,10 +3,13 @@ import {
   CreateRecipeImportIntentRequest,
   IdempotencyKey,
   RecipeImportIntentId,
+  RecipeImportPrincipal,
 } from "@meal-planner/recipe-import-api";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Redacted, Schema } from "effect";
 
+import { AuthPrincipalResolutionError } from "../auth/auth.principal.js";
+import type { AuthPrincipalResolverShape } from "../auth/auth.principal.js";
 import {
   ImportIntentIdGenerator,
   ImportPrincipal,
@@ -14,7 +17,7 @@ import {
 } from "./import-intent.js";
 import type { AcquisitionGeneration } from "./import-media.model.js";
 import { ImportTraceContext } from "./import-observability.js";
-import { makeImportAuthorizer } from "./import.auth.js";
+import { makeImportSystemAuthorizer } from "./import-system.auth.js";
 import { ImportTimestamp } from "./import.contracts.js";
 import type {
   ImportId,
@@ -33,12 +36,25 @@ export const TestImportTrace = Schema.decodeUnknownSync(ImportTraceContext)({
   correlationId: "11111111-1111-4111-8111-111111111111",
 });
 
-export const makeTestImportAuthorizer = (token: string) =>
-  makeImportAuthorizer({
-    configuredPrincipals: [
-      { principal: TestImportPrincipal, token: Redacted.make(token) },
-    ],
+export const makeTestSystemAuthorizer = (token: string) =>
+  makeImportSystemAuthorizer({
+    principal: TestImportPrincipal,
+    token: Redacted.make(token),
   });
+
+export const makeTestAuthPrincipalResolver = (
+  sessionToken: string,
+  principal = TestImportPrincipal
+): AuthPrincipalResolverShape => ({
+  resolve: (headers) =>
+    headers.get("cookie") === `better-auth.session_token=${sessionToken}`
+      ? Effect.succeed(
+          Schema.decodeUnknownSync(RecipeImportPrincipal)(principal)
+        )
+      : Effect.fail(
+          new AuthPrincipalResolutionError({ reason: "invalid_session" })
+        ),
+});
 
 export const admitResolvedTestImport = (input: {
   readonly canonicalId: SourceCanonicalId;

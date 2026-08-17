@@ -3,6 +3,8 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Schema } from "effect";
 import type { Redacted } from "effect";
 
+import { AuthPrincipalResolver } from "../auth/auth.principal.js";
+import type { AuthPrincipalResolverShape } from "../auth/auth.principal.js";
 import { ImportBatchId, ImportBatchItemId } from "./import-batch.contracts.js";
 import type { ImportBatchQueueShape } from "./import-batch.service.js";
 import {
@@ -37,9 +39,10 @@ import {
 } from "./import-provider-terminal-settlement.js";
 import { makeD1ImportBatchStore } from "./import-queue-acceptance.d1.js";
 import type { RecipeRecoveryWorkflowStarterShape } from "./import-recipe-recovery.js";
-import { ImportSystemAuthorizer } from "./import-system.auth.js";
-import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
-import type { ConfiguredImportPrincipal } from "./import.auth.js";
+import {
+  ImportSystemAuthorizer,
+  makeImportSystemAuthorizer,
+} from "./import-system.auth.js";
 import { ImportTimestamp } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
@@ -49,11 +52,11 @@ import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tik
 /** Inputs required to construct the import HTTP route services once. */
 export interface ImportWorkerRequestLayerInput {
   readonly bucket: AcquisitionBucketLike;
-  readonly configuredPrincipals: readonly ConfiguredImportPrincipal[];
   readonly database: AnyD1Database;
   readonly importWorkflowStarter: ImportWorkflowReconcilerShape;
   readonly importWorkflowTerminator: ImportIntentWorkflowTerminatorShape;
   readonly now: () => string;
+  readonly principalResolver: AuthPrincipalResolverShape;
   readonly queue: ImportBatchQueueShape;
   readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarterShape;
   readonly runtimeStage: string;
@@ -137,25 +140,16 @@ export const makeImportWorkerRequestLayer = (
   );
 
   return Layer.mergeAll(
-    Layer.effect(
-      ImportAuthorizer,
-      Effect.map(
-        makeImportAuthorizer({
-          configuredPrincipals: input.configuredPrincipals,
-        }),
-        ImportAuthorizer.of
-      )
+    Layer.succeed(
+      AuthPrincipalResolver,
+      AuthPrincipalResolver.of(input.principalResolver)
     ),
     Layer.effect(
       ImportSystemAuthorizer,
       Effect.map(
-        makeImportAuthorizer({
-          configuredPrincipals: [
-            {
-              principal: input.systemPrincipal,
-              token: input.systemApiToken,
-            },
-          ],
+        makeImportSystemAuthorizer({
+          principal: input.systemPrincipal,
+          token: input.systemApiToken,
         }),
         ImportSystemAuthorizer.of
       )

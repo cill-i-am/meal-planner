@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "auth:db:generate": "drizzle-kit generate --config drizzle.auth.config.ts --name auth_control_plane",
+    "auth:schema:generate": "auth generate --config ./auth.config.ts --output ./src/features/auth/auth.database-schema.ts --yes",
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate --name recipe_imports",
@@ -11,8 +13,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.0-rc.6",
     "@effect/platform-node": "4.0.0-rc.109",
     "@meal-planner/recipe-import-api": "workspace:*",
+    "better-auth": "1.7.0-rc.6",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "4.0.0-rc.109",
     "graphql": "16.11.0",
@@ -24,6 +28,7 @@
     "@distilled.cloud/cloudflare-rolldown-plugin": "0.17.1",
     "@effect/vitest": "4.0.0-rc.109",
     "@types/node": "24.13.2",
+    "auth": "1.7.0-rc.6",
     "drizzle-kit": "1.0.0-rc.5-ab785fc",
     "miniflare": "4.20260714.0",
     "tsx": "4.22.4",

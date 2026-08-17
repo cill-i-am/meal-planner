@@ -31,14 +31,13 @@ import type {
   RecipeRecoveryFailure,
 } from "./import-recipe-recovery.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
-import { ImportAuthorizer } from "./import.auth.js";
 import {
   ImportId,
   ImportTimestamp,
   SourceCanonicalId,
 } from "./import.contracts.js";
 import {
-  makeTestImportAuthorizer,
+  makeTestSystemAuthorizer,
   seedResolvedTestImportExecution,
 } from "./import.test-fixtures.js";
 
@@ -439,7 +438,7 @@ const corruptSourceIdentity = async (
 
 const makeApp = async (started: unknown[]) => {
   const authorizer = await Effect.runPromise(
-    makeTestImportAuthorizer("test-import-token")
+    makeTestSystemAuthorizer("test-import-token")
   );
   const service = makeD1ProviderTerminalSettlementService({
     database: testEnv.MealPlannerDatabase,
@@ -463,7 +462,6 @@ const makeApp = async (started: unknown[]) => {
   return HttpRouter.toWebHandler(
     Layer.mergeAll(
       ProviderTerminalSettlementRoutes,
-      Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
       Layer.succeed(
         ImportSystemAuthorizer,
         ImportSystemAuthorizer.of(authorizer)

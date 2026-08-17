@@ -1,7 +1,5 @@
 /* eslint-disable max-classes-per-file -- This shared protocol module owns its related Schema-backed middleware and client service tags. */
-import type { Redacted } from "effect";
 import { Context, Layer, Schema } from "effect";
-import { HttpClientRequest } from "effect/unstable/http";
 import {
   HttpApi,
   HttpApiClient,
@@ -9,7 +7,6 @@ import {
   HttpApiGroup,
   HttpApiMiddleware,
   HttpApiSchema,
-  HttpApiSecurity,
   OpenApi,
 } from "effect/unstable/httpapi";
 
@@ -751,17 +748,11 @@ const InternalProblem = asProblemJson(InternalErrorProblemDetails).pipe(
   HttpApiSchema.status(500)
 );
 
-export class RecipeImportBearerAuth extends HttpApiMiddleware.Service<
-  RecipeImportBearerAuth,
+export class RecipeImportSessionAuth extends HttpApiMiddleware.Service<
+  RecipeImportSessionAuth,
   { provides: RecipeImportCurrentPrincipal }
->()("RecipeImportBearerAuth", {
+>()("RecipeImportSessionAuth", {
   error: UnauthorizedProblem,
-  requiredForClient: true,
-  security: {
-    bearerAuth: HttpApiSecurity.bearer.pipe(
-      HttpApiSecurity.annotate(OpenApi.Format, "opaque")
-    ),
-  },
 }) {}
 
 export class RecipeImportSchemaErrors extends HttpApiMiddleware.Service<RecipeImportSchemaErrors>()(
@@ -862,7 +853,7 @@ const RecipeImportIntentsGroup = HttpApiGroup.make("recipeImportIntents")
       success: RecipeImportTimeline,
     })
   )
-  .middleware(RecipeImportBearerAuth)
+  .middleware(RecipeImportSessionAuth)
   .annotate(OpenApi.Title, "Recipe import intents");
 
 const RecipesGroup = HttpApiGroup.make("recipes")
@@ -873,7 +864,7 @@ const RecipesGroup = HttpApiGroup.make("recipes")
       success: Recipe,
     })
   )
-  .middleware(RecipeImportBearerAuth)
+  .middleware(RecipeImportSessionAuth)
   .annotate(OpenApi.Title, "Recipes");
 
 export const RecipeImportApi = HttpApi.make("recipeImportApi")
@@ -898,18 +889,10 @@ export class RecipeImportApiClient extends Context.Service<
   RecipeImportApiClientShape
 >()("meal-planner/RecipeImportApiClient") {}
 
-export const makeRecipeImportBearerAuthClientLayer = (
-  token: Redacted.Redacted<string>
-) =>
-  HttpApiMiddleware.layerClient(RecipeImportBearerAuth, ({ next, request }) =>
-    next(HttpClientRequest.bearerToken(request, token))
-  );
-
 export const makeRecipeImportApiClientLayer = (options: {
   readonly baseUrl: string | URL;
-  readonly token: Redacted.Redacted<string>;
 }) =>
   Layer.effect(
     RecipeImportApiClient,
     HttpApiClient.make(RecipeImportApi, { baseUrl: options.baseUrl })
-  ).pipe(Layer.provide(makeRecipeImportBearerAuthClientLayer(options.token)));
+  );

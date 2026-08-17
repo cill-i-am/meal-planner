@@ -53,11 +53,12 @@ Build an untracked JSON document with this shape:
 
 ## Submit Only After The Live Gate
 
-The private endpoint is `POST /imports/operator-carousel`. It requires the
-configured bearer token, `Content-Type: application/json`, and a unique
-`Idempotency-Key`. Keep the same idempotency key only when replaying the exact
-same bundle. A successful deterministic composition returns the import in
-`needs_review`.
+The private endpoint is `POST /imports/operator-carousel`. It requires a valid
+Better Auth session whose active organization membership is verified,
+`Content-Type: application/json`, and a unique `Idempotency-Key`. Never copy a
+session cookie into this repository, logs, or a shared handoff. Keep the same
+idempotency key only when replaying the exact same bundle. A successful
+deterministic composition returns the import in `needs_review`.
 
 The service rejects malformed, incomplete, oversized, duplicated,
 non-contiguous, dimension-mismatched, or checksum-mismatched bundles with

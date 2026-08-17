@@ -46,7 +46,7 @@ import type {
 import { runRecipeRecoveryLoop } from "./import-runtime-composition.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
-import { makeTestImportAuthorizer } from "./import.test-fixtures.js";
+import { makeTestSystemAuthorizer } from "./import.test-fixtures.js";
 import { makeImportWorkflowStarter } from "./import.workflow.js";
 
 interface ProviderWorkflowInput {
@@ -1306,7 +1306,7 @@ export default {
           await Effect.runPromise(
             Effect.gen(function* activateAuthenticatedSpeechRecovery() {
               const authorizer =
-                yield* makeTestImportAuthorizer("test-import-token");
+                yield* makeTestSystemAuthorizer("test-import-token");
               yield* authorizer.authorize(command.authorization);
               const workflowStarter = makeImportWorkflowStarter({
                 createBatch: () =>
@@ -1393,7 +1393,7 @@ export default {
           await Effect.runPromise(
             Effect.gen(function* prepareAuthenticatedVisualRecovery() {
               const authorizer =
-                yield* makeTestImportAuthorizer("test-import-token");
+                yield* makeTestSystemAuthorizer("test-import-token");
               yield* authorizer.authorize(command.authorization);
               return yield* makeD1ProviderTerminalSettlementService({
                 database: env.MealPlannerDatabase,

@@ -119,20 +119,29 @@ immutability guards directly on an empty D1 database. Local Workerd proof applie
 that baseline through the real D1 binding, checks `foreign_key_check`, and
 exercises the transactional race and receipt constraints without cloud access.
 
-`MEAL_PLANNER_IMPORT_CONFIGURED_PRINCIPALS_JSON` is a required secret-text
-closed registry of bearer tokens to household principals for public import,
-action, and recipe routes. `MEAL_PLANNER_IMPORT_API_TOKEN`,
-`MEAL_PLANNER_IMPORT_ACTOR_ID`, and
-`MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID` identify the distinct designated
-system principal for batch and provider terminal-settlement routes. Registry
-tokens must be unique and cannot equal the system token. The Worker reads all
-tokens through `Config.redacted`; they must never be logged, returned, or
-committed. Authentication happens before caller-input decoding and fails closed
-when any required binding is missing or invalid. Operator-carousel stays
-household-principal scoped. TanStack Start uses the generated Effect HttpApi
-client from server functions and a server-only alias-to-token registry; no
-bearer token, actor ID, or household scope is sent to browser code. Better Auth
-will replace this POC seam later without changing the public API contract.
+`MealPlannerAuthDatabase` is a separate D1 database for Better Auth identity,
+cookie sessions, organizations, invitations, and membership. The runtime uses
+Better Auth `1.7.0-rc.6` through the public Drizzle relations-v2 adapter. The
+actual auth configuration generates `auth.database-schema.ts`; Drizzle Kit owns
+the checked-in SQLite migration under `apps/api/auth-migrations`. Alchemy only
+provisions and binds the database and applies that migration. It does not run
+Better Auth or Alchemy automatic auth migrations.
+
+Household routes authenticate with the same-origin Better Auth cookie. Effect
+middleware resolves the session, requires an active organization, and verifies
+an explicit matching `member` row before constructing the typed household
+principal. The active organization value alone is not authorization.
+`MEAL_PLANNER_IMPORT_API_TOKEN`, `MEAL_PLANNER_IMPORT_ACTOR_ID`, and
+`MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID` remain the distinct designated system
+principal for batch and provider terminal-settlement routes only. Secrets are
+read through `Config.redacted`; they must never be logged, returned, or
+committed.
+
+The public TanStack Website Worker forwards `/api/auth/*` and `/v1/*` to the
+private API Worker through a Cloudflare service binding. It forwards the
+original request and response so `Cookie` and `Set-Cookie` remain same-origin.
+The browser uses the generated Effect HttpApi client directly and never
+receives a bearer token, actor ID, or household scope.
 
 D1 persists source identity, intent state, idempotency metadata, durable
 execution facts, review data, recipes, and safe evidence references. It does

@@ -13,11 +13,12 @@ import {
   SourceUrl,
   makeRecipeImportApiClientLayer,
 } from "@meal-planner/recipe-import-api";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { FetchHttpClient, HttpRouter } from "effect/unstable/http";
 import { OpenApi } from "effect/unstable/httpapi";
 import { afterAll, describe, expect, it } from "vitest";
 
+import { AuthPrincipalResolver } from "../auth/auth.principal.js";
 import { HealthRoutes } from "../health/health.routes.js";
 import { ImportBatchRouteDefinitions } from "./import-batch.routes.js";
 import { ImportBatchService } from "./import-batch.service.js";
@@ -36,8 +37,10 @@ import { ImportIntentIdGenerator } from "./import-intent.js";
 import { ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
 import { ProviderTerminalSettlementRouteDefinitions } from "./import-provider-terminal-settlement.routes.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
-import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
-import { TestImportPrincipal } from "./import.test-fixtures.js";
+import {
+  makeTestAuthPrincipalResolver,
+  makeTestSystemAuthorizer,
+} from "./import.test-fixtures.js";
 import { CanonicalSourceIdentityResolver } from "./source-identity.js";
 
 const intentId = "018f47ad-91aa-7c35-b6fe-000000000001";
@@ -182,25 +185,8 @@ interface MakeAppOptions {
 }
 
 const makeApp = async (options: MakeAppOptions = {}) => {
-  const authorizer = await Effect.runPromise(
-    makeImportAuthorizer({
-      configuredPrincipals: [
-        {
-          principal: TestImportPrincipal,
-          token: Redacted.make("test-import-token"),
-        },
-      ],
-    })
-  );
   const systemAuthorizer = await Effect.runPromise(
-    makeImportAuthorizer({
-      configuredPrincipals: [
-        {
-          principal: TestImportPrincipal,
-          token: Redacted.make("system-import-token"),
-        },
-      ],
-    })
+    makeTestSystemAuthorizer("system-import-token")
   );
   const intentApplication = {
     admit: unused,
@@ -242,7 +228,10 @@ const makeApp = async (options: MakeAppOptions = {}) => {
       ImportIntentWorkflowTerminator,
       ImportIntentWorkflowTerminator.of({ terminate: () => Effect.void })
     ),
-    Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+    Layer.succeed(
+      AuthPrincipalResolver,
+      AuthPrincipalResolver.of(makeTestAuthPrincipalResolver("test-session"))
+    ),
     Layer.succeed(
       ImportSystemAuthorizer,
       ImportSystemAuthorizer.of(systemAuthorizer)
@@ -306,8 +295,8 @@ describe("recipe import HttpApi boundary", () => {
       new Request("https://meal-planner.test/v1/recipe-import-intents", {
         body: "{not-json",
         headers: {
-          authorization: "Bearer wrong-token",
           "content-type": "application/json",
+          cookie: "better-auth.session_token=wrong-session",
           "idempotency-key": "test-key",
         },
         method: "POST",
@@ -332,8 +321,8 @@ describe("recipe import HttpApi boundary", () => {
       new Request("https://meal-planner.test/v1/recipe-import-intents", {
         body: "{not-json",
         headers: {
-          authorization: "Bearer test-import-token",
           "content-type": "application/json",
+          cookie: "better-auth.session_token=test-session",
           "idempotency-key": "test-key",
         },
         method: "POST",
@@ -375,8 +364,8 @@ describe("recipe import HttpApi boundary", () => {
           },
         }),
         headers: {
-          authorization: "Bearer test-import-token",
           "content-type": "application/json",
+          cookie: "better-auth.session_token=test-session",
           "idempotency-key": "test-key",
         },
         method: "POST",
@@ -403,7 +392,7 @@ describe("recipe import HttpApi boundary", () => {
     const response = await app.handler(
       new Request(
         `https://meal-planner.test/v1/recipe-import-intents/${intentId}`,
-        { headers: { authorization: "Bearer test-import-token" } }
+        { headers: { cookie: "better-auth.session_token=test-session" } }
       )
     );
 
@@ -432,7 +421,7 @@ describe("recipe import HttpApi boundary", () => {
     const response = await app.handler(
       new Request(
         `https://meal-planner.test/v1/recipe-import-intents/${intentId}`,
-        { headers: { authorization: "Bearer test-import-token" } }
+        { headers: { cookie: "better-auth.session_token=test-session" } }
       )
     );
     const body = await response.json();
@@ -447,7 +436,7 @@ describe("recipe import HttpApi boundary", () => {
 
   it("round-trips all eight endpoints through the generated client without leaking private state", async () => {
     const sentinels = [
-      "test-import-token",
+      "test-session",
       "https://vm.tiktok.com/submitted-private-url",
       "private-provider",
       "private-model",
@@ -491,12 +480,14 @@ describe("recipe import HttpApi boundary", () => {
 
     const clientLayer = makeRecipeImportApiClientLayer({
       baseUrl: "https://meal-planner.test",
-      token: Redacted.make(sentinels[0]),
     }).pipe(Layer.provide(FetchHttpClient.layer));
     const idempotencyKey = Schema.decodeUnknownSync(IdempotencyKey);
     const submittedSource = Schema.decodeUnknownSync(SourceUrl)(sentinels[1]);
-    const testFetch: typeof globalThis.fetch = (input, init) =>
-      app.handler(new Request(input, init));
+    const testFetch: typeof globalThis.fetch = (input, init) => {
+      const request = new Request(input, init);
+      request.headers.set("cookie", "better-auth.session_token=test-session");
+      return app.handler(request);
+    };
     const results = await Effect.runPromise(
       Effect.gen(function* generatedClientRoundTrip() {
         const client = yield* RecipeImportApiClient;
@@ -602,7 +593,7 @@ describe("recipe import HttpApi boundary", () => {
       app.handler(
         new Request(
           `https://meal-planner.test/v1/recipe-import-intents/${intentId}`,
-          { headers: { authorization: "Bearer test-import-token" } }
+          { headers: { cookie: "better-auth.session_token=test-session" } }
         )
       ),
       app.handler(

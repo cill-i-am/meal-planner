@@ -24,7 +24,7 @@ import type {
 import {
   TestImportPrincipal,
   TestImportTrace,
-  makeTestImportAuthorizer,
+  makeTestSystemAuthorizer,
 } from "./import.test-fixtures.js";
 
 const decodeRequest = Schema.decodeUnknownSync(CreateRecipeImportIntentRequest);
@@ -214,7 +214,7 @@ describe("recipe import intent application foundation", () => {
 
   it("returns one stable opaque private principal without deriving it from bearer material", async () => {
     const authorizer = await Effect.runPromise(
-      makeTestImportAuthorizer("intent-secret")
+      makeTestSystemAuthorizer("intent-secret")
     );
 
     const principal = await Effect.runPromise(

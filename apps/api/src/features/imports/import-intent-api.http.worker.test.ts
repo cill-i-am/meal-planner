@@ -4,6 +4,7 @@ import {
   CreateRecipeImportIntentRequest,
   IdempotencyKey,
   RecipeImportActionId,
+  RecipeImportPrincipal,
   RecipeImportIntentId,
   makeRecipeImportApiClientLayer,
   RecipeImportApiClient,
@@ -28,6 +29,7 @@ import {
 } from "effect/unstable/http";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { AuthPrincipalResolutionError } from "../auth/auth.principal.js";
 import { makeRecipeImportWorkerHttpLayer } from "./import-intent-api.http.js";
 import { makeImportIntentWorkflowTransitions } from "./import-intent-workflow-transitions.js";
 import { ImportPrincipal } from "./import-intent.js";
@@ -570,16 +572,6 @@ describe("recipe import intent HTTP API with real D1", () => {
       }) as typeof globalThis.fetch;
       requestLayer = makeImportWorkerRequestLayer({
         bucket: acquisitionBucket(),
-        configuredPrincipals: [
-          {
-            principal: TestImportPrincipal,
-            token: Redacted.make(bearerToken),
-          },
-          {
-            principal: secondPrincipal,
-            token: Redacted.make(secondBearerToken),
-          },
-        ],
         database,
         importWorkflowStarter: workflowStarter,
         importWorkflowTerminator: {
@@ -589,6 +581,26 @@ describe("recipe import intent HTTP API with real D1", () => {
             }),
         },
         now: () => instant,
+        principalResolver: {
+          resolve: (headers) => {
+            const token = headers.get("authorization")?.replace("Bearer ", "");
+            let principal;
+            if (token === bearerToken) {
+              principal = TestImportPrincipal;
+            } else if (token === secondBearerToken) {
+              principal = secondPrincipal;
+            }
+            return principal === undefined
+              ? Effect.fail(
+                  new AuthPrincipalResolutionError({
+                    reason: "invalid_session",
+                  })
+                )
+              : Effect.succeed(
+                  Schema.decodeUnknownSync(RecipeImportPrincipal)(principal)
+                );
+          },
+        },
         queue: { enqueue: () => Effect.void },
         recipeRecoveryStarter: { start: () => Effect.void },
         runtimeStage: "provider-free-worker-test",
@@ -609,24 +621,25 @@ describe("recipe import intent HTTP API with real D1", () => {
         { disableLogger: true }
       );
       app.current = mounted;
-      const webHttpClient = HttpClient.make((request, _url, signal) =>
-        HttpClientRequest.toWeb(request, { signal }).pipe(
-          Effect.orDie,
-          Effect.flatMap((webRequest) =>
-            Effect.promise(() => mounted.handler(webRequest))
-          ),
-          Effect.map((response) =>
-            HttpClientResponse.fromWeb(request, response)
+      const makeClientLayer = (token: string) => {
+        const webHttpClient = HttpClient.make((request, _url, signal) =>
+          HttpClientRequest.toWeb(request, { signal }).pipe(
+            Effect.orDie,
+            Effect.flatMap((webRequest) => {
+              webRequest.headers.set("authorization", `Bearer ${token}`);
+              return Effect.promise(() => mounted.handler(webRequest));
+            }),
+            Effect.map((response) =>
+              HttpClientResponse.fromWeb(request, response)
+            )
           )
-        )
-      );
-      const makeClientLayer = (token: string) =>
-        makeRecipeImportApiClientLayer({
+        );
+        return makeRecipeImportApiClientLayer({
           baseUrl: "http://meal-planner.test",
-          token: Redacted.make(token),
         }).pipe(
           Layer.provide(Layer.succeed(HttpClient.HttpClient, webHttpClient))
         );
+      };
       const firstClientLayer = makeClientLayer(bearerToken);
       const secondClientLayer = makeClientLayer(secondBearerToken);
       const request = Schema.decodeUnknownSync(CreateRecipeImportIntentRequest)(
