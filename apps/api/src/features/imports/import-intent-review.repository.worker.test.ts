@@ -661,6 +661,36 @@ describe("recipe import action composite D1 repository", () => {
     });
   });
 
+  it("reads an action after a name-only correction", async () => {
+    const fixture = await seedDistinctAction(709);
+    await Effect.runPromise(
+      fixture.application.answerAction(
+        principal,
+        fixture.intentId,
+        fixture.actionId,
+        answerRequest("Browser Fixture Stew"),
+        Schema.decodeUnknownSync(IdempotencyKey)("answer-action-709")
+      )
+    );
+
+    const action = await Effect.runPromise(
+      fixture.application.getAction(
+        principal,
+        fixture.intentId,
+        fixture.actionId
+      )
+    );
+
+    expect(action).toMatchObject({
+      actionVersion: 2,
+      review: {
+        answers: [{ field: "name", value: "Browser Fixture Stew" }],
+        recipe: { name: "Browser Fixture Stew" },
+      },
+      status: "active",
+    });
+  });
+
   it("allows one of correction and confirmation at the same action version", async () => {
     const fixture = await seedDistinctAction(704, { confirmable: true });
     const exits = await Promise.all([

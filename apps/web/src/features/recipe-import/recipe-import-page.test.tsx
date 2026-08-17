@@ -146,6 +146,15 @@ const activeAction = Schema.decodeUnknownSync(RecipeImportAction)({
   status: "active",
   type: "review_recipe",
 });
+const activeActionWithPlanningTags = Schema.decodeUnknownSync(
+  RecipeImportAction
+)({
+  ...activeAction,
+  review: {
+    ...activeAction.review,
+    editableFields: ["name", "tags"],
+  },
+});
 const recipe = Schema.decodeUnknownSync(Recipe)({
   id: recipeId,
   object: "recipe",
@@ -507,6 +516,70 @@ describe("RecipeImportPage", () => {
       await screen.findByRole("heading", { name: "Smoky aubergine bake" })
     ).toBeVisible();
     expect(screen.getByText("Version 2")).toBeVisible();
+  });
+
+  it("submits complete planning tags when the generated action exposes them", async () => {
+    const answerRequests: Parameters<
+      RecipeImportOperations["answerAction"]
+    >[0][] = [];
+    renderPage(
+      makeOperations({
+        answerAction: async (input) => {
+          answerRequests.push(input);
+          return requiresAction;
+        },
+        getAction: async () => activeActionWithPlanningTags,
+      })
+    );
+    const user = await submit();
+
+    await screen.findByRole("heading", { name: "Review recipe" });
+    await user.type(screen.getByRole("textbox", { name: "Cuisine" }), "Irish");
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Meal type" }),
+      "dinner"
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Dietary fit" }),
+      "household_match"
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Difficulty" }),
+      "easy"
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Leftovers" }),
+      "one_meal"
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Total time" }),
+      "30_to_60_minutes"
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Save planning tags" })
+    );
+
+    await waitFor(() => expect(answerRequests).toHaveLength(1));
+    expect(answerRequests[0]).toMatchObject({
+      actionId,
+      intentId,
+      request: {
+        answers: [
+          {
+            field: "tags",
+            value: {
+              cuisines: ["Irish"],
+              dietaryFit: "household_match",
+              difficulty: "easy",
+              leftovers: "one_meal",
+              mealTypes: ["dinner"],
+              totalTimeBand: "30_to_60_minutes",
+            },
+          },
+        ],
+        expectedActionVersion: 1,
+      },
+    });
   });
 
   it("does not retry a failed confirm action and keeps its idempotency key", async () => {

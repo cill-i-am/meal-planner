@@ -13,8 +13,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const workflowSource = readRepoFile(
       "./apps/api/src/features/imports/import.workflow.ts"
     );
-    const compositionSource = readRepoFile(
-      "./apps/api/src/features/imports/import-runtime-composition.ts"
+    const requestLayerSource = readRepoFile(
+      "./apps/api/src/features/imports/import-worker-request-layer.ts"
     );
     const providerTaskSource = readRepoFile(
       "./apps/api/src/features/imports/import-provider-workflow-task.ts"
@@ -36,7 +36,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workflowSource).toContain("runProviderTask,");
     expect(workflowSource).toContain("runProviderTaskAttempt,");
     expect(providerTaskSource).toContain("ProviderTaskStepConfig");
-    expect(compositionSource).toContain("stageOperatorCarouselForWorkflow");
+    expect(requestLayerSource).toContain("stageOperatorCarouselForWorkflow");
     expect(workerSource).not.toContain("carouselProcessingUnavailable");
     expect(gatewaySource).toContain('"ImportProviderGateway"');
     expect(gatewaySource).toContain("collectLogs: false");
@@ -92,6 +92,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(databaseSource).toContain('"MealPlannerDatabase"');
     expect(databaseSource).toContain('migrationsDir: "./apps/api/migrations"');
     expect(databaseSource).toContain('migrationsTable: "d1_migrations"');
+    expect(databaseSource.match(/Cloudflare\.D1\.Database\(/gu)).toHaveLength(
+      1
+    );
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS "recipe_imports"');
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS "import_requests"');
     expect(migration).toContain(
@@ -142,6 +145,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const mediaModelSource = readRepoFile(
       "./apps/api/src/features/imports/import-media.model.ts"
     );
+    const authorizationConfigSource = readRepoFile(
+      "./apps/api/src/features/imports/import.auth.config.ts"
+    );
     const allSource = `${workerSource}\n${databaseSource}\n${workflowSource}\n${objectSource}\n${bucketSource}`;
 
     expect(workerSource).toContain("Cloudflare.D1.QueryDatabase");
@@ -150,6 +156,11 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workflowSource).toContain('"ImportAcquisitionWorkflow"');
     expect(workflowSource).toContain("Cloudflare.R2.ReadWriteBucket");
     expect(objectSource).toContain('"ImportMediaAcquisitionObject"');
+    expect(objectSource).not.toMatch(
+      /this\.ctx\.storage|DurableObjectStorage/u
+    );
+    expect(workflowSource).toContain("mediaObjects.getByName(importId)");
+    expect(allSource).not.toMatch(/Household\w*DurableObject/iu);
     expect(objectSource).toContain("enableInternet: true");
     expect(bucketSource).toContain('"ImportEvidenceBucket"');
     expect(bucketSource).toContain("cors: []");
@@ -158,8 +169,11 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(mediaModelSource).toContain(
       "export const EvidenceRetentionSeconds = 604_800"
     );
-    expect(workerSource).toMatch(
+    expect(authorizationConfigSource).toMatch(
       /Config\.redacted\(\s*"MEAL_PLANNER_IMPORT_API_TOKEN"\s*\)/u
+    );
+    expect(authorizationConfigSource).toContain(
+      'Config.redacted("MEAL_PLANNER_IMPORT_CONFIGURED_PRINCIPALS_JSON")'
     );
     expect(workerSource).toContain(
       'Config.string("MEAL_PLANNER_IMPORT_ACTOR_ID")'
@@ -275,6 +289,10 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
 
   it("documents stage, profile, bootstrap, optional URL, and cleanup boundaries", () => {
     const docs = readRepoFile("./docs/infrastructure/alchemy.md");
+    const architecture = readRepoFile(
+      "./docs/architecture/recipe-import-intent.md"
+    );
+    const webDocs = readRepoFile("./apps/web/README.md");
     const packageSource = readRepoFile("./package.json");
 
     expect(docs).toContain("dev_$USER");
@@ -285,6 +303,15 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(docs).toContain("`.env.example` is intentionally trackable");
     expect(docs).toContain("internally enables automatic approval");
     expect(docs).toMatch(/shared state\s+store is not stage-owned cleanup/u);
+    expect(docs).toContain("one shared household-scoped D1");
+    expect(docs).toContain("no household Durable Object");
+    expect(docs).toContain("system principal");
+    expect(architecture).toMatch(
+      /does not use its own Durable Object\s+storage/u
+    );
+    expect(architecture).toContain("Better Auth");
+    expect(webDocs).toContain("server-only profile registry");
+    expect(webDocs).toContain("Better Auth");
     expect(packageSource).not.toContain('"alchemy:dev"');
   });
 });

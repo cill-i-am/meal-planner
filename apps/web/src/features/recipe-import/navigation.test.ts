@@ -6,6 +6,7 @@ import {
   canonicalizeRecipeImportSearch,
   decodeRecipeImportSearch,
   recipeImportIntentRedirectSearch,
+  recipeImportPageSessionKey,
   recipeImportProfileSwitchSearch,
 } from "./navigation.js";
 import {
@@ -64,5 +65,14 @@ describe("recipe import profile navigation", () => {
         intentId
       )
     ).toEqual({ intentId, profile: profileB });
+  });
+
+  it("retires the rendered page session when redirect navigation selects a canonical intent", () => {
+    expect(recipeImportPageSessionKey(profileA)).not.toBe(
+      recipeImportPageSessionKey(profileA, intentId)
+    );
+    expect(recipeImportPageSessionKey(profileA, intentId)).not.toBe(
+      recipeImportPageSessionKey(profileB, intentId)
+    );
   });
 });

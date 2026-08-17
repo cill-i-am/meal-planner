@@ -21,8 +21,11 @@ All recipe-import households share the single `MealPlannerDatabase` D1
 database. `household_scope_id` scopes the canonical aggregate and its import
 requests, idempotency records, history, actions, recipes, deduplication, and
 safe not-found behavior. A household does not own or map one-to-one to a
-Durable Object. `ImportMediaAcquisitionObject` transports private acquired
-media and artifacts; it is not a tenancy or household-storage boundary.
+Durable Object. `ImportMediaAcquisitionObject` is addressed by the globally
+random `importId` for per-import media/container coordination and transports
+private acquired media and artifacts. It does not use its own Durable Object
+storage: durable lifecycle and domain state stay in D1, while private artifacts
+stay in R2. It is not a tenancy or household-storage boundary.
 
 The proof-of-concept household switcher uses an app-local, server-side web
 profile registry pending Better Auth. Each configured profile maps an opaque UI

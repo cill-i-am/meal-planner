@@ -101,8 +101,11 @@ configured routes/domains before testing an endpoint.
 
 ## Recipe import storage and caller authentication
 
-`MealPlannerDatabase` is bound to the Worker through Alchemy's Effect-native D1
-query binding. Its fresh canonical SQL baseline is under `apps/api/migrations`;
+`MealPlannerDatabase` is one shared household-scoped D1, bound to the Worker
+through Alchemy's Effect-native D1 query binding. Household ownership is the
+`household_scope_id` on canonical aggregates and every public read or mutation;
+there is no household Durable Object. Its fresh canonical SQL baseline is under
+`apps/api/migrations`;
 the stable tracking table is `d1_migrations`. Generate Drizzle metadata with
 `pnpm db:generate`, review the SQL, and move the approved SQL to a numerically
 prefixed top-level file. Keep only Drizzle snapshot JSON under `migrations/meta`:
@@ -116,21 +119,31 @@ immutability guards directly on an empty D1 database. Local Workerd proof applie
 that baseline through the real D1 binding, checks `foreign_key_check`, and
 exercises the transactional race and receipt constraints without cloud access.
 
-`MEAL_PLANNER_IMPORT_API_TOKEN` is a required secret-text Worker binding. The
-Worker reads it through `Config.redacted`; it must never be logged, returned,
-or committed. `MEAL_PLANNER_IMPORT_ACTOR_ID` and
-`MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID` are required non-secret bindings that
-identify the configured private caller and scope every HTTP and queued import
-to the same household. The canonical `/v1/recipe-import-intents` and
-`/v1/recipes` endpoints authenticate before parsing caller input and fail
-closed when any required binding is missing or invalid. TanStack Start uses the
-generated Effect HttpApi client from server functions; the bearer token is
-never sent to browser code.
+`MEAL_PLANNER_IMPORT_CONFIGURED_PRINCIPALS_JSON` is a required secret-text
+closed registry of bearer tokens to household principals for public import,
+action, and recipe routes. `MEAL_PLANNER_IMPORT_API_TOKEN`,
+`MEAL_PLANNER_IMPORT_ACTOR_ID`, and
+`MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID` identify the distinct designated
+system principal for batch and provider terminal-settlement routes. Registry
+tokens must be unique and cannot equal the system token. The Worker reads all
+tokens through `Config.redacted`; they must never be logged, returned, or
+committed. Authentication happens before caller-input decoding and fails closed
+when any required binding is missing or invalid. Operator-carousel stays
+household-principal scoped. TanStack Start uses the generated Effect HttpApi
+client from server functions and a server-only alias-to-token registry; no
+bearer token, actor ID, or household scope is sent to browser code. Better Auth
+will replace this POC seam later without changing the public API contract.
 
 D1 persists source identity, intent state, idempotency metadata, durable
 execution facts, review data, recipes, and safe evidence references. It does
 not persist credentials, raw provider payloads, or media. TikTok requests are
 limited to the bounded source-resolution and acquisition workflow.
+
+`ImportMediaAcquisitionObject` is addressed by the globally random `importId`
+for per-import media/container coordination and private artifact transport. It
+does not use Durable Object storage: durable lifecycle and domain state stay in
+D1, while short-lived private artifacts stay in R2. The object is neither a
+household partition nor a household authorization boundary.
 
 ## Import operations staging topology
 
@@ -149,7 +162,7 @@ The Worker registers one serial consumer for each Queue. Primary deliveries are
 fenced and settled through the D1-backed batch store, and exhausted deliveries
 move to the configured dead-letter queue. Dead-letter replay claims and their
 leases are also durable in D1. Both consumers bind canonical intent admission
-to the configured private principal; messages continue to carry IDs only. The
+to the designated system principal; messages continue to carry IDs only. The
 operational service remains the authority for role checks, the pre-side-effect
 replay quota boundary, idempotent intent admission, and the closed privacy-safe
 event union.

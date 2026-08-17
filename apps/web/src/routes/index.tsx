@@ -12,6 +12,7 @@ import {
   canonicalizeRecipeImportSearch,
   decodeRecipeImportSearch,
   recipeImportProfileSwitchSearch,
+  recipeImportPageSessionKey,
 } from "../features/recipe-import/navigation.js";
 import type { RecipeImportSearch } from "../features/recipe-import/navigation.js";
 import { makeRecipeImportOperations } from "../features/recipe-import/operations.js";
@@ -50,7 +51,7 @@ const RecipeImportRoute = () => {
   return (
     <RecipeImportPage
       {...(intentId === undefined ? {} : { initialIntentId: intentId })}
-      key={profileAlias}
+      key={recipeImportPageSessionKey(profileAlias, intentId)}
       onProfileChange={(nextAlias) =>
         switchRecipeImportProfile({
           currentAlias: profileAlias,

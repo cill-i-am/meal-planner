@@ -152,6 +152,220 @@ const NameAnswerForm = ({
   );
 };
 
+const TagsAnswerForm = ({
+  action,
+  isPending,
+  makeRequestId,
+  submit,
+}: {
+  readonly action: ActiveReviewAction;
+  readonly isPending: boolean;
+  readonly makeRequestId: () => string;
+  readonly submit: (
+    input: Parameters<RecipeImportOperations["answerAction"]>[0]
+  ) => void;
+}) => {
+  const { tags } = action.review;
+  const form = useForm({
+    defaultValues: {
+      cuisine: tags?.cuisines.join(", ") ?? action.review.recipe.cuisine ?? "",
+      dietaryFit: tags?.dietaryFit ?? ("household_match" as const),
+      difficulty: tags?.difficulty ?? ("easy" as const),
+      leftovers: tags?.leftovers ?? ("one_meal" as const),
+      mealType: tags?.mealTypes[0] ?? ("dinner" as const),
+      totalTimeBand: tags?.totalTimeBand ?? ("30_to_60_minutes" as const),
+    },
+    onSubmit: ({ value }) => {
+      const request = Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest)(
+        {
+          answers: [
+            {
+              field: "tags",
+              value: {
+                cuisines: [value.cuisine.trim()],
+                dietaryFit: value.dietaryFit,
+                difficulty: value.difficulty,
+                leftovers: value.leftovers,
+                mealTypes: [value.mealType],
+                totalTimeBand: value.totalTimeBand,
+              },
+            },
+          ],
+          expectedActionVersion: action.actionVersion,
+        }
+      );
+      submit({
+        actionId: action.id,
+        idempotencyKey: idempotencyKey(makeRequestId),
+        intentId: action.intentId,
+        request,
+      });
+    },
+  });
+
+  return (
+    <form
+      className="field-stack planning-tags-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void form.handleSubmit();
+      }}
+    >
+      <h3>Planning tags</h3>
+      <form.Field name="cuisine">
+        {(field) => (
+          <div className="field-stack">
+            <Label htmlFor={`cuisine-${action.id}`}>Cuisine</Label>
+            <Input
+              id={`cuisine-${action.id}`}
+              name={field.name}
+              onBlur={field.handleBlur}
+              onChange={(event) => field.handleChange(event.target.value)}
+              value={field.state.value}
+            />
+          </div>
+        )}
+      </form.Field>
+      <div className="planning-tags-grid">
+        <form.Field name="mealType">
+          {(field) => (
+            <div className="field-stack">
+              <Label htmlFor={`mealType-${action.id}`}>Meal type</Label>
+              <select
+                className="field-select"
+                id={`mealType-${action.id}`}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) =>
+                  field.handleChange(
+                    event.target.value as typeof field.state.value
+                  )
+                }
+                value={field.state.value}
+              >
+                <option value="breakfast">Breakfast</option>
+                <option value="lunch">Lunch</option>
+                <option value="dinner">Dinner</option>
+                <option value="snack">Snack</option>
+                <option value="dessert">Dessert</option>
+              </select>
+            </div>
+          )}
+        </form.Field>
+        <form.Field name="dietaryFit">
+          {(field) => (
+            <div className="field-stack">
+              <Label htmlFor={`dietaryFit-${action.id}`}>Dietary fit</Label>
+              <select
+                className="field-select"
+                id={`dietaryFit-${action.id}`}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) =>
+                  field.handleChange(
+                    event.target.value as typeof field.state.value
+                  )
+                }
+                value={field.state.value}
+              >
+                <option value="household_match">Household match</option>
+                <option value="needs_adaptation">Needs adaptation</option>
+                <option value="not_suitable">Not suitable</option>
+              </select>
+            </div>
+          )}
+        </form.Field>
+        <form.Field name="difficulty">
+          {(field) => (
+            <div className="field-stack">
+              <Label htmlFor={`difficulty-${action.id}`}>Difficulty</Label>
+              <select
+                className="field-select"
+                id={`difficulty-${action.id}`}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) =>
+                  field.handleChange(
+                    event.target.value as typeof field.state.value
+                  )
+                }
+                value={field.state.value}
+              >
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+            </div>
+          )}
+        </form.Field>
+        <form.Field name="leftovers">
+          {(field) => (
+            <div className="field-stack">
+              <Label htmlFor={`leftovers-${action.id}`}>Leftovers</Label>
+              <select
+                className="field-select"
+                id={`leftovers-${action.id}`}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) =>
+                  field.handleChange(
+                    event.target.value as typeof field.state.value
+                  )
+                }
+                value={field.state.value}
+              >
+                <option value="none">None</option>
+                <option value="one_meal">One meal</option>
+                <option value="two_plus_meals">Two or more meals</option>
+              </select>
+            </div>
+          )}
+        </form.Field>
+        <form.Field name="totalTimeBand">
+          {(field) => (
+            <div className="field-stack">
+              <Label htmlFor={`totalTimeBand-${action.id}`}>Total time</Label>
+              <select
+                className="field-select"
+                id={`totalTimeBand-${action.id}`}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) =>
+                  field.handleChange(
+                    event.target.value as typeof field.state.value
+                  )
+                }
+                value={field.state.value}
+              >
+                <option value="under_30_minutes">Under 30 minutes</option>
+                <option value="30_to_60_minutes">30 to 60 minutes</option>
+                <option value="over_60_minutes">Over 60 minutes</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </div>
+          )}
+        </form.Field>
+      </div>
+      <form.Subscribe
+        selector={(state) => ({
+          canSubmit: state.canSubmit,
+          cuisine: state.values.cuisine,
+        })}
+      >
+        {({ canSubmit, cuisine }) => (
+          <Button
+            disabled={!canSubmit || cuisine.trim().length === 0 || isPending}
+            type="submit"
+          >
+            Save planning tags
+          </Button>
+        )}
+      </form.Subscribe>
+    </form>
+  );
+};
+
 export const RecipeImportPage = ({
   initialIntentId,
   makeRequestId = () => crypto.randomUUID(),
@@ -557,6 +771,15 @@ export const RecipeImportPage = ({
                     action={action}
                     isPending={answerMutation.isPending}
                     key={`${action.id}:${action.actionVersion}`}
+                    makeRequestId={makeRequestId}
+                    submit={answerMutation.mutate}
+                  />
+                )}
+                {action.review.editableFields.includes("tags") && (
+                  <TagsAnswerForm
+                    action={action}
+                    isPending={answerMutation.isPending}
+                    key={`${action.id}:${action.actionVersion}:tags`}
                     makeRequestId={makeRequestId}
                     submit={answerMutation.mutate}
                   />

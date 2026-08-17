@@ -448,6 +448,7 @@ const answerAction = (
         ?.value ?? review.tags;
     const tagsBeforeJson = JSON.stringify(review.tags);
     const tagsAfterJson = JSON.stringify(tags);
+    const materializedTagsAfterJson = tags === null ? null : tagsAfterJson;
     const correctionStatements = command.request.answers
       .toSorted((left, right) => left.field.localeCompare(right.field))
       .map((answer, ordinal) =>
@@ -519,7 +520,7 @@ const answerAction = (
                   )`
               )
               .bind(
-                tagsAfterJson,
+                materializedTagsAfterJson,
                 command.answeredAt,
                 row.extraction_fingerprint,
                 review.version,
