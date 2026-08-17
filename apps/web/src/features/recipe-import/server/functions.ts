@@ -13,14 +13,10 @@ import {
   RecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
 import { createServerFn } from "@tanstack/react-start";
-import { Effect, Redacted, Schema } from "effect";
+import { Effect, Schema } from "effect";
 
-import { makeRuntimeRecipeImportApiClientLayer } from "./recipe-import-api-client.server.js";
+import { recipeImportApiRuntime } from "./recipe-import-api-client.server.js";
 
-const RuntimeConfiguration = Schema.Struct({
-  baseUrl: Schema.String.pipe(Schema.check(Schema.isNonEmpty())),
-  token: Schema.String.pipe(Schema.check(Schema.isNonEmpty())),
-});
 const CreateIntentInput = Schema.Struct({
   idempotencyKey: IdempotencyKey,
   request: CreateRecipeImportIntentRequest,
@@ -61,28 +57,20 @@ const validate =
     }
   };
 
-const runtimeClientLayer = () => {
+const recipeImportUnavailable = () =>
+  new Error("Recipe importing is unavailable.");
+
+const run = async <A, E>(
+  program: Effect.Effect<A, E, RecipeImportApiClient>
+) => {
   try {
-    const configuration = Schema.decodeUnknownSync(RuntimeConfiguration)({
-      baseUrl: process.env["RECIPE_IMPORT_API_BASE_URL"],
-      token: process.env["RECIPE_IMPORT_API_TOKEN"],
-    });
-    return makeRuntimeRecipeImportApiClientLayer({
-      baseUrl: configuration.baseUrl,
-      token: Redacted.make(configuration.token),
-    });
+    return await recipeImportApiRuntime.runPromise(
+      program.pipe(Effect.mapError(recipeImportUnavailable))
+    );
   } catch {
-    throw new Error("Recipe importing is unavailable.");
+    throw recipeImportUnavailable();
   }
 };
-
-const run = <A, E>(program: Effect.Effect<A, E, RecipeImportApiClient>) =>
-  Effect.runPromise(
-    program.pipe(
-      Effect.mapError(() => new Error("Recipe importing is unavailable.")),
-      Effect.provide(runtimeClientLayer())
-    )
-  );
 
 export const createRecipeImportIntent = createServerFn({ method: "POST" })
   .validator(validate(CreateIntentInput))
