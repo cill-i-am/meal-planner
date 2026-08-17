@@ -1,13 +1,23 @@
+import { useQueryClient } from "@tanstack/react-query";
 import {
-  Recipe,
-  RecipeImportAction,
-  RecipeImportIntentId,
-  RecipeImportIntent,
-} from "@meal-planner/recipe-import-api";
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+  createFileRoute,
+  redirect,
+  useLoaderData,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router";
 import { Schema } from "effect";
 
-import type { RecipeImportOperations } from "../features/recipe-import/operations.js";
+import {
+  canonicalizeRecipeImportSearch,
+  decodeRecipeImportSearch,
+  recipeImportProfileSwitchSearch,
+} from "../features/recipe-import/navigation.js";
+import type { RecipeImportSearch } from "../features/recipe-import/navigation.js";
+import { makeRecipeImportOperations } from "../features/recipe-import/operations.js";
+import type { RecipeImportServerOperations } from "../features/recipe-import/operations.js";
+import { switchRecipeImportProfile } from "../features/recipe-import/profile-query-isolation.js";
+import { RecipeImportPublicProfileConfiguration } from "../features/recipe-import/profiles.js";
 import { RecipeImportPage } from "../features/recipe-import/recipe-import-page.js";
 import {
   answerRecipeImportAction,
@@ -17,55 +27,73 @@ import {
   getImportedRecipe,
   getRecipeImportAction,
   getRecipeImportIntent,
+  getRecipeImportProfileConfiguration,
 } from "../features/recipe-import/server/functions.js";
 
-const operations: RecipeImportOperations = {
-  answerAction: async (data) =>
-    Schema.decodeUnknownSync(RecipeImportIntent)(
-      await answerRecipeImportAction({ data })
-    ),
-  cancel: async (data) =>
-    Schema.decodeUnknownSync(RecipeImportIntent)(
-      await cancelRecipeImportIntent({ data })
-    ),
-  confirmAction: async (data) =>
-    Schema.decodeUnknownSync(RecipeImportIntent)(
-      await confirmRecipeImportAction({ data })
-    ),
-  create: async (data) =>
-    Schema.decodeUnknownSync(RecipeImportIntent)(
-      await createRecipeImportIntent({ data })
-    ),
-  getAction: async (data) =>
-    Schema.decodeUnknownSync(RecipeImportAction)(
-      await getRecipeImportAction({ data })
-    ),
-  getIntent: async (data) =>
-    Schema.decodeUnknownSync(RecipeImportIntent)(
-      await getRecipeImportIntent({ data })
-    ),
-  getRecipe: async (data) =>
-    Schema.decodeUnknownSync(Recipe)(await getImportedRecipe({ data })),
+const serverOperations: RecipeImportServerOperations = {
+  answerAction: answerRecipeImportAction,
+  cancel: cancelRecipeImportIntent,
+  confirmAction: confirmRecipeImportAction,
+  create: createRecipeImportIntent,
+  getAction: getRecipeImportAction,
+  getIntent: getRecipeImportIntent,
+  getRecipe: getImportedRecipe,
 };
 
-const RecipeImportSearch = Schema.Struct({
-  intentId: Schema.optional(RecipeImportIntentId),
-});
-
 const RecipeImportRoute = () => {
+  const { configuration, profileAlias } = useLoaderData({ from: "/" });
   const { intentId } = useSearch({ from: "/" });
+  const navigate = useNavigate({ from: "/" });
+  const queryClient = useQueryClient();
+  const operations = makeRecipeImportOperations(profileAlias, serverOperations);
+
   return (
     <RecipeImportPage
       {...(intentId === undefined ? {} : { initialIntentId: intentId })}
+      key={profileAlias}
+      onProfileChange={(nextAlias) =>
+        switchRecipeImportProfile({
+          currentAlias: profileAlias,
+          navigate: async (alias) => {
+            await navigate({
+              search: (previous) =>
+                recipeImportProfileSwitchSearch(previous, alias),
+              to: "/",
+            });
+          },
+          nextAlias,
+          queryClient,
+        })
+      }
       operations={operations}
+      profileAlias={profileAlias}
+      profiles={configuration.profiles}
     />
   );
 };
 
 export const Route = createFileRoute("/")({
   component: RecipeImportRoute,
-  validateSearch: (search) =>
-    Schema.decodeUnknownSync(RecipeImportSearch, {
-      onExcessProperty: "error",
-    })(search),
+  loader: async ({ deps }: { deps: RecipeImportSearch }) => {
+    const configuration = Schema.decodeUnknownSync(
+      RecipeImportPublicProfileConfiguration,
+      { onExcessProperty: "error" }
+    )(await getRecipeImportProfileConfiguration());
+    const canonicalSearch = canonicalizeRecipeImportSearch(configuration, deps);
+
+    if (deps.profile !== canonicalSearch.profile) {
+      throw redirect({
+        replace: true,
+        search: canonicalSearch,
+        to: "/",
+      });
+    }
+
+    return { configuration, profileAlias: canonicalSearch.profile };
+  },
+  loaderDeps: ({ search }) => ({
+    intentId: search.intentId,
+    profile: search.profile,
+  }),
+  validateSearch: decodeRecipeImportSearch,
 });

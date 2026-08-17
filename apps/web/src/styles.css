@@ -25,7 +25,8 @@ body {
   min-height: 100vh;
 }
 button,
-input {
+input,
+select {
   font: inherit;
 }
 a {
@@ -48,15 +49,40 @@ a:hover {
   align-items: center;
   border-bottom: 1px solid #d8d2c6;
   display: flex;
-  height: 64px;
+  gap: 20px;
   justify-content: space-between;
-  padding: 0 clamp(20px, 4vw, 56px);
+  min-height: 76px;
+  padding: 8px clamp(20px, 4vw, 56px);
 }
 .wordmark {
   font-size: 14px;
   font-weight: 750;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+.profile-control {
+  align-items: center;
+  display: grid;
+  gap: 2px 10px;
+  grid-template-columns: auto minmax(152px, 190px);
+}
+.profile-label {
+  grid-row: 1 / span 2;
+}
+.profile-select {
+  background: #fcfaf6;
+  border: 1px solid #a9b0ab;
+  border-radius: 7px;
+  color: #26312c;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 8px 34px 8px 10px;
+  width: 100%;
+}
+.active-profile {
+  color: #59645d;
+  font-size: 11px;
+  line-height: 1.25;
 }
 .badge {
   align-items: center;
@@ -361,6 +387,21 @@ h3 {
 }
 
 @media (max-width: 780px) {
+  .topbar {
+    align-items: start;
+    gap: 12px;
+    padding: 10px 20px;
+  }
+  .wordmark {
+    padding-top: 14px;
+  }
+  .profile-control {
+    gap: 2px;
+    grid-template-columns: minmax(140px, 170px);
+  }
+  .profile-label {
+    grid-row: auto;
+  }
   .workspace {
     display: block;
     padding: 20px 0 0;
