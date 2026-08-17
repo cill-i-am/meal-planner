@@ -45,5 +45,5 @@ export const recipeImportIntentRedirectSearch = (
 
 export const recipeImportPageSessionKey = (
   profile: RecipeImportProfileAliasType,
-  intentId: typeof RecipeImportIntentId.Type | undefined
+  intentId?: typeof RecipeImportIntentId.Type
 ) => `${profile}:${intentId ?? "new"}`;
