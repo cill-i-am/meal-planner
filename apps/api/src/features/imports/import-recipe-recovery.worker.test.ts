@@ -1,6 +1,6 @@
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Layer, Option, Redacted, Schema } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -30,9 +30,16 @@ import type {
   RecipeRecoveryAttempt,
   RecipeRecoveryFailure,
 } from "./import-recipe-recovery.js";
-import { deriveLegacyImportCorrelationId } from "./import-workflow-input.js";
-import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
+import { ImportAuthorizer } from "./import.auth.js";
+import {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "./import.contracts.js";
+import {
+  makeTestImportAuthorizer,
+  seedResolvedTestImportExecution,
+} from "./import.test-fixtures.js";
 
 const runtimeStage = "pilot-gaia-118";
 
@@ -46,6 +53,7 @@ const testEnv = env as unknown as {
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
+const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodeSha256 = Schema.decodeUnknownSync(Sha256Hex);
 const decodeImportTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
@@ -108,7 +116,7 @@ const seedRoot = async (
   const dispatchId = decodeDispatchId(
     `recipe:${importId}:${generation}:${evidenceFingerprint}`
   );
-  const evidenceReferencesJson = JSON.stringify([
+  const evidence = [
     {
       kind: "original_media",
       referenceId: `imports/${importId}/acquisition/v1/generations/${generation}/original.mp4`,
@@ -121,29 +129,21 @@ const seedRoot = async (
       kind: "speech_transcript",
       referenceId: `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`,
     },
-  ]);
+  ] as const;
+  const evidenceReferencesJson = JSON.stringify(evidence);
+
+  await seedResolvedTestImportExecution({
+    acquisitionGeneration: generation,
+    canonicalId: decodeCanonicalId(`s09-recovery-${suffix}`),
+    database,
+    evidence,
+    importId,
+    status: { kind: "transcribed" },
+    trace,
+    updatedAt: decodeImportTimestamp(now),
+  });
 
   await database.batch([
-    database
-      .prepare(
-        `INSERT INTO recipe_imports (
-           acquisition_generation, canonical_source_id,
-           compatibility_fingerprint, correlation_id, created_at, evidence_references_json,
-           id, recovery_action, source_kind, status, status_code, updated_at
-         ) VALUES (
-           ?, ?, ?, ?, ?, ?, ?, NULL, 'tiktok', 'transcribed', NULL, ?
-         )`
-      )
-      .bind(
-        generation,
-        `s09-recovery-${suffix}`,
-        "f".repeat(64),
-        trace.correlationId,
-        now,
-        evidenceReferencesJson,
-        importId,
-        now
-      ),
     database
       .prepare(
         `INSERT INTO import_transcriptions (
@@ -438,7 +438,7 @@ const corruptSourceIdentity = async (
 
 const makeApp = async (started: unknown[]) => {
   const authorizer = await Effect.runPromise(
-    makeImportAuthorizer(Redacted.make("test-import-token"))
+    makeTestImportAuthorizer("test-import-token")
   );
   const service = makeD1ProviderTerminalSettlementService({
     database: testEnv.MealPlannerDatabase,
@@ -1072,31 +1072,5 @@ describe("recipe recovery attempt ledger", () => {
     expect(started[0]).toMatchObject({ trace: seeded.trace });
     expect(resumedStarted[0]).toMatchObject({ trace: seeded.trace });
     expect(started[0]).not.toMatchObject({ trace: operatorTrace });
-  });
-
-  it("uses the deterministic legacy trace for recovery from a NULL import row", async () => {
-    const seeded = await seedRoot("000000000316");
-    await testEnv.MealPlannerDatabase.prepare(
-      "UPDATE recipe_imports SET correlation_id = NULL WHERE id = ?"
-    )
-      .bind(seeded.importId)
-      .run();
-    const started: unknown[] = [];
-    const app = await makeApp(started);
-
-    const prepared = await postOperation(
-      app,
-      seeded,
-      "prepare_recipe_recovery"
-    );
-
-    expect(prepared.status).toBe(200);
-    expect(started).toEqual([
-      expect.objectContaining({
-        trace: {
-          correlationId: deriveLegacyImportCorrelationId(seeded.importId),
-        },
-      }),
-    ]);
   });
 });

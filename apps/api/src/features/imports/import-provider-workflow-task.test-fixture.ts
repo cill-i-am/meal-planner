@@ -8,7 +8,7 @@ import {
 } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Redacted, Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 import {
   PilotBudgetDispatchId,
@@ -45,8 +45,8 @@ import type {
 } from "./import-recipe-recovery.js";
 import { runRecipeRecoveryLoop } from "./import-runtime-composition.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
-import { makeImportAuthorizer } from "./import.auth.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
+import { makeTestImportAuthorizer } from "./import.test-fixtures.js";
 import { makeImportWorkflowStarter } from "./import.workflow.js";
 
 interface ProviderWorkflowInput {
@@ -1305,9 +1305,8 @@ export default {
         return Response.json(
           await Effect.runPromise(
             Effect.gen(function* activateAuthenticatedSpeechRecovery() {
-              const authorizer = yield* makeImportAuthorizer(
-                Redacted.make("test-import-token")
-              );
+              const authorizer =
+                yield* makeTestImportAuthorizer("test-import-token");
               yield* authorizer.authorize(command.authorization);
               const workflowStarter = makeImportWorkflowStarter({
                 createBatch: () =>
@@ -1393,9 +1392,8 @@ export default {
         return Response.json(
           await Effect.runPromise(
             Effect.gen(function* prepareAuthenticatedVisualRecovery() {
-              const authorizer = yield* makeImportAuthorizer(
-                Redacted.make("test-import-token")
-              );
+              const authorizer =
+                yield* makeTestImportAuthorizer("test-import-token");
               yield* authorizer.authorize(command.authorization);
               return yield* makeD1ProviderTerminalSettlementService({
                 database: env.MealPlannerDatabase,

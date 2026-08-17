@@ -1,7 +1,6 @@
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { historicalAcquisitionCheckpointFixture } from "./import-acquisition-checkpoint.historical-fixture.js";
 import {
   decodeAcquisitionCheckpoint,
   recoverVerifiedAcquisitionCheckpoint,
@@ -19,7 +18,6 @@ import {
   ImportTimestamp,
   SourceCanonicalId,
 } from "./import.contracts.js";
-import { CompatibilityFingerprint } from "./import.repository.js";
 import type { StoredImport } from "./import.repository.js";
 
 const importId = Schema.decodeUnknownSync(ImportId)(
@@ -27,29 +25,61 @@ const importId = Schema.decodeUnknownSync(ImportId)(
 );
 const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
 const acquiredAt = "2026-07-28T10:00:00.000Z";
-const historicalCheckpoint = historicalAcquisitionCheckpointFixture(importId);
 const trace = Schema.decodeUnknownSync(ImportTraceContext)({
   correlationId: "10000000-0000-4000-8000-000000000002",
 });
 
 const verifiedOutcome = () => {
-  const decoded = decodeAcquisitionCheckpoint(historicalCheckpoint);
-  if (
-    decoded._tag !== "Accepted" ||
-    decoded.outcome._tag !== "VerifiedAcquisition"
-  ) {
-    throw new Error("Expected the synthetic checkpoint to decode");
+  const outcome = Schema.decodeUnknownSync(AcquisitionTaskOutcome)({
+    _tag: "VerifiedAcquisition",
+    evidence: {
+      acquiredAt,
+      audioStreams: [{ codec: "aac", index: 1 }],
+      bytes: 1024,
+      deleteAt: "2026-08-04T10:00:00.000Z",
+      durationSeconds: 30,
+      generation: 1,
+      manifestKey: manifestObjectKey(importId, generation),
+      mediaKey: mediaObjectKey(importId, generation),
+      sha256: "a".repeat(64),
+      source: {
+        canonicalUrl: "https://example.invalid/redacted-source",
+        caption: null,
+        creator: {
+          displayName: null,
+          handle: null,
+          id: null,
+        },
+        observedAt: acquiredAt,
+        provenance: {
+          canonicalUrl: "provider_observed",
+          caption: null,
+          creator: {
+            displayName: null,
+            handle: null,
+            id: null,
+          },
+          publishedAt: "provider_observed",
+        },
+        publishedAt: "2026-07-27T10:00:00.000Z",
+      },
+      videoStreams: [{ codec: "h264", index: 0 }],
+    },
+    generation: 1,
+  });
+  if (outcome._tag !== "VerifiedAcquisition") {
+    throw new Error("Expected a verified acquisition outcome");
   }
-  return decoded.outcome;
+  return outcome;
 };
+
+const currentCheckpoint = () =>
+  Schema.encodeSync(AcquisitionTaskOutcome)(verifiedOutcome());
 
 const storedImport = (overrides: Partial<StoredImport> = {}): StoredImport => ({
   acquisitionGeneration: generation,
   canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)(
     "synthetic-canonical-id"
-  ),
-  compatibilityFingerprint: Schema.decodeUnknownSync(CompatibilityFingerprint)(
-    "b".repeat(64)
   ),
   sourceKind: "tiktok",
   trace,
@@ -86,44 +116,13 @@ const storedImport = (overrides: Partial<StoredImport> = {}): StoredImport => ({
   ...overrides,
 });
 
-describe("historical acquisition checkpoint boundary", () => {
-  it("reproduces the persisted cross-realm shape rejected by the current decoder", () => {
+describe("acquisition checkpoint boundary", () => {
+  it("decodes the current schema-encoded checkpoint", () => {
+    const checkpoint = currentCheckpoint();
     expect(
-      Schema.decodeUnknownResult(AcquisitionTaskOutcome)(historicalCheckpoint)
-        ._tag
-    ).toBe("Failure");
-  });
-
-  it("decodes only the exact persisted historical timestamp representation", () => {
-    expect(decodeAcquisitionCheckpoint(historicalCheckpoint)).toMatchObject({
-      _tag: "Accepted",
-      outcome: {
-        _tag: "VerifiedAcquisition",
-        evidence: {
-          acquiredAt: expect.any(Object),
-          deleteAt: expect.any(Object),
-          source: {
-            observedAt: expect.any(Object),
-            publishedAt: expect.any(Object),
-          },
-        },
-        generation,
-      },
-    });
-  });
-
-  it("preserves the current encoded acquisition checkpoint contract", () => {
-    const decoded = decodeAcquisitionCheckpoint(historicalCheckpoint);
-    if (decoded._tag !== "Accepted") {
-      throw new Error("Expected the synthetic checkpoint to decode");
-    }
-    const currentCheckpoint = Schema.encodeSync(AcquisitionTaskOutcome)(
-      decoded.outcome
-    );
-    expect(
-      Schema.decodeUnknownResult(AcquisitionTaskOutcome)(currentCheckpoint)._tag
+      Schema.decodeUnknownResult(AcquisitionTaskOutcome)(checkpoint)._tag
     ).toBe("Success");
-    expect(decodeAcquisitionCheckpoint(currentCheckpoint)).toMatchObject({
+    expect(decodeAcquisitionCheckpoint(checkpoint)).toMatchObject({
       _tag: "Accepted",
       outcome: { _tag: "VerifiedAcquisition", generation },
     });
@@ -131,29 +130,29 @@ describe("historical acquisition checkpoint boundary", () => {
 
   it.each([
     {
-      name: "ISO string from a different serializer",
-      value: acquiredAt,
+      name: "invalid timestamp",
+      value: "not-a-timestamp",
     },
     {
-      name: "fractional epoch",
-      value: { epochMilliseconds: 1_785_232_800_000.5 },
-    },
-    {
-      name: "out-of-range epoch",
-      value: { epochMilliseconds: 9_000_000_000_000_000 },
+      name: "obsolete structured timestamp",
+      value: { epochMilliseconds: 1_785_232_800_000 },
     },
   ])("fails closed for $name", ({ value }) => {
+    const checkpoint = currentCheckpoint();
+    if (checkpoint._tag !== "VerifiedAcquisition") {
+      throw new Error("Expected a verified acquisition checkpoint");
+    }
     expect(
       decodeAcquisitionCheckpoint({
-        ...historicalCheckpoint,
+        ...checkpoint,
         evidence: {
-          ...historicalCheckpoint.evidence,
+          ...checkpoint.evidence,
           acquiredAt: value,
         },
       })
     ).toEqual({
       _tag: "AcquisitionCheckpointRejected",
-      code: "historical_acquisition_checkpoint_invalid",
+      code: "acquisition_checkpoint_invalid",
     });
   });
 
@@ -206,7 +205,7 @@ describe("historical acquisition checkpoint boundary", () => {
       }),
     },
   ])("fails closed for $name", ({ stored }) => {
-    const decoded = decodeAcquisitionCheckpoint(historicalCheckpoint);
+    const decoded = decodeAcquisitionCheckpoint(currentCheckpoint());
     if (decoded._tag !== "Accepted") {
       throw new Error("Expected the synthetic checkpoint to decode");
     }
@@ -218,12 +217,12 @@ describe("historical acquisition checkpoint boundary", () => {
       })
     ).toEqual({
       _tag: "AcquisitionCheckpointRejected",
-      code: "historical_acquisition_checkpoint_invalid",
+      code: "acquisition_checkpoint_invalid",
     });
   });
 
   it("accepts exact import, generation, lifecycle ownership, and evidence refs", () => {
-    const decoded = decodeAcquisitionCheckpoint(historicalCheckpoint);
+    const decoded = decodeAcquisitionCheckpoint(currentCheckpoint());
     if (decoded._tag !== "Accepted") {
       throw new Error("Expected the synthetic checkpoint to decode");
     }
@@ -302,7 +301,7 @@ describe("retained acquisition recovery boundary", () => {
       )
     ).resolves.toEqual({
       _tag: "AcquisitionCheckpointRejected",
-      code: "historical_acquisition_checkpoint_invalid",
+      code: "acquisition_checkpoint_invalid",
     });
   });
 
@@ -329,7 +328,7 @@ describe("retained acquisition recovery boundary", () => {
       )
     ).resolves.toEqual({
       _tag: "AcquisitionCheckpointRejected",
-      code: "historical_acquisition_checkpoint_invalid",
+      code: "acquisition_checkpoint_invalid",
     });
     expect(evidenceReads).toBe(0);
   });

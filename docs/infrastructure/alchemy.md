@@ -102,24 +102,35 @@ configured routes/domains before testing an endpoint.
 ## Recipe import storage and caller authentication
 
 `MealPlannerDatabase` is bound to the Worker through Alchemy's Effect-native D1
-query binding. Its versioned SQL is under `apps/api/migrations`; the stable
-tracking table is `d1_migrations`. Generate Drizzle metadata with
+query binding. Its fresh canonical SQL baseline is under `apps/api/migrations`;
+the stable tracking table is `d1_migrations`. Generate Drizzle metadata with
 `pnpm db:generate`, review the SQL, and move the approved SQL to a numerically
 prefixed top-level file. Keep only Drizzle snapshot JSON under `migrations/meta`:
 Alchemy recursively discovers every `.sql` file beneath its migrations
 directory, so leaving a generated metadata copy there would apply it twice.
 
+The baseline creates the recipe-import intent aggregate, request and history
+records, execution and provider checkpoints, recovery ledgers, evidence
+references, review data, complete mutation receipts, foreign keys, indexes, and
+immutability guards directly on an empty D1 database. Local Workerd proof applies
+that baseline through the real D1 binding, checks `foreign_key_check`, and
+exercises the transactional race and receipt constraints without cloud access.
+
 `MEAL_PLANNER_IMPORT_API_TOKEN` is a required secret-text Worker binding. The
 Worker reads it through `Config.redacted`; it must never be logged, returned,
-or committed. `POST /imports` and `GET /imports/:id` authenticate before parsing
-caller input and fail closed when the binding is missing or empty.
+or committed. `MEAL_PLANNER_IMPORT_ACTOR_ID` and
+`MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID` are required non-secret bindings that
+identify the configured private caller and scope every HTTP and queued import
+to the same household. The canonical `/v1/recipe-import-intents` and
+`/v1/recipes` endpoints authenticate before parsing caller input and fail
+closed when any required binding is missing or invalid. TanStack Start uses the
+generated Effect HttpApi client from server functions; the bearer token is
+never sent to browser code.
 
-GAIA-108 persists only source identity, import state, idempotency metadata, and
-safe evidence references. It does not persist submitted or redirect URLs,
-provider payloads, media, recipe data, or credentials. TikTok requests are
-used only for bounded identity/availability checks. GAIA-109 will replace the
-inert `ImportWorkflowStarter` seam with the queued acquisition workflow;
-workflow-start recovery and terminal-to-queued recovery remain later work.
+D1 persists source identity, intent state, idempotency metadata, durable
+execution facts, review data, recipes, and safe evidence references. It does
+not persist credentials, raw provider payloads, or media. TikTok requests are
+limited to the bounded source-resolution and acquisition workflow.
 
 ## Import operations staging topology
 
@@ -134,15 +145,14 @@ Queue resources. The Cloudflare producer adapter sends the existing ID-only
 application error. It must never enqueue source URLs, provider payloads, media,
 or credentials.
 
-The stack deliberately does not register a Queue consumer or attach the dead
-letter queue yet. The current batch coordinator and replay claim store are
-provider-free in-memory tracers; connecting them to an at-least-once remote
-consumer would lose batch state across isolates and could duplicate effectful
-work. A later authorized slice must provide durable coordinator and atomic
-replay-claim adapters before it can bind the consumer, configure retry and
-dead-letter delivery, or claim live recovery proof. The existing operational
-service remains the authority for role checks, the pre-side-effect replay quota
-boundary, ordinary-import idempotency, and the closed privacy-safe event union.
+The Worker registers one serial consumer for each Queue. Primary deliveries are
+fenced and settled through the D1-backed batch store, and exhausted deliveries
+move to the configured dead-letter queue. Dead-letter replay claims and their
+leases are also durable in D1. Both consumers bind canonical intent admission
+to the configured private principal; messages continue to carry IDs only. The
+operational service remains the authority for role checks, the pre-side-effect
+replay quota boundary, idempotent intent admission, and the closed privacy-safe
+event union.
 
 ## Cleanup and test boundaries
 

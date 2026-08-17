@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { Miniflare } from "miniflare";
 import {
@@ -26,9 +26,10 @@ import {
 } from "./import-batch.service.js";
 import type { ImportBatchQueueShape } from "./import-batch.service.js";
 import { makeD1ImportBatchStore } from "./import-queue-acceptance.d1.js";
-import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
+import { ImportAuthorizer } from "./import.auth.js";
 import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
 import { invalidSource } from "./import.errors.js";
+import { makeTestImportAuthorizer } from "./import.test-fixtures.js";
 import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
 
@@ -154,7 +155,7 @@ const makeHarness = async () => {
         : Effect.fail({ _tag: "ImportBatchQueueUnavailable" as const }),
   };
   const authorizer = await Effect.runPromise(
-    makeImportAuthorizer(Redacted.make(apiToken))
+    makeTestImportAuthorizer(apiToken)
   );
   const service = makeImportBatchService({
     identityResolver,

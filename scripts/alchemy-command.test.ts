@@ -13,9 +13,12 @@ describe("Alchemy command guard", () => {
     const fixture = fileURLToPath(
       new URL("fixtures/alchemy-stack-loader.ts", import.meta.url)
     );
+    const tsx = fileURLToPath(
+      new URL("../node_modules/.bin/tsx", import.meta.url)
+    );
     const result = spawnSync(
-      "pnpm",
-      ["exec", "tsx", script, "plan", fixture, "--stage", "loader-test"],
+      tsx,
+      [script, "plan", fixture, "--stage", "loader-test"],
       { encoding: "utf-8" }
     );
 

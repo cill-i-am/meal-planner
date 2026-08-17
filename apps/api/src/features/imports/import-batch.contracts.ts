@@ -1,12 +1,9 @@
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { Schema } from "effect";
 
 import {
   IdempotencyKey,
-  ImportDisposition,
-  ImportId,
-  ImportStatus,
   ImportTimestamp,
-  SourceCanonicalId,
   SourceDescriptor,
 } from "./import.contracts.js";
 
@@ -72,12 +69,10 @@ const RunningImportBatchItem = Schema.Struct({
 });
 
 const SucceededImportBatchItem = Schema.Struct({
-  canonicalId: SourceCanonicalId,
-  disposition: ImportDisposition,
+  disposition: Schema.Literals(["created", "idempotency_replay"]),
   id: ImportBatchItemId,
   idempotencyKey: IdempotencyKey,
-  importId: ImportId,
-  importStatus: ImportStatus,
+  intentId: RecipeImportIntentId,
   sourceKind: Schema.Literal("tiktok"),
   status: Schema.Literal("succeeded"),
 });
@@ -85,12 +80,12 @@ const SucceededImportBatchItem = Schema.Struct({
 /** Safe per-item error codes retained by a partial batch. */
 export const ImportBatchItemFailureCode = Schema.Literals([
   "idempotency_conflict",
+  "intent_not_found",
+  "intent_redirected",
+  "intent_transition_conflict",
+  "intent_transition_rejected",
   "persistence_corrupt",
   "persistence_unavailable",
-  "incompatible_duplicate",
-  "invalid_source",
-  "source_identity_unavailable",
-  "source_validation_unavailable",
   "workflow_start_unavailable",
 ]);
 /** Safe per-item error codes retained by a partial batch. */

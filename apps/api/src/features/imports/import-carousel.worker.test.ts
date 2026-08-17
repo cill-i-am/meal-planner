@@ -1,3 +1,4 @@
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { DateTime, Effect, Schema } from "effect";
@@ -14,9 +15,9 @@ import {
   importTikTokCarouselToRecipeDraft,
 } from "./import-carousel.js";
 import { makeD1CarouselEvidenceRepository } from "./import-carousel.repository.d1.js";
+import { makeImportIntentApplication } from "./import-intent.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
-import { ImportTraceContext } from "./import-observability.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
 import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
@@ -29,13 +30,11 @@ import {
   SourceUrl,
 } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type { AcceptImportCommand, StoredImport } from "./import.repository.js";
 import {
-  CompatibilityFingerprint,
-  IdempotencyKeyHash,
-  RequestFingerprint,
-  SourceLocatorHash,
-} from "./import.repository.js";
+  admitResolvedTestImport,
+  TestImportPrincipal,
+  TestImportTrace,
+} from "./import.test-fixtures.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
 interface TestR2Object {
@@ -68,35 +67,18 @@ const testEnv = env as unknown as {
   }[];
 };
 
+const decodeIntentId = Schema.decodeUnknownSync(RecipeImportIntentId);
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeIdempotencyKey = Schema.decodeUnknownSync(IdempotencyKey);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodeSourceUrl = Schema.decodeUnknownSync(SourceUrl);
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
-const decodeCompatibilityFingerprint = Schema.decodeUnknownSync(
-  CompatibilityFingerprint
-);
-const decodeIdempotencyKeyHash = Schema.decodeUnknownSync(IdempotencyKeyHash);
-const decodeRequestFingerprint = Schema.decodeUnknownSync(RequestFingerprint);
-const decodeSourceLocatorHash = Schema.decodeUnknownSync(SourceLocatorHash);
-const trace = Schema.decodeUnknownSync(ImportTraceContext)({
-  correlationId: "10000000-0000-4000-8000-000000000004",
-});
 
 const generation = decodeGeneration(0);
-const createdAt = decodeTimestamp("2026-07-22T08:00:00.000Z");
 const observedAt = decodeTimestamp("2026-07-22T07:59:00.000Z");
 const completedAt = decodeTimestamp("2026-07-22T08:01:00.000Z");
 const deleteAt = decodeTimestamp("2026-07-29T08:01:00.000Z");
-
-const fixtureHash = (value: string) =>
-  Array.from(new TextEncoder().encode(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  )
-    .join("")
-    .padEnd(64, "0")
-    .slice(0, 64);
 
 const acquisitionBucket = (): AcquisitionBucketLike => ({
   get: (key) => testEnv.ImportEvidenceBucket.get(key),
@@ -109,36 +91,14 @@ const seedQueuedImport = async (identity: string) => {
   const importId = decodeImportId(`018f47ad-91aa-7c35-b6fe-${identity}`);
   const canonicalId = decodeCanonicalId(`752${identity}`);
   const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
-  const candidate: StoredImport = {
-    acquisitionGeneration: generation,
-    canonicalSourceId: canonicalId,
-    compatibilityFingerprint: decodeCompatibilityFingerprint(
-      fixtureHash(`${identity}:carousel-compatibility`)
-    ),
-    sourceKind: "tiktok",
-    trace,
-    view: {
-      createdAt,
-      evidence: [],
-      id: importId,
-      source: { canonicalId, kind: "tiktok" },
-      status: { kind: "queued" },
-      updatedAt: createdAt,
-    },
-  };
-  const command: AcceptImportCommand = {
-    candidate,
-    idempotencyKeyHash: decodeIdempotencyKeyHash(
-      fixtureHash(`${identity}:carousel-idempotency`)
-    ),
-    requestFingerprint: decodeRequestFingerprint(
-      fixtureHash(`${identity}:carousel-request`)
-    ),
-    sourceLocatorHash: decodeSourceLocatorHash(
-      fixtureHash(`${identity}:carousel-locator`)
-    ),
-  };
-  await Effect.runPromise(repository.acceptRequest(command));
+  await Effect.runPromise(
+    admitResolvedTestImport({
+      canonicalId,
+      importId,
+      repository,
+      sourceKind: "carousel",
+    })
+  );
   return { canonicalId, importId, repository };
 };
 
@@ -296,92 +256,6 @@ const recipeFixture = (input: RecipeEvidenceAssembly) => {
       outputTokens: 50,
     },
     yield: unresolvedRecipeFact("not stated"),
-  };
-};
-
-const operatorRecipeFixture = (input: RecipeEvidenceAssembly) => {
-  const source = input.items.find(({ kind }) => kind === "source_url");
-  const visual = input.items.find(({ kind }) => kind === "visual_observation");
-  if (source === undefined || visual === undefined) {
-    throw new Error("Missing canonical recipe evidence");
-  }
-  const unresolved = unresolvedRecipeFact("not supplied");
-  const unresolvedList = {
-    items: [],
-    reason: "not supplied",
-    state: "unresolved" as const,
-  };
-  const supportedVisual = {
-    citations: [
-      {
-        confidence: 1,
-        evidenceId: visual.evidenceId,
-        origin: "observed" as const,
-      },
-    ],
-    origin: "observed" as const,
-    state: "supported" as const,
-    value: visual.value,
-  };
-  return {
-    author: unresolved,
-    category: unresolved,
-    cookTimeMinutes: unresolved,
-    cost: {
-      certainty: "known" as const,
-      currency: "USD" as const,
-      estimatedMicroUsd: 0,
-    },
-    cuisine: unresolved,
-    description: unresolved,
-    ingredientLines: {
-      items: [supportedVisual],
-      state: "supported" as const,
-    },
-    instructions: { items: [supportedVisual], state: "supported" as const },
-    name: unresolved,
-    nutrition: unresolved,
-    prepTimeMinutes: unresolved,
-    sourceUrl: {
-      citations: [
-        {
-          confidence: 1,
-          evidenceId: source.evidenceId,
-          origin: "observed" as const,
-        },
-      ],
-      origin: "observed" as const,
-      state: "supported" as const,
-      value: source.value,
-    },
-    supportedClaims: unresolvedList,
-    temperatureCelsius: unresolved,
-    tools: unresolvedList,
-    totalTimeMinutes: unresolved,
-    unresolvedFields: [
-      "author",
-      "category",
-      "cook_time_minutes",
-      "cuisine",
-      "description",
-      "ingredient_quantities",
-      "ingredient_units",
-      "name",
-      "nutrition",
-      "prep_time_minutes",
-      "temperature_celsius",
-      "tools",
-      "total_time_minutes",
-      "yield",
-    ],
-    usage: {
-      inputEvidenceItems: input.items.length,
-      inputTokens: 0,
-      latencyMilliseconds: 0,
-      modelCalls: 1 as const,
-      outputTokens: 0,
-    },
-    yield: unresolved,
   };
 };
 
@@ -679,72 +553,44 @@ describe("provider-free TikTok carousel tracer", () => {
     expect(tracer.recipe.calls).toEqual([]);
   });
 
-  it("admits an operator bundle from queued through the installed D1/R2 carousel service exactly once", async () => {
+  it("admits, stages, and starts one canonical operator intent exactly once", async () => {
     const identity = "000000000306";
-    const importId = decodeImportId(`018f47ad-91aa-7c35-b6fe-${identity}`);
+    const intentId = decodeIntentId(`018f47ad-91aa-7c35-b6fe-${identity}`);
     const canonicalId = decodeCanonicalId(`752${identity}`);
     const output = completeAdapterOutput(canonicalId);
-    const visual = makeDeterministicVisualEvidenceExtractor({
-      cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
-      model: "provider-free-proof",
-      observations: [
-        {
-          confidence: 1,
-          frameIndex: 0,
-          kind: "visible_text",
-          regions: [{ height: 1, width: 1, x: 0, y: 0 }],
-          text: "Chop onion then cook",
-          timestampMilliseconds: 0,
-        },
-      ],
-      outcome: "found",
-      provider: "deterministic_fake",
-      usage: {
-        inputBytes: output.images[1]?.bytes.byteLength ?? 0,
-        inputFrames: 1,
-        modelCalls: 1,
-      },
-    });
-    const recipe = makeDeterministicRecipeExtractor(
-      {
-        model: "provider-free-proof",
-        provider: "deterministic_fake",
-        version: "operator-carousel-v1",
-      },
-      operatorRecipeFixture
-    );
     const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
-    const service = makeOperatorCarouselImportService({
-      identityResolver: makeTikTokCanonicalSourceIdentityResolver(() =>
-        Promise.reject(new Error("Network must not be used"))
-      ),
-      newId: () => importId,
-      now: () => completedAt,
-      pipeline: {
-        process: (input) =>
-          importTikTokCarouselToRecipeDraft({
-            adapter: input.adapter,
-            bucket: acquisitionBucket(),
-            carouselRepository: makeD1CarouselEvidenceRepository(
-              testEnv.MealPlannerDatabase
-            ),
-            descriptor: {
-              canonicalId: input.canonicalId,
-              declaredPageCount: input.declaredPageCount,
-              kind: "tiktok_carousel",
-              sourceUrl: input.sourceUrl,
-            },
-            extractor: recipe.service,
-            importId: input.importId,
-            now: () => completedAt,
-            recipeRepository: makeD1RecipeDraftRepository(
-              testEnv.MealPlannerDatabase
-            ),
-            visualExtractor: visual.service,
-          }).pipe(Effect.asVoid),
-      },
+    const stageCalls: unknown[] = [];
+    const starterCalls: unknown[][] = [];
+    let providerCalls = 0;
+    const application = makeImportIntentApplication(
       repository,
-      trace,
+      {
+        ensureStarted: (startedImportId, executionGeneration, startedTrace) =>
+          Effect.sync(() => {
+            starterCalls.push([
+              startedImportId,
+              executionGeneration,
+              startedTrace,
+            ]);
+            return "created" as const;
+          }),
+      },
+      TestImportTrace
+    );
+    const service = makeOperatorCarouselImportService({
+      application,
+      identityResolver: makeTikTokCanonicalSourceIdentityResolver(() => {
+        providerCalls += 1;
+        return Promise.reject(new Error("Provider must not be used"));
+      }),
+      newIntentId: () => intentId,
+      now: () => Schema.encodeSync(ImportTimestamp)(completedAt),
+      pipeline: {
+        stage: (input) =>
+          Effect.sync(() => {
+            stageCalls.push(input);
+          }),
+      },
     });
     const bundle = Schema.decodeUnknownSync(OperatorCarouselBundle)({
       declaredPageCount: 2,
@@ -765,62 +611,73 @@ describe("provider-free TikTok carousel tracer", () => {
 
     const idempotencyKey = decodeIdempotencyKey("operator-306");
     const admitted = await Effect.runPromise(
-      service.admit(bundle, idempotencyKey)
+      service.admit(TestImportPrincipal, bundle, idempotencyKey)
     );
     const replay = await Effect.runPromise(
-      service.admit(bundle, idempotencyKey)
+      service.admit(TestImportPrincipal, bundle, idempotencyKey)
     );
 
     expect(admitted).toMatchObject({
-      disposition: "created",
-      import: { id: importId, status: { kind: "needs_review" } },
+      id: intentId,
+      intentVersion: 2,
+      processing: { sourceKind: "carousel", type: "acquiring_media" },
+      source: { resolution: "resolved" },
+      status: "processing",
     });
-    expect(replay).toMatchObject({
-      disposition: "idempotency_replay",
-      import: { id: importId, status: { kind: "needs_review" } },
-    });
-    expect(visual.calls).toHaveLength(1);
-    expect(recipe.calls).toHaveLength(1);
+    expect(replay).toEqual(admitted);
+    expect(stageCalls).toEqual([
+      expect.objectContaining({
+        canonicalId,
+        declaredPageCount: 2,
+        importId: intentId,
+        sourceUrl: descriptorFor(canonicalId).sourceUrl,
+      }),
+    ]);
+    expect(starterCalls).toEqual([[intentId, 1, TestImportTrace]]);
+    expect(providerCalls).toBe(0);
     expect(
       await testEnv.MealPlannerDatabase.prepare(
-        "SELECT status FROM recipe_imports WHERE id = ?"
+        `SELECT public_source_kind AS sourceKind,
+                public_stage AS stage,
+                public_status AS status,
+                resolved_canonical_source_id AS canonicalId
+           FROM recipe_imports WHERE id = ?`
       )
-        .bind(importId)
+        .bind(intentId)
         .first()
-    ).toEqual({ status: "queued" });
-    expect(
-      await testEnv.MealPlannerDatabase.prepare(
-        "SELECT count(*) AS count FROM import_transcriptions WHERE import_id = ?"
-      )
-        .bind(importId)
-        .first()
-    ).toEqual({ count: 0 });
-    const manifestObject = await testEnv.ImportEvidenceBucket.get(
-      carouselManifestObjectKey(importId, generation)
-    );
-    if (manifestObject === null) {
-      throw new Error("Expected an operator carousel manifest");
-    }
-    const manifest = Schema.decodeUnknownSync(CarouselEvidenceManifestDocument)(
-      JSON.parse(await manifestObject.text())
-    );
-    expect(manifest.source).toMatchObject({
+    ).toEqual({
       canonicalId,
-      provenance: { canonicalIdentity: "operator_supplied" },
+      sourceKind: "carousel",
+      stage: "acquiring_media",
+      status: "processing",
     });
-    expect(JSON.stringify(manifest)).not.toContain("https://");
-    expect(JSON.stringify(manifest)).not.toContain("tracking=discard");
     expect(
-      manifest.images.every(
-        ({ sourceAttribution }) =>
-          sourceAttribution.provenance === "operator_supplied"
+      await testEnv.MealPlannerDatabase.prepare(
+        "SELECT count(*) AS count FROM import_requests WHERE import_id = ?"
       )
-    ).toBe(true);
-    expect(manifest.retention.configuredAgeSeconds).toBe(604_800);
-    expect(manifest.transcript).toEqual({
-      reason: "source_type_carousel",
-      status: "not_applicable",
+        .bind(intentId)
+        .first()
+    ).toEqual({ count: 1 });
+
+    const fingerprintConflictBundle = Schema.decodeUnknownSync(
+      OperatorCarouselBundle
+    )({
+      ...bundle,
+      declaredPageCount: 1,
+      images: [bundle.images[0]],
     });
+    await expect(
+      Effect.runPromise(
+        service.admit(
+          TestImportPrincipal,
+          fingerprintConflictBundle,
+          idempotencyKey
+        )
+      )
+    ).rejects.toMatchObject({ _tag: "IdempotencyConflict" });
+    expect(stageCalls).toHaveLength(1);
+    expect(starterCalls).toHaveLength(1);
+    expect(providerCalls).toBe(0);
 
     const invalidCanonicalId = decodeCanonicalId("752000000000308");
     const invalidOutput = completeAdapterOutput(invalidCanonicalId);
@@ -845,6 +702,7 @@ describe("provider-free TikTok carousel tracer", () => {
     await expect(
       Effect.runPromise(
         service.admit(
+          TestImportPrincipal,
           invalidBundle,
           decodeIdempotencyKey("operator-308-invalid")
         )
@@ -854,7 +712,7 @@ describe("provider-free TikTok carousel tracer", () => {
     });
     expect(
       await testEnv.MealPlannerDatabase.prepare(
-        "SELECT count(*) AS count FROM recipe_imports WHERE canonical_source_id = ?"
+        "SELECT count(*) AS count FROM recipe_imports WHERE resolved_canonical_source_id = ?"
       )
         .bind(invalidCanonicalId)
         .first()

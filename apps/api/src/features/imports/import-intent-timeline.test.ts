@@ -206,8 +206,4 @@ describe("recipe import intent timeline projection", () => {
       }
     }
   );
-
-  it("omits the non-public migration snapshot", () => {
-    expect(project("migration_snapshot")).toEqual(Option.none());
-  });
 });

@@ -1,3 +1,4 @@
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { AnyD1Database } from "drizzle-orm/d1";
@@ -45,6 +46,7 @@ import {
   ImportIntentIdGenerator,
   makeImportIntentApplication,
 } from "./import-intent.js";
+import type { ImportPrincipal } from "./import-intent.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { adaptAcquisitionBucket } from "./import-media-acquirer.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
@@ -84,36 +86,13 @@ import type {
   RecipeRecoveryWorkflowInput,
   RecipeRecoveryWorkflowStarterShape,
 } from "./import-recipe-recovery.js";
-import {
-  RecipeReviewCompatibility,
-  makeRecipeReviewCompatibility,
-  makeRecipeReviewCompatibilityRepositoryD1,
-} from "./import-recipe-review.compatibility.js";
-import { makeRecipeReviewService } from "./import-recipe-review.js";
-import { makeD1RecipeReviewRepository } from "./import-recipe-review.repository.d1.js";
-import { LegacyImportWorkflowExecutionGeneration } from "./import-workflow-input.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
+import { ImportTimestamp } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import { ImportRepository } from "./import.repository.js";
-import { ImportService, makeImportService } from "./import.service.js";
-import type { MakeImportServiceOptions } from "./import.service.js";
-import { SourceAvailabilityValidator } from "./source-availability.js";
-import { makeTikTokSourceAvailabilityValidator } from "./source-availability.tiktok.js";
-import { CanonicalSourceIdentityResolver } from "./source-identity.js";
+import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
-export {
-  runImportVisualAndRecipeWorkflow,
-  runPreparedVisualRecoveryWorkflowBranch,
-} from "./import-application-workflows.js";
-
-type ImportWorkflowStarterShape = MakeImportServiceOptions["workflowStarter"];
-type ImportWorkflowReconcilerShape = ImportWorkflowStarterShape & {
-  readonly ensureStarted: NonNullable<
-    ImportWorkflowStarterShape["ensureStarted"]
-  >;
-};
+export { runImportVisualAndRecipeWorkflow } from "./import-application-workflows.js";
 
 const ImportBatchQueueDelivery = Schema.Struct({
   deliveryAttempt: ImportBatchDeliveryAttempt,
@@ -450,6 +429,7 @@ export interface ImportWorkerRequestLayerInput {
   readonly importWorkflowStarter: ImportWorkflowReconcilerShape;
   readonly importWorkflowTerminator: ImportIntentWorkflowTerminatorShape;
   readonly now: () => string;
+  readonly principal: ImportPrincipal;
   readonly queue: ImportBatchQueueShape;
   readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarterShape;
   readonly runtimeStage: string;
@@ -464,19 +444,10 @@ export const makeImportWorkerRequestLayer = (
   input: ImportWorkerRequestLayerInput
 ) => {
   const d1ImportRepository = makeD1ImportRepository(input.database);
-  const identityResolverLive = Layer.succeed(
-    CanonicalSourceIdentityResolver,
-    CanonicalSourceIdentityResolver.of(
-      makeTikTokCanonicalSourceIdentityResolver(globalThis.fetch)
-    )
-  );
-  const availabilityValidatorLive = Layer.succeed(
-    SourceAvailabilityValidator,
-    makeTikTokSourceAvailabilityValidator(globalThis.fetch)
-  );
-  const repositoryLive = Layer.succeed(
-    ImportRepository,
-    ImportRepository.of(d1ImportRepository)
+  const intentApplication = makeImportIntentApplication(
+    d1ImportRepository,
+    input.importWorkflowStarter,
+    input.trace
   );
   const batch = Layer.succeed(
     ImportBatchService,
@@ -499,14 +470,16 @@ export const makeImportWorkerRequestLayer = (
     OperatorCarouselImportService,
     OperatorCarouselImportService.of(
       makeOperatorCarouselImportService({
+        application: intentApplication,
         identityResolver: makeTikTokCanonicalSourceIdentityResolver(
           globalThis.fetch
         ),
-        newId: () => Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
-        now: () => timestamp(input.now),
+        newIntentId: () =>
+          Schema.decodeUnknownSync(RecipeImportIntentId)(crypto.randomUUID()),
+        now: input.now,
         pipeline: {
           preflight: () => Effect.void,
-          process: (pipelineInput) =>
+          stage: (pipelineInput) =>
             stageOperatorCarouselForWorkflow({
               adapter: pipelineInput.adapter,
               bucket: input.bucket,
@@ -517,18 +490,8 @@ export const makeImportWorkerRequestLayer = (
                 sourceUrl: pipelineInput.sourceUrl,
               },
               importId: pipelineInput.importId,
-            }).pipe(
-              Effect.andThen(
-                input.importWorkflowStarter.ensureStarted(
-                  pipelineInput.importId,
-                  LegacyImportWorkflowExecutionGeneration,
-                  pipelineInput.trace
-                )
-              )
-            ),
+            }),
         },
-        repository: makeD1ImportRepository(input.database),
-        trace: input.trace,
       })
     )
   );
@@ -544,53 +507,18 @@ export const makeImportWorkerRequestLayer = (
       })
     )
   );
-  const legacyRecipeReview = makeRecipeReviewService({
-    now: () => timestamp(input.now),
-    repository: makeD1RecipeReviewRepository(input.database),
-  });
   const intentReview = makeRecipeImportIntentReviewApplication(
     makeD1RecipeImportIntentReviewRepository(input.database)
-  );
-  const reviewCompatibility = Layer.succeed(
-    RecipeReviewCompatibility,
-    RecipeReviewCompatibility.of(
-      makeRecipeReviewCompatibility({
-        intentReviews: intentReview,
-        legacy: legacyRecipeReview,
-        repository: makeRecipeReviewCompatibilityRepositoryD1(input.database),
-      })
-    )
-  );
-  const service = Layer.effect(
-    ImportService,
-    Effect.gen(function* makeImportServiceLive() {
-      return ImportService.of(
-        makeImportService({
-          availabilityValidator: yield* SourceAvailabilityValidator,
-          identityResolver: yield* CanonicalSourceIdentityResolver,
-          newId: () => Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
-          now: () => timestamp(input.now),
-          repository: yield* ImportRepository,
-          trace: input.trace,
-          workflowStarter: input.importWorkflowStarter,
-        })
-      );
-    })
-  ).pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        repositoryLive,
-        identityResolverLive,
-        availabilityValidatorLive
-      )
-    )
   );
 
   return Layer.mergeAll(
     Layer.effect(
       ImportAuthorizer,
       Effect.map(
-        makeImportAuthorizer(input.importApiToken),
+        makeImportAuthorizer({
+          expectedToken: input.importApiToken,
+          principal: input.principal,
+        }),
         ImportAuthorizer.of
       )
     ),
@@ -601,12 +529,7 @@ export const makeImportWorkerRequestLayer = (
     ),
     Layer.succeed(
       RecipeImportIntentApplication,
-      RecipeImportIntentApplication.of(
-        makeImportIntentApplication(
-          d1ImportRepository,
-          input.importWorkflowStarter
-        )
-      )
+      RecipeImportIntentApplication.of(intentApplication)
     ),
     Layer.succeed(
       RecipeImportIntentReviewApplication,
@@ -618,36 +541,35 @@ export const makeImportWorkerRequestLayer = (
       ImportObservabilityTraceStore,
       makeD1ImportObservabilityTraceStore(input.database, input.now)
     ),
-    settlement,
-    reviewCompatibility,
-    service
+    settlement
   );
 };
 
 /** Construct queue acceptance only after a queue message is admitted. */
 export const makeImportBatchQueueAcceptance = (input: {
   readonly database: AnyD1Database;
-  readonly importWorkflowStarter: ImportWorkflowStarterShape;
+  readonly importWorkflowStarter: Pick<
+    ImportWorkflowReconcilerShape,
+    "ensureStarted"
+  >;
   readonly now: () => string;
+  readonly principal: ImportPrincipal;
   readonly trace: ImportTraceContext;
-}) =>
-  makeD1ImportQueueAcceptance({
+}) => {
+  const application = makeImportIntentApplication(
+    makeD1ImportRepository(input.database),
+    input.importWorkflowStarter,
+    input.trace
+  );
+  return makeD1ImportQueueAcceptance({
+    application,
     database: input.database,
-    imports: makeImportService({
-      availabilityValidator: makeTikTokSourceAvailabilityValidator(
-        globalThis.fetch
-      ),
-      identityResolver: makeTikTokCanonicalSourceIdentityResolver(
-        globalThis.fetch
-      ),
-      newId: () => Schema.decodeUnknownSync(ImportId)(crypto.randomUUID()),
-      now: () => timestamp(input.now),
-      repository: makeD1ImportRepository(input.database),
-      trace: input.trace,
-      workflowStarter: input.importWorkflowStarter,
-    }),
+    newIntentId: () =>
+      Schema.decodeUnknownSync(RecipeImportIntentId)(crypto.randomUUID()),
     newReplayClaimId: () =>
       Schema.decodeUnknownSync(DeadLetterReplayClaimId)(crypto.randomUUID()),
     now: input.now,
+    principal: input.principal,
     replayClaimLeaseMilliseconds: 60_000,
   });
+};

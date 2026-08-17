@@ -37,6 +37,44 @@ interface MigrationFile {
   readonly sql: string;
 }
 
+const triggerMigrationFixture = [
+  {
+    hash: "fixture-initial",
+    id: "0000_fixture_records.sql",
+    sql: `CREATE TABLE fixture_records (
+      id TEXT PRIMARY KEY,
+      state TEXT NOT NULL
+    );`,
+  },
+  {
+    hash: "fixture-events",
+    id: "0001_fixture_events.sql",
+    sql: `CREATE TABLE fixture_events (
+      dispatch_id TEXT NOT NULL,
+      record_id TEXT PRIMARY KEY,
+      FOREIGN KEY (record_id) REFERENCES fixture_records(id)
+    );`,
+  },
+  {
+    hash: "fixture-triggers",
+    id: "0002_fixture_triggers.sql",
+    sql: `CREATE TRIGGER fixture_events_advance_record
+      AFTER INSERT ON fixture_events
+      FOR EACH ROW
+      BEGIN
+        UPDATE fixture_records SET state = 'advanced' WHERE id = NEW.record_id;
+      END;
+    --> statement-breakpoint
+    CREATE TRIGGER fixture_events_identity_immutable
+      BEFORE UPDATE OF dispatch_id ON fixture_events
+      FOR EACH ROW
+      WHEN NEW.dispatch_id <> OLD.dispatch_id
+      BEGIN
+        SELECT RAISE(ABORT, 'fixture event identity is immutable');
+      END;`,
+  },
+] as const satisfies readonly MigrationFile[];
+
 interface ApplyMigrationsModule {
   readonly applyMigrations: (options: {
     readonly accountId: string;
@@ -393,19 +431,11 @@ describe("Alchemy D1 migration reconciliation", () => {
     }
   });
 
-  it("applies the trigger migration from 0000/0001 history without skipping or duplicating the ledger", async () => {
+  it("imports trigger migrations atomically without skipping or duplicating the ledger", async () => {
     const modules = await loadAlchemyD1Modules();
-    const checkedInMigrations = await loadCheckedInMigrations();
-    const migrationsFiles = checkedInMigrations.slice(0, 3);
+    const migrationsFiles = triggerMigrationFixture;
     const [initialMigration, acquisitionMigration, speechMigration] =
       migrationsFiles;
-    if (
-      initialMigration === undefined ||
-      acquisitionMigration === undefined ||
-      speechMigration === undefined
-    ) {
-      throw new Error("Expected the 0000 through 0002 migrations");
-    }
 
     const database = new DatabaseSync(":memory:");
     try {
@@ -425,7 +455,7 @@ describe("Alchemy D1 migration reconciliation", () => {
       expect(
         database
           .prepare(
-            "SELECT count(*) AS count FROM sqlite_master WHERE name = 'import_transcriptions';"
+            "SELECT count(*) AS count FROM sqlite_master WHERE name = 'fixture_events_advance_record';"
           )
           .get()
       ).toEqual({ count: 0 });
@@ -448,59 +478,27 @@ describe("Alchemy D1 migration reconciliation", () => {
         migrationsFiles.length
       );
 
-      const importId = "018f47ad-91aa-7c35-b6fe-000000000117";
-      const evidence = JSON.stringify([
-        {
-          kind: "original_media",
-          referenceId: `imports/${importId}/acquisition/v1/generations/0/original.mp4`,
-        },
-        {
-          kind: "acquisition_manifest",
-          referenceId: `imports/${importId}/acquisition/v1/generations/0/manifest.json`,
-        },
-      ]);
+      const recordId = "fixture-record-117";
+      database
+        .prepare("INSERT INTO fixture_records (id, state) VALUES (?, 'ready');")
+        .run(recordId);
       database
         .prepare(
-          `INSERT INTO recipe_imports (
-            acquisition_generation, canonical_source_id,
-            compatibility_fingerprint, created_at, evidence_references_json,
-            id, source_kind, status, updated_at
-          ) VALUES (0, ?, ?, ?, ?, ?, 'tiktok', 'acquired', ?);`
+          "INSERT INTO fixture_events (record_id, dispatch_id) VALUES (?, ?);"
         )
-        .run(
-          "7520000000000000117",
-          "compatibility-fingerprint",
-          "2026-07-22T10:00:00.000Z",
-          evidence,
-          importId,
-          "2026-07-22T10:00:00.000Z"
-        );
-      database
-        .prepare(
-          `INSERT INTO import_transcriptions (
-            import_id, acquisition_generation, dispatch_id,
-            source_media_sha256, state, created_at, updated_at
-          ) VALUES (?, 0, ?, ?, 'dispatching', ?, ?);`
-        )
-        .run(
-          importId,
-          "dispatch-117",
-          "a".repeat(64),
-          "2026-07-22T10:01:00.000Z",
-          "2026-07-22T10:01:00.000Z"
-        );
+        .run(recordId, "dispatch-117");
       expect(
         database
-          .prepare("SELECT status FROM recipe_imports WHERE id = ?;")
-          .get(importId)
-      ).toEqual({ status: "transcribing" });
+          .prepare("SELECT state FROM fixture_records WHERE id = ?;")
+          .get(recordId)
+      ).toEqual({ state: "advanced" });
       expect(() =>
         database
           .prepare(
-            "UPDATE import_transcriptions SET dispatch_id = ? WHERE import_id = ?;"
+            "UPDATE fixture_events SET dispatch_id = ? WHERE record_id = ?;"
           )
-          .run("changed-dispatch", importId)
-      ).toThrow("import transcription identity is immutable");
+          .run("changed-dispatch", recordId)
+      ).toThrow("fixture event identity is immutable");
 
       const firstRunImportCount = transport.importFiles.length;
       expect(firstRunImportCount).toBe(1);
@@ -517,17 +515,9 @@ describe("Alchemy D1 migration reconciliation", () => {
 
   it("does not record a migration when an adversarial statement fails", async () => {
     const modules = await loadAlchemyD1Modules();
-    const checkedInMigrations = await loadCheckedInMigrations();
-    const migrationsFiles = checkedInMigrations.slice(0, 3);
+    const migrationsFiles = triggerMigrationFixture;
     const [initialMigration, acquisitionMigration, speechMigration] =
       migrationsFiles;
-    if (
-      initialMigration === undefined ||
-      acquisitionMigration === undefined ||
-      speechMigration === undefined
-    ) {
-      throw new Error("Expected the 0000 through 0002 migrations");
-    }
 
     const database = new DatabaseSync(":memory:");
     try {
@@ -557,7 +547,7 @@ describe("Alchemy D1 migration reconciliation", () => {
       expect(
         database
           .prepare(
-            "SELECT count(*) AS count FROM sqlite_master WHERE name = 'import_transcriptions';"
+            "SELECT count(*) AS count FROM sqlite_master WHERE name = 'fixture_events_advance_record';"
           )
           .get()
       ).toEqual({ count: 0 });

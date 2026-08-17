@@ -31,14 +31,18 @@ import { makeD1RecipeImportIntentReviewRepository } from "./import-intent-review
 import {
   ImportIntentIdGenerator,
   ImportPrincipal,
-  LegacyPrivateImportPrincipal,
   makeImportIntentApplication,
 } from "./import-intent.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
-import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
+import { ImportAuthorizer } from "./import.auth.js";
 import { ImportId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
+import {
+  TestImportPrincipal,
+  TestImportTrace,
+  makeTestImportAuthorizer,
+} from "./import.test-fixtures.js";
 
 const testEnv = env as unknown as {
   readonly MealPlannerDatabase: AnyD1Database;
@@ -174,7 +178,7 @@ const seedRequiresAction = async (
       .prepare(
         `UPDATE recipe_imports
             SET acquisition_generation = 1,
-                canonical_source_id = ?, compatibility_fingerprint = ?,
+                compatibility_fingerprint = ?,
                 evidence_references_json = ?, resolved_canonical_source_id = ?,
                 source_kind = 'tiktok', status = 'transcribed',
                 status_code = NULL, public_source_url = ?,
@@ -186,7 +190,6 @@ const seedRequiresAction = async (
           WHERE id = ?`
       )
       .bind(
-        canonicalSourceId,
         compatibilityFingerprint,
         JSON.stringify(evidence),
         canonicalSourceId,
@@ -275,8 +278,8 @@ const assertNoPrivateTransport = (
     evidenceFingerprint,
     extractionFingerprint,
     compatibilityFingerprint,
-    LegacyPrivateImportPrincipal.actorId,
-    LegacyPrivateImportPrincipal.householdScopeId,
+    TestImportPrincipal.actorId,
+    TestImportPrincipal.householdScopeId,
     ...additionalSentinels,
   ];
   if (typeof value === "string") {
@@ -316,9 +319,7 @@ describe("recipe import intent HTTP API with real D1", () => {
       const database = testEnv.MealPlannerDatabase;
       const started: string[] = [];
       const terminated: string[] = [];
-      const authorizer = yield* makeImportAuthorizer(
-        Redacted.make(bearerToken)
-      );
+      const authorizer = yield* makeTestImportAuthorizer(bearerToken);
       const intentApplication = makeImportIntentApplication(
         makeD1ImportRepository(database),
         {
@@ -327,7 +328,8 @@ describe("recipe import intent HTTP API with real D1", () => {
               started.push(intentId);
               return "created" as const;
             }),
-        }
+        },
+        TestImportTrace
       );
       const reviewApplication = makeRecipeImportIntentReviewApplication(
         makeD1RecipeImportIntentReviewRepository(database)

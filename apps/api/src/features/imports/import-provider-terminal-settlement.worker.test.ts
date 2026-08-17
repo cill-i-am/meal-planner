@@ -1,6 +1,6 @@
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -20,9 +20,17 @@ import { ProviderTerminalSettlementRoutes } from "./import-provider-terminal-set
 import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-terminal.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import type { VisualEvidenceFailureCode } from "./import-visual-evidence.repository.d1.js";
-import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
+import { ImportAuthorizer } from "./import.auth.js";
+import {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "./import.contracts.js";
 import { workflowStartUnavailable } from "./import.errors.js";
+import {
+  makeTestImportAuthorizer,
+  seedResolvedTestImportExecution,
+} from "./import.test-fixtures.js";
 import type { ImportWorkflowStarterShape } from "./import.workflow.js";
 
 const testEnv = env as unknown as {
@@ -34,6 +42,7 @@ const testEnv = env as unknown as {
 };
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
+const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
 const decodeImportTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
@@ -78,7 +87,7 @@ const seedPoisonedTerminalSpeechImport = async (
     `speech:${importId}:${acquisitionGeneration}`
   );
   const now = "2026-07-27T10:00:00.000Z";
-  const evidence = JSON.stringify([
+  const evidence = [
     {
       kind: "original_media",
       referenceId: `imports/${importId}/acquisition/v1/generations/${acquisitionGeneration}/original.mp4`,
@@ -87,24 +96,16 @@ const seedPoisonedTerminalSpeechImport = async (
       kind: "acquisition_manifest",
       referenceId: `imports/${importId}/acquisition/v1/generations/${acquisitionGeneration}/manifest.json`,
     },
-  ]);
-  await testEnv.MealPlannerDatabase.prepare(
-    `INSERT INTO recipe_imports (
-       acquisition_generation, canonical_source_id, compatibility_fingerprint,
-       created_at, evidence_references_json, id, recovery_action, source_kind,
-       status, status_code, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video', 'acquired', NULL, ?)`
-  )
-    .bind(
-      acquisitionGeneration,
-      `canonical-${suffix}`,
-      "f".repeat(64),
-      now,
-      evidence,
-      importId,
-      now
-    )
-    .run();
+  ] as const;
+  await seedResolvedTestImportExecution({
+    acquisitionGeneration,
+    canonicalId: decodeCanonicalId(`canonical-${suffix}`),
+    database: testEnv.MealPlannerDatabase,
+    evidence,
+    importId,
+    status: { kind: "acquired" },
+    updatedAt: decodeImportTimestamp(now),
+  });
   await testEnv.MealPlannerDatabase.prepare(
     `INSERT INTO import_transcriptions (
        import_id, acquisition_generation, dispatch_id, source_media_sha256,
@@ -170,7 +171,7 @@ const seedPoisonedTerminalVisualImport = async (
   );
   const now = "2026-07-30T10:00:00.000Z";
   const sourceMediaSha256 = "a".repeat(64);
-  const evidence = JSON.stringify([
+  const evidence = [
     {
       kind: "original_media",
       referenceId: `imports/${importId}/acquisition/v1/generations/${acquisitionGeneration}/original.mp4`,
@@ -183,25 +184,19 @@ const seedPoisonedTerminalVisualImport = async (
       kind: "speech_transcript",
       referenceId: `imports/${importId}/transcription/v1/generations/${acquisitionGeneration}/transcript.json`,
     },
-  ]);
+  ] as const;
+
+  await seedResolvedTestImportExecution({
+    acquisitionGeneration,
+    canonicalId: decodeCanonicalId(`visual-canonical-${suffix}`),
+    database: testEnv.MealPlannerDatabase,
+    evidence,
+    importId,
+    status: { kind: "transcribed" },
+    updatedAt: decodeImportTimestamp(now),
+  });
 
   await testEnv.MealPlannerDatabase.batch([
-    testEnv.MealPlannerDatabase.prepare(
-      `INSERT INTO recipe_imports (
-         acquisition_generation, canonical_source_id,
-         compatibility_fingerprint, created_at, evidence_references_json, id,
-         recovery_action, source_kind, status, status_code, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'tiktok_video',
-                 'transcribed', NULL, ?)`
-    ).bind(
-      acquisitionGeneration,
-      `visual-canonical-${suffix}`,
-      "f".repeat(64),
-      now,
-      evidence,
-      importId,
-      now
-    ),
     testEnv.MealPlannerDatabase.prepare(
       `INSERT INTO import_transcriptions (
          import_id, acquisition_generation, dispatch_id, source_media_sha256,
@@ -382,22 +377,15 @@ const seedPoisonedTerminalRecipeImport = async (
     `recipe:${importId}:${acquisitionGeneration}:${evidenceFingerprint}`
   );
   const now = "2026-07-29T18:00:00.000Z";
-  await testEnv.MealPlannerDatabase.prepare(
-    `INSERT INTO recipe_imports (
-       acquisition_generation, canonical_source_id, compatibility_fingerprint,
-       created_at, evidence_references_json, id, recovery_action, source_kind,
-       status, status_code, updated_at
-     ) VALUES (?, ?, ?, ?, '[]', ?, NULL, 'tiktok_video', 'queued', NULL, ?)`
-  )
-    .bind(
-      acquisitionGeneration,
-      `recipe-canonical-${suffix}`,
-      "f".repeat(64),
-      now,
-      importId,
-      now
-    )
-    .run();
+  await seedResolvedTestImportExecution({
+    acquisitionGeneration,
+    canonicalId: decodeCanonicalId(`recipe-canonical-${suffix}`),
+    database: testEnv.MealPlannerDatabase,
+    evidence: [],
+    importId,
+    status: { kind: "queued" },
+    updatedAt: decodeImportTimestamp(now),
+  });
   await testEnv.MealPlannerDatabase.prepare(
     `INSERT INTO import_recipe_extractions (
        extraction_fingerprint, import_id, acquisition_generation,
@@ -576,7 +564,7 @@ const makeApp = async (
   workflowStarter?: Pick<ImportWorkflowStarterShape, "restartFromSpeech">
 ) => {
   const authorizer = await Effect.runPromise(
-    makeImportAuthorizer(Redacted.make("test-import-token"))
+    makeTestImportAuthorizer("test-import-token")
   );
   const service = makeD1ProviderTerminalSettlementService({
     database: testEnv.MealPlannerDatabase,
@@ -1022,7 +1010,7 @@ const readRecipeCheckpointRepairProtectedRows = (input: {
       .then(readD1Results),
     testEnv.MealPlannerDatabase.prepare(
       `SELECT *
-         FROM import_recipe_terminal_projections
+         FROM import_recipe_executor_terminal_checkpoints
         WHERE import_id = ? AND acquisition_generation = ?`
     )
       .bind(input.importId, input.acquisitionGeneration)
@@ -2401,8 +2389,8 @@ describe("authenticated terminal visual unknown-cost reconciliation", () => {
   });
 });
 
-describe("authenticated recipe terminal checkpoint compatibility repair", () => {
-  it("atomically reconstructs one immutable checkpoint and projection without clearing the poisoned budget", async () => {
+describe("authenticated recipe executor terminal checkpoint repair", () => {
+  it("atomically reconstructs one immutable executor checkpoint without clearing the poisoned budget", async () => {
     const seeded = await seedMissingRecipeTerminalCheckpoint("000000000401");
     const before = await readRecipeCheckpointRepairProtectedRows(seeded);
     const app = await makeApp("pilot-gaia-118");
@@ -2440,12 +2428,9 @@ describe("authenticated recipe terminal checkpoint compatibility repair", () => 
     expect(after[1]).toEqual([
       expect.objectContaining({
         acquisition_generation: seeded.acquisitionGeneration,
+        checkpointed_at: seeded.now,
         import_id: seeded.importId,
         ownership_id: seeded.extractionFingerprint,
-        projected_at: seeded.now,
-        recovery_action: "operator_reconcile",
-        status: "failed",
-        status_code: "recipe_extraction_failed",
       }),
     ]);
     await expect(
@@ -2471,7 +2456,7 @@ describe("authenticated recipe terminal checkpoint compatibility repair", () => 
       { additionalRecipeDispatch: true },
     ],
   ] as const)(
-    "fails closed without a checkpoint or projection for %s",
+    "fails closed without provider or executor checkpoint evidence for %s",
     async (_name, suffix, options) => {
       const seeded = await seedMissingRecipeTerminalCheckpoint(suffix, options);
 

@@ -31,8 +31,6 @@ import type {
 import {
   CancelImportIntentCommand,
   InitialRecipeImportIntentVersion,
-  LegacyPrivateImportActorId,
-  LegacyPrivateHouseholdScopeId,
   RecipeImportIntentIdempotencyConflict,
   RecipeImportIntentNotFound,
   RecipeImportIntentRedirected,
@@ -53,36 +51,29 @@ import {
 } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
-import { deriveLegacyImportCorrelationId } from "./import-workflow-input.js";
 import {
   EvidenceReference,
   ImportView,
   SourceCanonicalId,
 } from "./import.contracts.js";
 import type {
-  ImportDisposition,
   ImportId,
   ImportStatus,
   ImportTimestamp,
 } from "./import.contracts.js";
 import {
   importCarouselEvidence,
-  importRecipeTerminalProjections,
-  importRequests,
   importRecipeExtractions,
   importVisualEvidence,
   recipeImports,
 } from "./import.database-schema.js";
 import {
-  idempotencyConflict,
   importPersistenceCorrupt,
   importPersistenceUnavailable,
-  incompatibleDuplicate,
   importNotFound,
   importTransitionRejected,
 } from "./import.errors.js";
 import type {
-  AcceptImportCommand,
   ClaimAcquisitionResult,
   ImportIntentRepositoryShape,
   InternalImportIntentTransitionError,
@@ -90,12 +81,9 @@ import type {
   ImportTransitionError,
   StalledImportIntentStartLimit,
   StoredImport,
-  StoredImportRequest,
 } from "./import.repository.js";
 import {
-  CompatibilityFingerprint,
   RequestFingerprint,
-  SourceLocatorHash,
   StalledImportIntentStartCandidate,
 } from "./import.repository.js";
 
@@ -110,8 +98,7 @@ const DatabaseImportRow = Schema.Struct({
   canonicalSourceId: Schema.String,
   carouselManifestKey: NullableString,
   carouselUpdatedAt: NullableString,
-  compatibilityFingerprint: CompatibilityFingerprint,
-  correlationId: NullableString,
+  correlationId: ImportCorrelationId,
   createdAt: Schema.String,
   evidenceReferencesJson: Schema.String,
   id: Schema.String,
@@ -139,14 +126,11 @@ const DatabaseImportRow = Schema.Struct({
   visualUpdatedAt: NullableString,
 });
 
-const DatabaseRequestFingerprints = Schema.Struct({
-  requestFingerprint: RequestFingerprint,
-  sourceLocatorHash: SourceLocatorHash,
-});
-
 const importSelection = {
   acquisitionGeneration: recipeImports.acquisitionGeneration,
-  canonicalSourceId: recipeImports.canonicalSourceId,
+  canonicalSourceId: sql<string>`${recipeImports.resolvedCanonicalSourceId}`.as(
+    "resolved_canonical_source_id"
+  ),
   carouselManifestKey: sql<string | null>`(
     SELECT ${importCarouselEvidence.manifestKey}
       FROM ${importCarouselEvidence}
@@ -161,18 +145,9 @@ const importSelection = {
        AND ${importCarouselEvidence.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
        AND ${importCarouselEvidence.state} = 'completed'
   )`.as("carousel_updated_at"),
-  compatibilityFingerprint: recipeImports.compatibilityFingerprint,
   correlationId: recipeImports.correlationId,
   createdAt: recipeImports.createdAt,
-  evidenceReferencesJson: sql<string>`COALESCE(
-    (
-      SELECT ${importRecipeTerminalProjections.evidenceReferencesJson}
-        FROM ${importRecipeTerminalProjections}
-       WHERE ${importRecipeTerminalProjections.importId} = ${recipeImports.id}
-         AND ${importRecipeTerminalProjections.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
-    ),
-    ${recipeImports.evidenceReferencesJson}
-  )`.as("evidence_references_json"),
+  evidenceReferencesJson: recipeImports.evidenceReferencesJson,
   id: recipeImports.id,
   recipeDraftFingerprint: sql<
     string | null
@@ -188,43 +163,11 @@ const importSelection = {
   recipeDraftUpdatedAt: sql<
     string | null
   >`${importRecipeExtractions.updatedAt}`.as("recipe_draft_updated_at"),
-  recoveryAction: sql<string | null>`COALESCE(
-    (
-      SELECT ${importRecipeTerminalProjections.recoveryAction}
-        FROM ${importRecipeTerminalProjections}
-       WHERE ${importRecipeTerminalProjections.importId} = ${recipeImports.id}
-         AND ${importRecipeTerminalProjections.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
-    ),
-    ${recipeImports.recoveryAction}
-  )`.as("recovery_action"),
+  recoveryAction: recipeImports.recoveryAction,
   sourceKind: recipeImports.sourceKind,
-  status: sql<string>`COALESCE(
-    (
-      SELECT ${importRecipeTerminalProjections.status}
-        FROM ${importRecipeTerminalProjections}
-       WHERE ${importRecipeTerminalProjections.importId} = ${recipeImports.id}
-         AND ${importRecipeTerminalProjections.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
-    ),
-    ${recipeImports.status}
-  )`.as("status"),
-  statusCode: sql<string | null>`COALESCE(
-    (
-      SELECT ${importRecipeTerminalProjections.statusCode}
-        FROM ${importRecipeTerminalProjections}
-       WHERE ${importRecipeTerminalProjections.importId} = ${recipeImports.id}
-         AND ${importRecipeTerminalProjections.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
-    ),
-    ${recipeImports.statusCode}
-  )`.as("status_code"),
-  updatedAt: sql<string>`COALESCE(
-    (
-      SELECT ${importRecipeTerminalProjections.projectedAt}
-        FROM ${importRecipeTerminalProjections}
-       WHERE ${importRecipeTerminalProjections.importId} = ${recipeImports.id}
-         AND ${importRecipeTerminalProjections.acquisitionGeneration} = ${recipeImports.acquisitionGeneration}
-    ),
-    ${recipeImports.updatedAt}
-  )`.as("updated_at"),
+  status: recipeImports.status,
+  statusCode: recipeImports.statusCode,
+  updatedAt: recipeImports.updatedAt,
   visualFailureCode: importVisualEvidence.failureCode,
   visualManifestKey: importVisualEvidence.manifestKey,
   visualOutcome: importVisualEvidence.outcome,
@@ -521,32 +464,14 @@ const decodeStoredImport = (input: unknown) =>
         status: projection.status,
         updatedAt: projection.updatedAt,
       });
-      const correlationId =
-        row.correlationId === null
-          ? deriveLegacyImportCorrelationId(view.id)
-          : Schema.decodeUnknownSync(ImportCorrelationId)(row.correlationId);
       return {
         acquisitionGeneration: row.acquisitionGeneration,
         canonicalSourceId,
-        compatibilityFingerprint: row.compatibilityFingerprint,
         sourceKind: row.sourceKind,
-        trace: { correlationId },
+        trace: { correlationId: row.correlationId },
         view,
       };
     },
-  });
-
-const decodeStoredImportRequest = (input: unknown) =>
-  Effect.gen(function* decodeStoredRequest() {
-    const fingerprints = yield* Effect.try({
-      catch: importPersistenceCorrupt,
-      try: () => Schema.decodeUnknownSync(DatabaseRequestFingerprints)(input),
-    });
-    return {
-      import: yield* decodeStoredImport(input),
-      requestFingerprint: fingerprints.requestFingerprint,
-      sourceLocatorHash: fingerprints.sourceLocatorHash,
-    } satisfies StoredImportRequest;
   });
 
 const persistenceEffect = <A>(promise: () => PromiseLike<A>) =>
@@ -558,13 +483,11 @@ const persistenceEffect = <A>(promise: () => PromiseLike<A>) =>
 const DatabaseIntentRow = Schema.Struct({
   activeActionId: NullableString,
   cancelledAt: NullableString,
-  canonicalSourceId: Schema.String,
   createdAt: Schema.String,
   executionGeneration: ImportIntentExecutionGeneration,
   failedAt: NullableString,
   id: Schema.String,
   intentVersion: Schema.Number,
-  legacyStatus: Schema.String,
   publicActivity: Schema.NullOr(Schema.Literals(["working", "retrying"])),
   publicFailureCode: NullableString,
   publicFailureMessage: NullableString,
@@ -600,13 +523,11 @@ type DatabaseIntentRow = typeof DatabaseIntentRow.Type;
 const intentRowSelection = `
   active_action_id AS activeActionId,
   cancelled_at AS cancelledAt,
-  canonical_source_id AS canonicalSourceId,
   created_at AS createdAt,
   execution_generation AS executionGeneration,
   failed_at AS failedAt,
   id,
   intent_version AS intentVersion,
-  status AS legacyStatus,
   public_activity AS publicActivity,
   public_failure_code AS publicFailureCode,
   public_failure_message AS publicFailureMessage,
@@ -1290,8 +1211,7 @@ export const makeD1ImportRepository = (
             binding
               .prepare(
                 `UPDATE recipe_imports
-                SET canonical_source_id = ?,
-                    resolved_canonical_source_id = ?, public_source_url = ?,
+                SET resolved_canonical_source_id = ?, public_source_url = ?,
                     public_source_kind = ?, public_status = ?,
                     active_action_id = ?,
                     active_action_version = CASE
@@ -1316,7 +1236,6 @@ export const makeD1ImportRepository = (
                 AND execution_generation = ?${sourceGuard.sql}`
               )
               .bind(
-                next.resolvedCanonicalSourceId ?? row.canonicalSourceId,
                 next.resolvedCanonicalSourceId,
                 next.sourceUrl,
                 next.sourceKind,
@@ -1450,6 +1369,7 @@ export const makeD1ImportRepository = (
           binding
             .prepare(
               `SELECT id AS intentId,
+                      correlation_id AS correlationId,
                       execution_generation AS executionGeneration,
                       updated_at AS updatedAt
                  FROM recipe_imports
@@ -1466,11 +1386,29 @@ export const makeD1ImportRepository = (
       return yield* Effect.try({
         catch: importPersistenceCorrupt,
         try: () =>
-          rows.results.map((row) =>
-            Schema.decodeUnknownSync(StalledImportIntentStartCandidate, {
+          rows.results.map((row) => {
+            const candidate = Schema.decodeUnknownSync(
+              Schema.Struct({
+                correlationId: ImportCorrelationId,
+                executionGeneration: ImportIntentExecutionGeneration,
+                intentId: RecipeImportIntentId,
+                // Keep the encoded timestamp for the enclosing candidate
+                // decoder so the DateTime transformation runs exactly once.
+                updatedAt: Schema.String,
+              }),
+              {
+                onExcessProperty: "error",
+              }
+            )(row);
+            return Schema.decodeUnknownSync(StalledImportIntentStartCandidate, {
               onExcessProperty: "error",
-            })(row)
-          ),
+            })({
+              executionGeneration: candidate.executionGeneration,
+              intentId: candidate.intentId,
+              trace: { correlationId: candidate.correlationId },
+              updatedAt: candidate.updatedAt,
+            });
+          }),
       });
     });
 
@@ -1655,8 +1593,6 @@ export const makeD1ImportRepository = (
     admitIntent: (command) =>
       Effect.gen(function* admitIntent() {
         const createdAt = encodeInstant(command.createdAt);
-        const provisionalCanonicalId = `pending:${command.intentId}`;
-        const compatibilityFingerprint = "0".repeat(64);
         const [insertResult] = yield* persistenceEffect<
           readonly D1MutationResult[]
         >(
@@ -1665,8 +1601,7 @@ export const makeD1ImportRepository = (
               binding
                 .prepare(
                   `INSERT INTO recipe_imports (
-                   acquisition_generation, actor_id, canonical_source_id,
-                   compatibility_fingerprint, created_at,
+                   acquisition_generation, actor_id, correlation_id, created_at,
                    evidence_references_json, execution_generation,
                    household_scope_id, id, intent_version, public_activity,
                    public_stage, public_stage_started_at, public_status,
@@ -1675,7 +1610,7 @@ export const makeD1ImportRepository = (
                    transition_actor_category, transition_actor_identity_hash,
                    transition_provenance_version, updated_at
                  )
-                 SELECT 0, ?, ?, ?, ?, '[]', 0, ?, ?, 1, 'working',
+                 SELECT 0, ?, ?, ?, '[]', 1, ?, ?, 1, 'working',
                         'resolving_source', ?, 'processing', 'tiktok', 'queued',
                         ?, ?, ?, 'household_member', ?, 1, ?
                   WHERE NOT EXISTS (
@@ -1685,8 +1620,7 @@ export const makeD1ImportRepository = (
                 )
                 .bind(
                   command.principal.actorId,
-                  provisionalCanonicalId,
-                  compatibilityFingerprint,
+                  command.trace.correlationId,
                   createdAt,
                   command.principal.householdScopeId,
                   command.intentId,
@@ -1900,294 +1834,6 @@ export const makeD1ImportRepository = (
         const racedWinner = yield* findResolvedSourceWinner(principal, command);
         return yield* applySelectedTransition(racedWinner);
       }),
-    acceptRequest: (command: AcceptImportCommand) =>
-      Effect.gen(function* acceptRequest() {
-        const createdAt = DateTime.formatIso(command.candidate.view.createdAt);
-        const updatedAt = DateTime.formatIso(command.candidate.view.updatedAt);
-        const publicSourceUrl = `https://www.tiktok.com/video/${encodeURIComponent(command.candidate.canonicalSourceId)}`;
-        const canInsertCandidate =
-          ![
-            "extracting_visual",
-            "needs_review",
-            "visual_evidence_empty",
-            "visual_evidence_found",
-            "visual_evidence_low_confidence",
-          ].includes(command.candidate.view.status.kind) &&
-          !(
-            command.candidate.view.status.kind === "failed" &&
-            ["recipe_extraction_failed", "visual_evidence_failed"].includes(
-              command.candidate.view.status.code
-            )
-          );
-        const { recoveryAction, statusCode } = statusColumns(
-          command.candidate.view.status
-        );
-
-        const insertCandidate = database
-          .insert(
-            recipeImports,
-            "acquisitionGeneration",
-            "actorId",
-            "canonicalSourceId",
-            "compatibilityFingerprint",
-            "correlationId",
-            "createdAt",
-            "evidenceReferencesJson",
-            "id",
-            "recoveryAction",
-            "sourceKind",
-            "status",
-            "statusCode",
-            "updatedAt",
-            "householdScopeId",
-            "resolvedCanonicalSourceId",
-            "publicSourceUrl",
-            "publicSourceKind",
-            "publicStatus",
-            "publicStage",
-            "publicStageStartedAt",
-            "publicActivity",
-            "publicFailureCode",
-            "publicFailureMessage",
-            "publicRecovery",
-            "failedAt",
-            "transitionMutationId",
-            "transitionCommandDigest",
-            "transitionActorCategory",
-            "transitionActorIdentityHash",
-            "transitionProvenanceVersion"
-          )
-          .select(
-            sql`SELECT
-              ${command.candidate.acquisitionGeneration},
-              ${LegacyPrivateImportActorId},
-              ${command.candidate.canonicalSourceId},
-              ${command.candidate.compatibilityFingerprint},
-              ${command.candidate.trace.correlationId},
-              ${createdAt},
-              ${JSON.stringify(command.candidate.view.evidence)},
-              ${command.candidate.view.id},
-              ${recoveryAction},
-              ${command.candidate.sourceKind},
-              ${command.candidate.view.status.kind},
-              ${statusCode},
-              ${updatedAt},
-              ${LegacyPrivateHouseholdScopeId},
-              ${command.candidate.canonicalSourceId},
-              ${publicSourceUrl},
-              'video',
-              CASE
-                WHEN ${command.candidate.view.status.kind} IN ('failed', 'unsupported') THEN 'failed'
-                ELSE 'processing'
-              END,
-              CASE
-                WHEN ${command.candidate.view.status.kind} IN ('failed', 'unsupported') THEN NULL
-                WHEN ${command.candidate.view.status.kind} IN ('transcribed', 'transcribing') THEN 'analyzing_evidence'
-                ELSE 'acquiring_media'
-              END,
-              CASE
-                WHEN ${command.candidate.view.status.kind} IN ('failed', 'unsupported') THEN NULL
-                ELSE ${updatedAt}
-              END,
-              CASE
-                WHEN ${command.candidate.view.status.kind} IN ('failed', 'unsupported') THEN NULL
-                ELSE 'working'
-              END,
-              CASE
-                WHEN ${command.candidate.view.status.kind} NOT IN ('failed', 'unsupported') THEN NULL
-                WHEN ${statusCode} = 'private_or_unavailable' THEN 'source_unavailable'
-                WHEN ${statusCode} IN ('invalid_or_unsupported_media', 'unsupported_post_type') THEN 'invalid_media'
-                WHEN ${statusCode} IN ('transcription_failed', 'acquisition_temporarily_unavailable') THEN 'analysis_failed'
-                ELSE 'internal_error'
-              END,
-              CASE
-                WHEN ${command.candidate.view.status.kind} NOT IN ('failed', 'unsupported') THEN NULL
-                WHEN ${statusCode} = 'private_or_unavailable' THEN 'The source is not available.'
-                WHEN ${statusCode} IN ('invalid_or_unsupported_media', 'unsupported_post_type') THEN 'The source media is not supported.'
-                WHEN ${statusCode} IN ('transcription_failed', 'acquisition_temporarily_unavailable') THEN 'The source could not be analyzed.'
-                ELSE 'This import did not produce a recipe.'
-              END,
-              CASE
-                WHEN ${command.candidate.view.status.kind} IN ('failed', 'unsupported') THEN 'create_new_intent'
-                ELSE NULL
-              END,
-              CASE
-                WHEN ${command.candidate.view.status.kind} IN ('failed', 'unsupported') THEN ${updatedAt}
-                ELSE NULL
-              END,
-              ${command.idempotencyKeyHash},
-              ${command.requestFingerprint},
-              'household_member',
-              ${LegacyPrivateImportActorId},
-              1
-            WHERE ${canInsertCandidate ? 1 : 0} = 1
-              AND NOT EXISTS (
-              SELECT 1 FROM ${importRequests}
-              WHERE ${importRequests.idempotencyKeyHash} = ${command.idempotencyKeyHash}
-            )`
-          )
-          .onConflictDoNothing()
-          .returning({ id: recipeImports.id });
-
-        const insertRequest = database
-          .insert(
-            importRequests,
-            "householdScopeId",
-            "createdAt",
-            "idempotencyKeyHash",
-            "importId",
-            "requestFingerprint",
-            "sourceLocatorHash"
-          )
-          .select(
-            sql`SELECT
-              ${LegacyPrivateHouseholdScopeId},
-              ${createdAt},
-              ${command.idempotencyKeyHash},
-              ${recipeImports.id},
-              ${command.requestFingerprint},
-              ${command.sourceLocatorHash}
-            FROM ${recipeImports}
-            WHERE ${recipeImports.sourceKind} = ${command.candidate.sourceKind}
-              AND ${recipeImports.canonicalSourceId} = ${command.candidate.canonicalSourceId}
-              AND ${recipeImports.compatibilityFingerprint} = ${command.candidate.compatibilityFingerprint}
-              AND NOT EXISTS (
-                SELECT 1 FROM ${importRequests}
-                WHERE ${importRequests.idempotencyKeyHash} = ${command.idempotencyKeyHash}
-              )
-            LIMIT 1`
-          )
-          .onConflictDoNothing()
-          .returning({ importId: importRequests.importId });
-
-        const selectWinningRequest = database
-          .select({
-            ...importSelection,
-            requestFingerprint: importRequests.requestFingerprint,
-            sourceLocatorHash: importRequests.sourceLocatorHash,
-          })
-          .from(importRequests)
-          .innerJoin(
-            recipeImports,
-            eq(importRequests.importId, recipeImports.id)
-          )
-          .leftJoin(
-            importVisualEvidence,
-            and(
-              eq(importVisualEvidence.importId, recipeImports.id),
-              eq(
-                importVisualEvidence.acquisitionGeneration,
-                recipeImports.acquisitionGeneration
-              )
-            )
-          )
-          .leftJoin(
-            importRecipeExtractions,
-            and(
-              eq(importRecipeExtractions.importId, recipeImports.id),
-              eq(
-                importRecipeExtractions.acquisitionGeneration,
-                recipeImports.acquisitionGeneration
-              ),
-              eq(importRecipeExtractions.isCurrent, 1)
-            )
-          )
-          .where(
-            eq(importRequests.idempotencyKeyHash, command.idempotencyKeyHash)
-          )
-          .limit(1);
-
-        const selectCanonical = database
-          .select(importSelection)
-          .from(recipeImports)
-          .leftJoin(
-            importVisualEvidence,
-            and(
-              eq(importVisualEvidence.importId, recipeImports.id),
-              eq(
-                importVisualEvidence.acquisitionGeneration,
-                recipeImports.acquisitionGeneration
-              )
-            )
-          )
-          .leftJoin(
-            importRecipeExtractions,
-            and(
-              eq(importRecipeExtractions.importId, recipeImports.id),
-              eq(
-                importRecipeExtractions.acquisitionGeneration,
-                recipeImports.acquisitionGeneration
-              ),
-              eq(importRecipeExtractions.isCurrent, 1)
-            )
-          )
-          .where(
-            and(
-              eq(recipeImports.sourceKind, command.candidate.sourceKind),
-              eq(
-                recipeImports.canonicalSourceId,
-                command.candidate.canonicalSourceId
-              )
-            )
-          )
-          .limit(1);
-
-        const [insertedImports, insertedRequests] = yield* persistenceEffect(
-          () => database.batch([insertCandidate, insertRequest] as const)
-        );
-        const winningRows = yield* persistenceEffect(
-          () => selectWinningRequest
-        );
-
-        const [winningRow] = winningRows;
-        if (winningRow !== undefined) {
-          const winningRequest = yield* decodeStoredImportRequest(winningRow);
-          if (
-            winningRequest.requestFingerprint !== command.requestFingerprint
-          ) {
-            return yield* Effect.fail(idempotencyConflict());
-          }
-          const winningImport = winningRequest.import;
-          if (
-            winningImport.compatibilityFingerprint !==
-            command.candidate.compatibilityFingerprint
-          ) {
-            return yield* Effect.fail(incompatibleDuplicate());
-          }
-
-          const insertedImport = insertedImports.some(
-            ({ id }) => id === winningImport.view.id
-          );
-          let disposition: ImportDisposition = "idempotency_replay";
-          if (insertedImport) {
-            disposition = "created";
-          } else if (insertedRequests.length > 0) {
-            disposition = "canonical_duplicate";
-          }
-          return {
-            disposition,
-            import: winningImport,
-          };
-        }
-
-        const canonicalRows = yield* persistenceEffect(() => selectCanonical);
-        const [canonicalRow] = canonicalRows;
-        if (canonicalRow !== undefined) {
-          const canonicalImport = yield* decodeStoredImport(canonicalRow);
-          if (
-            canonicalImport.compatibilityFingerprint !==
-            command.candidate.compatibilityFingerprint
-          ) {
-            return yield* Effect.fail(incompatibleDuplicate());
-          }
-        }
-        return yield* Effect.fail(importPersistenceUnavailable());
-      }).pipe(
-        Effect.retry({
-          times: 4,
-          while: (error) => error._tag === "ImportPersistenceUnavailable",
-        })
-      ),
     beginAcquisitionAttempt: (id) =>
       Effect.gen(function* beginAcquisitionAttempt() {
         const allocated = yield* persistenceEffect(
@@ -2198,12 +1844,12 @@ export const makeD1ImportRepository = (
                SET acquisition_generation = acquisition_generation + 1
                WHERE id = ? AND status = 'acquiring'
                  AND acquisition_generation < 9007199254740991
-               RETURNING acquisition_generation, canonical_source_id`
+               RETURNING acquisition_generation, resolved_canonical_source_id`
               )
               .bind(id)
               .first() as PromiseLike<{
               readonly acquisition_generation: number;
-              readonly canonical_source_id: string;
+              readonly resolved_canonical_source_id: string;
             } | null>
         );
         if (allocated === null) {
@@ -2214,7 +1860,7 @@ export const makeD1ImportRepository = (
           catch: importPersistenceCorrupt,
           try: () => ({
             canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)(
-              allocated.canonical_source_id
+              allocated.resolved_canonical_source_id
             ),
             generation: Schema.decodeUnknownSync(AcquisitionGenerationSchema)(
               allocated.acquisition_generation
@@ -2222,90 +1868,7 @@ export const makeD1ImportRepository = (
           }),
         });
       }),
-    findByCanonicalIdentity: (identity) =>
-      Effect.gen(function* findByCanonicalIdentity() {
-        const rows = yield* persistenceEffect(() =>
-          database
-            .select(importSelection)
-            .from(recipeImports)
-            .leftJoin(
-              importVisualEvidence,
-              and(
-                eq(importVisualEvidence.importId, recipeImports.id),
-                eq(
-                  importVisualEvidence.acquisitionGeneration,
-                  recipeImports.acquisitionGeneration
-                )
-              )
-            )
-            .leftJoin(
-              importRecipeExtractions,
-              and(
-                eq(importRecipeExtractions.importId, recipeImports.id),
-                eq(
-                  importRecipeExtractions.acquisitionGeneration,
-                  recipeImports.acquisitionGeneration
-                ),
-                eq(importRecipeExtractions.isCurrent, 1)
-              )
-            )
-            .where(
-              and(
-                eq(recipeImports.sourceKind, identity.kind),
-                eq(recipeImports.canonicalSourceId, identity.canonicalId)
-              )
-            )
-            .limit(1)
-        );
-        return rows[0] === undefined
-          ? Option.none()
-          : Option.some(yield* decodeStoredImport(rows[0]));
-      }),
     findById,
-    findRequest: (idempotencyKeyHash) =>
-      Effect.gen(function* findRequest() {
-        const rows = yield* persistenceEffect(() =>
-          database
-            .select({
-              ...importSelection,
-              requestFingerprint: importRequests.requestFingerprint,
-              sourceLocatorHash: importRequests.sourceLocatorHash,
-            })
-            .from(importRequests)
-            .innerJoin(
-              recipeImports,
-              eq(importRequests.importId, recipeImports.id)
-            )
-            .leftJoin(
-              importVisualEvidence,
-              and(
-                eq(importVisualEvidence.importId, recipeImports.id),
-                eq(
-                  importVisualEvidence.acquisitionGeneration,
-                  recipeImports.acquisitionGeneration
-                )
-              )
-            )
-            .leftJoin(
-              importRecipeExtractions,
-              and(
-                eq(importRecipeExtractions.importId, recipeImports.id),
-                eq(
-                  importRecipeExtractions.acquisitionGeneration,
-                  recipeImports.acquisitionGeneration
-                ),
-                eq(importRecipeExtractions.isCurrent, 1)
-              )
-            )
-            .where(eq(importRequests.idempotencyKeyHash, idempotencyKeyHash))
-            .limit(1)
-        );
-        const [row] = rows;
-        if (row === undefined) {
-          return Option.none();
-        }
-        return Option.some(yield* decodeStoredImportRequest(row));
-      }),
     isAudioExtractionRecoveryEligible: (id) =>
       Effect.map(
         persistenceEffect(
@@ -2349,7 +1912,7 @@ export const makeD1ImportRepository = (
                WHERE id = ?
                  AND NOT EXISTS (
                    SELECT 1
-                     FROM import_recipe_terminal_projections AS projection
+                     FROM import_recipe_executor_terminal_checkpoints AS projection
                     WHERE projection.import_id = recipe_imports.id
                       AND projection.acquisition_generation =
                           recipe_imports.acquisition_generation

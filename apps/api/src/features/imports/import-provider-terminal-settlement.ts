@@ -1128,19 +1128,14 @@ const repairRecipeTerminalCheckpoint = (
            )
            AND NOT EXISTS (
              SELECT 1
-               FROM import_recipe_terminal_projections AS projection
+               FROM import_recipe_executor_terminal_checkpoints AS projection
               WHERE projection.import_id = extraction.import_id
                 AND projection.acquisition_generation =
                       extraction.acquisition_generation
                 AND (
                   projection.ownership_id <>
                         extraction.extraction_fingerprint
-                  OR projection.projected_at <> extraction.completed_at
-                  OR projection.status <> 'failed'
-                  OR projection.status_code <>
-                        'recipe_extraction_failed'
-                  OR projection.recovery_action <>
-                        'operator_reconcile'
+                  OR projection.checkpointed_at <> extraction.completed_at
                   OR projection.evidence_references_json <>
                         parent.evidence_references_json
                 )
@@ -1193,15 +1188,12 @@ const readRecipeTerminalCheckpointRepair = (
             AND extraction.failure_code = 'provider_error'
             AND extraction.completed_at = checkpoint.completed_at
             AND checkpoint.created_at = extraction.completed_at
-           JOIN import_recipe_terminal_projections AS projection
+           JOIN import_recipe_executor_terminal_checkpoints AS projection
              ON projection.import_id = checkpoint.import_id
             AND projection.acquisition_generation =
                   checkpoint.acquisition_generation
             AND projection.ownership_id = checkpoint.ownership_id
-            AND projection.projected_at = checkpoint.completed_at
-            AND projection.status = 'failed'
-            AND projection.status_code = 'recipe_extraction_failed'
-            AND projection.recovery_action = 'operator_reconcile'
+            AND projection.checkpointed_at = checkpoint.completed_at
            JOIN recipe_imports AS parent
              ON parent.id = extraction.import_id
             AND parent.acquisition_generation =
@@ -1293,7 +1285,7 @@ const readRecipeTerminalCheckpointRepair = (
              ) = 1
              AND (
                SELECT COUNT(*)
-                 FROM import_recipe_terminal_projections AS sibling
+                 FROM import_recipe_executor_terminal_checkpoints AS sibling
                 WHERE sibling.import_id = checkpoint.import_id
                   AND sibling.acquisition_generation =
                         checkpoint.acquisition_generation
@@ -1361,12 +1353,12 @@ const readRecipeSettled = (
             AND extraction.state = 'failed'
             AND extraction.failure_code = 'provider_error'
             AND extraction.completed_at = checkpoint.completed_at
-           JOIN import_recipe_terminal_projections AS projection
+           JOIN import_recipe_executor_terminal_checkpoints AS projection
              ON projection.import_id = checkpoint.import_id
             AND projection.acquisition_generation =
                   checkpoint.acquisition_generation
             AND projection.ownership_id = checkpoint.ownership_id
-            AND projection.projected_at = checkpoint.completed_at
+            AND projection.checkpointed_at = checkpoint.completed_at
            JOIN recipe_imports AS parent
              ON parent.id = checkpoint.import_id
             AND parent.acquisition_generation =
@@ -1389,9 +1381,6 @@ const readRecipeSettled = (
                    extraction.evidence_fingerprint
              AND dispatch.actual_cost_micro_usd IS NULL
              AND dispatch.maximum_cost_micro_usd = 100000
-             AND projection.status = 'failed'
-             AND projection.status_code = 'recipe_extraction_failed'
-             AND projection.recovery_action = 'operator_reconcile'
              AND (
                (
                  parent.status = 'queued'
@@ -1487,12 +1476,12 @@ const settleRecipeBatch = (
             AND extraction.state = 'failed'
             AND extraction.failure_code = 'provider_error'
             AND extraction.completed_at = checkpoint.completed_at
-           JOIN import_recipe_terminal_projections AS projection
+           JOIN import_recipe_executor_terminal_checkpoints AS projection
              ON projection.import_id = checkpoint.import_id
             AND projection.acquisition_generation =
                   checkpoint.acquisition_generation
             AND projection.ownership_id = checkpoint.ownership_id
-            AND projection.projected_at = checkpoint.completed_at
+            AND projection.checkpointed_at = checkpoint.completed_at
            JOIN recipe_imports AS parent
              ON parent.id = checkpoint.import_id
             AND parent.acquisition_generation =
@@ -1515,9 +1504,6 @@ const settleRecipeBatch = (
                    extraction.evidence_fingerprint
              AND dispatch.actual_cost_micro_usd IS NULL
              AND dispatch.maximum_cost_micro_usd = 100000
-             AND projection.status = 'failed'
-             AND projection.status_code = 'recipe_extraction_failed'
-             AND projection.recovery_action = 'operator_reconcile'
              AND (
                (
                  parent.status = 'queued'
@@ -1579,12 +1565,12 @@ const settleRecipeBatch = (
                    AND extraction.state = 'failed'
                    AND extraction.failure_code = 'provider_error'
                    AND extraction.completed_at = checkpoint.completed_at
-                  JOIN import_recipe_terminal_projections AS projection
+           JOIN import_recipe_executor_terminal_checkpoints AS projection
                     ON projection.import_id = checkpoint.import_id
                    AND projection.acquisition_generation =
                          checkpoint.acquisition_generation
                    AND projection.ownership_id = checkpoint.ownership_id
-                   AND projection.projected_at = checkpoint.completed_at
+                   AND projection.checkpointed_at = checkpoint.completed_at
                   JOIN recipe_imports AS parent
                     ON parent.id = checkpoint.import_id
                    AND parent.acquisition_generation =
@@ -1605,10 +1591,6 @@ const settleRecipeBatch = (
                    AND audit.actual_cost_was_unknown = 1
                    AND audit.authority = 'authenticated_operator'
                    AND audit.conservative_charge_micro_usd = 100000
-                   AND projection.status = 'failed'
-                   AND projection.status_code =
-                         'recipe_extraction_failed'
-                   AND projection.recovery_action = 'operator_reconcile'
                    AND (
                      (
                        parent.status = 'queued'
@@ -1680,14 +1662,11 @@ const recipeRecoveryUnknownAuthority = `
    AND current_extraction.state = 'failed'
    AND current_extraction.failure_code = 'provider_error'
    AND current_extraction.is_current = 0
-  JOIN import_recipe_terminal_projections AS projection
+  JOIN import_recipe_executor_terminal_checkpoints AS projection
     ON projection.import_id = recovery.import_id
    AND projection.acquisition_generation = recovery.acquisition_generation
    AND projection.ownership_id = recovery.root_extraction_fingerprint
-   AND projection.projected_at = recovery.terminal_checkpoint_completed_at
-   AND projection.status = 'failed'
-   AND projection.status_code = 'recipe_extraction_failed'
-   AND projection.recovery_action = 'operator_reconcile'
+   AND projection.checkpointed_at = recovery.terminal_checkpoint_completed_at
   JOIN recipe_imports AS parent
     ON parent.id = recovery.import_id
    AND parent.acquisition_generation = recovery.acquisition_generation
@@ -1785,17 +1764,14 @@ const readRecipeRecoverySettled = (
             AND current_extraction.state = 'failed'
             AND current_extraction.failure_code = 'provider_error'
             AND current_extraction.is_current = 0
-           JOIN import_recipe_terminal_projections AS projection
+           JOIN import_recipe_executor_terminal_checkpoints AS projection
              ON projection.import_id = recovery.import_id
             AND projection.acquisition_generation =
                   recovery.acquisition_generation
             AND projection.ownership_id =
                   recovery.root_extraction_fingerprint
-            AND projection.projected_at =
+            AND projection.checkpointed_at =
                   recovery.terminal_checkpoint_completed_at
-            AND projection.status = 'failed'
-            AND projection.status_code = 'recipe_extraction_failed'
-            AND projection.recovery_action = 'operator_reconcile'
            JOIN recipe_imports AS parent
              ON parent.id = recovery.import_id
             AND parent.acquisition_generation =
@@ -1965,18 +1941,14 @@ const settleRecipeRecoveryBatch = (
                    AND current_extraction.state = 'failed'
                    AND current_extraction.failure_code = 'provider_error'
                    AND current_extraction.is_current = 0
-                  JOIN import_recipe_terminal_projections AS projection
+                  JOIN import_recipe_executor_terminal_checkpoints AS projection
                     ON projection.import_id = recovery.import_id
                    AND projection.acquisition_generation =
                          recovery.acquisition_generation
                    AND projection.ownership_id =
                          recovery.root_extraction_fingerprint
-                   AND projection.projected_at =
+                   AND projection.checkpointed_at =
                          recovery.terminal_checkpoint_completed_at
-                   AND projection.status = 'failed'
-                   AND projection.status_code =
-                         'recipe_extraction_failed'
-                   AND projection.recovery_action = 'operator_reconcile'
                   JOIN recipe_imports AS parent
                     ON parent.id = recovery.import_id
                    AND parent.acquisition_generation =

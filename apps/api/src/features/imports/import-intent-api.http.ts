@@ -526,19 +526,26 @@ export const makeRecipeImportHttpApiLayer = () =>
     Layer.provide(RecipeImportHttpPlatformServices)
   );
 
-/** Compose the typed API beside legacy routes while retaining their fallback. */
 // eslint-disable-next-line typescript/no-explicit-any -- Effect's heterogeneous Route collection uses unconstrained error and context parameters.
 type AnyHttpRoute = HttpRouter.Route<any, any>;
 
-export const makeMealPlannerWorkerHttpLayer = <
-  const FallbackRoutes extends readonly AnyHttpRoute[],
-  const LegacyRoutes extends readonly AnyHttpRoute[],
+const notFound = HttpServerResponse.json(
+  { error: { code: "not_found", message: "The route was not found." } },
+  { status: 404 }
+).pipe(Effect.orDie);
+
+const RecipeImportNotFoundRoutes = [
+  HttpRouter.route("*", "*", notFound),
+] as const;
+
+/** Mount the canonical typed API beside explicitly named operational routes. */
+export const makeRecipeImportWorkerHttpLayer = <
+  const OperationalRoutes extends readonly AnyHttpRoute[],
 >(options: {
-  readonly fallbackRoutes: FallbackRoutes;
-  readonly legacyRoutes: LegacyRoutes;
+  readonly operationalRoutes: OperationalRoutes;
 }) =>
   Layer.mergeAll(
-    HttpRouter.addAll(options.legacyRoutes),
+    HttpRouter.addAll(options.operationalRoutes),
     makeRecipeImportHttpApiLayer(),
-    HttpRouter.addAll(options.fallbackRoutes)
+    HttpRouter.addAll(RecipeImportNotFoundRoutes)
   );

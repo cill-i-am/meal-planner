@@ -65,11 +65,6 @@ export type TikTokSourceDescriptor = typeof TikTokSourceDescriptor.Type;
 export const SourceDescriptor = Schema.Union([TikTokSourceDescriptor]);
 export type SourceDescriptor = typeof SourceDescriptor.Type;
 
-export const CreateImportRequest = Schema.Struct({
-  source: SourceDescriptor,
-});
-export type CreateImportRequest = typeof CreateImportRequest.Type;
-
 export const ImportSourceView = Schema.Struct({
   canonicalId: Schema.optionalKey(SourceCanonicalId),
   kind: Schema.Literal("tiktok"),
@@ -318,30 +313,3 @@ export const ImportView = Schema.Union([
   CarouselRecipeDraftImportView,
 ]);
 export type ImportView = typeof ImportView.Type;
-
-export const ImportDisposition = Schema.Literals([
-  "created",
-  "idempotency_replay",
-  "canonical_duplicate",
-]);
-export type ImportDisposition = typeof ImportDisposition.Type;
-
-export const CreateImportResponse = Schema.Struct({
-  disposition: ImportDisposition,
-  import: ImportView,
-});
-export type CreateImportResponse = typeof CreateImportResponse.Type;
-
-export const GetImportResponse = Schema.Struct({
-  import: ImportView,
-});
-export type GetImportResponse = typeof GetImportResponse.Type;
-
-export const ImportProblem = Schema.Struct({
-  error: Schema.Struct({
-    code: TrimmedNonEmptyString,
-    message: TrimmedNonEmptyString,
-    recovery: Schema.optionalKey(TrimmedNonEmptyString),
-  }),
-});
-export type ImportProblem = typeof ImportProblem.Type;

@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-TanStack Start with React, TanStack Query, TanStack Form, Effect Schema, and app-local shadcn primitives. This proof is localhost-only and unsupported for deployment.
+TanStack Start with React, TanStack Query, TanStack Form, Effect Schema, app-local shadcn primitives, and the generated `@meal-planner/recipe-import-api` Effect HttpApi client.
 
 ## Users
 
@@ -16,23 +16,23 @@ A household meal planner importing one public TikTok recipe link at a time while
 
 ## Product Purpose
 
-Prove that one public recipe link can become a truthful processing flow, a reviewable draft, and exactly one approved Recipe Bank result without exposing provider credentials to the browser.
+Prove that one public recipe link can become a truthful canonical import intent, a reviewable generated action, and one saved Recipe without exposing an API credential or provider data to the browser.
 
 ## Operating Context
 
-The user pastes a link, watches plain-language processing stages, checks the extracted recipe, and explicitly approves it before anything appears in Recipe Bank.
+The user pastes a link, sees the admitted intent immediately, watches its plain-language processing stages, checks the generated recipe review, edits its name when the canonical action permits it, and explicitly confirms it before the saved Recipe is shown.
 
 ## Capabilities and Constraints
 
 - One TikTok HTTPS URL per attempt.
-- A deterministic localhost fake API stands in for the production-shaped import endpoints.
-- API credentials and the API base URL remain server-only; the base URL must be loopback.
-- No live TikTok, AI, Cloudflare, Tesco, basket, checkout, payment, publication, or external-message effects.
-- No recipe corrections, recipe-bank browser, batch flow, auth platform, realtime behavior, deployment support, or backend changes.
+- The canonical generated Effect HttpApi client is composed server-side; runtime API base URL and bearer credential are read only by server functions and the credential remains redacted.
+- The browser uses server functions and canonical schemas only. It sends no upstream route/header/credential and contains no handwritten HTTP client or copied API DTOs.
+- No direct TikTok, AI, Cloudflare, Tesco, basket, checkout, payment, publication, or external-message effects occur in this web workspace.
+- No recipe corrections/editor, saved-recipe browser, batch flow, auth platform, realtime behavior, end-user deployment support, or backend changes are included.
 
 ## Evidence on Hand
 
-This is a provider-free proof against a deterministic local HTTP service. It does not prove live media acquisition, transcription, extraction, production routing, or production access control.
+This is a provider-free web proof at the API seam. It proves canonical intent/action/recipe handling and a server-only generated-client boundary; it does not prove live media acquisition, transcription, extraction quality, production access control, or end-user deployment readiness.
 
 ## Product Principles
 

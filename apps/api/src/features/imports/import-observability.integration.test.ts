@@ -9,6 +9,7 @@ import {
   makePilotProviderBudgetRuntime,
 } from "../pilots/pilot-provider-budget.js";
 import type { PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.js";
+import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
   ImportCorrelationId,
@@ -19,7 +20,6 @@ import {
 } from "./import-observability.js";
 import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
-import { LegacyImportWorkflowExecutionGeneration } from "./import-workflow-input.js";
 import type { ImportId as ImportIdType } from "./import.contracts.js";
 import { ImportId } from "./import.contracts.js";
 import { makeImportWorkflowStarter } from "./import.workflow.js";
@@ -33,6 +33,9 @@ const reconciliationCorrelationId = Schema.decodeUnknownSync(
 const importId = Schema.decodeUnknownSync(ImportId)(
   "00000000-0000-4000-8000-000000000184"
 );
+const executionGeneration = Schema.decodeUnknownSync(
+  ImportIntentExecutionGeneration
+)(1);
 const now = Schema.decodeUnknownSync(PilotBudgetTimestamp)(
   "2026-07-27T20:00:00.000Z"
 );
@@ -194,12 +197,12 @@ describe("opaque import correlation continuity", () => {
         expect(trace).toEqual({ correlationId });
         yield* createdStarter.ensureStarted(
           importId,
-          LegacyImportWorkflowExecutionGeneration,
+          executionGeneration,
           trace
         );
         const input = Schema.decodeUnknownSync(
           Schema.Struct({
-            executionGeneration: Schema.Literal(0),
+            executionGeneration: Schema.Literal(1),
             importId: ImportId,
             trace: Schema.Struct({ correlationId: ImportCorrelationId }),
           })
@@ -303,7 +306,7 @@ describe("opaque import correlation continuity", () => {
         yield* observeImportQueueReceipt(() => reconciliationCorrelationId);
         yield* reconciliationStarter.ensureStarted(
           importId,
-          LegacyImportWorkflowExecutionGeneration,
+          executionGeneration,
           { correlationId: reconciliationCorrelationId }
         );
       }).pipe(Effect.provideService(ImportObservabilityTraceStore, traceStore))

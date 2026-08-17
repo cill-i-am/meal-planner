@@ -1,71 +1,60 @@
-# Recipe import intent authority and lifecycle
+# Recipe import intent architecture
 
-## Decision
+## Authority
 
-`recipe_imports` is the sole durable `RecipeImportIntent` aggregate. Its
-existing repository and `ImportService` remain the only admission and current
-lifecycle owner; there is no parallel intent table, mirror, synchronizer, or
-read-time projector. The physical table name remains unchanged for a safe
-in-place migration.
+`recipe_imports` is the durable `RecipeImportIntent` aggregate and the only
+authority for the user-visible import lifecycle. D1 owns intent state, history,
+review state, recipes, execution fencing, and recovery ledgers. Cloudflare
+Workflow executes work but may advance an import only through guarded intent
+commands.
 
-D1 is authoritative. Cloudflare Workflow is an executor that must act through
-one guarded aggregate-transition capability and a fenced execution generation.
-The existing review ledger and approved recipe bank remain authoritative
-children. Workflow state, review data, and recipe data are not copied into a
-second public model.
+`import_recipe_executor_terminal_checkpoints` is a separate immutable
+operational fact. It records the import, acquisition generation, ownership,
+evidence references, and checkpoint time needed for replay and recovery. It
+does not store or project a second public status. Provider terminal settlement
+records that checkpoint and advances the intent through the canonical reducer
+and public history in one atomic operation.
 
-The retained `import_recipe_terminal_projections` table is compatibility-private
-in this slice. Migration precedence moves any later current approved review or
-current `needs_review` state into `recipe_imports`; an obsolete terminal
-projection cannot override it. Removing the private table is a bounded follow-up
-after every legacy settlement path writes the aggregate directly.
+## Admission, ownership, and duplicate handling
 
-## Ownership and admission
+Admission creates the intent immediately, before source resolution. One D1
+transaction inserts:
 
-A stable opaque household scope is the durable owner. Bearer credentials remain
-redacted and are never persisted. A resource in another household is
-indistinguishable from a missing resource for reads and mutations, and cannot
-participate in deduplication.
+- the unresolved `processing` / `resolving_source` intent;
+- its household-scoped idempotency record; and
+- version 1 `intent_admitted` history.
 
-Admission is immediate. It atomically inserts an unresolved intent as
-`processing` / `resolving_source`, its household-scoped idempotency record, and
-version 1 `intent_admitted` history. An exact `(household, Idempotency-Key)`
-replay returns that original creation result and location. Reusing the key for
-a different canonical public request is a conflict. Compatibility or executor
-version changes are private metadata and do not alter that request fingerprint.
+The caller therefore receives an addressable intent as soon as the request is
+accepted. An exact `(household, Idempotency-Key)` replay returns that result.
+Reusing a key for a different canonical request is a conflict.
 
-The submitted URL is private execution input. Before resolution the public
-source says only that TikTok resolution is pending. It must not appear in
-public errors, logs, traces, or history.
+The configured private-auth principal provides a stable opaque household scope
+and actor identity. Bearer values are redacted and never persisted. A resource
+owned by another household is indistinguishable from a missing resource for
+reads and mutations, and cannot participate in deduplication.
 
-## Source resolution and canonical duplicates
+Source resolution is asynchronous. A successful resolver stores a sanitized
+canonical HTTPS source and media kind, advances the intent to
+`acquiring_media`, claims the next execution generation, appends
+`source_resolved`, and then idempotently ensures the deterministic Workflow
+instance. A start failure leaves the durable state available to the bounded
+stalled-start reconciler.
 
-Resolution is asynchronous. A successful resolver atomically stores a
-sanitized canonical HTTPS URL and media kind, replaces the private provisional
-canonical placeholder, advances the intent to `acquiring_media`, increments its
-public version, claims the next execution generation, and appends
-`source_resolved` history. Only after that durable owner transition does the
-application idempotently ensure the deterministic Workflow instance is
-started. An exact source-resolution replay ensures that same generation again;
-it does not create a second executor. A start failure is typed and leaves the
-truthful `acquiring_media` snapshot available for recovery.
+Within one household, at most one `processing`, `requires_action`, or
+`succeeded` intent owns a resolved canonical source. Concurrent resolution has
+one database winner. Each loser becomes a terminal `redirected` intent pointing
+to the same-household owner and never starts an executor. Cross-household
+matches do not redirect or reveal an identifier. Failed and cancelled intents
+release canonical-source ownership; their original idempotency keys still
+replay their original results.
 
-Within one household, at most one intent may own a resolved canonical source
-while its status is `processing`, `requires_action`, or `succeeded`. The D1
-partial unique index is the race boundary. Concurrent resolvers therefore
-produce one live owner; each loser becomes terminal `redirected` to that
-same-household owner and appends `intent_redirected` history. A redirected intent
-has no executor, active action, or recipe. Its reads remain stable and every
-mutation returns the safe canonical intent link with `intent_redirected`.
+The submitted URL is private execution input. Before resolution, public state
+says only that source resolution is pending. Raw and redirect URLs never enter
+public errors, history, logs, or traces.
 
-`failed` and `cancelled` rows do not reserve the canonical source. A new
-idempotency key can create and resolve a fresh intent after either state. The
-original key always replays its original intent. Cross-household matches never
-redirect or reveal an identifier.
+## Public lifecycle
 
-## Public lifecycle and versions
-
-The public statuses are exactly:
+Public statuses are exactly:
 
 - `processing`
 - `requires_action`
@@ -74,133 +63,111 @@ The public statuses are exactly:
 - `cancelled`
 - `redirected`
 
-Processing stages are monotonic and exactly `resolving_source`,
+Processing stages progress monotonically through `resolving_source`,
 `acquiring_media`, `analyzing_evidence`, `extracting_recipe`,
 `grounding_recipe`, `preparing_review`, and `finalizing_recipe`.
-`resolving_source` requires a pending source; every later stage requires a
-resolved safe source and preserves the stage's original `startedAt`.
-`analyzing_evidence` exposes independent `speech` and `visuals` progress. Video
-completes both components in either order; carousel skips speech and completes
-visuals. Extraction cannot start until both components are terminal.
+`analyzing_evidence` exposes independent speech and visual progress. Video
+completes both; carousel skips speech and completes visuals.
 
-Safe activity is `working` or `retrying`, with an optional `nextAttemptAt` only
-when the executor has a truthful instant. Heartbeats, attempt counters, and
-private checkpoints do not change the public version. Meaningful stage,
-component, activity, action, recovery, or terminal changes increment it exactly
-once and append exactly one history event.
+Meaningful stage, component, action, recovery, or terminal changes increment
+the intent version exactly once and append exactly one public history event.
+Heartbeats, attempts, and private checkpoints do not change the public version.
+Safe activity is `working` or `retrying`; `nextAttemptAt` is present only when
+the executor has a truthful retry instant.
 
-Every executor command carries the exact execution generation and a stable
-mutation identity plus canonical command digest. An exact replay preserves the
-original version, timestamps, and history; reusing an identity with a changed
-digest conflicts. Older generations and superseded milestones cannot regress
-public state, and a terminal or redirected intent cannot be revived. Legacy
-persisted Workflow histories may decode a missing generation as generation
-zero, but every current starter call supplies its generation explicitly.
+Every executor command carries an explicit branded execution generation,
+deterministic correlation identity, stable mutation identity, and command
+digest. Missing or invalid workflow input is rejected before work begins.
+Exact replays preserve timestamps and versions. Stale generations and
+superseded milestones cannot call providers or regress state. Terminal intents
+cannot be revived.
 
-Intent and action versions are separate optimistic-concurrency domains. Each
-future mutation accepts only its relevant explicit expected version plus an
-idempotency key. At most one action is active. The action owns its complete safe
-review, editable fields, answers, and action version; the intent exposes only
-the active action identity, type, and link. Completed actions remain readable
-and immutable.
+Three generation values protect different boundaries:
 
-Expected executor failures map exhaustively to stable, provider-neutral public
-codes, messages, and the recovery choice `create_new_intent`,
-`contact_support`, or `none`. Raw exceptions, provider names or codes, URLs,
-R2 keys, transcripts, and evidence never enter public state, history, errors,
-or traces. `failed` never resumes.
+- `intentVersion` provides public optimistic concurrency;
+- `executionGeneration` fences Workflow execution; and
+- `acquisitionGeneration` fences provider ownership and evidence.
+
+Expected executor failures map exhaustively to stable provider-neutral codes,
+messages, retryability, and recovery choices. Raw exceptions, provider codes,
+storage keys, transcripts, evidence, and source URLs remain private.
 
 Cancellation is legal only from `processing` or `requires_action` and requires
-the expected intent version plus a replay-stable mutation identity. D1 commits
-the terminal snapshot and history before the application best-effort terminates
-the Workflow instance. Termination failure cannot undo cancellation. Later
-executor commands are terminal-fenced, and generation-positive Workflow runs
-recheck the intent before constructing or executing acquisition/provider work.
-Cancellation does not reject or otherwise mutate the private review ledger. A
-concurrent correction or confirmation races cancellation through the same
-guarded intent row, so exactly one command wins.
+the expected intent version plus an idempotency key. D1 commits cancellation and
+history before best-effort Workflow termination. The terminal fence prevents
+later executor work even when termination fails.
 
-## Review actions and recipe results
+## Review actions and recipes
 
-The current `needs_review` row remains the only review authority. A public
-review action is a strict safe projection of that row: it contains only the
-editable recipe values, planning tags, blockers, versions, and stable public
-identifiers. Evidence references, source URLs, extraction fingerprints,
-provider metadata, actors, mutation provenance, and review-ledger internals
-remain private.
+At most one review action is active. The action contains its safe editable
+recipe projection, questions, answers, planning tags, blockers, and independent
+action version. Evidence, extraction fingerprints, provider metadata, actors,
+and mutation provenance are never exposed.
 
-Correction and confirmation are separate idempotent mutations. Both compare
-the active action version and atomically advance the intent and review ledgers
-through one composite D1 batch. The final review-mutation receipt is inserted
-last; database triggers abort the whole batch unless the root, history, review,
-correction or approval details, provenance, and result shape are complete. An
-exact replay preserves the original response and timestamps, a changed command
-under the same idempotency key conflicts, and a distinct stale command loses its
-version race without leaving partial state.
+Answer and confirmation commands are separately idempotent. Each compares the
+active action version and commits the intent, review data, history, provenance,
+and a complete non-null mutation receipt atomically. Exact replays return the
+original result; changed commands under the same key conflict; stale commands
+leave no partial state.
 
-A correction advances exactly one intent version and one review/action version.
-Confirmation commits `processing` / `finalizing_recipe`, review approval, then
-`succeeded` in that order as one atomic unit. There is no cancellable or visible
-gap between approval and success. The succeeded sub-transition uses a derived
-mutation identity so both ordered history events remain independently unique.
+Confirmation commits `processing` / `finalizing_recipe`, approval, and
+`succeeded` in one transaction. The succeeded intent references its recipe by
+the branded import identifier. `GET /v1/recipes/:recipeId` household-scopes
+through that intent and projects the approved review.
 
-The recipe result is not a new table or copied document. `RecipeId` is the
-intent/import UUID, and the succeeded intent stores only that branded reference.
-`GET /v1/recipes/:recipeId` household-scopes through the succeeded intent and
-projects the existing approved review. A missing or malformed owned projection
-is persistence corruption and maps to a safe internal error; another
-household sees the same not-found response as an unknown recipe.
+## HTTP boundary
 
-## History and execution boundaries
+`@meal-planner/recipe-import-api` owns the shared Effect Schema, Effect HttpApi,
+generated client, OpenAPI metadata, and safe Problem Details contract. Its
+authenticated surface is:
 
-`recipe_import_intent_history` is the one append-only public history table. It
-records meaningful user-visible facts, not current state. Its stable event
-identity and cursor is `(intent_id, intent_version)`. Each event includes the
-immutable before/after public status and stage, actor category, an optional
-hashed actor identity, and optional stable mutation identity plus command digest.
-Mutation identity is unique per intent when present. Heartbeats, raw failures,
-provider details, evidence keys, attempts, generations, and transcripts are not
-public history.
+- create and read a recipe-import intent;
+- read its timeline;
+- read, answer, and confirm its active action;
+- cancel an active intent; and
+- read the recipe produced by a succeeded intent.
 
-D1 triggers make every post-migration aggregate creation and meaningful public
-version advance atomic with exactly one matching history event. Existing rows
-receive one truthful `migration_snapshot`, not fabricated stages. Timeline
-reads are a pure household-scoped projection of this table, ordered by intent
-version. Wrong-household and unknown intents are indistinguishable. The
-projection selects only the public event fields and never reads operational
-events or checkpoint ledgers; it omits mutation provenance, actor hashes, raw
-URLs, provider data, storage keys, transcripts, and evidence.
+Authentication establishes the typed household principal before request-body
+decoding. Schema failures and typed domain failures map exhaustively to safe
+Problem Details. The production Worker composes this API with explicitly named
+health, batch, operator-carousel, and provider-settlement routes, followed by
+one final 404 handler.
 
-Generation-positive Workflow executions recheck the exact intent and generation
-before their first acquisition/provider effect. A bounded internal recovery
-capability can list old `processing` / `acquiring_media` owners in deterministic
-order, recheck each fence, and idempotently ensure its exact Workflow instance.
-This closes the claim-before-start crash window without adding a lease,
-heartbeat, lifecycle version, or second orchestrator. The capability is
-deliberately unscheduled and unmounted in this slice: there is no cron, queue,
-route, or deployment wiring.
+The TanStack Start application calls the generated client only from server
+functions through an injected Effect Layer. TanStack Query owns browser
+reactivity and polling; TanStack Form owns mutations. The browser never receives
+the private bearer token or chooses an upstream URL, method, path, or header.
 
-## API and compatibility boundary
+## Persistence and recovery
 
-`@meal-planner/recipe-import-api` owns only the shared Effect Schema, HttpApi,
-generated client, OpenAPI metadata, and safe Problem Details contract. The
-production Worker mounts the complete approved `/v1` intent, action, timeline,
-cancellation, confirmation, and recipe surface as one Effect HttpApi. Bearer
-authentication establishes a typed household principal before payload decoding;
-credentials remain redacted and are never persisted or logged. Contract decode
-failures and domain errors map exhaustively to safe typed Problem Details.
+The fresh D1 baseline creates only the canonical aggregate and its operational
+children: request idempotency, append-only public history, execution and
+provider checkpoints, recovery-attempt ledgers, evidence references, review
+records, receipts, and guards. Foreign keys, unique indexes, and immutable
+triggers are installed directly on an empty database.
 
-Legacy `/imports`, `/recipe-drafts`, and `/recipe-bank` routes remain temporary
-transport adapters for the current web proof of concept. Intent-managed writes
-delegate to the same atomic intent/review capabilities. Legacy reject and reopen
-operations are fenced with a safe conflict for intent-managed rows rather than
-creating a second lifecycle writer. Operator, batch, and provider callback
-routes remain private compatibility surfaces until their own replacements
-exist.
+`recipe_import_intent_history` records meaningful public facts with immutable
+identity `(intent_id, intent_version)`. Timeline reads are pure household-scoped
+projections and exclude mutation provenance, actor hashes, providers, storage
+keys, transcripts, and evidence.
 
-Uploads, generic source extension hooks, similarity matching, recipe forks,
-batch fields, frontend/TanStack Query adoption, legacy-route removal, recovery
-scheduling, provider operations, and cloud deployment are deferred. Durable
-intent/action/recipe metadata lives in D1; private evidence remains in
-short-retention R2. A future batch resource may group independently addressable
-intent IDs without changing the intent aggregate.
+The stalled-start reconciler scans only `processing` / `acquiring_media` owners,
+rechecks the exact execution fence, and idempotently ensures that Workflow
+generation. Post-acquisition journals and provider recovery ledgers retain the
+checkpoints required to continue safely after retries. Immutable terminal
+checkpoints make exact provider settlement replay a no-op while preserving
+owner, generation, evidence, and recovery ancestry.
+
+Private evidence is stored in short-retention R2. D1 stores durable control
+state and safe references, not provider payloads, media, credentials, or raw
+source material.
+
+## Proof boundary
+
+Contract tests cover the Effect schemas and generated client. Node tests cover
+pure reducers and services. Workerd tests exercise the real local D1 and R2
+bindings, migrations, constraints, races, receipts, household isolation, and
+mounted HTTP flow without calling external providers. Workflow tests prove
+generation fencing, checkpoints, retries, and recovery. Browser acceptance
+covers the responsive submit, processing, action, confirmation, success,
+failure, redirect, and cancellation states through canonical `/v1` requests.

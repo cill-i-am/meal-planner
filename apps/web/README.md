@@ -1,21 +1,21 @@
 # Recipe import web proof of concept
 
-This independent TanStack Start workspace proves one path only: submit one public TikTok HTTPS URL, poll truthful processing stages, review one projected draft, approve it, and show the one matching Recipe Bank result.
+This independent TanStack Start workspace proves one path only: submit one public TikTok HTTPS URL, render the canonical import intent immediately, poll truthful processing stages, edit the recipe name when the generated review action permits it, confirm it, and show the saved canonical Recipe.
 
 ## Run locally
 
-Use two processes from the repository root:
+Run the recipe-import API and this web workspace with its runtime configuration:
 
 ```sh
-pnpm --filter @meal-planner/web fake-api
-RECIPE_IMPORT_API_BASE_URL=http://127.0.0.1:4311 RECIPE_IMPORT_API_TOKEN=poc-local-bearer-token pnpm --filter @meal-planner/web dev
+RECIPE_IMPORT_API_BASE_URL=https://your-recipe-import-api.example \
+RECIPE_IMPORT_API_TOKEN=your-server-credential \
+pnpm --filter @meal-planner/web dev
 ```
 
-The API token is read only inside TanStack Start server-function handlers. The BFF accepts no upstream URL, method, path, header, or token from the browser, and the API base rejects anything except loopback HTTP.
+The app composes the generated `RecipeImportApiClient` from `@meal-planner/recipe-import-api` inside a server-only module. TanStack Start server functions read the API base URL and bearer credential at request time, retain the credential as `Redacted`, and return only schema-encoded canonical data. The browser supplies neither an upstream URL/method/path/header nor a credential, and it contains no handwritten `fetch` client or copied API DTOs.
 
 ## Deliberate limitations
 
-- Current-main Node development does not mount the production import/review routes, so this proof uses a separate deterministic localhost HTTP fake with production-shaped endpoints.
-- Fresh production reviews currently have no tags-only approval path. The fake returns a review with valid planning tags so the existing approval shape can succeed; this slice does not change the backend.
-- This app is unsupported for deployment until a real user access/authentication boundary exists. The fixed local bearer token is not an end-user authorization design.
-- There are no live TikTok, AI, Cloudflare, Tesco, basket, checkout, payment, publish, or external-message effects.
+- This is a single-intent proof: it does not provide a saved-recipe browser/listing, batch/run flow, correction editor, authentication UI, realtime transport, or deployment-ready end-user authorization.
+- The current UI presents the generated review and offers one name editor only when the canonical action marks `name` editable. It submits that typed answer with the current action version; no arbitrary correction editor is implied.
+- The web workspace makes no direct provider calls. Any TikTok/media/AI/provider work remains behind the canonical API, and this POC has no Tesco, basket, checkout, payment, publish, or external-message effects.

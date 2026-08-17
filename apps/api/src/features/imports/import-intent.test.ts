@@ -5,7 +5,7 @@ import {
   ProcessingRecipeImportIntent,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
-import { Cause, Effect, Exit, Layer, Option, Redacted, Schema } from "effect";
+import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
@@ -13,16 +13,19 @@ import {
   HouseholdScopeId,
   ImportActorId,
   ImportIntentIdGenerator,
-  LegacyPrivateImportPrincipal,
   RecipeImportIntentIdempotencyConflict,
   makeImportIntentApplication,
 } from "./import-intent.js";
-import { makeImportAuthorizer } from "./import.auth.js";
 import type {
   AdmitImportIntentResult,
   ImportIntentRepositoryShape,
   StoredImportIntentRequest,
 } from "./import.repository.js";
+import {
+  TestImportPrincipal,
+  TestImportTrace,
+  makeTestImportAuthorizer,
+} from "./import.test-fixtures.js";
 
 const decodeRequest = Schema.decodeUnknownSync(CreateRecipeImportIntentRequest);
 const decodeKey = Schema.decodeUnknownSync(IdempotencyKey);
@@ -134,7 +137,8 @@ describe("recipe import intent application foundation", () => {
     const recording = makeRecordingRepository();
     const application = makeImportIntentApplication(
       recording.repository,
-      workflowStarter
+      workflowStarter,
+      TestImportTrace
     );
     const ids = [firstIntentId, secondIntentId, thirdIntentId];
     const idLayer = Layer.succeed(
@@ -158,18 +162,18 @@ describe("recipe import intent application foundation", () => {
       Effect.gen(function* admissionTracer() {
         yield* TestClock.setTime(Date.parse("2026-08-16T10:00:00.000Z"));
         const admitted = yield* application.admit(
-          LegacyPrivateImportPrincipal,
+          TestImportPrincipal,
           request,
           key
         );
         const replayResult = yield* application.admit(
-          LegacyPrivateImportPrincipal,
+          TestImportPrincipal,
           request,
           key
         );
         const conflictResult = yield* Effect.exit(
           application.admit(
-            LegacyPrivateImportPrincipal,
+            TestImportPrincipal,
             decodeRequest({
               source: {
                 kind: "tiktok",
@@ -208,14 +212,14 @@ describe("recipe import intent application foundation", () => {
 
   it("returns one stable opaque private principal without deriving it from bearer material", async () => {
     const authorizer = await Effect.runPromise(
-      makeImportAuthorizer(Redacted.make("intent-secret"))
+      makeTestImportAuthorizer("intent-secret")
     );
 
     const principal = await Effect.runPromise(
       authorizer.authorize("Bearer intent-secret")
     );
 
-    expect(principal).toEqual(LegacyPrivateImportPrincipal);
+    expect(principal).toEqual(TestImportPrincipal);
     expect(
       Schema.is(HouseholdScopeId)(principal.householdScopeId) &&
         Schema.is(ImportActorId)(principal.actorId)

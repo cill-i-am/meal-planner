@@ -1,9 +1,14 @@
+import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { Effect, Schema } from "effect";
 
 import type {
   ImportBatchItemFailureCode,
   ImportBatchItemId,
 } from "./import-batch.contracts.js";
+import type {
+  AdmitResolvedRecipeImportIntentCommand,
+  RecipeImportIntentAdmissionShape,
+} from "./import-intent-admission.js";
 import {
   DeadLetterReplayClaimId,
   makeImportOperationsService,
@@ -21,12 +26,6 @@ import type {
   OperationalEvent,
   OperationalEventSinkShape,
 } from "./import-operations.js";
-import type {
-  CreateImportRequest,
-  IdempotencyKey,
-  ImportView,
-} from "./import.contracts.js";
-import type { ImportServiceShape } from "./import.service.js";
 
 /** Sensitive fake-only fields deliberately excluded from all safe projections. */
 export interface ProviderFreeDeadLetterDiagnostics {
@@ -39,18 +38,17 @@ export interface ProviderFreeDeadLetterDiagnostics {
 /** Seed for one provider-free dead-letter record behind the adapter boundary. */
 export interface ProviderFreeDeadLetter {
   readonly code: ImportBatchItemFailureCode;
+  readonly command: AdmitResolvedRecipeImportIntentCommand;
   readonly correlation: OperationalCorrelation;
   readonly diagnostics: ProviderFreeDeadLetterDiagnostics;
-  readonly idempotencyKey: IdempotencyKey;
   readonly itemId: ImportBatchItemId;
-  readonly request: CreateImportRequest;
 }
 
 interface StoredDeadLetter {
   claimId?: DeadLetterReplayClaimIdType;
   readonly seed: ProviderFreeDeadLetter;
   state: "claimed" | "ready" | "replayed";
-  imported?: ImportView;
+  intentId?: RecipeImportIntentId;
 }
 
 const missing = (itemId: ImportBatchItemId): DeadLetterNotFound => ({
@@ -63,7 +61,7 @@ export const makeProviderFreeOperationalTracer = (input: {
   readonly artifacts: readonly ExpirableImportArtifact[];
   readonly deadLetters: readonly ProviderFreeDeadLetter[];
   readonly eventFailureTag?: OperationalEvent["_tag"];
-  readonly imports: ImportServiceShape;
+  readonly intents: RecipeImportIntentAdmissionShape;
   readonly replayQuotaLimit: number;
 }) => {
   const artifacts = [...input.artifacts];
@@ -118,13 +116,13 @@ export const makeProviderFreeOperationalTracer = (input: {
         }
         claimCount += 1;
         if (stored.state === "replayed") {
-          if (stored.imported === undefined) {
-            return Effect.die("Completed dead letter is missing its import");
+          if (stored.intentId === undefined) {
+            return Effect.die("Completed dead letter is missing its intent id");
           }
           return Effect.succeed({
             _tag: "AlreadyReplayed",
             correlation: stored.seed.correlation,
-            import: stored.imported,
+            intentId: stored.intentId,
           });
         }
         stored.state = "claimed";
@@ -134,12 +132,11 @@ export const makeProviderFreeOperationalTracer = (input: {
         return Effect.succeed({
           _tag: "Ready",
           claimId: stored.claimId,
+          command: stored.seed.command,
           correlation: stored.seed.correlation,
-          idempotencyKey: stored.seed.idempotencyKey,
-          request: stored.seed.request,
         });
       }),
-    completeReplay: (itemId, claimId, imported) =>
+    completeReplay: (itemId, claimId, intentId) =>
       Effect.suspend(() => {
         const stored = deadLetters.get(itemId);
         if (
@@ -152,7 +149,7 @@ export const makeProviderFreeOperationalTracer = (input: {
             itemId,
           });
         }
-        stored.imported = imported;
+        stored.intentId = intentId;
         stored.state = "replayed";
         completedReplayCount += 1;
         return Effect.void;
@@ -202,7 +199,7 @@ export const makeProviderFreeOperationalTracer = (input: {
       artifacts: artifactStore,
       deadLetters: deadLetterStore,
       events: eventSink,
-      imports: input.imports,
+      intents: input.intents,
       replayQuotaLimit: input.replayQuotaLimit,
     }),
   };

@@ -1,3 +1,10 @@
+import {
+  CanonicalTikTokUrl,
+  CreateRecipeImportIntentRequest,
+  IdempotencyKey as RecipeImportIntentIdempotencyKey,
+  RecipeImportIntentId as RecipeImportIntentIdSchema,
+} from "@meal-planner/recipe-import-api";
+import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { DateTime, Effect, Option, Schema } from "effect";
 
@@ -29,6 +36,15 @@ import {
   importBatchConflict,
 } from "./import-batch.service.js";
 import type {
+  AdmitResolvedRecipeImportIntentError,
+  AdmitResolvedRecipeImportIntentResult,
+} from "./import-intent-admission.js";
+import { makeRecipeImportIntentAdmission } from "./import-intent-admission.js";
+import type {
+  ImportPrincipal,
+  makeImportIntentApplication,
+} from "./import-intent.js";
+import type {
   DeadLetterNotFound,
   DeadLetterReplayClaim,
   DeadLetterReplayClaimId,
@@ -41,22 +57,15 @@ import {
   DeadLetterInspection,
   OperationalCorrelation as OperationalCorrelationSchema,
 } from "./import-operations.js";
-import type { CreateImportRequest } from "./import.contracts.js";
-import {
-  CreateImportRequest as CreateImportRequestSchema,
-  IdempotencyKey as IdempotencyKeySchema,
-  ImportView as ImportViewSchema,
-} from "./import.contracts.js";
+import { SourceCanonicalId } from "./import.contracts.js";
 import {
   importPersistenceCorrupt,
   importPersistenceUnavailable,
 } from "./import.errors.js";
 import type {
-  CreateImportError,
   ImportPersistenceCorrupt,
   ImportPersistenceUnavailable,
 } from "./import.errors.js";
-import type { ImportServiceShape } from "./import.service.js";
 
 const NonNegativeInteger = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
@@ -81,14 +90,12 @@ const QueueItemRow = Schema.Struct({
 });
 
 const ProjectionItemRow = Schema.Struct({
-  canonicalSourceId: Schema.NullOr(Schema.String),
   deadLetterItemId: Schema.NullOr(Schema.String),
   disposition: Schema.NullOr(Schema.String),
   failureCode: Schema.NullOr(Schema.String),
   id: Schema.String,
   idempotencyKey: Schema.String,
-  importId: Schema.NullOr(Schema.String),
-  importStatusJson: Schema.NullOr(Schema.String),
+  intentId: Schema.NullOr(Schema.String),
   status: Schema.Literals(["queued", "running", "succeeded", "failed"]),
 });
 
@@ -96,7 +103,7 @@ const DeadLetterRow = Schema.Struct({
   correlationJson: Schema.String,
   failureCode: Schema.String,
   idempotencyKey: Schema.String,
-  replayImportJson: Schema.NullOr(Schema.String),
+  replayIntentId: Schema.NullOr(Schema.String),
   replayState: Schema.Literals(["ready", "claimed", "replayed"]),
   sourceCanonicalId: Schema.String,
   sourceIdentityKind: ImportBatchSourceIdentityKindSchema,
@@ -172,29 +179,29 @@ const failureForMissingMessage = (
 });
 
 const failureCodeFor = (
-  error: CreateImportError
+  error: AdmitResolvedRecipeImportIntentError
 ): ImportBatchItemFailureCode => {
   switch (error._tag) {
-    case "IdempotencyConflict": {
+    case "RecipeImportIntentIdempotencyConflict": {
       return "idempotency_conflict";
+    }
+    case "RecipeImportIntentNotFound": {
+      return "intent_not_found";
+    }
+    case "RecipeImportIntentRedirected": {
+      return "intent_redirected";
+    }
+    case "ImportIntentTransitionMutationConflict": {
+      return "intent_transition_conflict";
+    }
+    case "RecipeImportIntentTransitionRejected": {
+      return "intent_transition_rejected";
     }
     case "ImportPersistenceCorrupt": {
       return "persistence_corrupt";
     }
     case "ImportPersistenceUnavailable": {
       return "persistence_unavailable";
-    }
-    case "IncompatibleDuplicate": {
-      return "incompatible_duplicate";
-    }
-    case "InvalidSource": {
-      return "invalid_source";
-    }
-    case "SourceIdentityUnavailable": {
-      return "source_identity_unavailable";
-    }
-    case "SourceValidationUnavailable": {
-      return "source_validation_unavailable";
     }
     case "WorkflowStartUnavailable": {
       return "workflow_start_unavailable";
@@ -205,16 +212,25 @@ const failureCodeFor = (
   }
 };
 
-const sourceRequest = (
+const resolvedIntentCommand = (
   canonicalId: string,
   sourceIdentityKind: ImportBatchSourceIdentityKind
-): CreateImportRequest =>
-  Schema.decodeUnknownSync(CreateImportRequestSchema)({
+) => {
+  const canonicalUrl = Schema.decodeUnknownSync(CanonicalTikTokUrl)(
+    `https://www.tiktok.com/@source/${sourceIdentityKind === "video" ? "video" : "photo"}/${encodeURIComponent(canonicalId)}`
+  );
+  return {
+    request: Schema.decodeUnknownSync(CreateRecipeImportIntentRequest)({
+      source: { kind: "tiktok", url: canonicalUrl },
+    }),
     source: {
-      kind: "tiktok",
-      url: `https://www.tiktok.com/@source/${sourceIdentityKind === "video" ? "video" : "photo"}/${encodeURIComponent(canonicalId)}`,
+      canonicalSourceId:
+        Schema.decodeUnknownSync(SourceCanonicalId)(canonicalId),
+      canonicalUrl,
+      sourceKind: sourceIdentityKind,
     },
-  });
+  };
+};
 
 const aggregateStatus = (counts: {
   readonly failed: number;
@@ -261,13 +277,8 @@ const itemView = (row: typeof ProjectionItemRow.Type) => {
     case "succeeded": {
       return {
         ...base,
-        canonicalId: row.canonicalSourceId,
         disposition: row.disposition,
-        importId: row.importId,
-        importStatus:
-          row.importStatusJson === null
-            ? null
-            : JSON.parse(row.importStatusJson),
+        intentId: row.intentId,
         status: "succeeded" as const,
       };
     }
@@ -303,14 +314,12 @@ const readBatchProjection = (
           .bind(batchId),
         database
           .prepare(
-            `SELECT i.canonical_source_id AS canonicalSourceId,
-                    d.item_id AS deadLetterItemId,
+            `SELECT d.item_id AS deadLetterItemId,
                     i.disposition,
                     i.failure_code AS failureCode,
                     i.id,
                     i.idempotency_key AS idempotencyKey,
-                    i.import_id AS importId,
-                    i.import_status_json AS importStatusJson,
+                    i.intent_id AS intentId,
                     i.status
                FROM import_batch_items i
                LEFT JOIN import_dead_letters d ON d.item_id = i.id
@@ -461,10 +470,9 @@ export const makeD1ImportBatchStore = (
                  id, batch_id, idempotency_key, source_kind,
                  source_canonical_id, source_identity_kind, delivery_mode,
                  correlation_json, status, failure_code, attempt_count,
-                 import_id, canonical_source_id, import_status_json,
-                 disposition, created_at, updated_at
+                 intent_id, disposition, created_at, updated_at
                ) VALUES (?, ?, ?, 'tiktok', ?, ?, 'ordinary', NULL, 'queued',
-                         NULL, 0, NULL, NULL, NULL, NULL, ?, ?)`
+                         NULL, 0, NULL, NULL, ?, ?)`
             )
             .bind(
               item.id,
@@ -532,11 +540,7 @@ const makeD1OperationalAdapters = (
   database: AnyD1Database,
   newReplayClaimId: () => DeadLetterReplayClaimId,
   now: () => string,
-  replayClaimLeaseMilliseconds: number,
-  sourceRequestForCanonicalId: (
-    canonicalId: string,
-    sourceIdentityKind: ImportBatchSourceIdentityKind
-  ) => CreateImportRequest
+  replayClaimLeaseMilliseconds: number
 ): {
   readonly deadLetters: DeadLetterStoreShape;
   readonly events: OperationalEventSinkShape;
@@ -548,7 +552,7 @@ const makeD1OperationalAdapters = (
           `SELECT d.correlation_json AS correlationJson,
                   d.failure_code AS failureCode,
                   i.idempotency_key AS idempotencyKey,
-                  d.replay_import_json AS replayImportJson,
+                  d.replay_intent_id AS replayIntentId,
                   d.replay_state AS replayState,
                   i.source_canonical_id AS sourceCanonicalId,
                   i.source_identity_kind AS sourceIdentityKind
@@ -614,7 +618,7 @@ const makeD1OperationalAdapters = (
               `SELECT d.correlation_json AS correlationJson,
                       d.failure_code AS failureCode,
                       i.idempotency_key AS idempotencyKey,
-                      d.replay_import_json AS replayImportJson,
+                      d.replay_intent_id AS replayIntentId,
                       d.replay_state AS replayState,
                       i.source_canonical_id AS sourceCanonicalId,
                       i.source_identity_kind AS sourceIdentityKind
@@ -651,8 +655,8 @@ const makeD1OperationalAdapters = (
               return Effect.succeed({
                 _tag: "AlreadyReplayed",
                 correlation,
-                import: Schema.decodeUnknownSync(ImportViewSchema)(
-                  JSON.parse(row.replayImportJson ?? "null")
+                intentId: Schema.decodeUnknownSync(RecipeImportIntentIdSchema)(
+                  row.replayIntentId
                 ),
               });
             }
@@ -665,21 +669,22 @@ const makeD1OperationalAdapters = (
             return Effect.succeed({
               _tag: "Ready",
               claimId,
+              command: {
+                ...resolvedIntentCommand(
+                  row.sourceCanonicalId,
+                  row.sourceIdentityKind
+                ),
+                idempotencyKey: Schema.decodeUnknownSync(
+                  RecipeImportIntentIdempotencyKey
+                )(row.idempotencyKey),
+              },
               correlation,
-              idempotencyKey: Schema.decodeUnknownSync(IdempotencyKeySchema)(
-                row.idempotencyKey
-              ),
-              request: sourceRequestForCanonicalId(
-                row.sourceCanonicalId,
-                row.sourceIdentityKind
-              ),
             });
           }
         )
       );
     },
-    completeReplay: (itemId, claimId, imported) => {
-      const importedJson = JSON.stringify(imported);
+    completeReplay: (itemId, claimId, intentId) => {
       const updatedAt = now();
       const completedAtEpochMilliseconds = Date.parse(updatedAt);
       if (!Number.isFinite(completedAtEpochMilliseconds)) {
@@ -698,7 +703,7 @@ const makeD1OperationalAdapters = (
               `UPDATE import_dead_letters
                   SET replay_state = 'replayed',
                       replay_claim_expires_at_epoch_milliseconds = NULL,
-                      replay_import_json = ?,
+                      replay_intent_id = ?,
                       updated_at = ?
                 WHERE item_id = ?
                   AND replay_state = 'claimed'
@@ -707,7 +712,7 @@ const makeD1OperationalAdapters = (
               RETURNING item_id`
             )
             .bind(
-              importedJson,
+              intentId,
               updatedAt,
               itemId,
               claimId,
@@ -718,9 +723,7 @@ const makeD1OperationalAdapters = (
               `UPDATE import_batch_items
                   SET status = 'succeeded',
                       failure_code = NULL,
-                      import_id = ?,
-                      canonical_source_id = ?,
-                      import_status_json = ?,
+                      intent_id = ?,
                       disposition = 'idempotency_replay',
                       updated_at = ?
                 WHERE id = ?
@@ -731,19 +734,10 @@ const makeD1OperationalAdapters = (
                      WHERE item_id = ?
                        AND replay_state = 'replayed'
                        AND replay_claim_id = ?
-                       AND replay_import_json = ?
+                       AND replay_intent_id = ?
                   )`
             )
-            .bind(
-              imported.id,
-              imported.source.canonicalId,
-              JSON.stringify(imported.status),
-              updatedAt,
-              itemId,
-              itemId,
-              claimId,
-              importedJson
-            ),
+            .bind(intentId, updatedAt, itemId, itemId, claimId, intentId),
           database
             .prepare(
               `UPDATE import_batches
@@ -770,10 +764,10 @@ const makeD1OperationalAdapters = (
                      WHERE item_id = ?
                        AND replay_state = 'replayed'
                        AND replay_claim_id = ?
-                       AND replay_import_json = ?
+                       AND replay_intent_id = ?
                   )`
             )
-            .bind(itemId, updatedAt, itemId, itemId, claimId, importedJson),
+            .bind(itemId, updatedAt, itemId, itemId, claimId, intentId),
         ])
       ).pipe(
         Effect.flatMap(([completed]) =>
@@ -839,15 +833,16 @@ const makeD1OperationalAdapters = (
 
 /** Build the D1-backed queue consumer, DLQ, and operations adapters. */
 export const makeD1ImportQueueAcceptance = (input: {
+  readonly application: Pick<
+    ReturnType<typeof makeImportIntentApplication>,
+    "admit" | "resolveSource"
+  >;
   readonly database: AnyD1Database;
-  readonly imports: ImportServiceShape;
+  readonly newIntentId: () => RecipeImportIntentId;
   readonly newReplayClaimId: () => DeadLetterReplayClaimId;
   readonly now: () => string;
+  readonly principal: ImportPrincipal;
   readonly replayClaimLeaseMilliseconds: number;
-  readonly sourceRequestForCanonicalId?: (
-    canonicalId: string,
-    sourceIdentityKind: ImportBatchSourceIdentityKind
-  ) => CreateImportRequest;
 }) => {
   if (
     !Number.isInteger(input.replayClaimLeaseMilliseconds) ||
@@ -859,9 +854,9 @@ export const makeD1ImportQueueAcceptance = (input: {
     input.database,
     input.newReplayClaimId,
     input.now,
-    input.replayClaimLeaseMilliseconds,
-    input.sourceRequestForCanonicalId ?? sourceRequest
+    input.replayClaimLeaseMilliseconds
   );
+  const intents = makeRecipeImportIntentAdmission(input);
   const store = makeD1ImportBatchStore(input.database);
 
   const claim = Effect.fn("ImportBatchQueue.claim")(function* claimDelivery(
@@ -965,14 +960,8 @@ export const makeD1ImportQueueAcceptance = (input: {
     function* settleSuccessfulItem(
       message: ImportBatchQueueMessage,
       deliveryAttempt: ImportBatchDeliveryAttempt,
-      result: Effect.Success<ReturnType<ImportServiceShape["create"]>>
+      result: AdmitResolvedRecipeImportIntentResult
     ) {
-      const { canonicalId } = result.import.source;
-      if (canonicalId === undefined) {
-        return yield* Effect.die(
-          "A successful queued import must retain its canonical identity"
-        );
-      }
       const updatedAt = input.now();
       yield* databaseEffect(() =>
         input.database.batch([
@@ -981,9 +970,7 @@ export const makeD1ImportQueueAcceptance = (input: {
               `UPDATE import_batch_items
                   SET status = 'succeeded',
                       failure_code = NULL,
-                      import_id = ?,
-                      canonical_source_id = ?,
-                      import_status_json = ?,
+                      intent_id = ?,
                       disposition = ?,
                       updated_at = ?
                 WHERE batch_id = ?
@@ -992,9 +979,7 @@ export const makeD1ImportQueueAcceptance = (input: {
                   AND attempt_count = ?`
             )
             .bind(
-              result.import.id,
-              canonicalId,
-              JSON.stringify(result.import.status),
+              result.intent.id,
               result.disposition,
               updatedAt,
               message.batchId,
@@ -1017,18 +1002,20 @@ export const makeD1ImportQueueAcceptance = (input: {
     }
     const item = claimed.value;
     const idempotencyKey = yield* decodePersisted(
-      IdempotencyKeySchema,
+      RecipeImportIntentIdempotencyKey,
       item.idempotencyKey
     );
-    const request = yield* Effect.try({
+    const command = yield* Effect.try({
       catch: importPersistenceCorrupt,
-      try: () =>
-        input.sourceRequestForCanonicalId?.(
+      try: () => ({
+        ...resolvedIntentCommand(
           item.sourceCanonicalId,
           item.sourceIdentityKind
-        ) ?? sourceRequest(item.sourceCanonicalId, item.sourceIdentityKind),
+        ),
+        idempotencyKey,
+      }),
     });
-    yield* input.imports.create(request, idempotencyKey).pipe(
+    yield* intents.admitResolved(command).pipe(
       Effect.matchEffect({
         onFailure: (error) =>
           settleFailure(message, deliveryAttempt, failureCodeFor(error)),
@@ -1061,7 +1048,7 @@ export const makeD1ImportQueueAcceptance = (input: {
             .prepare(
               `INSERT INTO import_dead_letters (
                item_id, failure_code, correlation_json, replay_state,
-               replay_import_json, created_at, updated_at
+               replay_intent_id, created_at, updated_at
              )
              SELECT id, 'workflow_start_unavailable', ?, 'ready', NULL, ?, ?
                FROM import_batch_items

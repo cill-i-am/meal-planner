@@ -1,3 +1,4 @@
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { Clock, Effect, Exit, Schema } from "effect";
 
 import { MealPlanDraftId } from "../meal-planning/meal-plan.js";
@@ -6,19 +7,17 @@ import {
   ImportBatchItemFailureCode,
   ImportBatchItemId,
 } from "./import-batch.contracts.js";
-import { RecipeReviewerActorId } from "./import-recipe-review.js";
 import type {
-  CreateImportRequest,
-  IdempotencyKey,
-} from "./import.contracts.js";
+  AdmitResolvedRecipeImportIntentCommand,
+  AdmitResolvedRecipeImportIntentError,
+  RecipeImportIntentAdmissionShape,
+} from "./import-intent-admission.js";
+import { RecipeReviewerActorId } from "./import-recipe-review.js";
 import {
   EvidenceReference,
   ImportId,
   ImportTimestamp,
-  ImportView,
 } from "./import.contracts.js";
-import type { CreateImportError } from "./import.errors.js";
-import type { ImportServiceShape } from "./import.service.js";
 
 const NonNegativeEpochMilliseconds = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
@@ -99,7 +98,7 @@ export type DeadLetterInspection = typeof DeadLetterInspection.Type;
 /** Result of replaying, or re-requesting replay of, one dead letter. */
 export const ReplayDeadLetterResult = Schema.Struct({
   disposition: Schema.Literals(["already_replayed", "replayed"]),
-  import: ImportView,
+  intentId: RecipeImportIntentId,
 });
 /** Result of replaying, or re-requesting replay of, one dead letter. */
 export type ReplayDeadLetterResult = typeof ReplayDeadLetterResult.Type;
@@ -208,7 +207,7 @@ export type InspectDeadLetterError =
 
 /** Expected failures from privileged dead-letter replay. */
 export type ReplayDeadLetterError =
-  | CreateImportError
+  | AdmitResolvedRecipeImportIntentError
   | DeadLetterAccessDenied
   | DeadLetterNotFound
   | DeadLetterReplayInProgress
@@ -219,14 +218,13 @@ export type DeadLetterReplayClaim =
   | {
       readonly _tag: "AlreadyReplayed";
       readonly correlation: OperationalCorrelation;
-      readonly import: ImportView;
+      readonly intentId: RecipeImportIntentId;
     }
   | {
       readonly _tag: "Ready";
       readonly claimId: DeadLetterReplayClaimId;
+      readonly command: AdmitResolvedRecipeImportIntentCommand;
       readonly correlation: OperationalCorrelation;
-      readonly idempotencyKey: IdempotencyKey;
-      readonly request: CreateImportRequest;
     };
 
 /** Persistence seam for safe inspection and atomic replay claims. */
@@ -240,7 +238,7 @@ export interface DeadLetterStoreShape {
   readonly completeReplay: (
     itemId: ImportBatchItemId,
     claimId: DeadLetterReplayClaimId,
-    imported: ImportView
+    intentId: RecipeImportIntentId
   ) => Effect.Effect<void, DeadLetterReplayInProgress>;
   readonly inspect: (
     itemId: ImportBatchItemId
@@ -272,7 +270,7 @@ export const makeImportOperationsService = (input: {
   readonly artifacts: ExpirableArtifactStoreShape;
   readonly deadLetters: DeadLetterStoreShape;
   readonly events: OperationalEventSinkShape;
-  readonly imports: ImportServiceShape;
+  readonly intents: RecipeImportIntentAdmissionShape;
   readonly replayQuotaLimit: number;
 }): ImportOperationsServiceShape => ({
   expireArtifacts: Effect.fn("ImportOperations.expireArtifacts")(
@@ -371,16 +369,13 @@ export const makeImportOperationsService = (input: {
             if (claim._tag === "AlreadyReplayed") {
               return {
                 disposition: "already_replayed" as const,
-                import: claim.import,
+                intentId: claim.intentId,
               };
             }
-            const result = yield* input.imports.create(
-              claim.request,
-              claim.idempotencyKey
-            );
+            const result = yield* input.intents.admitResolved(claim.command);
             yield* Effect.uninterruptible(
               input.deadLetters
-                .completeReplay(request.itemId, claim.claimId, result.import)
+                .completeReplay(request.itemId, claim.claimId, result.intent.id)
                 .pipe(
                   Effect.andThen(
                     Effect.sync(() => {
@@ -396,7 +391,10 @@ export const makeImportOperationsService = (input: {
               itemId: request.itemId,
               occurredAt,
             });
-            return { disposition: "replayed" as const, import: result.import };
+            return {
+              disposition: "replayed" as const,
+              intentId: result.intent.id,
+            };
           }),
         (claim, exit) =>
           claim._tag === "Ready" && !replayCompleted && Exit.isFailure(exit)

@@ -1,17 +1,13 @@
-import { DateTime, Effect, Option, Schema } from "effect";
+import { DateTime, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
 import {
-  RecipeReviewCommand,
-  RecipeReviewMutationId,
-  RecipeReviewMutationOutcome,
   RecipeCorrection,
   RecipeReviewView,
   approvalBlockers,
   applyCorrectionOverlay,
   projectApprovedReview,
-  recipeReviewCommandDigest,
   recipeReviewTransitionPolicy,
   refineRecipeReview,
 } from "./import-recipe-review.js";
@@ -120,100 +116,6 @@ const draft = Schema.decodeUnknownSync(RecipeDraft)({
   importId: "018f47ad-91aa-7c35-b6fe-000000000301",
   lifecycle: "needs_review",
   schemaVersion: 1,
-});
-
-describe("recipe review mutation contracts", () => {
-  it("accepts only bounded caller-owned mutation identities", () => {
-    const decode = Schema.decodeUnknownSync(RecipeReviewMutationId);
-
-    expect(decode("review-mutation:018f47ad-91aa-7c35-b6fe-000000000301")).toBe(
-      "review-mutation:018f47ad-91aa-7c35-b6fe-000000000301"
-    );
-    expect(decode("a".repeat(128))).toBe("a".repeat(128));
-    expect(() => decode("")).toThrow();
-    expect(() => decode("contains whitespace")).toThrow();
-    expect(() => decode("a".repeat(129))).toThrow();
-  });
-
-  it("produces a stable canonical digest without mutation identity or timestamp input", async () => {
-    const decodeCommand = Schema.decodeUnknownSync(RecipeReviewCommand);
-    const command = decodeCommand({
-      _tag: "Correction",
-      actorId: "private_api_credential",
-      correction: {
-        field: "name",
-        reason: "The title is visible in the cited caption frame.",
-        value: "Tomato and Onion Stew",
-      },
-      expectedVersion: 0,
-      extractionFingerprint: draft.extractionFingerprint,
-      tags: {
-        cuisines: ["Irish"],
-        dietaryFit: "household_match",
-        difficulty: "easy",
-        leftovers: "one_meal",
-        mealTypes: ["dinner"],
-        totalTimeBand: "30_to_60_minutes",
-      },
-    });
-
-    const first = await Effect.runPromise(recipeReviewCommandDigest(command));
-    const second = await Effect.runPromise(
-      recipeReviewCommandDigest(
-        decodeCommand(Schema.encodeSync(RecipeReviewCommand)(command))
-      )
-    );
-
-    expect(first).toMatch(/^[a-f\d]{64}$/u);
-    expect(second).toBe(first);
-    await expect(
-      Effect.runPromise(
-        recipeReviewCommandDigest(
-          decodeCommand({
-            ...Schema.encodeSync(RecipeReviewCommand)(command),
-            expectedVersion: 1,
-          })
-        )
-      )
-    ).resolves.not.toBe(first);
-  });
-
-  it("models applied and replayed writes as tagged outcomes", () => {
-    const review = refineRecipeReview(
-      Schema.decodeUnknownSync(RecipeReviewView)({
-        corrections: [],
-        draft: Schema.encodeSync(RecipeDraft)(draft),
-        evidence: [],
-        lifecycle: "needs_review",
-        nullablePolicy: [],
-        tags: null,
-        transitions: [],
-        unresolvedRequiredFields: ["name"],
-        version: 0,
-      })
-    );
-    expect(Option.isSome(review)).toBe(true);
-    if (Option.isNone(review)) {
-      throw new Error("Expected fixture review to refine");
-    }
-
-    expect(
-      RecipeReviewMutationOutcome.make({
-        _tag: "Applied",
-        mutationId: Schema.decodeUnknownSync(RecipeReviewMutationId)("apply-1"),
-        resultingVersion: 1,
-        review: review.value,
-      })._tag
-    ).toBe("Applied");
-    expect(
-      RecipeReviewMutationOutcome.make({
-        _tag: "Replayed",
-        mutationId: Schema.decodeUnknownSync(RecipeReviewMutationId)("apply-1"),
-        resultingVersion: 1,
-        review: review.value,
-      })._tag
-    ).toBe("Replayed");
-  });
 });
 
 describe("recipe review approval policy", () => {

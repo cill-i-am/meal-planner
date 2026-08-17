@@ -28,6 +28,7 @@ import {
 import { SourceCanonicalId } from "./import.contracts.js";
 import { workflowStartUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
+import { TestImportTrace } from "./import.test-fixtures.js";
 import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
 
 const testEnv = env as unknown as {
@@ -189,7 +190,8 @@ describe("canonical recipe import intent repository in workerd", () => {
     };
     const application = makeImportIntentApplication(
       repository,
-      workflowStarter
+      workflowStarter,
+      TestImportTrace
     );
     let nextId = 1;
     const idLayer = Layer.succeed(
@@ -832,9 +834,13 @@ describe("canonical recipe import intent repository in workerd", () => {
       ImportIntentIdGenerator,
       ImportIntentIdGenerator.of({ next: Effect.succeed(intentId) })
     );
-    const application = makeImportIntentApplication(repository, {
-      ensureStarted: () => Effect.fail(workflowStartUnavailable()),
-    });
+    const application = makeImportIntentApplication(
+      repository,
+      {
+        ensureStarted: () => Effect.fail(workflowStartUnavailable()),
+      },
+      TestImportTrace
+    );
 
     await Effect.runPromise(
       Effect.gen(function* failedStartTracer() {
@@ -950,7 +956,8 @@ describe("canonical recipe import intent repository in workerd", () => {
     };
     const application = makeImportIntentApplication(
       repositoryWithRecheckSkip,
-      workflowStarter
+      workflowStarter,
+      TestImportTrace
     );
     const idLayer = Layer.succeed(
       ImportIntentIdGenerator,
@@ -1124,7 +1131,8 @@ describe("canonical recipe import intent repository in workerd", () => {
     };
     const application = makeImportIntentApplication(
       repository,
-      workflowStarter
+      workflowStarter,
+      TestImportTrace
     );
     applicationReference.current = application;
     const idLayer = Layer.succeed(

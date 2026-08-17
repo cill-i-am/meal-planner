@@ -1,3 +1,9 @@
+import {
+  CanonicalTikTokUrl,
+  CreateRecipeImportIntentRequest,
+  IdempotencyKey,
+  RecipeImportIntent,
+} from "@meal-planner/recipe-import-api";
 import { Deferred, Effect, Exit, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
@@ -10,6 +16,12 @@ import {
 } from "../meal-planning/meal-plan.fake.js";
 import { MealPlanDecisionRequest } from "../meal-planning/meal-plan.js";
 import { ImportBatchItemId } from "./import-batch.contracts.js";
+import type {
+  AdmitResolvedRecipeImportIntentCommand,
+  AdmitResolvedRecipeImportIntentError,
+  AdmitResolvedRecipeImportIntentResult,
+  RecipeImportIntentAdmissionShape,
+} from "./import-intent-admission.js";
 import { EvidenceRetentionSeconds } from "./import-media.model.js";
 import { makeProviderFreeOperationalTracer } from "./import-operations.fake.js";
 import type { ProviderFreeDeadLetter } from "./import-operations.fake.js";
@@ -24,12 +36,7 @@ import {
 } from "./import-operations.js";
 import { projectApprovedRecipe } from "./import-recipe-review.js";
 import type { RecipeReviewView } from "./import-recipe-review.js";
-import {
-  CreateImportRequest as OrdinaryCreateImportRequest,
-  IdempotencyKey as OrdinaryIdempotencyKey,
-  ImportView as OrdinaryImportView,
-} from "./import.contracts.js";
-import { makeDeterministicOrdinaryImportService } from "./import.fake.js";
+import { SourceCanonicalId } from "./import.contracts.js";
 
 const BaseTime = Date.parse("2026-07-22T12:00:00.000Z");
 const importId = "018f47ad-91aa-7c35-b6fe-000000000401";
@@ -44,6 +51,37 @@ const viewer = Schema.decodeUnknownSync(OperationalPrincipal)({
   actorId: "synthetic_viewer",
   role: "viewer",
 });
+
+type IntentAdmissionAttempt =
+  | {
+      readonly _tag: "Failure";
+      readonly error: AdmitResolvedRecipeImportIntentError;
+    }
+  | {
+      readonly _tag: "Success";
+      readonly result: AdmitResolvedRecipeImportIntentResult;
+    };
+
+const makeRecordingIntentAdmission = (
+  attempts: readonly IntentAdmissionAttempt[]
+) => {
+  const remaining = [...attempts];
+  const calls: AdmitResolvedRecipeImportIntentCommand[] = [];
+  const service: RecipeImportIntentAdmissionShape = {
+    admitResolved: (command) =>
+      Effect.suspend(() => {
+        calls.push(command);
+        const attempt = remaining.shift();
+        if (attempt === undefined) {
+          return Effect.die("Synthetic intent admission exhausted");
+        }
+        return attempt._tag === "Failure"
+          ? Effect.fail(attempt.error)
+          : Effect.succeed(attempt.result);
+      }),
+  };
+  return { calls, service };
+};
 
 const firstSyntheticReview = (): RecipeReviewView => {
   const [review] = syntheticRecipeReviews;
@@ -73,31 +111,52 @@ const makeApprovedMealPlan = async () => {
 };
 
 const makeDeadLetterScenario = async () => {
-  const request = Schema.decodeUnknownSync(OrdinaryCreateImportRequest)({
+  const canonicalUrl = Schema.decodeUnknownSync(CanonicalTikTokUrl)(
+    "https://www.tiktok.com/@synthetic/video/751001"
+  );
+  const request = Schema.decodeUnknownSync(CreateRecipeImportIntentRequest)({
     source: {
       kind: "tiktok",
-      url: "https://www.tiktok.com/@synthetic/video/751001",
+      url: canonicalUrl,
     },
   });
-  const stableKey = Schema.decodeUnknownSync(OrdinaryIdempotencyKey)(
+  const stableKey = Schema.decodeUnknownSync(IdempotencyKey)(
     "dlq:synthetic:751001"
   );
-  const replayedImport = Schema.decodeUnknownSync(OrdinaryImportView)({
+  const replayedIntent = Schema.decodeUnknownSync(RecipeImportIntent)({
+    activity: { type: "working" },
     createdAt: "2026-07-22T12:00:00.000Z",
-    evidence: [],
     id: importId,
-    source: { canonicalId: "751001", kind: "tiktok" },
-    status: { kind: "queued" },
+    intentVersion: 2,
+    links: {
+      self: `/v1/recipe-import-intents/${importId}`,
+      timeline: `/v1/recipe-import-intents/${importId}/timeline`,
+    },
+    object: "recipe_import_intent",
+    processing: {
+      sourceKind: "video",
+      startedAt: "2026-07-22T12:00:00.000Z",
+      type: "acquiring_media",
+    },
+    source: { canonicalUrl, kind: "tiktok", resolution: "resolved" },
+    status: "processing",
     updatedAt: "2026-07-22T12:00:00.000Z",
   });
-  const ordinary = makeDeterministicOrdinaryImportService({
-    attempts: [
-      {
-        idempotencyKey: stableKey,
-        outcome: { _tag: "Success" as const, import: replayedImport },
-      },
-    ],
-  });
+  const command: AdmitResolvedRecipeImportIntentCommand = {
+    idempotencyKey: stableKey,
+    request,
+    source: {
+      canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)("751001"),
+      canonicalUrl,
+      sourceKind: "video",
+    },
+  };
+  const intents = makeRecordingIntentAdmission([
+    {
+      _tag: "Success",
+      result: { disposition: "created", intent: replayedIntent },
+    },
+  ]);
   const approvedMealPlan = await makeApprovedMealPlan();
   const review = firstSyntheticReview();
   const correlation = Schema.decodeUnknownSync(OperationalCorrelation)({
@@ -106,12 +165,13 @@ const makeDeadLetterScenario = async () => {
       kind: "visual_evidence_manifest",
       referenceId: "evidence:synthetic:751001",
     },
-    importId: replayedImport.id,
+    importId: replayedIntent.id,
     mealPlanId: approvedMealPlan.draftId,
     recipeId: projectApprovedRecipe(review).importId,
   });
   const deadLetter: ProviderFreeDeadLetter = {
     code: "workflow_start_unavailable",
+    command,
     correlation,
     diagnostics: {
       localPath: "/private/tmp/provider-media.mp4",
@@ -119,17 +179,14 @@ const makeDeadLetterScenario = async () => {
       providerPayload: { privateCaption: "provider secret" },
       token: "provider-token-secret",
     },
-    idempotencyKey: stableKey,
     itemId: Schema.decodeUnknownSync(ImportBatchItemId)(itemId),
-    request,
   };
   return {
+    command,
     correlation,
     deadLetter,
-    ordinary,
-    replayedImport,
-    request,
-    stableKey,
+    intents,
+    replayedIntent,
   };
 };
 
@@ -187,9 +244,9 @@ describe("provider-free import operations tracer", () => {
         }),
       ],
       deadLetters: [],
-      imports: {
-        create: () => Effect.die("Retention must not create an import"),
-        get: () => Effect.die("Retention must not read an import"),
+      intents: {
+        admitResolved: () =>
+          Effect.die("Retention must not admit a recipe import intent"),
       },
       replayQuotaLimit: 10,
     });
@@ -236,19 +293,13 @@ describe("provider-free import operations tracer", () => {
     ]);
   });
 
-  it("replays one dead letter through the ordinary import service exactly once", async () => {
-    const {
-      correlation,
-      deadLetter,
-      ordinary,
-      replayedImport,
-      request,
-      stableKey,
-    } = await makeDeadLetterScenario();
+  it("replays one dead letter through canonical intent admission exactly once", async () => {
+    const { correlation, deadLetter, command, intents, replayedIntent } =
+      await makeDeadLetterScenario();
     const tracer = makeProviderFreeOperationalTracer({
       artifacts: [],
       deadLetters: [deadLetter],
-      imports: ordinary.service,
+      intents: intents.service,
       replayQuotaLimit: 10,
     });
     const operation = decodeReplayRequest({ correlation, deadLetter });
@@ -262,13 +313,15 @@ describe("provider-free import operations tracer", () => {
       tracer.service.replayDeadLetter(operation)
     );
 
-    expect(first).toEqual({ disposition: "replayed", import: replayedImport });
+    expect(first).toEqual({
+      disposition: "replayed",
+      intentId: replayedIntent.id,
+    });
     expect(second).toEqual({
       disposition: "already_replayed",
-      import: replayedImport,
+      intentId: replayedIntent.id,
     });
-    expect(ordinary.calls).toEqual([{ idempotencyKey: stableKey, request }]);
-    expect(ordinary.ordinaryImportsCreated).toBe(1);
+    expect(intents.calls).toEqual([command]);
     expect(tracer.deadLetterStats.releaseCount).toBe(0);
     expect(tracer.events).toContainEqual(
       expect.objectContaining({
@@ -283,27 +336,22 @@ describe("provider-free import operations tracer", () => {
   });
 
   it("releases a typed failure claim so replay can recover", async () => {
-    const { correlation, deadLetter, replayedImport, request, stableKey } =
+    const { correlation, deadLetter, replayedIntent } =
       await makeDeadLetterScenario();
-    const ordinary = makeDeterministicOrdinaryImportService({
-      attempts: [
-        {
-          idempotencyKey: stableKey,
-          outcome: {
-            _tag: "Failure",
-            error: { _tag: "WorkflowStartUnavailable" },
-          },
-        },
-        {
-          idempotencyKey: stableKey,
-          outcome: { _tag: "Success", import: replayedImport },
-        },
-      ],
-    });
+    const intents = makeRecordingIntentAdmission([
+      {
+        _tag: "Failure",
+        error: { _tag: "WorkflowStartUnavailable" },
+      },
+      {
+        _tag: "Success",
+        result: { disposition: "idempotency_replay", intent: replayedIntent },
+      },
+    ]);
     const tracer = makeProviderFreeOperationalTracer({
       artifacts: [],
       deadLetters: [deadLetter],
-      imports: ordinary.service,
+      intents: intents.service,
       replayQuotaLimit: 10,
     });
     const operation = decodeReplayRequest({ correlation, deadLetter });
@@ -318,12 +366,9 @@ describe("provider-free import operations tracer", () => {
     expect(first).toEqual({ _tag: "WorkflowStartUnavailable" });
     expect(recovered).toEqual({
       disposition: "replayed",
-      import: replayedImport,
+      intentId: replayedIntent.id,
     });
-    expect(ordinary.calls).toEqual([
-      { idempotencyKey: stableKey, request },
-      { idempotencyKey: stableKey, request },
-    ]);
+    expect(intents.calls).toEqual([deadLetter.command, deadLetter.command]);
     expect(tracer.deadLetterStats).toMatchObject({
       claimCount: 2,
       completedReplayCount: 1,
@@ -332,20 +377,19 @@ describe("provider-free import operations tracer", () => {
   });
 
   it("releases a defected claim so replay can recover", async () => {
-    const { correlation, deadLetter, ordinary, replayedImport } =
+    const { correlation, deadLetter, intents, replayedIntent } =
       await makeDeadLetterScenario();
     let attempts = 0;
     const tracer = makeProviderFreeOperationalTracer({
       artifacts: [],
       deadLetters: [deadLetter],
-      imports: {
-        create: (request, idempotencyKey) => {
+      intents: {
+        admitResolved: (command) => {
           attempts += 1;
           return attempts === 1
-            ? Effect.die("synthetic import defect")
-            : ordinary.service.create(request, idempotencyKey);
+            ? Effect.die("synthetic intent admission defect")
+            : intents.service.admitResolved(command);
         },
-        get: ordinary.service.get,
       },
       replayQuotaLimit: 10,
     });
@@ -362,7 +406,7 @@ describe("provider-free import operations tracer", () => {
     expect(recovered).toEqual(
       expect.objectContaining({
         _tag: "Success",
-        value: { disposition: "replayed", import: replayedImport },
+        value: { disposition: "replayed", intentId: replayedIntent.id },
       })
     );
     expect(tracer.deadLetterStats).toMatchObject({
@@ -373,23 +417,22 @@ describe("provider-free import operations tracer", () => {
   });
 
   it("releases an interrupted claim so replay can recover", async () => {
-    const { correlation, deadLetter, ordinary, replayedImport } =
+    const { correlation, deadLetter, intents, replayedIntent } =
       await makeDeadLetterScenario();
     const started = await Effect.runPromise(Deferred.make<"started">());
     let attempts = 0;
     const tracer = makeProviderFreeOperationalTracer({
       artifacts: [],
       deadLetters: [deadLetter],
-      imports: {
-        create: (request, idempotencyKey) => {
+      intents: {
+        admitResolved: (command) => {
           attempts += 1;
           return attempts === 1
             ? Deferred.succeed(started, "started").pipe(
                 Effect.andThen(Effect.never)
               )
-            : ordinary.service.create(request, idempotencyKey);
+            : intents.service.admitResolved(command);
         },
-        get: ordinary.service.get,
       },
       replayQuotaLimit: 10,
     });
@@ -413,7 +456,7 @@ describe("provider-free import operations tracer", () => {
     expect(recovered).toEqual(
       expect.objectContaining({
         _tag: "Success",
-        value: { disposition: "replayed", import: replayedImport },
+        value: { disposition: "replayed", intentId: replayedIntent.id },
       })
     );
     expect(tracer.deadLetterStats).toMatchObject({
@@ -424,13 +467,13 @@ describe("provider-free import operations tracer", () => {
   });
 
   it("does not release a completed replay after event emission defects", async () => {
-    const { correlation, deadLetter, ordinary, replayedImport } =
+    const { correlation, deadLetter, intents, replayedIntent } =
       await makeDeadLetterScenario();
     const tracer = makeProviderFreeOperationalTracer({
       artifacts: [],
       deadLetters: [deadLetter],
       eventFailureTag: "DeadLetterReplayed",
-      imports: ordinary.service,
+      intents: intents.service,
       replayQuotaLimit: 10,
     });
     const operation = decodeReplayRequest({ correlation, deadLetter });
@@ -445,9 +488,9 @@ describe("provider-free import operations tracer", () => {
     expect(Exit.hasDies(defect)).toBe(true);
     expect(replay).toEqual({
       disposition: "already_replayed",
-      import: replayedImport,
+      intentId: replayedIntent.id,
     });
-    expect(ordinary.calls).toHaveLength(1);
+    expect(intents.calls).toHaveLength(1);
     expect(tracer.deadLetterStats).toMatchObject({
       claimCount: 2,
       completedReplayCount: 1,
@@ -456,12 +499,11 @@ describe("provider-free import operations tracer", () => {
   });
 
   it("audits denied replay authorization without business side effects", async () => {
-    const { correlation, deadLetter, ordinary } =
-      await makeDeadLetterScenario();
+    const { correlation, deadLetter, intents } = await makeDeadLetterScenario();
     const tracer = makeProviderFreeOperationalTracer({
       artifacts: [],
       deadLetters: [deadLetter],
-      imports: ordinary.service,
+      intents: intents.service,
       replayQuotaLimit: 10,
     });
 
@@ -492,7 +534,7 @@ describe("provider-free import operations tracer", () => {
       itemId: deadLetter.itemId,
     });
     expect(deniedInspection).toEqual(denied);
-    expect(ordinary.calls).toEqual([]);
+    expect(intents.calls).toEqual([]);
     expect(tracer.deadLetterStats).toMatchObject({
       claimCount: 0,
       completedReplayCount: 0,
@@ -527,7 +569,7 @@ describe("provider-free import operations tracer", () => {
     const allowedTracer = makeProviderFreeOperationalTracer({
       artifacts: [],
       deadLetters: [allowed.deadLetter],
-      imports: allowed.ordinary.service,
+      intents: allowed.intents.service,
       replayQuotaLimit: 10,
     });
     const inspectionRequest = Schema.decodeUnknownSync(
@@ -551,7 +593,7 @@ describe("provider-free import operations tracer", () => {
     );
 
     expect(atBoundary.disposition).toBe("replayed");
-    expect(allowed.ordinary.calls).toHaveLength(1);
+    expect(allowed.intents.calls).toHaveLength(1);
     expect(inspection).toEqual({
       code: allowed.deadLetter.code,
       correlation: allowed.correlation,
@@ -579,7 +621,7 @@ describe("provider-free import operations tracer", () => {
     const rejectedTracer = makeProviderFreeOperationalTracer({
       artifacts: [],
       deadLetters: [rejected.deadLetter],
-      imports: rejected.ordinary.service,
+      intents: rejected.intents.service,
       replayQuotaLimit: 10,
     });
     const rejectedRequest = decodeReplayRequest({
@@ -598,7 +640,7 @@ describe("provider-free import operations tracer", () => {
       limit: 10,
       requested: 11,
     });
-    expect(rejected.ordinary.calls).toEqual([]);
+    expect(rejected.intents.calls).toEqual([]);
     expect(rejectedTracer.deadLetterStats).toMatchObject({
       claimCount: 0,
       completedReplayCount: 0,

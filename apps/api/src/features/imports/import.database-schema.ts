@@ -18,25 +18,16 @@ export const recipeImports = sqliteTable(
       .default(0),
     activeActionId: text("active_action_id"),
     activeActionVersion: integer("active_action_version"),
-    actorId: text("actor_id")
-      .notNull()
-      .default(
-        "0000000000000000000000000000000000000000000000000000000000000000"
-      ),
+    actorId: text("actor_id").notNull(),
     cancelledAt: text("cancelled_at"),
-    canonicalSourceId: text("canonical_source_id").notNull(),
-    compatibilityFingerprint: text("compatibility_fingerprint").notNull(),
-    correlationId: text("correlation_id"),
+    compatibilityFingerprint: text("compatibility_fingerprint"),
+    correlationId: text("correlation_id").notNull(),
     createdAt: text("created_at").notNull(),
     evidenceReferencesJson: text("evidence_references_json").notNull(),
-    executionGeneration: integer("execution_generation").notNull().default(0),
+    executionGeneration: integer("execution_generation").notNull().default(1),
     executorOwnerId: text("executor_owner_id"),
     failedAt: text("failed_at"),
-    householdScopeId: text("household_scope_id")
-      .notNull()
-      .default(
-        "1111111111111111111111111111111111111111111111111111111111111111"
-      ),
+    householdScopeId: text("household_scope_id").notNull(),
     id: text("id").notNull(),
     intentVersion: integer("intent_version").notNull().default(1),
     publicActivity: text("public_activity", {
@@ -123,7 +114,7 @@ export const recipeImports = sqliteTable(
         "unsupported_post_type",
       ],
     }),
-    submittedSourceUrl: text("submitted_source_url"),
+    submittedSourceUrl: text("submitted_source_url").notNull(),
     succeededAt: text("succeeded_at"),
     transitionActorCategory: text("transition_actor_category", {
       enum: ["household_member", "system", "support"],
@@ -136,9 +127,6 @@ export const recipeImports = sqliteTable(
   },
   (table) => [
     primaryKey({ columns: [table.id] }),
-    uniqueIndex("recipe_imports_legacy_canonical_identity_unique")
-      .on(table.sourceKind, table.canonicalSourceId)
-      .where(sql`${table.submittedSourceUrl} IS NULL`),
     uniqueIndex("recipe_imports_household_live_canonical_unique")
       .on(table.householdScopeId, table.resolvedCanonicalSourceId)
       .where(
@@ -245,36 +233,29 @@ export const recipeImports = sqliteTable(
   ]
 );
 
-export const importRecipeTerminalProjections = sqliteTable(
-  "import_recipe_terminal_projections",
+export const importRecipeExecutorTerminalCheckpoints = sqliteTable(
+  "import_recipe_executor_terminal_checkpoints",
   {
     acquisitionGeneration: integer("acquisition_generation").notNull(),
+    checkpointedAt: text("checkpointed_at").notNull(),
     evidenceReferencesJson: text("evidence_references_json").notNull(),
     importId: text("import_id").notNull(),
     ownershipId: text("ownership_id").notNull(),
-    projectedAt: text("projected_at").notNull(),
-    recoveryAction: text("recovery_action", {
-      enum: ["operator_reconcile"],
-    }).notNull(),
-    status: text("status", { enum: ["failed"] }).notNull(),
-    statusCode: text("status_code", {
-      enum: ["recipe_extraction_failed"],
-    }).notNull(),
   },
   (table) => [
     primaryKey({
       columns: [table.importId, table.acquisitionGeneration],
     }),
     foreignKey({
-      columns: [table.importId],
-      foreignColumns: [recipeImports.id],
-      name: "import_recipe_terminal_projections_import_fk",
+      columns: [table.importId, table.acquisitionGeneration],
+      foreignColumns: [recipeImports.id, recipeImports.acquisitionGeneration],
+      name: "import_recipe_executor_terminal_checkpoints_import_generation_fk",
     })
       .onDelete("restrict")
       .onUpdate("restrict"),
     check(
-      "import_recipe_terminal_projections_details_check",
-      sql`${table.status} = 'failed' AND ${table.statusCode} = 'recipe_extraction_failed' AND ${table.recoveryAction} = 'operator_reconcile' AND json_valid(${table.evidenceReferencesJson}) AND json_array_length(${table.evidenceReferencesJson}) IN (0, 3) AND length(${table.ownershipId}) = 64 AND ${table.ownershipId} NOT GLOB '*[^0-9a-f]*'`
+      "import_recipe_executor_terminal_checkpoints_details_check",
+      sql`json_valid(${table.evidenceReferencesJson}) AND json_array_length(${table.evidenceReferencesJson}) IN (0, 3) AND length(${table.ownershipId}) = 64 AND ${table.ownershipId} NOT GLOB '*[^0-9a-f]*'`
     ),
   ]
 );
@@ -283,11 +264,7 @@ export const importRequests = sqliteTable(
   "import_requests",
   {
     createdAt: text("created_at").notNull(),
-    householdScopeId: text("household_scope_id")
-      .notNull()
-      .default(
-        "1111111111111111111111111111111111111111111111111111111111111111"
-      ),
+    householdScopeId: text("household_scope_id").notNull(),
     idempotencyKeyHash: text("idempotency_key_hash").notNull(),
     importId: text("import_id").notNull(),
     requestFingerprint: text("request_fingerprint").notNull(),
@@ -317,13 +294,12 @@ export const recipeImportIntentHistory = sqliteTable(
   {
     actionId: text("action_id"),
     actorCategory: text("actor_category", {
-      enum: ["migration", "household_member", "system", "support"],
+      enum: ["household_member", "system", "support"],
     }).notNull(),
     actorIdentityHash: text("actor_identity_hash"),
     commandDigest: text("command_digest"),
     eventType: text("event_type", {
       enum: [
-        "migration_snapshot",
         "intent_admitted",
         "source_resolved",
         "intent_redirected",
@@ -887,7 +863,7 @@ export const recipeReviewMutations = sqliteTable(
       enum: ["correction", "transition"],
     }).notNull(),
     extractionFingerprint: text("extraction_fingerprint").notNull(),
-    itemCount: integer("item_count"),
+    itemCount: integer("item_count").notNull(),
     mutationId: text("mutation_id").notNull(),
     resultingVersion: integer("resulting_version").notNull(),
   },
@@ -912,7 +888,7 @@ export const recipeReviewMutations = sqliteTable(
     ),
     check(
       "recipe_review_mutations_item_count_check",
-      sql`${table.itemCount} IS NULL OR (typeof(${table.itemCount}) = 'integer' AND ${table.itemCount} > 0 AND ${table.itemCount} <= 9007199254740991)`
+      sql`typeof(${table.itemCount}) = 'integer' AND ${table.itemCount} > 0 AND ${table.itemCount} <= 9007199254740991`
     ),
     check(
       "recipe_review_mutations_kind_check",

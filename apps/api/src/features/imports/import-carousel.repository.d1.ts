@@ -47,7 +47,7 @@ const D1BatchResults = Schema.Array(
 
 const CarouselParentRow = Schema.Struct({
   acquisition_generation: AcquisitionGeneration,
-  canonical_source_id: SourceCanonicalId,
+  resolved_canonical_source_id: SourceCanonicalId,
   status: Schema.String,
 });
 
@@ -324,7 +324,7 @@ export const makeD1CarouselEvidenceRepository = (
       const raw = yield* persistenceEffect(() =>
         binding
           .prepare(
-            `SELECT canonical_source_id, acquisition_generation, status
+            `SELECT resolved_canonical_source_id, acquisition_generation, status
                FROM recipe_imports WHERE id = ?`
           )
           .bind(importId)
@@ -337,7 +337,7 @@ export const makeD1CarouselEvidenceRepository = (
         onExcessProperty: "ignore",
       })(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
       return Option.some({
-        canonicalId: row.canonical_source_id,
+        canonicalId: row.resolved_canonical_source_id,
         generation: row.acquisition_generation,
         status: row.status,
       });

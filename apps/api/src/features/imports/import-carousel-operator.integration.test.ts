@@ -1,64 +1,36 @@
 import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { Miniflare } from "miniflare";
 import { describe, expect, it } from "vitest";
 
+import { OperatorCarouselRoutes } from "./import-carousel-operator.routes.js";
 import {
   makeOperatorCarouselImportService,
   OperatorCarouselImportService,
 } from "./import-carousel-operator.service.js";
-import {
-  CarouselEvidenceManifestDocument,
-  importTikTokCarouselToRecipeDraft,
-} from "./import-carousel.js";
-import { makeD1CarouselEvidenceRepository } from "./import-carousel.repository.d1.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
-import { makeImportTraceContext } from "./import-observability.js";
-import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
-import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
-import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
-import { makeDeterministicVisualEvidenceExtractor } from "./import-visual-evidence.fake.js";
-import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
-import {
-  ImportId,
-  ImportTimestamp,
-  SourceCanonicalId,
-} from "./import.contracts.js";
+import { makeImportIntentApplication } from "./import-intent.js";
+import { ImportAuthorizer } from "./import.auth.js";
+import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import { OperatorCarouselRoutes } from "./import.routes.js";
+import {
+  makeTestImportAuthorizer,
+  TestImportTrace,
+} from "./import.test-fixtures.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
-interface TestR2Object {
-  readonly checksums?: { readonly sha256?: ArrayBuffer };
-  readonly customMetadata?: Record<string, string>;
-  readonly httpMetadata?: {
-    readonly cacheControl?: string;
-    readonly contentType?: string;
-  };
-  readonly size: number;
-  readonly text: () => Promise<string>;
-}
-
-interface TestR2Bucket {
-  readonly get: (key: string) => Promise<TestR2Object | null>;
-  readonly head: AcquisitionBucketLike["head"];
-  readonly list: () => Promise<{
-    readonly objects: readonly { readonly key: string }[];
-  }>;
-  readonly put: AcquisitionBucketLike["put"];
-}
-
 const apiToken = "operator-integration-token";
-const importId = Schema.decodeUnknownSync(ImportId)(
+const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
   "018f47ad-91aa-7c35-b6fe-000000000162"
 );
 const timestamp = Schema.decodeUnknownSync(ImportTimestamp)(
   "2026-07-25T20:00:00.000Z"
 );
+const encodedTimestamp = Schema.encodeSync(ImportTimestamp)(timestamp);
 const canonicalId = Schema.decodeUnknownSync(SourceCanonicalId)(
   "7520000000000000162"
 );
@@ -81,98 +53,6 @@ const completeJpegs = [
   },
 ] as const;
 
-const unresolvedFact = {
-  citations: [],
-  origin: "unresolved" as const,
-  reason: "not supplied",
-  state: "unresolved" as const,
-};
-const unresolvedList = {
-  items: [],
-  reason: "not supplied",
-  state: "unresolved" as const,
-};
-
-const recipeFixture = (input: RecipeEvidenceAssembly) => {
-  const source = input.items.find(({ kind }) => kind === "source_url");
-  const visual = input.items.find(({ kind }) => kind === "visual_observation");
-  if (source === undefined || visual === undefined) {
-    throw new Error("Missing canonical recipe evidence");
-  }
-  const supportedVisual = {
-    citations: [
-      {
-        confidence: 1,
-        evidenceId: visual.evidenceId,
-        origin: "observed" as const,
-      },
-    ],
-    origin: "observed" as const,
-    state: "supported" as const,
-    value: visual.value,
-  };
-  return {
-    author: unresolvedFact,
-    category: unresolvedFact,
-    cookTimeMinutes: unresolvedFact,
-    cost: {
-      certainty: "known" as const,
-      currency: "USD" as const,
-      estimatedMicroUsd: 0,
-    },
-    cuisine: unresolvedFact,
-    description: unresolvedFact,
-    ingredientLines: {
-      items: [supportedVisual],
-      state: "supported" as const,
-    },
-    instructions: { items: [supportedVisual], state: "supported" as const },
-    name: unresolvedFact,
-    nutrition: unresolvedFact,
-    prepTimeMinutes: unresolvedFact,
-    sourceUrl: {
-      citations: [
-        {
-          confidence: 1,
-          evidenceId: source.evidenceId,
-          origin: "observed" as const,
-        },
-      ],
-      origin: "observed" as const,
-      state: "supported" as const,
-      value: source.value,
-    },
-    supportedClaims: unresolvedList,
-    temperatureCelsius: unresolvedFact,
-    tools: unresolvedList,
-    totalTimeMinutes: unresolvedFact,
-    unresolvedFields: [
-      "author",
-      "category",
-      "cook_time_minutes",
-      "cuisine",
-      "description",
-      "ingredient_quantities",
-      "ingredient_units",
-      "name",
-      "nutrition",
-      "prep_time_minutes",
-      "temperature_celsius",
-      "tools",
-      "total_time_minutes",
-      "yield",
-    ],
-    usage: {
-      inputEvidenceItems: input.items.length,
-      inputTokens: 0,
-      latencyMilliseconds: 0,
-      modelCalls: 1 as const,
-      outputTokens: 0,
-    },
-    yield: unresolvedFact,
-  };
-};
-
 const postBundle = (
   handler: (request: Request) => Promise<Response>,
   body: unknown,
@@ -192,21 +72,17 @@ const postBundle = (
   );
 
 describe("operator carousel HTTP integration", () => {
-  it("routes authenticated bundles through local D1/R2 without video acquisition", async () => {
+  it("durably resolves one intent and stages one provider-free carousel", async () => {
     const runtime = new Miniflare({
       compatibilityDate: "2026-07-14",
       d1Databases: { MealPlannerDatabase: "operator-carousel-integration" },
       modules: true,
-      r2Buckets: ["ImportEvidenceBucket"],
       script:
         "export default { fetch() { return new Response('local bindings'); } }",
     });
     const database = (await runtime.getD1Database(
       "MealPlannerDatabase"
     )) as AnyD1Database;
-    const bucket = (await runtime.getR2Bucket(
-      "ImportEvidenceBucket"
-    )) as unknown as TestR2Bucket;
     const migrations = await readD1Migrations(
       fileURLToPath(new URL("../../../migrations", import.meta.url))
     );
@@ -215,69 +91,38 @@ describe("operator carousel HTTP integration", () => {
         queries.map((query) => database.prepare(query))
       )
     );
-    const visual = makeDeterministicVisualEvidenceExtractor({
-      cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
-      model: "provider-free-http-proof",
-      observations: [
-        {
-          confidence: 1,
-          frameIndex: 0,
-          kind: "visible_text",
-          regions: [{ height: 1, width: 1, x: 0, y: 0 }],
-          text: "Chop onion then cook",
-          timestampMilliseconds: 0,
-        },
-      ],
-      outcome: "found",
-      provider: "deterministic_fake",
-      usage: { inputBytes: 270, inputFrames: 1, modelCalls: 1 },
-    });
-    const recipe = makeDeterministicRecipeExtractor(
-      {
-        model: "provider-free-http-proof",
-        provider: "deterministic_fake",
-        version: "operator-carousel-v1",
-      },
-      recipeFixture
-    );
     const repository = makeD1ImportRepository(database);
-    const liveIdentityResolver = makeTikTokCanonicalSourceIdentityResolver(() =>
-      Promise.reject(new Error("Network must not be used"))
-    );
-    let identityResolutionCalls = 0;
-    const service = makeOperatorCarouselImportService({
-      identityResolver: {
-        resolve: (source) => {
-          identityResolutionCalls += 1;
-          return liveIdentityResolver.resolve(source);
-        },
-      },
-      newId: () => importId,
-      now: () => timestamp,
-      pipeline: {
-        process: (input) =>
-          importTikTokCarouselToRecipeDraft({
-            adapter: input.adapter,
-            bucket,
-            carouselRepository: makeD1CarouselEvidenceRepository(database),
-            descriptor: {
-              canonicalId: input.canonicalId,
-              declaredPageCount: input.declaredPageCount,
-              kind: "tiktok_carousel",
-              sourceUrl: input.sourceUrl,
-            },
-            extractor: recipe.service,
-            importId: input.importId,
-            now: () => timestamp,
-            recipeRepository: makeD1RecipeDraftRepository(database),
-            visualExtractor: visual.service,
-          }).pipe(Effect.asVoid),
-      },
+    const stageCalls: unknown[] = [];
+    const starterCalls: unknown[][] = [];
+    let providerCalls = 0;
+    const application = makeImportIntentApplication(
       repository,
-      trace: makeImportTraceContext(),
+      {
+        ensureStarted: (startedImportId, executionGeneration, trace) =>
+          Effect.sync(() => {
+            starterCalls.push([startedImportId, executionGeneration, trace]);
+            return "created" as const;
+          }),
+      },
+      TestImportTrace
+    );
+    const service = makeOperatorCarouselImportService({
+      application,
+      identityResolver: makeTikTokCanonicalSourceIdentityResolver(() => {
+        providerCalls += 1;
+        return Promise.reject(new Error("Provider must not be used"));
+      }),
+      newIntentId: () => intentId,
+      now: () => encodedTimestamp,
+      pipeline: {
+        stage: (input) =>
+          Effect.sync(() => {
+            stageCalls.push(input);
+          }),
+      },
     });
     const authorizer = await Effect.runPromise(
-      makeImportAuthorizer(Redacted.make(apiToken))
+      makeTestImportAuthorizer(apiToken)
     );
     const app = HttpRouter.toWebHandler(
       Layer.mergeAll(
@@ -312,138 +157,86 @@ describe("operator carousel HTTP integration", () => {
           .prepare("SELECT count(*) AS count FROM recipe_imports")
           .first()
       ).toEqual({ count: 0 });
-      expect(
-        await database
-          .prepare("SELECT count(*) AS count FROM import_recipe_extractions")
-          .first()
-      ).toEqual({ count: 0 });
-      const objectsBeforeAdmission = await bucket.list();
-      expect(objectsBeforeAdmission.objects).toEqual([]);
+      expect(stageCalls).toEqual([]);
+      expect(starterCalls).toEqual([]);
+      expect(providerCalls).toBe(0);
 
       const admitted = await postBundle(app.handler, body, "operator-valid");
       const replay = await postBundle(app.handler, body, "operator-valid");
-      expect(admitted.status).toBe(200);
-      await expect(admitted.json()).resolves.toMatchObject({
-        disposition: "created",
-        import: { id: importId, status: { kind: "needs_review" } },
+      expect(admitted.status).toBe(202);
+      expect(replay.status).toBe(202);
+      const admittedIntent = await admitted.json();
+      const replayedIntent = await replay.json();
+      expect(admittedIntent).toMatchObject({
+        id: intentId,
+        intentVersion: 2,
+        processing: {
+          sourceKind: "carousel",
+          type: "acquiring_media",
+        },
+        source: {
+          canonicalUrl: `https://www.tiktok.com/@cook/photo/${canonicalId}`,
+          resolution: "resolved",
+        },
+        status: "processing",
       });
-      await expect(replay.json()).resolves.toMatchObject({
-        disposition: "idempotency_replay",
-        import: { id: importId, status: { kind: "needs_review" } },
+      expect(replayedIntent).toEqual(admittedIntent);
+      expect(stageCalls).toEqual([
+        expect.objectContaining({
+          canonicalId,
+          declaredPageCount: 2,
+          importId: intentId,
+          sourceUrl: `https://www.tiktok.com/@cook/photo/${canonicalId}`,
+        }),
+      ]);
+      expect(starterCalls).toEqual([[intentId, 1, TestImportTrace]]);
+      expect(providerCalls).toBe(0);
+      expect(
+        await database
+          .prepare(
+            `SELECT public_source_kind AS sourceKind,
+                    public_stage AS stage,
+                    public_status AS status,
+                    resolved_canonical_source_id AS canonicalId
+               FROM recipe_imports WHERE id = ?`
+          )
+          .bind(intentId)
+          .first()
+      ).toEqual({
+        canonicalId,
+        sourceKind: "carousel",
+        stage: "acquiring_media",
+        status: "processing",
       });
-      expect(identityResolutionCalls).toBe(1);
-      expect(visual.calls).toHaveLength(1);
-      expect(recipe.calls).toHaveLength(1);
       expect(
         await database
           .prepare(
-            "SELECT status FROM recipe_imports WHERE canonical_source_id = ?"
+            "SELECT count(*) AS count FROM import_requests WHERE import_id = ?"
           )
-          .bind(canonicalId)
-          .first()
-      ).toEqual({ status: "queued" });
-      expect(
-        await database
-          .prepare(
-            "SELECT count(*) AS count FROM import_transcriptions WHERE import_id = ?"
-          )
-          .bind(importId)
-          .first()
-      ).toEqual({ count: 0 });
-      expect(
-        await database
-          .prepare(
-            "SELECT count(*) AS count FROM import_recipe_extractions WHERE import_id = ?"
-          )
-          .bind(importId)
+          .bind(intentId)
           .first()
       ).toEqual({ count: 1 });
-      const successListing = await bucket.list();
-      const objectsAfterSuccess = successListing.objects;
-      expect(objectsAfterSuccess).toHaveLength(3);
-      expect(objectsAfterSuccess.some(({ key }) => key.endsWith(".mp4"))).toBe(
-        false
-      );
-      const manifestObject = await bucket.get(
-        objectsAfterSuccess.find(({ key }) => key.endsWith("manifest.json"))
-          ?.key ?? ""
-      );
-      if (manifestObject === null) {
-        throw new Error("Expected private carousel manifest");
-      }
-      const manifest = Schema.decodeUnknownSync(
-        CarouselEvidenceManifestDocument
-      )(JSON.parse(await manifestObject.text()));
-      expect(manifest.images.map(({ orderIndex }) => orderIndex)).toEqual([
-        0, 1,
-      ]);
-      expect(manifest.retention.configuredAgeSeconds).toBe(604_800);
-      expect(manifest.transcript).toEqual({
-        reason: "source_type_carousel",
-        status: "not_applicable",
-      });
-      expect(JSON.stringify(manifest)).not.toContain("https://");
-      expect(JSON.stringify(manifest)).not.toContain("tracking=discard");
-
-      await database
-        .prepare(
-          "UPDATE recipe_imports SET compatibility_fingerprint = ? WHERE id = ?"
-        )
-        .bind("0".repeat(64), importId)
-        .run();
-      const obsoleteReplay = await postBundle(
-        app.handler,
-        body,
-        "operator-valid"
-      );
-      expect(obsoleteReplay.status).toBe(409);
-      await expect(obsoleteReplay.json()).resolves.toMatchObject({
-        error: { code: "incompatible_duplicate" },
-      });
-      expect(identityResolutionCalls).toBe(1);
-      expect(visual.calls).toHaveLength(1);
-      expect(recipe.calls).toHaveLength(1);
-
-      const invalid = await postBundle(
+      const fingerprintConflict = await postBundle(
         app.handler,
         {
+          ...body,
           declaredPageCount: 1,
-          images: [
-            {
-              height: 1,
-              jpegBase64: "/9j/wAALCAABAAEBAREA/9k=",
-              orderIndex: 0,
-              sha256:
-                "96b3455d1180f0ca4c617adbe4d6a0631c9a46b49e9fa10cc1563a207b001b41",
-              width: 1,
-            },
-          ],
-          source: {
-            kind: "tiktok",
-            url: "https://www.tiktok.com/@cook/photo/7520000000000000999",
-          },
+          images: [completeJpegs[0]],
         },
-        "operator-invalid-jpeg"
+        "operator-valid"
       );
-      expect(invalid.status).toBe(422);
-      await expect(invalid.json()).resolves.toMatchObject({
-        error: { recovery: "request_complete_carousel" },
+      expect(fingerprintConflict.status).toBe(409);
+      await expect(fingerprintConflict.json()).resolves.toMatchObject({
+        error: { code: "idempotency_conflict" },
       });
+      expect(stageCalls).toHaveLength(1);
+      expect(starterCalls).toHaveLength(1);
+      expect(providerCalls).toBe(0);
       expect(
         await database
-          .prepare(
-            "SELECT count(*) AS count FROM recipe_imports WHERE canonical_source_id = ?"
-          )
-          .bind("7520000000000000999")
-          .first()
-      ).toEqual({ count: 0 });
-      expect(
-        await database
-          .prepare("SELECT count(*) AS count FROM import_recipe_extractions")
+          .prepare("SELECT count(*) AS count FROM import_requests")
           .first()
       ).toEqual({ count: 1 });
-      const objectsAfterInvalid = await bucket.list();
-      expect(objectsAfterInvalid.objects).toHaveLength(3);
     } finally {
       await app.dispose();
       await runtime.dispose();

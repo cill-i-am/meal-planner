@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Exit, Layer, Redacted, Schema } from "effect";
+import { Effect, Exit, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { Miniflare } from "miniflare";
 import {
@@ -30,20 +31,20 @@ import {
   ImportBatchService,
   makeImportBatchService,
 } from "./import-batch.service.js";
+import { makeImportIntentApplication } from "./import-intent.js";
 import { DeadLetterReplayClaimId } from "./import-operations.js";
 import { makeD1ImportQueueAcceptance } from "./import-queue-acceptance.d1.js";
 import type { ImportAuthorizerShape } from "./import.auth.js";
-import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
+import { ImportAuthorizer } from "./import.auth.js";
+import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
+import { invalidSource, workflowStartUnavailable } from "./import.errors.js";
+import { makeD1ImportRepository } from "./import.repository.d1.js";
 import {
-  CreateImportRequest,
-  ImportTimestamp,
-  ImportView,
-  SourceCanonicalId,
-} from "./import.contracts.js";
-import { invalidSource, sourceValidationUnavailable } from "./import.errors.js";
-import { makeDeterministicOrdinaryImportService } from "./import.fake.js";
-import type { ImportServiceShape } from "./import.service.js";
-import { makeProviderFreeSyntheticImportService } from "./import.synthetic.js";
+  makeTestImportAuthorizer,
+  TestImportPrincipal,
+  TestImportTrace,
+} from "./import.test-fixtures.js";
+import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
 import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
 
@@ -59,9 +60,8 @@ const decodeDeliveryAttempt = Schema.decodeUnknownSync(
 );
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodeVideoUrl = Schema.decodeUnknownSync(ValidatedVideoUrl);
-const decodeImportView = Schema.decodeUnknownSync(ImportView);
 const decodeQueueMessage = Schema.decodeUnknownSync(ImportBatchQueueMessage);
-const decodeCreateRequest = Schema.decodeUnknownSync(CreateImportRequest);
+const decodeIntentId = Schema.decodeUnknownSync(RecipeImportIntentId);
 
 let authorizer: ImportAuthorizerShape;
 let database: AnyD1Database;
@@ -69,6 +69,7 @@ let persistenceDirectory: string;
 let runtime: Miniflare;
 const applications: { readonly dispose: () => Promise<void> }[] = [];
 let replayClaimSequence = 0;
+let intentSequence = 0;
 
 const queueRecordingWorker = `
 export default {
@@ -164,9 +165,7 @@ beforeAll(async () => {
        )`
     ),
   ]);
-  authorizer = await Effect.runPromise(
-    makeImportAuthorizer(Redacted.make(apiToken))
-  );
+  authorizer = await Effect.runPromise(makeTestImportAuthorizer(apiToken));
 }, 30_000);
 
 beforeEach(async () => {
@@ -231,6 +230,42 @@ const identityResolver: CanonicalSourceIdentityResolverShape = {
   },
 };
 
+const makeAcceptance = (options?: {
+  readonly workflowStarter?: Pick<
+    ImportWorkflowReconcilerShape,
+    "ensureStarted"
+  >;
+}) => {
+  const workflowStarts: string[] = [];
+  const workflowStarter = options?.workflowStarter ?? {
+    ensureStarted: (importId: string) =>
+      Effect.sync(() => {
+        workflowStarts.push(importId);
+        return "created" as const;
+      }),
+  };
+  const application = makeImportIntentApplication(
+    makeD1ImportRepository(database),
+    workflowStarter,
+    TestImportTrace
+  );
+  const acceptance = makeD1ImportQueueAcceptance({
+    application,
+    database,
+    newIntentId: () => {
+      intentSequence += 1;
+      return decodeIntentId(
+        `018f47ad-91aa-7c35-b6fe-${String(800_000 + intentSequence).padStart(12, "0")}`
+      );
+    },
+    newReplayClaimId,
+    now: () => timestampText,
+    principal: TestImportPrincipal,
+    replayClaimLeaseMilliseconds: 60_000,
+  });
+  return { ...acceptance, workflowStarts };
+};
+
 const makeHttpHarness = async () => {
   const sender = await runtime.getQueueProducer<unknown>("PRIMARY_QUEUE");
   let nextBatchId = 0;
@@ -249,13 +284,7 @@ const makeHttpHarness = async () => {
     queue: makeCloudflareImportBatchQueue({
       sendBatch: (messages) => sender.sendBatch(messages),
     }),
-    store: makeD1ImportQueueAcceptance({
-      database,
-      imports: makeDeterministicOrdinaryImportService({ attempts: [] }).service,
-      newReplayClaimId,
-      now: () => timestampText,
-      replayClaimLeaseMilliseconds: 60_000,
-    }).store,
+    store: makeAcceptance().store,
   });
   const app = HttpRouter.toWebHandler(
     Layer.mergeAll(
@@ -349,41 +378,11 @@ const waitForDeliveries = (
 const messageFrom = (delivery: RecordedDelivery) =>
   decodeQueueMessage(JSON.parse(delivery.bodyJson));
 
-const queuedImport = (canonicalId: string, importSuffix: number) =>
-  decodeImportView({
-    createdAt: timestampText,
-    evidence: [],
-    id: `018f47ad-91aa-7c35-b6fe-${String(800_000 + importSuffix).padStart(12, "0")}`,
-    source: { canonicalId, kind: "tiktok" },
-    status: { kind: "queued" },
-    updatedAt: timestampText,
-  });
-
-const makeAcceptance = (imports: ImportServiceShape) =>
-  makeD1ImportQueueAcceptance({
-    database,
-    imports,
-    newReplayClaimId,
-    now: () => timestampText,
-    replayClaimLeaseMilliseconds: 60_000,
-  });
-
 describe("durable import batch queue acceptance", () => {
-  it("preserves a photo identity through D1 and Queue consumption", async () => {
+  it("preserves a carousel identity through D1 and canonical intent admission", async () => {
     const app = await makeHttpHarness();
     const canonicalId = "7520000000000000051";
-    const ordinary = makeDeterministicOrdinaryImportService({
-      attempts: [
-        {
-          idempotencyKey: "batch-photo-item-1",
-          outcome: {
-            _tag: "Success",
-            import: queuedImport(canonicalId, 51),
-          },
-        },
-      ],
-    });
-    const acceptance = makeAcceptance(ordinary.service);
+    const acceptance = makeAcceptance();
 
     const admitted = await postBatchSources(app, "batch-photo", [
       `photo/${canonicalId}`,
@@ -411,35 +410,38 @@ describe("durable import batch queue acceptance", () => {
     expect(admitted.status).toBe(202);
     expect(stored).toEqual({
       canonicalId,
-      identityKind: "unsupported",
+      identityKind: "carousel",
     });
-    expect(ordinary.calls[0]?.request.source.url).toBe(
-      `https://www.tiktok.com/@source/photo/${canonicalId}`
-    );
-    expect(ordinary.calls[0]?.request.source.url).not.toContain("/video/");
+    const intent = await database
+      .prepare(
+        `SELECT resolved_canonical_source_id AS canonicalId,
+                public_source_url AS canonicalUrl,
+                public_source_kind AS sourceKind
+           FROM recipe_imports
+          WHERE resolved_canonical_source_id = ?`
+      )
+      .bind(canonicalId)
+      .first();
+    expect(intent).toEqual({
+      canonicalId,
+      canonicalUrl: `https://www.tiktok.com/@source/photo/${canonicalId}`,
+      sourceKind: "carousel",
+    });
   });
 
   it("proves HTTP to D1 to workerd Queue to unordered consumer to D1 to GET", async () => {
     const app = await makeHttpHarness();
-    const ordinary = makeDeterministicOrdinaryImportService({
-      attempts: [
-        {
-          idempotencyKey: "batch-partial-item-1",
-          outcome: {
-            _tag: "Success",
-            import: queuedImport("7520000000000000101", 1),
-          },
+    let starts = 0;
+    const acceptance = makeAcceptance({
+      workflowStarter: {
+        ensureStarted: () => {
+          starts += 1;
+          return starts === 2
+            ? Effect.fail(workflowStartUnavailable())
+            : Effect.succeed("created" as const);
         },
-        {
-          idempotencyKey: "batch-partial-item-2",
-          outcome: {
-            _tag: "Failure",
-            error: sourceValidationUnavailable(),
-          },
-        },
-      ],
+      },
     });
-    const acceptance = makeAcceptance(ordinary.service);
 
     const admitted = await postBatch(app, "batch-partial", [
       "7520000000000000101",
@@ -479,25 +481,25 @@ describe("durable import batch queue acceptance", () => {
         counts: { failed: 1, queued: 0, running: 0, succeeded: 1, total: 2 },
         items: [
           {
-            canonicalId: "7520000000000000101",
-            disposition: "created",
+            code: "workflow_start_unavailable",
+            deadLettered: false,
             id: itemIdFor(1),
-            status: "succeeded",
+            status: "failed",
           },
           {
-            code: "source_validation_unavailable",
-            deadLettered: false,
+            disposition: "created",
             id: itemIdFor(2),
-            status: "failed",
+            intentId: expect.any(String),
+            status: "succeeded",
           },
         ],
         status: "partial_failure",
       },
     });
-    expect(ordinary.calls).toHaveLength(2);
+    expect(starts).toBe(2);
   });
 
-  it("recovers an interrupted settlement through ordinary-import idempotency", async () => {
+  it("recovers an interrupted settlement through canonical intent idempotency", async () => {
     const app = await makeHttpHarness();
     const admitted = await postBatch(app, "batch-redelivery", [
       "7520000000000000201",
@@ -506,34 +508,16 @@ describe("durable import batch queue acceptance", () => {
     if (delivery === undefined) {
       throw new Error("Expected queue delivery");
     }
-    const ordinary = makeProviderFreeSyntheticImportService({
-      database,
-      now: () => timestampText,
-    });
     let calls = 0;
-    const interruptedAfterCreate: ImportServiceShape = {
-      ...ordinary,
-      create: (request, idempotencyKey) =>
-        ordinary.create(request, idempotencyKey).pipe(
-          Effect.flatMap((result) => {
-            calls += 1;
-            return calls === 1 ? Effect.interrupt : Effect.succeed(result);
-          })
-        ),
-    };
-    const acceptance = makeD1ImportQueueAcceptance({
-      database,
-      imports: interruptedAfterCreate,
-      newReplayClaimId,
-      now: () => timestampText,
-      replayClaimLeaseMilliseconds: 60_000,
-      sourceRequestForCanonicalId: (canonicalId) =>
-        decodeCreateRequest({
-          source: {
-            kind: "tiktok",
-            url: `https://synthetic.invalid/imports/${canonicalId}`,
-          },
-        }),
+    const acceptance = makeAcceptance({
+      workflowStarter: {
+        ensureStarted: () => {
+          calls += 1;
+          return calls === 1
+            ? Effect.interrupt
+            : Effect.succeed("created" as const);
+        },
+      },
     });
     const message = messageFrom(delivery);
 
@@ -566,38 +550,25 @@ describe("durable import batch queue acceptance", () => {
       },
     });
     expect(calls).toBe(2);
-    const ordinaryRows = await database
-      .prepare("SELECT COUNT(*) AS count FROM recipe_imports")
+    const intentRows = await database
+      .prepare(
+        `SELECT COUNT(*) AS count
+           FROM recipe_imports
+          WHERE resolved_canonical_source_id = ?`
+      )
+      .bind("7520000000000000201")
       .first<{ readonly count: number }>();
-    expect(ordinaryRows?.count).toBe(1);
+    expect(intentRows?.count).toBe(1);
   });
 
-  it("retains the ordinary canonical-duplicate disposition", async () => {
+  it("settles same-household duplicates as independently addressable intents", async () => {
     const app = await makeHttpHarness();
     await postBatch(app, "batch-canonical-duplicate", [
       "7520000000000000251",
       "7520000000000000251",
     ]);
     const primaryDeliveries = await waitForDeliveries(primaryQueueName, 2);
-    const ordinary = makeDeterministicOrdinaryImportService({
-      attempts: [
-        {
-          idempotencyKey: "batch-canonical-duplicate-item-1",
-          outcome: {
-            _tag: "Success",
-            import: queuedImport("7520000000000000251", 251),
-          },
-        },
-        {
-          idempotencyKey: "batch-canonical-duplicate-item-2",
-          outcome: {
-            _tag: "Success",
-            import: queuedImport("7520000000000000251", 252),
-          },
-        },
-      ],
-    });
-    const acceptance = makeAcceptance(ordinary.service);
+    const acceptance = makeAcceptance();
 
     await runSequentially(primaryDeliveries, (delivery) =>
       Effect.runPromise(
@@ -613,13 +584,40 @@ describe("durable import batch queue acceptance", () => {
       batch: {
         counts: { failed: 0, queued: 0, running: 0, succeeded: 2, total: 2 },
         items: [
-          { disposition: "created", status: "succeeded" },
-          { disposition: "canonical_duplicate", status: "succeeded" },
+          {
+            disposition: "created",
+            intentId: expect.any(String),
+            status: "succeeded",
+          },
+          {
+            disposition: "created",
+            intentId: expect.any(String),
+            status: "succeeded",
+          },
         ],
         status: "completed",
       },
     });
-    expect(ordinary.ordinaryImportsCreated).toBe(1);
+    const duplicateIntents = await database
+      .prepare(
+        `SELECT id, public_status AS status
+           FROM recipe_imports
+          WHERE resolved_canonical_source_id = ?
+          ORDER BY created_at, id`
+      )
+      .bind("7520000000000000251")
+      .all<{ readonly id: string; readonly status: string }>();
+    expect(duplicateIntents.results).toHaveLength(2);
+    expect(
+      duplicateIntents.results.map(
+        ({ status }: { readonly status: string }) => status
+      )
+    ).toEqual(["processing", "redirected"]);
+    expect(
+      new Set(
+        duplicateIntents.results.map(({ id }: { readonly id: string }) => id)
+      ).size
+    ).toBe(2);
   });
 
   it("surfaces a real Queue retry exhaustion through the durable DLQ", async () => {
@@ -639,9 +637,7 @@ describe("durable import batch queue acceptance", () => {
     if (deadLetterDelivery === undefined) {
       throw new Error("Expected final dead-letter delivery");
     }
-    const acceptance = makeAcceptance(
-      makeDeterministicOrdinaryImportService({ attempts: [] }).service
-    );
+    const acceptance = makeAcceptance();
     const message = messageFrom(deadLetterDelivery);
 
     expect(admitted.status).toBe(202);
@@ -687,9 +683,7 @@ describe("durable import batch queue acceptance", () => {
   });
 
   it("rejects a queue identity that was never admitted", async () => {
-    const acceptance = makeAcceptance(
-      makeDeterministicOrdinaryImportService({ attempts: [] }).service
-    );
+    const acceptance = makeAcceptance();
     const missing = decodeQueueMessage({
       batchId: batchIdFor(99),
       itemId: itemIdFor(99),

@@ -19,7 +19,7 @@ import {
   ImportIntentTransitionCommandDigest,
   ImportIntentTransitionMutationId,
 } from "./import-intent-transition.js";
-import { deriveLegacyImportCorrelationId } from "./import-workflow-input.js";
+import type { ImportTraceContext } from "./import-observability.js";
 import { ImportId } from "./import.contracts.js";
 import type {
   ImportIntentRepositoryShape,
@@ -85,19 +85,6 @@ export const ImportPrincipal = Schema.Struct({
   householdScopeId: HouseholdScopeId,
 });
 export type ImportPrincipal = typeof ImportPrincipal.Type;
-
-export const LegacyPrivateHouseholdScopeId = Schema.decodeUnknownSync(
-  HouseholdScopeId
-)("1111111111111111111111111111111111111111111111111111111111111111");
-export const LegacyPrivateImportActorId = Schema.decodeUnknownSync(
-  ImportActorId
-)("0000000000000000000000000000000000000000000000000000000000000000");
-export const LegacyPrivateImportPrincipal = Schema.decodeUnknownSync(
-  ImportPrincipal
-)({
-  actorId: LegacyPrivateImportActorId,
-  householdScopeId: LegacyPrivateHouseholdScopeId,
-});
 
 export interface RecipeImportIntentIdempotencyConflict {
   readonly _tag: "RecipeImportIntentIdempotencyConflict";
@@ -263,7 +250,8 @@ const resolveSourceCommandDigest = (
 
 export const makeImportIntentApplication = (
   repository: ImportIntentRepositoryShape,
-  workflowStarter: Pick<ImportWorkflowReconcilerShape, "ensureStarted">
+  workflowStarter: Pick<ImportWorkflowReconcilerShape, "ensureStarted">,
+  trace: ImportTraceContext
 ) => ({
   admit: Effect.fn("RecipeImportIntent.admit")(function* admit(
     principal: ImportPrincipal,
@@ -287,6 +275,33 @@ export const makeImportIntentApplication = (
       requestFingerprint: fingerprint,
       sourceLocatorHash: locatorHash,
       submittedSourceUrl: request.source.url,
+      trace,
+    });
+  }),
+  admitWithRequestFingerprint: Effect.fn(
+    "RecipeImportIntent.admitWithRequestFingerprint"
+  )(function* admitWithRequestFingerprint(
+    principal: ImportPrincipal,
+    request: CreateRecipeImportIntentRequest,
+    key: IdempotencyKey,
+    fingerprint: RequestFingerprint
+  ) {
+    const generator = yield* ImportIntentIdGenerator;
+    const [intentId, createdAt, keyHash, locatorHash] = yield* Effect.all([
+      generator.next,
+      currentInstant,
+      idempotencyKeyHash(key),
+      sourceLocatorHash(request),
+    ]);
+    return yield* repository.admitIntent({
+      createdAt,
+      idempotencyKeyHash: keyHash,
+      intentId,
+      principal,
+      requestFingerprint: fingerprint,
+      sourceLocatorHash: locatorHash,
+      submittedSourceUrl: request.source.url,
+      trace,
     });
   }),
   cancel: Effect.fn("RecipeImportIntent.cancel")(function* cancel(
@@ -369,9 +384,7 @@ export const makeImportIntentApplication = (
         candidate.intentId
       ).pipe(Effect.orDie);
       const started = yield* workflowStarter
-        .ensureStarted(importId, candidate.executionGeneration, {
-          correlationId: deriveLegacyImportCorrelationId(importId),
-        })
+        .ensureStarted(importId, candidate.executionGeneration, candidate.trace)
         .pipe(
           Effect.match({
             onFailure: () => false,
@@ -418,7 +431,7 @@ export const makeImportIntentApplication = (
         yield* workflowStarter.ensureStarted(
           importId,
           result.executionGeneration,
-          { correlationId: deriveLegacyImportCorrelationId(importId) }
+          trace
         );
       }
       return result.intent;

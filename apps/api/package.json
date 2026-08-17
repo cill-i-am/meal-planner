@@ -17,8 +17,7 @@
     "effect": "4.0.0-rc.109",
     "graphql": "16.11.0",
     "jpeg-js": "0.4.4",
-    "parse5": "8.0.1",
-    "uuid": "14.0.1"
+    "parse5": "8.0.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.6",

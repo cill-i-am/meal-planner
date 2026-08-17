@@ -123,22 +123,16 @@ describe("recipe recovery workflow authority", () => {
     ]);
   });
 
-  it("normalizes only the legacy durable recovery shape and preserves its identifier", async () => {
-    await expect(
-      Effect.runPromise(
-        resolveRecipeRecoveryWorkflowInput({
-          acquisitionGeneration,
-          attemptOrdinal: 1,
-          correlationId,
-          importId,
-        })
-      )
-    ).resolves.toEqual({
+  it("preserves the exact current durable recovery input", async () => {
+    const input = {
       acquisitionGeneration,
-      attemptOrdinal: 1,
+      attemptOrdinal: 1 as const,
       importId,
       trace: { correlationId },
-    });
+    };
+    await expect(
+      Effect.runPromise(resolveRecipeRecoveryWorkflowInput(input))
+    ).resolves.toEqual(input);
   });
 
   it("rejects malformed recovery context before downstream acquisition and redacts it", async () => {

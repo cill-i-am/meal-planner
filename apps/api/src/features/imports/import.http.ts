@@ -4,36 +4,26 @@ import { HttpServerResponse } from "effect/unstable/http";
 import type {
   IdempotencyConflict,
   InvalidCarouselBundle,
-  ImportNotFound,
   ImportPersistenceCorrupt,
   ImportPersistenceUnavailable,
   ImportTransitionRejected,
-  IncompatibleDuplicate,
-  InvalidImportId,
   InvalidImportRequest,
   InvalidSource,
   SourceIdentityUnavailable,
-  SourceValidationUnavailable,
   UnauthorizedImportCaller,
-  WorkflowStartUnavailable,
   CarouselProcessingUnavailable,
 } from "./import.errors.js";
 
 type PublicImportError =
   | IdempotencyConflict
   | InvalidCarouselBundle
-  | ImportNotFound
   | ImportPersistenceCorrupt
   | ImportPersistenceUnavailable
   | ImportTransitionRejected
-  | IncompatibleDuplicate
-  | InvalidImportId
   | InvalidImportRequest
   | InvalidSource
   | SourceIdentityUnavailable
-  | SourceValidationUnavailable
   | UnauthorizedImportCaller
-  | WorkflowStartUnavailable
   | CarouselProcessingUnavailable;
 
 const problem = (
@@ -60,8 +50,7 @@ const publicErrorResponse = (error: PublicImportError) => {
         "www-authenticate": 'Bearer realm="meal-planner-imports"',
       });
     }
-    case "InvalidImportRequest":
-    case "InvalidImportId": {
+    case "InvalidImportRequest": {
       return problem(400, "invalid_request", "The import request is invalid.");
     }
     case "InvalidCarouselBundle": {
@@ -90,23 +79,6 @@ const publicErrorResponse = (error: PublicImportError) => {
         "The requested import transition is not allowed."
       );
     }
-    case "IncompatibleDuplicate": {
-      return problem(
-        409,
-        "incompatible_duplicate",
-        "The source already exists with incompatible import options."
-      );
-    }
-    case "ImportNotFound": {
-      return problem(404, "not_found", "The import was not found.");
-    }
-    case "SourceValidationUnavailable": {
-      return problem(
-        503,
-        "source_validation_unavailable",
-        "Source validation is temporarily unavailable."
-      );
-    }
     case "SourceIdentityUnavailable": {
       return problem(
         503,
@@ -119,13 +91,6 @@ const publicErrorResponse = (error: PublicImportError) => {
         503,
         "persistence_unavailable",
         "Import persistence is temporarily unavailable."
-      );
-    }
-    case "WorkflowStartUnavailable": {
-      return problem(
-        503,
-        "workflow_start_unavailable",
-        "Import processing is temporarily unavailable."
       );
     }
     case "CarouselProcessingUnavailable": {
