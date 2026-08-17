@@ -20,7 +20,6 @@ export const recipeImports = sqliteTable(
     activeActionVersion: integer("active_action_version"),
     actorId: text("actor_id").notNull(),
     cancelledAt: text("cancelled_at"),
-    compatibilityFingerprint: text("compatibility_fingerprint"),
     correlationId: text("correlation_id").notNull(),
     createdAt: text("created_at").notNull(),
     evidenceReferencesJson: text("evidence_references_json").notNull(),

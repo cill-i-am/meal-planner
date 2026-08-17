@@ -22,14 +22,22 @@ import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   ImportIntentIdGenerator,
   ImportPrincipal,
-  ReconcileStalledImportIntentStartsRequest,
+  ReconcileStalledImportIntentContinuationsRequest,
   makeImportIntentApplication,
 } from "./import-intent.js";
 import { SourceCanonicalId } from "./import.contracts.js";
-import { workflowStartUnavailable } from "./import.errors.js";
+import {
+  invalidSource,
+  sourceIdentityUnavailable,
+  workflowStartUnavailable,
+} from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import { TestImportTrace } from "./import.test-fixtures.js";
 import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
+import {
+  CanonicalSourceIdentityResolver,
+  ValidatedVideoUrl,
+} from "./source-identity.js";
 
 const testEnv = env as unknown as {
   readonly MealPlannerDatabase: AnyD1Database;
@@ -57,7 +65,13 @@ const decodeExecutionGeneration = Schema.decodeUnknownSync(
   ImportIntentExecutionGeneration
 );
 const decodeReconciliationRequest = Schema.decodeUnknownSync(
-  ReconcileStalledImportIntentStartsRequest
+  ReconcileStalledImportIntentContinuationsRequest
+);
+const unusedSourceResolverLayer = Layer.succeed(
+  CanonicalSourceIdentityResolver,
+  CanonicalSourceIdentityResolver.of({
+    resolve: () => Effect.die("source resolution is not used by this tracer"),
+  })
 );
 const importWorkflowInstanceId = (importId: string) =>
   `import-acquisition-${importId}`;
@@ -1045,9 +1059,12 @@ describe("canonical recipe import intent repository in workerd", () => {
           limit: 10,
           minimumAgeMilliseconds: 300_000,
         });
-        const first = yield* application.reconcileStalledStarts(request);
-        const replay = yield* application.reconcileStalledStarts(request);
+        const first = yield* application.reconcileStalledContinuations(request);
+        const replay =
+          yield* application.reconcileStalledContinuations(request);
         expect(first).toEqual({
+          continuationFailures: 0,
+          continued: 0,
           ensured: 1,
           examined: 3,
           skipped: 1,
@@ -1070,7 +1087,222 @@ describe("canonical recipe import intent repository in workerd", () => {
           { executionGeneration: 1, importId: successfulIntentId },
         ]);
         expect(starts[1]?.correlationId).toBe(starts[3]?.correlationId);
-      }).pipe(Effect.provide([idLayer, TestClock.layer()]))
+      }).pipe(
+        Effect.provide([idLayer, TestClock.layer(), unusedSourceResolverLayer])
+      )
+    );
+  });
+
+  it("recovers a durable unresolved admission after the original request disappears", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const intentId = decodeIntentId("00000000-0000-4000-8000-000000000206");
+    const started: { correlationId: string; importId: string }[] = [];
+    const admissionApplication = makeImportIntentApplication(
+      repository,
+      { ensureStarted: () => Effect.die("admission must not start work") },
+      TestImportTrace
+    );
+    const recoveredApplication = makeImportIntentApplication(
+      makeD1ImportRepository(testEnv.MealPlannerDatabase),
+      {
+        ensureStarted: (importId, _executionGeneration, workflowTrace) =>
+          Effect.sync(() => {
+            started.push({
+              correlationId: workflowTrace.correlationId,
+              importId,
+            });
+            return "created" as const;
+          }),
+      },
+      TestImportTrace
+    );
+    const idLayer = Layer.succeed(
+      ImportIntentIdGenerator,
+      ImportIntentIdGenerator.of({ next: Effect.succeed(intentId) })
+    );
+    const resolverLayer = Layer.succeed(
+      CanonicalSourceIdentityResolver,
+      CanonicalSourceIdentityResolver.of({
+        resolve: (source) => {
+          const ordinal = /ZTEST(?<ordinal>\d+)/u.exec(source.url)?.groups?.[
+            "ordinal"
+          ];
+          if (ordinal === undefined) {
+            return Effect.fail(invalidSource());
+          }
+          const parsedOrdinal = Number(ordinal);
+          return Effect.succeed({
+            _tag: "VideoIdentity" as const,
+            identity: {
+              canonicalId: canonicalSourceIdFor(parsedOrdinal),
+              kind: "tiktok" as const,
+            },
+            videoUrl: Schema.decodeUnknownSync(ValidatedVideoUrl)(
+              canonicalUrlFor(parsedOrdinal)
+            ),
+          });
+        },
+      })
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* stalledSourceResolutionTracer() {
+        yield* TestClock.setTime(Date.parse("2026-08-18T12:00:00.000Z"));
+        const admitted = yield* admissionApplication.admit(
+          householdA,
+          requestFor(206),
+          decodeKey("stalled-source-206")
+        );
+        expect(admitted.intent).toMatchObject({
+          processing: { type: "resolving_source" },
+          source: { resolution: "pending" },
+        });
+
+        yield* TestClock.setTime(Date.parse("2026-08-18T12:10:00.000Z"));
+        const recovered =
+          yield* recoveredApplication.reconcileStalledContinuations(
+            decodeReconciliationRequest({
+              limit: 100,
+              minimumAgeMilliseconds: 300_000,
+            })
+          );
+        expect(recovered.continued).toBeGreaterThanOrEqual(1);
+        expect(recovered.continuationFailures).toBe(0);
+        expect(started.filter(({ importId }) => importId === intentId)).toEqual(
+          [
+            {
+              correlationId: TestImportTrace.correlationId,
+              importId: intentId,
+            },
+          ]
+        );
+        expect(
+          yield* recoveredApplication.get(householdA, intentId)
+        ).toMatchObject({
+          processing: { sourceKind: "video", type: "acquiring_media" },
+          source: {
+            canonicalUrl: canonicalUrlFor(206),
+            resolution: "resolved",
+          },
+        });
+        expect(
+          yield* recoveredApplication.continueSourceResolution(
+            householdA,
+            intentId
+          )
+        ).toMatchObject({
+          disposition: "no_op",
+          intent: {
+            processing: { type: "acquiring_media" },
+            status: "processing",
+          },
+        });
+      }).pipe(Effect.provide([idLayer, resolverLayer, TestClock.layer()]))
+    );
+  });
+
+  it("settles source-resolution failures as safe terminal intent states", async () => {
+    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+    const intentIds = [207, 208, 209].map((ordinal) =>
+      decodeIntentId(
+        `00000000-0000-4000-8000-${ordinal.toString().padStart(12, "0")}`
+      )
+    );
+    let nextIntentIndex = 0;
+    let resolverCalls = 0;
+    const application = makeImportIntentApplication(
+      repository,
+      { ensureStarted: () => Effect.die("failed sources must not start work") },
+      TestImportTrace
+    );
+    const idLayer = Layer.succeed(
+      ImportIntentIdGenerator,
+      ImportIntentIdGenerator.of({
+        next: Effect.sync(() => {
+          const next = intentIds[nextIntentIndex];
+          nextIntentIndex += 1;
+          if (next === undefined) {
+            throw new Error("source failure intent fixture exhausted");
+          }
+          return next;
+        }),
+      })
+    );
+    const resolverLayer = Layer.succeed(
+      CanonicalSourceIdentityResolver,
+      CanonicalSourceIdentityResolver.of({
+        resolve: (source) => {
+          resolverCalls += 1;
+          if (source.url.includes("207")) {
+            return Effect.fail(invalidSource());
+          }
+          if (source.url.includes("208")) {
+            return Effect.fail(sourceIdentityUnavailable());
+          }
+          return Effect.succeed({
+            _tag: "UnsupportedIdentity" as const,
+            identity: {
+              canonicalId: canonicalSourceIdFor(209),
+              kind: "tiktok" as const,
+            },
+          });
+        },
+      })
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* sourceFailureTracer() {
+        yield* TestClock.setTime(Date.parse("2026-08-19T12:00:00.000Z"));
+        const expected = [
+          {
+            code: "unsupported_source",
+            message: "This source type is not supported.",
+            ordinal: 207,
+          },
+          {
+            code: "source_unavailable",
+            message: "The source is temporarily unavailable.",
+            ordinal: 208,
+          },
+          {
+            code: "unsupported_source",
+            message: "This source type is not supported.",
+            ordinal: 209,
+          },
+        ] as const;
+        for (const item of expected) {
+          const admitted = yield* application.admit(
+            householdA,
+            requestFor(item.ordinal),
+            decodeKey(`source-failure-${item.ordinal}`)
+          );
+          const failed = yield* application.continueSourceResolution(
+            householdA,
+            admitted.intent.id
+          );
+          expect(failed).toMatchObject({
+            disposition: "failed",
+            intent: {
+              error: {
+                code: item.code,
+                message: item.message,
+                recovery: "create_new_intent",
+              },
+              status: "failed",
+            },
+          });
+          expect(
+            yield* application.continueSourceResolution(
+              householdA,
+              admitted.intent.id
+            )
+          ).toMatchObject({
+            disposition: "no_op",
+            intent: { status: "failed" },
+          });
+        }
+        expect(resolverCalls).toBe(3);
+      }).pipe(Effect.provide([idLayer, resolverLayer, TestClock.layer()]))
     );
   });
 
@@ -1157,13 +1389,15 @@ describe("canonical recipe import intent repository in workerd", () => {
 
         yield* TestClock.setTime(Date.parse("2026-08-14T13:10:00.000Z"));
         reconciling = true;
-        const summary = yield* application.reconcileStalledStarts(
+        const summary = yield* application.reconcileStalledContinuations(
           decodeReconciliationRequest({
             limit: 10,
             minimumAgeMilliseconds: 300_000,
           })
         );
         expect(summary).toEqual({
+          continuationFailures: 0,
+          continued: 0,
           ensured: 1,
           examined: 1,
           skipped: 0,
@@ -1185,19 +1419,23 @@ describe("canonical recipe import intent repository in workerd", () => {
         const cancelled = yield* application.get(householdA, intentId);
         expect(cancelled.status).toBe("cancelled");
         expect(
-          yield* application.reconcileStalledStarts(
+          yield* application.reconcileStalledContinuations(
             decodeReconciliationRequest({
               limit: 10,
               minimumAgeMilliseconds: 300_000,
             })
           )
         ).toEqual({
+          continuationFailures: 0,
+          continued: 0,
           ensured: 0,
           examined: 0,
           skipped: 0,
           startFailures: 0,
         });
-      }).pipe(Effect.provide([idLayer, TestClock.layer()]))
+      }).pipe(
+        Effect.provide([idLayer, TestClock.layer(), unusedSourceResolverLayer])
+      )
     );
   });
 

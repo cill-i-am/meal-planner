@@ -1,7 +1,6 @@
 -- Canonical greenfield import persistence baseline. Existing pre-cutover data is intentionally unsupported.
 CREATE TABLE IF NOT EXISTS "recipe_imports" (
 	`acquisition_generation` integer DEFAULT 0 NOT NULL,
-	`compatibility_fingerprint` text,
 	`created_at` text NOT NULL,
 	`evidence_references_json` text NOT NULL,
 	`id` text PRIMARY KEY NOT NULL,

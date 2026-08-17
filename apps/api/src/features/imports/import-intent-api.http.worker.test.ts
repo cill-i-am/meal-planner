@@ -36,13 +36,17 @@ import {
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
 import { ImportAuthorizer } from "./import.auth.js";
-import { ImportId } from "./import.contracts.js";
+import { ImportId, SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import {
   TestImportPrincipal,
   TestImportTrace,
   makeTestImportAuthorizer,
 } from "./import.test-fixtures.js";
+import {
+  CanonicalSourceIdentityResolver,
+  ValidatedVideoUrl,
+} from "./source-identity.js";
 
 const testEnv = env as unknown as {
   readonly MealPlannerDatabase: AnyD1Database;
@@ -63,7 +67,6 @@ const privateModel = "http-worker-private-model";
 const privateTranscript = "http-worker-private-transcript";
 const extractionFingerprint = "d".repeat(64);
 const evidenceFingerprint = "e".repeat(64);
-const compatibilityFingerprint = "f".repeat(64);
 const actionId = Schema.decodeUnknownSync(RecipeImportActionId)("c".repeat(64));
 const foreignHouseholdScopeId = "9".repeat(64);
 const instant = "2026-08-16T18:00:00.000Z";
@@ -178,26 +181,16 @@ const seedRequiresAction = async (
       .prepare(
         `UPDATE recipe_imports
             SET acquisition_generation = 1,
-                compatibility_fingerprint = ?,
-                evidence_references_json = ?, resolved_canonical_source_id = ?,
+                evidence_references_json = ?,
                 source_kind = 'tiktok', status = 'transcribed',
-                status_code = NULL, public_source_url = ?,
-                public_source_kind = 'video', public_status = 'requires_action',
+                status_code = NULL, public_status = 'requires_action',
                 public_stage = NULL, public_stage_started_at = NULL,
                 public_activity = NULL, active_action_id = ?,
                 active_action_version = 1,
                 intent_version = intent_version + 1, updated_at = ?
           WHERE id = ?`
       )
-      .bind(
-        compatibilityFingerprint,
-        JSON.stringify(evidence),
-        canonicalSourceId,
-        canonicalUrl,
-        actionId,
-        instant,
-        importId
-      ),
+      .bind(JSON.stringify(evidence), actionId, instant, importId),
     database
       .prepare(
         `INSERT INTO import_recipe_extractions (
@@ -277,7 +270,6 @@ const assertNoPrivateTransport = (
     privateTranscript,
     evidenceFingerprint,
     extractionFingerprint,
-    compatibilityFingerprint,
     TestImportPrincipal.actorId,
     TestImportPrincipal.householdScopeId,
     ...additionalSentinels,
@@ -318,6 +310,7 @@ describe("recipe import intent HTTP API with real D1", () => {
     const program = Effect.gen(function* realD1HttpScenario() {
       const database = testEnv.MealPlannerDatabase;
       const started: string[] = [];
+      const activeWorkflowIds = new Set<string>();
       const terminated: string[] = [];
       const authorizer = yield* makeTestImportAuthorizer(bearerToken);
       const intentApplication = makeImportIntentApplication(
@@ -325,6 +318,10 @@ describe("recipe import intent HTTP API with real D1", () => {
         {
           ensureStarted: (intentId) =>
             Effect.sync(() => {
+              if (activeWorkflowIds.has(intentId)) {
+                return "already_active" as const;
+              }
+              activeWorkflowIds.add(intentId);
               started.push(intentId);
               return "created" as const;
             }),
@@ -351,6 +348,24 @@ describe("recipe import intent HTTP API with real D1", () => {
             terminate: (intentId) =>
               Effect.sync(() => {
                 terminated.push(intentId);
+              }),
+          })
+        ),
+        Layer.succeed(
+          CanonicalSourceIdentityResolver,
+          CanonicalSourceIdentityResolver.of({
+            resolve: () =>
+              Effect.succeed({
+                _tag: "VideoIdentity" as const,
+                identity: {
+                  canonicalId:
+                    Schema.decodeUnknownSync(SourceCanonicalId)(
+                      canonicalSourceId
+                    ),
+                  kind: "tiktok" as const,
+                },
+                videoUrl:
+                  Schema.decodeUnknownSync(ValidatedVideoUrl)(canonicalUrl),
               }),
           })
         )
@@ -422,6 +437,21 @@ describe("recipe import intent HTTP API with real D1", () => {
           },
           payload: request,
         });
+        let continued = yield* client.recipeImportIntents.get({
+          params: { id: created.body.id },
+        });
+        for (
+          let attempt = 0;
+          attempt < 20 &&
+          continued.body.status === "processing" &&
+          continued.body.processing.type === "resolving_source";
+          attempt += 1
+        ) {
+          yield* Effect.sleep("1 millis");
+          continued = yield* client.recipeImportIntents.get({
+            params: { id: created.body.id },
+          });
+        }
         const replayed = yield* client.recipeImportIntents.create({
           headers: {
             "idempotency-key": idempotencyKey("http-worker-admission"),
@@ -509,6 +539,7 @@ describe("recipe import intent HTTP API with real D1", () => {
           confirmReplay,
           confirmed,
           conflict,
+          continued,
           created,
           foreignNotFound,
           recipe,
@@ -518,6 +549,15 @@ describe("recipe import intent HTTP API with real D1", () => {
       }).pipe(Effect.provide(clientLayer));
 
       expect(results.created.body).toMatchObject({ status: "processing" });
+      expect(results.created.body).toMatchObject({
+        processing: { type: "resolving_source" },
+        source: { resolution: "pending" },
+      });
+      expect(results.continued.body).toMatchObject({
+        processing: { sourceKind: "video", type: "acquiring_media" },
+        source: { canonicalUrl, resolution: "resolved" },
+        status: "processing",
+      });
       expect(results.created.headers.location).toContain(
         results.created.body.id
       );
@@ -541,12 +581,12 @@ describe("recipe import intent HTTP API with real D1", () => {
       });
       expect(results.answered).toMatchObject({
         action: { id: actionId },
-        intentVersion: 3,
+        intentVersion: 4,
         status: "requires_action",
       });
       expect(results.confirmed).toMatchObject({
         id: results.created.body.id,
-        intentVersion: 5,
+        intentVersion: 6,
         result: { recipeId: results.created.body.id },
         status: "succeeded",
       });
@@ -554,7 +594,7 @@ describe("recipe import intent HTTP API with real D1", () => {
       expect(results.afterReplay).toEqual(results.afterConfirm);
       expect(results.afterConfirm).toEqual({
         corrections: 2,
-        history: 5,
+        history: 6,
         mutations: 2,
         public_status: "succeeded",
         recipe_id: results.created.body.id,
@@ -574,6 +614,7 @@ describe("recipe import intent HTTP API with real D1", () => {
       });
       const publicPayloads = [
         results.created,
+        results.continued,
         results.replayed,
         results.conflict,
         results.foreignNotFound,
@@ -592,7 +633,7 @@ describe("recipe import intent HTTP API with real D1", () => {
         );
       }
       expect(JSON.stringify(publicPayloads)).toContain(canonicalUrl);
-      expect(started).toEqual([]);
+      expect(started).toEqual([results.created.body.id]);
       expect(terminated).toEqual([]);
     });
     try {

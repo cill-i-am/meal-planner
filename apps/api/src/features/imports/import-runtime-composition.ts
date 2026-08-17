@@ -90,6 +90,7 @@ import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import { ImportTimestamp } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
+import { CanonicalSourceIdentityResolver } from "./source-identity.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
 export { runImportVisualAndRecipeWorkflow } from "./import-application-workflows.js";
@@ -444,6 +445,9 @@ export const makeImportWorkerRequestLayer = (
   input: ImportWorkerRequestLayerInput
 ) => {
   const d1ImportRepository = makeD1ImportRepository(input.database);
+  const identityResolver = makeTikTokCanonicalSourceIdentityResolver(
+    globalThis.fetch
+  );
   const intentApplication = makeImportIntentApplication(
     d1ImportRepository,
     input.importWorkflowStarter,
@@ -453,9 +457,7 @@ export const makeImportWorkerRequestLayer = (
     ImportBatchService,
     ImportBatchService.of(
       makeImportBatchService({
-        identityResolver: makeTikTokCanonicalSourceIdentityResolver(
-          globalThis.fetch
-        ),
+        identityResolver,
         newBatchId: () =>
           Schema.decodeUnknownSync(ImportBatchId)(crypto.randomUUID()),
         newItemId: () =>
@@ -471,9 +473,7 @@ export const makeImportWorkerRequestLayer = (
     OperatorCarouselImportService.of(
       makeOperatorCarouselImportService({
         application: intentApplication,
-        identityResolver: makeTikTokCanonicalSourceIdentityResolver(
-          globalThis.fetch
-        ),
+        identityResolver,
         newIntentId: () =>
           Schema.decodeUnknownSync(RecipeImportIntentId)(crypto.randomUUID()),
         now: input.now,
@@ -523,6 +523,10 @@ export const makeImportWorkerRequestLayer = (
       )
     ),
     ImportIntentIdGenerator.live,
+    Layer.succeed(
+      CanonicalSourceIdentityResolver,
+      CanonicalSourceIdentityResolver.of(identityResolver)
+    ),
     Layer.succeed(
       ImportIntentWorkflowTerminator,
       ImportIntentWorkflowTerminator.of(input.importWorkflowTerminator)

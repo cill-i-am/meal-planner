@@ -37,6 +37,7 @@ import { ProviderTerminalSettlementService } from "./import-provider-terminal-se
 import { ProviderTerminalSettlementRouteDefinitions } from "./import-provider-terminal-settlement.routes.js";
 import { ImportAuthorizer, makeImportAuthorizer } from "./import.auth.js";
 import { TestImportPrincipal } from "./import.test-fixtures.js";
+import { CanonicalSourceIdentityResolver } from "./source-identity.js";
 
 const intentId = "018f47ad-91aa-7c35-b6fe-000000000001";
 const actionId = "a".repeat(64);
@@ -189,8 +190,21 @@ const makeApp = async (options: MakeAppOptions = {}) => {
   const intentApplication = {
     admit: unused,
     cancel: unused,
+    continueSourceResolution: () =>
+      Effect.succeed({
+        disposition: "no_op" as const,
+        intent: requiresActionIntent,
+      }),
     get: unused,
-    reconcileStalledStarts: unused,
+    reconcileStalledContinuations: () =>
+      Effect.succeed({
+        continuationFailures: 0,
+        continued: 0,
+        ensured: 0,
+        examined: 0,
+        skipped: 0,
+        startFailures: 0,
+      }),
     requireMutable: unused,
     resolveSource: unused,
     timeline: unused,
@@ -205,6 +219,10 @@ const makeApp = async (options: MakeAppOptions = {}) => {
   } as RecipeImportIntentReviewApplicationShape;
   const services = Layer.mergeAll(
     ImportIntentIdGenerator.live,
+    Layer.succeed(
+      CanonicalSourceIdentityResolver,
+      CanonicalSourceIdentityResolver.of({ resolve: unused })
+    ),
     Layer.succeed(
       ImportIntentWorkflowTerminator,
       ImportIntentWorkflowTerminator.of({ terminate: () => Effect.void })

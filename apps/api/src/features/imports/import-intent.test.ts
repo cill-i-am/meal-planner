@@ -110,8 +110,10 @@ const makeRecordingRepository = (): {
             intents.get(`${principal.householdScopeId}:${intentId}`)
           )
         ),
+      findPendingSourceResolution: () => Effect.succeed(Option.none()),
       isIntentExecutionCurrent: () => Effect.succeed(false),
       listStalledIntentStarts: () => Effect.succeed([]),
+      listStalledSourceResolutions: () => Effect.succeed([]),
       readIntentTimeline: () => Effect.die("not used by this tracer"),
       requireMutableIntent: (principal, intentId) =>
         Effect.flatMap(

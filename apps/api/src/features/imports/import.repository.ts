@@ -46,11 +46,6 @@ const Sha256Hex = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
 );
 
-export const CompatibilityFingerprint = Sha256Hex.pipe(
-  Schema.brand("CompatibilityFingerprint")
-);
-export type CompatibilityFingerprint = typeof CompatibilityFingerprint.Type;
-
 export const IdempotencyKeyHash = Sha256Hex.pipe(
   Schema.brand("IdempotencyKeyHash")
 );
@@ -157,6 +152,15 @@ export const StalledImportIntentStartCandidate = Schema.Struct({
 export type StalledImportIntentStartCandidate =
   typeof StalledImportIntentStartCandidate.Type;
 
+export interface PendingImportIntentSourceResolution {
+  readonly executionGeneration: ImportIntentExecutionGeneration;
+  readonly intentId: RecipeImportIntentId;
+  readonly principal: ImportPrincipal;
+  readonly submittedSourceUrl: SourceUrl;
+  readonly trace: ImportTraceContext;
+  readonly updatedAt: Instant;
+}
+
 export type InternalImportIntentTransitionError =
   | ImportPersistenceCorrupt
   | ImportPersistenceUnavailable
@@ -186,6 +190,13 @@ export interface ImportIntentRepositoryShape {
     Option.Option<RecipeImportIntent>,
     ImportPersistenceCorrupt | ImportPersistenceUnavailable
   >;
+  readonly findPendingSourceResolution: (
+    principal: ImportPrincipal,
+    intentId: RecipeImportIntentId
+  ) => Effect.Effect<
+    Option.Option<PendingImportIntentSourceResolution>,
+    ImportPersistenceCorrupt | ImportPersistenceUnavailable
+  >;
   readonly isIntentExecutionCurrent: (
     intentId: RecipeImportIntentId,
     executionGeneration: ImportIntentTransitionCommand["executionGeneration"]
@@ -198,6 +209,13 @@ export interface ImportIntentRepositoryShape {
     limit: StalledImportIntentStartLimit
   ) => Effect.Effect<
     readonly StalledImportIntentStartCandidate[],
+    ImportPersistenceCorrupt | ImportPersistenceUnavailable
+  >;
+  readonly listStalledSourceResolutions: (
+    cutoff: Instant,
+    limit: StalledImportIntentStartLimit
+  ) => Effect.Effect<
+    readonly PendingImportIntentSourceResolution[],
     ImportPersistenceCorrupt | ImportPersistenceUnavailable
   >;
   readonly requireMutableIntent: (

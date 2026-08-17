@@ -107,12 +107,11 @@ describe("canonical recipe import baseline", () => {
     expect(recipeImportColumns.results).not.toContainEqual(
       expect.objectContaining({ name: "canonical_source_id" })
     );
+    expect(recipeImportColumns.results).not.toContainEqual(
+      expect.objectContaining({ name: "compatibility_fingerprint" })
+    );
     expect(recipeImportColumns.results).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          name: "compatibility_fingerprint",
-          notnull: 0,
-        }),
         expect.objectContaining({ name: "correlation_id", notnull: 1 }),
         expect.objectContaining({
           dflt_value: null,

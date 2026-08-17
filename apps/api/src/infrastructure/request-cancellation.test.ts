@@ -212,10 +212,14 @@ describe("request cancellation", () => {
       },
       cancelIntent: () => Effect.die("cancellation must not start"),
       findIntent: () => Effect.die("intent lookup must not start"),
+      findPendingSourceResolution: () =>
+        Effect.die("pending source lookup must not start"),
       isIntentExecutionCurrent: () =>
         Effect.die("generation lookup must not start"),
       listStalledIntentStarts: () =>
         Effect.die("stalled-start lookup must not start"),
+      listStalledSourceResolutions: () =>
+        Effect.die("stalled source lookup must not start"),
       readIntentTimeline: () => Effect.die("timeline lookup must not start"),
       requireMutableIntent: () =>
         Effect.die("mutable-intent lookup must not start"),

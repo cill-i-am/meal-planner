@@ -2,6 +2,7 @@ import {
   Instant,
   RecipeImportIntent,
   RecipeImportIntentId,
+  SourceUrl,
 } from "@meal-planner/recipe-import-api";
 import type {
   RecipeImportIntent as RecipeImportIntentType,
@@ -31,13 +32,13 @@ import type {
 import {
   CancelImportIntentCommand,
   InitialRecipeImportIntentVersion,
+  ImportPrincipal,
   RecipeImportIntentIdempotencyConflict,
   RecipeImportIntentNotFound,
   RecipeImportIntentRedirected,
   RecipeImportIntentTransitionRejected,
   RecipeImportIntentVersionConflict,
 } from "./import-intent.js";
-import type { ImportPrincipal } from "./import-intent.js";
 import type {
   AcquisitionGeneration,
   ClassifiedAcquisitionFailure,
@@ -79,6 +80,7 @@ import type {
   InternalImportIntentTransitionError,
   ImportRepositoryShape,
   ImportTransitionError,
+  PendingImportIntentSourceResolution as PendingImportIntentSourceResolutionType,
   StalledImportIntentStartLimit,
   StoredImport,
 } from "./import.repository.js";
@@ -937,6 +939,38 @@ const requireMatchingResolvedSource = (
   row.publicSourceUrl === command.canonicalUrl &&
   row.publicSourceKind === command.sourceKind;
 
+const decodePendingSourceResolution = (input: unknown) =>
+  Effect.try({
+    catch: importPersistenceCorrupt,
+    try: () => {
+      const row = Schema.decodeUnknownSync(
+        Schema.Struct({
+          actorId: Schema.String,
+          correlationId: ImportCorrelationId,
+          executionGeneration: ImportIntentExecutionGeneration,
+          householdScopeId: Schema.String,
+          intentId: RecipeImportIntentId,
+          submittedSourceUrl: Schema.String,
+          updatedAt: Schema.String,
+        }),
+        { onExcessProperty: "error" }
+      )(input);
+      return {
+        executionGeneration: row.executionGeneration,
+        intentId: row.intentId,
+        principal: Schema.decodeUnknownSync(ImportPrincipal)({
+          actorId: row.actorId,
+          householdScopeId: row.householdScopeId,
+        }),
+        submittedSourceUrl: Schema.decodeUnknownSync(SourceUrl)(
+          row.submittedSourceUrl
+        ),
+        trace: { correlationId: row.correlationId },
+        updatedAt: Schema.decodeUnknownSync(Instant)(row.updatedAt),
+      } satisfies PendingImportIntentSourceResolutionType;
+    },
+  });
+
 export const makeD1ImportRepository = (
   binding: AnyD1Database,
   currentTimeMillis: () => number = Date.now
@@ -1025,6 +1059,34 @@ export const makeD1ImportRepository = (
         onSome: (row) => Effect.map(decodePublicIntent(row), Option.some),
       })
     );
+
+  const findPendingSourceResolution = (
+    principal: ImportPrincipal,
+    intentId: RecipeImportIntentId
+  ) =>
+    Effect.gen(function* findPendingSourceResolutionEffect() {
+      const row = yield* persistenceEffect(
+        () =>
+          binding
+            .prepare(
+              `SELECT actor_id AS actorId, correlation_id AS correlationId,
+                      execution_generation AS executionGeneration,
+                      household_scope_id AS householdScopeId, id AS intentId,
+                      submitted_source_url AS submittedSourceUrl,
+                      updated_at AS updatedAt
+                 FROM recipe_imports
+                WHERE actor_id = ? AND household_scope_id = ? AND id = ?
+                  AND public_status = 'processing'
+                  AND public_stage = 'resolving_source'
+                LIMIT 1`
+            )
+            .bind(principal.actorId, principal.householdScopeId, intentId)
+            .first() as PromiseLike<unknown | null>
+      );
+      return row === null
+        ? Option.none<PendingImportIntentSourceResolutionType>()
+        : Option.some(yield* decodePendingSourceResolution(row));
+    });
 
   const requireIntentRow = (
     principal: ImportPrincipal,
@@ -1412,6 +1474,35 @@ export const makeD1ImportRepository = (
       });
     });
 
+  const listStalledSourceResolutions = (
+    cutoff: Instant,
+    limit: StalledImportIntentStartLimit
+  ) =>
+    Effect.gen(function* listStalledSourceResolutionsEffect() {
+      const rows = yield* persistenceEffect(
+        () =>
+          binding
+            .prepare(
+              `SELECT actor_id AS actorId, correlation_id AS correlationId,
+                      execution_generation AS executionGeneration,
+                      household_scope_id AS householdScopeId, id AS intentId,
+                      submitted_source_url AS submittedSourceUrl,
+                      updated_at AS updatedAt
+                 FROM recipe_imports
+                WHERE public_status = 'processing'
+                  AND public_stage = 'resolving_source'
+                  AND updated_at <= ?
+                ORDER BY updated_at ASC, id ASC
+                LIMIT ?`
+            )
+            .bind(encodeInstant(cutoff), limit)
+            .all() as PromiseLike<{ readonly results: readonly unknown[] }>
+      );
+      return yield* Effect.all(
+        rows.results.map((row) => decodePendingSourceResolution(row))
+      );
+    });
+
   const isIntentExecutionCurrent = (
     intentId: RecipeImportIntentId,
     executionGeneration: typeof ImportIntentExecutionGeneration.Type
@@ -1702,8 +1793,10 @@ export const makeD1ImportRepository = (
       }),
     cancelIntent,
     findIntent,
+    findPendingSourceResolution,
     isIntentExecutionCurrent,
     listStalledIntentStarts,
+    listStalledSourceResolutions,
     readIntentTimeline,
     requireMutableIntent: (principal, intentId) =>
       Effect.gen(function* requireMutableIntent() {
