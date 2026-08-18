@@ -20,10 +20,14 @@ const isProductionSource = (entryPath: string): boolean =>
   !entryPath.includes(".integration.") &&
   !entryPath.includes(".support.") &&
   !entryPath.includes(".gen.") &&
+  !entryPath.includes(".generated.") &&
+  !entryPath.includes(".fixture.") &&
   !entryPath.includes("/test/") &&
   !entryPath.includes("/tests/") &&
   !entryPath.includes("/__tests__/") &&
   !entryPath.includes("/fixtures/") &&
+  !entryPath.includes("/fixture/") &&
+  !entryPath.includes("/generated/") &&
   !entryPath.includes("/test-fixtures/") &&
   !entryPath.includes("/support/") &&
   !entryPath.includes("/vendor/");
@@ -82,8 +86,30 @@ describe("greenfield recipe-import architecture", () => {
   it.each([
     ["apps/web/src/worker.ts", "website-worker"],
     ["apps/web/src/background.worker.ts", "browser"],
+    ["apps/web/src/supporting/secret.ts", "browser"],
+    ["apps/web/src/secret.supporting.ts", "browser"],
+    ["apps/web/src/generated-client/secret.ts", "browser"],
+    ["apps/web/src/secret.generated-client.ts", "browser"],
+    ["apps/web/src/fixture-data/secret.ts", "browser"],
+    ["apps/web/src/secret.fixture-data.ts", "browser"],
     ["apps/web/src/support/secret.ts", undefined],
     ["apps/web/src/secret.support.ts", undefined],
+    ["apps/web/src/test/secret.ts", undefined],
+    ["apps/web/src/tests/secret.ts", undefined],
+    ["apps/web/src/__tests__/secret.ts", undefined],
+    ["apps/web/src/fixtures/secret.ts", undefined],
+    ["apps/web/src/fixture/secret.ts", undefined],
+    ["apps/web/src/generated/secret.ts", undefined],
+    ["apps/web/src/test-fixtures/secret.ts", undefined],
+    ["apps/web/src/vendor/secret.ts", undefined],
+    ["apps/web/src/secret.test.ts", undefined],
+    ["apps/web/src/secret.integration.ts", undefined],
+    ["apps/web/src/secret.gen.ts", undefined],
+    ["apps/web/src/secret.generated.ts", undefined],
+    ["apps/web/src/secret.fixture.ts", undefined],
+    ["apps/web/src/secret.txt", undefined],
+    ["apps/api/src/secret.ts", undefined],
+    ["", undefined],
   ] as const)("classifies %s as %s", (entryPath, expected) => {
     expect(classifyWebProductionSource(entryPath)).toBe(expected);
   });
