@@ -1,7 +1,7 @@
 import { defineRule } from "@oxlint/plugins";
 import type { ESTree } from "@oxlint/plugins";
 
-// Vendored from dmmulroy/anti-slop at 446268e5d15baa968eaec669ff65358d36ae6259.
+// Vendored from dmmulroy/anti-slop at 6d538555cb151d4121ed51a27db81890eacf8ae9.
 // Only repository-formatting/style adaptations were applied; rule behavior is unchanged.
 type Parameter = ESTree.ParamPattern;
 type ParameterOwner =

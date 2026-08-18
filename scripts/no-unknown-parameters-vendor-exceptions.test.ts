@@ -13,8 +13,8 @@ interface VendorContractException {
 }
 
 // Last verified 2026-08-18: npm latest=next=alchemy@2.0.0-beta.72;
-// anti-slop main=446268e5d15baa968eaec669ff65358d36ae6259;
-// Alchemy main=6b73819a02f609e8942b1d9286dc197fbca200ab.
+// anti-slop main=6d538555cb151d4121ed51a27db81890eacf8ae9;
+// Alchemy main=ae168f2e206fc14e1f37fef3925ce2644bbf5014.
 const vendorContractExceptions: readonly VendorContractException[] = [
   {
     file: "apps/api/src/features/imports/import-provider-kernel.ts",
@@ -106,10 +106,9 @@ const sourceExtensions = new Set([
   ".ts",
   ".tsx",
 ]);
-const suppression = [
-  "oxlint-disable-next-line ",
-  "anti-slop/no-unknown-parameters",
-].join("");
+const oxlintDisable = ["oxlint", "disable"].join("-");
+const ruleName = ["anti-slop", "no-unknown-parameters"].join("/");
+const suppression = `${oxlintDisable}-next-line ${ruleName}`;
 
 const trackedFiles = execFileSync("git", ["ls-files", "-z"], {
   cwd: repositoryRoot,
@@ -127,16 +126,53 @@ const ownedSourceFiles = (): readonly string[] =>
     return isOwned && sourceExtensions.has(extension);
   });
 
+const suppressionLines = (source: string): readonly number[] => {
+  const commentPattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\//gu;
+  const locations: number[] = [];
+
+  for (const match of source.matchAll(commentPattern)) {
+    const [comment] = match;
+    if (!(comment.includes(oxlintDisable) && comment.includes(ruleName))) {
+      continue;
+    }
+
+    const matchIndex = match.index;
+    locations.push(source.slice(0, matchIndex).split("\n").length);
+  }
+
+  return locations;
+};
+
 const suppressionLocations = (): readonly string[] =>
   ownedSourceFiles().flatMap((file) =>
-    readFileSync(new URL(file, repositoryRootUrl), "utf-8")
-      .split("\n")
-      .flatMap((line, index) =>
-        line.includes(suppression) ? [`${file}:${index + 1}`] : []
-      )
+    suppressionLines(
+      readFileSync(new URL(file, repositoryRootUrl), "utf-8")
+    ).map((line) => `${file}:${line}`)
   );
 
 describe("anti-slop vendor contract exceptions", () => {
+  it.each([
+    `// ${oxlintDisable}-next-line ${ruleName}`,
+    `const probe = (input: unknown) => input; // ${oxlintDisable}-line ${ruleName}`,
+    `/* ${oxlintDisable} ${ruleName} */`,
+    `/* ${oxlintDisable}\n * ${ruleName}\n */`,
+  ])("detects every Oxlint suppression form", (directive) => {
+    expect(suppressionLines(directive)).toHaveLength(1);
+  });
+
+  it("keeps the rule globally enabled without config-level exceptions", () => {
+    const config = readFileSync(
+      new URL("oxlint.config.ts", repositoryRootUrl),
+      "utf-8"
+    );
+    const ruleMentions = config
+      .split("\n")
+      .flatMap((line, index) => (line.includes(ruleName) ? [index + 1] : []));
+
+    expect(ruleMentions).toHaveLength(1);
+    expect(config).toContain(`"${ruleName}": "error"`);
+  });
+
   it("keeps exactly the nine reviewed Alchemy beta.72 exceptions", () => {
     expect(vendorContractExceptions).toHaveLength(9);
     expect(suppressionLocations()).toHaveLength(9);
