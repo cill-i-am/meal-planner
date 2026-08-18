@@ -14,13 +14,13 @@ export interface PrivateOrUnavailableSource {
 
 export type SourceAvailability = AvailableSource | PrivateOrUnavailableSource;
 
-export interface SourceAvailabilityValidatorShape {
+export interface SourceAvailabilityValidator {
   readonly validate: (
     source: Omit<VideoIdentity, "_tag">
   ) => Effect.Effect<SourceAvailability, SourceAvailabilityError>;
 }
 
 export const SourceAvailabilityValidator =
-  Context.Service<SourceAvailabilityValidatorShape>(
+  Context.Service<SourceAvailabilityValidator>(
     "meal-planner/SourceAvailabilityValidator"
   );

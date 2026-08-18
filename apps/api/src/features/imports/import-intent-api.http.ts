@@ -68,14 +68,14 @@ import type {
   ImportPersistenceUnavailable,
 } from "./import.errors.js";
 
-export type RecipeImportIntentApplicationShape = ReturnType<
+export type RecipeImportIntentApplication = ReturnType<
   typeof makeImportIntentApplication
 >;
 
-export class RecipeImportIntentApplication extends Context.Service<
-  RecipeImportIntentApplication,
-  RecipeImportIntentApplicationShape
->()("meal-planner/RecipeImportIntentApplication") {}
+export const RecipeImportIntentApplication =
+  Context.Service<RecipeImportIntentApplication>(
+    "meal-planner/RecipeImportIntentApplication"
+  );
 
 const decodeApiPrincipal = Schema.decodeUnknownSync(RecipeImportPrincipal);
 const decodeDomainPrincipal = Schema.decodeUnknownSync(ImportPrincipalSchema);
@@ -312,7 +312,7 @@ const stalledContinuationRequest = Schema.decodeUnknownSync(
 )({ limit: 25, minimumAgeMilliseconds: 300_000 });
 
 const deferIntentContinuations = (
-  application: RecipeImportIntentApplicationShape,
+  application: RecipeImportIntentApplication,
   principal: ImportPrincipal,
   intentId?: RecipeImportIntentId
 ) =>

@@ -22,8 +22,8 @@ import type {
   RetryableAcquisitionFailure,
   Sha256Hex as Sha256HexType,
 } from "./import-media.model.js";
-import type { SpeechAudioExtractorShape } from "./import-speech-transcriber.js";
-import type { VisualFrameSamplerShape } from "./import-visual-evidence-extractor.js";
+import type { SpeechAudioExtractor } from "./import-speech-transcriber.js";
+import type { VisualFrameSampler } from "./import-visual-evidence-extractor.js";
 import { ImportId } from "./import.contracts.js";
 import type { ImportId as ImportIdType } from "./import.contracts.js";
 
@@ -375,7 +375,7 @@ const readBytes = Effect.fn("ImportDerivedMedia.readBytes")(
 /** Private-R2 audio adapter for the real workflow. */
 export const makeR2SpeechAudioExtractor = (
   bucket: AcquisitionBucketLike
-): SpeechAudioExtractorShape => ({
+): SpeechAudioExtractor => ({
   extract: Effect.fn("ImportDerivedMedia.extractAudio")((input) =>
     Effect.gen(function* extractAudioEffect() {
       const manifest = yield* readManifest(
@@ -410,7 +410,7 @@ export const makeR2SpeechAudioExtractor = (
 /** Private-R2 ordered frame adapter for the real workflow. */
 export const makeR2VisualFrameSampler = (
   bucket: AcquisitionBucketLike
-): VisualFrameSamplerShape => ({
+): VisualFrameSampler => ({
   sample: Effect.fn("ImportDerivedMedia.sampleFrames")((input) =>
     Effect.gen(function* sampleFramesEffect() {
       const manifest = yield* readManifest(

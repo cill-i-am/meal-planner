@@ -45,7 +45,7 @@ import {
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
-import type { VisualEvidenceExtractorShape } from "./import-visual-evidence-extractor.js";
+import type { VisualEvidenceExtractor } from "./import-visual-evidence-extractor.js";
 import { VisualEvidence } from "./import-visual-evidence-extractor.js";
 import {
   makeDeterministicFrameSampler,
@@ -60,10 +60,7 @@ import {
 } from "./import.contracts.js";
 import { importPersistenceUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type {
-  ImportRepositoryShape,
-  StoredImport,
-} from "./import.repository.js";
+import type { ImportRepository, StoredImport } from "./import.repository.js";
 import {
   admitResolvedTestImport,
   makeTestSystemAuthorizer,
@@ -1288,7 +1285,7 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
       provider: "deterministic_fake",
       usage: { inputBytes: 5, inputFrames: 1, modelCalls: 1 },
     });
-    const extractor: VisualEvidenceExtractorShape = {
+    const extractor: VisualEvidenceExtractor = {
       extract: (input) =>
         Effect.sync(() => {
           calls.push(input);
@@ -1394,7 +1391,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     canonicalId: SourceCanonicalId
   ) => {
     const importRepository = await landVisualEvidence(importId, canonicalId);
-    const recipeRepository: RecipeDraftRepository.RecipeDraftRepositoryShape = {
+    const recipeRepository: RecipeDraftRepository.RecipeDraftRepository = {
       claim: () => Effect.succeed({ _tag: "DispatchClaimed" as const }),
       claimCarousel: () => Effect.succeed({ _tag: "DispatchClaimed" as const }),
       complete: Effect.succeed,
@@ -1506,7 +1503,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
         updatedAt: stored.view.updatedAt,
       },
     };
-    const transcribedImportRepository: ImportRepositoryShape = {
+    const transcribedImportRepository: ImportRepository = {
       ...importRepository,
       findById: () => Effect.succeed(Option.some(transcribed)),
     };

@@ -21,7 +21,7 @@ import type {
   ConfirmRecipeImportActionCommand,
   RecipeImportActionCommandDigest,
   RecipeImportActionMutationId,
-  RecipeImportIntentReviewRepositoryShape,
+  RecipeImportIntentReviewRepository,
 } from "./import-intent-review.js";
 import {
   RecipeImportActionMutationConflict,
@@ -740,7 +740,7 @@ const confirmAction = (
 
 export const makeD1RecipeImportIntentReviewRepository = (
   binding: AnyD1Database
-): RecipeImportIntentReviewRepositoryShape => ({
+): RecipeImportIntentReviewRepository => ({
   answerAction: (command) =>
     answerAction(binding, command).pipe(
       Effect.tap(() =>

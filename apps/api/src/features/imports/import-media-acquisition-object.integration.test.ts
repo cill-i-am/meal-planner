@@ -35,7 +35,7 @@ import { ImportMediaAcquisitionObjectRuntime } from "./import-media-acquisition-
 import { TikTokMediaContainer } from "./import-media-container.js";
 import { makeTikTokMediaContainerRuntime } from "./import-media-container.runtime.js";
 import { makeTemporaryArtifactStore } from "./import-media-process.js";
-import type { MediaProcessRunnerShape } from "./import-media-process.js";
+import type { MediaProcessRunner } from "./import-media-process.js";
 import {
   AcquisitionGeneration,
   MaximumMediaProcessMilliseconds,
@@ -105,7 +105,7 @@ const makeProcessRunner = (
     readonly value: string;
   },
   sessionDomain = ".tiktokcdn.com"
-): MediaProcessRunnerShape => ({
+): MediaProcessRunner => ({
   run: (command, args) =>
     Effect.promise(async () => {
       if (command === "yt-dlp") {
@@ -227,6 +227,7 @@ const withInstalledAcquisitionBoundary = async <A>(
     ),
   });
 
+  const alchemyRuntimeContractKey = "shape";
   const entrypoint = Effect.succeed({
     RuntimeContext: {
       exports: Effect.succeed({
@@ -235,7 +236,7 @@ const withInstalledAcquisitionBoundary = async <A>(
           services: Context.empty(),
         },
       }),
-      shape: () => ({}),
+      [alchemyRuntimeContractKey]: () => ({}),
     },
   });
   class TestDurableObject {

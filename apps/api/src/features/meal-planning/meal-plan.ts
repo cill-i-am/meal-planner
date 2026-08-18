@@ -2,7 +2,7 @@ import { Effect, Option, Schema } from "effect";
 
 import type {
   RecipeReviewServiceError,
-  RecipeReviewServiceShape,
+  RecipeReviewService,
 } from "../imports/import-recipe-review.js";
 import {
   ApprovedRecipe,
@@ -188,7 +188,7 @@ export const MealPlanProposal = Schema.Struct({
 });
 export type MealPlanProposal = typeof MealPlanProposal.Type;
 
-export interface MealPlanPlannerShape {
+export interface MealPlanPlanner {
   readonly plan: (input: {
     readonly approvedRecipes: readonly ApprovedRecipe[];
     readonly policy: MealPlanPolicy;
@@ -305,7 +305,7 @@ export type MealPlanRepositoryError =
   | MealPlanTransitionRejected
   | MealPlanVersionConflict;
 
-export interface MealPlanDraftRepositoryShape {
+export interface MealPlanDraftRepository {
   readonly create: (input: {
     readonly draft: MealPlanDraft;
     readonly requestFingerprint: string;
@@ -335,7 +335,7 @@ export type MealPlanServiceError =
   | MealPlanVersionConflict
   | RecipeReviewServiceError;
 
-export interface MealPlanServiceShape {
+export interface MealPlanService {
   readonly create: (
     request: MealPlanRequest,
     policy: MealPlanPolicy
@@ -386,7 +386,7 @@ const compareCandidates =
       : preferredDifference;
   };
 
-export const makeDeterministicMealPlanPlanner = (): MealPlanPlannerShape => ({
+export const makeDeterministicMealPlanPlanner = (): MealPlanPlanner => ({
   plan: ({ approvedRecipes, policy, request }) =>
     Effect.sync(() => {
       const meals: PlannedMeal[] = [];
@@ -442,10 +442,7 @@ const fingerprint = <S extends Schema.ConstraintEncoder<unknown>>(
   value: S["Type"]
 ): string => JSON.stringify(Schema.encodeSync(schema)(value));
 
-const getPlan = (
-  drafts: MealPlanDraftRepositoryShape,
-  draftId: MealPlanDraftId
-) =>
+const getPlan = (drafts: MealPlanDraftRepository, draftId: MealPlanDraftId) =>
   drafts.find(draftId).pipe(
     Effect.flatMap(
       Option.match({
@@ -481,10 +478,10 @@ const reasonsFor = (
 };
 
 export const makeMealPlanService = (input: {
-  readonly drafts: MealPlanDraftRepositoryShape;
-  readonly planner: MealPlanPlannerShape;
-  readonly recipeReviews: Pick<RecipeReviewServiceShape, "listApproved">;
-}): MealPlanServiceShape => {
+  readonly drafts: MealPlanDraftRepository;
+  readonly planner: MealPlanPlanner;
+  readonly recipeReviews: Pick<RecipeReviewService, "listApproved">;
+}): MealPlanService => {
   const decide = (
     request: MealPlanDecisionRequest,
     outcome: "approved" | "rejected"

@@ -28,7 +28,7 @@ import type {
   ImportBatchNotFound,
   ImportBatchQueueMessageNotFound,
   ImportBatchSourceIdentityKind,
-  ImportBatchStoreShape,
+  ImportBatchStore,
 } from "./import-batch.service.js";
 import {
   ImportBatchRequestFingerprint,
@@ -49,9 +49,9 @@ import type {
   DeadLetterReplayClaim,
   DeadLetterReplayClaimId,
   DeadLetterReplayInProgress,
-  DeadLetterStoreShape,
+  DeadLetterStore,
   OperationalEvent,
-  OperationalEventSinkShape,
+  OperationalEventSink,
 } from "./import-operations.js";
 import {
   DeadLetterInspection,
@@ -406,8 +406,8 @@ const admissionProjection = (
 /** D1 is the sole durable truth for HTTP batch admission and polling. */
 export const makeD1ImportBatchStore = (
   database: AnyD1Database
-): ImportBatchStoreShape => {
-  const findReplay: ImportBatchStoreShape["findReplay"] = Effect.fn(
+): ImportBatchStore => {
+  const findReplay: ImportBatchStore["findReplay"] = Effect.fn(
     "ImportBatchStore.findReplay"
   )(function* findReplay(idempotencyKeyHash, requestFingerprint) {
     const row = yield* databaseEffect(() =>
@@ -441,7 +441,7 @@ export const makeD1ImportBatchStore = (
     return Option.some(projection);
   });
 
-  const admit: ImportBatchStoreShape["admit"] = (
+  const admit: ImportBatchStore["admit"] = (
     command: ImportBatchAdmissionCommand
   ) => {
     const timestamp = DateTime.formatIso(command.timestamp);
@@ -542,8 +542,8 @@ const makeD1OperationalAdapters = (
   now: () => string,
   replayClaimLeaseMilliseconds: number
 ): {
-  readonly deadLetters: DeadLetterStoreShape;
-  readonly events: OperationalEventSinkShape;
+  readonly deadLetters: DeadLetterStore;
+  readonly events: OperationalEventSink;
 } => {
   const readDeadLetter = (itemId: ImportBatchItemId) =>
     operationalDatabaseEffect(() =>
@@ -573,7 +573,7 @@ const makeD1OperationalAdapters = (
       )
     );
 
-  const deadLetters: DeadLetterStoreShape = {
+  const deadLetters: DeadLetterStore = {
     claimReplay: (itemId) => {
       const claimedAt = now();
       const claimedAtEpochMilliseconds = Date.parse(claimedAt);
@@ -808,7 +808,7 @@ const makeD1OperationalAdapters = (
       ).pipe(Effect.asVoid),
   };
 
-  const events: OperationalEventSinkShape = {
+  const events: OperationalEventSink = {
     emit: (event: OperationalEvent) =>
       operationalDatabaseEffect(() =>
         database

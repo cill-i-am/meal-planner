@@ -142,18 +142,18 @@ export interface PilotProviderBudgetRepository {
   ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
 }
 
-export interface PilotProviderBudgetRuntimeShape {
+export interface PilotProviderBudgetRuntime {
   readonly runtimeStage: unknown;
 }
 
-export class PilotProviderBudgetRuntime extends Context.Service<
-  PilotProviderBudgetRuntime,
-  PilotProviderBudgetRuntimeShape
->()("meal-planner/PilotProviderBudgetRuntime") {}
+export const PilotProviderBudgetRuntime =
+  Context.Service<PilotProviderBudgetRuntime>(
+    "meal-planner/PilotProviderBudgetRuntime"
+  );
 
 export const makePilotProviderBudgetRuntime = (
   runtimeStage: unknown
-): PilotProviderBudgetRuntimeShape => ({ runtimeStage });
+): PilotProviderBudgetRuntime => ({ runtimeStage });
 
 export type PilotProviderCost =
   | {

@@ -10,7 +10,7 @@ import {
 import type {
   AdmitResolvedRecipeImportIntentCommand,
   AdmitResolvedRecipeImportIntentError,
-  RecipeImportIntentAdmissionShape,
+  RecipeImportIntentAdmission,
 } from "./import-intent-admission.js";
 import { RecipeReviewerActorId } from "./import-recipe-review.js";
 import {
@@ -163,14 +163,14 @@ export const RetentionSweepResult = Schema.Struct({
 export type RetentionSweepResult = typeof RetentionSweepResult.Type;
 
 /** Artifact persistence seam used by the provider-free retention service. */
-export interface ExpirableArtifactStoreShape {
+export interface ExpirableArtifactStore {
   readonly expireDue: (
     cutoffEpochMilliseconds: number
   ) => Effect.Effect<readonly ExpirableImportArtifact[]>;
 }
 
 /** Structured event sink that only accepts the safe event union. */
-export interface OperationalEventSinkShape {
+export interface OperationalEventSink {
   readonly emit: (event: OperationalEvent) => Effect.Effect<void>;
 }
 
@@ -228,7 +228,7 @@ export type DeadLetterReplayClaim =
     };
 
 /** Persistence seam for safe inspection and atomic replay claims. */
-export interface DeadLetterStoreShape {
+export interface DeadLetterStore {
   readonly claimReplay: (
     itemId: ImportBatchItemId
   ) => Effect.Effect<
@@ -250,7 +250,7 @@ export interface DeadLetterStoreShape {
 }
 
 /** Application interface for the bounded operational tracer. */
-export interface ImportOperationsServiceShape {
+export interface ImportOperationsService {
   readonly expireArtifacts: (
     scope: OperationalScope
   ) => Effect.Effect<RetentionSweepResult>;
@@ -267,12 +267,12 @@ const timestampFromEpochMilliseconds = (value: number) =>
 
 /** Build the bounded provider-free import operations service. */
 export const makeImportOperationsService = (input: {
-  readonly artifacts: ExpirableArtifactStoreShape;
-  readonly deadLetters: DeadLetterStoreShape;
-  readonly events: OperationalEventSinkShape;
-  readonly intents: RecipeImportIntentAdmissionShape;
+  readonly artifacts: ExpirableArtifactStore;
+  readonly deadLetters: DeadLetterStore;
+  readonly events: OperationalEventSink;
+  readonly intents: RecipeImportIntentAdmission;
   readonly replayQuotaLimit: number;
-}): ImportOperationsServiceShape => ({
+}): ImportOperationsService => ({
   expireArtifacts: Effect.fn("ImportOperations.expireArtifacts")(
     function* expireArtifacts(scope) {
       const cutoff = yield* Clock.currentTimeMillis;

@@ -236,7 +236,7 @@ export const RecipeExtractionFailure =
     code: RecipeExtractionFailureCode,
   });
 
-export interface RecipeExtractorShape {
+export interface RecipeExtractor {
   readonly descriptor: RecipeExtractorDescriptor;
   readonly extract: (
     input: RecipeEvidenceAssembly
@@ -244,7 +244,6 @@ export interface RecipeExtractorShape {
 }
 
 /** Replaceable provider-neutral recipe extraction capability. */
-export class RecipeExtractor extends Context.Service<
-  RecipeExtractor,
-  RecipeExtractorShape
->()("meal-planner/RecipeExtractor") {}
+export const RecipeExtractor = Context.Service<RecipeExtractor>(
+  "meal-planner/RecipeExtractor"
+);

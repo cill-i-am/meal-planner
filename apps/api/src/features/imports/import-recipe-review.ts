@@ -481,7 +481,7 @@ export type RecipeReviewPersistenceError =
   | ImportPersistenceCorrupt
   | ImportPersistenceUnavailable;
 
-export interface RecipeReviewRepositoryShape {
+export interface RecipeReviewRepository {
   readonly find: (
     importId: ImportId
   ) => Effect.Effect<Option.Option<Review>, RecipeReviewPersistenceError>;
@@ -493,7 +493,7 @@ export interface RecipeReviewRepositoryShape {
 
 export type RecipeReviewServiceError = RecipeReviewPersistenceError;
 
-export interface RecipeReviewServiceShape {
+export interface RecipeReviewService {
   readonly listApproved: () => Effect.Effect<
     readonly ApprovedRecipe[],
     RecipeReviewServiceError

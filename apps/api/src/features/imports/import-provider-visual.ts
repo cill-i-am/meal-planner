@@ -18,7 +18,7 @@ import {
 import type { ProviderDispatchGate } from "./import-provider-kernel.js";
 import type {
   VisualEvidenceExtractionFailure,
-  VisualEvidenceExtractorShape,
+  VisualEvidenceExtractor,
   VisualFrameArtifact,
 } from "./import-visual-evidence-extractor.js";
 import {
@@ -216,5 +216,5 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                   }
                 )
               ),
-    } satisfies VisualEvidenceExtractorShape;
+    } satisfies VisualEvidenceExtractor;
   });

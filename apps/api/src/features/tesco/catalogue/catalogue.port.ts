@@ -10,7 +10,7 @@ import type {
   SearchCatalogueInput,
 } from "./catalogue.model.js";
 
-export interface TescoCatalogueShape {
+export interface TescoCatalogue {
   readonly search: (
     request: SearchCatalogueInput
   ) => Effect.Effect<CatalogueProductResults, TescoCatalogueError>;
@@ -22,7 +22,6 @@ export interface TescoCatalogueShape {
   ) => Effect.Effect<CatalogueSuggestions, TescoCatalogueError>;
 }
 
-export class TescoCatalogue extends Context.Service<
-  TescoCatalogue,
-  TescoCatalogueShape
->()("meal-planner/TescoCatalogue") {}
+export const TescoCatalogue = Context.Service<TescoCatalogue>(
+  "meal-planner/TescoCatalogue"
+);

@@ -18,7 +18,7 @@ import {
 } from "./import-intent.js";
 import type {
   AdmitImportIntentResult,
-  ImportIntentRepositoryShape,
+  ImportIntentRepository,
   StoredImportIntentRequest,
 } from "./import.repository.js";
 import {
@@ -40,7 +40,7 @@ const workflowStarter = {
 
 const makeRecordingRepository = (): {
   readonly admissions: StoredImportIntentRequest[];
-  readonly repository: ImportIntentRepositoryShape;
+  readonly repository: ImportIntentRepository;
 } => {
   const admissions: StoredImportIntentRequest[] = [];
   const intents = new Map<string, AdmitImportIntentResult["intent"]>();

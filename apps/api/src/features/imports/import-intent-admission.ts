@@ -40,7 +40,7 @@ export type AdmitResolvedRecipeImportIntentError =
   | WorkflowStartUnavailable;
 
 /** Canonical application seam shared by queue consumption and dead-letter replay. */
-export interface RecipeImportIntentAdmissionShape {
+export interface RecipeImportIntentAdmission {
   readonly admitResolved: (
     command: AdmitResolvedRecipeImportIntentCommand
   ) => Effect.Effect<
@@ -57,7 +57,7 @@ export const makeRecipeImportIntentAdmission = (input: {
   >;
   readonly newIntentId: () => RecipeImportIntentId;
   readonly principal: ImportPrincipal;
-}): RecipeImportIntentAdmissionShape => ({
+}): RecipeImportIntentAdmission => ({
   admitResolved: Effect.fn("RecipeImportIntentAdmission.admitResolved")(
     function* admitResolved(command) {
       const admitted = yield* input.application

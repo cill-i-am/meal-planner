@@ -103,10 +103,11 @@ const workflowExport = {
   },
 };
 
+const AlchemyRuntimeContractKey = "shape";
 const entrypoint = Effect.succeed({
   RuntimeContext: {
     exports: Effect.succeed({ CurrentInputWorkflow: workflowExport }),
-    shape: () => ({}),
+    [AlchemyRuntimeContractKey]: () => ({}),
   },
 });
 

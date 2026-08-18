@@ -21,7 +21,7 @@ import type {
   InvalidSource,
   SourceIdentityUnavailable,
 } from "./import.errors.js";
-import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
+import type { CanonicalSourceIdentityResolver } from "./source-identity.js";
 
 const ProviderDeadlineMilliseconds = 5000;
 const MaximumConcurrentIdentityResolutions = 5;
@@ -91,7 +91,7 @@ export type GetImportBatchError =
   | ImportPersistenceUnavailable;
 
 /** Provider-neutral enqueue capability used by the batch coordinator. */
-export interface ImportBatchQueueShape {
+export interface ImportBatchQueue {
   readonly enqueue: (
     messages: readonly ImportBatchQueueMessage[]
   ) => Effect.Effect<void, ImportBatchQueueUnavailable>;
@@ -116,7 +116,7 @@ export interface ImportBatchAdmissionCommand {
 }
 
 /** Durable batch persistence contract consumed by the application service. */
-export interface ImportBatchStoreShape {
+export interface ImportBatchStore {
   readonly admit: (command: ImportBatchAdmissionCommand) => Effect.Effect<
     ImportBatchAdmissionProjection & {
       readonly disposition: "created" | "idempotency_replay";
@@ -141,18 +141,18 @@ export interface ImportBatchStoreShape {
 
 /** Construction options for the D1-backed batch application workflow. */
 export interface MakeImportBatchServiceOptions {
-  readonly identityResolver: CanonicalSourceIdentityResolverShape;
+  readonly identityResolver: CanonicalSourceIdentityResolver;
   readonly newBatchId: () => ImportBatchId;
   readonly newItemId: () => ImportBatchItemId;
   readonly now: () => ImportTimestamp;
   /** Finite test-only override for the code-owned five-second provider budget. */
   readonly providerDeadlineMilliseconds?: number;
-  readonly queue: ImportBatchQueueShape;
-  readonly store: ImportBatchStoreShape;
+  readonly queue: ImportBatchQueue;
+  readonly store: ImportBatchStore;
 }
 
 /** Application service contract mounted by the authenticated HTTP routes. */
-export interface ImportBatchServiceShape {
+export interface ImportBatchService {
   readonly create: (
     request: CreateImportBatchRequest,
     idempotencyKey: IdempotencyKey
@@ -186,14 +186,14 @@ const finiteProviderDeadline = (override: number | undefined) => {
 };
 
 const enqueuePending = (
-  queue: ImportBatchQueueShape,
+  queue: ImportBatchQueue,
   messages: readonly ImportBatchQueueMessage[]
 ) => (messages.length === 0 ? Effect.void : queue.enqueue(messages));
 
 /** Build the bounded HTTP admission workflow over durable D1 state. */
 export const makeImportBatchService = (
   options: MakeImportBatchServiceOptions
-): ImportBatchServiceShape => {
+): ImportBatchService => {
   const providerDeadlineMilliseconds = finiteProviderDeadline(
     options.providerDeadlineMilliseconds
   );
@@ -270,7 +270,6 @@ export const makeImportBatchService = (
 };
 
 /** Effect service tag for the import-batch application seam. */
-export class ImportBatchService extends Context.Service<
-  ImportBatchService,
-  ImportBatchServiceShape
->()("meal-planner/ImportBatchService") {}
+export const ImportBatchService = Context.Service<ImportBatchService>(
+  "meal-planner/ImportBatchService"
+);

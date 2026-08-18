@@ -182,7 +182,7 @@ const replayFromRow = (
   };
 };
 
-const validDispatchShape = (row: DispatchRow) => {
+const isValidDispatchRow = (row: DispatchRow) => {
   if (
     !validMoney(row.maximum_cost_micro_usd) ||
     row.maximum_cost_micro_usd === 0 ||
@@ -227,7 +227,7 @@ const dispatchFromRow = (
   row: DispatchRow
 ): Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError> => {
   const replay = replayFromRow(row);
-  return validDispatchShape(row)
+  return isValidDispatchRow(row)
     ? Effect.succeed({
         actualCostMicroUsd: row.actual_cost_micro_usd,
         ...(row.conservative_charge_micro_usd === null ||
@@ -254,7 +254,7 @@ const dispatchFromRow = (
 const stageFromRow = (
   row: StageRow
 ): Effect.Effect<PilotProviderStageBudget, PilotProviderBudgetError> => {
-  const validStateShape =
+  const hasValidStageState =
     (row.state === "open" &&
       row.invoking_dispatch_id === null &&
       row.poison_dispatch_id === null) ||
@@ -270,7 +270,7 @@ const stageFromRow = (
     !validMoney(row.settled_micro_usd) ||
     row.reserved_micro_usd + row.settled_micro_usd >
       PilotProviderBudgetCapMicroUsd ||
-    !validStateShape
+    !hasValidStageState
   ) {
     return Effect.fail(pilotProviderBudgetError("persistence_corrupt"));
   }

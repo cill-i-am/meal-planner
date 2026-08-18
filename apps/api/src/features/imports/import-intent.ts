@@ -25,7 +25,7 @@ import type { PublicIntentFailure } from "./import-intent-workflow-transitions.j
 import type { ImportTraceContext } from "./import-observability.js";
 import { ImportId, SourceDescriptor } from "./import.contracts.js";
 import type {
-  ImportIntentRepositoryShape,
+  ImportIntentRepository,
   ResolveImportIntentSourceCommand,
 } from "./import.repository.js";
 import {
@@ -34,7 +34,7 @@ import {
   SourceLocatorHash,
   StalledImportIntentStartLimit,
 } from "./import.repository.js";
-import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
+import type { ImportWorkflowReconciler } from "./import.workflow.js";
 import { CanonicalSourceIdentityResolver } from "./source-identity.js";
 
 const OpaqueSha256 = Schema.String.pipe(
@@ -280,8 +280,8 @@ const publicFailureForSourceResolution = (
 };
 
 export const makeImportIntentApplication = (
-  repository: ImportIntentRepositoryShape,
-  workflowStarter: Pick<ImportWorkflowReconcilerShape, "ensureStarted">,
+  repository: ImportIntentRepository,
+  workflowStarter: Pick<ImportWorkflowReconciler, "ensureStarted">,
   trace: ImportTraceContext
 ) => {
   const getIntent = Effect.fn("RecipeImportIntent.get")(function* get(

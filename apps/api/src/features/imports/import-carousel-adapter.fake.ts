@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type {
   TikTokCarouselAcquisition,
   TikTokCarouselAdapterFailure,
-  TikTokCarouselAdapterShape,
+  TikTokCarouselAdapter,
   TikTokCarouselDescriptor,
 } from "./import-carousel-adapter.js";
 
@@ -12,7 +12,7 @@ export const makeDeterministicTikTokCarouselAdapter = (
   output: TikTokCarouselAcquisition | TikTokCarouselAdapterFailure
 ): {
   readonly calls: TikTokCarouselDescriptor[];
-  readonly service: TikTokCarouselAdapterShape;
+  readonly service: TikTokCarouselAdapter;
 } => {
   const calls: TikTokCarouselDescriptor[] = [];
   return {

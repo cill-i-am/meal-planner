@@ -98,7 +98,7 @@ export interface SpeechAudioExtractionFailure {
 }
 
 /** Media-tooling port that produces a bounded speech-audio artifact. */
-export interface SpeechAudioExtractorShape {
+export interface SpeechAudioExtractor {
   readonly extract: (
     input: SpeechAudioExtractionInput
   ) => Effect.Effect<SpeechAudioArtifact, SpeechAudioExtractionFailure>;
@@ -128,17 +128,16 @@ export interface SpeechTranscriptionFailure {
 }
 
 /** Provider-neutral speech capability. */
-export interface SpeechTranscriberShape {
+export interface SpeechTranscriber {
   readonly transcribe: (
     input: SpeechTranscriptionInput
   ) => Effect.Effect<SpeechTranscript, SpeechTranscriptionFailure>;
 }
 
 /** Effect service tag for a replaceable speech provider adapter. */
-export class SpeechTranscriber extends Context.Service<
-  SpeechTranscriber,
-  SpeechTranscriberShape
->()("meal-planner/SpeechTranscriber") {}
+export const SpeechTranscriber = Context.Service<SpeechTranscriber>(
+  "meal-planner/SpeechTranscriber"
+);
 
 /** Strictly decode a speech adapter's normalized response. */
 export const decodeSpeechTranscript = Schema.decodeUnknownEffect(

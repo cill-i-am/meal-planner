@@ -4,7 +4,7 @@ import { Context } from "effect";
 import type { TescoAuthSessionError } from "./auth.errors.js";
 import type { TescoAuthorization } from "./auth.model.js";
 
-export interface TescoAuthSessionShape {
+export interface TescoAuthSession {
   readonly authorization: Effect.Effect<
     TescoAuthorization,
     TescoAuthSessionError
@@ -14,7 +14,6 @@ export interface TescoAuthSessionShape {
   ) => Effect.Effect<TescoAuthorization, TescoAuthSessionError>;
 }
 
-export class TescoAuthSession extends Context.Service<
-  TescoAuthSession,
-  TescoAuthSessionShape
->()("meal-planner/TescoAuthSession") {}
+export const TescoAuthSession = Context.Service<TescoAuthSession>(
+  "meal-planner/TescoAuthSession"
+);

@@ -72,7 +72,7 @@ export type CarouselEvidenceClaim =
   | { readonly _tag: "DispatchClaimed" }
   | { readonly _tag: "ResumeDispatch" };
 
-export interface CarouselEvidenceRepositoryShape {
+export interface CarouselEvidenceRepository {
   readonly findParent: (importId: ImportId) => Effect.Effect<
     Option.Option<{
       readonly canonicalId: SourceCanonicalId;
@@ -204,7 +204,7 @@ const claimFromRow = (row: CarouselEvidenceRow, inserted: boolean) => {
 /** Additive, generation-fenced carousel evidence sidecar. */
 export const makeD1CarouselEvidenceRepository = (
   binding: AnyD1Database
-): CarouselEvidenceRepositoryShape => ({
+): CarouselEvidenceRepository => ({
   claim: (input) =>
     Effect.gen(function* claimCarouselEvidence() {
       const raw = yield* persistenceEffect(() =>

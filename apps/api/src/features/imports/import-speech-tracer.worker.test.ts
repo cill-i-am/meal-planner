@@ -26,9 +26,9 @@ import {
 } from "./import-media.model.js";
 import { ImportTraceContext } from "./import-observability.js";
 import type {
-  SpeechAudioExtractorShape,
+  SpeechAudioExtractor,
   SpeechTranscriptionFailure,
-  SpeechTranscriberShape,
+  SpeechTranscriber,
 } from "./import-speech-transcriber.js";
 import {
   makeDeterministicSpeechAudioExtractor,
@@ -152,7 +152,7 @@ const makeBudgetedSpeechFixture = (fixtureImportId: ImportId) => {
     runId: decodeBudgetRunId(`run-gaia-195-${fixtureImportId.slice(-6)}`),
     timestamp: decodeBudgetTimestamp("2026-07-28T21:00:00.000Z"),
   };
-  const service: SpeechTranscriberShape = {
+  const service: SpeechTranscriber = {
     transcribe: (request) =>
       runPilotProviderDispatch({
         invoke: deterministic.service.transcribe(request).pipe(
@@ -214,14 +214,14 @@ const seedDispatchingTranscription = (
 
 const makeExternalIoTrap = (reason: string) => {
   const calls: string[] = [];
-  const audioExtractor: SpeechAudioExtractorShape = {
+  const audioExtractor: SpeechAudioExtractor = {
     extract: () =>
       Effect.sync(() => {
         calls.push("audio");
         throw new Error(`${reason}: audio extraction`);
       }),
   };
-  const speechTranscriber: SpeechTranscriberShape = {
+  const speechTranscriber: SpeechTranscriber = {
     transcribe: () =>
       Effect.sync(() => {
         calls.push("provider");
@@ -652,7 +652,7 @@ describe("provider-free acquired-to-transcript tracer", () => {
     });
     const audio = makeAudioFixture();
     const providerCalls: string[] = [];
-    const ambiguousProvider: SpeechTranscriberShape = {
+    const ambiguousProvider: SpeechTranscriber = {
       transcribe: (input) =>
         Effect.sync(() => {
           providerCalls.push(input.dispatchId);
@@ -1019,7 +1019,7 @@ describe("provider-free acquired-to-transcript tracer", () => {
     });
     const audio = makeAudioFixture();
     const providerCalls: string[] = [];
-    const failingProvider: SpeechTranscriberShape = {
+    const failingProvider: SpeechTranscriber = {
       transcribe: (input) =>
         Effect.sync(() => {
           providerCalls.push(input.dispatchId);

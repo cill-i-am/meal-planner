@@ -5,8 +5,8 @@ import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { EvidenceRetentionSeconds } from "./import-media.model.js";
 import type { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
-  VisualEvidenceExtractorShape,
-  VisualFrameSamplerShape,
+  VisualEvidenceExtractor,
+  VisualFrameSampler,
 } from "./import-visual-evidence-extractor.js";
 import {
   decodeVisualEvidence,
@@ -16,11 +16,11 @@ import {
 import type {
   CompletedVisualEvidence,
   VisualEvidenceFailureCode,
-  VisualEvidenceRepositoryShape,
+  VisualEvidenceRepository,
 } from "./import-visual-evidence.repository.d1.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { importTransitionRejected } from "./import.errors.js";
-import type { ImportRepositoryShape } from "./import.repository.js";
+import type { ImportRepository } from "./import.repository.js";
 import {
   TranscriptEvidenceStore,
   TranscriptEvidenceStoreLive,
@@ -93,14 +93,14 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
   "Imports.extractVisualEvidence"
 )(function* extractVisualEvidenceForTranscribedImport(input: {
   readonly bucket: AcquisitionBucketLike;
-  readonly extractor: VisualEvidenceExtractorShape;
-  readonly frameSampler: VisualFrameSamplerShape;
+  readonly extractor: VisualEvidenceExtractor;
+  readonly frameSampler: VisualFrameSampler;
   readonly importId: ImportId;
-  readonly importRepository: ImportRepositoryShape;
+  readonly importRepository: ImportRepository;
   readonly now: () => ImportTimestamp;
   readonly speechDispatchId?: string;
   readonly visualDispatchId?: string;
-  readonly visualRepository: VisualEvidenceRepositoryShape;
+  readonly visualRepository: VisualEvidenceRepository;
 }) {
   const stored = yield* input.importRepository.findById(input.importId).pipe(
     Effect.flatMap(

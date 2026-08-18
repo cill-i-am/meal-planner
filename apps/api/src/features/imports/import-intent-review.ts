@@ -224,7 +224,7 @@ export interface ConfirmRecipeImportActionCommand {
   readonly succeededMutationId: RecipeImportActionMutationId;
 }
 
-export interface RecipeImportIntentReviewRepositoryShape {
+export interface RecipeImportIntentReviewRepository {
   readonly answerAction: (
     command: AnswerRecipeImportActionCommand
   ) => Effect.Effect<
@@ -249,7 +249,7 @@ export interface RecipeImportIntentReviewRepositoryShape {
 }
 
 export const makeRecipeImportIntentReviewApplication = (
-  repository: RecipeImportIntentReviewRepositoryShape
+  repository: RecipeImportIntentReviewRepository
 ) => ({
   answerAction: Effect.fn("RecipeImportIntent.answerAction")(
     function* answerAction(
@@ -330,11 +330,11 @@ export const makeRecipeImportIntentReviewApplication = (
   getRecipe: repository.getRecipe,
 });
 
-export type RecipeImportIntentReviewApplicationShape = ReturnType<
+export type RecipeImportIntentReviewApplication = ReturnType<
   typeof makeRecipeImportIntentReviewApplication
 >;
 
-export class RecipeImportIntentReviewApplication extends Context.Service<
-  RecipeImportIntentReviewApplication,
-  RecipeImportIntentReviewApplicationShape
->()("meal-planner/RecipeImportIntentReviewApplication") {}
+export const RecipeImportIntentReviewApplication =
+  Context.Service<RecipeImportIntentReviewApplication>(
+    "meal-planner/RecipeImportIntentReviewApplication"
+  );

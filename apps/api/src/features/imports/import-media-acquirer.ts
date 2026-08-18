@@ -63,7 +63,7 @@ export interface ValidatedMediaArtifact {
   }[];
 }
 
-export interface MediaAcquirerShape {
+export interface MediaAcquirer {
   readonly acquire: (
     source: ResolvedVideoSource,
     limits: MediaLimits,
@@ -74,10 +74,9 @@ export interface MediaAcquirerShape {
   >;
 }
 
-export class MediaAcquirer extends Context.Service<
-  MediaAcquirer,
-  MediaAcquirerShape
->()("meal-planner/MediaAcquirer") {}
+export const MediaAcquirer = Context.Service<MediaAcquirer>(
+  "meal-planner/MediaAcquirer"
+);
 
 export type ContainerAcquisitionError =
   | RetryableAcquisitionFailure

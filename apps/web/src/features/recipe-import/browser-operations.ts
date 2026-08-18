@@ -2,7 +2,6 @@ import {
   makeRecipeImportApiClientLayer,
   RecipeImportApiClient,
 } from "@meal-planner/recipe-import-api";
-import type { RecipeImportApiClientShape } from "@meal-planner/recipe-import-api";
 import { Effect, Layer } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
@@ -13,7 +12,7 @@ const makeClientRunner = (baseUrl: string | URL) => {
     Layer.provide(FetchHttpClient.layer)
   );
   return <A, E>(
-    operation: (client: RecipeImportApiClientShape) => Effect.Effect<A, E>
+    operation: (client: RecipeImportApiClient) => Effect.Effect<A, E>
   ): Promise<A> =>
     Effect.runPromise(
       RecipeImportApiClient.pipe(

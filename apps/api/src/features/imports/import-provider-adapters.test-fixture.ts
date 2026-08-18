@@ -2,10 +2,7 @@ import { RuntimeContext } from "alchemy";
 import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import { Effect, Schema } from "effect";
 
-import type {
-  ImportObservabilityEvent,
-  ImportObservabilityTraceStoreShape,
-} from "./import-observability.js";
+import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
@@ -118,7 +115,7 @@ export const testRuntimeContext = RuntimeContext.of({
 
 export const runFactory = <A>(
   effect: Effect.Effect<A, never, RuntimeContext>,
-  traceStore?: ImportObservabilityTraceStoreShape
+  traceStore?: ImportObservabilityTraceStore
 ): Promise<A> => {
   const withRuntime = effect.pipe(
     Effect.provideService(RuntimeContext, testRuntimeContext)

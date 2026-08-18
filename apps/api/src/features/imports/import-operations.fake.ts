@@ -7,7 +7,7 @@ import type {
 } from "./import-batch.contracts.js";
 import type {
   AdmitResolvedRecipeImportIntentCommand,
-  RecipeImportIntentAdmissionShape,
+  RecipeImportIntentAdmission,
 } from "./import-intent-admission.js";
 import {
   DeadLetterReplayClaimId,
@@ -19,12 +19,12 @@ import type {
   DeadLetterNotFound,
   DeadLetterReplayClaim,
   DeadLetterReplayInProgress,
-  DeadLetterStoreShape,
+  DeadLetterStore,
   ExpirableImportArtifact,
-  ExpirableArtifactStoreShape,
+  ExpirableArtifactStore,
   OperationalCorrelation,
   OperationalEvent,
-  OperationalEventSinkShape,
+  OperationalEventSink,
 } from "./import-operations.js";
 
 /** Sensitive fake-only fields deliberately excluded from all safe projections. */
@@ -61,7 +61,7 @@ export const makeProviderFreeOperationalTracer = (input: {
   readonly artifacts: readonly ExpirableImportArtifact[];
   readonly deadLetters: readonly ProviderFreeDeadLetter[];
   readonly eventFailureTag?: OperationalEvent["_tag"];
-  readonly intents: RecipeImportIntentAdmissionShape;
+  readonly intents: RecipeImportIntentAdmission;
   readonly replayQuotaLimit: number;
 }) => {
   const artifacts = [...input.artifacts];
@@ -73,7 +73,7 @@ export const makeProviderFreeOperationalTracer = (input: {
   let completedReplayCount = 0;
   let inspectionCount = 0;
   let releaseCount = 0;
-  const artifactStore: ExpirableArtifactStoreShape = {
+  const artifactStore: ExpirableArtifactStore = {
     expireDue: (cutoffEpochMilliseconds) =>
       Effect.sync(() => {
         const expired = artifacts.filter(
@@ -88,7 +88,7 @@ export const makeProviderFreeOperationalTracer = (input: {
         return expired;
       }),
   };
-  const eventSink: OperationalEventSinkShape = {
+  const eventSink: OperationalEventSink = {
     emit: (event) =>
       Effect.sync(() => {
         events.push(event);
@@ -97,7 +97,7 @@ export const makeProviderFreeOperationalTracer = (input: {
         }
       }),
   };
-  const deadLetterStore: DeadLetterStoreShape = {
+  const deadLetterStore: DeadLetterStore = {
     claimReplay: (itemId) =>
       Effect.suspend<
         DeadLetterReplayClaim,

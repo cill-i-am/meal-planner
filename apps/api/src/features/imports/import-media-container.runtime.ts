@@ -11,7 +11,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { makeContainerMediaAcquirer } from "./import-media-acquirer.container.js";
-import type { MediaAcquirerShape } from "./import-media-acquirer.js";
+import type { MediaAcquirer } from "./import-media-acquirer.js";
 import { PrivateMediaArtifactPathPrefix } from "./import-media-artifact-transport.js";
 import { TikTokMediaContainer } from "./import-media-container.js";
 import {
@@ -20,7 +20,7 @@ import {
   NodeCommandExecutor,
   scanTemporaryWorkspace,
 } from "./import-media-process.js";
-import type { MediaProcessRunnerShape } from "./import-media-process.js";
+import type { MediaProcessRunner } from "./import-media-process.js";
 import { RetryableAcquisitionError } from "./import-media.errors.js";
 import type { TikTokIdentity } from "./import-media.model.js";
 import {
@@ -33,7 +33,7 @@ import {
   ProductionMediaLimits,
   Sha256Hex,
 } from "./import-media.model.js";
-import type { SourceResolverShape } from "./import-source-resolver.js";
+import type { SourceResolver } from "./import-source-resolver.js";
 import { makeTikTokSourceResolver } from "./import-source-resolver.tiktok.js";
 
 export const TikTokMediaContainerDockerfile = `
@@ -73,11 +73,11 @@ const registeredArtifactMissing = () =>
   ({ _tag: "RegisteredArtifactMissing" }) as const;
 
 export interface TikTokMediaContainerRuntimeDependencies {
-  readonly acquirer: MediaAcquirerShape;
+  readonly acquirer: MediaAcquirer;
   readonly artifacts: ReturnType<typeof makeTemporaryArtifactStore>;
   readonly makeTemporaryRoot?: (importId: string) => Promise<string>;
-  readonly processRunner: MediaProcessRunnerShape;
-  readonly resolver: SourceResolverShape;
+  readonly processRunner: MediaProcessRunner;
+  readonly resolver: SourceResolver;
 }
 
 export const makeTikTokMediaContainerRuntime = ({

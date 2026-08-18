@@ -34,7 +34,6 @@ import {
 import { makeImportIntentApplication } from "./import-intent.js";
 import { DeadLetterReplayClaimId } from "./import-operations.js";
 import { makeD1ImportQueueAcceptance } from "./import-queue-acceptance.d1.js";
-import type { ImportSystemAuthorizerShape } from "./import-system.auth.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
 import { invalidSource, workflowStartUnavailable } from "./import.errors.js";
@@ -44,8 +43,8 @@ import {
   TestImportPrincipal,
   TestImportTrace,
 } from "./import.test-fixtures.js";
-import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
-import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
+import type { ImportWorkflowReconciler } from "./import.workflow.js";
+import type { CanonicalSourceIdentityResolver } from "./source-identity.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
 
 const apiToken = "durable-queue-test-token";
@@ -63,7 +62,7 @@ const decodeVideoUrl = Schema.decodeUnknownSync(ValidatedVideoUrl);
 const decodeQueueMessage = Schema.decodeUnknownSync(ImportBatchQueueMessage);
 const decodeIntentId = Schema.decodeUnknownSync(RecipeImportIntentId);
 
-let authorizer: ImportSystemAuthorizerShape;
+let authorizer: ImportSystemAuthorizer;
 let database: AnyD1Database;
 let persistenceDirectory: string;
 let runtime: Miniflare;
@@ -205,7 +204,7 @@ const newReplayClaimId = () => {
   );
 };
 
-const identityResolver: CanonicalSourceIdentityResolverShape = {
+const identityResolver: CanonicalSourceIdentityResolver = {
   resolve: (source) => {
     const match = /\/(?<kind>photo|video)\/(?<id>\d+)/u.exec(source.url);
     const canonicalId = match?.groups?.["id"];
@@ -231,10 +230,7 @@ const identityResolver: CanonicalSourceIdentityResolverShape = {
 };
 
 const makeAcceptance = (options?: {
-  readonly workflowStarter?: Pick<
-    ImportWorkflowReconcilerShape,
-    "ensureStarted"
-  >;
+  readonly workflowStarter?: Pick<ImportWorkflowReconciler, "ensureStarted">;
 }) => {
   const workflowStarts: string[] = [];
   const workflowStarter = options?.workflowStarter ?? {

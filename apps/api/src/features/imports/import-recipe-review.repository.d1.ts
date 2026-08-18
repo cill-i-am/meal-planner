@@ -13,7 +13,7 @@ import {
   recipeReviewNullablePolicy,
 } from "./import-recipe-review.js";
 import type {
-  RecipeReviewRepositoryShape,
+  RecipeReviewRepository,
   Review,
   RecipeReviewView,
 } from "./import-recipe-review.js";
@@ -247,7 +247,7 @@ const readReview = (
 /** D1-backed recipe review read model. */
 export const makeD1RecipeReviewRepository = (
   binding: AnyD1Database
-): RecipeReviewRepositoryShape => ({
+): RecipeReviewRepository => ({
   find: (importId) => readReview(binding, { importId }),
   listApproved: () =>
     Effect.gen(function* listApprovedRecipeReviews() {

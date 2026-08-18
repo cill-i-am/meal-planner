@@ -21,7 +21,7 @@ import {
 import type {
   MealPlan,
   MealPlanDraftId,
-  MealPlanDraftRepositoryShape,
+  MealPlanDraftRepository,
 } from "./meal-plan.js";
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
@@ -288,7 +288,7 @@ const mutationKey = (draftId: string, mutationId: string) =>
 
 export const makeInMemoryMealPlanDraftRepository = (): {
   readonly drafts: MealPlan[];
-  readonly repository: MealPlanDraftRepositoryShape;
+  readonly repository: MealPlanDraftRepository;
 } => {
   const drafts: MealPlan[] = [];
   const requestFingerprints = new Map<string, string>();

@@ -27,7 +27,7 @@ import type {
   SafeProviderFailureCode,
 } from "./import-provider-kernel.js";
 import type {
-  SpeechTranscriberShape,
+  SpeechTranscriber,
   SpeechTranscriptionFailure,
   SpeechTranscriptionInput,
 } from "./import-speech-transcriber.js";
@@ -1006,5 +1006,5 @@ export const makeInstalledSpeechTranscriber = (input: {
             )
           )
         ),
-    } satisfies SpeechTranscriberShape;
+    } satisfies SpeechTranscriber;
   });

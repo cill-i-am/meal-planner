@@ -31,7 +31,7 @@ import {
   makeTestSystemAuthorizer,
   seedResolvedTestImportExecution,
 } from "./import.test-fixtures.js";
-import type { ImportWorkflowStarterShape } from "./import.workflow.js";
+import type { ImportWorkflowStarter } from "./import.workflow.js";
 
 const testEnv = env as unknown as {
   readonly MealPlannerDatabase: AnyD1Database;
@@ -561,7 +561,7 @@ const seedMissingRecipeTerminalCheckpoint = async (
 
 const makeApp = async (
   runtimeStage: unknown,
-  workflowStarter?: Pick<ImportWorkflowStarterShape, "restartFromSpeech">
+  workflowStarter?: Pick<ImportWorkflowStarter, "restartFromSpeech">
 ) => {
   const authorizer = await Effect.runPromise(
     makeTestSystemAuthorizer("test-import-token")

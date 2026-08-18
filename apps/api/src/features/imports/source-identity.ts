@@ -32,13 +32,13 @@ export interface UnsupportedIdentity {
 
 export type CanonicalIdentityResolution = UnsupportedIdentity | VideoIdentity;
 
-export interface CanonicalSourceIdentityResolverShape {
+export interface CanonicalSourceIdentityResolver {
   readonly resolve: (
     source: SourceDescriptor
   ) => Effect.Effect<CanonicalIdentityResolution, SourceIdentityError>;
 }
 
-export class CanonicalSourceIdentityResolver extends Context.Service<
-  CanonicalSourceIdentityResolver,
-  CanonicalSourceIdentityResolverShape
->()("meal-planner/CanonicalSourceIdentityResolver") {}
+export const CanonicalSourceIdentityResolver =
+  Context.Service<CanonicalSourceIdentityResolver>(
+    "meal-planner/CanonicalSourceIdentityResolver"
+  );

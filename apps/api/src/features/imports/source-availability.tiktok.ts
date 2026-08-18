@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 
 import { sourceValidationUnavailable } from "./import.errors.js";
-import type { SourceAvailabilityValidatorShape } from "./source-availability.js";
+import type { SourceAvailabilityValidator } from "./source-availability.js";
 import { makeTikTokHttpTransport } from "./tiktok-http.transport.js";
 import type {
   TikTokFetcher,
@@ -17,7 +17,7 @@ const TikTokOEmbedResponse = Schema.Struct({
 export const makeTikTokSourceAvailabilityValidator = (
   fetcher: TikTokFetcher,
   options?: TikTokHttpPolicyOptions
-): SourceAvailabilityValidatorShape => {
+): SourceAvailabilityValidator => {
   const transport = makeTikTokHttpTransport(fetcher, options);
   return {
     validate: Effect.fn("TikTokSourceAvailabilityValidator.validate")(

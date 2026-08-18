@@ -3,8 +3,8 @@ import { Effect, Schema } from "effect";
 import type {
   SpeechAudioArtifact,
   SpeechAudioExtractionInput,
-  SpeechAudioExtractorShape,
-  SpeechTranscriberShape,
+  SpeechAudioExtractor,
+  SpeechTranscriber,
   SpeechTranscriptionInput,
 } from "./import-speech-transcriber.js";
 import {
@@ -17,7 +17,7 @@ export const makeDeterministicSpeechAudioExtractor = (
   artifact: SpeechAudioArtifact
 ): {
   readonly calls: SpeechAudioExtractionInput[];
-  readonly service: SpeechAudioExtractorShape;
+  readonly service: SpeechAudioExtractor;
 } => {
   if (!validateSpeechAudioArtifact(artifact, "0".repeat(64))) {
     throw new Error("Invalid deterministic audio fixture");
@@ -40,7 +40,7 @@ export const makeDeterministicSpeechTranscriber = (
   output: typeof SpeechTranscript.Encoded
 ): {
   readonly calls: SpeechTranscriptionInput[];
-  readonly service: SpeechTranscriberShape;
+  readonly service: SpeechTranscriber;
 } => {
   const transcript = Schema.decodeUnknownSync(SpeechTranscript, {
     onExcessProperty: "error",

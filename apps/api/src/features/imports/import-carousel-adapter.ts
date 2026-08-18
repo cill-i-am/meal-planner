@@ -86,14 +86,13 @@ export type TikTokCarouselAdapterFailure = {
     }
 );
 
-export interface TikTokCarouselAdapterShape {
+export interface TikTokCarouselAdapter {
   readonly acquire: (
     descriptor: TikTokCarouselDescriptor
   ) => Effect.Effect<TikTokCarouselAcquisition, TikTokCarouselAdapterFailure>;
 }
 
 /** Replaceable carousel capability; no real provider implementation lands here. */
-export class TikTokCarouselAdapter extends Context.Service<
-  TikTokCarouselAdapter,
-  TikTokCarouselAdapterShape
->()("meal-planner/TikTokCarouselAdapter") {}
+export const TikTokCarouselAdapter = Context.Service<TikTokCarouselAdapter>(
+  "meal-planner/TikTokCarouselAdapter"
+);

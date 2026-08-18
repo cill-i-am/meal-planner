@@ -52,14 +52,14 @@ export type TescoAuthenticatedGraphQlTransportError =
   | TescoAuthenticatedResponseInvalid;
 
 /** Authenticated Tesco GraphQL transport capability. */
-export interface TescoAuthenticatedGraphQlTransportShape {
+export interface TescoAuthenticatedGraphQlTransport {
   readonly execute: (
     operation: AuthenticatedGraphQlRead
   ) => Effect.Effect<Schema.Json, TescoAuthenticatedGraphQlTransportError>;
 }
 
 /** Service tag for authenticated Tesco GraphQL transport policy. */
-export class TescoAuthenticatedGraphQlTransport extends Context.Service<
-  TescoAuthenticatedGraphQlTransport,
-  TescoAuthenticatedGraphQlTransportShape
->()("meal-planner/TescoAuthenticatedGraphQlTransport") {}
+export const TescoAuthenticatedGraphQlTransport =
+  Context.Service<TescoAuthenticatedGraphQlTransport>(
+    "meal-planner/TescoAuthenticatedGraphQlTransport"
+  );
