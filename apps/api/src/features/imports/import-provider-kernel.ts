@@ -18,7 +18,6 @@ import type {
   PilotProviderConservativeReplayValue,
   PilotProviderKnownZeroCostFailure,
   PilotProviderBudgetRepository,
-  PilotProviderBudgetRuntimeShape,
 } from "../pilots/pilot-provider-budget.js";
 import {
   decodeForcedToolResponseResult,
@@ -26,7 +25,7 @@ import {
 } from "./import-forced-tool-response.js";
 import type {
   ImportCorrelationId,
-  ImportObservabilityTraceStoreShape,
+  ImportObservabilityTraceStore,
   ProviderDecodeReason,
 } from "./import-observability.js";
 import { emitImportObservabilityEvent } from "./import-observability.js";
@@ -120,7 +119,7 @@ export const makePilotProviderDispatchGate = (input: {
   readonly now: () => PilotBudgetTimestamp;
   readonly repository: PilotProviderBudgetRepository;
   readonly runId: PilotBudgetRunId;
-  readonly runtime: PilotProviderBudgetRuntimeShape;
+  readonly runtime: PilotProviderBudgetRuntime;
 }): ProviderDispatchGate => ({
   run: <A, E>(request: ProviderDispatchRequest<A, E>) =>
     Effect.gen(function* runBudgetedAdapterDispatch() {
@@ -305,7 +304,7 @@ export const failAfter = <A, E, R>(
   observability: {
     readonly correlationId: ImportCorrelationId;
     readonly providerStage: "recipe" | "speech" | "visual";
-    readonly traceStore?: ImportObservabilityTraceStoreShape | undefined;
+    readonly traceStore?: ImportObservabilityTraceStore | undefined;
   }
 ): Effect.Effect<A, E | SafeProviderFailureCode, R> =>
   effect.pipe(
@@ -344,7 +343,7 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
   observability: {
     readonly correlationId: ImportCorrelationId;
     readonly providerStage: "recipe" | "visual";
-    readonly traceStore: ImportObservabilityTraceStoreShape | undefined;
+    readonly traceStore: ImportObservabilityTraceStore | undefined;
   }
 ): Effect.Effect<
   {
@@ -851,7 +850,7 @@ const withNativeToolCall = (
     : canonicalNative;
 };
 
-const normalizeRawToolShape = (value: unknown): unknown => {
+const normalizeProviderToolPayload = (value: unknown): unknown => {
   const decoded = decodeWorkersAiProviderResponseEnvelope(value);
   if (Option.isNone(decoded)) {
     return value;
@@ -907,7 +906,7 @@ const withProviderNormalizationBoundary = (response: Response): Response => {
             throw new Error(ProviderNormalizationBodyInvalidMessage);
           }
           try {
-            return normalizeRawToolShape(raw);
+            return normalizeProviderToolPayload(raw);
           } catch {
             // Provider payloads and parser details must not cross the
             // observability boundary. Alchemy preserves this closed
@@ -933,7 +932,7 @@ export const noLogWorkersAiClient = (
   client: QueryGatewayClient,
   correlationId: ImportCorrelationId,
   providerStage: "recipe" | "visual",
-  traceStore: ImportObservabilityTraceStoreShape | undefined
+  traceStore: ImportObservabilityTraceStore | undefined
 ): QueryGatewayClient => ({
   ...client,
   raw: Effect.all([client.raw, client.id]).pipe(

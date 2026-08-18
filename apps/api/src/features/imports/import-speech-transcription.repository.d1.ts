@@ -84,7 +84,7 @@ export type SpeechDispatchClaim =
     };
 
 /** D1 capability needed by the provider-free transcription use case. */
-export interface SpeechTranscriptionRepositoryShape {
+export interface SpeechTranscriptionRepository {
   readonly claim: (input: {
     readonly dispatchId: string;
     readonly generation: AcquisitionGeneration;
@@ -210,7 +210,7 @@ const claimFromRow = (row: TranscriptionRow, inserted: boolean) => {
 /** Build the D1 speech ledger adapter around the existing Meal Planner binding. */
 export const makeD1SpeechTranscriptionRepository = (
   binding: AnyD1Database
-): SpeechTranscriptionRepositoryShape => ({
+): SpeechTranscriptionRepository => ({
   claim: (input) =>
     Effect.gen(function* claimSpeechDispatch() {
       const rawResults = yield* persistenceEffect(() =>

@@ -49,7 +49,7 @@ export interface ResolvedVideoSource {
   readonly session: MediaSessionCapability;
 }
 
-export interface SourceResolverShape {
+export interface SourceResolver {
   readonly resolve: (
     identity: TikTokIdentity,
     workspaceRoot: string
@@ -62,7 +62,6 @@ export interface SourceResolverShape {
   >;
 }
 
-export class SourceResolver extends Context.Service<
-  SourceResolver,
-  SourceResolverShape
->()("meal-planner/SourceResolver") {}
+export const SourceResolver = Context.Service<SourceResolver>(
+  "meal-planner/SourceResolver"
+);

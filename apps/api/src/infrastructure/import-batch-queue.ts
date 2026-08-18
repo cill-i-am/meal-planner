@@ -1,7 +1,7 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 
-import type { ImportBatchQueueShape } from "../features/imports/import-batch.service.js";
+import type { ImportBatchQueue as ImportBatchQueuePort } from "../features/imports/import-batch.service.js";
 
 /** Primary staging queue for ID-only import batch work. */
 export const ImportBatchQueue = Cloudflare.Queues.Queue("ImportBatchQueue");
@@ -23,7 +23,7 @@ interface ImportBatchQueueSender {
 /** Adapt a Cloudflare queue sender to the provider-neutral batch queue seam. */
 export const makeCloudflareImportBatchQueue = (
   sender: ImportBatchQueueSender
-): ImportBatchQueueShape => ({
+): ImportBatchQueuePort => ({
   enqueue: (messages) =>
     Effect.tryPromise({
       catch: (): { readonly _tag: "ImportBatchQueueUnavailable" } => ({

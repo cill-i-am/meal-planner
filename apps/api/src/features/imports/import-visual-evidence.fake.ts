@@ -2,9 +2,9 @@ import { Effect, Schema } from "effect";
 
 import type {
   VisualEvidenceExtractionInput,
-  VisualEvidenceExtractorShape,
+  VisualEvidenceExtractor,
   VisualFrameArtifact,
-  VisualFrameSamplerShape,
+  VisualFrameSampler,
   VisualFrameSamplingInput,
 } from "./import-visual-evidence-extractor.js";
 import { VisualEvidence } from "./import-visual-evidence-extractor.js";
@@ -14,7 +14,7 @@ export const makeDeterministicFrameSampler = (
   frames: readonly VisualFrameArtifact[]
 ): {
   readonly calls: VisualFrameSamplingInput[];
-  readonly service: VisualFrameSamplerShape;
+  readonly service: VisualFrameSampler;
 } => {
   const calls: VisualFrameSamplingInput[] = [];
   return {
@@ -37,7 +37,7 @@ export const makeDeterministicVisualEvidenceExtractor = (
   output: typeof VisualEvidence.Encoded
 ): {
   readonly calls: VisualEvidenceExtractionInput[];
-  readonly service: VisualEvidenceExtractorShape;
+  readonly service: VisualEvidenceExtractor;
 } => {
   const evidence = Schema.decodeUnknownSync(VisualEvidence, {
     onExcessProperty: "error",

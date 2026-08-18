@@ -24,13 +24,13 @@ import {
   ImportBatchService,
   makeImportBatchService,
 } from "./import-batch.service.js";
-import type { ImportBatchQueueShape } from "./import-batch.service.js";
+import type { ImportBatchQueue } from "./import-batch.service.js";
 import { makeD1ImportBatchStore } from "./import-queue-acceptance.d1.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
 import { invalidSource } from "./import.errors.js";
 import { makeTestSystemAuthorizer } from "./import.test-fixtures.js";
-import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
+import type { CanonicalSourceIdentityResolver } from "./source-identity.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
 
 const apiToken = "durable-batch-test-token";
@@ -125,7 +125,7 @@ const makeHarness = async () => {
   let identityCalls = 0;
   let nextBatchId = 0;
   let nextItemId = 0;
-  const identityResolver: CanonicalSourceIdentityResolverShape = {
+  const identityResolver: CanonicalSourceIdentityResolver = {
     resolve: (source) => {
       const canonicalId = /\/video\/(?<id>\d+)/u.exec(source.url)?.groups?.[
         "id"
@@ -146,7 +146,7 @@ const makeHarness = async () => {
       });
     },
   };
-  const queue: ImportBatchQueueShape = {
+  const queue: ImportBatchQueue = {
     enqueue: (messages) =>
       queueAvailable
         ? Effect.sync(() => {

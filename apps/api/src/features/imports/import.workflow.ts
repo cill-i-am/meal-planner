@@ -46,7 +46,7 @@ import {
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
 import { runCurrentImportIntentExecution } from "./import-intent-execution.js";
-import type { ImportIntentWorkflowTerminatorShape } from "./import-intent-execution.js";
+import type { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   makeImportIntentWorkflowTransitions,
@@ -1019,7 +1019,7 @@ export const importWorkflowInstanceId = (
   importId: ImportId | RecipeImportIntentId
 ) => `import-acquisition-${importId}`;
 
-export interface ImportWorkflowStarterShape {
+export interface ImportWorkflowStarter {
   readonly ensureStarted: (
     importId: ImportId,
     executionGeneration: ImportIntentExecutionGeneration,
@@ -1034,7 +1034,7 @@ export interface ImportWorkflowStarterShape {
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
 }
 
-export interface ImportWorkflowReconcilerShape extends ImportWorkflowStarterShape {
+export interface ImportWorkflowReconciler extends ImportWorkflowStarter {
   readonly ensureStarted: (
     importId: ImportId,
     executionGeneration: ImportIntentExecutionGeneration,
@@ -1074,7 +1074,7 @@ interface WorkflowTerminationHandleLike {
 
 export const makeImportWorkflowTerminator = (
   workflow: WorkflowTerminationHandleLike
-): ImportIntentWorkflowTerminatorShape => ({
+): ImportIntentWorkflowTerminator => ({
   terminate: Effect.fn("ImportWorkflow.terminate")(
     (intentId: RecipeImportIntentId) =>
       workflow
@@ -1165,7 +1165,7 @@ const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
 
 export const makeImportWorkflowStarter = (
   workflow: WorkflowHandleLike
-): ImportWorkflowReconcilerShape => {
+): ImportWorkflowReconciler => {
   const restartPostAcquisition = (
     importId: ImportId,
     rawCheckpoint: PostAcquisitionJournalCheckpoint
@@ -1252,14 +1252,12 @@ export const makeImportWorkflowStarter = (
 };
 
 export const ensureImportWorkflowStarted = (
-  starter: ImportWorkflowStarterShape,
+  starter: ImportWorkflowStarter,
   importId: ImportId,
   executionGeneration: ImportIntentExecutionGeneration,
   trace: ImportTraceContext
 ) => starter.ensureStarted(importId, executionGeneration, trace);
 
-// eslint-disable-next-line max-classes-per-file -- The Workflow host and its service tag form one frozen module contract.
-export class ImportWorkflowStarter extends Context.Service<
-  ImportWorkflowStarter,
-  ImportWorkflowStarterShape
->()("meal-planner/ImportWorkflowStarter") {}
+export const ImportWorkflowStarter = Context.Service<ImportWorkflowStarter>(
+  "meal-planner/ImportWorkflowStarter"
+);

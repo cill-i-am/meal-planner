@@ -13,14 +13,14 @@ import { Sha256Hex } from "./import-media.model.js";
 import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
   RecipeDispatchClaim,
-  RecipeDraftRepositoryShape,
+  RecipeDraftRepository,
 } from "./import-recipe-draft.repository.d1.js";
 import type {
   RecipeEvidenceAssembly,
   RecipeEvidenceItem,
   RecipeExtractionFailureCode,
   RecipeExtraction,
-  RecipeExtractorShape,
+  RecipeExtractor,
   RecipeExtractorDescriptor as RecipeExtractorDescriptorType,
   RecipeNumberFact,
   RecipeStringFact,
@@ -34,7 +34,7 @@ import {
 import { recipeEvidenceContains } from "./import-recipe-grounding.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type {
-  ImportRepositoryShape,
+  ImportRepository,
   ImportTransitionError,
 } from "./import.repository.js";
 import {
@@ -545,7 +545,7 @@ interface ProduceRecipeDraftFromEvidenceInput {
   readonly claim: (
     context: RecipeDraftClaimContext
   ) => Effect.Effect<RecipeDispatchClaim, ImportTransitionError>;
-  readonly extractor: RecipeExtractorShape;
+  readonly extractor: RecipeExtractor;
   readonly extractionFingerprint?: string;
   readonly lifecycle?: {
     readonly grounding: Effect.Effect<void>;
@@ -555,7 +555,7 @@ interface ProduceRecipeDraftFromEvidenceInput {
     ) => Effect.Effect<void>;
   };
   readonly now: ImportTimestamp;
-  readonly recipeRepository: RecipeDraftRepositoryShape;
+  readonly recipeRepository: RecipeDraftRepository;
   readonly source: VerifiedSourceMetadata;
   readonly transcript:
     | { readonly route: "video_v1" }
@@ -710,9 +710,9 @@ export const produceRecipeDraftForImport = Effect.fn(
   "Imports.produceRecipeDraft"
 )(function* produceRecipeDraft(input: {
   readonly bucket: AcquisitionBucketLike;
-  readonly extractor: RecipeExtractorShape;
+  readonly extractor: RecipeExtractor;
   readonly importId: ImportId;
-  readonly importRepository: ImportRepositoryShape;
+  readonly importRepository: ImportRepository;
   readonly lifecycle?: ProduceRecipeDraftFromEvidenceInput["lifecycle"];
   readonly now: () => ImportTimestamp;
   readonly recovery?: {
@@ -724,7 +724,7 @@ export const produceRecipeDraftForImport = Effect.fn(
     readonly transcriptSha256: Sha256Hex;
     readonly visualManifestSha256: Sha256Hex;
   };
-  readonly recipeRepository: RecipeDraftRepositoryShape;
+  readonly recipeRepository: RecipeDraftRepository;
 }) {
   const storedOption = yield* input.importRepository.findById(input.importId);
   const stored = yield* Option.match(storedOption, {

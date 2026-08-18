@@ -1222,10 +1222,11 @@ const providerWorkflowExport = {
   },
 };
 
+const AlchemyRuntimeContractKey = "shape";
 const entrypoint = Effect.succeed({
   RuntimeContext: {
     exports: Effect.succeed({ ProviderRetryWorkflow: providerWorkflowExport }),
-    shape: () => ({}),
+    [AlchemyRuntimeContractKey]: () => ({}),
   },
 });
 

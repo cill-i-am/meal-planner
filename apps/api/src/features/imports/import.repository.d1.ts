@@ -76,9 +76,9 @@ import {
 } from "./import.errors.js";
 import type {
   ClaimAcquisitionResult,
-  ImportIntentRepositoryShape,
+  ImportIntentRepository,
   InternalImportIntentTransitionError,
-  ImportRepositoryShape,
+  ImportRepository,
   ImportTransitionError,
   PendingImportIntentSourceResolution as PendingImportIntentSourceResolutionType,
   StalledImportIntentStartLimit,
@@ -846,8 +846,7 @@ const isVerifiedEvidenceFor = (
     DateTime.toEpochMillis(evidence.acquiredAt) ===
     EvidenceRetentionSeconds * 1000;
 
-interface D1ImportRepositoryShape
-  extends ImportRepositoryShape, ImportIntentRepositoryShape {
+interface D1ImportRepository extends ImportRepository, ImportIntentRepository {
   readonly beginAcquisitionAttempt: (id: ImportId) => Effect.Effect<
     {
       readonly canonicalSourceId: SourceCanonicalId;
@@ -933,7 +932,7 @@ const resolvedSourceResult = (
 
 const requireMatchingResolvedSource = (
   row: DatabaseIntentRow,
-  command: Parameters<ImportIntentRepositoryShape["resolveIntentSource"]>[1]
+  command: Parameters<ImportIntentRepository["resolveIntentSource"]>[1]
 ) =>
   row.resolvedCanonicalSourceId === command.canonicalSourceId &&
   row.publicSourceUrl === command.canonicalUrl &&
@@ -974,7 +973,7 @@ const decodePendingSourceResolution = (input: unknown) =>
 export const makeD1ImportRepository = (
   binding: AnyD1Database,
   currentTimeMillis: () => number = Date.now
-): D1ImportRepositoryShape => {
+): D1ImportRepository => {
   const database = drizzle(binding);
 
   const findById = (id: ImportId) =>
@@ -1601,7 +1600,7 @@ export const makeD1ImportRepository = (
 
   const findResolvedSourceWinner = (
     principal: ImportPrincipal,
-    command: Parameters<ImportIntentRepositoryShape["resolveIntentSource"]>[1]
+    command: Parameters<ImportIntentRepository["resolveIntentSource"]>[1]
   ) =>
     Effect.gen(function* findResolvedSourceWinnerEffect() {
       const winner = yield* persistenceEffect(
@@ -1641,7 +1640,7 @@ export const makeD1ImportRepository = (
     });
 
   const sourceTransitionCommand = (
-    command: Parameters<ImportIntentRepositoryShape["resolveIntentSource"]>[1],
+    command: Parameters<ImportIntentRepository["resolveIntentSource"]>[1],
     winner: Option.Option<RecipeImportIntentId>,
     executionGeneration: typeof ImportIntentExecutionGeneration.Type
   ) =>

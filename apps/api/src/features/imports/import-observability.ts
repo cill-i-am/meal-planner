@@ -179,7 +179,7 @@ export const ImportObservabilityEvent = Schema.Struct({
 });
 export type ImportObservabilityEvent = typeof ImportObservabilityEvent.Type;
 
-export interface ImportObservabilityTraceStoreShape {
+export interface ImportObservabilityTraceStore {
   readonly append: (
     event: ImportObservabilityEvent
   ) => Effect.Effect<void, never>;
@@ -188,10 +188,10 @@ export interface ImportObservabilityTraceStoreShape {
   ) => Effect.Effect<readonly ImportObservabilityEvent[], never>;
 }
 
-export class ImportObservabilityTraceStore extends Context.Service<
-  ImportObservabilityTraceStore,
-  ImportObservabilityTraceStoreShape
->()("meal-planner/ImportObservabilityTraceStore") {}
+export const ImportObservabilityTraceStore =
+  Context.Service<ImportObservabilityTraceStore>(
+    "meal-planner/ImportObservabilityTraceStore"
+  );
 
 const decodeEvent = Schema.decodeUnknownSync(ImportObservabilityEvent, {
   onExcessProperty: "error",
@@ -260,7 +260,7 @@ const eventAnnotations = (event: ImportObservabilityEvent) => ({
  */
 export const emitImportObservabilityEvent = (
   rawEvent: unknown,
-  capturedTraceStore?: ImportObservabilityTraceStoreShape
+  capturedTraceStore?: ImportObservabilityTraceStore
 ) =>
   Effect.suspend(() => {
     const event = decodeEvent(rawEvent);

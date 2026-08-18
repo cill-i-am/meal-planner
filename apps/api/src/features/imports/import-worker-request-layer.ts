@@ -4,9 +4,8 @@ import { Effect, Layer, Schema } from "effect";
 import type { Redacted } from "effect";
 
 import { AuthPrincipalResolver } from "../auth/auth.principal.js";
-import type { AuthPrincipalResolverShape } from "../auth/auth.principal.js";
 import { ImportBatchId, ImportBatchItemId } from "./import-batch.contracts.js";
-import type { ImportBatchQueueShape } from "./import-batch.service.js";
+import type { ImportBatchQueue } from "./import-batch.service.js";
 import {
   ImportBatchService,
   makeImportBatchService,
@@ -18,7 +17,6 @@ import {
 import { stageOperatorCarouselForWorkflow } from "./import-carousel-staging.js";
 import { RecipeImportIntentApplication } from "./import-intent-api.http.js";
 import { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
-import type { ImportIntentWorkflowTerminatorShape } from "./import-intent-execution.js";
 import {
   RecipeImportIntentReviewApplication,
   makeRecipeImportIntentReviewApplication,
@@ -38,14 +36,14 @@ import {
   makeD1ProviderTerminalSettlementService,
 } from "./import-provider-terminal-settlement.js";
 import { makeD1ImportBatchStore } from "./import-queue-acceptance.d1.js";
-import type { RecipeRecoveryWorkflowStarterShape } from "./import-recipe-recovery.js";
+import type { RecipeRecoveryWorkflowStarter } from "./import-recipe-recovery.js";
 import {
   ImportSystemAuthorizer,
   makeImportSystemAuthorizer,
 } from "./import-system.auth.js";
 import { ImportTimestamp } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
+import type { ImportWorkflowReconciler } from "./import.workflow.js";
 import { CanonicalSourceIdentityResolver } from "./source-identity.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
@@ -53,12 +51,12 @@ import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tik
 export interface ImportWorkerRequestLayerInput {
   readonly bucket: AcquisitionBucketLike;
   readonly database: AnyD1Database;
-  readonly importWorkflowStarter: ImportWorkflowReconcilerShape;
-  readonly importWorkflowTerminator: ImportIntentWorkflowTerminatorShape;
+  readonly importWorkflowStarter: ImportWorkflowReconciler;
+  readonly importWorkflowTerminator: ImportIntentWorkflowTerminator;
   readonly now: () => string;
-  readonly principalResolver: AuthPrincipalResolverShape;
-  readonly queue: ImportBatchQueueShape;
-  readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarterShape;
+  readonly principalResolver: AuthPrincipalResolver;
+  readonly queue: ImportBatchQueue;
+  readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarter;
   readonly runtimeStage: string;
   readonly systemApiToken: Redacted.Redacted<string>;
   readonly systemPrincipal: ImportPrincipal;

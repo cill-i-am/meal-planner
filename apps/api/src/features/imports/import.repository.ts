@@ -167,7 +167,7 @@ export type InternalImportIntentTransitionError =
   | ImportIntentTransitionMutationConflict
   | RecipeImportIntentNotFound;
 
-export interface ImportIntentRepositoryShape {
+export interface ImportIntentRepository {
   readonly admitIntent: (
     command: AdmitImportIntentCommand
   ) => Effect.Effect<AdmitImportIntentResult, ImportIntentRepositoryError>;
@@ -274,7 +274,7 @@ export const AcquisitionFinalizationResult = Schema.Literals([
 export type AcquisitionFinalizationResult =
   typeof AcquisitionFinalizationResult.Type;
 
-export interface ImportRepositoryShape {
+export interface ImportRepository {
   readonly findById: (
     id: ImportId
   ) => Effect.Effect<
@@ -307,7 +307,6 @@ export interface ImportRepositoryShape {
   ) => Effect.Effect<AcquisitionFinalizationResult, ImportTransitionError>;
 }
 
-export class ImportRepository extends Context.Service<
-  ImportRepository,
-  ImportRepositoryShape
->()("meal-planner/ImportRepository") {}
+export const ImportRepository = Context.Service<ImportRepository>(
+  "meal-planner/ImportRepository"
+);

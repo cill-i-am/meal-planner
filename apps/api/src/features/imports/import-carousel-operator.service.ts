@@ -34,7 +34,7 @@ import type {
   SourceIdentityUnavailable,
 } from "./import.errors.js";
 import { RequestFingerprint } from "./import.repository.js";
-import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
+import type { CanonicalSourceIdentityResolver } from "./source-identity.js";
 
 const digestSha256 = (value: string) =>
   Effect.promise(async () => {
@@ -75,7 +75,7 @@ export interface OperatorCarouselPipelineInput {
   readonly sourceUrl: SourceUrl;
 }
 
-export interface OperatorCarouselPipelineShape {
+export interface OperatorCarouselPipeline {
   readonly preflight?: () => Effect.Effect<void, CarouselProcessingUnavailable>;
   readonly stage: (
     input: OperatorCarouselPipelineInput
@@ -91,7 +91,7 @@ export type OperatorCarouselImportError =
   | InvalidSource
   | SourceIdentityUnavailable;
 
-export interface OperatorCarouselImportServiceShape {
+export interface OperatorCarouselImportService {
   readonly admit: (
     principal: ImportPrincipal,
     bundle: OperatorCarouselBundle,
@@ -133,11 +133,11 @@ const applicationError = (error: unknown): OperatorCarouselImportError => {
 
 export const makeOperatorCarouselImportService = (input: {
   readonly application: ReturnType<typeof makeImportIntentApplication>;
-  readonly identityResolver: CanonicalSourceIdentityResolverShape;
+  readonly identityResolver: CanonicalSourceIdentityResolver;
   readonly newIntentId: () => RecipeImportIntentId;
   readonly now: () => string;
-  readonly pipeline: OperatorCarouselPipelineShape;
-}): OperatorCarouselImportServiceShape => {
+  readonly pipeline: OperatorCarouselPipeline;
+}): OperatorCarouselImportService => {
   const admit = Effect.fn("OperatorCarouselImportService.admit")(
     function* admitOperatorCarousel(principal, bundle, idempotencyKey) {
       const canonicalUrl = Schema.decodeUnknownSync(SourceUrl)(
@@ -229,7 +229,7 @@ export const makeOperatorCarouselImportService = (input: {
   return { admit };
 };
 
-export class OperatorCarouselImportService extends Context.Service<
-  OperatorCarouselImportService,
-  OperatorCarouselImportServiceShape
->()("meal-planner/OperatorCarouselImportService") {}
+export const OperatorCarouselImportService =
+  Context.Service<OperatorCarouselImportService>(
+    "meal-planner/OperatorCarouselImportService"
+  );

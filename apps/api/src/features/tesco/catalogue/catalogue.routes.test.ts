@@ -11,10 +11,9 @@ import {
 } from "./catalogue.errors.js";
 import type { TescoCatalogueError } from "./catalogue.errors.js";
 import { TescoCatalogue } from "./catalogue.port.js";
-import type { TescoCatalogueShape } from "./catalogue.port.js";
 import { TescoCatalogueRoutes } from "./catalogue.routes.js";
 
-const makeApp = (service: TescoCatalogueShape) =>
+const makeApp = (service: TescoCatalogue) =>
   HttpRouter.toWebHandler(
     Layer.mergeAll(
       HttpRouter.addAll(TescoCatalogueRoutes),
@@ -23,9 +22,7 @@ const makeApp = (service: TescoCatalogueShape) =>
     { disableLogger: true }
   );
 
-const failingCatalogue = (
-  failure: TescoCatalogueError
-): TescoCatalogueShape => ({
+const failingCatalogue = (failure: TescoCatalogueError): TescoCatalogue => ({
   categoryProducts: () => Effect.fail(failure),
   search: () => Effect.fail(failure),
   suggestions: () => Effect.fail(failure),

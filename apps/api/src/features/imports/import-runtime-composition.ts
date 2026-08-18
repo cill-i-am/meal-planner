@@ -54,7 +54,7 @@ import type {
   RecipeRecoveryWorkflowInput,
 } from "./import-recipe-recovery.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
+import type { ImportWorkflowReconciler } from "./import.workflow.js";
 
 export { runImportVisualAndRecipeWorkflow } from "./import-application-workflows.js";
 
@@ -389,7 +389,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
 export const makeImportBatchQueueAcceptance = (input: {
   readonly database: AnyD1Database;
   readonly importWorkflowStarter: Pick<
-    ImportWorkflowReconcilerShape,
+    ImportWorkflowReconciler,
     "ensureStarted"
   >;
   readonly now: () => string;

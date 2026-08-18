@@ -3,7 +3,7 @@ import { Cause, Effect, Schema } from "effect";
 
 import type {
   ImportCorrelationId,
-  ImportObservabilityTraceStoreShape,
+  ImportObservabilityTraceStore,
 } from "./import-observability.js";
 import { ImportObservabilityEvent } from "./import-observability.js";
 
@@ -29,7 +29,7 @@ const decodeEvent = Schema.decodeUnknownSync(ImportObservabilityEvent, {
 export const makeD1ImportObservabilityTraceStore = (
   database: AnyD1Database,
   now: () => string
-): ImportObservabilityTraceStoreShape => ({
+): ImportObservabilityTraceStore => ({
   append: (event) =>
     databaseEffect(() =>
       database

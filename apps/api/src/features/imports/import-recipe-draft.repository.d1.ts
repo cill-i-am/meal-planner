@@ -82,7 +82,7 @@ export type RecipeDispatchClaim =
   | { readonly _tag: "NeedsReview"; readonly draft: RecipeDraft }
   | { readonly _tag: "ResumeDispatch" };
 
-export interface RecipeDraftRepositoryShape {
+export interface RecipeDraftRepository {
   readonly claim: (input: {
     readonly descriptor: RecipeExtractorDescriptor;
     readonly evidenceFingerprint: string;
@@ -195,7 +195,7 @@ const claimFromRow = (row: RecipeExtractionRow, inserted: boolean) => {
 /** Generation-fenced, fingerprint-idempotent D1 recipe extraction ledger. */
 export const makeD1RecipeDraftRepository = (
   binding: AnyD1Database
-): RecipeDraftRepositoryShape => ({
+): RecipeDraftRepository => ({
   claim: (input) =>
     Effect.gen(function* claimRecipeExtraction() {
       const raw = yield* persistenceEffect(() =>

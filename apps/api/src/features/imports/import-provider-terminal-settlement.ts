@@ -14,12 +14,12 @@ import {
 } from "./import-recipe-recovery.js";
 import type {
   RecipeRecoveryFailure,
-  RecipeRecoveryWorkflowStarterShape,
+  RecipeRecoveryWorkflowStarter,
 } from "./import-recipe-recovery.js";
 import { ImportId } from "./import.contracts.js";
 import type { ImportTimestamp } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type { ImportWorkflowStarterShape } from "./import.workflow.js";
+import type { ImportWorkflowStarter } from "./import.workflow.js";
 
 const TerminalUnknownSettlementRequest = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
@@ -2025,7 +2025,7 @@ const sweepExpiredRecipeReplays = (database: AnyD1Database) =>
     )
   );
 
-export interface ProviderTerminalSettlementServiceShape {
+export interface ProviderTerminalSettlementService {
   readonly settle: (
     input: ProviderTerminalSettlementRequest
   ) => Effect.Effect<
@@ -2034,20 +2034,17 @@ export interface ProviderTerminalSettlementServiceShape {
   >;
 }
 
-export class ProviderTerminalSettlementService extends Context.Service<
-  ProviderTerminalSettlementService,
-  ProviderTerminalSettlementServiceShape
->()("meal-planner/ProviderTerminalSettlementService") {}
+export const ProviderTerminalSettlementService =
+  Context.Service<ProviderTerminalSettlementService>(
+    "meal-planner/ProviderTerminalSettlementService"
+  );
 
 interface ProviderTerminalSettlementServiceInput {
   readonly database: AnyD1Database;
   readonly now: () => ImportTimestamp;
   readonly runtimeStage: unknown;
-  readonly recipeRecoveryStarter?: RecipeRecoveryWorkflowStarterShape;
-  readonly workflowStarter?: Pick<
-    ImportWorkflowStarterShape,
-    "restartFromSpeech"
-  >;
+  readonly recipeRecoveryStarter?: RecipeRecoveryWorkflowStarter;
+  readonly workflowStarter?: Pick<ImportWorkflowStarter, "restartFromSpeech">;
 }
 
 const readAuthoritativeImportTrace = (
@@ -2140,7 +2137,7 @@ const prepareSpeechRecovery = (
 
 export const makeD1ProviderTerminalSettlementService = (
   input: ProviderTerminalSettlementServiceInput
-): ProviderTerminalSettlementServiceShape => ({
+): ProviderTerminalSettlementService => ({
   settle: Effect.fn("ProviderTerminalSettlementService.settle")(
     function* settleTerminalUnknownProviderCost(request) {
       if (input.runtimeStage !== PilotProviderBudgetStage) {

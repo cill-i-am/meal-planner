@@ -10,8 +10,8 @@ import { checkServerIdentity } from "node:tls";
 
 import { Clock, Effect } from "effect";
 
-import type { MediaAcquirerShape } from "./import-media-acquirer.js";
-import type { MediaProcessRunnerShape } from "./import-media-process.js";
+import type { MediaAcquirer } from "./import-media-acquirer.js";
+import type { MediaProcessRunner } from "./import-media-process.js";
 import { scanTemporaryWorkspace } from "./import-media-process.js";
 import {
   hasIsoBaseMediaFileType,
@@ -380,11 +380,11 @@ const checksumFile = Effect.fn("ImportMedia.checksumFile")((filePath: string) =>
 );
 
 export const makeContainerMediaAcquirer = (
-  processRunner: MediaProcessRunnerShape,
+  processRunner: MediaProcessRunner,
   downloader: SecureMediaDownloader = makeSecureMediaDownloader(
     NodeSecureMediaDownloadClient
   )
-): MediaAcquirerShape => ({
+): MediaAcquirer => ({
   acquire: Effect.fn("ImportMedia.acquire")((source, limits, workspaceRoot) =>
     Effect.gen(function* acquireMedia() {
       const deadlineAt =

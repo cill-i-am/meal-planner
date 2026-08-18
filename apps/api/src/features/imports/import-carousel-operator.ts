@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect";
 
 import type {
   TikTokCarouselAdapterFailure,
-  TikTokCarouselAdapterShape,
+  TikTokCarouselAdapter,
   TikTokCarouselImageArtifact,
 } from "./import-carousel-adapter.js";
 import {
@@ -99,7 +99,7 @@ export const makeOperatorCarouselAdapter = (input: {
   readonly canonicalId: SourceCanonicalId;
   readonly receivedAt: string;
   readonly sourceUrl: SourceUrl;
-}): TikTokCarouselAdapterShape => ({
+}): TikTokCarouselAdapter => ({
   acquire: (descriptor) =>
     Effect.gen(function* acquireOperatorCarousel() {
       yield* Schema.decodeUnknownEffect(ImportTimestamp)(input.receivedAt).pipe(

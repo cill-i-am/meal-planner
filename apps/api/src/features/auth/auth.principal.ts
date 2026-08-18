@@ -11,7 +11,7 @@ import { AuthPrincipalResolutionError } from "./auth.principal.error.js";
 
 export { AuthPrincipalResolutionError } from "./auth.principal.error.js";
 
-export interface AuthPrincipalResolverShape {
+export interface AuthPrincipalResolver {
   readonly resolve: (
     headers: Headers
   ) => Effect.Effect<
@@ -20,10 +20,9 @@ export interface AuthPrincipalResolverShape {
   >;
 }
 
-export class AuthPrincipalResolver extends Context.Service<
-  AuthPrincipalResolver,
-  AuthPrincipalResolverShape
->()("meal-planner/AuthPrincipalResolver") {}
+export const AuthPrincipalResolver = Context.Service<AuthPrincipalResolver>(
+  "meal-planner/AuthPrincipalResolver"
+);
 
 const sha256 = async (value: string): Promise<string> => {
   const digest = await crypto.subtle.digest(
@@ -91,6 +90,6 @@ export const resolveAuthPrincipal = (options: {
 
 export const makeAuthPrincipalResolver = (options: {
   readonly auth: MealPlannerAuth;
-}): AuthPrincipalResolverShape => ({
+}): AuthPrincipalResolver => ({
   resolve: (headers) => resolveAuthPrincipal({ headers, ...options }),
 });

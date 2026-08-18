@@ -6,10 +6,7 @@ import {
   isPilotProviderKnownZeroCostFailure,
   pilotProviderKnownZeroCostFailure,
 } from "../pilots/pilot-provider-budget.js";
-import type {
-  ImportCorrelationId,
-  ImportObservabilityTraceStoreShape,
-} from "./import-observability.js";
+import type { ImportCorrelationId } from "./import-observability.js";
 import {
   ImportObservabilityTraceStore,
   emitImportObservabilityEvent,
@@ -33,7 +30,7 @@ import type {
 } from "./import-provider-kernel.js";
 import type {
   RecipeEvidenceAssembly,
-  RecipeExtractorShape,
+  RecipeExtractor,
 } from "./import-recipe-extractor.js";
 import {
   RecipeCandidate,
@@ -240,7 +237,7 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
     request: RecipeEvidenceAssembly,
     observability: {
       readonly correlationId: ImportCorrelationId;
-      readonly traceStore: ImportObservabilityTraceStoreShape | undefined;
+      readonly traceStore: ImportObservabilityTraceStore | undefined;
     }
   ) {
     return yield* failAfter(
@@ -525,5 +522,5 @@ export const makeInstalledRecipeExtractor = Effect.fn(
             }
           )
         ),
-  } satisfies RecipeExtractorShape;
+  } satisfies RecipeExtractor;
 });

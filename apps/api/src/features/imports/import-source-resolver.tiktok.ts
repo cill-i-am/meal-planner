@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { Clock, Effect, Schema } from "effect";
 
-import type { MediaProcessRunnerShape } from "./import-media-process.js";
+import type { MediaProcessRunner } from "./import-media-process.js";
 import {
   RetryableAcquisitionError,
   TerminalMediaError,
@@ -25,7 +25,7 @@ import type {
 } from "./import-media.model.js";
 import type {
   MediaRequestHeaders,
-  SourceResolverShape,
+  SourceResolver,
 } from "./import-source-resolver.js";
 import {
   decodeTikTokMediaSession,
@@ -333,8 +333,8 @@ const parseMetadata = Effect.fn("ImportMedia.parseTikTokMetadata")(
 );
 
 export const makeTikTokSourceResolver = (
-  processRunner: MediaProcessRunnerShape
-): SourceResolverShape => ({
+  processRunner: MediaProcessRunner
+): SourceResolver => ({
   resolve: Effect.fn("ImportMedia.resolveTikTokSource")(
     (identity, workspaceRoot) => {
       const sessionPath = join(workspaceRoot, "yt-dlp-session.cookies");

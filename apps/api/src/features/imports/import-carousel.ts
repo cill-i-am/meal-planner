@@ -3,7 +3,7 @@ import { DateTime, Effect, Option, Schema } from "effect";
 import type {
   TikTokCarouselAcquisition,
   TikTokCarouselAdapterFailure,
-  TikTokCarouselAdapterShape,
+  TikTokCarouselAdapter,
   TikTokCarouselDescriptor,
 } from "./import-carousel-adapter.js";
 import {
@@ -12,7 +12,7 @@ import {
   TikTokCarouselDescriptor as TikTokCarouselDescriptorSchema,
 } from "./import-carousel-adapter.js";
 import type {
-  CarouselEvidenceRepositoryShape,
+  CarouselEvidenceRepository,
   CompletedCarouselEvidence,
 } from "./import-carousel.repository.d1.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
@@ -22,14 +22,14 @@ import {
   VerifiedSourceMetadata,
 } from "./import-media.model.js";
 import { produceRecipeDraftFromEvidence } from "./import-recipe-draft.js";
-import type { RecipeDraftRepositoryShape } from "./import-recipe-draft.repository.d1.js";
+import type { RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import type {
   RecipeEvidenceAssembly,
   RecipeEvidenceItem,
-  RecipeExtractorShape,
+  RecipeExtractor,
 } from "./import-recipe-extractor.js";
 import type {
-  VisualEvidenceExtractorShape,
+  VisualEvidenceExtractor,
   VisualFrameArtifact,
 } from "./import-visual-evidence-extractor.js";
 import {
@@ -571,13 +571,13 @@ const completedEvidence = (
 export const prepareTikTokCarouselEvidence = Effect.fn(
   "Imports.prepareTikTokCarouselEvidence"
 )(function* prepareCarousel(input: {
-  readonly adapter: TikTokCarouselAdapterShape;
+  readonly adapter: TikTokCarouselAdapter;
   readonly bucket: AcquisitionBucketLike;
-  readonly carouselRepository: CarouselEvidenceRepositoryShape;
+  readonly carouselRepository: CarouselEvidenceRepository;
   readonly descriptor: TikTokCarouselDescriptor;
   readonly importId: ImportId;
   readonly now: () => ImportTimestamp;
-  readonly visualExtractor: VisualEvidenceExtractorShape;
+  readonly visualExtractor: VisualEvidenceExtractor;
 }) {
   const descriptor = yield* Schema.decodeUnknownEffect(
     TikTokCarouselDescriptorSchema,
@@ -802,13 +802,13 @@ export const produceTikTokCarouselRecipeDraft = Effect.fn(
   readonly bucket: AcquisitionBucketLike;
   readonly descriptor: TikTokCarouselDescriptor;
   readonly evidence: CompletedCarouselEvidence;
-  readonly extractor: RecipeExtractorShape;
+  readonly extractor: RecipeExtractor;
   readonly importId: ImportId;
   readonly lifecycle?: Parameters<
     typeof produceRecipeDraftFromEvidence
   >[0]["lifecycle"];
   readonly now: () => ImportTimestamp;
-  readonly recipeRepository: RecipeDraftRepositoryShape;
+  readonly recipeRepository: RecipeDraftRepository;
 }) {
   const committed = yield* readVerifiedManifest(
     input.bucket,
@@ -877,15 +877,15 @@ export const produceTikTokCarouselRecipeDraft = Effect.fn(
 export const importTikTokCarouselToRecipeDraft = Effect.fn(
   "Imports.importTikTokCarouselToRecipeDraft"
 )(function* importCarousel(input: {
-  readonly adapter: TikTokCarouselAdapterShape;
+  readonly adapter: TikTokCarouselAdapter;
   readonly bucket: AcquisitionBucketLike;
-  readonly carouselRepository: CarouselEvidenceRepositoryShape;
+  readonly carouselRepository: CarouselEvidenceRepository;
   readonly descriptor: TikTokCarouselDescriptor;
-  readonly extractor: RecipeExtractorShape;
+  readonly extractor: RecipeExtractor;
   readonly importId: ImportId;
   readonly now: () => ImportTimestamp;
-  readonly recipeRepository: RecipeDraftRepositoryShape;
-  readonly visualExtractor: VisualEvidenceExtractorShape;
+  readonly recipeRepository: RecipeDraftRepository;
+  readonly visualExtractor: VisualEvidenceExtractor;
 }) {
   const evidence = yield* prepareTikTokCarouselEvidence(input);
   return yield* produceTikTokCarouselRecipeDraft({

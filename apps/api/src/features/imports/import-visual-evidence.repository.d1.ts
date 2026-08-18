@@ -85,7 +85,7 @@ export type VisualEvidenceFailureCode =
   | "visual_evidence_failed"
   | "visual_extraction_failed";
 
-export interface VisualEvidenceRepositoryShape {
+export interface VisualEvidenceRepository {
   readonly claim: (input: {
     readonly dispatchId: string;
     readonly generation: AcquisitionGeneration;
@@ -207,7 +207,7 @@ const claimFromRow = (row: VisualEvidenceRow, inserted: boolean) => {
 /** Build the generation-fenced D1 visual dispatch ledger. */
 export const makeD1VisualEvidenceRepository = (
   binding: AnyD1Database
-): VisualEvidenceRepositoryShape => ({
+): VisualEvidenceRepository => ({
   claim: (input) =>
     Effect.gen(function* claimVisualDispatch() {
       const rawResults = yield* persistenceEffect(() =>

@@ -4,13 +4,12 @@ import { Context } from "effect";
 import type { TescoSoftLoginRefreshError } from "./auth.errors.js";
 import type { TescoAuthCookieHeader, TescoAuthSnapshot } from "./auth.model.js";
 
-export interface TescoAuthRefreshShape {
+export interface TescoAuthRefresh {
   readonly refresh: (
     cookieHeader: TescoAuthCookieHeader
   ) => Effect.Effect<TescoAuthSnapshot, TescoSoftLoginRefreshError>;
 }
 
-export class TescoAuthRefresh extends Context.Service<
-  TescoAuthRefresh,
-  TescoAuthRefreshShape
->()("meal-planner/TescoAuthRefresh") {}
+export const TescoAuthRefresh = Context.Service<TescoAuthRefresh>(
+  "meal-planner/TescoAuthRefresh"
+);

@@ -25,7 +25,7 @@ const bearerToken = (authorization: string | undefined) => {
   return match?.groups?.["token"];
 };
 
-export interface ImportSystemAuthorizerShape {
+export interface ImportSystemAuthorizer {
   readonly authorize: (
     authorization: string | undefined
   ) => Effect.Effect<ImportPrincipal, UnauthorizedImportCaller>;
@@ -35,7 +35,7 @@ export interface ImportSystemAuthorizerShape {
 export const makeImportSystemAuthorizer = (options: {
   readonly principal: ImportPrincipal;
   readonly token: Redacted.Redacted<string>;
-}): Effect.Effect<ImportSystemAuthorizerShape> => {
+}): Effect.Effect<ImportSystemAuthorizer> => {
   const expectedToken = Redacted.value(options.token);
   if (expectedToken.length === 0) {
     return Effect.succeed({ authorize: rejectUnauthorized });
@@ -72,7 +72,6 @@ export const makeImportSystemAuthorizer = (options: {
 };
 
 /** System-only authorization capability for operational import routes. */
-export class ImportSystemAuthorizer extends Context.Service<
-  ImportSystemAuthorizer,
-  ImportSystemAuthorizerShape
->()("meal-planner/ImportSystemAuthorizer") {}
+export const ImportSystemAuthorizer = Context.Service<ImportSystemAuthorizer>(
+  "meal-planner/ImportSystemAuthorizer"
+);

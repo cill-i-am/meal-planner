@@ -46,7 +46,7 @@ export interface MediaProcessResult {
   readonly stdout: Uint8Array;
 }
 
-export interface MediaProcessRunnerShape {
+export interface MediaProcessRunner {
   readonly run: (
     command: string,
     args: readonly string[],
@@ -57,10 +57,9 @@ export interface MediaProcessRunnerShape {
   >;
 }
 
-export class MediaProcessRunner extends Context.Service<
-  MediaProcessRunner,
-  MediaProcessRunnerShape
->()("meal-planner/MediaProcessRunner") {}
+export const MediaProcessRunner = Context.Service<MediaProcessRunner>(
+  "meal-planner/MediaProcessRunner"
+);
 
 interface TemporaryArtifact {
   readonly contentType: string | null;
@@ -266,7 +265,7 @@ type TemporaryWorkspaceScanner = (
 export const makeMediaProcessRunner = (
   execute: CommandExecutor,
   scanWorkspace: TemporaryWorkspaceScanner = scanTemporaryWorkspace
-): MediaProcessRunnerShape => ({
+): MediaProcessRunner => ({
   run: Effect.fn("ImportMedia.runProcess")((command, args, options) =>
     Effect.callback<
       MediaProcessResult,

@@ -23,7 +23,7 @@ import type {
   SecureMediaDownloadClient,
   SecureMediaDownloadResponse,
 } from "./import-media-acquirer.container.js";
-import type { MediaProcessRunnerShape } from "./import-media-process.js";
+import type { MediaProcessRunner } from "./import-media-process.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import {
   isSafeTikTokMediaLocator,
@@ -85,7 +85,7 @@ const makeRunner = (
     removed: boolean;
   }[] = [];
   const sessionCanary = randomUUID();
-  const runner: MediaProcessRunnerShape = {
+  const runner: MediaProcessRunner = {
     run: (command, args) =>
       Effect.promise(async () => {
         calls.push({ args, command });

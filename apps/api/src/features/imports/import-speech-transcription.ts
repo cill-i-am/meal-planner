@@ -4,8 +4,8 @@ import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import type { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
-  SpeechAudioExtractorShape,
-  SpeechTranscriberShape,
+  SpeechAudioExtractor,
+  SpeechTranscriber,
 } from "./import-speech-transcriber.js";
 import {
   decodeSpeechTranscript,
@@ -13,11 +13,11 @@ import {
 } from "./import-speech-transcriber.js";
 import type {
   CompletedTranscriptEvidence,
-  SpeechTranscriptionRepositoryShape,
+  SpeechTranscriptionRepository,
 } from "./import-speech-transcription.repository.d1.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { importTransitionRejected } from "./import.errors.js";
-import type { ImportRepositoryShape } from "./import.repository.js";
+import type { ImportRepository } from "./import.repository.js";
 import type { TranscriptEvidenceDocument } from "./transcript-evidence-store.js";
 import {
   TranscriptEvidenceStore,
@@ -82,14 +82,14 @@ const completedFromDocument = (
 /** Run one replay-safe provider-free acquired-to-transcript use case. */
 export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
   function* transcribeAcquired(input: {
-    readonly acquisitionRepository: ImportRepositoryShape;
-    readonly audioExtractor: SpeechAudioExtractorShape;
+    readonly acquisitionRepository: ImportRepository;
+    readonly audioExtractor: SpeechAudioExtractor;
     readonly bucket: AcquisitionBucketLike;
     readonly dispatchId?: string;
     readonly importId: ImportId;
     readonly now: () => ImportTimestamp;
-    readonly speechTranscriber: SpeechTranscriberShape;
-    readonly transcriptionRepository: SpeechTranscriptionRepositoryShape;
+    readonly speechTranscriber: SpeechTranscriber;
+    readonly transcriptionRepository: SpeechTranscriptionRepository;
   }) {
     const storedOption = yield* input.acquisitionRepository.findById(
       input.importId

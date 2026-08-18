@@ -19,7 +19,7 @@ import {
 import type { AcquisitionTaskOutcome } from "./import-media.model.js";
 import type { ProviderTaskStage } from "./import-provider-workflow-task.js";
 import type {
-  ImportIntentRepositoryShape,
+  ImportIntentRepository,
   InternalImportIntentTransitionError,
 } from "./import.repository.js";
 
@@ -185,7 +185,7 @@ export type ImportIntentWorkflowTransitionError =
   | InternalImportIntentTransitionError
   | Schema.SchemaError;
 
-export interface ImportIntentWorkflowTransitionsShape {
+export interface ImportIntentWorkflowTransitions {
   readonly advanceComponent: (
     component: "speech" | "visuals",
     progress: "not_started" | "processing" | "completed" | "skipped"
@@ -211,8 +211,8 @@ export interface ImportIntentWorkflowTransitionsShape {
 export const makeImportIntentWorkflowTransitions = (input: {
   readonly executionGeneration: typeof ImportIntentExecutionGeneration.Type;
   readonly intentId: typeof RecipeImportIntentId.Type;
-  readonly repository: Pick<ImportIntentRepositoryShape, "transitionIntent">;
-}): ImportIntentWorkflowTransitionsShape => {
+  readonly repository: Pick<ImportIntentRepository, "transitionIntent">;
+}): ImportIntentWorkflowTransitions => {
   const apply = Effect.fn("RecipeImportIntent.executorTransition")(
     function* applyWorkflowTransition(rawPayload: WorkflowTransitionPayload) {
       const payload = yield* Schema.decodeUnknownEffect(

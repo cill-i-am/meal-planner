@@ -9,7 +9,7 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Redacted, Schema } from "effect";
 
 import { AuthPrincipalResolutionError } from "../auth/auth.principal.js";
-import type { AuthPrincipalResolverShape } from "../auth/auth.principal.js";
+import type { AuthPrincipalResolver } from "../auth/auth.principal.js";
 import {
   ImportIntentIdGenerator,
   ImportPrincipal,
@@ -25,7 +25,7 @@ import type {
   SourceCanonicalId,
 } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type { ImportIntentRepositoryShape } from "./import.repository.js";
+import type { ImportIntentRepository } from "./import.repository.js";
 
 export const TestImportPrincipal = Schema.decodeUnknownSync(ImportPrincipal)({
   actorId: "a".repeat(64),
@@ -45,7 +45,7 @@ export const makeTestSystemAuthorizer = (token: string) =>
 export const makeTestAuthPrincipalResolver = (
   sessionToken: string,
   principal = TestImportPrincipal
-): AuthPrincipalResolverShape => ({
+): AuthPrincipalResolver => ({
   resolve: (headers) =>
     headers.get("cookie") === `better-auth.session_token=${sessionToken}`
       ? Effect.succeed(
@@ -59,7 +59,7 @@ export const makeTestAuthPrincipalResolver = (
 export const admitResolvedTestImport = (input: {
   readonly canonicalId: SourceCanonicalId;
   readonly importId: ImportId;
-  readonly repository: ImportIntentRepositoryShape;
+  readonly repository: ImportIntentRepository;
   readonly sourceKind: "carousel" | "video";
   readonly trace?: ImportTraceContext;
 }) => {

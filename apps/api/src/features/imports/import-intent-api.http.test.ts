@@ -29,10 +29,8 @@ import {
   makeRecipeImportHttpApiLayer,
   makeRecipeImportWorkerHttpLayer,
 } from "./import-intent-api.http.js";
-import type { RecipeImportIntentApplicationShape } from "./import-intent-api.http.js";
 import { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
 import { RecipeImportIntentReviewApplication } from "./import-intent-review.js";
-import type { RecipeImportIntentReviewApplicationShape } from "./import-intent-review.js";
 import { ImportIntentIdGenerator } from "./import-intent.js";
 import { ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
 import { ProviderTerminalSettlementRouteDefinitions } from "./import-provider-terminal-settlement.routes.js";
@@ -179,9 +177,9 @@ const unused = () => Effect.die("not used by this HTTP boundary test");
 type AnyHttpRoute = HttpRouter.Route<any, any>;
 
 interface MakeAppOptions {
-  readonly intent?: Partial<RecipeImportIntentApplicationShape>;
+  readonly intent?: Partial<RecipeImportIntentApplication>;
   readonly operationalRoutes?: readonly AnyHttpRoute[];
-  readonly review?: Partial<RecipeImportIntentReviewApplicationShape>;
+  readonly review?: Partial<RecipeImportIntentReviewApplication>;
 }
 
 const makeApp = async (options: MakeAppOptions = {}) => {
@@ -210,14 +208,14 @@ const makeApp = async (options: MakeAppOptions = {}) => {
     resolveSource: unused,
     timeline: unused,
     ...options.intent,
-  } as RecipeImportIntentApplicationShape;
+  } as RecipeImportIntentApplication;
   const reviewApplication = {
     answerAction: unused,
     confirmAction: unused,
     getAction: unused,
     getRecipe: unused,
     ...options.review,
-  } as RecipeImportIntentReviewApplicationShape;
+  } as RecipeImportIntentReviewApplication;
   const services = Layer.mergeAll(
     ImportIntentIdGenerator.live,
     Layer.succeed(

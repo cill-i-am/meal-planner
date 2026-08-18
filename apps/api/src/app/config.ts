@@ -1,4 +1,3 @@
-/* eslint-disable max-classes-per-file -- Startup configuration owns its tagged failure and service. */
 import { Config, Context, Data, Effect, Layer, Schema } from "effect";
 
 export class AppConfigError extends Data.TaggedError("AppConfigError") {}
@@ -15,13 +14,11 @@ export interface ServerConfig {
   readonly port: number;
 }
 
-export interface AppConfigShape {
+export interface AppConfig {
   readonly server: ServerConfig;
 }
 
-export class AppConfig extends Context.Service<AppConfig, AppConfigShape>()(
-  "meal-planner/AppConfig"
-) {}
+export const AppConfig = Context.Service<AppConfig>("meal-planner/AppConfig");
 
 export const AppConfigDefinition = Config.all({
   server: Config.all({

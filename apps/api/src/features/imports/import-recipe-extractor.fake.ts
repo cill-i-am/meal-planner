@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type {
   RecipeEvidenceAssembly,
   RecipeExtractorDescriptor,
-  RecipeExtractorShape,
+  RecipeExtractor,
 } from "./import-recipe-extractor.js";
 
 /** Deterministic provider-free extractor that deliberately returns untrusted data. */
@@ -12,7 +12,7 @@ export const makeDeterministicRecipeExtractor = (
   output: unknown | ((input: RecipeEvidenceAssembly) => unknown)
 ): {
   readonly calls: RecipeEvidenceAssembly[];
-  readonly service: RecipeExtractorShape;
+  readonly service: RecipeExtractor;
 } => {
   const calls: RecipeEvidenceAssembly[] = [];
   return {

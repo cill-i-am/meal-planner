@@ -20,7 +20,7 @@ import type {
   AdmitResolvedRecipeImportIntentCommand,
   AdmitResolvedRecipeImportIntentError,
   AdmitResolvedRecipeImportIntentResult,
-  RecipeImportIntentAdmissionShape,
+  RecipeImportIntentAdmission,
 } from "./import-intent-admission.js";
 import { EvidenceRetentionSeconds } from "./import-media.model.js";
 import { makeProviderFreeOperationalTracer } from "./import-operations.fake.js";
@@ -67,7 +67,7 @@ const makeRecordingIntentAdmission = (
 ) => {
   const remaining = [...attempts];
   const calls: AdmitResolvedRecipeImportIntentCommand[] = [];
-  const service: RecipeImportIntentAdmissionShape = {
+  const service: RecipeImportIntentAdmission = {
     admitResolved: (command) =>
       Effect.suspend(() => {
         calls.push(command);

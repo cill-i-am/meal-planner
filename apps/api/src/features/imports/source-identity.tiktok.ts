@@ -7,7 +7,7 @@ import { invalidSource, sourceIdentityUnavailable } from "./import.errors.js";
 import type {
   CanonicalIdentityResolution,
   CanonicalSourceIdentity,
-  CanonicalSourceIdentityResolverShape,
+  CanonicalSourceIdentityResolver,
 } from "./source-identity.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
 import {
@@ -264,7 +264,7 @@ const resolveShortLink = (
 export const makeTikTokCanonicalSourceIdentityResolver = (
   fetcher: TikTokFetcher,
   options?: TikTokHttpPolicyOptions
-): CanonicalSourceIdentityResolverShape => {
+): CanonicalSourceIdentityResolver => {
   const transport = makeTikTokHttpTransport(fetcher, options);
   return {
     resolve: Effect.fn("TikTokCanonicalSourceIdentityResolver.resolve")(

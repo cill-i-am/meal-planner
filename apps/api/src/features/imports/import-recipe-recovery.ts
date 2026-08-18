@@ -835,7 +835,7 @@ export const PrepareNextRecipeRecoveryAttempt = Schema.Struct({
 export type PrepareNextRecipeRecoveryAttempt =
   typeof PrepareNextRecipeRecoveryAttempt.Type;
 
-export interface RecipeRecoveryRepositoryShape {
+export interface RecipeRecoveryRepository {
   readonly prepareNextAttempt: (
     input: PrepareNextRecipeRecoveryAttempt
   ) => Effect.Effect<RecipeRecoveryAttempt, RecipeRecoveryFailure>;
@@ -864,8 +864,8 @@ export interface RecipeRecoveryRepositoryShape {
 export const makeD1RecipeRecoveryRepository = (
   database: AnyD1Database,
   runtimeStage: unknown
-): RecipeRecoveryRepositoryShape => {
-  const readAttempt: RecipeRecoveryRepositoryShape["readAttempt"] = Effect.fn(
+): RecipeRecoveryRepository => {
+  const readAttempt: RecipeRecoveryRepository["readAttempt"] = Effect.fn(
     "RecipeRecoveryRepository.readAttempt"
   )((input) => {
     if (runtimeStage !== PilotProviderBudgetStage) {
@@ -881,7 +881,7 @@ export const makeD1RecipeRecoveryRepository = (
     );
   });
 
-  const readCurrent: RecipeRecoveryRepositoryShape["readCurrent"] = Effect.fn(
+  const readCurrent: RecipeRecoveryRepository["readCurrent"] = Effect.fn(
     "RecipeRecoveryRepository.readCurrent"
   )((input) => {
     if (runtimeStage !== PilotProviderBudgetStage) {
@@ -896,32 +896,31 @@ export const makeD1RecipeRecoveryRepository = (
     );
   });
 
-  const readResumable: RecipeRecoveryRepositoryShape["readResumable"] =
-    Effect.fn("RecipeRecoveryRepository.readResumable")(
-      function* readResumableEffect(input) {
-        const current = yield* readCurrent(input);
-        if (Option.isNone(current)) {
-          return yield* Effect.fail(
-            new RecipeRecoveryMissingPredecessor({
-              acquisitionGeneration: input.acquisitionGeneration,
-              importId: input.importId,
-            })
-          );
-        }
-        if (current.value.rootDispatchId !== input.rootDispatchId) {
-          return yield* Effect.fail(
-            new RecipeRecoveryDispatchConflict({
-              acquisitionGeneration: input.acquisitionGeneration,
-              dispatchId: input.rootDispatchId,
-              importId: input.importId,
-            })
-          );
-        }
-        return current.value;
-      }
-    );
+  const readResumable: RecipeRecoveryRepository["readResumable"] = Effect.fn(
+    "RecipeRecoveryRepository.readResumable"
+  )(function* readResumableEffect(input) {
+    const current = yield* readCurrent(input);
+    if (Option.isNone(current)) {
+      return yield* Effect.fail(
+        new RecipeRecoveryMissingPredecessor({
+          acquisitionGeneration: input.acquisitionGeneration,
+          importId: input.importId,
+        })
+      );
+    }
+    if (current.value.rootDispatchId !== input.rootDispatchId) {
+      return yield* Effect.fail(
+        new RecipeRecoveryDispatchConflict({
+          acquisitionGeneration: input.acquisitionGeneration,
+          dispatchId: input.rootDispatchId,
+          importId: input.importId,
+        })
+      );
+    }
+    return current.value;
+  });
 
-  const prepareNextAttempt: RecipeRecoveryRepositoryShape["prepareNextAttempt"] =
+  const prepareNextAttempt: RecipeRecoveryRepository["prepareNextAttempt"] =
     Effect.fn("RecipeRecoveryRepository.prepareNextAttempt")(
       function* prepareNextAttemptEffect(rawInput) {
         const input = yield* decodeD1(
@@ -1189,7 +1188,7 @@ const reconcileWorkflowInstance = (
     })
   );
 
-export interface RecipeRecoveryWorkflowStarterShape {
+export interface RecipeRecoveryWorkflowStarter {
   readonly start: (
     attempt: RecipeRecoveryAttempt,
     trace: ImportTraceContext
@@ -1203,7 +1202,7 @@ export const recipeRecoveryWorkflowInstanceId = (
 
 export const makeRecipeRecoveryWorkflowStarter = (
   workflow: WorkflowHandleLike
-): RecipeRecoveryWorkflowStarterShape => ({
+): RecipeRecoveryWorkflowStarter => ({
   start: Effect.fn("RecipeRecoveryWorkflowStarter.start")(
     function* startRecipeRecoveryWorkflow(attempt, trace) {
       const id = recipeRecoveryWorkflowInstanceId(

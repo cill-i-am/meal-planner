@@ -10,9 +10,9 @@ import { makeImportIntentApplication } from "../features/imports/import-intent.j
 import { makeImportTraceContext } from "../features/imports/import-observability.js";
 import { IdempotencyKey } from "../features/imports/import.contracts.js";
 import { sourceIdentityUnavailable } from "../features/imports/import.errors.js";
-import type { ImportIntentRepositoryShape } from "../features/imports/import.repository.js";
+import type { ImportIntentRepository } from "../features/imports/import.repository.js";
 import { makeTestSystemAuthorizer } from "../features/imports/import.test-fixtures.js";
-import type { CanonicalSourceIdentityResolverShape } from "../features/imports/source-identity.js";
+import type { CanonicalSourceIdentityResolver } from "../features/imports/source-identity.js";
 import {
   raceWithRequestSignal,
   withCurrentRequestCancellation,
@@ -205,7 +205,7 @@ describe("request cancellation", () => {
     let admissionRequests = 0;
     let pipelineStarts = 0;
     let workflowStarts = 0;
-    const repository: ImportIntentRepositoryShape = {
+    const repository: ImportIntentRepository = {
       admitIntent: () => {
         admissionRequests += 1;
         return Effect.die("durable admission must not start");
@@ -227,7 +227,7 @@ describe("request cancellation", () => {
         Effect.die("source resolution persistence must not start"),
       transitionIntent: () => Effect.die("transition must not start"),
     };
-    const identityResolver: CanonicalSourceIdentityResolverShape = {
+    const identityResolver: CanonicalSourceIdentityResolver = {
       resolve: () =>
         Effect.tryPromise({
           catch: sourceIdentityUnavailable,

@@ -12,7 +12,6 @@ import {
   OperatorCarouselRoutes,
 } from "./import-carousel-operator.routes.js";
 import { OperatorCarouselImportService } from "./import-carousel-operator.service.js";
-import type { OperatorCarouselImportServiceShape } from "./import-carousel-operator.service.js";
 import { invalidCarouselBundle } from "./import.errors.js";
 import {
   makeTestAuthPrincipalResolver,
@@ -53,7 +52,7 @@ const completeJpegBase64 =
 
 const principalResolver = makeTestAuthPrincipalResolver("test-session");
 
-const makeApp = (service: OperatorCarouselImportServiceShape) =>
+const makeApp = (service: OperatorCarouselImportService) =>
   HttpRouter.toWebHandler(
     Layer.mergeAll(
       OperatorCarouselRoutes,

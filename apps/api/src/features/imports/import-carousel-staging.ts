@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 
 import type {
-  TikTokCarouselAdapterShape,
+  TikTokCarouselAdapter,
   TikTokCarouselDescriptor,
   TikTokCarouselImageArtifact,
 } from "./import-carousel-adapter.js";
@@ -126,7 +126,7 @@ const putPrivate = (
 
 /** Persist an already validated operator bundle before starting the workflow. */
 export const stageOperatorCarouselForWorkflow = (input: {
-  readonly adapter: TikTokCarouselAdapterShape;
+  readonly adapter: TikTokCarouselAdapter;
   readonly bucket: AcquisitionBucketLike;
   readonly descriptor: TikTokCarouselDescriptor;
   readonly importId: ImportId;
@@ -285,7 +285,7 @@ export const loadStagedOperatorCarousel = (input: {
       kind: "tiktok_carousel",
       sourceUrl,
     };
-    const adapter: TikTokCarouselAdapterShape = {
+    const adapter: TikTokCarouselAdapter = {
       acquire: (requested) =>
         requested.canonicalId === descriptor.canonicalId &&
         requested.declaredPageCount === descriptor.declaredPageCount

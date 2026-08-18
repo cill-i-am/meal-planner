@@ -2,18 +2,18 @@ import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { Context, Effect, Schema } from "effect";
 
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
-import type { ImportIntentRepositoryShape } from "./import.repository.js";
+import type { ImportIntentRepository } from "./import.repository.js";
 
-export interface ImportIntentWorkflowTerminatorShape {
+export interface ImportIntentWorkflowTerminator {
   readonly terminate: (
     intentId: RecipeImportIntentId
   ) => Effect.Effect<void, unknown>;
 }
 
-export class ImportIntentWorkflowTerminator extends Context.Service<
-  ImportIntentWorkflowTerminator,
-  ImportIntentWorkflowTerminatorShape
->()("meal-planner/ImportIntentWorkflowTerminator") {}
+export const ImportIntentWorkflowTerminator =
+  Context.Service<ImportIntentWorkflowTerminator>(
+    "meal-planner/ImportIntentWorkflowTerminator"
+  );
 
 export const ImportIntentExecutionSuperseded = Schema.TaggedStruct(
   "ImportIntentExecutionSuperseded",
@@ -35,7 +35,7 @@ export const runCurrentImportIntentExecution = Effect.fn(
   Failure,
   Requirements,
 >(
-  repository: Pick<ImportIntentRepositoryShape, "isIntentExecutionCurrent">,
+  repository: Pick<ImportIntentRepository, "isIntentExecutionCurrent">,
   intentId: RecipeImportIntentId,
   executionGeneration: ImportIntentExecutionGeneration,
   run: () => Effect.Effect<Success, Failure, Requirements>

@@ -10,12 +10,12 @@ import {
   produceRecipeDraftFromEvidence,
   projectRecipeExtractionFailure,
 } from "./import-recipe-draft.js";
-import type { RecipeDraftRepositoryShape } from "./import-recipe-draft.repository.d1.js";
+import type { RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { RecipeExtractionFailure } from "./import-recipe-extractor.js";
 import type {
   RecipeEvidenceAssembly,
   RecipeExtractionFailureCode,
-  RecipeExtractorShape,
+  RecipeExtractor,
 } from "./import-recipe-extractor.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
@@ -71,7 +71,7 @@ describe("recipe extraction failure projection", () => {
     "drives %s through the typed pipeline and durable write policy",
     async (extractorCode, pipelineCode, durableCode) => {
       const persisted: string[] = [];
-      const repository: RecipeDraftRepositoryShape = {
+      const repository: RecipeDraftRepository = {
         claim: () => Effect.die("unexpected repository claim"),
         claimCarousel: () => Effect.die("unexpected carousel claim"),
         complete: () => Effect.die("unexpected recipe completion"),
@@ -80,7 +80,7 @@ describe("recipe extraction failure projection", () => {
             persisted.push(failureCode);
           }),
       };
-      const extractor: RecipeExtractorShape = {
+      const extractor: RecipeExtractor = {
         descriptor: {
           model: "fake-model",
           provider: "fake-provider",

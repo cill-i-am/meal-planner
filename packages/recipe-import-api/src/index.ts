@@ -880,14 +880,13 @@ export const RecipeImportApi = HttpApi.make("recipeImportApi")
     })
   );
 
-export type RecipeImportApiClientShape = HttpApiClient.ForApi<
+export type RecipeImportApiClient = HttpApiClient.ForApi<
   typeof RecipeImportApi
 >;
 
-export class RecipeImportApiClient extends Context.Service<
-  RecipeImportApiClient,
-  RecipeImportApiClientShape
->()("meal-planner/RecipeImportApiClient") {}
+export const RecipeImportApiClient = Context.Service<RecipeImportApiClient>(
+  "meal-planner/RecipeImportApiClient"
+);
 
 export const makeRecipeImportApiClientLayer = (options: {
   readonly baseUrl: string | URL;

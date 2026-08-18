@@ -33,7 +33,7 @@ import {
 } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import { TestImportTrace } from "./import.test-fixtures.js";
-import type { ImportWorkflowReconcilerShape } from "./import.workflow.js";
+import type { ImportWorkflowReconciler } from "./import.workflow.js";
 import {
   CanonicalSourceIdentityResolver,
   ValidatedVideoUrl,
@@ -156,10 +156,7 @@ describe("canonical recipe import intent repository in workerd", () => {
       readonly importId: string;
       readonly instanceId: string;
     }[] = [];
-    const workflowStarter: Pick<
-      ImportWorkflowReconcilerShape,
-      "ensureStarted"
-    > = {
+    const workflowStarter: Pick<ImportWorkflowReconciler, "ensureStarted"> = {
       ensureStarted: (importId, executionGeneration, trace) =>
         Effect.gen(function* recordDurableStart() {
           const committed = yield* Effect.promise<{
@@ -932,10 +929,7 @@ describe("canonical recipe import intent repository in workerd", () => {
       readonly importId: string;
       readonly correlationId: string;
     }[] = [];
-    const workflowStarter: Pick<
-      ImportWorkflowReconcilerShape,
-      "ensureStarted"
-    > = {
+    const workflowStarter: Pick<ImportWorkflowReconciler, "ensureStarted"> = {
       ensureStarted: (importId, executionGeneration, trace) => {
         if (!reconciling) {
           return Effect.succeed("already_active" as const);
@@ -1323,10 +1317,7 @@ describe("canonical recipe import intent repository in workerd", () => {
           terminationCalls += 1;
         }),
     });
-    const workflowStarter: Pick<
-      ImportWorkflowReconcilerShape,
-      "ensureStarted"
-    > = {
+    const workflowStarter: Pick<ImportWorkflowReconciler, "ensureStarted"> = {
       ensureStarted: (importId, executionGeneration) => {
         if (!reconciling) {
           return Effect.succeed("already_active" as const);

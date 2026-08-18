@@ -271,7 +271,7 @@ export interface VisualFrameSamplingFailure {
   readonly code: "frame_sampling_failed";
 }
 
-export interface VisualFrameSamplerShape {
+export interface VisualFrameSampler {
   readonly sample: (
     input: VisualFrameSamplingInput
   ) => Effect.Effect<
@@ -302,17 +302,16 @@ export interface VisualEvidenceExtractionFailure {
     | "visual_extraction_failed";
 }
 
-export interface VisualEvidenceExtractorShape {
+export interface VisualEvidenceExtractor {
   readonly extract: (
     input: VisualEvidenceExtractionInput
   ) => Effect.Effect<VisualEvidence, VisualEvidenceExtractionFailure>;
 }
 
 /** Replaceable provider-neutral visual evidence capability. */
-export class VisualEvidenceExtractor extends Context.Service<
-  VisualEvidenceExtractor,
-  VisualEvidenceExtractorShape
->()("meal-planner/VisualEvidenceExtractor") {}
+export const VisualEvidenceExtractor = Context.Service<VisualEvidenceExtractor>(
+  "meal-planner/VisualEvidenceExtractor"
+);
 
 export const decodeVisualEvidence = Schema.decodeUnknownEffect(VisualEvidence, {
   onExcessProperty: "error",
