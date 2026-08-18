@@ -238,7 +238,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           now: currentIsoTimestamp,
           principalResolver: makeAuthPrincipalResolver({
             auth,
-            database: authDatabase,
           }),
           queue: makeCloudflareImportBatchQueue(rawImportBatchQueue),
           recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(

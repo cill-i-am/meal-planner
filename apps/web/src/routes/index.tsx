@@ -3,31 +3,18 @@ import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 import { AuthBoundary } from "../features/auth/auth-boundary.js";
-import type {
-  AuthBoundaryActions,
-  AuthBoundaryState,
-  HouseholdSummary,
-} from "../features/auth/auth-boundary.js";
+import type { AuthBoundaryActions } from "../features/auth/auth-boundary.js";
 import {
   authClient,
   requireAuthSuccess,
 } from "../features/auth/auth-client.js";
+import { deriveAuthBoundaryState } from "../features/auth/auth-state.js";
 import { makeBrowserRecipeImportOperations } from "../features/recipe-import/browser-operations.js";
 import {
   decodeRecipeImportSearch,
   recipeImportPageSessionKey,
 } from "../features/recipe-import/navigation.js";
 import { RecipeImportPage } from "../features/recipe-import/recipe-import-page.js";
-
-const toHousehold = (organization: {
-  readonly id: string;
-  readonly name: string;
-  readonly slug: string;
-}): HouseholdSummary => ({
-  id: organization.id,
-  name: organization.name,
-  slug: organization.slug,
-});
 
 const MealPlannerRoute = () => {
   const { intentId } = useSearch({ from: "/" });
@@ -45,6 +32,13 @@ const MealPlannerRoute = () => {
     createHousehold: async (input) => {
       await requireAuthSuccess(authClient.organization.create(input));
     },
+    retry: async () => {
+      await Promise.all([
+        session.refetch(),
+        organizations.refetch(),
+        activeOrganization.refetch(),
+      ]);
+    },
     selectHousehold: async (organizationId) => {
       await requireAuthSuccess(
         authClient.organization.setActive({ organizationId })
@@ -59,29 +53,11 @@ const MealPlannerRoute = () => {
     },
   };
 
-  let state: AuthBoundaryState;
-  if (
-    session.isPending ||
-    (session.data !== null &&
-      (organizations.isPending || activeOrganization.isPending))
-  ) {
-    state = { kind: "loading" };
-  } else if (session.data === null) {
-    state = { kind: "anonymous" };
-  } else {
-    state = {
-      activeHousehold:
-        activeOrganization.data === null
-          ? null
-          : toHousehold(activeOrganization.data),
-      households: (organizations.data ?? []).map(toHousehold),
-      kind: "authenticated",
-      user: {
-        email: session.data.user.email,
-        name: session.data.user.name,
-      },
-    };
-  }
+  const state = deriveAuthBoundaryState({
+    activeOrganization,
+    organizations,
+    session,
+  });
 
   return (
     <AuthBoundary actions={actions} state={state}>

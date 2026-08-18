@@ -15,6 +15,7 @@ afterEach(cleanup);
 
 const makeActions = (): AuthBoundaryActions => ({
   createHousehold: vi.fn(async () => {}),
+  retry: vi.fn(async () => {}),
   selectHousehold: vi.fn(async () => {}),
   signIn: vi.fn(async () => {}),
   signOut: vi.fn(async () => {}),
@@ -36,6 +37,18 @@ const renderBoundary = (
 };
 
 describe("AuthBoundary", () => {
+  it("shows a safe retry action when authentication is unavailable", async () => {
+    const actions = renderBoundary({ kind: "error" });
+    const user = userEvent.setup();
+
+    expect(
+      screen.getByText("We couldn’t load your account right now.")
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(actions.retry).toHaveBeenCalledOnce();
+  });
+
   it("submits an email/password login", async () => {
     const actions = renderBoundary({ kind: "anonymous" });
     const user = userEvent.setup();

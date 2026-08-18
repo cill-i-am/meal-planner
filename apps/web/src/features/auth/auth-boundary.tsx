@@ -18,6 +18,7 @@ export interface AuthBoundaryActions {
     readonly name: string;
     readonly slug: string;
   }) => Promise<void>;
+  readonly retry: () => Promise<void>;
   readonly selectHousehold: (organizationId: string) => Promise<void>;
   readonly signIn: (input: {
     readonly email: string;
@@ -33,6 +34,7 @@ export interface AuthBoundaryActions {
 
 export type AuthBoundaryState =
   | { readonly kind: "loading" }
+  | { readonly kind: "error" }
   | { readonly kind: "anonymous" }
   | {
       readonly activeHousehold: HouseholdSummary | null;
@@ -277,6 +279,20 @@ export const AuthBoundary = ({
 }) => {
   if (state.kind === "loading") {
     return <main className="auth-shell">Loading your session…</main>;
+  }
+  if (state.kind === "error") {
+    return (
+      <main className="auth-shell">
+        <section className="auth-panel" aria-labelledby="auth-error-title">
+          <p className="eyebrow">Meal Planner</p>
+          <h1 id="auth-error-title">Account temporarily unavailable</h1>
+          <p className="lede">We couldn’t load your account right now.</p>
+          <Button onClick={() => void actions.retry()} type="button">
+            Try again
+          </Button>
+        </section>
+      </main>
+    );
   }
   if (state.kind === "anonymous") {
     return (

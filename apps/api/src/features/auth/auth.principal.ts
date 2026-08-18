@@ -3,11 +3,9 @@ import {
   RecipeImportHouseholdScopeId,
   RecipeImportPrincipal,
 } from "@meal-planner/recipe-import-api";
-import { and, eq } from "drizzle-orm";
-import type { DrizzleD1Database } from "drizzle-orm/d1";
+import { isAPIError } from "better-auth/api";
 import { Context, Effect, Schema } from "effect";
 
-import { member } from "./auth.database-schema.js";
 import type { MealPlannerAuth } from "./auth.js";
 import { AuthPrincipalResolutionError } from "./auth.principal.error.js";
 
@@ -37,10 +35,9 @@ const sha256 = async (value: string): Promise<string> => {
   ).join("");
 };
 
-/** Resolve a domain principal from the authoritative Better Auth session and membership row. */
+/** Resolve a domain principal through Better Auth's session and organization APIs. */
 export const resolveAuthPrincipal = (options: {
   readonly auth: MealPlannerAuth;
-  readonly database: DrizzleD1Database;
   readonly headers: Headers;
 }) =>
   Effect.tryPromise({
@@ -63,17 +60,20 @@ export const resolveAuthPrincipal = (options: {
           reason: "missing_active_household",
         });
       }
-      const [membership] = await options.database
-        .select({ id: member.id })
-        .from(member)
-        .where(
-          and(
-            eq(member.organizationId, organizationId),
-            eq(member.userId, authSession.user.id)
-          )
-        )
-        .limit(1);
-      if (membership === undefined) {
+      const membership = await options.auth.api
+        .getActiveMember({ headers: options.headers })
+        .catch((error: unknown) => {
+          if (isAPIError(error) && error.body?.code === "MEMBER_NOT_FOUND") {
+            throw new AuthPrincipalResolutionError({
+              reason: "missing_membership",
+            });
+          }
+          throw error;
+        });
+      if (
+        membership.organizationId !== organizationId ||
+        membership.userId !== authSession.user.id
+      ) {
         throw new AuthPrincipalResolutionError({
           reason: "missing_membership",
         });
@@ -91,7 +91,6 @@ export const resolveAuthPrincipal = (options: {
 
 export const makeAuthPrincipalResolver = (options: {
   readonly auth: MealPlannerAuth;
-  readonly database: DrizzleD1Database;
 }): AuthPrincipalResolverShape => ({
   resolve: (headers) => resolveAuthPrincipal({ headers, ...options }),
 });

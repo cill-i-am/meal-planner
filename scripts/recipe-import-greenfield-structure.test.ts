@@ -1,4 +1,5 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path = require("node:path");
 import { fileURLToPath } from "node:url";
 
@@ -6,37 +7,45 @@ import { describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 
-const collectFiles = async (entryPath: string): Promise<readonly string[]> => {
-  const entry = await stat(entryPath);
-  if (entry.isFile()) {
-    return [entryPath];
-  }
-
-  const children = await readdir(entryPath);
-  const descendants = await Promise.all(
-    children.map((child) => collectFiles(path.join(entryPath, child)))
-  );
-  return descendants.flat();
-};
+const trackedFiles = execFileSync("git", ["ls-files", "-z"], {
+  cwd: repositoryRoot,
+  encoding: "utf-8",
+})
+  .split("\0")
+  .filter((entryPath) => entryPath.length > 0);
 
 const isProductionSource = (entryPath: string): boolean =>
   [".ts", ".tsx"].includes(path.extname(entryPath)) &&
   !entryPath.includes(".test.") &&
   !entryPath.includes(".integration.") &&
   !entryPath.includes(".worker.") &&
+  !entryPath.includes(".gen.") &&
+  !entryPath.includes("/test/") &&
+  !entryPath.includes("/tests/") &&
+  !entryPath.includes("/__tests__/") &&
   !entryPath.includes("/fixtures/") &&
-  !entryPath.includes("/test-fixtures/");
+  !entryPath.includes("/test-fixtures/") &&
+  !entryPath.includes("/vendor/");
 
-const loadSources = async (
+const loadSources = (
   paths: readonly string[],
   include: (path: string) => boolean
 ): Promise<readonly { readonly path: string; readonly source: string }[]> => {
-  const collectedFiles = await Promise.all(paths.map(collectFiles));
-  const files = collectedFiles.flat().filter(include);
+  const requestedPaths = paths.map((entryPath) =>
+    path.relative(repositoryRoot, entryPath)
+  );
+  const files = trackedFiles.filter(
+    (entryPath) =>
+      requestedPaths.some(
+        (requestedPath) =>
+          entryPath === requestedPath ||
+          entryPath.startsWith(`${requestedPath}${path.sep}`)
+      ) && include(entryPath)
+  );
   return Promise.all(
     files.map(async (entryPath) => ({
-      path: path.relative(repositoryRoot, entryPath),
-      source: await readFile(entryPath, "utf-8"),
+      path: entryPath,
+      source: await readFile(path.join(repositoryRoot, entryPath), "utf-8"),
     }))
   );
 };
@@ -105,8 +114,19 @@ describe("greenfield recipe-import architecture", () => {
       [`${repositoryRoot}/apps/web/src`],
       isProductionSource
     );
+    const sourcePaths = sources.map(({ path: sourcePath }) => sourcePath);
+    const workerSources = sourcePaths.filter(
+      (sourcePath) => sourcePath === "apps/web/src/worker.ts"
+    );
+    const browserSources = sourcePaths.filter(
+      (sourcePath) => sourcePath !== "apps/web/src/worker.ts"
+    );
     const forbidden = [/\bprocess\.env\b/u, /\bRedacted\.make\b/u] as const;
 
+    expect(workerSources).toEqual(["apps/web/src/worker.ts"]);
+    expect(browserSources.length).toBeGreaterThan(0);
+    expect(sourcePaths).not.toContain("apps/web/src/routeTree.gen.ts");
+    expect(sourcePaths).not.toContain("apps/web/src/test/setup.ts");
     expect(
       forbidden.flatMap((pattern) => violations(sources, pattern))
     ).toEqual([]);
