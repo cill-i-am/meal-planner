@@ -5,10 +5,10 @@ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { InvalidRequest, toHttpFailureResponse } from "./http-failure.js";
 import type { HttpFailure } from "./http-failure.js";
 
-export const json = (body: unknown, status = 200) =>
+export const json = (body: Schema.Json, status = 200) =>
   HttpServerResponse.json(body, { status }).pipe(Effect.orDie);
 
-export const routeJson = <A, R>(
+export const routeJson = <A extends Schema.Json, R>(
   effect: Effect.Effect<A, HttpFailure, R>
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R> =>
   effect.pipe(

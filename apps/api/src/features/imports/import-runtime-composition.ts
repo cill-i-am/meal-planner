@@ -23,7 +23,7 @@ import type {
 } from "./import-batch.contracts.js";
 import { makeImportIntentApplication } from "./import-intent.js";
 import type { ImportPrincipal } from "./import-intent.js";
-import { adaptAcquisitionBucket } from "./import-media-acquirer.js";
+import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import type { ImportTraceContext } from "./import-observability.js";
 import {
@@ -31,7 +31,10 @@ import {
   observeImportWorkflowStart,
 } from "./import-observability.js";
 import { DeadLetterReplayClaimId } from "./import-operations.js";
-import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
+import {
+  makePilotProviderDispatchGate,
+  makeWorkersAiTransport,
+} from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { ProviderTaskCheckpoint } from "./import-provider-workflow-checkpoint.js";
 import {
@@ -51,7 +54,9 @@ import {
 } from "./import-recipe-recovery.js";
 import type {
   RecipeRecoveryAttempt,
+  RecipeRecoveryAuthorization as RecipeRecoveryAuthorizationType,
   RecipeRecoveryWorkflowInput,
+  RecipeRecoveryWorkflowInputEncoded,
 } from "./import-recipe-recovery.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import type { ImportWorkflowReconciler } from "./import.workflow.js";
@@ -127,7 +132,7 @@ export const consumeImportBatchQueueDelivery = Effect.fn(
 export const consumeImportBatchDeadLetterDelivery = Effect.fn(
   "ImportRuntime.consumeBatchDeadLetterDelivery"
 )(function* consumeImportBatchDeadLetterDeliveryEffect<Error, Requirements>(
-  body: unknown,
+  body: typeof ImportBatchQueueMessage.Encoded,
   consume: (
     message: ImportBatchQueueMessageType
   ) => Effect.Effect<void, Error, Requirements>
@@ -162,7 +167,11 @@ export interface RecipeRecoveryLoopDependencies<Requirements = never> {
   ) => Effect.Effect<RecoveryCheckpoint, never, Requirements>;
   readonly waitForAuthorization: (
     ordinal: RecipeRecoveryOrdinal
-  ) => Effect.Effect<unknown, never, Requirements>;
+  ) => Effect.Effect<
+    typeof RecipeRecoveryAuthorization.Encoded,
+    never,
+    Requirements
+  >;
 }
 
 const failedRecoveryCheckpoint = (code: string): RecoveryCheckpoint => ({
@@ -174,7 +183,9 @@ const failedRecoveryCheckpoint = (code: string): RecoveryCheckpoint => ({
 const nextRecoveryOrdinal = (ordinal: RecipeRecoveryOrdinal) =>
   Schema.decodeUnknownOption(RecipeRecoveryOrdinal)(ordinal + 1);
 
-const normalizeDurableRecoveryAuthorization = (input: unknown): unknown => {
+const normalizeDurableRecoveryAuthorization = (
+  input: typeof RecipeRecoveryAuthorization.Encoded
+): typeof RecipeRecoveryAuthorization.Encoded | undefined => {
   try {
     return structuredClone(input);
   } catch {
@@ -271,13 +282,13 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
     const runtimeStage = yield* Config.string("ALCHEMY_STAGE");
     const budgetRuntime = makePilotProviderBudgetRuntime(runtimeStage);
 
-    return (rawInput: unknown) =>
+    return (rawInput: RecipeRecoveryWorkflowInputEncoded) =>
       Effect.gen(function* runImportRecipeRecoveryWorkflow() {
         const workflowInput = yield* resolveRecipeRecoveryWorkflowInput(
           rawInput
         ).pipe(Effect.orDie);
         const database = yield* queryDatabase.raw;
-        const rawBucket = yield* evidenceBucket.raw;
+        const bucket = adaptAcquisitionBucket(evidenceBucket, runtimeContext);
         const recoveryRepository = makeD1RecipeRecoveryRepository(
           database,
           runtimeStage
@@ -294,11 +305,19 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
           ),
           runtime: budgetRuntime,
         });
+        const traceStore = makeD1ImportObservabilityTraceStore(database, () =>
+          new Date().toISOString()
+        );
+        const transport = yield* makeWorkersAiTransport(
+          providerGateway,
+          workflowInput.trace.correlationId,
+          traceStore
+        ).pipe(Effect.provideService(RuntimeContext, runtimeContext));
         const extractor = yield* makeInstalledRecipeExtractor({
-          client: providerGateway,
           correlationId: workflowInput.trace.correlationId,
           dispatch,
-        }).pipe(Effect.provideService(RuntimeContext, runtimeContext));
+          transport: transport.recipe,
+        });
         const recipeRepository = makeD1RecipeDraftRepository(database);
 
         return yield* observeImportWorkflowStart(workflowInput.trace).pipe(
@@ -331,7 +350,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                     runProviderTaskAttempt(
                       "recipe",
                       produceRecipeDraftForImport({
-                        bucket: adaptAcquisitionBucket(rawBucket),
+                        bucket,
                         extractor,
                         importId: attempt.importId,
                         importRepository: makeD1ImportRepository(database),
@@ -366,7 +385,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                   ),
               waitForAuthorization: (ordinal) =>
                 durable
-                  .waitForEvent<unknown>(
+                  .waitForEvent<RecipeRecoveryAuthorizationType>(
                     `authorize-recipe-recovery-${ordinal}`,
                     {
                       type: recipeRecoveryAuthorizationEventType(ordinal),
@@ -375,12 +394,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                   .pipe(Effect.map(({ payload }) => payload)),
             })
           ),
-          Effect.provideService(
-            ImportObservabilityTraceStore,
-            makeD1ImportObservabilityTraceStore(database, () =>
-              new Date().toISOString()
-            )
-          )
+          Effect.provideService(ImportObservabilityTraceStore, traceStore)
         );
       });
   });

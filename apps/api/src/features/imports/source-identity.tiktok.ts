@@ -38,8 +38,8 @@ const TikTokHandoffItemMetadata = Schema.Struct({
             uniqueId: Schema.String,
           }),
           id: Schema.String,
-          imagePost: Schema.optionalKey(Schema.Unknown),
-          video: Schema.optionalKey(Schema.Unknown),
+          imagePost: Schema.optionalKey(Schema.Json),
+          video: Schema.optionalKey(Schema.Json),
         }),
       }),
       statusCode: Schema.Literal(0),
@@ -145,20 +145,19 @@ const findHydrationContent = (
   return undefined;
 };
 
-const parseHandoffMetadata = (html: string): unknown | undefined => {
+const parseHandoffMetadata = (html: string): Schema.Json | undefined => {
   const content = findHydrationContent(parse(html).childNodes);
   if (content === undefined) {
     return undefined;
   }
-
-  try {
-    return JSON.parse(content);
-  } catch {
-    return undefined;
-  }
+  return Option.getOrUndefined(
+    Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))(content)
+  );
 };
 
-const parseHandoffCanonical = (decodedJson: unknown): string | undefined => {
+const parseHandoffCanonical = (
+  decodedJson: Schema.Json
+): string | undefined => {
   const metadata = Schema.decodeUnknownOption(TikTokHandoffMetadata)(
     decodedJson
   );
@@ -167,11 +166,13 @@ const parseHandoffCanonical = (decodedJson: unknown): string | undefined => {
     : undefined;
 };
 
-const isObject = (value: unknown): value is object =>
+const isJsonObject = (
+  value: Schema.Json | undefined
+): value is Schema.JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const parseHandoffItem = (
-  decodedJson: unknown
+  decodedJson: Schema.Json
 ): CanonicalIdentityResolution | undefined => {
   const metadata = Schema.decodeUnknownOption(TikTokHandoffItemMetadata)(
     decodedJson
@@ -189,8 +190,8 @@ const parseHandoffItem = (
     return undefined;
   }
 
-  const hasVideo = isObject(item.video);
-  const hasImagePost = isObject(item.imagePost);
+  const hasVideo = isJsonObject(item.video);
+  const hasImagePost = isJsonObject(item.imagePost);
   if (hasVideo === hasImagePost) {
     return undefined;
   }

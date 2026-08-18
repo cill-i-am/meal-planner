@@ -59,16 +59,21 @@ export const resolveAuthPrincipal = (options: {
           reason: "missing_active_household",
         });
       }
-      const membership = await options.auth.api
-        .getActiveMember({ headers: options.headers })
-        .catch((error: unknown) => {
-          if (isAPIError(error) && error.body?.code === "MEMBER_NOT_FOUND") {
-            throw new AuthPrincipalResolutionError({
-              reason: "missing_membership",
-            });
-          }
-          throw error;
+      let membership: Awaited<
+        ReturnType<typeof options.auth.api.getActiveMember>
+      >;
+      try {
+        membership = await options.auth.api.getActiveMember({
+          headers: options.headers,
         });
+      } catch (error) {
+        if (isAPIError(error) && error.body?.code === "MEMBER_NOT_FOUND") {
+          throw new AuthPrincipalResolutionError({
+            reason: "missing_membership",
+          });
+        }
+        throw new AuthPrincipalResolutionError({ reason: "invalid_session" });
+      }
       if (
         membership.organizationId !== organizationId ||
         membership.userId !== authSession.user.id

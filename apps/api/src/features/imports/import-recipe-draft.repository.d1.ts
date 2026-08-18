@@ -70,9 +70,24 @@ const RecipeExtractionRow = Schema.Struct({
 });
 type RecipeExtractionRow = typeof RecipeExtractionRow.Type;
 
-const D1BatchResults = Schema.Array(
-  Schema.Struct({ results: Schema.Array(Schema.Unknown) })
-);
+const D1MutationResult = Schema.Struct({ results: Schema.Array(Schema.Json) });
+const D1InsertResult = Schema.Struct({
+  results: Schema.Array(Schema.Struct({ extraction_fingerprint: Sha256Hex })),
+});
+const D1RecipeExtractionRows = Schema.Struct({
+  results: Schema.Array(RecipeExtractionRow),
+});
+const D1ClaimBatchResults = Schema.Tuple([
+  D1InsertResult,
+  D1RecipeExtractionRows,
+]);
+const D1CompleteBatchResults = Schema.Tuple([
+  D1MutationResult,
+  D1MutationResult,
+  D1MutationResult,
+  D1MutationResult,
+  D1RecipeExtractionRows,
+]);
 
 export type RecipeExtractionFailureCode = DurableRecipeExtractionFailureCode;
 
@@ -118,16 +133,6 @@ const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
     catch: importPersistenceUnavailable,
     try: () => Promise.resolve(operation()),
   });
-
-const decodeRow = (value: unknown) =>
-  Schema.decodeUnknownEffect(RecipeExtractionRow, {
-    onExcessProperty: "ignore",
-  })(value).pipe(Effect.mapError(() => importPersistenceCorrupt()));
-
-const decodeBatchResults = (value: unknown) =>
-  Schema.decodeUnknownEffect(D1BatchResults, {
-    onExcessProperty: "ignore",
-  })(value).pipe(Effect.mapError(() => importPersistenceCorrupt()));
 
 const decodeDraft = (row: RecipeExtractionRow) =>
   Effect.try({
@@ -250,12 +255,14 @@ export const makeD1RecipeDraftRepository = (
             .bind(input.extractionFingerprint),
         ])
       );
-      const [insert, select] = yield* decodeBatchResults(raw);
-      const rawRow = select?.results[0];
-      if (insert === undefined || rawRow === undefined) {
+      const [insert, select] = yield* Schema.decodeUnknownEffect(
+        D1ClaimBatchResults,
+        { onExcessProperty: "ignore" }
+      )(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
+      const [row] = select.results;
+      if (row === undefined) {
         return yield* Effect.fail(importTransitionRejected());
       }
-      const row = yield* decodeRow(rawRow);
       if (
         row.import_id !== input.importId ||
         row.acquisition_generation !== input.generation ||
@@ -312,12 +319,14 @@ export const makeD1RecipeDraftRepository = (
             .bind(input.extractionFingerprint),
         ])
       );
-      const [insert, select] = yield* decodeBatchResults(raw);
-      const rawRow = select?.results[0];
-      if (insert === undefined || rawRow === undefined) {
+      const [insert, select] = yield* Schema.decodeUnknownEffect(
+        D1ClaimBatchResults,
+        { onExcessProperty: "ignore" }
+      )(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
+      const [row] = select.results;
+      if (row === undefined) {
         return yield* Effect.fail(importTransitionRejected());
       }
-      const row = yield* decodeRow(rawRow);
       if (
         row.import_id !== input.importId ||
         row.acquisition_generation !== input.generation ||
@@ -428,12 +437,14 @@ export const makeD1RecipeDraftRepository = (
             .bind(draft.extractionFingerprint),
         ])
       );
-      const results = yield* decodeBatchResults(raw);
-      const rawRow = results[4]?.results[0];
-      if (rawRow === undefined) {
+      const [_parentUpdate, _previousUpdate, _insert, _childUpdate, selected] =
+        yield* Schema.decodeUnknownEffect(D1CompleteBatchResults, {
+          onExcessProperty: "ignore",
+        })(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
+      const [row] = selected.results;
+      if (row === undefined) {
         return yield* Effect.fail(importTransitionRejected());
       }
-      const row = yield* decodeRow(rawRow);
       const decodedDraft = yield* decodeDraft(row);
       return decodedDraft;
     }),

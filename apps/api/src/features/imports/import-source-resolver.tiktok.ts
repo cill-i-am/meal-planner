@@ -49,20 +49,20 @@ const sourceLimitExceeded = (): TerminalMediaFailure =>
   new TerminalMediaError({ code: "limit_exceeded", stage: "resolve" });
 
 const TikTokProviderMetadataEnvelope = Schema.Struct({
-  _type: Schema.optionalKey(Schema.Unknown),
-  availability: Schema.optionalKey(Schema.Unknown),
-  description: Schema.optionalKey(Schema.Unknown),
-  duration: Schema.optionalKey(Schema.Unknown),
-  entries: Schema.optionalKey(Schema.Unknown),
-  http_headers: Schema.optionalKey(Schema.Unknown),
-  id: Schema.optionalKey(Schema.Unknown),
-  timestamp: Schema.optionalKey(Schema.Unknown),
-  title: Schema.optionalKey(Schema.Unknown),
-  uploader: Schema.optionalKey(Schema.Unknown),
-  uploader_id: Schema.optionalKey(Schema.Unknown),
-  uploader_url: Schema.optionalKey(Schema.Unknown),
-  url: Schema.optionalKey(Schema.Unknown),
-  webpage_url: Schema.optionalKey(Schema.Unknown),
+  _type: Schema.optionalKey(Schema.Json),
+  availability: Schema.optionalKey(Schema.Json),
+  description: Schema.optionalKey(Schema.Json),
+  duration: Schema.optionalKey(Schema.Json),
+  entries: Schema.optionalKey(Schema.Json),
+  http_headers: Schema.optionalKey(Schema.Json),
+  id: Schema.optionalKey(Schema.Json),
+  timestamp: Schema.optionalKey(Schema.Json),
+  title: Schema.optionalKey(Schema.Json),
+  uploader: Schema.optionalKey(Schema.Json),
+  uploader_id: Schema.optionalKey(Schema.Json),
+  uploader_url: Schema.optionalKey(Schema.Json),
+  url: Schema.optionalKey(Schema.Json),
+  webpage_url: Schema.optionalKey(Schema.Json),
 });
 type TikTokProviderMetadataEnvelope =
   typeof TikTokProviderMetadataEnvelope.Type;
@@ -71,7 +71,7 @@ const decodeTikTokProviderMetadataEnvelope = Schema.decodeUnknownSync(
   Schema.fromJsonString(TikTokProviderMetadataEnvelope)
 );
 
-const stringOrNull = (value: unknown) =>
+const stringOrNull = (value: Schema.Json | undefined) =>
   typeof value === "string" && value.trim().length > 0 ? value : null;
 
 const containsControlCharacter = (value: string) =>
@@ -80,7 +80,10 @@ const containsControlCharacter = (value: string) =>
     return codePoint <= 0x1f || codePoint === 0x7f;
   });
 
-const safeHeaderValue = (value: unknown, maximumLength: number) => {
+const safeHeaderValue = (
+  value: Schema.Json | undefined,
+  maximumLength: number
+) => {
   if (
     typeof value !== "string" ||
     value.length === 0 ||
@@ -94,7 +97,7 @@ const safeHeaderValue = (value: unknown, maximumLength: number) => {
 };
 
 const headerValue = (
-  headers: Record<string, unknown>,
+  headers: Schema.JsonObject,
   name: string,
   maximumLength: number
 ) => {
@@ -103,6 +106,9 @@ const headerValue = (
   );
   return safeHeaderValue(entry?.[1], maximumLength);
 };
+
+const isJsonObject = (value: Schema.Json): value is Schema.JsonObject =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const safeTikTokReferer = (value: string | undefined) => {
   if (value === undefined) {
@@ -127,15 +133,16 @@ const safeTikTokReferer = (value: string | undefined) => {
   }
 };
 
-const mediaRequestHeaders = (raw: unknown): MediaRequestHeaders => {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+const mediaRequestHeaders = (
+  raw: Schema.Json | undefined
+): MediaRequestHeaders => {
+  if (raw === undefined || !isJsonObject(raw)) {
     return {};
   }
-  const headers = raw as Record<string, unknown>;
-  const accept = headerValue(headers, "accept", 1024);
-  const acceptLanguage = headerValue(headers, "accept-language", 256);
-  const referer = safeTikTokReferer(headerValue(headers, "referer", 2048));
-  const userAgent = headerValue(headers, "user-agent", 1024);
+  const accept = headerValue(raw, "accept", 1024);
+  const acceptLanguage = headerValue(raw, "accept-language", 256);
+  const referer = safeTikTokReferer(headerValue(raw, "referer", 2048));
+  const userAgent = headerValue(raw, "user-agent", 1024);
   return {
     ...(accept === undefined ? {} : { accept }),
     ...(acceptLanguage === undefined ? {} : { acceptLanguage }),
@@ -215,7 +222,7 @@ const validatedSourceFields = (
   };
 };
 
-const creatorHandle = (uploaderUrlValue: unknown) => {
+const creatorHandle = (uploaderUrlValue: Schema.Json | undefined) => {
   const uploaderUrl = stringOrNull(uploaderUrlValue);
   if (uploaderUrl === null) {
     return null;

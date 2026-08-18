@@ -4,7 +4,7 @@ import { TerminalMediaError } from "./import-media.errors.js";
 import { MediaByteCount, MediaDurationSeconds } from "./import-media.model.js";
 import type { TerminalMediaFailure } from "./import-media.model.js";
 
-const ProbeOutput = Schema.Struct({
+export const MediaProbeOutput = Schema.Struct({
   format: Schema.Struct({
     duration: Schema.String,
     format_name: Schema.String,
@@ -18,6 +18,7 @@ const ProbeOutput = Schema.Struct({
     })
   ),
 });
+export type MediaProbeOutput = typeof MediaProbeOutput.Type;
 
 const invalidMedia = (
   code: "invalid_media" | "limit_exceeded" | "unsupported_streams"
@@ -33,16 +34,13 @@ export const hasIsoBaseMediaFileType = (header: Uint8Array) =>
 
 export const validateMediaProbe = Effect.fn("ImportMedia.validateMediaProbe")(
   function* validateMediaProbeEffect(
-    input: unknown,
+    probe: MediaProbeOutput,
     limits: {
       readonly actualBytes: number;
       readonly maximumBytes: number;
       readonly maximumDurationSeconds: number;
     }
   ) {
-    const probe = yield* Schema.decodeUnknownEffect(ProbeOutput)(input).pipe(
-      Effect.mapError(() => invalidMedia("invalid_media"))
-    );
     const durationSeconds = Number(probe.format.duration);
     const reportedBytes = Number(probe.format.size);
     if (

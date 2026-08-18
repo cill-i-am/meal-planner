@@ -6,10 +6,10 @@ export const RecipeImportSearch = Schema.Struct({
 });
 export type RecipeImportSearch = typeof RecipeImportSearch.Type;
 
-export const decodeRecipeImportSearch = (search: unknown) =>
-  Schema.decodeUnknownSync(RecipeImportSearch, {
-    onExcessProperty: "error",
-  })(search);
+export const decodeRecipeImportSearch = Schema.decodeUnknownSync(
+  RecipeImportSearch,
+  { onExcessProperty: "error" }
+);
 
 export const recipeImportIntentRedirectSearch = (
   previous: RecipeImportSearch,

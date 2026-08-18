@@ -1,5 +1,5 @@
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { DateTime, Effect, Schema } from "effect";
+import { DateTime, Effect, Schema, flow } from "effect";
 
 import { PilotProviderBudgetStage } from "../pilots/pilot-provider-budget.js";
 import type { AcquisitionGeneration } from "./import-media.model.js";
@@ -89,41 +89,49 @@ const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
     try: () => Promise.resolve(operation()),
   });
 
-const decodeCheckpoint = (value: unknown) =>
-  Schema.decodeUnknownEffect(CheckpointRow, {
-    onExcessProperty: "ignore",
-  })(value).pipe(
-    Effect.mapError(() =>
-      providerTerminalPersistenceError("persistence_corrupt")
-    ),
-    Effect.map(
-      (row): ProviderTerminalCheckpoint => ({
-        acquisitionGeneration: row.acquisition_generation,
-        completedAt: row.completed_at,
-        failureCode: row.failure_code,
-        importId: row.import_id,
-        ownershipId: row.ownership_id,
-        providerStage: row.provider_stage,
-      })
-    )
-  );
+const decodeCheckpointRow = Schema.decodeUnknownEffect(CheckpointRow, {
+  onExcessProperty: "ignore",
+});
 
-const decodeRecovery = (value: unknown) =>
-  Schema.decodeUnknownEffect(RecoveryRow, {
-    onExcessProperty: "ignore",
-  })(value).pipe(
-    Effect.mapError(() =>
-      providerTerminalPersistenceError("persistence_corrupt")
-    ),
-    Effect.map(
-      (row): SpeechProviderRecovery => ({
-        acquisitionGeneration: row.acquisition_generation,
-        importId: row.import_id,
-        originalDispatchId: row.original_dispatch_id,
-        recoveryDispatchId: row.recovery_dispatch_id,
-      })
-    )
-  );
+const checkpointFromRow = (
+  row: typeof CheckpointRow.Type
+): ProviderTerminalCheckpoint => ({
+  acquisitionGeneration: row.acquisition_generation,
+  completedAt: row.completed_at,
+  failureCode: row.failure_code,
+  importId: row.import_id,
+  ownershipId: row.ownership_id,
+  providerStage: row.provider_stage,
+});
+
+const decodeCheckpoint = flow(
+  decodeCheckpointRow,
+  Effect.mapError(() =>
+    providerTerminalPersistenceError("persistence_corrupt")
+  ),
+  Effect.map(checkpointFromRow)
+);
+
+const decodeRecoveryRow = Schema.decodeUnknownEffect(RecoveryRow, {
+  onExcessProperty: "ignore",
+});
+
+const recoveryFromRow = (
+  row: typeof RecoveryRow.Type
+): SpeechProviderRecovery => ({
+  acquisitionGeneration: row.acquisition_generation,
+  importId: row.import_id,
+  originalDispatchId: row.original_dispatch_id,
+  recoveryDispatchId: row.recovery_dispatch_id,
+});
+
+const decodeRecovery = flow(
+  decodeRecoveryRow,
+  Effect.mapError(() =>
+    providerTerminalPersistenceError("persistence_corrupt")
+  ),
+  Effect.map(recoveryFromRow)
+);
 
 const readActiveOwnership = (
   database: AnyD1Database,
@@ -1431,7 +1439,7 @@ export interface ProviderTerminalRecoveryRepository {
 
 export const makeD1ProviderTerminalRecoveryRepository = (
   database: AnyD1Database,
-  runtimeStage: unknown
+  runtimeStage: string
 ): ProviderTerminalRecoveryRepository => ({
   inspectSpeechUnknownRecoveryActivation: (input) =>
     Effect.gen(function* inspectSpeechUnknownRecoveryActivation() {

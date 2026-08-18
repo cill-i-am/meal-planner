@@ -1,5 +1,4 @@
 import { applyD1Migrations, env } from "cloudflare:test";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -16,7 +15,10 @@ import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
   PreparedMediaArtifact,
+  R2ObjectBodyLike,
+  R2ObjectLike,
 } from "./import-media-acquirer.js";
+import { RetryableAcquisitionError } from "./import-media.errors.js";
 import {
   AcquisitionGeneration,
   Sha256Hex,
@@ -54,6 +56,15 @@ import {
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import {
+  ImportWorkerR2TestEnvironment,
+  workerTestR2PutBody,
+  workerTestMigrations,
+} from "./import-worker-test-environment.js";
+import type {
+  WorkerTestR2Object,
+  WorkerTestR2ObjectBody,
+} from "./import-worker-test-environment.js";
+import {
   ImportId,
   ImportTimestamp,
   SourceCanonicalId,
@@ -85,37 +96,7 @@ const visualFrameObjectKey = (
 ) =>
   `${visualGenerationPrefix(importId, generation)}/frames/${String(frameIndex).padStart(2, "0")}.jpg`;
 
-interface TestR2Object {
-  readonly checksums?: { readonly sha256?: ArrayBuffer };
-  readonly customMetadata?: Record<string, string>;
-  readonly httpMetadata?: {
-    readonly cacheControl?: string;
-    readonly contentType?: string;
-  };
-  readonly key: string;
-  readonly size: number;
-  readonly text: () => Promise<string>;
-}
-
-interface TestR2Bucket {
-  readonly delete: (key: string) => Promise<void>;
-  readonly get: (key: string) => Promise<TestR2Object | null>;
-  readonly head: (key: string) => Promise<TestR2Object | null>;
-  readonly put: (
-    key: string,
-    value: ArrayBufferView | ReadableStream,
-    options?: unknown
-  ) => Promise<TestR2Object | null>;
-}
-
-const testEnv = env as unknown as {
-  readonly ImportEvidenceBucket: TestR2Bucket;
-  readonly MealPlannerDatabase: AnyD1Database;
-  readonly TEST_MIGRATIONS: {
-    readonly name: string;
-    readonly queries: string[];
-  }[];
-};
+const testEnv = Schema.decodeUnknownSync(ImportWorkerR2TestEnvironment)(env);
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
@@ -153,11 +134,59 @@ const makeRecipeExtractorDescriptor = (version: "schema-1" | "schema-2") => ({
   version,
 });
 
+const retryableR2Failure = (stage: "store" | "verify") =>
+  new RetryableAcquisitionError({ reason: "container_rpc", stage });
+
+const r2Object = (object: WorkerTestR2Object): R2ObjectLike => ({
+  checksums: object.checksums,
+  ...(object.customMetadata === undefined
+    ? {}
+    : { customMetadata: object.customMetadata }),
+  ...(object.httpMetadata === undefined
+    ? {}
+    : { httpMetadata: object.httpMetadata }),
+  size: object.size,
+});
+
+const r2ObjectBody = (object: WorkerTestR2ObjectBody): R2ObjectBodyLike => ({
+  ...r2Object(object),
+  arrayBuffer: () =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => object.arrayBuffer(),
+    }),
+  text: () =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => object.text(),
+    }),
+});
+
 const acquisitionBucket = (): AcquisitionBucketLike => ({
-  get: (key) => testEnv.ImportEvidenceBucket.get(key),
-  head: (key) => testEnv.ImportEvidenceBucket.head(key),
+  get: (key) =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => testEnv.ImportEvidenceBucket.get(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2ObjectBody(object)))
+    ),
+  head: (key) =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => testEnv.ImportEvidenceBucket.head(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2Object(object)))
+    ),
   put: (key, value, options) =>
-    testEnv.ImportEvidenceBucket.put(key, value, options),
+    Effect.gen(function* putR2Object() {
+      const body = yield* workerTestR2PutBody(value, options.contentLength);
+      return yield* Effect.tryPromise({
+        catch: () => retryableR2Failure("store"),
+        try: () => testEnv.ImportEvidenceBucket.put(key, body, options),
+      });
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2Object(object)))
+    ),
 });
 
 const bucketWithNativeChecksumOverride = (
@@ -166,30 +195,22 @@ const bucketWithNativeChecksumOverride = (
   const bucket = acquisitionBucket();
   return {
     ...bucket,
-    get: async (key) => {
-      const object = await bucket.get(key);
-      const override = overrides.get(key);
-      if (object === null || override === undefined) {
-        return object;
-      }
-      return {
-        ...(object.arrayBuffer === undefined
-          ? {}
-          : {
-              arrayBuffer: () => object.arrayBuffer?.() as Promise<ArrayBuffer>,
-            }),
-        checksums:
-          override === "missing" ? {} : { sha256: new Uint8Array(32).buffer },
-        ...(object.customMetadata === undefined
-          ? {}
-          : { customMetadata: object.customMetadata }),
-        ...(object.httpMetadata === undefined
-          ? {}
-          : { httpMetadata: object.httpMetadata }),
-        size: object.size,
-        text: () => object.text(),
-      };
-    },
+    get: (key) =>
+      bucket.get(key).pipe(
+        Effect.map((object) => {
+          const override = overrides.get(key);
+          if (object === null || override === undefined) {
+            return object;
+          }
+          return {
+            ...object,
+            checksums:
+              override === "missing"
+                ? {}
+                : { sha256: new Uint8Array(32).buffer },
+          };
+        })
+      ),
   };
 };
 
@@ -456,7 +477,7 @@ const makeRecipeFixture = (
 beforeAll(async () => {
   await applyD1Migrations(
     testEnv.MealPlannerDatabase,
-    [...testEnv.TEST_MIGRATIONS],
+    workerTestMigrations(testEnv.TEST_MIGRATIONS),
     "d1_migrations"
   );
 });
@@ -579,7 +600,7 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
       importId,
       operation: "prepare_visual_recovery",
     };
-    const postRecovery = (body: unknown, token = "test-import-token") =>
+    const postRecovery = (body: Schema.Json, token = "test-import-token") =>
       app.handler(
         new Request(
           "https://meal-planner.test/imports/operator-provider-terminal-settlement",

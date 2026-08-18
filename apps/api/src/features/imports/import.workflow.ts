@@ -45,7 +45,10 @@ import {
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
-import { runCurrentImportIntentExecution } from "./import-intent-execution.js";
+import {
+  ImportWorkflowTerminationUnavailable,
+  runCurrentImportIntentExecution,
+} from "./import-intent-execution.js";
 import type { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
@@ -54,10 +57,10 @@ import {
   publicIntentFailureForProviderStage,
 } from "./import-intent-workflow-transitions.js";
 import {
-  adaptAcquisitionBucket,
   acquireStoreVerify,
   readVerifiedAcquisitionEvidence,
 } from "./import-media-acquirer.js";
+import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 import { makeAcquisitionMediaObject } from "./import-media-acquisition-object.client.js";
 import { ImportMediaAcquisitionObject } from "./import-media-acquisition-object.js";
 import {
@@ -83,7 +86,10 @@ import {
   observeImportWorkflowStart,
 } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
-import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
+import {
+  makePilotProviderDispatchGate,
+  makeWorkersAiTransport,
+} from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
 import {
@@ -100,7 +106,10 @@ import {
   runProviderTask,
   runProviderTaskAttempt,
 } from "./import-provider-workflow-task.js";
-import type { ProviderTaskRetryLifecycle } from "./import-provider-workflow-task.js";
+import type {
+  ProviderTaskFailure,
+  ProviderTaskRetryLifecycle,
+} from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
@@ -111,6 +120,7 @@ import {
   decodeImportWorkflowInput,
   ImportWorkflowInput,
 } from "./import-workflow-input.js";
+import type { ImportWorkflowInputEncoded } from "./import-workflow-input.js";
 import {
   PostAcquisitionJournalCheckpoint,
   postAcquisitionRestartOptions,
@@ -243,20 +253,33 @@ export const observeAcquisitionSettlement = (
     settlement === "Superseded"
       ? ("state_fence" as const)
       : acquisitionOutcomeReasonCode(outcome);
-  const settled = emitImportObservabilityEvent({
-    correlationId,
-    event: "acquisition.settlement",
-    outcome: settlement === "Superseded" ? "rejected" : "settled",
-    ...(settlement === "Superseded" ? { reasonCode } : {}),
-  });
+  const settled =
+    settlement === "Superseded"
+      ? emitImportObservabilityEvent({
+          correlationId,
+          event: "acquisition.settlement",
+          outcome: "rejected",
+          reasonCode: "state_fence",
+        })
+      : emitImportObservabilityEvent({
+          correlationId,
+          event: "acquisition.settlement",
+          outcome: "settled",
+        });
   return settled.pipe(
     Effect.andThen(
-      emitImportObservabilityEvent({
-        correlationId,
-        event: "acquisition.terminal",
-        outcome: reasonCode === undefined ? "succeeded" : "rejected",
-        ...(reasonCode === undefined ? {} : { reasonCode }),
-      })
+      reasonCode === undefined
+        ? emitImportObservabilityEvent({
+            correlationId,
+            event: "acquisition.terminal",
+            outcome: "succeeded",
+          })
+        : emitImportObservabilityEvent({
+            correlationId,
+            event: "acquisition.terminal",
+            outcome: "rejected",
+            reasonCode,
+          })
     )
   );
 };
@@ -470,7 +493,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
       yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
     const mediaObjects = yield* ImportMediaAcquisitionObject;
 
-    return (rawInput: unknown) =>
+    return (rawInput: ImportWorkflowInputEncoded) =>
       Effect.gen(function* initializeImportAcquisitionWorkflow() {
         const workflowInput = yield* decodeImportWorkflowInput(rawInput).pipe(
           Effect.orDie
@@ -491,7 +514,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           () =>
             Effect.gen(function* runCurrentImportAcquisitionWorkflow() {
               yield* observeImportWorkflowStart(trace);
-              const rawBucket = yield* evidenceBucket.raw;
+              const bucket = adaptAcquisitionBucket(
+                evidenceBucket,
+                runtimeContext
+              );
               const intentTransitions = makeImportIntentWorkflowTransitions({
                 executionGeneration,
                 intentId,
@@ -542,23 +568,28 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 ),
                 runtime: pilotProviderBudgetRuntime,
               });
+              const workersAiTransport = yield* makeWorkersAiTransport(
+                providerGateway,
+                correlationId,
+                traceStore
+              ).pipe(Effect.provideService(RuntimeContext, runtimeContext));
               const speechTranscriber = yield* makeInstalledSpeechTranscriber({
-                client: providerGateway,
                 correlationId,
                 dispatch,
-              }).pipe(Effect.provideService(RuntimeContext, runtimeContext));
+                transport: workersAiTransport.speech,
+              });
               const visualExtractor =
                 yield* makeInstalledVisualEvidenceExtractor({
-                  client: providerGateway,
                   correlationId,
                   dispatch,
+                  transport: workersAiTransport.visual,
                 });
               const recipeExtractor = yield* makeInstalledRecipeExtractor({
-                client: providerGateway,
                 correlationId,
                 dispatch,
+                transport: workersAiTransport.recipe,
               });
-              const task = <A, E>(
+              const task = <A, E extends ProviderTaskFailure>(
                 name: string,
                 stage: "recipe" | "speech" | "visual",
                 effect: Effect.Effect<A, E>
@@ -631,7 +662,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     "extract-recipe-v1",
                     "recipe",
                     produceRecipeDraftForImport({
-                      bucket: adaptAcquisitionBucket(rawBucket),
+                      bucket,
                       extractor: recipeExtractor,
                       importId,
                       importRepository: repository,
@@ -652,11 +683,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         "extract-visual-evidence-v1",
                         "visual",
                         extractVisualEvidenceForTranscribedImport({
-                          bucket: adaptAcquisitionBucket(rawBucket),
+                          bucket,
                           extractor: visualExtractor,
-                          frameSampler: makeR2VisualFrameSampler(
-                            adaptAcquisitionBucket(rawBucket)
-                          ),
+                          frameSampler: makeR2VisualFrameSampler(bucket),
                           importId,
                           importRepository: repository,
                           now,
@@ -677,7 +706,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   })(),
                 });
               const stagedCarousel = yield* loadStagedOperatorCarousel({
-                bucket: adaptAcquisitionBucket(rawBucket),
+                bucket,
                 importId,
               }).pipe(Effect.orDie);
               if (stagedCarousel !== null) {
@@ -711,7 +740,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         "extract-carousel-recipe-v1",
                         "recipe",
                         produceTikTokCarouselRecipeDraft({
-                          bucket: adaptAcquisitionBucket(rawBucket),
+                          bucket,
                           descriptor: stagedCarousel.descriptor,
                           evidence: carouselEvidence.evidence,
                           extractor: recipeExtractor,
@@ -727,7 +756,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                       "visual",
                       prepareTikTokCarouselEvidence({
                         adapter: stagedCarousel.adapter,
-                        bucket: adaptAcquisitionBucket(rawBucket),
+                        bucket,
                         carouselRepository:
                           makeD1CarouselEvidenceRepository(database),
                         descriptor: stagedCarousel.descriptor,
@@ -790,14 +819,11 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   findStored: repository.findById(importId),
                   importId,
                   readEvidence: (stored) =>
-                    readVerifiedAcquisitionEvidence(
-                      adaptAcquisitionBucket(rawBucket),
-                      {
-                        canonicalId: stored.canonicalSourceId,
-                        generation: stored.acquisitionGeneration,
-                        importId,
-                      }
-                    ),
+                    readVerifiedAcquisitionEvidence(bucket, {
+                      canonicalId: stored.canonicalSourceId,
+                      generation: stored.acquisitionGeneration,
+                      importId,
+                    }),
                 }).pipe(
                   Effect.flatMap(
                     (
@@ -811,28 +837,24 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                             () => repository.beginAcquisitionAttempt(importId),
                             (allocation) =>
                               allocation.canonicalSourceId === claim.canonicalId
-                                ? acquireStoreVerify(
-                                    adaptAcquisitionBucket(rawBucket),
-                                    mediaObject,
-                                    {
-                                      beforeCleanup: (
+                                ? acquireStoreVerify(bucket, mediaObject, {
+                                    beforeCleanup: (
+                                      prepared,
+                                      acquisitionMediaObject
+                                    ) =>
+                                      persistDerivedProviderEvidence(
+                                        bucket,
+                                        acquisitionMediaObject,
                                         prepared,
-                                        acquisitionMediaObject
-                                      ) =>
-                                        persistDerivedProviderEvidence(
-                                          adaptAcquisitionBucket(rawBucket),
-                                          acquisitionMediaObject,
-                                          prepared,
-                                          {
-                                            generation: allocation.generation,
-                                            importId,
-                                          }
-                                        ),
-                                      canonicalId: allocation.canonicalSourceId,
-                                      generation: allocation.generation,
-                                      importId,
-                                    }
-                                  )
+                                        {
+                                          generation: allocation.generation,
+                                          importId,
+                                        }
+                                      ),
+                                    canonicalId: allocation.canonicalSourceId,
+                                    generation: allocation.generation,
+                                    importId,
+                                  })
                                 : Effect.die(
                                     "Persisted canonical identity changed"
                                   ),
@@ -938,10 +960,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                             "speech",
                             transcribeAcquiredImport({
                               acquisitionRepository: repository,
-                              audioExtractor: makeR2SpeechAudioExtractor(
-                                adaptAcquisitionBucket(rawBucket)
-                              ),
-                              bucket: adaptAcquisitionBucket(rawBucket),
+                              audioExtractor:
+                                makeR2SpeechAudioExtractor(bucket),
+                              bucket,
                               dispatchId: speechDispatchId,
                               importId,
                               now,
@@ -1042,34 +1063,22 @@ export interface ImportWorkflowReconciler extends ImportWorkflowStarter {
   ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
 }
 
-interface WorkflowInstanceLike {
-  readonly restart: (options?: {
-    readonly from: {
-      readonly name: string;
-      readonly type: "do";
-    };
-  }) => Effect.Effect<void>;
-  readonly status: () => Effect.Effect<{
-    readonly status: string;
-  }>;
-}
-
-interface WorkflowInstanceCreateOptionsLike {
-  readonly id?: string;
-  readonly params?: unknown;
-}
+type WorkflowInstanceLike = Pick<
+  Cloudflare.Workflows.WorkflowInstance,
+  "restart" | "status"
+>;
 
 interface WorkflowHandleLike {
   readonly createBatch: (
-    batch: WorkflowInstanceCreateOptionsLike[]
+    batch: Cloudflare.Workflows.WorkflowInstanceCreateOptions<ImportWorkflowInputEncoded>[]
   ) => Effect.Effect<readonly WorkflowInstanceLike[]>;
   readonly get: (id: string) => Effect.Effect<WorkflowInstanceLike>;
 }
 
 interface WorkflowTerminationHandleLike {
-  readonly get: (id: string) => Effect.Effect<{
-    readonly terminate: () => Effect.Effect<void, unknown>;
-  }>;
+  readonly get: (
+    id: string
+  ) => Effect.Effect<Pick<Cloudflare.Workflows.WorkflowInstance, "terminate">>;
 }
 
 export const makeImportWorkflowTerminator = (
@@ -1077,9 +1086,13 @@ export const makeImportWorkflowTerminator = (
 ): ImportIntentWorkflowTerminator => ({
   terminate: Effect.fn("ImportWorkflow.terminate")(
     (intentId: RecipeImportIntentId) =>
-      workflow
-        .get(importWorkflowInstanceId(intentId))
-        .pipe(Effect.flatMap((instance) => instance.terminate()))
+      workflow.get(importWorkflowInstanceId(intentId)).pipe(
+        Effect.flatMap((instance) => instance.terminate()),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterrupts(cause),
+          () => Effect.fail(new ImportWorkflowTerminationUnavailable())
+        )
+      )
   ),
 });
 

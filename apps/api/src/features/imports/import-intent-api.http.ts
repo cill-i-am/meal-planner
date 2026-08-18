@@ -41,6 +41,7 @@ import {
 } from "effect/unstable/httpapi";
 
 import { AuthPrincipalResolver } from "../auth/auth.principal.js";
+import type { ImportWorkflowTerminationUnavailable } from "./import-intent-execution.js";
 import type {
   RecipeImportActionMutationConflict,
   RecipeImportActionNotFound,
@@ -53,7 +54,6 @@ import type { ImportIntentTransitionMutationConflict } from "./import-intent-tra
 import {
   ImportPrincipal as ImportPrincipalSchema,
   ReconcileStalledImportIntentContinuationsRequest,
-  RecipeImportIntentRedirected as RecipeImportIntentRedirectedSchema,
 } from "./import-intent.js";
 import type {
   ImportPrincipal,
@@ -61,6 +61,7 @@ import type {
   RecipeImportIntentNotFound,
   RecipeImportIntentRedirected,
   RecipeImportIntentTransitionRejected,
+  RecipeImportIntentVersionConflict,
   makeImportIntentApplication,
 } from "./import-intent.js";
 import type {
@@ -258,10 +259,16 @@ const mapAdmitError = (
   }
 };
 
-const mapUnknownIntentMutationError = (error: unknown) => {
-  if (typeof error !== "object" || error === null || !("_tag" in error)) {
-    return internalErrorProblem;
-  }
+type IntentMutationError =
+  | ImportIntentTransitionMutationConflict
+  | ImportWorkflowTerminationUnavailable
+  | PersistenceError
+  | RecipeImportIntentNotFound
+  | RecipeImportIntentRedirected
+  | RecipeImportIntentTransitionRejected
+  | RecipeImportIntentVersionConflict;
+
+const mapIntentMutationError = (error: IntentMutationError) => {
   switch (error._tag) {
     case "ImportIntentTransitionMutationConflict": {
       return idempotencyConflictProblem;
@@ -270,9 +277,6 @@ const mapUnknownIntentMutationError = (error: unknown) => {
       return intentNotFoundProblem;
     }
     case "RecipeImportIntentRedirected": {
-      if (!Schema.is(RecipeImportIntentRedirectedSchema)(error)) {
-        return internalErrorProblem;
-      }
       return Schema.decodeUnknownSync(IntentRedirectedProblem)({
         code: "intent_redirected",
         detail: "This intent redirects to the canonical recipe import intent.",
@@ -288,6 +292,9 @@ const mapUnknownIntentMutationError = (error: unknown) => {
     }
     case "RecipeImportIntentVersionConflict": {
       return versionConflictProblem;
+    }
+    case "ImportWorkflowTerminationUnavailable": {
+      return internalErrorProblem;
     }
     default: {
       return internalErrorProblem;
@@ -436,7 +443,7 @@ const RecipeImportIntentHandlers = HttpApiBuilder.group(
           const application = yield* RecipeImportIntentApplication;
           const result = yield* application
             .cancel(principal, params.id, payload, headers["idempotency-key"])
-            .pipe(Effect.mapError(mapUnknownIntentMutationError));
+            .pipe(Effect.mapError(mapIntentMutationError));
           return result.status === "cancelled"
             ? result
             : yield* Effect.fail(internalErrorProblem);

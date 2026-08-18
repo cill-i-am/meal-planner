@@ -547,7 +547,7 @@ describe("recipe import HttpApi boundary", () => {
       )
     );
 
-    const assertNoSentinels = (value: unknown): void => {
+    const assertNoSentinels = (value: Schema.Json): void => {
       if (typeof value === "string") {
         for (const sentinel of sentinels) {
           expect(value).not.toContain(sentinel);
@@ -569,7 +569,15 @@ describe("recipe import HttpApi boundary", () => {
     };
     expect(results.responses).toHaveLength(8);
     for (const response of results.responses) {
-      assertNoSentinels(response);
+      const serializedResponse = JSON.stringify(response);
+      if (serializedResponse === undefined) {
+        throw new Error("Expected a serializable public response");
+      }
+      assertNoSentinels(
+        Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(
+          serializedResponse
+        )
+      );
     }
     expect(results.retryAfter).toEqual({ create: 2, read: 2 });
   });

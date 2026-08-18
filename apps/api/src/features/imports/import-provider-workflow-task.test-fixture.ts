@@ -1,11 +1,11 @@
 import { RuntimeContext } from "alchemy";
-import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import {
   WorkflowEvent,
   makeWorkflowBridge,
   task,
   waitForEvent,
 } from "alchemy/Cloudflare/Workflows";
+import type { WorkflowInstanceRestartOptions } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
@@ -25,7 +25,13 @@ import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-bu
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
-import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
+import { makeVisualTransport } from "./import-provider-adapters.test-fixture.js";
+import type { WorkersAiTransport } from "./import-provider-kernel.js";
+import {
+  InstalledRecipeModel,
+  InstalledSpeechModel,
+  makePilotProviderDispatchGate,
+} from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
 import { makeD1ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
@@ -34,8 +40,11 @@ import {
   makeD1ProviderTerminalRecoveryRepository,
 } from "./import-provider-terminal.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
+import type { ProviderTaskCheckpoint } from "./import-provider-workflow-checkpoint.js";
+import type { ProviderTaskStage } from "./import-provider-workflow-task.js";
 import { runProviderTask } from "./import-provider-workflow-task.js";
 import {
+  RecipeRecoveryAuthorization,
   recipeRecoveryAuthorizationEventType,
   recipeRecoveryDurableTaskNames,
 } from "./import-recipe-recovery.js";
@@ -49,25 +58,27 @@ import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { makeTestSystemAuthorizer } from "./import.test-fixtures.js";
 import { makeImportWorkflowStarter } from "./import.workflow.js";
 
-interface ProviderWorkflowInput {
-  readonly failureCode?: string;
-  readonly importId?: string;
-  readonly scenario:
-    | "retry_exhausted"
-    | "recipe_conservative_crash_replay"
-    | "recipe_conservative_success"
-    | "recipe_recovery_loop_bounded"
-    | "recipe_recovery_loop_non_retryable"
-    | "recipe_recovery_loop_reconciliation_wait"
-    | "recipe_recovery_loop_success"
-    | "recipe_recovery_native_replay"
-    | "speech_terminal_recovery"
-    | "speech_terminal_recovery_poison"
-    | "success"
-    | "terminal"
-    | "unknown"
-    | "visual_terminal_recovery";
-}
+const ProviderWorkflowInput = Schema.Struct({
+  failureCode: Schema.optionalKey(Schema.String),
+  importId: Schema.optionalKey(Schema.String),
+  scenario: Schema.Literals([
+    "retry_exhausted",
+    "recipe_conservative_crash_replay",
+    "recipe_conservative_success",
+    "recipe_recovery_loop_bounded",
+    "recipe_recovery_loop_non_retryable",
+    "recipe_recovery_loop_reconciliation_wait",
+    "recipe_recovery_loop_success",
+    "recipe_recovery_native_replay",
+    "speech_terminal_recovery",
+    "speech_terminal_recovery_poison",
+    "success",
+    "terminal",
+    "unknown",
+    "visual_terminal_recovery",
+  ]),
+});
+type ProviderWorkflowInput = typeof ProviderWorkflowInput.Type;
 
 interface ProviderWorkflowTestEnv {
   readonly MealPlannerDatabase: AnyD1Database;
@@ -78,17 +89,17 @@ interface ProviderWorkflowTestEnv {
   readonly ProviderRetryWorkflow: {
     readonly create: (options: {
       readonly id: string;
-      readonly params: ProviderWorkflowInput;
+      readonly params: Schema.Json;
     }) => Promise<void>;
     readonly get: (id: string) => Promise<{
-      readonly restart: (options: {
-        readonly from: { readonly name: string; readonly type: "do" };
-      }) => Promise<void>;
-      readonly status: () => Promise<unknown>;
+      readonly restart: (
+        options: WorkflowInstanceRestartOptions
+      ) => Promise<void>;
+      readonly status: () => Promise<Schema.Json>;
     }>;
     readonly unsafeSetIntrospectionOperations: (
       sessionId: string,
-      operations: readonly unknown[]
+      operations: readonly Schema.Json[]
     ) => Promise<void>;
     readonly unsafeStartIntrospection: () => Promise<string>;
     readonly unsafeStopIntrospection: (sessionId: string) => Promise<void>;
@@ -256,38 +267,17 @@ const installedRecipeConservativeDispatch = (
       ),
       runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
-    const client = {
-      gateway: Effect.die("universal AI Gateway binding must not be used"),
-      id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.succeed({
-        run: async (
-          _model: unknown,
-          _body: unknown,
-          options: unknown
-        ): Promise<Response> => {
-          if (
-            JSON.stringify(options) !==
-            JSON.stringify({
-              gateway: {
-                collectLog: false,
-                id: "meal-planner-pilot-gaia-118",
-                skipCache: true,
-              },
-              returnRawResponse: true,
-            })
-          ) {
-            throw new Error("Gateway logging was not disabled");
-          }
-          await Effect.runPromise(increment(env, instanceId, "provider-calls"));
-          return Response.json({ response: emptyRecipeProviderSelection });
-        },
-      }),
-      run: () => Effect.die("universal AI Gateway dispatch must not be used"),
-    } as unknown as QueryGatewayClient;
+    const transport: WorkersAiTransport["recipe"] = {
+      model: InstalledRecipeModel,
+      run: async () => {
+        await Effect.runPromise(increment(env, instanceId, "provider-calls"));
+        return Response.json({ response: emptyRecipeProviderSelection });
+      },
+    };
     const extractor = yield* makeInstalledRecipeExtractor({
-      client,
       correlationId,
       dispatch,
+      transport,
     });
     const output = yield* extractor.extract({
       ...(recovery
@@ -363,43 +353,20 @@ const installedSpeechDispatch = (
       ),
       runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
-    const client = {
-      gateway: Effect.die("universal AI Gateway binding must not be used"),
-      id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.succeed({
-        run: async (
-          _model: unknown,
-          _body: unknown,
-          options: unknown
-        ): Promise<Response> => {
-          if (
-            JSON.stringify(options) !==
-            JSON.stringify({
-              gateway: {
-                collectLog: false,
-                id: "meal-planner-pilot-gaia-118",
-                skipCache: true,
-              },
-              returnRawResponse: true,
-            })
-          ) {
-            throw new Error("Gateway logging was not disabled");
-          }
-          await Effect.runPromise(increment(env, instanceId, "provider-calls"));
-          if (outcome === "known_zero") {
-            throw pilotProviderKnownZeroCostFailure(
-              "provider_unavailable" as const
-            );
-          }
-          throw new Error("simulated ambiguous provider interruption");
-        },
-      }),
-      run: () => Effect.die("universal AI Gateway dispatch must not be used"),
-    } as unknown as QueryGatewayClient;
+    const transport: WorkersAiTransport["speech"] = {
+      model: InstalledSpeechModel,
+      run: async () => {
+        await Effect.runPromise(increment(env, instanceId, "provider-calls"));
+        if (outcome === "known_zero") {
+          throw pilotProviderKnownZeroCostFailure("provider_unavailable");
+        }
+        throw new Error("simulated ambiguous provider interruption");
+      },
+    };
     const transcriber = yield* makeInstalledSpeechTranscriber({
-      client,
       correlationId,
       dispatch,
+      transport,
     });
     return yield* transcriber.transcribe({
       audio: {
@@ -449,24 +416,21 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
       }),
     ];
     let providerCalls = 0;
-    const client = {
-      gateway: Effect.die("universal AI Gateway binding must not be used"),
-      id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.succeed({
-        run: (
-          _model: unknown,
-          _body: unknown,
-          _options: unknown
-        ): Promise<Response> => {
-          providerCalls += 1;
-          const response = responses.shift();
-          return response === undefined
-            ? Promise.reject(new Error("Unexpected provider dispatch"))
-            : Promise.resolve(response);
-        },
-      }),
-      run: () => Effect.die("universal AI Gateway dispatch must not be used"),
-    } as unknown as QueryGatewayClient;
+    const transport = makeVisualTransport(
+      () => {
+        const response = responses.shift();
+        if (response === undefined) {
+          throw new Error("Unexpected provider dispatch");
+        }
+        return response;
+      },
+      () =>
+        Effect.runPromise(
+          Effect.sync(() => {
+            providerCalls += 1;
+          })
+        )
+    );
     const repository = makeD1PilotProviderBudgetRepository(
       env.MealPlannerDatabase,
       "pilot-gaia-118"
@@ -484,9 +448,9 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
       runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
     const visual = yield* makeInstalledVisualEvidenceExtractor({
-      client,
       correlationId,
       dispatch,
+      transport,
     });
     const importId = decodeImportId("00000000-0000-4000-8000-000000000199");
     const generation = decodeGeneration(1);
@@ -581,61 +545,37 @@ const visualTerminalRecoveryDispatch = (
       runId: decodeRunId("gaia-200:visual-terminal-recovery"),
       runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
-    const client = {
-      gateway: Effect.die("universal AI Gateway binding must not be used"),
-      id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.succeed({
-        run: async (
-          _model: unknown,
-          _body: unknown,
-          options: unknown
-        ): Promise<Response> => {
-          if (
-            JSON.stringify(options) !==
-            JSON.stringify({
-              gateway: {
-                collectLog: false,
-                id: "meal-planner-pilot-gaia-118",
-                skipCache: true,
-              },
-              returnRawResponse: true,
-            })
-          ) {
-            throw new Error("Gateway logging was not disabled");
-          }
-          await Effect.runPromise(
-            increment(env, instanceId, "visual-provider-calls")
-          );
-          return Response.json({
-            choices: [
-              {
-                finish_reason: "tool_calls",
-                message: {
-                  content: null,
-                  tool_calls: [
-                    {
-                      function: {
-                        arguments: JSON.stringify({
-                          observations: [],
-                        }),
-                        name: "record_visual_evidence",
-                      },
-                      id: "visual-call-1",
-                      type: "function",
+    const transport = makeVisualTransport(
+      () =>
+        Response.json({
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    function: {
+                      arguments: JSON.stringify({
+                        observations: [],
+                      }),
+                      name: "record_visual_evidence",
                     },
-                  ],
-                },
+                    id: "visual-call-1",
+                    type: "function",
+                  },
+                ],
               },
-            ],
-          });
-        },
-      }),
-      run: () => Effect.die("universal AI Gateway dispatch must not be used"),
-    } as unknown as QueryGatewayClient;
+            },
+          ],
+        }),
+      () =>
+        Effect.runPromise(increment(env, instanceId, "visual-provider-calls"))
+    );
     const extractor = yield* makeInstalledVisualEvidenceExtractor({
-      client,
       correlationId,
       dispatch: budget,
+      transport,
     });
     const output = yield* extractor.extract({
       dispatchId,
@@ -875,12 +815,44 @@ const providerFailureCode = (error: { readonly code: string }) => ({
   code: error.code,
 });
 
+interface ProviderWorkflowSuccess<Evidence> {
+  readonly _tag: "Succeeded";
+  readonly evidence: Evidence;
+  readonly stage: ProviderTaskStage;
+}
+
+const providerWorkflowSuccess = <Evidence>(
+  stage: ProviderTaskStage,
+  evidence: Evidence
+): ProviderWorkflowSuccess<Evidence> => ({
+  _tag: "Succeeded",
+  evidence,
+  stage,
+});
+
+const recipeRecoverySuccess = (): typeof ProviderTaskCheckpoint.Type => ({
+  _tag: "Succeeded",
+  stage: "recipe",
+});
+
+const recipeRecoveryFailure = (
+  code: string
+): typeof ProviderTaskCheckpoint.Type => ({
+  _tag: "Failed",
+  code,
+  stage: "recipe",
+});
+
 const providerWorkflowExport = {
   kind: "workflow" as const,
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU005 alchemy@2.0.0-beta.72): WorkflowExport.make(env: unknown) erases behaviorful KV/D1 bindings; Schema cannot reconstruct branded host handles or their runtime behavior. Remove when Alchemy provides a precise env generic or supported real-runtime harness.
   make: (rawEnv: unknown) => {
     const env = rawEnv as ProviderWorkflowTestEnv;
-    return Effect.succeed((input: ProviderWorkflowInput) =>
+    return Effect.succeed((rawInput: Schema.Json) =>
       Effect.gen(function* runProviderWorkflow() {
+        const input = yield* Schema.decodeUnknownEffect(ProviderWorkflowInput, {
+          onExcessProperty: "error",
+        })(rawInput);
         const event = yield* WorkflowEvent;
         yield* increment(env, event.instanceId, "workflow-runs");
         if (
@@ -931,33 +903,31 @@ const providerWorkflowExport = {
                     );
                     yield* increment(env, event.instanceId, durableTaskName);
                     if (input.scenario === "recipe_recovery_loop_success") {
-                      return {
-                        _tag: "Succeeded" as const,
-                        stage: "recipe" as const,
-                      };
+                      return recipeRecoverySuccess();
                     }
                     if (
                       input.scenario === "recipe_recovery_loop_non_retryable"
                     ) {
-                      return {
-                        _tag: "Failed" as const,
-                        code: "invalid_schema",
-                        stage: "recipe" as const,
-                      };
+                      return recipeRecoveryFailure("invalid_schema");
                     }
-                    return {
-                      _tag: "Failed" as const,
-                      code: "outcome_unknown",
-                      stage: "recipe" as const,
-                    };
+                    return recipeRecoveryFailure("outcome_unknown");
                   })
                 ),
               waitForAuthorization: (ordinal) =>
                 input.scenario === "recipe_recovery_loop_reconciliation_wait"
-                  ? waitForEvent<unknown>(
+                  ? waitForEvent<Schema.Json>(
                       `authorize-recipe-recovery-${ordinal}`,
-                      { type: recipeRecoveryAuthorizationEventType(ordinal) }
-                    ).pipe(Effect.map(({ payload }) => payload))
+                      {
+                        type: recipeRecoveryAuthorizationEventType(ordinal),
+                      }
+                    ).pipe(
+                      Effect.flatMap(({ payload }) =>
+                        Schema.decodeUnknownEffect(RecipeRecoveryAuthorization)(
+                          payload
+                        )
+                      ),
+                      Effect.orDie
+                    )
                   : task(
                       `authorize-recipe-recovery-${ordinal}`,
                       Effect.succeed({
@@ -996,11 +966,7 @@ const providerWorkflowExport = {
               acquisitionGeneration,
               input.scenario === "speech_terminal_recovery_poison"
             ),
-            (evidence) => ({
-              _tag: "Succeeded" as const,
-              evidence,
-              stage: "speech" as const,
-            })
+            (evidence) => providerWorkflowSuccess("speech", evidence)
           );
           if (checkpoint._tag === "Failed") {
             yield* task(
@@ -1093,11 +1059,7 @@ const providerWorkflowExport = {
               importId,
               acquisitionGeneration
             ),
-            (evidence) => ({
-              _tag: "Succeeded" as const,
-              evidence,
-              stage: "visual" as const,
-            })
+            (evidence) => providerWorkflowSuccess("visual", evidence)
           );
           if (visual._tag === "Failed") {
             return yield* task("finalize-terminal", Effect.succeed(visual));
@@ -1113,11 +1075,7 @@ const providerWorkflowExport = {
           );
           return yield* task(
             "finalize-terminal",
-            Effect.succeed({
-              _tag: "Succeeded" as const,
-              evidence: recipe,
-              stage: "recipe" as const,
-            })
+            Effect.succeed(providerWorkflowSuccess("recipe", recipe))
           );
         }
         if (
@@ -1137,11 +1095,7 @@ const providerWorkflowExport = {
               input.scenario === "recipe_conservative_crash_replay",
               false
             ),
-            (evidence) => ({
-              _tag: "Succeeded" as const,
-              evidence,
-              stage: "recipe" as const,
-            })
+            (evidence) => providerWorkflowSuccess("recipe", evidence)
           );
           return yield* task("finalize-terminal", Effect.succeed(checkpoint));
         }
@@ -1172,11 +1126,7 @@ const providerWorkflowExport = {
               true,
               true
             ),
-            (evidence) => ({
-              _tag: "Succeeded" as const,
-              evidence,
-              stage: "recipe" as const,
-            })
+            (evidence) => providerWorkflowSuccess("recipe", evidence)
           );
           return yield* task("finalize-terminal", Effect.succeed(checkpoint));
         }
@@ -1209,12 +1159,11 @@ const providerWorkflowExport = {
           "provider-dispatch",
           stage,
           provider,
-          (value) => ({
-            _tag: "Succeeded" as const,
-            evidence:
-              input.scenario === "success" ? value : "unexpected-success",
-            stage,
-          })
+          (value) =>
+            providerWorkflowSuccess(
+              stage,
+              input.scenario === "success" ? value : "unexpected-success"
+            )
         );
         return yield* task("finalize-terminal", Effect.succeed(checkpoint));
       })
@@ -1238,57 +1187,70 @@ const ProviderRetryWorkflowBridge = makeWorkflowBridge(WorkflowEntrypoint, {
 /** Installed Alchemy bridge hosted by the same native WorkflowEntrypoint used in deployment. */
 export class ProviderRetryWorkflow extends ProviderRetryWorkflowBridge {}
 
+const CommandId = Schema.Struct({ id: Schema.String });
+const ProviderWorkflowCommand = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("activate-speech"),
+    authorization: Schema.optionalKey(Schema.String),
+    dispatchId: Schema.String,
+    id: Schema.String,
+    importId: Schema.String,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("interleave-stage"),
+    ...CommandId.fields,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("prepare-visual"),
+    authorization: Schema.optionalKey(Schema.String),
+    dispatchId: Schema.String,
+    id: Schema.String,
+    importId: Schema.String,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("prepare-speech"),
+    id: Schema.String,
+    importId: Schema.String,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("settle-speech"),
+    dispatchId: Schema.String,
+    id: Schema.String,
+    importId: Schema.String,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("run-visual-recipe-budget"),
+    ...CommandId.fields,
+  }),
+  Schema.Struct({ action: Schema.Literal("restart"), ...CommandId.fields }),
+  Schema.Struct({
+    action: Schema.Literal("restart-speech"),
+    ...CommandId.fields,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("restart-terminal"),
+    ...CommandId.fields,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("restart-visual"),
+    ...CommandId.fields,
+  }),
+  Schema.Struct({
+    action: Schema.Literals(["run", "run-waiting"]),
+    id: Schema.String,
+    input: ProviderWorkflowInput,
+  }),
+]);
+
 const readRequest = (request: Request) =>
-  request.json() as Promise<
-    | {
-        readonly action: "activate-speech";
-        readonly authorization?: string;
-        readonly dispatchId: string;
-        readonly id: string;
-        readonly importId: string;
-      }
-    | {
-        readonly action: "interleave-stage";
-        readonly id: string;
-      }
-    | {
-        readonly action: "prepare-visual";
-        readonly authorization?: string;
-        readonly dispatchId: string;
-        readonly id: string;
-        readonly importId: string;
-      }
-    | {
-        readonly action: "prepare-speech";
-        readonly id: string;
-        readonly importId: string;
-      }
-    | {
-        readonly action: "settle-speech";
-        readonly dispatchId: string;
-        readonly id: string;
-        readonly importId: string;
-      }
-    | { readonly action: "run-visual-recipe-budget"; readonly id: string }
-    | { readonly action: "restart"; readonly id: string }
-    | { readonly action: "restart-speech"; readonly id: string }
-    | { readonly action: "restart-terminal"; readonly id: string }
-    | { readonly action: "restart-visual"; readonly id: string }
-    | {
-        readonly action: "run";
-        readonly id: string;
-        readonly input: ProviderWorkflowInput;
-      }
-    | {
-        readonly action: "run-waiting";
-        readonly id: string;
-        readonly input: ProviderWorkflowInput;
-      }
-  >;
+  Effect.runPromise(
+    Effect.promise(() => request.json()).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(ProviderWorkflowCommand))
+    )
+  );
 
 export default {
-  fetch: async (request: Request, rawEnv: unknown) => {
-    const env = rawEnv as ProviderWorkflowTestEnv;
+  fetch: async (request: Request, env: ProviderWorkflowTestEnv) => {
     const command = await readRequest(request);
     const workflow = env.ProviderRetryWorkflow;
     const sessionId =

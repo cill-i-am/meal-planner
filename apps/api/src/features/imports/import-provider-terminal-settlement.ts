@@ -2042,7 +2042,7 @@ export const ProviderTerminalSettlementService =
 interface ProviderTerminalSettlementServiceInput {
   readonly database: AnyD1Database;
   readonly now: () => ImportTimestamp;
-  readonly runtimeStage: unknown;
+  readonly runtimeStage: string;
   readonly recipeRecoveryStarter?: RecipeRecoveryWorkflowStarter;
   readonly workflowStarter?: Pick<ImportWorkflowStarter, "restartFromSpeech">;
 }

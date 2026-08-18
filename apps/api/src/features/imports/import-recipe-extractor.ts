@@ -170,10 +170,12 @@ export const RecipeExtraction = Schema.Struct({
 });
 export type RecipeExtraction = typeof RecipeExtraction.Type;
 
-export const decodeRecipeExtraction = (input: unknown) =>
-  Schema.decodeUnknownEffect(RecipeExtraction, {
+export const decodeRecipeExtraction = Schema.decodeUnknownEffect(
+  RecipeExtraction,
+  {
     onExcessProperty: "error",
-  })(input);
+  }
+);
 
 export interface RecipeEvidenceItem {
   readonly artifactReference: string;
@@ -240,7 +242,7 @@ export interface RecipeExtractor {
   readonly descriptor: RecipeExtractorDescriptor;
   readonly extract: (
     input: RecipeEvidenceAssembly
-  ) => Effect.Effect<unknown, RecipeExtractionFailure>;
+  ) => Effect.Effect<RecipeExtraction, RecipeExtractionFailure>;
 }
 
 /** Replaceable provider-neutral recipe extraction capability. */

@@ -1,6 +1,11 @@
-import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
+import type { RuntimeContext } from "alchemy";
+import { makeLanguageModel as makeAlchemyLanguageModel } from "alchemy/Cloudflare/AI";
+import type {
+  LanguageModelClient,
+  QueryGatewayClient,
+} from "alchemy/Cloudflare/AI";
 import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
-import { Cause, Effect, Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import type { LanguageModel, Prompt } from "effect/unstable/ai";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
@@ -44,14 +49,16 @@ const ProviderNormalizationBodyInvalidMessage =
 export const ProviderKnownZeroSetupFailureMessage =
   "provider_known_zero_setup_failure" as const;
 
-export type SafeProviderFailureCode =
-  | "insufficient_evidence"
-  | "malformed_response"
-  | "model_refusal"
-  | "outcome_unknown"
-  | "provider_unavailable"
-  | "throttled"
-  | "timeout";
+export const SafeProviderFailureCode = Schema.Literals([
+  "insufficient_evidence",
+  "malformed_response",
+  "model_refusal",
+  "outcome_unknown",
+  "provider_unavailable",
+  "throttled",
+  "timeout",
+]);
+export type SafeProviderFailureCode = typeof SafeProviderFailureCode.Type;
 
 const SafeProviderFailureCodes = new Set<string>([
   "insufficient_evidence",
@@ -63,8 +70,12 @@ const SafeProviderFailureCodes = new Set<string>([
   "timeout",
 ]);
 
+type SafeProviderFailureCandidate =
+  | string
+  | { readonly _tag: string; readonly error?: string };
+
 export const isSafeProviderFailureCode = (
-  value: unknown
+  value: SafeProviderFailureCandidate
 ): value is SafeProviderFailureCode =>
   typeof value === "string" && SafeProviderFailureCodes.has(value);
 
@@ -220,54 +231,79 @@ export const makePilotProviderDispatchGate = (input: {
     ),
 });
 
-export const safeFailureCode = (
-  cause: Cause.Cause<unknown>
-): SafeProviderFailureCode => {
-  const error = Option.getOrUndefined(Cause.findErrorOption(cause));
-  if (typeof error === "object" && error !== null) {
-    const record = error as Record<string, unknown>;
-    const reason =
-      typeof record["reason"] === "object" && record["reason"] !== null
-        ? (record["reason"] as Record<string, unknown>)
-        : record;
-    const original =
-      typeof record["cause"] === "object" && record["cause"] !== null
-        ? (record["cause"] as Record<string, unknown>)
-        : record;
+const ProviderErrorDetails = Schema.Struct({
+  _tag: Schema.optionalKey(Schema.String),
+  description: Schema.optionalKey(Schema.String),
+  status: Schema.optionalKey(Schema.Number),
+});
+const ProviderFailureEvidence = Schema.Struct({
+  _tag: Schema.optionalKey(Schema.String),
+  cause: Schema.optionalKey(ProviderErrorDetails),
+  description: Schema.optionalKey(Schema.String),
+  reason: Schema.optionalKey(ProviderErrorDetails),
+  status: Schema.optionalKey(Schema.Number),
+});
+export type ProviderFailureEvidence = typeof ProviderFailureEvidence.Type;
+export const decodeProviderFailureEvidence = Schema.decodeUnknownOption(
+  ProviderFailureEvidence,
+  { onExcessProperty: "ignore" }
+);
+
+export interface ProviderFailure {
+  readonly code: SafeProviderFailureCode;
+  readonly description?: string;
+}
+
+export const providerFailureFromEvidence = (
+  evidence: ProviderFailureEvidence | undefined
+): ProviderFailure => {
+  if (evidence !== undefined) {
+    const reason = evidence.reason ?? evidence;
+    const original = evidence.cause ?? evidence;
     const tag = String(
-      original["_tag"] ?? reason["_tag"] ?? record["_tag"] ?? ""
+      original._tag ?? reason._tag ?? evidence._tag ?? ""
     ).toLowerCase();
-    const status = original["status"] ?? reason["status"] ?? record["status"];
+    const status = original.status ?? reason.status ?? evidence.status;
     if (status === 429 || tag.includes("rate") || tag.includes("throttl")) {
-      return "throttled";
+      return {
+        code: "throttled",
+        ...(reason.description === undefined
+          ? {}
+          : { description: reason.description }),
+      };
     }
     if (tag.includes("refusal") || tag.includes("contentfilter")) {
-      return "model_refusal";
+      return {
+        code: "model_refusal",
+        ...(reason.description === undefined
+          ? {}
+          : { description: reason.description }),
+      };
     }
+    const description = reason.description ?? evidence.description;
+    return {
+      code: "provider_unavailable",
+      ...(description === undefined ? {} : { description }),
+    };
   }
-  return "provider_unavailable";
+  return { code: "provider_unavailable" };
 };
+
+export const providerFailureFromStatus = (status: number): ProviderFailure =>
+  status === 429 ? { code: "throttled" } : { code: "provider_unavailable" };
+
+export const safeFailureCode = (
+  failure: ProviderFailure
+): SafeProviderFailureCode => failure.code;
 
 export const providerErrorDescription = (
-  error: unknown
-): string | undefined => {
-  if (typeof error !== "object" || error === null) {
-    return undefined;
-  }
-  const record = error as Record<string, unknown>;
-  const reason =
-    typeof record["reason"] === "object" && record["reason"] !== null
-      ? (record["reason"] as Record<string, unknown>)
-      : record;
-  return typeof reason["description"] === "string"
-    ? reason["description"]
-    : undefined;
-};
+  failure: ProviderFailure
+): string | undefined => failure.description;
 
 const hasProviderErrorDescription = (
-  error: unknown,
+  failure: ProviderFailure,
   description: string
-): boolean => providerErrorDescription(error) === description;
+): boolean => providerErrorDescription(failure) === description;
 
 export const providerNormalizationDecodeReasonFromDescription = (
   description: string | undefined
@@ -287,17 +323,19 @@ export const providerNormalizationDecodeReasonFromDescription = (
 };
 
 const providerNormalizationDecodeReason = (
-  error: unknown
+  failure: ProviderFailure
 ): ProviderDecodeReason | undefined =>
   providerNormalizationDecodeReasonFromDescription(
-    providerErrorDescription(error)
+    providerErrorDescription(failure)
   );
 
-const isProviderNormalizationFailure = (error: unknown): boolean =>
-  providerNormalizationDecodeReason(error) !== undefined;
+const isProviderNormalizationFailure = (failure: ProviderFailure): boolean =>
+  providerNormalizationDecodeReason(failure) !== undefined;
 
-const isProviderNormalizationBodyFailure = (error: unknown): boolean =>
-  hasProviderErrorDescription(error, ProviderNormalizationBodyInvalidMessage);
+const isProviderNormalizationBodyFailure = (
+  failure: ProviderFailure
+): boolean =>
+  hasProviderErrorDescription(failure, ProviderNormalizationBodyInvalidMessage);
 
 export const failAfter = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
@@ -334,7 +372,7 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     readonly acceptUnwrappedObject?: boolean;
     readonly description: string;
     readonly name: Name;
-    readonly normalizeValue?: (value: unknown) => unknown;
+    readonly normalizeValue?: (value: Schema.Json) => S["Encoded"];
     readonly prompt: Prompt.RawInput;
     readonly providerNormalizationFallback?: () => S["Type"];
     readonly schema: S;
@@ -378,7 +416,10 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     // Effect error channel but must not be represented as decode evidence.
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
     Effect.tapError((error) => {
-      const decodeReason = providerNormalizationDecodeReason(error);
+      const failure = providerFailureFromEvidence(
+        Option.getOrUndefined(decodeProviderFailureEvidence(error))
+      );
+      const decodeReason = providerNormalizationDecodeReason(failure);
       if (decodeReason !== undefined) {
         return emitImportObservabilityEvent(
           {
@@ -396,9 +437,15 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     }),
     Effect.map((response) => ({ _tag: "Response" as const, response })),
     Effect.catchIf(
-      (error) =>
-        isProviderNormalizationBodyFailure(error) &&
-        input.providerNormalizationFallback !== undefined,
+      (error) => {
+        const failure = providerFailureFromEvidence(
+          Option.getOrUndefined(decodeProviderFailureEvidence(error))
+        );
+        return (
+          isProviderNormalizationBodyFailure(failure) &&
+          input.providerNormalizationFallback !== undefined
+        );
+      },
       () =>
         Effect.succeed({
           _tag: "ProviderNormalizationFallback" as const,
@@ -410,17 +457,23 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
       if (typeof error === "string") {
         return error;
       }
-      if (isProviderNormalizationFailure(error)) {
+      const failure = providerFailureFromEvidence(
+        Option.getOrUndefined(decodeProviderFailureEvidence(error))
+      );
+      if (isProviderNormalizationFailure(failure)) {
         return "malformed_response" as const;
       }
       if (
-        hasProviderErrorDescription(error, ProviderKnownZeroSetupFailureMessage)
+        hasProviderErrorDescription(
+          failure,
+          ProviderKnownZeroSetupFailureMessage
+        )
       ) {
         return pilotProviderKnownZeroCostFailure(
           "provider_unavailable" as const
         );
       }
-      return safeFailureCode(Cause.fail(error));
+      return safeFailureCode(failure);
     }),
     Effect.flatMap((result) => {
       if (result._tag === "ProviderNormalizationFallback") {
@@ -539,21 +592,31 @@ export const pricedTokenUsage = (
   };
 };
 
+const WorkersAiGatewayOptions = Schema.Struct({
+  gateway: Schema.Struct({
+    collectLog: Schema.Literal(false),
+    id: Schema.String,
+    skipCache: Schema.Literal(true),
+  }),
+  returnRawResponse: Schema.Literal(true),
+});
+
 const workersAiGatewayOptions = (gatewayId: string) =>
-  ({
+  Schema.decodeUnknownSync(WorkersAiGatewayOptions)({
     gateway: {
       collectLog: false,
       id: gatewayId,
       skipCache: true,
     },
     returnRawResponse: true,
-  }) as const;
+  });
 
 export type WorkersAiBinding = Effect.Success<QueryGatewayClient["raw"]>;
 
 export const runWorkersAi = (
   ai: WorkersAiBinding,
   model: string,
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU001 alchemy@2.0.0-beta.72): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
   body: unknown,
   gatewayId: string
 ): Promise<Response> =>
@@ -563,14 +626,85 @@ export const runWorkersAi = (
     workersAiGatewayOptions(gatewayId) as never
   ) as Promise<Response>;
 
+export const InstalledRecipeModel = Schema.decodeUnknownSync(
+  Schema.Literal("@cf/meta/llama-3.3-70b-instruct-fp8-fast")
+)("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+export const InstalledSpeechModel = Schema.decodeUnknownSync(
+  Schema.Literal("@cf/openai/whisper-large-v3-turbo")
+)("@cf/openai/whisper-large-v3-turbo");
+export const InstalledVisualModel = Schema.decodeUnknownSync(
+  Schema.Literal("@cf/meta/llama-4-scout-17b-16e-instruct")
+)("@cf/meta/llama-4-scout-17b-16e-instruct");
+
+export const RecipeWorkersAiRequest = Schema.Struct({
+  max_tokens: Schema.Number,
+  messages: Schema.Array(
+    Schema.Struct({ content: Schema.String, role: Schema.Literal("user") })
+  ),
+  response_format: Schema.Struct({
+    json_schema: Schema.Json,
+    type: Schema.Literal("json_schema"),
+  }),
+  temperature: Schema.Number,
+});
+export type RecipeWorkersAiRequest = typeof RecipeWorkersAiRequest.Type;
+
+export const SpeechWorkersAiRequest = Schema.Struct({
+  audio: Schema.String,
+  condition_on_previous_text: Schema.Literal(false),
+  language: Schema.Literal("en"),
+  task: Schema.Literal("transcribe"),
+  vad_filter: Schema.Literal(true),
+});
+export type SpeechWorkersAiRequest = typeof SpeechWorkersAiRequest.Type;
+
+export interface WorkersAiTransport {
+  readonly recipe: {
+    readonly model: typeof InstalledRecipeModel;
+    readonly run: (body: RecipeWorkersAiRequest) => Promise<Response>;
+  };
+  readonly speech: {
+    readonly model: typeof InstalledSpeechModel;
+    readonly run: (body: SpeechWorkersAiRequest) => Promise<Response>;
+  };
+  readonly visual: {
+    readonly makeLanguageModel: (parameters: {
+      readonly maxTokens?: number;
+      readonly temperature?: number;
+    }) => Effect.Effect<LanguageModel.Service, never, RuntimeContext>;
+    readonly model: typeof InstalledVisualModel;
+  };
+}
+
+type ProviderInvocationOutcome =
+  | { readonly _tag: "Success"; readonly response: Response }
+  | { readonly _tag: "KnownZeroCostFailure" }
+  | { readonly _tag: "TransportUnavailable" };
+
+class ProviderInvocationFailureError extends Error {
+  readonly description:
+    | typeof ProviderKnownZeroSetupFailureMessage
+    | typeof ProviderTransportUnavailableMessage;
+
+  constructor(
+    description:
+      | typeof ProviderKnownZeroSetupFailureMessage
+      | typeof ProviderTransportUnavailableMessage
+  ) {
+    super(description);
+    this.description = description;
+    this.name = "ProviderInvocationFailureError";
+  }
+}
+
 export const isUnknownRecord = (
-  value: unknown
-): value is Record<string, unknown> =>
+  value: Schema.Json | undefined
+): value is Schema.JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const WorkersAiProviderResponseEnvelope = Schema.Struct({
-  choices: Schema.optionalKey(Schema.Unknown),
-  tool_calls: Schema.optionalKey(Schema.Unknown),
+  choices: Schema.optionalKey(Schema.Json),
+  tool_calls: Schema.optionalKey(Schema.Json),
 });
 type WorkersAiProviderResponseEnvelope =
   typeof WorkersAiProviderResponseEnvelope.Type;
@@ -580,11 +714,11 @@ const decodeWorkersAiProviderResponseEnvelope = Schema.decodeUnknownOption(
 );
 
 const ProviderToolCallEnvelope = Schema.Struct({
-  arguments: Schema.optionalKey(Schema.Unknown),
-  function: Schema.optionalKey(Schema.Unknown),
-  id: Schema.optionalKey(Schema.Unknown),
-  name: Schema.optionalKey(Schema.Unknown),
-  type: Schema.optionalKey(Schema.Unknown),
+  arguments: Schema.optionalKey(Schema.Json),
+  function: Schema.optionalKey(Schema.Json),
+  id: Schema.optionalKey(Schema.Json),
+  name: Schema.optionalKey(Schema.Json),
+  type: Schema.optionalKey(Schema.Json),
 });
 type ProviderToolCallEnvelope = typeof ProviderToolCallEnvelope.Type;
 const decodeProviderToolCallEnvelope = Schema.decodeUnknownOption(
@@ -592,8 +726,8 @@ const decodeProviderToolCallEnvelope = Schema.decodeUnknownOption(
 );
 
 const ProviderToolFunctionEnvelope = Schema.Struct({
-  arguments: Schema.optionalKey(Schema.Unknown),
-  name: Schema.optionalKey(Schema.Unknown),
+  arguments: Schema.optionalKey(Schema.Json),
+  name: Schema.optionalKey(Schema.Json),
 });
 type ProviderToolFunctionEnvelope = typeof ProviderToolFunctionEnvelope.Type;
 const decodeProviderToolFunctionEnvelope = Schema.decodeUnknownOption(
@@ -601,7 +735,7 @@ const decodeProviderToolFunctionEnvelope = Schema.decodeUnknownOption(
 );
 
 const OpenAiProviderChoiceEnvelope = Schema.Struct({
-  message: Schema.Unknown,
+  message: Schema.Json,
 });
 type OpenAiProviderChoiceEnvelope = typeof OpenAiProviderChoiceEnvelope.Type;
 const decodeOpenAiProviderChoiceEnvelope = Schema.decodeUnknownOption(
@@ -610,7 +744,7 @@ const decodeOpenAiProviderChoiceEnvelope = Schema.decodeUnknownOption(
 );
 
 const OpenAiProviderMessageEnvelope = Schema.Struct({
-  tool_calls: Schema.optionalKey(Schema.Unknown),
+  tool_calls: Schema.optionalKey(Schema.Json),
 });
 type OpenAiProviderMessageEnvelope = typeof OpenAiProviderMessageEnvelope.Type;
 const decodeOpenAiProviderMessageEnvelope = Schema.decodeUnknownOption(
@@ -620,14 +754,14 @@ const decodeOpenAiProviderMessageEnvelope = Schema.decodeUnknownOption(
 
 type CanonicalProviderToolCall =
   | {
-      readonly arguments?: unknown;
+      readonly arguments?: Schema.Json;
       readonly id?: string;
       readonly name: string;
       readonly type?: string;
     }
   | {
       readonly function: {
-        readonly arguments?: unknown;
+        readonly arguments?: Schema.Json;
         readonly name: string;
       };
       readonly id?: string;
@@ -638,7 +772,7 @@ type RawToolCallAuthority =
   | { readonly _tag: "Absent" }
   | {
       readonly _tag: "Call";
-      readonly arguments: unknown;
+      readonly arguments: Schema.Json | undefined;
       readonly call: CanonicalProviderToolCall;
       readonly name: string;
     }
@@ -649,12 +783,17 @@ export type ProviderRawToolCall = Extract<
   { readonly _tag: "Call" }
 >;
 
-export const comparableToolArguments = (value: unknown): unknown => {
+export const comparableToolArguments = (
+  value: Schema.Json | undefined
+): Schema.Json | undefined => {
   if (typeof value !== "string") {
     return value;
   }
   try {
-    return JSON.parse(value) as unknown;
+    return Option.getOrElse(
+      Schema.decodeUnknownOption(Schema.Json)(JSON.parse(value)),
+      () => value
+    );
   } catch {
     return value;
   }
@@ -733,7 +872,7 @@ const decodeNestedRawToolCall = (
   };
 };
 
-const decodeRawToolCall = (value: unknown): RawToolCallAuthority => {
+const decodeRawToolCall = (value: Schema.Json): RawToolCallAuthority => {
   const decoded = decodeProviderToolCallEnvelope(value);
   if (Option.isNone(decoded)) {
     return { _tag: "Invalid" };
@@ -749,7 +888,9 @@ const decodeRawToolCall = (value: unknown): RawToolCallAuthority => {
     : { _tag: "Invalid" };
 };
 
-const decodeRawToolCalls = (value: unknown): RawToolCallAuthority => {
+const decodeRawToolCalls = (
+  value: Schema.Json | undefined
+): RawToolCallAuthority => {
   if (value === undefined || value === null) {
     return { _tag: "Absent" };
   }
@@ -783,7 +924,9 @@ interface OpenAiToolAuthority {
   };
 }
 
-const decodeOpenAiToolAuthority = (choices: unknown): OpenAiToolAuthority => {
+const decodeOpenAiToolAuthority = (
+  choices: Schema.Json | undefined
+): OpenAiToolAuthority => {
   if (choices === undefined || choices === null) {
     return { authority: { _tag: "Absent" } };
   }
@@ -821,7 +964,7 @@ const withOpenAiToolCall = (
   value: WorkersAiProviderResponseEnvelope,
   openAiChoice: NonNullable<OpenAiToolAuthority["choice"]>,
   call: ProviderRawToolCall
-): Record<string, unknown> => {
+): Schema.JsonObject => {
   const { tool_calls: _nativeToolCalls, ...withoutNativeToolCalls } = value;
   return {
     ...withoutNativeToolCalls,
@@ -839,9 +982,9 @@ const withOpenAiToolCall = (
 
 const withNativeToolCall = (
   value: WorkersAiProviderResponseEnvelope,
-  choices: unknown,
+  choices: Schema.Json | undefined,
   call: ProviderRawToolCall
-): Record<string, unknown> => {
+): Schema.JsonObject => {
   const canonicalNative = { ...value, tool_calls: [call.call] };
   return Array.isArray(choices) && choices.length === 0
     ? Object.fromEntries(
@@ -850,7 +993,7 @@ const withNativeToolCall = (
     : canonicalNative;
 };
 
-const normalizeProviderToolPayload = (value: unknown): unknown => {
+const normalizeProviderToolPayload = (value: Schema.Json): Schema.Json => {
   const decoded = decodeWorkersAiProviderResponseEnvelope(value);
   if (Option.isNone(decoded)) {
     return value;
@@ -890,27 +1033,30 @@ const normalizeProviderToolPayload = (value: unknown): unknown => {
   return providerResponse;
 };
 
-const withProviderNormalizationBoundary = (response: Response): Response => {
+export const normalizeWorkersAiResponse = (response: Response): Response => {
   const parseJson = response.json.bind(response);
   return new Proxy(response, {
     get: (target, property) => {
       if (property === "json") {
-        return async (): Promise<unknown> => {
-          let raw: unknown;
+        return async (): Promise<Schema.Json> => {
+          let decoded: Option.Option<Schema.Json>;
           try {
-            raw = await parseJson();
+            const raw = await parseJson();
+            decoded = Schema.decodeUnknownOption(Schema.Json)(raw);
           } catch {
             // The raw body is untrusted and must never cross this boundary.
             // Preserve only enough internal authority for the optional visual
             // stage to degrade without weakening structural tool validation.
             throw new Error(ProviderNormalizationBodyInvalidMessage);
           }
+          if (Option.isNone(decoded)) {
+            throw new Error(ProviderNormalizationBodyInvalidMessage);
+          }
           try {
-            return normalizeProviderToolPayload(raw);
+            return normalizeProviderToolPayload(decoded.value);
           } catch {
             // Provider payloads and parser details must not cross the
-            // observability boundary. Alchemy preserves this closed
-            // description inside its typed AiError.UnknownError.
+            // observability boundary.
             throw new Error(ProviderNormalizationInvalidMessage);
           }
         };
@@ -931,7 +1077,7 @@ const withProviderNormalizationBoundary = (response: Response): Response => {
 export const noLogWorkersAiClient = (
   client: QueryGatewayClient,
   correlationId: ImportCorrelationId,
-  providerStage: "recipe" | "visual",
+  providerStage: "visual",
   traceStore: ImportObservabilityTraceStore | undefined
 ): QueryGatewayClient => ({
   ...client,
@@ -939,7 +1085,12 @@ export const noLogWorkersAiClient = (
     Effect.map(
       ([ai, gatewayId]) =>
         ({
-          run: async (model: unknown, body: unknown) => {
+          run: async (
+            // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU002 alchemy@2.0.0-beta.72): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema cannot establish the missing behavioral model/body relationship. Remove when Alchemy provides a public precise visual request transport.
+            model: unknown,
+            // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU003 alchemy@2.0.0-beta.72): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
+            body: unknown
+          ) => {
             let response: Response;
             try {
               response = await runWorkersAi(ai, String(model), body, gatewayId);
@@ -966,9 +1117,101 @@ export const noLogWorkersAiClient = (
                 traceStore
               )
             );
-            return withProviderNormalizationBoundary(response);
+            return normalizeWorkersAiResponse(response);
           },
         }) as WorkersAiBinding
     )
   ) as QueryGatewayClient["raw"],
 });
+
+export const makeWorkersAiTransport = (
+  client: QueryGatewayClient,
+  correlationId: ImportCorrelationId,
+  traceStore: ImportObservabilityTraceStore | undefined
+) =>
+  Effect.gen(function* makeProviderTransport() {
+    const ai = yield* client.raw;
+    const gatewayId = yield* client.id;
+    const runProviderRequest = async (
+      providerStage: "recipe" | "speech" | "visual",
+      invoke: () => Promise<Response>
+    ): Promise<Response> => {
+      let outcome: ProviderInvocationOutcome;
+      try {
+        outcome = { _tag: "Success", response: await invoke() };
+      } catch (error) {
+        outcome = isPilotProviderKnownZeroCostFailure(error)
+          ? { _tag: "KnownZeroCostFailure" }
+          : { _tag: "TransportUnavailable" };
+      }
+      if (outcome._tag === "KnownZeroCostFailure") {
+        throw new ProviderInvocationFailureError(
+          ProviderKnownZeroSetupFailureMessage
+        );
+      }
+      if (outcome._tag === "TransportUnavailable") {
+        throw new ProviderInvocationFailureError(
+          ProviderTransportUnavailableMessage
+        );
+      }
+      await Effect.runPromise(
+        emitImportObservabilityEvent(
+          {
+            correlationId,
+            event: "provider.response",
+            outcome: "received",
+            providerStage,
+          },
+          traceStore
+        )
+      );
+      return normalizeWorkersAiResponse(outcome.response);
+    };
+    const languageModelClient: LanguageModelClient = noLogWorkersAiClient(
+      client,
+      correlationId,
+      "visual",
+      traceStore
+    );
+    return {
+      recipe: {
+        model: InstalledRecipeModel,
+        run: (body) =>
+          runProviderRequest("recipe", () =>
+            ai.run(
+              InstalledRecipeModel,
+              {
+                max_tokens: body.max_tokens,
+                messages: body.messages.map(({ content, role }) => ({
+                  content,
+                  role,
+                })),
+                response_format: body.response_format,
+                temperature: body.temperature,
+              },
+              workersAiGatewayOptions(gatewayId)
+            )
+          ),
+      },
+      speech: {
+        model: InstalledSpeechModel,
+        run: (body) =>
+          runProviderRequest("speech", () =>
+            ai.run(
+              InstalledSpeechModel,
+              body,
+              workersAiGatewayOptions(gatewayId)
+            )
+          ),
+      },
+      visual: {
+        makeLanguageModel: (parameters) =>
+          makeAlchemyLanguageModel({
+            client: languageModelClient,
+            model: InstalledVisualModel,
+            parameters,
+          }),
+        model: InstalledVisualModel,
+      },
+    } satisfies WorkersAiTransport;
+  });

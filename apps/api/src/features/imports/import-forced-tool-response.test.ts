@@ -1,3 +1,4 @@
+import type { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,8 +15,8 @@ const validArguments = {
   },
 };
 
-const textPart = (value: unknown) => ({
-  text: typeof value === "string" ? value : JSON.stringify(value),
+const textPart = (value: Schema.Json) => ({
+  text: typeof value === "string" ? value : (JSON.stringify(value) ?? "null"),
   type: "text",
 });
 

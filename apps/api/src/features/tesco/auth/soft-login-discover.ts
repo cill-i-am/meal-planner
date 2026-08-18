@@ -18,7 +18,10 @@ const DiscoverScriptPattern =
 
 export const discoverJsonFromHtml = (
   html: string
-): Effect.Effect<unknown, TescoSoftLoginResponseInvalid> =>
+): Effect.Effect<
+  typeof TescoDiscoverAuthConfig.Type,
+  TescoSoftLoginResponseInvalid
+> =>
   Effect.gen(function* () {
     const match = DiscoverScriptPattern.exec(html);
     const jsonText = match?.groups?.["json"];
@@ -28,16 +31,16 @@ export const discoverJsonFromHtml = (
 
     return yield* Effect.try({
       catch: () => new TescoSoftLoginResponseInvalid(),
-      try: () => JSON.parse(jsonText) as unknown,
-    });
+      try: () => JSON.parse(jsonText),
+    }).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(TescoDiscoverAuthConfig)),
+      Effect.mapError(() => new TescoSoftLoginResponseInvalid())
+    );
   });
 
-export const authorizationFromDiscoverConfig = (value: unknown) =>
-  Schema.decodeUnknownEffect(TescoDiscoverAuthConfig)(value).pipe(
-    Effect.map((discoverConfig) =>
-      Redacted.make(
-        discoverConfig["mfe-orchestrator"].props.config.authorization
-      )
-    ),
-    Effect.mapError(() => new TescoSoftLoginResponseInvalid())
+export const authorizationFromDiscoverConfig = (
+  discoverConfig: typeof TescoDiscoverAuthConfig.Type
+) =>
+  Effect.succeed(
+    Redacted.make(discoverConfig["mfe-orchestrator"].props.config.authorization)
   );

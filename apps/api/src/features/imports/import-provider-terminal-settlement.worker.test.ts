@@ -1,5 +1,4 @@
 import { applyD1Migrations, env } from "cloudflare:test";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -22,6 +21,10 @@ import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcripti
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import type { VisualEvidenceFailureCode } from "./import-visual-evidence.repository.d1.js";
 import {
+  ImportWorkerTestEnvironment,
+  workerTestMigrations,
+} from "./import-worker-test-environment.js";
+import {
   ImportId,
   ImportTimestamp,
   SourceCanonicalId,
@@ -33,13 +36,7 @@ import {
 } from "./import.test-fixtures.js";
 import type { ImportWorkflowStarter } from "./import.workflow.js";
 
-const testEnv = env as unknown as {
-  readonly MealPlannerDatabase: AnyD1Database;
-  readonly TEST_MIGRATIONS: {
-    readonly name: string;
-    readonly queries: string[];
-  }[];
-};
+const testEnv = Schema.decodeUnknownSync(ImportWorkerTestEnvironment)(env);
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
@@ -49,13 +46,14 @@ const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
 const decodeRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
 const decodeStageId = Schema.decodeUnknownSync(PilotBudgetProviderStageId);
 const decodeDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
-const readD1Results = (result: { readonly results: readonly unknown[] }) =>
-  result.results;
+const decodeD1Results = Schema.decodeUnknownSync(
+  Schema.Struct({ results: Schema.Array(Schema.Json) })
+);
 
 beforeAll(async () => {
   await applyD1Migrations(
     testEnv.MealPlannerDatabase,
-    [...testEnv.TEST_MIGRATIONS],
+    workerTestMigrations(testEnv.TEST_MIGRATIONS),
     "d1_migrations"
   );
 });
@@ -560,7 +558,7 @@ const seedMissingRecipeTerminalCheckpoint = async (
 };
 
 const makeApp = async (
-  runtimeStage: unknown,
+  runtimeStage: string,
   workflowStarter?: Pick<ImportWorkflowStarter, "restartFromSpeech">
 ) => {
   const authorizer = await Effect.runPromise(
@@ -641,7 +639,7 @@ const visualCheckpointRepairCommandFor = (
 
 const postSettlement = (
   app: Awaited<ReturnType<typeof makeApp>>,
-  body: unknown,
+  body: Schema.Json,
   token = "test-import-token"
 ) =>
   app.handler(
@@ -1010,7 +1008,8 @@ const readRecipeCheckpointRepairProtectedRows = (input: {
     )
       .bind(input.importId, input.acquisitionGeneration)
       .all()
-      .then(readD1Results),
+      .then(decodeD1Results)
+      .then(({ results }) => results),
     testEnv.MealPlannerDatabase.prepare(
       `SELECT *
          FROM import_recipe_executor_terminal_checkpoints
@@ -1018,7 +1017,8 @@ const readRecipeCheckpointRepairProtectedRows = (input: {
     )
       .bind(input.importId, input.acquisitionGeneration)
       .all()
-      .then(readD1Results),
+      .then(decodeD1Results)
+      .then(({ results }) => results),
     testEnv.MealPlannerDatabase.prepare(
       `SELECT *
          FROM recipe_imports
@@ -1033,7 +1033,8 @@ const readRecipeCheckpointRepairProtectedRows = (input: {
     )
       .bind(input.importId, input.acquisitionGeneration)
       .all()
-      .then(readD1Results),
+      .then(decodeD1Results)
+      .then(({ results }) => results),
     testEnv.MealPlannerDatabase.prepare(
       `SELECT *
          FROM import_recipe_extractions
@@ -1041,7 +1042,8 @@ const readRecipeCheckpointRepairProtectedRows = (input: {
     )
       .bind(input.importId, input.acquisitionGeneration)
       .all()
-      .then(readD1Results),
+      .then(decodeD1Results)
+      .then(({ results }) => results),
     testEnv.MealPlannerDatabase.prepare(
       `SELECT *
          FROM pilot_provider_stage_budget
@@ -1071,7 +1073,8 @@ const readRecipeCheckpointRepairProtectedRows = (input: {
     )
       .bind(input.dispatchId)
       .all()
-      .then(readD1Results),
+      .then(decodeD1Results)
+      .then(({ results }) => results),
   ]);
 
 const expectRecipeCheckpointRepairRejected = async (

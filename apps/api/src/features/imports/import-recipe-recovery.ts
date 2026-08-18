@@ -1,6 +1,8 @@
 /* eslint-disable max-classes-per-file -- This module owns one closed, Schema-backed recovery failure family. */
+import type * as Cloudflare from "alchemy/Cloudflare";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Cause, Data, DateTime, Effect, Option, Schema } from "effect";
+import { flow } from "effect/Function";
 
 import {
   PilotBudgetDispatchId,
@@ -205,12 +207,10 @@ const runD1 = <A>(
 
 const decodeD1 = <S extends Schema.Top>(
   schema: S,
-  operation: RecoveryD1Operation,
-  value: unknown
+  operation: RecoveryD1Operation
 ) =>
-  Schema.decodeUnknownEffect(schema, { onExcessProperty: "ignore" })(
-    value
-  ).pipe(
+  flow(
+    Schema.decodeUnknownEffect(schema, { onExcessProperty: "ignore" }),
     Effect.mapError(() => new RecipeRecoveryIntegrityFailure({ operation }))
   );
 
@@ -268,9 +268,10 @@ const readCurrentAttempt = (
     Effect.flatMap((row) =>
       row === null
         ? Effect.succeed(Option.none<RecipeRecoveryAttempt>())
-        : decodeD1(RecipeRecoveryAttemptRow, "decode", row).pipe(
-            Effect.map((decoded) => Option.some(toAttempt(decoded)))
-          )
+        : decodeD1(
+            RecipeRecoveryAttemptRow,
+            "decode"
+          )(row).pipe(Effect.map((decoded) => Option.some(toAttempt(decoded))))
     )
   );
 
@@ -305,9 +306,10 @@ const readAttemptAtOrdinal = (
     Effect.flatMap((row) =>
       row === null
         ? Effect.succeed(Option.none<RecipeRecoveryAttempt>())
-        : decodeD1(RecipeRecoveryAttemptRow, "decode", row).pipe(
-            Effect.map((decoded) => Option.some(toAttempt(decoded)))
-          )
+        : decodeD1(
+            RecipeRecoveryAttemptRow,
+            "decode"
+          )(row).pipe(Effect.map((decoded) => Option.some(toAttempt(decoded))))
     )
   );
 
@@ -357,9 +359,10 @@ const readImportEvidence = (database: AnyD1Database, importId: ImportId) =>
     Effect.flatMap((row) =>
       row === null
         ? Effect.succeed(Option.none<ImportEvidence>())
-        : decodeD1(ImportEvidenceRow, "decode", row).pipe(
-            Effect.map(Option.some)
-          )
+        : decodeD1(
+            ImportEvidenceRow,
+            "decode"
+          )(row).pipe(Effect.map(Option.some))
     )
   );
 
@@ -399,9 +402,10 @@ const readRootExtraction = (
     Effect.flatMap((row) =>
       row === null
         ? Effect.succeed(Option.none<typeof RootExtractionRow.Type>())
-        : decodeD1(RootExtractionRow, "decode", row).pipe(
-            Effect.map(Option.some)
-          )
+        : decodeD1(
+            RootExtractionRow,
+            "decode"
+          )(row).pipe(Effect.map(Option.some))
     )
   );
 
@@ -551,7 +555,7 @@ const readAuthority = (
               operation: "read_authority",
             })
           )
-        : decodeD1(AuthorityRow, "decode", row)
+        : decodeD1(AuthorityRow, "decode")(row)
     )
   );
 
@@ -808,7 +812,7 @@ export const recipeRecoveryExtractionFingerprint = Effect.fn(
   const value = Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0")
   ).join("");
-  return yield* decodeD1(Sha256Hex, "decode", value);
+  return yield* decodeD1(Sha256Hex, "decode")(value);
 });
 
 const nextOrdinal = (
@@ -823,7 +827,7 @@ const nextOrdinal = (
       new RecipeRecoveryAttemptLimitReached(baseFailure(input))
     );
   }
-  return decodeD1(RecipeRecoveryOrdinal, "decode", current.value.ordinal + 1);
+  return decodeD1(RecipeRecoveryOrdinal, "decode")(current.value.ordinal + 1);
 };
 
 export const PrepareNextRecipeRecoveryAttempt = Schema.Struct({
@@ -863,7 +867,7 @@ export interface RecipeRecoveryRepository {
 
 export const makeD1RecipeRecoveryRepository = (
   database: AnyD1Database,
-  runtimeStage: unknown
+  runtimeStage: string
 ): RecipeRecoveryRepository => {
   const readAttempt: RecipeRecoveryRepository["readAttempt"] = Effect.fn(
     "RecipeRecoveryRepository.readAttempt"
@@ -925,9 +929,8 @@ export const makeD1RecipeRecoveryRepository = (
       function* prepareNextAttemptEffect(rawInput) {
         const input = yield* decodeD1(
           PrepareNextRecipeRecoveryAttempt,
-          "decode",
-          rawInput
-        );
+          "decode"
+        )(rawInput);
         if (runtimeStage !== PilotProviderBudgetStage) {
           return yield* Effect.fail(
             new RecipeRecoveryD1Unavailable({ operation: "insert" })
@@ -1001,9 +1004,8 @@ export const makeD1RecipeRecoveryRepository = (
 
         const currentDispatchId = yield* decodeD1(
           PilotBudgetDispatchId,
-          "decode",
-          `${rootDispatchId}:recovery:${ordinal}`
-        );
+          "decode"
+        )(`${rootDispatchId}:recovery:${ordinal}`);
         const currentExtractionFingerprint =
           yield* recipeRecoveryExtractionFingerprint(
             predecessorExtractionFingerprint,
@@ -1102,17 +1104,19 @@ export const RecipeRecoveryWorkflowInput = Schema.Struct({
 });
 export type RecipeRecoveryWorkflowInput =
   typeof RecipeRecoveryWorkflowInput.Type;
+export type RecipeRecoveryWorkflowInputEncoded =
+  typeof RecipeRecoveryWorkflowInput.Encoded;
 
 export class InvalidRecipeRecoveryWorkflowInput extends Data.TaggedError(
   "InvalidRecipeRecoveryWorkflowInput"
 ) {}
 
-export const resolveRecipeRecoveryWorkflowInput = (rawInput: unknown) =>
+export const resolveRecipeRecoveryWorkflowInput = flow(
   Schema.decodeUnknownEffect(RecipeRecoveryWorkflowInput, {
     onExcessProperty: "error",
-  })(rawInput).pipe(
-    Effect.mapError(() => new InvalidRecipeRecoveryWorkflowInput())
-  );
+  }),
+  Effect.mapError(() => new InvalidRecipeRecoveryWorkflowInput())
+);
 
 export const RecipeRecoveryAuthorization = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
@@ -1123,20 +1127,16 @@ export type RecipeRecoveryAuthorization =
   typeof RecipeRecoveryAuthorization.Type;
 
 interface WorkflowInstanceLike {
-  readonly restart: () => Effect.Effect<void>;
-  readonly sendEvent: (event: {
-    readonly payload: RecipeRecoveryAuthorization;
-    readonly type: string;
-  }) => Effect.Effect<void>;
-  readonly status: () => Effect.Effect<{ readonly status: string }>;
+  readonly restart: Cloudflare.Workflows.WorkflowInstance["restart"];
+  readonly sendEvent: (
+    event: Cloudflare.Workflows.WorkflowInstanceEvent<RecipeRecoveryAuthorization>
+  ) => Effect.Effect<void>;
+  readonly status: Cloudflare.Workflows.WorkflowInstance["status"];
 }
 
 interface WorkflowHandleLike {
   readonly createBatch: (
-    batch: {
-      readonly id?: string;
-      readonly params?: unknown;
-    }[]
+    batch: Cloudflare.Workflows.WorkflowInstanceCreateOptions<RecipeRecoveryWorkflowInputEncoded>[]
   ) => Effect.Effect<readonly WorkflowInstanceLike[]>;
   readonly get: (id: string) => Effect.Effect<WorkflowInstanceLike>;
 }

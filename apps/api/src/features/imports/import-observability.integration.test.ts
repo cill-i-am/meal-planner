@@ -1,5 +1,4 @@
 import { RuntimeContext } from "alchemy";
-import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
 import { Effect, Schema, Tracer } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
@@ -18,9 +17,9 @@ import {
   observeImportQueueReceipt,
   observeImportWorkflowStart,
 } from "./import-observability.js";
+import { makeVisualTransport } from "./import-provider-adapters.test-fixture.js";
 import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
-import type { ImportId as ImportIdType } from "./import.contracts.js";
 import { ImportId } from "./import.contracts.js";
 import { makeImportWorkflowStarter } from "./import.workflow.js";
 
@@ -97,42 +96,28 @@ const repository: PilotProviderBudgetRepository = {
     }),
 };
 
-const gatewayRequests: unknown[] = [];
-const gatewayClient = {
-  gateway: Effect.die("universal AI Gateway binding must not be used"),
-  id: Effect.succeed("meal-planner-pilot-gaia-118"),
-  raw: Effect.succeed({
-    run: (model: unknown, body: unknown, options: unknown) => {
-      gatewayRequests.push({ body, model, options });
-      return Promise.resolve(
-        Response.json({
-          choices: [
+const visualProviderResponse = () =>
+  Response.json({
+    choices: [
+      {
+        finish_reason: "tool_calls",
+        message: {
+          content: null,
+          tool_calls: [
             {
-              finish_reason: "tool_calls",
-              message: {
-                content: null,
-                tool_calls: [
-                  {
-                    function: {
-                      arguments: JSON.stringify({
-                        observations: [],
-                      }),
-                      name: "record_visual_evidence",
-                    },
-                    id: "visual-correlation-call-1",
-                    type: "function",
-                  },
-                ],
+              function: {
+                arguments: JSON.stringify({ observations: [] }),
+                name: "record_visual_evidence",
               },
+              id: "visual-correlation-call-1",
+              type: "function",
             },
           ],
-          usage: { completion_tokens: 10, prompt_tokens: 20 },
-        })
-      );
-    },
-  }),
-  run: () => Effect.die("universal AI Gateway dispatch must not be used"),
-} as unknown as QueryGatewayClient;
+        },
+      },
+    ],
+    usage: { completion_tokens: 10, prompt_tokens: 20 },
+  });
 
 const testRuntimeContext = RuntimeContext.of({
   Type: "TestRuntimeContext",
@@ -169,7 +154,7 @@ describe("opaque import correlation continuity", () => {
       read: (id) =>
         Effect.succeed(events.filter((event) => event.correlationId === id)),
     });
-    let workflowParams: unknown;
+    let workflowParams: Schema.Json | undefined;
     const createdStarter = makeImportWorkflowStarter({
       createBatch: (batch) =>
         Effect.sync(() => {
@@ -185,6 +170,14 @@ describe("opaque import correlation continuity", () => {
       runId,
       runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
+    let visualProviderCalls = 0;
+    const transport = makeVisualTransport(visualProviderResponse, () =>
+      Effect.runPromise(
+        Effect.sync(() => {
+          visualProviderCalls += 1;
+        })
+      )
+    );
 
     await Effect.runPromise(
       Effect.gen(function* correlatedPath() {
@@ -209,9 +202,9 @@ describe("opaque import correlation continuity", () => {
         )(workflowParams);
         yield* observeImportWorkflowStart(input.trace);
         const adapter = yield* makeInstalledVisualEvidenceExtractor({
-          client: gatewayClient,
           correlationId: input.trace.correlationId,
           dispatch,
+          transport,
         });
         yield* adapter.extract({
           dispatchId: "visual:opaque-import:1",
@@ -272,28 +265,8 @@ describe("opaque import correlation continuity", () => {
         )
       )
     ).toBe(true);
-    expect(gatewayRequests).toHaveLength(1);
-    const { options } = Schema.decodeUnknownSync(
-      Schema.Struct({
-        options: Schema.Struct({
-          gateway: Schema.Struct({
-            collectLog: Schema.Boolean,
-            id: Schema.String,
-            skipCache: Schema.Boolean,
-          }),
-        }),
-      })
-    )(gatewayRequests[0]);
-    expect(options).toEqual({
-      gateway: {
-        collectLog: false,
-        id: "meal-planner-pilot-gaia-118",
-        skipCache: true,
-      },
-    });
-    expect(options.gateway).not.toHaveProperty("metadata");
-    expect(options).not.toHaveProperty("headers");
-    expect(JSON.stringify(options)).not.toMatch(
+    expect(visualProviderCalls).toBe(1);
+    expect(JSON.stringify(transport)).not.toMatch(
       /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
     );
 
@@ -328,7 +301,9 @@ describe("opaque import correlation continuity", () => {
     );
     expect(
       Schema.is(ImportId)(
-        (workflowParams as { readonly importId: ImportIdType }).importId
+        Schema.decodeUnknownSync(Schema.Struct({ importId: ImportId }), {
+          onExcessProperty: "ignore",
+        })(workflowParams).importId
       )
     ).toBe(true);
     log.mockRestore();

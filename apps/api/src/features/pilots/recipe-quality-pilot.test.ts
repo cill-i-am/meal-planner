@@ -8,6 +8,7 @@ import {
   RecipeQualityPilotReport,
   runRecipeQualityPilotPreflight,
 } from "./recipe-quality-pilot.js";
+import type { PilotPreflightErrorCode } from "./recipe-quality-pilot.js";
 
 const Now = "2026-08-01T09:00:00.000Z";
 const DeleteBy = "2026-08-08T09:00:00.000Z";
@@ -172,7 +173,10 @@ const completeObservations = () => [
   notARecipeObservation(),
 ];
 
-const expectPreflightCode = async (input: unknown, code: string) => {
+const expectPreflightCode = async (
+  input: Schema.Json,
+  code: PilotPreflightErrorCode
+) => {
   const exit = await Effect.runPromiseExit(
     runRecipeQualityPilotPreflight(input, Now)
   );
@@ -255,7 +259,7 @@ describe("recipe quality pilot readiness", () => {
   it("fails closed for every missing execution prerequisite", async () => {
     const cases: readonly [
       mutate: (input: ReturnType<typeof preflightInput>) => void,
-      code: string,
+      code: PilotPreflightErrorCode,
     ][] = [
       [
         (input) => {
@@ -426,6 +430,10 @@ describe("recipe quality pilot report", () => {
       runRecipeQualityPilotPreflight(preflightInput(), Now)
     );
     const complete = completeObservations();
+    const [firstComplete] = complete;
+    if (firstComplete === undefined) {
+      throw new Error("Expected the complete pilot observation fixture");
+    }
 
     await expectReportCode(
       buildRecipeQualityPilotReport(ready, complete.slice(1), Now),
@@ -435,7 +443,7 @@ describe("recipe quality pilot report", () => {
     await expectReportCode(
       buildRecipeQualityPilotReport(
         ready,
-        [...complete.slice(0, -1), complete[0]],
+        [...complete.slice(0, -1), firstComplete],
         Now
       ),
       "observations_do_not_reconcile"

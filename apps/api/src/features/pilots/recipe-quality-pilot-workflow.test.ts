@@ -1,9 +1,10 @@
 import { Cause, Effect, Exit, Option } from "effect";
+import type { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { decodeRecipeQualityPilotWorkflowStatus } from "./recipe-quality-pilot.js";
 
-const expectInvalidResponse = async (input: unknown) => {
+const expectInvalidResponse = async (input: Schema.Json) => {
   const exit = await Effect.runPromiseExit(
     decodeRecipeQualityPilotWorkflowStatus(input)
   );

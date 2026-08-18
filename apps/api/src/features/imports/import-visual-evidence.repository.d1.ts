@@ -36,9 +36,21 @@ const VisualEvidenceRow = Schema.Struct({
   updated_at: ImportTimestamp,
 });
 type VisualEvidenceRow = typeof VisualEvidenceRow.Type;
-const D1BatchResults = Schema.Array(
-  Schema.Struct({ results: Schema.Array(Schema.Unknown) })
-);
+const D1MutationResult = Schema.Struct({ results: Schema.Array(Schema.Json) });
+const D1InsertResult = Schema.Struct({
+  results: Schema.Array(Schema.Struct({ dispatch_id: Schema.String })),
+});
+const D1VisualEvidenceRows = Schema.Struct({
+  results: Schema.Array(VisualEvidenceRow),
+});
+const D1ClaimBatchResults = Schema.Tuple([
+  D1InsertResult,
+  D1VisualEvidenceRows,
+]);
+const D1CompleteBatchResults = Schema.Tuple([
+  D1MutationResult,
+  D1VisualEvidenceRows,
+]);
 
 export type VisualEvidenceOutcome = "empty" | "found" | "low_confidence";
 
@@ -111,16 +123,6 @@ const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
     catch: importPersistenceUnavailable,
     try: () => Promise.resolve(operation()),
   });
-
-const decodeRow = (value: unknown) =>
-  Schema.decodeUnknownEffect(VisualEvidenceRow, {
-    onExcessProperty: "ignore",
-  })(value).pipe(Effect.mapError(() => importPersistenceCorrupt()));
-
-const decodeBatchResults = (value: unknown) =>
-  Schema.decodeUnknownEffect(D1BatchResults, {
-    onExcessProperty: "ignore",
-  })(value).pipe(Effect.mapError(() => importPersistenceCorrupt()));
 
 const requiredNumber = (value: number | null) =>
   value !== null && Number.isSafeInteger(value) && value >= 0
@@ -260,13 +262,14 @@ export const makeD1VisualEvidenceRepository = (
             .bind(input.importId, input.generation),
         ])
       );
-      const [insertResult, selectResult] =
-        yield* decodeBatchResults(rawResults);
-      const rawRow = selectResult?.results[0];
-      if (insertResult === undefined || rawRow === undefined) {
+      const [insertResult, selectResult] = yield* Schema.decodeUnknownEffect(
+        D1ClaimBatchResults,
+        { onExcessProperty: "ignore" }
+      )(rawResults).pipe(Effect.mapError(() => importPersistenceCorrupt()));
+      const [row] = selectResult.results;
+      if (row === undefined) {
         return yield* Effect.fail(importTransitionRejected());
       }
-      const row = yield* decodeRow(rawRow);
       if (
         row.dispatch_id !== input.dispatchId ||
         row.source_media_sha256 !== input.sourceMediaSha256
@@ -321,12 +324,15 @@ export const makeD1VisualEvidenceRepository = (
             .bind(evidence.importId, evidence.generation),
         ])
       );
-      const [, selectResult] = yield* decodeBatchResults(rawResults);
-      const rawRow = selectResult?.results[0];
-      if (rawRow === undefined) {
+      const [, selectResult] = yield* Schema.decodeUnknownEffect(
+        D1CompleteBatchResults,
+        { onExcessProperty: "ignore" }
+      )(rawResults).pipe(Effect.mapError(() => importPersistenceCorrupt()));
+      const [row] = selectResult.results;
+      if (row === undefined) {
         return yield* Effect.fail(importTransitionRejected());
       }
-      const completed = yield* completedEvidence(yield* decodeRow(rawRow));
+      const completed = yield* completedEvidence(row);
       if (
         completed.dispatchId !== evidence.dispatchId ||
         completed.manifestSha256 !== evidence.manifestSha256

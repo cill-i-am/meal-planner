@@ -145,7 +145,14 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
             sourceMediaSha256: evidence.sha256,
           })
         ),
-        Effect.provide(TranscriptEvidenceStoreLive(input.bucket))
+        Effect.provide(TranscriptEvidenceStoreLive(input.bucket)),
+        Effect.mapError((error) =>
+          pipelineFailure(
+            error.code === "storage_failure"
+              ? "transcript_evidence_unknown"
+              : "transcript_evidence_failed"
+          )
+        )
       );
       if (Option.isSome(recovered)) {
         const completed = yield* input.transcriptionRepository.complete(

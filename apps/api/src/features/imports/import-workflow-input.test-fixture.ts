@@ -4,7 +4,7 @@ import {
   task,
 } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import {
   ImportObservabilityTraceStore,
@@ -20,13 +20,13 @@ interface CurrentInputWorkflowTestEnv {
   readonly CurrentInputWorkflow: {
     readonly create: (options: {
       readonly id: string;
-      readonly params: unknown;
+      readonly params: Schema.Json;
     }) => Promise<void>;
     readonly get: (id: string) => Promise<{
       readonly restart: (options: {
         readonly from: { readonly name: string; readonly type: "do" };
       }) => Promise<void>;
-      readonly status: () => Promise<unknown>;
+      readonly status: () => Promise<Schema.Json>;
     }>;
     readonly unsafeStartIntrospection: () => Promise<string>;
     readonly unsafeStopIntrospection: (sessionId: string) => Promise<void>;
@@ -59,9 +59,10 @@ const increment = (
 
 const workflowExport = {
   kind: "workflow" as const,
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU004 alchemy@2.0.0-beta.72): WorkflowExport.make(env: unknown) erases behaviorful KV/D1 bindings; Schema cannot reconstruct branded host handles or their runtime behavior. Remove when Alchemy provides a precise env generic or supported real-runtime harness.
   make: (rawEnv: unknown) => {
     const env = rawEnv as CurrentInputWorkflowTestEnv;
-    return Effect.succeed((rawInput: unknown) =>
+    return Effect.succeed((rawInput: Schema.Json) =>
       Effect.gen(function* runCurrentInputWorkflow() {
         const event = yield* WorkflowEvent;
         const workflowRun = yield* increment(
@@ -118,27 +119,26 @@ const CurrentInputWorkflowBridge = makeWorkflowBridge(WorkflowEntrypoint, {
 
 export class CurrentInputWorkflow extends CurrentInputWorkflowBridge {}
 
+const WorkflowCommand = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("read"), id: Schema.String }),
+  Schema.Struct({ action: Schema.Literal("restart"), id: Schema.String }),
+  Schema.Struct({
+    action: Schema.Literal("run"),
+    expectedStatus: Schema.Literals(["complete", "errored"]),
+    id: Schema.String,
+    input: Schema.Json,
+  }),
+]);
+
 const readRequest = (request: Request) =>
-  request.json() as Promise<
-    | {
-        readonly action: "read";
-        readonly id: string;
-      }
-    | {
-        readonly action: "restart";
-        readonly id: string;
-      }
-    | {
-        readonly action: "run";
-        readonly expectedStatus: "complete" | "errored";
-        readonly id: string;
-        readonly input: unknown;
-      }
-  >;
+  Effect.runPromise(
+    Effect.promise(() => request.json()).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(WorkflowCommand))
+    )
+  );
 
 export default {
-  fetch: async (request: Request, rawEnv: unknown) => {
-    const env = rawEnv as CurrentInputWorkflowTestEnv;
+  fetch: async (request: Request, env: CurrentInputWorkflowTestEnv) => {
     const command = await readRequest(request);
     if (command.action === "read") {
       const read = (name: string) =>

@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
 import { NodeHttpClient } from "@effect/platform-node";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Cause, Effect, Exit, Layer, Option, Redacted, Schema } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { describe, expect, it } from "vitest";
 
@@ -196,7 +196,7 @@ const makeUnitLive = (
   );
 };
 
-const respondJson = (response: ServerResponse, body: unknown): void => {
+const respondJson = (response: ServerResponse, body: Schema.Json): void => {
   response.writeHead(200, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
 };
@@ -239,10 +239,11 @@ describe("makeTescoXapiCatalogueLive", () => {
       const catalogue = yield* TescoCatalogue;
       return yield* catalogue.search(searchRequest("milk"));
     }).pipe(Effect.provide(Live));
-    const failure: unknown = await Effect.runPromise(effect).then(
-      () => null,
-      (error: unknown) => error
-    );
+    const exit = await Effect.runPromiseExit(effect);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected an invalid Tesco search response");
+    }
+    const failure = Option.getOrThrow(Cause.findErrorOption(exit.cause));
 
     expect(failure).toMatchObject({
       _tag: "TescoCatalogueResponseInvalid",
@@ -284,10 +285,11 @@ describe("makeTescoXapiCatalogueLive", () => {
       const catalogue = yield* TescoCatalogue;
       return yield* catalogue.suggestions(suggestionsRequest);
     }).pipe(Effect.provide(Live));
-    const failure: unknown = await Effect.runPromise(effect).then(
-      () => null,
-      (error: unknown) => error
-    );
+    const exit = await Effect.runPromiseExit(effect);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected an invalid Tesco suggestions response");
+    }
+    const failure = Option.getOrThrow(Cause.findErrorOption(exit.cause));
 
     expect(failure).toMatchObject({
       _tag: "TescoCatalogueResponseInvalid",

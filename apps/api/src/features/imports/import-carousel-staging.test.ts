@@ -41,24 +41,24 @@ const makeBucket = () => {
   const bucket: AcquisitionBucketLike = {
     get: (key) => {
       const object = objects.get(key);
-      return Promise.resolve(
+      return Effect.succeed(
         object === undefined
           ? null
           : {
               arrayBuffer: () =>
-                Promise.resolve(Uint8Array.from(object.bytes).buffer),
+                Effect.succeed(Uint8Array.from(object.bytes).buffer),
               checksums: { sha256: object.options.sha256 },
               customMetadata: object.options.customMetadata,
               httpMetadata: object.options.httpMetadata,
               size: object.bytes.byteLength,
               text: () =>
-                Promise.resolve(new TextDecoder().decode(object.bytes)),
+                Effect.succeed(new TextDecoder().decode(object.bytes)),
             }
       );
     },
     head: (key) => {
       const object = objects.get(key);
-      return Promise.resolve(
+      return Effect.succeed(
         object === undefined
           ? null
           : {
@@ -69,26 +69,27 @@ const makeBucket = () => {
             }
       );
     },
-    put: (key, value, options) => {
-      if (objects.has(key)) {
-        return Promise.resolve(null);
-      }
-      if (!ArrayBuffer.isView(value)) {
-        throw new TypeError("Test bucket accepts byte views only");
-      }
-      const bytes = new Uint8Array(
-        value.buffer,
-        value.byteOffset,
-        value.byteLength
-      );
-      objects.set(key, { bytes: Uint8Array.from(bytes), options });
-      return Promise.resolve({
-        checksums: { sha256: options.sha256 },
-        customMetadata: options.customMetadata,
-        httpMetadata: options.httpMetadata,
-        size: bytes.byteLength,
-      });
-    },
+    put: (key, value, options) =>
+      Effect.sync(() => {
+        if (objects.has(key)) {
+          return null;
+        }
+        if (!ArrayBuffer.isView(value)) {
+          throw new TypeError("Test bucket accepts byte views only");
+        }
+        const bytes = new Uint8Array(
+          value.buffer,
+          value.byteOffset,
+          value.byteLength
+        );
+        objects.set(key, { bytes: Uint8Array.from(bytes), options });
+        return {
+          checksums: { sha256: options.sha256 },
+          customMetadata: options.customMetadata,
+          httpMetadata: options.httpMetadata,
+          size: bytes.byteLength,
+        };
+      }),
   };
   return { bucket, objects };
 };

@@ -10,7 +10,6 @@ import {
   RecipeImportApiClient,
 } from "@meal-planner/recipe-import-api";
 import { applyD1Migrations, env } from "cloudflare:test";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import {
   Cause,
   Effect,
@@ -38,7 +37,10 @@ import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
   PreparedMediaArtifact,
+  R2ObjectBodyLike,
+  R2ObjectLike,
 } from "./import-media-acquirer.js";
+import { RetryableAcquisitionError } from "./import-media.errors.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
@@ -56,6 +58,16 @@ import {
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import type { makeImportWorkerRequestLayer as MakeImportWorkerRequestLayer } from "./import-worker-request-layer.js";
+import {
+  ImportWorkerR2TestEnvironment,
+  workerTestR2PutBody,
+  workerTestMigrations,
+} from "./import-worker-test-environment.js";
+import type {
+  WorkerTestD1Database,
+  WorkerTestR2Object,
+  WorkerTestR2ObjectBody,
+} from "./import-worker-test-environment.js";
 import { ImportTimestamp } from "./import.contracts.js";
 import type { ImportId, SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
@@ -64,36 +76,7 @@ import {
   TestImportTrace,
 } from "./import.test-fixtures.js";
 
-interface TestR2Object {
-  readonly checksums?: { readonly sha256?: ArrayBuffer };
-  readonly customMetadata?: Record<string, string>;
-  readonly httpMetadata?: {
-    readonly cacheControl?: string;
-    readonly contentType?: string;
-  };
-  readonly key: string;
-  readonly size: number;
-  readonly text: () => Promise<string>;
-}
-
-interface TestR2Bucket {
-  readonly get: (key: string) => Promise<TestR2Object | null>;
-  readonly head: (key: string) => Promise<TestR2Object | null>;
-  readonly put: (
-    key: string,
-    value: ArrayBufferView | ReadableStream,
-    options?: unknown
-  ) => Promise<TestR2Object | null>;
-}
-
-const testEnv = env as unknown as {
-  readonly ImportEvidenceBucket: TestR2Bucket;
-  readonly MealPlannerDatabase: AnyD1Database;
-  readonly TEST_MIGRATIONS: {
-    readonly name: string;
-    readonly queries: string[];
-  }[];
-};
+const testEnv = Schema.decodeUnknownSync(ImportWorkerR2TestEnvironment)(env);
 
 const bearerToken = "http-worker-private-bearer";
 const canonicalUrl =
@@ -130,11 +113,64 @@ const sourceMedia = new Uint8Array([
 const sourceMediaSha256 =
   "c43403fe022af967a0b859d3e14ea12d6633f4c8ad475816b0c55d85896e8e35";
 
+const testR2Failure = (stage: "store" | "verify") =>
+  new RetryableAcquisitionError({ reason: "container_rpc", stage });
+
+const testR2Object = (object: WorkerTestR2Object): R2ObjectLike => ({
+  ...(object.checksums === undefined ? {} : { checksums: object.checksums }),
+  ...(object.customMetadata === undefined
+    ? {}
+    : { customMetadata: object.customMetadata }),
+  ...(object.httpMetadata === undefined
+    ? {}
+    : { httpMetadata: object.httpMetadata }),
+  size: object.size,
+});
+
+const testR2ObjectBody = (
+  object: WorkerTestR2ObjectBody
+): R2ObjectBodyLike => ({
+  ...testR2Object(object),
+  arrayBuffer: () =>
+    Effect.tryPromise({
+      catch: () => testR2Failure("verify"),
+      try: () => object.arrayBuffer(),
+    }),
+  text: () =>
+    Effect.tryPromise({
+      catch: () => testR2Failure("verify"),
+      try: () => object.text(),
+    }),
+});
+
 const acquisitionBucket = (): AcquisitionBucketLike => ({
-  get: (key) => testEnv.ImportEvidenceBucket.get(key),
-  head: (key) => testEnv.ImportEvidenceBucket.head(key),
+  get: (key) =>
+    Effect.tryPromise({
+      catch: () => testR2Failure("verify"),
+      try: () => testEnv.ImportEvidenceBucket.get(key),
+    }).pipe(
+      Effect.map((object) =>
+        object === null ? null : testR2ObjectBody(object)
+      )
+    ),
+  head: (key) =>
+    Effect.tryPromise({
+      catch: () => testR2Failure("verify"),
+      try: () => testEnv.ImportEvidenceBucket.head(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : testR2Object(object)))
+    ),
   put: (key, value, options) =>
-    testEnv.ImportEvidenceBucket.put(key, value, options),
+    Effect.gen(function* putTestR2Object() {
+      const bytes = yield* workerTestR2PutBody(value, options.contentLength);
+      const object = yield* Effect.tryPromise({
+        catch: () => testR2Failure("store"),
+        try: () => testEnv.ImportEvidenceBucket.put(key, bytes, options),
+      });
+      return object;
+    }).pipe(
+      Effect.map((object) => (object === null ? null : testR2Object(object)))
+    ),
 });
 
 const makeFrameFixture = () =>
@@ -268,7 +304,7 @@ const makeRecipeFixture = (
 
 const makeProviderFreeWorkflowStarter = (input: {
   readonly activeWorkflowIds: Set<string>;
-  readonly database: AnyD1Database;
+  readonly database: WorkerTestD1Database;
   readonly stages: string[];
   readonly started: string[];
 }) => ({
@@ -452,7 +488,9 @@ const makeProviderFreeWorkflowStarter = (input: {
     }).pipe(Effect.orDie),
 });
 
-const failureValue = (exit: Exit.Exit<unknown, unknown>) => {
+const failureValue = <Success, Failure>(
+  exit: Exit.Exit<Success, Failure>
+): Failure | undefined => {
   expect(Exit.isFailure(exit)).toBe(true);
   if (Exit.isSuccess(exit)) {
     throw new Error("Expected the request to fail");
@@ -463,7 +501,7 @@ const failureValue = (exit: Exit.Exit<unknown, unknown>) => {
 };
 
 const auditConfirmation = (
-  database: AnyD1Database,
+  database: WorkerTestD1Database,
   intentId: string,
   fixtureExtractionFingerprint: string
 ) =>
@@ -490,7 +528,7 @@ const auditConfirmation = (
     .first();
 
 const assertNoPrivateTransport = (
-  value: unknown,
+  value: Schema.Json,
   additionalSentinels: readonly string[] = []
 ): void => {
   const sentinels = [
@@ -529,7 +567,7 @@ const assertNoPrivateTransport = (
 beforeAll(async () => {
   await applyD1Migrations(
     testEnv.MealPlannerDatabase,
-    [...testEnv.TEST_MIGRATIONS],
+    workerTestMigrations(testEnv.TEST_MIGRATIONS),
     "d1_migrations"
   );
 });
@@ -1225,12 +1263,19 @@ describe("recipe import intent HTTP API with real D1", () => {
         secondResults.succeededAfterCancellation,
         firstHouseholdCancellationRead,
       ];
-      for (const payload of publicPayloads) {
-        assertNoPrivateTransport(payload, [
+      const serializedPublicPayloads = JSON.stringify(publicPayloads);
+      if (serializedPublicPayloads === undefined) {
+        throw new Error("Expected serializable public payloads");
+      }
+      assertNoPrivateTransport(
+        Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(
+          serializedPublicPayloads
+        ),
+        [
           ...privateR2References(results.created.body.id),
           ...privateR2References(secondResults.created.body.id),
-        ]);
-      }
+        ]
+      );
       expect(JSON.stringify(publicPayloads)).toContain(canonicalUrl);
       expect(workflowStages.slice(0, 14)).toEqual([
         "stored:queued",

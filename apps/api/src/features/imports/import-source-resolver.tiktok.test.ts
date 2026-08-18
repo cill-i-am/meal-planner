@@ -75,7 +75,7 @@ const sessionRecordForMode = (
   })[mode];
 
 const makeRunner = (
-  metadata: unknown,
+  metadata: Schema.Json,
   sessionMode: "invalid" | "missing" | "source-scoped" | "valid" = "valid"
 ) => {
   const calls: { args: readonly string[]; command: string }[] = [];
@@ -483,7 +483,13 @@ describe("TikTok source resolver adapter", () => {
     const resolved = await Effect.runPromise(
       fixture.resolver.resolve(identity)
     );
-    const requests: unknown[] = [];
+    const requests: {
+      readonly accept?: string;
+      readonly acceptLanguage?: string;
+      readonly referer?: string;
+      readonly sessionPresent: boolean;
+      readonly userAgent?: string;
+    }[] = [];
     const client: SecureMediaDownloadClient = {
       request: (_url, _address, _signal, headers) => {
         const { cookie, ...safeHeaders } = headers;

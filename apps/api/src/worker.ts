@@ -1,3 +1,4 @@
+import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
@@ -11,6 +12,7 @@ import * as authSchema from "./features/auth/auth.database-schema.js";
 import { makeMealPlannerAuth } from "./features/auth/auth.js";
 import { makeAuthPrincipalResolver } from "./features/auth/auth.principal.js";
 import { HealthRoutes } from "./features/health/health.routes.js";
+import type { ImportBatchQueueMessage } from "./features/imports/import-batch.contracts.js";
 import { ImportBatchRouteDefinitions } from "./features/imports/import-batch.routes.js";
 import { OperatorCarouselRouteDefinitions } from "./features/imports/import-carousel-operator.routes.js";
 import { makeRecipeImportWorkerHttpLayer } from "./features/imports/import-intent-api.http.js";
@@ -19,7 +21,7 @@ import {
   ImportActorId,
   ImportPrincipal,
 } from "./features/imports/import-intent.js";
-import type { AcquisitionBucketLike } from "./features/imports/import-media-acquirer.js";
+import { adaptAcquisitionBucket } from "./features/imports/import-media-acquisition-bucket.alchemy.js";
 import { makeD1ImportObservabilityTraceStore } from "./features/imports/import-observability.d1.js";
 import {
   ImportObservabilityTraceStore,
@@ -181,7 +183,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           )
         )
     );
-    yield* Cloudflare.Queues.consumeQueueMessages(
+    yield* Cloudflare.Queues.consumeQueueMessages<
+      typeof ImportBatchQueueMessage.Encoded
+    >(
       importBatchDeadLetterQueue,
       { batchSize: 1, maxConcurrency: 1 },
       (messages) =>
@@ -210,6 +214,11 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           return yield* Effect.die("Expected a Web Request source.");
         }
         const database = yield* queryDatabase.raw;
+        const runtimeContext = yield* RuntimeContext;
+        const acquisitionBucket = adaptAcquisitionBucket(
+          evidenceBucket,
+          runtimeContext
+        );
         const authDatabase = drizzle(yield* authQueryDatabase.raw);
         const requestOrigin = new URL(webRequest.url).origin;
         const auth = makeMealPlannerAuth({
@@ -223,11 +232,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             yield* Effect.promise(() => auth.fetch(webRequest))
           );
         }
-        const rawBucket = yield* evidenceBucket.raw;
         const rawImportBatchQueue = yield* importBatchQueueWriter.raw;
         const trace = makeImportTraceContext();
         const requestLayer = makeImportWorkerRequestLayer({
-          bucket: rawBucket as unknown as AcquisitionBucketLike,
+          bucket: acquisitionBucket,
           database,
           importWorkflowStarter: makeImportWorkflowStarter(
             importAcquisitionWorkflow

@@ -1,5 +1,4 @@
-import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
-import { Cause, Effect, Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 
 import {
@@ -14,19 +13,22 @@ import {
 import {
   ProviderKnownZeroSetupFailureMessage,
   ProviderName,
+  RecipeWorkersAiRequest,
+  SafeProviderFailureCode,
+  decodeProviderFailureEvidence,
   failAfter,
   isSafeProviderFailureCode,
-  noLogWorkersAiClient,
   pricedTokenUsage,
   providerErrorDescription,
+  providerFailureFromEvidence,
+  providerFailureFromStatus,
   providerNormalizationDecodeReasonFromDescription,
   safeFailureCode,
 } from "./import-provider-kernel.js";
 import type {
   ProviderDispatchGate,
   ProviderDispatchRequest,
-  SafeProviderFailureCode,
-  WorkersAiBinding,
+  WorkersAiTransport,
 } from "./import-provider-kernel.js";
 import type {
   RecipeEvidenceAssembly,
@@ -40,8 +42,7 @@ import {
 } from "./import-recipe-extractor.js";
 import { groundRecipeCandidate } from "./import-recipe-grounding.js";
 
-export const InstalledRecipeModel =
-  "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
+export { InstalledRecipeModel } from "./import-provider-kernel.js";
 
 const RecipeMaximumCostMicroUsd = 100_000;
 
@@ -54,6 +55,17 @@ type RecipeDispatchOutcome =
       readonly _tag: "Failed";
       readonly code: SafeProviderFailureCode;
     };
+
+const FailedRecipeReplay = Schema.Struct({
+  _tag: Schema.Literal("Failed"),
+  code: SafeProviderFailureCode,
+});
+const decodeFailedRecipeReplay = Schema.decodeUnknownOption(
+  FailedRecipeReplay,
+  {
+    onExcessProperty: "error",
+  }
+);
 
 const recipeReplaySha256 = (valueJson: string) =>
   Effect.tryPromise({
@@ -96,19 +108,13 @@ const recipeConservativeReplay = (
       }
       const parsed = yield* Effect.try({
         catch: () => "malformed_response" as const,
-        try: (): unknown => JSON.parse(replay.valueJson),
+        try: () => JSON.parse(replay.valueJson),
       });
-      if (
-        typeof parsed === "object" &&
-        parsed !== null &&
-        "_tag" in parsed &&
-        parsed._tag === "Failed" &&
-        "code" in parsed &&
-        isSafeProviderFailureCode(parsed.code)
-      ) {
+      const failed = decodeFailedRecipeReplay(parsed);
+      if (Option.isSome(failed)) {
         return {
           _tag: "Failed" as const,
-          code: parsed.code,
+          code: failed.value.code,
         };
       }
       const extraction = yield* Schema.decodeUnknownEffect(RecipeExtraction, {
@@ -181,8 +187,8 @@ const RecipeTransportUsage = Schema.Struct({
   total_tokens: RecipeTransportTokenCount,
 });
 const RecipeJsonModeTransportEnvelope = Schema.Struct({
-  response: Schema.Unknown,
-  usage: Schema.optionalKey(Schema.Unknown),
+  response: Schema.Json,
+  usage: Schema.optionalKey(Schema.Json),
 });
 const decodeRecipeTransportUsage = Schema.decodeUnknownOption(
   RecipeTransportUsage,
@@ -196,27 +202,18 @@ const decodeRecipeJsonModeTransportEnvelope = Schema.decodeUnknownResult(
 const decodeRecipeCandidate = Schema.decodeUnknownResult(RecipeCandidate, {
   onExcessProperty: "error",
 });
-const recipeJsonModeRequest = (request: RecipeEvidenceAssembly) => ({
-  max_tokens: 16_384,
-  messages: [{ content: recipePromptText(request), role: "user" as const }],
-  response_format: {
-    json_schema: Tool.getJsonSchemaFromSchema(RecipeCandidate),
-    type: "json_schema" as const,
-  },
-  temperature: 0,
-});
-
-const invokeWorkersAiRecipe = async (
-  ai: WorkersAiBinding,
-  model: string,
-  body: unknown
-): Promise<Response> => {
-  const response: unknown = await Reflect.apply(ai.run, ai, [model, body]);
-  if (!(response instanceof Response)) {
-    throw new TypeError("Workers AI returned a non-Response recipe result");
-  }
-  return response;
-};
+const recipeJsonModeRequest = (
+  request: RecipeEvidenceAssembly
+): RecipeWorkersAiRequest =>
+  Schema.decodeUnknownSync(RecipeWorkersAiRequest)({
+    max_tokens: 16_384,
+    messages: [{ content: recipePromptText(request), role: "user" }],
+    response_format: {
+      json_schema: Tool.getJsonSchemaFromSchema(RecipeCandidate),
+      type: "json_schema",
+    },
+    temperature: 0,
+  });
 
 type RecipeJsonModeOutcome =
   | {
@@ -232,8 +229,7 @@ type RecipeJsonModeOutcome =
 
 const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
   function* runRecipeJsonModeWorkflow(
-    ai: WorkersAiBinding,
-    model: string,
+    transport: WorkersAiTransport["recipe"],
     request: RecipeEvidenceAssembly,
     observability: {
       readonly correlationId: ImportCorrelationId;
@@ -244,13 +240,12 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
       Effect.gen(function* invokeRecipeJsonMode() {
         const response = yield* Effect.tryPromise({
           catch: (error) => error,
-          try: () =>
-            invokeWorkersAiRecipe(ai, model, recipeJsonModeRequest(request)),
+          try: () => transport.run(recipeJsonModeRequest(request)),
         });
         if (!response.ok) {
           return {
             _tag: "Failed" as const,
-            code: safeFailureCode(Cause.fail({ status: response.status })),
+            code: safeFailureCode(providerFailureFromStatus(response.status)),
           } satisfies RecipeJsonModeOutcome;
         }
         const raw = Option.getOrUndefined(
@@ -355,7 +350,11 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
         const decodeReason = providerNormalizationDecodeReasonFromDescription(
           error instanceof Error
             ? error.message
-            : providerErrorDescription(error)
+            : providerErrorDescription(
+                providerFailureFromEvidence(
+                  Option.getOrUndefined(decodeProviderFailureEvidence(error))
+                )
+              )
         );
         return decodeReason === undefined
           ? Effect.void
@@ -379,7 +378,11 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
           providerNormalizationDecodeReasonFromDescription(
             error instanceof Error
               ? error.message
-              : providerErrorDescription(error)
+              : providerErrorDescription(
+                  providerFailureFromEvidence(
+                    Option.getOrUndefined(decodeProviderFailureEvidence(error))
+                  )
+                )
           ) !== undefined
         ) {
           return "malformed_response" as const;
@@ -387,14 +390,21 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
         if (
           (error instanceof Error
             ? error.message
-            : providerErrorDescription(error)) ===
-          ProviderKnownZeroSetupFailureMessage
+            : providerErrorDescription(
+                providerFailureFromEvidence(
+                  Option.getOrUndefined(decodeProviderFailureEvidence(error))
+                )
+              )) === ProviderKnownZeroSetupFailureMessage
         ) {
           return pilotProviderKnownZeroCostFailure(
             "provider_unavailable" as const
           );
         }
-        return safeFailureCode(Cause.fail(error));
+        return safeFailureCode(
+          providerFailureFromEvidence(
+            Option.getOrUndefined(decodeProviderFailureEvidence(error))
+          )
+        );
       })
     );
   }
@@ -403,22 +413,14 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
 export const makeInstalledRecipeExtractor = Effect.fn(
   "Imports.makeInstalledRecipeExtractor"
 )(function* makeRecipeAdapter(input: {
-  readonly client: QueryGatewayClient;
   readonly correlationId: ImportCorrelationId;
   readonly dispatch: ProviderDispatchGate;
-  readonly model?: string;
+  readonly transport: WorkersAiTransport["recipe"];
 }) {
-  const model = input.model ?? InstalledRecipeModel;
+  const { model } = input.transport;
   const traceStore = Option.getOrUndefined(
     yield* Effect.serviceOption(ImportObservabilityTraceStore)
   );
-  const client = noLogWorkersAiClient(
-    input.client,
-    input.correlationId,
-    "recipe",
-    traceStore
-  );
-  const ai = yield* client.raw;
   return {
     descriptor: Schema.decodeUnknownSync(RecipeExtractorDescriptor)({
       model,
@@ -434,7 +436,7 @@ export const makeInstalledRecipeExtractor = Effect.fn(
             `recipe:${request.importId}:${request.generation}:${request.evidenceFingerprint}`,
           invoke: Effect.gen(function* extractRecipeSemantics() {
             const startedAt = yield* Effect.sync(() => Date.now());
-            const result = yield* runRecipeJsonMode(ai, model, request, {
+            const result = yield* runRecipeJsonMode(input.transport, request, {
               correlationId: input.correlationId,
               traceStore,
             });

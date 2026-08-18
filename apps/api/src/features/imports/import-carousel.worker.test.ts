@@ -1,6 +1,5 @@
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { applyD1Migrations, env } from "cloudflare:test";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { DateTime, Effect, Schema } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -16,12 +15,26 @@ import {
 } from "./import-carousel.js";
 import { makeD1CarouselEvidenceRepository } from "./import-carousel.repository.d1.js";
 import { makeImportIntentApplication } from "./import-intent.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
+import type {
+  AcquisitionBucketLike,
+  R2ObjectBodyLike,
+  R2ObjectLike,
+} from "./import-media-acquirer.js";
+import { RetryableAcquisitionError } from "./import-media.errors.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
 import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
 import { makeDeterministicVisualEvidenceExtractor } from "./import-visual-evidence.fake.js";
+import {
+  ImportWorkerR2TestEnvironment,
+  workerTestR2PutBody,
+  workerTestMigrations,
+} from "./import-worker-test-environment.js";
+import type {
+  WorkerTestR2Object,
+  WorkerTestR2ObjectBody,
+} from "./import-worker-test-environment.js";
 import {
   IdempotencyKey,
   ImportId,
@@ -37,35 +50,7 @@ import {
 } from "./import.test-fixtures.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
-interface TestR2Object {
-  readonly checksums?: { readonly sha256?: ArrayBuffer };
-  readonly customMetadata?: Record<string, string>;
-  readonly httpMetadata?: {
-    readonly cacheControl?: string;
-    readonly contentType?: string;
-  };
-  readonly size: number;
-  readonly text: () => Promise<string>;
-}
-
-interface TestR2Bucket {
-  readonly get: (key: string) => Promise<TestR2Object | null>;
-  readonly head: (key: string) => Promise<TestR2Object | null>;
-  readonly put: (
-    key: string,
-    value: ArrayBufferView | ReadableStream,
-    options?: unknown
-  ) => Promise<TestR2Object | null>;
-}
-
-const testEnv = env as unknown as {
-  readonly ImportEvidenceBucket: TestR2Bucket;
-  readonly MealPlannerDatabase: AnyD1Database;
-  readonly TEST_MIGRATIONS: {
-    readonly name: string;
-    readonly queries: string[];
-  }[];
-};
+const testEnv = Schema.decodeUnknownSync(ImportWorkerR2TestEnvironment)(env);
 
 const decodeIntentId = Schema.decodeUnknownSync(RecipeImportIntentId);
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
@@ -80,11 +65,59 @@ const observedAt = decodeTimestamp("2026-07-22T07:59:00.000Z");
 const completedAt = decodeTimestamp("2026-07-22T08:01:00.000Z");
 const deleteAt = decodeTimestamp("2026-07-29T08:01:00.000Z");
 
+const retryableR2Failure = (stage: "store" | "verify") =>
+  new RetryableAcquisitionError({ reason: "container_rpc", stage });
+
+const r2Object = (object: WorkerTestR2Object): R2ObjectLike => ({
+  checksums: object.checksums,
+  ...(object.customMetadata === undefined
+    ? {}
+    : { customMetadata: object.customMetadata }),
+  ...(object.httpMetadata === undefined
+    ? {}
+    : { httpMetadata: object.httpMetadata }),
+  size: object.size,
+});
+
+const r2ObjectBody = (object: WorkerTestR2ObjectBody): R2ObjectBodyLike => ({
+  ...r2Object(object),
+  arrayBuffer: () =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => object.arrayBuffer(),
+    }),
+  text: () =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => object.text(),
+    }),
+});
+
 const acquisitionBucket = (): AcquisitionBucketLike => ({
-  get: (key) => testEnv.ImportEvidenceBucket.get(key),
-  head: (key) => testEnv.ImportEvidenceBucket.head(key),
+  get: (key) =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => testEnv.ImportEvidenceBucket.get(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2ObjectBody(object)))
+    ),
+  head: (key) =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => testEnv.ImportEvidenceBucket.head(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2Object(object)))
+    ),
   put: (key, value, options) =>
-    testEnv.ImportEvidenceBucket.put(key, value, options),
+    Effect.gen(function* putR2Object() {
+      const body = yield* workerTestR2PutBody(value, options.contentLength);
+      return yield* Effect.tryPromise({
+        catch: () => retryableR2Failure("store"),
+        try: () => testEnv.ImportEvidenceBucket.put(key, body, options),
+      });
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2Object(object)))
+    ),
 });
 
 const seedQueuedImport = async (identity: string) => {
@@ -308,7 +341,7 @@ const runTracer = async (
 beforeAll(async () => {
   await applyD1Migrations(
     testEnv.MealPlannerDatabase,
-    [...testEnv.TEST_MIGRATIONS],
+    workerTestMigrations(testEnv.TEST_MIGRATIONS),
     "d1_migrations"
   );
 });

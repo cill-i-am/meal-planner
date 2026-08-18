@@ -91,24 +91,19 @@ const putPrivate = (
   }
 ) =>
   Effect.gen(function* put() {
-    yield* Effect.tryPromise({
-      catch: failure,
-      try: () =>
-        bucket.put(input.key, input.bytes, {
-          contentLength: input.bytes.byteLength,
-          customMetadata: input.metadata,
-          httpMetadata: {
-            cacheControl: "private, no-store",
-            contentType: input.contentType,
-          },
-          onlyIf: { etagDoesNotMatch: "*" },
-          sha256: checksumBuffer(input.sha256),
-        }),
-    });
-    const stored = yield* Effect.tryPromise({
-      catch: failure,
-      try: () => bucket.head(input.key),
-    });
+    yield* bucket
+      .put(input.key, input.bytes, {
+        contentLength: input.bytes.byteLength,
+        customMetadata: input.metadata,
+        httpMetadata: {
+          cacheControl: "private, no-store",
+          contentType: input.contentType,
+        },
+        onlyIf: { etagDoesNotMatch: "*" },
+        sha256: checksumBuffer(input.sha256),
+      })
+      .pipe(Effect.mapError(failure));
+    const stored = yield* bucket.head(input.key).pipe(Effect.mapError(failure));
     if (
       stored === null ||
       stored.size !== input.bytes.byteLength ||
@@ -202,19 +197,12 @@ const readBytes = (
   expectedSha256: string
 ) =>
   Effect.gen(function* read() {
-    const object = yield* Effect.tryPromise({
-      catch: failure,
-      try: () => bucket.get(key),
-    });
-    if (object === null || object.arrayBuffer === undefined) {
+    const object = yield* bucket.get(key).pipe(Effect.mapError(failure));
+    if (object === null) {
       return yield* Effect.fail(failure());
     }
-    const { arrayBuffer } = object;
     const bytes = new Uint8Array(
-      yield* Effect.tryPromise({
-        catch: failure,
-        try: () => arrayBuffer(),
-      })
+      yield* object.arrayBuffer().pipe(Effect.mapError(failure))
     );
     if (
       bytes.byteLength !== expectedLength ||
@@ -231,18 +219,14 @@ export const loadStagedOperatorCarousel = (input: {
   readonly importId: ImportId;
 }) =>
   Effect.gen(function* load() {
-    const object = yield* Effect.tryPromise({
-      catch: failure,
-      try: () =>
-        input.bucket.get(stagedCarouselManifestObjectKey(input.importId)),
-    });
+    const object = yield* input.bucket
+      .get(stagedCarouselManifestObjectKey(input.importId))
+      .pipe(Effect.mapError(failure));
     if (object === null) {
       return null;
     }
-    const manifest = yield* Effect.tryPromise({
-      catch: failure,
-      try: () => object.text(),
-    }).pipe(
+    const manifest = yield* object.text().pipe(
+      Effect.mapError(failure),
       Effect.flatMap((text) =>
         Effect.try({
           catch: failure,

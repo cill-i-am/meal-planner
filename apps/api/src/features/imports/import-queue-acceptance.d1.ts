@@ -83,7 +83,7 @@ const QueueItemRow = Schema.Struct({
   batchId: ImportBatchIdSchema,
   failureCode: Schema.NullOr(Schema.String),
   id: ImportBatchItemIdSchema,
-  idempotencyKey: Schema.String,
+  idempotencyKey: RecipeImportIntentIdempotencyKey,
   sourceCanonicalId: Schema.String,
   sourceIdentityKind: ImportBatchSourceIdentityKindSchema,
   status: Schema.Literals(["queued", "running", "succeeded", "failed"]),
@@ -102,12 +102,56 @@ const ProjectionItemRow = Schema.Struct({
 const DeadLetterRow = Schema.Struct({
   correlationJson: Schema.String,
   failureCode: Schema.String,
-  idempotencyKey: Schema.String,
+  idempotencyKey: RecipeImportIntentIdempotencyKey,
   replayIntentId: Schema.NullOr(Schema.String),
   replayState: Schema.Literals(["ready", "claimed", "replayed"]),
   sourceCanonicalId: Schema.String,
   sourceIdentityKind: ImportBatchSourceIdentityKindSchema,
 });
+
+const ReplayRow = Schema.Struct({
+  id: ImportBatchIdSchema,
+  requestFingerprint: ImportBatchRequestFingerprint,
+});
+
+const D1MutationResult = Schema.Struct({
+  results: Schema.Array(Schema.Json),
+});
+
+const BatchProjectionResults = Schema.Tuple([
+  Schema.Struct({ results: Schema.Array(BatchRow) }),
+  Schema.Struct({ results: Schema.Array(ProjectionItemRow) }),
+]);
+
+const PendingMessageResults = Schema.Struct({
+  results: Schema.Array(ImportBatchQueueMessageSchema),
+});
+
+const ReplayClaimResults = Schema.Tuple([
+  D1MutationResult,
+  Schema.Struct({ results: Schema.Array(DeadLetterRow) }),
+]);
+
+const ReplayCompletionResults = Schema.Tuple([
+  D1MutationResult,
+  D1MutationResult,
+  D1MutationResult,
+]);
+
+const QueueClaimResults = Schema.Tuple([
+  Schema.Struct({ results: Schema.Array(QueueItemRow) }),
+  D1MutationResult,
+]);
+
+const DeadLetterResults = Schema.Tuple([
+  D1MutationResult,
+  D1MutationResult,
+  D1MutationResult,
+]);
+
+const OperationalCorrelationJson = Schema.fromJsonString(
+  OperationalCorrelationSchema
+);
 
 export type ImportQueueAcceptanceError =
   | ImportBatchQueueMessageNotFound
@@ -122,15 +166,6 @@ const databaseEffect = <A>(operation: () => PromiseLike<A>) =>
 
 const operationalDatabaseEffect = <A>(operation: () => PromiseLike<A>) =>
   databaseEffect(operation).pipe(Effect.orDie);
-
-const decodePersisted = <S extends Schema.ConstraintDecoder<unknown>>(
-  schema: S,
-  value: unknown
-): Effect.Effect<S["Type"], ImportPersistenceCorrupt> =>
-  Effect.try({
-    catch: importPersistenceCorrupt,
-    try: () => Schema.decodeUnknownSync(schema)(value),
-  });
 
 const updateBatchProjection = (
   database: AnyD1Database,
@@ -298,9 +333,7 @@ const readBatchProjection = (
   batchId: ImportBatchId
 ): Effect.Effect<ImportBatchView, ProjectionReadError> =>
   Effect.gen(function* readProjection() {
-    const [batchResult, itemResult] = yield* databaseEffect<
-      readonly { readonly results: readonly unknown[] }[]
-    >(() =>
+    const rawResults = yield* databaseEffect(() =>
       database.batch([
         database
           .prepare(
@@ -329,9 +362,10 @@ const readBatchProjection = (
           .bind(batchId),
       ])
     );
-    if (batchResult === undefined || itemResult === undefined) {
-      return yield* Effect.fail(importPersistenceCorrupt());
-    }
+    const [batchResult, itemResult] = yield* Schema.decodeUnknownEffect(
+      BatchProjectionResults,
+      { onExcessProperty: "ignore" }
+    )(rawResults).pipe(Effect.mapError(importPersistenceCorrupt));
     const [rawBatch] = batchResult.results;
     if (rawBatch === undefined) {
       return yield* Effect.fail<ImportBatchNotFound>({
@@ -339,10 +373,8 @@ const readBatchProjection = (
         batchId,
       });
     }
-    const batch = yield* decodePersisted(BatchRow, rawBatch);
-    const items = yield* Effect.forEach((row) =>
-      decodePersisted(ProjectionItemRow, row)
-    )(itemResult.results);
+    const batch = rawBatch;
+    const items = itemResult.results;
     const counts = {
       failed: 0,
       queued: 0,
@@ -364,7 +396,9 @@ const readBatchProjection = (
         updatedAt: batch.updatedAt,
       }),
     });
-    return yield* decodePersisted(ImportBatchViewSchema, projection);
+    return yield* Schema.decodeUnknownEffect(ImportBatchViewSchema)(
+      projection
+    ).pipe(Effect.mapError(importPersistenceCorrupt));
   });
 
 const pendingMessages = (
@@ -374,9 +408,7 @@ const pendingMessages = (
   readonly ImportBatchQueueMessage[],
   ImportPersistenceCorrupt | ImportPersistenceUnavailable
 > =>
-  databaseEffect<{
-    readonly results: readonly Record<string, unknown>[];
-  }>(() =>
+  databaseEffect(() =>
     database
       .prepare(
         `SELECT batch_id AS batchId, id AS itemId
@@ -385,13 +417,14 @@ const pendingMessages = (
           ORDER BY created_at, id`
       )
       .bind(batchId)
-      .all<Record<string, unknown>>()
+      .all()
   ).pipe(
-    Effect.flatMap(({ results }) =>
-      Effect.forEach((row) =>
-        decodePersisted(ImportBatchQueueMessageSchema, row)
-      )(results)
-    )
+    Effect.flatMap((raw) =>
+      Schema.decodeUnknownEffect(PendingMessageResults, {
+        onExcessProperty: "ignore",
+      })(raw).pipe(Effect.mapError(importPersistenceCorrupt))
+    ),
+    Effect.map(({ results }) => results)
   );
 
 const admissionProjection = (
@@ -418,18 +451,14 @@ export const makeD1ImportBatchStore = (
             WHERE idempotency_key_hash = ?`
         )
         .bind(idempotencyKeyHash)
-        .first<Record<string, unknown>>()
+        .first()
     );
     if (row === null) {
       return Option.none();
     }
-    const existing = yield* decodePersisted(
-      Schema.Struct({
-        id: ImportBatchIdSchema,
-        requestFingerprint: ImportBatchRequestFingerprint,
-      }),
-      row
-    );
+    const existing = yield* Schema.decodeUnknownEffect(ReplayRow, {
+      onExcessProperty: "ignore",
+    })(row).pipe(Effect.mapError(importPersistenceCorrupt));
     if (existing.requestFingerprint !== requestFingerprint) {
       return yield* Effect.fail(importBatchConflict());
     }
@@ -569,7 +598,9 @@ const makeD1OperationalAdapters = (
               _tag: "DeadLetterNotFound",
               itemId,
             })
-          : Effect.sync(() => Schema.decodeUnknownSync(DeadLetterRow)(row))
+          : Schema.decodeUnknownEffect(DeadLetterRow, {
+              onExcessProperty: "ignore",
+            })(row).pipe(Effect.orDie)
       )
     );
 
@@ -583,11 +614,7 @@ const makeD1OperationalAdapters = (
       const claimId = newReplayClaimId();
       const expiresAtEpochMilliseconds =
         claimedAtEpochMilliseconds + replayClaimLeaseMilliseconds;
-      return operationalDatabaseEffect<
-        readonly {
-          readonly results: readonly unknown[];
-        }[]
-      >(() =>
+      return operationalDatabaseEffect(() =>
         database.batch([
           database
             .prepare(
@@ -629,6 +656,11 @@ const makeD1OperationalAdapters = (
             .bind(itemId),
         ])
       ).pipe(
+        Effect.flatMap((raw) =>
+          Schema.decodeUnknownEffect(ReplayClaimResults, {
+            onExcessProperty: "ignore",
+          })(raw).pipe(Effect.orDie)
+        ),
         Effect.flatMap(
           (
             results
@@ -647,10 +679,10 @@ const makeD1OperationalAdapters = (
                 itemId,
               });
             }
-            const row = Schema.decodeUnknownSync(DeadLetterRow)(raw);
+            const row = raw;
             const correlation = Schema.decodeUnknownSync(
-              OperationalCorrelationSchema
-            )(JSON.parse(row.correlationJson));
+              OperationalCorrelationJson
+            )(row.correlationJson);
             if (row.replayState === "replayed") {
               return Effect.succeed({
                 _tag: "AlreadyReplayed",
@@ -674,9 +706,7 @@ const makeD1OperationalAdapters = (
                   row.sourceCanonicalId,
                   row.sourceIdentityKind
                 ),
-                idempotencyKey: Schema.decodeUnknownSync(
-                  RecipeImportIntentIdempotencyKey
-                )(row.idempotencyKey),
+                idempotencyKey: row.idempotencyKey,
               },
               correlation,
             });
@@ -692,11 +722,7 @@ const makeD1OperationalAdapters = (
           "Replay completion time must be a valid ISO timestamp"
         );
       }
-      return operationalDatabaseEffect<
-        readonly {
-          readonly results: readonly unknown[];
-        }[]
-      >(() =>
+      return operationalDatabaseEffect(() =>
         database.batch([
           database
             .prepare(
@@ -770,6 +796,11 @@ const makeD1OperationalAdapters = (
             .bind(itemId, updatedAt, itemId, itemId, claimId, intentId),
         ])
       ).pipe(
+        Effect.flatMap((raw) =>
+          Schema.decodeUnknownEffect(ReplayCompletionResults, {
+            onExcessProperty: "ignore",
+          })(raw).pipe(Effect.orDie)
+        ),
         Effect.flatMap(([completed]) =>
           completed !== undefined && completed.results.length === 1
             ? Effect.void
@@ -785,7 +816,9 @@ const makeD1OperationalAdapters = (
         Effect.map((row) =>
           Schema.decodeUnknownSync(DeadLetterInspection)({
             code: row.failureCode,
-            correlation: JSON.parse(row.correlationJson),
+            correlation: Schema.decodeUnknownSync(OperationalCorrelationJson)(
+              row.correlationJson
+            ),
             itemId,
           })
         )
@@ -864,9 +897,7 @@ export const makeD1ImportQueueAcceptance = (input: {
     deliveryAttempt: ImportBatchDeliveryAttempt
   ) {
     const updatedAt = input.now();
-    const [claimed] = yield* databaseEffect<
-      readonly { readonly results: readonly unknown[] }[]
-    >(() =>
+    const rawResults = yield* databaseEffect(() =>
       input.database.batch([
         input.database
           .prepare(
@@ -906,9 +937,12 @@ export const makeD1ImportQueueAcceptance = (input: {
         updateBatchProjection(input.database, message.batchId, updatedAt),
       ])
     );
-    const rawClaimed = claimed?.results[0];
+    const [claimed] = yield* Schema.decodeUnknownEffect(QueueClaimResults, {
+      onExcessProperty: "ignore",
+    })(rawResults).pipe(Effect.mapError(importPersistenceCorrupt));
+    const [rawClaimed] = claimed.results;
     if (rawClaimed !== undefined) {
-      return Option.some(yield* decodePersisted(QueueItemRow, rawClaimed));
+      return Option.some(rawClaimed);
     }
 
     const stored = yield* databaseEffect(() =>
@@ -919,7 +953,9 @@ export const makeD1ImportQueueAcceptance = (input: {
     if (stored === null) {
       return yield* Effect.fail(failureForMissingMessage(message));
     }
-    yield* decodePersisted(QueueItemRow, stored);
+    yield* Schema.decodeUnknownEffect(QueueItemRow, {
+      onExcessProperty: "ignore",
+    })(stored).pipe(Effect.mapError(importPersistenceCorrupt));
     return Option.none();
   });
 
@@ -1001,10 +1037,6 @@ export const makeD1ImportQueueAcceptance = (input: {
       return;
     }
     const item = claimed.value;
-    const idempotencyKey = yield* decodePersisted(
-      RecipeImportIntentIdempotencyKey,
-      item.idempotencyKey
-    );
     const command = yield* Effect.try({
       catch: importPersistenceCorrupt,
       try: () => ({
@@ -1012,7 +1044,7 @@ export const makeD1ImportQueueAcceptance = (input: {
           item.sourceCanonicalId,
           item.sourceIdentityKind
         ),
-        idempotencyKey,
+        idempotencyKey: item.idempotencyKey,
       }),
     });
     yield* intents.admitResolved(command).pipe(
@@ -1028,9 +1060,7 @@ export const makeD1ImportQueueAcceptance = (input: {
     function* deadLetterBatch(message: ImportBatchQueueMessage) {
       const updatedAt = input.now();
       const correlationJson = JSON.stringify(correlationFor(message));
-      const [failed] = yield* databaseEffect<
-        readonly { readonly results: readonly unknown[] }[]
-      >(() =>
+      const rawResults = yield* databaseEffect(() =>
         input.database.batch([
           input.database
             .prepare(
@@ -1068,7 +1098,10 @@ export const makeD1ImportQueueAcceptance = (input: {
           updateBatchProjection(input.database, message.batchId, updatedAt),
         ])
       );
-      if ((failed?.results.length ?? 0) > 0) {
+      const [failed] = yield* Schema.decodeUnknownEffect(DeadLetterResults, {
+        onExcessProperty: "ignore",
+      })(rawResults).pipe(Effect.mapError(importPersistenceCorrupt));
+      if (failed.results.length > 0) {
         return;
       }
       const existing = yield* databaseEffect(() =>
@@ -1079,7 +1112,9 @@ export const makeD1ImportQueueAcceptance = (input: {
       if (existing === null) {
         return yield* Effect.fail(failureForMissingMessage(message));
       }
-      yield* decodePersisted(QueueItemRow, existing);
+      yield* Schema.decodeUnknownEffect(QueueItemRow, {
+        onExcessProperty: "ignore",
+      })(existing).pipe(Effect.mapError(importPersistenceCorrupt));
     }
   );
 

@@ -149,17 +149,20 @@ export const VisualEvidenceProviderSemantics = Schema.Struct({
   ).pipe(Schema.check(Schema.isMaxLength(MaximumVisualObservations))),
 });
 
-const isUnknownRecord = (
-  input: unknown
-): input is Readonly<Record<string, unknown>> =>
+const isJsonObject = (input: Schema.Json): input is Schema.JsonObject =>
   typeof input === "object" && input !== null && !Array.isArray(input);
 
-const normalizeProviderConfidence = (input: unknown): unknown => {
+const normalizeProviderConfidence = (
+  input: Schema.Json | undefined
+): number => {
   if (input === undefined || input === null) {
     return 0;
   }
-  if (typeof input !== "string") {
+  if (typeof input === "number") {
     return input;
+  }
+  if (typeof input !== "string") {
+    return 0;
   }
   const trimmed = input.trim();
   const numeric = /^(?:\d+(?:\.\d+)?|\.\d+)$/u.exec(trimmed);
@@ -179,18 +182,21 @@ const normalizeProviderConfidence = (input: unknown): unknown => {
  * evidence instead of acquiring authority or aborting transcript processing.
  */
 export const projectVisualProviderSemanticsInput = (
-  input: unknown
-): unknown => {
-  if (!isUnknownRecord(input) || !Array.isArray(input["observations"])) {
+  input: Schema.Json
+): typeof VisualEvidenceProviderSemantics.Type => {
+  if (!isJsonObject(input) || !Array.isArray(input["observations"])) {
     return { observations: [] };
   }
 
-  const observations: unknown[] = [];
+  const observations: {
+    readonly confidence: number;
+    readonly text: string;
+  }[] = [];
   for (const observation of input["observations"].slice(
     0,
     MaximumVisualObservations
   )) {
-    if (!isUnknownRecord(observation)) {
+    if (!isJsonObject(observation)) {
       continue;
     }
     const { text } = observation;

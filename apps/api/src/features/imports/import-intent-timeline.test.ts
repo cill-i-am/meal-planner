@@ -34,7 +34,7 @@ const common = {
   redirectedToIntentId: null,
 } as const;
 
-const project = (eventType: string, input: Record<string, unknown> = {}) =>
+const project = (eventType: string, input: Schema.JsonObject = {}) =>
   Option.map(
     projectImportIntentHistoryRow(
       decodeRow({ ...common, ...input, eventType })
@@ -42,7 +42,7 @@ const project = (eventType: string, input: Record<string, unknown> = {}) =>
     encodeEvent
   );
 
-const keysOf = (value: unknown): readonly string[] => {
+const keysOf = (value: Schema.Json): readonly string[] => {
   if (Array.isArray(value)) {
     return value.flatMap(keysOf);
   }

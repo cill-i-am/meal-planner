@@ -1,5 +1,4 @@
 import { applyD1Migrations, env } from "cloudflare:test";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Cause, Effect, Exit, Option, Schema, Stream } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -18,7 +17,10 @@ import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
   PreparedMediaArtifact,
+  R2ObjectBodyLike,
+  R2ObjectLike,
 } from "./import-media-acquirer.js";
+import { RetryableAcquisitionError } from "./import-media.errors.js";
 import {
   AcquisitionGeneration,
   manifestObjectKey,
@@ -37,6 +39,15 @@ import {
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import {
+  ImportWorkerR2TestEnvironment,
+  workerTestR2PutBody,
+  workerTestMigrations,
+} from "./import-worker-test-environment.js";
+import type {
+  WorkerTestR2Object,
+  WorkerTestR2ObjectBody,
+} from "./import-worker-test-environment.js";
+import {
   ImportId,
   ImportTimestamp,
   SourceCanonicalId,
@@ -52,36 +63,7 @@ const trace = Schema.decodeUnknownSync(ImportTraceContext)({
 const transcriptObjectKey = (importId: string, generation: number) =>
   `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`;
 
-interface TestR2Object {
-  readonly checksums?: { readonly sha256?: ArrayBuffer };
-  readonly customMetadata?: Record<string, string>;
-  readonly httpMetadata?: {
-    readonly cacheControl?: string;
-    readonly contentType?: string;
-  };
-  readonly key: string;
-  readonly size: number;
-  readonly text: () => Promise<string>;
-}
-
-interface TestR2Bucket {
-  readonly get: (key: string) => Promise<TestR2Object | null>;
-  readonly head: (key: string) => Promise<TestR2Object | null>;
-  readonly put: (
-    key: string,
-    value: ArrayBufferView | ReadableStream,
-    options?: unknown
-  ) => Promise<TestR2Object | null>;
-}
-
-const testEnv = env as unknown as {
-  readonly ImportEvidenceBucket: TestR2Bucket;
-  readonly MealPlannerDatabase: AnyD1Database;
-  readonly TEST_MIGRATIONS: {
-    readonly name: string;
-    readonly queries: string[];
-  }[];
-};
+const testEnv = Schema.decodeUnknownSync(ImportWorkerR2TestEnvironment)(env);
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
@@ -104,11 +86,59 @@ const sourceMedia = new Uint8Array([
 const sourceMediaSha256 =
   "c43403fe022af967a0b859d3e14ea12d6633f4c8ad475816b0c55d85896e8e35";
 
+const retryableR2Failure = (stage: "store" | "verify") =>
+  new RetryableAcquisitionError({ reason: "container_rpc", stage });
+
+const r2Object = (object: WorkerTestR2Object): R2ObjectLike => ({
+  checksums: object.checksums,
+  ...(object.customMetadata === undefined
+    ? {}
+    : { customMetadata: object.customMetadata }),
+  ...(object.httpMetadata === undefined
+    ? {}
+    : { httpMetadata: object.httpMetadata }),
+  size: object.size,
+});
+
+const r2ObjectBody = (object: WorkerTestR2ObjectBody): R2ObjectBodyLike => ({
+  ...r2Object(object),
+  arrayBuffer: () =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => object.arrayBuffer(),
+    }),
+  text: () =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => object.text(),
+    }),
+});
+
 const acquisitionBucket = (): AcquisitionBucketLike => ({
-  get: (key) => testEnv.ImportEvidenceBucket.get(key),
-  head: (key) => testEnv.ImportEvidenceBucket.head(key),
+  get: (key) =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => testEnv.ImportEvidenceBucket.get(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2ObjectBody(object)))
+    ),
+  head: (key) =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => testEnv.ImportEvidenceBucket.head(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2Object(object)))
+    ),
   put: (key, value, options) =>
-    testEnv.ImportEvidenceBucket.put(key, value, options),
+    Effect.gen(function* putR2Object() {
+      const body = yield* workerTestR2PutBody(value, options.contentLength);
+      return yield* Effect.tryPromise({
+        catch: () => retryableR2Failure("store"),
+        try: () => testEnv.ImportEvidenceBucket.put(key, body, options),
+      });
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2Object(object)))
+    ),
 });
 
 const makeAudioFixture = () =>
@@ -329,7 +359,7 @@ const makeAcquiredImport = async ({
 beforeAll(async () => {
   await applyD1Migrations(
     testEnv.MealPlannerDatabase,
-    [...testEnv.TEST_MIGRATIONS],
+    workerTestMigrations(testEnv.TEST_MIGRATIONS),
     "d1_migrations"
   );
 });
@@ -559,20 +589,21 @@ describe("provider-free acquired-to-transcript tracer", () => {
           verificationReadsFailed === 0
         ) {
           verificationReadsFailed += 1;
-          return Promise.reject(
-            new Error("simulated transcript verification read failure")
-          );
+          return Effect.fail(retryableR2Failure("verify"));
         }
         return durableBucket.get(key);
       },
       head: (key) => durableBucket.head(key),
-      put: async (key, value, options) => {
-        const object = await durableBucket.put(key, value, options);
-        if (key === transcriptKey) {
-          transcriptPutCommitted = true;
-        }
-        return object;
-      },
+      put: (key, value, options) =>
+        durableBucket.put(key, value, options).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              if (key === transcriptKey) {
+                transcriptPutCommitted = true;
+              }
+            })
+          )
+        ),
     };
 
     const interrupted = await Effect.runPromiseExit(
