@@ -34,14 +34,13 @@ import {
 import { makeImportIntentApplication } from "./import-intent.js";
 import { DeadLetterReplayClaimId } from "./import-operations.js";
 import { makeD1ImportQueueAcceptance } from "./import-queue-acceptance.d1.js";
+import type { ImportSystemAuthorizerShape } from "./import-system.auth.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
-import type { ImportAuthorizerShape } from "./import.auth.js";
-import { ImportAuthorizer } from "./import.auth.js";
 import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
 import { invalidSource, workflowStartUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import {
-  makeTestImportAuthorizer,
+  makeTestSystemAuthorizer,
   TestImportPrincipal,
   TestImportTrace,
 } from "./import.test-fixtures.js";
@@ -64,7 +63,7 @@ const decodeVideoUrl = Schema.decodeUnknownSync(ValidatedVideoUrl);
 const decodeQueueMessage = Schema.decodeUnknownSync(ImportBatchQueueMessage);
 const decodeIntentId = Schema.decodeUnknownSync(RecipeImportIntentId);
 
-let authorizer: ImportAuthorizerShape;
+let authorizer: ImportSystemAuthorizerShape;
 let database: AnyD1Database;
 let persistenceDirectory: string;
 let runtime: Miniflare;
@@ -166,7 +165,7 @@ beforeAll(async () => {
        )`
     ),
   ]);
-  authorizer = await Effect.runPromise(makeTestImportAuthorizer(apiToken));
+  authorizer = await Effect.runPromise(makeTestSystemAuthorizer(apiToken));
 }, 30_000);
 
 beforeEach(async () => {
@@ -290,7 +289,6 @@ const makeHttpHarness = async () => {
   const app = HttpRouter.toWebHandler(
     Layer.mergeAll(
       ImportBatchRoutes,
-      Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
       Layer.succeed(
         ImportSystemAuthorizer,
         ImportSystemAuthorizer.of(authorizer)

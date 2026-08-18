@@ -15,7 +15,7 @@ does not store or project a second public status. Provider terminal settlement
 records that checkpoint and advances the intent through the canonical reducer
 and public history in one atomic operation.
 
-## Household tenancy and configured profiles
+## Household tenancy and organization identity
 
 All recipe-import households share the single `MealPlannerDatabase` D1
 database. `household_scope_id` scopes the canonical aggregate and its import
@@ -27,18 +27,21 @@ private acquired media and artifacts. It does not use its own Durable Object
 storage: durable lifecycle and domain state stay in D1, while private artifacts
 stay in R2. It is not a tenancy or household-storage boundary.
 
-The proof-of-concept household switcher uses an app-local, server-side web
-profile registry pending Better Auth. Each configured profile maps an opaque UI
-alias and display label to a Redacted bearer token and the shared API base URL.
-Only the safe alias and label cross into the browser. Bearer tokens, actor IDs,
-household-scope values or digests, and raw server configuration remain private.
-Browser selection cannot supply a principal, tenancy header, or operational
-credential.
+Better Auth is the global identity and organization control plane. Its dedicated
+D1 database contains identity, session, organization, invitation, and membership
+tables only; recipe-import domain state remains in `MealPlannerDatabase`.
+Email/password sessions use same-origin HttpOnly cookies. An application request
+resolves the Better Auth session, reads its active organization, and then
+requires an explicit matching membership row before creating the typed Effect
+principal. Possession or manipulation of `activeOrganizationId` alone grants no
+authority.
 
-The public Effect HttpApi and generated `RecipeImportApiClient` contract remain
-unchanged. Web server functions select the configured profile's generated
-client; the browser does not restate the wire contract or construct a separate
-HTTP client.
+The public Website Worker forwards auth and `/v1` application requests to the
+private API Worker through a Cloudflare service binding without reconstructing
+the request or response. The browser calls the generated
+`RecipeImportApiClient` at its own origin; native cookie handling supplies the
+session, and no bearer credential, actor ID, or household-scope value is exposed
+to browser code.
 
 ## Admission, ownership, and duplicate handling
 
@@ -159,13 +162,14 @@ health, batch, operator-carousel, and provider-settlement routes, followed by
 one final 404 handler. Batch routes and provider terminal settlement authorize
 one explicitly configured system principal. Operator-carousel remains
 household-principal scoped; associating it with operational routes does not
-grant it system authority. Browser profile selection cannot control either
-system-only surface.
+grant it system authority. Better Auth organization membership cannot control
+either system-only surface.
 
-The TanStack Start application calls the generated client only from server
-functions through an injected Effect Layer. TanStack Query owns browser
-reactivity and polling; TanStack Form owns mutations. The browser never receives
-the private bearer token or chooses an upstream URL, method, path, or header.
+The TanStack Start application calls the generated client from the browser
+through an injected Effect Layer at the current origin. TanStack Query owns
+browser reactivity and polling; TanStack Form owns mutations. The browser never
+receives a private bearer token or constructs a parallel handwritten API
+contract.
 
 ## Persistence and recovery
 

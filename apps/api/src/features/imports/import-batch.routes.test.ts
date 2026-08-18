@@ -27,10 +27,9 @@ import {
 import type { ImportBatchQueueShape } from "./import-batch.service.js";
 import { makeD1ImportBatchStore } from "./import-queue-acceptance.d1.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
-import { ImportAuthorizer } from "./import.auth.js";
 import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
 import { invalidSource } from "./import.errors.js";
-import { makeTestImportAuthorizer } from "./import.test-fixtures.js";
+import { makeTestSystemAuthorizer } from "./import.test-fixtures.js";
 import type { CanonicalSourceIdentityResolverShape } from "./source-identity.js";
 import { ValidatedVideoUrl } from "./source-identity.js";
 
@@ -156,7 +155,7 @@ const makeHarness = async () => {
         : Effect.fail({ _tag: "ImportBatchQueueUnavailable" as const }),
   };
   const authorizer = await Effect.runPromise(
-    makeTestImportAuthorizer(apiToken)
+    makeTestSystemAuthorizer(apiToken)
   );
   const service = makeImportBatchService({
     identityResolver,
@@ -175,7 +174,6 @@ const makeHarness = async () => {
   const app = HttpRouter.toWebHandler(
     Layer.mergeAll(
       ImportBatchRoutes,
-      Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
       Layer.succeed(
         ImportSystemAuthorizer,
         ImportSystemAuthorizer.of(authorizer)

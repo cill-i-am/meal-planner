@@ -21,7 +21,6 @@ import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-te
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import type { VisualEvidenceFailureCode } from "./import-visual-evidence.repository.d1.js";
-import { ImportAuthorizer } from "./import.auth.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -29,7 +28,7 @@ import {
 } from "./import.contracts.js";
 import { workflowStartUnavailable } from "./import.errors.js";
 import {
-  makeTestImportAuthorizer,
+  makeTestSystemAuthorizer,
   seedResolvedTestImportExecution,
 } from "./import.test-fixtures.js";
 import type { ImportWorkflowStarterShape } from "./import.workflow.js";
@@ -565,7 +564,7 @@ const makeApp = async (
   workflowStarter?: Pick<ImportWorkflowStarterShape, "restartFromSpeech">
 ) => {
   const authorizer = await Effect.runPromise(
-    makeTestImportAuthorizer("test-import-token")
+    makeTestSystemAuthorizer("test-import-token")
   );
   const service = makeD1ProviderTerminalSettlementService({
     database: testEnv.MealPlannerDatabase,
@@ -576,7 +575,6 @@ const makeApp = async (
   return HttpRouter.toWebHandler(
     Layer.mergeAll(
       ProviderTerminalSettlementRoutes,
-      Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
       Layer.succeed(
         ImportSystemAuthorizer,
         ImportSystemAuthorizer.of(authorizer)

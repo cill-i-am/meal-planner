@@ -7,10 +7,10 @@ import {
   InternalErrorProblemDetails,
   InvalidRequestProblemDetails,
   RecipeImportApi,
-  RecipeImportBearerAuth,
   RecipeImportCurrentPrincipal,
   RecipeImportDefectBoundary,
   RecipeImportPrincipal,
+  RecipeImportSessionAuth,
   RecipeImportSchemaErrors,
   RecipeNotFoundProblemDetails,
   UnauthorizedProblemDetails,
@@ -31,6 +31,7 @@ import {
   Etag,
   HttpPlatform,
   HttpRouter,
+  HttpServerRequest,
   HttpServerResponse,
 } from "effect/unstable/http";
 import {
@@ -39,6 +40,7 @@ import {
   HttpApiSchema,
 } from "effect/unstable/httpapi";
 
+import { AuthPrincipalResolver } from "../auth/auth.principal.js";
 import type {
   RecipeImportActionMutationConflict,
   RecipeImportActionNotFound,
@@ -61,7 +63,6 @@ import type {
   RecipeImportIntentTransitionRejected,
   makeImportIntentApplication,
 } from "./import-intent.js";
-import { ImportAuthorizer } from "./import.auth.js";
 import type {
   ImportPersistenceCorrupt,
   ImportPersistenceUnavailable,
@@ -471,26 +472,26 @@ const RecipeHandlers = HttpApiBuilder.group(
     )
 );
 
-const RecipeImportBearerAuthLive = Layer.effect(
-  RecipeImportBearerAuth,
-  // eslint-disable-next-line unicorn/no-array-method-this-argument -- This is Effect.map's dual data-first form, not Array.prototype.map's thisArg.
-  Effect.map(ImportAuthorizer, (authorizer) => ({
-    bearerAuth: (httpEffect, { credential }) =>
-      authorizer.authorizeBearer(credential).pipe(
-        Effect.map((principal) =>
-          decodeApiPrincipal({
-            actorId: principal.actorId,
-            householdScopeId: principal.householdScopeId,
-          })
-        ),
-        Effect.mapError(() => unauthorizedProblem),
-        Effect.flatMap((principal) =>
-          httpEffect.pipe(
+const RecipeImportSessionAuthLive = Layer.effect(
+  RecipeImportSessionAuth,
+  AuthPrincipalResolver.pipe(
+    Effect.map((resolver) =>
+      RecipeImportSessionAuth.of((httpEffect) =>
+        Effect.gen(function* resolveRecipeImportSession() {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const principal = yield* resolver
+            .resolve(new globalThis.Headers(Object.entries(request.headers)))
+            .pipe(
+              Effect.map(decodeApiPrincipal),
+              Effect.mapError(() => unauthorizedProblem)
+            );
+          return yield* httpEffect.pipe(
             Effect.provideService(RecipeImportCurrentPrincipal, principal)
-          )
-        )
-      ),
-  }))
+          );
+        })
+      )
+    )
+  )
 );
 
 const RecipeImportSchemaErrorsLive =
@@ -527,7 +528,7 @@ const RecipeImportDefectBoundaryLive = Layer.succeed(
 );
 
 const RecipeImportHttpMiddlewareLive = Layer.mergeAll(
-  RecipeImportBearerAuthLive,
+  RecipeImportSessionAuthLive,
   RecipeImportSchemaErrorsLive,
   RecipeImportDefectBoundaryLive
 );

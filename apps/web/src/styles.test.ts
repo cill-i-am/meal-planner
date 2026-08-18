@@ -22,10 +22,11 @@ describe("mobile recipe import layout", () => {
     );
   });
 
-  it("keeps the labeled household switcher touch-sized at desktop and 375px", () => {
-    expect(stylesheet).toMatch(/\.profile-select \{[\s\S]*?min-height: 44px;/u);
+  it("keeps authentication controls touch-sized and stacked at 375px", () => {
+    expect(stylesheet).toMatch(/\.input \{[\s\S]*?min-height: 48px;/u);
+    expect(stylesheet).toMatch(/\.button \{[\s\S]*?min-height: 48px;/u);
     expect(stylesheet).toMatch(
-      /@media \(max-width: 780px\) \{[\s\S]*?\.profile-control \{[\s\S]*?grid-template-columns: minmax\(140px, 170px\);/u
+      /@media \(max-width: 780px\) \{[\s\S]*?\.auth-grid \{\s+grid-template-columns: 1fr;/u
     );
   });
 });

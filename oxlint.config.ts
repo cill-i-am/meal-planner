@@ -6,7 +6,12 @@ export default defineConfig({
   // policies that conflict with these comprehensive Effect schema tests.
   extends: [core],
   // Project-scoped vendor skills are executable tooling, not application source.
-  ignorePatterns: [...core.ignorePatterns, ".agents/**"],
+  ignorePatterns: [
+    ...core.ignorePatterns,
+    ".agents/**",
+    "apps/api/auth-migrations/**/snapshot.json",
+    "apps/api/src/features/auth/auth.database-schema.ts",
+  ],
   overrides: [
     {
       files: [
@@ -59,6 +64,13 @@ export default defineConfig({
         // These are Effect combinators; no Promise callbacks or .then calls exist.
         "promise/prefer-await-to-callbacks": "off",
         "promise/prefer-await-to-then": "off",
+      },
+    },
+    {
+      files: ["apps/api/src/features/auth/auth.principal.ts"],
+      rules: {
+        // Effect.mapError is an Effect combinator, not a Promise callback.
+        "promise/prefer-await-to-callbacks": "off",
       },
     },
     {

@@ -53,7 +53,6 @@ import {
 } from "./import-visual-evidence.fake.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
-import { ImportAuthorizer } from "./import.auth.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -67,7 +66,7 @@ import type {
 } from "./import.repository.js";
 import {
   admitResolvedTestImport,
-  makeTestImportAuthorizer,
+  makeTestSystemAuthorizer,
 } from "./import.test-fixtures.js";
 
 const trace = Schema.decodeUnknownSync(ImportTraceContext)({
@@ -556,7 +555,7 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
     ]);
 
     const authorizer = await Effect.runPromise(
-      makeTestImportAuthorizer("test-import-token")
+      makeTestSystemAuthorizer("test-import-token")
     );
     const service = makeD1ProviderTerminalSettlementService({
       database: testEnv.MealPlannerDatabase,
@@ -566,7 +565,6 @@ describe("provider-free transcript-to-visual-evidence tracer", () => {
     const app = HttpRouter.toWebHandler(
       Layer.mergeAll(
         ProviderTerminalSettlementRoutes,
-        Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
         Layer.succeed(
           ImportSystemAuthorizer,
           ImportSystemAuthorizer.of(authorizer)

@@ -1,4 +1,5 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path = require("node:path");
 import { fileURLToPath } from "node:url";
 
@@ -6,37 +7,65 @@ import { describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 
-const collectFiles = async (entryPath: string): Promise<readonly string[]> => {
-  const entry = await stat(entryPath);
-  if (entry.isFile()) {
-    return [entryPath];
-  }
-
-  const children = await readdir(entryPath);
-  const descendants = await Promise.all(
-    children.map((child) => collectFiles(path.join(entryPath, child)))
-  );
-  return descendants.flat();
-};
+const trackedFiles = execFileSync("git", ["ls-files", "-z"], {
+  cwd: repositoryRoot,
+  encoding: "utf-8",
+})
+  .split("\0")
+  .filter((entryPath) => entryPath.length > 0);
 
 const isProductionSource = (entryPath: string): boolean =>
   [".ts", ".tsx"].includes(path.extname(entryPath)) &&
   !entryPath.includes(".test.") &&
   !entryPath.includes(".integration.") &&
-  !entryPath.includes(".worker.") &&
+  !entryPath.includes(".support.") &&
+  !entryPath.includes(".gen.") &&
+  !entryPath.includes(".generated.") &&
+  !entryPath.includes(".fixture.") &&
+  !entryPath.includes("/test/") &&
+  !entryPath.includes("/tests/") &&
+  !entryPath.includes("/__tests__/") &&
   !entryPath.includes("/fixtures/") &&
-  !entryPath.includes("/test-fixtures/");
+  !entryPath.includes("/fixture/") &&
+  !entryPath.includes("/generated/") &&
+  !entryPath.includes("/test-fixtures/") &&
+  !entryPath.includes("/support/") &&
+  !entryPath.includes("/vendor/");
 
-const loadSources = async (
+type WebProductionSourceCategory = "browser" | "website-worker";
+
+const classifyWebProductionSource = (
+  entryPath: string
+): WebProductionSourceCategory | undefined => {
+  if (
+    !entryPath.startsWith("apps/web/src/") ||
+    !isProductionSource(entryPath)
+  ) {
+    return undefined;
+  }
+
+  return entryPath === "apps/web/src/worker.ts" ? "website-worker" : "browser";
+};
+
+const loadSources = (
   paths: readonly string[],
   include: (path: string) => boolean
 ): Promise<readonly { readonly path: string; readonly source: string }[]> => {
-  const collectedFiles = await Promise.all(paths.map(collectFiles));
-  const files = collectedFiles.flat().filter(include);
+  const requestedPaths = paths.map((entryPath) =>
+    path.relative(repositoryRoot, entryPath)
+  );
+  const files = trackedFiles.filter(
+    (entryPath) =>
+      requestedPaths.some(
+        (requestedPath) =>
+          entryPath === requestedPath ||
+          entryPath.startsWith(`${requestedPath}${path.sep}`)
+      ) && include(entryPath)
+  );
   return Promise.all(
     files.map(async (entryPath) => ({
-      path: path.relative(repositoryRoot, entryPath),
-      source: await readFile(entryPath, "utf-8"),
+      path: entryPath,
+      source: await readFile(path.join(repositoryRoot, entryPath), "utf-8"),
     }))
   );
 };
@@ -54,6 +83,37 @@ const violations = (
   );
 
 describe("greenfield recipe-import architecture", () => {
+  it.each([
+    ["apps/web/src/worker.ts", "website-worker"],
+    ["apps/web/src/background.worker.ts", "browser"],
+    ["apps/web/src/supporting/secret.ts", "browser"],
+    ["apps/web/src/secret.supporting.ts", "browser"],
+    ["apps/web/src/generated-client/secret.ts", "browser"],
+    ["apps/web/src/secret.generated-client.ts", "browser"],
+    ["apps/web/src/fixture-data/secret.ts", "browser"],
+    ["apps/web/src/secret.fixture-data.ts", "browser"],
+    ["apps/web/src/support/secret.ts", undefined],
+    ["apps/web/src/secret.support.ts", undefined],
+    ["apps/web/src/test/secret.ts", undefined],
+    ["apps/web/src/tests/secret.ts", undefined],
+    ["apps/web/src/__tests__/secret.ts", undefined],
+    ["apps/web/src/fixtures/secret.ts", undefined],
+    ["apps/web/src/fixture/secret.ts", undefined],
+    ["apps/web/src/generated/secret.ts", undefined],
+    ["apps/web/src/test-fixtures/secret.ts", undefined],
+    ["apps/web/src/vendor/secret.ts", undefined],
+    ["apps/web/src/secret.test.ts", undefined],
+    ["apps/web/src/secret.integration.ts", undefined],
+    ["apps/web/src/secret.gen.ts", undefined],
+    ["apps/web/src/secret.generated.ts", undefined],
+    ["apps/web/src/secret.fixture.ts", undefined],
+    ["apps/web/src/secret.txt", undefined],
+    ["apps/api/src/secret.ts", undefined],
+    ["", undefined],
+  ] as const)("classifies %s as %s", (entryPath, expected) => {
+    expect(classifyWebProductionSource(entryPath)).toBe(expected);
+  });
+
   it("keeps removed compatibility surfaces out of production code", async () => {
     const sources = await loadSources(
       [
@@ -100,13 +160,25 @@ describe("greenfield recipe-import architecture", () => {
     ).toEqual([]);
   });
 
-  it("keeps web runtime configuration at the server composition boundary", async () => {
+  it("keeps browser and website worker code free of runtime secrets", async () => {
     const sources = await loadSources(
-      [`${repositoryRoot}/apps/web/src/features/recipe-import/server`],
-      isProductionSource
+      [`${repositoryRoot}/apps/web/src`],
+      (entryPath) => classifyWebProductionSource(entryPath) !== undefined
+    );
+    const sourcePaths = sources.map(({ path: sourcePath }) => sourcePath);
+    const workerSources = sourcePaths.filter(
+      (sourcePath) =>
+        classifyWebProductionSource(sourcePath) === "website-worker"
+    );
+    const browserSources = sourcePaths.filter(
+      (sourcePath) => classifyWebProductionSource(sourcePath) === "browser"
     );
     const forbidden = [/\bprocess\.env\b/u, /\bRedacted\.make\b/u] as const;
 
+    expect(workerSources).toEqual(["apps/web/src/worker.ts"]);
+    expect(browserSources.length).toBeGreaterThan(0);
+    expect(sourcePaths).not.toContain("apps/web/src/routeTree.gen.ts");
+    expect(sourcePaths).not.toContain("apps/web/src/test/setup.ts");
     expect(
       forbidden.flatMap((pattern) => violations(sources, pattern))
     ).toEqual([]);

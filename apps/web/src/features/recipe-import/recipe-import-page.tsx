@@ -25,17 +25,9 @@ import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
 import { Separator } from "../../components/ui/separator.js";
 import { Skeleton } from "../../components/ui/skeleton.js";
+import { recipeImportQueryKeys } from "./household-query-isolation.js";
 import { recipeImportIntentRedirectSearch } from "./navigation.js";
 import type { RecipeImportOperations } from "./operations.js";
-import {
-  makeRecipeImportProfileSession,
-  recipeImportQueryKeys,
-} from "./profile-query-isolation.js";
-import { RecipeImportProfileAlias } from "./profiles.js";
-import type {
-  RecipeImportProfileAlias as RecipeImportProfileAliasType,
-  RecipeImportPublicProfile,
-} from "./profiles.js";
 
 type ActiveReviewAction = Extract<
   RecipeImportAction,
@@ -367,57 +359,35 @@ const TagsAnswerForm = ({
 };
 
 export const RecipeImportPage = ({
+  householdId,
+  householdName,
   initialIntentId,
   makeRequestId = () => crypto.randomUUID(),
-  onProfileChange,
+  onSignOut,
   operations,
   pollIntervalMs = 650,
-  profileAlias,
-  profiles,
 }: {
+  readonly householdId: string;
+  readonly householdName: string;
   readonly initialIntentId?: RecipeImportIntentId;
   readonly makeRequestId?: () => string;
-  readonly onProfileChange: (
-    profileAlias: RecipeImportProfileAliasType
-  ) => Promise<void>;
+  readonly onSignOut: () => Promise<void>;
   readonly operations: RecipeImportOperations;
   readonly pollIntervalMs?: number;
-  readonly profileAlias: RecipeImportProfileAliasType;
-  readonly profiles: readonly RecipeImportPublicProfile[];
 }) => {
   const queryClient = useQueryClient();
-  const profileSession = useMemo(
-    () => makeRecipeImportProfileSession(),
-    [profileAlias]
-  );
+  const session = useMemo(() => ({ active: true }), [householdId]);
   useEffect(() => {
-    profileSession.mount();
-    return profileSession.unmount;
-  }, [profileSession]);
-  const changeProfile = async (nextAlias: RecipeImportProfileAliasType) => {
-    if (nextAlias === profileAlias) {
-      return;
-    }
-    profileSession.beginSwitch();
-    try {
-      await onProfileChange(nextAlias);
-    } catch {
-      profileSession.recover();
-    }
-  };
-  const activeProfile = profiles.find(
-    (profile) => profile.alias === profileAlias
-  );
-  if (activeProfile === undefined) {
-    throw new Error("Recipe import profile is unavailable.");
-  }
+    session.active = true;
+    return () => {
+      session.active = false;
+    };
+  }, [session]);
   const createMutation = useMutation({
     mutationFn: operations.create,
     retry: false,
   });
-  const createdIntent = profileSession.isActive()
-    ? createMutation.data
-    : undefined;
+  const createdIntent = session.active ? createMutation.data : undefined;
   const activeIntentId = createdIntent?.id ?? initialIntentId;
   const intentQuery = useQuery({
     enabled: activeIntentId !== undefined,
@@ -426,7 +396,7 @@ export const RecipeImportPage = ({
       activeIntentId === undefined
         ? skipToken
         : () => operations.getIntent({ intentId: activeIntentId }),
-    queryKey: recipeImportQueryKeys.intent(profileAlias, activeIntentId),
+    queryKey: recipeImportQueryKeys.intent(householdId, activeIntentId),
     refetchInterval: (query) =>
       query.state.data?.status === "processing" ? pollIntervalMs : false,
     retry: false,
@@ -446,7 +416,7 @@ export const RecipeImportPage = ({
               intentId: actionIntentId,
             }),
     queryKey: recipeImportQueryKeys.action(
-      profileAlias,
+      householdId,
       actionIntentId,
       actionReference?.id
     ),
@@ -460,21 +430,21 @@ export const RecipeImportPage = ({
       recipeId === undefined
         ? skipToken
         : () => operations.getRecipe({ recipeId }),
-    queryKey: recipeImportQueryKeys.recipe(profileAlias, recipeId),
+    queryKey: recipeImportQueryKeys.recipe(householdId, recipeId),
     retry: false,
   });
   const confirmMutation = useMutation({
     mutationFn: operations.confirmAction,
     onSuccess: (succeeded) => {
-      if (!profileSession.isActive()) {
+      if (!session.active) {
         return;
       }
       queryClient.setQueryData(
-        recipeImportQueryKeys.intent(profileAlias, succeeded.id),
+        recipeImportQueryKeys.intent(householdId, succeeded.id),
         succeeded
       );
       return queryClient.invalidateQueries({
-        queryKey: recipeImportQueryKeys.actions(profileAlias, succeeded.id),
+        queryKey: recipeImportQueryKeys.actions(householdId, succeeded.id),
       });
     },
     retry: false,
@@ -482,19 +452,19 @@ export const RecipeImportPage = ({
   const answerMutation = useMutation({
     mutationFn: operations.answerAction,
     onSuccess: (updated) => {
-      if (!profileSession.isActive()) {
+      if (!session.active) {
         return;
       }
       queryClient.setQueryData(
-        recipeImportQueryKeys.intent(profileAlias, updated.id),
+        recipeImportQueryKeys.intent(householdId, updated.id),
         updated
       );
       return Promise.all([
         queryClient.invalidateQueries({
-          queryKey: recipeImportQueryKeys.intent(profileAlias, updated.id),
+          queryKey: recipeImportQueryKeys.intent(householdId, updated.id),
         }),
         queryClient.invalidateQueries({
-          queryKey: recipeImportQueryKeys.actions(profileAlias, updated.id),
+          queryKey: recipeImportQueryKeys.actions(householdId, updated.id),
         }),
       ]);
     },
@@ -503,11 +473,11 @@ export const RecipeImportPage = ({
   const cancelMutation = useMutation({
     mutationFn: operations.cancel,
     onSuccess: (cancelled) => {
-      if (!profileSession.isActive()) {
+      if (!session.active) {
         return;
       }
       return queryClient.setQueryData(
-        recipeImportQueryKeys.intent(profileAlias, cancelled.id),
+        recipeImportQueryKeys.intent(householdId, cancelled.id),
         cancelled
       );
     },
@@ -526,7 +496,7 @@ export const RecipeImportPage = ({
   });
 
   const hasRequestFailure =
-    profileSession.isActive() &&
+    session.active &&
     (createMutation.isError ||
       intentQuery.isError ||
       actionQuery.isError ||
@@ -545,31 +515,11 @@ export const RecipeImportPage = ({
     <main className="app-shell">
       <header className="topbar">
         <span className="wordmark">Meal Planner</span>
-        <div className="profile-control">
-          <Label className="profile-label" htmlFor="recipe-import-profile">
-            Household
-          </Label>
-          <select
-            aria-describedby="active-recipe-import-profile"
-            className="profile-select"
-            id="recipe-import-profile"
-            onChange={(event) => {
-              const nextAlias = Schema.decodeUnknownSync(
-                RecipeImportProfileAlias
-              )(event.target.value);
-              void changeProfile(nextAlias);
-            }}
-            value={profileAlias}
-          >
-            {profiles.map((profile) => (
-              <option key={profile.alias} value={profile.alias}>
-                {profile.label}
-              </option>
-            ))}
-          </select>
-          <span className="active-profile" id="active-recipe-import-profile">
-            Viewing {activeProfile.label}
-          </span>
+        <div className="session-control">
+          <span className="active-household">{householdName}</span>
+          <Button onClick={() => void onSignOut()} type="button">
+            Log out
+          </Button>
         </div>
       </header>
 
@@ -711,7 +661,6 @@ export const RecipeImportPage = ({
                   search={(previous) =>
                     recipeImportIntentRedirectSearch(
                       previous,
-                      profileAlias,
                       intent.redirect.intentId
                     )
                   }

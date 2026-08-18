@@ -539,9 +539,7 @@ describe("RecipeImportApi HttpApi declaration", () => {
       "/v1/recipe-import-intents/{id}/timeline",
       "/v1/recipes/{recipeId}",
     ]);
-    expect(document.components.securitySchemes).toEqual({
-      bearerAuth: { bearerFormat: "opaque", scheme: "Bearer", type: "http" },
-    });
+    expect(document.components.securitySchemes).toEqual({});
 
     const operations = [
       {
@@ -612,7 +610,7 @@ describe("RecipeImportApi HttpApi declaration", () => {
 
     for (const operation of operations) {
       const declaration = document.paths[operation.path]?.[operation.method];
-      expect(declaration?.security).toEqual([{ bearerAuth: [] }]);
+      expect(declaration?.security).toEqual([]);
       expect(Object.keys(declaration?.responses ?? {}).toSorted()).toEqual(
         [operation.success, ...operation.errors].map(String).toSorted()
       );

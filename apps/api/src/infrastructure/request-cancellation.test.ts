@@ -11,7 +11,7 @@ import { makeImportTraceContext } from "../features/imports/import-observability
 import { IdempotencyKey } from "../features/imports/import.contracts.js";
 import { sourceIdentityUnavailable } from "../features/imports/import.errors.js";
 import type { ImportIntentRepositoryShape } from "../features/imports/import.repository.js";
-import { makeTestImportAuthorizer } from "../features/imports/import.test-fixtures.js";
+import { makeTestSystemAuthorizer } from "../features/imports/import.test-fixtures.js";
 import type { CanonicalSourceIdentityResolverShape } from "../features/imports/source-identity.js";
 import {
   raceWithRequestSignal,
@@ -292,7 +292,7 @@ describe("request cancellation", () => {
       },
     });
     const authorizer = await Effect.runPromise(
-      makeTestImportAuthorizer("request-cancellation-token")
+      makeTestSystemAuthorizer("request-cancellation-token")
     );
     const request = new Request(
       "https://meal-planner.test/imports/operator-carousel",

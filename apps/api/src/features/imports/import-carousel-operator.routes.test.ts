@@ -4,19 +4,18 @@ import {
 } from "@meal-planner/recipe-import-api";
 import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
+import { AuthPrincipalResolver } from "../auth/auth.principal.js";
 import {
   MaximumOperatorCarouselRequestBytes,
   OperatorCarouselRoutes,
 } from "./import-carousel-operator.routes.js";
 import { OperatorCarouselImportService } from "./import-carousel-operator.service.js";
 import type { OperatorCarouselImportServiceShape } from "./import-carousel-operator.service.js";
-import type { ImportAuthorizerShape } from "./import.auth.js";
-import { ImportAuthorizer } from "./import.auth.js";
 import { invalidCarouselBundle } from "./import.errors.js";
 import {
-  makeTestImportAuthorizer,
+  makeTestAuthPrincipalResolver,
   TestImportPrincipal,
 } from "./import.test-fixtures.js";
 
@@ -52,19 +51,16 @@ const processingIntent = Schema.decodeUnknownSync(ProcessingRecipeImportIntent)(
 const completeJpegBase64 =
   "/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAADAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z";
 
-let authorizer: ImportAuthorizerShape;
-
-beforeAll(async () => {
-  authorizer = await Effect.runPromise(
-    makeTestImportAuthorizer("test-import-token")
-  );
-});
+const principalResolver = makeTestAuthPrincipalResolver("test-session");
 
 const makeApp = (service: OperatorCarouselImportServiceShape) =>
   HttpRouter.toWebHandler(
     Layer.mergeAll(
       OperatorCarouselRoutes,
-      Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+      Layer.succeed(
+        AuthPrincipalResolver,
+        AuthPrincipalResolver.of(principalResolver)
+      ),
       Layer.succeed(
         OperatorCarouselImportService,
         OperatorCarouselImportService.of(service)
@@ -122,8 +118,8 @@ describe("operator carousel route", () => {
       new Request("https://meal-planner.test/imports/operator-carousel", {
         body: JSON.stringify(body),
         headers: {
-          authorization: "Bearer test-import-token",
           "content-type": "application/json",
+          cookie: "better-auth.session_token=test-session",
           "idempotency-key": "operator-162",
         },
         method: "POST",
@@ -164,8 +160,8 @@ describe("operator carousel route", () => {
       new Request("https://meal-planner.test/imports/operator-carousel", {
         body: "x".repeat(MaximumOperatorCarouselRequestBytes + 1),
         headers: {
-          authorization: "Bearer test-import-token",
           "content-type": "application/json",
+          cookie: "better-auth.session_token=test-session",
           "idempotency-key": "operator-oversized",
         },
         method: "POST",
@@ -203,8 +199,8 @@ describe("operator carousel route", () => {
       new Request("https://meal-planner.test/imports/operator-carousel", {
         body,
         headers: {
-          authorization: "Bearer test-import-token",
           "content-type": "application/json",
+          cookie: "better-auth.session_token=test-session",
           "idempotency-key": "operator-invalid-body",
         },
         method: "POST",
@@ -245,8 +241,8 @@ describe("operator carousel route", () => {
           },
         }),
         headers: {
-          authorization: "Bearer test-import-token",
           "content-type": "application/json",
+          cookie: "better-auth.session_token=test-session",
           "idempotency-key": "operator-invalid",
         },
         method: "POST",

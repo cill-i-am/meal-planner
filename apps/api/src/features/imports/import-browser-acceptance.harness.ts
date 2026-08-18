@@ -15,12 +15,16 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
-import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import {
+  RecipeImportIntentId,
+  RecipeImportPrincipal,
+} from "@meal-planner/recipe-import-api";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Option, Redacted, Schema, Stream } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { Miniflare } from "miniflare";
 
+import { AuthPrincipalResolutionError } from "../auth/auth.principal.js";
 import { makeRecipeImportWorkerHttpLayer } from "./import-intent-api.http.js";
 import { makeImportIntentWorkflowTransitions } from "./import-intent-workflow-transitions.js";
 import { ImportPrincipal } from "./import-intent.js";
@@ -571,13 +575,6 @@ const main = async () => {
     });
     const requestLayer = makeImportWorkerRequestLayer({
       bucket: acquisitionBucket(bucket),
-      configuredPrincipals: [
-        {
-          principal: TestImportPrincipal,
-          token: Redacted.make(bearerTokenA),
-        },
-        { principal: principalB, token: Redacted.make(bearerTokenB) },
-      ],
       database,
       importWorkflowStarter: makeProviderFreeWorkflowStarter({
         activeWorkflowIds: new Set(),
@@ -592,6 +589,26 @@ const main = async () => {
           }),
       },
       now: () => instant,
+      principalResolver: {
+        resolve: (headers) => {
+          const token = headers.get("authorization")?.replace("Bearer ", "");
+          let principal;
+          if (token === bearerTokenA) {
+            principal = TestImportPrincipal;
+          } else if (token === bearerTokenB) {
+            principal = principalB;
+          }
+          return principal === undefined
+            ? Effect.fail(
+                new AuthPrincipalResolutionError({
+                  reason: "invalid_session",
+                })
+              )
+            : Effect.succeed(
+                Schema.decodeUnknownSync(RecipeImportPrincipal)(principal)
+              );
+        },
+      },
       queue: { enqueue: () => Effect.void },
       recipeRecoveryStarter: { start: () => Effect.void },
       runtimeStage: "provider-free-browser-acceptance",

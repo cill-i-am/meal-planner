@@ -1,100 +1,81 @@
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  createFileRoute,
-  redirect,
-  useLoaderData,
-  useNavigate,
-  useSearch,
-} from "@tanstack/react-router";
-import { Schema } from "effect";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { useMemo } from "react";
 
+import { AuthBoundary } from "../features/auth/auth-boundary.js";
+import type { AuthBoundaryActions } from "../features/auth/auth-boundary.js";
 import {
-  canonicalizeRecipeImportSearch,
+  authClient,
+  requireAuthSuccess,
+} from "../features/auth/auth-client.js";
+import { deriveAuthBoundaryState } from "../features/auth/auth-state.js";
+import { makeBrowserRecipeImportOperations } from "../features/recipe-import/browser-operations.js";
+import {
   decodeRecipeImportSearch,
-  recipeImportProfileSwitchSearch,
   recipeImportPageSessionKey,
 } from "../features/recipe-import/navigation.js";
-import type { RecipeImportSearch } from "../features/recipe-import/navigation.js";
-import { makeRecipeImportOperations } from "../features/recipe-import/operations.js";
-import type { RecipeImportServerOperations } from "../features/recipe-import/operations.js";
-import { switchRecipeImportProfile } from "../features/recipe-import/profile-query-isolation.js";
-import { RecipeImportPublicProfileConfiguration } from "../features/recipe-import/profiles.js";
 import { RecipeImportPage } from "../features/recipe-import/recipe-import-page.js";
-import {
-  answerRecipeImportAction,
-  cancelRecipeImportIntent,
-  confirmRecipeImportAction,
-  createRecipeImportIntent,
-  getImportedRecipe,
-  getRecipeImportAction,
-  getRecipeImportIntent,
-  getRecipeImportProfileConfiguration,
-} from "../features/recipe-import/server/functions.js";
 
-const serverOperations: RecipeImportServerOperations = {
-  answerAction: answerRecipeImportAction,
-  cancel: cancelRecipeImportIntent,
-  confirmAction: confirmRecipeImportAction,
-  create: createRecipeImportIntent,
-  getAction: getRecipeImportAction,
-  getIntent: getRecipeImportIntent,
-  getRecipe: getImportedRecipe,
-};
-
-const RecipeImportRoute = () => {
-  const { configuration, profileAlias } = useLoaderData({ from: "/" });
+const MealPlannerRoute = () => {
   const { intentId } = useSearch({ from: "/" });
-  const navigate = useNavigate({ from: "/" });
   const queryClient = useQueryClient();
-  const operations = makeRecipeImportOperations(profileAlias, serverOperations);
+  const session = authClient.useSession();
+  const organizations = authClient.useListOrganizations();
+  const activeOrganization = authClient.useActiveOrganization();
+  const operations = useMemo(() => makeBrowserRecipeImportOperations(), []);
+
+  const signOut = async () => {
+    await requireAuthSuccess(authClient.signOut());
+    queryClient.clear();
+  };
+  const actions: AuthBoundaryActions = {
+    createHousehold: async (input) => {
+      await requireAuthSuccess(authClient.organization.create(input));
+    },
+    retry: async () => {
+      await Promise.all([
+        session.refetch(),
+        organizations.refetch(),
+        activeOrganization.refetch(),
+      ]);
+    },
+    selectHousehold: async (organizationId) => {
+      await requireAuthSuccess(
+        authClient.organization.setActive({ organizationId })
+      );
+    },
+    signIn: async (input) => {
+      await requireAuthSuccess(authClient.signIn.email(input));
+    },
+    signOut,
+    signUp: async (input) => {
+      await requireAuthSuccess(authClient.signUp.email(input));
+    },
+  };
+
+  const state = deriveAuthBoundaryState({
+    activeOrganization,
+    organizations,
+    session,
+  });
 
   return (
-    <RecipeImportPage
-      {...(intentId === undefined ? {} : { initialIntentId: intentId })}
-      key={recipeImportPageSessionKey(profileAlias, intentId)}
-      onProfileChange={(nextAlias) =>
-        switchRecipeImportProfile({
-          currentAlias: profileAlias,
-          navigate: async (alias) => {
-            await navigate({
-              search: (previous) =>
-                recipeImportProfileSwitchSearch(previous, alias),
-              to: "/",
-            });
-          },
-          nextAlias,
-          queryClient,
-        })
-      }
-      operations={operations}
-      profileAlias={profileAlias}
-      profiles={configuration.profiles}
-    />
+    <AuthBoundary actions={actions} state={state}>
+      {(household, logout) => (
+        <RecipeImportPage
+          {...(intentId === undefined ? {} : { initialIntentId: intentId })}
+          householdId={household.id}
+          householdName={household.name}
+          key={recipeImportPageSessionKey(household.id, intentId)}
+          onSignOut={logout}
+          operations={operations}
+        />
+      )}
+    </AuthBoundary>
   );
 };
 
 export const Route = createFileRoute("/")({
-  component: RecipeImportRoute,
-  loader: async ({ deps }: { deps: RecipeImportSearch }) => {
-    const configuration = Schema.decodeUnknownSync(
-      RecipeImportPublicProfileConfiguration,
-      { onExcessProperty: "error" }
-    )(await getRecipeImportProfileConfiguration());
-    const canonicalSearch = canonicalizeRecipeImportSearch(configuration, deps);
-
-    if (deps.profile !== canonicalSearch.profile) {
-      throw redirect({
-        replace: true,
-        search: canonicalSearch,
-        to: "/",
-      });
-    }
-
-    return { configuration, profileAlias: canonicalSearch.profile };
-  },
-  loaderDeps: ({ search }) => ({
-    intentId: search.intentId,
-    profile: search.profile,
-  }),
+  component: MealPlannerRoute,
   validateSearch: decodeRecipeImportSearch,
 });

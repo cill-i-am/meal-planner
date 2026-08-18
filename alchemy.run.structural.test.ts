@@ -81,7 +81,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(stackSource).not.toContain("api.url.as<string>()");
   });
 
-  it("declares one stable D1 resource with versioned local migrations", () => {
+  it("declares the domain D1 resource with its reviewed migration", () => {
     const databaseSource = readRepoFile(
       "./apps/api/src/infrastructure/meal-planner-database.ts"
     );
@@ -114,7 +114,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(migration).not.toContain("import_recipe_terminal_projections");
   });
 
-  it("keeps exactly the reviewed deployable SQL migrations", () => {
+  it("keeps exactly the reviewed domain SQL migrations", () => {
     const migrationsDirectory = fileURLToPath(
       new URL("apps/api/migrations", import.meta.url)
     );
@@ -126,6 +126,85 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       .toSorted();
 
     expect(sqlFiles).toEqual(["0000_recipe_imports.sql"]);
+  });
+
+  it("provisions Better Auth D1 while Drizzle Kit owns its checked-in migrations", () => {
+    const stackSource = readRepoFile("./alchemy.run.ts");
+    const databaseSource = readRepoFile(
+      "./apps/api/src/infrastructure/meal-planner-auth-database.ts"
+    );
+    const authConfigSource = readRepoFile("./apps/api/auth.config.ts");
+    const runtimeAuthSource = readRepoFile(
+      "./apps/api/src/features/auth/auth.ts"
+    );
+    const schemaSource = readRepoFile(
+      "./apps/api/src/features/auth/auth.database-schema.ts"
+    );
+    const drizzleConfigSource = readRepoFile(
+      "./apps/api/drizzle.auth.config.ts"
+    );
+    const authMigrationsDirectory = fileURLToPath(
+      new URL("apps/api/auth-migrations", import.meta.url)
+    );
+    const sqlFiles = readdirSync(authMigrationsDirectory, {
+      recursive: true,
+    })
+      .map(String)
+      .filter((path) => path.endsWith(".sql"))
+      .toSorted();
+
+    expect(databaseSource).toContain('"MealPlannerAuthDatabase"');
+    expect(databaseSource).toContain(
+      'migrationsDir: "./apps/api/auth-migrations"'
+    );
+    expect(databaseSource).toContain('migrationsTable: "d1_migrations"');
+    expect(databaseSource.match(/Cloudflare\.D1\.Database\(/gu)).toHaveLength(
+      1
+    );
+    expect(stackSource).toContain(
+      "authDatabaseName: authDatabase.databaseName"
+    );
+    expect(stackSource).not.toContain("@alchemy.run/better-auth");
+    expect(authConfigSource).toContain("makeMealPlannerAuth");
+    expect(authConfigSource).not.toContain("--adapter");
+    expect(runtimeAuthSource).toContain(
+      'from "@better-auth/drizzle-adapter/relations-v2"'
+    );
+    expect(schemaSource).toContain("defineRelationsPart(");
+    expect(drizzleConfigSource).toContain(
+      'schema: "./src/features/auth/auth.database-schema.ts"'
+    );
+    expect(sqlFiles).toEqual([
+      "20260817221945_auth_control_plane/migration.sql",
+    ]);
+
+    const migration = readRepoFile(
+      `./apps/api/auth-migrations/${sqlFiles[0] ?? "missing"}`
+    );
+    expect(migration).toContain("CREATE TABLE `user`");
+    expect(migration).toContain("CREATE TABLE `session`");
+    expect(migration).toContain("CREATE TABLE `organization`");
+    expect(migration).toContain("CREATE TABLE `member`");
+  });
+
+  it("keeps authentication same-origin through the Website service binding", () => {
+    const stackSource = readRepoFile("./alchemy.run.ts");
+    const apiWorkerSource = readRepoFile("./apps/api/src/worker.ts");
+    const websiteWorkerSource = readRepoFile("./apps/web/src/worker.ts");
+
+    expect(stackSource).toContain(
+      'Cloudflare.Website.Vite("MealPlannerWebsite"'
+    );
+    expect(stackSource).toContain(
+      'assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] }'
+    );
+    expect(stackSource).toContain("env: { MEAL_PLANNER_API: api }");
+    expect(stackSource).toContain('main: "src/worker.ts"');
+    expect(apiWorkerSource).toContain("auth.fetch(webRequest)");
+    expect(apiWorkerSource).toContain('Config.redacted("BETTER_AUTH_SECRET")');
+    expect(websiteWorkerSource).toContain(
+      "proxyApiRequest(request, environment.MEAL_PLANNER_API)"
+    );
   });
 
   it("binds the least-privilege acquisition resources without Images or Sharp", () => {
@@ -171,9 +250,6 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
     expect(authorizationConfigSource).toMatch(
       /Config\.redacted\(\s*"MEAL_PLANNER_IMPORT_API_TOKEN"\s*\)/u
-    );
-    expect(authorizationConfigSource).toContain(
-      'Config.redacted("MEAL_PLANNER_IMPORT_CONFIGURED_PRINCIPALS_JSON")'
     );
     expect(workerSource).toContain(
       'Config.string("MEAL_PLANNER_IMPORT_ACTOR_ID")'
@@ -287,7 +363,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(ignoreSource).toContain(".dev.vars.*");
   });
 
-  it("documents stage, profile, bootstrap, optional URL, and cleanup boundaries", () => {
+  it("documents stage, auth, bootstrap, optional URL, and cleanup boundaries", () => {
     const docs = readRepoFile("./docs/infrastructure/alchemy.md");
     const architecture = readRepoFile(
       "./docs/architecture/recipe-import-intent.md"
@@ -310,8 +386,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       /does not use its own Durable Object\s+storage/u
     );
     expect(architecture).toContain("Better Auth");
-    expect(webDocs).toContain("server-only profile registry");
-    expect(webDocs).toContain("Better Auth");
+    expect(webDocs).toContain("same-origin email/password authentication");
+    expect(webDocs).toContain("Drizzle Kit is the only schema migration owner");
     expect(packageSource).not.toContain('"alchemy:dev"');
   });
 });

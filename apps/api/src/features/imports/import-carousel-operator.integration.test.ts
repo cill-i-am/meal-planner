@@ -8,17 +8,17 @@ import { HttpRouter } from "effect/unstable/http";
 import { Miniflare } from "miniflare";
 import { describe, expect, it } from "vitest";
 
+import { AuthPrincipalResolver } from "../auth/auth.principal.js";
 import { OperatorCarouselRoutes } from "./import-carousel-operator.routes.js";
 import {
   makeOperatorCarouselImportService,
   OperatorCarouselImportService,
 } from "./import-carousel-operator.service.js";
 import { makeImportIntentApplication } from "./import-intent.js";
-import { ImportAuthorizer } from "./import.auth.js";
 import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import {
-  makeTestImportAuthorizer,
+  makeTestAuthPrincipalResolver,
   TestImportTrace,
 } from "./import.test-fixtures.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
@@ -63,7 +63,9 @@ const postBundle = (
     new Request("https://meal-planner.test/imports/operator-carousel", {
       body: JSON.stringify(body),
       headers: {
-        ...(authorized ? { authorization: `Bearer ${apiToken}` } : {}),
+        ...(authorized
+          ? { cookie: `better-auth.session_token=${apiToken}` }
+          : {}),
         "content-type": "application/json",
         "idempotency-key": idempotencyKey,
       },
@@ -121,13 +123,13 @@ describe("operator carousel HTTP integration", () => {
           }),
       },
     });
-    const authorizer = await Effect.runPromise(
-      makeTestImportAuthorizer(apiToken)
-    );
     const app = HttpRouter.toWebHandler(
       Layer.mergeAll(
         OperatorCarouselRoutes,
-        Layer.succeed(ImportAuthorizer, ImportAuthorizer.of(authorizer)),
+        Layer.succeed(
+          AuthPrincipalResolver,
+          AuthPrincipalResolver.of(makeTestAuthPrincipalResolver(apiToken))
+        ),
         Layer.succeed(
           OperatorCarouselImportService,
           OperatorCarouselImportService.of(service)
