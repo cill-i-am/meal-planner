@@ -562,12 +562,16 @@ const makeApp = async (
   const authorizer = await Effect.runPromise(
     makeTestSystemAuthorizer("test-import-token")
   );
-  const service = makeD1ProviderTerminalSettlementService({
+  const serviceOptions = {
     database: testEnv.MealPlannerDatabase,
     now: () => decodeImportTimestamp("2026-07-27T10:01:00.000Z"),
     runtimeStage,
-    ...(workflowStarter === undefined ? {} : { workflowStarter }),
-  });
+  };
+  const service = makeD1ProviderTerminalSettlementService(
+    workflowStarter === undefined
+      ? serviceOptions
+      : { ...serviceOptions, workflowStarter }
+  );
   return HttpRouter.toWebHandler(
     Layer.mergeAll(
       ProviderTerminalSettlementRoutes,
@@ -2790,12 +2794,15 @@ describe("authenticated terminal recipe unknown-cost reconciliation", () => {
       providerStageId,
       runId
     ) => {
-      const seeded = await seedPoisonedTerminalRecipeImport(suffix, {
+      const seedOptions = {
         maximumCostMicroUsd,
         persistCheckpoint,
         providerStageId,
-        ...(runId === undefined ? {} : { runId }),
-      });
+      };
+      const seeded = await seedPoisonedTerminalRecipeImport(
+        suffix,
+        runId === undefined ? seedOptions : { ...seedOptions, runId }
+      );
       const app = await makeApp(runtimeStage);
 
       const response = await postSettlement(app, recipeCommandFor(seeded));

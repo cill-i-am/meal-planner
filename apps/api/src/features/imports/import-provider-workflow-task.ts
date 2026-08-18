@@ -58,12 +58,30 @@ const terminalFailureCheckpoint = (
   stage: ProviderTaskStage,
   code: string,
   reasonCode?: ProviderTaskFailureCheckpoint["reasonCode"]
-): ProviderTaskFailureCheckpoint => ({
-  _tag: "Failed",
-  code,
-  ...(reasonCode === undefined ? {} : { reasonCode }),
-  stage,
-});
+): ProviderTaskFailureCheckpoint =>
+  reasonCode === undefined
+    ? { _tag: "Failed", code, stage }
+    : { _tag: "Failed", code, reasonCode, stage };
+
+const terminalFailureEvent = (
+  trace: ImportTraceContext,
+  stage: ProviderTaskStage,
+  reasonCode?: ProviderTaskFailureCheckpoint["reasonCode"]
+) =>
+  reasonCode === undefined
+    ? {
+        correlationId: trace.correlationId,
+        event: "provider.terminal" as const,
+        outcome: "failed" as const,
+        providerStage: stage,
+      }
+    : {
+        correlationId: trace.correlationId,
+        event: "provider.terminal" as const,
+        outcome: "failed" as const,
+        providerStage: stage,
+        reasonCode,
+      };
 
 /**
  * Keeps retryable provider failures in Cloudflare's native retry path until
@@ -96,13 +114,9 @@ export const runProviderTaskAttempt = <
             return (
               trace === undefined
                 ? Effect.void
-                : emitImportObservabilityEvent({
-                    correlationId: trace.correlationId,
-                    event: "provider.terminal",
-                    outcome: "failed",
-                    providerStage: stage,
-                    ...(reasonCode === undefined ? {} : { reasonCode }),
-                  })
+                : emitImportObservabilityEvent(
+                    terminalFailureEvent(trace, stage, reasonCode)
+                  )
             ).pipe(
               Effect.as(terminalFailureCheckpoint(stage, code, reasonCode))
             );

@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
+import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
   makeProviderTransports,
   makeRawProviderTransports,
@@ -682,7 +683,7 @@ describe("installed speech provider adapter", () => {
       expect(exit._tag).toBe("Failure");
       expect(JSON.stringify(exit)).toContain("SpeechTranscriptionFailure");
       expect(JSON.stringify(exit)).toContain("malformed_response");
-      expect(trace.events.at(-1)).toEqual({
+      let expected: ImportObservabilityEvent = {
         correlationId,
         decodeReason:
           speechEnvelopeFailure === "normalized_text_invalid"
@@ -697,13 +698,14 @@ describe("installed speech provider adapter", () => {
         providerStage: "speech",
         speechEnvelopeFailure,
         speechEnvelopeFamily,
-        ...(speechEnvelopeUnsupportedLocation === undefined
-          ? {}
-          : { speechEnvelopeUnsupportedLocation }),
-        ...(speechEnvelopeUnsupportedRootProperty === undefined
-          ? {}
-          : { speechEnvelopeUnsupportedRootProperty }),
-      });
+      };
+      if (speechEnvelopeUnsupportedLocation !== undefined) {
+        expected = { ...expected, speechEnvelopeUnsupportedLocation };
+      }
+      if (speechEnvelopeUnsupportedRootProperty !== undefined) {
+        expected = { ...expected, speechEnvelopeUnsupportedRootProperty };
+      }
+      expect(trace.events.at(-1)).toEqual(expected);
       expect(JSON.stringify(exit)).not.toContain("private-shape-canary");
       expect(JSON.stringify(trace.events)).not.toContain(
         "private-shape-canary"
@@ -831,7 +833,7 @@ describe("installed speech provider adapter", () => {
       );
 
       expect(exit._tag).toBe("Failure");
-      expect(trace.events.at(-1)).toEqual({
+      const expected = {
         correlationId,
         decodeReason: "speech_envelope_schema_invalid",
         decodeStage: "speech_envelope",
@@ -841,10 +843,12 @@ describe("installed speech provider adapter", () => {
         speechEnvelopeFailure: "unsupported_property",
         speechEnvelopeFamily,
         speechEnvelopeUnsupportedLocation,
-        ...(speechEnvelopeUnsupportedRootProperty === undefined
-          ? {}
-          : { speechEnvelopeUnsupportedRootProperty }),
-      });
+      };
+      expect(trace.events.at(-1)).toEqual(
+        speechEnvelopeUnsupportedRootProperty === undefined
+          ? expected
+          : { ...expected, speechEnvelopeUnsupportedRootProperty }
+      );
       expect(Object.keys(trace.events.at(-1) ?? {}).toSorted()).toEqual([
         "correlationId",
         "decodeReason",

@@ -44,11 +44,10 @@ export interface VisualEvidencePipelineFailure {
 const pipelineFailure = (
   code: VisualEvidencePipelineFailure["code"],
   reasonCode?: ProviderTaskDiagnosticReasonCode
-): VisualEvidencePipelineFailure => ({
-  _tag: "VisualEvidencePipelineFailure",
-  code,
-  ...(reasonCode === undefined ? {} : { reasonCode }),
-});
+): VisualEvidencePipelineFailure =>
+  reasonCode === undefined
+    ? { _tag: "VisualEvidencePipelineFailure", code }
+    : { _tag: "VisualEvidencePipelineFailure", code, reasonCode };
 const bytesToHex = (value: ArrayBuffer) =>
   Array.from(new Uint8Array(value), (byte) =>
     byte.toString(16).padStart(2, "0")

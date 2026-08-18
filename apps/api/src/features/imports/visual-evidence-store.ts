@@ -100,10 +100,9 @@ export const VisualEvidenceStoreError =
     reasonCode: Schema.optionalKey(Schema.String),
   });
 const failure = (code: VisualEvidenceStoreError["code"], reasonCode?: string) =>
-  new VisualEvidenceStoreError({
-    code,
-    ...(reasonCode === undefined ? {} : { reasonCode }),
-  });
+  new VisualEvidenceStoreError(
+    reasonCode === undefined ? { code } : { code, reasonCode }
+  );
 
 export interface VerifiedVisualEvidence {
   readonly document: VisualEvidenceManifestDocument;

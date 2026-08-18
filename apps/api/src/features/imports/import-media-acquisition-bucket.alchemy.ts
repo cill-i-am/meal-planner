@@ -21,16 +21,19 @@ type AlchemyR2Failure = Effect.Error<
   ReturnType<Cloudflare.R2.ReadWriteBucketClient["head"]>
 >;
 
-const r2Object = (object: AlchemyR2Object): R2ObjectLike => ({
-  checksums: object.checksums,
-  ...(object.customMetadata === undefined
-    ? {}
-    : { customMetadata: object.customMetadata }),
-  ...(object.httpMetadata === undefined
-    ? {}
-    : { httpMetadata: object.httpMetadata }),
-  size: object.size,
-});
+const r2Object = (object: AlchemyR2Object): R2ObjectLike => {
+  let projected: R2ObjectLike = {
+    checksums: object.checksums,
+    size: object.size,
+  };
+  if (object.customMetadata !== undefined) {
+    projected = { ...projected, customMetadata: object.customMetadata };
+  }
+  if (object.httpMetadata !== undefined) {
+    projected = { ...projected, httpMetadata: object.httpMetadata };
+  }
+  return projected;
+};
 
 const retryableR2Failure = (
   stage: "store" | "verify"

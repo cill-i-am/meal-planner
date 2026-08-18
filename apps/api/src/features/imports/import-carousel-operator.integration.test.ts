@@ -61,20 +61,22 @@ const postBundle = (
   body: Schema.Json,
   idempotencyKey: string,
   authorized = true
-) =>
-  handler(
+) => {
+  const headers = new Headers({
+    "content-type": "application/json",
+    "idempotency-key": idempotencyKey,
+  });
+  if (authorized) {
+    headers.set("cookie", `better-auth.session_token=${apiToken}`);
+  }
+  return handler(
     new Request("https://meal-planner.test/imports/operator-carousel", {
       body: JSON.stringify(body),
-      headers: {
-        ...(authorized
-          ? { cookie: `better-auth.session_token=${apiToken}` }
-          : {}),
-        "content-type": "application/json",
-        "idempotency-key": idempotencyKey,
-      },
+      headers,
       method: "POST",
     })
   );
+};
 
 describe("operator carousel HTTP integration", () => {
   it("durably resolves one intent and stages one provider-free carousel", async () => {

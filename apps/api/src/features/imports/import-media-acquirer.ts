@@ -335,10 +335,9 @@ const retryableAt = (
   stage: RetryableAcquisitionFailure["stage"],
   reason?: AcquisitionFailureReason
 ): RetryableAcquisitionFailure =>
-  new RetryableAcquisitionError({
-    ...(reason === undefined ? {} : { reason }),
-    stage,
-  });
+  new RetryableAcquisitionError(
+    reason === undefined ? { stage } : { reason, stage }
+  );
 
 const closeContainerFailure = (
   failure: ContainerAcquisitionError,

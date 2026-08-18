@@ -116,16 +116,19 @@ const sourceMediaSha256 =
 const testR2Failure = (stage: "store" | "verify") =>
   new RetryableAcquisitionError({ reason: "container_rpc", stage });
 
-const testR2Object = (object: WorkerTestR2Object): R2ObjectLike => ({
-  ...(object.checksums === undefined ? {} : { checksums: object.checksums }),
-  ...(object.customMetadata === undefined
-    ? {}
-    : { customMetadata: object.customMetadata }),
-  ...(object.httpMetadata === undefined
-    ? {}
-    : { httpMetadata: object.httpMetadata }),
-  size: object.size,
-});
+const testR2Object = (object: WorkerTestR2Object): R2ObjectLike => {
+  let projected: R2ObjectLike = { size: object.size };
+  if (object.checksums !== undefined) {
+    projected = { ...projected, checksums: object.checksums };
+  }
+  if (object.customMetadata !== undefined) {
+    projected = { ...projected, customMetadata: object.customMetadata };
+  }
+  if (object.httpMetadata !== undefined) {
+    projected = { ...projected, httpMetadata: object.httpMetadata };
+  }
+  return projected;
+};
 
 const testR2ObjectBody = (
   object: WorkerTestR2ObjectBody

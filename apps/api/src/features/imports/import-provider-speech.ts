@@ -295,13 +295,14 @@ const normalizeModelSpecificSpeechProviderResponse = (
   const segments = Array.isArray(normalized["segments"])
     ? normalized["segments"].map(normalizeModelSpecificSpeechProviderSegment)
     : normalized["segments"];
-  return {
-    ...normalized,
-    ...(transcriptionInfo === undefined
-      ? {}
-      : { transcription_info: transcriptionInfo }),
-    ...(segments === undefined ? {} : { segments }),
-  };
+  let response: Schema.JsonObject = { ...normalized };
+  if (transcriptionInfo !== undefined) {
+    response = { ...response, transcription_info: transcriptionInfo };
+  }
+  if (segments !== undefined) {
+    response = { ...response, segments };
+  }
+  return response;
 };
 
 const decodeGenericSpeechResponse = Schema.decodeUnknownOption(
@@ -722,6 +723,35 @@ const classifySpeechEnvelope = (
   return { failure: undefined, family };
 };
 
+const rejectedSpeechEnvelope = (
+  classification: ReturnType<typeof classifySpeechEnvelope>,
+  defaultFailure: SpeechEnvelopeFailure
+) => {
+  const rejected = {
+    _tag: "Rejected" as const,
+    decodeReason: "speech_envelope_schema_invalid" as const,
+    decodeStage: "speech_envelope" as const,
+    speechEnvelopeFailure: classification.failure ?? defaultFailure,
+    speechEnvelopeFamily: classification.family,
+  };
+  const location = classification.unsupportedLocation;
+  const rootProperty = classification.unsupportedRootProperty;
+  if (location === undefined) {
+    if (rootProperty === undefined) {
+      return rejected;
+    }
+    return { ...rejected, speechEnvelopeUnsupportedRootProperty: rootProperty };
+  }
+  if (rootProperty === undefined) {
+    return { ...rejected, speechEnvelopeUnsupportedLocation: location };
+  }
+  return {
+    ...rejected,
+    speechEnvelopeUnsupportedLocation: location,
+    speechEnvelopeUnsupportedRootProperty: rootProperty,
+  };
+};
+
 const decodeSpeechResponse = (
   raw: Schema.Json | undefined
 ):
@@ -742,25 +772,7 @@ const decodeSpeechResponse = (
     } => {
   const classification = classifySpeechEnvelope(raw);
   if (!isUnknownRecord(raw) || classification.failure !== undefined) {
-    return {
-      _tag: "Rejected",
-      decodeReason: "speech_envelope_schema_invalid",
-      decodeStage: "speech_envelope",
-      speechEnvelopeFailure: classification.failure ?? "not_object",
-      speechEnvelopeFamily: classification.family,
-      ...(classification.unsupportedLocation === undefined
-        ? {}
-        : {
-            speechEnvelopeUnsupportedLocation:
-              classification.unsupportedLocation,
-          }),
-      ...(classification.unsupportedRootProperty === undefined
-        ? {}
-        : {
-            speechEnvelopeUnsupportedRootProperty:
-              classification.unsupportedRootProperty,
-          }),
-    };
+    return rejectedSpeechEnvelope(classification, "not_object");
   }
   const isModelSpecific = classification.family === "model_specific";
   const projected = projectDocumentedSpeechResponse(
@@ -777,25 +789,7 @@ const decodeSpeechResponse = (
         Option.map(({ text }) => text)
       );
   if (Option.isNone(envelope)) {
-    return {
-      _tag: "Rejected",
-      decodeReason: "speech_envelope_schema_invalid",
-      decodeStage: "speech_envelope",
-      speechEnvelopeFailure: classification.failure ?? "semantic_constraint",
-      speechEnvelopeFamily: classification.family,
-      ...(classification.unsupportedLocation === undefined
-        ? {}
-        : {
-            speechEnvelopeUnsupportedLocation:
-              classification.unsupportedLocation,
-          }),
-      ...(classification.unsupportedRootProperty === undefined
-        ? {}
-        : {
-            speechEnvelopeUnsupportedRootProperty:
-              classification.unsupportedRootProperty,
-          }),
-    };
+    return rejectedSpeechEnvelope(classification, "semantic_constraint");
   }
   const text = Schema.decodeUnknownOption(SpeechTranscript.fields.text)(
     envelope.value.trim()
@@ -820,23 +814,30 @@ const speechDecodeDiagnostics = (
   transcript: Option.Option<SpeechTranscript>
 ) => {
   if (decoded._tag === "Rejected") {
-    return {
+    const diagnostics = {
       decodeReason: decoded.decodeReason,
       decodeStage: decoded.decodeStage,
       speechEnvelopeFailure: decoded.speechEnvelopeFailure,
       speechEnvelopeFamily: decoded.speechEnvelopeFamily,
-      ...(decoded.speechEnvelopeUnsupportedLocation === undefined
-        ? {}
-        : {
-            speechEnvelopeUnsupportedLocation:
-              decoded.speechEnvelopeUnsupportedLocation,
-          }),
-      ...(decoded.speechEnvelopeUnsupportedRootProperty === undefined
-        ? {}
-        : {
-            speechEnvelopeUnsupportedRootProperty:
-              decoded.speechEnvelopeUnsupportedRootProperty,
-          }),
+    };
+    const location = decoded.speechEnvelopeUnsupportedLocation;
+    const rootProperty = decoded.speechEnvelopeUnsupportedRootProperty;
+    if (location === undefined) {
+      if (rootProperty === undefined) {
+        return diagnostics;
+      }
+      return {
+        ...diagnostics,
+        speechEnvelopeUnsupportedRootProperty: rootProperty,
+      };
+    }
+    if (rootProperty === undefined) {
+      return { ...diagnostics, speechEnvelopeUnsupportedLocation: location };
+    }
+    return {
+      ...diagnostics,
+      speechEnvelopeUnsupportedLocation: location,
+      speechEnvelopeUnsupportedRootProperty: rootProperty,
     };
   }
   if (Option.isNone(transcript)) {

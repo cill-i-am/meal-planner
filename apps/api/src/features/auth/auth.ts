@@ -15,18 +15,20 @@ export const makeMealPlannerAuth = ({
   database,
   schema,
   secret,
-}: MealPlannerAuthOptions) =>
-  betterAuth({
+}: MealPlannerAuthOptions) => {
+  const adapterOptions =
+    schema === undefined
+      ? { provider: "sqlite" as const }
+      : { provider: "sqlite" as const, schema };
+  return betterAuth({
     appName: "Meal Planner",
     baseURL,
-    database: drizzleAdapter(database, {
-      provider: "sqlite",
-      ...(schema === undefined ? {} : { schema }),
-    }),
+    database: drizzleAdapter(database, adapterOptions),
     emailAndPassword: { enabled: true },
     plugins: [organization()],
     secret,
     trustedOrigins: [baseURL],
   });
+};
 
 export type MealPlannerAuth = ReturnType<typeof makeMealPlannerAuth>;

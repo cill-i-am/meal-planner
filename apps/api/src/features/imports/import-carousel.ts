@@ -22,6 +22,7 @@ import {
   VerifiedSourceMetadata,
 } from "./import-media.model.js";
 import { produceRecipeDraftFromEvidence } from "./import-recipe-draft.js";
+import type { ProduceRecipeDraftFromEvidenceInput } from "./import-recipe-draft.js";
 import type { RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import type {
   RecipeEvidenceAssembly,
@@ -841,7 +842,7 @@ export const produceTikTokCarouselRecipeDraft = Effect.fn(
     source
   );
   const now = input.now();
-  const draft = yield* produceRecipeDraftFromEvidence({
+  const draftInput: ProduceRecipeDraftFromEvidenceInput = {
     assembly,
     claim: ({
       descriptor: extractorDescriptor,
@@ -858,7 +859,6 @@ export const produceTikTokCarouselRecipeDraft = Effect.fn(
         startedAt: now,
       }),
     extractor: input.extractor,
-    ...(input.lifecycle === undefined ? {} : { lifecycle: input.lifecycle }),
     now,
     recipeRepository: input.recipeRepository,
     source,
@@ -867,7 +867,12 @@ export const produceTikTokCarouselRecipeDraft = Effect.fn(
       route: "carousel_v2",
       status: "not_applicable",
     },
-  });
+  };
+  const draft = yield* produceRecipeDraftFromEvidence(
+    input.lifecycle === undefined
+      ? draftInput
+      : { ...draftInput, lifecycle: input.lifecycle }
+  );
   return {
     _tag: "CarouselRecipeDraftReady" as const,
     draft,

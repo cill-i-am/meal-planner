@@ -41,10 +41,11 @@ const terminal = (
   new TerminalMediaError({ code, stage: "validation" });
 
 const retryableDownload = (reason?: AcquisitionFailureReason) =>
-  new RetryableAcquisitionError({
-    ...(reason === undefined ? {} : { reason }),
-    stage: "container",
-  });
+  new RetryableAcquisitionError(
+    reason === undefined
+      ? { stage: "container" }
+      : { reason, stage: "container" }
+  );
 const UnsafeMediaDestination = Symbol("UnsafeMediaDestination");
 const MediaDownloadLimitExceeded = Symbol("MediaDownloadLimitExceeded");
 const MediaDownloadDnsFailure = Symbol("MediaDownloadDnsFailure");
@@ -173,25 +174,26 @@ export const NodeSecureMediaDownloadClient: SecureMediaDownloadClient = {
   request: (url, address, signal, requestHeaders) =>
     // eslint-disable-next-line promise/avoid-new -- Node HTTPS exposes response callbacks, not a promise API.
     new Promise((resolve, reject) => {
+      const headers: Record<string, string> = {
+        accept: requestHeaders.accept ?? "*/*",
+        host: url.hostname,
+        "user-agent":
+          requestHeaders.userAgent ?? "MealPlannerMediaAcquirer/1.0",
+      };
+      if (requestHeaders.acceptLanguage !== undefined) {
+        headers["accept-language"] = requestHeaders.acceptLanguage;
+      }
+      if (requestHeaders.referer !== undefined) {
+        headers["referer"] = requestHeaders.referer;
+      }
+      if (requestHeaders.cookie !== undefined) {
+        headers["cookie"] = requestHeaders.cookie;
+      }
       const request = httpsRequest(
         {
           checkServerIdentity: (_hostname, certificate) =>
             checkServerIdentity(url.hostname, certificate),
-          headers: {
-            accept: requestHeaders.accept ?? "*/*",
-            host: url.hostname,
-            "user-agent":
-              requestHeaders.userAgent ?? "MealPlannerMediaAcquirer/1.0",
-            ...(requestHeaders.acceptLanguage === undefined
-              ? {}
-              : { "accept-language": requestHeaders.acceptLanguage }),
-            ...(requestHeaders.referer === undefined
-              ? {}
-              : { referer: requestHeaders.referer }),
-            ...(requestHeaders.cookie === undefined
-              ? {}
-              : { cookie: requestHeaders.cookie }),
-          },
+          headers,
           hostname: address,
           method: "GET",
           path: `${url.pathname}${url.search}`,
@@ -277,10 +279,9 @@ const requestSafeMedia = async (
       session === undefined
         ? undefined
         : mediaSessionCookieHeader(session, url);
-    response = await client.request(url, address, signal, {
-      ...requestHeaders,
-      ...(cookie === undefined ? {} : { cookie }),
-    });
+    const authenticatedHeaders =
+      cookie === undefined ? requestHeaders : { ...requestHeaders, cookie };
+    response = await client.request(url, address, signal, authenticatedHeaders);
   } catch (error) {
     throw error instanceof Error && isAbortError(error)
       ? MediaDownloadTimeout

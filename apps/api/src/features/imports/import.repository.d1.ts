@@ -567,14 +567,13 @@ const processingActivityFor = (row: DatabaseIntentRow) => {
   if (row.publicActivity === null) {
     throw new Error("Processing activity is missing");
   }
-  return row.publicActivity === "retrying"
-    ? {
-        ...(row.publicNextAttemptAt === null
-          ? {}
-          : { nextAttemptAt: row.publicNextAttemptAt }),
-        type: "retrying" as const,
-      }
-    : { type: "working" as const };
+  if (row.publicActivity !== "retrying") {
+    return { type: "working" as const };
+  }
+  const retrying = { type: "retrying" as const };
+  return row.publicNextAttemptAt === null
+    ? retrying
+    : { ...retrying, nextAttemptAt: row.publicNextAttemptAt };
 };
 
 const processingStageFor = (row: DatabaseIntentRow) => {

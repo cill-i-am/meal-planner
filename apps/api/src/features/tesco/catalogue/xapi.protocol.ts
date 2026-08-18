@@ -164,20 +164,25 @@ interface TescoGraphQlQuery<Input, Output> {
 
 const projectTescoListing = (
   listing: typeof TescoListingDto.Type
-): CatalogueProductResults => ({
-  pageInformation: listing.pageInformation,
-  results: listing.results.map(({ node }) => ({
-    id: node.id,
-    title: node.title,
-    type: node.__typename,
-    ...(node.defaultImageUrl === null || node.defaultImageUrl === undefined
-      ? {}
-      : { defaultImageUrl: node.defaultImageUrl }),
-  })),
-  ...(listing.options?.sortBy === undefined
-    ? {}
-    : { sortBy: listing.options.sortBy }),
-});
+): CatalogueProductResults => {
+  const results = listing.results.map(({ node }) => {
+    const projected = {
+      id: node.id,
+      title: node.title,
+      type: node.__typename,
+    };
+    return node.defaultImageUrl === null || node.defaultImageUrl === undefined
+      ? projected
+      : { ...projected, defaultImageUrl: node.defaultImageUrl };
+  });
+  const projected: CatalogueProductResults = {
+    pageInformation: listing.pageInformation,
+    results,
+  };
+  return listing.options?.sortBy === undefined
+    ? projected
+    : { ...projected, sortBy: listing.options.sortBy };
+};
 
 /** Named Tesco search document paired with its response codec and projection. */
 export const TescoSearchQuery: TescoGraphQlQuery<

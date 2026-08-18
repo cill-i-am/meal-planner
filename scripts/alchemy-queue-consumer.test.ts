@@ -484,32 +484,34 @@ const physicalConsumer = (
   physicalDeadLetterQueue: string | null | undefined,
   settings: ConsumerSettings = desiredSettings,
   physicalConsumerId: string = consumerId
-) => ({
-  consumer_id: physicalConsumerId,
-  ...(physicalDeadLetterQueue === undefined
-    ? {}
-    : { dead_letter_queue: physicalDeadLetterQueue }),
-  queue_name: "meal-planner-pilot-gaia-117-import-batch",
-  script: scriptName,
-  settings: {
-    ...(settings.batchSize === undefined
-      ? {}
-      : { batch_size: settings.batchSize }),
-    ...(settings.maxConcurrency === undefined
-      ? {}
-      : { max_concurrency: settings.maxConcurrency }),
-    ...(settings.maxRetries === undefined
-      ? {}
-      : { max_retries: settings.maxRetries }),
-    ...(settings.maxWaitTimeMs === undefined
-      ? {}
-      : { max_wait_time_ms: settings.maxWaitTimeMs }),
-    ...(settings.retryDelay === undefined
-      ? {}
-      : { retry_delay: settings.retryDelay }),
-  },
-  type: "worker",
-});
+) => {
+  const physicalSettings: Record<string, number> = {};
+  if (settings.batchSize !== undefined) {
+    physicalSettings["batch_size"] = settings.batchSize;
+  }
+  if (settings.maxConcurrency !== undefined) {
+    physicalSettings["max_concurrency"] = settings.maxConcurrency;
+  }
+  if (settings.maxRetries !== undefined) {
+    physicalSettings["max_retries"] = settings.maxRetries;
+  }
+  if (settings.maxWaitTimeMs !== undefined) {
+    physicalSettings["max_wait_time_ms"] = settings.maxWaitTimeMs;
+  }
+  if (settings.retryDelay !== undefined) {
+    physicalSettings["retry_delay"] = settings.retryDelay;
+  }
+  const consumer = {
+    consumer_id: physicalConsumerId,
+    queue_name: "meal-planner-pilot-gaia-117-import-batch",
+    script: scriptName,
+    settings: physicalSettings,
+    type: "worker",
+  };
+  return physicalDeadLetterQueue === undefined
+    ? consumer
+    : { ...consumer, dead_letter_queue: physicalDeadLetterQueue };
+};
 
 const physicalQueue = (options: {
   readonly consumers: readonly ReturnType<typeof physicalConsumer>[];

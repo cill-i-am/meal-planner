@@ -141,10 +141,7 @@ export const makePilotProviderDispatchGate = (input: {
         runId: input.runId,
         timestamp,
       };
-      return yield* runPilotProviderDispatch({
-        ...(request.conservativeReplay === undefined
-          ? {}
-          : { conservativeReplay: request.conservativeReplay }),
+      const commonDispatch = {
         invoke: request.invoke,
         onDispatch: emitImportObservabilityEvent({
           correlationId: input.correlationId,
@@ -164,26 +161,36 @@ export const makePilotProviderDispatchGate = (input: {
           outcome: "reserved",
           providerStage: request.providerStage,
         }),
-        onSettlement: (outcome) =>
+        onSettlement: (outcome: "conservative" | "known" | "unknown") =>
           emitImportObservabilityEvent({
             correlationId: input.correlationId,
             event: "provider.settlement",
             outcome,
             providerStage: request.providerStage,
           }),
-        ...(attempt > 1
-          ? {
+        repository: input.repository,
+        reservation,
+      };
+      const replayDispatch =
+        request.conservativeReplay === undefined
+          ? commonDispatch
+          : {
+              ...commonDispatch,
+              conservativeReplay: request.conservativeReplay,
+            };
+      const dispatch =
+        attempt === 1
+          ? replayDispatch
+          : {
+              ...replayDispatch,
               previousAttempt: {
                 ...reservation,
                 dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
                   retryDispatchId(request.dispatchId, attempt - 1)
                 ),
               },
-            }
-          : {}),
-        repository: input.repository,
-        reservation,
-      });
+            };
+      return yield* runPilotProviderDispatch(dispatch);
     }).pipe(
       Effect.provideService(PilotProviderBudgetRuntime, input.runtime),
       Effect.flatMap((result) => {
@@ -252,26 +259,19 @@ export const providerFailureFromEvidence = (
     ).toLowerCase();
     const status = original.status ?? reason.status ?? evidence.status;
     if (status === 429 || tag.includes("rate") || tag.includes("throttl")) {
-      return {
-        code: "throttled",
-        ...(reason.description === undefined
-          ? {}
-          : { description: reason.description }),
-      };
+      return reason.description === undefined
+        ? { code: "throttled" }
+        : { code: "throttled", description: reason.description };
     }
     if (tag.includes("refusal") || tag.includes("contentfilter")) {
-      return {
-        code: "model_refusal",
-        ...(reason.description === undefined
-          ? {}
-          : { description: reason.description }),
-      };
+      return reason.description === undefined
+        ? { code: "model_refusal" }
+        : { code: "model_refusal", description: reason.description };
     }
     const description = reason.description ?? evidence.description;
-    return {
-      code: "provider_unavailable",
-      ...(description === undefined ? {} : { description }),
-    };
+    return description === undefined
+      ? { code: "provider_unavailable" }
+      : { code: "provider_unavailable", description };
   }
   return { code: "provider_unavailable" };
 };
@@ -794,15 +794,20 @@ const decodeFlatRawToolCall = (
     return { _tag: "Invalid" };
   }
   const hasArguments = Object.hasOwn(value, "arguments");
+  let call: CanonicalProviderToolCall = { name };
+  if (Schema.is(Schema.String)(id)) {
+    call = { ...call, id };
+  }
+  if (Schema.is(Schema.String)(type)) {
+    call = { ...call, type };
+  }
+  if (hasArguments && toolArguments !== undefined) {
+    call = { ...call, arguments: toolArguments };
+  }
   return {
     _tag: "Call",
     arguments: toolArguments,
-    call: {
-      ...(Schema.is(Schema.String)(id) ? { id } : {}),
-      ...(Schema.is(Schema.String)(type) ? { type } : {}),
-      ...(hasArguments ? { arguments: toolArguments } : {}),
-      name,
-    },
+    call,
     name,
   };
 };
@@ -841,20 +846,27 @@ const decodeNestedRawToolCall = (
   const toolArguments = hasFunctionArguments
     ? functionArguments
     : flatArguments;
+  let toolFunction: { arguments?: Schema.Json; name: string } = {
+    name: functionName,
+  };
+  if (
+    (hasFunctionArguments || hasFlatArguments) &&
+    toolArguments !== undefined
+  ) {
+    toolFunction = { ...toolFunction, arguments: toolArguments };
+  }
+  let call: CanonicalProviderToolCall = { function: toolFunction };
+  if (Schema.is(Schema.String)(id)) {
+    call = { ...call, id };
+  }
+  if (Schema.is(Schema.String)(type)) {
+    call = { ...call, type };
+  }
 
   return {
     _tag: "Call",
     arguments: toolArguments,
-    call: {
-      ...(Schema.is(Schema.String)(id) ? { id } : {}),
-      ...(Schema.is(Schema.String)(type) ? { type } : {}),
-      function: {
-        ...(hasFunctionArguments || hasFlatArguments
-          ? { arguments: toolArguments }
-          : {}),
-        name: functionName,
-      },
-    },
+    call,
     name: functionName,
   };
 };

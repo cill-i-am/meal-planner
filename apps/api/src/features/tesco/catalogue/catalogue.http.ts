@@ -87,12 +87,22 @@ export const searchInputFromUrl = (
     const count = yield* optionalParam(url, "count", ResultCountFromString);
     const sortBy = yield* optionalParam(url, "sortBy", SortBy);
 
-    return yield* Schema.decodeUnknownEffect(SearchRequestBody)({
-      query,
-      ...(page === undefined ? {} : { page }),
-      ...(count === undefined ? {} : { count }),
-      ...(sortBy === undefined ? {} : { sortBy }),
-    }).pipe(Effect.mapError(() => new InvalidRequest({ location: "query" })));
+    const input: Record<
+      string,
+      typeof count | typeof page | typeof query | typeof sortBy
+    > = { query };
+    if (page !== undefined) {
+      input["page"] = page;
+    }
+    if (count !== undefined) {
+      input["count"] = count;
+    }
+    if (sortBy !== undefined) {
+      input["sortBy"] = sortBy;
+    }
+    return yield* Schema.decodeUnknownEffect(SearchRequestBody)(input).pipe(
+      Effect.mapError(() => new InvalidRequest({ location: "query" }))
+    );
   });
 
 /** Decode one category URL into a fully populated stable catalogue input. */
@@ -105,12 +115,19 @@ export const categoryInputFromUrl = (
     const page = yield* optionalParam(url, "page", PageNumberFromString);
     const count = yield* optionalParam(url, "count", ResultCountFromString);
     const sortBy = yield* optionalParam(url, "sortBy", SortBy);
+    const input: Record<string, typeof count | typeof page | typeof sortBy> =
+      {};
+    if (page !== undefined) {
+      input["page"] = page;
+    }
+    if (count !== undefined) {
+      input["count"] = count;
+    }
+    if (sortBy !== undefined) {
+      input["sortBy"] = sortBy;
+    }
     const body = yield* Schema.decodeUnknownEffect(CategoryProductsRequestBody)(
-      {
-        ...(page === undefined ? {} : { page }),
-        ...(count === undefined ? {} : { count }),
-        ...(sortBy === undefined ? {} : { sortBy }),
-      }
+      input
     ).pipe(Effect.mapError(() => new InvalidRequest({ location: "query" })));
     return { facet, ...body };
   });
@@ -130,29 +147,36 @@ export const suggestionsInputFromUrl = (
     const query = yield* requiredParam(url, "query", SearchQuery);
     const limit = yield* optionalParam(url, "limit", ResultCountFromString);
 
+    const input: Record<string, typeof limit | typeof query> = { query };
+    if (limit !== undefined) {
+      input["limit"] = limit;
+    }
     return yield* Schema.decodeUnknownEffect(
       Schema.Struct({ limit: SuggestionLimitWithDefault, query: SearchQuery })
-    )({
-      query,
-      ...(limit === undefined ? {} : { limit }),
-    }).pipe(Effect.mapError(() => new InvalidRequest({ location: "query" })));
+    )(input).pipe(
+      Effect.mapError(() => new InvalidRequest({ location: "query" }))
+    );
   });
 
 /** Explicit HTTP projection for one stable catalogue listing. */
 export const toCatalogueProductResultsResponse = (
   result: CatalogueProductResults
-) => ({
-  pageInformation: result.pageInformation,
-  results: result.results.map((product) => ({
-    id: product.id,
-    title: product.title,
-    type: product.type,
-    ...(product.defaultImageUrl === undefined
-      ? {}
-      : { defaultImageUrl: product.defaultImageUrl }),
-  })),
-  ...(result.sortBy === undefined ? {} : { sortBy: result.sortBy }),
-});
+) => {
+  const results = result.results.map((product) => {
+    const projected = {
+      id: product.id,
+      title: product.title,
+      type: product.type,
+    };
+    return product.defaultImageUrl === undefined
+      ? projected
+      : { ...projected, defaultImageUrl: product.defaultImageUrl };
+  });
+  const projected = { pageInformation: result.pageInformation, results };
+  return result.sortBy === undefined
+    ? projected
+    : { ...projected, sortBy: result.sortBy };
+};
 
 /** Explicit HTTP projection for stable catalogue suggestions. */
 export const toCatalogueSuggestionsResponse = (

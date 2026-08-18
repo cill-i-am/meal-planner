@@ -140,16 +140,19 @@ const makeRecipeExtractorDescriptor = (version: "schema-1" | "schema-2") => ({
 const retryableR2Failure = (stage: "store" | "verify") =>
   new RetryableAcquisitionError({ reason: "container_rpc", stage });
 
-const r2Object = (object: WorkerTestR2Object): R2ObjectLike => ({
-  checksums: object.checksums,
-  ...(object.customMetadata === undefined
-    ? {}
-    : { customMetadata: object.customMetadata }),
-  ...(object.httpMetadata === undefined
-    ? {}
-    : { httpMetadata: object.httpMetadata }),
-  size: object.size,
-});
+const r2Object = (object: WorkerTestR2Object): R2ObjectLike => {
+  let projected: R2ObjectLike = {
+    checksums: object.checksums,
+    size: object.size,
+  };
+  if (object.customMetadata !== undefined) {
+    projected = { ...projected, customMetadata: object.customMetadata };
+  }
+  if (object.httpMetadata !== undefined) {
+    projected = { ...projected, httpMetadata: object.httpMetadata };
+  }
+  return projected;
+};
 
 const r2ObjectBody = (object: WorkerTestR2ObjectBody): R2ObjectBodyLike => ({
   ...r2Object(object),
@@ -315,21 +318,23 @@ const makeTranscribedImport = async (
     text: "Chop onions. Simmer for ten minutes.",
     usage: { audioDurationMilliseconds: 2000, inputBytes: 8 },
   });
+  const transcriptionInput = {
+    acquisitionRepository: repository,
+    audioExtractor: audio.service,
+    bucket: acquisitionBucket(),
+    importId,
+    now: () => transcribedAt,
+    speechTranscriber: speech.service,
+    transcriptionRepository: makeD1SpeechTranscriptionRepository(
+      testEnv.MealPlannerDatabase
+    ),
+  };
   await Effect.runPromise(
-    transcribeAcquiredImport({
-      acquisitionRepository: repository,
-      audioExtractor: audio.service,
-      bucket: acquisitionBucket(),
-      ...(options.speechDispatchId === undefined
-        ? {}
-        : { dispatchId: options.speechDispatchId }),
-      importId,
-      now: () => transcribedAt,
-      speechTranscriber: speech.service,
-      transcriptionRepository: makeD1SpeechTranscriptionRepository(
-        testEnv.MealPlannerDatabase
-      ),
-    })
+    transcribeAcquiredImport(
+      options.speechDispatchId === undefined
+        ? transcriptionInput
+        : { ...transcriptionInput, dispatchId: options.speechDispatchId }
+    )
   );
   return repository;
 };

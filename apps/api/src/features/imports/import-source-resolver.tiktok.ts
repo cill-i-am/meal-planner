@@ -143,12 +143,20 @@ const mediaRequestHeaders = (
   const acceptLanguage = headerValue(raw, "accept-language", 256);
   const referer = safeTikTokReferer(headerValue(raw, "referer", 2048));
   const userAgent = headerValue(raw, "user-agent", 1024);
-  return {
-    ...(accept === undefined ? {} : { accept }),
-    ...(acceptLanguage === undefined ? {} : { acceptLanguage }),
-    ...(referer === null ? {} : { referer }),
-    ...(userAgent === undefined ? {} : { userAgent }),
-  };
+  let headers: MediaRequestHeaders = {};
+  if (accept !== undefined) {
+    headers = { ...headers, accept };
+  }
+  if (acceptLanguage !== undefined) {
+    headers = { ...headers, acceptLanguage };
+  }
+  if (referer !== null) {
+    headers = { ...headers, referer };
+  }
+  if (userAgent !== undefined) {
+    headers = { ...headers, userAgent };
+  }
+  return headers;
 };
 
 export const isSafeTikTokMediaLocator = (value: string) => {
