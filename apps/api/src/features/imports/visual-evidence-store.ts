@@ -247,7 +247,10 @@ const observationsMatchFrames = (
   );
 
 const verifiedManifestMetadata = (
-  object: Exclude<Awaited<ReturnType<AcquisitionBucketLike["get"]>>, null>,
+  object: Exclude<
+    Effect.Success<ReturnType<AcquisitionBucketLike["get"]>>,
+    null
+  >,
   expected: ReadVerifiedVisualEvidence,
   sha256: Sha256Hex,
   bytes: Uint8Array
@@ -316,10 +319,13 @@ const verifyFrame = (
   frame: VisualFrameReference
 ) =>
   Effect.fn("VisualEvidenceStore.verifyFrame")(function* verifyStoredFrame() {
-    const object = yield* Effect.tryPromise({
-      catch: () => failure("storage_failure", "visual_frame_head_failed"),
-      try: () => bucket.head(frame.key),
-    });
+    const object = yield* bucket
+      .head(frame.key)
+      .pipe(
+        Effect.mapError(() =>
+          failure("storage_failure", "visual_frame_head_failed")
+        )
+      );
     if (object === null) {
       return yield* Effect.fail(
         failure("invalid_frame", "visual_frame_missing")
@@ -365,10 +371,13 @@ const readVerified = (bucket: AcquisitionBucketLike) =>
     expected: ReadVerifiedVisualEvidence
   ) {
     const key = manifestKey(expected.importId, expected.generation);
-    const object = yield* Effect.tryPromise({
-      catch: () => failure("storage_failure", "visual_manifest_get_failed"),
-      try: () => bucket.get(key),
-    });
+    const object = yield* bucket
+      .get(key)
+      .pipe(
+        Effect.mapError(() =>
+          failure("storage_failure", "visual_manifest_get_failed")
+        )
+      );
     if (object === null) {
       return Option.none();
     }
@@ -377,10 +386,13 @@ const readVerified = (bucket: AcquisitionBucketLike) =>
         failure("oversized", "visual_manifest_size_invalid")
       );
     }
-    const text = yield* Effect.tryPromise({
-      catch: () => failure("storage_failure", "visual_manifest_read_failed"),
-      try: () => object.text(),
-    });
+    const text = yield* object
+      .text()
+      .pipe(
+        Effect.mapError(() =>
+          failure("storage_failure", "visual_manifest_read_failed")
+        )
+      );
     const bytes = new TextEncoder().encode(text);
     const sha256 = yield* digest(bytes).pipe(
       Effect.mapError(() =>
@@ -444,20 +456,22 @@ const putVerified = (bucket: AcquisitionBucketLike) =>
           failure("invalid_frame", "visual_frame_missing")
         );
       }
-      const written = yield* Effect.tryPromise({
-        catch: () => failure("storage_failure", "visual_frame_put_failed"),
-        try: () =>
-          bucket.put(reference.key, frame.bytes, {
-            contentLength: reference.byteLength,
-            customMetadata: frameMetadata(document, reference),
-            httpMetadata: {
-              cacheControl: "private, no-store",
-              contentType: "image/jpeg",
-            },
-            onlyIf: { etagDoesNotMatch: "*" },
-            sha256: checksumBytes(reference.sha256),
-          }),
-      });
+      const written = yield* bucket
+        .put(reference.key, frame.bytes, {
+          contentLength: reference.byteLength,
+          customMetadata: frameMetadata(document, reference),
+          httpMetadata: {
+            cacheControl: "private, no-store",
+            contentType: "image/jpeg",
+          },
+          onlyIf: { etagDoesNotMatch: "*" },
+          sha256: checksumBytes(reference.sha256),
+        })
+        .pipe(
+          Effect.mapError(() =>
+            failure("storage_failure", "visual_frame_put_failed")
+          )
+        );
       if (written === null) {
         return yield* Effect.fail(
           failure("storage_failure", "visual_frame_conditional_create_rejected")
@@ -481,26 +495,28 @@ const putVerified = (bucket: AcquisitionBucketLike) =>
       )
     );
     const key = manifestKey(document.importId, document.acquisitionGeneration);
-    const written = yield* Effect.tryPromise({
-      catch: () => failure("storage_failure", "visual_manifest_put_failed"),
-      try: () =>
-        bucket.put(key, bytes, {
-          contentLength: bytes.byteLength,
-          customMetadata: {
-            generation: String(document.acquisitionGeneration),
-            importId: document.importId,
-            kind: "visual_evidence_manifest",
-            sha256,
-            sourceMediaSha256: document.sourceMediaSha256,
-          },
-          httpMetadata: {
-            cacheControl: "private, no-store",
-            contentType: "application/json",
-          },
-          onlyIf: { etagDoesNotMatch: "*" },
-          sha256: checksumBytes(sha256),
-        }),
-    });
+    const written = yield* bucket
+      .put(key, bytes, {
+        contentLength: bytes.byteLength,
+        customMetadata: {
+          generation: String(document.acquisitionGeneration),
+          importId: document.importId,
+          kind: "visual_evidence_manifest",
+          sha256,
+          sourceMediaSha256: document.sourceMediaSha256,
+        },
+        httpMetadata: {
+          cacheControl: "private, no-store",
+          contentType: "application/json",
+        },
+        onlyIf: { etagDoesNotMatch: "*" },
+        sha256: checksumBytes(sha256),
+      })
+      .pipe(
+        Effect.mapError(() =>
+          failure("storage_failure", "visual_manifest_put_failed")
+        )
+      );
     if (written === null) {
       return yield* Effect.fail(
         failure(

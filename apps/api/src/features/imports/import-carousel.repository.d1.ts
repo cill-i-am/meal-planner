@@ -41,9 +41,21 @@ const CarouselEvidenceRow = Schema.Struct({
 });
 type CarouselEvidenceRow = typeof CarouselEvidenceRow.Type;
 
-const D1BatchResults = Schema.Array(
-  Schema.Struct({ results: Schema.Array(Schema.Unknown) })
-);
+const D1MutationResult = Schema.Struct({ results: Schema.Array(Schema.Json) });
+const D1InsertResult = Schema.Struct({
+  results: Schema.Array(Schema.Struct({ import_id: ImportId })),
+});
+const D1CarouselEvidenceRows = Schema.Struct({
+  results: Schema.Array(CarouselEvidenceRow),
+});
+const D1ClaimBatchResults = Schema.Tuple([
+  D1InsertResult,
+  D1CarouselEvidenceRows,
+]);
+const D1CompleteBatchResults = Schema.Tuple([
+  D1MutationResult,
+  D1CarouselEvidenceRows,
+]);
 
 const CarouselParentRow = Schema.Struct({
   acquisition_generation: AcquisitionGeneration,
@@ -106,16 +118,6 @@ const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
     catch: importPersistenceUnavailable,
     try: () => Promise.resolve(operation()),
   });
-
-const decodeBatchResults = (value: unknown) =>
-  Schema.decodeUnknownEffect(D1BatchResults, {
-    onExcessProperty: "ignore",
-  })(value).pipe(Effect.mapError(() => importPersistenceCorrupt()));
-
-const decodeRow = (value: unknown) =>
-  Schema.decodeUnknownEffect(CarouselEvidenceRow, {
-    onExcessProperty: "ignore",
-  })(value).pipe(Effect.mapError(() => importPersistenceCorrupt()));
 
 const decodeFailure = (row: CarouselEvidenceRow) => {
   const candidate = {
@@ -239,12 +241,14 @@ export const makeD1CarouselEvidenceRepository = (
             .bind(input.importId, input.generation),
         ])
       );
-      const [insert, select] = yield* decodeBatchResults(raw);
-      const rawRow = select?.results[0];
-      if (insert === undefined || rawRow === undefined) {
+      const [insert, select] = yield* Schema.decodeUnknownEffect(
+        D1ClaimBatchResults,
+        { onExcessProperty: "ignore" }
+      )(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
+      const [row] = select.results;
+      if (row === undefined) {
         return yield* Effect.fail(importTransitionRejected());
       }
-      const row = yield* decodeRow(rawRow);
       if (
         row.descriptor_fingerprint !== input.descriptorFingerprint ||
         row.dispatch_id !== input.dispatchId
@@ -286,16 +290,15 @@ export const makeD1CarouselEvidenceRepository = (
             .bind(evidence.importId, evidence.generation),
         ])
       );
-      const [update, select] = yield* decodeBatchResults(raw);
-      const rawRow = select?.results[0];
-      if (
-        update === undefined ||
-        update.results.length !== 1 ||
-        rawRow === undefined
-      ) {
+      const [update, select] = yield* Schema.decodeUnknownEffect(
+        D1CompleteBatchResults,
+        { onExcessProperty: "ignore" }
+      )(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
+      const [row] = select.results;
+      if (update.results.length !== 1 || row === undefined) {
         return yield* Effect.fail(importTransitionRejected());
       }
-      return yield* completedFromRow(yield* decodeRow(rawRow));
+      return yield* completedFromRow(row);
     }),
   fail: (input) =>
     persistenceEffect(() =>

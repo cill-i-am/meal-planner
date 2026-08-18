@@ -9,7 +9,6 @@ import {
   RecipeImportTimeline,
 } from "@meal-planner/recipe-import-api";
 import { applyD1Migrations, env } from "cloudflare:test";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import {
   Cause,
   Deferred,
@@ -23,24 +22,25 @@ import {
 import { TestClock } from "effect/testing";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
+import {
+  ImportIntentWorkflowTerminator,
+  ImportWorkflowTerminationUnavailable,
+} from "./import-intent-execution.js";
 import { ImportIntentTransitionCommand } from "./import-intent-transition.js";
 import {
   ImportIntentIdGenerator,
   ImportPrincipal,
   makeImportIntentApplication,
 } from "./import-intent.js";
+import {
+  ImportWorkerTestEnvironment,
+  workerTestMigrations,
+} from "./import-worker-test-environment.js";
 import { SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import { TestImportTrace } from "./import.test-fixtures.js";
 
-const testEnv = env as unknown as {
-  readonly MealPlannerDatabase: AnyD1Database;
-  readonly TEST_MIGRATIONS: {
-    readonly name: string;
-    readonly queries: string[];
-  }[];
-};
+const testEnv = Schema.decodeUnknownSync(ImportWorkerTestEnvironment)(env);
 
 const decodeRequest = Schema.decodeUnknownSync(CreateRecipeImportIntentRequest);
 const decodeCancelRequest = Schema.decodeUnknownSync(
@@ -62,7 +62,7 @@ const workflowStarter = {
   ensureStarted: () => Effect.succeed("already_active" as const),
 };
 
-const keysOf = (value: unknown): readonly string[] => {
+const keysOf = (value: Schema.Json): readonly string[] => {
   if (Array.isArray(value)) {
     return value.flatMap(keysOf);
   }
@@ -84,7 +84,7 @@ const principal = decodePrincipal({
 beforeAll(async () => {
   await applyD1Migrations(
     testEnv.MealPlannerDatabase,
-    [...testEnv.TEST_MIGRATIONS],
+    workerTestMigrations(testEnv.TEST_MIGRATIONS),
     "d1_migrations"
   );
 });
@@ -347,15 +347,12 @@ describe("recipe import intent transition repository in workerd", () => {
             public_visuals: "completed",
             updated_at: "2026-08-16T15:00:05.000Z",
           });
-          const zeroRowUpdate = yield* Effect.promise(
-            () =>
-              testEnv.MealPlannerDatabase.prepare(
-                "UPDATE recipe_imports SET updated_at = updated_at WHERE id = ?"
-              )
-                .bind("00000000-0000-4000-8000-999999999999")
-                .run() as PromiseLike<{
-                readonly meta: { readonly changes: number };
-              }>
+          const zeroRowUpdate = yield* Effect.promise(() =>
+            testEnv.MealPlannerDatabase.prepare(
+              "UPDATE recipe_imports SET updated_at = updated_at WHERE id = ?"
+            )
+              .bind("00000000-0000-4000-8000-999999999999")
+              .run()
           );
           expect(zeroRowUpdate.meta.changes).toBe(0);
         })
@@ -379,7 +376,7 @@ describe("recipe import intent transition repository in workerd", () => {
       Effect.runPromise(
         effect.pipe(Effect.provide([idLayer, TestClock.layer()]))
       );
-    const command = (ordinal: number, body: Record<string, unknown>) =>
+    const command = (ordinal: number, body: Schema.JsonObject) =>
       decodeTransition({
         ...body,
         commandDigest: ordinal.toString(16).padStart(64, "0"),
@@ -509,35 +506,24 @@ describe("recipe import intent transition repository in workerd", () => {
           intentVersion: 7,
           status: "failed",
         });
-        const events = yield* Effect.promise(
-          () =>
-            testEnv.MealPlannerDatabase.prepare(
-              `SELECT event_type, intent_version, public_stage,
+        const events = yield* Effect.promise(() =>
+          testEnv.MealPlannerDatabase.prepare(
+            `SELECT event_type, intent_version, public_stage,
                     public_activity, public_speech, public_visuals, failure_code
                FROM recipe_import_intent_history
               WHERE intent_id = ? AND intent_version >= 5
               ORDER BY intent_version`
-            )
-              .bind(intentId)
-              .all<{
-                event_type: string;
-                failure_code: string | null;
-                intent_version: number;
-                public_activity: string | null;
-                public_speech: string | null;
-                public_stage: string | null;
-                public_visuals: string | null;
-              }>() as PromiseLike<{
-              readonly results: readonly {
-                readonly event_type: string;
-                readonly failure_code: string | null;
-                readonly intent_version: number;
-                readonly public_activity: string | null;
-                readonly public_speech: string | null;
-                readonly public_stage: string | null;
-                readonly public_visuals: string | null;
-              }[];
-            }>
+          )
+            .bind(intentId)
+            .all<{
+              event_type: string;
+              failure_code: string | null;
+              intent_version: number;
+              public_activity: string | null;
+              public_speech: string | null;
+              public_stage: string | null;
+              public_visuals: string | null;
+            }>()
         );
         expect(events.results).toEqual([
           {
@@ -705,7 +691,7 @@ describe("recipe import intent transition repository in workerd", () => {
         }),
       })
     );
-    const terminationSnapshots: unknown[] = [];
+    const terminationSnapshots: Schema.Json[] = [];
     const terminatorLayer = Layer.succeed(
       ImportIntentWorkflowTerminator,
       ImportIntentWorkflowTerminator.of({
@@ -723,10 +709,14 @@ describe("recipe import intent transition repository in workerd", () => {
           ).pipe(
             Effect.tap((snapshot) =>
               Effect.sync(() => {
-                terminationSnapshots.push(snapshot);
+                terminationSnapshots.push(
+                  Schema.decodeUnknownSync(Schema.Json)(snapshot)
+                );
               })
             ),
-            Effect.andThen(Effect.fail("workflow termination unavailable"))
+            Effect.andThen(
+              Effect.fail(new ImportWorkflowTerminationUnavailable())
+            )
           ),
       })
     );
@@ -962,26 +952,23 @@ describe("recipe import intent transition repository in workerd", () => {
           "https://www.tiktok.com/@cook/video/7520000000000001305"
         );
 
-        const history = yield* Effect.promise(
-          () =>
-            testEnv.MealPlannerDatabase.prepare(
-              `SELECT actor_category, actor_identity_hash, command_digest,
+        const history = yield* Effect.promise(() =>
+          testEnv.MealPlannerDatabase.prepare(
+            `SELECT actor_category, actor_identity_hash, command_digest,
                     event_type, intent_version, mutation_id, occurred_at
                FROM recipe_import_intent_history
               WHERE intent_id = ? AND event_type = 'intent_cancelled'`
-            )
-              .bind(intentId)
-              .all<{
-                actor_category: string;
-                actor_identity_hash: string | null;
-                command_digest: string | null;
-                event_type: string;
-                intent_version: number;
-                mutation_id: string | null;
-                occurred_at: string;
-              }>() as PromiseLike<{
-              readonly results: readonly Record<string, unknown>[];
-            }>
+          )
+            .bind(intentId)
+            .all<{
+              actor_category: string;
+              actor_identity_hash: string | null;
+              command_digest: string | null;
+              event_type: string;
+              intent_version: number;
+              mutation_id: string | null;
+              occurred_at: string;
+            }>()
         );
         expect(history.results).toEqual([
           expect.objectContaining({
@@ -1022,7 +1009,7 @@ describe("recipe import intent transition repository in workerd", () => {
       workflowStarter,
       TestImportTrace
     );
-    const transition = (ordinal: number, body: Record<string, unknown>) =>
+    const transition = (ordinal: number, body: Schema.JsonObject) =>
       repository.transitionIntent(
         decodeTransition({
           ...body,

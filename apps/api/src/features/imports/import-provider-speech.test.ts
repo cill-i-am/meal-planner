@@ -2,9 +2,9 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
-  makeSpeechGateway,
-  makeSpeechGatewayFromValue,
-  makeRejectedGateway,
+  makeProviderTransports,
+  makeRawProviderTransports,
+  makeRejectedProviderTransports,
   correlationId,
   speechTranscriptionInput,
   nestUnknownMetadata,
@@ -17,36 +17,39 @@ import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
 
 describe("installed speech provider adapter", () => {
   it("uses the authenticated binding with provider logging disabled and the pinned combined speech response shape", async () => {
-    const gateway = makeSpeechGateway({
-      segments: [
-        {
-          avg_logprob: -0.25,
-          compression_ratio: 1.1,
-          end: 1,
-          no_speech_prob: 0.01,
-          start: 0,
-          temperature: 0,
-          text: "Chop the onion.",
-          words: [
-            {
-              end: 0.5,
-              start: 0,
-              word: "Chop",
-            },
-          ],
-        },
-      ],
-      text: "Chop the onion.",
-      transcription_info: {
-        duration: 1,
-        duration_after_vad: 0.9,
-        language: "en",
-        language_probability: 0.99,
-      },
-      vtt: "WEBVTT",
-      word_count: 3,
-    });
     const trace = makeRecordingTraceStore();
+    const gateway = makeProviderTransports(
+      {
+        segments: [
+          {
+            avg_logprob: -0.25,
+            compression_ratio: 1.1,
+            end: 1,
+            no_speech_prob: 0.01,
+            start: 0,
+            temperature: 0,
+            text: "Chop the onion.",
+            words: [
+              {
+                end: 0.5,
+                start: 0,
+                word: "Chop",
+              },
+            ],
+          },
+        ],
+        text: "Chop the onion.",
+        transcription_info: {
+          duration: 1,
+          duration_after_vad: 0.9,
+          language: "en",
+          language_probability: 0.99,
+        },
+        vtt: "WEBVTT",
+        word_count: 3,
+      },
+      trace.service
+    );
     const dispatches: {
       readonly actualCostMicroUsd: number;
       readonly maximumCostMicroUsd: number;
@@ -70,9 +73,9 @@ describe("installed speech provider adapter", () => {
     };
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: gateway.client,
         correlationId,
         dispatch,
+        transport: gateway.speech,
       }),
       trace.service
     );
@@ -104,37 +107,15 @@ describe("installed speech provider adapter", () => {
         providerStageId: "speech-transcription",
       },
     ]);
-    expect(gateway.requests[0]).toEqual({
-      body: {
-        audio: "AQID",
-        condition_on_previous_text: false,
-        language: "en",
-        task: "transcribe",
-        vad_filter: true,
-      },
-      model: "@cf/openai/whisper-large-v3-turbo",
-      options: {
-        gateway: {
-          collectLog: false,
-          id: "meal-planner-pilot-gaia-118",
-          skipCache: true,
-        },
-        returnRawResponse: true,
-      },
+    expect(gateway.speechRequests[0]).toEqual({
+      audio: "AQID",
+      condition_on_previous_text: false,
+      language: "en",
+      task: "transcribe",
+      vad_filter: true,
     });
-    const speechRequest = gateway.requests[0] as {
-      readonly options: {
-        readonly gateway: {
-          readonly collectLog: boolean;
-          readonly metadata?: unknown;
-        };
-      };
-    };
-    expect(speechRequest.options.gateway.collectLog).toBe(false);
-    expect(speechRequest.options.gateway).not.toHaveProperty("metadata");
-    expect(speechRequest.options).not.toHaveProperty("headers");
-    expect(JSON.stringify(speechRequest.options)).not.toMatch(
-      /AQID|Chop the onion|https?:|cookie|credential|prompt|transcript/iu
+    expect(JSON.stringify(gateway.speechRequests[0])).not.toMatch(
+      /Chop the onion|https?:|cookie|credential|prompt|transcript/iu
     );
     expect(trace.events).toEqual([
       {
@@ -156,7 +137,9 @@ describe("installed speech provider adapter", () => {
   it("retains the pinned installed root speech response compatibility shape", async () => {
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeSpeechGateway({
+        correlationId,
+        dispatch: localDispatchGate,
+        transport: makeProviderTransports({
           text: "Chop the onion.",
           vtt: null,
           word_count: 3,
@@ -167,9 +150,7 @@ describe("installed speech provider adapter", () => {
               word: "Chop",
             },
           ],
-        }).client,
-        correlationId,
-        dispatch: localDispatchGate,
+        }).speech,
       })
     );
 
@@ -183,18 +164,20 @@ describe("installed speech provider adapter", () => {
   it("accepts bounded standard Whisper segment metadata and projects it away", async () => {
     const baselineAdapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeSpeechGateway({
-          segments: [],
-          text: "Chop the onion.",
-        }).client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: makeProviderTransports({
+          segments: [],
+          text: "Chop the onion.",
+        }).speech,
       })
     );
     const trace = makeRecordingTraceStore();
     const metadataAdapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeSpeechGateway({
+        correlationId,
+        dispatch: localDispatchGate,
+        transport: makeProviderTransports({
           segments: [
             {
               id: 0,
@@ -203,9 +186,7 @@ describe("installed speech provider adapter", () => {
             },
           ],
           text: "Chop the onion.",
-        }).client,
-        correlationId,
-        dispatch: localDispatchGate,
+        }).speech,
       }),
       trace.service
     );
@@ -230,7 +211,9 @@ describe("installed speech provider adapter", () => {
   it("accepts only the bounded upper edge of standard Whisper segment metadata", async () => {
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeSpeechGateway({
+        correlationId,
+        dispatch: localDispatchGate,
+        transport: makeProviderTransports({
           segments: [
             {
               id: Number.MAX_SAFE_INTEGER,
@@ -239,9 +222,7 @@ describe("installed speech provider adapter", () => {
             },
           ],
           text: "Chop the onion.",
-        }).client,
-        correlationId,
-        dispatch: localDispatchGate,
+        }).speech,
       })
     );
 
@@ -285,24 +266,24 @@ describe("installed speech provider adapter", () => {
     async (_case, rootMetadata) => {
       const baselineAdapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway({
-            segments: [],
-            text: "Chop the onion.",
-          }).client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: makeProviderTransports({
+            segments: [],
+            text: "Chop the onion.",
+          }).speech,
         })
       );
       const trace = makeRecordingTraceStore();
       const metadataAdapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway({
+          correlationId,
+          dispatch: localDispatchGate,
+          transport: makeProviderTransports({
             ...rootMetadata,
             segments: [],
             text: "Chop the onion.",
-          }).client,
-          correlationId,
-          dispatch: localDispatchGate,
+          }).speech,
         }),
         trace.service
       );
@@ -386,17 +367,17 @@ describe("installed speech provider adapter", () => {
     async (_case, baselineResponse, metadataResponse, privatePattern) => {
       const baselineAdapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway(baselineResponse).client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: makeProviderTransports(baselineResponse).speech,
         })
       );
       const trace = makeRecordingTraceStore();
       const metadataAdapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway(metadataResponse).client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: makeProviderTransports(metadataResponse).speech,
         }),
         trace.service
       );
@@ -469,9 +450,9 @@ describe("installed speech provider adapter", () => {
       compatibleResponses.map(async (response) => {
         const adapter = await runFactory(
           makeInstalledSpeechTranscriber({
-            client: makeSpeechGateway(response).client,
             correlationId,
             dispatch: localDispatchGate,
+            transport: makeProviderTransports(response).speech,
           })
         );
 
@@ -488,7 +469,9 @@ describe("installed speech provider adapter", () => {
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeSpeechGateway({
+        correlationId,
+        dispatch: localDispatchGate,
+        transport: makeProviderTransports({
           segments: [],
           text: " \nChop the onion.\t ",
           transcription_info: {
@@ -496,9 +479,7 @@ describe("installed speech provider adapter", () => {
             language: "en",
           },
           word_count: 3,
-        }).client,
-        correlationId,
-        dispatch: localDispatchGate,
+        }).speech,
       }),
       trace.service
     );
@@ -687,9 +668,9 @@ describe("installed speech provider adapter", () => {
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway(response).client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: makeProviderTransports(response).speech,
         }),
         trace.service
       );
@@ -838,9 +819,9 @@ describe("installed speech provider adapter", () => {
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway(response).client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: makeProviderTransports(response).speech,
         }),
         trace.service
       );
@@ -1013,9 +994,9 @@ describe("installed speech provider adapter", () => {
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway(response).client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: makeProviderTransports(response).speech,
         }),
         trace.service
       );
@@ -1125,9 +1106,9 @@ describe("installed speech provider adapter", () => {
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway(response).client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: makeProviderTransports(response).speech,
         }),
         trace.service
       );
@@ -1175,13 +1156,13 @@ describe("installed speech provider adapter", () => {
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway({
+          correlationId,
+          dispatch: localDispatchGate,
+          transport: makeProviderTransports({
             segments: [],
             syntheticTraversalContainer,
             text: "Chop the onion.",
-          }).client,
-          correlationId,
-          dispatch: localDispatchGate,
+          }).speech,
         }),
         trace.service
       );
@@ -1274,9 +1255,9 @@ describe("installed speech provider adapter", () => {
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway(response).client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: makeProviderTransports(response).speech,
         }),
         trace.service
       );
@@ -1307,7 +1288,9 @@ describe("installed speech provider adapter", () => {
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeSpeechGateway({
+        correlationId,
+        dispatch: localDispatchGate,
+        transport: makeProviderTransports({
           privateRootCanary: Array.from({ length: 6000 }, () => 1),
           segments: [
             {
@@ -1318,9 +1301,7 @@ describe("installed speech provider adapter", () => {
           transcription_info: {
             privateInfoCanary: Array.from({ length: 6000 }, () => 2),
           },
-        }).client,
-        correlationId,
-        dispatch: localDispatchGate,
+        }).speech,
       }),
       trace.service
     );
@@ -1378,11 +1359,16 @@ describe("installed speech provider adapter", () => {
         };
       }
       const trace = makeRecordingTraceStore();
+      const responseEnvelope = new Response(null, { status: 200 });
+      Object.defineProperty(responseEnvelope, "json", {
+        value: () => Promise.resolve(response),
+      });
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGatewayFromValue(response).client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: makeRawProviderTransports(responseEnvelope, trace.service)
+            .speech,
         }),
         trace.service
       );
@@ -1399,9 +1385,8 @@ describe("installed speech provider adapter", () => {
         event: "provider.decode",
         outcome: "malformed",
         providerStage: "speech",
-        speechEnvelopeFailure: "unsupported_property",
-        speechEnvelopeFamily: "model_specific",
-        speechEnvelopeUnsupportedLocation,
+        speechEnvelopeFailure: "not_object",
+        speechEnvelopeFamily: "unclassified",
       });
       expect(JSON.stringify({ exit, trace: trace.events })).not.toMatch(
         /privateCycleCanary/u
@@ -1458,9 +1443,9 @@ describe("installed speech provider adapter", () => {
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledSpeechTranscriber({
-          client: makeSpeechGateway(response).client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: makeProviderTransports(response).speech,
         }),
         trace.service
       );
@@ -1487,7 +1472,9 @@ describe("installed speech provider adapter", () => {
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeSpeechGateway({
+        correlationId,
+        dispatch: localDispatchGate,
+        transport: makeProviderTransports({
           segments: [
             {
               id: 0,
@@ -1499,9 +1486,7 @@ describe("installed speech provider adapter", () => {
             },
           ],
           text: "Chop the onion.",
-        }).client,
-        correlationId,
-        dispatch: localDispatchGate,
+        }).speech,
       }),
       trace.service
     );
@@ -1526,12 +1511,12 @@ describe("installed speech provider adapter", () => {
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeSpeechGateway({
-          segments: [],
-          text: 3,
-        }).client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: makeProviderTransports({
+          segments: [],
+          text: 3,
+        }).speech,
       }),
       trace.service
     );
@@ -1633,9 +1618,9 @@ describe("installed speech provider adapter", () => {
         const trace = makeRecordingTraceStore();
         const adapter = await runFactory(
           makeInstalledSpeechTranscriber({
-            client: makeSpeechGateway(response).client,
             correlationId,
             dispatch: localDispatchGate,
+            transport: makeProviderTransports(response).speech,
           }),
           trace.service
         );
@@ -1724,16 +1709,16 @@ describe("installed speech provider adapter", () => {
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeSpeechGateway({
+        correlationId,
+        dispatch: localDispatchGate,
+        transport: makeProviderTransports({
           segments: [],
           text: " \n\t ",
           transcription_info: {
             duration: 1,
             language: "en",
           },
-        }).client,
-        correlationId,
-        dispatch: localDispatchGate,
+        }).speech,
       }),
       trace.service
     );
@@ -1767,19 +1752,21 @@ describe("installed speech provider adapter", () => {
   });
 
   it("settles known cost and fails closed when the installed speech response is malformed", async () => {
-    const gateway = makeSpeechGateway({
-      providerSecret: "must-not-escape",
-      transcription_info: {
-        duration: 1,
-        language: "en",
-      },
-      word_count: 4,
-    });
     const trace = makeRecordingTraceStore();
+    const gateway = makeProviderTransports(
+      {
+        providerSecret: "must-not-escape",
+        transcription_info: {
+          duration: 1,
+          language: "en",
+        },
+        word_count: 4,
+      },
+      trace.service
+    );
     const settledCosts: number[] = [];
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: gateway.client,
         correlationId,
         dispatch: {
           run: (input) =>
@@ -1794,6 +1781,7 @@ describe("installed speech provider adapter", () => {
               Effect.map(({ value }) => value)
             ),
         },
+        transport: gateway.speech,
       }),
       trace.service
     );
@@ -1839,16 +1827,17 @@ describe("installed speech provider adapter", () => {
   it("preserves retryable native speech failures as typed redacted failures", async () => {
     const adapter = await runFactory(
       makeInstalledSpeechTranscriber({
-        client: makeRejectedGateway({
-          _tag: "AiGatewayError",
-          cause: {
-            providerSecret: "must-not-escape",
-            status: 429,
-          },
-          message: "providerSecret=must-not-escape",
-        }),
         correlationId,
         dispatch: localDispatchGate,
+        transport: makeRejectedProviderTransports(
+          Object.assign(new Error("providerSecret=must-not-escape"), {
+            _tag: "AiGatewayError",
+            cause: {
+              providerSecret: "must-not-escape",
+              status: 429,
+            },
+          })
+        ).speech,
       })
     );
 

@@ -87,7 +87,7 @@ const resolving = () =>
 
 const apply = (
   snapshot: typeof ImportIntentTransitionSnapshot.Type,
-  input: unknown
+  input: Schema.Json
 ) => applyImportIntentTransition(snapshot, decodeCommand(input));
 
 const advanceAnalyzing = (snapshot: ReturnType<typeof acquiring>) =>

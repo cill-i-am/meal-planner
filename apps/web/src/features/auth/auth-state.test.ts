@@ -8,7 +8,7 @@ const household = {
   name: "Barron home",
   slug: "barron-home",
 };
-const query = <T>(data: T | null, error: unknown = null) => ({
+const query = <T>(data: T | null, error: Error | null = null) => ({
   data,
   error,
   isPending: false,

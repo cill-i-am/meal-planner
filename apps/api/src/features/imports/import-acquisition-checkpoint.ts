@@ -42,16 +42,18 @@ const rejected = (): AcquisitionCheckpointRejected => ({
   code: "acquisition_checkpoint_invalid",
 });
 
-const normalizeDurableCheckpoint = (raw: unknown): unknown => {
+const normalizeDurableCheckpoint = (
+  raw: Schema.Json
+): Schema.Json | undefined => {
   try {
-    return structuredClone(raw) as unknown;
+    return structuredClone(raw);
   } catch {
     return undefined;
   }
 };
 
 export const decodeAcquisitionCheckpoint = (
-  raw: unknown
+  raw: Schema.Json
 ): DecodedAcquisitionCheckpoint => {
   const decoded = Schema.decodeUnknownOption(AcquisitionTaskOutcome, {
     onExcessProperty: "error",

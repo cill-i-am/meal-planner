@@ -1,6 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare";
-import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
-import { Cause, Effect, Option } from "effect";
+import { Effect, Option } from "effect";
 import type { Prompt } from "effect/unstable/ai";
 
 import { isPilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
@@ -9,13 +7,17 @@ import { ImportObservabilityTraceStore } from "./import-observability.js";
 import {
   ProviderName,
   adapterFailure,
+  decodeProviderFailureEvidence,
   isSafeProviderFailureCode,
-  noLogWorkersAiClient,
   oneForcedToolCall,
   pricedTokenUsage,
+  providerFailureFromEvidence,
   safeFailureCode,
 } from "./import-provider-kernel.js";
-import type { ProviderDispatchGate } from "./import-provider-kernel.js";
+import type {
+  ProviderDispatchGate,
+  WorkersAiTransport,
+} from "./import-provider-kernel.js";
 import type {
   VisualEvidenceExtractionFailure,
   VisualEvidenceExtractor,
@@ -29,8 +31,7 @@ import {
   visualEvidenceOutcomeForObservations,
 } from "./import-visual-evidence-extractor.js";
 
-export const InstalledVisualModel =
-  "@cf/meta/llama-4-scout-17b-16e-instruct" as const;
+export { InstalledVisualModel } from "./import-provider-kernel.js";
 
 const VisualMaximumCostMicroUsd = 100_000;
 
@@ -55,26 +56,18 @@ const visualPrompt = (frame: VisualFrameArtifact): Prompt.RawInput => [
 ];
 
 export const makeInstalledVisualEvidenceExtractor = (input: {
-  readonly client: QueryGatewayClient;
   readonly correlationId: ImportCorrelationId;
   readonly dispatch: ProviderDispatchGate;
-  readonly model?: string;
+  readonly transport: WorkersAiTransport["visual"];
 }) =>
   Effect.gen(function* makeVisualAdapter() {
-    const model = input.model ?? InstalledVisualModel;
+    const { model } = input.transport;
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const client = noLogWorkersAiClient(
-      input.client,
-      input.correlationId,
-      "visual",
-      traceStore
-    );
-    const service = yield* Cloudflare.AI.makeLanguageModel({
-      client,
-      model,
-      parameters: { maxTokens: 8192, temperature: 0 },
+    const service = yield* input.transport.makeLanguageModel({
+      maxTokens: 8192,
+      temperature: 0,
     });
     return {
       extract: (request) =>
@@ -190,7 +183,13 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                     }
                     return typeof error === "string"
                       ? error
-                      : safeFailureCode(Cause.fail(error));
+                      : safeFailureCode(
+                          providerFailureFromEvidence(
+                            Option.getOrUndefined(
+                              decodeProviderFailureEvidence(error)
+                            )
+                          )
+                        );
                   })
                 ),
                 maximumCostMicroUsd: VisualMaximumCostMicroUsd,

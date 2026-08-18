@@ -1,5 +1,4 @@
-import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
-import { Cause, Effect, Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import { isPilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
 import type { PilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
@@ -17,14 +16,16 @@ import {
 import {
   ProviderName,
   adapterFailure,
+  decodeProviderFailureEvidence,
   failAfter,
   isUnknownRecord,
-  runWorkersAi,
+  providerFailureFromEvidence,
   safeFailureCode,
 } from "./import-provider-kernel.js";
 import type {
   ProviderDispatchGate,
   SafeProviderFailureCode,
+  WorkersAiTransport,
 } from "./import-provider-kernel.js";
 import type {
   SpeechTranscriber,
@@ -33,8 +34,7 @@ import type {
 } from "./import-speech-transcriber.js";
 import { SpeechTranscript } from "./import-speech-transcriber.js";
 
-export const InstalledSpeechModel =
-  "@cf/openai/whisper-large-v3-turbo" as const;
+export { InstalledSpeechModel } from "./import-provider-kernel.js";
 
 const SpeechMaximumCostMicroUsd = 50_000;
 
@@ -218,9 +218,9 @@ const SpeechProviderResponseKeys: ReadonlySet<string> = new Set([
 ]);
 
 const omitAllowlistedNullMetadata = (
-  record: Readonly<Record<string, unknown>>,
+  record: Schema.JsonObject,
   allowlist: ReadonlySet<string>
-): Record<string, unknown> =>
+): Schema.JsonObject =>
   Object.fromEntries(
     Object.entries(record).filter(
       ([key, value]) => value !== null || !allowlist.has(key)
@@ -228,16 +228,21 @@ const omitAllowlistedNullMetadata = (
   );
 
 const projectDocumentedSpeechResponse = (
-  record: Readonly<Record<string, unknown>>,
+  record: Schema.JsonObject,
   allowlist: ReadonlySet<string>
-): Record<string, unknown> =>
+): Schema.JsonObject =>
   Object.fromEntries(
-    [...allowlist]
-      .filter((key) => Object.hasOwn(record, key))
-      .map((key) => [key, record[key]])
+    [...allowlist].flatMap((key) => {
+      const value = record[key];
+      return Object.hasOwn(record, key) && value !== undefined
+        ? [[key, value]]
+        : [];
+    })
   );
 
-const normalizeModelSpecificSpeechProviderWord = (raw: unknown): unknown =>
+const normalizeModelSpecificSpeechProviderWord = (
+  raw: Schema.Json
+): Schema.Json =>
   isUnknownRecord(raw)
     ? omitAllowlistedNullMetadata(
         projectDocumentedSpeechResponse(
@@ -248,7 +253,9 @@ const normalizeModelSpecificSpeechProviderWord = (raw: unknown): unknown =>
       )
     : raw;
 
-const normalizeModelSpecificSpeechProviderSegment = (raw: unknown): unknown => {
+const normalizeModelSpecificSpeechProviderSegment = (
+  raw: Schema.Json
+): Schema.Json => {
   if (!isUnknownRecord(raw)) {
     return raw;
   }
@@ -270,27 +277,31 @@ const normalizeModelSpecificSpeechProviderSegment = (raw: unknown): unknown => {
 };
 
 const normalizeModelSpecificSpeechProviderResponse = (
-  raw: Record<string, unknown>
-): Record<string, unknown> => {
+  raw: Schema.JsonObject
+): Schema.JsonObject => {
   const normalized = omitAllowlistedNullMetadata(
     raw,
     ModelSpecificSpeechResponseOptionalMetadataKeys
   );
-  if (isUnknownRecord(normalized["transcription_info"])) {
-    normalized["transcription_info"] = omitAllowlistedNullMetadata(
-      projectDocumentedSpeechResponse(
-        normalized["transcription_info"],
+  const transcriptionInfo = isUnknownRecord(normalized["transcription_info"])
+    ? omitAllowlistedNullMetadata(
+        projectDocumentedSpeechResponse(
+          normalized["transcription_info"],
+          ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys
+        ),
         ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys
-      ),
-      ModelSpecificSpeechTranscriptionInfoOptionalMetadataKeys
-    );
-  }
-  if (Array.isArray(normalized["segments"])) {
-    normalized["segments"] = normalized["segments"].map(
-      normalizeModelSpecificSpeechProviderSegment
-    );
-  }
-  return normalized;
+      )
+    : normalized["transcription_info"];
+  const segments = Array.isArray(normalized["segments"])
+    ? normalized["segments"].map(normalizeModelSpecificSpeechProviderSegment)
+    : normalized["segments"];
+  return {
+    ...normalized,
+    ...(transcriptionInfo === undefined
+      ? {}
+      : { transcription_info: transcriptionInfo }),
+    ...(segments === undefined ? {} : { segments }),
+  };
 };
 
 const decodeGenericSpeechResponse = Schema.decodeUnknownOption(
@@ -315,7 +326,7 @@ interface SpeechEnvelopeClassification {
 }
 
 const hasUnsupportedProperty = (
-  record: Readonly<Record<string, unknown>>,
+  record: Schema.JsonObject,
   allowlist: ReadonlySet<string>
 ): boolean => Object.keys(record).some((key) => !allowlist.has(key));
 
@@ -334,11 +345,11 @@ const makeSpeechUnknownMetadataTraversal =
   });
 
 const unknownSpeechMetadataRequiresRejection = (
-  values: Iterable<unknown>,
+  values: Iterable<Schema.Json>,
   traversal: SpeechUnknownMetadataTraversal
 ): boolean => {
-  const pending: { readonly depth: number; readonly value: unknown }[] = [];
-  const enqueue = (value: unknown, depth: number): boolean => {
+  const pending: { readonly depth: number; readonly value: Schema.Json }[] = [];
+  const enqueue = (value: Schema.Json, depth: number): boolean => {
     traversal.discoveredNodes += 1;
     if (
       traversal.discoveredNodes > SpeechUnknownMetadataMaximumTraversalNodes ||
@@ -390,27 +401,26 @@ const unknownSpeechMetadataRequiresRejection = (
   return false;
 };
 
-const hasAmbiguousSpeechWrapper = (
-  raw: Readonly<Record<string, unknown>>
-): boolean =>
+const hasAmbiguousSpeechWrapper = (raw: Schema.JsonObject): boolean =>
   Object.hasOwn(raw, "errors") ||
   Object.hasOwn(raw, "messages") ||
   Object.hasOwn(raw, "result") ||
   Object.hasOwn(raw, "success");
 
 const unknownSpeechMetadataValues = function* unknownSpeechMetadataValues(
-  raw: Readonly<Record<string, unknown>>,
+  raw: Schema.JsonObject,
   allowlist: ReadonlySet<string>
-): Generator<unknown> {
+): Generator<Schema.Json> {
   for (const key of Object.keys(raw)) {
-    if (!allowlist.has(key)) {
-      yield raw[key];
+    const value = raw[key];
+    if (!allowlist.has(key) && value !== undefined) {
+      yield value;
     }
   }
 };
 
 const unknownSpeechContainerMetadataRequiresRejection = (
-  raw: Readonly<Record<string, unknown>>,
+  raw: Schema.JsonObject,
   allowlist: ReadonlySet<string>,
   traversal: SpeechUnknownMetadataTraversal
 ): boolean =>
@@ -420,24 +430,19 @@ const unknownSpeechContainerMetadataRequiresRejection = (
     traversal
   );
 
-const isPresentNonNull = (
-  record: Readonly<Record<string, unknown>>,
-  key: string
-): boolean => Object.hasOwn(record, key) && record[key] !== null;
+const isPresentNonNull = (record: Schema.JsonObject, key: string): boolean =>
+  Object.hasOwn(record, key) && record[key] !== null;
 
-const hasWrongRootMetadataType = (
-  raw: Readonly<Record<string, unknown>>
-): boolean =>
+const hasWrongRootMetadataType = (raw: Schema.JsonObject): boolean =>
   (isPresentNonNull(raw, "vtt") && typeof raw["vtt"] !== "string") ||
   (isPresentNonNull(raw, "word_count") &&
     typeof raw["word_count"] !== "number");
 
-const genericNestedContainersAreInvalid = (
-  raw: Readonly<Record<string, unknown>>
-): boolean => isPresentNonNull(raw, "words") && !Array.isArray(raw["words"]);
+const genericNestedContainersAreInvalid = (raw: Schema.JsonObject): boolean =>
+  isPresentNonNull(raw, "words") && !Array.isArray(raw["words"]);
 
 const modelSpecificNestedContainersAreInvalid = (
-  raw: Readonly<Record<string, unknown>>
+  raw: Schema.JsonObject
 ): boolean => {
   if (
     (isPresentNonNull(raw, "segments") && !Array.isArray(raw["segments"])) ||
@@ -459,14 +464,12 @@ const modelSpecificNestedContainersAreInvalid = (
   );
 };
 
-const genericNestedEntriesAreInvalid = (
-  raw: Readonly<Record<string, unknown>>
-): boolean =>
+const genericNestedEntriesAreInvalid = (raw: Schema.JsonObject): boolean =>
   Array.isArray(raw["words"]) &&
   raw["words"].some((word) => !isUnknownRecord(word));
 
 const modelSpecificNestedEntriesAreInvalid = (
-  raw: Readonly<Record<string, unknown>>
+  raw: Schema.JsonObject
 ): boolean =>
   Array.isArray(raw["segments"]) &&
   raw["segments"].some(
@@ -477,17 +480,17 @@ const modelSpecificNestedEntriesAreInvalid = (
   );
 
 const hasWrongNullableNumberType = (
-  record: Readonly<Record<string, unknown>>,
+  record: Schema.JsonObject,
   key: string
 ): boolean => isPresentNonNull(record, key) && typeof record[key] !== "number";
 
 const hasWrongNullableStringType = (
-  record: Readonly<Record<string, unknown>>,
+  record: Schema.JsonObject,
   key: string
 ): boolean => isPresentNonNull(record, key) && typeof record[key] !== "string";
 
 const genericNestedMetadataTypesAreInvalid = (
-  raw: Readonly<Record<string, unknown>>
+  raw: Schema.JsonObject
 ): boolean =>
   Array.isArray(raw["words"]) &&
   raw["words"].some(
@@ -499,7 +502,7 @@ const genericNestedMetadataTypesAreInvalid = (
   );
 
 const modelSpecificNestedMetadataTypesAreInvalid = (
-  raw: Readonly<Record<string, unknown>>
+  raw: Schema.JsonObject
 ): boolean => {
   const transcriptionInfo = raw["transcription_info"];
   if (
@@ -551,7 +554,7 @@ const modelSpecificNestedMetadataTypesAreInvalid = (
 };
 
 const genericUnsupportedPropertyLocation = (
-  raw: Readonly<Record<string, unknown>>
+  raw: Schema.JsonObject
 ): SpeechEnvelopeUnsupportedLocation | undefined =>
   Array.isArray(raw["words"]) &&
   raw["words"].some(
@@ -563,7 +566,7 @@ const genericUnsupportedPropertyLocation = (
     : undefined;
 
 const modelSpecificUnsupportedPropertyLocation = (
-  raw: Readonly<Record<string, unknown>>,
+  raw: Schema.JsonObject,
   traversal: SpeechUnknownMetadataTraversal
 ): SpeechEnvelopeUnsupportedLocation | undefined => {
   const transcriptionInfo = raw["transcription_info"];
@@ -618,7 +621,7 @@ const modelSpecificUnsupportedPropertyLocation = (
 };
 
 const classifySpeechEnvelopeFamily = (
-  raw: Readonly<Record<string, unknown>>
+  raw: Schema.JsonObject
 ): SpeechEnvelopeFamily => {
   const hasModelSpecificDiscriminator =
     Object.hasOwn(raw, "segments") || Object.hasOwn(raw, "transcription_info");
@@ -629,7 +632,9 @@ const classifySpeechEnvelopeFamily = (
   return hasModelSpecificDiscriminator ? "model_specific" : "generic";
 };
 
-const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
+const classifySpeechEnvelope = (
+  raw: Schema.Json | undefined
+): SpeechEnvelopeClassification => {
   if (!isUnknownRecord(raw)) {
     return { failure: "not_object", family: "unclassified" };
   }
@@ -709,7 +714,7 @@ const classifySpeechEnvelope = (raw: unknown): SpeechEnvelopeClassification => {
 };
 
 const decodeSpeechResponse = (
-  raw: unknown
+  raw: Schema.Json | undefined
 ):
   | {
       readonly _tag: "Decoded";
@@ -850,18 +855,15 @@ type SpeechDispatchOutcome =
     };
 
 export const makeInstalledSpeechTranscriber = (input: {
-  readonly client: QueryGatewayClient;
   readonly correlationId: ImportCorrelationId;
   readonly dispatch: ProviderDispatchGate;
-  readonly model?: string;
+  readonly transport: WorkersAiTransport["speech"];
 }) =>
   Effect.gen(function* makeSpeechAdapter() {
-    const model = input.model ?? InstalledSpeechModel;
+    const { model } = input.transport;
     const traceStore = Option.getOrUndefined(
       yield* Effect.serviceOption(ImportObservabilityTraceStore)
     );
-    const ai = yield* input.client.raw;
-    const gatewayId = yield* input.client.id;
     return {
       transcribe: (request: SpeechTranscriptionInput) =>
         Effect.gen(function* transcribeSpeech() {
@@ -882,30 +884,22 @@ export const makeInstalledSpeechTranscriber = (input: {
                   catch: (error) =>
                     isPilotProviderKnownZeroCostFailure(error)
                       ? error
-                      : safeFailureCode(Cause.fail(error)),
+                      : safeFailureCode(
+                          providerFailureFromEvidence(
+                            Option.getOrUndefined(
+                              decodeProviderFailureEvidence(error)
+                            )
+                          )
+                        ),
                   try: () =>
-                    runWorkersAi(
-                      ai,
-                      model,
-                      {
-                        audio: encodeBase64(request.audio.bytes),
-                        condition_on_previous_text: false,
-                        language: "en",
-                        task: "transcribe",
-                        vad_filter: true,
-                      },
-                      gatewayId
-                    ),
+                    input.transport.run({
+                      audio: encodeBase64(request.audio.bytes),
+                      condition_on_previous_text: false,
+                      language: "en",
+                      task: "transcribe",
+                      vad_filter: true,
+                    }),
                 });
-                yield* emitImportObservabilityEvent(
-                  {
-                    correlationId: input.correlationId,
-                    event: "provider.response",
-                    outcome: "received",
-                    providerStage: "speech",
-                  },
-                  traceStore
-                );
                 if (!response.ok) {
                   return yield* Effect.fail({ status: response.status });
                 }
@@ -913,7 +907,10 @@ export const makeInstalledSpeechTranscriber = (input: {
                   yield* Effect.tryPromise({
                     catch: () => "malformed_response" as const,
                     try: () => response.json(),
-                  }).pipe(Effect.option)
+                  }).pipe(
+                    Effect.flatMap(Schema.decodeUnknownEffect(Schema.Json)),
+                    Effect.option
+                  )
                 );
                 const decoded = decodeSpeechResponse(raw);
                 const transcript =
@@ -985,7 +982,13 @@ export const makeInstalledSpeechTranscriber = (input: {
                 }
                 return typeof error === "string"
                   ? error
-                  : safeFailureCode(Cause.fail(error));
+                  : safeFailureCode(
+                      providerFailureFromEvidence(
+                        Option.getOrUndefined(
+                          decodeProviderFailureEvidence(error)
+                        )
+                      )
+                    );
               })
             ),
             maximumCostMicroUsd: SpeechMaximumCostMicroUsd,

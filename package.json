@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@effect/platform-node": "4.0.0-rc.109",
+    "@oxlint/plugins": "1.73.0",
     "@types/node": "24.13.2",
     "alchemy": "2.0.0-beta.72",
     "effect": "4.0.0-rc.109",

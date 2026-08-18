@@ -5,7 +5,10 @@ import {
   makeR2SpeechAudioExtractor,
   makeR2VisualFrameSampler,
 } from "./import-derived-media.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
+import type {
+  AcquisitionBucketLike,
+  R2ObjectBodyLike,
+} from "./import-media-acquirer.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { ImportId } from "./import.contracts.js";
 
@@ -17,10 +20,21 @@ const hash = async (bytes: Uint8Array) =>
     (byte) => byte.toString(16).padStart(2, "0")
   ).join("");
 
-const object = (bytes: Uint8Array) => ({
-  arrayBuffer: () => Promise.resolve(Uint8Array.from(bytes).buffer),
+const object = (bytes: Uint8Array): R2ObjectBodyLike => ({
+  arrayBuffer: () => Effect.succeed(Uint8Array.from(bytes).buffer),
   size: bytes.byteLength,
-  text: () => Promise.resolve(new TextDecoder().decode(bytes)),
+  text: () => Effect.succeed(new TextDecoder().decode(bytes)),
+});
+
+const readOnlyBucket = (
+  read: (key: string) => Uint8Array | undefined
+): AcquisitionBucketLike => ({
+  get: (key) => {
+    const bytes = read(key);
+    return Effect.succeed(bytes === undefined ? null : object(bytes));
+  },
+  head: () => Effect.die("Unexpected derived-evidence head"),
+  put: () => Effect.die("Unexpected derived-evidence write"),
 });
 
 describe("private derived provider evidence", () => {
@@ -75,12 +89,7 @@ describe("private derived provider evidence", () => {
       [firstFrameKey, first],
       [secondFrameKey, second],
     ]);
-    const bucket = {
-      get: (key: string) => {
-        const bytes = values.get(key);
-        return Promise.resolve(bytes === undefined ? null : object(bytes));
-      },
-    } as unknown as AcquisitionBucketLike;
+    const bucket = readOnlyBucket((key) => values.get(key));
     const input = {
       generation,
       importId,
@@ -134,14 +143,11 @@ describe("private derived provider evidence", () => {
       schemaVersion: 1,
       sourceMediaSha256: "a".repeat(64),
     };
-    const bucket = {
-      get: (key: string) =>
-        Promise.resolve(
-          key.endsWith("provider-evidence.json")
-            ? object(new TextEncoder().encode(JSON.stringify(manifest)))
-            : object(new Uint8Array([9]))
-        ),
-    } as unknown as AcquisitionBucketLike;
+    const bucket = readOnlyBucket((key) =>
+      key.endsWith("provider-evidence.json")
+        ? new TextEncoder().encode(JSON.stringify(manifest))
+        : new Uint8Array([9])
+    );
 
     const exit = await Effect.runPromiseExit(
       makeR2SpeechAudioExtractor(bucket).extract({

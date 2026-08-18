@@ -8,13 +8,14 @@ import { BlockList, isIP } from "node:net";
 import { join } from "node:path";
 import { checkServerIdentity } from "node:tls";
 
-import { Clock, Effect } from "effect";
+import { Clock, Effect, Schema } from "effect";
 
 import type { MediaAcquirer } from "./import-media-acquirer.js";
 import type { MediaProcessRunner } from "./import-media-process.js";
 import { scanTemporaryWorkspace } from "./import-media-process.js";
 import {
   hasIsoBaseMediaFileType,
+  MediaProbeOutput,
   validateMediaProbe,
 } from "./import-media-validation.js";
 import {
@@ -55,6 +56,14 @@ const MediaDownloadStreamOrTlsFailure = Symbol(
   "MediaDownloadStreamOrTlsFailure"
 );
 const MediaDownloadTimeout = Symbol("MediaDownloadTimeout");
+type MediaDownloadFailure =
+  | typeof MediaDownloadDnsFailure
+  | typeof MediaDownloadHttpResponseFailure
+  | typeof MediaDownloadLimitExceeded
+  | typeof MediaDownloadSourceUnavailable
+  | typeof MediaDownloadStreamOrTlsFailure
+  | typeof MediaDownloadTimeout
+  | typeof UnsafeMediaDestination;
 
 const BlockedMediaAddresses = new BlockList();
 const GlobalUnicastMediaAddresses = new BlockList();
@@ -210,7 +219,7 @@ export const NodeSecureMediaDownloadClient: SecureMediaDownloadClient = {
   },
 };
 
-const downloadFailure = (error: unknown) => {
+const downloadFailure = (error: MediaDownloadFailure) => {
   if (error === UnsafeMediaDestination) {
     return terminal("invalid_media");
   }
@@ -232,11 +241,7 @@ const downloadFailure = (error: unknown) => {
   return retryableDownload("download_stream_or_tls");
 };
 
-const isAbortError = (error: unknown) =>
-  typeof error === "object" &&
-  error !== null &&
-  "name" in error &&
-  error.name === "AbortError";
+const isAbortError = (error: Error) => error.name === "AbortError";
 
 const requestSafeMedia = async (
   client: SecureMediaDownloadClient,
@@ -277,7 +282,7 @@ const requestSafeMedia = async (
       ...(cookie === undefined ? {} : { cookie }),
     });
   } catch (error) {
-    throw isAbortError(error)
+    throw error instanceof Error && isAbortError(error)
       ? MediaDownloadTimeout
       : MediaDownloadStreamOrTlsFailure;
   }
@@ -307,7 +312,17 @@ export const makeSecureMediaDownloader = (
   download: Effect.fn("ImportMedia.download")(
     (locator, destination, maximumBytes, requestHeaders, session) =>
       Effect.tryPromise({
-        catch: downloadFailure,
+        catch: (error) =>
+          downloadFailure(
+            error === UnsafeMediaDestination ||
+              error === MediaDownloadLimitExceeded ||
+              error === MediaDownloadDnsFailure ||
+              error === MediaDownloadHttpResponseFailure ||
+              error === MediaDownloadSourceUnavailable ||
+              error === MediaDownloadTimeout
+              ? error
+              : MediaDownloadStreamOrTlsFailure
+          ),
         try: async (signal) => {
           const file = await open(destination, "wx");
           let completed = false;
@@ -347,7 +362,7 @@ export const makeSecureMediaDownloader = (
               if (error === MediaDownloadLimitExceeded) {
                 throw error;
               }
-              throw isAbortError(error)
+              throw error instanceof Error && isAbortError(error)
                 ? MediaDownloadTimeout
                 : MediaDownloadStreamOrTlsFailure;
             }
@@ -482,9 +497,11 @@ export const makeContainerMediaAcquirer = (
       );
       const parsedProbe = yield* Effect.try({
         catch: () => terminal("invalid_media"),
-        try: () =>
-          JSON.parse(new TextDecoder().decode(probe.stdout)) as unknown,
-      });
+        try: () => JSON.parse(new TextDecoder().decode(probe.stdout)),
+      }).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(MediaProbeOutput)),
+        Effect.mapError(() => terminal("invalid_media"))
+      );
       const validated = yield* validateMediaProbe(parsedProbe, {
         actualBytes: mediaStats.size,
         maximumBytes: limits.maximumMediaBytes,

@@ -1,4 +1,5 @@
 import { Data, Effect, Schema } from "effect";
+import { flow } from "effect/Function";
 
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { ImportTraceContext } from "./import-observability.js";
@@ -11,12 +12,16 @@ export const ImportWorkflowInput = Schema.Struct({
   importId: ImportId,
   trace: ImportTraceContext,
 });
+export type ImportWorkflowInput = typeof ImportWorkflowInput.Type;
+export type ImportWorkflowInputEncoded = typeof ImportWorkflowInput.Encoded;
 
 export class InvalidImportWorkflowInput extends Data.TaggedError(
   "InvalidImportWorkflowInput"
 ) {}
 
-export const decodeImportWorkflowInput = (rawInput: unknown) =>
+export const decodeImportWorkflowInput = flow(
   Schema.decodeUnknownEffect(ImportWorkflowInput, {
     onExcessProperty: "error",
-  })(rawInput).pipe(Effect.mapError(() => new InvalidImportWorkflowInput()));
+  }),
+  Effect.mapError(() => new InvalidImportWorkflowInput())
+);

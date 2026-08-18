@@ -2,6 +2,8 @@ import { Context, Effect, Layer, Option, Schema } from "effect";
 
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
+import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
+import type { ProviderTaskDiagnosticReasonCode as ProviderTaskDiagnosticReasonCodeType } from "./import-provider-workflow-checkpoint.js";
 import { SpeechTranscript } from "./import-speech-transcriber.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
@@ -34,7 +36,7 @@ export interface TranscriptEvidenceStoreError {
     | "checksum_mismatch"
     | "identity_mismatch"
     | "metadata_mismatch";
-  readonly reasonCode?: string;
+  readonly reasonCode?: ProviderTaskDiagnosticReasonCodeType;
 }
 export const TranscriptEvidenceStoreError =
   // eslint-disable-next-line unicorn/throw-new-error -- Schema.TaggedError is Effect's constructor factory, not a thrown expression.
@@ -50,7 +52,7 @@ export const TranscriptEvidenceStoreError =
         "identity_mismatch",
         "metadata_mismatch",
       ]),
-      reasonCode: Schema.optionalKey(Schema.String),
+      reasonCode: Schema.optionalKey(ProviderTaskDiagnosticReasonCode),
     }
   );
 
@@ -90,7 +92,7 @@ export class TranscriptEvidenceStore extends Context.Service<
 
 const failure = (
   code: TranscriptEvidenceStoreError["code"],
-  reasonCode?: string
+  reasonCode?: ProviderTaskDiagnosticReasonCodeType
 ) =>
   new TranscriptEvidenceStoreError({
     code,
@@ -153,10 +155,13 @@ const readVerified = (bucket: AcquisitionBucketLike) =>
     expected: ReadVerifiedTranscriptEvidence
   ) {
     const key = transcriptObjectKey(expected.importId, expected.generation);
-    const object = yield* Effect.tryPromise({
-      catch: () => failure("storage_failure", "transcript_get_failed"),
-      try: () => bucket.get(key),
-    });
+    const object = yield* bucket
+      .get(key)
+      .pipe(
+        Effect.mapError(() =>
+          failure("storage_failure", "transcript_get_failed")
+        )
+      );
     if (object === null) {
       return Option.none();
     }
@@ -165,10 +170,13 @@ const readVerified = (bucket: AcquisitionBucketLike) =>
         failure("oversized", "transcript_size_invalid")
       );
     }
-    const text = yield* Effect.tryPromise({
-      catch: () => failure("storage_failure", "transcript_read_failed"),
-      try: () => object.text(),
-    });
+    const text = yield* object
+      .text()
+      .pipe(
+        Effect.mapError(() =>
+          failure("storage_failure", "transcript_read_failed")
+        )
+      );
     const bytes = new TextEncoder().encode(text);
     const sha256 = yield* digest(bytes).pipe(
       Effect.mapError(() => failure("malformed", "transcript_digest_invalid"))
@@ -236,26 +244,28 @@ const putVerified = (bucket: AcquisitionBucketLike) =>
       document.importId,
       document.acquisitionGeneration
     );
-    const written = yield* Effect.tryPromise({
-      catch: () => failure("storage_failure", "transcript_put_failed"),
-      try: () =>
-        bucket.put(key, bytes, {
-          contentLength: bytes.byteLength,
-          customMetadata: {
-            generation: String(document.acquisitionGeneration),
-            importId: document.importId,
-            kind: "speech_transcript",
-            sha256,
-            sourceMediaSha256: document.sourceMediaSha256,
-          },
-          httpMetadata: {
-            cacheControl: "private, no-store",
-            contentType: "application/json",
-          },
-          onlyIf: { etagDoesNotMatch: "*" },
-          sha256: checksumBytes(sha256),
-        }),
-    });
+    const written = yield* bucket
+      .put(key, bytes, {
+        contentLength: bytes.byteLength,
+        customMetadata: {
+          generation: String(document.acquisitionGeneration),
+          importId: document.importId,
+          kind: "speech_transcript",
+          sha256,
+          sourceMediaSha256: document.sourceMediaSha256,
+        },
+        httpMetadata: {
+          cacheControl: "private, no-store",
+          contentType: "application/json",
+        },
+        onlyIf: { etagDoesNotMatch: "*" },
+        sha256: checksumBytes(sha256),
+      })
+      .pipe(
+        Effect.mapError(() =>
+          failure("storage_failure", "transcript_put_failed")
+        )
+      );
     if (written === null) {
       return yield* Effect.fail(
         failure("storage_failure", "transcript_conditional_create_rejected")

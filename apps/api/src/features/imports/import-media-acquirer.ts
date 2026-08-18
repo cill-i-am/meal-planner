@@ -29,11 +29,7 @@ import {
   MediaDurationSeconds as MediaDurationSecondsSchema,
   MediaObjectKey as MediaObjectKeySchema,
   MediaStreamSummary,
-  RetryableAcquisitionFailure as RetryableAcquisitionFailureSchema,
   Sha256Hex as Sha256HexSchema,
-  TerminalMediaFailure as TerminalMediaFailureSchema,
-  UnavailableFailure as UnavailableFailureSchema,
-  UnsupportedCarouselFailure as UnsupportedCarouselFailureSchema,
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
@@ -100,7 +96,7 @@ export interface PreparedMediaArtifact {
   }[];
 }
 
-interface R2ObjectLike {
+export interface R2ObjectLike {
   readonly checksums?: { readonly sha256?: ArrayBuffer };
   readonly customMetadata?: Record<string, string>;
   readonly httpMetadata?: {
@@ -110,9 +106,12 @@ interface R2ObjectLike {
   readonly size: number;
 }
 
-interface R2ObjectBodyLike extends R2ObjectLike {
-  readonly arrayBuffer?: () => Promise<ArrayBuffer>;
-  readonly text: () => Promise<string>;
+export interface R2ObjectBodyLike extends R2ObjectLike {
+  readonly arrayBuffer: () => Effect.Effect<
+    ArrayBuffer,
+    RetryableAcquisitionFailure
+  >;
+  readonly text: () => Effect.Effect<string, RetryableAcquisitionFailure>;
 }
 
 export interface AcquisitionPutOptions {
@@ -130,25 +129,28 @@ export interface AcquisitionPutOptions {
   readonly sha256: ArrayBuffer;
 }
 
+export type AcquisitionPutValue =
+  | ArrayBufferView
+  | Stream.Stream<Uint8Array, RetryableAcquisitionFailure>;
+
 export interface AcquisitionBucketLike {
-  readonly get: (key: string) => Promise<R2ObjectBodyLike | null>;
-  readonly head: (key: string) => Promise<R2ObjectLike | null>;
+  readonly get: (
+    key: string
+  ) => Effect.Effect<R2ObjectBodyLike | null, RetryableAcquisitionFailure>;
+  readonly head: (
+    key: string
+  ) => Effect.Effect<R2ObjectLike | null, RetryableAcquisitionFailure>;
   readonly put: (
     key: string,
-    value: ArrayBufferView | ReadableStream,
+    value: AcquisitionPutValue,
     options: AcquisitionPutOptions
-  ) => Promise<R2ObjectLike | null>;
+  ) => Effect.Effect<R2ObjectLike | null, RetryableAcquisitionFailure>;
 }
 
-/** Narrow the Alchemy/Cloudflare R2 binding to the capabilities used here. */
-// SAFETY: Alchemy's ReadWriteBucket.raw value is the deployed Cloudflare R2
-// binding. This single adapter deliberately exposes only get/head/put.
-export const adaptAcquisitionBucket = (
-  bucket: unknown
-): AcquisitionBucketLike => bucket as AcquisitionBucketLike;
-
 export interface AcquisitionMediaObjectLike {
-  readonly cleanup: (artifactId: string) => Effect.Effect<void>;
+  readonly cleanup: (
+    artifactId: string
+  ) => Effect.Effect<void, RetryableAcquisitionFailure>;
   readonly prepare: (
     input: TikTokIdentity
   ) => Effect.Effect<PreparedMediaArtifact, ContainerAcquisitionError>;
@@ -339,108 +341,55 @@ const retryableAt = (
   });
 
 const closeContainerFailure = (
-  failure: unknown,
+  failure: ContainerAcquisitionError,
   generation: AcquisitionGeneration
 ): Effect.Effect<AcquisitionTaskOutcome, RetryableAcquisitionFailure> => {
-  const retryable = Schema.decodeUnknownOption(
-    RetryableAcquisitionFailureSchema
-  )(failure);
-  if (Option.isSome(retryable)) {
-    return Effect.fail(
-      retryableAt(retryable.value.stage, retryable.value.reason)
-    );
+  switch (failure._tag) {
+    case "RetryableAcquisitionFailure": {
+      return Effect.fail(retryableAt(failure.stage, failure.reason));
+    }
+    case "TerminalMedia": {
+      return Effect.succeed({
+        _tag: "TerminalMedia",
+        code: failure.code,
+        generation,
+        stage: failure.stage,
+      });
+    }
+    case "Unavailable": {
+      return Effect.succeed({
+        _tag: "Unavailable",
+        code: failure.code,
+        generation,
+      });
+    }
+    case "UnsupportedCarousel": {
+      return Effect.succeed({
+        _tag: "UnsupportedCarousel",
+        code: failure.code,
+        generation,
+      });
+    }
+    default: {
+      return failure satisfies never;
+    }
   }
-  const terminal = Schema.decodeUnknownOption(TerminalMediaFailureSchema)(
-    failure
-  );
-  if (Option.isSome(terminal)) {
-    return Effect.succeed({
-      _tag: "TerminalMedia",
-      code: terminal.value.code,
-      generation,
-      stage: terminal.value.stage,
-    });
-  }
-  const unavailable = Schema.decodeUnknownOption(UnavailableFailureSchema)(
-    failure
-  );
-  if (Option.isSome(unavailable)) {
-    return Effect.succeed({
-      _tag: "Unavailable",
-      code: unavailable.value.code,
-      generation,
-    });
-  }
-  const unsupportedCarousel = Schema.decodeUnknownOption(
-    UnsupportedCarouselFailureSchema
-  )(failure);
-  if (Option.isSome(unsupportedCarousel)) {
-    return Effect.succeed({
-      _tag: "UnsupportedCarousel",
-      code: unsupportedCarousel.value.code,
-      generation,
-    });
-  }
-  return Effect.fail(retryableAt("container", "container_rpc"));
 };
 
 const r2Effect = <A>(
   stage: RetryableAcquisitionFailure["stage"],
-  operation: () => Promise<A>
+  operation: Effect.Effect<A, RetryableAcquisitionFailure>
 ) =>
-  Effect.tryPromise({
-    catch: () => retryableAt(stage, "container_rpc"),
-    try: operation,
-  }).pipe(
+  operation.pipe(
     Effect.timeoutOrElse({
       duration: MaximumR2OperationMilliseconds,
       orElse: () => Effect.fail(retryableAt(stage, "acquisition_timeout")),
     })
   );
 
-const r2MutationEffect = <A>(
-  stage: RetryableAcquisitionFailure["stage"],
-  operation: () => Promise<A>,
-  onDeadline?: () => void
+const boundedCleanup = (
+  cleanup: Effect.Effect<void, RetryableAcquisitionFailure>
 ) =>
-  Effect.callback<A, RetryableAcquisitionFailure>((resume) => {
-    let completed = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const finish = (effect: Effect.Effect<A, RetryableAcquisitionFailure>) => {
-      if (completed) {
-        return;
-      }
-      completed = true;
-      if (timer !== undefined) {
-        clearTimeout(timer);
-      }
-      resume(effect);
-    };
-    try {
-      const pending = operation();
-      void (async () => {
-        try {
-          finish(Effect.succeed(await pending));
-        } catch {
-          finish(Effect.fail(retryableAt(stage, "container_rpc")));
-        }
-      })();
-      timer = setTimeout(() => {
-        onDeadline?.();
-        finish(Effect.fail(retryableAt(stage, "acquisition_timeout")));
-      }, MaximumR2OperationMilliseconds);
-    } catch {
-      finish(Effect.fail(retryableAt(stage, "container_rpc")));
-    }
-    return Effect.sync(() => {
-      if (timer !== undefined) {
-        clearTimeout(timer);
-      }
-      onDeadline?.();
-    });
-  });
-
-const boundedCleanup = (cleanup: Effect.Effect<void>) =>
   cleanup.pipe(
     Effect.timeoutOrElse({
       duration: MaximumLocalCleanupMilliseconds,
@@ -488,10 +437,12 @@ const readCommittedPair = Effect.fn("ImportMedia.readCommittedPair")(
     importId: ImportId,
     generation: AcquisitionGeneration
   ) {
-    const media = yield* r2Effect("verify", () =>
+    const media = yield* r2Effect(
+      "verify",
       bucket.head(mediaObjectKey(importId, generation))
     );
-    const manifest = yield* r2Effect("verify", () =>
+    const manifest = yield* r2Effect(
+      "verify",
       bucket.get(manifestObjectKey(importId, generation))
     );
     return { manifest, media };
@@ -566,12 +517,12 @@ const decodeCommittedEvidence = Effect.fn(
   if (media === null || manifest === null) {
     return null;
   }
-  const manifestText = yield* r2Effect("verify", () => manifest.text());
+  const manifestText = yield* r2Effect("verify", manifest.text());
   const manifestBytes = new TextEncoder().encode(manifestText);
   const manifestSha256 = yield* sha256Hex(manifestBytes);
   const parsed = yield* Effect.try({
     catch: () => null,
-    try: () => JSON.parse(manifestText) as unknown,
+    try: () => JSON.parse(manifestText),
   }).pipe(Effect.option);
   if (Option.isNone(parsed)) {
     return null;
@@ -763,7 +714,8 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
       ).pipe(Effect.mapError(() => retryableAt("store")));
       const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
       const manifestSha256 = yield* sha256Hex(manifestBytes);
-      const storedManifest = yield* r2MutationEffect("store", () =>
+      const storedManifest = yield* r2Effect(
+        "store",
         bucket.put(manifestKey, manifestBytes, {
           contentLength: manifestBytes.byteLength,
           customMetadata: objectMetadata(

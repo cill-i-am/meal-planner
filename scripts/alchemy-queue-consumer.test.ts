@@ -18,6 +18,7 @@ import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import type * as Schema from "effect/Schema";
 import type * as HttpBody from "effect/unstable/http/HttpBody";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
@@ -175,7 +176,7 @@ const decodeRequestBody = (body: HttpBody.HttpBody): QueueRequestBody => {
 
 const cloudflareResponse = (
   request: Parameters<typeof HttpClientResponse.fromWeb>[0],
-  result: unknown
+  result: Schema.Json
 ): HttpClientResponse.HttpClientResponse =>
   HttpClientResponse.fromWeb(
     request,
@@ -319,14 +320,14 @@ const runEventSourcePlan = async () => {
       )
     )
   );
-  const values = new Map<string, unknown>();
+  const values = new Map<string, Output.Output>();
   const runtimeContext = {
     Type: "test",
     env: {},
     get: <T>(key: string) => Effect.succeed(values.get(key) as T | undefined),
     id: "local-runtime",
     listen: () => Effect.void,
-    set: (key: string, value: unknown) =>
+    set: (key: string, value: Output.Output) =>
       Effect.sync(() => {
         values.set(key, value);
         return key;
@@ -491,11 +492,21 @@ const physicalConsumer = (
   queue_name: "meal-planner-pilot-gaia-117-import-batch",
   script: scriptName,
   settings: {
-    batch_size: settings.batchSize,
-    max_concurrency: settings.maxConcurrency,
-    max_retries: settings.maxRetries,
-    max_wait_time_ms: settings.maxWaitTimeMs,
-    retry_delay: settings.retryDelay,
+    ...(settings.batchSize === undefined
+      ? {}
+      : { batch_size: settings.batchSize }),
+    ...(settings.maxConcurrency === undefined
+      ? {}
+      : { max_concurrency: settings.maxConcurrency }),
+    ...(settings.maxRetries === undefined
+      ? {}
+      : { max_retries: settings.maxRetries }),
+    ...(settings.maxWaitTimeMs === undefined
+      ? {}
+      : { max_wait_time_ms: settings.maxWaitTimeMs }),
+    ...(settings.retryDelay === undefined
+      ? {}
+      : { retry_delay: settings.retryDelay }),
   },
   type: "worker",
 });
@@ -504,7 +515,7 @@ const physicalQueue = (options: {
   readonly consumers: readonly ReturnType<typeof physicalConsumer>[];
   readonly consumersTotalCount?: number | undefined;
   readonly physicalQueueId: string;
-  readonly producers?: readonly Record<string, unknown>[] | undefined;
+  readonly producers?: readonly Schema.JsonObject[] | undefined;
   readonly producersTotalCount?: number | undefined;
   readonly queueName: string;
 }) => ({
@@ -538,7 +549,7 @@ interface ReplacementScenario {
   >[];
   readonly deadLetterQueuePhysicalId?: string;
   readonly deadLetterQueueSafetyId?: string;
-  readonly deadLetterQueueProducers?: readonly Record<string, unknown>[];
+  readonly deadLetterQueueProducers?: readonly Schema.JsonObject[];
   readonly deadLetterQueueProducersTotalCount?: number;
   readonly failure?: ReplacementFailure;
   readonly replacementDeadLetterQueue?: string | null;
@@ -547,7 +558,7 @@ interface ReplacementScenario {
   readonly sourceBacklogCount?: number | null;
   readonly sourceConsumers?: readonly ReturnType<typeof physicalConsumer>[];
   readonly sourcePhysicalQueueId?: string;
-  readonly sourceProducers?: readonly Record<string, unknown>[];
+  readonly sourceProducers?: readonly Schema.JsonObject[];
   readonly sourceProducersTotalCount?: number;
   readonly updateDeadLetterQueue?: string | null;
 }
@@ -872,11 +883,11 @@ describe("Alchemy queue consumer reconciliation", () => {
           queue_name: "meal-planner-pilot-gaia-117-import-batch",
           script_name: scriptName,
           settings: {
-            batch_size: desiredSettings.batchSize,
-            max_concurrency: desiredSettings.maxConcurrency,
-            max_retries: desiredSettings.maxRetries,
-            max_wait_time_ms: desiredSettings.maxWaitTimeMs,
-            retry_delay: desiredSettings.retryDelay,
+            batch_size: 1,
+            max_concurrency: 1,
+            max_retries: 2,
+            max_wait_time_ms: 1000,
+            retry_delay: 1,
           },
           type: "worker",
         });
@@ -923,11 +934,11 @@ describe("Alchemy queue consumer reconciliation", () => {
           queue_name: "meal-planner-pilot-gaia-117-import-batch",
           script_name: scriptName,
           settings: {
-            batch_size: desiredSettings.batchSize,
-            max_concurrency: desiredSettings.maxConcurrency,
-            max_retries: desiredSettings.maxRetries,
-            max_wait_time_ms: desiredSettings.maxWaitTimeMs,
-            retry_delay: desiredSettings.retryDelay,
+            batch_size: 1,
+            max_concurrency: 1,
+            max_retries: 2,
+            max_wait_time_ms: 1000,
+            retry_delay: 1,
           },
           type: "worker",
         });
@@ -964,9 +975,9 @@ describe("Alchemy queue consumer reconciliation", () => {
           queue_name: "meal-planner-pilot-gaia-117-import-batch",
           script_name: scriptName,
           settings: {
-            batch_size: desiredSettingsWithProviderDefaults.batchSize,
-            max_concurrency: desiredSettingsWithProviderDefaults.maxConcurrency,
-            max_retries: desiredSettingsWithProviderDefaults.maxRetries,
+            batch_size: 1,
+            max_concurrency: 1,
+            max_retries: 3,
             max_wait_time_ms: 5000,
             retry_delay: 0,
           },
@@ -1084,11 +1095,11 @@ describe("Alchemy queue consumer reconciliation", () => {
           queue_name: "meal-planner-pilot-gaia-117-import-batch",
           script_name: scriptName,
           settings: {
-            batch_size: desiredSettings.batchSize,
-            max_concurrency: desiredSettings.maxConcurrency,
-            max_retries: desiredSettings.maxRetries,
-            max_wait_time_ms: desiredSettings.maxWaitTimeMs,
-            retry_delay: desiredSettings.retryDelay,
+            batch_size: 1,
+            max_concurrency: 1,
+            max_retries: 2,
+            max_wait_time_ms: 1000,
+            retry_delay: 1,
           },
           type: "worker",
         });

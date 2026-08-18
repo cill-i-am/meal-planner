@@ -44,6 +44,7 @@ const CorrectionRow = Schema.Struct({
   reason: Schema.String,
   version: Schema.Number,
 });
+type CorrectionRow = typeof CorrectionRow.Type;
 
 const TransitionRow = Schema.Struct({
   actor_id: Schema.String,
@@ -53,10 +54,13 @@ const TransitionRow = Schema.Struct({
   transitioned_at: Schema.String,
   version: Schema.Number,
 });
+type TransitionRow = typeof TransitionRow.Type;
 
-const D1BatchResults = Schema.Array(
-  Schema.Struct({ results: Schema.Array(Schema.Unknown) })
-);
+const D1ReviewRows = Schema.Tuple([
+  Schema.Struct({ results: Schema.Array(ReviewSourceRow) }),
+  Schema.Struct({ results: Schema.Array(CorrectionRow) }),
+  Schema.Struct({ results: Schema.Array(TransitionRow) }),
+]);
 
 const ApprovedImportRow = Schema.Struct({ import_id: ImportId });
 
@@ -66,26 +70,21 @@ const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
     try: () => Promise.resolve(operation()),
   });
 
-const decode = <S extends Schema.Top>(schema: S, value: unknown) =>
-  Schema.decodeUnknownEffect(schema, { onExcessProperty: "ignore" })(
-    value
-  ).pipe(Effect.mapError(() => importPersistenceCorrupt()));
-
 const decodeJson = <S extends Schema.Top>(schema: S, value: string) =>
-  Effect.try({
-    catch: importPersistenceCorrupt,
-    try: () => JSON.parse(value) as unknown,
-  }).pipe(Effect.flatMap((json) => decode(schema, json)));
+  Schema.decodeUnknownEffect(Schema.fromJsonString(schema), {
+    onExcessProperty: "ignore",
+  })(value).pipe(Effect.mapError(() => importPersistenceCorrupt()));
 
-const decodeCorrection = (value: unknown) =>
+const decodeCorrection = (row: CorrectionRow) =>
   Effect.gen(function* decodeCorrectionRow() {
-    const row = yield* decode(CorrectionRow, value);
     const before = yield* decodeJson(
       Schema.NullOr(RecipeCorrectionValue),
       row.before_json
     );
     const after = yield* decodeJson(RecipeCorrectionValue, row.after_json);
-    return yield* decode(RecipeCorrection, {
+    return yield* Schema.decodeUnknownEffect(RecipeCorrection, {
+      onExcessProperty: "ignore",
+    })({
       actorId: row.actor_id,
       after,
       before,
@@ -93,20 +92,21 @@ const decodeCorrection = (value: unknown) =>
       field: row.field,
       reason: row.reason,
       version: row.version,
-    });
+    }).pipe(Effect.mapError(() => importPersistenceCorrupt()));
   });
 
-const decodeTransition = (value: unknown) =>
+const decodeTransition = (row: TransitionRow) =>
   Effect.gen(function* decodeTransitionRow() {
-    const row = yield* decode(TransitionRow, value);
-    return yield* decode(RecipeReviewTransition, {
+    return yield* Schema.decodeUnknownEffect(RecipeReviewTransition, {
+      onExcessProperty: "ignore",
+    })({
       actorId: row.actor_id,
       from: row.from_lifecycle,
       reason: row.reason,
       to: row.to_lifecycle,
       transitionedAt: row.transitioned_at,
       version: row.version,
-    });
+    }).pipe(Effect.mapError(() => importPersistenceCorrupt()));
   });
 
 const unresolvedRequiredFields = (
@@ -121,12 +121,11 @@ const unresolvedRequiredFields = (
 };
 
 const reviewFromRows = (
-  sourceValue: unknown,
-  correctionValues: readonly unknown[],
-  transitionValues: readonly unknown[]
+  source: ReviewSourceRow,
+  correctionsRows: readonly CorrectionRow[],
+  transitionRows: readonly TransitionRow[]
 ) =>
   Effect.gen(function* decodeReview() {
-    const source = yield* decode(ReviewSourceRow, sourceValue);
     const draft = yield* decodeJson(RecipeDraft, source.draft_json);
     if (draft.extractionFingerprint !== source.extraction_fingerprint) {
       return yield* Effect.fail(importPersistenceCorrupt());
@@ -135,20 +134,21 @@ const reviewFromRows = (
       Schema.Array(EvidenceReference),
       source.evidence_references_json
     );
-    const corrections = yield* Effect.forEach((value) =>
-      decodeCorrection(value)
-    )(correctionValues);
-    const transitions = yield* Effect.forEach((value) =>
-      decodeTransition(value)
-    )(transitionValues);
+    const corrections =
+      yield* Effect.forEach(decodeCorrection)(correctionsRows);
+    const transitions = yield* Effect.forEach(decodeTransition)(transitionRows);
     const lifecycle =
       source.lifecycle === null
         ? "needs_review"
-        : yield* decode(RecipeReviewLifecycle, source.lifecycle);
+        : yield* Schema.decodeUnknownEffect(RecipeReviewLifecycle)(
+            source.lifecycle
+          ).pipe(Effect.mapError(() => importPersistenceCorrupt()));
     const version =
       source.version === null
         ? 0
-        : yield* decode(RecipeReviewVersion, source.version);
+        : yield* Schema.decodeUnknownEffect(RecipeReviewVersion)(
+            source.version
+          ).pipe(Effect.mapError(() => importPersistenceCorrupt()));
     const tags =
       source.tags_json === null
         ? null
@@ -230,17 +230,16 @@ const readReview = (
           .bind(value),
       ])
     );
-    const results = yield* decode(D1BatchResults, raw);
-    const source = results[0]?.results[0];
+    const [sources, corrections, transitions] =
+      yield* Schema.decodeUnknownEffect(D1ReviewRows, {
+        onExcessProperty: "ignore",
+      })(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
+    const [source] = sources.results;
     if (source === undefined) {
       return Option.none<Review>();
     }
     return Option.some(
-      yield* reviewFromRows(
-        source,
-        results[1]?.results ?? [],
-        results[2]?.results ?? []
-      )
+      yield* reviewFromRows(source, corrections.results, transitions.results)
     );
   });
 
@@ -264,10 +263,10 @@ export const makeD1RecipeReviewRepository = (
           )
           .all()
       );
-      const rows = yield* decode(
+      const rows = yield* Schema.decodeUnknownEffect(
         Schema.Struct({ results: Schema.Array(ApprovedImportRow) }),
-        raw
-      );
+        { onExcessProperty: "ignore" }
+      )(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
       const reviews = yield* Effect.forEach(({ import_id }) =>
         readReview(binding, { importId: import_id })
       )(rows.results);

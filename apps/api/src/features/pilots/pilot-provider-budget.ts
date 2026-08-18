@@ -143,7 +143,7 @@ export interface PilotProviderBudgetRepository {
 }
 
 export interface PilotProviderBudgetRuntime {
-  readonly runtimeStage: unknown;
+  readonly runtimeStage: string;
 }
 
 export const PilotProviderBudgetRuntime =
@@ -152,7 +152,7 @@ export const PilotProviderBudgetRuntime =
   );
 
 export const makePilotProviderBudgetRuntime = (
-  runtimeStage: unknown
+  runtimeStage: string
 ): PilotProviderBudgetRuntime => ({ runtimeStage });
 
 export type PilotProviderCost =
@@ -193,9 +193,9 @@ export const pilotProviderKnownZeroCostFailure = <E>(
   error,
 });
 
-export const isPilotProviderKnownZeroCostFailure = (
-  error: unknown
-): error is PilotProviderKnownZeroCostFailure<unknown> =>
+export const isPilotProviderKnownZeroCostFailure = <Error>(
+  error: Error | PilotProviderKnownZeroCostFailure<Error>
+): error is PilotProviderKnownZeroCostFailure<Error> =>
   typeof error === "object" &&
   error !== null &&
   "_tag" in error &&
@@ -504,7 +504,7 @@ export const runPilotProviderDispatch = <A, E>(input: {
             ).pipe(
               Effect.as<KnownZeroFailureResult<E>>({
                 _tag: "KnownZeroFailure",
-                error: error.error as E,
+                error: error.error,
               })
             )
           : Effect.fail(error)

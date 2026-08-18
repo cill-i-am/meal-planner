@@ -1,7 +1,6 @@
 import { Effect, Schema } from "effect";
 
 import { TescoCatalogueResponseInvalid } from "./catalogue.errors.js";
-import type { TescoCatalogueOperation } from "./catalogue.errors.js";
 import {
   ImageUrl,
   PageInformation,
@@ -157,20 +156,11 @@ const CategoryProductsReadOperation = defineReadOnlyGraphQlOperation({
 /** One named read-only Tesco GraphQL query and its stable projection. */
 interface TescoGraphQlQuery<Input, Output> {
   readonly decode: (
-    input: unknown
+    input: Schema.Json
   ) => Effect.Effect<Output, TescoCatalogueResponseInvalid>;
   readonly operation: ReadOnlyGraphQlOperation;
   readonly variables: (input: Input) => GraphQlVariables;
 }
-
-const decodeUnknown = <A, I, RD, RE>(
-  schema: Schema.Codec<A, I, RD, RE>,
-  input: unknown,
-  operation: TescoCatalogueOperation
-): Effect.Effect<A, TescoCatalogueResponseInvalid, RD> =>
-  Schema.decodeUnknownEffect(schema)(input).pipe(
-    Effect.mapError(() => new TescoCatalogueResponseInvalid({ operation }))
-  );
 
 const projectTescoListing = (
   listing: typeof TescoListingDto.Type
@@ -195,7 +185,10 @@ export const TescoSearchQuery: TescoGraphQlQuery<
   CatalogueProductResults
 > = {
   decode: (input) =>
-    decodeUnknown(TescoSearchGraphQlResponseDto, input, "search").pipe(
+    Schema.decodeUnknownEffect(TescoSearchGraphQlResponseDto)(input).pipe(
+      Effect.mapError(
+        () => new TescoCatalogueResponseInvalid({ operation: "search" })
+      ),
       Effect.map(({ data }) => projectTescoListing(data.search))
     ),
   operation: SearchReadOperation,
@@ -213,11 +206,15 @@ export const TescoCategoryProductsQuery: TescoGraphQlQuery<
   CatalogueProductResults
 > = {
   decode: (input) =>
-    decodeUnknown(
-      TescoCategoryGraphQlResponseDto,
-      input,
-      "category_products"
-    ).pipe(Effect.map(({ data }) => projectTescoListing(data.category))),
+    Schema.decodeUnknownEffect(TescoCategoryGraphQlResponseDto)(input).pipe(
+      Effect.mapError(
+        () =>
+          new TescoCatalogueResponseInvalid({
+            operation: "category_products",
+          })
+      ),
+      Effect.map(({ data }) => projectTescoListing(data.category))
+    ),
   operation: CategoryProductsReadOperation,
   variables: (input) => ({
     count: input.count,
@@ -230,9 +227,12 @@ export const TescoCategoryProductsQuery: TescoGraphQlQuery<
 /** Tesco suggestions request mapper, response codec, and stable projection. */
 export const TescoSuggestionsEndpoint = {
   decode: (
-    input: unknown
+    input: Schema.Json
   ): Effect.Effect<CatalogueSuggestions, TescoCatalogueResponseInvalid> =>
-    decodeUnknown(TescoSuggestionsResponseDto, input, "suggestions").pipe(
+    Schema.decodeUnknownEffect(TescoSuggestionsResponseDto)(input).pipe(
+      Effect.mapError(
+        () => new TescoCatalogueResponseInvalid({ operation: "suggestions" })
+      ),
       Effect.map(({ results }) => ({ results }))
     ),
   request: ({

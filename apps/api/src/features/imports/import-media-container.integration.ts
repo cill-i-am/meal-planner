@@ -6,14 +6,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { Cause, Effect, Exit, Option } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { TikTokMediaContainerDockerfile } from "./import-media-container.runtime.js";
 import {
+  MediaProbeOutput,
   hasIsoBaseMediaFileType,
   validateMediaProbe,
 } from "./import-media-validation.js";
+import { TerminalMediaError } from "./import-media.errors.js";
 
 const execFilePromise = promisify(execFile);
 const enabled = process.env["MEAL_PLANNER_RUN_CONTAINER_TESTS"] === "1";
@@ -41,16 +43,27 @@ const docker = (
   });
 
 const expectRejectedProbe = async (
-  probe: unknown,
+  probe: Schema.Json,
   actualBytes: number,
   maximumBytes = 268_435_456
 ) => {
   const exit = await Effect.runPromiseExit(
-    validateMediaProbe(probe, {
-      actualBytes,
-      maximumBytes,
-      maximumDurationSeconds: 900,
-    })
+    Schema.decodeUnknownEffect(MediaProbeOutput)(probe).pipe(
+      Effect.mapError(
+        () =>
+          new TerminalMediaError({
+            code: "invalid_media",
+            stage: "validation",
+          })
+      ),
+      Effect.flatMap((decodedProbe) =>
+        validateMediaProbe(decodedProbe, {
+          actualBytes,
+          maximumBytes,
+          maximumDurationSeconds: 900,
+        })
+      )
+    )
   );
   expect(Exit.isFailure(exit)).toBe(true);
   if (Exit.isSuccess(exit)) {
@@ -260,11 +273,13 @@ ffprobe -v error -show_format -show_streams -of json /tmp/video-only.mp4 > /tmp/
       );
 
       const validBytes = await readFile(join(root, "valid.mp4"));
-      const validProbe = JSON.parse(
-        await readFile(join(root, "valid.json"), "utf-8")
-      ) as unknown;
+      const validProbe = Schema.decodeUnknownSync(Schema.Json)(
+        JSON.parse(await readFile(join(root, "valid.json"), "utf-8"))
+      );
+      const decodedValidProbe =
+        Schema.decodeUnknownSync(MediaProbeOutput)(validProbe);
       const validated = await Effect.runPromise(
-        validateMediaProbe(validProbe, {
+        validateMediaProbe(decodedValidProbe, {
           actualBytes: validBytes.byteLength,
           maximumBytes: 268_435_456,
           maximumDurationSeconds: 900,
@@ -289,7 +304,7 @@ ffprobe -v error -show_format -show_streams -of json /tmp/video-only.mp4 > /tmp/
             readFile(join(root, probeName), "utf-8"),
           ]);
           await expectRejectedProbe(
-            JSON.parse(probeText) as unknown,
+            Schema.decodeUnknownSync(Schema.Json)(JSON.parse(probeText)),
             media.byteLength
           );
         })

@@ -274,8 +274,8 @@ const validatePreflight = (
  * capabilities.
  */
 export const runRecipeQualityPilotPreflight = (
-  input: unknown,
-  now: unknown
+  input: Schema.Json,
+  now: typeof ImportTimestamp.Encoded
 ): Effect.Effect<RecipeQualityPilotReadiness, PilotPreflightError> =>
   Effect.all({
     now: Schema.decodeUnknownEffect(ImportTimestamp)(now),
@@ -374,6 +374,11 @@ export const RecipeQualityPilotObservation = Schema.Union([
 ]);
 export type RecipeQualityPilotObservation =
   typeof RecipeQualityPilotObservation.Type;
+const RecipeQualityPilotObservations = Schema.Array(
+  RecipeQualityPilotObservation
+);
+type RecipeQualityPilotObservationsEncoded =
+  typeof RecipeQualityPilotObservations.Encoded;
 type SuccessfulPilotObservationType = Extract<
   RecipeQualityPilotObservation,
   { readonly outcome: "approved" | "rejected" }
@@ -516,17 +521,16 @@ const observationMatchesSourceRole = (
 /** Build one exact, redacted report from already-measured terminal outcomes. */
 export const buildRecipeQualityPilotReport = (
   readiness: RecipeQualityPilotReadiness,
-  input: unknown,
-  generatedAt: unknown
+  input: RecipeQualityPilotObservationsEncoded,
+  generatedAt: typeof ImportTimestamp.Encoded
 ): Effect.Effect<RecipeQualityPilotReport, PilotReportError> =>
   Effect.all({
     generatedAt: Schema.decodeUnknownEffect(ImportTimestamp)(generatedAt).pipe(
       Effect.mapError(() => reportError("invalid_generated_at"))
     ),
-    observations: Schema.decodeUnknownEffect(
-      Schema.Array(RecipeQualityPilotObservation),
-      { onExcessProperty: "error" }
-    )(input).pipe(Effect.mapError(() => reportError("invalid_observations"))),
+    observations: Schema.decodeUnknownEffect(RecipeQualityPilotObservations, {
+      onExcessProperty: "error",
+    })(input).pipe(Effect.mapError(() => reportError("invalid_observations"))),
   }).pipe(
     Effect.flatMap(({ generatedAt: decodedGeneratedAt, observations }) => {
       const manifestSamples = readiness.manifest.samples;

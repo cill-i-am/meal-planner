@@ -1,7 +1,6 @@
 import { Effect, Schema, SchemaGetter } from "effect";
 
 import { InvalidRequest } from "../../../app/http/http-failure.js";
-import type { RequestLocation } from "../../../app/http/http-failure.js";
 import {
   optionalParam,
   requiredParam,
@@ -77,15 +76,6 @@ export const CategoryProductsRequestBody = Schema.Struct({
   sortBy: SortByWithDefault,
 });
 
-const decodeRequest = <A, I, RD, RE>(
-  schema: Schema.Codec<A, I, RD, RE>,
-  location: RequestLocation,
-  value: unknown
-): Effect.Effect<A, InvalidRequest, RD> =>
-  Schema.decodeUnknownEffect(schema)(value).pipe(
-    Effect.mapError(() => new InvalidRequest({ location }))
-  );
-
 /** Decode one search URL into a fully populated stable catalogue input. */
 export const searchInputFromUrl = (
   requestUrl: string
@@ -97,12 +87,12 @@ export const searchInputFromUrl = (
     const count = yield* optionalParam(url, "count", ResultCountFromString);
     const sortBy = yield* optionalParam(url, "sortBy", SortBy);
 
-    return yield* decodeRequest(SearchRequestBody, "query", {
+    return yield* Schema.decodeUnknownEffect(SearchRequestBody)({
       query,
       ...(page === undefined ? {} : { page }),
       ...(count === undefined ? {} : { count }),
       ...(sortBy === undefined ? {} : { sortBy }),
-    });
+    }).pipe(Effect.mapError(() => new InvalidRequest({ location: "query" })));
   });
 
 /** Decode one category URL into a fully populated stable catalogue input. */
@@ -115,11 +105,13 @@ export const categoryInputFromUrl = (
     const page = yield* optionalParam(url, "page", PageNumberFromString);
     const count = yield* optionalParam(url, "count", ResultCountFromString);
     const sortBy = yield* optionalParam(url, "sortBy", SortBy);
-    const body = yield* decodeRequest(CategoryProductsRequestBody, "query", {
-      ...(page === undefined ? {} : { page }),
-      ...(count === undefined ? {} : { count }),
-      ...(sortBy === undefined ? {} : { sortBy }),
-    });
+    const body = yield* Schema.decodeUnknownEffect(CategoryProductsRequestBody)(
+      {
+        ...(page === undefined ? {} : { page }),
+        ...(count === undefined ? {} : { count }),
+        ...(sortBy === undefined ? {} : { sortBy }),
+      }
+    ).pipe(Effect.mapError(() => new InvalidRequest({ location: "query" })));
     return { facet, ...body };
   });
 
@@ -138,14 +130,12 @@ export const suggestionsInputFromUrl = (
     const query = yield* requiredParam(url, "query", SearchQuery);
     const limit = yield* optionalParam(url, "limit", ResultCountFromString);
 
-    return yield* decodeRequest(
-      Schema.Struct({ limit: SuggestionLimitWithDefault, query: SearchQuery }),
-      "query",
-      {
-        query,
-        ...(limit === undefined ? {} : { limit }),
-      }
-    );
+    return yield* Schema.decodeUnknownEffect(
+      Schema.Struct({ limit: SuggestionLimitWithDefault, query: SearchQuery })
+    )({
+      query,
+      ...(limit === undefined ? {} : { limit }),
+    }).pipe(Effect.mapError(() => new InvalidRequest({ location: "query" })));
   });
 
 /** Explicit HTTP projection for one stable catalogue listing. */

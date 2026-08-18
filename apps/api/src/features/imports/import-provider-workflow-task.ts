@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect";
 import type { ImportTraceContext } from "./import-observability.js";
 import { emitImportObservabilityEvent } from "./import-observability.js";
 import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
+import type { ImportTransitionError } from "./import.repository.js";
 
 export const ProviderTaskStepConfig = {
   retries: { backoff: "exponential", delay: "2 seconds", limit: 2 },
@@ -26,32 +27,21 @@ export interface ProviderTaskRetryLifecycle {
   readonly working: (attempt: number) => Effect.Effect<void>;
 }
 
-export const providerTaskFailureCode = (error: unknown): string => {
-  if (typeof error === "string") {
-    return error;
-  }
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string"
-  ) {
-    return error.code;
-  }
-  return "stage_failed";
-};
+export interface CodedProviderTaskFailure {
+  readonly code: string;
+  readonly reasonCode?: ProviderTaskFailureCheckpoint["reasonCode"];
+}
+export type ProviderTaskFailure =
+  | CodedProviderTaskFailure
+  | ImportTransitionError;
+
+export const providerTaskFailureCode = (error: ProviderTaskFailure): string =>
+  "code" in error ? error.code : "stage_failed";
 
 const providerTaskFailureReasonCode = (
-  error: unknown
-): ProviderTaskFailureCheckpoint["reasonCode"] => {
-  if (typeof error !== "object" || error === null || !("reasonCode" in error)) {
-    return undefined;
-  }
-  const decoded = Schema.decodeUnknownOption(ProviderTaskDiagnosticReasonCode)(
-    error.reasonCode
-  );
-  return decoded._tag === "Some" ? decoded.value : undefined;
-};
+  error: ProviderTaskFailure
+): ProviderTaskFailureCheckpoint["reasonCode"] =>
+  "reasonCode" in error ? error.reasonCode : undefined;
 
 export const isRetryableProviderTaskFailure = (code: string) =>
   code === "provider_unavailable" || code === "throttled" || code === "timeout";
@@ -81,7 +71,11 @@ const terminalFailureCheckpoint = (
  * with a safe typed checkpoint, so Cloudflare persists and replays the
  * terminal result instead of leaving the workflow errored.
  */
-export const runProviderTaskAttempt = <Value, Failure, Success>(
+export const runProviderTaskAttempt = <
+  Value,
+  Failure extends ProviderTaskFailure,
+  Success,
+>(
   stage: ProviderTaskStage,
   effect: Effect.Effect<Value, Failure>,
   onSuccess: (value: Value) => Success,
@@ -169,7 +163,11 @@ export const runProviderTaskAttempt = <Value, Failure, Success>(
     );
   });
 
-export const runProviderTask = <Value, Failure, Success>(
+export const runProviderTask = <
+  Value,
+  Failure extends ProviderTaskFailure,
+  Success,
+>(
   name: string,
   stage: ProviderTaskStage,
   effect: Effect.Effect<Value, Failure>,

@@ -16,10 +16,14 @@ import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
   AcquisitionPutOptions,
+  AcquisitionPutValue,
   PreparedMediaArtifact,
+  R2ObjectBodyLike,
+  R2ObjectLike,
 } from "./import-media-acquirer.js";
 import { makeAcquisitionMediaObject } from "./import-media-acquisition-object.client.js";
 import type { AcquisitionMediaObjectStub } from "./import-media-acquisition-object.client.js";
+import { RetryableAcquisitionError } from "./import-media.errors.js";
 import {
   AcquisitionGeneration,
   MaximumR2OperationMilliseconds,
@@ -31,41 +35,20 @@ import {
   mediaObjectKey,
 } from "./import-media.model.js";
 import {
+  ImportWorkerR2TestEnvironment,
+  workerTestR2PutBody,
+} from "./import-worker-test-environment.js";
+import type {
+  WorkerTestR2Object,
+  WorkerTestR2ObjectBody,
+} from "./import-worker-test-environment.js";
+import {
   ImportId,
   ImportTimestamp,
   SourceCanonicalId,
 } from "./import.contracts.js";
 
-interface TestR2Object {
-  readonly arrayBuffer: () => Promise<ArrayBuffer>;
-  readonly checksums?: { readonly sha256?: ArrayBuffer };
-  readonly customMetadata?: Record<string, string>;
-  readonly httpMetadata?: {
-    readonly cacheControl?: string;
-    readonly contentType?: string;
-  };
-  readonly key: string;
-  readonly size: number;
-  readonly text: () => Promise<string>;
-}
-
-interface TestR2Bucket {
-  readonly delete: (keys: string | string[]) => Promise<void>;
-  readonly get: (key: string) => Promise<TestR2Object | null>;
-  readonly head: (key: string) => Promise<TestR2Object | null>;
-  readonly list: (options: { readonly prefix: string }) => Promise<{
-    readonly objects: readonly TestR2Object[];
-  }>;
-  readonly put: (
-    key: string,
-    value: unknown,
-    options?: unknown
-  ) => Promise<TestR2Object | null>;
-}
-
-const testEnv = env as unknown as {
-  readonly ImportEvidenceBucket: TestR2Bucket;
-};
+const testEnv = Schema.decodeUnknownSync(ImportWorkerR2TestEnvironment)(env);
 const mediaBytes = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]);
 const sha256 =
   "d9f1cb99ee21291800d5e62bd9bca07850461d7d8096afc4150a52dc8554d49f";
@@ -79,38 +62,83 @@ const canonicalId = Schema.decodeUnknownSync(SourceCanonicalId)(
   "7520000000000000000"
 );
 
-const bucket = (): AcquisitionBucketLike => ({
-  get: (key) => testEnv.ImportEvidenceBucket.get(key),
-  head: (key) => testEnv.ImportEvidenceBucket.head(key),
-  put: (key, value, options) =>
-    testEnv.ImportEvidenceBucket.put(key, value, options),
+const retryableR2Failure = (stage: "store" | "verify") =>
+  new RetryableAcquisitionError({ reason: "container_rpc", stage });
+
+const r2Object = (object: WorkerTestR2Object): R2ObjectLike => ({
+  checksums: object.checksums,
+  ...(object.customMetadata === undefined
+    ? {}
+    : { customMetadata: object.customMetadata }),
+  ...(object.httpMetadata === undefined
+    ? {}
+    : { httpMetadata: object.httpMetadata }),
+  size: object.size,
 });
 
-const drainReadable = async (
-  reader: ReadableStreamDefaultReader<unknown>
-): Promise<void> => {
-  const result = await reader.read();
-  if (!result.done) {
-    await drainReadable(reader);
-  }
-};
+const r2ObjectBody = (object: WorkerTestR2ObjectBody): R2ObjectBodyLike => ({
+  ...r2Object(object),
+  arrayBuffer: () =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => object.arrayBuffer(),
+    }),
+  text: () =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => object.text(),
+    }),
+});
+
+const bucket = (): AcquisitionBucketLike => ({
+  get: (key) =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => testEnv.ImportEvidenceBucket.get(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2ObjectBody(object)))
+    ),
+  head: (key) =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => testEnv.ImportEvidenceBucket.head(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2Object(object)))
+    ),
+  put: (key, value, options) =>
+    Effect.gen(function* putR2Object() {
+      const body = yield* workerTestR2PutBody(value, options.contentLength);
+      return yield* Effect.tryPromise({
+        catch: () => retryableR2Failure("store"),
+        try: () => testEnv.ImportEvidenceBucket.put(key, body, options),
+      });
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2Object(object)))
+    ),
+});
 
 const consumingBucket = (): AcquisitionBucketLike => ({
-  get: () => Promise.reject(new Error("read must remain untouched")),
-  head: () => Promise.reject(new Error("head must remain untouched")),
-  put: async (_key, value) => {
-    if (!(value instanceof ReadableStream)) {
-      throw new Error("Expected a streamed artifact");
-    }
-    const reader = value.getReader();
-    try {
-      await drainReadable(reader);
-      return null;
-    } finally {
-      reader.releaseLock();
-    }
-  },
+  get: () => Effect.fail(retryableR2Failure("verify")),
+  head: () => Effect.fail(retryableR2Failure("verify")),
+  put: (_key, value) =>
+    ArrayBuffer.isView(value)
+      ? Effect.fail(retryableR2Failure("store"))
+      : Stream.runDrain(value).pipe(
+          Effect.mapError(() => retryableR2Failure("store")),
+          Effect.as(null)
+        ),
 });
+
+const rejectAfterStartingStream = (value: AcquisitionPutValue) =>
+  ArrayBuffer.isView(value)
+    ? Effect.fail(retryableR2Failure("store"))
+    : Effect.scoped(
+        Effect.gen(function* rejectStreamedPut() {
+          yield* Stream.runDrain(value).pipe(Effect.forkScoped);
+          yield* Effect.yieldNow;
+          return yield* Effect.fail(retryableR2Failure("store"));
+        })
+      );
 
 const digest = async (bytes: Uint8Array) => {
   const value = await crypto.subtle.digest(
@@ -426,22 +454,17 @@ describe("derived provider evidence", () => {
           : Stream.make(mediaBytes),
     };
     const rejectingDerivedBucket: AcquisitionBucketLike = {
-      get: () => Promise.reject(new Error("read must remain untouched")),
-      head: () => Promise.reject(new Error("head must remain untouched")),
-      put: async (key, value) => {
+      get: () => Effect.fail(retryableR2Failure("verify")),
+      head: () => Effect.fail(retryableR2Failure("verify")),
+      put: (key, value) => {
         if (key.endsWith("/provider-audio.wav")) {
-          throw new Error("synthetic derived R2 rejection");
+          return rejectAfterStartingStream(value);
         }
-        if (!(value instanceof ReadableStream)) {
-          throw new Error("Expected a streamed source artifact");
-        }
-        const reader = value.getReader();
-        try {
-          await drainReadable(reader);
-        } finally {
-          reader.releaseLock();
-        }
-        return { size: mediaBytes.byteLength };
+        return ArrayBuffer.isView(value)
+          ? Effect.fail(retryableR2Failure("store"))
+          : Stream.runDrain(value).pipe(
+              Effect.as({ size: mediaBytes.byteLength })
+            );
       },
     };
 
@@ -701,7 +724,7 @@ describe("native R2 generation commit", () => {
     const calls: {
       readonly key: string;
       readonly options: AcquisitionPutOptions;
-      readonly value: ArrayBufferView | ReadableStream;
+      readonly value: AcquisitionPutValue;
     }[] = [];
     const native = bucket();
     const recording: AcquisitionBucketLike = {
@@ -754,7 +777,7 @@ describe("native R2 generation commit", () => {
         expect(value.length).toBeLessThanOrEqual(64);
       }
     }
-    expect(calls[0]?.value).toBeInstanceOf(ReadableStream);
+    expect(Stream.isStream(calls[0]?.value)).toBe(true);
     expect(ArrayBuffer.isView(calls[1]?.value)).toBe(true);
   });
 
@@ -876,7 +899,11 @@ describe("native R2 generation commit", () => {
       const latePut = Promise.withResolvers<null>();
       const neverSettling: AcquisitionBucketLike = {
         ...bucket(),
-        put: () => latePut.promise,
+        put: () =>
+          Effect.tryPromise({
+            catch: () => retryableR2Failure("store"),
+            try: () => latePut.promise,
+          }),
       };
       const result = Effect.runPromiseExit(
         acquireStoreVerify(neverSettling, fake.object, {
@@ -969,7 +996,7 @@ describe("native R2 generation commit", () => {
     const mediaObject = makeAcquisitionMediaObject(stub);
     const rejecting: AcquisitionBucketLike = {
       ...bucket(),
-      put: () => Promise.reject(new Error("synthetic R2 rejection")),
+      put: (_key, value) => rejectAfterStartingStream(value),
     };
 
     const exit = await Effect.runPromiseExit(
@@ -1097,7 +1124,7 @@ describe("native R2 generation commit", () => {
     };
     const rejecting: AcquisitionBucketLike = {
       ...bucket(),
-      put: () => Promise.reject(new Error("synthetic R2 rejection")),
+      put: () => Effect.fail(retryableR2Failure("store")),
     };
     const result = Effect.runPromiseExit(
       acquireStoreVerify(rejecting, mediaObject, {
@@ -1124,15 +1151,14 @@ describe("native R2 generation commit", () => {
     const importId = id(409);
     const generation = decodeGeneration(1);
     const fake = makeMediaObject();
-    const mediaObject: AcquisitionMediaObjectLike = {
-      ...fake.object,
-      prepare: () =>
-        Effect.fail({
-          _tag: "RpcCallError",
-          cause: new Error("opaque-provider-secret-fragment"),
-          method: "prepare",
-        } as never),
+    const stub: AcquisitionMediaObjectStub = {
+      cleanup: fake.object.cleanup,
+      fetch: () => Effect.fail(new Error("opaque-provider-secret-fragment")),
+      prepare: fake.object.prepare,
+      prepareProviderEvidence: () =>
+        Effect.die("derived evidence must remain untouched"),
     };
+    const mediaObject = makeAcquisitionMediaObject(stub);
 
     const exit = await Effect.runPromiseExit(
       acquireStoreVerify(bucket(), mediaObject, {
@@ -1154,6 +1180,6 @@ describe("native R2 generation commit", () => {
         "opaque-provider-secret-fragment"
       );
     }
-    expect(fake.cleanupCalls()).toBe(0);
+    expect(fake.cleanupCalls()).toBe(1);
   });
 });

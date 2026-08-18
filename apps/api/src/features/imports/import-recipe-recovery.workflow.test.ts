@@ -61,6 +61,11 @@ const input = (attemptOrdinal: RecipeRecoveryOrdinal) => ({
   importId,
   trace: { correlationId },
 });
+const authorization = (attemptOrdinal: RecipeRecoveryOrdinal) => ({
+  acquisitionGeneration: generation,
+  attemptOrdinal,
+  importId,
+});
 
 describe("bounded recipe recovery workflow", () => {
   it("preserves the versioned durable checkpoint names for every ordinal", async () => {
@@ -84,11 +89,7 @@ describe("bounded recipe recovery workflow", () => {
                 };
           }),
         waitForAuthorization: (ordinal) =>
-          Effect.succeed({
-            acquisitionGeneration: generation,
-            attemptOrdinal: ordinal,
-            importId,
-          }),
+          Effect.succeed(authorization(ordinal)),
       })
     );
 
@@ -129,7 +130,7 @@ describe("bounded recipe recovery workflow", () => {
           waitForAuthorization: () =>
             Effect.sync(() => {
               waits += 1;
-              return {};
+              return authorization(1);
             }),
         })
       );
@@ -172,11 +173,7 @@ describe("bounded recipe recovery workflow", () => {
               : { _tag: "Succeeded" as const, stage: "recipe" as const };
           }),
         waitForAuthorization: (ordinal) =>
-          Effect.succeed({
-            acquisitionGeneration: generation,
-            attemptOrdinal: ordinal,
-            importId,
-          }),
+          Effect.succeed(authorization(ordinal)),
       })
     );
 
@@ -202,11 +199,7 @@ describe("bounded recipe recovery workflow", () => {
             };
           }),
         waitForAuthorization: (ordinal) =>
-          Effect.succeed({
-            acquisitionGeneration: generation,
-            attemptOrdinal: ordinal,
-            importId,
-          }),
+          Effect.succeed(authorization(ordinal)),
       })
     );
 
@@ -232,12 +225,7 @@ describe("bounded recipe recovery workflow", () => {
               stage: "recipe" as const,
             };
           }),
-        waitForAuthorization: () =>
-          Effect.succeed({
-            acquisitionGeneration: generation,
-            attemptOrdinal: 3,
-            importId,
-          }),
+        waitForAuthorization: () => Effect.succeed(authorization(3)),
       })
     );
 

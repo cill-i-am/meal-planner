@@ -51,7 +51,6 @@ const StageRow = Schema.Struct({
   state: Schema.Literals(["invoking", "open", "poisoned"]),
 });
 type StageRow = typeof StageRow.Type;
-const QueryRows = Schema.Struct({ results: Schema.Array(Schema.Unknown) });
 const ConservativeSettlementRow = Schema.Struct({
   actual_cost_was_unknown: Schema.Literal(1),
   authority: Schema.Literal("schema_valid_provider_response"),
@@ -60,39 +59,20 @@ const ConservativeSettlementRow = Schema.Struct({
   runtime_stage: Schema.Literal(PilotProviderBudgetStage),
 });
 
+const DispatchQueryRows = Schema.Struct({
+  results: Schema.Array(DispatchRow),
+});
+
+const ReservationBatchRows = Schema.Tuple([
+  Schema.Struct({ results: Schema.optionalKey(Schema.Array(Schema.Json)) }),
+  Schema.Struct({ results: Schema.Array(StageRow) }),
+]);
+
 const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({
     catch: () => pilotProviderBudgetError("persistence_unavailable"),
     try: () => Promise.resolve(operation()),
   });
-
-const decodeDispatchRow = (value: unknown) =>
-  Schema.decodeUnknownEffect(DispatchRow, {
-    onExcessProperty: "ignore",
-  })(value).pipe(
-    Effect.mapError(() => pilotProviderBudgetError("persistence_corrupt"))
-  );
-
-const decodeStageRow = (value: unknown) =>
-  Schema.decodeUnknownEffect(StageRow, {
-    onExcessProperty: "ignore",
-  })(value).pipe(
-    Effect.mapError(() => pilotProviderBudgetError("persistence_corrupt"))
-  );
-
-const decodeQueryRows = (value: unknown) =>
-  Schema.decodeUnknownEffect(QueryRows, {
-    onExcessProperty: "ignore",
-  })(value).pipe(
-    Effect.mapError(() => pilotProviderBudgetError("persistence_corrupt"))
-  );
-
-const decodeConservativeSettlementRow = (value: unknown) =>
-  Schema.decodeUnknownEffect(ConservativeSettlementRow, {
-    onExcessProperty: "ignore",
-  })(value).pipe(
-    Effect.mapError(() => pilotProviderBudgetError("persistence_corrupt"))
-  );
 
 const validMoney = (value: number) => Number.isSafeInteger(value) && value >= 0;
 
@@ -289,7 +269,7 @@ const stageFromRow = (
 };
 
 const ensureAllowedStage = (
-  runtimeStage: unknown
+  runtimeStage: string
 ): Effect.Effect<void, PilotProviderBudgetError> =>
   runtimeStage === PilotProviderBudgetStage
     ? Effect.void
@@ -327,7 +307,13 @@ const readDispatch = (binding: AnyD1Database, input: PilotBudgetReservation) =>
     Effect.flatMap((row) =>
       row === null
         ? Effect.fail(pilotProviderBudgetError("transition_rejected"))
-        : decodeDispatchRow(row)
+        : Schema.decodeUnknownEffect(DispatchRow, {
+            onExcessProperty: "ignore",
+          })(row).pipe(
+            Effect.mapError(() =>
+              pilotProviderBudgetError("persistence_corrupt")
+            )
+          )
     ),
     Effect.flatMap(dispatchFromRow)
   );
@@ -388,7 +374,13 @@ const readStageRow = (binding: AnyD1Database) =>
     Effect.flatMap((row) =>
       row === null
         ? Effect.fail(pilotProviderBudgetError("persistence_corrupt"))
-        : decodeStageRow(row)
+        : Schema.decodeUnknownEffect(StageRow, {
+            onExcessProperty: "ignore",
+          })(row).pipe(
+            Effect.mapError(() =>
+              pilotProviderBudgetError("persistence_corrupt")
+            )
+          )
     ),
     Effect.flatMap(stageFromRow)
   );
@@ -411,7 +403,13 @@ const readConservativeSettlement = (
     Effect.flatMap((row) =>
       row === null
         ? Effect.fail(pilotProviderBudgetError("transition_rejected"))
-        : decodeConservativeSettlementRow(row)
+        : Schema.decodeUnknownEffect(ConservativeSettlementRow, {
+            onExcessProperty: "ignore",
+          })(row).pipe(
+            Effect.mapError(() =>
+              pilotProviderBudgetError("persistence_corrupt")
+            )
+          )
     )
   );
 
@@ -419,7 +417,7 @@ const transition = (
   binding: AnyD1Database,
   input: PilotBudgetReservation,
   sql: string,
-  parameters: readonly unknown[]
+  parameters: readonly (number | string | null)[]
 ) =>
   Effect.gen(function* transitionDispatch() {
     yield* persistenceEffect(() =>
@@ -436,7 +434,7 @@ const transition = (
 /** Build the stage-global D1 budget authority around the existing database. */
 export const makeD1PilotProviderBudgetRepository = (
   binding: AnyD1Database,
-  runtimeStage: unknown
+  runtimeStage: string
 ): PilotProviderBudgetRepository => ({
   beginInvocation: (input) =>
     Effect.gen(function* beginInvocation() {
@@ -465,7 +463,11 @@ export const makeD1PilotProviderBudgetRepository = (
           )
           .all()
       );
-      const claimRows = yield* decodeQueryRows(rawClaim);
+      const claimRows = yield* Schema.decodeUnknownEffect(DispatchQueryRows, {
+        onExcessProperty: "ignore",
+      })(rawClaim).pipe(
+        Effect.mapError(() => pilotProviderBudgetError("persistence_corrupt"))
+      );
       if (claimRows.results.length > 1) {
         return yield* Effect.fail(
           pilotProviderBudgetError("persistence_corrupt")
@@ -473,8 +475,7 @@ export const makeD1PilotProviderBudgetRepository = (
       }
       const [claimedRow] = claimRows.results;
       if (claimedRow !== undefined) {
-        const dispatch = yield* decodeDispatchRow(claimedRow).pipe(
-          Effect.flatMap(dispatchFromRow),
+        const dispatch = yield* dispatchFromRow(claimedRow).pipe(
           Effect.flatMap((row) => requireIdentity(row, input))
         );
         return { _tag: "Claimed", dispatch };
@@ -563,18 +564,19 @@ export const makeD1PilotProviderBudgetRepository = (
             .bind(PilotProviderBudgetStage),
         ])
       );
-      const batch = stageBefore as readonly {
-        readonly results?: readonly unknown[];
-      }[];
-      const stageRow = batch[1]?.results?.[0];
+      const [, stageResult] = yield* Schema.decodeUnknownEffect(
+        ReservationBatchRows,
+        { onExcessProperty: "ignore" }
+      )(stageBefore).pipe(
+        Effect.mapError(() => pilotProviderBudgetError("persistence_corrupt"))
+      );
+      const [stageRow] = stageResult.results;
       if (stageRow === undefined) {
         return yield* Effect.fail(
           pilotProviderBudgetError("persistence_corrupt")
         );
       }
-      const stage = yield* decodeStageRow(stageRow).pipe(
-        Effect.flatMap(stageFromRow)
-      );
+      const stage = yield* stageFromRow(stageRow);
       const dispatch = yield* readDispatch(binding, input).pipe(
         Effect.catchTag("PilotProviderBudgetError", (error) =>
           error.code === "transition_rejected"

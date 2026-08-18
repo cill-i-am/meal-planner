@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import { flow } from "effect/Function";
 
 import { AcquisitionTaskOutcome } from "../imports/import-media.model.js";
 
@@ -71,31 +72,20 @@ const safeOutputStatus = (
 });
 
 const decodeCompleteOutput = (output: string) =>
-  Effect.try({
-    catch: inspectionError,
-    try: () => JSON.parse(output) as unknown,
-  }).pipe(
-    Effect.flatMap(
-      Schema.decodeUnknownEffect(PilotWorkflowOutput, {
-        onExcessProperty: "error",
-      })
-    ),
+  Schema.decodeUnknownEffect(Schema.fromJsonString(PilotWorkflowOutput), {
+    onExcessProperty: "error",
+  })(output).pipe(
+    Effect.mapError(inspectionError),
     Effect.map(safeOutputStatus)
   );
 
-export const decodeRecipeQualityPilotWorkflowStatus = (
-  input: unknown
+const inspectRecipeQualityPilotWorkflowStatus = (
+  instance: typeof CurrentWorkflowInstanceResponse.Type
 ): Effect.Effect<
   RecipeQualityPilotWorkflowStatus,
   PilotWorkflowInspectionError
 > =>
   Effect.gen(function* decodeWorkflowStatus() {
-    const instance = yield* Schema.decodeUnknownEffect(
-      CurrentWorkflowInstanceResponse,
-      {
-        onExcessProperty: "ignore",
-      }
-    )(input);
     if (instance.status === "complete") {
       if (typeof instance.output !== "string") {
         return yield* Effect.fail(inspectionError());
@@ -112,4 +102,12 @@ export const decodeRecipeQualityPilotWorkflowStatus = (
       output: null,
       status: instance.status,
     };
-  }).pipe(Effect.mapError(inspectionError));
+  });
+
+export const decodeRecipeQualityPilotWorkflowStatus = flow(
+  Schema.decodeUnknownEffect(CurrentWorkflowInstanceResponse, {
+    onExcessProperty: "ignore",
+  }),
+  Effect.mapError(inspectionError),
+  Effect.flatMap(inspectRecipeQualityPilotWorkflowStatus)
+);

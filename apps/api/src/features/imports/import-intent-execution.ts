@@ -1,13 +1,17 @@
 import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
-import { Context, Effect, Schema } from "effect";
+import { Context, Data, Effect, Schema } from "effect";
 
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import type { ImportIntentRepository } from "./import.repository.js";
 
+export class ImportWorkflowTerminationUnavailable extends Data.TaggedError(
+  "ImportWorkflowTerminationUnavailable"
+) {}
+
 export interface ImportIntentWorkflowTerminator {
   readonly terminate: (
     intentId: RecipeImportIntentId
-  ) => Effect.Effect<void, unknown>;
+  ) => Effect.Effect<void, ImportWorkflowTerminationUnavailable>;
 }
 
 export const ImportIntentWorkflowTerminator =

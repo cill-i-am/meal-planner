@@ -1,65 +1,412 @@
 import { RuntimeContext } from "alchemy";
-import type { QueryGatewayClient } from "alchemy/Cloudflare/AI";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema, Stream } from "effect";
+import { AiError, LanguageModel } from "effect/unstable/ai";
+import type { Response as AiResponse } from "effect/unstable/ai";
 
 import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
+  emitImportObservabilityEvent,
   ImportCorrelationId,
   ImportObservabilityTraceStore,
 } from "./import-observability.js";
-import type { ProviderDispatchGate } from "./import-provider-kernel.js";
+import type {
+  ProviderDispatchGate,
+  WorkersAiTransport,
+} from "./import-provider-kernel.js";
+import {
+  InstalledRecipeModel,
+  InstalledSpeechModel,
+  InstalledVisualModel,
+  normalizeWorkersAiResponse,
+} from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 
-export const makeRawGateway = (response: Response) => {
-  const requests: unknown[] = [];
-  const ai = {
-    run: (model: unknown, body: unknown, options: unknown) => {
-      requests.push({ body, model, options });
-      return (options as { readonly returnRawResponse?: boolean })
-        .returnRawResponse === true
-        ? Promise.resolve(response)
-        : response.clone().json();
-    },
-  };
-  return {
-    client: {
-      gateway: Effect.die("universal AI Gateway binding must not be used"),
-      id: Effect.succeed("meal-planner-pilot-gaia-118"),
-      raw: Effect.succeed(ai),
-      run: () => Effect.die("universal AI Gateway dispatch must not be used"),
-    } as unknown as QueryGatewayClient,
-    requests,
-  };
-};
-
-export const makeGateway = (response: unknown) =>
-  makeRawGateway(Response.json(response));
-
-export const makeSpeechGateway = makeGateway;
-
-export const makeSpeechGatewayFromValue = (response: unknown) => {
-  const responseEnvelope = new Response(null, { status: 200 });
-  Object.defineProperty(responseEnvelope, "json", {
-    value: () => Promise.resolve(response),
-  });
-  return makeRawGateway(responseEnvelope);
-};
-
-export const makeRejectedGateway = (error: unknown) =>
-  ({
-    gateway: Effect.die("universal AI Gateway binding must not be used"),
-    id: Effect.succeed("meal-planner-pilot-gaia-118"),
-    raw: Effect.succeed({
-      run: () => {
-        throw error;
-      },
+const ProviderToolCall = Schema.Union([
+  Schema.Struct({
+    arguments: Schema.optionalKey(Schema.Json),
+    id: Schema.optionalKey(Schema.String),
+    name: Schema.String,
+    type: Schema.optionalKey(Schema.String),
+  }),
+  Schema.Struct({
+    function: Schema.Struct({
+      arguments: Schema.optionalKey(Schema.Json),
+      name: Schema.String,
     }),
-    run: () => Effect.die("universal AI Gateway dispatch must not be used"),
-  }) as unknown as QueryGatewayClient;
+    id: Schema.optionalKey(Schema.String),
+    type: Schema.optionalKey(Schema.String),
+  }),
+]);
+type ProviderToolCall = typeof ProviderToolCall.Type;
+
+const VisualProviderResponse = Schema.Struct({
+  choices: Schema.optionalKey(Schema.Json),
+  finish_reason: Schema.optionalKey(Schema.Json),
+  response: Schema.optionalKey(Schema.Json),
+  tool_calls: Schema.optionalKey(Schema.Json),
+  usage: Schema.optionalKey(Schema.Json),
+});
+type VisualProviderResponse = typeof VisualProviderResponse.Type;
 
 export const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
 );
+
+const VisualReasoningPart = Schema.Struct({
+  text: Schema.String,
+  type: Schema.Literal("reasoning"),
+});
+const VisualTextPart = Schema.Struct({
+  text: Schema.String,
+  type: Schema.Literal("text"),
+});
+const JsonObject = Schema.Record(Schema.String, Schema.Json);
+
+const ProviderFixtureResponseInvalid = "provider_fixture_response_invalid";
+const ProviderNormalizationInvalid = "provider_normalization_invalid";
+const ProviderNormalizationBodyInvalid = "provider_normalization_body_invalid";
+
+type FixtureAiErrorDescription =
+  | typeof ProviderFixtureResponseInvalid
+  | typeof ProviderNormalizationBodyInvalid
+  | typeof ProviderNormalizationInvalid;
+
+const fixtureAiError = (
+  description: FixtureAiErrorDescription = ProviderFixtureResponseInvalid
+) =>
+  AiError.make({
+    method: "generateText",
+    module: "MealPlannerProviderFixture",
+    reason: new AiError.UnknownError({
+      description,
+    }),
+  });
+
+const safeFixtureErrorDescription = (
+  error: Error
+): FixtureAiErrorDescription => {
+  switch (error.message) {
+    case ProviderNormalizationBodyInvalid:
+    case ProviderNormalizationInvalid: {
+      return error.message;
+    }
+    default: {
+      return ProviderFixtureResponseInvalid;
+    }
+  }
+};
+
+type NormalizedVisualResponseOutcome =
+  | {
+      readonly _tag: "Failure";
+      readonly description: FixtureAiErrorDescription;
+    }
+  | { readonly _tag: "Success"; readonly value: Schema.Json };
+
+const readNormalizedVisualResponse = async (
+  nextResponse: () => Response
+): Promise<NormalizedVisualResponseOutcome> => {
+  try {
+    return {
+      _tag: "Success",
+      value: await normalizeWorkersAiResponse(nextResponse()).json(),
+    };
+  } catch (error) {
+    return {
+      _tag: "Failure",
+      description:
+        error instanceof Error
+          ? safeFixtureErrorDescription(error)
+          : ProviderFixtureResponseInvalid,
+    };
+  }
+};
+
+const toolCallName = (call: ProviderToolCall) =>
+  "function" in call ? call.function.name : call.name;
+
+const toolCallArguments = (call: ProviderToolCall): Schema.Json => {
+  const value = "function" in call ? call.function.arguments : call.arguments;
+  if (typeof value !== "string") {
+    return value ?? null;
+  }
+  try {
+    return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(value));
+  } catch {
+    return value;
+  }
+};
+
+const jsonObject = (
+  value: Schema.Json | undefined
+): Schema.JsonObject | undefined => {
+  const decoded = Schema.decodeUnknownOption(JsonObject)(value);
+  return Option.isSome(decoded) ? decoded.value : undefined;
+};
+
+const decodedProviderToolCalls = (
+  value: Schema.Json | undefined
+): readonly ProviderToolCall[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((call) => {
+    const decoded = Schema.decodeUnknownOption(ProviderToolCall)(call);
+    return Option.isSome(decoded) ? [decoded.value] : [];
+  });
+};
+
+const firstOpenAiChoice = (
+  response: VisualProviderResponse
+): Schema.JsonObject | undefined =>
+  Array.isArray(response.choices) ? jsonObject(response.choices[0]) : undefined;
+
+const openAiMessage = (
+  response: VisualProviderResponse
+): Schema.JsonObject | undefined =>
+  jsonObject(firstOpenAiChoice(response)?.["message"]);
+
+const providerToolCalls = (
+  response: VisualProviderResponse
+): readonly ProviderToolCall[] => {
+  const openAiCalls = decodedProviderToolCalls(
+    openAiMessage(response)?.["tool_calls"]
+  );
+  return openAiCalls.length > 0
+    ? openAiCalls
+    : decodedProviderToolCalls(response.tool_calls);
+};
+
+const providerText = (response: VisualProviderResponse): string | undefined => {
+  const openAiContent = openAiMessage(response)?.["content"];
+  if (typeof openAiContent === "string" && openAiContent.length > 0) {
+    return openAiContent;
+  }
+  if (response.response === undefined || response.response === null) {
+    return undefined;
+  }
+  return typeof response.response === "object"
+    ? JSON.stringify(response.response)
+    : String(response.response);
+};
+
+const providerReasoning = (
+  response: VisualProviderResponse
+): string | undefined => {
+  const message = openAiMessage(response);
+  const reasoning = message?.["reasoning_content"] ?? message?.["reasoning"];
+  return typeof reasoning === "string" && reasoning.length > 0
+    ? reasoning
+    : undefined;
+};
+
+const usageToken = (
+  response: VisualProviderResponse,
+  key: "completion_tokens" | "prompt_tokens"
+): number | undefined => {
+  const value = jsonObject(response.usage)?.[key];
+  return typeof value === "number" ? value : undefined;
+};
+
+const providerResponseParts = (
+  response: VisualProviderResponse
+): AiResponse.PartEncoded[] => {
+  const calls = providerToolCalls(response);
+  const text = providerText(response);
+  const reasoning = providerReasoning(response);
+  return [
+    ...(reasoning === undefined
+      ? []
+      : [
+          Schema.decodeUnknownSync(VisualReasoningPart)({
+            text: reasoning,
+            type: "reasoning",
+          }),
+        ]),
+    ...(text === undefined
+      ? []
+      : [
+          Schema.decodeUnknownSync(VisualTextPart)({
+            text,
+            type: "text",
+          }),
+        ]),
+    ...calls.map(
+      (call): AiResponse.ToolCallPartEncoded => ({
+        id: call.id ?? "provider-fixture-call",
+        name: toolCallName(call),
+        params: toolCallArguments(call),
+        type: "tool-call",
+      })
+    ),
+    {
+      reason: calls.length === 0 ? "stop" : "tool-calls",
+      type: "finish",
+      usage: {
+        inputTokens: { total: usageToken(response, "prompt_tokens") },
+        outputTokens: { total: usageToken(response, "completion_tokens") },
+      },
+    },
+  ];
+};
+
+const makeVisualLanguageModel = (
+  nextResponse: () => Response,
+  onDispatch: (request: LanguageModel.ProviderOptions) => Promise<void>,
+  traceStore: ImportObservabilityTraceStore | undefined
+) =>
+  LanguageModel.make({
+    generateText: (request) =>
+      Effect.promise(() => onDispatch(request)).pipe(
+        Effect.andThen(
+          Effect.promise(async () => {
+            await Effect.runPromise(
+              emitImportObservabilityEvent(
+                {
+                  correlationId,
+                  event: "provider.response",
+                  outcome: "received",
+                  providerStage: "visual",
+                },
+                traceStore
+              )
+            );
+            return readNormalizedVisualResponse(nextResponse);
+          })
+        ),
+        Effect.flatMap((outcome) =>
+          outcome._tag === "Failure"
+            ? Effect.fail(fixtureAiError(outcome.description))
+            : Schema.decodeUnknownEffect(VisualProviderResponse, {
+                onExcessProperty: "preserve",
+              })(outcome.value).pipe(Effect.mapError(() => fixtureAiError()))
+        ),
+        Effect.map(providerResponseParts)
+      ),
+    streamText: () => Stream.fail(fixtureAiError()),
+  });
+
+export const makeVisualTransport = (
+  nextResponse: () => Response,
+  onDispatch: (request: LanguageModel.ProviderOptions) => Promise<void> = () =>
+    Promise.resolve()
+): WorkersAiTransport["visual"] => ({
+  makeLanguageModel: () =>
+    Effect.gen(function* makeFixtureVisualLanguageModel() {
+      const traceStore = Option.getOrUndefined(
+        yield* Effect.serviceOption(ImportObservabilityTraceStore)
+      );
+      return yield* makeVisualLanguageModel(
+        nextResponse,
+        onDispatch,
+        traceStore
+      );
+    }),
+  model: InstalledVisualModel,
+});
+
+export const makeRawProviderTransports = (
+  response: Response,
+  traceStore?: ImportObservabilityTraceStore
+) => {
+  const recipeRequests: Parameters<WorkersAiTransport["recipe"]["run"]>[0][] =
+    [];
+  const speechRequests: Parameters<WorkersAiTransport["speech"]["run"]>[0][] =
+    [];
+  const visualRequests: LanguageModel.ProviderOptions[] = [];
+  const recipe: WorkersAiTransport["recipe"] = {
+    model: InstalledRecipeModel,
+    run: async (body) => {
+      recipeRequests.push(body);
+      await Effect.runPromise(
+        emitImportObservabilityEvent(
+          {
+            correlationId,
+            event: "provider.response",
+            outcome: "received",
+            providerStage: "recipe",
+          },
+          traceStore
+        )
+      );
+      return normalizeWorkersAiResponse(response);
+    },
+  };
+  const speech: WorkersAiTransport["speech"] = {
+    model: InstalledSpeechModel,
+    run: async (body) => {
+      speechRequests.push(body);
+      await Effect.runPromise(
+        emitImportObservabilityEvent(
+          {
+            correlationId,
+            event: "provider.response",
+            outcome: "received",
+            providerStage: "speech",
+          },
+          traceStore
+        )
+      );
+      return normalizeWorkersAiResponse(response);
+    },
+  };
+  const visual = makeVisualTransport(
+    () => response,
+    (request) => {
+      visualRequests.push(request);
+      return Promise.resolve();
+    }
+  );
+  return {
+    recipe,
+    recipeRequests,
+    speech,
+    speechRequests,
+    visual,
+    visualRequests,
+  };
+};
+
+export const makeProviderTransports = (
+  response: Schema.Json,
+  traceStore?: ImportObservabilityTraceStore
+) => makeRawProviderTransports(Response.json(response), traceStore);
+
+export const makeSpeechTransportFromValue = (response: Schema.Json) => {
+  const responseEnvelope = new Response(null, { status: 200 });
+  Object.defineProperty(responseEnvelope, "json", {
+    value: () => Promise.resolve(response),
+  });
+  return makeRawProviderTransports(responseEnvelope).speech;
+};
+
+export const makeRejectedProviderTransports = (error: Error) => ({
+  recipe: {
+    model: InstalledRecipeModel,
+    run: () => Effect.runPromise(Effect.fail(error)),
+  } satisfies WorkersAiTransport["recipe"],
+  speech: {
+    model: InstalledSpeechModel,
+    run: () => Effect.runPromise(Effect.fail(error)),
+  } satisfies WorkersAiTransport["speech"],
+  visual: {
+    makeLanguageModel: () =>
+      LanguageModel.make({
+        generateText: () =>
+          Effect.fail(
+            AiError.make({
+              method: "generateText",
+              module: "MealPlannerProviderFixture",
+              reason: new AiError.UnknownError({
+                description: error.message,
+              }),
+            })
+          ),
+        streamText: () => Stream.fail(fixtureAiError()),
+      }),
+    model: InstalledVisualModel,
+  } satisfies WorkersAiTransport["visual"],
+});
 
 export const speechTranscriptionInput = {
   audio: {
@@ -74,8 +421,11 @@ export const speechTranscriptionInput = {
   sourceMediaSha256: "b".repeat(64),
 };
 
-export const nestUnknownMetadata = (leaf: unknown, depth: number): unknown => {
-  let value = leaf;
+export const nestUnknownMetadata = (
+  leaf: Schema.Json,
+  depth: number
+): Schema.Json => {
+  let value: Schema.Json = leaf;
   for (let index = 0; index < depth; index += 1) {
     value = { nested: value };
   }
@@ -159,13 +509,13 @@ export const recipeEvidenceAssembly = {
   ],
 } as const;
 
-export const runRecipeTransportRoot = async (response: unknown) => {
+export const runRecipeTransportRoot = async (response: Schema.Json) => {
   const trace = makeRecordingTraceStore();
   const adapter = await runFactory(
     makeInstalledRecipeExtractor({
-      client: makeGateway(response).client,
       correlationId,
       dispatch: localDispatchGate,
+      transport: makeProviderTransports(response).recipe,
     }),
     trace.service
   );
@@ -285,8 +635,8 @@ export const defaultVisualUsage = {
 
 export const toolResponse = (
   name: string,
-  value: unknown,
-  usage: unknown | null = defaultVisualUsage
+  value: Schema.Json,
+  usage: Schema.Json | null = defaultVisualUsage
 ) => ({
   choices: [
     {
@@ -307,8 +657,8 @@ export const toolResponse = (
 });
 
 export const recipeJsonResponse = (
-  value: unknown,
-  usage: unknown | null = defaultVisualUsage
+  value: Schema.Json,
+  usage: Schema.Json | null = defaultVisualUsage
 ) => ({
   response: value,
   ...(usage === null ? {} : { usage }),

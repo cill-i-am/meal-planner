@@ -77,20 +77,11 @@ const ConfirmMutationReplayRow = Schema.Struct({
   public_status: Schema.String,
 });
 
-interface D1BatchResult {
-  readonly results: readonly unknown[];
-}
-
 const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({
     catch: importPersistenceUnavailable,
     try: () => Promise.resolve(operation()),
   });
-
-const decode = <S extends Schema.Top>(schema: S, value: unknown) =>
-  Schema.decodeUnknownEffect(schema, { onExcessProperty: "ignore" })(
-    value
-  ).pipe(Effect.mapError(() => importPersistenceCorrupt()));
 
 const asImportId = (intentId: RecipeImportIntentId) =>
   Schema.decodeUnknownSync(ImportId)(intentId);
@@ -131,9 +122,13 @@ const readActionSource = (
         .bind(principal.householdScopeId, intentId)
         .first()
     );
-    return raw === null
-      ? Option.none<ActionSourceRow>()
-      : Option.some(yield* decode(ActionSourceRow, raw));
+    if (raw === null) {
+      return Option.none<ActionSourceRow>();
+    }
+    const row = yield* Schema.decodeUnknownEffect(ActionSourceRow, {
+      onExcessProperty: "ignore",
+    })(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
+    return Option.some(row);
   });
 
 const actionBelongsToIntent = (
@@ -197,7 +192,9 @@ const readMutationReplay = (
     if (raw === null) {
       return Option.none<ActionMutationReplayRow>();
     }
-    const row = yield* decode(ActionMutationReplayRow, raw);
+    const row = yield* Schema.decodeUnknownEffect(ActionMutationReplayRow, {
+      onExcessProperty: "ignore",
+    })(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
     if (row.command_digest !== input.commandDigest) {
       return yield* Effect.fail(new RecipeImportActionMutationConflict());
     }
@@ -305,7 +302,9 @@ const readConfirmReplay = (
     if (raw === null) {
       return Option.none<SucceededRecipeImportIntent>();
     }
-    const row = yield* decode(ConfirmMutationReplayRow, raw);
+    const row = yield* Schema.decodeUnknownEffect(ConfirmMutationReplayRow, {
+      onExcessProperty: "ignore",
+    })(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
     if (row.command_digest !== command.commandDigest) {
       return yield* Effect.fail(new RecipeImportActionMutationConflict());
     }
@@ -330,7 +329,7 @@ const readConfirmReplay = (
 const currentAnswerValue = (
   review: Review,
   answer: RecipeReviewAnswer
-): unknown => {
+): Schema.Json => {
   if (answer.field === "tags") {
     return review.tags;
   }
@@ -477,12 +476,11 @@ const answerAction = (
           )
       );
     const applied = yield* Effect.exit(
-      persistenceEffect(
-        () =>
-          binding.batch([
-            binding
-              .prepare(
-                `UPDATE recipe_imports
+      persistenceEffect(() =>
+        binding.batch([
+          binding
+            .prepare(
+              `UPDATE recipe_imports
                   SET active_action_version = ?, intent_version = intent_version + 1,
                       transition_mutation_id = ?, transition_command_digest = ?,
                       transition_actor_category = 'household_member',
@@ -493,22 +491,22 @@ const answerAction = (
                   AND public_status = 'requires_action'
                   AND active_action_id = ? AND active_action_version = ?
                   AND intent_version = ?`
-              )
-              .bind(
-                resultingActionVersion,
-                command.mutationId,
-                command.commandDigest,
-                command.principal.actorId,
-                command.answeredAt,
-                command.intentId,
-                command.principal.householdScopeId,
-                command.actionId,
-                command.request.expectedActionVersion,
-                row.intent_version
-              ),
-            binding
-              .prepare(
-                `UPDATE recipe_reviews
+            )
+            .bind(
+              resultingActionVersion,
+              command.mutationId,
+              command.commandDigest,
+              command.principal.actorId,
+              command.answeredAt,
+              command.intentId,
+              command.principal.householdScopeId,
+              command.actionId,
+              command.request.expectedActionVersion,
+              row.intent_version
+            ),
+          binding
+            .prepare(
+              `UPDATE recipe_reviews
                   SET version = version + 1, tags_json = ?, updated_at = ?
                 WHERE extraction_fingerprint = ? AND version = ?
                   AND lifecycle = 'needs_review'
@@ -518,33 +516,33 @@ const answerAction = (
                        AND history.command_digest = ?
                        AND history.event_type = 'action_available'
                   )`
-              )
-              .bind(
-                materializedTagsAfterJson,
-                command.answeredAt,
-                row.extraction_fingerprint,
-                review.version,
-                command.intentId,
-                command.mutationId,
-                command.commandDigest
-              ),
-            ...correctionStatements,
-            binding
-              .prepare(
-                `INSERT INTO recipe_review_mutations (
+            )
+            .bind(
+              materializedTagsAfterJson,
+              command.answeredAt,
+              row.extraction_fingerprint,
+              review.version,
+              command.intentId,
+              command.mutationId,
+              command.commandDigest
+            ),
+          ...correctionStatements,
+          binding
+            .prepare(
+              `INSERT INTO recipe_review_mutations (
                  extraction_fingerprint, mutation_id, command_kind,
                  command_digest, resulting_version, item_count, applied_at
                ) VALUES (?, ?, 'correction', ?, ?, ?, ?)`
-              )
-              .bind(
-                row.extraction_fingerprint,
-                command.mutationId,
-                command.commandDigest,
-                resultingReviewVersion,
-                command.request.answers.length,
-                command.answeredAt
-              ),
-          ]) as PromiseLike<readonly D1BatchResult[]>
+            )
+            .bind(
+              row.extraction_fingerprint,
+              command.mutationId,
+              command.commandDigest,
+              resultingReviewVersion,
+              command.request.answers.length,
+              command.answeredAt
+            ),
+        ])
       )
     );
     const recorded = yield* readAnswerReplay(binding, command);
@@ -587,12 +585,11 @@ const confirmAction = (
     const finalizingIntentVersion = row.intent_version + 1;
     const succeededIntentVersion = row.intent_version + 2;
     const applied = yield* Effect.exit(
-      persistenceEffect(
-        () =>
-          binding.batch([
-            binding
-              .prepare(
-                `UPDATE recipe_imports
+      persistenceEffect(() =>
+        binding.batch([
+          binding
+            .prepare(
+              `UPDATE recipe_imports
                   SET public_status = 'processing',
                       public_stage = 'finalizing_recipe',
                       public_stage_started_at = ?, public_activity = 'working',
@@ -609,22 +606,22 @@ const confirmAction = (
                   AND public_status = 'requires_action'
                   AND active_action_id = ? AND active_action_version = ?
                   AND intent_version = ?`
-              )
-              .bind(
-                command.confirmedAt,
-                command.mutationId,
-                command.commandDigest,
-                command.principal.actorId,
-                command.confirmedAt,
-                command.intentId,
-                command.principal.householdScopeId,
-                command.actionId,
-                command.request.expectedActionVersion,
-                row.intent_version
-              ),
-            binding
-              .prepare(
-                `UPDATE recipe_reviews
+            )
+            .bind(
+              command.confirmedAt,
+              command.mutationId,
+              command.commandDigest,
+              command.principal.actorId,
+              command.confirmedAt,
+              command.intentId,
+              command.principal.householdScopeId,
+              command.actionId,
+              command.request.expectedActionVersion,
+              row.intent_version
+            ),
+          binding
+            .prepare(
+              `UPDATE recipe_reviews
                   SET lifecycle = 'approved', version = version + 1,
                       updated_at = ?
                 WHERE extraction_fingerprint = ? AND version = ?
@@ -638,35 +635,35 @@ const confirmAction = (
                        AND history.public_status = 'processing'
                        AND history.public_stage = 'finalizing_recipe'
                   )`
-              )
-              .bind(
-                command.confirmedAt,
-                row.extraction_fingerprint,
-                review.version,
-                command.intentId,
-                finalizingIntentVersion,
-                command.mutationId,
-                command.commandDigest
-              ),
-            binding
-              .prepare(
-                `INSERT INTO recipe_review_transitions (
+            )
+            .bind(
+              command.confirmedAt,
+              row.extraction_fingerprint,
+              review.version,
+              command.intentId,
+              finalizingIntentVersion,
+              command.mutationId,
+              command.commandDigest
+            ),
+          binding
+            .prepare(
+              `INSERT INTO recipe_review_transitions (
                  extraction_fingerprint, version, actor_id, from_lifecycle,
                  to_lifecycle, reason, transitioned_at
                )
                SELECT ?, ?, ?, 'needs_review', 'approved', ?, ?
                 WHERE changes() = 1`
-              )
-              .bind(
-                row.extraction_fingerprint,
-                resultingReviewVersion,
-                command.actorId,
-                "Household confirmed recipe review action",
-                command.confirmedAt
-              ),
-            binding
-              .prepare(
-                `UPDATE recipe_imports
+            )
+            .bind(
+              row.extraction_fingerprint,
+              resultingReviewVersion,
+              command.actorId,
+              "Household confirmed recipe review action",
+              command.confirmedAt
+            ),
+          binding
+            .prepare(
+              `UPDATE recipe_imports
                   SET public_status = 'succeeded', public_stage = NULL,
                       public_stage_started_at = NULL, public_activity = NULL,
                       public_next_attempt_at = NULL, public_recipe_id = id,
@@ -687,34 +684,34 @@ const confirmAction = (
                        AND transition.from_lifecycle = 'needs_review'
                        AND transition.to_lifecycle = 'approved'
                   )`
-              )
-              .bind(
-                command.confirmedAt,
-                command.succeededMutationId,
-                command.commandDigest,
-                command.principal.actorId,
-                command.confirmedAt,
-                command.intentId,
-                command.principal.householdScopeId,
-                finalizingIntentVersion,
-                row.extraction_fingerprint,
-                resultingReviewVersion
-              ),
-            binding
-              .prepare(
-                `INSERT INTO recipe_review_mutations (
+            )
+            .bind(
+              command.confirmedAt,
+              command.succeededMutationId,
+              command.commandDigest,
+              command.principal.actorId,
+              command.confirmedAt,
+              command.intentId,
+              command.principal.householdScopeId,
+              finalizingIntentVersion,
+              row.extraction_fingerprint,
+              resultingReviewVersion
+            ),
+          binding
+            .prepare(
+              `INSERT INTO recipe_review_mutations (
                  extraction_fingerprint, mutation_id, command_kind,
                  command_digest, resulting_version, item_count, applied_at
                ) VALUES (?, ?, 'transition', ?, ?, 1, ?)`
-              )
-              .bind(
-                row.extraction_fingerprint,
-                command.mutationId,
-                command.commandDigest,
-                resultingReviewVersion,
-                command.confirmedAt
-              ),
-          ]) as PromiseLike<readonly D1BatchResult[]>
+            )
+            .bind(
+              row.extraction_fingerprint,
+              command.mutationId,
+              command.commandDigest,
+              resultingReviewVersion,
+              command.confirmedAt
+            ),
+        ])
       )
     );
     const recorded = yield* readConfirmReplay(binding, command);

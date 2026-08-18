@@ -142,9 +142,13 @@ const limitExceeded = (): TerminalMediaFailure =>
 const OutputLimitExceeded = Symbol("OutputLimitExceeded");
 const ProcessExited = Symbol("ProcessExited");
 const ProcessTimedOut = Symbol("ProcessTimedOut");
+type MediaProcessFailure =
+  | typeof OutputLimitExceeded
+  | typeof ProcessExited
+  | typeof ProcessTimedOut;
 
 const processFailure = (
-  error: unknown,
+  error: MediaProcessFailure,
   failure: MediaProcessOptions["failure"]
 ) => {
   if (error === OutputLimitExceeded) {
@@ -341,7 +345,6 @@ export const makeMediaProcessRunner = (
           let execution:
             | {
                 readonly _tag: "Failure";
-                readonly error: unknown;
               }
             | {
                 readonly _tag: "Success";
@@ -372,8 +375,8 @@ export const makeMediaProcessRunner = (
                 },
               }),
             };
-          } catch (error) {
-            execution = { _tag: "Failure", error };
+          } catch {
+            execution = { _tag: "Failure" };
           } finally {
             clearInterval(workspacePoll);
           }
@@ -408,7 +411,13 @@ export const makeMediaProcessRunner = (
         try {
           resume(Effect.succeed(await completion));
         } catch (error) {
-          resume(Effect.fail(processFailure(error, options.failure)));
+          const normalizedFailure: MediaProcessFailure =
+            error === OutputLimitExceeded || error === ProcessTimedOut
+              ? error
+              : ProcessExited;
+          resume(
+            Effect.fail(processFailure(normalizedFailure, options.failure))
+          );
         }
       };
       const observation = observeCompletion();

@@ -445,11 +445,10 @@ const decodeRecipeProjection = (
   throw new Error("Invalid persisted recipe draft state");
 };
 
-const decodeStoredImport = (input: unknown) =>
+const storedImportFromRow = (row: DatabaseImportRow) =>
   Effect.try({
     catch: importPersistenceCorrupt,
     try: (): StoredImport => {
-      const row = Schema.decodeUnknownSync(DatabaseImportRow)(input);
       const canonicalSourceId = Schema.decodeUnknownSync(SourceCanonicalId)(
         row.canonicalSourceId
       );
@@ -578,7 +577,7 @@ const processingActivityFor = (row: DatabaseIntentRow) => {
     : { type: "working" as const };
 };
 
-const processingStageFor = (row: DatabaseIntentRow): unknown => {
+const processingStageFor = (row: DatabaseIntentRow) => {
   if (row.publicStage === null || row.publicStageStartedAt === null) {
     throw new Error("Processing stage is missing");
   }
@@ -625,11 +624,10 @@ const processingStageFor = (row: DatabaseIntentRow): unknown => {
   }
 };
 
-const decodePublicIntent = (input: unknown) =>
+const publicIntentFromRow = (row: DatabaseIntentRow) =>
   Effect.try({
     catch: importPersistenceCorrupt,
     try: (): RecipeImportIntentType => {
-      const row = Schema.decodeUnknownSync(DatabaseIntentRow)(input);
       const common = {
         createdAt: row.createdAt,
         id: row.id,
@@ -639,22 +637,23 @@ const decodePublicIntent = (input: unknown) =>
         source: publicSourceFor(row),
         updatedAt: row.updatedAt,
       };
-      let candidate: unknown;
+      const decode = Schema.decodeUnknownSync(RecipeImportIntent, {
+        onExcessProperty: "error",
+      });
       switch (row.publicStatus) {
         case "processing": {
-          candidate = {
+          return decode({
             ...common,
             activity: processingActivityFor(row),
             processing: processingStageFor(row),
             status: "processing",
-          };
-          break;
+          });
         }
         case "requires_action": {
           if (row.activeActionId === null) {
             throw new Error("Active action identity is missing");
           }
-          candidate = {
+          return decode({
             ...common,
             action: {
               id: row.activeActionId,
@@ -662,20 +661,18 @@ const decodePublicIntent = (input: unknown) =>
               type: "review_recipe",
             },
             status: "requires_action",
-          };
-          break;
+          });
         }
         case "succeeded": {
           if (row.publicRecipeId === null || row.succeededAt === null) {
             throw new Error("Succeeded result is missing");
           }
-          candidate = {
+          return decode({
             ...common,
             completedAt: row.succeededAt,
             result: { recipeId: row.publicRecipeId },
             status: "succeeded",
-          };
-          break;
+          });
         }
         case "failed": {
           if (
@@ -686,7 +683,7 @@ const decodePublicIntent = (input: unknown) =>
           ) {
             throw new Error("Failed result is missing");
           }
-          candidate = {
+          return decode({
             ...common,
             error: {
               code: row.publicFailureCode,
@@ -695,25 +692,23 @@ const decodePublicIntent = (input: unknown) =>
             },
             failedAt: row.failedAt,
             status: "failed",
-          };
-          break;
+          });
         }
         case "cancelled": {
           if (row.cancelledAt === null) {
             throw new Error("Cancellation time is missing");
           }
-          candidate = {
+          return decode({
             ...common,
             cancelledAt: row.cancelledAt,
             status: "cancelled",
-          };
-          break;
+          });
         }
         case "redirected": {
           if (row.redirectedAt === null || row.redirectedToImportId === null) {
             throw new Error("Redirect target is missing");
           }
-          candidate = {
+          return decode({
             ...common,
             redirect: {
               intentId: row.redirectedToImportId,
@@ -721,16 +716,12 @@ const decodePublicIntent = (input: unknown) =>
             },
             redirectedAt: row.redirectedAt,
             status: "redirected",
-          };
-          break;
+          });
         }
         default: {
           throw new Error("Unsupported public intent status");
         }
       }
-      return Schema.decodeUnknownSync(RecipeImportIntent, {
-        onExcessProperty: "error",
-      })(candidate);
     },
   });
 
@@ -938,23 +929,41 @@ const requireMatchingResolvedSource = (
   row.publicSourceUrl === command.canonicalUrl &&
   row.publicSourceKind === command.sourceKind;
 
-const decodePendingSourceResolution = (input: unknown) =>
+const PendingSourceResolutionRow = Schema.Struct({
+  actorId: Schema.String,
+  correlationId: ImportCorrelationId,
+  executionGeneration: ImportIntentExecutionGeneration,
+  householdScopeId: Schema.String,
+  intentId: RecipeImportIntentId,
+  submittedSourceUrl: Schema.String,
+  updatedAt: Schema.String,
+});
+type PendingSourceResolutionRow = typeof PendingSourceResolutionRow.Type;
+
+const IntentTimelineResults = Schema.Struct({
+  results: Schema.Array(ImportIntentHistoryRow),
+});
+
+const StalledIntentStartRow = Schema.Struct({
+  correlationId: ImportCorrelationId,
+  executionGeneration: ImportIntentExecutionGeneration,
+  intentId: RecipeImportIntentId,
+  updatedAt: Schema.String,
+});
+
+const StalledIntentStartResults = Schema.Struct({
+  results: Schema.Array(StalledIntentStartRow),
+});
+
+const PendingSourceResolutionResults = Schema.Struct({
+  results: Schema.Array(PendingSourceResolutionRow),
+});
+
+const pendingSourceResolutionFromRow = (row: PendingSourceResolutionRow) =>
   Effect.try({
     catch: importPersistenceCorrupt,
-    try: () => {
-      const row = Schema.decodeUnknownSync(
-        Schema.Struct({
-          actorId: Schema.String,
-          correlationId: ImportCorrelationId,
-          executionGeneration: ImportIntentExecutionGeneration,
-          householdScopeId: Schema.String,
-          intentId: RecipeImportIntentId,
-          submittedSourceUrl: Schema.String,
-          updatedAt: Schema.String,
-        }),
-        { onExcessProperty: "error" }
-      )(input);
-      return {
+    try: () =>
+      ({
         executionGeneration: row.executionGeneration,
         intentId: row.intentId,
         principal: Schema.decodeUnknownSync(ImportPrincipal)({
@@ -966,8 +975,7 @@ const decodePendingSourceResolution = (input: unknown) =>
         ),
         trace: { correlationId: row.correlationId },
         updatedAt: Schema.decodeUnknownSync(Instant)(row.updatedAt),
-      } satisfies PendingImportIntentSourceResolutionType;
-    },
+      }) satisfies PendingImportIntentSourceResolutionType,
   });
 
 export const makeD1ImportRepository = (
@@ -1008,7 +1016,12 @@ export const makeD1ImportRepository = (
       );
       return rows[0] === undefined
         ? Option.none()
-        : Option.some(yield* decodeStoredImport(rows[0]));
+        : Option.some(
+            yield* Effect.try({
+              catch: importPersistenceCorrupt,
+              try: () => Schema.decodeUnknownSync(DatabaseImportRow)(rows[0]),
+            }).pipe(Effect.flatMap(storedImportFromRow))
+          );
     });
 
   const requireImport = (id: ImportId) =>
@@ -1024,17 +1037,16 @@ export const makeD1ImportRepository = (
     intentId: RecipeImportIntentId
   ) =>
     Effect.gen(function* findIntentRowEffect() {
-      const row = yield* persistenceEffect(
-        () =>
-          binding
-            .prepare(
-              `SELECT ${intentRowSelection}
+      const row = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `SELECT ${intentRowSelection}
                  FROM recipe_imports
                 WHERE household_scope_id = ? AND id = ?
                 LIMIT 1`
-            )
-            .bind(principal.householdScopeId, intentId)
-            .first() as PromiseLike<unknown | null>
+          )
+          .bind(principal.householdScopeId, intentId)
+          .first()
       );
       if (row === null) {
         return Option.none<DatabaseIntentRow>();
@@ -1055,7 +1067,7 @@ export const makeD1ImportRepository = (
       findIntentRow(principal, intentId),
       Option.match({
         onNone: () => Effect.succeed(Option.none<RecipeImportIntentType>()),
-        onSome: (row) => Effect.map(decodePublicIntent(row), Option.some),
+        onSome: (row) => Effect.map(publicIntentFromRow(row), Option.some),
       })
     );
 
@@ -1064,11 +1076,10 @@ export const makeD1ImportRepository = (
     intentId: RecipeImportIntentId
   ) =>
     Effect.gen(function* findPendingSourceResolutionEffect() {
-      const row = yield* persistenceEffect(
-        () =>
-          binding
-            .prepare(
-              `SELECT actor_id AS actorId, correlation_id AS correlationId,
+      const row = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `SELECT actor_id AS actorId, correlation_id AS correlationId,
                       execution_generation AS executionGeneration,
                       household_scope_id AS householdScopeId, id AS intentId,
                       submitted_source_url AS submittedSourceUrl,
@@ -1078,13 +1089,20 @@ export const makeD1ImportRepository = (
                   AND public_status = 'processing'
                   AND public_stage = 'resolving_source'
                 LIMIT 1`
-            )
-            .bind(principal.actorId, principal.householdScopeId, intentId)
-            .first() as PromiseLike<unknown | null>
+          )
+          .bind(principal.actorId, principal.householdScopeId, intentId)
+          .first()
       );
       return row === null
         ? Option.none<PendingImportIntentSourceResolutionType>()
-        : Option.some(yield* decodePendingSourceResolution(row));
+        : Option.some(
+            yield* Schema.decodeUnknownEffect(PendingSourceResolutionRow, {
+              onExcessProperty: "ignore",
+            })(row).pipe(
+              Effect.mapError(importPersistenceCorrupt),
+              Effect.flatMap(pendingSourceResolutionFromRow)
+            )
+          );
     });
 
   const requireIntentRow = (
@@ -1101,17 +1119,16 @@ export const makeD1ImportRepository = (
 
   const requireInternalIntentRow = (intentId: RecipeImportIntentId) =>
     Effect.gen(function* requireInternalIntentRowEffect() {
-      const row = yield* persistenceEffect(
-        () =>
-          binding
-            .prepare(
-              `SELECT ${intentRowSelection}
+      const row = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `SELECT ${intentRowSelection}
                  FROM recipe_imports
                 WHERE id = ?
                 LIMIT 1`
-            )
-            .bind(intentId)
-            .first() as PromiseLike<unknown | null>
+          )
+          .bind(intentId)
+          .first()
       );
       if (row === null) {
         return yield* Effect.fail(new RecipeImportIntentNotFound());
@@ -1127,17 +1144,16 @@ export const makeD1ImportRepository = (
     mutationId: typeof ImportIntentTransitionMutationId.Type
   ) =>
     Effect.gen(function* recordedTransitionEffect() {
-      const row = yield* persistenceEffect(
-        () =>
-          binding
-            .prepare(
-              `SELECT command_digest AS commandDigest
+      const row = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `SELECT command_digest AS commandDigest
                  FROM recipe_import_intent_history
                 WHERE intent_id = ? AND mutation_id = ?
                 LIMIT 1`
-            )
-            .bind(intentId, mutationId)
-            .first() as PromiseLike<unknown | null>
+          )
+          .bind(intentId, mutationId)
+          .first()
       );
       if (row === null) {
         return Option.none<typeof ImportIntentTransitionCommandDigest.Type>();
@@ -1381,11 +1397,10 @@ export const makeD1ImportRepository = (
   ) =>
     Effect.gen(function* readIntentTimelineEffect() {
       yield* requireIntentRow(principal, intentId);
-      const rows = yield* persistenceEffect(
-        () =>
-          binding
-            .prepare(
-              `SELECT action_id AS actionId, occurred_at AS at,
+      const rawRows = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `SELECT action_id AS actionId, occurred_at AS at,
                       event_type AS eventType, failure_code AS failureCode,
                       intent_id AS intentId, intent_version AS intentVersion,
                       public_next_attempt_at AS publicNextAttemptAt,
@@ -1399,22 +1414,22 @@ export const makeD1ImportRepository = (
                  FROM recipe_import_intent_history
                 WHERE intent_id = ?
                 ORDER BY intent_version ASC`
-            )
-            .bind(intentId)
-            .all() as PromiseLike<{ readonly results: readonly unknown[] }>
+          )
+          .bind(intentId)
+          .all()
       );
+      const rows = yield* Schema.decodeUnknownEffect(IntentTimelineResults, {
+        onExcessProperty: "ignore",
+      })(rawRows).pipe(Effect.mapError(importPersistenceCorrupt));
       return yield* Effect.try({
         catch: importPersistenceCorrupt,
         try: (): RecipeImportTimelineType => ({
-          data: rows.results.flatMap((rawRow) => {
-            const row = Schema.decodeUnknownSync(ImportIntentHistoryRow, {
-              onExcessProperty: "error",
-            })(rawRow);
-            return Option.match(projectImportIntentHistoryRow(row), {
+          data: rows.results.flatMap((row) =>
+            Option.match(projectImportIntentHistoryRow(row), {
               onNone: () => [],
               onSome: (event) => [event],
-            });
-          }),
+            })
+          ),
           object: "list",
         }),
       });
@@ -1425,11 +1440,10 @@ export const makeD1ImportRepository = (
     limit: StalledImportIntentStartLimit
   ) =>
     Effect.gen(function* listStalledIntentStartsEffect() {
-      const rows = yield* persistenceEffect(
-        () =>
-          binding
-            .prepare(
-              `SELECT id AS intentId,
+      const rawRows = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `SELECT id AS intentId,
                       correlation_id AS correlationId,
                       execution_generation AS executionGeneration,
                       updated_at AS updatedAt
@@ -1440,36 +1454,29 @@ export const makeD1ImportRepository = (
                   AND updated_at <= ?
                 ORDER BY updated_at ASC, id ASC
                 LIMIT ?`
-            )
-            .bind(encodeInstant(cutoff), limit)
-            .all() as PromiseLike<{ readonly results: readonly unknown[] }>
+          )
+          .bind(encodeInstant(cutoff), limit)
+          .all()
       );
+      const rows = yield* Schema.decodeUnknownEffect(
+        StalledIntentStartResults,
+        {
+          onExcessProperty: "ignore",
+        }
+      )(rawRows).pipe(Effect.mapError(importPersistenceCorrupt));
       return yield* Effect.try({
         catch: importPersistenceCorrupt,
         try: () =>
-          rows.results.map((row) => {
-            const candidate = Schema.decodeUnknownSync(
-              Schema.Struct({
-                correlationId: ImportCorrelationId,
-                executionGeneration: ImportIntentExecutionGeneration,
-                intentId: RecipeImportIntentId,
-                // Keep the encoded timestamp for the enclosing candidate
-                // decoder so the DateTime transformation runs exactly once.
-                updatedAt: Schema.String,
-              }),
-              {
-                onExcessProperty: "error",
-              }
-            )(row);
-            return Schema.decodeUnknownSync(StalledImportIntentStartCandidate, {
+          rows.results.map((candidate) =>
+            Schema.decodeUnknownSync(StalledImportIntentStartCandidate, {
               onExcessProperty: "error",
             })({
               executionGeneration: candidate.executionGeneration,
               intentId: candidate.intentId,
               trace: { correlationId: candidate.correlationId },
               updatedAt: candidate.updatedAt,
-            });
-          }),
+            })
+          ),
       });
     });
 
@@ -1478,11 +1485,10 @@ export const makeD1ImportRepository = (
     limit: StalledImportIntentStartLimit
   ) =>
     Effect.gen(function* listStalledSourceResolutionsEffect() {
-      const rows = yield* persistenceEffect(
-        () =>
-          binding
-            .prepare(
-              `SELECT actor_id AS actorId, correlation_id AS correlationId,
+      const rawRows = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `SELECT actor_id AS actorId, correlation_id AS correlationId,
                       execution_generation AS executionGeneration,
                       household_scope_id AS householdScopeId, id AS intentId,
                       submitted_source_url AS submittedSourceUrl,
@@ -1493,12 +1499,16 @@ export const makeD1ImportRepository = (
                   AND updated_at <= ?
                 ORDER BY updated_at ASC, id ASC
                 LIMIT ?`
-            )
-            .bind(encodeInstant(cutoff), limit)
-            .all() as PromiseLike<{ readonly results: readonly unknown[] }>
+          )
+          .bind(encodeInstant(cutoff), limit)
+          .all()
       );
+      const rows = yield* Schema.decodeUnknownEffect(
+        PendingSourceResolutionResults,
+        { onExcessProperty: "ignore" }
+      )(rawRows).pipe(Effect.mapError(importPersistenceCorrupt));
       return yield* Effect.all(
-        rows.results.map((row) => decodePendingSourceResolution(row))
+        rows.results.map(pendingSourceResolutionFromRow)
       );
     });
 
@@ -1507,19 +1517,18 @@ export const makeD1ImportRepository = (
     executionGeneration: typeof ImportIntentExecutionGeneration.Type
   ) =>
     Effect.gen(function* isIntentExecutionCurrentEffect() {
-      const row = yield* persistenceEffect(
-        () =>
-          binding
-            .prepare(
-              `SELECT 1 AS isCurrent
+      const row = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `SELECT 1 AS isCurrent
                  FROM recipe_imports
                 WHERE id = ?
                   AND execution_generation = ?
                   AND public_status = 'processing'
                 LIMIT 1`
-            )
-            .bind(intentId, executionGeneration)
-            .first() as PromiseLike<unknown | null>
+          )
+          .bind(intentId, executionGeneration)
+          .first()
       );
       if (row === null) {
         return false;
@@ -1548,7 +1557,7 @@ export const makeD1ImportRepository = (
         command.principal,
         command.intentId
       );
-      const currentIntent = yield* decodePublicIntent(currentRow);
+      const currentIntent = yield* publicIntentFromRow(currentRow);
       if (currentIntent.status === "redirected") {
         return yield* Effect.fail(
           new RecipeImportIntentRedirected({
@@ -1592,7 +1601,7 @@ export const makeD1ImportRepository = (
           outcome._tag === "NoOp"
             ? ("replayed" as const)
             : ("applied" as const),
-        intent: yield* decodePublicIntent(
+        intent: yield* publicIntentFromRow(
           yield* requireIntentRow(command.principal, command.intentId)
         ),
       };
@@ -1603,11 +1612,10 @@ export const makeD1ImportRepository = (
     command: Parameters<ImportIntentRepository["resolveIntentSource"]>[1]
   ) =>
     Effect.gen(function* findResolvedSourceWinnerEffect() {
-      const winner = yield* persistenceEffect(
-        () =>
-          binding
-            .prepare(
-              `SELECT id
+      const winner = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `SELECT id
                  FROM recipe_imports
                 WHERE household_scope_id = ?
                   AND resolved_canonical_source_id = ?
@@ -1617,13 +1625,13 @@ export const makeD1ImportRepository = (
                   AND id <> ?
                 ORDER BY created_at, id
                 LIMIT 1`
-            )
-            .bind(
-              principal.householdScopeId,
-              command.canonicalSourceId,
-              command.intentId
-            )
-            .first() as PromiseLike<unknown | null>
+          )
+          .bind(
+            principal.householdScopeId,
+            command.canonicalSourceId,
+            command.intentId
+          )
+          .first()
       );
       if (winner === null) {
         return Option.none<RecipeImportIntentId>();
@@ -1750,21 +1758,20 @@ export const makeD1ImportRepository = (
                 ),
             ]) as PromiseLike<readonly D1MutationResult[]>
         );
-        const winningRequest = yield* persistenceEffect(
-          () =>
-            binding
-              .prepare(
-                `SELECT import_id AS id, created_at AS createdAt,
+        const winningRequest = yield* persistenceEffect(() =>
+          binding
+            .prepare(
+              `SELECT import_id AS id, created_at AS createdAt,
                         request_fingerprint AS requestFingerprint
                    FROM import_requests
                   WHERE household_scope_id = ? AND idempotency_key_hash = ?
                   LIMIT 1`
-              )
-              .bind(
-                command.principal.householdScopeId,
-                command.idempotencyKeyHash
-              )
-              .first() as PromiseLike<unknown | null>
+            )
+            .bind(
+              command.principal.householdScopeId,
+              command.idempotencyKeyHash
+            )
+            .first()
         );
         const request = yield* Effect.try({
           catch: importPersistenceCorrupt,
@@ -1800,7 +1807,7 @@ export const makeD1ImportRepository = (
     requireMutableIntent: (principal, intentId) =>
       Effect.gen(function* requireMutableIntent() {
         const row = yield* requireIntentRow(principal, intentId);
-        const intent = yield* decodePublicIntent(row);
+        const intent = yield* publicIntentFromRow(row);
         if (intent.status === "redirected") {
           return yield* Effect.fail(
             new RecipeImportIntentRedirected({
@@ -1830,7 +1837,7 @@ export const makeD1ImportRepository = (
           }
           return resolvedSourceResult(
             current,
-            yield* decodePublicIntent(current),
+            yield* publicIntentFromRow(current),
             false
           );
         }
@@ -1838,7 +1845,7 @@ export const makeD1ImportRepository = (
           if (requireMatchingResolvedSource(current, command)) {
             return resolvedSourceResult(
               current,
-              yield* decodePublicIntent(current),
+              yield* publicIntentFromRow(current),
               false
             );
           }
@@ -1887,7 +1894,7 @@ export const makeD1ImportRepository = (
             }
             return resolvedSourceResult(
               settled,
-              yield* decodePublicIntent(settled),
+              yield* publicIntentFromRow(settled),
               outcome._tag === "Applied"
             );
           });
@@ -1912,7 +1919,7 @@ export const makeD1ImportRepository = (
           }
           return resolvedSourceResult(
             raced,
-            yield* decodePublicIntent(raced),
+            yield* publicIntentFromRow(raced),
             false
           );
         }

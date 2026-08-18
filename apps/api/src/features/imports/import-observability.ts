@@ -259,7 +259,7 @@ const eventAnnotations = (event: ImportObservabilityEvent) => ({
  * Cloudflare's automatic spans include URL attributes.
  */
 export const emitImportObservabilityEvent = (
-  rawEvent: unknown,
+  rawEvent: Schema.Json,
   capturedTraceStore?: ImportObservabilityTraceStore
 ) =>
   Effect.suspend(() => {

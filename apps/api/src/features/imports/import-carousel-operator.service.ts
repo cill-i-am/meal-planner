@@ -9,6 +9,7 @@ import type {
 } from "@meal-planner/recipe-import-api";
 import { Context, Effect, Schema } from "effect";
 
+import type { TikTokCarouselAdapterFailure } from "./import-carousel-adapter.js";
 import type { OperatorCarouselBundle } from "./import-carousel-operator.js";
 import { makeOperatorCarouselAdapter } from "./import-carousel-operator.js";
 import { ImportIntentIdGenerator } from "./import-intent.js";
@@ -79,7 +80,10 @@ export interface OperatorCarouselPipeline {
   readonly preflight?: () => Effect.Effect<void, CarouselProcessingUnavailable>;
   readonly stage: (
     input: OperatorCarouselPipelineInput
-  ) => Effect.Effect<void, unknown>;
+  ) => Effect.Effect<
+    void,
+    CarouselProcessingUnavailable | TikTokCarouselAdapterFailure
+  >;
 }
 
 export type OperatorCarouselImportError =
@@ -99,31 +103,32 @@ export interface OperatorCarouselImportService {
   ) => Effect.Effect<RecipeImportIntent, OperatorCarouselImportError>;
 }
 
-const pipelineError = (error: unknown) => {
-  if (typeof error !== "object" || error === null) {
-    return carouselProcessingUnavailable();
-  }
-  if ("_tag" in error && error._tag === "CarouselProcessingUnavailable") {
-    return carouselProcessingUnavailable();
-  }
-  if ("recovery" in error && error.recovery === "request_complete_carousel") {
-    return invalidCarouselBundle();
-  }
-  return carouselProcessingUnavailable();
-};
+type ImportIntentApplication = ReturnType<typeof makeImportIntentApplication>;
+type OperatorCarouselApplicationError =
+  | Effect.Error<
+      ReturnType<ImportIntentApplication["admitWithRequestFingerprint"]>
+    >
+  | Effect.Error<ReturnType<ImportIntentApplication["get"]>>
+  | Effect.Error<ReturnType<ImportIntentApplication["resolveSource"]>>;
 
-const applicationError = (error: unknown): OperatorCarouselImportError => {
-  if (typeof error !== "object" || error === null || !("_tag" in error)) {
-    return carouselProcessingUnavailable();
-  }
+const pipelineError = (
+  error: CarouselProcessingUnavailable | TikTokCarouselAdapterFailure
+) =>
+  error._tag === "TikTokCarouselAdapterFailure" &&
+  error.recovery === "request_complete_carousel"
+    ? invalidCarouselBundle()
+    : carouselProcessingUnavailable();
+
+const applicationError = (
+  error: OperatorCarouselApplicationError
+): OperatorCarouselImportError => {
   switch (error._tag) {
     case "RecipeImportIntentIdempotencyConflict": {
       return idempotencyConflict();
     }
     case "ImportPersistenceCorrupt":
-    case "ImportPersistenceUnavailable":
-    case "SourceIdentityUnavailable": {
-      return error as OperatorCarouselImportError;
+    case "ImportPersistenceUnavailable": {
+      return error;
     }
     default: {
       return carouselProcessingUnavailable();

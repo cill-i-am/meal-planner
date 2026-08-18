@@ -1,12 +1,24 @@
-interface ForcedToolResponsePart {
-  readonly name?: string;
-  readonly params?: unknown;
-  readonly text?: string;
-  readonly type?: string;
-}
+import { Option, Schema } from "effect";
+
+const ForcedToolJsonObject = Schema.Record(Schema.String, Schema.Json);
+type ForcedToolJsonObject = typeof ForcedToolJsonObject.Type;
+const decodeForcedToolJsonObject =
+  Schema.decodeUnknownOption(ForcedToolJsonObject);
+
+const ForcedToolResponsePart = Schema.Struct({
+  name: Schema.optionalKey(Schema.String),
+  params: Schema.optionalKey(Schema.Json),
+  text: Schema.optionalKey(Schema.String),
+  type: Schema.optionalKey(Schema.String),
+});
+type ForcedToolResponsePart = typeof ForcedToolResponsePart.Type;
+const decodeForcedToolResponsePart = Schema.decodeUnknownOption(
+  ForcedToolResponsePart,
+  { onExcessProperty: "ignore" }
+);
 
 interface NativeForcedToolEnvelope {
-  readonly arguments: Record<string, unknown>;
+  readonly arguments: ForcedToolJsonObject;
   readonly name: string;
 }
 
@@ -16,7 +28,7 @@ type NativeForcedToolDecode =
   | { readonly _tag: "Prose" }
   | {
       readonly _tag: "Value";
-      readonly value: Record<string, unknown>;
+      readonly value: ForcedToolJsonObject;
       readonly wrappedInArray: boolean;
     };
 
@@ -29,19 +41,22 @@ export type ForcedToolDecodeReason =
   | "unexpected_tool_name";
 
 export type ForcedToolResponseDecode =
-  | { readonly _tag: "Decoded"; readonly value: Record<string, unknown> }
+  | { readonly _tag: "Decoded"; readonly value: ForcedToolJsonObject }
   | {
       readonly _tag: "Malformed";
       readonly reason: Exclude<ForcedToolDecodeReason, "missing_content">;
     }
   | { readonly _tag: "Missing"; readonly reason: "missing_content" };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+const isRecord = (value: Schema.Json | undefined): value is Schema.JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const decodeArguments = (
-  value: unknown
-): Record<string, unknown> | undefined => {
+  value: Schema.Json | undefined
+): ForcedToolJsonObject | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
   if (isRecord(value)) {
     return value;
   }
@@ -49,25 +64,38 @@ const decodeArguments = (
     return undefined;
   }
   try {
-    const parsed: unknown = JSON.parse(value);
-    return isRecord(parsed) ? parsed : undefined;
+    return Option.getOrUndefined(decodeForcedToolJsonObject(JSON.parse(value)));
   } catch {
     return undefined;
   }
 };
 
-const decodeNativeForcedToolEnvelope = (
-  text: string
-): NativeForcedToolDecode => {
-  let parsed: unknown;
+type ForcedToolJsonDecode =
+  | { readonly _tag: "Parsed"; readonly value: Schema.Json }
+  | Extract<NativeForcedToolDecode, { readonly _tag: "Invalid" | "Prose" }>;
+
+const decodeForcedToolJson = (text: string): ForcedToolJsonDecode => {
   try {
-    parsed = JSON.parse(text);
+    const decoded = Schema.decodeUnknownOption(Schema.Json)(JSON.parse(text));
+    return Option.isSome(decoded)
+      ? { _tag: "Parsed", value: decoded.value }
+      : { _tag: "Invalid" };
   } catch {
     const trimmed = text.trimStart();
     return trimmed.startsWith("{") || trimmed.startsWith("[")
       ? { _tag: "Invalid" }
       : { _tag: "Prose" };
   }
+};
+
+const decodeNativeForcedToolEnvelope = (
+  text: string
+): NativeForcedToolDecode => {
+  const decodedJson = decodeForcedToolJson(text);
+  if (decodedJson._tag !== "Parsed") {
+    return decodedJson;
+  }
+  const parsed = decodedJson.value;
   let envelope = parsed;
   const wrappedInArray = Array.isArray(parsed);
   if (Array.isArray(parsed)) {
@@ -116,8 +144,8 @@ const decodeNativeForcedToolEnvelope = (
 };
 
 export const structurallyEqualJson = (
-  left: unknown,
-  right: unknown
+  left: Schema.Json | undefined,
+  right: Schema.Json | undefined
 ): boolean => {
   if (Object.is(left, right)) {
     return true;
@@ -188,7 +216,12 @@ export const decodeForcedToolResponseResult = (
     readonly acceptUnwrappedObject?: boolean;
   }
 ): ForcedToolResponseDecode => {
-  const parts = content.filter(isRecord) as readonly ForcedToolResponsePart[];
+  const parts = content.flatMap((part) =>
+    Option.match(decodeForcedToolResponsePart(part), {
+      onNone: () => [],
+      onSome: (decoded) => [decoded],
+    })
+  );
   const structured = parts.filter((part) => part.type === "tool-call");
   const text = parts.filter(
     (part): part is ForcedToolResponsePart & { readonly text: string } =>
@@ -248,7 +281,7 @@ export const decodeForcedToolResponseResult = (
 export const decodeForcedToolResponse = (
   content: readonly unknown[],
   expectedName: string
-): unknown | undefined => {
+): ForcedToolJsonObject | undefined => {
   const result = decodeForcedToolResponseResult(content, expectedName);
   return result._tag === "Decoded" ? result.value : undefined;
 };

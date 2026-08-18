@@ -1,12 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Option } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 
 import {
   hasIsoBaseMediaFileType,
+  MediaProbeOutput,
   validateMediaProbe,
 } from "./import-media-validation.js";
 
-const validProbe = {
+const validProbe = Schema.decodeUnknownSync(MediaProbeOutput)({
   format: {
     duration: "1.000000",
     format_name: "mov,mp4,m4a,3gp,3g2,mj2",
@@ -16,9 +17,9 @@ const validProbe = {
     { codec_name: "h264", codec_type: "video", index: 0 },
     { codec_name: "aac", codec_type: "audio", index: 1 },
   ],
-};
+});
 
-const expectTerminal = (effect: Effect.Effect<unknown, unknown>) =>
+const expectTerminal = (effect: ReturnType<typeof validateMediaProbe>) =>
   Effect.gen(function* expectTerminalEffect() {
     const exit = yield* Effect.exit(effect);
     expect(Exit.isFailure(exit)).toBe(true);
@@ -86,16 +87,6 @@ describe("real media validation", () => {
           )
         ),
         expectTerminal(
-          validateMediaProbe(
-            { malformed: true },
-            {
-              actualBytes: 1024,
-              maximumBytes: 2048,
-              maximumDurationSeconds: 900,
-            }
-          )
-        ),
-        expectTerminal(
           validateMediaProbe(validProbe, {
             actualBytes: 2049,
             maximumBytes: 2048,
@@ -116,5 +107,14 @@ describe("real media validation", () => {
           )
         ),
       ]).pipe(Effect.asVoid)
+  );
+
+  it.effect("rejects malformed probe data at the schema boundary", () =>
+    Effect.gen(function* rejectMalformedProbeEffect() {
+      const exit = yield* Effect.exit(
+        Schema.decodeUnknownEffect(MediaProbeOutput)({ malformed: true })
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+    })
   );
 });

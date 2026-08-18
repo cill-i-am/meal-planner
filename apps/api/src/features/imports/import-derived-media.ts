@@ -270,20 +270,18 @@ export const persistDerivedProviderEvidence = Effect.fn(
   }).pipe(Effect.mapError(derivedFailure));
   const bytes = new TextEncoder().encode(JSON.stringify(manifest));
   const sha256 = yield* hash(bytes);
-  const stored = yield* Effect.tryPromise({
-    catch: derivedFailure,
-    try: () =>
-      bucket.put(manifestKey(input.importId, input.generation), bytes, {
-        contentLength: bytes.byteLength,
-        customMetadata: { kind: "provider-evidence-manifest", sha256 },
-        httpMetadata: {
-          cacheControl: "private, no-store",
-          contentType: "application/json",
-        },
-        onlyIf: { etagDoesNotMatch: "*" },
-        sha256: sha256Bytes(sha256),
-      }),
-  });
+  const stored = yield* bucket
+    .put(manifestKey(input.importId, input.generation), bytes, {
+      contentLength: bytes.byteLength,
+      customMetadata: { kind: "provider-evidence-manifest", sha256 },
+      httpMetadata: {
+        cacheControl: "private, no-store",
+        contentType: "application/json",
+      },
+      onlyIf: { etagDoesNotMatch: "*" },
+      sha256: sha256Bytes(sha256),
+    })
+    .pipe(Effect.mapError(derivedFailure));
   if (stored === null) {
     return yield* Effect.fail(derivedFailure());
   }
@@ -320,17 +318,15 @@ const readManifest = Effect.fn("ImportDerivedMedia.readManifest")(
     const expectedSha256 = yield* Schema.decodeUnknownEffect(Sha256Hex)(
       sourceMediaSha256
     ).pipe(Effect.mapError(() => readFailure("verifyIdentity")));
-    const object = yield* Effect.tryPromise({
-      catch: () => readFailure("getManifest"),
-      try: () => bucket.get(manifestKey(importId, generation)),
-    });
+    const object = yield* bucket
+      .get(manifestKey(importId, generation))
+      .pipe(Effect.mapError(() => readFailure("getManifest")));
     if (object === null) {
       return yield* Effect.fail(readFailure("getManifest"));
     }
-    const text = yield* Effect.tryPromise({
-      catch: () => readFailure("decodeManifest"),
-      try: () => object.text(),
-    });
+    const text = yield* object
+      .text()
+      .pipe(Effect.mapError(() => readFailure("decodeManifest")));
     const unknownManifest = yield* Effect.try({
       catch: () => readFailure("decodeManifest"),
       try: () => JSON.parse(text) as unknown,
@@ -356,18 +352,15 @@ const readBytes = Effect.fn("ImportDerivedMedia.readBytes")(
     bucket: AcquisitionBucketLike,
     key: DerivedAudioObjectKey | DerivedFrameObjectKey
   ) {
-    const object = yield* Effect.tryPromise({
-      catch: () => readFailure("getObject"),
-      try: () => bucket.get(key),
-    });
-    if (object === null || object.arrayBuffer === undefined) {
+    const object = yield* bucket
+      .get(key)
+      .pipe(Effect.mapError(() => readFailure("getObject")));
+    if (object === null) {
       return yield* Effect.fail(readFailure("getObject"));
     }
-    const readObject = object.arrayBuffer.bind(object);
-    const bytes = yield* Effect.tryPromise({
-      catch: () => readFailure("getObject"),
-      try: () => readObject(),
-    });
+    const bytes = yield* object
+      .arrayBuffer()
+      .pipe(Effect.mapError(() => readFailure("getObject")));
     return new Uint8Array(bytes);
   }
 );

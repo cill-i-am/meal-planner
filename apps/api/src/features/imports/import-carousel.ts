@@ -296,25 +296,25 @@ const storeImage = (
   bytes: Uint8Array
 ) =>
   Effect.gen(function* store() {
-    yield* Effect.tryPromise({
-      catch: () => null,
-      try: () =>
-        bucket.put(reference.key, bytes, {
-          contentLength: reference.byteLength,
-          customMetadata: imageMetadata(document, reference),
-          httpMetadata: {
-            cacheControl: "private, no-store",
-            contentType: "image/jpeg",
-          },
-          onlyIf: { etagDoesNotMatch: "*" },
-          sha256: checksumBuffer(reference.sha256),
-        }),
-    }).pipe(Effect.exit);
-    const stored = yield* Effect.tryPromise({
-      catch: () =>
-        pipelineFailure("carousel_evidence_invalid", "operator_reconcile"),
-      try: () => bucket.head(reference.key),
-    });
+    yield* bucket
+      .put(reference.key, bytes, {
+        contentLength: reference.byteLength,
+        customMetadata: imageMetadata(document, reference),
+        httpMetadata: {
+          cacheControl: "private, no-store",
+          contentType: "image/jpeg",
+        },
+        onlyIf: { etagDoesNotMatch: "*" },
+        sha256: checksumBuffer(reference.sha256),
+      })
+      .pipe(Effect.exit);
+    const stored = yield* bucket
+      .head(reference.key)
+      .pipe(
+        Effect.mapError(() =>
+          pipelineFailure("carousel_evidence_invalid", "operator_reconcile")
+        )
+      );
     if (
       stored === null ||
       stored.size !== reference.byteLength ||
@@ -344,7 +344,7 @@ const manifestMetadata = (
 });
 
 const manifestMatches = (
-  object: NonNullable<Awaited<ReturnType<AcquisitionBucketLike["get"]>>>,
+  object: NonNullable<Effect.Success<ReturnType<AcquisitionBucketLike["get"]>>>,
   bytes: Uint8Array,
   sha256: string,
   expected: CompletedCarouselEvidence,
@@ -372,19 +372,25 @@ const readVerifiedManifest = (
   descriptor: TikTokCarouselDescriptor
 ) =>
   Effect.gen(function* read() {
-    const object = yield* Effect.tryPromise({
-      catch: () => pipelineFailure("outcome_unknown", "operator_reconcile"),
-      try: () => bucket.get(expected.manifestKey),
-    });
+    const object = yield* bucket
+      .get(expected.manifestKey)
+      .pipe(
+        Effect.mapError(() =>
+          pipelineFailure("outcome_unknown", "operator_reconcile")
+        )
+      );
     if (object === null) {
       return yield* Effect.fail(
         pipelineFailure("carousel_evidence_invalid", "operator_reconcile")
       );
     }
-    const text = yield* Effect.tryPromise({
-      catch: () => pipelineFailure("outcome_unknown", "operator_reconcile"),
-      try: () => object.text(),
-    });
+    const text = yield* object
+      .text()
+      .pipe(
+        Effect.mapError(() =>
+          pipelineFailure("outcome_unknown", "operator_reconcile")
+        )
+      );
     const bytes = new TextEncoder().encode(text);
     const sha256 = yield* sha256Hex(bytes);
     const parsed = yield* Effect.try({
@@ -421,10 +427,13 @@ const readVerifiedManifest = (
           pipelineFailure("carousel_evidence_invalid", "operator_reconcile")
         );
       }
-      const stored = yield* Effect.tryPromise({
-        catch: () => pipelineFailure("outcome_unknown", "operator_reconcile"),
-        try: () => bucket.head(reference.key),
-      });
+      const stored = yield* bucket
+        .head(reference.key)
+        .pipe(
+          Effect.mapError(() =>
+            pipelineFailure("outcome_unknown", "operator_reconcile")
+          )
+        );
       if (
         stored === null ||
         stored.size !== reference.byteLength ||
@@ -457,20 +466,18 @@ const storeManifest = (
       document.importId,
       document.acquisitionGeneration
     );
-    yield* Effect.tryPromise({
-      catch: () => null,
-      try: () =>
-        bucket.put(key, bytes, {
-          contentLength: bytes.byteLength,
-          customMetadata: manifestMetadata(document, sha256),
-          httpMetadata: {
-            cacheControl: "private, no-store",
-            contentType: "application/json",
-          },
-          onlyIf: { etagDoesNotMatch: "*" },
-          sha256: checksumBuffer(sha256),
-        }),
-    }).pipe(Effect.exit);
+    yield* bucket
+      .put(key, bytes, {
+        contentLength: bytes.byteLength,
+        customMetadata: manifestMetadata(document, sha256),
+        httpMetadata: {
+          cacheControl: "private, no-store",
+          contentType: "application/json",
+        },
+        onlyIf: { etagDoesNotMatch: "*" },
+        sha256: checksumBuffer(sha256),
+      })
+      .pipe(Effect.exit);
     return { key, sha256 };
   });
 

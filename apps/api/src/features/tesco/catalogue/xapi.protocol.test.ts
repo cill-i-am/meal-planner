@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -144,14 +144,15 @@ describe("Tesco XAPI catalogue protocol", () => {
 
   it("contains provider drift as a typed decode failure", async () => {
     const canary = "provider-secret-schema-detail";
-    const failure: unknown = await Effect.runPromise(
+    const exit = await Effect.runPromiseExit(
       TescoSearchQuery.decode({
         data: { search: { providerDetail: canary, results: [] } },
       })
-    ).then(
-      () => null,
-      (error: unknown) => error
     );
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected Tesco provider drift to fail decoding");
+    }
+    const failure = Option.getOrThrow(Cause.findErrorOption(exit.cause));
 
     expect(failure).toMatchObject({
       _tag: "TescoCatalogueResponseInvalid",

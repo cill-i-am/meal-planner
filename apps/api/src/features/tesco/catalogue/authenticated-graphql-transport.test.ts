@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Layer, Redacted, Schema } from "effect";
+import { Cause, Effect, Exit, Layer, Option, Redacted, Schema } from "effect";
 import {
   HttpClient,
   HttpClientError,
@@ -40,7 +40,7 @@ const catalogueConfig: TescoCatalogueConfig = {
 };
 
 interface StubResponse {
-  readonly body?: unknown;
+  readonly body?: Schema.Json;
   readonly kind?: "interrupt" | "response" | "transportFailure";
   readonly rawBody?: string;
   readonly status: number;
@@ -160,10 +160,11 @@ describe("TescoAuthenticatedGraphQlTransportLive", () => {
       },
     ]);
 
-    const failure: unknown = await Effect.runPromise(run.effect).then(
-      () => null,
-      (error: unknown) => error
-    );
+    const exit = await Effect.runPromiseExit(run.effect);
+    if (Exit.isSuccess(exit)) {
+      throw new Error("Expected Tesco GraphQL errors to be rejected");
+    }
+    const failure = Option.getOrThrow(Cause.findErrorOption(exit.cause));
     expect(failure).toMatchObject({
       _tag: "TescoAuthenticatedRequestRejected",
       operation: "search",

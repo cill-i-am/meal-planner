@@ -12,6 +12,12 @@ export default defineConfig({
     "apps/api/auth-migrations/**/snapshot.json",
     "apps/api/src/features/auth/auth.database-schema.ts",
   ],
+  jsPlugins: [
+    {
+      name: "anti-slop",
+      specifier: "./tools/oxlint/anti-slop/index.ts",
+    },
+  ],
   overrides: [
     {
       files: [
@@ -117,4 +123,7 @@ export default defineConfig({
       },
     },
   ],
+  rules: {
+    "anti-slop/no-unknown-parameters": "error",
+  },
 });

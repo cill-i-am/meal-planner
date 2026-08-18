@@ -1,14 +1,11 @@
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
+import { isPilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
 import {
-  isPilotProviderKnownZeroCostFailure,
-  pilotProviderKnownZeroCostFailure,
-} from "../pilots/pilot-provider-budget.js";
-import {
-  makeRawGateway,
-  makeGateway,
-  makeRejectedGateway,
+  makeRawProviderTransports,
+  makeProviderTransports,
+  makeRejectedProviderTransports,
   correlationId,
   localDispatchGate,
   runFactory,
@@ -24,12 +21,14 @@ import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.j
 describe("installed visual provider adapter", () => {
   it("maps a missing visual forced-tool call without payload data", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
-    const gateway = makeGateway({ providerSecret: "must-not-escape" });
+    const gateway = makeProviderTransports({
+      providerSecret: "must-not-escape",
+    });
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.visual,
       })
     );
 
@@ -99,11 +98,11 @@ describe("installed visual provider adapter", () => {
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledVisualEvidenceExtractor({
-          client: makeRejectedGateway(
-            pilotProviderKnownZeroCostFailure("provider_unavailable" as const)
-          ),
           correlationId,
           dispatch,
+          transport: makeRejectedProviderTransports(
+            new Error("provider_known_zero_setup_failure")
+          ).visual,
         }),
         trace.service
       );
@@ -152,18 +151,19 @@ describe("installed visual provider adapter", () => {
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: makeRejectedGateway({
-          _tag: "AiGatewayError",
-          cause: {
-            code: "model_agreement_required",
-            name: "request_shape_rejected",
-            providerSecret: "must-not-escape",
-            status: 400,
-          },
-          message: "providerSecret=must-not-escape",
-        }),
         correlationId,
         dispatch,
+        transport: makeRejectedProviderTransports(
+          Object.assign(new Error("providerSecret=must-not-escape"), {
+            _tag: "AiGatewayError",
+            cause: {
+              code: "model_agreement_required",
+              name: "request_shape_rejected",
+              providerSecret: "must-not-escape",
+              status: 400,
+            },
+          })
+        ).visual,
       }),
       trace.service
     );
@@ -208,16 +208,15 @@ describe("installed visual provider adapter", () => {
       ],
       outcome: "empty",
     } as const;
-    const gateway = makeGateway(
+    const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", visualSemantics)
     );
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
-        model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+        transport: gateway.visual,
       }),
       trace.service
     );
@@ -277,103 +276,15 @@ describe("installed visual provider adapter", () => {
       provider: "cloudflare-workers-ai",
       usage: { inputBytes: 2, inputFrames: 1, modelCalls: 1 },
     });
-    expect(gateway.requests).toHaveLength(1);
-    const request = gateway.requests[0] as {
-      readonly body: {
-        readonly messages: readonly {
-          readonly content: readonly [
-            { readonly text: string; readonly type: "text" },
-            {
-              readonly image_url: { readonly url: string };
-              readonly type: "image_url";
-            },
-          ];
-        }[];
-        readonly tool_choice: string;
-        readonly tools: readonly {
-          readonly function: {
-            readonly name: string;
-            readonly parameters: unknown;
-          };
-          readonly type: string;
-        }[];
-      };
-      readonly model: string;
-      readonly options: {
-        readonly gateway: {
-          readonly collectLog: boolean;
-          readonly id: string;
-          readonly metadata?: unknown;
-          readonly skipCache: boolean;
-        };
-        readonly returnRawResponse?: boolean;
-      };
-    };
-    expect(request.model).toBe("@cf/meta/llama-4-scout-17b-16e-instruct");
-    expect(request.options).toEqual({
-      gateway: {
-        collectLog: false,
-        id: "meal-planner-pilot-gaia-118",
-        skipCache: true,
-      },
-      returnRawResponse: true,
-    });
-    expect(request.options.gateway).not.toHaveProperty("metadata");
-    expect(request.options).not.toHaveProperty("headers");
-    expect(JSON.stringify(request.options)).not.toMatch(
-      /AQID|data:image|https?:|cookie|credential|prompt|transcript/iu
-    );
-    expect(request.body.tool_choice).toBe("required");
-    expect(request.body.tools).toHaveLength(1);
-    expect(request.body.tools[0]?.function.name).toBe("record_visual_evidence");
-    expect(request.body).not.toHaveProperty("stream");
-    expect(request.body).not.toHaveProperty("image");
-    expect(request.body).not.toHaveProperty("response_format");
-    expect(request.body.messages[0]?.content[0]?.text).toContain(
+    expect(gateway.visualRequests).toHaveLength(1);
+    const [request] = gateway.visualRequests;
+    expect(request?.toolChoice).toEqual({ tool: "record_visual_evidence" });
+    expect(request?.tools.map((tool) => tool.name)).toEqual([
+      "record_visual_evidence",
+    ]);
+    expect(JSON.stringify(request?.prompt)).toContain(
       "adapter owns the source frame identity and timing"
     );
-    expect(request.body.messages[0]?.content[1]).toEqual({
-      image_url: { url: "data:image/jpeg;base64,BAU=" },
-      type: "image_url",
-    });
-    const jsonSchema = request.body.tools[0]?.function.parameters;
-    expect(jsonSchema).toMatchObject({
-      additionalProperties: false,
-      properties: {
-        observations: expect.any(Object),
-      },
-      required: ["observations"],
-      type: "object",
-    });
-    const observationItems = (
-      jsonSchema as {
-        readonly properties: {
-          readonly observations: {
-            readonly items: {
-              readonly additionalProperties: boolean;
-              readonly properties: Record<string, unknown>;
-            };
-          };
-        };
-      }
-    ).properties.observations.items;
-    expect(observationItems.additionalProperties).toBe(false);
-    expect(Object.keys(observationItems.properties)).toEqual([
-      "confidence",
-      "text",
-    ]);
-    expect(observationItems).toMatchObject({
-      required: ["text"],
-    });
-    expect(
-      Object.keys(
-        (
-          jsonSchema as {
-            readonly properties: Record<string, unknown>;
-          }
-        ).properties
-      )
-    ).toEqual(["observations"]);
     expect(trace.events).toEqual([
       {
         correlationId,
@@ -393,7 +304,7 @@ describe("installed visual provider adapter", () => {
   });
 
   it("projects known inert visual metadata before strict semantic decoding", async () => {
-    const gateway = makeGateway(
+    const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", {
         observations: [
           {
@@ -410,9 +321,9 @@ describe("installed visual provider adapter", () => {
     );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.visual,
       })
     );
 
@@ -451,7 +362,7 @@ describe("installed visual provider adapter", () => {
   });
 
   it("conservatively normalizes optional provider confidence variants", async () => {
-    const gateway = makeGateway(
+    const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", {
         observations: [
           {
@@ -470,9 +381,9 @@ describe("installed visual provider adapter", () => {
     );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.visual,
       })
     );
 
@@ -506,7 +417,7 @@ describe("installed visual provider adapter", () => {
   });
 
   it("keeps only safe visual facts when the provider adds malformed metadata", async () => {
-    const gateway = makeGateway(
+    const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", {
         observations: [
           {
@@ -528,9 +439,9 @@ describe("installed visual provider adapter", () => {
     );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.visual,
       })
     );
 
@@ -575,12 +486,14 @@ describe("installed visual provider adapter", () => {
   ])(
     "projects empty visual evidence when the provider %s",
     async (_label, body) => {
-      const gateway = makeGateway(toolResponse("record_visual_evidence", body));
+      const gateway = makeProviderTransports(
+        toolResponse("record_visual_evidence", body)
+      );
       const adapter = await runFactory(
         makeInstalledVisualEvidenceExtractor({
-          client: gateway.client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: gateway.visual,
         })
       );
 
@@ -609,14 +522,14 @@ describe("installed visual provider adapter", () => {
   );
 
   it("accepts the documented Workers AI forced-tool response envelope", async () => {
-    const gateway = makeGateway(
+    const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", validVisualSemantics)
     );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.visual,
       })
     );
 
@@ -644,14 +557,11 @@ describe("installed visual provider adapter", () => {
       observations: [],
       outcome: "empty",
     });
-    expect(gateway.requests).toHaveLength(1);
-    expect((gateway.requests[0] as { readonly model: string }).model).toBe(
-      "@cf/meta/llama-4-scout-17b-16e-instruct"
-    );
+    expect(gateway.visualRequests).toHaveLength(1);
   });
 
   it("derives low-confidence outcome from strict provider observations", async () => {
-    const gateway = makeGateway(
+    const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", {
         observations: [
           {
@@ -664,9 +574,9 @@ describe("installed visual provider adapter", () => {
     );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.visual,
       })
     );
 
@@ -773,13 +683,13 @@ describe("installed visual provider adapter", () => {
   ] as const)(
     "accepts the unambiguous Workers AI vision variant with %s",
     async (_label, response) => {
-      const gateway = makeGateway(response);
+      const gateway = makeProviderTransports(response);
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledVisualEvidenceExtractor({
-          client: gateway.client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: gateway.visual,
         }),
         trace.service
       );
@@ -817,7 +727,7 @@ describe("installed visual provider adapter", () => {
   );
 
   it("discards model attempts to inject visual transport metadata", async () => {
-    const gateway = makeGateway(
+    const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", {
         ...validVisual,
         providerPrivateCanary: "must-not-escape",
@@ -825,9 +735,9 @@ describe("installed visual provider adapter", () => {
     );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.visual,
       })
     );
 
@@ -856,12 +766,12 @@ describe("installed visual provider adapter", () => {
 
   it("fails closed for prose instead of structured visual tool arguments", async () => {
     const response = toolResponse("record_visual_evidence", "{not-json");
-    const gateway = makeGateway(response);
+    const gateway = makeProviderTransports(response);
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.visual,
       })
     );
 
@@ -902,14 +812,13 @@ describe("installed visual provider adapter", () => {
       | { readonly _tag: "Unknown" }
     )[] = [];
     const trace = makeRecordingTraceStore();
-    const gateway = makeRawGateway(
+    const gateway = makeRawProviderTransports(
       new Response("provider-private-canary", {
         headers: { "content-type": "application/json" },
       })
     );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: {
           run: (input) =>
@@ -922,6 +831,7 @@ describe("installed visual provider adapter", () => {
               Effect.map(({ value }) => value)
             ),
         },
+        transport: gateway.visual,
       }),
       trace.service
     );
@@ -1198,13 +1108,13 @@ describe("installed visual provider adapter", () => {
   ] as const)(
     "fails closed for visual %s without leaking provider data",
     async (_label, response) => {
-      const gateway = makeGateway(response);
+      const gateway = makeProviderTransports(response);
       const trace = makeRecordingTraceStore();
       const adapter = await runFactory(
         makeInstalledVisualEvidenceExtractor({
-          client: gateway.client,
           correlationId,
           dispatch: localDispatchGate,
+          transport: gateway.visual,
         }),
         trace.service
       );
@@ -1279,7 +1189,6 @@ describe("installed visual provider adapter", () => {
       )[] = [];
       const adapter = await runFactory(
         makeInstalledVisualEvidenceExtractor({
-          client: makeGateway(response).client,
           correlationId,
           dispatch: {
             run: (input) =>
@@ -1292,6 +1201,7 @@ describe("installed visual provider adapter", () => {
                 Effect.map(({ value }) => value)
               ),
           },
+          transport: makeProviderTransports(response).visual,
         })
       );
 
@@ -1324,14 +1234,14 @@ describe("installed visual provider adapter", () => {
   );
 
   it("rejects an empty visual dispatch before the provider boundary", async () => {
-    const gateway = makeGateway(
+    const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", validVisualSemantics)
     );
     const adapter = await runFactory(
       makeInstalledVisualEvidenceExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.visual,
       })
     );
 
@@ -1347,6 +1257,6 @@ describe("installed visual provider adapter", () => {
 
     expect(exit._tag).toBe("Failure");
     expect(JSON.stringify(exit)).toContain("insufficient_evidence");
-    expect(gateway.requests).toHaveLength(0);
+    expect(gateway.visualRequests).toHaveLength(0);
   });
 });

@@ -2,7 +2,6 @@ import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { Miniflare } from "miniflare";
@@ -14,8 +13,12 @@ import {
   makeOperatorCarouselImportService,
   OperatorCarouselImportService,
 } from "./import-carousel-operator.service.js";
+import type { OperatorCarouselPipelineInput } from "./import-carousel-operator.service.js";
+import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { makeImportIntentApplication } from "./import-intent.js";
+import type { ImportTraceContext } from "./import-observability.js";
 import { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
+import type { ImportId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import {
   makeTestAuthPrincipalResolver,
@@ -55,7 +58,7 @@ const completeJpegs = [
 
 const postBundle = (
   handler: (request: Request) => Promise<Response>,
-  body: unknown,
+  body: Schema.Json,
   idempotencyKey: string,
   authorized = true
 ) =>
@@ -82,9 +85,7 @@ describe("operator carousel HTTP integration", () => {
       script:
         "export default { fetch() { return new Response('local bindings'); } }",
     });
-    const database = (await runtime.getD1Database(
-      "MealPlannerDatabase"
-    )) as AnyD1Database;
+    const database = await runtime.getD1Database("MealPlannerDatabase");
     const migrations = await readD1Migrations(
       fileURLToPath(new URL("../../../migrations", import.meta.url))
     );
@@ -94,8 +95,12 @@ describe("operator carousel HTTP integration", () => {
       )
     );
     const repository = makeD1ImportRepository(database);
-    const stageCalls: unknown[] = [];
-    const starterCalls: unknown[][] = [];
+    const stageCalls: OperatorCarouselPipelineInput[] = [];
+    const starterCalls: (readonly [
+      ImportId,
+      ImportIntentExecutionGeneration,
+      ImportTraceContext,
+    ])[] = [];
     let providerCalls = 0;
     const application = makeImportIntentApplication(
       repository,

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import type * as Cloudflare from "alchemy/Cloudflare";
 import { Cause, Effect, Exit, Fiber, Option, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { Miniflare } from "miniflare";
@@ -27,6 +28,7 @@ import {
   ImportObservabilityTraceStore,
 } from "./import-observability.js";
 import { decodeImportWorkflowInput } from "./import-workflow-input.js";
+import type { ImportWorkflowInputEncoded } from "./import-workflow-input.js";
 import { ImportId } from "./import.contracts.js";
 import {
   importWorkflowInstanceId,
@@ -333,18 +335,24 @@ const makeWorkflow = (
     | "waitingForPause",
   created = false
 ) => {
-  const calls = {
-    createBatch: [] as (readonly {
-      readonly id?: string;
-      readonly params?: unknown;
-    }[])[],
-    get: [] as string[],
+  interface WorkflowCalls {
+    readonly createBatch: Cloudflare.Workflows.WorkflowInstanceCreateOptions<ImportWorkflowInputEncoded>[][];
+    readonly get: string[];
+    restart: number;
+    readonly restartOptions: (
+      | Cloudflare.Workflows.WorkflowInstanceRestartOptions
+      | undefined
+    )[];
+  }
+  const calls: WorkflowCalls = {
+    createBatch: [],
+    get: [],
     restart: 0,
-    restartOptions: [] as unknown[],
+    restartOptions: [],
   };
   const instance = {
     id: importWorkflowInstanceId(importId),
-    restart: (options?: unknown) =>
+    restart: (options?: Cloudflare.Workflows.WorkflowInstanceRestartOptions) =>
       Effect.sync(() => {
         calls.restart += 1;
         calls.restartOptions.push(options);
@@ -353,7 +361,7 @@ const makeWorkflow = (
   };
   const workflow = {
     createBatch: (
-      input: readonly { readonly id?: string; readonly params?: unknown }[]
+      input: Cloudflare.Workflows.WorkflowInstanceCreateOptions<ImportWorkflowInputEncoded>[]
     ) =>
       Effect.sync(() => {
         calls.createBatch.push(input);

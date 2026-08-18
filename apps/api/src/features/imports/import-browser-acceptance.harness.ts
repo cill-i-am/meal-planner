@@ -19,7 +19,6 @@ import {
   RecipeImportIntentId,
   RecipeImportPrincipal,
 } from "@meal-planner/recipe-import-api";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Option, Redacted, Schema, Stream } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { Miniflare } from "miniflare";
@@ -33,7 +32,10 @@ import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
   PreparedMediaArtifact,
+  R2ObjectBodyLike,
+  R2ObjectLike,
 } from "./import-media-acquirer.js";
+import { RetryableAcquisitionError } from "./import-media.errors.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
@@ -51,6 +53,17 @@ import {
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import { makeImportWorkerRequestLayer } from "./import-worker-request-layer.js";
+import {
+  WorkerTestD1DatabaseSchema,
+  WorkerTestR2BucketSchema,
+  workerTestR2PutBody,
+} from "./import-worker-test-environment.js";
+import type {
+  WorkerTestD1Database,
+  WorkerTestR2Bucket,
+  WorkerTestR2Object,
+  WorkerTestR2ObjectBody,
+} from "./import-worker-test-environment.js";
 import { ImportTimestamp } from "./import.contracts.js";
 import type { ImportId, SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
@@ -59,32 +72,10 @@ import {
   TestImportTrace,
 } from "./import.test-fixtures.js";
 
-interface LocalR2Object {
-  readonly checksums?: { readonly sha256?: ArrayBuffer };
-  readonly customMetadata?: Record<string, string>;
-  readonly httpMetadata?: {
-    readonly cacheControl?: string;
-    readonly contentType?: string;
-  };
-  readonly key: string;
-  readonly size: number;
-  readonly text: () => Promise<string>;
-}
-
-interface LocalR2Bucket {
-  readonly get: (key: string) => Promise<LocalR2Object | null>;
-  readonly head: (key: string) => Promise<LocalR2Object | null>;
-  readonly put: (
-    key: string,
-    value: ArrayBufferView | ReadableStream,
-    options?: unknown
-  ) => Promise<LocalR2Object | null>;
-}
-
-interface LocalBindings {
-  readonly ImportEvidenceBucket: LocalR2Bucket;
-  readonly MealPlannerDatabase: AnyD1Database;
-}
+const LocalBindings = Schema.Struct({
+  ImportEvidenceBucket: WorkerTestR2BucketSchema,
+  MealPlannerDatabase: WorkerTestD1DatabaseSchema,
+});
 
 type LocalFixedLengthStreamConstructor = new (length: number) => {
   readonly readable: ReadableStream;
@@ -138,16 +129,60 @@ const sourceMedia = new Uint8Array([
 const sourceMediaSha256 =
   "c43403fe022af967a0b859d3e14ea12d6633f4c8ad475816b0c55d85896e8e35";
 
-const acquisitionBucket = (bucket: LocalR2Bucket): AcquisitionBucketLike => ({
-  get: (key) => bucket.get(key),
-  head: (key) => bucket.head(key),
-  put: async (key, value, options) =>
-    bucket.put(
-      key,
-      value instanceof ReadableStream
-        ? new Uint8Array(await new Response(value).arrayBuffer())
-        : value,
-      options
+const retryableR2Failure = (stage: "store" | "verify") =>
+  new RetryableAcquisitionError({ reason: "container_rpc", stage });
+
+const r2Object = (object: WorkerTestR2Object): R2ObjectLike => ({
+  checksums: object.checksums,
+  ...(object.customMetadata === undefined
+    ? {}
+    : { customMetadata: object.customMetadata }),
+  ...(object.httpMetadata === undefined
+    ? {}
+    : { httpMetadata: object.httpMetadata }),
+  size: object.size,
+});
+
+const r2ObjectBody = (object: WorkerTestR2ObjectBody): R2ObjectBodyLike => ({
+  ...r2Object(object),
+  arrayBuffer: () =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => object.arrayBuffer(),
+    }),
+  text: () =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => object.text(),
+    }),
+});
+
+const acquisitionBucket = (
+  bucket: WorkerTestR2Bucket
+): AcquisitionBucketLike => ({
+  get: (key) =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => bucket.get(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2ObjectBody(object)))
+    ),
+  head: (key) =>
+    Effect.tryPromise({
+      catch: () => retryableR2Failure("verify"),
+      try: () => bucket.head(key),
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2Object(object)))
+    ),
+  put: (key, value, options) =>
+    Effect.gen(function* putR2Object() {
+      const body = yield* workerTestR2PutBody(value, options.contentLength);
+      return yield* Effect.tryPromise({
+        catch: () => retryableR2Failure("store"),
+        try: () => bucket.put(key, body, options),
+      });
+    }).pipe(
+      Effect.map((object) => (object === null ? null : r2Object(object)))
     ),
 });
 
@@ -283,8 +318,8 @@ const makeRecipeFixture = (
 
 const makeProviderFreeWorkflowStarter = (input: {
   readonly activeWorkflowIds: Set<string>;
-  readonly bucket: LocalR2Bucket;
-  readonly database: AnyD1Database;
+  readonly bucket: WorkerTestR2Bucket;
+  readonly database: WorkerTestD1Database;
   readonly stages: string[];
 }) => ({
   ensureStarted: (
@@ -463,7 +498,7 @@ const makeProviderFreeWorkflowStarter = (input: {
     }).pipe(Effect.orDie),
 });
 
-const applyProductionMigrations = async (database: AnyD1Database) => {
+const applyProductionMigrations = async (database: WorkerTestD1Database) => {
   const migrations = await readD1Migrations(
     fileURLToPath(new URL("../../../migrations", import.meta.url))
   );
@@ -560,7 +595,9 @@ const main = async () => {
       script:
         'export default { fetch() { return new Response("local binding host"); } };',
     });
-    const bindings = await miniflare.getBindings<LocalBindings>();
+    const bindings = Schema.decodeUnknownSync(LocalBindings)(
+      await miniflare.getBindings()
+    );
     const database = bindings.MealPlannerDatabase;
     const bucket = bindings.ImportEvidenceBucket;
     await applyProductionMigrations(database);

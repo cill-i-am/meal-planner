@@ -36,6 +36,7 @@ import { TikTokMediaContainer } from "./import-media-container.js";
 import { makeTikTokMediaContainerRuntime } from "./import-media-container.runtime.js";
 import { makeTemporaryArtifactStore } from "./import-media-process.js";
 import type { MediaProcessRunner } from "./import-media-process.js";
+import { RetryableAcquisitionError } from "./import-media.errors.js";
 import {
   AcquisitionGeneration,
   MaximumMediaProcessMilliseconds,
@@ -241,6 +242,7 @@ const withInstalledAcquisitionBoundary = async <A>(
   });
   class TestDurableObject {
     readonly ctx;
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU009 alchemy@2.0.0-beta.72): makeDurableObjectBridge(durableObject: typeof DurableObject) requires a generated branded host class; Schema cannot manufacture its brand, container binding, or runtime behavior. Remove when Alchemy provides a public precise bridge generic or supported real-runtime harness.
     constructor(ctx: unknown) {
       this.ctx = ctx;
     }
@@ -279,9 +281,27 @@ const withInstalledAcquisitionBoundary = async <A>(
 };
 
 const untouchedBucket = (): AcquisitionBucketLike => ({
-  get: () => Promise.reject(new Error("bucket must remain untouched")),
-  head: () => Promise.reject(new Error("bucket must remain untouched")),
-  put: () => Promise.reject(new Error("bucket must remain untouched")),
+  get: () =>
+    Effect.fail(
+      new RetryableAcquisitionError({
+        reason: "container_rpc",
+        stage: "verify",
+      })
+    ),
+  head: () =>
+    Effect.fail(
+      new RetryableAcquisitionError({
+        reason: "container_rpc",
+        stage: "verify",
+      })
+    ),
+  put: () =>
+    Effect.fail(
+      new RetryableAcquisitionError({
+        reason: "container_rpc",
+        stage: "store",
+      })
+    ),
 });
 
 const runContainerRequest = (

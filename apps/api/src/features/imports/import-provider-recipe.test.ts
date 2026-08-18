@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 
 import type { PilotProviderConservativeReplayValue } from "../pilots/pilot-provider-budget.js";
 import {
-  makeRawGateway,
-  makeGateway,
-  makeRejectedGateway,
+  makeRawProviderTransports,
+  makeProviderTransports,
+  makeRejectedProviderTransports,
   correlationId,
   localDispatchGate,
   runFactory,
@@ -158,11 +158,10 @@ describe("installed recipe provider adapter", () => {
     "conservatively settles %s while failing the recipe honestly",
     async (_label, response, expectedCode) => {
       const costs: unknown[] = [];
-      const gateway = makeRawGateway(response());
       const trace = makeRecordingTraceStore();
+      const gateway = makeRawProviderTransports(response(), trace.service);
       const adapter = await runFactory(
         makeInstalledRecipeExtractor({
-          client: gateway.client,
           correlationId,
           dispatch: {
             run: (input) =>
@@ -175,6 +174,7 @@ describe("installed recipe provider adapter", () => {
                 Effect.map(({ value }) => value)
               ),
           },
+          transport: gateway.recipe,
         }),
         trace.service
       );
@@ -191,7 +191,7 @@ describe("installed recipe provider adapter", () => {
           conservativeChargeMicroUsd: 100_000,
         },
       ]);
-      expect(gateway.requests).toHaveLength(1);
+      expect(gateway.recipeRequests).toHaveLength(1);
       expect(trace.events).toContainEqual({
         correlationId,
         event: "provider.response",
@@ -208,10 +208,6 @@ describe("installed recipe provider adapter", () => {
     let completedInsideDispatch = false;
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: makeRejectedGateway({
-          message: "providerPrivateCanary=must-not-escape",
-          status: 503,
-        }),
         correlationId,
         dispatch: {
           run: (input) =>
@@ -224,6 +220,12 @@ describe("installed recipe provider adapter", () => {
               Effect.map(({ value }) => value)
             ),
         },
+        transport: makeRejectedProviderTransports(
+          Object.assign(new Error("provider transport unavailable"), {
+            message: "providerPrivateCanary=must-not-escape",
+            status: 503,
+          })
+        ).recipe,
       })
     );
 
@@ -317,13 +319,12 @@ describe("installed recipe provider adapter", () => {
       }),
     ],
   ])("fails closed for %s", async (_label, response) => {
-    const gateway = makeGateway(response);
+    const gateway = makeProviderTransports(response);
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
-        model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        transport: gateway.recipe,
       })
     );
     const exit = await Effect.runPromiseExit(
@@ -349,15 +350,14 @@ describe("installed recipe provider adapter", () => {
   });
 
   it("requests strict recipe JSON mode and injects trusted transport usage", async () => {
-    const gateway = makeGateway(
+    const gateway = makeProviderTransports(
       recipeJsonResponse(emptyRecipeProviderSelection)
     );
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
-        model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        transport: gateway.recipe,
       })
     );
     const output = await Effect.runPromise(
@@ -392,46 +392,21 @@ describe("installed recipe provider adapter", () => {
       },
     });
     expect(Schema.is(RecipeExtraction)(output)).toBe(true);
-    const request = gateway.requests[0] as {
-      readonly body: {
-        readonly response_format?: unknown;
-        readonly tool_choice?: unknown;
-        readonly tools?: unknown;
-      };
-      readonly options: {
-        readonly gateway: {
-          readonly collectLog: boolean;
-          readonly id: string;
-          readonly metadata?: unknown;
-          readonly skipCache: boolean;
-        };
-        readonly returnRawResponse: boolean;
-      };
-    };
-    expect(request.options).toEqual({
-      gateway: {
-        collectLog: false,
-        id: "meal-planner-pilot-gaia-118",
-        skipCache: true,
-      },
-      returnRawResponse: true,
-    });
-    expect(request.options.gateway).not.toHaveProperty("metadata");
-    expect(request.options).not.toHaveProperty("headers");
-    expect(request.body).not.toHaveProperty("tool_choice");
-    expect(request.body).not.toHaveProperty("tools");
-    expect(request.body.response_format).toEqual({
+    const [request] = gateway.recipeRequests;
+    expect(request).not.toHaveProperty("tool_choice");
+    expect(request).not.toHaveProperty("tools");
+    expect(request?.response_format).toEqual({
       json_schema: Tool.getJsonSchemaFromSchema(RecipeCandidate),
       type: "json_schema",
     });
-    expect(request.body.response_format).toMatchObject({
+    expect(request?.response_format).toMatchObject({
       json_schema: expect.objectContaining({
         additionalProperties: false,
         type: "object",
       }),
       type: "json_schema",
     });
-    const serializedRequest = JSON.stringify(request.body);
+    const serializedRequest = JSON.stringify(request);
     expect(serializedRequest).toContain(
       "Select only recipe values supported by the supplied evidence"
     );
@@ -471,12 +446,14 @@ describe("installed recipe provider adapter", () => {
       totalTimeMinutes: 12,
       yield: null,
     });
-    const gateway = makeGateway(recipeJsonResponse(providerSelection));
+    const gateway = makeProviderTransports(
+      recipeJsonResponse(providerSelection)
+    );
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.recipe,
       })
     );
 
@@ -538,12 +515,14 @@ describe("installed recipe provider adapter", () => {
       totalTimeMinutes: null,
       yield: null,
     });
-    const gateway = makeGateway(recipeJsonResponse(providerSelection));
+    const gateway = makeProviderTransports(
+      recipeJsonResponse(providerSelection)
+    );
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.recipe,
       })
     );
 
@@ -582,12 +561,14 @@ describe("installed recipe provider adapter", () => {
       totalTimeMinutes: 10,
       yield: "Serves 2",
     };
-    const gateway = makeGateway(recipeJsonResponse(groundedCandidate));
+    const gateway = makeProviderTransports(
+      recipeJsonResponse(groundedCandidate)
+    );
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.recipe,
       })
     );
 
@@ -694,12 +675,12 @@ describe("installed recipe provider adapter", () => {
       instructions: ["CHOP TOMATOES!"],
       name: "TOMATO PASTA!",
     };
-    const gateway = makeGateway(recipeJsonResponse(candidate));
+    const gateway = makeProviderTransports(recipeJsonResponse(candidate));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.recipe,
       })
     );
 
@@ -745,12 +726,12 @@ describe("installed recipe provider adapter", () => {
       instructions: ["Chop tomatoes."],
       name: "Tomato pasta",
     };
-    const gateway = makeGateway(recipeJsonResponse(candidate));
+    const gateway = makeProviderTransports(recipeJsonResponse(candidate));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.recipe,
       })
     );
 
@@ -801,12 +782,12 @@ describe("installed recipe provider adapter", () => {
       ingredientLines: ["tomatoes and pasta"],
       instructions: ["add chopped tomatoes to the pan"],
     };
-    const gateway = makeGateway(recipeJsonResponse(candidate));
+    const gateway = makeProviderTransports(recipeJsonResponse(candidate));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.recipe,
       })
     );
 
@@ -851,13 +832,12 @@ describe("installed recipe provider adapter", () => {
   });
 
   it("uses the immutable recovery dispatch exactly once without changing evidence", async () => {
-    const gateway = makeGateway(
+    const gateway = makeProviderTransports(
       recipeJsonResponse(emptyRecipeProviderSelection)
     );
     const dispatches: string[] = [];
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: {
           run: (input) =>
@@ -868,6 +848,7 @@ describe("installed recipe provider adapter", () => {
               Effect.map(({ value }) => value)
             ),
         },
+        transport: gateway.recipe,
       })
     );
     const request = {
@@ -889,16 +870,16 @@ describe("installed recipe provider adapter", () => {
     await Effect.runPromise(adapter.extract(request));
 
     expect(dispatches).toEqual([request.dispatchId]);
-    expect(gateway.requests).toHaveLength(1);
+    expect(gateway.recipeRequests).toHaveLength(1);
   });
 
   it("rejects model attempts to inject recipe transport metadata", async () => {
-    const gateway = makeGateway(recipeJsonResponse(validRecipe));
+    const gateway = makeProviderTransports(recipeJsonResponse(validRecipe));
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.recipe,
       })
     );
     const exit = await Effect.runPromiseExit(
@@ -925,7 +906,7 @@ describe("installed recipe provider adapter", () => {
   it("settles a schema-valid recipe without usage at the conservative maximum", async () => {
     const response = recipeJsonResponse(emptyRecipeProviderSelection);
     delete (response as { usage?: unknown }).usage;
-    const gateway = makeGateway(response);
+    const gateway = makeProviderTransports(response);
     const costs: (
       | { readonly _tag: "Known"; readonly actualCostMicroUsd: number }
       | {
@@ -936,7 +917,6 @@ describe("installed recipe provider adapter", () => {
     )[] = [];
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: {
           run: (input) =>
@@ -949,6 +929,7 @@ describe("installed recipe provider adapter", () => {
               Effect.map(({ value }) => value)
             ),
         },
+        transport: gateway.recipe,
       })
     );
     const output = await Effect.runPromise(
@@ -981,7 +962,8 @@ describe("installed recipe provider adapter", () => {
   });
 
   it("times out a hanging recipe response body without logging or decoding its payload", async () => {
-    const gateway = makeRawGateway(
+    const trace = makeRecordingTraceStore();
+    const gateway = makeRawProviderTransports(
       new Response(
         new ReadableStream<Uint8Array>({
           start() {
@@ -989,14 +971,14 @@ describe("installed recipe provider adapter", () => {
           },
         }),
         { headers: { "content-type": "application/json" } }
-      )
+      ),
+      trace.service
     );
-    const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: localDispatchGate,
+        transport: gateway.recipe,
       }),
       trace.service
     );
@@ -1045,7 +1027,9 @@ describe("installed recipe provider adapter", () => {
   });
 
   it("fails closed without invoking the provider when a conservative replay hash is corrupt", async () => {
-    const gateway = makeGateway(recipeJsonResponse(validRecipeSemantics));
+    const gateway = makeProviderTransports(
+      recipeJsonResponse(validRecipeSemantics)
+    );
     const replayGate: ProviderDispatchGate = {
       run: <A, E>(input: {
         readonly conservativeReplay?: {
@@ -1073,9 +1057,9 @@ describe("installed recipe provider adapter", () => {
     };
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: replayGate,
+        transport: gateway.recipe,
       })
     );
 
@@ -1099,11 +1083,13 @@ describe("installed recipe provider adapter", () => {
     expect(exit._tag).toBe("Failure");
     expect(JSON.stringify(exit)).toContain("malformed_response");
     expect(JSON.stringify(exit)).not.toContain("must-not-appear");
-    expect(gateway.requests).toHaveLength(0);
+    expect(gateway.recipeRequests).toHaveLength(0);
   });
 
   it("fails closed without invoking the provider when conservative replay JSON violates the schema", async () => {
-    const gateway = makeGateway(recipeJsonResponse(validRecipeSemantics));
+    const gateway = makeProviderTransports(
+      recipeJsonResponse(validRecipeSemantics)
+    );
     const valueJson = JSON.stringify({ unexpected: true });
     const valueSha256 = [
       ...new Uint8Array(
@@ -1143,9 +1129,9 @@ describe("installed recipe provider adapter", () => {
     };
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: replayGate,
+        transport: gateway.recipe,
       })
     );
 
@@ -1169,11 +1155,13 @@ describe("installed recipe provider adapter", () => {
     expect(exit._tag).toBe("Failure");
     expect(JSON.stringify(exit)).toContain("malformed_response");
     expect(JSON.stringify(exit)).not.toContain("must-not-appear");
-    expect(gateway.requests).toHaveLength(0);
+    expect(gateway.recipeRequests).toHaveLength(0);
   });
 
   it("fails closed without invoking the provider when a multibyte replay exceeds the byte cap", async () => {
-    const gateway = makeGateway(recipeJsonResponse(validRecipeSemantics));
+    const gateway = makeProviderTransports(
+      recipeJsonResponse(validRecipeSemantics)
+    );
     const valueJson = JSON.stringify({ value: "é".repeat(140_000) });
     expect(valueJson.length).toBeLessThan(262_144);
     expect(new TextEncoder().encode(valueJson).byteLength).toBeGreaterThan(
@@ -1217,9 +1205,9 @@ describe("installed recipe provider adapter", () => {
     };
     const adapter = await runFactory(
       makeInstalledRecipeExtractor({
-        client: gateway.client,
         correlationId,
         dispatch: replayGate,
+        transport: gateway.recipe,
       })
     );
 
@@ -1243,6 +1231,6 @@ describe("installed recipe provider adapter", () => {
     expect(exit._tag).toBe("Failure");
     expect(JSON.stringify(exit)).toContain("malformed_response");
     expect(JSON.stringify(exit)).not.toContain("must-not-appear");
-    expect(gateway.requests).toHaveLength(0);
+    expect(gateway.recipeRequests).toHaveLength(0);
   });
 });

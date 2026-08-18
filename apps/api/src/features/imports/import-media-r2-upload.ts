@@ -1,84 +1,20 @@
-import { Effect, Exit, Stream } from "effect";
+import { Effect } from "effect";
+import type { Stream } from "effect";
 
 import type {
   AcquisitionBucketLike,
   AcquisitionPutOptions,
 } from "./import-media-acquirer.js";
 import { RetryableAcquisitionError } from "./import-media.errors.js";
-import {
-  MaximumLocalCleanupMilliseconds,
-  MaximumR2OperationMilliseconds,
-} from "./import-media.model.js";
+import { MaximumR2OperationMilliseconds } from "./import-media.model.js";
 import type { RetryableAcquisitionFailure } from "./import-media.model.js";
-
-interface UploadTransport {
-  readonly controller: AbortController;
-  readonly piping: Promise<void>;
-  readonly readable: ReadableStream;
-}
 
 const retryableUploadFailure = (
   reason: NonNullable<RetryableAcquisitionFailure["reason"]>
 ): RetryableAcquisitionFailure =>
   new RetryableAcquisitionError({ reason, stage: "store" });
 
-const acquireTransport = Effect.fn("ImportMedia.acquireUploadTransport")(
-  (input: {
-    readonly options: AcquisitionPutOptions;
-    readonly stream: Stream.Stream<Uint8Array, RetryableAcquisitionFailure>;
-  }): Effect.Effect<UploadTransport, RetryableAcquisitionFailure> =>
-    Effect.try({
-      catch: () => retryableUploadFailure("container_rpc"),
-      try: () => {
-        // SAFETY: Cloudflare Workers installs FixedLengthStream on globalThis;
-        // this adapter is the single host-specific cast for the upload transport.
-        const FixedLengthStreamConstructor = (
-          globalThis as unknown as {
-            readonly FixedLengthStream: new (length: number) => {
-              readonly readable: ReadableStream;
-              readonly writable: WritableStream<Uint8Array>;
-            };
-          }
-        ).FixedLengthStream;
-        const controller = new AbortController();
-        const fixedLength = new FixedLengthStreamConstructor(
-          input.options.contentLength
-        );
-        return {
-          controller,
-          piping: Stream.toReadableStream(input.stream).pipeTo(
-            fixedLength.writable,
-            { signal: controller.signal }
-          ),
-          readable: fixedLength.readable,
-        };
-      },
-    })
-);
-
-const settleTransport = Effect.fn("ImportMedia.settleUploadTransport")(
-  function* settleUploadTransport(transport: UploadTransport) {
-    transport.controller.abort();
-    yield* Effect.tryPromise({
-      catch: () => null,
-      try: () => transport.readable.cancel(),
-    }).pipe(Effect.ignore);
-    yield* Effect.tryPromise({
-      catch: () => null,
-      try: () => transport.piping,
-    }).pipe(Effect.ignore);
-  }
-);
-
-const boundedSettlement = (transport: UploadTransport) =>
-  settleTransport(transport).pipe(
-    Effect.timeoutOrElse({
-      duration: MaximumLocalCleanupMilliseconds,
-      orElse: () => Effect.void,
-    })
-  );
-
-/** Adapt one private Effect byte stream to the R2 host upload boundary. */
+/** Stream one private artifact through the application-owned R2 port. */
 export const putPrivateArtifact = Effect.fn("ImportMedia.putPrivateArtifact")(
   (
     bucket: AcquisitionBucketLike,
@@ -88,31 +24,12 @@ export const putPrivateArtifact = Effect.fn("ImportMedia.putPrivateArtifact")(
       readonly stream: Stream.Stream<Uint8Array, RetryableAcquisitionFailure>;
     }
   ) =>
-    Effect.acquireUseRelease(
-      acquireTransport(input),
-      (transport) =>
-        Effect.all(
-          {
-            piping: Effect.tryPromise({
-              catch: () => retryableUploadFailure("container_rpc"),
-              try: () => transport.piping,
-            }),
-            stored: Effect.tryPromise({
-              catch: () => retryableUploadFailure("container_rpc"),
-              try: () =>
-                bucket.put(input.key, transport.readable, input.options),
-            }),
-          },
-          { concurrency: "unbounded" }
-        ).pipe(
-          Effect.map(({ stored }) => stored !== null),
-          Effect.timeoutOrElse({
-            duration: MaximumR2OperationMilliseconds,
-            orElse: () =>
-              Effect.fail(retryableUploadFailure("acquisition_timeout")),
-          })
-        ),
-      (transport, exit) =>
-        Exit.isSuccess(exit) ? Effect.void : boundedSettlement(transport)
+    bucket.put(input.key, input.stream, input.options).pipe(
+      Effect.map((stored) => stored !== null),
+      Effect.timeoutOrElse({
+        duration: MaximumR2OperationMilliseconds,
+        orElse: () =>
+          Effect.fail(retryableUploadFailure("acquisition_timeout")),
+      })
     )
 );
