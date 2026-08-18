@@ -1,7 +1,6 @@
 import { Effect, Option, Schema } from "effect";
 
 import { isPilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
-import type { PilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
 import type {
   ImportCorrelationId,
   SpeechEnvelopeFailure,
@@ -18,6 +17,7 @@ import {
   adapterFailure,
   decodeProviderFailureEvidence,
   failAfter,
+  isSafeProviderFailureCode,
   isUnknownRecord,
   providerFailureFromEvidence,
   safeFailureCode,
@@ -357,7 +357,14 @@ const unknownSpeechMetadataRequiresRejection = (
     ) {
       return false;
     }
-    if (typeof value === "object" && value !== null) {
+    if (
+      Schema.is(
+        Schema.Union([
+          Schema.Array(Schema.Json),
+          Schema.Record(Schema.String, Schema.Json),
+        ])
+      )(value)
+    ) {
       if (traversal.visitedContainers.has(value)) {
         return false;
       }
@@ -434,9 +441,9 @@ const isPresentNonNull = (record: Schema.JsonObject, key: string): boolean =>
   Object.hasOwn(record, key) && record[key] !== null;
 
 const hasWrongRootMetadataType = (raw: Schema.JsonObject): boolean =>
-  (isPresentNonNull(raw, "vtt") && typeof raw["vtt"] !== "string") ||
+  (isPresentNonNull(raw, "vtt") && !Schema.is(Schema.String)(raw["vtt"])) ||
   (isPresentNonNull(raw, "word_count") &&
-    typeof raw["word_count"] !== "number");
+    !Schema.is(Schema.Number)(raw["word_count"]));
 
 const genericNestedContainersAreInvalid = (raw: Schema.JsonObject): boolean =>
   isPresentNonNull(raw, "words") && !Array.isArray(raw["words"]);
@@ -482,12 +489,14 @@ const modelSpecificNestedEntriesAreInvalid = (
 const hasWrongNullableNumberType = (
   record: Schema.JsonObject,
   key: string
-): boolean => isPresentNonNull(record, key) && typeof record[key] !== "number";
+): boolean =>
+  isPresentNonNull(record, key) && !Schema.is(Schema.Number)(record[key]);
 
 const hasWrongNullableStringType = (
   record: Schema.JsonObject,
   key: string
-): boolean => isPresentNonNull(record, key) && typeof record[key] !== "string";
+): boolean =>
+  isPresentNonNull(record, key) && !Schema.is(Schema.String)(record[key]);
 
 const genericNestedMetadataTypesAreInvalid = (
   raw: Schema.JsonObject
@@ -535,7 +544,7 @@ const modelSpecificNestedMetadataTypesAreInvalid = (
       }
       if (
         Array.isArray(segment["tokens"]) &&
-        segment["tokens"].some((token) => typeof token !== "number")
+        segment["tokens"].some((token) => !Schema.is(Schema.Number)(token))
       ) {
         return true;
       }
@@ -642,7 +651,7 @@ const classifySpeechEnvelope = (
   if (!Object.hasOwn(raw, "text")) {
     return { failure: "required_text_missing", family };
   }
-  if (typeof raw["text"] !== "string") {
+  if (!Schema.is(Schema.String)(raw["text"])) {
     return { failure: "required_text_type", family };
   }
   if (hasWrongRootMetadataType(raw)) {
@@ -978,9 +987,9 @@ export const makeInstalledSpeechTranscriber = (input: {
             ).pipe(
               Effect.mapError((error) => {
                 if (isPilotProviderKnownZeroCostFailure(error)) {
-                  return error as PilotProviderKnownZeroCostFailure<SafeProviderFailureCode>;
+                  return error;
                 }
-                return typeof error === "string"
+                return Schema.is(Schema.String)(error)
                   ? error
                   : safeFailureCode(
                       providerFailureFromEvidence(
@@ -1003,9 +1012,7 @@ export const makeInstalledSpeechTranscriber = (input: {
           // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
           Effect.mapError((error) =>
             speechFailure(
-              typeof error === "object"
-                ? "outcome_unknown"
-                : (error as SafeProviderFailureCode)
+              isSafeProviderFailureCode(error) ? error : "outcome_unknown"
             )
           )
         ),

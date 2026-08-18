@@ -118,9 +118,9 @@ const makeProcessRunner = (
         const sessionStats = await stat(sessionPath);
         if (sessionAudit !== undefined) {
           sessionAudit.mode = sessionStats.mode % 0o1000;
+          const processUserId = process.getuid?.();
           sessionAudit.ownedByProcess =
-            typeof process.getuid !== "function" ||
-            sessionStats.uid === process.getuid();
+            processUserId === undefined || sessionStats.uid === processUserId;
           sessionAudit.path = sessionPath;
         }
         await appendFile(

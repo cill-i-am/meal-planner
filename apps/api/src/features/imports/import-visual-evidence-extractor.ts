@@ -150,7 +150,7 @@ export const VisualEvidenceProviderSemantics = Schema.Struct({
 });
 
 const isJsonObject = (input: Schema.Json): input is Schema.JsonObject =>
-  typeof input === "object" && input !== null && !Array.isArray(input);
+  Schema.is(Schema.Record(Schema.String, Schema.Json))(input);
 
 const normalizeProviderConfidence = (
   input: Schema.Json | undefined
@@ -158,10 +158,10 @@ const normalizeProviderConfidence = (
   if (input === undefined || input === null) {
     return 0;
   }
-  if (typeof input === "number") {
+  if (Schema.is(Schema.Number)(input)) {
     return input;
   }
-  if (typeof input !== "string") {
+  if (!Schema.is(Schema.String)(input)) {
     return 0;
   }
   const trimmed = input.trim();
@@ -200,7 +200,7 @@ export const projectVisualProviderSemanticsInput = (
       continue;
     }
     const { text } = observation;
-    if (typeof text !== "string") {
+    if (!Schema.is(Schema.String)(text)) {
       continue;
     }
     const normalizedText = text.trim();
@@ -212,7 +212,6 @@ export const projectVisualProviderSemanticsInput = (
     );
     observations.push({
       confidence:
-        typeof normalizedConfidence === "number" &&
         Number.isFinite(normalizedConfidence) &&
         normalizedConfidence >= 0 &&
         normalizedConfidence <= 100

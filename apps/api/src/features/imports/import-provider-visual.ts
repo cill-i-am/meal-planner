@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 import type { Prompt } from "effect/unstable/ai";
 
 import { isPilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
@@ -181,7 +181,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                     if (isPilotProviderKnownZeroCostFailure(error)) {
                       return error;
                     }
-                    return typeof error === "string"
+                    return Schema.is(Schema.String)(error)
                       ? error
                       : safeFailureCode(
                           providerFailureFromEvidence(

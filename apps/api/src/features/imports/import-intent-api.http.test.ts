@@ -548,7 +548,7 @@ describe("recipe import HttpApi boundary", () => {
     );
 
     const assertNoSentinels = (value: Schema.Json): void => {
-      if (typeof value === "string") {
+      if (Schema.is(Schema.String)(value)) {
         for (const sentinel of sentinels) {
           expect(value).not.toContain(sentinel);
         }
@@ -560,7 +560,7 @@ describe("recipe import HttpApi boundary", () => {
         }
         return;
       }
-      if (typeof value === "object" && value !== null) {
+      if (Schema.is(Schema.Record(Schema.String, Schema.Json))(value)) {
         for (const [key, child] of Object.entries(value)) {
           assertNoSentinels(key);
           assertNoSentinels(child);

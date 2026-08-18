@@ -1,5 +1,14 @@
 import { organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
+import { Option, Schema } from "effect";
+
+const AuthenticationError = Schema.Struct({
+  message: Schema.String,
+});
+const decodeAuthenticationError = Schema.decodeUnknownOption(
+  AuthenticationError,
+  { onExcessProperty: "ignore" }
+);
 
 export const authClient = createAuthClient({
   plugins: [organizationClient()],
@@ -13,13 +22,10 @@ export const requireAuthSuccess = async <T>(
 ): Promise<T> => {
   const result = await request;
   if (result.error !== null) {
-    const message =
-      typeof result.error === "object" &&
-      result.error !== null &&
-      "message" in result.error &&
-      typeof result.error.message === "string"
-        ? result.error.message
-        : "Authentication request failed.";
+    const message = Option.match(decodeAuthenticationError(result.error), {
+      onNone: () => "Authentication request failed.",
+      onSome: (error) => error.message,
+    });
     throw new Error(message);
   }
   if (result.data === null) {

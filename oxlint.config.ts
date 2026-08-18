@@ -11,6 +11,9 @@ export default defineConfig({
     ".agents/**",
     "apps/api/auth-migrations/**/snapshot.json",
     "apps/api/src/features/auth/auth.database-schema.ts",
+    // Byte-identical upstream plugin source is verified separately and must not
+    // lint itself; repository-owned plugin glue remains in the lint scope.
+    "tools/oxlint/anti-slop/no-runtime-typeof.ts",
   ],
   jsPlugins: [
     {
@@ -124,6 +127,7 @@ export default defineConfig({
     },
   ],
   rules: {
+    "anti-slop/no-runtime-typeof": "error",
     "anti-slop/no-unknown-parameters": "error",
   },
 });

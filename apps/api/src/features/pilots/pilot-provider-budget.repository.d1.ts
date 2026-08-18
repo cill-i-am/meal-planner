@@ -1,5 +1,5 @@
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { DateTime, Effect, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 
 import {
   PilotBudgetDispatchId,
@@ -90,6 +90,30 @@ const validReplayValueJson = (value: string) => {
 };
 
 const Sha256Pattern = /^[a-f\d]{64}$/u;
+const ReplaySha256 = Schema.String.pipe(
+  Schema.check(Schema.isPattern(Sha256Pattern))
+);
+const ReplayGeneration = Schema.Int.pipe(
+  Schema.check(
+    Schema.isGreaterThanOrEqualTo(1),
+    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+  )
+);
+const ReplayValueJson = Schema.String.pipe(
+  Schema.check(Schema.makeFilter(validReplayValueJson))
+);
+const ReplayRow = Schema.Struct({
+  dispatch_id: PilotBudgetDispatchId,
+  replay_evidence_fingerprint: ReplaySha256,
+  replay_expires_at: Schema.String,
+  replay_generation: ReplayGeneration,
+  replay_import_id: Schema.NonEmptyString,
+  replay_value_json: ReplayValueJson,
+  replay_value_sha256: ReplaySha256,
+});
+const decodeReplayRow = Schema.decodeUnknownOption(ReplayRow, {
+  onExcessProperty: "ignore",
+});
 const RecipeReplayRecoveryOrdinals = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
 const recipeReplayDispatchIds = (replay: {
@@ -121,44 +145,23 @@ const isRecipeReplayDispatchId = (
 const replayFromRow = (
   row: DispatchRow
 ): PilotBudgetDispatch["conservativeReplay"] | undefined => {
-  const fields = [
-    row.replay_evidence_fingerprint,
-    row.replay_expires_at,
-    row.replay_generation,
-    row.replay_import_id,
-    row.replay_value_json,
-    row.replay_value_sha256,
-  ];
-  if (fields.every((value) => value === null || value === undefined)) {
-    return undefined;
-  }
+  const replay = Option.getOrUndefined(decodeReplayRow(row));
   if (
-    typeof row.replay_evidence_fingerprint !== "string" ||
-    !Sha256Pattern.test(row.replay_evidence_fingerprint) ||
-    typeof row.replay_expires_at !== "string" ||
-    typeof row.replay_generation !== "number" ||
-    !Number.isSafeInteger(row.replay_generation) ||
-    row.replay_generation < 1 ||
-    typeof row.replay_import_id !== "string" ||
-    row.replay_import_id.length === 0 ||
-    typeof row.replay_value_json !== "string" ||
-    !validReplayValueJson(row.replay_value_json) ||
-    typeof row.replay_value_sha256 !== "string" ||
-    !Sha256Pattern.test(row.replay_value_sha256) ||
-    !isRecipeReplayDispatchId(row.dispatch_id, {
-      evidenceFingerprint: row.replay_evidence_fingerprint,
-      generation: row.replay_generation,
-      importId: row.replay_import_id,
+    replay === undefined ||
+    !isRecipeReplayDispatchId(replay.dispatch_id, {
+      evidenceFingerprint: replay.replay_evidence_fingerprint,
+      generation: replay.replay_generation,
+      importId: replay.replay_import_id,
     })
   ) {
     return undefined;
   }
   return {
-    evidenceFingerprint: row.replay_evidence_fingerprint,
-    generation: row.replay_generation,
-    importId: row.replay_import_id,
-    valueJson: row.replay_value_json,
-    valueSha256: row.replay_value_sha256,
+    evidenceFingerprint: replay.replay_evidence_fingerprint,
+    generation: replay.replay_generation,
+    importId: replay.replay_import_id,
+    valueJson: replay.replay_value_json,
+    valueSha256: replay.replay_value_sha256,
   };
 };
 

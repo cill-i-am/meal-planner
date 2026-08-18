@@ -46,7 +46,7 @@ const keysOf = (value: Schema.Json): readonly string[] => {
   if (Array.isArray(value)) {
     return value.flatMap(keysOf);
   }
-  if (value === null || typeof value !== "object") {
+  if (!Schema.is(Schema.Record(Schema.String, Schema.Json))(value)) {
     return [];
   }
   return Object.entries(value).flatMap(([key, nested]) => [

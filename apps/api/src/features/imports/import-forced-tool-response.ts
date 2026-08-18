@@ -49,7 +49,7 @@ export type ForcedToolResponseDecode =
   | { readonly _tag: "Missing"; readonly reason: "missing_content" };
 
 const isRecord = (value: Schema.Json | undefined): value is Schema.JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+  Schema.is(ForcedToolJsonObject)(value);
 
 const decodeArguments = (
   value: Schema.Json | undefined
@@ -60,7 +60,7 @@ const decodeArguments = (
   if (isRecord(value)) {
     return value;
   }
-  if (typeof value !== "string") {
+  if (!Schema.is(Schema.String)(value)) {
     return undefined;
   }
   try {
@@ -117,13 +117,13 @@ const decodeNativeForcedToolEnvelope = (
     keys.length === 2 &&
     keys[0] === (hasArguments ? "arguments" : "name") &&
     keys[1] === (hasArguments ? "name" : "parameters") &&
-    typeof name === "string";
+    Schema.is(Schema.String)(name);
   if (!isExactEnvelope) {
-    return hasArguments || hasParameters || typeof name === "string"
+    return hasArguments || hasParameters || Schema.is(Schema.String)(name)
       ? { _tag: "Invalid" }
       : { _tag: "Value", value: envelope, wrappedInArray };
   }
-  if (typeof name !== "string") {
+  if (!Schema.is(Schema.String)(name)) {
     return { _tag: "Invalid" };
   }
 
@@ -225,7 +225,7 @@ export const decodeForcedToolResponseResult = (
   const structured = parts.filter((part) => part.type === "tool-call");
   const text = parts.filter(
     (part): part is ForcedToolResponsePart & { readonly text: string } =>
-      part.type === "text" && typeof part.text === "string"
+      part.type === "text" && part.text !== undefined
   );
 
   if (structured.length > 0) {

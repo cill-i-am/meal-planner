@@ -55,6 +55,29 @@ const SpeechRecoveryActivationRow = Schema.Struct({
   transcription_state: Schema.NullOr(Schema.String),
 });
 
+const NonEmptyPersistenceString = Schema.String.pipe(
+  Schema.check(Schema.isNonEmpty())
+);
+const PersistenceSha256 = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[\da-f]{64}$/u))
+);
+const ActiveOwnershipResults = Schema.Struct({
+  results: Schema.Tuple([
+    Schema.Struct({ ownership_id: NonEmptyPersistenceString }),
+  ]),
+});
+const SettledRecoveryCandidate = Schema.Struct({
+  original_dispatch_id: NonEmptyPersistenceString,
+  source_media_sha256: PersistenceSha256,
+});
+const ExistingRecoveryCandidate = Schema.Struct({
+  first_recovery_dispatch_id: NonEmptyPersistenceString,
+  original_dispatch_id: NonEmptyPersistenceString,
+});
+const PoisonedDispatchCandidate = Schema.Struct({
+  poison_dispatch_id: NonEmptyPersistenceString,
+});
+
 export interface ProviderTerminalCheckpoint {
   readonly acquisitionGeneration: number;
   readonly completedAt: string;
@@ -187,13 +210,14 @@ const readActiveOwnership = (
         readonly results: readonly { readonly ownership_id: string }[];
       }>
   ).pipe(
-    Effect.flatMap(({ results }) =>
-      results.length === 1 &&
-      typeof results[0]?.ownership_id === "string" &&
-      results[0].ownership_id.length > 0
-        ? Effect.succeed(results[0].ownership_id)
-        : Effect.fail(providerTerminalPersistenceError("persistence_corrupt"))
-    )
+    Effect.flatMap((result) => {
+      const decoded = Schema.decodeUnknownOption(ActiveOwnershipResults)(
+        result
+      );
+      return decoded._tag === "Some"
+        ? Effect.succeed(decoded.value.results[0].ownership_id)
+        : Effect.fail(providerTerminalPersistenceError("persistence_corrupt"));
+    })
   );
 
 const readActiveRecipeOwnership = (
@@ -391,7 +415,7 @@ const resolveRecipeTerminalFacts = (
 
     if (
       ownership.failure_code !== input.failureCode ||
-      typeof ownership.completed_at !== "string" ||
+      ownership.completed_at === null ||
       ownership.completed_at.length === 0
     ) {
       return yield* Effect.fail(
@@ -457,7 +481,7 @@ const resolveVisualTerminalFacts = (
 
     if (
       ownership.failure_code === input.failureCode &&
-      typeof ownership.completed_at === "string" &&
+      ownership.completed_at !== null &&
       ownership.completed_at.length > 0
     ) {
       return {
@@ -852,11 +876,7 @@ const readSettledRecoveryCandidate = (
       }>()
   ).pipe(
     Effect.flatMap((candidate) =>
-      candidate !== null &&
-      typeof candidate.original_dispatch_id === "string" &&
-      candidate.original_dispatch_id.length > 0 &&
-      typeof candidate.source_media_sha256 === "string" &&
-      /^[\da-f]{64}$/u.test(candidate.source_media_sha256)
+      Schema.is(SettledRecoveryCandidate)(candidate)
         ? Effect.succeed(candidate)
         : Effect.fail(providerTerminalPersistenceError("recovery_not_allowed"))
     )
@@ -1231,9 +1251,7 @@ const readSettledVisualSecondRecoveryCandidate = (
       }>()
   ).pipe(
     Effect.flatMap((candidate) =>
-      candidate !== null &&
-      typeof candidate.original_dispatch_id === "string" &&
-      candidate.original_dispatch_id.length > 0 &&
+      Schema.is(ExistingRecoveryCandidate)(candidate) &&
       !candidate.original_dispatch_id.includes(":recovery:") &&
       candidate.first_recovery_dispatch_id ===
         `${candidate.original_dispatch_id}:recovery:1`
@@ -1324,12 +1342,8 @@ const readSettledVisualRecoveryCandidate = (
       }>()
   ).pipe(
     Effect.flatMap((candidate) =>
-      candidate !== null &&
-      typeof candidate.original_dispatch_id === "string" &&
-      candidate.original_dispatch_id.length > 0 &&
-      !candidate.original_dispatch_id.includes(":recovery:1") &&
-      typeof candidate.source_media_sha256 === "string" &&
-      /^[\da-f]{64}$/u.test(candidate.source_media_sha256)
+      Schema.is(SettledRecoveryCandidate)(candidate) &&
+      !candidate.original_dispatch_id.includes(":recovery:1")
         ? Effect.succeed(candidate)
         : Effect.fail(providerTerminalPersistenceError("recovery_not_allowed"))
     )
@@ -1543,9 +1557,7 @@ export const makeD1ProviderTerminalRecoveryRepository = (
           } | null>
       );
       if (
-        poison === null ||
-        typeof poison.poison_dispatch_id !== "string" ||
-        poison.poison_dispatch_id.length === 0 ||
+        !Schema.is(PoisonedDispatchCandidate)(poison) ||
         poison.poison_dispatch_id.includes(":recovery:1")
       ) {
         return yield* Effect.fail(

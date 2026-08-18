@@ -20,10 +20,8 @@ import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-te
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import type { VisualEvidenceFailureCode } from "./import-visual-evidence.repository.d1.js";
-import {
-  ImportWorkerTestEnvironment,
-  workerTestMigrations,
-} from "./import-worker-test-environment.js";
+import { workerTestMigrations } from "./import-worker-test-environment.js";
+import type { ImportWorkerTestEnvironment } from "./import-worker-test-environment.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -36,7 +34,7 @@ import {
 } from "./import.test-fixtures.js";
 import type { ImportWorkflowStarter } from "./import.workflow.js";
 
-const testEnv = Schema.decodeUnknownSync(ImportWorkerTestEnvironment)(env);
+const testEnv: ImportWorkerTestEnvironment = env;
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);

@@ -60,24 +60,12 @@ export const SafeProviderFailureCode = Schema.Literals([
 ]);
 export type SafeProviderFailureCode = typeof SafeProviderFailureCode.Type;
 
-const SafeProviderFailureCodes = new Set<string>([
-  "insufficient_evidence",
-  "malformed_response",
-  "model_refusal",
-  "outcome_unknown",
-  "provider_unavailable",
-  "throttled",
-  "timeout",
-]);
-
-type SafeProviderFailureCandidate =
-  | string
-  | { readonly _tag: string; readonly error?: string };
+type SafeProviderFailureCandidate = string | object;
 
 export const isSafeProviderFailureCode = (
   value: SafeProviderFailureCandidate
 ): value is SafeProviderFailureCode =>
-  typeof value === "string" && SafeProviderFailureCodes.has(value);
+  Schema.is(SafeProviderFailureCode)(value);
 
 export interface ProviderDispatchRequest<A, E> {
   readonly conservativeReplay?: {
@@ -219,10 +207,9 @@ export const makePilotProviderDispatchGate = (input: {
       // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
       Effect.mapError((error) => {
         if (
-          typeof error === "object" &&
-          error !== null &&
-          "_tag" in error &&
-          error._tag === "PilotProviderBudgetError"
+          Schema.is(
+            Schema.Struct({ _tag: Schema.Literal("PilotProviderBudgetError") })
+          )(error)
         ) {
           return dispatchRejected;
         }
@@ -454,7 +441,7 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     ),
     // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
     Effect.mapError((error) => {
-      if (typeof error === "string") {
+      if (Schema.is(Schema.String)(error)) {
         return error;
       }
       const failure = providerFailureFromEvidence(
@@ -700,7 +687,7 @@ class ProviderInvocationFailureError extends Error {
 export const isUnknownRecord = (
   value: Schema.Json | undefined
 ): value is Schema.JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+  Schema.is(Schema.Record(Schema.String, Schema.Json))(value);
 
 const WorkersAiProviderResponseEnvelope = Schema.Struct({
   choices: Schema.optionalKey(Schema.Json),
@@ -786,7 +773,7 @@ export type ProviderRawToolCall = Extract<
 export const comparableToolArguments = (
   value: Schema.Json | undefined
 ): Schema.Json | undefined => {
-  if (typeof value !== "string") {
+  if (!Schema.is(Schema.String)(value)) {
     return value;
   }
   try {
@@ -803,7 +790,7 @@ const decodeFlatRawToolCall = (
   value: ProviderToolCallEnvelope
 ): RawToolCallAuthority => {
   const { arguments: toolArguments, id, name, type } = value;
-  if (typeof name !== "string" || name.length === 0) {
+  if (!Schema.is(Schema.String)(name) || name.length === 0) {
     return { _tag: "Invalid" };
   }
   const hasArguments = Object.hasOwn(value, "arguments");
@@ -811,8 +798,8 @@ const decodeFlatRawToolCall = (
     _tag: "Call",
     arguments: toolArguments,
     call: {
-      ...(typeof id === "string" ? { id } : {}),
-      ...(typeof type === "string" ? { type } : {}),
+      ...(Schema.is(Schema.String)(id) ? { id } : {}),
+      ...(Schema.is(Schema.String)(type) ? { type } : {}),
       ...(hasArguments ? { arguments: toolArguments } : {}),
       name,
     },
@@ -828,12 +815,12 @@ const decodeNestedRawToolCall = (
   const hasFlatName = Object.hasOwn(value, "name");
   const hasFlatArguments = Object.hasOwn(value, "arguments");
   const { arguments: functionArguments, name: functionName } = functionValue;
-  if (typeof functionName !== "string" || functionName.length === 0) {
+  if (!Schema.is(Schema.String)(functionName) || functionName.length === 0) {
     return { _tag: "Invalid" };
   }
   if (
     hasFlatName &&
-    (typeof flatName !== "string" ||
+    (!Schema.is(Schema.String)(flatName) ||
       flatName.length === 0 ||
       flatName !== functionName)
   ) {
@@ -859,8 +846,8 @@ const decodeNestedRawToolCall = (
     _tag: "Call",
     arguments: toolArguments,
     call: {
-      ...(typeof id === "string" ? { id } : {}),
-      ...(typeof type === "string" ? { type } : {}),
+      ...(Schema.is(Schema.String)(id) ? { id } : {}),
+      ...(Schema.is(Schema.String)(type) ? { type } : {}),
       function: {
         ...(hasFunctionArguments || hasFlatArguments
           ? { arguments: toolArguments }

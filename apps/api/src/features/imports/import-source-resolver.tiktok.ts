@@ -72,7 +72,7 @@ const decodeTikTokProviderMetadataEnvelope = Schema.decodeUnknownSync(
 );
 
 const stringOrNull = (value: Schema.Json | undefined) =>
-  typeof value === "string" && value.trim().length > 0 ? value : null;
+  Schema.is(Schema.String)(value) && value.trim().length > 0 ? value : null;
 
 const containsControlCharacter = (value: string) =>
   [...value].some((character) => {
@@ -85,7 +85,7 @@ const safeHeaderValue = (
   maximumLength: number
 ) => {
   if (
-    typeof value !== "string" ||
+    !Schema.is(Schema.String)(value) ||
     value.length === 0 ||
     value.length > maximumLength ||
     value.trim() !== value ||
@@ -108,7 +108,7 @@ const headerValue = (
 };
 
 const isJsonObject = (value: Schema.Json): value is Schema.JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+  Schema.is(Schema.Record(Schema.String, Schema.Json))(value);
 
 const safeTikTokReferer = (value: string | undefined) => {
   if (value === undefined) {
@@ -268,7 +268,7 @@ const decodeTikTokProviderMetadata = (
     identity
   );
   if (
-    typeof metadata.duration === "number" &&
+    Schema.is(Schema.Number)(metadata.duration) &&
     Number.isFinite(metadata.duration) &&
     metadata.duration > MaximumMediaDurationSeconds
   ) {
@@ -286,7 +286,7 @@ const decodeTikTokProviderMetadata = (
     },
     mediaLocator,
     publishedAt:
-      typeof timestamp === "number" && Number.isSafeInteger(timestamp)
+      Schema.is(Schema.Number)(timestamp) && Number.isSafeInteger(timestamp)
         ? new Date(timestamp * 1000).toISOString()
         : null,
     requestHeaders: mediaRequestHeaders(metadata.http_headers),
@@ -377,11 +377,11 @@ export const makeTikTokSourceResolver = (
           );
           try {
             const stats = await file.stat();
+            const processUserId = process.getuid?.();
             if (
               !stats.isFile() ||
               stats.mode % 0o1000 !== 0o600 ||
-              (typeof process.getuid === "function" &&
-                stats.uid !== process.getuid()) ||
+              (processUserId !== undefined && stats.uid !== processUserId) ||
               stats.size <= 0 ||
               stats.size > 64 * 1024
             ) {

@@ -95,11 +95,11 @@ const makeRunner = (
           throw new Error("Expected an ephemeral session file");
         }
         const sessionStats = await stat(sessionPath);
+        const processUserId = process.getuid?.();
         const audit = {
           mode: sessionStats.mode % 0o1000,
           ownedByProcess:
-            typeof process.getuid !== "function" ||
-            sessionStats.uid === process.getuid(),
+            processUserId === undefined || sessionStats.uid === processUserId,
           removed: false,
         };
         sessionFileAudits.push(audit);

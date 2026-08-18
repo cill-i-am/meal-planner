@@ -5,6 +5,7 @@ import * as State from "alchemy/State";
 import { scratchStack, toEffect } from "alchemy/Test/Core";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 type NamespaceResource = AlchemyResource<
@@ -86,8 +87,11 @@ describe("installed Alchemy resolved binding persistence", () => {
         | undefined
     )?.durableObjects?.namespaceId;
 
-    expect(typeof persistedNamespaceId).toBe("string");
-    expect(persistedNamespaceId).toBe(namespaceId);
+    const decodedNamespaceId = Schema.decodeUnknownSync(Schema.String)(
+      persistedNamespaceId
+    );
+
+    expect(decodedNamespaceId).toBe(namespaceId);
     expect(plan.resources["Host"]?.action).toBe("noop");
   });
 });

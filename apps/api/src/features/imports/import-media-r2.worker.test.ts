@@ -34,11 +34,9 @@ import {
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
-import {
-  ImportWorkerR2TestEnvironment,
-  workerTestR2PutBody,
-} from "./import-worker-test-environment.js";
+import { workerTestR2PutBody } from "./import-worker-test-environment.js";
 import type {
+  ImportWorkerR2TestEnvironment,
   WorkerTestR2Object,
   WorkerTestR2ObjectBody,
 } from "./import-worker-test-environment.js";
@@ -48,7 +46,7 @@ import {
   SourceCanonicalId,
 } from "./import.contracts.js";
 
-const testEnv = Schema.decodeUnknownSync(ImportWorkerR2TestEnvironment)(env);
+const testEnv: ImportWorkerR2TestEnvironment = env;
 const mediaBytes = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]);
 const sha256 =
   "d9f1cb99ee21291800d5e62bd9bca07850461d7d8096afc4150a52dc8554d49f";

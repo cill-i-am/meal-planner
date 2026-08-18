@@ -147,11 +147,12 @@ const failureTag = (exit: Exit.Exit<unknown, unknown>) => {
   }
   const error = Cause.findErrorOption(exit.cause);
   expect(error._tag).toBe("Some");
-  return error._tag === "Some" &&
-    typeof error.value === "object" &&
-    error.value !== null &&
-    "_tag" in error.value
-    ? error.value._tag
+  return error._tag === "Some"
+    ? Schema.decodeUnknownOption(Schema.Struct({ _tag: Schema.String }), {
+        onExcessProperty: "ignore",
+      })(error.value).pipe((decoded) =>
+        decoded._tag === "Some" ? decoded.value._tag : undefined
+      )
     : undefined;
 };
 

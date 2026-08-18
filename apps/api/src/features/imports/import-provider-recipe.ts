@@ -371,7 +371,7 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
             );
       }),
       Effect.mapError((error) => {
-        if (typeof error === "string") {
+        if (Schema.is(Schema.String)(error)) {
           return error;
         }
         if (

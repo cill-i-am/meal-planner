@@ -1,4 +1,4 @@
-import { Effect, Predicate, Schema, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import type { Miniflare } from "miniflare";
 
 import type { AcquisitionPutValue } from "./import-media-acquirer.js";
@@ -23,39 +23,6 @@ export type WorkerTestR2ObjectBody = Exclude<
   Awaited<ReturnType<WorkerTestR2Bucket["get"]>>,
   null
 >;
-
-const hasFunction = (property: PropertyKey) => (input: object) =>
-  Predicate.hasProperty(input, property) &&
-  typeof input[property] === "function";
-
-/** Decode a Miniflare D1 database binding at the test ownership seam. */
-export const WorkerTestD1DatabaseSchema: Schema.Schema<WorkerTestD1Database> &
-  Schema.ConstraintDecoder<WorkerTestD1Database> = Schema.declare(
-  (input): input is WorkerTestD1Database =>
-    Predicate.isObject(input) &&
-    hasFunction("batch")(input) &&
-    hasFunction("dump")(input) &&
-    hasFunction("exec")(input) &&
-    hasFunction("prepare")(input) &&
-    hasFunction("withSession")(input)
-);
-
-/** Decode a Miniflare R2 bucket binding at the test ownership seam. */
-export const WorkerTestR2BucketSchema: Schema.Schema<WorkerTestR2Bucket> &
-  Schema.ConstraintDecoder<WorkerTestR2Bucket> = Schema.declare(
-  (input): input is WorkerTestR2Bucket =>
-    Predicate.isObject(input) &&
-    hasFunction("delete")(input) &&
-    hasFunction("get")(input) &&
-    hasFunction("head")(input) &&
-    hasFunction("list")(input) &&
-    hasFunction("put")(input)
-);
-
-const WorkerMigration = Schema.Struct({
-  name: Schema.String,
-  queries: Schema.Array(Schema.String),
-});
 
 /** One decoded D1 migration supplied by the Worker test harness. */
 export interface WorkerTestMigration {
@@ -99,18 +66,3 @@ export const workerTestR2PutBody = (
     return bytes;
   });
 };
-
-/** Decode the Cloudflare D1 bindings owned by import Worker tests. */
-export const ImportWorkerTestEnvironment: Schema.Schema<ImportWorkerTestEnvironment> &
-  Schema.ConstraintDecoder<ImportWorkerTestEnvironment> = Schema.Struct({
-  MealPlannerDatabase: WorkerTestD1DatabaseSchema,
-  TEST_MIGRATIONS: Schema.Array(WorkerMigration),
-});
-
-/** Decode the Cloudflare D1 and R2 bindings owned by import Worker tests. */
-export const ImportWorkerR2TestEnvironment: Schema.Schema<ImportWorkerR2TestEnvironment> &
-  Schema.ConstraintDecoder<ImportWorkerR2TestEnvironment> = Schema.Struct({
-  ImportEvidenceBucket: WorkerTestR2BucketSchema,
-  MealPlannerDatabase: WorkerTestD1DatabaseSchema,
-  TEST_MIGRATIONS: Schema.Array(WorkerMigration),
-});

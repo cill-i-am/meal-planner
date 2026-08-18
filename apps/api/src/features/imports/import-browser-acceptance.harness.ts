@@ -53,11 +53,7 @@ import {
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import { makeImportWorkerRequestLayer } from "./import-worker-request-layer.js";
-import {
-  WorkerTestD1DatabaseSchema,
-  WorkerTestR2BucketSchema,
-  workerTestR2PutBody,
-} from "./import-worker-test-environment.js";
+import { workerTestR2PutBody } from "./import-worker-test-environment.js";
 import type {
   WorkerTestD1Database,
   WorkerTestR2Bucket,
@@ -71,11 +67,6 @@ import {
   TestImportPrincipal,
   TestImportTrace,
 } from "./import.test-fixtures.js";
-
-const LocalBindings = Schema.Struct({
-  ImportEvidenceBucket: WorkerTestR2BucketSchema,
-  MealPlannerDatabase: WorkerTestD1DatabaseSchema,
-});
 
 type LocalFixedLengthStreamConstructor = new (length: number) => {
   readonly readable: ReadableStream;
@@ -513,7 +504,14 @@ const applyProductionMigrations = async (database: WorkerTestD1Database) => {
 const requestBody = async (request: IncomingMessage) => {
   const chunks: Uint8Array[] = [];
   for await (const chunk of request) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    const decodedChunk = Schema.decodeUnknownSync(
+      Schema.Union([Schema.String, Schema.Uint8Array])
+    )(chunk);
+    chunks.push(
+      Schema.is(Schema.String)(decodedChunk)
+        ? Buffer.from(decodedChunk)
+        : decodedChunk
+    );
   }
   return chunks.length === 0
     ? undefined
@@ -595,11 +593,8 @@ const main = async () => {
       script:
         'export default { fetch() { return new Response("local binding host"); } };',
     });
-    const bindings = Schema.decodeUnknownSync(LocalBindings)(
-      await miniflare.getBindings()
-    );
-    const database = bindings.MealPlannerDatabase;
-    const bucket = bindings.ImportEvidenceBucket;
+    const database = await miniflare.getD1Database("MealPlannerDatabase");
+    const bucket = await miniflare.getR2Bucket("ImportEvidenceBucket");
     await applyProductionMigrations(database);
 
     const principalB = Schema.decodeUnknownSync(ImportPrincipal)({
