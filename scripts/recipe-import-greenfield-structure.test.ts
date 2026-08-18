@@ -18,14 +18,30 @@ const isProductionSource = (entryPath: string): boolean =>
   [".ts", ".tsx"].includes(path.extname(entryPath)) &&
   !entryPath.includes(".test.") &&
   !entryPath.includes(".integration.") &&
-  !entryPath.includes(".worker.") &&
+  !entryPath.includes(".support.") &&
   !entryPath.includes(".gen.") &&
   !entryPath.includes("/test/") &&
   !entryPath.includes("/tests/") &&
   !entryPath.includes("/__tests__/") &&
   !entryPath.includes("/fixtures/") &&
   !entryPath.includes("/test-fixtures/") &&
+  !entryPath.includes("/support/") &&
   !entryPath.includes("/vendor/");
+
+type WebProductionSourceCategory = "browser" | "website-worker";
+
+const classifyWebProductionSource = (
+  entryPath: string
+): WebProductionSourceCategory | undefined => {
+  if (
+    !entryPath.startsWith("apps/web/src/") ||
+    !isProductionSource(entryPath)
+  ) {
+    return undefined;
+  }
+
+  return entryPath === "apps/web/src/worker.ts" ? "website-worker" : "browser";
+};
 
 const loadSources = (
   paths: readonly string[],
@@ -63,6 +79,15 @@ const violations = (
   );
 
 describe("greenfield recipe-import architecture", () => {
+  it.each([
+    ["apps/web/src/worker.ts", "website-worker"],
+    ["apps/web/src/background.worker.ts", "browser"],
+    ["apps/web/src/support/secret.ts", undefined],
+    ["apps/web/src/secret.support.ts", undefined],
+  ] as const)("classifies %s as %s", (entryPath, expected) => {
+    expect(classifyWebProductionSource(entryPath)).toBe(expected);
+  });
+
   it("keeps removed compatibility surfaces out of production code", async () => {
     const sources = await loadSources(
       [
@@ -112,14 +137,15 @@ describe("greenfield recipe-import architecture", () => {
   it("keeps browser and website worker code free of runtime secrets", async () => {
     const sources = await loadSources(
       [`${repositoryRoot}/apps/web/src`],
-      isProductionSource
+      (entryPath) => classifyWebProductionSource(entryPath) !== undefined
     );
     const sourcePaths = sources.map(({ path: sourcePath }) => sourcePath);
     const workerSources = sourcePaths.filter(
-      (sourcePath) => sourcePath === "apps/web/src/worker.ts"
+      (sourcePath) =>
+        classifyWebProductionSource(sourcePath) === "website-worker"
     );
     const browserSources = sourcePaths.filter(
-      (sourcePath) => sourcePath !== "apps/web/src/worker.ts"
+      (sourcePath) => classifyWebProductionSource(sourcePath) === "browser"
     );
     const forbidden = [/\bprocess\.env\b/u, /\bRedacted\.make\b/u] as const;
 
