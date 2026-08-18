@@ -51,7 +51,7 @@ const listen = async (server: Server): Promise<string> => {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address();
-  if (address === null || typeof address === "string") {
+  if (address === null || Schema.is(Schema.String)(address)) {
     throw new Error("Test server did not expose a TCP address");
   }
   return `http://${address.address}:${address.port}`;

@@ -39,11 +39,11 @@ import {
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import {
-  ImportWorkerR2TestEnvironment,
   workerTestR2PutBody,
   workerTestMigrations,
 } from "./import-worker-test-environment.js";
 import type {
+  ImportWorkerR2TestEnvironment,
   WorkerTestR2Object,
   WorkerTestR2ObjectBody,
 } from "./import-worker-test-environment.js";
@@ -56,6 +56,20 @@ import { importPersistenceUnavailable } from "./import.errors.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import { admitResolvedTestImport } from "./import.test-fixtures.js";
 
+const SpeechTranscriptionFailureSchema = Schema.Struct({
+  _tag: Schema.Literal("SpeechTranscriptionFailure"),
+  code: Schema.Literals([
+    "insufficient_evidence",
+    "malformed_response",
+    "model_refusal",
+    "outcome_unknown",
+    "provider_unavailable",
+    "throttled",
+    "timeout",
+    "transcription_failed",
+  ]),
+});
+
 const trace = Schema.decodeUnknownSync(ImportTraceContext)({
   correlationId: "10000000-0000-4000-8000-000000000005",
 });
@@ -63,7 +77,7 @@ const trace = Schema.decodeUnknownSync(ImportTraceContext)({
 const transcriptObjectKey = (importId: string, generation: number) =>
   `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`;
 
-const testEnv = Schema.decodeUnknownSync(ImportWorkerR2TestEnvironment)(env);
+const testEnv: ImportWorkerR2TestEnvironment = env;
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
@@ -214,17 +228,18 @@ const makeBudgetedSpeechFixture = (fixtureImportId: ImportId) => {
           } satisfies SpeechTranscriptionFailure);
         }),
         // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed test adapter channel.
-        Effect.mapError((error) =>
-          typeof error === "object" &&
-          error !== null &&
-          "_tag" in error &&
-          error._tag === "SpeechTranscriptionFailure"
-            ? (error as SpeechTranscriptionFailure)
+        Effect.mapError((error) => {
+          const decoded = Schema.decodeUnknownOption(
+            SpeechTranscriptionFailureSchema,
+            { onExcessProperty: "ignore" }
+          )(error);
+          return decoded._tag === "Some"
+            ? decoded.value
             : ({
                 _tag: "SpeechTranscriptionFailure",
                 code: "outcome_unknown",
-              } satisfies SpeechTranscriptionFailure)
-        )
+              } satisfies SpeechTranscriptionFailure);
+        })
       ),
   };
   return { calls: deterministic.calls, repository, reservation, service };

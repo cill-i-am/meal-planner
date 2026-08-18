@@ -59,11 +59,11 @@ import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evide
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import type { makeImportWorkerRequestLayer as MakeImportWorkerRequestLayer } from "./import-worker-request-layer.js";
 import {
-  ImportWorkerR2TestEnvironment,
   workerTestR2PutBody,
   workerTestMigrations,
 } from "./import-worker-test-environment.js";
 import type {
+  ImportWorkerR2TestEnvironment,
   WorkerTestD1Database,
   WorkerTestR2Object,
   WorkerTestR2ObjectBody,
@@ -76,7 +76,7 @@ import {
   TestImportTrace,
 } from "./import.test-fixtures.js";
 
-const testEnv = Schema.decodeUnknownSync(ImportWorkerR2TestEnvironment)(env);
+const testEnv: ImportWorkerR2TestEnvironment = env;
 
 const bearerToken = "http-worker-private-bearer";
 const canonicalUrl =
@@ -544,7 +544,7 @@ const assertNoPrivateTransport = (
     foreignHouseholdScopeId,
     ...additionalSentinels,
   ];
-  if (typeof value === "string") {
+  if (Schema.is(Schema.String)(value)) {
     for (const sentinel of sentinels) {
       expect(value).not.toContain(sentinel);
     }
@@ -556,7 +556,7 @@ const assertNoPrivateTransport = (
     }
     return;
   }
-  if (typeof value === "object" && value !== null) {
+  if (Schema.is(Schema.Record(Schema.String, Schema.Json))(value)) {
     for (const [key, child] of Object.entries(value)) {
       assertNoPrivateTransport(key, additionalSentinels);
       assertNoPrivateTransport(child, additionalSentinels);

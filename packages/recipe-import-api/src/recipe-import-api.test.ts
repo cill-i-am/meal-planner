@@ -1,4 +1,5 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
+import type { JsonSchema } from "effect";
 import { OpenApi } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
@@ -104,6 +105,25 @@ const review = {
 const decodeIntent = Schema.decodeUnknownSync(RecipeImportIntent, {
   onExcessProperty: "error",
 });
+
+const OpenApiReference = Schema.Struct({
+  $ref: Schema.String,
+});
+const decodeOpenApiReference = Schema.decodeUnknownOption(OpenApiReference, {
+  onExcessProperty: "ignore",
+});
+const OpenApiObjectProperty = Schema.Struct({
+  properties: Schema.Struct({ object: Schema.Json }),
+});
+const decodeOpenApiObjectProperty = Schema.decodeUnknownOption(
+  OpenApiObjectProperty,
+  { onExcessProperty: "ignore" }
+);
+
+const openApiReferenceName = (
+  schema: JsonSchema.JsonSchema | Schema.Json | undefined
+): string | undefined =>
+  Option.getOrUndefined(decodeOpenApiReference(schema))?.$ref.split("/").at(-1);
 
 describe("RecipeImportIntent protocol", () => {
   it.each([
@@ -670,13 +690,7 @@ describe("RecipeImportApi HttpApi declaration", () => {
       document.paths[
         "/v1/recipe-import-intents/{id}/actions/{actionId}/answers"
       ]?.post?.responses?.["200"]?.content?.["application/json"]?.schema;
-    const answerReference =
-      typeof answerSchema === "object" &&
-      answerSchema !== null &&
-      "$ref" in answerSchema &&
-      typeof answerSchema["$ref"] === "string"
-        ? answerSchema["$ref"].split("/").at(-1)
-        : undefined;
+    const answerReference = openApiReferenceName(answerSchema);
     const resolvedAnswerSchema =
       answerReference === undefined
         ? answerSchema
@@ -693,22 +707,10 @@ describe("RecipeImportApi HttpApi declaration", () => {
       '"actionVersion"'
     );
 
-    const objectSchema =
-      typeof resolvedAnswerSchema === "object" &&
-      resolvedAnswerSchema !== null &&
-      "properties" in resolvedAnswerSchema &&
-      typeof resolvedAnswerSchema["properties"] === "object" &&
-      resolvedAnswerSchema["properties"] !== null &&
-      "object" in resolvedAnswerSchema["properties"]
-        ? resolvedAnswerSchema["properties"]["object"]
-        : undefined;
-    const objectReference =
-      typeof objectSchema === "object" &&
-      objectSchema !== null &&
-      "$ref" in objectSchema &&
-      typeof objectSchema["$ref"] === "string"
-        ? objectSchema["$ref"].split("/").at(-1)
-        : undefined;
+    const objectSchema = Option.getOrUndefined(
+      decodeOpenApiObjectProperty(resolvedAnswerSchema)
+    )?.properties.object;
+    const objectReference = openApiReferenceName(objectSchema);
     expect(
       objectReference === undefined
         ? objectSchema

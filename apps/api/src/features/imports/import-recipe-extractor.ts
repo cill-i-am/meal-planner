@@ -242,7 +242,7 @@ export interface RecipeExtractor {
   readonly descriptor: RecipeExtractorDescriptor;
   readonly extract: (
     input: RecipeEvidenceAssembly
-  ) => Effect.Effect<RecipeExtraction, RecipeExtractionFailure>;
+  ) => Effect.Effect<Schema.Json, RecipeExtractionFailure>;
 }
 
 /** Replaceable provider-neutral recipe extraction capability. */

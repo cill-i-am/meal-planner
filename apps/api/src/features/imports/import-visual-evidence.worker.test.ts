@@ -37,7 +37,10 @@ import {
 } from "./import-provider-terminal.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import * as RecipeDraftRepository from "./import-recipe-draft.repository.d1.js";
-import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
+import {
+  makeDeterministicRecipeExtractor,
+  makeDeterministicRecipeExtractorValue,
+} from "./import-recipe-extractor.fake.js";
 import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
 import { RecipeExtraction } from "./import-recipe-extractor.js";
 import {
@@ -56,11 +59,11 @@ import {
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import {
-  ImportWorkerR2TestEnvironment,
   workerTestR2PutBody,
   workerTestMigrations,
 } from "./import-worker-test-environment.js";
 import type {
+  ImportWorkerR2TestEnvironment,
   WorkerTestR2Object,
   WorkerTestR2ObjectBody,
 } from "./import-worker-test-environment.js";
@@ -96,7 +99,7 @@ const visualFrameObjectKey = (
 ) =>
   `${visualGenerationPrefix(importId, generation)}/frames/${String(frameIndex).padStart(2, "0")}.jpg`;
 
-const testEnv = Schema.decodeUnknownSync(ImportWorkerR2TestEnvironment)(env);
+const testEnv: ImportWorkerR2TestEnvironment = env;
 
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
@@ -1768,7 +1771,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
       version: 1,
     });
 
-    const replay = makeDeterministicRecipeExtractor(descriptor, {
+    const replay = makeDeterministicRecipeExtractorValue(descriptor, {
       malformed: true,
     });
     await expect(
@@ -1805,7 +1808,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
       draft.extractionFingerprint
     );
 
-    const historicalReplay = makeDeterministicRecipeExtractor(descriptor, {
+    const historicalReplay = makeDeterministicRecipeExtractorValue(descriptor, {
       malformed: true,
     });
     await expect(
@@ -1966,7 +1969,7 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
     const importId = decodeImportId("018f47ad-91aa-7c35-b6fe-000000000231");
     const canonicalId = decodeCanonicalId("7520000000000000231");
     const importRepository = await landVisualEvidence(importId, canonicalId);
-    const extractor = makeDeterministicRecipeExtractor(
+    const extractor = makeDeterministicRecipeExtractorValue(
       {
         model: "fixture-recipe-invalid",
         provider: "deterministic_fake",

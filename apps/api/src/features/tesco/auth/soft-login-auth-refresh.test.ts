@@ -80,7 +80,7 @@ const listen = (server: Server): Promise<string> =>
     server.listen(0, "127.0.0.1", () => {
       server.off("error", onError);
       const address = server.address();
-      if (address === null || typeof address === "string") {
+      if (address === null || Schema.is(Schema.String)(address)) {
         reject(new Error("Test server did not expose a TCP address"));
         return;
       }

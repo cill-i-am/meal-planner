@@ -35,12 +35,24 @@ const PilotWorkflowOutput = Schema.Union([
 ]);
 type PilotWorkflowOutput = typeof PilotWorkflowOutput.Type;
 
-const CurrentWorkflowInstanceResponse = Schema.Struct({
-  output: Schema.optionalKey(
-    Schema.NullOr(Schema.Union([Schema.String, Schema.Number]))
-  ),
-  status: PilotWorkflowInstanceStatus,
-});
+const CurrentWorkflowInstanceResponse = Schema.Union([
+  Schema.Struct({
+    output: Schema.String,
+    status: Schema.Literal("complete"),
+  }),
+  Schema.Struct({
+    output: Schema.optionalKey(Schema.Null),
+    status: Schema.Literals([
+      "errored",
+      "paused",
+      "queued",
+      "running",
+      "terminated",
+      "waiting",
+      "waitingForPause",
+    ]),
+  }),
+]);
 
 export interface PilotWorkflowOutputStatus {
   readonly code: string | null;
@@ -87,9 +99,6 @@ const inspectRecipeQualityPilotWorkflowStatus = (
 > =>
   Effect.gen(function* decodeWorkflowStatus() {
     if (instance.status === "complete") {
-      if (typeof instance.output !== "string") {
-        return yield* Effect.fail(inspectionError());
-      }
       return {
         output: yield* decodeCompleteOutput(instance.output),
         status: instance.status,

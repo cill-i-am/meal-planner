@@ -47,7 +47,7 @@ const buildFixture = async (outputDirectory: string) => {
   const {
     files: [{ content }],
   } = output;
-  return typeof content === "string"
+  return Schema.is(Schema.String)(content)
     ? content
     : new TextDecoder().decode(content);
 };

@@ -127,7 +127,7 @@ const toolCallName = (call: ProviderToolCall) =>
 
 const toolCallArguments = (call: ProviderToolCall): Schema.Json => {
   const value = "function" in call ? call.function.arguments : call.arguments;
-  if (typeof value !== "string") {
+  if (!Schema.is(Schema.String)(value)) {
     return value ?? null;
   }
   try {
@@ -179,13 +179,18 @@ const providerToolCalls = (
 
 const providerText = (response: VisualProviderResponse): string | undefined => {
   const openAiContent = openAiMessage(response)?.["content"];
-  if (typeof openAiContent === "string" && openAiContent.length > 0) {
+  if (Schema.is(Schema.String)(openAiContent) && openAiContent.length > 0) {
     return openAiContent;
   }
   if (response.response === undefined || response.response === null) {
     return undefined;
   }
-  return typeof response.response === "object"
+  return Schema.is(
+    Schema.Union([
+      Schema.Array(Schema.Json),
+      Schema.Record(Schema.String, Schema.Json),
+    ])
+  )(response.response)
     ? JSON.stringify(response.response)
     : String(response.response);
 };
@@ -195,7 +200,7 @@ const providerReasoning = (
 ): string | undefined => {
   const message = openAiMessage(response);
   const reasoning = message?.["reasoning_content"] ?? message?.["reasoning"];
-  return typeof reasoning === "string" && reasoning.length > 0
+  return Schema.is(Schema.String)(reasoning) && reasoning.length > 0
     ? reasoning
     : undefined;
 };
@@ -205,7 +210,7 @@ const usageToken = (
   key: "completion_tokens" | "prompt_tokens"
 ): number | undefined => {
   const value = jsonObject(response.usage)?.[key];
-  return typeof value === "number" ? value : undefined;
+  return Schema.is(Schema.Number)(value) ? value : undefined;
 };
 
 const providerResponseParts = (

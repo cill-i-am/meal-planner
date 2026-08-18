@@ -173,7 +173,8 @@ const issueEnvironmentVariable = (
   if (issue._tag === "Pointer") {
     const environmentVariable = issue.path.find(
       (segment): segment is TescoEnvironmentVariable =>
-        typeof segment === "string" && tescoEnvironmentVariables.has(segment)
+        Schema.is(Schema.String)(segment) &&
+        tescoEnvironmentVariables.has(segment)
     );
 
     return environmentVariable ?? issueEnvironmentVariable(issue.issue);

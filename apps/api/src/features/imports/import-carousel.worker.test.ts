@@ -27,11 +27,11 @@ import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake
 import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
 import { makeDeterministicVisualEvidenceExtractor } from "./import-visual-evidence.fake.js";
 import {
-  ImportWorkerR2TestEnvironment,
   workerTestR2PutBody,
   workerTestMigrations,
 } from "./import-worker-test-environment.js";
 import type {
+  ImportWorkerR2TestEnvironment,
   WorkerTestR2Object,
   WorkerTestR2ObjectBody,
 } from "./import-worker-test-environment.js";
@@ -50,7 +50,7 @@ import {
 } from "./import.test-fixtures.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
-const testEnv = Schema.decodeUnknownSync(ImportWorkerR2TestEnvironment)(env);
+const testEnv: ImportWorkerR2TestEnvironment = env;
 
 const decodeIntentId = Schema.decodeUnknownSync(RecipeImportIntentId);
 const decodeImportId = Schema.decodeUnknownSync(ImportId);

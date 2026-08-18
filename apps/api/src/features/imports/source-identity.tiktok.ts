@@ -169,7 +169,7 @@ const parseHandoffCanonical = (
 const isJsonObject = (
   value: Schema.Json | undefined
 ): value is Schema.JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+  Schema.is(Schema.Record(Schema.String, Schema.Json))(value);
 
 const parseHandoffItem = (
   decodedJson: Schema.Json

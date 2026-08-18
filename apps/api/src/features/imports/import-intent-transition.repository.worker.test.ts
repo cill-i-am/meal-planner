@@ -32,15 +32,13 @@ import {
   ImportPrincipal,
   makeImportIntentApplication,
 } from "./import-intent.js";
-import {
-  ImportWorkerTestEnvironment,
-  workerTestMigrations,
-} from "./import-worker-test-environment.js";
+import { workerTestMigrations } from "./import-worker-test-environment.js";
+import type { ImportWorkerTestEnvironment } from "./import-worker-test-environment.js";
 import { SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import { TestImportTrace } from "./import.test-fixtures.js";
 
-const testEnv = Schema.decodeUnknownSync(ImportWorkerTestEnvironment)(env);
+const testEnv: ImportWorkerTestEnvironment = env;
 
 const decodeRequest = Schema.decodeUnknownSync(CreateRecipeImportIntentRequest);
 const decodeCancelRequest = Schema.decodeUnknownSync(
@@ -66,7 +64,7 @@ const keysOf = (value: Schema.Json): readonly string[] => {
   if (Array.isArray(value)) {
     return value.flatMap(keysOf);
   }
-  if (value === null || typeof value !== "object") {
+  if (!Schema.is(Schema.Record(Schema.String, Schema.Json))(value)) {
     return [];
   }
   return Object.entries(value).flatMap(([key, nested]) => [

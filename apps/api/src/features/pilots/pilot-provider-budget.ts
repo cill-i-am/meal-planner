@@ -179,30 +179,25 @@ const PilotProviderKnownZeroCostFailureBrand = Symbol(
   "PilotProviderKnownZeroCostFailure"
 );
 
-export interface PilotProviderKnownZeroCostFailure<E> {
-  readonly [PilotProviderKnownZeroCostFailureBrand]: true;
-  readonly _tag: "PilotProviderKnownZeroCostFailure";
+export class PilotProviderKnownZeroCostFailure<E> {
+  readonly [PilotProviderKnownZeroCostFailureBrand] = true;
+  readonly _tag = "PilotProviderKnownZeroCostFailure";
   readonly error: E;
+
+  constructor(error: E) {
+    this.error = error;
+  }
 }
 
 export const pilotProviderKnownZeroCostFailure = <E>(
   error: E
-): PilotProviderKnownZeroCostFailure<E> => ({
-  [PilotProviderKnownZeroCostFailureBrand]: true,
-  _tag: "PilotProviderKnownZeroCostFailure",
-  error,
-});
+): PilotProviderKnownZeroCostFailure<E> =>
+  new PilotProviderKnownZeroCostFailure(error);
 
 export const isPilotProviderKnownZeroCostFailure = <Error>(
   error: Error | PilotProviderKnownZeroCostFailure<Error>
 ): error is PilotProviderKnownZeroCostFailure<Error> =>
-  typeof error === "object" &&
-  error !== null &&
-  "_tag" in error &&
-  error._tag === "PilotProviderKnownZeroCostFailure" &&
-  "error" in error &&
-  PilotProviderKnownZeroCostFailureBrand in error &&
-  error[PilotProviderKnownZeroCostFailureBrand] === true;
+  error instanceof PilotProviderKnownZeroCostFailure;
 
 export type PilotProviderDispatchResult<A> =
   | {

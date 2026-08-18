@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { Schema } from "effect";
 
 import type {
   RecipeEvidenceAssembly,
@@ -9,7 +10,7 @@ import type {
 /** Deterministic provider-free extractor that deliberately returns untrusted data. */
 export const makeDeterministicRecipeExtractor = (
   descriptor: RecipeExtractorDescriptor,
-  output: unknown | ((input: RecipeEvidenceAssembly) => unknown)
+  output: (input: RecipeEvidenceAssembly) => Schema.Json
 ): {
   readonly calls: RecipeEvidenceAssembly[];
   readonly service: RecipeExtractor;
@@ -22,10 +23,14 @@ export const makeDeterministicRecipeExtractor = (
       extract: (input) =>
         Effect.sync(() => {
           calls.push(input);
-          return structuredClone(
-            typeof output === "function" ? output(input) : output
-          );
+          return structuredClone(output(input));
         }),
     },
   };
 };
+
+/** Deterministic provider-free extractor for one fixed untrusted fixture. */
+export const makeDeterministicRecipeExtractorValue = (
+  descriptor: RecipeExtractorDescriptor,
+  output: Schema.Json
+) => makeDeterministicRecipeExtractor(descriptor, () => output);
