@@ -14,7 +14,7 @@ interface VendorContractException {
 
 // Last verified 2026-08-18: npm latest=next=alchemy@2.0.0-beta.72;
 // anti-slop main=6d538555cb151d4121ed51a27db81890eacf8ae9;
-// Alchemy main=ae168f2e206fc14e1f37fef3925ce2644bbf5014.
+// Alchemy main=6b73819a02f609e8942b1d9286dc197fbca200ab.
 const vendorContractExceptions: readonly VendorContractException[] = [
   {
     file: "apps/api/src/features/imports/import-provider-kernel.ts",
