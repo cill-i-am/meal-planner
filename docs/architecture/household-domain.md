@@ -46,10 +46,18 @@ domain read model, dual write, or compatibility path.
 
 ## Proof boundary
 
-Provider-free Miniflare coverage traverses the public Website Worker, raw
-Cookie/Set-Cookie proxy, private API Worker service binding, Better Auth D1
-membership check, private household service binding, domain Worker, Durable
-Object RPC, and real SQLite storage. It proves idempotent initialization,
-provenance mismatch rejection, and rejection of a forged active organization
-before private household routing. It does not prove a cloud deployment or
-provider lifecycle.
+Provider-free Miniflare coverage traverses the exact Website API-proxy
+functions, a private API service binding, the production household request
+composition, Better Auth D1 membership checks, the private household service
+binding, the production domain Worker entrypoint, Durable Object RPC, and real
+SQLite storage. The Website host is a narrow shell because the complete
+TanStack entrypoint depends on Vite-generated virtual modules; the API host
+supplies disposable D1 and secret bindings rather than initializing unrelated
+recipe-import resources. The proof therefore covers the production security
+and domain compositions, not either full deployable entrypoint. Separate
+structural guards tie those compositions and private bindings to the real
+Workers.
+
+The runtime tests prove idempotent initialization, provenance mismatch
+rejection, and rejection of a forged active organization before private
+household routing. They do not prove a cloud deployment or provider lifecycle.

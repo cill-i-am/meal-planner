@@ -18,7 +18,14 @@ const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
 const secret = "local-boundary-test-secret-at-least-32-characters";
 const temporaryDirectories: string[] = [];
-let runtime: Miniflare;
+let runtime: Miniflare | undefined;
+
+const getRuntime = (): Miniflare => {
+  if (runtime === undefined) {
+    throw new Error("Expected the household boundary runtime to be ready.");
+  }
+  return runtime;
+};
 
 const HouseholdStatusResponse = Schema.Struct({
   ...HouseholdMetadata.fields,
@@ -110,10 +117,13 @@ beforeAll(async () => {
   );
   temporaryDirectories.push(temporaryDirectory);
   const [websiteModules, apiModules, domainModules] = await Promise.all([
-    bundleFixture("household-website.test-worker.ts", temporaryDirectory),
-    bundleFixture("household-api-service.test-worker.ts", temporaryDirectory),
     bundleFixture(
-      "household-domain-service.test-worker.ts",
+      "household-website-service.test-fixture.js",
+      temporaryDirectory
+    ),
+    bundleFixture("household-api-service.test-fixture.ts", temporaryDirectory),
+    bundleFixture(
+      "household-domain-service.test-fixture.js",
       temporaryDirectory
     ),
   ]);
@@ -129,7 +139,7 @@ beforeAll(async () => {
         serviceBindings: { MEAL_PLANNER_API: "api" },
       },
       {
-        bindings: { AUTH_SECRET: secret },
+        bindings: { BETTER_AUTH_SECRET: secret },
         compatibilityDate,
         compatibilityFlags,
         d1Databases: { MealPlannerAuthDatabase: "household-auth-test" },
@@ -149,12 +159,12 @@ beforeAll(async () => {
     ],
   });
   await applyAuthMigrations(
-    await runtime.getD1Database("MealPlannerAuthDatabase", "api")
+    await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
   );
 }, 30_000);
 
 afterAll(async () => {
-  await runtime.dispose();
+  await runtime?.dispose();
   await Promise.all(
     temporaryDirectories.map((directory) =>
       rm(directory, { force: true, recursive: true })
@@ -184,11 +194,14 @@ const authRequest = (
   if (cookie !== undefined) {
     headers["cookie"] = cookie;
   }
-  return runtime.dispatchFetch(`https://meal-planner.test/api/auth${path}`, {
-    body: JSON.stringify(body),
-    headers,
-    method: "POST",
-  });
+  return getRuntime().dispatchFetch(
+    `https://meal-planner.test/api/auth${path}`,
+    {
+      body: JSON.stringify(body),
+      headers,
+      method: "POST",
+    }
+  );
 };
 
 const signUp = async (label: string) => {
@@ -218,7 +231,7 @@ describe("household Website-to-Durable-Object boundary", () => {
     const cookie = await signUp("Boundary Member");
     const organization = await createOrganization("Boundary Household", cookie);
 
-    const response = await runtime.dispatchFetch(
+    const response = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/household",
       { headers: { cookie } }
     );
@@ -238,7 +251,7 @@ describe("household Website-to-Durable-Object boundary", () => {
     const cookieA = await signUp("Boundary A");
     const cookieB = await signUp("Boundary B");
     const organizationB = await createOrganization("Boundary B Home", cookieB);
-    const sessionResponse = await runtime.dispatchFetch(
+    const sessionResponse = await getRuntime().dispatchFetch(
       "https://meal-planner.test/api/auth/get-session",
       { headers: { cookie: cookieA } }
     );
@@ -246,19 +259,23 @@ describe("household Website-to-Durable-Object boundary", () => {
       await sessionResponse.json()
     );
     const authDatabase = drizzle(
-      await runtime.getD1Database("MealPlannerAuthDatabase", "api")
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
     );
     await authDatabase
       .update(authSchema.session)
       .set({ activeOrganizationId: organizationB.id })
       .where(eq(authSchema.session.id, session.session.id));
 
-    const response = await runtime.dispatchFetch(
+    const response = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/household",
       { headers: { cookie: cookieA } }
     );
 
     expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({ code: "unauthorized" });
+    await expect(response.json()).resolves.toEqual({
+      code: "unauthorized",
+      message: "Sign in and select a household to continue.",
+      status: 401,
+    });
   });
 });

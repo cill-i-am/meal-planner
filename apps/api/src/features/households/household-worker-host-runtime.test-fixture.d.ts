@@ -1,5 +1,5 @@
 declare module "cloudflare:workers" {
-  /** Native RPC entrypoint used only by the bundled real-runtime fixture. */
+  /** Native RPC entrypoint used only by bundled real-runtime fixtures. */
   export abstract class WorkerEntrypoint<Env = Record<string, never>> {
     protected readonly ctx: ExecutionContext;
     protected readonly env: Env;

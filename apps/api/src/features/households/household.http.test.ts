@@ -2,7 +2,7 @@ import {
   HouseholdOrganizationId,
   HouseholdStatus,
 } from "@meal-planner/household-api";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -10,9 +10,9 @@ import {
   AuthenticatedOrganizationResolver,
   AuthPrincipalResolutionError,
 } from "../auth/auth.principal.js";
-import { RecipeImportHttpPlatformServices } from "../imports/import-intent-api.http.js";
-import { HouseholdDomainGateway } from "./household.gateway.js";
-import { makeHouseholdHttpApiLayer } from "./household.http.js";
+import { makeHouseholdRequestLayer } from "./household-request-composition.js";
+import type { HouseholdDomainGateway } from "./household.gateway.js";
+import { HouseholdDomainGateway as HouseholdDomainGatewayService } from "./household.gateway.js";
 
 const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
   "organization-a"
@@ -26,20 +26,10 @@ const householdStatus = Schema.decodeUnknownSync(HouseholdStatus)({
 const makeApp = (options: {
   readonly gateway: HouseholdDomainGateway;
   readonly resolver: AuthenticatedOrganizationResolver;
-}) => {
-  const services = Layer.mergeAll(
-    Layer.succeed(AuthenticatedOrganizationResolver, options.resolver),
-    Layer.succeed(HouseholdDomainGateway, options.gateway)
-  );
-  return HttpRouter.toWebHandler(
-    makeHouseholdHttpApiLayer().pipe(
-      Layer.provide(RecipeImportHttpPlatformServices),
-      Layer.provide(services),
-      HttpRouter.provideRequest(services)
-    ),
-    { disableLogger: true }
-  );
-};
+}) =>
+  HttpRouter.toWebHandler(makeHouseholdRequestLayer(options), {
+    disableLogger: true,
+  });
 
 describe("household HttpApi boundary", () => {
   const apps: ReturnType<typeof makeApp>[] = [];
@@ -51,7 +41,7 @@ describe("household HttpApi boundary", () => {
   it("routes only the organization admitted from the authenticated session", async () => {
     const routedOrganizationIds: string[] = [];
     const app = makeApp({
-      gateway: HouseholdDomainGateway.of({
+      gateway: HouseholdDomainGatewayService.of({
         ensure: (admittedOrganizationId) =>
           Effect.sync(() => {
             routedOrganizationIds.push(admittedOrganizationId);
@@ -79,7 +69,7 @@ describe("household HttpApi boundary", () => {
   it("rejects before routing when authentication cannot admit an organization", async () => {
     let routed = false;
     const app = makeApp({
-      gateway: HouseholdDomainGateway.of({
+      gateway: HouseholdDomainGatewayService.of({
         ensure: () => {
           routed = true;
           return Effect.succeed(householdStatus);

@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const readRepoFile = (path: string): string =>
@@ -70,7 +71,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workerSource).toContain("workersDev: false");
     expect(workerSource).toContain("HealthRoutes");
     expect(workerSource).toContain("makeRecipeImportHttpApiLayer");
-    expect(workerSource).toContain("makeHouseholdHttpApiLayer");
+    expect(workerSource).toContain("makeHouseholdRequestLayer");
     expect(workerSource).toContain("OperatorCarouselRouteDefinitions");
     expect(workerSource).toContain("ImportBatchRouteDefinitions");
     expect(workerSource).toContain(
@@ -224,6 +225,65 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(schemaSource).toContain('sqliteTable("household_meta"');
     expect(drizzleConfigSource).toContain('driver: "durable-sqlite"');
     expect(migration).toContain("CREATE TABLE `household_meta`");
+  });
+
+  it("keeps household host fixtures out of the API production program", () => {
+    const apiRoot = fileURLToPath(new URL("apps/api", import.meta.url));
+    const configPath = `${apiRoot}/tsconfig.build.json`;
+    const config = ts.readConfigFile(configPath, ts.sys.readFile);
+    const parsed = ts.parseJsonConfigFileContent(
+      config.config,
+      ts.sys,
+      apiRoot,
+      undefined,
+      configPath
+    );
+    const householdFiles = parsed.fileNames
+      .filter((path) => path.includes("/features/households/"))
+      .map((path) => path.slice(apiRoot.length + 1))
+      .toSorted();
+
+    expect(householdFiles).toContain(
+      "src/features/households/household-domain-worker.ts"
+    );
+    expect(householdFiles).toContain(
+      "src/features/households/household-object.ts"
+    );
+    expect(
+      householdFiles.filter(
+        (path) =>
+          path.includes(".test-fixture.") || path.includes(".test-types.")
+      )
+    ).toEqual([]);
+  });
+
+  it("uses production household compositions in the real-runtime boundary proof", () => {
+    const boundarySource = readRepoFile(
+      "./apps/api/src/features/households/household-boundary.integration.test.ts"
+    );
+    const apiFixtureSource = readRepoFile(
+      "./apps/api/src/features/households/household-api-service.test-fixture.ts"
+    );
+    const websiteFixtureSource = readRepoFile(
+      "./apps/api/src/features/households/household-website-service.test-fixture.js"
+    );
+    const domainFixtureSource = readRepoFile(
+      "./apps/api/src/features/households/household-domain-service.test-fixture.js"
+    );
+
+    expect(boundarySource).toContain(
+      "household-website-service.test-fixture.js"
+    );
+    expect(websiteFixtureSource).toContain("isApiRequest");
+    expect(websiteFixtureSource).toContain("proxyApiRequest");
+    expect(apiFixtureSource).toContain("makeHouseholdRequestLayer");
+    expect(domainFixtureSource).toContain(
+      'import entrypoint from "./household-domain-worker.js"'
+    );
+    expect(domainFixtureSource).toContain("makeWorkerBridge");
+    expect(domainFixtureSource).not.toContain(
+      "class HouseholdDomainTestWorker"
+    );
   });
 
   it("keeps authentication same-origin through the Website service binding", () => {

@@ -17,7 +17,7 @@ import {
 const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
 const fixturePath = fileURLToPath(
-  new URL("household-test-worker.ts", import.meta.url)
+  new URL("household-object-host.test-fixture.ts", import.meta.url)
 );
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare;

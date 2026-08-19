@@ -11,21 +11,21 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as authSchema from "./features/auth/auth.database-schema.js";
 import { makeMealPlannerAuth } from "./features/auth/auth.js";
 import {
-  AuthenticatedOrganizationResolver,
   makeAuthenticatedOrganizationResolver,
   makeAuthPrincipalResolver,
 } from "./features/auth/auth.principal.js";
 import { HealthRoutes } from "./features/health/health.routes.js";
 import { HouseholdDomainWorker } from "./features/households/household-domain-worker.js";
-import { HouseholdDomainGateway } from "./features/households/household.gateway.js";
-import { makeHouseholdHttpApiLayer } from "./features/households/household.http.js";
+import {
+  makeHouseholdDomainGateway,
+  makeHouseholdRequestLayer,
+} from "./features/households/household-request-composition.js";
 import type { ImportBatchQueueMessage } from "./features/imports/import-batch.contracts.js";
 import { ImportBatchRouteDefinitions } from "./features/imports/import-batch.routes.js";
 import { OperatorCarouselRouteDefinitions } from "./features/imports/import-carousel-operator.routes.js";
 import {
   makeRecipeImportHttpApiLayer,
   makeRecipeImportNotFoundHttpLayer,
-  RecipeImportHttpPlatformServices,
 } from "./features/imports/import-intent-api.http.js";
 import {
   HouseholdScopeId,
@@ -272,36 +272,19 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           systemPrincipal: importSystemPrincipal,
           trace,
         });
-        const householdRequestLayer = Layer.mergeAll(
-          Layer.succeed(
-            AuthenticatedOrganizationResolver,
-            authenticatedOrganizationResolver
-          ),
-          Layer.succeed(HouseholdDomainGateway, {
-            ensure: (organizationId) =>
-              householdDomain.ensureHousehold({ organizationId }).pipe(
-                Effect.map((metadata) => ({
-                  ...metadata,
-                  status: "ready" as const,
-                }))
-              ),
-          })
-        );
-        const mealPlannerRequestLayer = Layer.merge(
-          requestLayer,
-          householdRequestLayer
-        );
+        const householdRequestLayer = makeHouseholdRequestLayer({
+          gateway: makeHouseholdDomainGateway(householdDomain),
+          resolver: authenticatedOrganizationResolver,
+        });
         const routeHandler = yield* HttpRouter.toHttpEffect(
           Layer.mergeAll(
             HttpRouter.addAll(MealPlannerOperationalRoutes),
             makeRecipeImportHttpApiLayer(),
-            makeHouseholdHttpApiLayer().pipe(
-              Layer.provide(RecipeImportHttpPlatformServices)
-            ),
+            householdRequestLayer,
             makeRecipeImportNotFoundHttpLayer()
           ).pipe(
-            Layer.provide(mealPlannerRequestLayer),
-            HttpRouter.provideRequest(mealPlannerRequestLayer)
+            Layer.provide(requestLayer),
+            HttpRouter.provideRequest(requestLayer)
           )
         );
         return yield* withCurrentRequestCancellation(routeHandler);
