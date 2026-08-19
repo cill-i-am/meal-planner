@@ -1,13 +1,23 @@
+import { MealPlanPersistenceFailure } from "@meal-planner/household-api";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 
 import * as authSchema from "../auth/auth.database-schema.js";
 import { makeMealPlannerAuth } from "../auth/auth.js";
 import { makeAuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
+import type {
+  HouseholdCreateMealPlanInput,
+  HouseholdDecideMealPlanInput,
+  HouseholdMealPlanWire,
+  HouseholdReadMealPlanInput,
+  HouseholdSwapMealPlanInput,
+} from "./household-meal-plan.contract.js";
 import {
   makeHouseholdDomainGateway,
+  makeHouseholdMealPlanGateway,
+  makeHouseholdMealPlanRequestLayer,
   makeHouseholdRequestLayer,
 } from "./household-request-composition.js";
 import type {
@@ -21,11 +31,27 @@ const baseURL = "https://meal-planner.test";
 interface HouseholdApiFixtureEnv {
   readonly BETTER_AUTH_SECRET: string;
   readonly HouseholdDomainWorker: {
+    readonly approveMealPlan: (
+      input: HouseholdDecideMealPlanInput
+    ) => Promise<HouseholdMealPlanWire>;
+    readonly createMealPlan: (
+      input: HouseholdCreateMealPlanInput
+    ) => Promise<HouseholdMealPlanWire>;
     readonly ensureHousehold: (
       input: HouseholdEnsureInput
     ) => Promise<HouseholdMetadata>;
+    readonly readMealPlan: (
+      input: HouseholdReadMealPlanInput
+    ) => Promise<HouseholdMealPlanWire | null>;
+    readonly rejectMealPlan: (
+      input: HouseholdDecideMealPlanInput
+    ) => Promise<HouseholdMealPlanWire>;
+    readonly swapMealPlan: (
+      input: HouseholdSwapMealPlanInput
+    ) => Promise<HouseholdMealPlanWire>;
   };
   readonly MealPlannerAuthDatabase: AnyD1Database;
+  readonly MealPlannerDatabase: AnyD1Database;
 }
 
 /**
@@ -43,18 +69,58 @@ export default {
     if (new URL(request.url).pathname.startsWith("/api/auth/")) {
       return auth.fetch(request);
     }
-    const mounted = HttpRouter.toWebHandler(
-      makeHouseholdRequestLayer({
-        gateway: makeHouseholdDomainGateway({
-          ensureHousehold: (input) =>
+    const resolver = makeAuthenticatedOrganizationResolver({ auth });
+    const householdLayer = makeHouseholdRequestLayer({
+      gateway: makeHouseholdDomainGateway({
+        ensureHousehold: (input) =>
+          Effect.tryPromise({
+            catch: () =>
+              HouseholdPersistenceFailure.make({ operation: "ensure" }),
+            try: () => env.HouseholdDomainWorker.ensureHousehold(input),
+          }),
+      }),
+      resolver,
+    });
+    const mealPlanLayer = makeHouseholdMealPlanRequestLayer({
+      gateway: makeHouseholdMealPlanGateway({
+        database: env.MealPlannerDatabase,
+        domain: {
+          approveMealPlan: (input) =>
             Effect.tryPromise({
               catch: () =>
-                HouseholdPersistenceFailure.make({ operation: "ensure" }),
-              try: () => env.HouseholdDomainWorker.ensureHousehold(input),
+                MealPlanPersistenceFailure.make({ operation: "save" }),
+              try: () => env.HouseholdDomainWorker.approveMealPlan(input),
             }),
-        }),
-        resolver: makeAuthenticatedOrganizationResolver({ auth }),
+          createMealPlan: (input) =>
+            Effect.tryPromise({
+              catch: () =>
+                MealPlanPersistenceFailure.make({ operation: "create" }),
+              try: () => env.HouseholdDomainWorker.createMealPlan(input),
+            }),
+          readMealPlan: (input) =>
+            Effect.tryPromise({
+              catch: () =>
+                MealPlanPersistenceFailure.make({ operation: "read" }),
+              try: () => env.HouseholdDomainWorker.readMealPlan(input),
+            }),
+          rejectMealPlan: (input) =>
+            Effect.tryPromise({
+              catch: () =>
+                MealPlanPersistenceFailure.make({ operation: "save" }),
+              try: () => env.HouseholdDomainWorker.rejectMealPlan(input),
+            }),
+          swapMealPlan: (input) =>
+            Effect.tryPromise({
+              catch: () =>
+                MealPlanPersistenceFailure.make({ operation: "save" }),
+              try: () => env.HouseholdDomainWorker.swapMealPlan(input),
+            }),
+        },
       }),
+      resolver,
+    });
+    const mounted = HttpRouter.toWebHandler(
+      Layer.mergeAll(householdLayer, mealPlanLayer),
       { disableLogger: true }
     );
     try {

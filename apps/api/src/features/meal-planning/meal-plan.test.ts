@@ -1,3 +1,4 @@
+import { MealPlanRecipeSnapshot as SharedMealPlanRecipeSnapshot } from "@meal-planner/household-api";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -11,11 +12,28 @@ import {
 } from "./meal-plan.fake.js";
 import {
   MealPlanDecisionRequest,
+  MealPlanRecipeSnapshot,
   MealPlanRequest,
   ManualMealSwapRequest,
 } from "./meal-plan.js";
 
 describe("provider-free meal-plan tracer", () => {
+  it("uses the shared recipe snapshot contract at the review boundary", async () => {
+    expect(MealPlanRecipeSnapshot).toBe(SharedMealPlanRecipeSnapshot);
+
+    const { recipeRepository } = makeSyntheticMealPlanTracer();
+    const snapshots = await Effect.runPromise(recipeRepository.listApproved());
+
+    expect(snapshots).toHaveLength(3);
+    const isMealPlanRecipeSnapshot = Schema.is(MealPlanRecipeSnapshot);
+    expect(
+      snapshots.every((snapshot) => isMealPlanRecipeSnapshot(snapshot))
+    ).toBe(true);
+    expect(
+      snapshots.some(({ importId }) => importId === syntheticRejectedRecipeId)
+    ).toBe(false);
+  });
+
   it("creates an approved-only deterministic draft with explicit hard-constraint gaps", async () => {
     const tracer = makeSyntheticMealPlanTracer();
 

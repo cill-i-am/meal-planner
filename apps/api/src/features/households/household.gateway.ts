@@ -1,6 +1,20 @@
 import type {
+  CreateMealPlanPayload,
+  DecideMealPlanPayload,
+  HouseholdMealPlanPrincipal,
   HouseholdOrganizationId,
   HouseholdStatus,
+  MealPlan,
+  MealPlanDraftId,
+  MealPlanInstant,
+  MealPlanMutationConflict,
+  MealPlanNotFound,
+  MealPlanPersistenceFailure,
+  MealPlanRequestConflict,
+  MealPlanSwapRejected,
+  MealPlanTransitionRejected,
+  MealPlanVersionConflict,
+  SwapMealPlanPayload,
 } from "@meal-planner/household-api";
 import type { Effect } from "effect";
 import { Context } from "effect";
@@ -16,3 +30,60 @@ export interface HouseholdDomainGateway {
 export const HouseholdDomainGateway = Context.Service<HouseholdDomainGateway>(
   "meal-planner/HouseholdDomainGateway"
 );
+
+export type MealPlanCreateFailure =
+  | MealPlanPersistenceFailure
+  | MealPlanRequestConflict;
+
+export type MealPlanReadFailure = MealPlanNotFound | MealPlanPersistenceFailure;
+
+export type MealPlanDecisionFailure =
+  | MealPlanMutationConflict
+  | MealPlanNotFound
+  | MealPlanPersistenceFailure
+  | MealPlanTransitionRejected
+  | MealPlanVersionConflict;
+
+export type MealPlanSwapFailure =
+  | MealPlanDecisionFailure
+  | MealPlanSwapRejected;
+
+export type HouseholdMealPlanFailure =
+  | MealPlanCreateFailure
+  | MealPlanDecisionFailure
+  | MealPlanReadFailure
+  | MealPlanSwapFailure;
+
+export interface HouseholdMealPlanGateway {
+  readonly approve: (input: {
+    readonly payload: DecideMealPlanPayload;
+    readonly principal: HouseholdMealPlanPrincipal;
+    readonly decidedAt: MealPlanInstant;
+    readonly draftId: MealPlanDraftId;
+  }) => Effect.Effect<MealPlan, MealPlanDecisionFailure>;
+  readonly create: (input: {
+    readonly payload: CreateMealPlanPayload;
+    readonly principal: HouseholdMealPlanPrincipal;
+  }) => Effect.Effect<MealPlan, MealPlanCreateFailure>;
+  readonly read: (input: {
+    readonly draftId: MealPlanDraftId;
+    readonly principal: HouseholdMealPlanPrincipal;
+  }) => Effect.Effect<MealPlan, MealPlanReadFailure>;
+  readonly reject: (input: {
+    readonly payload: DecideMealPlanPayload;
+    readonly principal: HouseholdMealPlanPrincipal;
+    readonly decidedAt: MealPlanInstant;
+    readonly draftId: MealPlanDraftId;
+  }) => Effect.Effect<MealPlan, MealPlanDecisionFailure>;
+  readonly swap: (input: {
+    readonly payload: SwapMealPlanPayload;
+    readonly principal: HouseholdMealPlanPrincipal;
+    readonly swappedAt: MealPlanInstant;
+    readonly draftId: MealPlanDraftId;
+  }) => Effect.Effect<MealPlan, MealPlanSwapFailure>;
+}
+
+export const HouseholdMealPlanGateway =
+  Context.Service<HouseholdMealPlanGateway>(
+    "meal-planner/HouseholdMealPlanGateway"
+  );

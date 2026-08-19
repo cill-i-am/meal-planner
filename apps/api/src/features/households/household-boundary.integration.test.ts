@@ -2,7 +2,9 @@ import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
+import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
+import { CreateMealPlanPayload, MealPlan } from "@meal-planner/household-api";
 import * as Bundle from "alchemy/Bundle";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
@@ -35,6 +37,27 @@ const SessionResponse = Schema.Struct({
   session: Schema.Struct({ id: Schema.String }),
 });
 const OrganizationResponse = Schema.Struct({ id: Schema.String });
+const createPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
+  policy: {
+    allowedDietaryFit: ["household_match"],
+    allowedDifficulties: ["easy"],
+    allowedTotalTimeBands: ["under_30_minutes"],
+    maxRecipeUses: 1,
+    preferredCuisines: [],
+    version: "boundary-policy-v1",
+  },
+  request: {
+    requestKey: "boundary-week",
+    slots: [
+      {
+        date: "2026-08-24",
+        mealType: "dinner",
+        servings: 2,
+        slotId: "boundary-dinner",
+      },
+    ],
+  },
+});
 
 const bundleText = (content: string | Uint8Array<ArrayBufferLike>): string =>
   Schema.is(Schema.String)(content)
@@ -111,6 +134,29 @@ const applyAuthMigrations = async (database: MiniflareD1Database) => {
   );
 };
 
+const applyDomainMigrations = async (database: MiniflareD1Database) => {
+  const migrations = await readD1Migrations(
+    fileURLToPath(new URL("../../../migrations", import.meta.url))
+  );
+  await database
+    .prepare(
+      `CREATE TABLE d1_migrations (
+         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+         name TEXT NOT NULL UNIQUE,
+         applied_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+       )`
+    )
+    .run();
+  await database.batch(
+    migrations.flatMap((migration) => [
+      ...migration.queries.map((query) => database.prepare(query)),
+      database
+        .prepare("INSERT INTO d1_migrations (name) VALUES (?)")
+        .bind(migration.name),
+    ])
+  );
+};
+
 beforeAll(async () => {
   const temporaryDirectory = await mkdtemp(
     `${tmpdir()}/meal-planner-household-boundary-`
@@ -142,7 +188,10 @@ beforeAll(async () => {
         bindings: { BETTER_AUTH_SECRET: secret },
         compatibilityDate,
         compatibilityFlags,
-        d1Databases: { MealPlannerAuthDatabase: "household-auth-test" },
+        d1Databases: {
+          MealPlannerAuthDatabase: "household-auth-test",
+          MealPlannerDatabase: "household-domain-read-test",
+        },
         modules: [...apiModules],
         name: "api",
         serviceBindings: { HouseholdDomainWorker: "household-domain" },
@@ -160,6 +209,9 @@ beforeAll(async () => {
   });
   await applyAuthMigrations(
     await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+  );
+  await applyDomainMigrations(
+    await getRuntime().getD1Database("MealPlannerDatabase", "api")
   );
 }, 30_000);
 
@@ -247,6 +299,42 @@ describe("household Website-to-Durable-Object boundary", () => {
     });
   });
 
+  it("creates and reads a household-owned meal plan through the production boundary", async () => {
+    const cookie = await signUp("Meal Plan Member");
+    await createOrganization("Meal Plan Household", cookie);
+
+    const createResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/meal-plans",
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(CreateMealPlanPayload)(createPayload)
+        ),
+        headers: { "content-type": "application/json", cookie },
+        method: "POST",
+      }
+    );
+
+    expect(createResponse.status).toBe(201);
+    const created = await Schema.decodeUnknownPromise(MealPlan)(
+      await createResponse.json()
+    );
+    expect(created).toMatchObject({
+      _tag: "Draft",
+      gaps: [{ slotId: "boundary-dinner" }],
+      meals: [],
+      revision: 0,
+    });
+
+    const readResponse = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/meal-plans/${created.draftId}`,
+      { headers: { cookie } }
+    );
+    expect(readResponse.status).toBe(200);
+    await expect(readResponse.json()).resolves.toEqual(
+      Schema.encodeSync(MealPlan)(created)
+    );
+  });
+
   it("rejects a forged cross-organization session before private routing", async () => {
     const cookieA = await signUp("Boundary A");
     const cookieB = await signUp("Boundary B");
@@ -267,8 +355,17 @@ describe("household Website-to-Durable-Object boundary", () => {
       .where(eq(authSchema.session.id, session.session.id));
 
     const response = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household",
-      { headers: { cookie: cookieA } }
+      "https://meal-planner.test/v1/meal-plans",
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(CreateMealPlanPayload)(createPayload)
+        ),
+        headers: {
+          "content-type": "application/json",
+          cookie: cookieA,
+        },
+        method: "POST",
+      }
     );
 
     expect(response.status).toBe(401);
@@ -277,5 +374,11 @@ describe("household Website-to-Durable-Object boundary", () => {
       message: "Sign in and select a household to continue.",
       status: 401,
     });
+
+    const readResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/meal-plans/draft-boundary-week",
+      { headers: { cookie: cookieB } }
+    );
+    expect(readResponse.status).toBe(404);
   });
 });

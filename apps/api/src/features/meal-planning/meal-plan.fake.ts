@@ -2,12 +2,14 @@ import { Effect, Option, Schema } from "effect";
 
 import { RecipeDraft } from "../imports/import-recipe-draft.repository.d1.js";
 import {
-  PlanningTags,
+  ApprovedRecipe,
   RecipeReviewView,
   projectApprovedRecipe,
 } from "../imports/import-recipe-review.js";
-import { ImportId } from "../imports/import.contracts.js";
 import {
+  MealPlanRecipeSnapshot,
+  MealPlanRecipeSnapshotId,
+  MealPlanTags,
   MealPlanPolicy,
   MealPlanRequest,
   makeDeterministicMealPlanPlanner,
@@ -22,10 +24,15 @@ import type {
   MealPlan,
   MealPlanDraftId,
   MealPlanDraftRepository,
+  MealPlanRecipeSource,
 } from "./meal-plan.js";
 
-const decodeImportId = Schema.decodeUnknownSync(ImportId);
-const decodeTags = Schema.decodeUnknownSync(PlanningTags);
+const decodeRecipeId = Schema.decodeUnknownSync(MealPlanRecipeSnapshotId);
+const encodeApprovedRecipe = Schema.encodeSync(ApprovedRecipe);
+const decodeMealPlanRecipeSnapshot = Schema.decodeUnknownSync(
+  MealPlanRecipeSnapshot
+);
+const decodeTags = Schema.decodeUnknownSync(MealPlanTags);
 
 const citation = {
   citations: [
@@ -116,7 +123,7 @@ const makeSyntheticReview = (input: {
   readonly importId: string;
   readonly lifecycle: "approved" | "rejected";
   readonly name: string;
-  readonly tags: PlanningTags;
+  readonly tags: MealPlanTags;
 }): RecipeReviewView => {
   const draft = makeSyntheticDraft(input);
   return Schema.decodeUnknownSync(RecipeReviewView)({
@@ -191,13 +198,13 @@ const hardDinnerTags = decodeTags({
   totalTimeBand: "under_30_minutes",
 });
 
-export const syntheticReplacementRecipeId = decodeImportId(
+export const syntheticReplacementRecipeId = decodeRecipeId(
   "018f47ad-91aa-7c35-b6fe-000000000403"
 );
-export const syntheticHardConstraintRecipeId = decodeImportId(
+export const syntheticHardConstraintRecipeId = decodeRecipeId(
   "018f47ad-91aa-7c35-b6fe-000000000404"
 );
-export const syntheticRejectedRecipeId = decodeImportId(
+export const syntheticRejectedRecipeId = decodeRecipeId(
   "018f47ad-91aa-7c35-b6fe-000000000402"
 );
 
@@ -265,10 +272,7 @@ export const syntheticMealPlanRequest = Schema.decodeUnknownSync(
 
 export const makeInMemoryRecipeReviewRepository = (
   initial: readonly RecipeReviewView[]
-): {
-  readonly listApproved: () => Effect.Effect<
-    readonly ReturnType<typeof projectApprovedRecipe>[]
-  >;
+): MealPlanRecipeSource & {
   readonly reviews: readonly RecipeReviewView[];
 } => {
   const reviews = [...initial];
@@ -278,6 +282,9 @@ export const makeInMemoryRecipeReviewRepository = (
         reviews
           .filter(({ lifecycle }) => lifecycle === "approved")
           .map(projectApprovedRecipe)
+          .map((approvedRecipe) =>
+            decodeMealPlanRecipeSnapshot(encodeApprovedRecipe(approvedRecipe))
+          )
       ),
     reviews,
   };
