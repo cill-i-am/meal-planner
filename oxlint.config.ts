@@ -11,6 +11,9 @@ export default defineConfig({
     ".agents/**",
     "apps/api/auth-migrations/**/snapshot.json",
     "apps/api/src/features/auth/auth.database-schema.ts",
+    // Drizzle Kit emits this import() declaration alongside generated
+    // Durable SQLite migrations; generation/no-diff checks own its integrity.
+    "apps/api/household-migrations/migrations.d.ts",
     // Byte-identical upstream plugin sources are verified separately and must
     // not lint themselves; repository-owned plugin glue remains in lint scope.
     "tools/oxlint/anti-slop/no-conditional-empty-object-spread.ts",

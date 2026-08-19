@@ -9,6 +9,8 @@ import {
   requireAuthSuccess,
 } from "../features/auth/auth-client.js";
 import { deriveAuthBoundaryState } from "../features/auth/auth-state.js";
+import { makeBrowserHouseholdOperations } from "../features/households/browser-operations.js";
+import { HouseholdDomainStatus } from "../features/households/household-domain-status.js";
 import { makeBrowserRecipeImportOperations } from "../features/recipe-import/browser-operations.js";
 import {
   decodeRecipeImportSearch,
@@ -22,6 +24,7 @@ const MealPlannerRoute = () => {
   const session = authClient.useSession();
   const organizations = authClient.useListOrganizations();
   const activeOrganization = authClient.useActiveOrganization();
+  const householdOperations = useMemo(makeBrowserHouseholdOperations, []);
   const operations = useMemo(() => makeBrowserRecipeImportOperations(), []);
 
   const signOut = async () => {
@@ -66,6 +69,12 @@ const MealPlannerRoute = () => {
           {...(intentId === undefined ? {} : { initialIntentId: intentId })}
           householdId={household.id}
           householdName={household.name}
+          householdDomainStatus={
+            <HouseholdDomainStatus
+              operations={householdOperations}
+              organizationId={household.id}
+            />
+          }
           key={recipeImportPageSessionKey(household.id, intentId)}
           onSignOut={logout}
           operations={operations}

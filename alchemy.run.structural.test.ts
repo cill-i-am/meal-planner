@@ -69,7 +69,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workerSource).not.toMatch(/traces:\s*\{[^}]*enabled:\s*true/u);
     expect(workerSource).toContain("workersDev: false");
     expect(workerSource).toContain("HealthRoutes");
-    expect(workerSource).toContain("makeRecipeImportWorkerHttpLayer");
+    expect(workerSource).toContain("makeRecipeImportHttpApiLayer");
+    expect(workerSource).toContain("makeHouseholdHttpApiLayer");
     expect(workerSource).toContain("OperatorCarouselRouteDefinitions");
     expect(workerSource).toContain("ImportBatchRouteDefinitions");
     expect(workerSource).toContain(
@@ -185,6 +186,44 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(migration).toContain("CREATE TABLE `session`");
     expect(migration).toContain("CREATE TABLE `organization`");
     expect(migration).toContain("CREATE TABLE `member`");
+  });
+
+  it("keeps the household object private with Drizzle-owned durable migrations", () => {
+    const stackSource = readRepoFile("./alchemy.run.ts");
+    const apiWorkerSource = readRepoFile("./apps/api/src/worker.ts");
+    const domainWorkerSource = readRepoFile(
+      "./apps/api/src/features/households/household-domain-worker.ts"
+    );
+    const objectSource = readRepoFile(
+      "./apps/api/src/features/households/household-object.ts"
+    );
+    const schemaSource = readRepoFile(
+      "./apps/api/src/features/households/household.database-schema.ts"
+    );
+    const drizzleConfigSource = readRepoFile(
+      "./apps/api/household.drizzle.config.ts"
+    );
+    const migration = readRepoFile(
+      "./apps/api/household-migrations/20260819075508_household_domain/migration.sql"
+    );
+
+    expect(stackSource).toContain("Effect.provide(HouseholdDomainWorkerLive)");
+    expect(apiWorkerSource).toMatch(
+      /Cloudflare\.Workers\.bindWorker\(\s*HouseholdDomainWorker\s*\)/u
+    );
+    expect(domainWorkerSource).toContain('>()("HouseholdDomainWorker")');
+    expect(domainWorkerSource).toContain("workersDev: false");
+    expect(domainWorkerSource).toContain(
+      "Schema.decodeUnknownEffect(HouseholdEnsureInputSchema)(input)"
+    );
+    expect(domainWorkerSource).toContain(
+      "householdObjectName(command.organizationId)"
+    );
+    expect(domainWorkerSource).not.toContain("better-auth");
+    expect(objectSource).toContain("Drizzle.DurableObject({ migrations })");
+    expect(schemaSource).toContain('sqliteTable("household_meta"');
+    expect(drizzleConfigSource).toContain('driver: "durable-sqlite"');
+    expect(migration).toContain("CREATE TABLE `household_meta`");
   });
 
   it("keeps authentication same-origin through the Website service binding", () => {
@@ -387,7 +426,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(docs).toContain("internally enables automatic approval");
     expect(docs).toMatch(/shared state\s+store is not stage-owned cleanup/u);
     expect(docs).toContain("one shared household-scoped D1");
-    expect(docs).toContain("no household Durable Object");
+    expect(docs).toContain("household Durable Object tracer");
     expect(docs).toContain("system principal");
     expect(architecture).toMatch(
       /does not use its own Durable Object\s+storage/u

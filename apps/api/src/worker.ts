@@ -10,12 +10,23 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import * as authSchema from "./features/auth/auth.database-schema.js";
 import { makeMealPlannerAuth } from "./features/auth/auth.js";
-import { makeAuthPrincipalResolver } from "./features/auth/auth.principal.js";
+import {
+  AuthenticatedOrganizationResolver,
+  makeAuthenticatedOrganizationResolver,
+  makeAuthPrincipalResolver,
+} from "./features/auth/auth.principal.js";
 import { HealthRoutes } from "./features/health/health.routes.js";
+import { HouseholdDomainWorker } from "./features/households/household-domain-worker.js";
+import { HouseholdDomainGateway } from "./features/households/household.gateway.js";
+import { makeHouseholdHttpApiLayer } from "./features/households/household.http.js";
 import type { ImportBatchQueueMessage } from "./features/imports/import-batch.contracts.js";
 import { ImportBatchRouteDefinitions } from "./features/imports/import-batch.routes.js";
 import { OperatorCarouselRouteDefinitions } from "./features/imports/import-carousel-operator.routes.js";
-import { makeRecipeImportWorkerHttpLayer } from "./features/imports/import-intent-api.http.js";
+import {
+  makeRecipeImportHttpApiLayer,
+  makeRecipeImportNotFoundHttpLayer,
+  RecipeImportHttpPlatformServices,
+} from "./features/imports/import-intent-api.http.js";
 import {
   HouseholdScopeId,
   ImportActorId,
@@ -105,6 +116,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const importRecipeRecoveryWorkflow = yield* ImportRecipeRecoveryWorkflow;
     const importBatchQueue = yield* ImportBatchQueue;
     const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
+    const householdDomain = yield* Cloudflare.Workers.bindWorker(
+      HouseholdDomainWorker
+    );
     const importBatchQueueWriter =
       yield* Cloudflare.Queues.WriteQueue(importBatchQueue);
     const authSecret = yield* Config.redacted("BETTER_AUTH_SECRET");
@@ -234,6 +248,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         }
         const rawImportBatchQueue = yield* importBatchQueueWriter.raw;
         const trace = makeImportTraceContext();
+        const authenticatedOrganizationResolver =
+          makeAuthenticatedOrganizationResolver({ auth });
         const requestLayer = makeImportWorkerRequestLayer({
           bucket: acquisitionBucket,
           database,
@@ -256,12 +272,36 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           systemPrincipal: importSystemPrincipal,
           trace,
         });
+        const householdRequestLayer = Layer.mergeAll(
+          Layer.succeed(
+            AuthenticatedOrganizationResolver,
+            authenticatedOrganizationResolver
+          ),
+          Layer.succeed(HouseholdDomainGateway, {
+            ensure: (organizationId) =>
+              householdDomain.ensureHousehold({ organizationId }).pipe(
+                Effect.map((metadata) => ({
+                  ...metadata,
+                  status: "ready" as const,
+                }))
+              ),
+          })
+        );
+        const mealPlannerRequestLayer = Layer.merge(
+          requestLayer,
+          householdRequestLayer
+        );
         const routeHandler = yield* HttpRouter.toHttpEffect(
-          makeRecipeImportWorkerHttpLayer({
-            operationalRoutes: MealPlannerOperationalRoutes,
-          }).pipe(
-            Layer.provide(requestLayer),
-            HttpRouter.provideRequest(requestLayer)
+          Layer.mergeAll(
+            HttpRouter.addAll(MealPlannerOperationalRoutes),
+            makeRecipeImportHttpApiLayer(),
+            makeHouseholdHttpApiLayer().pipe(
+              Layer.provide(RecipeImportHttpPlatformServices)
+            ),
+            makeRecipeImportNotFoundHttpLayer()
+          ).pipe(
+            Layer.provide(mealPlannerRequestLayer),
+            HttpRouter.provideRequest(mealPlannerRequestLayer)
           )
         );
         return yield* withCurrentRequestCancellation(routeHandler);
