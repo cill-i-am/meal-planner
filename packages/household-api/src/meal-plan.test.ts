@@ -2,6 +2,8 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  CreateMealPlanPayload,
+  DecideMealPlanPayload,
   MaximumMealPlanSlots,
   MaximumPreferredCuisines,
   MealPlanInstant,
@@ -10,7 +12,30 @@ import {
   MealPlanRecipeSnapshotId,
   MealPlanRequest,
   MealPlanTags,
+  SwapMealPlanPayload,
 } from "./meal-plan.js";
+
+const validCreatePayload = {
+  policy: {
+    allowedDietaryFit: ["household_match"],
+    allowedDifficulties: ["easy"],
+    allowedTotalTimeBands: ["under_30_minutes"],
+    maxRecipeUses: 1,
+    preferredCuisines: ["Mediterranean"],
+    version: "policy-v1",
+  },
+  request: {
+    requestKey: "week-1",
+    slots: [
+      {
+        date: "2026-08-24",
+        mealType: "dinner",
+        servings: 2,
+        slotId: "monday-dinner",
+      },
+    ],
+  },
+} as const;
 
 describe("meal-plan contract", () => {
   it("owns its recipe snapshot primitives without a transport contract", () => {
@@ -86,5 +111,76 @@ describe("meal-plan contract", () => {
         version: "policy-v1",
       })
     ).toThrow();
+  });
+
+  it.each([
+    [
+      "create",
+      CreateMealPlanPayload,
+      { ...validCreatePayload, organizationId: "browser-organization" },
+    ],
+    [
+      "swap",
+      SwapMealPlanPayload,
+      {
+        actorId: "browser-actor",
+        expectedRevision: 0,
+        mutationId: "swap-1",
+        reason: "Use another approved recipe.",
+        replacementImportId: "a9f513cb-d1cc-4ae8-99fb-20113da1b83a",
+        slotId: "monday-dinner",
+      },
+    ],
+    [
+      "decide",
+      DecideMealPlanPayload,
+      {
+        decidedAt: "2026-08-24T18:00:00.000Z",
+        expectedRevision: 0,
+        mutationId: "decision-1",
+        reason: "The household reviewed this plan.",
+      },
+    ],
+  ] as const)("rejects excess fields in the %s command", (_, schema, input) => {
+    expect(() => Schema.decodeUnknownSync(schema)(input)).toThrow(
+      /Expected no excess property/u
+    );
+  });
+
+  it.each(["2026-99-99", "2026-02-29"])(
+    "rejects the impossible calendar date %s",
+    (date) => {
+      expect(() =>
+        Schema.decodeUnknownSync(CreateMealPlanPayload)({
+          ...validCreatePayload,
+          request: {
+            ...validCreatePayload.request,
+            slots: [
+              {
+                ...validCreatePayload.request.slots[0],
+                date,
+              },
+            ],
+          },
+        })
+      ).toThrow();
+    }
+  );
+
+  it("accepts a real leap-day calendar date", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(CreateMealPlanPayload)({
+        ...validCreatePayload,
+        request: {
+          ...validCreatePayload.request,
+          slots: [
+            {
+              ...validCreatePayload.request.slots[0],
+              date: "2028-02-29",
+            },
+          ],
+        },
+      })
+    ).not.toThrow();
   });
 });

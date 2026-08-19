@@ -223,12 +223,9 @@ describe("household meal-plan HttpApi boundary", () => {
 
     const response = await app.handler(
       new Request("https://meal-planner.test/v1/meal-plans", {
-        body: JSON.stringify({
-          ...Schema.encodeSync(CreateMealPlanPayload)(createMealPlanPayload),
-          actorId: "browser-supplied-actor",
-          approvedRecipes: [{ name: "browser-supplied-recipe" }],
-          organizationId: "browser-supplied-organization",
-        }),
+        body: JSON.stringify(
+          Schema.encodeSync(CreateMealPlanPayload)(createMealPlanPayload)
+        ),
         headers: {
           "content-type": "application/json",
           cookie: "better-auth.session_token=session",
@@ -250,6 +247,107 @@ describe("household meal-plan HttpApi boundary", () => {
         }),
       },
     ]);
+  });
+
+  it("rejects identity-bearing and unknown command fields before the household gateway", async () => {
+    let routed = false;
+    const app = makeMealPlanApp({
+      gateway: HouseholdMealPlanGateway.of({
+        approve: () => {
+          routed = true;
+          return Effect.succeed(createdMealPlan);
+        },
+        create: () => {
+          routed = true;
+          return Effect.succeed(createdMealPlan);
+        },
+        read: () => Effect.die("Unexpected read"),
+        reject: () => Effect.die("Unexpected reject"),
+        swap: () => {
+          routed = true;
+          return Effect.succeed(createdMealPlan);
+        },
+      }),
+    });
+    const headers = {
+      "content-type": "application/json",
+      cookie: "better-auth.session_token=session",
+    };
+    const requests = [
+      new Request("https://meal-planner.test/v1/meal-plans", {
+        body: JSON.stringify({
+          ...Schema.encodeSync(CreateMealPlanPayload)(createMealPlanPayload),
+          organizationId: "browser-supplied-organization",
+        }),
+        headers,
+        method: "POST",
+      }),
+      new Request(`https://meal-planner.test/v1/meal-plans/${draftId}/swaps`, {
+        body: JSON.stringify({
+          ...Schema.encodeSync(SwapMealPlanPayload)(swapMealPlanPayload),
+          actorId: "browser-supplied-actor",
+        }),
+        headers,
+        method: "POST",
+      }),
+      new Request(
+        `https://meal-planner.test/v1/meal-plans/${draftId}/approve`,
+        {
+          body: JSON.stringify({
+            ...Schema.encodeSync(DecideMealPlanPayload)(decideMealPlanPayload),
+            decidedAt: "2026-08-24T18:00:00.000Z",
+          }),
+          headers,
+          method: "POST",
+        }
+      ),
+    ];
+
+    const responses = await Promise.all(
+      requests.map((request) => app.handler(request))
+    );
+
+    expect(responses.map(({ status }) => status)).toEqual([400, 400, 400]);
+    expect(routed).toBe(false);
+  });
+
+  it("rejects impossible calendar dates before the household gateway", async () => {
+    let routed = false;
+    const app = makeMealPlanApp({
+      gateway: HouseholdMealPlanGateway.of({
+        approve: () => Effect.die("Unexpected approve"),
+        create: () => {
+          routed = true;
+          return Effect.succeed(createdMealPlan);
+        },
+        read: () => Effect.die("Unexpected read"),
+        reject: () => Effect.die("Unexpected reject"),
+        swap: () => Effect.die("Unexpected swap"),
+      }),
+    });
+    const payload = Schema.encodeSync(CreateMealPlanPayload)(
+      createMealPlanPayload
+    );
+
+    const response = await app.handler(
+      new Request("https://meal-planner.test/v1/meal-plans", {
+        body: JSON.stringify({
+          ...payload,
+          request: {
+            ...payload.request,
+            slots: [{ ...payload.request.slots[0], date: "2026-99-99" }],
+          },
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: "better-auth.session_token=session",
+        },
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(routed).toBe(false);
   });
 
   it("routes read, swap, approve, and reject through the admitted principal", async () => {

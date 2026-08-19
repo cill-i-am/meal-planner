@@ -16,7 +16,7 @@ import type {
   MealPlanVersionConflict,
 } from "@meal-planner/household-api";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 
 import type { AuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
@@ -29,7 +29,10 @@ import type {
   HouseholdReadMealPlanInput,
   HouseholdSwapMealPlanInput,
 } from "./household-meal-plan.contract.js";
-import { listApprovedMealPlanRecipeSnapshots } from "./household-meal-plan.recipe-source.js";
+import {
+  findApprovedMealPlanRecipeSnapshot,
+  listApprovedMealPlanRecipeSnapshots,
+} from "./household-meal-plan.recipe-source.js";
 import type {
   HouseholdDomainFailure,
   HouseholdEnsureInput,
@@ -153,6 +156,27 @@ export const makeHouseholdMealPlanGateway = (options: {
       Effect.mapError(() => persistenceFailure("read"))
     );
 
+  const encodeExplicitRecipe = (
+    organizationId: HouseholdCreateMealPlanInput["organizationId"],
+    importId: Parameters<typeof findApprovedMealPlanRecipeSnapshot>[2]
+  ) =>
+    findApprovedMealPlanRecipeSnapshot(
+      options.database,
+      organizationId,
+      importId
+    ).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.succeed([]),
+          onSome: (recipe) =>
+            Schema.encodeEffect(MealPlanRecipeSnapshot)(recipe).pipe(
+              Effect.map((encoded) => [encoded])
+            ),
+        })
+      ),
+      Effect.mapError(() => persistenceFailure("read"))
+    );
+
   return {
     approve: ({ decidedAt, draftId, payload, principal }) =>
       Effect.gen(function* approveHouseholdMealPlan() {
@@ -225,7 +249,10 @@ export const makeHouseholdMealPlanGateway = (options: {
     swap: ({ draftId, payload, principal, swappedAt }) =>
       Effect.gen(function* swapHouseholdMealPlan() {
         const [recipes, request] = yield* Effect.all([
-          encodeRecipes(principal.organizationId),
+          encodeExplicitRecipe(
+            principal.organizationId,
+            payload.replacementImportId
+          ),
           Schema.encodeEffect(ManualMealSwapRequest)({
             ...payload,
             actorId: principal.actorId,

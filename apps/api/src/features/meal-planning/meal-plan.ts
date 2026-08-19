@@ -270,6 +270,24 @@ const fingerprint = <S extends Schema.ConstraintEncoder<unknown>>(
   value: S["Type"]
 ): string => JSON.stringify(Schema.encodeSync(schema)(value));
 
+const ManualMealSwapFingerprint = Schema.Struct({
+  actorId: ManualMealSwapRequest.fields.actorId,
+  draftId: ManualMealSwapRequest.fields.draftId,
+  expectedRevision: ManualMealSwapRequest.fields.expectedRevision,
+  mutationId: ManualMealSwapRequest.fields.mutationId,
+  reason: ManualMealSwapRequest.fields.reason,
+  replacementImportId: ManualMealSwapRequest.fields.replacementImportId,
+  slotId: ManualMealSwapRequest.fields.slotId,
+});
+
+const MealPlanDecisionFingerprint = Schema.Struct({
+  actorId: MealPlanDecisionRequest.fields.actorId,
+  draftId: MealPlanDecisionRequest.fields.draftId,
+  expectedRevision: MealPlanDecisionRequest.fields.expectedRevision,
+  mutationId: MealPlanDecisionRequest.fields.mutationId,
+  reason: MealPlanDecisionRequest.fields.reason,
+});
+
 const getPlan = (drafts: MealPlanDraftRepository, draftId: MealPlanDraftId) =>
   drafts.find(draftId).pipe(
     Effect.flatMap(
@@ -316,7 +334,7 @@ export const makeMealPlanService = (input: {
   ) =>
     Effect.gen(function* decideMealPlanDraft() {
       const mutationFingerprint = `${outcome}:${fingerprint(
-        MealPlanDecisionRequest,
+        MealPlanDecisionFingerprint,
         request
       )}`;
       const replay = yield* input.drafts.findMutation({
@@ -415,7 +433,10 @@ export const makeMealPlanService = (input: {
       ),
     swap: (request) =>
       Effect.gen(function* swapMealPlanRecipe() {
-        const mutationFingerprint = fingerprint(ManualMealSwapRequest, request);
+        const mutationFingerprint = fingerprint(
+          ManualMealSwapFingerprint,
+          request
+        );
         const replay = yield* input.drafts.findMutation({
           draftId: request.draftId,
           mutationFingerprint,

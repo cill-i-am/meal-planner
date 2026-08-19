@@ -1,5 +1,8 @@
 import { MealPlanRecipeSnapshot } from "@meal-planner/household-api";
-import type { HouseholdOrganizationId } from "@meal-planner/household-api";
+import type {
+  HouseholdOrganizationId,
+  MealPlanRecipeSnapshotId,
+} from "@meal-planner/household-api";
 import { RecipeImportHouseholdScopeId } from "@meal-planner/recipe-import-api";
 import { and, desc, eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
@@ -41,6 +44,22 @@ const decodeSnapshot = (review: Parameters<typeof projectApprovedReview>[0]) =>
     Effect.flatMap(Schema.decodeUnknownEffect(MealPlanRecipeSnapshot)),
     Effect.mapError(() => importPersistenceUnavailable())
   );
+
+const decodeApprovedSnapshot = (
+  review: Option.Option<Parameters<typeof refineRecipeReview>[0]>
+): Effect.Effect<
+  Option.Option<typeof MealPlanRecipeSnapshot.Type>,
+  RecipeReviewPersistenceError
+> =>
+  Option.match(review, {
+    onNone: () => Effect.succeed(Option.none()),
+    onSome: (value) => {
+      const refined = refineRecipeReview(value);
+      return Option.isSome(refined) && refined.value._tag === "Approved"
+        ? decodeSnapshot(refined.value).pipe(Effect.map(Option.some))
+        : Effect.succeed(Option.none());
+    },
+  });
 
 /**
  * Read approved recipe snapshots from their existing shared-D1 authority.
@@ -94,18 +113,7 @@ export const listApprovedMealPlanRecipeSnapshots = (
         Schema.decodeUnknownEffect(ImportId)(importId).pipe(
           Effect.mapError(() => importPersistenceUnavailable()),
           Effect.flatMap(reviews.find),
-          Effect.flatMap(
-            Option.match({
-              onNone: () => Effect.succeed(Option.none()),
-              onSome: (review) => {
-                const refined = refineRecipeReview(review);
-                return Option.isSome(refined) &&
-                  refined.value._tag === "Approved"
-                  ? decodeSnapshot(refined.value).pipe(Effect.map(Option.some))
-                  : Effect.succeed(Option.none());
-              },
-            })
-          )
+          Effect.flatMap(decodeApprovedSnapshot)
         )
       ),
       { concurrency: RecipeReviewReadConcurrency }
@@ -114,4 +122,63 @@ export const listApprovedMealPlanRecipeSnapshots = (
         snapshots.flatMap((snapshot) => Option.toArray(snapshot))
       )
     );
+  });
+
+/** Resolve one current approved recipe for an admitted household and import. */
+export const findApprovedMealPlanRecipeSnapshot = (
+  binding: AnyD1Database,
+  organizationId: HouseholdOrganizationId,
+  importId: MealPlanRecipeSnapshotId
+): Effect.Effect<
+  Option.Option<typeof MealPlanRecipeSnapshot.Type>,
+  RecipeReviewPersistenceError
+> =>
+  Effect.gen(function* findHouseholdApprovedRecipe() {
+    const householdScopeId = yield* hashOrganizationId(organizationId).pipe(
+      Effect.mapError(() => importPersistenceUnavailable())
+    );
+    const requestedImportId = yield* Schema.decodeUnknownEffect(ImportId)(
+      importId
+    ).pipe(Effect.mapError(() => importPersistenceUnavailable()));
+    const rows = yield* Effect.tryPromise({
+      catch: () => importPersistenceUnavailable(),
+      try: () =>
+        drizzle(binding)
+          .select({ importId: recipeImports.id })
+          .from(recipeImports)
+          .innerJoin(
+            importRecipeExtractions,
+            and(
+              eq(importRecipeExtractions.importId, recipeImports.id),
+              eq(
+                importRecipeExtractions.acquisitionGeneration,
+                recipeImports.acquisitionGeneration
+              ),
+              eq(importRecipeExtractions.isCurrent, 1)
+            )
+          )
+          .innerJoin(
+            recipeReviews,
+            and(
+              eq(
+                recipeReviews.extractionFingerprint,
+                importRecipeExtractions.extractionFingerprint
+              ),
+              eq(recipeReviews.lifecycle, "approved")
+            )
+          )
+          .where(
+            and(
+              eq(recipeImports.householdScopeId, householdScopeId),
+              eq(recipeImports.id, requestedImportId)
+            )
+          )
+          .limit(1),
+    });
+    if (rows.length === 0) {
+      return Option.none();
+    }
+    return yield* makeD1RecipeReviewRepository(binding)
+      .find(requestedImportId)
+      .pipe(Effect.flatMap(decodeApprovedSnapshot));
   });

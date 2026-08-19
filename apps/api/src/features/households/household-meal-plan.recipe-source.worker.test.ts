@@ -1,16 +1,20 @@
 import {
   HouseholdOrganizationId,
   MealPlanRecipeSnapshot,
+  MealPlanRecipeSnapshotId,
 } from "@meal-planner/household-api";
 import { applyD1Migrations, env } from "cloudflare:test";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { AcquisitionGeneration } from "../imports/import-media.model.js";
 import { RecipeDraft } from "../imports/import-recipe-draft.repository.d1.js";
 import { workerTestMigrations } from "../imports/import-worker-test-environment.js";
 import { ImportId } from "../imports/import.contracts.js";
-import { listApprovedMealPlanRecipeSnapshots } from "./household-meal-plan.recipe-source.js";
+import {
+  findApprovedMealPlanRecipeSnapshot,
+  listApprovedMealPlanRecipeSnapshots,
+} from "./household-meal-plan.recipe-source.js";
 
 const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
   "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -346,4 +350,111 @@ describe("household meal-plan approved recipe authority", () => {
       }),
     ]);
   });
+
+  it("keeps generation bounded while resolving an older explicit swap recipe through household authority", async () => {
+    const approvedImportIds = Array.from({ length: 130 }, (_, index) =>
+      Schema.decodeUnknownSync(ImportId)(
+        `10000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`
+      )
+    );
+    await Promise.all(
+      approvedImportIds.map((importId, index) =>
+        seedImport({
+          current: true,
+          extractionFingerprint: index.toString(16).padStart(64, "0"),
+          householdScopeId,
+          importId,
+          lifecycle: "approved",
+          name: `Bounded Approved Recipe ${index}`,
+          sourceUrl: `https://www.tiktok.com/@fixture/video/7520000000000001${index.toString().padStart(3, "0")}`,
+        })
+      )
+    );
+
+    const olderApprovedImportId = Schema.decodeUnknownSync(
+      MealPlanRecipeSnapshotId
+    )(approvedImportIds.at(-1));
+    const candidates = await Effect.runPromise(
+      listApprovedMealPlanRecipeSnapshots(
+        env.MealPlannerDatabase,
+        organizationId
+      )
+    );
+    expect(candidates).toHaveLength(128);
+    expect(
+      candidates.some(({ importId }) => importId === olderApprovedImportId)
+    ).toBe(false);
+
+    const explicitlyRequested = await Effect.runPromise(
+      findApprovedMealPlanRecipeSnapshot(
+        env.MealPlannerDatabase,
+        organizationId,
+        olderApprovedImportId
+      )
+    );
+    expect(Option.getOrUndefined(explicitlyRequested)).toMatchObject({
+      importId: olderApprovedImportId,
+      recipe: { name: "Bounded Approved Recipe 129" },
+    });
+
+    const crossHousehold = await Effect.runPromise(
+      findApprovedMealPlanRecipeSnapshot(
+        env.MealPlannerDatabase,
+        otherOrganizationId,
+        olderApprovedImportId
+      )
+    );
+    expect(Option.isNone(crossHousehold)).toBe(true);
+
+    const pendingImportId = Schema.decodeUnknownSync(ImportId)(
+      "20000000-0000-4000-8000-000000000001"
+    );
+    await seedImport({
+      current: true,
+      extractionFingerprint: `${"a".repeat(63)}1`,
+      householdScopeId,
+      importId: pendingImportId,
+      lifecycle: "needs_review",
+      name: "Current Pending Explicit Recipe",
+      sourceUrl: "https://www.tiktok.com/@fixture/video/7520000000000002001",
+    });
+    const pending = await Effect.runPromise(
+      findApprovedMealPlanRecipeSnapshot(
+        env.MealPlannerDatabase,
+        organizationId,
+        Schema.decodeUnknownSync(MealPlanRecipeSnapshotId)(pendingImportId)
+      )
+    );
+    expect(Option.isNone(pending)).toBe(true);
+
+    const supersededImportId = Schema.decodeUnknownSync(ImportId)(
+      "20000000-0000-4000-8000-000000000002"
+    );
+    await seedImport({
+      current: false,
+      extractionFingerprint: `${"a".repeat(63)}2`,
+      householdScopeId,
+      importId: supersededImportId,
+      lifecycle: "approved",
+      name: "Superseded Approved Explicit Recipe",
+      sourceUrl: "https://www.tiktok.com/@fixture/video/7520000000000002002",
+    });
+    await seedImport({
+      current: true,
+      extractionFingerprint: `${"a".repeat(63)}3`,
+      householdScopeId,
+      importId: supersededImportId,
+      lifecycle: "needs_review",
+      name: "Current Pending Explicit Recipe",
+      sourceUrl: "https://www.tiktok.com/@fixture/video/7520000000000002002",
+    });
+    const superseded = await Effect.runPromise(
+      findApprovedMealPlanRecipeSnapshot(
+        env.MealPlannerDatabase,
+        organizationId,
+        Schema.decodeUnknownSync(MealPlanRecipeSnapshotId)(supersededImportId)
+      )
+    );
+    expect(Option.isNone(superseded)).toBe(true);
+  }, 30_000);
 });

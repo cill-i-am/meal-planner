@@ -34,6 +34,7 @@ import {
 const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
 const MealPlanWire = Schema.toEncoded(MealPlan);
+const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
 const ManualMealSwapRequestWire = Schema.toEncoded(ManualMealSwapRequest);
 const MealPlanDecisionRequestWire = Schema.toEncoded(MealPlanDecisionRequest);
 const fixturePath = fileURLToPath(
@@ -59,6 +60,25 @@ const MealPlanResponse = Schema.Union([
   Schema.Struct({
     ok: Schema.Literal(true),
     value: MealPlanWire,
+  }),
+  Schema.Struct({
+    error: Schema.Unknown,
+    ok: Schema.Literal(false),
+  }),
+]);
+type SuccessfulMealPlanResponse = Extract<
+  typeof MealPlanResponse.Type,
+  { readonly ok: true }
+>;
+type FailedMealPlanResponse = Extract<
+  typeof MealPlanResponse.Type,
+  { readonly ok: false }
+>;
+
+const MaybeMealPlanResponse = Schema.Union([
+  Schema.Struct({
+    ok: Schema.Literal(true),
+    value: Schema.NullOr(MealPlanWire),
   }),
   Schema.Struct({
     error: Schema.Unknown,
@@ -172,6 +192,65 @@ const approvedRecipes = syntheticRecipeReviews
   .map(projectApprovedRecipe)
   .map((recipe) => Schema.encodeSync(ApprovedRecipe)(recipe));
 
+const makeLargeApprovedRecipe = (input: {
+  readonly character: string;
+  readonly importId: string;
+  readonly ingredientLineCount: number;
+}) => {
+  const base = approvedRecipes.at(0);
+  if (base === undefined) {
+    throw new Error("Expected an approved recipe fixture.");
+  }
+  return Schema.decodeUnknownSync(ApprovedRecipeWire)({
+    ...base,
+    extractionFingerprint: input.character.repeat(64),
+    importId: input.importId,
+    recipe: {
+      ...base.recipe,
+      ingredientLines: Array.from({ length: input.ingredientLineCount }, () =>
+        input.character.repeat(4096)
+      ),
+    },
+    source: {
+      ...base.source,
+      evidenceFingerprint: input.character.repeat(64),
+    },
+  });
+};
+
+const makeMaximumSlotRequest = (requestKey: string) =>
+  Schema.decodeUnknownSync(MealPlanRequest)({
+    requestKey,
+    slots: Array.from({ length: 31 }, (_, index) => ({
+      date: `2026-08-${String(index + 1).padStart(2, "0")}`,
+      mealType: "dinner",
+      servings: 2,
+      slotId: `large-dinner-${index + 1}`,
+    })),
+  });
+
+const makeSingleDinnerRequest = (requestKey: string) =>
+  Schema.decodeUnknownSync(MealPlanRequest)({
+    requestKey,
+    slots: [
+      {
+        date: "2026-08-01",
+        mealType: "dinner",
+        servings: 2,
+        slotId: "large-audit-dinner",
+      },
+    ],
+  });
+
+const makeRepeatedRecipePolicy = () =>
+  Schema.decodeUnknownSync(MealPlanPolicy)({
+    ...syntheticPlanningPolicy,
+    maxRecipeUses: 31,
+  });
+
+const jsonByteLength = (value: object): number =>
+  new TextEncoder().encode(JSON.stringify(value)).byteLength;
+
 const createMealPlan = async (
   objectName: string,
   organizationId: string,
@@ -257,6 +336,26 @@ const readMealPlan = async (
   return Schema.decodeUnknownPromise(MealPlanResponse)(await response.json());
 };
 
+const readMaybeMealPlan = async (
+  objectName: string,
+  organizationId: string,
+  draftId: string
+) => {
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify({
+      draftId,
+      objectName,
+      operation: "readMealPlan",
+      organizationId,
+    }),
+    method: "POST",
+  });
+  expect(response.status).toBe(200);
+  return Schema.decodeUnknownPromise(MaybeMealPlanResponse)(
+    await response.json()
+  );
+};
+
 describe("household Durable Object", () => {
   it("initializes once and rejects a conflicting organization provenance", async () => {
     const objectName = "household:v1:organization-a";
@@ -308,6 +407,161 @@ describe("household Durable Object", () => {
     );
     expect(persisted).toEqual(created);
   });
+
+  it("rejects an oversized encoded plan without leaving a partial draft", async () => {
+    const objectName = "household:v1:organization-oversized-create";
+    const organizationId = "organization-oversized-create";
+    const request = makeMaximumSlotRequest("oversized-create");
+    const created = await createMealPlan(objectName, organizationId, {
+      approvedRecipes: [
+        makeLargeApprovedRecipe({
+          character: "x",
+          importId: "018f47ad-91aa-7c35-b6fe-000000000501",
+          ingredientLineCount: 16,
+        }),
+      ],
+      policy: makeRepeatedRecipePolicy(),
+      request,
+    });
+
+    expect(created).toMatchObject({
+      error: { _tag: "MealPlanPersistenceFailure", operation: "create" },
+      ok: false,
+    });
+    expect(
+      await readMaybeMealPlan(
+        objectName,
+        organizationId,
+        `draft-${request.requestKey}`
+      )
+    ).toEqual({ ok: true, value: null });
+  });
+
+  it("persists a valid encoded plan near the conservative size limit", async () => {
+    const objectName = "household:v1:organization-near-limit-create";
+    const organizationId = "organization-near-limit-create";
+    const request = makeMaximumSlotRequest("near-limit-create");
+    const created = await createMealPlan(objectName, organizationId, {
+      approvedRecipes: [
+        makeLargeApprovedRecipe({
+          character: "n",
+          importId: "018f47ad-91aa-7c35-b6fe-000000000502",
+          ingredientLineCount: 14,
+        }),
+      ],
+      policy: makeRepeatedRecipePolicy(),
+      request,
+    });
+    if (!created.ok) {
+      throw new Error(
+        `Expected the near-limit meal plan to persist: ${JSON.stringify(created.error)}`
+      );
+    }
+
+    expect(jsonByteLength(created.value)).toBeGreaterThan(1_700_000);
+    expect(
+      await readMealPlan(
+        objectName,
+        organizationId,
+        `draft-${request.requestKey}`
+      )
+    ).toEqual(created);
+  });
+
+  it("preserves the last valid draft when repeated swaps reach the size limit", async () => {
+    const objectName = "household:v1:organization-large-swap-audit";
+    const organizationId = "organization-large-swap-audit";
+    const largeRecipes = [
+      makeLargeApprovedRecipe({
+        character: "a",
+        importId: "018f47ad-91aa-7c35-b6fe-000000000503",
+        ingredientLineCount: 16,
+      }),
+      makeLargeApprovedRecipe({
+        character: "b",
+        importId: "018f47ad-91aa-7c35-b6fe-000000000504",
+        ingredientLineCount: 16,
+      }),
+    ];
+    const created = await createMealPlan(objectName, organizationId, {
+      approvedRecipes: largeRecipes,
+      request: makeSingleDinnerRequest("large-swap-audit"),
+    });
+    if (!created.ok) {
+      throw new Error("Expected the large swap-audit fixture to be created.");
+    }
+
+    const swapUntilRejected = async (
+      lastValid: SuccessfulMealPlanResponse,
+      index: number
+    ): Promise<{
+      readonly lastValid: SuccessfulMealPlanResponse;
+      readonly rejected: FailedMealPlanResponse;
+    }> => {
+      if (index >= 20) {
+        throw new Error("Expected repeated swaps to reach the size limit.");
+      }
+      const currentRecipeId = lastValid.value.meals[0]?.sourceRecipe.importId;
+      const replacement = largeRecipes.find(
+        ({ importId }) => importId !== currentRecipeId
+      );
+      if (replacement === undefined) {
+        throw new Error("Expected an alternate large recipe fixture.");
+      }
+      const result = await mutateMealPlan({
+        approvedRecipes: largeRecipes,
+        objectName,
+        operation: "swapMealPlan",
+        organizationId,
+        request: Schema.decodeUnknownSync(ManualMealSwapRequestWire)({
+          actorId: "actor-large-audit",
+          draftId: created.value.draftId,
+          expectedRevision: lastValid.value.revision,
+          mutationId: `large-swap-${index}`,
+          reason: "Exercise the persisted audit size boundary.",
+          replacementImportId: replacement.importId,
+          slotId: "large-audit-dinner",
+          swappedAt: "2026-08-01T12:00:00.000Z",
+        }),
+      });
+      if (!result.ok) {
+        return { lastValid, rejected: result };
+      }
+      return swapUntilRejected(result, index + 1);
+    };
+
+    const { lastValid, rejected } = await swapUntilRejected(created, 0);
+
+    expect(lastValid.value.audit.length).toBeGreaterThan(1);
+    expect(failureTag(rejected)).toBe("MealPlanPersistenceFailure");
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const persisted = await readMealPlan(
+      objectName,
+      organizationId,
+      created.value.draftId
+    );
+    expect(persisted).toEqual(lastValid);
+
+    const approved = await mutateMealPlan({
+      objectName,
+      operation: "approveMealPlan",
+      organizationId,
+      request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
+        actorId: "actor-large-audit",
+        decidedAt: "2026-08-01T12:30:00.000Z",
+        draftId: created.value.draftId,
+        expectedRevision: lastValid.value.revision,
+        mutationId: "approve-after-size-rejection",
+        reason: "Approve the last valid draft.",
+      }),
+    });
+    expect(approved).toMatchObject({
+      ok: true,
+      value: { _tag: "Approved" },
+    });
+  }, 20_000);
 
   it("replays an identical create and rejects a changed request with the same key", async () => {
     const objectName = "household:v1:organization-create-replay";

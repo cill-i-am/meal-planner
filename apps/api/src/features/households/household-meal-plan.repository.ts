@@ -21,10 +21,22 @@ import {
 const EncodedMealPlan = Schema.fromJsonString(MealPlan);
 
 const encodePlan = Schema.encodeSync(EncodedMealPlan);
+const MaximumPersistedMealPlanBytes = 1_900_000;
+const utf8Encoder = new TextEncoder();
 
 const persistenceFailure = (
   operation: (typeof MealPlanPersistenceFailure.Type)["operation"]
 ) => MealPlanPersistenceFailure.make({ operation });
+
+const encodePersistablePlan = (
+  plan: typeof MealPlan.Type,
+  operation: "create" | "save"
+): Effect.Effect<string, MealPlanPersistenceFailure> => {
+  const encoded = encodePlan(plan);
+  return utf8Encoder.encode(encoded).byteLength <= MaximumPersistedMealPlanBytes
+    ? Effect.succeed(encoded)
+    : Effect.fail(persistenceFailure(operation));
+};
 
 const decodePlan = (planJson: string, operation: "read" | "save") =>
   Schema.decodeUnknownEffect(EncodedMealPlan)(planJson).pipe(
@@ -56,11 +68,12 @@ export const makeHouseholdMealPlanRepository = (
                   MealPlanRequestConflict.make({ draftId: draft.draftId })
                 );
           }
+          const planJson = yield* encodePersistablePlan(draft, "create");
           yield* transaction
             .insert(householdMealPlans)
             .values({
               draftId: draft.draftId,
-              planJson: encodePlan(draft),
+              planJson,
               requestFingerprint,
               revision: draft.revision,
             })
@@ -174,7 +187,7 @@ export const makeHouseholdMealPlanRepository = (
             return yield* Effect.fail(persistenceFailure("save"));
           }
 
-          const resultJson = encodePlan(input.next);
+          const resultJson = yield* encodePersistablePlan(input.next, "save");
           yield* transaction
             .update(householdMealPlans)
             .set({

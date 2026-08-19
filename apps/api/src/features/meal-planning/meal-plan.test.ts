@@ -176,7 +176,14 @@ describe("provider-free meal-plan tracer", () => {
       replacementImportId: syntheticReplacementRecipeId,
     });
     const swapped = await Effect.runPromise(tracer.service.swap(request));
-    const replay = await Effect.runPromise(tracer.service.swap(request));
+    const replay = await Effect.runPromise(
+      tracer.service.swap(
+        decodeSwap({
+          ...request,
+          swappedAt: "2026-07-22T10:05:00.000Z",
+        })
+      )
+    );
 
     expect(swapped).toEqual(replay);
     expect(swapped._tag).toBe("Draft");
@@ -191,6 +198,7 @@ describe("provider-free meal-plan tracer", () => {
       mutationId: "swap-valid-recipe",
       toRecipe: { recipe: { name: "Synthetic Bean Traybake" } },
     });
+    expect(swapped.audit[0]?.swappedAt).toEqual(request.swappedAt);
 
     const stale = await Effect.runPromise(
       Effect.flip(
@@ -292,10 +300,32 @@ describe("provider-free meal-plan tracer", () => {
     expect(draft._tag).toBe("Draft");
     const approved = await Effect.runPromise(tracer.service.approve(approve));
     const approveReplay = await Effect.runPromise(
-      tracer.service.approve(approve)
+      tracer.service.approve(
+        decodeDecision({
+          ...approve,
+          decidedAt: "2026-07-22T10:06:00.000Z",
+        })
+      )
     );
     expect(approved).toEqual(approveReplay);
     expect(approved).toMatchObject({ _tag: "Approved", revision: 1 });
+    expect(approved.decision.decidedAt).toEqual(approve.decidedAt);
+
+    const changedDecisionIntent = await Effect.runPromise(
+      Effect.flip(
+        tracer.service.approve(
+          decodeDecision({
+            ...approve,
+            decidedAt: "2026-07-22T10:06:00.000Z",
+            reason: "A materially different approval reason.",
+          })
+        )
+      )
+    );
+    expect(changedDecisionIntent).toMatchObject({
+      _tag: "MealPlanMutationConflict",
+      mutationId: "approve-synthetic-draft",
+    });
 
     const decisionCollision = await Effect.runPromise(
       Effect.flip(tracer.service.reject(approve))

@@ -23,6 +23,18 @@ const NonNegativeInteger = Schema.Number.pipe(
     Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
   )
 );
+const CalendarDate = Schema.String.pipe(
+  Schema.check(
+    Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u),
+    Schema.makeFilter((date) => {
+      const instant = new Date(`${date}T00:00:00.000Z`);
+      return !Number.isNaN(instant.getTime()) &&
+        instant.toISOString().slice(0, 10) === date
+        ? undefined
+        : "Expected a real calendar date";
+    })
+  )
+);
 
 export const MealPlanRecipeSnapshotId = Schema.String.pipe(
   Schema.check(Schema.isUUID()),
@@ -115,9 +127,7 @@ export const MealPlanMutationId = ShortIdentifier.pipe(
 export type MealPlanMutationId = typeof MealPlanMutationId.Type;
 
 export const MealPlanSlot = Schema.Struct({
-  date: Schema.String.pipe(
-    Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u))
-  ),
+  date: CalendarDate,
   mealType: MealPlanMealType,
   servings: PositiveInteger,
   slotId: MealPlanSlotId,
@@ -347,7 +357,7 @@ export type MealPlanPersistenceFailure = typeof MealPlanPersistenceFailure.Type;
 export const CreateMealPlanPayload = Schema.Struct({
   policy: MealPlanPolicy,
   request: MealPlanRequest,
-});
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type CreateMealPlanPayload = typeof CreateMealPlanPayload.Type;
 
 export const SwapMealPlanPayload = Schema.Struct({
@@ -356,12 +366,12 @@ export const SwapMealPlanPayload = Schema.Struct({
   reason: ShortText,
   replacementImportId: MealPlanRecipeSnapshotId,
   slotId: MealPlanSlotId,
-});
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type SwapMealPlanPayload = typeof SwapMealPlanPayload.Type;
 
 export const DecideMealPlanPayload = Schema.Struct({
   expectedRevision: NonNegativeInteger,
   mutationId: MealPlanMutationId,
   reason: ShortText,
-});
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type DecideMealPlanPayload = typeof DecideMealPlanPayload.Type;
