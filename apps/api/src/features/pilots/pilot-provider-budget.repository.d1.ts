@@ -210,28 +210,35 @@ const dispatchFromRow = (
   row: DispatchRow
 ): Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError> => {
   const replay = replayFromRow(row);
-  return isValidDispatchRow(row)
-    ? Effect.succeed({
-        actualCostMicroUsd: row.actual_cost_micro_usd,
-        ...(row.conservative_charge_micro_usd === null ||
-        row.conservative_charge_micro_usd === undefined
-          ? {}
-          : {
-              conservativeChargeMicroUsd: row.conservative_charge_micro_usd,
-            }),
-        ...(replay === undefined ? {} : { conservativeReplay: replay }),
-        dispatchId: row.dispatch_id,
-        maximumCostMicroUsd: row.maximum_cost_micro_usd,
-        providerStageId: row.provider_stage_id,
-        runId: row.run_id,
-        state:
-          row.state === "settled_unknown" &&
-          row.conservative_charge_micro_usd !== null &&
-          row.conservative_charge_micro_usd !== undefined
-            ? "settled_conservative"
-            : row.state,
-      })
-    : Effect.fail(pilotProviderBudgetError("persistence_corrupt"));
+  if (!isValidDispatchRow(row)) {
+    return Effect.fail(pilotProviderBudgetError("persistence_corrupt"));
+  }
+  let dispatch: PilotBudgetDispatch = {
+    actualCostMicroUsd: row.actual_cost_micro_usd,
+    dispatchId: row.dispatch_id,
+    maximumCostMicroUsd: row.maximum_cost_micro_usd,
+    providerStageId: row.provider_stage_id,
+    runId: row.run_id,
+    state:
+      row.state === "settled_unknown" &&
+      row.conservative_charge_micro_usd !== null &&
+      row.conservative_charge_micro_usd !== undefined
+        ? "settled_conservative"
+        : row.state,
+  };
+  if (
+    row.conservative_charge_micro_usd !== null &&
+    row.conservative_charge_micro_usd !== undefined
+  ) {
+    dispatch = {
+      ...dispatch,
+      conservativeChargeMicroUsd: row.conservative_charge_micro_usd,
+    };
+  }
+  if (replay !== undefined) {
+    dispatch = { ...dispatch, conservativeReplay: replay };
+  }
+  return Effect.succeed(dispatch);
 };
 
 const stageFromRow = (
@@ -257,18 +264,19 @@ const stageFromRow = (
   ) {
     return Effect.fail(pilotProviderBudgetError("persistence_corrupt"));
   }
-  return Effect.succeed({
+  let stage: PilotProviderStageBudget = {
     budgetCapMicroUsd: row.budget_cap_micro_usd,
-    ...(row.invoking_dispatch_id === null
-      ? {}
-      : { invokingDispatchId: row.invoking_dispatch_id }),
-    ...(row.poison_dispatch_id === null
-      ? {}
-      : { poisonDispatchId: row.poison_dispatch_id }),
     reservedMicroUsd: row.reserved_micro_usd,
     settledMicroUsd: row.settled_micro_usd,
     state: row.state,
-  });
+  };
+  if (row.invoking_dispatch_id !== null) {
+    stage = { ...stage, invokingDispatchId: row.invoking_dispatch_id };
+  }
+  if (row.poison_dispatch_id !== null) {
+    stage = { ...stage, poisonDispatchId: row.poison_dispatch_id };
+  }
+  return Effect.succeed(stage);
 };
 
 const ensureAllowedStage = (

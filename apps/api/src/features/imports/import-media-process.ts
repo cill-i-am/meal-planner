@@ -130,10 +130,9 @@ export const makeTemporaryArtifactStore = (
 const retryableProcess = (
   reason?: RetryableAcquisitionFailure["reason"]
 ): RetryableAcquisitionFailure =>
-  new RetryableAcquisitionError({
-    ...(reason === undefined ? {} : { reason }),
-    stage: "process",
-  });
+  new RetryableAcquisitionError(
+    reason === undefined ? { stage: "process" } : { reason, stage: "process" }
+  );
 const terminalProcess = (): TerminalMediaFailure =>
   new TerminalMediaError({ code: "invalid_media", stage: "process" });
 const limitExceeded = (): TerminalMediaFailure =>

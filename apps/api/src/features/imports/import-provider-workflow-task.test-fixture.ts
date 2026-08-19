@@ -43,6 +43,7 @@ import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.j
 import type { ProviderTaskCheckpoint } from "./import-provider-workflow-checkpoint.js";
 import type { ProviderTaskStage } from "./import-provider-workflow-task.js";
 import { runProviderTask } from "./import-provider-workflow-task.js";
+import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
 import {
   RecipeRecoveryAuthorization,
   recipeRecoveryAuthorizationEventType,
@@ -279,14 +280,7 @@ const installedRecipeConservativeDispatch = (
       dispatch,
       transport,
     });
-    const output = yield* extractor.extract({
-      ...(recovery
-        ? {
-            dispatchId: decodeDispatchId(
-              `recipe:${importId}:${generation}:${"e".repeat(64)}:recovery:1`
-            ),
-          }
-        : {}),
+    const extractionInput: RecipeEvidenceAssembly = {
       evidenceFingerprint: "e".repeat(64),
       generation,
       importId,
@@ -299,7 +293,17 @@ const installedRecipeConservativeDispatch = (
           value: "visible evidence",
         },
       ],
-    });
+    };
+    const output = yield* extractor.extract(
+      recovery
+        ? {
+            ...extractionInput,
+            dispatchId: decodeDispatchId(
+              `recipe:${importId}:${generation}:${"e".repeat(64)}:recovery:1`
+            ),
+          }
+        : extractionInput
+    );
     yield* increment(env, instanceId, "recipe-adapter-completions");
     if (
       output.cost.certainty !== "estimated" ||

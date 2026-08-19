@@ -217,40 +217,45 @@ export const metadataOnlyGatewayHeaders = (
     "content-type": "application/json",
   }) as const;
 
-const eventAnnotations = (event: ImportObservabilityEvent) => ({
-  ...(event.attempt === undefined ? {} : { attempt: event.attempt }),
-  correlationId: event.correlationId,
-  ...(event.decodeReason === undefined
-    ? {}
-    : { decodeReason: event.decodeReason }),
-  ...(event.decodeStage === undefined
-    ? {}
-    : { decodeStage: event.decodeStage }),
-  event: event.event,
-  ...(event.outcome === undefined ? {} : { outcome: event.outcome }),
-  ...(event.providerStage === undefined
-    ? {}
-    : { providerStage: event.providerStage }),
-  ...(event.reasonCode === undefined ? {} : { reasonCode: event.reasonCode }),
-  ...(event.speechEnvelopeFailure === undefined
-    ? {}
-    : { speechEnvelopeFailure: event.speechEnvelopeFailure }),
-  ...(event.speechEnvelopeFamily === undefined
-    ? {}
-    : { speechEnvelopeFamily: event.speechEnvelopeFamily }),
-  ...(event.speechEnvelopeUnsupportedLocation === undefined
-    ? {}
-    : {
-        speechEnvelopeUnsupportedLocation:
-          event.speechEnvelopeUnsupportedLocation,
-      }),
-  ...(event.speechEnvelopeUnsupportedRootProperty === undefined
-    ? {}
-    : {
-        speechEnvelopeUnsupportedRootProperty:
-          event.speechEnvelopeUnsupportedRootProperty,
-      }),
-});
+const eventAnnotations = (event: ImportObservabilityEvent) => {
+  const annotations: Record<string, number | string> = {
+    correlationId: event.correlationId,
+    event: event.event,
+  };
+  if (event.attempt !== undefined) {
+    annotations["attempt"] = event.attempt;
+  }
+  if (event.decodeReason !== undefined) {
+    annotations["decodeReason"] = event.decodeReason;
+  }
+  if (event.decodeStage !== undefined) {
+    annotations["decodeStage"] = event.decodeStage;
+  }
+  if (event.outcome !== undefined) {
+    annotations["outcome"] = event.outcome;
+  }
+  if (event.providerStage !== undefined) {
+    annotations["providerStage"] = event.providerStage;
+  }
+  if (event.reasonCode !== undefined) {
+    annotations["reasonCode"] = event.reasonCode;
+  }
+  if (event.speechEnvelopeFailure !== undefined) {
+    annotations["speechEnvelopeFailure"] = event.speechEnvelopeFailure;
+  }
+  if (event.speechEnvelopeFamily !== undefined) {
+    annotations["speechEnvelopeFamily"] = event.speechEnvelopeFamily;
+  }
+  if (event.speechEnvelopeUnsupportedLocation !== undefined) {
+    annotations["speechEnvelopeUnsupportedLocation"] =
+      event.speechEnvelopeUnsupportedLocation;
+  }
+  if (event.speechEnvelopeUnsupportedRootProperty !== undefined) {
+    annotations["speechEnvelopeUnsupportedRootProperty"] =
+      event.speechEnvelopeUnsupportedRootProperty;
+  }
+  return annotations;
+};
 
 /**
  * Emit only the closed, low-cardinality import event contract. The decoder

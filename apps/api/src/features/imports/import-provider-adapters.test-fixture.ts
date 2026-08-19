@@ -642,29 +642,31 @@ export const toolResponse = (
   name: string,
   value: Schema.Json,
   usage: Schema.Json | null = defaultVisualUsage
-) => ({
-  choices: [
-    {
-      finish_reason: "tool_calls",
-      message: {
-        content: null,
-        tool_calls: [
-          {
-            function: { arguments: JSON.stringify(value), name },
-            id: "call-1",
-            type: "function",
-          },
-        ],
+) => {
+  const response = {
+    choices: [
+      {
+        finish_reason: "tool_calls",
+        message: {
+          content: null,
+          tool_calls: [
+            {
+              function: { arguments: JSON.stringify(value), name },
+              id: "call-1",
+              type: "function",
+            },
+          ],
+        },
       },
-    },
-  ],
-  ...(usage === null ? {} : { usage }),
-});
+    ],
+  };
+  return usage === null ? response : { ...response, usage };
+};
 
 export const recipeJsonResponse = (
   value: Schema.Json,
   usage: Schema.Json | null = defaultVisualUsage
-) => ({
-  response: value,
-  ...(usage === null ? {} : { usage }),
-});
+) => {
+  const response = { response: value };
+  return usage === null ? response : { ...response, usage };
+};

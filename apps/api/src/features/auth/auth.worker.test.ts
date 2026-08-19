@@ -32,16 +32,20 @@ const authRequest = (
   path: string,
   body: Record<string, unknown>,
   cookie?: string
-) =>
-  new Request(`${baseURL}/api/auth${path}`, {
+) => {
+  const headers = new Headers({
+    "content-type": "application/json",
+    origin: baseURL,
+  });
+  if (cookie !== undefined) {
+    headers.set("cookie", cookie);
+  }
+  return new Request(`${baseURL}/api/auth${path}`, {
     body: JSON.stringify(body),
-    headers: {
-      "content-type": "application/json",
-      origin: baseURL,
-      ...(cookie === undefined ? {} : { cookie }),
-    },
+    headers,
     method: "POST",
   });
+};
 
 describe("Better Auth D1 control plane", () => {
   beforeAll(async () => {

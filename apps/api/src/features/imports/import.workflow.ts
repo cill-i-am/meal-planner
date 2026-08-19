@@ -198,12 +198,16 @@ const acquisitionOutcomeReasonCode = (
   outcome: AcquisitionTaskOutcome
 ): AcquisitionDiagnosticReasonCode | undefined => {
   if (outcome._tag === "RetryExhausted") {
-    return acquisitionFailureReasonCode({
+    const retry: ConfirmedAcquisitionRetry = {
       _tag: "ConfirmedAcquisitionRetry",
       generation: outcome.generation,
-      ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
       stage: outcome.stage,
-    });
+    };
+    return acquisitionFailureReasonCode(
+      outcome.reason === undefined
+        ? retry
+        : { ...retry, reason: outcome.reason }
+    );
   }
   if (outcome._tag === "TerminalMedia") {
     return outcome.code === "unsupported_streams"
@@ -352,12 +356,12 @@ export const runAcquisitionTask = <
               // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.mapError is a typed Effect combinator, not Promise callback control flow.
               (error): ConfirmedAcquisitionRetry => {
                 const reason = "reason" in error ? error.reason : undefined;
-                return {
+                const retry: ConfirmedAcquisitionRetry = {
                   _tag: "ConfirmedAcquisitionRetry",
                   generation: allocation.generation,
-                  ...(reason === undefined ? {} : { reason }),
                   stage: error.stage,
                 };
+                return reason === undefined ? retry : { ...retry, reason };
               }
             )
           )
@@ -417,24 +421,35 @@ export const runAcquisitionTask = <
     return runAttempt.pipe(
       Effect.retry({ schedule: TypedAcquisitionRetrySchedule }),
       Effect.matchEffect({
-        onFailure: (error) => {
+        onFailure: (
+          error
+        ): Effect.Effect<
+          AcquisitionTaskOutcome,
+          UnconfirmedAcquisitionRetry
+        > => {
           if (error._tag !== "ConfirmedAcquisitionRetry") {
             return Effect.fail(error);
           }
+          if (error.reason === "download_source_unavailable") {
+            return Effect.succeed({
+              _tag: "Unavailable" as const,
+              code: "private_or_unavailable" as const,
+              generation: error.generation,
+            });
+          }
           const outcome =
-            error.reason === "download_source_unavailable"
+            error.reason === undefined
               ? {
-                  _tag: "Unavailable" as const,
-                  code: "private_or_unavailable" as const,
+                  _tag: "RetryExhausted" as const,
+                  attempts: 3 as const,
                   generation: error.generation,
+                  stage: error.stage,
                 }
               : {
                   _tag: "RetryExhausted" as const,
                   attempts: 3 as const,
                   generation: error.generation,
-                  ...(error.reason === undefined
-                    ? {}
-                    : { reason: error.reason }),
+                  reason: error.reason,
                   stage: error.stage,
                 };
           return Effect.succeed(outcome);

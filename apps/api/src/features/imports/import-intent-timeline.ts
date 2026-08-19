@@ -156,14 +156,13 @@ export const projectImportIntentHistoryRow = (
       );
     }
     case "retrying": {
+      const retrying = { ...common, type: row.eventType };
       return Option.some(
-        decodeEvent({
-          ...common,
-          ...(row.publicNextAttemptAt === null
-            ? {}
-            : { nextAttemptAt: row.publicNextAttemptAt }),
-          type: row.eventType,
-        })
+        decodeEvent(
+          row.publicNextAttemptAt === null
+            ? retrying
+            : { ...retrying, nextAttemptAt: row.publicNextAttemptAt }
+        )
       );
     }
     case "recovered":

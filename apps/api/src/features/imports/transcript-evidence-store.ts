@@ -94,10 +94,9 @@ const failure = (
   code: TranscriptEvidenceStoreError["code"],
   reasonCode?: ProviderTaskDiagnosticReasonCodeType
 ) =>
-  new TranscriptEvidenceStoreError({
-    code,
-    ...(reasonCode === undefined ? {} : { reasonCode }),
-  });
+  new TranscriptEvidenceStoreError(
+    reasonCode === undefined ? { code } : { code, reasonCode }
+  );
 const transcriptObjectKey = (
   importId: ImportId,
   generation: AcquisitionGeneration

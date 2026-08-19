@@ -114,14 +114,18 @@ export const seedResolvedTestImportExecution = async (input: {
   const repository = makeD1ImportRepository(input.database, () =>
     Date.parse(updatedAt)
   );
+  const admission = {
+    canonicalId: input.canonicalId,
+    importId: input.importId,
+    repository,
+    sourceKind: input.sourceKind ?? "video",
+  };
   await Effect.runPromise(
-    admitResolvedTestImport({
-      canonicalId: input.canonicalId,
-      importId: input.importId,
-      repository,
-      sourceKind: input.sourceKind ?? "video",
-      ...(input.trace === undefined ? {} : { trace: input.trace }),
-    })
+    admitResolvedTestImport(
+      input.trace === undefined
+        ? admission
+        : { ...admission, trace: input.trace }
+    )
   );
   const statusCode = "code" in input.status ? input.status.code : null;
   const recoveryAction =

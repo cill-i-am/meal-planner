@@ -161,13 +161,18 @@ const fetchManual = (
 ) =>
   Effect.tryPromise({
     catch: unavailable,
-    try: (signal) =>
-      fetcher(input, {
-        ...(headers === undefined ? {} : { headers }),
-        method: "GET",
-        redirect: "manual",
-        signal,
-      }),
+    try: (signal) => {
+      const request =
+        headers === undefined
+          ? { method: "GET" as const, redirect: "manual" as const, signal }
+          : {
+              headers,
+              method: "GET" as const,
+              redirect: "manual" as const,
+              signal,
+            };
+      return fetcher(input, request);
+    },
   });
 
 const withDeadline = <A>(

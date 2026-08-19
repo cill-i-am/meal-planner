@@ -43,11 +43,10 @@ export interface SpeechPipelineFailure {
 const pipelineFailure = (
   code: SpeechPipelineFailure["code"],
   reasonCode?: ProviderTaskDiagnosticReasonCode
-): SpeechPipelineFailure => ({
-  _tag: "SpeechPipelineFailure",
-  code,
-  ...(reasonCode === undefined ? {} : { reasonCode }),
-});
+): SpeechPipelineFailure =>
+  reasonCode === undefined
+    ? { _tag: "SpeechPipelineFailure", code }
+    : { _tag: "SpeechPipelineFailure", code, reasonCode };
 
 const bytesToHex = (value: ArrayBuffer) =>
   Array.from(new Uint8Array(value), (byte) =>

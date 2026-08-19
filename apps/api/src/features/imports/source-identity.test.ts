@@ -501,33 +501,30 @@ describe("TikTok canonical identity", () => {
           );
         }
 
+        let streamSource: UnderlyingSource<Uint8Array> = {
+          cancel: () => {
+            cancelCalls += 1;
+            return neverSettlingCancellation.promise;
+          },
+        };
+        if (oversizePath === "streamed") {
+          streamSource = {
+            ...streamSource,
+            start: (controller) => {
+              controller.enqueue(new Uint8Array(512 * 1024));
+              controller.enqueue(new Uint8Array([1]));
+            },
+          };
+        }
         return resolvedResponse(
-          new Response(
-            new ReadableStream<Uint8Array>({
-              cancel: () => {
-                cancelCalls += 1;
-                return neverSettlingCancellation.promise;
-              },
-              ...(oversizePath === "streamed"
-                ? {
-                    start: (
-                      controller: ReadableStreamDefaultController<Uint8Array>
-                    ) => {
-                      controller.enqueue(new Uint8Array(512 * 1024));
-                      controller.enqueue(new Uint8Array([1]));
-                    },
-                  }
-                : {}),
-            }),
-            {
-              headers: {
-                "content-length":
-                  oversizePath === "declared" ? String(512 * 1024 + 1) : "0",
-                "content-type": "text/html; charset=utf-8",
-              },
-              status: 200,
-            }
-          )
+          new Response(new ReadableStream<Uint8Array>(streamSource), {
+            headers: {
+              "content-length":
+                oversizePath === "declared" ? String(512 * 1024 + 1) : "0",
+              "content-type": "text/html; charset=utf-8",
+            },
+            status: 200,
+          })
         );
       });
 

@@ -93,14 +93,20 @@ const pipelineFailure = (
   code: RecipeDraftPipelineFailure["code"],
   reasonCode?: ProviderTaskDiagnosticReasonCode,
   evidenceStoreFailureCode?: EvidenceStoreFailureCode
-): RecipeDraftPipelineFailure =>
-  new RecipeDraftPipelineFailure({
-    code,
-    ...(reasonCode === undefined ? {} : { reasonCode }),
-    ...(evidenceStoreFailureCode === undefined
-      ? {}
-      : { evidenceStoreFailureCode }),
-  });
+): RecipeDraftPipelineFailure => {
+  if (reasonCode === undefined) {
+    return evidenceStoreFailureCode === undefined
+      ? new RecipeDraftPipelineFailure({ code })
+      : new RecipeDraftPipelineFailure({ code, evidenceStoreFailureCode });
+  }
+  return evidenceStoreFailureCode === undefined
+    ? new RecipeDraftPipelineFailure({ code, reasonCode })
+    : new RecipeDraftPipelineFailure({
+        code,
+        evidenceStoreFailureCode,
+        reasonCode,
+      });
+};
 
 const transcriptEvidenceReason = (error: {
   readonly reasonCode?: string;
@@ -540,7 +546,7 @@ interface RecipeDraftClaimContext {
   readonly extractionFingerprint: string;
 }
 
-interface ProduceRecipeDraftFromEvidenceInput {
+export interface ProduceRecipeDraftFromEvidenceInput {
   readonly assembly: RecipeEvidenceAssembly;
   readonly claim: (
     context: RecipeDraftClaimContext
@@ -758,19 +764,22 @@ export const produceRecipeDraftForImport = Effect.fn(
     );
   }
   const transcript = yield* TranscriptEvidenceStore.pipe(
-    Effect.flatMap((store) =>
-      store.readVerified({
+    Effect.flatMap((store) => {
+      const readInput = {
         dispatchId: `speech:${input.importId}:${evidence.generation}`,
         generation: evidence.generation,
         importId: input.importId,
-        ...(input.recovery === undefined
-          ? {}
-          : {
-              recoverySha256: input.recovery.transcriptSha256,
-            }),
         sourceMediaSha256: evidence.sha256,
-      })
-    ),
+      };
+      return store.readVerified(
+        input.recovery === undefined
+          ? readInput
+          : {
+              ...readInput,
+              recoverySha256: input.recovery.transcriptSha256,
+            }
+      );
+    }),
     Effect.provide(TranscriptEvidenceStoreLive(input.bucket)),
     Effect.mapError((error) =>
       pipelineFailure(
@@ -781,20 +790,23 @@ export const produceRecipeDraftForImport = Effect.fn(
     )
   );
   const visual = yield* VisualEvidenceStore.pipe(
-    Effect.flatMap((store) =>
-      store.readVerified({
+    Effect.flatMap((store) => {
+      const readInput = {
         dispatchId: `visual:${input.importId}:${evidence.generation}`,
         generation: evidence.generation,
         importId: input.importId,
-        ...(input.recovery === undefined
-          ? {}
-          : {
-              recoverySha256: input.recovery.visualManifestSha256,
-            }),
         sourceEvidenceDeleteAt: evidence.deleteAt,
         sourceMediaSha256: evidence.sha256,
-      })
-    ),
+      };
+      return store.readVerified(
+        input.recovery === undefined
+          ? readInput
+          : {
+              ...readInput,
+              recoverySha256: input.recovery.visualManifestSha256,
+            }
+      );
+    }),
     Effect.provide(VisualEvidenceStoreLive(input.bucket)),
     Effect.mapError((error) =>
       pipelineFailure(
@@ -852,7 +864,7 @@ export const produceRecipeDraftForImport = Effect.fn(
       pipelineFailure("source_evidence_invalid", "source_metadata_missing")
     );
   }
-  return yield* produceRecipeDraftFromEvidence({
+  const draftInput: ProduceRecipeDraftFromEvidenceInput = {
     assembly: dispatchedAssembly,
     claim: ({ descriptor, evidenceFingerprint, extractionFingerprint }) =>
       input.recipeRepository.claim({
@@ -867,13 +879,21 @@ export const produceRecipeDraftForImport = Effect.fn(
         visualManifestSha256: visual.value.sha256,
       }),
     extractor: input.extractor,
-    ...(input.lifecycle === undefined ? {} : { lifecycle: input.lifecycle }),
-    ...(input.recovery === undefined
-      ? {}
-      : { extractionFingerprint: input.recovery.extractionFingerprint }),
     now,
     recipeRepository: input.recipeRepository,
     source,
     transcript: { route: "video_v1" },
-  });
+  };
+  const lifecycleInput =
+    input.lifecycle === undefined
+      ? draftInput
+      : { ...draftInput, lifecycle: input.lifecycle };
+  return yield* produceRecipeDraftFromEvidence(
+    input.recovery === undefined
+      ? lifecycleInput
+      : {
+          ...lifecycleInput,
+          extractionFingerprint: input.recovery.extractionFingerprint,
+        }
+  );
 });
