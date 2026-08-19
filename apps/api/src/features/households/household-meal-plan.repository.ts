@@ -22,6 +22,13 @@ const EncodedMealPlan = Schema.fromJsonString(MealPlan);
 
 const encodePlan = Schema.encodeSync(EncodedMealPlan);
 const MaximumPersistedMealPlanBytes = 1_900_000;
+// A terminal decision can add up to 26,112 bytes when its 4,096-character
+// reason and two 128-character identifiers all require six-byte JSON escapes.
+// The remaining 6,656 bytes cover keys, quotes, lifecycle-tag growth, the
+// decision timestamp, and UTF-8 overhead.
+const TerminalDecisionHeadroomBytes = 32_768;
+const MaximumPersistedDraftBytes =
+  MaximumPersistedMealPlanBytes - TerminalDecisionHeadroomBytes;
 const utf8Encoder = new TextEncoder();
 
 const persistenceFailure = (
@@ -33,7 +40,11 @@ const encodePersistablePlan = (
   operation: "create" | "save"
 ): Effect.Effect<string, MealPlanPersistenceFailure> => {
   const encoded = encodePlan(plan);
-  return utf8Encoder.encode(encoded).byteLength <= MaximumPersistedMealPlanBytes
+  const maximumBytes =
+    plan._tag === "Draft"
+      ? MaximumPersistedDraftBytes
+      : MaximumPersistedMealPlanBytes;
+  return utf8Encoder.encode(encoded).byteLength <= maximumBytes
     ? Effect.succeed(encoded)
     : Effect.fail(persistenceFailure(operation));
 };

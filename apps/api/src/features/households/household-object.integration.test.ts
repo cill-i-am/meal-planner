@@ -196,6 +196,7 @@ const makeLargeApprovedRecipe = (input: {
   readonly character: string;
   readonly importId: string;
   readonly ingredientLineCount: number;
+  readonly recipeNameLength?: number;
 }) => {
   const base = approvedRecipes.at(0);
   if (base === undefined) {
@@ -210,6 +211,10 @@ const makeLargeApprovedRecipe = (input: {
       ingredientLines: Array.from({ length: input.ingredientLineCount }, () =>
         input.character.repeat(4096)
       ),
+      name:
+        input.recipeNameLength === undefined
+          ? base.recipe.name
+          : input.character.repeat(input.recipeNameLength),
     },
     source: {
       ...base.source,
@@ -437,6 +442,40 @@ describe("household Durable Object", () => {
     ).toEqual({ ok: true, value: null });
   });
 
+  it("rejects a draft that cannot reserve a terminal decision", async () => {
+    const objectName = "household:v1:organization-terminal-headroom";
+    const organizationId = "organization-terminal-headroom";
+    const request = makeMaximumSlotRequest("terminal-headroom");
+    const created = await createMealPlan(objectName, organizationId, {
+      approvedRecipes: [
+        makeLargeApprovedRecipe({
+          character: "h",
+          importId: "018f47ad-91aa-7c35-b6fe-000000000505",
+          ingredientLineCount: 14,
+          recipeNameLength: 2500,
+        }),
+      ],
+      policy: makeRepeatedRecipePolicy(),
+      request,
+    });
+
+    if (created.ok) {
+      expect(jsonByteLength(created.value)).toBeGreaterThan(1_867_232);
+      expect(jsonByteLength(created.value)).toBeLessThanOrEqual(1_900_000);
+    }
+    expect(created).toMatchObject({
+      error: { _tag: "MealPlanPersistenceFailure", operation: "create" },
+      ok: false,
+    });
+    expect(
+      await readMaybeMealPlan(
+        objectName,
+        organizationId,
+        `draft-${request.requestKey}`
+      )
+    ).toEqual({ ok: true, value: null });
+  });
+
   it("persists a valid encoded plan near the conservative size limit", async () => {
     const objectName = "household:v1:organization-near-limit-create";
     const organizationId = "organization-near-limit-create";
@@ -468,9 +507,106 @@ describe("household Durable Object", () => {
     ).toEqual(created);
   });
 
-  it("preserves the last valid draft when repeated swaps reach the size limit", async () => {
-    const objectName = "household:v1:organization-large-swap-audit";
-    const organizationId = "organization-large-swap-audit";
+  it("keeps every accepted near-limit draft terminalizable", async () => {
+    const approvalObjectName = "household:v1:organization-near-limit-approval";
+    const approvalOrganizationId = "organization-near-limit-approval";
+    const approvalRequest = makeMaximumSlotRequest("near-limit-approval");
+    const rejectionObjectName =
+      "household:v1:organization-near-limit-rejection";
+    const rejectionOrganizationId = "organization-near-limit-rejection";
+    const rejectionRequest = makeMaximumSlotRequest("near-limit-rejection");
+    const nearLimitRecipe = makeLargeApprovedRecipe({
+      character: "t",
+      importId: "018f47ad-91aa-7c35-b6fe-000000000506",
+      ingredientLineCount: 14,
+      recipeNameLength: 1700,
+    });
+    const [approvalCreated, rejectionCreated] = await Promise.all([
+      createMealPlan(approvalObjectName, approvalOrganizationId, {
+        approvedRecipes: [nearLimitRecipe],
+        policy: makeRepeatedRecipePolicy(),
+        request: approvalRequest,
+      }),
+      createMealPlan(rejectionObjectName, rejectionOrganizationId, {
+        approvedRecipes: [nearLimitRecipe],
+        policy: makeRepeatedRecipePolicy(),
+        request: rejectionRequest,
+      }),
+    ]);
+    if (!approvalCreated.ok || !rejectionCreated.ok) {
+      throw new Error("Expected both near-limit drafts to persist.");
+    }
+    expect(jsonByteLength(approvalCreated.value)).toBeGreaterThan(1_860_000);
+    expect(jsonByteLength(approvalCreated.value)).toBeLessThanOrEqual(
+      1_867_232
+    );
+    expect(jsonByteLength(rejectionCreated.value)).toBeGreaterThan(1_860_000);
+    expect(jsonByteLength(rejectionCreated.value)).toBeLessThanOrEqual(
+      1_867_232
+    );
+
+    const maximumEscapedReason = "\u0001".repeat(4096);
+    const [approved, rejected] = await Promise.all([
+      mutateMealPlan({
+        objectName: approvalObjectName,
+        operation: "approveMealPlan",
+        organizationId: approvalOrganizationId,
+        request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
+          actorId: "a".repeat(128),
+          decidedAt: "2026-08-01T12:30:00.000Z",
+          draftId: approvalCreated.value.draftId,
+          expectedRevision: approvalCreated.value.revision,
+          mutationId: "p".repeat(128),
+          reason: maximumEscapedReason,
+        }),
+      }),
+      mutateMealPlan({
+        objectName: rejectionObjectName,
+        operation: "rejectMealPlan",
+        organizationId: rejectionOrganizationId,
+        request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
+          actorId: "a".repeat(128),
+          decidedAt: "2026-08-01T12:30:00.000Z",
+          draftId: rejectionCreated.value.draftId,
+          expectedRevision: rejectionCreated.value.revision,
+          mutationId: "r".repeat(128),
+          reason: maximumEscapedReason,
+        }),
+      }),
+    ]);
+
+    expect(approved).toMatchObject({
+      ok: true,
+      value: { _tag: "Approved" },
+    });
+    expect(rejected).toMatchObject({
+      ok: true,
+      value: { _tag: "Rejected" },
+    });
+    if (!approved.ok || !rejected.ok) {
+      throw new Error(
+        "Expected both near-limit terminal decisions to persist."
+      );
+    }
+    expect(jsonByteLength(approved.value)).toBeLessThanOrEqual(1_900_000);
+    expect(jsonByteLength(rejected.value)).toBeLessThanOrEqual(1_900_000);
+    expect(
+      await readMealPlan(
+        approvalObjectName,
+        approvalOrganizationId,
+        approvalCreated.value.draftId
+      )
+    ).toEqual(approved);
+    expect(
+      await readMealPlan(
+        rejectionObjectName,
+        rejectionOrganizationId,
+        rejectionCreated.value.draftId
+      )
+    ).toEqual(rejected);
+  }, 20_000);
+
+  it("keeps swap-grown drafts terminalizable after rejecting an oversized mutation", async () => {
     const largeRecipes = [
       makeLargeApprovedRecipe({
         character: "a",
@@ -483,85 +619,172 @@ describe("household Durable Object", () => {
         ingredientLineCount: 16,
       }),
     ];
-    const created = await createMealPlan(objectName, organizationId, {
-      approvedRecipes: largeRecipes,
-      request: makeSingleDinnerRequest("large-swap-audit"),
-    });
-    if (!created.ok) {
-      throw new Error("Expected the large swap-audit fixture to be created.");
-    }
-
-    const swapUntilRejected = async (
-      lastValid: SuccessfulMealPlanResponse,
-      index: number
-    ): Promise<{
-      readonly lastValid: SuccessfulMealPlanResponse;
-      readonly rejected: FailedMealPlanResponse;
-    }> => {
-      if (index >= 20) {
-        throw new Error("Expected repeated swaps to reach the size limit.");
-      }
-      const currentRecipeId = lastValid.value.meals[0]?.sourceRecipe.importId;
-      const replacement = largeRecipes.find(
-        ({ importId }) => importId !== currentRecipeId
+    const growUntilRejected = async (input: {
+      readonly objectName: string;
+      readonly organizationId: string;
+      readonly requestKey: string;
+    }) => {
+      const created = await createMealPlan(
+        input.objectName,
+        input.organizationId,
+        {
+          approvedRecipes: largeRecipes,
+          request: makeSingleDinnerRequest(input.requestKey),
+        }
       );
-      if (replacement === undefined) {
-        throw new Error("Expected an alternate large recipe fixture.");
+      if (!created.ok) {
+        throw new Error("Expected the large swap-audit fixture to be created.");
       }
-      const result = await mutateMealPlan({
-        approvedRecipes: largeRecipes,
-        objectName,
-        operation: "swapMealPlan",
-        organizationId,
-        request: Schema.decodeUnknownSync(ManualMealSwapRequestWire)({
+      const swapUntilRejected = async (
+        lastValid: SuccessfulMealPlanResponse,
+        index: number
+      ): Promise<{
+        readonly lastValid: SuccessfulMealPlanResponse;
+        readonly rejected: FailedMealPlanResponse;
+        readonly rejectedRequest: typeof ManualMealSwapRequestWire.Type;
+      }> => {
+        if (index >= 20) {
+          throw new Error("Expected repeated swaps to reach the size limit.");
+        }
+        const currentRecipeId = lastValid.value.meals[0]?.sourceRecipe.importId;
+        const replacement = largeRecipes.find(
+          ({ importId }) => importId !== currentRecipeId
+        );
+        if (replacement === undefined) {
+          throw new Error("Expected an alternate large recipe fixture.");
+        }
+        const request = Schema.decodeUnknownSync(ManualMealSwapRequestWire)({
           actorId: "actor-large-audit",
           draftId: created.value.draftId,
           expectedRevision: lastValid.value.revision,
-          mutationId: `large-swap-${index}`,
+          mutationId: `${input.requestKey}-swap-${index}`,
           reason: "Exercise the persisted audit size boundary.",
           replacementImportId: replacement.importId,
           slotId: "large-audit-dinner",
           swappedAt: "2026-08-01T12:00:00.000Z",
-        }),
-      });
-      if (!result.ok) {
-        return { lastValid, rejected: result };
-      }
-      return swapUntilRejected(result, index + 1);
+        });
+        const result = await mutateMealPlan({
+          approvedRecipes: largeRecipes,
+          objectName: input.objectName,
+          operation: "swapMealPlan",
+          organizationId: input.organizationId,
+          request,
+        });
+        if (!result.ok) {
+          return { lastValid, rejected: result, rejectedRequest: request };
+        }
+        return swapUntilRejected(result, index + 1);
+      };
+      return {
+        created,
+        ...(await swapUntilRejected(created, 0)),
+      };
     };
 
-    const { lastValid, rejected } = await swapUntilRejected(created, 0);
+    const approvalInput = {
+      objectName: "household:v1:organization-large-swap-approval",
+      organizationId: "organization-large-swap-approval",
+      requestKey: "large-swap-approval",
+    };
+    const rejectionInput = {
+      objectName: "household:v1:organization-large-swap-rejection",
+      organizationId: "organization-large-swap-rejection",
+      requestKey: "large-swap-rejection",
+    };
+    const [approvalScenario, rejectionScenario] = await Promise.all([
+      growUntilRejected(approvalInput),
+      growUntilRejected(rejectionInput),
+    ]);
 
-    expect(lastValid.value.audit.length).toBeGreaterThan(1);
-    expect(failureTag(rejected)).toBe("MealPlanPersistenceFailure");
+    expect(approvalScenario.lastValid.value.audit.length).toBeGreaterThan(1);
+    expect(rejectionScenario.lastValid.value.audit.length).toBeGreaterThan(1);
+    expect(failureTag(approvalScenario.rejected)).toBe(
+      "MealPlanPersistenceFailure"
+    );
+    expect(failureTag(rejectionScenario.rejected)).toBe(
+      "MealPlanPersistenceFailure"
+    );
+
+    const replayRejectedSwap = (input: {
+      readonly objectName: string;
+      readonly organizationId: string;
+      readonly request: typeof ManualMealSwapRequestWire.Type;
+    }) =>
+      mutateMealPlan({
+        approvedRecipes: largeRecipes,
+        objectName: input.objectName,
+        operation: "swapMealPlan",
+        organizationId: input.organizationId,
+        request: input.request,
+      });
+    const [approvalReplay, rejectionReplay] = await Promise.all([
+      replayRejectedSwap({
+        ...approvalInput,
+        request: approvalScenario.rejectedRequest,
+      }),
+      replayRejectedSwap({
+        ...rejectionInput,
+        request: rejectionScenario.rejectedRequest,
+      }),
+    ]);
+    expect(failureTag(approvalReplay)).toBe("MealPlanPersistenceFailure");
+    expect(failureTag(rejectionReplay)).toBe("MealPlanPersistenceFailure");
 
     await runtime.dispose();
     runtime = makeRuntime();
-    const persisted = await readMealPlan(
-      objectName,
-      organizationId,
-      created.value.draftId
-    );
-    expect(persisted).toEqual(lastValid);
+    const [approvalPersisted, rejectionPersisted] = await Promise.all([
+      readMealPlan(
+        approvalInput.objectName,
+        approvalInput.organizationId,
+        approvalScenario.created.value.draftId
+      ),
+      readMealPlan(
+        rejectionInput.objectName,
+        rejectionInput.organizationId,
+        rejectionScenario.created.value.draftId
+      ),
+    ]);
+    expect(approvalPersisted).toEqual(approvalScenario.lastValid);
+    expect(rejectionPersisted).toEqual(rejectionScenario.lastValid);
 
-    const approved = await mutateMealPlan({
-      objectName,
-      operation: "approveMealPlan",
-      organizationId,
-      request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
-        actorId: "actor-large-audit",
-        decidedAt: "2026-08-01T12:30:00.000Z",
-        draftId: created.value.draftId,
-        expectedRevision: lastValid.value.revision,
-        mutationId: "approve-after-size-rejection",
-        reason: "Approve the last valid draft.",
+    const maximumEscapedReason = "\u0001".repeat(4096);
+    const [approved, rejected] = await Promise.all([
+      mutateMealPlan({
+        objectName: approvalInput.objectName,
+        operation: "approveMealPlan",
+        organizationId: approvalInput.organizationId,
+        request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
+          actorId: "a".repeat(128),
+          decidedAt: "2026-08-01T12:30:00.000Z",
+          draftId: approvalScenario.created.value.draftId,
+          expectedRevision: approvalScenario.lastValid.value.revision,
+          mutationId: "p".repeat(128),
+          reason: maximumEscapedReason,
+        }),
       }),
-    });
+      mutateMealPlan({
+        objectName: rejectionInput.objectName,
+        operation: "rejectMealPlan",
+        organizationId: rejectionInput.organizationId,
+        request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
+          actorId: "a".repeat(128),
+          decidedAt: "2026-08-01T12:30:00.000Z",
+          draftId: rejectionScenario.created.value.draftId,
+          expectedRevision: rejectionScenario.lastValid.value.revision,
+          mutationId: "r".repeat(128),
+          reason: maximumEscapedReason,
+        }),
+      }),
+    ]);
     expect(approved).toMatchObject({
       ok: true,
       value: { _tag: "Approved" },
     });
-  }, 20_000);
+    expect(rejected).toMatchObject({
+      ok: true,
+      value: { _tag: "Rejected" },
+    });
+  }, 30_000);
 
   it("replays an identical create and rejects a changed request with the same key", async () => {
     const objectName = "household:v1:organization-create-replay";

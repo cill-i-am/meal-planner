@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
-import { CreateMealPlanPayload, MealPlan } from "@meal-planner/household-api";
+import {
+  CreateMealPlanPayload,
+  MealPlan,
+  SwapMealPlanPayload,
+} from "@meal-planner/household-api";
 import * as Bundle from "alchemy/Bundle";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
@@ -14,6 +18,15 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
+import { AcquisitionGeneration } from "../imports/import-media.model.js";
+import { RecipeDraft } from "../imports/import-recipe-draft.repository.d1.js";
+import { ImportId } from "../imports/import.contracts.js";
+import {
+  importRecipeExtractions,
+  recipeImports,
+  recipeReviews,
+  recipeReviewTransitions,
+} from "../imports/import.database-schema.js";
 import { HouseholdMetadata } from "./household.contract.js";
 
 const compatibilityDate = "2026-07-14";
@@ -58,6 +71,109 @@ const createPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
     ],
   },
 });
+const recipeAuthorityInstant = "2026-08-19T12:00:00.000Z";
+const recipeTags = {
+  cuisines: ["Irish"],
+  dietaryFit: "household_match",
+  difficulty: "easy",
+  leftovers: "one_meal",
+  mealTypes: ["dinner"],
+  totalTimeBand: "under_30_minutes",
+} as const;
+
+const recipeCitation = {
+  citations: [
+    {
+      confidence: 1,
+      evidenceId: "caption:boundary-authority",
+      origin: "creator_provided" as const,
+    },
+  ],
+  origin: "creator_provided" as const,
+  state: "supported" as const,
+};
+const supportedString = (value: string) => ({ ...recipeCitation, value });
+const supportedNumber = (value: number) => ({ ...recipeCitation, value });
+const supportedList = (values: readonly string[]) => ({
+  items: values.map(supportedString),
+  state: "supported" as const,
+});
+const unresolved = (reason: string) => ({
+  citations: [] as const,
+  origin: "unresolved" as const,
+  reason,
+  state: "unresolved" as const,
+});
+
+const hashOrganizationId = async (organizationId: string): Promise<string> => {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(organizationId)
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+};
+
+const makeRecipeDraft = (input: {
+  readonly extractionFingerprint: string;
+  readonly importId: typeof ImportId.Type;
+  readonly name: string;
+  readonly sourceUrl: string;
+}) =>
+  Schema.decodeUnknownSync(RecipeDraft)({
+    createdAt: recipeAuthorityInstant,
+    evidenceFingerprint: input.extractionFingerprint.replaceAll("0", "e"),
+    extraction: {
+      author: supportedString("Boundary Fixture Cook"),
+      category: supportedString("Dinner"),
+      cookTimeMinutes: supportedNumber(10),
+      cost: {
+        certainty: "known",
+        currency: "USD",
+        estimatedMicroUsd: 0,
+      },
+      cuisine: supportedString("Irish"),
+      description: supportedString("A boundary-owned approved recipe."),
+      ingredientLines: supportedList(["1 onion", "2 tomatoes"]),
+      instructions: supportedList([
+        "Chop the onion.",
+        "Simmer for 10 minutes.",
+      ]),
+      name: supportedString(input.name),
+      nutrition: unresolved("Nutrition was not stated."),
+      prepTimeMinutes: supportedNumber(5),
+      sourceUrl: supportedString(input.sourceUrl),
+      supportedClaims: supportedList(["Simmer for 10 minutes."]),
+      temperatureCelsius: unresolved("Temperature was not stated."),
+      tools: supportedList(["Saucepan"]),
+      totalTimeMinutes: supportedNumber(15),
+      unresolvedFields: [
+        "nutrition",
+        "temperature_celsius",
+        "ingredient_quantities",
+        "ingredient_units",
+      ],
+      usage: {
+        inputEvidenceItems: 1,
+        inputTokens: 0,
+        latencyMilliseconds: 0,
+        modelCalls: 1,
+        outputTokens: 0,
+      },
+      yield: supportedString("2 servings"),
+    },
+    extractionFingerprint: input.extractionFingerprint,
+    extractor: {
+      model: "boundary-authority-v1",
+      provider: "deterministic_fake",
+      version: "schema-1",
+    },
+    generation: Schema.decodeUnknownSync(AcquisitionGeneration)(1),
+    importId: input.importId,
+    lifecycle: "needs_review",
+    schemaVersion: 1,
+  });
 
 const bundleText = (content: string | Uint8Array<ArrayBufferLike>): string =>
   Schema.is(Schema.String)(content)
@@ -155,6 +271,128 @@ const applyDomainMigrations = async (database: MiniflareD1Database) => {
         .bind(migration.name),
     ])
   );
+};
+
+const seedApprovedRecipeAuthority = async (
+  database: MiniflareD1Database,
+  organizationId: string
+) => {
+  const client = drizzle(database);
+  const householdScopeId = await hashOrganizationId(organizationId);
+  const approvedRecipes = Array.from({ length: 129 }, (_, index) => {
+    const importId = Schema.decodeUnknownSync(ImportId)(
+      `30000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`
+    );
+    const extractionFingerprint = index.toString(16).padStart(64, "0");
+    const sourceUrl = `https://www.tiktok.com/@fixture/video/7530000000000000${index.toString().padStart(3, "0")}`;
+    const draft = makeRecipeDraft({
+      extractionFingerprint,
+      importId,
+      name: `Boundary Approved Recipe ${index}`,
+      sourceUrl,
+    });
+    const evidence = [
+      {
+        kind: "original_media",
+        referenceId: `imports/${importId}/acquisition/v1/generations/1/original.mp4`,
+      },
+      {
+        kind: "acquisition_manifest",
+        referenceId: `imports/${importId}/acquisition/v1/generations/1/manifest.json`,
+      },
+      {
+        kind: "speech_transcript",
+        referenceId: `imports/${importId}/transcription/v1/generations/1/transcript.json`,
+      },
+    ];
+    return {
+      draft,
+      evidence,
+      extractionFingerprint,
+      importId,
+      sourceUrl,
+    };
+  });
+
+  await Promise.all(
+    approvedRecipes.map(({ evidence, importId, sourceUrl }) =>
+      client.insert(recipeImports).values({
+        acquisitionGeneration: 1,
+        actorId: "a".repeat(64),
+        correlationId: "11111111-1111-4111-8111-111111111111",
+        createdAt: recipeAuthorityInstant,
+        evidenceReferencesJson: JSON.stringify(evidence),
+        executionGeneration: 1,
+        householdScopeId,
+        id: importId,
+        publicActivity: "working",
+        publicSourceKind: "video",
+        publicSourceUrl: sourceUrl,
+        publicStage: "preparing_review",
+        publicStageStartedAt: recipeAuthorityInstant,
+        publicStatus: "processing",
+        resolvedCanonicalSourceId: importId,
+        sourceKind: "tiktok",
+        status: "transcribed",
+        submittedSourceUrl: sourceUrl,
+        updatedAt: recipeAuthorityInstant,
+      })
+    )
+  );
+  await Promise.all(
+    approvedRecipes.map(({ draft, extractionFingerprint, importId }) =>
+      client.insert(importRecipeExtractions).values({
+        acquisitionGeneration: 1,
+        completedAt: recipeAuthorityInstant,
+        costCertainty: "known",
+        costCurrency: "USD",
+        createdAt: recipeAuthorityInstant,
+        draftJson: JSON.stringify(Schema.encodeSync(RecipeDraft)(draft)),
+        estimatedCostMicroUsd: 0,
+        evidenceFingerprint: draft.evidenceFingerprint,
+        extractionFingerprint,
+        extractorModel: "boundary-authority-v1",
+        extractorProvider: "deterministic_fake",
+        extractorVersion: "schema-1",
+        importId,
+        inputEvidenceItems: 1,
+        inputTokens: 0,
+        isCurrent: 1,
+        latencyMilliseconds: 0,
+        modelCalls: 1,
+        outputTokens: 0,
+        state: "needs_review",
+        updatedAt: recipeAuthorityInstant,
+      })
+    )
+  );
+  await Promise.all(
+    approvedRecipes.map(({ extractionFingerprint }) =>
+      client.insert(recipeReviews).values({
+        createdAt: recipeAuthorityInstant,
+        extractionFingerprint,
+        lifecycle: "approved",
+        tagsJson: JSON.stringify(recipeTags),
+        updatedAt: recipeAuthorityInstant,
+        version: 1,
+      })
+    )
+  );
+  await Promise.all(
+    approvedRecipes.map(({ extractionFingerprint }) =>
+      client.insert(recipeReviewTransitions).values({
+        actorId: "boundary-authority",
+        extractionFingerprint,
+        fromLifecycle: "needs_review",
+        reason: "Approved for production-boundary planning proof.",
+        toLifecycle: "approved",
+        transitionedAt: recipeAuthorityInstant,
+        version: 1,
+      })
+    )
+  );
+
+  return approvedRecipes.map(({ importId }) => importId);
 };
 
 beforeAll(async () => {
@@ -334,6 +572,151 @@ describe("household Website-to-Durable-Object boundary", () => {
       Schema.encodeSync(MealPlan)(created)
     );
   });
+
+  it("uses the shared approved-recipe authority across the full create and explicit-swap boundary", async () => {
+    const ownerCookie = await signUp("Populated Meal Plan Member");
+    const organization = await createOrganization(
+      "Populated Meal Plan Household",
+      ownerCookie
+    );
+    const approvedImportIds = await seedApprovedRecipeAuthority(
+      await getRuntime().getD1Database("MealPlannerDatabase", "api"),
+      organization.id
+    );
+    const [generatedImportId] = approvedImportIds;
+    const explicitImportId = approvedImportIds.at(-1);
+    if (generatedImportId === undefined || explicitImportId === undefined) {
+      throw new Error("Expected bounded approved-recipe fixtures.");
+    }
+
+    const createResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/meal-plans",
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(CreateMealPlanPayload)(createPayload)
+        ),
+        headers: { "content-type": "application/json", cookie: ownerCookie },
+        method: "POST",
+      }
+    );
+
+    expect(createResponse.status).toBe(201);
+    const created = await Schema.decodeUnknownPromise(MealPlan)(
+      await createResponse.json()
+    );
+    expect(created).toMatchObject({
+      _tag: "Draft",
+      gaps: [],
+      meals: [
+        {
+          slotId: "boundary-dinner",
+          sourceRecipe: {
+            importId: generatedImportId,
+            recipe: { name: "Boundary Approved Recipe 0" },
+          },
+        },
+      ],
+      revision: 0,
+    });
+
+    const swapPayload = Schema.decodeUnknownSync(SwapMealPlanPayload)({
+      expectedRevision: 0,
+      mutationId: "boundary-explicit-recipe-swap",
+      reason: "Use the explicitly selected approved household recipe.",
+      replacementImportId: explicitImportId,
+      slotId: "boundary-dinner",
+    });
+    const intruderCookie = await signUp("Populated Meal Plan Intruder");
+    const intruderSessionResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/api/auth/get-session",
+      { headers: { cookie: intruderCookie } }
+    );
+    const intruderSession = await Schema.decodeUnknownPromise(SessionResponse)(
+      await intruderSessionResponse.json()
+    );
+    const authDatabase = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    await authDatabase
+      .update(authSchema.session)
+      .set({ activeOrganizationId: organization.id })
+      .where(eq(authSchema.session.id, intruderSession.session.id));
+
+    const forgedSwapResponse = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/meal-plans/${created.draftId}/swaps`,
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(SwapMealPlanPayload)(swapPayload)
+        ),
+        headers: {
+          "content-type": "application/json",
+          cookie: intruderCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(forgedSwapResponse.status).toBe(401);
+    await expect(forgedSwapResponse.json()).resolves.toEqual({
+      code: "unauthorized",
+      message: "Sign in and select a household to continue.",
+      status: 401,
+    });
+
+    const unchangedResponse = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/meal-plans/${created.draftId}`,
+      { headers: { cookie: ownerCookie } }
+    );
+    expect(unchangedResponse.status).toBe(200);
+    const unchanged = await Schema.decodeUnknownPromise(MealPlan)(
+      await unchangedResponse.json()
+    );
+    expect(unchanged).toMatchObject({
+      _tag: "Draft",
+      revision: 0,
+    });
+
+    const swapResponse = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/meal-plans/${created.draftId}/swaps`,
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(SwapMealPlanPayload)(swapPayload)
+        ),
+        headers: {
+          "content-type": "application/json",
+          cookie: ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(swapResponse.status).toBe(200);
+    const swapped = await Schema.decodeUnknownPromise(MealPlan)(
+      await swapResponse.json()
+    );
+    expect(swapped).toMatchObject({
+      _tag: "Draft",
+      audit: [
+        {
+          fromRecipe: { importId: generatedImportId },
+          mutationId: "boundary-explicit-recipe-swap",
+          toRecipe: {
+            importId: explicitImportId,
+            recipe: { name: "Boundary Approved Recipe 128" },
+          },
+        },
+      ],
+      gaps: [],
+      meals: [
+        {
+          slotId: "boundary-dinner",
+          sourceRecipe: {
+            importId: explicitImportId,
+            recipe: { name: "Boundary Approved Recipe 128" },
+          },
+        },
+      ],
+      revision: 1,
+    });
+  }, 30_000);
 
   it("rejects a forged cross-organization session before private routing", async () => {
     const cookieA = await signUp("Boundary A");
