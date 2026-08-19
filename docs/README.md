@@ -13,6 +13,7 @@ Drafts remain inactive until explicitly approved.
 
 ## Product And Engineering
 
+- [Household domain boundary](architecture/household-domain.md)
 - [Recipe import intent authority and lifecycle](architecture/recipe-import-intent.md)
 - [TikTok recipe-import feasibility report](tiktok-recipe-import-feasibility.html)
 - [Real-source recipe quality pilot runbook](real-source-pilot-runbook.md)

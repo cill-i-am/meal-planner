@@ -15,7 +15,7 @@ Better Auth uses its own Cloudflare D1 database through the official Drizzle ada
 ## Deliberate limitations
 
 - This slice supports email/password rather than username/password because Better Auth's native credential flow is email-based.
-- It does not add household Durable Object storage. Better Auth organization IDs are the stable household seam for the later domain worker.
+- The household storage tracer uses the selected Better Auth organization ID only after API-side membership authorization; the browser cannot select a Durable Object directly.
 - It remains a single-intent recipe-import experience without a saved-recipe browser/listing, batch/run UI, general correction editor, or realtime transport.
 - Batch and provider-settlement routes remain system-principal-only and cannot be selected in this UI. Operator-carousel remains household-principal scoped and is outside this page.
 - The current UI presents the generated review and offers one name editor only when the canonical action marks `name` editable. It submits that typed answer with the current action version; no arbitrary correction editor is implied.

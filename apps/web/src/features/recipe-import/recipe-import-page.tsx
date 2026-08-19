@@ -17,6 +17,7 @@ import {
 import { Link } from "@tanstack/react-router";
 import { Schema } from "effect";
 import { useEffect, useMemo } from "react";
+import type { ReactNode } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
 import { Badge } from "../../components/ui/badge.js";
@@ -359,6 +360,7 @@ const TagsAnswerForm = ({
 };
 
 export const RecipeImportPage = ({
+  householdDomainStatus,
   householdId,
   householdName,
   initialIntentId,
@@ -367,6 +369,7 @@ export const RecipeImportPage = ({
   operations,
   pollIntervalMs = 650,
 }: {
+  readonly householdDomainStatus?: ReactNode;
   readonly householdId: string;
   readonly householdName: string;
   readonly initialIntentId?: RecipeImportIntentId;
@@ -516,6 +519,7 @@ export const RecipeImportPage = ({
       <header className="topbar">
         <span className="wordmark">Meal Planner</span>
         <div className="session-control">
+          {householdDomainStatus}
           <span className="active-household">{householdName}</span>
           <Button onClick={() => void onSignOut()} type="button">
             Log out

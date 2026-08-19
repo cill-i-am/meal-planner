@@ -17,14 +17,15 @@ and public history in one atomic operation.
 
 ## Household tenancy and organization identity
 
-All recipe-import households share the single `MealPlannerDatabase` D1
+All current recipe-import households share the single `MealPlannerDatabase` D1
 database. `household_scope_id` scopes the canonical aggregate and its import
 requests, idempotency records, history, actions, recipes, deduplication, and
-safe not-found behavior. A household does not own or map one-to-one to a
-Durable Object. `ImportMediaAcquisitionObject` is addressed by the globally
+safe not-found behavior. This slice does not move those tables into the private
+household Durable Object; that object currently owns only its organization
+provenance tracer. `ImportMediaAcquisitionObject` is addressed by the globally
 random `importId` for per-import media/container coordination and transports
 private acquired media and artifacts. It does not use its own Durable Object
-storage: durable lifecycle and domain state stay in D1, while private artifacts
+storage: durable import lifecycle state stays in D1, while private artifacts
 stay in R2. It is not a tenancy or household-storage boundary.
 
 Better Auth is the global identity and organization control plane. Its dedicated

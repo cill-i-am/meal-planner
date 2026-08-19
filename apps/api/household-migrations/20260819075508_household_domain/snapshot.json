@@ -1,0 +1,57 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "5e67f58d-6e16-40d2-9db6-cffa14474976",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "ddl": [
+    {
+      "name": "household_meta",
+      "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at_epoch_ms",
+      "entityType": "columns",
+      "table": "household_meta"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "household_meta"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "singleton_key",
+      "entityType": "columns",
+      "table": "household_meta"
+    },
+    {
+      "columns": ["singleton_key"],
+      "nameExplicit": false,
+      "name": "household_meta_pk",
+      "table": "household_meta",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["organization_id"],
+      "nameExplicit": false,
+      "name": "household_meta_organization_id_unique",
+      "entityType": "uniques",
+      "table": "household_meta"
+    }
+  ],
+  "renames": []
+}

@@ -2,6 +2,7 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 
+import HouseholdDomainWorkerLive from "./apps/api/src/features/households/household-domain-worker.js";
 import TikTokMediaContainerLive from "./apps/api/src/features/imports/import-media-container.runtime.js";
 import { EvidenceRetentionSeconds } from "./apps/api/src/features/imports/import-media.model.js";
 import {
@@ -59,5 +60,8 @@ export default Alchemy.Stack(
       websiteUrl: website.url,
       websiteWorkerName: website.workerName,
     };
-  }).pipe(Effect.provide(TikTokMediaContainerLive))
+  }).pipe(
+    Effect.provide(HouseholdDomainWorkerLive),
+    Effect.provide(TikTokMediaContainerLive)
+  )
 );

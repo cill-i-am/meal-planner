@@ -86,11 +86,14 @@ mutation, and cleanup boundary.
 ## Outputs and health verification
 
 The stack returns the safe resource inventory `apiWorkerName`, `databaseName`,
-`evidenceBucketName`, `evidenceRetentionSeconds`, `importBatchQueueName`, and
-`importBatchDeadLetterQueueName`, plus the optional `apiUrl`. Alchemy types the
-Worker URL as `string | undefined`: a Worker can exist without a generated
-workers.dev URL. Operator tooling must not invent a URL or cast it to a
-required string. When `apiUrl` is present, `GET <apiUrl>/health` returns:
+`authDatabaseName`, `evidenceBucketName`, `evidenceRetentionSeconds`,
+`importBatchQueueName`, `importBatchDeadLetterQueueName`,
+`importProviderGatewayId`, `websiteWorkerName`, and `websiteUrl`, plus the
+optional `apiUrl`. The household domain Worker is private and is deliberately
+not surfaced as a public URL. Alchemy types Worker and Website URLs as
+`string | undefined`: a resource can exist without a generated workers.dev
+URL. Operator tooling must not invent a URL or cast it to a required string.
+When `apiUrl` is present, `GET <apiUrl>/health` returns:
 
 ```json
 { "ok": true }
@@ -103,8 +106,9 @@ configured routes/domains before testing an endpoint.
 
 `MealPlannerDatabase` is one shared household-scoped D1, bound to the Worker
 through Alchemy's Effect-native D1 query binding. Household ownership is the
-`household_scope_id` on canonical aggregates and every public read or mutation;
-there is no household Durable Object. Its fresh canonical SQL baseline is under
+`household_scope_id` on canonical recipe-import aggregates and every public
+recipe-import read or mutation. That existing domain data has not moved into
+the household Durable Object tracer. Its fresh canonical SQL baseline is under
 `apps/api/migrations`;
 the stable tracking table is `d1_migrations`. Generate Drizzle metadata with
 `pnpm db:generate`, review the SQL, and move the approved SQL to a numerically
@@ -129,8 +133,8 @@ Better Auth or Alchemy automatic auth migrations.
 
 Household routes authenticate with the same-origin Better Auth cookie. Effect
 middleware resolves the session, requires an active organization, and verifies
-an explicit matching `member` row before constructing the typed household
-principal. The active organization value alone is not authorization.
+membership through Better Auth's public API before constructing the typed
+household principal. The active organization value alone is not authorization.
 `MEAL_PLANNER_IMPORT_API_TOKEN`, `MEAL_PLANNER_IMPORT_ACTOR_ID`, and
 `MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID` remain the distinct designated system
 principal for batch and provider terminal-settlement routes only. Secrets are
@@ -142,6 +146,15 @@ private API Worker through a Cloudflare service binding. It forwards the
 original request and response so `Cookie` and `Set-Cookie` remain same-origin.
 The browser uses the generated Effect HttpApi client directly and never
 receives a bearer token, actor ID, or household scope.
+
+The API Worker privately binds `HouseholdDomainWorker`, which owns the
+`HouseholdObject` Durable Object namespace. After membership authorization, the
+domain Worker derives `household:v1:<immutableOrganizationId>` and lazily
+ensures the object's `household_meta` row. Durable SQLite persistence uses
+Drizzle and the checked-in `apps/api/household-migrations`; the stored
+organization ID is asserted on every ensure/read. Neither the private Worker
+nor the object imports Better Auth. The tracer does not add a lookup mapper,
+shared read model, domain-table migration, or public household Worker route.
 
 D1 persists source identity, intent state, idempotency metadata, durable
 execution facts, review data, recipes, and safe evidence references. It does

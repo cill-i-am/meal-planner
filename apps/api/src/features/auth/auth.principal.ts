@@ -1,3 +1,4 @@
+import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import {
   RecipeImportActorId,
   RecipeImportHouseholdScopeId,
@@ -20,6 +21,17 @@ export interface AuthPrincipalResolver {
   >;
 }
 
+export interface AuthenticatedOrganizationResolver {
+  readonly resolve: (
+    headers: Headers
+  ) => Effect.Effect<AuthenticatedOrganization, AuthPrincipalResolutionError>;
+}
+
+export const AuthenticatedOrganizationResolver =
+  Context.Service<AuthenticatedOrganizationResolver>(
+    "meal-planner/AuthenticatedOrganizationResolver"
+  );
+
 export const AuthPrincipalResolver = Context.Service<AuthPrincipalResolver>(
   "meal-planner/AuthPrincipalResolver"
 );
@@ -34,8 +46,16 @@ const sha256 = async (value: string): Promise<string> => {
   ).join("");
 };
 
-/** Resolve a domain principal through Better Auth's session and organization APIs. */
-export const resolveAuthPrincipal = (options: {
+const AuthenticatedOrganization = Schema.Struct({
+  organizationId: HouseholdOrganizationId,
+  userId: Schema.String.pipe(
+    Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
+  ),
+});
+export type AuthenticatedOrganization = typeof AuthenticatedOrganization.Type;
+
+/** Admit the active organization only after Better Auth proves membership. */
+export const resolveAuthenticatedOrganization = (options: {
   readonly auth: MealPlannerAuth;
   readonly headers: Headers;
 }) =>
@@ -82,19 +102,45 @@ export const resolveAuthPrincipal = (options: {
           reason: "missing_membership",
         });
       }
-      return Schema.decodeUnknownSync(RecipeImportPrincipal)({
-        actorId: Schema.decodeUnknownSync(RecipeImportActorId)(
-          await sha256(authSession.user.id)
-        ),
-        householdScopeId: Schema.decodeUnknownSync(
-          RecipeImportHouseholdScopeId
-        )(await sha256(organizationId)),
+      return Schema.decodeUnknownSync(AuthenticatedOrganization)({
+        organizationId,
+        userId: authSession.user.id,
       });
     },
   });
+
+/** Resolve the recipe-import principal from the admitted organization. */
+export const resolveAuthPrincipal = (options: {
+  readonly auth: MealPlannerAuth;
+  readonly headers: Headers;
+}) =>
+  resolveAuthenticatedOrganization(options).pipe(
+    Effect.flatMap((principal) =>
+      Effect.tryPromise({
+        catch: () =>
+          new AuthPrincipalResolutionError({ reason: "invalid_session" }),
+        try: async () =>
+          Schema.decodeUnknownSync(RecipeImportPrincipal)({
+            actorId: Schema.decodeUnknownSync(RecipeImportActorId)(
+              await sha256(principal.userId)
+            ),
+            householdScopeId: Schema.decodeUnknownSync(
+              RecipeImportHouseholdScopeId
+            )(await sha256(principal.organizationId)),
+          }),
+      })
+    )
+  );
 
 export const makeAuthPrincipalResolver = (options: {
   readonly auth: MealPlannerAuth;
 }): AuthPrincipalResolver => ({
   resolve: (headers) => resolveAuthPrincipal({ headers, ...options }),
+});
+
+export const makeAuthenticatedOrganizationResolver = (options: {
+  readonly auth: MealPlannerAuth;
+}): AuthenticatedOrganizationResolver => ({
+  resolve: (headers) =>
+    resolveAuthenticatedOrganization({ headers, ...options }),
 });

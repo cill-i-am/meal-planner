@@ -553,7 +553,7 @@ const RecipeImportHttpPlatformLive = Layer.succeed(HttpPlatform.HttpPlatform, {
   platform: "web",
 });
 
-const RecipeImportHttpPlatformServices = Layer.mergeAll(
+export const RecipeImportHttpPlatformServices = Layer.mergeAll(
   Etag.layer,
   FileSystem.layerNoop({}),
   RecipeImportHttpPlatformLive,
@@ -582,6 +582,9 @@ const RecipeImportNotFoundRoutes = [
   HttpRouter.route("*", "*", notFound),
 ] as const;
 
+export const makeRecipeImportNotFoundHttpLayer = () =>
+  HttpRouter.addAll(RecipeImportNotFoundRoutes);
+
 /** Mount the canonical typed API beside explicitly named operational routes. */
 export const makeRecipeImportWorkerHttpLayer = <
   const OperationalRoutes extends readonly AnyHttpRoute[],
@@ -591,5 +594,5 @@ export const makeRecipeImportWorkerHttpLayer = <
   Layer.mergeAll(
     HttpRouter.addAll(options.operationalRoutes),
     makeRecipeImportHttpApiLayer(),
-    HttpRouter.addAll(RecipeImportNotFoundRoutes)
+    makeRecipeImportNotFoundHttpLayer()
   );

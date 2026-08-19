@@ -7,7 +7,10 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import * as authSchema from "./auth.database-schema.js";
 import { makeMealPlannerAuth } from "./auth.js";
-import { resolveAuthPrincipal } from "./auth.principal.js";
+import {
+  resolveAuthenticatedOrganization,
+  resolveAuthPrincipal,
+} from "./auth.principal.js";
 
 const testEnv = env as unknown as {
   readonly AUTH_TEST_MIGRATIONS: {
@@ -97,6 +100,16 @@ describe("Better Auth D1 control plane", () => {
     );
     expect(principal.actorId).toMatch(/^[a-f\d]{64}$/u);
     expect(principal.householdScopeId).toMatch(/^[a-f\d]{64}$/u);
+    const authenticatedOrganization = await Effect.runPromise(
+      resolveAuthenticatedOrganization({
+        auth,
+        headers: new Headers({ cookie }),
+      })
+    );
+    expect(authenticatedOrganization).toEqual({
+      organizationId: organization.id,
+      userId: session?.user.id,
+    });
     expect(getActiveMember).toHaveBeenCalledWith({
       headers: expect.any(Headers),
     });
@@ -175,5 +188,15 @@ describe("Better Auth D1 control plane", () => {
       )
     );
     expect(error.reason).toBe("missing_membership");
+
+    const householdError = await Effect.runPromise(
+      Effect.flip(
+        resolveAuthenticatedOrganization({
+          auth,
+          headers: new Headers({ cookie: cookieA }),
+        })
+      )
+    );
+    expect(householdError.reason).toBe("missing_membership");
   });
 });
