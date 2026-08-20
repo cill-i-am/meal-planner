@@ -67,6 +67,11 @@ household meal-plan state.
 
 ## Current scope
 
+The ordered replacement of the remaining household-owned capabilities is
+defined in
+[household-capability-migration-plan.md](household-capability-migration-plan.md).
+That plan supersedes this section whenever a listed capability is delivered.
+
 The existing frontend tracer displays household storage state for the selected
 organization using an organization-keyed TanStack Query. Its generated
 same-origin client calls `GET /v1/household` without placing an organization ID,
