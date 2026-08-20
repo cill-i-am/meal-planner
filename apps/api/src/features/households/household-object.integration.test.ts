@@ -86,6 +86,16 @@ const MaybeMealPlanResponse = Schema.Union([
   }),
 ]);
 
+const MealPlanStorageResponse = Schema.Struct({
+  ok: Schema.Literal(true),
+  value: Schema.NullOr(
+    Schema.Struct({
+      planJsonBytes: Schema.Number,
+      replayKeyBytes: Schema.Number,
+    })
+  ),
+});
+
 const bundleText = (content: string | Uint8Array<ArrayBufferLike>): string =>
   Schema.is(Schema.String)(content)
     ? content
@@ -253,6 +263,13 @@ const makeRepeatedRecipePolicy = () =>
     maxRecipeUses: 31,
   });
 
+const makeFingerprintHeavyPolicy = (version: string) =>
+  Schema.decodeUnknownSync(MealPlanPolicy)({
+    ...syntheticPlanningPolicy,
+    preferredCuisines: ["f".repeat(1_037_000)],
+    version,
+  });
+
 const jsonByteLength = (value: object): number =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
 
@@ -357,6 +374,21 @@ const readMaybeMealPlan = async (
   });
   expect(response.status).toBe(200);
   return Schema.decodeUnknownPromise(MaybeMealPlanResponse)(
+    await response.json()
+  );
+};
+
+const inspectMealPlanStorage = async (objectName: string, draftId: string) => {
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify({
+      draftId,
+      objectName,
+      operation: "inspectMealPlanStorage",
+    }),
+    method: "POST",
+  });
+  expect(response.status).toBe(200);
+  return Schema.decodeUnknownPromise(MealPlanStorageResponse)(
     await response.json()
   );
 };
@@ -604,6 +636,119 @@ describe("household Durable Object", () => {
         rejectionCreated.value.draftId
       )
     ).toEqual(rejected);
+  }, 20_000);
+
+  it("keeps fingerprint-heavy drafts replayable and terminalizable", async () => {
+    const approvalObjectName =
+      "household:v1:organization-fingerprint-heavy-approval";
+    const approvalOrganizationId = "organization-fingerprint-heavy-approval";
+    const approvalRequest = Schema.decodeUnknownSync(MealPlanRequest)({
+      ...Schema.encodeSync(MealPlanRequest)(syntheticMealPlanRequest),
+      requestKey: "fingerprint-heavy-approval",
+    });
+    const rejectionObjectName =
+      "household:v1:organization-fingerprint-heavy-rejection";
+    const rejectionOrganizationId = "organization-fingerprint-heavy-rejection";
+    const rejectionRequest = Schema.decodeUnknownSync(MealPlanRequest)({
+      ...Schema.encodeSync(MealPlanRequest)(syntheticMealPlanRequest),
+      requestKey: "fingerprint-heavy-rejection",
+    });
+    const policy = makeFingerprintHeavyPolicy("fingerprint-heavy-v1");
+    const [approvalCreated, rejectionCreated] = await Promise.all([
+      createMealPlan(approvalObjectName, approvalOrganizationId, {
+        policy,
+        request: approvalRequest,
+      }),
+      createMealPlan(rejectionObjectName, rejectionOrganizationId, {
+        policy,
+        request: rejectionRequest,
+      }),
+    ]);
+    if (!approvalCreated.ok || !rejectionCreated.ok) {
+      throw new Error(
+        `Expected both fingerprint-heavy drafts to persist: ${JSON.stringify({ approvalCreated, rejectionCreated })}`
+      );
+    }
+    expect(jsonByteLength(approvalCreated.value)).toBeGreaterThan(1_000_000);
+    expect(jsonByteLength(approvalCreated.value)).toBeLessThanOrEqual(
+      1_867_232
+    );
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const replay = await createMealPlan(
+      approvalObjectName,
+      approvalOrganizationId,
+      { policy, request: approvalRequest }
+    );
+    expect(replay).toEqual(approvalCreated);
+    const collision = await createMealPlan(
+      approvalObjectName,
+      approvalOrganizationId,
+      {
+        policy: makeFingerprintHeavyPolicy("fingerprint-heavy-v2"),
+        request: approvalRequest,
+      }
+    );
+    expect(failureTag(collision)).toBe("MealPlanRequestConflict");
+
+    const maximumEscapedReason = "\u0001".repeat(4096);
+    const [approved, rejected] = await Promise.all([
+      mutateMealPlan({
+        objectName: approvalObjectName,
+        operation: "approveMealPlan",
+        organizationId: approvalOrganizationId,
+        request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
+          actorId: "a".repeat(128),
+          decidedAt: "2026-08-01T12:30:00.000Z",
+          draftId: approvalCreated.value.draftId,
+          expectedRevision: approvalCreated.value.revision,
+          mutationId: "p".repeat(128),
+          reason: maximumEscapedReason,
+        }),
+      }),
+      mutateMealPlan({
+        objectName: rejectionObjectName,
+        operation: "rejectMealPlan",
+        organizationId: rejectionOrganizationId,
+        request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
+          actorId: "a".repeat(128),
+          decidedAt: "2026-08-01T12:30:00.000Z",
+          draftId: rejectionCreated.value.draftId,
+          expectedRevision: rejectionCreated.value.revision,
+          mutationId: "r".repeat(128),
+          reason: maximumEscapedReason,
+        }),
+      }),
+    ]);
+
+    expect(approved).toMatchObject({
+      ok: true,
+      value: { _tag: "Approved" },
+    });
+    expect(rejected).toMatchObject({
+      ok: true,
+      value: { _tag: "Rejected" },
+    });
+    const [approvalStorage, rejectionStorage] = await Promise.all([
+      inspectMealPlanStorage(approvalObjectName, approvalCreated.value.draftId),
+      inspectMealPlanStorage(
+        rejectionObjectName,
+        rejectionCreated.value.draftId
+      ),
+    ]);
+    if (approvalStorage.value === null || rejectionStorage.value === null) {
+      throw new Error("Expected both persisted meal-plan rows.");
+    }
+    expect(approvalStorage.value.replayKeyBytes).toBe(64);
+    expect(rejectionStorage.value.replayKeyBytes).toBe(64);
+    expect(
+      approvalStorage.value.planJsonBytes + approvalStorage.value.replayKeyBytes
+    ).toBeLessThanOrEqual(1_900_000);
+    expect(
+      rejectionStorage.value.planJsonBytes +
+        rejectionStorage.value.replayKeyBytes
+    ).toBeLessThanOrEqual(1_900_000);
   }, 20_000);
 
   it("keeps swap-grown drafts terminalizable after rejecting an oversized mutation", async () => {

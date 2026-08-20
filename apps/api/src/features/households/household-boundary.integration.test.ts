@@ -32,6 +32,10 @@ import { HouseholdMetadata } from "./household.contract.js";
 const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
 const secret = "local-boundary-test-secret-at-least-32-characters";
+const recipeAuthorityDriftHeader = "x-test-recipe-authority-drift";
+const recipeAuthorityQueryBudgetHeader = "x-test-recipe-authority-query-budget";
+const recipeAuthorityQueryStatementsHeader =
+  "x-test-recipe-authority-query-statements";
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare | undefined;
 
@@ -56,7 +60,7 @@ const createPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
     allowedDifficulties: ["easy"],
     allowedTotalTimeBands: ["under_30_minutes"],
     maxRecipeUses: 1,
-    preferredCuisines: [],
+    preferredCuisines: ["preferred"],
     version: "boundary-policy-v1",
   },
   request: {
@@ -275,22 +279,26 @@ const applyDomainMigrations = async (database: MiniflareD1Database) => {
 
 const seedApprovedRecipeAuthority = async (
   database: MiniflareD1Database,
-  organizationId: string
+  organizationId: string,
+  seedNumber: number
 ) => {
   const client = drizzle(database);
   const householdScopeId = await hashOrganizationId(organizationId);
-  const approvedRecipes = Array.from({ length: 129 }, (_, index) => {
+  const approvedRecipes = Array.from({ length: 257 }, (_, index) => {
+    const fixtureNumber = seedNumber * 4096 + index;
     const importId = Schema.decodeUnknownSync(ImportId)(
-      `30000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`
+      `30000000-0000-4000-8000-${fixtureNumber.toString(16).padStart(12, "0")}`
     );
-    const extractionFingerprint = index.toString(16).padStart(64, "0");
-    const sourceUrl = `https://www.tiktok.com/@fixture/video/7530000000000000${index.toString().padStart(3, "0")}`;
+    const extractionFingerprint = fixtureNumber.toString(16).padStart(64, "0");
+    const sourceUrl = `https://www.tiktok.com/@fixture/video/7530000000000000${fixtureNumber.toString().padStart(5, "0")}`;
     const draft = makeRecipeDraft({
       extractionFingerprint,
       importId,
       name: `Boundary Approved Recipe ${index}`,
       sourceUrl,
     });
+    const tags =
+      index === 256 ? { ...recipeTags, cuisines: ["preferred"] } : recipeTags;
     const evidence = [
       {
         kind: "original_media",
@@ -311,6 +319,7 @@ const seedApprovedRecipeAuthority = async (
       extractionFingerprint,
       importId,
       sourceUrl,
+      tags,
     };
   });
 
@@ -367,12 +376,12 @@ const seedApprovedRecipeAuthority = async (
     )
   );
   await Promise.all(
-    approvedRecipes.map(({ extractionFingerprint }) =>
+    approvedRecipes.map(({ extractionFingerprint, tags }) =>
       client.insert(recipeReviews).values({
         createdAt: recipeAuthorityInstant,
         extractionFingerprint,
         lifecycle: "approved",
-        tagsJson: JSON.stringify(recipeTags),
+        tagsJson: JSON.stringify(tags),
         updatedAt: recipeAuthorityInstant,
         version: 1,
       })
@@ -393,6 +402,25 @@ const seedApprovedRecipeAuthority = async (
   );
 
   return approvedRecipes.map(({ importId }) => importId);
+};
+
+const readApprovedRecipeTagsJson = async (
+  database: MiniflareD1Database,
+  importId: typeof ImportId.Type
+) => {
+  const [row] = await drizzle(database)
+    .select({ tagsJson: recipeReviews.tagsJson })
+    .from(recipeReviews)
+    .innerJoin(
+      importRecipeExtractions,
+      eq(
+        importRecipeExtractions.extractionFingerprint,
+        recipeReviews.extractionFingerprint
+      )
+    )
+    .where(eq(importRecipeExtractions.importId, importId))
+    .limit(1);
+  return row?.tagsJson;
 };
 
 beforeAll(async () => {
@@ -517,6 +545,35 @@ const createOrganization = async (label: string, cookie: string) => {
 };
 
 describe("household Website-to-Durable-Object boundary", () => {
+  it("keeps recipe-authority test controls outside the production API build", async () => {
+    const BuildTsconfig = Schema.Struct({
+      exclude: Schema.Array(Schema.String),
+    });
+    const [buildTsconfigText, productionWorker] = await Promise.all([
+      readFile(
+        fileURLToPath(new URL("../../../tsconfig.build.json", import.meta.url)),
+        "utf-8"
+      ),
+      readFile(
+        fileURLToPath(new URL("../../worker.ts", import.meta.url)),
+        "utf-8"
+      ),
+    ]);
+    const buildTsconfig = Schema.decodeUnknownSync(
+      Schema.fromJsonString(BuildTsconfig)
+    )(buildTsconfigText);
+
+    expect(buildTsconfig.exclude).toContain("src/**/*.test-fixture.ts");
+    expect(productionWorker).not.toContain(recipeAuthorityDriftHeader);
+    expect(productionWorker).not.toContain(recipeAuthorityQueryBudgetHeader);
+    expect(productionWorker).not.toContain(
+      recipeAuthorityQueryStatementsHeader
+    );
+    expect(productionWorker).not.toContain(
+      "household-api-service.test-fixture"
+    );
+  });
+
   it("admits a member before the private worker initializes its household", async () => {
     const cookie = await signUp("Boundary Member");
     const organization = await createOrganization("Boundary Household", cookie);
@@ -581,10 +638,11 @@ describe("household Website-to-Durable-Object boundary", () => {
     );
     const approvedImportIds = await seedApprovedRecipeAuthority(
       await getRuntime().getD1Database("MealPlannerDatabase", "api"),
-      organization.id
+      organization.id,
+      0
     );
-    const [generatedImportId] = approvedImportIds;
-    const explicitImportId = approvedImportIds.at(-1);
+    const generatedImportId = approvedImportIds.at(-1);
+    const [explicitImportId] = approvedImportIds;
     if (generatedImportId === undefined || explicitImportId === undefined) {
       throw new Error("Expected bounded approved-recipe fixtures.");
     }
@@ -595,12 +653,19 @@ describe("household Website-to-Durable-Object boundary", () => {
         body: JSON.stringify(
           Schema.encodeSync(CreateMealPlanPayload)(createPayload)
         ),
-        headers: { "content-type": "application/json", cookie: ownerCookie },
+        headers: {
+          "content-type": "application/json",
+          cookie: ownerCookie,
+          [recipeAuthorityQueryBudgetHeader]: "observe",
+        },
         method: "POST",
       }
     );
 
     expect(createResponse.status).toBe(201);
+    expect(
+      createResponse.headers.get(recipeAuthorityQueryStatementsHeader)
+    ).toBe("13");
     const created = await Schema.decodeUnknownPromise(MealPlan)(
       await createResponse.json()
     );
@@ -612,7 +677,7 @@ describe("household Website-to-Durable-Object boundary", () => {
           slotId: "boundary-dinner",
           sourceRecipe: {
             importId: generatedImportId,
-            recipe: { name: "Boundary Approved Recipe 0" },
+            recipe: { name: "Boundary Approved Recipe 256" },
           },
         },
       ],
@@ -700,7 +765,7 @@ describe("household Website-to-Durable-Object boundary", () => {
           mutationId: "boundary-explicit-recipe-swap",
           toRecipe: {
             importId: explicitImportId,
-            recipe: { name: "Boundary Approved Recipe 128" },
+            recipe: { name: "Boundary Approved Recipe 0" },
           },
         },
       ],
@@ -710,12 +775,168 @@ describe("household Website-to-Durable-Object boundary", () => {
           slotId: "boundary-dinner",
           sourceRecipe: {
             importId: explicitImportId,
-            recipe: { name: "Boundary Approved Recipe 128" },
+            recipe: { name: "Boundary Approved Recipe 0" },
           },
         },
       ],
       revision: 1,
     });
+  }, 30_000);
+
+  it("uses one coherent catalogue when an older candidate changes after the snapshot", async () => {
+    const ownerCookie = await signUp("Snapshot Meal Plan Member");
+    const organization = await createOrganization(
+      "Snapshot Meal Plan Household",
+      ownerCookie
+    );
+    const database = await getRuntime().getD1Database(
+      "MealPlannerDatabase",
+      "api"
+    );
+    const approvedImportIds = await seedApprovedRecipeAuthority(
+      database,
+      organization.id,
+      3
+    );
+    const [changedOlderImportId] = approvedImportIds;
+    const snapshotWinnerImportId = approvedImportIds.at(-1);
+    if (
+      changedOlderImportId === undefined ||
+      snapshotWinnerImportId === undefined
+    ) {
+      throw new Error("Expected snapshot approved-recipe fixtures.");
+    }
+
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/meal-plans",
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(CreateMealPlanPayload)(createPayload)
+        ),
+        headers: {
+          "content-type": "application/json",
+          cookie: ownerCookie,
+          [recipeAuthorityDriftHeader]: "catalogue",
+        },
+        method: "POST",
+      }
+    );
+
+    expect(response.status).toBe(201);
+    const created = await Schema.decodeUnknownPromise(MealPlan)(
+      await response.json()
+    );
+    expect(created).toMatchObject({
+      _tag: "Draft",
+      gaps: [],
+      meals: [
+        {
+          slotId: "boundary-dinner",
+          sourceRecipe: { importId: snapshotWinnerImportId },
+        },
+      ],
+    });
+    await expect(
+      readApprovedRecipeTagsJson(database, changedOlderImportId)
+    ).resolves.toContain("preferred");
+  }, 30_000);
+
+  it("restarts discovery once after an authority mismatch and uses the refreshed winner", async () => {
+    const ownerCookie = await signUp("Retry Meal Plan Member");
+    const organization = await createOrganization(
+      "Retry Meal Plan Household",
+      ownerCookie
+    );
+    const approvedImportIds = await seedApprovedRecipeAuthority(
+      await getRuntime().getD1Database("MealPlannerDatabase", "api"),
+      organization.id,
+      1
+    );
+    const [refreshedImportId] = approvedImportIds;
+    if (refreshedImportId === undefined) {
+      throw new Error("Expected a refreshed approved-recipe winner.");
+    }
+
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/meal-plans",
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(CreateMealPlanPayload)(createPayload)
+        ),
+        headers: {
+          "content-type": "application/json",
+          cookie: ownerCookie,
+          [recipeAuthorityDriftHeader]: "once",
+          [recipeAuthorityQueryBudgetHeader]: "observe",
+        },
+        method: "POST",
+      }
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.headers.get(recipeAuthorityQueryStatementsHeader)).toBe(
+      "26"
+    );
+    const created = await Schema.decodeUnknownPromise(MealPlan)(
+      await response.json()
+    );
+    expect(created).toMatchObject({
+      _tag: "Draft",
+      gaps: [],
+      meals: [
+        {
+          slotId: "boundary-dinner",
+          sourceRecipe: {
+            importId: refreshedImportId,
+            recipe: { name: "Boundary Approved Recipe 0" },
+          },
+        },
+      ],
+    });
+  }, 30_000);
+
+  it("fails safely before private-domain creation when authority keeps drifting", async () => {
+    const ownerCookie = await signUp("Persistent Drift Meal Plan Member");
+    const organization = await createOrganization(
+      "Persistent Drift Meal Plan Household",
+      ownerCookie
+    );
+    await seedApprovedRecipeAuthority(
+      await getRuntime().getD1Database("MealPlannerDatabase", "api"),
+      organization.id,
+      2
+    );
+
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/meal-plans",
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(CreateMealPlanPayload)(createPayload)
+        ),
+        headers: {
+          "content-type": "application/json",
+          cookie: ownerCookie,
+          [recipeAuthorityDriftHeader]: "always",
+          [recipeAuthorityQueryBudgetHeader]: "observe",
+        },
+        method: "POST",
+      }
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get(recipeAuthorityQueryStatementsHeader)).toBe(
+      "26"
+    );
+    await expect(response.json()).resolves.toEqual({
+      code: "internal_error",
+      message: "Household storage is temporarily unavailable.",
+      status: 500,
+    });
+    const readResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/meal-plans/draft-boundary-week",
+      { headers: { cookie: ownerCookie } }
+    );
+    expect(readResponse.status).toBe(404);
   }, 30_000);
 
   it("rejects a forged cross-organization session before private routing", async () => {

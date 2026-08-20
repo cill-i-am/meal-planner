@@ -9,6 +9,6 @@ CREATE TABLE `household_meal_plan_mutation_receipts` (
 CREATE TABLE `household_meal_plans` (
 	`draft_id` text PRIMARY KEY,
 	`plan_json` text NOT NULL,
-	`request_fingerprint` text NOT NULL,
+	`request_fingerprint_digest` text NOT NULL,
 	`revision` integer NOT NULL
 );

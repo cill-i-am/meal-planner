@@ -4,24 +4,25 @@ import type {
   MealPlanRecipeSnapshotId,
 } from "@meal-planner/household-api";
 import { RecipeImportHouseholdScopeId } from "@meal-planner/recipe-import-api";
-import { and, desc, eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { drizzle } from "drizzle-orm/d1";
-import { Effect, Option, Schema } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 
 import {
-  ApprovedRecipe,
-  projectApprovedReview,
-  refineRecipeReview,
-} from "../imports/import-recipe-review.js";
+  findCurrentApprovedRecipeProjection,
+  findCurrentApprovedRecipeProjections,
+  readCurrentApprovedRecipeCandidateCatalogue,
+} from "../imports/import-approved-recipe-projection.d1.js";
+import type {
+  ApprovedRecipeAuthorityMismatch,
+  ApprovedRecipeAuthorityToken,
+  ApprovedRecipeCandidateCatalogue,
+  ApprovedRecipeCandidatePageTooLarge,
+  ApprovedRecipeCandidateQueryCapacityExceeded,
+  ApprovedRecipeProjectionTooLarge,
+} from "../imports/import-approved-recipe-projection.d1.js";
+import { ApprovedRecipe } from "../imports/import-recipe-review.js";
 import type { RecipeReviewPersistenceError } from "../imports/import-recipe-review.js";
-import { makeD1RecipeReviewRepository } from "../imports/import-recipe-review.repository.d1.js";
 import { ImportId } from "../imports/import.contracts.js";
-import {
-  importRecipeExtractions,
-  recipeImports,
-  recipeReviews,
-} from "../imports/import.database-schema.js";
 import { importPersistenceUnavailable } from "../imports/import.errors.js";
 
 const hashOrganizationId = (organizationId: HouseholdOrganizationId) =>
@@ -36,92 +37,103 @@ const hashOrganizationId = (organizationId: HouseholdOrganizationId) =>
     Effect.flatMap(Schema.decodeUnknownEffect(RecipeImportHouseholdScopeId))
   );
 
-const MaximumApprovedRecipeCandidates = 128;
-const RecipeReviewReadConcurrency = 8;
+// One MiB stays well below the 1.9 MB persisted-plan ceiling and leaves room
+// for the request, policy, RPC envelope, and generated-plan growth. The
+// persisted-plan repository remains the final authority for its own limit.
+const MaximumApprovedRecipeTransferBytes = 1_048_576;
+const EmptyJsonArrayBytes = 2;
+const JsonArraySeparatorBytes = 1;
+const utf8Encoder = new TextEncoder();
+const encodeSnapshotJson = Schema.encodeEffect(
+  Schema.fromJsonString(MealPlanRecipeSnapshot)
+);
 
-const decodeSnapshot = (review: Parameters<typeof projectApprovedReview>[0]) =>
-  Schema.encodeEffect(ApprovedRecipe)(projectApprovedReview(review)).pipe(
+/** The approved recipe set cannot be transferred safely within its byte budget. */
+export class ApprovedMealPlanRecipePayloadTooLarge extends Data.TaggedError(
+  "ApprovedMealPlanRecipePayloadTooLarge"
+) {}
+
+const decodeSnapshot = (approved: ApprovedRecipe) =>
+  Schema.encodeEffect(ApprovedRecipe)(approved).pipe(
     Effect.flatMap(Schema.decodeUnknownEffect(MealPlanRecipeSnapshot)),
     Effect.mapError(() => importPersistenceUnavailable())
   );
 
-const decodeApprovedSnapshot = (
-  review: Option.Option<Parameters<typeof refineRecipeReview>[0]>
-): Effect.Effect<
-  Option.Option<typeof MealPlanRecipeSnapshot.Type>,
-  RecipeReviewPersistenceError
-> =>
-  Option.match(review, {
-    onNone: () => Effect.succeed(Option.none()),
-    onSome: (value) => {
-      const refined = refineRecipeReview(value);
-      return Option.isSome(refined) && refined.value._tag === "Approved"
-        ? decodeSnapshot(refined.value).pipe(Effect.map(Option.some))
-        : Effect.succeed(Option.none());
-    },
-  });
-
-/**
- * Read approved recipe snapshots from their existing shared-D1 authority.
- * The ownership query is Drizzle-scoped before any review is projected.
- */
-export const listApprovedMealPlanRecipeSnapshots = (
+/** Read one coherent bounded catalogue of current approved planning facts. */
+export const readApprovedMealPlanRecipeCandidateCatalogue = (
   binding: AnyD1Database,
   organizationId: HouseholdOrganizationId
 ): Effect.Effect<
-  readonly (typeof MealPlanRecipeSnapshot.Type)[],
-  RecipeReviewPersistenceError
+  ApprovedRecipeCandidateCatalogue,
+  | ApprovedRecipeAuthorityMismatch
+  | ApprovedRecipeCandidatePageTooLarge
+  | ApprovedRecipeCandidateQueryCapacityExceeded
+  | RecipeReviewPersistenceError
 > =>
-  Effect.gen(function* listHouseholdApprovedRecipes() {
+  Effect.gen(function* readHouseholdApprovedRecipeCandidateCatalogue() {
     const householdScopeId = yield* hashOrganizationId(organizationId).pipe(
       Effect.mapError(() => importPersistenceUnavailable())
     );
-    const rows = yield* Effect.tryPromise({
-      catch: () => importPersistenceUnavailable(),
-      try: () =>
-        drizzle(binding)
-          .select({ importId: recipeImports.id })
-          .from(recipeImports)
-          .innerJoin(
-            importRecipeExtractions,
-            and(
-              eq(importRecipeExtractions.importId, recipeImports.id),
-              eq(
-                importRecipeExtractions.acquisitionGeneration,
-                recipeImports.acquisitionGeneration
-              ),
-              eq(importRecipeExtractions.isCurrent, 1)
-            )
-          )
-          .innerJoin(
-            recipeReviews,
-            and(
-              eq(
-                recipeReviews.extractionFingerprint,
-                importRecipeExtractions.extractionFingerprint
-              ),
-              eq(recipeReviews.lifecycle, "approved")
-            )
-          )
-          .where(eq(recipeImports.householdScopeId, householdScopeId))
-          .orderBy(desc(recipeReviews.updatedAt), recipeImports.id)
-          .limit(MaximumApprovedRecipeCandidates),
-    });
-    const reviews = makeD1RecipeReviewRepository(binding);
-    return yield* Effect.all(
-      rows.map(({ importId }) =>
-        Schema.decodeUnknownEffect(ImportId)(importId).pipe(
+    return yield* readCurrentApprovedRecipeCandidateCatalogue(
+      binding,
+      householdScopeId
+    );
+  });
+
+export interface ApprovedMealPlanRecipeSelection {
+  readonly authorityToken: ApprovedRecipeAuthorityToken;
+  readonly importId: MealPlanRecipeSnapshotId;
+}
+
+/** Hydrate only selected current approved recipes within the RPC byte budget. */
+export const hydrateApprovedMealPlanRecipeSnapshots = (
+  binding: AnyD1Database,
+  organizationId: HouseholdOrganizationId,
+  selectedRecipes: readonly ApprovedMealPlanRecipeSelection[]
+): Effect.Effect<
+  readonly (typeof MealPlanRecipeSnapshot.Type)[],
+  | ApprovedMealPlanRecipePayloadTooLarge
+  | ApprovedRecipeAuthorityMismatch
+  | ApprovedRecipeProjectionTooLarge
+  | RecipeReviewPersistenceError
+> =>
+  Effect.gen(function* hydrateHouseholdApprovedRecipes() {
+    const householdScopeId = yield* hashOrganizationId(organizationId).pipe(
+      Effect.mapError(() => importPersistenceUnavailable())
+    );
+    const selections = yield* Effect.all(
+      selectedRecipes.map((selection) =>
+        Schema.decodeUnknownEffect(ImportId)(selection.importId).pipe(
           Effect.mapError(() => importPersistenceUnavailable()),
-          Effect.flatMap(reviews.find),
-          Effect.flatMap(decodeApprovedSnapshot)
+          Effect.map((importId) => ({
+            authorityToken: selection.authorityToken,
+            importId,
+          }))
         )
-      ),
-      { concurrency: RecipeReviewReadConcurrency }
-    ).pipe(
-      Effect.map((snapshots) =>
-        snapshots.flatMap((snapshot) => Option.toArray(snapshot))
       )
     );
+    const approvedRecipes = yield* findCurrentApprovedRecipeProjections(
+      binding,
+      { householdScopeId, selections }
+    );
+    const snapshots: (typeof MealPlanRecipeSnapshot.Type)[] = [];
+    let aggregateBytes = EmptyJsonArrayBytes;
+    for (const approvedRecipe of approvedRecipes) {
+      const selectedSnapshot = yield* decodeSnapshot(approvedRecipe);
+      const encodedSnapshot = yield* encodeSnapshotJson(selectedSnapshot).pipe(
+        Effect.mapError(() => importPersistenceUnavailable())
+      );
+      const nextAggregateBytes =
+        aggregateBytes +
+        (snapshots.length === 0 ? 0 : JsonArraySeparatorBytes) +
+        utf8Encoder.encode(encodedSnapshot).byteLength;
+      if (nextAggregateBytes > MaximumApprovedRecipeTransferBytes) {
+        return yield* new ApprovedMealPlanRecipePayloadTooLarge();
+      }
+      snapshots.push(selectedSnapshot);
+      aggregateBytes = nextAggregateBytes;
+    }
+    return snapshots;
   });
 
 /** Resolve one current approved recipe for an admitted household and import. */
@@ -131,7 +143,9 @@ export const findApprovedMealPlanRecipeSnapshot = (
   importId: MealPlanRecipeSnapshotId
 ): Effect.Effect<
   Option.Option<typeof MealPlanRecipeSnapshot.Type>,
-  RecipeReviewPersistenceError
+  | ApprovedRecipeAuthorityMismatch
+  | ApprovedRecipeProjectionTooLarge
+  | RecipeReviewPersistenceError
 > =>
   Effect.gen(function* findHouseholdApprovedRecipe() {
     const householdScopeId = yield* hashOrganizationId(organizationId).pipe(
@@ -140,45 +154,16 @@ export const findApprovedMealPlanRecipeSnapshot = (
     const requestedImportId = yield* Schema.decodeUnknownEffect(ImportId)(
       importId
     ).pipe(Effect.mapError(() => importPersistenceUnavailable()));
-    const rows = yield* Effect.tryPromise({
-      catch: () => importPersistenceUnavailable(),
-      try: () =>
-        drizzle(binding)
-          .select({ importId: recipeImports.id })
-          .from(recipeImports)
-          .innerJoin(
-            importRecipeExtractions,
-            and(
-              eq(importRecipeExtractions.importId, recipeImports.id),
-              eq(
-                importRecipeExtractions.acquisitionGeneration,
-                recipeImports.acquisitionGeneration
-              ),
-              eq(importRecipeExtractions.isCurrent, 1)
-            )
-          )
-          .innerJoin(
-            recipeReviews,
-            and(
-              eq(
-                recipeReviews.extractionFingerprint,
-                importRecipeExtractions.extractionFingerprint
-              ),
-              eq(recipeReviews.lifecycle, "approved")
-            )
-          )
-          .where(
-            and(
-              eq(recipeImports.householdScopeId, householdScopeId),
-              eq(recipeImports.id, requestedImportId)
-            )
-          )
-          .limit(1),
-    });
-    if (rows.length === 0) {
-      return Option.none();
-    }
-    return yield* makeD1RecipeReviewRepository(binding)
-      .find(requestedImportId)
-      .pipe(Effect.flatMap(decodeApprovedSnapshot));
+    return yield* findCurrentApprovedRecipeProjection(binding, {
+      householdScopeId,
+      importId: requestedImportId,
+    }).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.succeed(Option.none()),
+          onSome: (approved) =>
+            decodeSnapshot(approved).pipe(Effect.map(Option.some)),
+        })
+      )
+    );
   });

@@ -35,6 +35,20 @@ const persistenceFailure = (
   operation: (typeof MealPlanPersistenceFailure.Type)["operation"]
 ) => MealPlanPersistenceFailure.make({ operation });
 
+const digestRequestFingerprint = (requestFingerprint: string) =>
+  Effect.tryPromise({
+    catch: () => persistenceFailure("create"),
+    try: async () => {
+      const digest = await crypto.subtle.digest(
+        "SHA-256",
+        utf8Encoder.encode(requestFingerprint)
+      );
+      return Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0")
+      ).join("");
+    },
+  });
+
 const encodePersistablePlan = (
   plan: typeof MealPlan.Type,
   operation: "create" | "save"
@@ -63,8 +77,10 @@ export const makeHouseholdMealPlanRepository = (
   database: EffectSQLiteDoDatabase
 ): MealPlanDraftRepository => ({
   create: ({ draft, requestFingerprint }) =>
-    database
-      .transaction((transaction) =>
+    Effect.gen(function* createMealPlanWithReplayDigest() {
+      const requestFingerprintDigest =
+        yield* digestRequestFingerprint(requestFingerprint);
+      return yield* database.transaction((transaction) =>
         Effect.gen(function* createHouseholdMealPlan() {
           const [existing] = yield* transaction
             .select()
@@ -73,7 +89,8 @@ export const makeHouseholdMealPlanRepository = (
             .limit(1)
             .pipe(queryFailure("create"));
           if (existing !== undefined) {
-            return existing.requestFingerprint === requestFingerprint
+            return existing.requestFingerprintDigest ===
+              requestFingerprintDigest
               ? yield* decodePlan(existing.planJson, "read")
               : yield* Effect.fail(
                   MealPlanRequestConflict.make({ draftId: draft.draftId })
@@ -85,18 +102,18 @@ export const makeHouseholdMealPlanRepository = (
             .values({
               draftId: draft.draftId,
               planJson,
-              requestFingerprint,
+              requestFingerprintDigest,
               revision: draft.revision,
             })
             .pipe(queryFailure("create"));
           return draft;
         })
+      );
+    }).pipe(
+      Effect.catchTag("SqlError", () =>
+        Effect.fail(persistenceFailure("create"))
       )
-      .pipe(
-        Effect.catchTag("SqlError", () =>
-          Effect.fail(persistenceFailure("create"))
-        )
-      ),
+    ),
   find: (draftId: MealPlanDraftId) =>
     database
       .select()

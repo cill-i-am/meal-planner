@@ -82,7 +82,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "request_fingerprint",
+      "name": "request_fingerprint_digest",
       "entityType": "columns",
       "table": "household_meal_plans"
     },

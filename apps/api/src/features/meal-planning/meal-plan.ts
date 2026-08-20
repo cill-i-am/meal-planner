@@ -77,6 +77,52 @@ export interface MealPlanPlanner {
   }) => Effect.Effect<MealPlanProposal>;
 }
 
+const MealPlanRecipeAuthorityFingerprint = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+);
+
+export const MealPlanRecipeAuthorityToken = Schema.Struct({
+  extractionFingerprint: MealPlanRecipeAuthorityFingerprint,
+  reviewVersion: Schema.Number.pipe(
+    Schema.check(
+      Schema.isInt(),
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+    )
+  ),
+  tagsFingerprint: MealPlanRecipeAuthorityFingerprint,
+});
+export type MealPlanRecipeAuthorityToken =
+  typeof MealPlanRecipeAuthorityToken.Type;
+
+interface RankableMealPlanRecipe {
+  readonly importId: MealPlanRecipeSnapshot["importId"];
+  readonly tags: MealPlanRecipeSnapshot["tags"];
+}
+
+export interface MealPlanRecipeCandidate extends RankableMealPlanRecipe {
+  readonly authorityToken: MealPlanRecipeAuthorityToken;
+}
+
+export interface MealPlanCandidateFrontier {
+  readonly policy: MealPlanPolicy;
+  readonly rankedCandidatesBySlot: readonly (readonly {
+    readonly authorityToken: MealPlanRecipeAuthorityToken;
+    readonly importId: MealPlanRecipeCandidate["importId"];
+    readonly preferred: boolean;
+  }[])[];
+  readonly request: MealPlanRequest;
+}
+
+export interface MealPlanCandidateSelection {
+  readonly assignments: readonly {
+    readonly authorityToken: MealPlanRecipeAuthorityToken;
+    readonly importId: MealPlanRecipeCandidate["importId"];
+    readonly slot: MealPlanSlot;
+  }[];
+  readonly gaps: readonly MealPlanGap[];
+}
+
 export interface MealPlanRecipeSource {
   readonly listApproved: () => Effect.Effect<
     readonly MealPlanRecipeSnapshot[],
@@ -186,7 +232,7 @@ const includes = <A>(values: readonly A[], value: A): boolean =>
   values.includes(value);
 
 const hasPreferredCuisine = (
-  recipe: MealPlanRecipeSnapshot,
+  recipe: RankableMealPlanRecipe,
   policy: MealPlanPolicy
 ): boolean =>
   recipe.tags.cuisines.some((cuisine) =>
@@ -194,7 +240,7 @@ const hasPreferredCuisine = (
   );
 
 export const isRecipeEligibleForSlot = (
-  recipe: MealPlanRecipeSnapshot,
+  recipe: RankableMealPlanRecipe,
   slot: MealPlanSlot,
   policy: MealPlanPolicy
 ): boolean =>
@@ -203,62 +249,176 @@ export const isRecipeEligibleForSlot = (
   includes(policy.allowedDifficulties, recipe.tags.difficulty) &&
   includes(policy.allowedTotalTimeBands, recipe.tags.totalTimeBand);
 
-const compareCandidates =
-  (policy: MealPlanPolicy) =>
-  (left: MealPlanRecipeSnapshot, right: MealPlanRecipeSnapshot): number => {
-    const preferredDifference =
-      Number(hasPreferredCuisine(right, policy)) -
-      Number(hasPreferredCuisine(left, policy));
-    return preferredDifference === 0
-      ? left.importId.localeCompare(right.importId)
-      : preferredDifference;
+const compareRankedCandidates = (
+  left: {
+    readonly authorityToken: MealPlanRecipeAuthorityToken;
+    readonly importId: MealPlanRecipeCandidate["importId"];
+    readonly preferred: boolean;
+  },
+  right: {
+    readonly authorityToken: MealPlanRecipeAuthorityToken;
+    readonly importId: MealPlanRecipeCandidate["importId"];
+    readonly preferred: boolean;
+  }
+): number => {
+  const preferredDifference = Number(right.preferred) - Number(left.preferred);
+  return preferredDifference === 0
+    ? left.importId.localeCompare(right.importId)
+    : preferredDifference;
+};
+
+export const makeMealPlanCandidateFrontier = (input: {
+  readonly policy: MealPlanPolicy;
+  readonly request: MealPlanRequest;
+}): MealPlanCandidateFrontier => ({
+  policy: input.policy,
+  rankedCandidatesBySlot: input.request.slots.map(() => []),
+  request: input.request,
+});
+
+/**
+ * Retains only the candidates that can still win the deterministic planner.
+ *
+ * A winner for slot `i` cannot rank below `i + 1` among that slot's eligible
+ * candidates: making each higher-ranked candidate unavailable requires at
+ * least one earlier assignment. Retaining the best `slotCount` candidates per
+ * slot therefore preserves the complete greedy result while bounding the
+ * frontier at `slotCount²` candidates (at most 961 for a valid request).
+ */
+export const addMealPlanCandidatePage = (
+  frontier: MealPlanCandidateFrontier,
+  page: readonly MealPlanRecipeCandidate[]
+): MealPlanCandidateFrontier => {
+  const rankedCandidatesBySlot = frontier.rankedCandidatesBySlot.map(
+    (candidates) => [...candidates]
+  );
+  const maximumCandidatesPerSlot = frontier.request.slots.length;
+  for (const candidate of page) {
+    const preferred = hasPreferredCuisine(candidate, frontier.policy);
+    for (const [slotIndex, slot] of frontier.request.slots.entries()) {
+      if (!isRecipeEligibleForSlot(candidate, slot, frontier.policy)) {
+        continue;
+      }
+      const rankedCandidates = rankedCandidatesBySlot[slotIndex];
+      if (
+        rankedCandidates === undefined ||
+        rankedCandidates.some(({ importId }) => importId === candidate.importId)
+      ) {
+        continue;
+      }
+      rankedCandidates.push({
+        authorityToken: candidate.authorityToken,
+        importId: candidate.importId,
+        preferred,
+      });
+      rankedCandidates.sort(compareRankedCandidates);
+      if (rankedCandidates.length > maximumCandidatesPerSlot) {
+        rankedCandidates.pop();
+      }
+    }
+  }
+
+  return {
+    ...frontier,
+    rankedCandidatesBySlot,
   };
+};
+
+export const selectMealPlanCandidates = (
+  frontier: MealPlanCandidateFrontier
+): MealPlanCandidateSelection => {
+  const assignments: {
+    readonly authorityToken: MealPlanRecipeAuthorityToken;
+    readonly importId: MealPlanRecipeCandidate["importId"];
+    readonly slot: MealPlanSlot;
+  }[] = [];
+  const gaps: MealPlanGap[] = [];
+  const uses = new Map<string, number>();
+
+  for (const [slotIndex, slot] of frontier.request.slots.entries()) {
+    const candidate = frontier.rankedCandidatesBySlot[slotIndex]?.find(
+      ({ importId }) =>
+        (uses.get(importId) ?? 0) < frontier.policy.maxRecipeUses
+    );
+    if (candidate === undefined) {
+      gaps.push({
+        reason: "no_eligible_approved_recipe",
+        slotId: slot.slotId,
+      });
+      continue;
+    }
+
+    uses.set(candidate.importId, (uses.get(candidate.importId) ?? 0) + 1);
+    assignments.push({
+      authorityToken: candidate.authorityToken,
+      importId: candidate.importId,
+      slot,
+    });
+  }
+
+  return { assignments, gaps };
+};
+
+// The legacy planner already owns hydrated snapshots, so its authority token is
+// never used for a second read. A fixed bounded token lets it reuse the exact
+// same ranking implementation without manufacturing persistence authority.
+const AlreadyHydratedRecipeAuthorityToken = Schema.decodeUnknownSync(
+  MealPlanRecipeAuthorityToken
+)({
+  extractionFingerprint: "0".repeat(64),
+  reviewVersion: 0,
+  tagsFingerprint: "0".repeat(64),
+});
 
 export const makeDeterministicMealPlanPlanner = (): MealPlanPlanner => ({
   plan: ({ approvedRecipes, policy, request }) =>
     Effect.sync(() => {
-      const meals: PlannedMeal[] = [];
-      const gaps: MealPlanGap[] = [];
-      const uses = new Map<string, number>();
-
-      for (const slot of request.slots) {
-        const [recipe] = approvedRecipes
-          .filter(
-            (candidate) =>
-              isRecipeEligibleForSlot(candidate, slot, policy) &&
-              (uses.get(candidate.importId) ?? 0) < policy.maxRecipeUses
-          )
-          .toSorted(compareCandidates(policy));
-
-        if (recipe === undefined) {
-          gaps.push({
-            reason: "no_eligible_approved_recipe",
-            slotId: slot.slotId,
-          });
-          continue;
+      const selection = selectMealPlanCandidates(
+        addMealPlanCandidatePage(
+          makeMealPlanCandidateFrontier({
+            policy,
+            request,
+          }),
+          approvedRecipes.map((recipe) => ({
+            authorityToken: AlreadyHydratedRecipeAuthorityToken,
+            importId: recipe.importId,
+            tags: recipe.tags,
+          }))
+        )
+      );
+      const recipesById = new Map<string, MealPlanRecipeSnapshot>();
+      for (const recipe of approvedRecipes) {
+        if (!recipesById.has(recipe.importId)) {
+          recipesById.set(recipe.importId, recipe);
         }
-
-        uses.set(recipe.importId, (uses.get(recipe.importId) ?? 0) + 1);
-        const reasons: [MealPlanReason, ...MealPlanReason[]] = [
-          "approved_recipe",
-          "meal_type_match",
-          "hard_constraints_satisfied",
-        ];
-        if (hasPreferredCuisine(recipe, policy)) {
-          reasons.push("preferred_cuisine");
-        }
-        meals.push({
-          date: slot.date,
-          mealType: slot.mealType,
-          reasons,
-          relevantTags: recipe.tags,
-          servings: slot.servings,
-          slotId: slot.slotId,
-          sourceRecipe: recipe,
-        });
       }
+      const meals: PlannedMeal[] = selection.assignments.map(
+        ({ importId, slot }) => {
+          const recipe = recipesById.get(importId);
+          if (recipe === undefined) {
+            throw new Error("Selected meal-plan recipe is unavailable");
+          }
+          const reasons: [MealPlanReason, ...MealPlanReason[]] = [
+            "approved_recipe",
+            "meal_type_match",
+            "hard_constraints_satisfied",
+          ];
+          if (hasPreferredCuisine(recipe, policy)) {
+            reasons.push("preferred_cuisine");
+          }
+          return {
+            date: slot.date,
+            mealType: slot.mealType,
+            reasons,
+            relevantTags: recipe.tags,
+            servings: slot.servings,
+            slotId: slot.slotId,
+            sourceRecipe: recipe,
+          };
+        }
+      );
 
-      return { gaps, meals };
+      return { gaps: selection.gaps, meals };
     }),
 });
 

@@ -1,7 +1,10 @@
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import { DurableObject } from "cloudflare:workers";
+import { eq } from "drizzle-orm";
 import { Context, Effect, Schema } from "effect";
 
+import migrations from "../../../household-migrations/migrations.js";
 import { ApprovedRecipe } from "../imports/import-recipe-review.js";
 import {
   ManualMealSwapRequest,
@@ -18,6 +21,7 @@ import type {
   HouseholdMetadata,
 } from "./household.contract.js";
 import { HouseholdEnsureInput } from "./household.contract.js";
+import { householdMealPlans } from "./household.database-schema.js";
 
 const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
 const MealPlanWire = Schema.toEncoded(MealPlan);
@@ -27,11 +31,53 @@ const ManualMealSwapRequestWire = Schema.toEncoded(ManualMealSwapRequest);
 const MealPlanDecisionRequestWire = Schema.toEncoded(MealPlanDecisionRequest);
 
 const alchemyRuntimeContractKey = "shape";
+const HouseholdObjectTestRuntime = Effect.gen(
+  function* initializeHouseholdObjectTestRuntime() {
+    const household = yield* yield* HouseholdObjectRuntime;
+    const durableObjectState = yield* Cloudflare.DurableObjectState;
+    const database = Drizzle.DurableObject({ migrations });
+    const scoped = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      effect.pipe(
+        Effect.provideService(
+          Cloudflare.DurableObjectState,
+          durableObjectState
+        ),
+        Effect.scoped
+      );
+    return Effect.succeed({
+      ...household,
+      inspectMealPlanStorage: (draftId: MealPlanDraftId) =>
+        scoped(
+          Effect.gen(function* inspectMealPlanStorage() {
+            const connection = yield* database;
+            const [row] = yield* connection
+              .select({
+                planJson: householdMealPlans.planJson,
+                requestFingerprintDigest:
+                  householdMealPlans.requestFingerprintDigest,
+              })
+              .from(householdMealPlans)
+              .where(eq(householdMealPlans.draftId, draftId))
+              .limit(1);
+            if (row === undefined) {
+              return null;
+            }
+            const encoder = new TextEncoder();
+            return {
+              planJsonBytes: encoder.encode(row.planJson).byteLength,
+              replayKeyBytes: encoder.encode(row.requestFingerprintDigest)
+                .byteLength,
+            };
+          })
+        ),
+    });
+  }
+);
 const entrypoint = Effect.succeed({
   RuntimeContext: {
     exports: Effect.succeed({
       HouseholdObject: {
-        constructor: HouseholdObjectRuntime,
+        constructor: HouseholdObjectTestRuntime,
         services: Context.empty(),
       },
     }),
@@ -68,6 +114,10 @@ interface HouseholdObjectClient {
   readonly ensureHousehold: (
     input: HouseholdEnsureInput
   ) => Effect.Effect<HouseholdMetadata, HouseholdDomainFailure>;
+  readonly inspectMealPlanStorage: (draftId: MealPlanDraftId) => Effect.Effect<{
+    readonly planJsonBytes: number;
+    readonly replayKeyBytes: number;
+  } | null>;
   readonly readMealPlan: (input: {
     readonly draftId: MealPlanDraftId;
     readonly organizationId: HouseholdEnsureInput["organizationId"];
@@ -111,6 +161,11 @@ const HouseholdTestCommand = Schema.Union([
     organizationId: HouseholdEnsureInput.fields.organizationId,
     policy: MealPlanPolicyWire,
     request: MealPlanRequestWire,
+  }),
+  Schema.Struct({
+    draftId: MealPlanDraftId,
+    objectName: Schema.String,
+    operation: Schema.Literal("inspectMealPlanStorage"),
   }),
   Schema.Struct({
     draftId: MealPlanDraftId,
@@ -181,6 +236,9 @@ export default {
           organizationId: command.organizationId,
         })
       );
+    }
+    if (command.operation === "inspectMealPlanStorage") {
+      return respond(household.inspectMealPlanStorage(command.draftId));
     }
     if (command.operation === "readMealPlan") {
       return respond(

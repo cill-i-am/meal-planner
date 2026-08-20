@@ -14,7 +14,7 @@ export const householdMeta = sqliteTable("household_meta", {
 export const householdMealPlans = sqliteTable("household_meal_plans", {
   draftId: text("draft_id").primaryKey(),
   planJson: text("plan_json").notNull(),
-  requestFingerprint: text("request_fingerprint").notNull(),
+  requestFingerprintDigest: text("request_fingerprint_digest").notNull(),
   revision: integer("revision").notNull(),
 });
 

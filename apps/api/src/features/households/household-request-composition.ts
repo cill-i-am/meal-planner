@@ -21,7 +21,14 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 
 import type { AuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
 import { AuthenticatedOrganizationResolver as AuthenticatedOrganizationResolverService } from "../auth/auth.principal.js";
+import { ApprovedRecipeAuthorityToken } from "../imports/import-approved-recipe-projection.d1.js";
 import { RecipeImportHttpPlatformServices } from "../imports/import-intent-api.http.js";
+import {
+  addMealPlanCandidatePage,
+  makeMealPlanCandidateFrontier,
+  MealPlanRecipeAuthorityToken,
+  selectMealPlanCandidates,
+} from "../meal-planning/meal-plan.js";
 import type {
   HouseholdCreateMealPlanInput,
   HouseholdDecideMealPlanInput,
@@ -31,7 +38,8 @@ import type {
 } from "./household-meal-plan.contract.js";
 import {
   findApprovedMealPlanRecipeSnapshot,
-  listApprovedMealPlanRecipeSnapshots,
+  hydrateApprovedMealPlanRecipeSnapshots,
+  readApprovedMealPlanRecipeCandidateCatalogue,
 } from "./household-meal-plan.recipe-source.js";
 import type {
   HouseholdDomainFailure,
@@ -133,6 +141,33 @@ const decodeMealPlan = (wire: HouseholdMealPlanWire) =>
     Effect.mapError(() => persistenceFailure("read"))
   );
 
+const decodeMealPlanRecipeCandidate = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    authorityToken: MealPlanRecipeAuthorityToken,
+    importId: MealPlanRecipeSnapshot.fields.importId,
+    tags: MealPlanRecipeSnapshot.fields.tags,
+  })
+);
+const decodeApprovedRecipeSelection = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    authorityToken: ApprovedRecipeAuthorityToken,
+    importId: MealPlanRecipeSnapshot.fields.importId,
+  })
+);
+
+export interface HouseholdMealPlanRecipeAuthority {
+  readonly findApprovedRecipe: typeof findApprovedMealPlanRecipeSnapshot;
+  readonly hydrateApprovedRecipes: typeof hydrateApprovedMealPlanRecipeSnapshots;
+  readonly readApprovedRecipeCandidateCatalogue: typeof readApprovedMealPlanRecipeCandidateCatalogue;
+}
+
+const ProductionMealPlanRecipeAuthority: HouseholdMealPlanRecipeAuthority = {
+  findApprovedRecipe: findApprovedMealPlanRecipeSnapshot,
+  hydrateApprovedRecipes: hydrateApprovedMealPlanRecipeSnapshots,
+  readApprovedRecipeCandidateCatalogue:
+    readApprovedMealPlanRecipeCandidateCatalogue,
+};
+
 /**
  * Adapt admitted household operations to the private household worker.
  * Approved recipe state is read from its current D1 authority and passed as a
@@ -141,41 +176,72 @@ const decodeMealPlan = (wire: HouseholdMealPlanWire) =>
 export const makeHouseholdMealPlanGateway = (options: {
   readonly database: AnyD1Database;
   readonly domain: HouseholdMealPlanDomainPort;
+  readonly recipeAuthority?: HouseholdMealPlanRecipeAuthority;
 }): HouseholdMealPlanGateway => {
+  const recipeAuthority =
+    options.recipeAuthority ?? ProductionMealPlanRecipeAuthority;
   const encodeRecipes = (
-    organizationId: HouseholdCreateMealPlanInput["organizationId"]
+    organizationId: HouseholdCreateMealPlanInput["organizationId"],
+    request: typeof MealPlanRequest.Type,
+    policy: typeof MealPlanPolicy.Type
   ) =>
-    listApprovedMealPlanRecipeSnapshots(options.database, organizationId).pipe(
-      Effect.flatMap((recipes) =>
-        Effect.all(
-          recipes.map((recipe) =>
-            Schema.encodeEffect(MealPlanRecipeSnapshot)(recipe)
-          )
+    Effect.gen(function* encodeSelectedHouseholdRecipes() {
+      const discoverSelectedRecipes = () =>
+        Effect.gen(function* discoverSelectedHouseholdRecipes() {
+          let frontier = makeMealPlanCandidateFrontier({ policy, request });
+          const catalogue =
+            yield* recipeAuthority.readApprovedRecipeCandidateCatalogue(
+              options.database,
+              organizationId
+            );
+          for (const page of catalogue.pages) {
+            const candidates = yield* Effect.forEach((fact) =>
+              decodeMealPlanRecipeCandidate(fact)
+            )(page);
+            frontier = addMealPlanCandidatePage(frontier, candidates);
+          }
+
+          const selection = selectMealPlanCandidates(frontier);
+          const selectedRecipes = yield* Effect.forEach((assignment) =>
+            decodeApprovedRecipeSelection(assignment)
+          )(selection.assignments);
+          return yield* recipeAuthority.hydrateApprovedRecipes(
+            options.database,
+            organizationId,
+            selectedRecipes
+          );
+        });
+
+      const recipes = yield* discoverSelectedRecipes().pipe(
+        Effect.catchTag("ApprovedRecipeAuthorityMismatch", () =>
+          discoverSelectedRecipes()
         )
-      ),
-      Effect.mapError(() => persistenceFailure("read"))
-    );
+      );
+      return yield* Effect.all(
+        recipes.map((recipe) =>
+          Schema.encodeEffect(MealPlanRecipeSnapshot)(recipe)
+        )
+      );
+    }).pipe(Effect.mapError(() => persistenceFailure("read")));
 
   const encodeExplicitRecipe = (
     organizationId: HouseholdCreateMealPlanInput["organizationId"],
     importId: Parameters<typeof findApprovedMealPlanRecipeSnapshot>[2]
   ) =>
-    findApprovedMealPlanRecipeSnapshot(
-      options.database,
-      organizationId,
-      importId
-    ).pipe(
-      Effect.flatMap(
-        Option.match({
-          onNone: () => Effect.succeed([]),
-          onSome: (recipe) =>
-            Schema.encodeEffect(MealPlanRecipeSnapshot)(recipe).pipe(
-              Effect.map((encoded) => [encoded])
-            ),
-        })
-      ),
-      Effect.mapError(() => persistenceFailure("read"))
-    );
+    recipeAuthority
+      .findApprovedRecipe(options.database, organizationId, importId)
+      .pipe(
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.succeed([]),
+            onSome: (recipe) =>
+              Schema.encodeEffect(MealPlanRecipeSnapshot)(recipe).pipe(
+                Effect.map((encoded) => [encoded])
+              ),
+          })
+        ),
+        Effect.mapError(() => persistenceFailure("read"))
+      );
 
   return {
     approve: ({ decidedAt, draftId, payload, principal }) =>
@@ -197,7 +263,11 @@ export const makeHouseholdMealPlanGateway = (options: {
     create: ({ payload, principal }) =>
       Effect.gen(function* createHouseholdMealPlan() {
         const [recipes, policy, request] = yield* Effect.all([
-          encodeRecipes(principal.organizationId),
+          encodeRecipes(
+            principal.organizationId,
+            payload.request,
+            payload.policy
+          ),
           Schema.encodeEffect(MealPlanPolicy)(payload.policy).pipe(
             Effect.mapError(() => persistenceFailure("create"))
           ),
