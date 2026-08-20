@@ -18,6 +18,8 @@ import { HealthRoutes } from "./features/health/health.routes.js";
 import { HouseholdDomainWorker } from "./features/households/household-domain-worker.js";
 import {
   makeHouseholdDomainGateway,
+  makeHouseholdMealPlanGateway,
+  makeHouseholdMealPlanRequestLayer,
   makeHouseholdRequestLayer,
 } from "./features/households/household-request-composition.js";
 import type { ImportBatchQueueMessage } from "./features/imports/import-batch.contracts.js";
@@ -276,11 +278,21 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           gateway: makeHouseholdDomainGateway(householdDomain),
           resolver: authenticatedOrganizationResolver,
         });
+        const householdMealPlanRequestLayer = makeHouseholdMealPlanRequestLayer(
+          {
+            gateway: makeHouseholdMealPlanGateway({
+              database,
+              domain: householdDomain,
+            }),
+            resolver: authenticatedOrganizationResolver,
+          }
+        );
         const routeHandler = yield* HttpRouter.toHttpEffect(
           Layer.mergeAll(
             HttpRouter.addAll(MealPlannerOperationalRoutes),
             makeRecipeImportHttpApiLayer(),
             householdRequestLayer,
+            householdMealPlanRequestLayer,
             makeRecipeImportNotFoundHttpLayer()
           ).pipe(
             Layer.provide(requestLayer),

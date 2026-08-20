@@ -1,267 +1,134 @@
+import {
+  MealPlanDecisionRequest,
+  MealPlanDraftId,
+  MealPlanPolicy,
+  MealPlanRequest,
+  ManualMealSwapRequest,
+} from "@meal-planner/household-api";
+import type {
+  MealPlan,
+  MealPlanApproved,
+  MealPlanDraft,
+  MealPlanGap,
+  MealPlanMutationConflict,
+  MealPlanMutationId,
+  MealPlanNotFound,
+  MealPlanPersistenceFailure,
+  MealPlanProposal,
+  MealPlanReason,
+  MealPlanRecipeSnapshot,
+  MealPlanRejected,
+  MealPlanRequestConflict,
+  MealPlanSlot,
+  MealPlanSwapRejected,
+  MealPlanTransitionRejected,
+  MealPlanVersionConflict,
+  PlannedMeal,
+} from "@meal-planner/household-api";
 import { Effect, Option, Schema } from "effect";
 
-import type {
-  RecipeReviewServiceError,
-  RecipeReviewService,
-} from "../imports/import-recipe-review.js";
-import {
-  ApprovedRecipe,
-  PlanningDietaryFit,
-  PlanningDifficulty,
-  PlanningMealType,
-  PlanningTags,
-  PlanningTotalTimeBand,
-} from "../imports/import-recipe-review.js";
-import { ImportId, ImportTimestamp } from "../imports/import.contracts.js";
-
-const TrimmedNonEmptyString = Schema.String.pipe(
-  Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
-);
-const ShortIdentifier = TrimmedNonEmptyString.pipe(
-  Schema.check(Schema.isMaxLength(128))
-);
-const PositiveInteger = Schema.Number.pipe(
-  Schema.check(
-    Schema.isInt(),
-    Schema.isGreaterThanOrEqualTo(1),
-    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-  )
-);
-
-export const MealPlanRequestKey = ShortIdentifier.pipe(
-  Schema.brand("MealPlanRequestKey")
-);
-export type MealPlanRequestKey = typeof MealPlanRequestKey.Type;
-
-const DraftIdentifier = TrimmedNonEmptyString.pipe(
-  Schema.check(Schema.isMaxLength(134))
-);
-export const MealPlanDraftId = DraftIdentifier.pipe(
-  Schema.brand("MealPlanDraftId")
-);
-export type MealPlanDraftId = typeof MealPlanDraftId.Type;
-
-export const MealPlanPolicyVersion = ShortIdentifier.pipe(
-  Schema.brand("MealPlanPolicyVersion")
-);
-export type MealPlanPolicyVersion = typeof MealPlanPolicyVersion.Type;
-
-export const MealPlanSlotId = ShortIdentifier.pipe(
-  Schema.brand("MealPlanSlotId")
-);
-export type MealPlanSlotId = typeof MealPlanSlotId.Type;
-
-export const MealPlanActorId = ShortIdentifier.pipe(
-  Schema.brand("MealPlanActorId")
-);
-export type MealPlanActorId = typeof MealPlanActorId.Type;
-
-export const MealPlanMutationId = ShortIdentifier.pipe(
-  Schema.brand("MealPlanMutationId")
-);
-export type MealPlanMutationId = typeof MealPlanMutationId.Type;
-
-export const MealPlanSlot = Schema.Struct({
-  date: Schema.String.pipe(
-    Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u))
-  ),
-  mealType: PlanningMealType,
-  servings: PositiveInteger,
-  slotId: MealPlanSlotId,
-});
-export type MealPlanSlot = typeof MealPlanSlot.Type;
-
-export const MealPlanRequest = Schema.Struct({
-  requestKey: MealPlanRequestKey,
-  slots: Schema.NonEmptyArray(MealPlanSlot),
-}).check(
-  Schema.makeFilter((request) =>
-    new Set(request.slots.map(({ slotId }) => slotId)).size ===
-    request.slots.length
-      ? undefined
-      : { issue: "Meal-plan slot IDs must be unique", path: ["slots"] }
-  )
-);
-export type MealPlanRequest = typeof MealPlanRequest.Type;
-
-export const MealPlanPolicy = Schema.Struct({
-  allowedDietaryFit: Schema.NonEmptyArray(PlanningDietaryFit),
-  allowedDifficulties: Schema.NonEmptyArray(PlanningDifficulty),
-  allowedTotalTimeBands: Schema.NonEmptyArray(PlanningTotalTimeBand),
-  maxRecipeUses: PositiveInteger,
-  preferredCuisines: Schema.Array(TrimmedNonEmptyString),
-  version: MealPlanPolicyVersion,
-});
-export type MealPlanPolicy = typeof MealPlanPolicy.Type;
-
-export const MealPlanReason = Schema.Literals([
-  "approved_recipe",
-  "meal_type_match",
-  "hard_constraints_satisfied",
-  "preferred_cuisine",
-]);
-export type MealPlanReason = typeof MealPlanReason.Type;
-
-export const PlannedMeal = Schema.Struct({
-  date: MealPlanSlot.fields.date,
-  mealType: PlanningMealType,
-  reasons: Schema.NonEmptyArray(MealPlanReason),
-  relevantTags: PlanningTags,
-  servings: PositiveInteger,
-  slotId: MealPlanSlotId,
-  sourceRecipe: ApprovedRecipe,
-});
-export type PlannedMeal = typeof PlannedMeal.Type;
-
-export const MealPlanGap = Schema.Struct({
-  reason: Schema.Literal("no_eligible_approved_recipe"),
-  slotId: MealPlanSlotId,
-});
-export type MealPlanGap = typeof MealPlanGap.Type;
-
-export const ManualSwapAudit = Schema.Struct({
-  actorId: MealPlanActorId,
-  fromRecipe: ApprovedRecipe,
-  mutationId: MealPlanMutationId,
-  reason: TrimmedNonEmptyString,
-  slotId: MealPlanSlotId,
-  swappedAt: ImportTimestamp,
-  toRecipe: ApprovedRecipe,
-});
-export type ManualSwapAudit = typeof ManualSwapAudit.Type;
-
-const MealPlanRecordFields = {
-  audit: Schema.Array(ManualSwapAudit),
-  draftId: MealPlanDraftId,
-  gaps: Schema.Array(MealPlanGap),
-  meals: Schema.Array(PlannedMeal),
-  policy: MealPlanPolicy,
-  request: MealPlanRequest,
-  revision: Schema.Number.pipe(
-    Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
-  ),
-} as const;
-
-export const MealPlanDraft = Schema.Struct({
-  ...MealPlanRecordFields,
-  _tag: Schema.Literal("Draft"),
-});
-export type MealPlanDraft = typeof MealPlanDraft.Type;
-
-const MealPlanDecisionFields = {
-  actorId: MealPlanActorId,
-  decidedAt: ImportTimestamp,
-  mutationId: MealPlanMutationId,
-  reason: TrimmedNonEmptyString,
-} as const;
-
-export const MealPlanApproved = Schema.Struct({
-  ...MealPlanRecordFields,
-  _tag: Schema.Literal("Approved"),
-  decision: Schema.Struct({
-    ...MealPlanDecisionFields,
-    outcome: Schema.Literal("approved"),
-  }),
-});
-export type MealPlanApproved = typeof MealPlanApproved.Type;
-
-export const MealPlanRejected = Schema.Struct({
-  ...MealPlanRecordFields,
-  _tag: Schema.Literal("Rejected"),
-  decision: Schema.Struct({
-    ...MealPlanDecisionFields,
-    outcome: Schema.Literal("rejected"),
-  }),
-});
-export type MealPlanRejected = typeof MealPlanRejected.Type;
-
-export const MealPlan = Schema.Union([
-  MealPlanDraft,
+export {
+  CreateMealPlanPayload,
+  DecideMealPlanPayload,
+  ManualMealSwapRequest,
+  ManualSwapAudit,
+  MealPlan,
+  MealPlanActorId,
   MealPlanApproved,
+  MealPlanDecisionRequest,
+  MealPlanDraft,
+  MealPlanDraftId,
+  MealPlanDietaryFit,
+  MealPlanDifficulty,
+  MealPlanGap,
+  MealPlanInstant,
+  MealPlanLeftovers,
+  MealPlanMealType,
+  MealPlanMutationConflict,
+  MealPlanMutationId,
+  MealPlanNotFound,
+  MealPlanPersistenceFailure,
+  MealPlanPolicy,
+  MealPlanPolicyVersion,
+  MealPlanProposal,
+  MealPlanReason,
+  MealPlanRecipeSnapshot,
+  MealPlanRecipeSnapshotId,
   MealPlanRejected,
-]);
-export type MealPlan = typeof MealPlan.Type;
-
-export const MealPlanProposal = Schema.Struct({
-  gaps: Schema.Array(MealPlanGap),
-  meals: Schema.Array(PlannedMeal),
-});
-export type MealPlanProposal = typeof MealPlanProposal.Type;
+  MealPlanRequest,
+  MealPlanRequestConflict,
+  MealPlanRequestKey,
+  MealPlanSlot,
+  MealPlanSlotId,
+  MealPlanSwapRejected,
+  MealPlanTags,
+  MealPlanTotalTimeBand,
+  MealPlanTransitionRejected,
+  MealPlanVersionConflict,
+  PlannedMeal,
+  SwapMealPlanPayload,
+} from "@meal-planner/household-api";
 
 export interface MealPlanPlanner {
   readonly plan: (input: {
-    readonly approvedRecipes: readonly ApprovedRecipe[];
+    readonly approvedRecipes: readonly MealPlanRecipeSnapshot[];
     readonly policy: MealPlanPolicy;
     readonly request: MealPlanRequest;
   }) => Effect.Effect<MealPlanProposal>;
 }
 
-export const ManualMealSwapRequest = Schema.Struct({
-  actorId: MealPlanActorId,
-  draftId: MealPlanDraftId,
-  expectedRevision: MealPlanRecordFields.revision,
-  mutationId: MealPlanMutationId,
-  reason: TrimmedNonEmptyString,
-  replacementImportId: ImportId,
-  slotId: MealPlanSlotId,
-  swappedAt: ImportTimestamp,
+const MealPlanRecipeAuthorityFingerprint = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
+);
+
+export const MealPlanRecipeAuthorityToken = Schema.Struct({
+  extractionFingerprint: MealPlanRecipeAuthorityFingerprint,
+  reviewVersion: Schema.Number.pipe(
+    Schema.check(
+      Schema.isInt(),
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+    )
+  ),
+  tagsFingerprint: MealPlanRecipeAuthorityFingerprint,
 });
-export type ManualMealSwapRequest = typeof ManualMealSwapRequest.Type;
+export type MealPlanRecipeAuthorityToken =
+  typeof MealPlanRecipeAuthorityToken.Type;
 
-export const MealPlanDecisionRequest = Schema.Struct({
-  actorId: MealPlanActorId,
-  decidedAt: ImportTimestamp,
-  draftId: MealPlanDraftId,
-  expectedRevision: MealPlanRecordFields.revision,
-  mutationId: MealPlanMutationId,
-  reason: TrimmedNonEmptyString,
-});
-export type MealPlanDecisionRequest = typeof MealPlanDecisionRequest.Type;
+interface RankableMealPlanRecipe {
+  readonly importId: MealPlanRecipeSnapshot["importId"];
+  readonly tags: MealPlanRecipeSnapshot["tags"];
+}
 
-export const MealPlanRequestConflict = Schema.TaggedStruct(
-  "MealPlanRequestConflict",
-  { draftId: MealPlanDraftId }
-);
-export type MealPlanRequestConflict = typeof MealPlanRequestConflict.Type;
+export interface MealPlanRecipeCandidate extends RankableMealPlanRecipe {
+  readonly authorityToken: MealPlanRecipeAuthorityToken;
+}
 
-export const MealPlanNotFound = Schema.TaggedStruct("MealPlanNotFound", {
-  draftId: MealPlanDraftId,
-});
-export type MealPlanNotFound = typeof MealPlanNotFound.Type;
+export interface MealPlanCandidateFrontier {
+  readonly policy: MealPlanPolicy;
+  readonly rankedCandidatesBySlot: readonly (readonly {
+    readonly authorityToken: MealPlanRecipeAuthorityToken;
+    readonly importId: MealPlanRecipeCandidate["importId"];
+    readonly preferred: boolean;
+  }[])[];
+  readonly request: MealPlanRequest;
+}
 
-export const MealPlanVersionConflict = Schema.TaggedStruct(
-  "MealPlanVersionConflict",
-  {
-    actualRevision: MealPlanRecordFields.revision,
-    expectedRevision: MealPlanRecordFields.revision,
-  }
-);
-export type MealPlanVersionConflict = typeof MealPlanVersionConflict.Type;
+export interface MealPlanCandidateSelection {
+  readonly assignments: readonly {
+    readonly authorityToken: MealPlanRecipeAuthorityToken;
+    readonly importId: MealPlanRecipeCandidate["importId"];
+    readonly slot: MealPlanSlot;
+  }[];
+  readonly gaps: readonly MealPlanGap[];
+}
 
-export const MealPlanTransitionRejected = Schema.TaggedStruct(
-  "MealPlanTransitionRejected",
-  { lifecycle: Schema.Literals(["Draft", "Approved", "Rejected"]) }
-);
-export type MealPlanTransitionRejected = typeof MealPlanTransitionRejected.Type;
-
-export const MealPlanSwapRejected = Schema.TaggedStruct(
-  "MealPlanSwapRejected",
-  {
-    reason: Schema.Literals([
-      "slot_not_found",
-      "recipe_not_approved",
-      "hard_constraint_violation",
-      "same_recipe",
-    ]),
-  }
-);
-export type MealPlanSwapRejected = typeof MealPlanSwapRejected.Type;
-
-export const MealPlanMutationConflict = Schema.TaggedStruct(
-  "MealPlanMutationConflict",
-  { mutationId: MealPlanMutationId }
-);
-export type MealPlanMutationConflict = typeof MealPlanMutationConflict.Type;
+export interface MealPlanRecipeSource {
+  readonly listApproved: () => Effect.Effect<
+    readonly MealPlanRecipeSnapshot[],
+    MealPlanPersistenceFailure
+  >;
+}
 
 export const mealPlanRequestConflict = (
   draftId: MealPlanDraftId
@@ -302,6 +169,7 @@ export const mealPlanMutationConflict = (
 export type MealPlanRepositoryError =
   | MealPlanMutationConflict
   | MealPlanNotFound
+  | MealPlanPersistenceFailure
   | MealPlanTransitionRejected
   | MealPlanVersionConflict;
 
@@ -309,15 +177,21 @@ export interface MealPlanDraftRepository {
   readonly create: (input: {
     readonly draft: MealPlanDraft;
     readonly requestFingerprint: string;
-  }) => Effect.Effect<MealPlan, MealPlanRequestConflict>;
+  }) => Effect.Effect<
+    MealPlan,
+    MealPlanPersistenceFailure | MealPlanRequestConflict
+  >;
   readonly find: (
     draftId: MealPlanDraftId
-  ) => Effect.Effect<Option.Option<MealPlan>>;
+  ) => Effect.Effect<Option.Option<MealPlan>, MealPlanPersistenceFailure>;
   readonly findMutation: (input: {
     readonly draftId: MealPlanDraftId;
     readonly mutationFingerprint: string;
     readonly mutationId: MealPlanMutationId;
-  }) => Effect.Effect<Option.Option<MealPlan>, MealPlanMutationConflict>;
+  }) => Effect.Effect<
+    Option.Option<MealPlan>,
+    MealPlanMutationConflict | MealPlanPersistenceFailure
+  >;
   readonly save: (input: {
     readonly expectedRevision: number;
     readonly mutationFingerprint: string;
@@ -329,11 +203,11 @@ export interface MealPlanDraftRepository {
 export type MealPlanServiceError =
   | MealPlanMutationConflict
   | MealPlanNotFound
+  | MealPlanPersistenceFailure
   | MealPlanRequestConflict
   | MealPlanSwapRejected
   | MealPlanTransitionRejected
-  | MealPlanVersionConflict
-  | RecipeReviewServiceError;
+  | MealPlanVersionConflict;
 
 export interface MealPlanService {
   readonly create: (
@@ -342,7 +216,7 @@ export interface MealPlanService {
   ) => Effect.Effect<MealPlan, MealPlanServiceError>;
   readonly read: (
     draftId: MealPlanDraftId
-  ) => Effect.Effect<Option.Option<MealPlan>>;
+  ) => Effect.Effect<Option.Option<MealPlan>, MealPlanServiceError>;
   readonly approve: (
     request: MealPlanDecisionRequest
   ) => Effect.Effect<MealPlanApproved, MealPlanServiceError>;
@@ -358,7 +232,7 @@ const includes = <A>(values: readonly A[], value: A): boolean =>
   values.includes(value);
 
 const hasPreferredCuisine = (
-  recipe: ApprovedRecipe,
+  recipe: RankableMealPlanRecipe,
   policy: MealPlanPolicy
 ): boolean =>
   recipe.tags.cuisines.some((cuisine) =>
@@ -366,7 +240,7 @@ const hasPreferredCuisine = (
   );
 
 export const isRecipeEligibleForSlot = (
-  recipe: ApprovedRecipe,
+  recipe: RankableMealPlanRecipe,
   slot: MealPlanSlot,
   policy: MealPlanPolicy
 ): boolean =>
@@ -375,62 +249,176 @@ export const isRecipeEligibleForSlot = (
   includes(policy.allowedDifficulties, recipe.tags.difficulty) &&
   includes(policy.allowedTotalTimeBands, recipe.tags.totalTimeBand);
 
-const compareCandidates =
-  (policy: MealPlanPolicy) =>
-  (left: ApprovedRecipe, right: ApprovedRecipe): number => {
-    const preferredDifference =
-      Number(hasPreferredCuisine(right, policy)) -
-      Number(hasPreferredCuisine(left, policy));
-    return preferredDifference === 0
-      ? left.importId.localeCompare(right.importId)
-      : preferredDifference;
+const compareRankedCandidates = (
+  left: {
+    readonly authorityToken: MealPlanRecipeAuthorityToken;
+    readonly importId: MealPlanRecipeCandidate["importId"];
+    readonly preferred: boolean;
+  },
+  right: {
+    readonly authorityToken: MealPlanRecipeAuthorityToken;
+    readonly importId: MealPlanRecipeCandidate["importId"];
+    readonly preferred: boolean;
+  }
+): number => {
+  const preferredDifference = Number(right.preferred) - Number(left.preferred);
+  return preferredDifference === 0
+    ? left.importId.localeCompare(right.importId)
+    : preferredDifference;
+};
+
+export const makeMealPlanCandidateFrontier = (input: {
+  readonly policy: MealPlanPolicy;
+  readonly request: MealPlanRequest;
+}): MealPlanCandidateFrontier => ({
+  policy: input.policy,
+  rankedCandidatesBySlot: input.request.slots.map(() => []),
+  request: input.request,
+});
+
+/**
+ * Retains only the candidates that can still win the deterministic planner.
+ *
+ * A winner for slot `i` cannot rank below `i + 1` among that slot's eligible
+ * candidates: making each higher-ranked candidate unavailable requires at
+ * least one earlier assignment. Retaining the best `slotCount` candidates per
+ * slot therefore preserves the complete greedy result while bounding the
+ * frontier at `slotCount²` candidates (at most 961 for a valid request).
+ */
+export const addMealPlanCandidatePage = (
+  frontier: MealPlanCandidateFrontier,
+  page: readonly MealPlanRecipeCandidate[]
+): MealPlanCandidateFrontier => {
+  const rankedCandidatesBySlot = frontier.rankedCandidatesBySlot.map(
+    (candidates) => [...candidates]
+  );
+  const maximumCandidatesPerSlot = frontier.request.slots.length;
+  for (const candidate of page) {
+    const preferred = hasPreferredCuisine(candidate, frontier.policy);
+    for (const [slotIndex, slot] of frontier.request.slots.entries()) {
+      if (!isRecipeEligibleForSlot(candidate, slot, frontier.policy)) {
+        continue;
+      }
+      const rankedCandidates = rankedCandidatesBySlot[slotIndex];
+      if (
+        rankedCandidates === undefined ||
+        rankedCandidates.some(({ importId }) => importId === candidate.importId)
+      ) {
+        continue;
+      }
+      rankedCandidates.push({
+        authorityToken: candidate.authorityToken,
+        importId: candidate.importId,
+        preferred,
+      });
+      rankedCandidates.sort(compareRankedCandidates);
+      if (rankedCandidates.length > maximumCandidatesPerSlot) {
+        rankedCandidates.pop();
+      }
+    }
+  }
+
+  return {
+    ...frontier,
+    rankedCandidatesBySlot,
   };
+};
+
+export const selectMealPlanCandidates = (
+  frontier: MealPlanCandidateFrontier
+): MealPlanCandidateSelection => {
+  const assignments: {
+    readonly authorityToken: MealPlanRecipeAuthorityToken;
+    readonly importId: MealPlanRecipeCandidate["importId"];
+    readonly slot: MealPlanSlot;
+  }[] = [];
+  const gaps: MealPlanGap[] = [];
+  const uses = new Map<string, number>();
+
+  for (const [slotIndex, slot] of frontier.request.slots.entries()) {
+    const candidate = frontier.rankedCandidatesBySlot[slotIndex]?.find(
+      ({ importId }) =>
+        (uses.get(importId) ?? 0) < frontier.policy.maxRecipeUses
+    );
+    if (candidate === undefined) {
+      gaps.push({
+        reason: "no_eligible_approved_recipe",
+        slotId: slot.slotId,
+      });
+      continue;
+    }
+
+    uses.set(candidate.importId, (uses.get(candidate.importId) ?? 0) + 1);
+    assignments.push({
+      authorityToken: candidate.authorityToken,
+      importId: candidate.importId,
+      slot,
+    });
+  }
+
+  return { assignments, gaps };
+};
+
+// The legacy planner already owns hydrated snapshots, so its authority token is
+// never used for a second read. A fixed bounded token lets it reuse the exact
+// same ranking implementation without manufacturing persistence authority.
+const AlreadyHydratedRecipeAuthorityToken = Schema.decodeUnknownSync(
+  MealPlanRecipeAuthorityToken
+)({
+  extractionFingerprint: "0".repeat(64),
+  reviewVersion: 0,
+  tagsFingerprint: "0".repeat(64),
+});
 
 export const makeDeterministicMealPlanPlanner = (): MealPlanPlanner => ({
   plan: ({ approvedRecipes, policy, request }) =>
     Effect.sync(() => {
-      const meals: PlannedMeal[] = [];
-      const gaps: MealPlanGap[] = [];
-      const uses = new Map<string, number>();
-
-      for (const slot of request.slots) {
-        const [recipe] = approvedRecipes
-          .filter(
-            (candidate) =>
-              isRecipeEligibleForSlot(candidate, slot, policy) &&
-              (uses.get(candidate.importId) ?? 0) < policy.maxRecipeUses
-          )
-          .toSorted(compareCandidates(policy));
-
-        if (recipe === undefined) {
-          gaps.push({
-            reason: "no_eligible_approved_recipe",
-            slotId: slot.slotId,
-          });
-          continue;
+      const selection = selectMealPlanCandidates(
+        addMealPlanCandidatePage(
+          makeMealPlanCandidateFrontier({
+            policy,
+            request,
+          }),
+          approvedRecipes.map((recipe) => ({
+            authorityToken: AlreadyHydratedRecipeAuthorityToken,
+            importId: recipe.importId,
+            tags: recipe.tags,
+          }))
+        )
+      );
+      const recipesById = new Map<string, MealPlanRecipeSnapshot>();
+      for (const recipe of approvedRecipes) {
+        if (!recipesById.has(recipe.importId)) {
+          recipesById.set(recipe.importId, recipe);
         }
-
-        uses.set(recipe.importId, (uses.get(recipe.importId) ?? 0) + 1);
-        const reasons: [MealPlanReason, ...MealPlanReason[]] = [
-          "approved_recipe",
-          "meal_type_match",
-          "hard_constraints_satisfied",
-        ];
-        if (hasPreferredCuisine(recipe, policy)) {
-          reasons.push("preferred_cuisine");
-        }
-        meals.push({
-          date: slot.date,
-          mealType: slot.mealType,
-          reasons,
-          relevantTags: recipe.tags,
-          servings: slot.servings,
-          slotId: slot.slotId,
-          sourceRecipe: recipe,
-        });
       }
+      const meals: PlannedMeal[] = selection.assignments.map(
+        ({ importId, slot }) => {
+          const recipe = recipesById.get(importId);
+          if (recipe === undefined) {
+            throw new Error("Selected meal-plan recipe is unavailable");
+          }
+          const reasons: [MealPlanReason, ...MealPlanReason[]] = [
+            "approved_recipe",
+            "meal_type_match",
+            "hard_constraints_satisfied",
+          ];
+          if (hasPreferredCuisine(recipe, policy)) {
+            reasons.push("preferred_cuisine");
+          }
+          return {
+            date: slot.date,
+            mealType: slot.mealType,
+            reasons,
+            relevantTags: recipe.tags,
+            servings: slot.servings,
+            slotId: slot.slotId,
+            sourceRecipe: recipe,
+          };
+        }
+      );
 
-      return { gaps, meals };
+      return { gaps: selection.gaps, meals };
     }),
 });
 
@@ -441,6 +429,24 @@ const fingerprint = <S extends Schema.ConstraintEncoder<unknown>>(
   schema: S,
   value: S["Type"]
 ): string => JSON.stringify(Schema.encodeSync(schema)(value));
+
+const ManualMealSwapFingerprint = Schema.Struct({
+  actorId: ManualMealSwapRequest.fields.actorId,
+  draftId: ManualMealSwapRequest.fields.draftId,
+  expectedRevision: ManualMealSwapRequest.fields.expectedRevision,
+  mutationId: ManualMealSwapRequest.fields.mutationId,
+  reason: ManualMealSwapRequest.fields.reason,
+  replacementImportId: ManualMealSwapRequest.fields.replacementImportId,
+  slotId: ManualMealSwapRequest.fields.slotId,
+});
+
+const MealPlanDecisionFingerprint = Schema.Struct({
+  actorId: MealPlanDecisionRequest.fields.actorId,
+  draftId: MealPlanDecisionRequest.fields.draftId,
+  expectedRevision: MealPlanDecisionRequest.fields.expectedRevision,
+  mutationId: MealPlanDecisionRequest.fields.mutationId,
+  reason: MealPlanDecisionRequest.fields.reason,
+});
 
 const getPlan = (drafts: MealPlanDraftRepository, draftId: MealPlanDraftId) =>
   drafts.find(draftId).pipe(
@@ -463,7 +469,7 @@ const assertRevision = (plan: MealPlan, expectedRevision: number) =>
     : Effect.fail(mealPlanVersionConflict(expectedRevision, plan.revision));
 
 const reasonsFor = (
-  recipe: ApprovedRecipe,
+  recipe: MealPlanRecipeSnapshot,
   policy: MealPlanPolicy
 ): readonly [MealPlanReason, ...MealPlanReason[]] => {
   const reasons: [MealPlanReason, ...MealPlanReason[]] = [
@@ -480,7 +486,7 @@ const reasonsFor = (
 export const makeMealPlanService = (input: {
   readonly drafts: MealPlanDraftRepository;
   readonly planner: MealPlanPlanner;
-  readonly recipeReviews: Pick<RecipeReviewService, "listApproved">;
+  readonly recipeReviews: MealPlanRecipeSource;
 }): MealPlanService => {
   const decide = (
     request: MealPlanDecisionRequest,
@@ -488,7 +494,7 @@ export const makeMealPlanService = (input: {
   ) =>
     Effect.gen(function* decideMealPlanDraft() {
       const mutationFingerprint = `${outcome}:${fingerprint(
-        MealPlanDecisionRequest,
+        MealPlanDecisionFingerprint,
         request
       )}`;
       const replay = yield* input.drafts.findMutation({
@@ -587,7 +593,10 @@ export const makeMealPlanService = (input: {
       ),
     swap: (request) =>
       Effect.gen(function* swapMealPlanRecipe() {
-        const mutationFingerprint = fingerprint(ManualMealSwapRequest, request);
+        const mutationFingerprint = fingerprint(
+          ManualMealSwapFingerprint,
+          request
+        );
         const replay = yield* input.drafts.findMutation({
           draftId: request.draftId,
           mutationFingerprint,

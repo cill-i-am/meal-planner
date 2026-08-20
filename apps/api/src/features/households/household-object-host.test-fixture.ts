@@ -1,20 +1,83 @@
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import { DurableObject } from "cloudflare:workers";
+import { eq } from "drizzle-orm";
 import { Context, Effect, Schema } from "effect";
 
+import migrations from "../../../household-migrations/migrations.js";
+import { ApprovedRecipe } from "../imports/import-recipe-review.js";
+import {
+  ManualMealSwapRequest,
+  MealPlan,
+  MealPlanDecisionRequest,
+  MealPlanDraftId,
+  MealPlanPolicy,
+  MealPlanRequest,
+} from "../meal-planning/meal-plan.js";
+import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
 import { HouseholdObjectRuntime } from "./household-object.js";
 import type {
   HouseholdDomainFailure,
   HouseholdMetadata,
 } from "./household.contract.js";
 import { HouseholdEnsureInput } from "./household.contract.js";
+import { householdMealPlans } from "./household.database-schema.js";
+
+const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
+const MealPlanWire = Schema.toEncoded(MealPlan);
+const MealPlanPolicyWire = Schema.toEncoded(MealPlanPolicy);
+const MealPlanRequestWire = Schema.toEncoded(MealPlanRequest);
+const ManualMealSwapRequestWire = Schema.toEncoded(ManualMealSwapRequest);
+const MealPlanDecisionRequestWire = Schema.toEncoded(MealPlanDecisionRequest);
 
 const alchemyRuntimeContractKey = "shape";
+const HouseholdObjectTestRuntime = Effect.gen(
+  function* initializeHouseholdObjectTestRuntime() {
+    const household = yield* yield* HouseholdObjectRuntime;
+    const durableObjectState = yield* Cloudflare.DurableObjectState;
+    const database = Drizzle.DurableObject({ migrations });
+    const scoped = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      effect.pipe(
+        Effect.provideService(
+          Cloudflare.DurableObjectState,
+          durableObjectState
+        ),
+        Effect.scoped
+      );
+    return Effect.succeed({
+      ...household,
+      inspectMealPlanStorage: (draftId: MealPlanDraftId) =>
+        scoped(
+          Effect.gen(function* inspectMealPlanStorage() {
+            const connection = yield* database;
+            const [row] = yield* connection
+              .select({
+                planJson: householdMealPlans.planJson,
+                requestFingerprintDigest:
+                  householdMealPlans.requestFingerprintDigest,
+              })
+              .from(householdMealPlans)
+              .where(eq(householdMealPlans.draftId, draftId))
+              .limit(1);
+            if (row === undefined) {
+              return null;
+            }
+            const encoder = new TextEncoder();
+            return {
+              planJsonBytes: encoder.encode(row.planJson).byteLength,
+              replayKeyBytes: encoder.encode(row.requestFingerprintDigest)
+                .byteLength,
+            };
+          })
+        ),
+    });
+  }
+);
 const entrypoint = Effect.succeed({
   RuntimeContext: {
     exports: Effect.succeed({
       HouseholdObject: {
-        constructor: HouseholdObjectRuntime,
+        constructor: HouseholdObjectTestRuntime,
         services: Context.empty(),
       },
     }),
@@ -32,21 +95,114 @@ const HouseholdObjectBridge = Cloudflare.makeDurableObjectBridge(
 export class HouseholdObject extends HouseholdObjectBridge {}
 
 interface HouseholdObjectClient {
+  readonly approveMealPlan: (input: {
+    readonly organizationId: HouseholdEnsureInput["organizationId"];
+    readonly request: typeof MealPlanDecisionRequestWire.Type;
+  }) => Effect.Effect<
+    typeof MealPlanWire.Type,
+    HouseholdDomainFailure | MealPlanServiceError
+  >;
+  readonly createMealPlan: (input: {
+    readonly approvedRecipes: readonly (typeof ApprovedRecipeWire.Type)[];
+    readonly organizationId: HouseholdEnsureInput["organizationId"];
+    readonly policy: typeof MealPlanPolicyWire.Type;
+    readonly request: typeof MealPlanRequestWire.Type;
+  }) => Effect.Effect<
+    typeof MealPlanWire.Type,
+    HouseholdDomainFailure | MealPlanServiceError
+  >;
   readonly ensureHousehold: (
     input: HouseholdEnsureInput
   ) => Effect.Effect<HouseholdMetadata, HouseholdDomainFailure>;
+  readonly inspectMealPlanStorage: (draftId: MealPlanDraftId) => Effect.Effect<{
+    readonly planJsonBytes: number;
+    readonly replayKeyBytes: number;
+  } | null>;
+  readonly readMealPlan: (input: {
+    readonly draftId: MealPlanDraftId;
+    readonly organizationId: HouseholdEnsureInput["organizationId"];
+  }) => Effect.Effect<
+    typeof MealPlanWire.Type | null,
+    HouseholdDomainFailure | MealPlanServiceError
+  >;
+  readonly rejectMealPlan: (input: {
+    readonly organizationId: HouseholdEnsureInput["organizationId"];
+    readonly request: typeof MealPlanDecisionRequestWire.Type;
+  }) => Effect.Effect<
+    typeof MealPlanWire.Type,
+    HouseholdDomainFailure | MealPlanServiceError
+  >;
+  readonly swapMealPlan: (input: {
+    readonly approvedRecipes: readonly (typeof ApprovedRecipeWire.Type)[];
+    readonly organizationId: HouseholdEnsureInput["organizationId"];
+    readonly request: typeof ManualMealSwapRequestWire.Type;
+  }) => Effect.Effect<
+    typeof MealPlanWire.Type,
+    HouseholdDomainFailure | MealPlanServiceError
+  >;
 }
 
-const HouseholdTestCommand = Schema.Struct({
-  objectName: Schema.String,
-  organizationId: HouseholdEnsureInput.fields.organizationId,
-});
+const HouseholdTestCommand = Schema.Union([
+  Schema.Struct({
+    objectName: Schema.String,
+    operation: Schema.Literal("approveMealPlan"),
+    organizationId: HouseholdEnsureInput.fields.organizationId,
+    request: MealPlanDecisionRequestWire,
+  }),
+  Schema.Struct({
+    objectName: Schema.String,
+    operation: Schema.Literal("ensure"),
+    organizationId: HouseholdEnsureInput.fields.organizationId,
+  }),
+  Schema.Struct({
+    approvedRecipes: Schema.Array(ApprovedRecipeWire),
+    objectName: Schema.String,
+    operation: Schema.Literal("createMealPlan"),
+    organizationId: HouseholdEnsureInput.fields.organizationId,
+    policy: MealPlanPolicyWire,
+    request: MealPlanRequestWire,
+  }),
+  Schema.Struct({
+    draftId: MealPlanDraftId,
+    objectName: Schema.String,
+    operation: Schema.Literal("inspectMealPlanStorage"),
+  }),
+  Schema.Struct({
+    draftId: MealPlanDraftId,
+    objectName: Schema.String,
+    operation: Schema.Literal("readMealPlan"),
+    organizationId: HouseholdEnsureInput.fields.organizationId,
+  }),
+  Schema.Struct({
+    objectName: Schema.String,
+    operation: Schema.Literal("rejectMealPlan"),
+    organizationId: HouseholdEnsureInput.fields.organizationId,
+    request: MealPlanDecisionRequestWire,
+  }),
+  Schema.Struct({
+    approvedRecipes: Schema.Array(ApprovedRecipeWire),
+    objectName: Schema.String,
+    operation: Schema.Literal("swapMealPlan"),
+    organizationId: HouseholdEnsureInput.fields.organizationId,
+    request: ManualMealSwapRequestWire,
+  }),
+]);
 
 interface HouseholdTestEnv {
   readonly HouseholdObject: {
     readonly getByName: (name: string) => object;
   };
 }
+
+const respond = <A, E>(effect: Effect.Effect<A, E>) =>
+  Effect.runPromise(
+    effect.pipe(
+      Effect.match({
+        onFailure: (error) => Response.json({ error, ok: false }),
+        onSuccess: (value) => Response.json({ ok: true, value }),
+      })
+    )
+  );
 
 export default {
   fetch: async (request: Request, env: HouseholdTestEnv) => {
@@ -56,15 +212,56 @@ export default {
     const household = Cloudflare.makeRpcStub<HouseholdObjectClient>(
       env.HouseholdObject.getByName(command.objectName)
     );
-    return Effect.runPromise(
-      household
-        .ensureHousehold({ organizationId: command.organizationId })
-        .pipe(
-          Effect.match({
-            onFailure: (error) => Response.json({ error, ok: false }),
-            onSuccess: (value) => Response.json({ ok: true, value }),
-          })
-        )
+    if (command.operation === "approveMealPlan") {
+      return respond(
+        household.approveMealPlan({
+          organizationId: command.organizationId,
+          request: command.request,
+        })
+      );
+    }
+    if (command.operation === "createMealPlan") {
+      return respond(
+        household.createMealPlan({
+          approvedRecipes: command.approvedRecipes,
+          organizationId: command.organizationId,
+          policy: command.policy,
+          request: command.request,
+        })
+      );
+    }
+    if (command.operation === "ensure") {
+      return respond(
+        household.ensureHousehold({
+          organizationId: command.organizationId,
+        })
+      );
+    }
+    if (command.operation === "inspectMealPlanStorage") {
+      return respond(household.inspectMealPlanStorage(command.draftId));
+    }
+    if (command.operation === "readMealPlan") {
+      return respond(
+        household.readMealPlan({
+          draftId: command.draftId,
+          organizationId: command.organizationId,
+        })
+      );
+    }
+    if (command.operation === "rejectMealPlan") {
+      return respond(
+        household.rejectMealPlan({
+          organizationId: command.organizationId,
+          request: command.request,
+        })
+      );
+    }
+    return respond(
+      household.swapMealPlan({
+        approvedRecipes: command.approvedRecipes,
+        organizationId: command.organizationId,
+        request: command.request,
+      })
     );
   },
 };

@@ -1,0 +1,159 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "4a8798e6-bd8c-4bff-b69f-72711a170898",
+  "prevIds": ["5e67f58d-6e16-40d2-9db6-cffa14474976"],
+  "ddl": [
+    {
+      "name": "household_meal_plan_mutation_receipts",
+      "entityType": "tables"
+    },
+    {
+      "name": "household_meal_plans",
+      "entityType": "tables"
+    },
+    {
+      "name": "household_meta",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "draft_id",
+      "entityType": "columns",
+      "table": "household_meal_plan_mutation_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "mutation_fingerprint",
+      "entityType": "columns",
+      "table": "household_meal_plan_mutation_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "mutation_id",
+      "entityType": "columns",
+      "table": "household_meal_plan_mutation_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "result_json",
+      "entityType": "columns",
+      "table": "household_meal_plan_mutation_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "draft_id",
+      "entityType": "columns",
+      "table": "household_meal_plans"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "plan_json",
+      "entityType": "columns",
+      "table": "household_meal_plans"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "request_fingerprint_digest",
+      "entityType": "columns",
+      "table": "household_meal_plans"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revision",
+      "entityType": "columns",
+      "table": "household_meal_plans"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at_epoch_ms",
+      "entityType": "columns",
+      "table": "household_meta"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "household_meta"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "singleton_key",
+      "entityType": "columns",
+      "table": "household_meta"
+    },
+    {
+      "columns": ["draft_id", "mutation_id"],
+      "nameExplicit": false,
+      "name": "household_meal_plan_mutation_receipts_pk",
+      "entityType": "pks",
+      "table": "household_meal_plan_mutation_receipts"
+    },
+    {
+      "columns": ["draft_id"],
+      "nameExplicit": false,
+      "name": "household_meal_plans_pk",
+      "table": "household_meal_plans",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["singleton_key"],
+      "nameExplicit": false,
+      "name": "household_meta_pk",
+      "table": "household_meta",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["organization_id"],
+      "nameExplicit": false,
+      "name": "household_meta_organization_id_unique",
+      "entityType": "uniques",
+      "table": "household_meta"
+    }
+  ],
+  "renames": []
+}
