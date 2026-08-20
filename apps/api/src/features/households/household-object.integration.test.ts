@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   ApprovedRecipe,
+  RecipeReviewView,
   projectApprovedRecipe,
 } from "../imports/import-recipe-review.js";
 import {
@@ -1158,5 +1159,249 @@ describe("household Durable Object", () => {
       created.value.draftId
     );
     expect(persisted).toEqual(approved);
+  });
+
+  it("owns recipe review, correction, approval publication, planning, replay, and restart atomically", async () => {
+    const objectName = "household:v1:organization-recipe-bank-open";
+    const organizationId = "organization-recipe-bank-open";
+    const sourceReview = syntheticRecipeReviews.at(0);
+    if (sourceReview === undefined) {
+      throw new Error("Expected a synthetic recipe review source.");
+    }
+    const snapshot = Schema.encodeSync(RecipeReviewView)(sourceReview);
+    const command = {
+      objectName,
+      openedAt: "2026-08-20T08:00:00.000Z",
+      operation: "openRecipeReview",
+      organizationId,
+      snapshot: {
+        draft: snapshot.draft,
+        evidence: snapshot.evidence,
+      },
+    };
+    const invoke = async (body: object) => {
+      const response = await runtime.dispatchFetch("http://localhost/", {
+        body: JSON.stringify(body),
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+
+    const opened = await invoke(command);
+    expect(await invoke(command)).toEqual(opened);
+    expect(opened).toMatchObject({
+      ok: true,
+      value: {
+        lifecycle: "needs_review",
+        version: 0,
+      },
+    });
+
+    const collision = await invoke({
+      ...command,
+      snapshot: {
+        ...command.snapshot,
+        draft: {
+          ...command.snapshot.draft,
+          extractionFingerprint: "f".repeat(64),
+        },
+      },
+    });
+    expect(collision).toMatchObject({
+      error: { _tag: "RecipeReviewOpenConflict" },
+      ok: false,
+    });
+
+    const answerCommand = {
+      actorId: "actor-household-member",
+      answeredAt: "2026-08-20T08:05:00.000Z",
+      answers: [
+        { field: "name", value: "Corrected Household Tomato Orzo" },
+        { field: "tags", value: sourceReview.tags },
+      ],
+      expectedVersion: 0,
+      importId: snapshot.draft.importId,
+      mutationId: "answer-recipe-review-1",
+      objectName,
+      operation: "answerRecipeReview",
+      organizationId,
+    };
+    const answered = await invoke(answerCommand);
+    expect(answered).toMatchObject({
+      ok: true,
+      value: {
+        corrections: [
+          {
+            actorId: "actor-household-member",
+            after: "Corrected Household Tomato Orzo",
+            field: "name",
+            version: 1,
+          },
+        ],
+        tags: sourceReview.tags,
+        version: 1,
+      },
+    });
+    expect(await invoke(answerCommand)).toEqual(answered);
+    expect(
+      await invoke({
+        ...answerCommand,
+        answers: [{ field: "name", value: "Mutation collision" }],
+      })
+    ).toMatchObject({
+      error: { _tag: "RecipeReviewMutationConflict" },
+      ok: false,
+    });
+
+    const approveCommand = {
+      actorId: "actor-household-member",
+      expectedVersion: 1,
+      importId: snapshot.draft.importId,
+      mutationId: "approve-recipe-review-1",
+      objectName,
+      operation: "transitionRecipeReview",
+      organizationId,
+      reason: "Approved for the household Recipe Bank.",
+      to: "approved",
+      transitionedAt: "2026-08-20T08:10:00.000Z",
+    };
+    const approved = await invoke(approveCommand);
+    expect(approved).toMatchObject({
+      ok: true,
+      value: {
+        _tag: "Approved",
+        actorId: "actor-household-member",
+        lifecycle: "approved",
+        recipe: { name: "Corrected Household Tomato Orzo" },
+        version: 2,
+      },
+    });
+    expect(await invoke(approveCommand)).toEqual(approved);
+    expect(
+      await invoke({
+        ...approveCommand,
+        transitionedAt: "2026-08-20T08:11:00.000Z",
+      })
+    ).toMatchObject({
+      error: { _tag: "RecipeReviewMutationConflict" },
+      ok: false,
+    });
+
+    const listed = await invoke({
+      objectName,
+      operation: "listApprovedRecipes",
+      organizationId,
+    });
+    expect(listed).toMatchObject({
+      ok: true,
+      value: [
+        {
+          importId: snapshot.draft.importId,
+          recipe: { name: "Corrected Household Tomato Orzo" },
+          version: 2,
+        },
+      ],
+    });
+
+    const planRequest = Schema.decodeUnknownSync(MealPlanRequest)({
+      requestKey: "recipe-bank-week-1",
+      slots: [
+        {
+          date: "2026-08-24",
+          mealType: "dinner",
+          servings: 2,
+          slotId: "recipe-bank-dinner",
+        },
+      ],
+    });
+    const planned = await createMealPlan(objectName, organizationId, {
+      approvedRecipes: [],
+      request: planRequest,
+    });
+    if (!planned.ok) {
+      throw new Error(
+        `Expected Recipe Bank planning to succeed: ${JSON.stringify(planned.error)}`
+      );
+    }
+    expect(planned).toMatchObject({
+      ok: true,
+      value: {
+        meals: [
+          {
+            sourceRecipe: {
+              importId: snapshot.draft.importId,
+              recipe: { name: "Corrected Household Tomato Orzo" },
+            },
+          },
+        ],
+      },
+    });
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    expect(
+      await invoke({
+        importId: snapshot.draft.importId,
+        objectName,
+        operation: "readRecipeReview",
+        organizationId,
+      })
+    ).toEqual(approved);
+    expect(await invoke(approveCommand)).toEqual(approved);
+    expect(
+      await readMealPlan(
+        objectName,
+        organizationId,
+        `draft-${planRequest.requestKey}`
+      )
+    ).toEqual(planned);
+  });
+
+  it("serializes concurrent stale recipe corrections so one version wins", async () => {
+    const objectName = "household:v1:organization-recipe-bank-concurrency";
+    const organizationId = "organization-recipe-bank-concurrency";
+    const sourceReview = syntheticRecipeReviews.at(0);
+    if (sourceReview === undefined) {
+      throw new Error("Expected a synthetic recipe review source.");
+    }
+    const snapshot = Schema.encodeSync(RecipeReviewView)(sourceReview);
+    const invoke = async (body: object) => {
+      const response = await runtime.dispatchFetch("http://localhost/", {
+        body: JSON.stringify(body),
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      return response.json() as Promise<{
+        readonly error?: { readonly _tag: string };
+        readonly ok: boolean;
+      }>;
+    };
+    await invoke({
+      objectName,
+      openedAt: "2026-08-20T09:00:00.000Z",
+      operation: "openRecipeReview",
+      organizationId,
+      snapshot: { draft: snapshot.draft, evidence: snapshot.evidence },
+    });
+    const answer = (mutationId: string, value: string) => ({
+      actorId: "actor-concurrent",
+      answeredAt: "2026-08-20T09:05:00.000Z",
+      answers: [{ field: "name", value }],
+      expectedVersion: 0,
+      importId: snapshot.draft.importId,
+      mutationId,
+      objectName,
+      operation: "answerRecipeReview",
+      organizationId,
+    });
+    const results = await Promise.all([
+      invoke(answer("concurrent-answer-a", "Concurrent recipe A")),
+      invoke(answer("concurrent-answer-b", "Concurrent recipe B")),
+    ]);
+    expect(results.filter(({ ok }) => ok)).toHaveLength(1);
+    expect(results.find(({ ok }) => !ok)?.error?._tag).toBe(
+      "RecipeReviewVersionConflict"
+    );
   });
 });

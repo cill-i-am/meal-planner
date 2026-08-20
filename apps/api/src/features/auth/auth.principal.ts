@@ -12,11 +12,16 @@ import { AuthPrincipalResolutionError } from "./auth.principal.error.js";
 
 export { AuthPrincipalResolutionError } from "./auth.principal.error.js";
 
+export type AuthenticatedRecipeImportPrincipal =
+  typeof RecipeImportPrincipal.Type & {
+    readonly organizationId: typeof HouseholdOrganizationId.Type;
+  };
+
 export interface AuthPrincipalResolver {
   readonly resolve: (
     headers: Headers
   ) => Effect.Effect<
-    typeof RecipeImportPrincipal.Type,
+    AuthenticatedRecipeImportPrincipal,
     AuthPrincipalResolutionError
   >;
 }
@@ -119,8 +124,8 @@ export const resolveAuthPrincipal = (options: {
       Effect.tryPromise({
         catch: () =>
           new AuthPrincipalResolutionError({ reason: "invalid_session" }),
-        try: async () =>
-          Schema.decodeUnknownSync(RecipeImportPrincipal)({
+        try: async () => ({
+          ...Schema.decodeUnknownSync(RecipeImportPrincipal)({
             actorId: Schema.decodeUnknownSync(RecipeImportActorId)(
               await sha256(principal.userId)
             ),
@@ -128,6 +133,8 @@ export const resolveAuthPrincipal = (options: {
               RecipeImportHouseholdScopeId
             )(await sha256(principal.organizationId)),
           }),
+          organizationId: principal.organizationId,
+        }),
       })
     )
   );

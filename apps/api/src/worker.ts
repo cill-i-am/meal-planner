@@ -255,6 +255,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const requestLayer = makeImportWorkerRequestLayer({
           bucket: acquisitionBucket,
           database,
+          householdDomain,
           importWorkflowStarter: makeImportWorkflowStarter(
             importAcquisitionWorkflow
           ),
@@ -281,7 +282,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const householdMealPlanRequestLayer = makeHouseholdMealPlanRequestLayer(
           {
             gateway: makeHouseholdMealPlanGateway({
-              database,
               domain: householdDomain,
             }),
             resolver: authenticatedOrganizationResolver,

@@ -108,8 +108,14 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
     expect(migration).toContain("`intent_id` text");
     expect(migration).toContain("`replay_intent_id` text");
-    expect(migration).toContain("`item_count` integer NOT NULL");
     expect(migration).toContain("INSERT INTO `pilot_provider_stage_budget`");
+    expect(migration).not.toContain(
+      'CREATE TABLE IF NOT EXISTS "recipe_reviews"'
+    );
+    expect(migration).not.toContain(
+      'CREATE TABLE IF NOT EXISTS "recipe_review_corrections"'
+    );
+    expect(migration).not.toContain("CREATE TABLE `recipe_review_mutations`");
     expect(migration).not.toMatch(/`canonical_source_id`/u);
     expect(migration).not.toContain("__new_");
     expect(migration).not.toContain("migration_snapshot");

@@ -30,7 +30,7 @@ export type HouseholdProvenanceMismatch =
 export const HouseholdPersistenceFailure = Schema.TaggedStruct(
   "HouseholdPersistenceFailure",
   {
-    operation: Schema.Literals(["ensure", "read"]),
+    operation: Schema.Literals(["ensure", "read", "save"]),
   }
 );
 export type HouseholdPersistenceFailure =

@@ -21,7 +21,8 @@ import {
   RecipeImportIntentReviewApplication,
   makeRecipeImportIntentReviewApplication,
 } from "./import-intent-review.js";
-import { makeD1RecipeImportIntentReviewRepository } from "./import-intent-review.repository.d1.js";
+import type { HouseholdRecipeReviewPort } from "./import-intent-review.repository.js";
+import { makeRecipeImportIntentReviewRepository } from "./import-intent-review.repository.js";
 import {
   ImportIntentIdGenerator,
   makeImportIntentApplication,
@@ -53,6 +54,7 @@ export interface ImportWorkerRequestLayerInput {
   readonly database: AnyD1Database;
   readonly importWorkflowStarter: ImportWorkflowReconciler;
   readonly importWorkflowTerminator: ImportIntentWorkflowTerminator;
+  readonly householdDomain: HouseholdRecipeReviewPort;
   readonly now: () => string;
   readonly principalResolver: AuthPrincipalResolver;
   readonly queue: ImportBatchQueue;
@@ -134,7 +136,10 @@ export const makeImportWorkerRequestLayer = (
     )
   );
   const intentReview = makeRecipeImportIntentReviewApplication(
-    makeD1RecipeImportIntentReviewRepository(input.database)
+    makeRecipeImportIntentReviewRepository(
+      input.database,
+      input.householdDomain
+    )
   );
 
   return Layer.mergeAll(

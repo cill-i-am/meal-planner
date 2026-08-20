@@ -1720,20 +1720,6 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
       model_calls: 1,
       state: "needs_review",
     });
-    const reviewRoot = () =>
-      testEnv.MealPlannerDatabase.prepare(
-        `SELECT lifecycle, version, tags_json, created_at, updated_at
-           FROM recipe_reviews WHERE extraction_fingerprint = ?`
-      )
-        .bind(draft.extractionFingerprint)
-        .first();
-    await expect(reviewRoot()).resolves.toEqual({
-      created_at: completedAt,
-      lifecycle: "needs_review",
-      tags_json: null,
-      updated_at: completedAt,
-      version: 0,
-    });
     expect(persisted?.draft_json).not.toMatch(
       /Synthetic fixture caption|Simmer for ten minutes|providerBody|authorization|secret/iu
     );
@@ -1756,25 +1742,9 @@ describe("provider-free evidence-to-recipe-draft tracer", () => {
       updatedAt: now,
     });
 
-    const existingTags = JSON.stringify({ retained: true });
-    const existingUpdatedAt = "2026-07-21T10:04:00.000Z";
-    await testEnv.MealPlannerDatabase.prepare(
-      `UPDATE recipe_reviews
-          SET version = 1, tags_json = ?, updated_at = ?
-        WHERE extraction_fingerprint = ?`
-    )
-      .bind(existingTags, existingUpdatedAt, draft.extractionFingerprint)
-      .run();
     await expect(
       Effect.runPromise(recipeRepository.complete(draft))
     ).resolves.toEqual(draft);
-    await expect(reviewRoot()).resolves.toEqual({
-      created_at: completedAt,
-      lifecycle: "needs_review",
-      tags_json: existingTags,
-      updated_at: existingUpdatedAt,
-      version: 1,
-    });
 
     const replay = makeDeterministicRecipeExtractorValue(descriptor, {
       malformed: true,

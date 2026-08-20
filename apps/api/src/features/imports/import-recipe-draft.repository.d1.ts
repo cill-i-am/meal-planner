@@ -85,7 +85,6 @@ const D1CompleteBatchResults = Schema.Tuple([
   D1MutationResult,
   D1MutationResult,
   D1MutationResult,
-  D1MutationResult,
   D1RecipeExtractionRows,
 ]);
 
@@ -412,32 +411,13 @@ export const makeD1RecipeDraftRepository = (
             ),
           binding
             .prepare(
-              `INSERT INTO recipe_reviews (
-                 extraction_fingerprint, lifecycle, version, tags_json,
-                 created_at, updated_at
-               )
-               SELECT extraction_fingerprint, 'needs_review', 0, NULL, ?, ?
-                 FROM import_recipe_extractions
-                WHERE extraction_fingerprint = ? AND import_id = ?
-                  AND acquisition_generation = ? AND state = 'needs_review'
-               ON CONFLICT(extraction_fingerprint) DO NOTHING`
-            )
-            .bind(
-              DateTime.formatIso(draft.createdAt),
-              DateTime.formatIso(draft.createdAt),
-              draft.extractionFingerprint,
-              draft.importId,
-              draft.generation
-            ),
-          binding
-            .prepare(
               `SELECT * FROM import_recipe_extractions
                 WHERE extraction_fingerprint = ? AND is_current = 1`
             )
             .bind(draft.extractionFingerprint),
         ])
       );
-      const [_parentUpdate, _previousUpdate, _insert, _childUpdate, selected] =
+      const [_parentUpdate, _previousUpdate, _childUpdate, selected] =
         yield* Schema.decodeUnknownEffect(D1CompleteBatchResults, {
           onExcessProperty: "ignore",
         })(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));

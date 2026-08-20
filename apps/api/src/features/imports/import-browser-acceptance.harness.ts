@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import {
   RecipeImportIntentId,
   RecipeImportPrincipal,
@@ -611,6 +612,16 @@ const main = async () => {
     const requestLayer = makeImportWorkerRequestLayer({
       bucket: acquisitionBucket(bucket),
       database,
+      householdDomain: {
+        answerRecipeReview: () =>
+          Effect.fail({ _tag: "HouseholdPersistenceFailure" as const }),
+        openRecipeReview: () =>
+          Effect.fail({ _tag: "HouseholdPersistenceFailure" as const }),
+        readRecipeReview: () =>
+          Effect.fail({ _tag: "HouseholdPersistenceFailure" as const }),
+        transitionRecipeReview: () =>
+          Effect.fail({ _tag: "HouseholdPersistenceFailure" as const }),
+      },
       importWorkflowStarter: makeProviderFreeWorkflowStarter({
         activeWorkflowIds: new Set(),
         bucket,
@@ -639,9 +650,16 @@ const main = async () => {
                   reason: "invalid_session",
                 })
               )
-            : Effect.succeed(
-                Schema.decodeUnknownSync(RecipeImportPrincipal)(principal)
-              );
+            : Effect.succeed({
+                ...Schema.decodeUnknownSync(RecipeImportPrincipal)(principal),
+                organizationId: Schema.decodeUnknownSync(
+                  HouseholdOrganizationId
+                )(
+                  token === bearerTokenA
+                    ? "browser-household-a"
+                    : "browser-household-b"
+                ),
+              });
         },
       },
       queue: { enqueue: () => Effect.void },

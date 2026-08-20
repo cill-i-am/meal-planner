@@ -1,3 +1,4 @@
+import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import {
   ActionNotFoundProblemDetails,
   IdempotencyConflictProblemDetails,
@@ -310,6 +311,21 @@ const toDomainPrincipal = (
     householdScopeId: principal.householdScopeId,
   });
 
+const toReviewPrincipal = (
+  principal: typeof RecipeImportPrincipal.Type
+): ImportPrincipal & {
+  readonly organizationId: typeof HouseholdOrganizationId.Type;
+} => ({
+  ...toDomainPrincipal(principal),
+  organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
+    (
+      principal as typeof RecipeImportPrincipal.Type & {
+        readonly organizationId?: unknown;
+      }
+    ).organizationId
+  ),
+});
+
 const retryAfterSeconds = 2;
 const retryAfterHeaders = (status: string) =>
   status === "processing" ? { "retry-after": retryAfterSeconds } : {};
@@ -392,7 +408,7 @@ const RecipeImportIntentHandlers = HttpApiBuilder.group(
       )
       .handle("getAction", ({ params }) =>
         Effect.gen(function* getRecipeImportAction() {
-          const principal = toDomainPrincipal(
+          const principal = toReviewPrincipal(
             yield* RecipeImportCurrentPrincipal
           );
           const application = yield* RecipeImportIntentReviewApplication;
@@ -403,7 +419,7 @@ const RecipeImportIntentHandlers = HttpApiBuilder.group(
       )
       .handle("answerAction", ({ headers, params, payload }) =>
         Effect.gen(function* answerRecipeImportAction() {
-          const principal = toDomainPrincipal(
+          const principal = toReviewPrincipal(
             yield* RecipeImportCurrentPrincipal
           );
           const application = yield* RecipeImportIntentReviewApplication;
@@ -420,7 +436,7 @@ const RecipeImportIntentHandlers = HttpApiBuilder.group(
       )
       .handle("confirmAction", ({ headers, params, payload }) =>
         Effect.gen(function* confirmRecipeImportAction() {
-          const principal = toDomainPrincipal(
+          const principal = toReviewPrincipal(
             yield* RecipeImportCurrentPrincipal
           );
           const application = yield* RecipeImportIntentReviewApplication;
@@ -468,7 +484,7 @@ const RecipeHandlers = HttpApiBuilder.group(
   (handlers) =>
     handlers.handle("get", ({ params }) =>
       Effect.gen(function* getRecipe() {
-        const principal = toDomainPrincipal(
+        const principal = toReviewPrincipal(
           yield* RecipeImportCurrentPrincipal
         );
         const application = yield* RecipeImportIntentReviewApplication;
@@ -486,12 +502,13 @@ const RecipeImportSessionAuthLive = Layer.effect(
       RecipeImportSessionAuth.of((httpEffect) =>
         Effect.gen(function* resolveRecipeImportSession() {
           const request = yield* HttpServerRequest.HttpServerRequest;
-          const principal = yield* resolver
+          const resolved = yield* resolver
             .resolve(new globalThis.Headers(Object.entries(request.headers)))
-            .pipe(
-              Effect.map(decodeApiPrincipal),
-              Effect.mapError(() => unauthorizedProblem)
-            );
+            .pipe(Effect.mapError(() => unauthorizedProblem));
+          const principal = {
+            ...decodeApiPrincipal(resolved),
+            organizationId: resolved.organizationId,
+          };
           return yield* httpEffect.pipe(
             Effect.provideService(RecipeImportCurrentPrincipal, principal)
           );

@@ -4,7 +4,6 @@ import {
   MealPlanDecisionRequest,
   MealPlanDraftId,
   MealPlanPolicy,
-  MealPlanRecipeSnapshot,
   MealPlanRequest,
 } from "@meal-planner/household-api";
 import { Schema } from "effect";
@@ -15,13 +14,11 @@ export const HouseholdMealPlanWire = Schema.toEncoded(MealPlan);
 export type HouseholdMealPlanWire = typeof HouseholdMealPlanWire.Type;
 
 const MealPlanPolicyWire = Schema.toEncoded(MealPlanPolicy);
-const MealPlanRecipeSnapshotWire = Schema.toEncoded(MealPlanRecipeSnapshot);
 const MealPlanRequestWire = Schema.toEncoded(MealPlanRequest);
 const ManualMealSwapRequestWire = Schema.toEncoded(ManualMealSwapRequest);
 const MealPlanDecisionRequestWire = Schema.toEncoded(MealPlanDecisionRequest);
 
 export const HouseholdCreateMealPlanInput = Schema.Struct({
-  approvedRecipes: Schema.Array(MealPlanRecipeSnapshotWire),
   organizationId: HouseholdOrganizationId,
   policy: MealPlanPolicyWire,
   request: MealPlanRequestWire,
@@ -36,7 +33,6 @@ export const HouseholdReadMealPlanInput = Schema.Struct({
 export type HouseholdReadMealPlanInput = typeof HouseholdReadMealPlanInput.Type;
 
 export const HouseholdSwapMealPlanInput = Schema.Struct({
-  approvedRecipes: Schema.Array(MealPlanRecipeSnapshotWire),
   organizationId: HouseholdOrganizationId,
   request: ManualMealSwapRequestWire,
 });

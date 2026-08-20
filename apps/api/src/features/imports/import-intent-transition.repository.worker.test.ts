@@ -1103,33 +1103,6 @@ describe("recipe import intent transition repository in workerd", () => {
             )
             .run()
         );
-        yield* Effect.promise(() =>
-          testEnv.MealPlannerDatabase.prepare(
-            `INSERT INTO recipe_reviews (
-               extraction_fingerprint, lifecycle, version, tags_json,
-               created_at, updated_at
-             ) VALUES (?, 'needs_review', 1, NULL, ?, ?)`
-          )
-            .bind(
-              fingerprint,
-              "2026-08-16T15:30:09.000Z",
-              "2026-08-16T15:30:09.000Z"
-            )
-            .run()
-        );
-        const reviewBefore = yield* Effect.promise(() =>
-          testEnv.MealPlannerDatabase.prepare(
-            `SELECT review.lifecycle, review.version,
-                    (SELECT count(*) FROM recipe_review_mutations
-                      WHERE extraction_fingerprint = review.extraction_fingerprint)
-                      AS mutation_count
-               FROM recipe_reviews AS review
-              WHERE review.extraction_fingerprint = ?`
-          )
-            .bind(fingerprint)
-            .first()
-        );
-
         yield* TestClock.setTime(Date.parse("2026-08-16T15:31:00.000Z"));
         const cancelled = yield* application.cancel(
           principal,
@@ -1142,24 +1115,6 @@ describe("recipe import intent transition repository in workerd", () => {
           status: "cancelled",
         });
         expect(terminated).toEqual([intentId]);
-        const reviewAfter = yield* Effect.promise(() =>
-          testEnv.MealPlannerDatabase.prepare(
-            `SELECT review.lifecycle, review.version,
-                    (SELECT count(*) FROM recipe_review_mutations
-                      WHERE extraction_fingerprint = review.extraction_fingerprint)
-                      AS mutation_count
-               FROM recipe_reviews AS review
-              WHERE review.extraction_fingerprint = ?`
-          )
-            .bind(fingerprint)
-            .first()
-        );
-        expect(reviewAfter).toEqual(reviewBefore);
-        expect(reviewAfter).toEqual({
-          lifecycle: "needs_review",
-          mutation_count: 0,
-          version: 1,
-        });
         const timeline = encodeTimeline(
           yield* application.timeline(principal, intentId)
         );

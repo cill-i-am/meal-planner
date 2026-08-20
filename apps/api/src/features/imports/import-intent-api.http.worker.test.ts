@@ -29,7 +29,9 @@ import {
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { AuthPrincipalResolutionError } from "../auth/auth.principal.js";
+import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { makeRecipeImportWorkerHttpLayer } from "./import-intent-api.http.js";
+import type { HouseholdRecipeReviewPort } from "./import-intent-review.repository.js";
 import { makeImportIntentWorkflowTransitions } from "./import-intent-workflow-transitions.js";
 import { ImportPrincipal } from "./import-intent.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
@@ -42,9 +44,22 @@ import type {
 } from "./import-media-acquirer.js";
 import { RetryableAcquisitionError } from "./import-media.errors.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
-import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import {
+  RecipeDraft,
+  makeD1RecipeDraftRepository,
+} from "./import-recipe-draft.repository.d1.js";
 import { makeDeterministicRecipeExtractor } from "./import-recipe-extractor.fake.js";
 import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
+import {
+  RecipeCorrection,
+  RecipeReviewTransition,
+  RecipeReviewView,
+  Review,
+  approvalBlockers,
+  applyCorrectionOverlay,
+  recipeReviewNullablePolicy,
+  refineRecipeReview,
+} from "./import-recipe-review.js";
 import {
   makeDeterministicSpeechAudioExtractor,
   makeDeterministicSpeechTranscriber,
@@ -68,7 +83,7 @@ import type {
   WorkerTestR2Object,
   WorkerTestR2ObjectBody,
 } from "./import-worker-test-environment.js";
-import { ImportTimestamp } from "./import.contracts.js";
+import { EvidenceReference, ImportTimestamp } from "./import.contracts.js";
 import type { ImportId, SourceCanonicalId } from "./import.contracts.js";
 import { makeD1ImportRepository } from "./import.repository.d1.js";
 import {
@@ -491,6 +506,179 @@ const makeProviderFreeWorkflowStarter = (input: {
     }).pipe(Effect.orDie),
 });
 
+const householdReviewKey = (organizationId: string, importId: string) =>
+  `${organizationId}:${importId}`;
+
+const householdReviewView = (
+  current: typeof Review.Type,
+  changes: Partial<typeof RecipeReviewView.Type>
+) =>
+  RecipeReviewView.make({
+    corrections: changes.corrections ?? current.corrections,
+    draft: current.draft,
+    evidence: current.evidence,
+    lifecycle: changes.lifecycle ?? current.lifecycle,
+    nullablePolicy: current.nullablePolicy,
+    tags: changes.tags === undefined ? current.tags : changes.tags,
+    transitions: changes.transitions ?? current.transitions,
+    unresolvedRequiredFields:
+      changes.unresolvedRequiredFields ?? current.unresolvedRequiredFields,
+    version: changes.version ?? current.version,
+  });
+
+const makeInMemoryHouseholdReviewPort = (): HouseholdRecipeReviewPort => {
+  const reviews = new Map<string, typeof Review.Type>();
+  const encode = Schema.encodeSync(Review);
+
+  return {
+    answerRecipeReview: (input) =>
+      Effect.gen(function* answerInMemoryReview() {
+        const key = householdReviewKey(input.organizationId, input.importId);
+        const current = reviews.get(key);
+        if (current === undefined) {
+          return yield* Effect.fail({ _tag: "RecipeReviewNotFound" });
+        }
+        if (
+          current._tag !== "NeedsReview" ||
+          current.version !== input.expectedVersion
+        ) {
+          return yield* Effect.fail({ _tag: "RecipeReviewVersionConflict" });
+        }
+        const nextVersion = current.version + 1;
+        const corrected = applyCorrectionOverlay(
+          current.draft,
+          current.corrections
+        );
+        const corrections = yield* Effect.all(
+          input.answers.map((answer) => {
+            if (answer.field === "tags") {
+              return Effect.succeed(null);
+            }
+            if (answer.field !== "name") {
+              return Effect.die(
+                `Unexpected HTTP fixture field ${answer.field}`
+              );
+            }
+            return Schema.decodeUnknownEffect(RecipeCorrection)({
+              actorId: input.actorId,
+              after: answer.value,
+              before: corrected.name,
+              correctedAt: input.answeredAt,
+              field: answer.field,
+              reason: "Household answered recipe review action",
+              version: nextVersion,
+            });
+          })
+        );
+        const nextCorrections = [
+          ...current.corrections,
+          ...corrections.filter((correction) => correction !== null),
+        ];
+        const tags =
+          input.answers.find((answer) => answer.field === "tags")?.value ??
+          current.tags;
+        const next = Option.getOrThrow(
+          refineRecipeReview(
+            householdReviewView(current, {
+              corrections: nextCorrections,
+              tags,
+              unresolvedRequiredFields: approvalBlockers(
+                current.draft,
+                nextCorrections
+              ).unresolvedRequiredFields,
+              version: nextVersion,
+            })
+          )
+        );
+        reviews.set(key, next);
+        return encode(next);
+      }),
+    openRecipeReview: (input) =>
+      Effect.gen(function* openInMemoryReview() {
+        const draft = yield* Schema.decodeUnknownEffect(RecipeDraft)(
+          input.snapshot.draft
+        );
+        const key = householdReviewKey(input.organizationId, draft.importId);
+        const existing = reviews.get(key);
+        if (existing !== undefined) {
+          if (
+            existing.draft.extractionFingerprint !== draft.extractionFingerprint
+          ) {
+            return yield* Effect.fail({ _tag: "RecipeReviewOpenConflict" });
+          }
+          return encode(existing);
+        }
+        const evidence = yield* Effect.all(
+          input.snapshot.evidence.map((reference) =>
+            Schema.decodeUnknownEffect(EvidenceReference)(reference)
+          )
+        );
+        const review = Option.getOrThrow(
+          refineRecipeReview(
+            RecipeReviewView.make({
+              corrections: [],
+              draft,
+              evidence,
+              lifecycle: "needs_review",
+              nullablePolicy: recipeReviewNullablePolicy,
+              tags: null,
+              transitions: [],
+              unresolvedRequiredFields: approvalBlockers(draft, [])
+                .unresolvedRequiredFields,
+              version: 0,
+            })
+          )
+        );
+        reviews.set(key, review);
+        return encode(review);
+      }),
+    readRecipeReview: (input) => {
+      const review = reviews.get(
+        householdReviewKey(input.organizationId, input.importId)
+      );
+      return review === undefined
+        ? Effect.fail({ _tag: "RecipeReviewNotFound" as const })
+        : Effect.succeed(encode(review));
+    },
+    transitionRecipeReview: (input) =>
+      Effect.gen(function* transitionInMemoryReview() {
+        const key = householdReviewKey(input.organizationId, input.importId);
+        const current = reviews.get(key);
+        if (current === undefined) {
+          return yield* Effect.fail({ _tag: "RecipeReviewNotFound" });
+        }
+        if (current.version !== input.expectedVersion) {
+          return yield* Effect.fail({ _tag: "RecipeReviewVersionConflict" });
+        }
+        const nextVersion = current.version + 1;
+        const transition = yield* Schema.decodeUnknownEffect(
+          RecipeReviewTransition
+        )({
+          actorId: input.actorId,
+          from: current.lifecycle,
+          reason: input.reason,
+          to: input.to,
+          transitionedAt: input.transitionedAt,
+          version: nextVersion,
+        });
+        const refined = refineRecipeReview(
+          householdReviewView(current, {
+            lifecycle: input.to,
+            transitions: [...current.transitions, transition],
+            version: nextVersion,
+          })
+        );
+        if (Option.isNone(refined)) {
+          return yield* Effect.fail({
+            _tag: "RecipeReviewTransitionRejected",
+          });
+        }
+        reviews.set(key, refined.value);
+        return encode(refined.value);
+      }),
+  };
+};
+
 const failureValue = <Success, Failure>(
   exit: Exit.Exit<Success, Failure>
 ): Failure | undefined => {
@@ -503,31 +691,15 @@ const failureValue = <Success, Failure>(
   return error._tag === "Some" ? error.value : undefined;
 };
 
-const auditConfirmation = (
-  database: WorkerTestD1Database,
-  intentId: string,
-  fixtureExtractionFingerprint: string
-) =>
+const auditConfirmation = (database: WorkerTestD1Database, intentId: string) =>
   database
     .prepare(
       `SELECT
-         (SELECT count(*) FROM recipe_review_corrections WHERE extraction_fingerprint = ?) AS corrections,
-         (SELECT count(*) FROM recipe_review_mutations WHERE extraction_fingerprint = ?) AS mutations,
-         (SELECT count(*) FROM recipe_review_transitions WHERE extraction_fingerprint = ?) AS transitions,
          (SELECT count(*) FROM recipe_import_intent_history WHERE intent_id = ?) AS history,
-         (SELECT version FROM recipe_reviews WHERE extraction_fingerprint = ?) AS review_version,
          (SELECT public_status FROM recipe_imports WHERE id = ?) AS public_status,
          (SELECT public_recipe_id FROM recipe_imports WHERE id = ?) AS recipe_id`
     )
-    .bind(
-      fixtureExtractionFingerprint,
-      fixtureExtractionFingerprint,
-      fixtureExtractionFingerprint,
-      intentId,
-      fixtureExtractionFingerprint,
-      intentId,
-      intentId
-    )
+    .bind(intentId, intentId, intentId)
     .first();
 
 const assertNoPrivateTransport = (
@@ -587,10 +759,23 @@ describe("recipe import intent HTTP API with real D1", () => {
     const workflowStages: string[] = [];
     const activeWorkflowIds = new Set<string>();
     const terminated: string[] = [];
-    const secondPrincipal = Schema.decodeUnknownSync(ImportPrincipal)({
-      actorId: secondActorId,
-      householdScopeId: foreignHouseholdScopeId,
-    });
+    const firstPrincipal = {
+      ...Schema.decodeUnknownSync(RecipeImportPrincipal)(TestImportPrincipal),
+      organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
+        "http-worker-first-household"
+      ),
+    };
+    const secondPrincipal = {
+      ...Schema.decodeUnknownSync(RecipeImportPrincipal)(
+        Schema.decodeUnknownSync(ImportPrincipal)({
+          actorId: secondActorId,
+          householdScopeId: foreignHouseholdScopeId,
+        })
+      ),
+      organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
+        "http-worker-second-household"
+      ),
+    };
     const systemPrincipal = Schema.decodeUnknownSync(ImportPrincipal)({
       actorId: "a".repeat(64),
       householdScopeId: "b".repeat(64),
@@ -614,6 +799,7 @@ describe("recipe import intent HTTP API with real D1", () => {
       requestLayer = makeImportWorkerRequestLayer({
         bucket: acquisitionBucket(),
         database,
+        householdDomain: makeInMemoryHouseholdReviewPort(),
         importWorkflowStarter: workflowStarter,
         importWorkflowTerminator: {
           terminate: (intentId) =>
@@ -627,7 +813,7 @@ describe("recipe import intent HTTP API with real D1", () => {
             const token = headers.get("authorization")?.replace("Bearer ", "");
             let principal;
             if (token === bearerToken) {
-              principal = TestImportPrincipal;
+              principal = firstPrincipal;
             } else if (token === secondBearerToken) {
               principal = secondPrincipal;
             }
@@ -637,9 +823,7 @@ describe("recipe import intent HTTP API with real D1", () => {
                     reason: "invalid_session",
                   })
                 )
-              : Effect.succeed(
-                  Schema.decodeUnknownSync(RecipeImportPrincipal)(principal)
-                );
+              : Effect.succeed(principal);
           },
         },
         queue: { enqueue: () => Effect.void },
@@ -804,7 +988,7 @@ describe("recipe import intent HTTP API with real D1", () => {
           payload: confirmRequest,
         });
         const afterConfirm = yield* Effect.promise(() =>
-          auditConfirmation(database, created.body.id, actionId)
+          auditConfirmation(database, created.body.id)
         );
         const confirmReplay = yield* client.recipeImportIntents.confirmAction({
           headers: {
@@ -814,7 +998,7 @@ describe("recipe import intent HTTP API with real D1", () => {
           payload: confirmRequest,
         });
         const afterReplay = yield* Effect.promise(() =>
-          auditConfirmation(database, created.body.id, actionId)
+          auditConfirmation(database, created.body.id)
         );
         const completedAction = yield* client.recipeImportIntents.getAction({
           params: { actionId, id: created.body.id },
@@ -910,7 +1094,7 @@ describe("recipe import intent HTTP API with real D1", () => {
             payload: confirmRequest,
           });
           const afterConfirm = yield* Effect.promise(() =>
-            auditConfirmation(database, created.body.id, actionId)
+            auditConfirmation(database, created.body.id)
           );
           const completedAction = yield* client.recipeImportIntents.getAction({
             params: { actionId, id: created.body.id },
@@ -1118,13 +1302,9 @@ describe("recipe import intent HTTP API with real D1", () => {
       expect(results.confirmReplay).toEqual(results.confirmed);
       expect(results.afterReplay).toEqual(results.afterConfirm);
       expect(results.afterConfirm).toEqual({
-        corrections: 2,
         history: results.confirmed.intentVersion,
-        mutations: 2,
         public_status: "succeeded",
         recipe_id: results.created.body.id,
-        review_version: 2,
-        transitions: 1,
       });
       expect(results.completedAction).toMatchObject({
         actionVersion: 2,
@@ -1176,13 +1356,9 @@ describe("recipe import intent HTTP API with real D1", () => {
         tags: reviewTags,
       });
       expect(secondResults.afterConfirm).toEqual({
-        corrections: 2,
         history: secondResults.confirmed.intentVersion,
-        mutations: 2,
         public_status: "succeeded",
         recipe_id: secondResults.created.body.id,
-        review_version: 2,
-        transitions: 1,
       });
       expect(secondResults.timeline.data.at(-1)).toMatchObject({
         recipeId: secondResults.created.body.id,

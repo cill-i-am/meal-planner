@@ -18,28 +18,16 @@ beforeAll(async () => {
   );
 });
 
-describe("provider-free D1 recipe review tracer", () => {
-  it("installs the fresh review schema with only the durable mutation ledger identity", async () => {
-    const reviewColumns = await testEnv.MealPlannerDatabase.prepare(
-      "PRAGMA table_info(recipe_reviews)"
-    ).all<{ readonly name: string }>();
-    expect(
-      reviewColumns.results.map((row: { readonly name: string }) => row.name)
-    ).not.toContain("last_mutation_id");
-
-    const mutationColumns = await testEnv.MealPlannerDatabase.prepare(
-      "PRAGMA table_info(recipe_review_mutations)"
-    ).all<{ readonly name: string }>();
-    expect(
-      mutationColumns.results.map((row: { readonly name: string }) => row.name)
-    ).toEqual([
-      "extraction_fingerprint",
-      "mutation_id",
-      "command_kind",
-      "command_digest",
-      "resulting_version",
-      "applied_at",
-      "item_count",
-    ]);
+describe("provider-free D1 recipe review boundary", () => {
+  it("does not install household review or Recipe Bank authority in shared D1", async () => {
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT name
+           FROM sqlite_schema
+          WHERE name LIKE 'recipe_review%'
+             OR name LIKE 'approved_recipe%'
+          ORDER BY name`
+      ).all()
+    ).resolves.toMatchObject({ results: [] });
   });
 });

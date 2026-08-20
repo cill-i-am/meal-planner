@@ -2,6 +2,7 @@ import {
   ManualMealSwapRequest,
   MealPlan,
   MealPlanDecisionRequest,
+  MealPlanPersistenceFailure,
   MealPlanPolicy,
   MealPlanRecipeSnapshot,
   MealPlanRequest,
@@ -12,6 +13,12 @@ import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Effect, Option, Schema } from "effect";
 
 import migrations from "../../../household-migrations/migrations.js";
+import { RecipeDraft } from "../imports/import-recipe-draft.repository.d1.js";
+import { ApprovedRecipe, Review } from "../imports/import-recipe-review.js";
+import {
+  EvidenceReference,
+  ImportTimestamp,
+} from "../imports/import.contracts.js";
 import {
   makeDeterministicMealPlanPlanner,
   makeMealPlanService,
@@ -23,6 +30,13 @@ import {
   HouseholdSwapMealPlanInput,
 } from "./household-meal-plan.contract.js";
 import { makeHouseholdMealPlanRepository } from "./household-meal-plan.repository.js";
+import {
+  HouseholdAnswerRecipeReviewInput,
+  HouseholdOpenRecipeReviewInput,
+  HouseholdReadRecipeReviewInput,
+  HouseholdTransitionRecipeReviewInput,
+} from "./household-recipe-bank.contract.js";
+import { makeHouseholdRecipeBankRepository } from "./household-recipe-bank.repository.js";
 import type { HouseholdMetadata } from "./household.contract.js";
 import {
   HouseholdEnsureInput,
@@ -94,28 +108,32 @@ const invalidInput = () => HouseholdInvalidInput.make({});
 const encodeMealPlan = (plan: typeof MealPlan.Type) =>
   Schema.encodeEffect(MealPlan)(plan).pipe(Effect.mapError(invalidInput));
 
-const makeService = (
-  database: EffectSQLiteDoDatabase,
-  approvedRecipes: readonly MealPlanRecipeSnapshot[] = []
-) =>
-  makeMealPlanService({
+const makeService = (database: EffectSQLiteDoDatabase) => {
+  const recipeBank = makeHouseholdRecipeBankRepository(database);
+  return makeMealPlanService({
     drafts: makeHouseholdMealPlanRepository(database),
     planner: makeDeterministicMealPlanPlanner(),
     recipeReviews: {
-      listApproved: () => Effect.succeed(approvedRecipes),
+      listApproved: () =>
+        recipeBank.listApproved().pipe(
+          Effect.flatMap((recipes) =>
+            Effect.all(
+              recipes.map((recipe) =>
+                Schema.encodeEffect(ApprovedRecipe)(recipe).pipe(
+                  Effect.flatMap(
+                    Schema.decodeUnknownEffect(MealPlanRecipeSnapshot)
+                  )
+                )
+              )
+            )
+          ),
+          Effect.mapError(() =>
+            MealPlanPersistenceFailure.make({ operation: "read" })
+          )
+        ),
     },
   });
-
-const decodeApprovedRecipes = (
-  encoded: HouseholdCreateMealPlanInput["approvedRecipes"]
-) =>
-  Effect.all(
-    encoded.map((recipe) =>
-      Schema.decodeUnknownEffect(MealPlanRecipeSnapshot)(recipe).pipe(
-        Effect.mapError(invalidInput)
-      )
-    )
-  );
+};
 
 export const HouseholdObjectRuntime = Effect.gen(
   function* initializeHouseholdObject() {
@@ -131,6 +149,23 @@ export const HouseholdObjectRuntime = Effect.gen(
     const database = Drizzle.DurableObject({ migrations });
 
     return Effect.succeed({
+      answerRecipeReview: (untrustedInput: HouseholdAnswerRecipeReviewInput) =>
+        scoped(
+          Effect.gen(function* answerHouseholdRecipeReview() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdAnswerRecipeReviewInput
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            const connection = yield* database;
+            yield* ensureHousehold(connection, command);
+            const review =
+              yield* makeHouseholdRecipeBankRepository(connection).answer(
+                command
+              );
+            return yield* Schema.encodeEffect(Review)(review).pipe(
+              Effect.mapError(invalidInput)
+            );
+          })
+        ),
       approveMealPlan: (untrustedInput: HouseholdDecideMealPlanInput) =>
         scoped(
           Effect.gen(function* approveHouseholdMealPlan() {
@@ -154,19 +189,13 @@ export const HouseholdObjectRuntime = Effect.gen(
             )(untrustedInput).pipe(Effect.mapError(invalidInput));
             const connection = yield* database;
             yield* ensureHousehold(connection, command);
-            const approvedRecipes = yield* decodeApprovedRecipes(
-              command.approvedRecipes
-            );
             const policy = yield* Schema.decodeUnknownEffect(MealPlanPolicy)(
               command.policy
             ).pipe(Effect.mapError(invalidInput));
             const request = yield* Schema.decodeUnknownEffect(MealPlanRequest)(
               command.request
             ).pipe(Effect.mapError(invalidInput));
-            const plan = yield* makeService(connection, approvedRecipes).create(
-              request,
-              policy
-            );
+            const plan = yield* makeService(connection).create(request, policy);
             return yield* encodeMealPlan(plan);
           })
         ),
@@ -178,6 +207,52 @@ export const HouseholdObjectRuntime = Effect.gen(
             )(untrustedInput).pipe(Effect.mapError(invalidInput));
             const connection = yield* database;
             return yield* ensureHousehold(connection, input);
+          })
+        ),
+      listApprovedRecipes: (untrustedInput: HouseholdEnsureInput) =>
+        scoped(
+          Effect.gen(function* listApprovedHouseholdRecipes() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdEnsureInput
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            const connection = yield* database;
+            yield* ensureHousehold(connection, command);
+            const recipes =
+              yield* makeHouseholdRecipeBankRepository(
+                connection
+              ).listApproved();
+            return yield* Effect.all(
+              recipes.map((recipe) =>
+                Schema.encodeEffect(ApprovedRecipe)(recipe).pipe(
+                  Effect.mapError(invalidInput)
+                )
+              )
+            );
+          })
+        ),
+      openRecipeReview: (untrustedInput: HouseholdOpenRecipeReviewInput) =>
+        scoped(
+          Effect.gen(function* openHouseholdRecipeReview() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdOpenRecipeReviewInput
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            const connection = yield* database;
+            yield* ensureHousehold(connection, command);
+            const [draft, evidence, openedAt] = yield* Effect.all([
+              Schema.decodeUnknownEffect(RecipeDraft)(command.snapshot.draft),
+              Effect.all(
+                command.snapshot.evidence.map((reference) =>
+                  Schema.decodeUnknownEffect(EvidenceReference)(reference)
+                )
+              ),
+              Schema.decodeUnknownEffect(ImportTimestamp)(command.openedAt),
+            ]).pipe(Effect.mapError(invalidInput));
+            const review = yield* makeHouseholdRecipeBankRepository(
+              connection
+            ).open({ draft, evidence, openedAt });
+            return yield* Schema.encodeEffect(Review)(review).pipe(
+              Effect.mapError(invalidInput)
+            );
           })
         ),
       readMealPlan: (untrustedInput: HouseholdReadMealPlanInput) =>
@@ -193,6 +268,22 @@ export const HouseholdObjectRuntime = Effect.gen(
               onNone: () => Effect.succeed(null),
               onSome: encodeMealPlan,
             });
+          })
+        ),
+      readRecipeReview: (untrustedInput: HouseholdReadRecipeReviewInput) =>
+        scoped(
+          Effect.gen(function* readHouseholdRecipeReview() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadRecipeReviewInput
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            const connection = yield* database;
+            yield* ensureHousehold(connection, command);
+            const review = yield* makeHouseholdRecipeBankRepository(
+              connection
+            ).find(command.importId);
+            return yield* Schema.encodeEffect(Review)(review).pipe(
+              Effect.mapError(invalidInput)
+            );
           })
         ),
       rejectMealPlan: (untrustedInput: HouseholdDecideMealPlanInput) =>
@@ -218,20 +309,30 @@ export const HouseholdObjectRuntime = Effect.gen(
             )(untrustedInput).pipe(Effect.mapError(invalidInput));
             const connection = yield* database;
             yield* ensureHousehold(connection, command);
-            const approvedRecipes = yield* Effect.all(
-              command.approvedRecipes.map((recipe) =>
-                Schema.decodeUnknownEffect(MealPlanRecipeSnapshot)(recipe).pipe(
-                  Effect.mapError(invalidInput)
-                )
-              )
-            );
             const request = yield* Schema.decodeUnknownEffect(
               ManualMealSwapRequest
             )(command.request).pipe(Effect.mapError(invalidInput));
-            const plan = yield* makeService(connection, approvedRecipes).swap(
-              request
-            );
+            const plan = yield* makeService(connection).swap(request);
             return yield* encodeMealPlan(plan);
+          })
+        ),
+      transitionRecipeReview: (
+        untrustedInput: HouseholdTransitionRecipeReviewInput
+      ) =>
+        scoped(
+          Effect.gen(function* transitionHouseholdRecipeReview() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdTransitionRecipeReviewInput
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            const connection = yield* database;
+            yield* ensureHousehold(connection, command);
+            const review =
+              yield* makeHouseholdRecipeBankRepository(connection).transition(
+                command
+              );
+            return yield* Schema.encodeEffect(Review)(review).pipe(
+              Effect.mapError(invalidInput)
+            );
           })
         ),
     });

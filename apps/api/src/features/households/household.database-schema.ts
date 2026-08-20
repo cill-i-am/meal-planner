@@ -28,3 +28,31 @@ export const householdMealPlanMutationReceipts = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.draftId, table.mutationId] })]
 );
+
+export const householdRecipeReviews = sqliteTable("household_recipe_reviews", {
+  extractionFingerprint: text("extraction_fingerprint").notNull(),
+  importId: text("import_id").primaryKey(),
+  lifecycle: text("lifecycle", {
+    enum: ["needs_review", "approved", "rejected"],
+  }).notNull(),
+  openedAt: text("opened_at").notNull(),
+  reviewJson: text("review_json").notNull(),
+  version: integer("version").notNull(),
+});
+
+export const householdRecipeReviewMutationReceipts = sqliteTable(
+  "household_recipe_review_mutation_receipts",
+  {
+    commandDigest: text("command_digest").notNull(),
+    importId: text("import_id").notNull(),
+    mutationId: text("mutation_id").notNull(),
+    resultJson: text("result_json").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.importId, table.mutationId] })]
+);
+
+export const householdRecipeBank = sqliteTable("household_recipe_bank", {
+  approvedRecipeJson: text("approved_recipe_json").notNull(),
+  importId: text("import_id").primaryKey(),
+  reviewVersion: integer("review_version").notNull(),
+});

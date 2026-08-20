@@ -16,14 +16,26 @@ import {
 } from "../meal-planning/meal-plan.js";
 import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
 import { HouseholdObjectRuntime } from "./household-object.js";
+import * as RecipeBankContract from "./household-recipe-bank.contract.js";
 import type {
   HouseholdDomainFailure,
   HouseholdMetadata,
 } from "./household.contract.js";
 import { HouseholdEnsureInput } from "./household.contract.js";
-import { householdMealPlans } from "./household.database-schema.js";
+import {
+  householdMealPlans,
+  householdRecipeBank,
+} from "./household.database-schema.js";
 
 const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
+const HouseholdAnswerRecipeReviewInputSchema =
+  RecipeBankContract.HouseholdAnswerRecipeReviewInput;
+const HouseholdOpenRecipeReviewInputSchema =
+  RecipeBankContract.HouseholdOpenRecipeReviewInput;
+const HouseholdReadRecipeReviewInputSchema =
+  RecipeBankContract.HouseholdReadRecipeReviewInput;
+const HouseholdTransitionRecipeReviewInputSchema =
+  RecipeBankContract.HouseholdTransitionRecipeReviewInput;
 const MealPlanWire = Schema.toEncoded(MealPlan);
 const MealPlanPolicyWire = Schema.toEncoded(MealPlanPolicy);
 const MealPlanRequestWire = Schema.toEncoded(MealPlanRequest);
@@ -70,6 +82,41 @@ const HouseholdObjectTestRuntime = Effect.gen(
             };
           })
         ),
+      seedApprovedRecipes: (
+        recipes: readonly (typeof ApprovedRecipeWire.Type)[]
+      ) =>
+        scoped(
+          Effect.gen(function* seedHouseholdRecipeBank() {
+            const connection = yield* database;
+            yield* Effect.all(
+              recipes.map((wire) =>
+                Effect.gen(function* seedApprovedRecipe() {
+                  const recipe =
+                    yield* Schema.decodeUnknownEffect(ApprovedRecipe)(wire);
+                  yield* connection
+                    .insert(householdRecipeBank)
+                    .values({
+                      approvedRecipeJson: Schema.encodeSync(
+                        Schema.fromJsonString(ApprovedRecipe)
+                      )(recipe),
+                      importId: recipe.importId,
+                      reviewVersion: recipe.version,
+                    })
+                    .onConflictDoUpdate({
+                      set: {
+                        approvedRecipeJson: Schema.encodeSync(
+                          Schema.fromJsonString(ApprovedRecipe)
+                        )(recipe),
+                        reviewVersion: recipe.version,
+                      },
+                      target: householdRecipeBank.importId,
+                    });
+                })
+              ),
+              { discard: true }
+            );
+          })
+        ),
     });
   }
 );
@@ -94,7 +141,21 @@ const HouseholdObjectBridge = Cloudflare.makeDurableObjectBridge(
 
 export class HouseholdObject extends HouseholdObjectBridge {}
 
+type RecipeReviewFailure =
+  | HouseholdDomainFailure
+  | RecipeBankContract.RecipeReviewMutationConflict
+  | RecipeBankContract.RecipeReviewNotFound
+  | RecipeBankContract.RecipeReviewOpenConflict
+  | RecipeBankContract.RecipeReviewTransitionRejected
+  | RecipeBankContract.RecipeReviewVersionConflict;
+
 interface HouseholdObjectClient {
+  readonly answerRecipeReview: (
+    input: RecipeBankContract.HouseholdAnswerRecipeReviewInput
+  ) => Effect.Effect<
+    RecipeBankContract.HouseholdRecipeReviewWire,
+    RecipeReviewFailure
+  >;
   readonly approveMealPlan: (input: {
     readonly organizationId: HouseholdEnsureInput["organizationId"];
     readonly request: typeof MealPlanDecisionRequestWire.Type;
@@ -103,7 +164,6 @@ interface HouseholdObjectClient {
     HouseholdDomainFailure | MealPlanServiceError
   >;
   readonly createMealPlan: (input: {
-    readonly approvedRecipes: readonly (typeof ApprovedRecipeWire.Type)[];
     readonly organizationId: HouseholdEnsureInput["organizationId"];
     readonly policy: typeof MealPlanPolicyWire.Type;
     readonly request: typeof MealPlanRequestWire.Type;
@@ -118,12 +178,30 @@ interface HouseholdObjectClient {
     readonly planJsonBytes: number;
     readonly replayKeyBytes: number;
   } | null>;
+  readonly listApprovedRecipes: (
+    input: HouseholdEnsureInput
+  ) => Effect.Effect<
+    readonly RecipeBankContract.HouseholdApprovedRecipeWire[],
+    HouseholdDomainFailure
+  >;
+  readonly openRecipeReview: (
+    input: RecipeBankContract.HouseholdOpenRecipeReviewInput
+  ) => Effect.Effect<
+    RecipeBankContract.HouseholdRecipeReviewWire,
+    HouseholdDomainFailure | RecipeBankContract.RecipeReviewOpenConflict
+  >;
   readonly readMealPlan: (input: {
     readonly draftId: MealPlanDraftId;
     readonly organizationId: HouseholdEnsureInput["organizationId"];
   }) => Effect.Effect<
     typeof MealPlanWire.Type | null,
     HouseholdDomainFailure | MealPlanServiceError
+  >;
+  readonly readRecipeReview: (
+    input: RecipeBankContract.HouseholdReadRecipeReviewInput
+  ) => Effect.Effect<
+    RecipeBankContract.HouseholdRecipeReviewWire,
+    RecipeReviewFailure
   >;
   readonly rejectMealPlan: (input: {
     readonly organizationId: HouseholdEnsureInput["organizationId"];
@@ -133,16 +211,34 @@ interface HouseholdObjectClient {
     HouseholdDomainFailure | MealPlanServiceError
   >;
   readonly swapMealPlan: (input: {
-    readonly approvedRecipes: readonly (typeof ApprovedRecipeWire.Type)[];
     readonly organizationId: HouseholdEnsureInput["organizationId"];
     readonly request: typeof ManualMealSwapRequestWire.Type;
   }) => Effect.Effect<
     typeof MealPlanWire.Type,
     HouseholdDomainFailure | MealPlanServiceError
   >;
+  readonly seedApprovedRecipes: (
+    recipes: readonly (typeof ApprovedRecipeWire.Type)[]
+  ) => Effect.Effect<void>;
+  readonly transitionRecipeReview: (
+    input: RecipeBankContract.HouseholdTransitionRecipeReviewInput
+  ) => Effect.Effect<
+    RecipeBankContract.HouseholdRecipeReviewWire,
+    RecipeReviewFailure
+  >;
 }
 
 const HouseholdTestCommand = Schema.Union([
+  Schema.Struct({
+    ...HouseholdAnswerRecipeReviewInputSchema.fields,
+    objectName: Schema.String,
+    operation: Schema.Literal("answerRecipeReview"),
+  }),
+  Schema.Struct({
+    ...HouseholdOpenRecipeReviewInputSchema.fields,
+    objectName: Schema.String,
+    operation: Schema.Literal("openRecipeReview"),
+  }),
   Schema.Struct({
     objectName: Schema.String,
     operation: Schema.Literal("approveMealPlan"),
@@ -168,10 +264,20 @@ const HouseholdTestCommand = Schema.Union([
     operation: Schema.Literal("inspectMealPlanStorage"),
   }),
   Schema.Struct({
+    objectName: Schema.String,
+    operation: Schema.Literal("listApprovedRecipes"),
+    organizationId: HouseholdEnsureInput.fields.organizationId,
+  }),
+  Schema.Struct({
     draftId: MealPlanDraftId,
     objectName: Schema.String,
     operation: Schema.Literal("readMealPlan"),
     organizationId: HouseholdEnsureInput.fields.organizationId,
+  }),
+  Schema.Struct({
+    ...HouseholdReadRecipeReviewInputSchema.fields,
+    objectName: Schema.String,
+    operation: Schema.Literal("readRecipeReview"),
   }),
   Schema.Struct({
     objectName: Schema.String,
@@ -185,6 +291,11 @@ const HouseholdTestCommand = Schema.Union([
     operation: Schema.Literal("swapMealPlan"),
     organizationId: HouseholdEnsureInput.fields.organizationId,
     request: ManualMealSwapRequestWire,
+  }),
+  Schema.Struct({
+    ...HouseholdTransitionRecipeReviewInputSchema.fields,
+    objectName: Schema.String,
+    operation: Schema.Literal("transitionRecipeReview"),
   }),
 ]);
 
@@ -212,6 +323,9 @@ export default {
     const household = Cloudflare.makeRpcStub<HouseholdObjectClient>(
       env.HouseholdObject.getByName(command.objectName)
     );
+    if (command.operation === "answerRecipeReview") {
+      return respond(household.answerRecipeReview(command));
+    }
     if (command.operation === "approveMealPlan") {
       return respond(
         household.approveMealPlan({
@@ -222,12 +336,15 @@ export default {
     }
     if (command.operation === "createMealPlan") {
       return respond(
-        household.createMealPlan({
-          approvedRecipes: command.approvedRecipes,
-          organizationId: command.organizationId,
-          policy: command.policy,
-          request: command.request,
-        })
+        household.seedApprovedRecipes(command.approvedRecipes).pipe(
+          Effect.flatMap(() =>
+            household.createMealPlan({
+              organizationId: command.organizationId,
+              policy: command.policy,
+              request: command.request,
+            })
+          )
+        )
       );
     }
     if (command.operation === "ensure") {
@@ -240,6 +357,22 @@ export default {
     if (command.operation === "inspectMealPlanStorage") {
       return respond(household.inspectMealPlanStorage(command.draftId));
     }
+    if (command.operation === "listApprovedRecipes") {
+      return respond(
+        household.listApprovedRecipes({
+          organizationId: command.organizationId,
+        })
+      );
+    }
+    if (command.operation === "openRecipeReview") {
+      return respond(
+        household.openRecipeReview({
+          openedAt: command.openedAt,
+          organizationId: command.organizationId,
+          snapshot: command.snapshot,
+        })
+      );
+    }
     if (command.operation === "readMealPlan") {
       return respond(
         household.readMealPlan({
@@ -247,6 +380,9 @@ export default {
           organizationId: command.organizationId,
         })
       );
+    }
+    if (command.operation === "readRecipeReview") {
+      return respond(household.readRecipeReview(command));
     }
     if (command.operation === "rejectMealPlan") {
       return respond(
@@ -256,12 +392,18 @@ export default {
         })
       );
     }
+    if (command.operation === "transitionRecipeReview") {
+      return respond(household.transitionRecipeReview(command));
+    }
     return respond(
-      household.swapMealPlan({
-        approvedRecipes: command.approvedRecipes,
-        organizationId: command.organizationId,
-        request: command.request,
-      })
+      household.seedApprovedRecipes(command.approvedRecipes).pipe(
+        Effect.flatMap(() =>
+          household.swapMealPlan({
+            organizationId: command.organizationId,
+            request: command.request,
+          })
+        )
+      )
     );
   },
 };

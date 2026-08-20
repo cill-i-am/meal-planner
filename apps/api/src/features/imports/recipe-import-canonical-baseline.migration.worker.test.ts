@@ -33,10 +33,6 @@ const canonicalTables = [
   "pilot_provider_visual_second_recoveries",
   "recipe_import_intent_history",
   "recipe_imports",
-  "recipe_review_corrections",
-  "recipe_review_mutations",
-  "recipe_review_transitions",
-  "recipe_reviews",
 ] as const;
 
 describe("canonical recipe import baseline", () => {
@@ -72,13 +68,12 @@ describe("canonical recipe import baseline", () => {
     ).resolves.toMatchObject({ results: [] });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        "PRAGMA foreign_key_list('recipe_review_transitions')"
+        `SELECT name
+           FROM sqlite_schema
+          WHERE name LIKE 'recipe_review%'
+          ORDER BY name`
       ).all()
-    ).resolves.toMatchObject({
-      results: expect.arrayContaining([
-        expect.objectContaining({ table: "recipe_reviews" }),
-      ]),
-    });
+    ).resolves.toMatchObject({ results: [] });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
         `SELECT budget_cap_micro_usd, reserved_micro_usd,
@@ -149,13 +144,6 @@ describe("canonical recipe import baseline", () => {
         { name: "checkpointed_at" },
       ],
     });
-
-    const reviewMutationColumns = await testEnv.MealPlannerDatabase.prepare(
-      "PRAGMA table_info(recipe_review_mutations)"
-    ).all<{ readonly name: string; readonly notnull: number }>();
-    expect(reviewMutationColumns.results).toContainEqual(
-      expect.objectContaining({ name: "item_count", notnull: 1 })
-    );
 
     const schemaRows = await testEnv.MealPlannerDatabase.prepare(
       `SELECT name, sql

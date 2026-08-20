@@ -1,3 +1,4 @@
+import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import {
   CanonicalTikTokUrl,
   CreateRecipeImportIntentRequest,
@@ -48,9 +49,12 @@ export const makeTestAuthPrincipalResolver = (
 ): AuthPrincipalResolver => ({
   resolve: (headers) =>
     headers.get("cookie") === `better-auth.session_token=${sessionToken}`
-      ? Effect.succeed(
-          Schema.decodeUnknownSync(RecipeImportPrincipal)(principal)
-        )
+      ? Effect.succeed({
+          ...Schema.decodeUnknownSync(RecipeImportPrincipal)(principal),
+          organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
+            "test-household"
+          ),
+        })
       : Effect.fail(
           new AuthPrincipalResolutionError({ reason: "invalid_session" })
         ),
