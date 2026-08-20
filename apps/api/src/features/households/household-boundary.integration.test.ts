@@ -6,7 +6,8 @@ import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
 import {
   CreateMealPlanPayload,
-  MealPlan,
+  DecideMealPlanPayload,
+  HouseholdMealPlanResponse,
   SwapMealPlanPayload,
 } from "@meal-planner/household-api";
 import * as Bundle from "alchemy/Bundle";
@@ -52,6 +53,7 @@ const HouseholdStatusResponse = Schema.Struct({
 });
 const SessionResponse = Schema.Struct({
   session: Schema.Struct({ id: Schema.String }),
+  user: Schema.Struct({ id: Schema.String }),
 });
 const OrganizationResponse = Schema.Struct({ id: Schema.String });
 const createPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
@@ -610,9 +612,9 @@ describe("household Website-to-Durable-Object boundary", () => {
     );
 
     expect(createResponse.status).toBe(201);
-    const created = await Schema.decodeUnknownPromise(MealPlan)(
-      await createResponse.json()
-    );
+    const created = await Schema.decodeUnknownPromise(
+      HouseholdMealPlanResponse
+    )(await createResponse.json());
     expect(created).toMatchObject({
       _tag: "Draft",
       gaps: [{ slotId: "boundary-dinner" }],
@@ -626,7 +628,7 @@ describe("household Website-to-Durable-Object boundary", () => {
     );
     expect(readResponse.status).toBe(200);
     await expect(readResponse.json()).resolves.toEqual(
-      Schema.encodeSync(MealPlan)(created)
+      Schema.encodeSync(HouseholdMealPlanResponse)(created)
     );
   });
 
@@ -646,6 +648,13 @@ describe("household Website-to-Durable-Object boundary", () => {
     if (generatedImportId === undefined || explicitImportId === undefined) {
       throw new Error("Expected bounded approved-recipe fixtures.");
     }
+    const ownerSessionResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/api/auth/get-session",
+      { headers: { cookie: ownerCookie } }
+    );
+    const ownerSession = await Schema.decodeUnknownPromise(SessionResponse)(
+      await ownerSessionResponse.json()
+    );
 
     const createResponse = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/meal-plans",
@@ -666,9 +675,9 @@ describe("household Website-to-Durable-Object boundary", () => {
     expect(
       createResponse.headers.get(recipeAuthorityQueryStatementsHeader)
     ).toBe("13");
-    const created = await Schema.decodeUnknownPromise(MealPlan)(
-      await createResponse.json()
-    );
+    const created = await Schema.decodeUnknownPromise(
+      HouseholdMealPlanResponse
+    )(await createResponse.json());
     expect(created).toMatchObject({
       _tag: "Draft",
       gaps: [],
@@ -732,9 +741,9 @@ describe("household Website-to-Durable-Object boundary", () => {
       { headers: { cookie: ownerCookie } }
     );
     expect(unchangedResponse.status).toBe(200);
-    const unchanged = await Schema.decodeUnknownPromise(MealPlan)(
-      await unchangedResponse.json()
-    );
+    const unchanged = await Schema.decodeUnknownPromise(
+      HouseholdMealPlanResponse
+    )(await unchangedResponse.json());
     expect(unchanged).toMatchObject({
       _tag: "Draft",
       revision: 0,
@@ -754,9 +763,12 @@ describe("household Website-to-Durable-Object boundary", () => {
       }
     );
     expect(swapResponse.status).toBe(200);
-    const swapped = await Schema.decodeUnknownPromise(MealPlan)(
-      await swapResponse.json()
-    );
+    const swappedJson = await swapResponse.json();
+    expect(swappedJson).not.toHaveProperty("audit.0.actorId");
+    expect(JSON.stringify(swappedJson)).not.toContain(ownerSession.user.id);
+    const swapped = await Schema.decodeUnknownPromise(
+      HouseholdMealPlanResponse
+    )(swappedJson);
     expect(swapped).toMatchObject({
       _tag: "Draft",
       audit: [
@@ -781,6 +793,40 @@ describe("household Website-to-Durable-Object boundary", () => {
       ],
       revision: 1,
     });
+
+    const decidePayload = Schema.decodeUnknownSync(DecideMealPlanPayload)({
+      expectedRevision: 1,
+      mutationId: "boundary-approve-plan",
+      reason: "The household approved this plan.",
+    });
+    const approveResponse = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/meal-plans/${created.draftId}/approve`,
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(DecideMealPlanPayload)(decidePayload)
+        ),
+        headers: {
+          "content-type": "application/json",
+          cookie: ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(approveResponse.status).toBe(200);
+    const approvedJson = await approveResponse.json();
+    expect(approvedJson).not.toHaveProperty("audit.0.actorId");
+    expect(approvedJson).not.toHaveProperty("decision.actorId");
+    expect(JSON.stringify(approvedJson)).not.toContain(ownerSession.user.id);
+
+    const readResponse = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/meal-plans/${created.draftId}`,
+      { headers: { cookie: ownerCookie } }
+    );
+    expect(readResponse.status).toBe(200);
+    const readJson = await readResponse.json();
+    expect(readJson).not.toHaveProperty("audit.0.actorId");
+    expect(readJson).not.toHaveProperty("decision.actorId");
+    expect(JSON.stringify(readJson)).not.toContain(ownerSession.user.id);
   }, 30_000);
 
   it("uses one coherent catalogue when an older candidate changes after the snapshot", async () => {
@@ -823,9 +869,9 @@ describe("household Website-to-Durable-Object boundary", () => {
     );
 
     expect(response.status).toBe(201);
-    const created = await Schema.decodeUnknownPromise(MealPlan)(
-      await response.json()
-    );
+    const created = await Schema.decodeUnknownPromise(
+      HouseholdMealPlanResponse
+    )(await response.json());
     expect(created).toMatchObject({
       _tag: "Draft",
       gaps: [],
@@ -877,9 +923,9 @@ describe("household Website-to-Durable-Object boundary", () => {
     expect(response.headers.get(recipeAuthorityQueryStatementsHeader)).toBe(
       "26"
     );
-    const created = await Schema.decodeUnknownPromise(MealPlan)(
-      await response.json()
-    );
+    const created = await Schema.decodeUnknownPromise(
+      HouseholdMealPlanResponse
+    )(await response.json());
     expect(created).toMatchObject({
       _tag: "Draft",
       gaps: [],

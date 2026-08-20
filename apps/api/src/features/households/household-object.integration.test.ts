@@ -1131,7 +1131,12 @@ describe("household Durable Object", () => {
     if (!approved.ok) {
       throw new Error("Expected approval to succeed.");
     }
-    expect(approved.value).toMatchObject({ _tag: "Approved", revision: 2 });
+    expect(approved.value).toMatchObject({
+      _tag: "Approved",
+      audit: [{ actorId: "actor-a", mutationId: "swap-a" }],
+      decision: { actorId: "actor-a", mutationId: "decision-a" },
+      revision: 2,
+    });
 
     const terminalRewrite = await mutateMealPlan({
       objectName,

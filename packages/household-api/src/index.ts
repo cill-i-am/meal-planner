@@ -12,6 +12,7 @@ import type { HouseholdCurrentPrincipal } from "./household-principal.js";
 import { HouseholdOrganizationId } from "./household-principal.js";
 import type { HouseholdMealPlanCurrentPrincipal } from "./meal-plan-http.js";
 import {
+  HouseholdMealPlanResponse,
   HouseholdMealPlanConflictProblem,
   HouseholdMealPlanInternalProblem,
   HouseholdMealPlanInvalidRequestProblem,
@@ -21,7 +22,6 @@ import { HouseholdMealPlanSchemaErrors } from "./meal-plan-schema-errors.js";
 import {
   CreateMealPlanPayload,
   DecideMealPlanPayload,
-  MealPlan,
   MealPlanDraftId,
   SwapMealPlanPayload,
 } from "./meal-plan.js";
@@ -38,6 +38,8 @@ export {
   HouseholdMealPlanInvalidRequestProblem,
   HouseholdMealPlanNotFoundProblem,
   HouseholdMealPlanPrincipal,
+  HouseholdMealPlanResponse,
+  toHouseholdMealPlanResponse,
 } from "./meal-plan-http.js";
 export {
   CreateMealPlanPayload,
@@ -133,7 +135,7 @@ const MealPlansGroup = HttpApiGroup.make("mealPlans")
         HouseholdMealPlanInternalProblem,
       ],
       payload: CreateMealPlanPayload,
-      success: MealPlan.pipe(HttpApiSchema.status(201)),
+      success: HouseholdMealPlanResponse.pipe(HttpApiSchema.status(201)),
     }),
     HttpApiEndpoint.get("read", "/v1/meal-plans/:draftId", {
       error: [
@@ -141,7 +143,7 @@ const MealPlansGroup = HttpApiGroup.make("mealPlans")
         HouseholdMealPlanInternalProblem,
       ],
       params: { draftId: MealPlanDraftId },
-      success: MealPlan,
+      success: HouseholdMealPlanResponse,
     }),
     HttpApiEndpoint.post("swap", "/v1/meal-plans/:draftId/swaps", {
       error: [
@@ -152,7 +154,7 @@ const MealPlansGroup = HttpApiGroup.make("mealPlans")
       ],
       params: { draftId: MealPlanDraftId },
       payload: SwapMealPlanPayload,
-      success: MealPlan,
+      success: HouseholdMealPlanResponse,
     }),
     HttpApiEndpoint.post("approve", "/v1/meal-plans/:draftId/approve", {
       error: [
@@ -162,7 +164,7 @@ const MealPlansGroup = HttpApiGroup.make("mealPlans")
       ],
       params: { draftId: MealPlanDraftId },
       payload: DecideMealPlanPayload,
-      success: MealPlan,
+      success: HouseholdMealPlanResponse,
     }),
     HttpApiEndpoint.post("reject", "/v1/meal-plans/:draftId/reject", {
       error: [
@@ -172,7 +174,7 @@ const MealPlansGroup = HttpApiGroup.make("mealPlans")
       ],
       params: { draftId: MealPlanDraftId },
       payload: DecideMealPlanPayload,
-      success: MealPlan,
+      success: HouseholdMealPlanResponse,
     })
   )
   .middleware(HouseholdSessionAuth);

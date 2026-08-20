@@ -79,6 +79,30 @@ const createdMealPlan = Schema.decodeUnknownSync(MealPlan)({
   request: createMealPlanPayload.request,
   revision: 0,
 });
+const approvedMealPlan = Schema.decodeUnknownSync(MealPlan)({
+  ...createdMealPlan,
+  _tag: "Approved",
+  decision: {
+    actorId,
+    decidedAt: "2026-08-24T18:00:00.000Z",
+    mutationId: "decision-1",
+    outcome: "approved",
+    reason: "The household reviewed this plan.",
+  },
+  revision: 1,
+});
+const rejectedMealPlan = Schema.decodeUnknownSync(MealPlan)({
+  ...createdMealPlan,
+  _tag: "Rejected",
+  decision: {
+    actorId,
+    decidedAt: "2026-08-24T18:00:00.000Z",
+    mutationId: "decision-1",
+    outcome: "rejected",
+    reason: "The household reviewed this plan.",
+  },
+  revision: 1,
+});
 const swapMealPlanPayload = Schema.decodeUnknownSync(SwapMealPlanPayload)({
   expectedRevision: 0,
   mutationId: Schema.decodeUnknownSync(MealPlanMutationId)("swap-1"),
@@ -357,18 +381,18 @@ describe("household meal-plan HttpApi boundary", () => {
         approve: (input) =>
           Effect.sync(() => {
             calls.push({ input, operation: "approve" });
-            return createdMealPlan;
+            return approvedMealPlan;
           }),
         create: () => Effect.die("Unexpected create"),
         read: (input) =>
           Effect.sync(() => {
             calls.push({ input, operation: "read" });
-            return createdMealPlan;
+            return approvedMealPlan;
           }),
         reject: (input) =>
           Effect.sync(() => {
             calls.push({ input, operation: "reject" });
-            return createdMealPlan;
+            return rejectedMealPlan;
           }),
         swap: (input) =>
           Effect.sync(() => {
@@ -415,6 +439,13 @@ describe("household meal-plan HttpApi boundary", () => {
     );
 
     expect(responses.map(({ status }) => status)).toEqual([200, 200, 200, 200]);
+    const responseBodies = await Promise.all(
+      responses.map((response) => response.json())
+    );
+    expect(responseBodies[0]).not.toHaveProperty("decision.actorId");
+    expect(responseBodies[2]).not.toHaveProperty("decision.actorId");
+    expect(responseBodies[3]).not.toHaveProperty("decision.actorId");
+    expect(JSON.stringify(responseBodies)).not.toContain(actorId);
     expect(calls).toEqual([
       {
         input: { draftId, principal: { actorId, organizationId } },

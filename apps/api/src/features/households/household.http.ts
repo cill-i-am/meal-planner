@@ -1,3 +1,4 @@
+import type { MealPlan } from "@meal-planner/household-api";
 import {
   HouseholdApi,
   HouseholdCurrentPrincipal,
@@ -11,6 +12,7 @@ import {
   HouseholdMealPlanSchemaErrors,
   HouseholdSessionAuth,
   MealPlanInstant,
+  toHouseholdMealPlanResponse,
 } from "@meal-planner/household-api";
 import { Clock, Effect, Layer, Schema } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
@@ -112,13 +114,14 @@ const observeMealPlanFailure = <E extends { readonly _tag: string }>(
     ? Effect.logError("household.meal_plan.persistence_failed")
     : Effect.void;
 
-const exposeMealPlanResult = <A, E extends { readonly _tag: string }, P>(
-  effect: Effect.Effect<A, E>,
+const exposeMealPlanResult = <E extends { readonly _tag: string }, P>(
+  effect: Effect.Effect<MealPlan, E>,
   mapError: (error: E) => P
 ) =>
   effect.pipe(
     Effect.tapError(observeMealPlanFailure),
-    Effect.mapError(mapError)
+    Effect.mapError(mapError),
+    Effect.map(toHouseholdMealPlanResponse)
   );
 
 const HouseholdSessionAuthLive = Layer.effect(
