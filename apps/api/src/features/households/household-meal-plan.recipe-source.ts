@@ -24,18 +24,17 @@ import { ApprovedRecipe } from "../imports/import-recipe-review.js";
 import type { RecipeReviewPersistenceError } from "../imports/import-recipe-review.js";
 import { ImportId } from "../imports/import.contracts.js";
 import { importPersistenceUnavailable } from "../imports/import.errors.js";
+import { HouseholdDigest } from "./shared-kernel/authority-services.js";
+import { HouseholdDigestLive } from "./shared-kernel/authority-services.live.js";
 
 const hashOrganizationId = (organizationId: HouseholdOrganizationId) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", new TextEncoder().encode(organizationId))
-  ).pipe(
-    Effect.map((digest) =>
-      Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("")
-    ),
-    Effect.flatMap(Schema.decodeUnknownEffect(RecipeImportHouseholdScopeId))
-  );
+  Effect.gen(function* hashHouseholdRecipeScope() {
+    const digest = yield* HouseholdDigest;
+    const value = yield* digest.sha256(organizationId);
+    return yield* Schema.decodeUnknownEffect(RecipeImportHouseholdScopeId)(
+      value
+    );
+  }).pipe(Effect.provide(HouseholdDigestLive));
 
 // One MiB stays well below the 1.9 MB persisted-plan ceiling and leaves room
 // for the request, policy, RPC envelope, and generated-plan growth. The

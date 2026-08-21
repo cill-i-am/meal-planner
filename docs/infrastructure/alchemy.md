@@ -149,12 +149,15 @@ receives a bearer token, actor ID, or household scope.
 
 The API Worker privately binds `HouseholdDomainWorker`, which owns the
 `HouseholdObject` Durable Object namespace. After membership authorization, the
-domain Worker derives `household:v1:<immutableOrganizationId>` and lazily
-ensures the object's `household_meta` row. Durable SQLite persistence uses
-Drizzle and the checked-in `apps/api/household-migrations`; the stored
-organization ID is asserted on every ensure/read. Neither the private Worker
-nor the object imports Better Auth. The tracer does not add a lookup mapper,
-shared read model, domain-table migration, or public household Worker route.
+domain Worker uses the central locator to derive
+`household:v1:<sha256(canonical-v1-organization-payload)>` and lazily ensures
+the object's `household_meta` row. The raw organization ID never appears in the
+object name. Durable SQLite persistence uses Drizzle and the checked-in
+`apps/api/household-migrations`; stored organization provenance is asserted
+before every operation. Neither the private Worker nor the object imports
+Better Auth. The Alchemy class host owns the stable namespace lifecycle, while
+the per-object Drizzle migration owns schema evolution. No lookup mapper,
+shared read model, dual write, or public household Worker route is added.
 
 D1 persists source identity, intent state, idempotency metadata, durable
 execution facts, review data, recipes, and safe evidence references. It does
@@ -162,10 +165,12 @@ not persist credentials, raw provider payloads, or media. TikTok requests are
 limited to the bounded source-resolution and acquisition workflow.
 
 `ImportMediaAcquisitionObject` is addressed by the globally random `importId`
-for per-import media/container coordination and private artifact transport. It
-does not use Durable Object storage: durable lifecycle and domain state stay in
-D1, while short-lived private artifacts stay in R2. The object is neither a
-household partition nor a household authorization boundary.
+for per-import media/container coordination and private artifact transport.
+Artifact commands validate an ID containing that import ID and acquisition
+execution generation. It does not use Durable Object storage: durable lifecycle
+and domain state stay in D1, while short-lived private artifacts stay in R2.
+The object is noncanonical and is neither a household partition, import
+lifecycle authority, recovery authority, nor household authorization boundary.
 
 ## Import operations staging topology
 

@@ -31,6 +31,8 @@ import {
   HouseholdDomainGateway,
   HouseholdMealPlanGateway,
 } from "./household.gateway.js";
+import { HouseholdDigest } from "./shared-kernel/authority-services.js";
+import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-services.live.js";
 
 const unauthorizedProblem = {
   code: "unauthorized",
@@ -126,34 +128,37 @@ const exposeMealPlanResult = <E extends { readonly _tag: string }, P>(
 
 const HouseholdSessionAuthLive = Layer.effect(
   HouseholdSessionAuth,
-  AuthenticatedOrganizationResolver.pipe(
-    Effect.map((resolver) =>
-      HouseholdSessionAuth.of((httpEffect) =>
-        Effect.gen(function* resolveHouseholdSession() {
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          const principal = yield* resolver
-            .resolve(new globalThis.Headers(Object.entries(request.headers)))
-            .pipe(Effect.mapError(() => unauthorizedProblem));
-          const mealPlanPrincipal = yield* Schema.decodeUnknownEffect(
-            HouseholdMealPlanPrincipal
-          )({
-            actorId: principal.userId,
+  Effect.gen(function* makeHouseholdSessionAuth() {
+    const resolver = yield* AuthenticatedOrganizationResolver;
+    const digest = yield* HouseholdDigest;
+    return HouseholdSessionAuth.of((httpEffect) =>
+      Effect.gen(function* resolveHouseholdSession() {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const principal = yield* resolver
+          .resolve(new globalThis.Headers(Object.entries(request.headers)))
+          .pipe(Effect.mapError(() => unauthorizedProblem));
+        const actorId = yield* digest
+          .sha256(principal.userId)
+          .pipe(Effect.mapError(() => unauthorizedProblem));
+        const mealPlanPrincipal = yield* Schema.decodeUnknownEffect(
+          HouseholdMealPlanPrincipal
+        )({
+          actorId,
+          organizationId: principal.organizationId,
+        }).pipe(Effect.mapError(() => unauthorizedProblem));
+        return yield* httpEffect.pipe(
+          Effect.provideService(HouseholdCurrentPrincipal, {
             organizationId: principal.organizationId,
-          }).pipe(Effect.mapError(() => unauthorizedProblem));
-          return yield* httpEffect.pipe(
-            Effect.provideService(HouseholdCurrentPrincipal, {
-              organizationId: principal.organizationId,
-            }),
-            Effect.provideService(
-              HouseholdMealPlanCurrentPrincipal,
-              mealPlanPrincipal
-            )
-          );
-        })
-      )
-    )
-  )
-);
+          }),
+          Effect.provideService(
+            HouseholdMealPlanCurrentPrincipal,
+            mealPlanPrincipal
+          )
+        );
+      })
+    );
+  })
+).pipe(Layer.provide(HouseholdAuthorityServicesLive));
 
 const HouseholdMealPlanHandlers = HttpApiBuilder.group(
   HouseholdMealPlanApi,
@@ -254,9 +259,10 @@ const HouseholdHandlers = HttpApiBuilder.group(
   (handlers) =>
     handlers.handle("current", () =>
       Effect.gen(function* currentHousehold() {
-        const principal = yield* HouseholdCurrentPrincipal;
+        yield* HouseholdCurrentPrincipal;
+        const principal = yield* HouseholdMealPlanCurrentPrincipal;
         const gateway = yield* HouseholdDomainGateway;
-        return yield* gateway.ensure(principal.organizationId).pipe(
+        return yield* gateway.ensure(principal).pipe(
           Effect.tapError(() =>
             Effect.logError("household.domain.ensure_failed")
           ),

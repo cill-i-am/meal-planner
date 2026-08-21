@@ -2,7 +2,6 @@ import type {
   CreateMealPlanPayload,
   DecideMealPlanPayload,
   HouseholdMealPlanPrincipal,
-  HouseholdOrganizationId,
   HouseholdStatus,
   MealPlan,
   MealPlanDraftId,
@@ -23,7 +22,7 @@ import type { HouseholdDomainFailure } from "./household.contract.js";
 
 export interface HouseholdDomainGateway {
   readonly ensure: (
-    organizationId: HouseholdOrganizationId
+    principal: HouseholdMealPlanPrincipal
   ) => Effect.Effect<HouseholdStatus, HouseholdDomainFailure>;
 }
 

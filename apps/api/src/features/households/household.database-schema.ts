@@ -3,6 +3,7 @@ import {
   primaryKey,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 export const householdMeta = sqliteTable("household_meta", {
@@ -28,3 +29,37 @@ export const householdMealPlanMutationReceipts = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.draftId, table.mutationId] })]
 );
+
+/**
+ * Preparatory execution admission only. Import product authority remains in
+ * the current import stores until the complete Slice 1 cutover.
+ */
+export const householdImportWorkflowAdmissions = sqliteTable(
+  "household_import_workflow_admissions",
+  {
+    commandDigest: text("command_digest").notNull(),
+    committedAtEpochMs: integer("committed_at_epoch_ms").notNull(),
+    committedResultJson: text("committed_result_json").notNull(),
+    dispatchId: text("dispatch_id").notNull().unique(),
+    executionGeneration: integer("execution_generation").notNull(),
+    importId: text("import_id").notNull(),
+    mutationId: text("mutation_id").primaryKey(),
+    workflowIdentity: text("workflow_identity").notNull().unique(),
+  },
+  (table) => [
+    uniqueIndex("household_import_workflow_execution_unique").on(
+      table.importId,
+      table.executionGeneration
+    ),
+  ]
+);
+
+export const householdOutbox = sqliteTable("household_outbox", {
+  attempts: integer("attempts").notNull(),
+  dispatchId: text("dispatch_id").primaryKey(),
+  exhaustedAtEpochMs: integer("exhausted_at_epoch_ms"),
+  nextAttemptAtEpochMs: integer("next_attempt_at_epoch_ms").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  purpose: text("purpose").notNull(),
+  state: text("state").notNull(),
+});

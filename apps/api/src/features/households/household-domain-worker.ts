@@ -1,4 +1,3 @@
-import type { HouseholdOrganizationId } from "@meal-planner/household-api";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect, Schema } from "effect";
 
@@ -16,6 +15,7 @@ import {
   HouseholdReadMealPlanInput as HouseholdReadMealPlanInputSchema,
   HouseholdSwapMealPlanInput as HouseholdSwapMealPlanInputSchema,
 } from "./household-meal-plan.contract.js";
+import { HouseholdObjectLocator } from "./household-object-locator.js";
 import HouseholdObject from "./household-object.js";
 import type {
   HouseholdDomainFailure,
@@ -24,9 +24,10 @@ import type {
 } from "./household.contract.js";
 import {
   HouseholdInvalidInput,
-  householdObjectName,
   HouseholdEnsureInput as HouseholdEnsureInputSchema,
 } from "./household.contract.js";
+import type { HouseholdCommandAdmission } from "./rpc/command-envelope.js";
+import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-services.live.js";
 
 export interface HouseholdDomainWorkerMethods {
   readonly approveMealPlan: (
@@ -64,26 +65,30 @@ export class HouseholdDomainWorker extends Cloudflare.Worker<
 
 const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
   const households = yield* HouseholdObject;
+  const locator = yield* HouseholdObjectLocator;
   const route = <
-    A extends { readonly organizationId: HouseholdOrganizationId },
+    A extends { readonly admission: HouseholdCommandAdmission },
     I,
-    R,
     B,
     E,
   >(
-    schema: Schema.Codec<A, I, R>,
+    schema: Schema.Codec<A, I, never>,
     input: A,
     invoke: (
       household: ReturnType<typeof households.getByName>,
       command: A
     ) => Effect.Effect<B, E>
   ) =>
-    Schema.decodeUnknownEffect(schema)(input).pipe(
+    Schema.decodeUnknownEffect(schema, { onExcessProperty: "error" })(
+      input
+    ).pipe(
       Effect.mapError(() => HouseholdInvalidInput.make({})),
       Effect.flatMap((command) =>
-        invoke(
-          households.getByName(householdObjectName(command.organizationId)),
-          command
+        locator.locate(command.admission.organizationId).pipe(
+          Effect.mapError(() => HouseholdInvalidInput.make({})),
+          Effect.flatMap((objectName) =>
+            invoke(households.getByName(objectName), command)
+          )
         )
       )
     );
@@ -97,13 +102,8 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         household.createMealPlan(command)
       ),
     ensureHousehold: (input: HouseholdEnsureInput) =>
-      Schema.decodeUnknownEffect(HouseholdEnsureInputSchema)(input).pipe(
-        Effect.mapError(() => HouseholdInvalidInput.make({})),
-        Effect.flatMap((command) =>
-          households
-            .getByName(householdObjectName(command.organizationId))
-            .ensureHousehold(command)
-        )
+      route(HouseholdEnsureInputSchema, input, (household, command) =>
+        household.ensureHousehold(command)
       ),
     readMealPlan: (input: HouseholdReadMealPlanInput) =>
       route(HouseholdReadMealPlanInputSchema, input, (household, command) =>
@@ -136,5 +136,8 @@ export default HouseholdDomainWorker.make(
     },
     workersDev: false,
   },
-  HouseholdDomainWorkerRuntime
+  HouseholdDomainWorkerRuntime.pipe(
+    Effect.provide(HouseholdObjectLocator.layer),
+    Effect.provide(HouseholdAuthorityServicesLive)
+  )
 );

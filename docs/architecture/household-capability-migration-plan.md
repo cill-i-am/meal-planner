@@ -445,9 +445,9 @@ temporary meal-plan recipe source still reads approved recipes from shared D1
 and transfers snapshots over RPC; that seam is deleted by the complete import
 cutover.
 
-### Slice 0: foundation hardening — immediate next slice
+### Completed: Slice 0 foundation hardening
 
-Harden the merged foundation without moving another product authority:
+The foundation is hardened without moving another product authority:
 
 - central privacy-safe, versioned object locator;
 - auth and membership proof before route derivation;
@@ -673,8 +673,7 @@ minimal noncanonical operational index for an approved concrete use case.
 
 ## Immediate handoff
 
-The immediate delivery is **Slice 0: harden the household foundation**. It is a
-bounded prerequisite, not another product authority migration. Once its exact
-head is green, reviewed, and merged, dispatch Slice 1 as the complete import,
-review, and Recipe Bank cutover. Do not restart the superseded Recipe Bank-only
-session.
+The next delivery is **Slice 1: complete import, review, and Recipe Bank
+authority cutover**. Dispatch it as one separately owned slice only after the
+Slice 0 head is green, independently reviewed, and merged. Do not restart the
+superseded Recipe Bank-only session.

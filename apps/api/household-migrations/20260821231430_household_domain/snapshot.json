@@ -1,0 +1,382 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "c094d909-5e6d-48fa-995d-76d146931666",
+  "prevIds": [
+    "4a8798e6-bd8c-4bff-b69f-72711a170898"
+  ],
+  "ddl": [
+    {
+      "name": "household_import_workflow_admissions",
+      "entityType": "tables"
+    },
+    {
+      "name": "household_meal_plan_mutation_receipts",
+      "entityType": "tables"
+    },
+    {
+      "name": "household_meal_plans",
+      "entityType": "tables"
+    },
+    {
+      "name": "household_meta",
+      "entityType": "tables"
+    },
+    {
+      "name": "household_outbox",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "command_digest",
+      "entityType": "columns",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "committed_at_epoch_ms",
+      "entityType": "columns",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "committed_result_json",
+      "entityType": "columns",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "execution_generation",
+      "entityType": "columns",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "mutation_id",
+      "entityType": "columns",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workflow_identity",
+      "entityType": "columns",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "draft_id",
+      "entityType": "columns",
+      "table": "household_meal_plan_mutation_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "mutation_fingerprint",
+      "entityType": "columns",
+      "table": "household_meal_plan_mutation_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "mutation_id",
+      "entityType": "columns",
+      "table": "household_meal_plan_mutation_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "result_json",
+      "entityType": "columns",
+      "table": "household_meal_plan_mutation_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "draft_id",
+      "entityType": "columns",
+      "table": "household_meal_plans"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "plan_json",
+      "entityType": "columns",
+      "table": "household_meal_plans"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "request_fingerprint_digest",
+      "entityType": "columns",
+      "table": "household_meal_plans"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revision",
+      "entityType": "columns",
+      "table": "household_meal_plans"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at_epoch_ms",
+      "entityType": "columns",
+      "table": "household_meta"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "household_meta"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "singleton_key",
+      "entityType": "columns",
+      "table": "household_meta"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "household_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "household_outbox"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "exhausted_at_epoch_ms",
+      "entityType": "columns",
+      "table": "household_outbox"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "next_attempt_at_epoch_ms",
+      "entityType": "columns",
+      "table": "household_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payload_json",
+      "entityType": "columns",
+      "table": "household_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "purpose",
+      "entityType": "columns",
+      "table": "household_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "household_outbox"
+    },
+    {
+      "columns": [
+        "draft_id",
+        "mutation_id"
+      ],
+      "nameExplicit": false,
+      "name": "household_meal_plan_mutation_receipts_pk",
+      "entityType": "pks",
+      "table": "household_meal_plan_mutation_receipts"
+    },
+    {
+      "columns": [
+        "mutation_id"
+      ],
+      "nameExplicit": false,
+      "name": "household_import_workflow_admissions_pk",
+      "table": "household_import_workflow_admissions",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "draft_id"
+      ],
+      "nameExplicit": false,
+      "name": "household_meal_plans_pk",
+      "table": "household_meal_plans",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "singleton_key"
+      ],
+      "nameExplicit": false,
+      "name": "household_meta_pk",
+      "table": "household_meta",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "dispatch_id"
+      ],
+      "nameExplicit": false,
+      "name": "household_outbox_pk",
+      "table": "household_outbox",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "import_id",
+          "isExpression": false
+        },
+        {
+          "value": "execution_generation",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "household_import_workflow_execution_unique",
+      "entityType": "indexes",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "columns": [
+        "dispatch_id"
+      ],
+      "nameExplicit": false,
+      "name": "household_import_workflow_admissions_dispatch_id_unique",
+      "entityType": "uniques",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "columns": [
+        "workflow_identity"
+      ],
+      "nameExplicit": false,
+      "name": "household_import_workflow_admissions_workflow_identity_unique",
+      "entityType": "uniques",
+      "table": "household_import_workflow_admissions"
+    },
+    {
+      "columns": [
+        "organization_id"
+      ],
+      "nameExplicit": false,
+      "name": "household_meta_organization_id_unique",
+      "entityType": "uniques",
+      "table": "household_meta"
+    }
+  ],
+  "renames": []
+}
