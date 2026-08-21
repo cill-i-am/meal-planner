@@ -1,193 +1,599 @@
 # Household capability migration plan
 
-## Goal
+## Status and decision
 
-Move household-owned product state from the shared D1 prototype to the
-canonical per-organization `HouseholdObject`, one coherent capability at a
-time. Cloudflare primitives keep distinct responsibilities:
+This plan is the source of truth for moving household-owned product state from
+the shared D1 prototype into one canonical SQLite-backed `HouseholdObject` per
+Better Auth organization.
 
-- Better Auth D1 owns global identity, organizations, memberships, and
-  sessions.
-- `HouseholdObject` Drizzle SQLite owns canonical household product state and
-  serialized household commands.
-- Workflows own durable multi-step orchestration, not product truth.
-- Queues deliver work; queue state is not household product state.
-- R2 owns large media, transcripts, manifests, and evidence payloads.
-- Child Durable Objects may coordinate one import or runtime, but the parent
-  household object remains the canonical household authority.
+The foundation tracer from PR #182 and the household meal-plan slice from PR
+#183 are merged. They prove private routing, per-object Drizzle migrations,
+provenance, restart durability, replay receipts, optimistic concurrency, and
+physical cross-household isolation. Foundation hardening remains before the
+next authority cutover.
 
-This repository is greenfield. Each slice replaces its superseded shared-D1
-path outright. Do not add dual writes, read-through compatibility, backfills,
-legacy adapters, staged migrations, or portability machinery without explicit
-user approval.
+PR #184 and the former Recipe Bank-only first slice are **superseded**. They
+split state changed by the existing confirmation command across separate
+canonical stores. Do not merge, revive, or adapt that delivery lane. Reuse
+only independently useful findings or tests after revalidating them against
+this plan.
 
-## Delivery order
+The next product cutover moves the complete import intake, lifecycle, review,
+and Recipe Bank authority together. It may be implemented behind unmounted
+internal boundaries while tests are red or incomplete, but production routes
+and writers switch only once, as one cutover.
 
-| Order | Capability | Destination | Status |
-| --- | --- | --- | --- |
-| 1 | Recipe review and approved Recipe Bank | Household Object + R2 references | Ready for delivery |
-| 2 | Import admission, identity, and source deduplication | Household Object + Workflow start | Planned |
-| 3 | Public import lifecycle and timeline | Household Object + Workflow commands | Planned |
-| 4 | Evidence and extraction metadata | Household Object + R2 | Planned |
-| 5 | Import settlement and recovery | Household Object + Workflow saga | Planned |
-| 6 | Batch import state | Household Object + Queue/Workflow | Planned |
-| 7 | Shared household D1 retirement | Remove household-domain D1 persistence | Planned |
+## Architectural goal
 
-Preferences, shopping lists, and Tesco draft or approval state are future
-capabilities. Build them directly on the household foundation rather than
-introducing them into shared D1 first.
+Cloudflare primitives keep distinct responsibilities:
 
-## Slice 1: household Recipe Bank
+- Better Auth D1 owns global identity, accounts, sessions, organizations,
+  memberships, invitations, and roles.
+- One `HouseholdObject` per organization hosts that tenant's private SQLite
+  database, canonical household product state, and serialized commands.
+- Domain-driven, feature-first capability modules own their models, commands,
+  queries, tables, repositories, and failures inside that database.
+- Explicit household operations coordinate commands that legitimately span
+  capabilities and commit them in one local transaction.
+- Workflows own durable, multi-step orchestration and external waits, not
+  household product truth.
+- Queues transport work; a queue, retry count, or DLQ entry is not product
+  state.
+- R2 owns large media, transcript, manifest, and evidence bytes. Household
+  SQLite stores compact, integrity-checked references and admitted outcomes.
+- Child Durable Objects may own independent runtime coordination. They do not
+  become competing authorities for household product state.
 
-### Outcome
+`HouseholdObject` is a tenant actor, private database, and consistency host. It
+is **not** one giant DDD aggregate. Recipe import, review/publication, meal
+planning, preferences, and shopping may remain separate aggregates and
+modules while sharing one database and transaction boundary where required.
 
-An authenticated household reviews, corrects, tags, approves, rejects, and
-queries its recipes through one canonical `HouseholdObject` SQLite aggregate.
-Meal-plan generation reads approved recipes from the same household object.
+This repository is greenfield. Each cutover deletes the superseded path for
+the moved state. Do not add compatibility reads, dual writes, backfills,
+legacy adapters, shadow product projections, or preservation of experimental
+D1 data or schemas.
 
-Review state and approved-recipe publication move together because approval is
-one atomic domain transition. They must not be split across separate stores or
-delivery slices.
+## Non-negotiable invariants
 
-### Authority
+### Cross-capability atomicity rule
 
-The household object owns:
+> A delivery slice may not divide state changed by one existing atomic command
+> across separate canonical authorities. When a command changes import
+> lifecycle, review, Recipe Bank publication, history, or receipts atomically,
+> all affected state moves in the same cutover unless an explicit product and
+> API redesign first establishes an eventual-consistency boundary.
 
-- the review version and state;
-- reviewer corrections and planning tags;
-- approve, reject, and return-to-review transitions;
-- mutation receipts, optimistic concurrency, replay, and collision detection;
-- the canonical approved household recipe;
-- attribution and privacy-safe public projections.
+The current confirmation command atomically approves the review, clears the
+active action, moves the import through finalization to success, publishes the
+recipe identity, appends history, and records replay receipts. Therefore the
+old review-first, admission-second, lifecycle-third split is invalid.
 
-The current extraction remains a read-only import input for this slice. Opening
-a review admits a schema-decoded extraction snapshot into the household object.
-After admission, review commands do not write back to shared D1. Large source
-evidence remains in R2 and is referenced rather than copied into SQLite.
+### Authority and routing
 
-### Required replacement
+- Public requests never choose an organization, household object name, actor,
+  authoritative time, generation, result version, timeline ordinal, or
+  receipt.
+- The API proves the Better Auth session and organization membership before
+  routing. Active organization is UI state, not authorization proof.
+- A single locator derives a versioned, privacy-safe object name from the
+  admitted immutable organization ID before `getByName`; never route by slug,
+  display name, URL parameter, or a raw organization ID embedded in the object
+  name.
+- The private household Worker decodes the internal command, derives the
+  object route, and forwards it. The Durable Object decodes the structured
+  clone again before domain code. TypeScript RPC types are not runtime proof.
+- The object persists the immutable organization ID as provenance and rejects
+  any mismatch before reading or mutating capability state.
+- Application principal context must be propagated explicitly over service
+  bindings and revalidated. Platform access context is not assumed to
+  propagate.
 
-Delete the superseded shared-D1 review and Recipe Bank implementation in the
-same PR, including its repositories, composition paths, and tables:
+### Transaction and command ownership
 
-- `recipe_reviews`;
-- `recipe_review_mutations`;
-- `recipe_review_corrections`;
-- `recipe_review_transitions`;
-- the approved-recipe projection used by meal planning.
+The `HouseholdObject` owns authoritative command time, aggregate versions,
+timeline ordinals, mutation receipts, command digests, and result identities.
+Callers may provide a mutation ID and an explicit expected version for replay
+and optimistic concurrency; they do not provide the resulting authority facts.
 
-Reset the greenfield D1 schema as needed. Do not retain a compatibility read,
-shadow projection, or dual write.
+Every mutation follows this shape:
 
-### First vertical tracer
+```text
+authenticate and authorize
+-> perform required external I/O outside the object transaction
+-> Schema-decode a closed external result
+-> encode and send a closed internal command
+-> decode again at the private Worker and Durable Object boundaries
+-> read local SQLite state
+-> make a pure domain decision
+-> assign authority-owned time, versions, ordinals, and receipt content
+-> commit all local changes in one short Drizzle transaction
+-> return the committed result
+-> dispatch any recorded follow-up work after commit
+```
 
-Exercise one provider-free path through the production boundaries:
+No D1, R2, `fetch`, Workflow, Queue, service-binding, provider, container, or
+other network I/O may occur inside a `HouseholdObject` transaction. If a local
+commit must trigger external work, record a compact outbox/dispatch intent in
+the same transaction. An alarm or host adapter drains it idempotently after
+commit. Queue and Workflow acknowledgements can be committed later as separate
+commands.
 
-1. Website request reaches the private API Worker.
-2. Better Auth validates the session and active organization membership.
-3. The API reads and decodes one current extraction snapshot.
-4. The private household service binding routes to the named
-   `HouseholdObject`.
-5. The household object opens a review, applies one correction and tag, then
-   approves it atomically into the Recipe Bank.
-6. Meal-plan creation reads that approved recipe directly from the same object.
-7. A runtime restart preserves the review, recipe, receipts, and resulting meal
-   plan input.
+### Canonical and noncanonical state
 
-### Acceptance criteria
+| Store or service | Authority | Permitted facts |
+| --- | --- | --- |
+| Household SQLite | Canonical household product authority | Imports, actions, reviews, recipes, plans, preferences, shopping, household receipts and lifecycle |
+| Better Auth D1 | Canonical identity control plane | Users, sessions, organizations, membership, invitations, roles |
+| R2 | Canonical large-byte store behind household references | Evidence and media bytes with checksums, generation, ownership, and retention metadata admitted by the household authority |
+| Workflow and Queue | Operational execution and delivery | Attempts, waits, transport, retry and orchestration state; never public household truth |
+| Global operational store | Noncanonical for household product state | Opaque object key, workflow ID, safe failure class, provider cost, cleanup deadline, migration or recovery status |
+| Analytics Engine | Noncanonical telemetry | Privacy-safe usage, latency, outcomes, retry bands, and approximate cost |
 
-- Public commands accept no organization, household, actor, timestamp, or
-  authority-owned snapshot fields.
-- Better Auth membership is proven before household routing.
-- Cross-organization reads and mutations fail before reaching another
-  household object.
-- Opening the same review request replays; reusing its identifier for a changed
-  extraction collides safely.
-- Corrections and transitions enforce optimistic review versions.
-- Approval and Recipe Bank publication occur in one SQLite transaction.
-- Only approved recipes are visible to planning; rejected or in-review recipes
-  are not.
-- Identical transition retries return the recorded result; changed commands
-  with the same mutation identifier conflict.
-- Public responses do not expose Better Auth user identifiers or private
-  evidence locations.
-- Restart tests prove durable state and receipts.
-- Meal-plan generation no longer queries the shared D1 approved-recipe
-  projection.
-- Structural proof rejects production references to the deleted shared-D1
-  review and Recipe Bank paths.
-- Drizzle owns all database access and checked-in migration generation.
+A global operational store must not become another Recipe Bank, import
+lifecycle, meal plan, shopping list, review log, or household directory with
+product data. A genuinely global authority, such as strict provider budget
+reservation, must be named and modelled separately rather than disguised as a
+household projection.
 
-### Boundaries and non-goals
+## Domain and module topology
 
-- Do not move import admission, lifecycle, provider settlement, batch state, or
-  evidence payloads in this slice.
-- Do not add a rich review frontend unless a minimal tracer is necessary to
-  prove an existing public contract.
-- Do not deploy to Cloudflare or call a live provider.
-- Do not preserve experimental D1 data or schemas.
+Use DDD-informed, feature-first vertical capability modules with ports and
+adapters. Keep the host thin and place layers inside each capability rather
+than creating repository-wide `domain/`, `application/`, and `persistence/`
+folders.
 
-### Risk and proof
+```text
+apps/api/src/features/households/
+  household-object.ts                 thin DO handler and instance lifecycle
+  household-domain-worker.ts          private admitted routing only
+  household-object-locator.ts         versioned privacy-safe object routing
+  household-object-runtime.ts         composes one instance-scoped runtime
 
-This is a Tier B internal slice because it changes canonical durable authority,
-review integrity, replay semantics, and a planning input boundary. The worker
-must use test-first delivery, provider-free Workerd/Miniflare and real SQLite
-proof, full repository gates, simplification, and one independent exact-head
-review before merge.
+  rpc/
+    command-envelope.ts               actor/system provenance and mutation ID
+    commands.ts                       closed internal command union
+    results.ts                        closed result and failure union
 
-## Slice 2: import admission and identity
+  shared-kernel/
+    actor.ts
+    command-digest.ts
+    household-identity.ts
+    instant.ts
+    mutation-id.ts
 
-Move import request replay, import identity, canonical-source ownership,
-deduplication, and redirects into the household object. Commit admission before
-starting a deterministic Workflow so a start failure remains recoverable.
-Delete the old D1 admission and source-deduplication path in the same slice.
+  capabilities/
+    meal-planning/                    relocate the merged vertical internally
+      model.ts
+      commands.ts
+      repository.ts
+      schema.ts
+      tests/
 
-## Slice 3: import lifecycle and timeline
+    recipe-import/
+      model.ts                         intake, lifecycle, actions, terminality
+      decide.ts                        pure transitions and invariants
+      commands.ts
+      queries.ts
+      repository.ts
+      schema.ts
+      projection.ts                    public intent/action/timeline views
+      tests/
 
-Move the household-visible import stage, status, version, generation fences,
-cancellation, available actions, history, and command receipts into the
-household object. Workflows report typed transitions to the object; they do not
-own public lifecycle truth.
+    recipe-bank/
+      model.ts                         review, corrections, tags, publication
+      decide.ts
+      commands.ts
+      queries.ts
+      repository.ts
+      schema.ts
+      projection.ts                    planning-safe recipe snapshots
+      tests/
 
-## Slice 4: evidence and extraction metadata
+    evidence/                         later compact metadata and R2 references
+    settlement/                       later checkpoints and recovery receipts
+    batches/                          later household batch state and outbox
 
-Move compact transcription, visual, carousel, and extraction outcomes and
-their R2 references into the household object. Keep large bytes in R2. Keep the
-per-import acquisition object as a noncanonical coordinator. Delete the
-corresponding shared-D1 evidence and extraction records.
+  operations/
+    confirm-import-review.ts          one cross-capability SQLite transaction
+    admit-import.ts
+    cancel-import.ts
+    create-plan-from-recipe-bank.ts
+    delete-household.ts
 
-## Slice 5: settlement and recovery
+apps/api/src/features/imports/orchestration/
+  acquisition-workflow.ts             R2/provider/external orchestration
+  recovery-workflow.ts
+  batch-consumer.ts
 
-Move import-specific terminal checkpoints, recovery attempts, replay guards,
-and receipts into the household object. Use a Workflow saga for idempotent
-provider settlement followed by household outcome commitment. Retain a global
-operational D1 only for a genuinely cross-household provider budget; otherwise
-delete the experimental pilot ledgers.
+apps/api/household-migrations/         generated checked-in SQLite migrations
+packages/household-api/                public HTTP schemas and generated client
+packages/recipe-import-api/            existing public import HTTP contract
+```
 
-## Slice 6: batch imports
+The names are a target topology, not authority to preserve obsolete files.
+Refine placement against actual imports during each slice. An internal RPC
+package is justified only when a second real runtime consumer needs it;
+otherwise keep internal commands app-local. Public HTTP contracts do not own
+Drizzle tables, Better Auth, Cloudflare bindings, or internal command envelopes.
 
-Move batch membership, item status, replay, completion, and household-visible
-failure into the household object. Queues remain delivery transport and
-Workflows coordinate items. A queue DLQ is operational evidence, not canonical
-household state.
+Cross-capability operations are the only place allowed to coordinate multiple
+capability repositories in one transaction. Capabilities do not reach into one
+another's internal files, and repositories do not hide business orchestration.
+The shared kernel stays deliberately small.
 
-## Slice 7: retire shared household D1 persistence
+## Internal contracts
 
-Remove the remaining household-domain tables, repositories, and binding from
-the shared D1. Keep Better Auth D1 and only any proven global operational SQL
-store. Add structural guards preventing household product state from drifting
-back into globally tenant-filtered persistence.
+The exact schemas are implemented test-first, but the boundary has this shape:
 
-## Gate for every slice
+```ts
+type HouseholdCommandContext = {
+  readonly actor:
+    | { readonly _tag: "Member"; readonly actorId: HouseholdActorId }
+    | { readonly _tag: "System"; readonly purpose: SystemPurpose }
+  readonly mutationId: MutationId
+  readonly organizationId: BetterAuthOrganizationId
+  readonly traceId: TraceId
+}
 
-Every slice must finish with:
+type ConfirmImportReview = {
+  readonly _tag: "ConfirmImportReview"
+  readonly actionId: RecipeImportActionId
+  readonly expectedActionVersion: ActionVersion
+  readonly intentId: RecipeImportIntentId
+}
 
-1. one canonical writer for the moved capability;
-2. the superseded path deleted in the same PR;
-3. provider-free real-boundary and restart/replay proof;
-4. cross-household authorization and privacy proof;
-5. full repository checks and builds;
-6. a clean immutable PR head with green CI;
-7. one independent exact-head review;
-8. orchestrator merge and task/worktree cleanup;
-9. no live provider call or Cloudflare deployment unless separately approved.
+type CommitExtraction = {
+  readonly _tag: "CommitExtraction"
+  readonly expectedGeneration: ImportGeneration
+  readonly extraction: ClosedExtractionSnapshot
+  readonly intentId: RecipeImportIntentId
+  readonly evidence: readonly EvidenceReference[]
+}
+```
+
+The API derives organization and member identity from Better Auth. Async
+consumers carry the immutable organization ID plus durable IDs and admitted
+system provenance, not mutable domain snapshots. External adapters decode
+provider/R2/Workflow data before constructing a command; the private runtime
+decodes the command again.
+
+Expected failures remain closed, tagged, and Schema-backed:
+
+- invalid input or internal protocol mismatch;
+- unauthenticated or unauthorized principal before object access;
+- provenance mismatch;
+- aggregate not found or transition rejected;
+- expected-version or generation conflict;
+- replay collision for one mutation ID with different content;
+- local persistence or migration unavailable;
+- post-commit dispatch pending or exhausted, without exposing transport detail.
+
+Public HTTP maps only its own stable Problem Details. Logs and operational
+facts use opaque household correlations and closed reason categories; they do
+not include organization IDs, actor IDs, URLs, evidence keys, provider payloads,
+or command bodies.
+
+## Durable Object and Drizzle lifecycle
+
+Two independent lifecycle layers must remain explicit:
+
+1. **Alchemy/Cloudflare class and namespace lifecycle.** This owns the stable
+   `HouseholdObject` class, namespace, bindings, privacy-safe object ID
+   derivation, and deployment changes. The locator is the only place that may
+   derive a named object identity, so routing cannot drift across capabilities.
+2. **Per-object Drizzle database lifecycle.** Checked-in generated migrations
+   are applied to each private SQLite database under instance initialization
+   gating before commands are admitted. Migrations are repeatable on restart,
+   fail closed, and are tested across schema versions. They are not D1
+   migrations and are not replaced by an Alchemy namespace update.
+
+Use initialization gating only for runtime setup and migrations. Normal
+commands rely on local SQLite transactions and do not wrap external work in a
+global concurrency block.
+
+## Child Durable Object decision rule
+
+Do not create a child object because a domain noun exists. Decompose code
+aggressively; decompose the Durable Object only when a separate coordination,
+lifetime, throughput, placement, or consistency boundary is proven.
+
+A child object is justified only when most of these are true:
+
+1. It has an independent, durable coordination identity.
+2. It has a materially different lifetime or retention policy.
+3. Its traffic is sufficiently hot or high-frequency to threaten the household
+   object's serialized workload.
+4. It owns a long-lived connection, runtime session, or isolated executor.
+5. Its state never needs an atomic transaction with canonical household state.
+6. Eventual consistency with the household authority is an accepted product
+   invariant.
+7. Its failure, replay, and recovery semantics justify an RPC or saga boundary.
+8. Independent placement, scaling, or security controls solve a measured need.
+
+An import acquisition object, retail session object, realtime session object,
+or large batch executor may eventually qualify. A `RecipeObject`,
+`ReviewObject`, `MealPlanObject`, or `ShoppingListObject` does not qualify now.
+The parent object remains canonical even when a child coordinates execution.
+Avoid deep service chains: every extra binding is another invocation and
+another principal-propagation boundary.
+
+## Cloudflare adoption roadmap
+
+| Timing | Capability | Decision and boundary |
+| --- | --- | --- |
+| Now | Existing R2 lifecycle | Keep the seven-day `imports/` deletion rule. Treat asynchronous lifecycle deletion as defense-in-depth, not a correctness or authorization clock. |
+| Now | Workflow, Queue, R2, private service binding | Keep orchestration, delivery, bytes, and private routing outside household transactions. Pass and re-prove the application principal across the binding. |
+| Next | SQLite DO PITR and recovery runbook | Add operator tooling for per-object bookmarks and 30-day restore, destructive-command/migration procedures, authorization, audit, and a production drill. PITR is per-object recovery, not fleet backup or inventory, and is unavailable locally. |
+| Next | Durable Object alarms | Multiplex a local schedule/outbox table onto the single alarm. Handlers are idempotent and limited to local wake-up, pruning, deletion, or dispatch retry; provider work remains in Workflows. |
+| Next | R2 Queue event notifications | Send relevant create/delete/lifecycle-deletion events through a reconciliation Queue with strict prefix/suffix and generation validation. Notifications are delivery evidence, not household truth. |
+| Next | Scheduled maintenance | On Alchemy beta.72, use an Alchemy-managed cron Worker that starts a bound Workflow. Direct Workflow schedules exist in Cloudflare but are not exposed by the pinned Alchemy resource API; revisit after support lands. |
+| Next | Rate Limiting binding | Protect expensive admission/provider routes with privacy-safe household/actor/capability keys. Location-local permissive counters are abuse and load protection, never authorization, quota, budget, billing, or idempotency. |
+| Next | Secrets Store evaluation | Prefer reusable account-level provider/system credentials if the open-beta, async binding and local-development constraints pass an exact-version spike. Do not store household product data or retail grants there. |
+| Next | Analytics Engine | Emit privacy-safe high-cardinality operational telemetry. Its fixed three-month retention makes it unsuitable for durable audit, receipts, billing, or long-term product reporting. |
+| Later | Turnstile | Add server-verified, single-use protection only when exposed signup or expensive import abuse warrants it. |
+| Later | Hibernatable WebSockets | Adopt only for genuine collaborative planning, shopping, or high-frequency progress; current polling does not justify it. |
+| Later | Vectorize | Use only as a rebuildable derived semantic index pointing to canonical household recipe IDs. Never make it recipe authority. |
+| Later | `@cloudflare/actors` | Defer the beta framework. Revisit only if its scheduling or migration helpers remove material code without obscuring Effect scope, Drizzle ownership, or failure semantics. |
+
+Household SQLite capacity remains bounded by Cloudflare's per-object limits.
+Keep large values in R2, enforce conservative row and command payload limits,
+and treat the soft per-object throughput ceiling as a reason to measure hot
+households—not as a reason to pre-shard ordinary domain nouns.
+
+## Household deletion lifecycle
+
+Organization deletion stays disabled until this idempotent lifecycle exists:
+
+1. An authorized deletion command marks the household `Closing`, records the
+   authority-owned deadline and receipt, and fences new commands.
+2. Existing Workflow and Queue work is cancelled or allowed to settle under an
+   explicit policy; late callbacks are rejected by lifecycle and generation.
+3. A deletion Workflow removes household-owned R2 prefixes and other external
+   resources outside the object transaction.
+4. The object verifies local preconditions, records completion, and calls
+   SQLite `deleteAll` only at the final destructive step.
+5. A privacy-safe global operational deletion receipt records object key,
+   completion status, and retention deadline without copying product state.
+6. Better Auth organization deletion completes only after the household
+   deletion policy reaches its terminal outcome.
+
+Retries at every step return the existing receipt. A failed cleanup remains
+recoverable and visible to operators without reopening household writes.
+
+## Future global-query policy
+
+Normal product queries always start from an authenticated organization and
+route to one household. There is no fleet-wide SQL query across private object
+databases, and the architecture will not create a global product read model in
+advance.
+
+When a real global use case appears, classify it first:
+
+- Support reads route to a known household after verified authorization.
+- Analytics use privacy-safe events and are noncanonical.
+- Reconciliation and deletion may use a minimal operational index of opaque
+  object/workflow IDs and safe statuses.
+- Strict cross-household budget reservation may own a separate global
+  operational aggregate.
+- Fleet-wide recipe, import, plan, or shopping queries require an explicit
+  architecture and privacy decision. They do not justify silently duplicating
+  canonical household rows.
+
+Any product projection, dual store, or compatibility mechanism still requires
+the user's explicit approval under the greenfield policy.
+
+## Revised delivery sequence
+
+### Completed: foundation tracer and meal planning
+
+PRs #182 and #183 established one per-organization SQLite DO and moved meal
+plan state, decisions, receipts, and restart/concurrency proof into it. The
+temporary meal-plan recipe source still reads approved recipes from shared D1
+and transfers snapshots over RPC; that seam is deleted by the complete import
+cutover.
+
+### Slice 0: foundation hardening — immediate next slice
+
+Harden the merged foundation without moving another product authority:
+
+- central privacy-safe, versioned object locator;
+- auth and membership proof before route derivation;
+- closed internal RPC envelope and double decode;
+- explicit member/system provenance and privacy-safe failures;
+- object-owned clock, versions, ordinals, digests, and receipts;
+- thin object host plus feature-first runtime composition;
+- clear Alchemy class lifecycle versus per-object Drizzle migrations;
+- local outbox/alarm port with no external I/O in transactions;
+- first-activation, restart, repeated-migration, migration-failure, provenance,
+  authorization, replay, and cross-object isolation proof;
+- structural checks for raw organization IDs in object names and forbidden
+  external calls inside transaction modules.
+
+This slice deletes obsolete foundation shapes rather than preserving adapters.
+It does not change import authority, deploy to Cloudflare, or call providers.
+
+### Slice 1: complete import, review, and Recipe Bank authority cutover
+
+Move these together and switch all public writers/readers in one delivery:
+
+- admission, import identity, and idempotency ledger;
+- source ownership, canonical-source deduplication, winner races, and redirects;
+- public lifecycle, stage, version, generation fences, timeline, and projections;
+- active review actions and available-action rules;
+- current admitted extraction/draft snapshot required to review and publish;
+- review state, answers, corrections, tags, transitions, and mutation receipts;
+- approval and canonical Recipe Bank publication;
+- cancellation, terminal state, recipe identity, history, and receipts.
+
+The `confirm-import-review` operation commits review approval, publication,
+action completion, finalizing/succeeded lifecycle, version increments, timeline
+entries, and replay receipts in one local SQLite transaction. Admission commits
+the import plus its idempotency record before Workflow start. Source-dedup,
+cancel-versus-confirm, and replay races resolve inside the same household
+authority.
+
+Delete the superseded D1 repositories, composition, triggers, tables, and
+planning projection for this moved state in the same PR. Meal planning queries
+the local Recipe Bank capability directly; remove the D1 recipe-source gateway
+and its transfer-size workaround. Do not preserve prototype rows or reinstate
+an arbitrary product-level recipe-count ceiling such as the old 128-item limit;
+use pagination, bounded pages, and byte limits at real transport/storage seams.
+
+### Slice 2: evidence and extraction metadata
+
+Move compact transcription, visual, carousel, extraction, manifest, current
+result, and generation metadata plus integrity-checked R2 references. Large
+bytes remain in R2. Workflows perform provider/R2 I/O, decode a closed result,
+then ask the object to commit it. Add R2 lifecycle, event-notification,
+retention, missing-object, deletion, restart, and stale-generation proof.
+
+The exact table boundary is refined from live dependencies after Slice 1; no
+state needed by the confirmation transaction may be left behind.
+
+### Slice 3: settlement and recovery
+
+Move household-owned terminal checkpoints, recovery attempts, generation
+fences, replay guards, and receipts. Workflow owns waits, retries, provider
+calls, and saga execution; the object decides and records household outcomes.
+Retain only proven cross-household budget or safe operational facts globally.
+
+### Slice 4: batches
+
+Move canonical batch/item membership, status, replay, completion, failure, and
+outbox state. Queue messages carry immutable organization, batch, and item IDs;
+Queue/DLQ remains transport evidence. Workflow coordinates multi-step items.
+
+### Slice 5: shared household D1 retirement
+
+After all canonical household capabilities have moved, delete the shared domain
+D1 binding, remaining household tables, repositories, tests, and configuration.
+Retain Better Auth D1. Retain a separate global operational store only for
+explicitly approved global facts. Add structural enforcement preventing
+household product state from returning to tenant-filtered global persistence.
+
+Preferences, shopping lists, Tesco draft/approval state, and later household
+verticals are built directly as local capability modules. They do not pass
+through shared D1 first.
+
+## Test-first proof plan
+
+Every slice uses red-green-refactor:
+
+1. **Red:** add a provider-free failing test for the production boundary or
+   invariant before changing implementation.
+2. **Green:** prove the smallest production path with real Effect layers,
+   Drizzle SQLite, Workerd/Miniflare bindings, and closed schemas.
+3. **Refactor:** simplify boundaries, delete superseded code, and rerun focused
+   plus repository-wide gates.
+
+Foundation proof retains and extends current tests for provenance, physical
+object isolation, restart durability, migration initialization, replay,
+collision, stale-version serialization, terminal transitions, and payload
+limits.
+
+The complete import cutover adds at minimum:
+
+- one real SQLite rollback test covering the entire confirmation transaction;
+- admission plus idempotency atomicity and Workflow-start failure recovery;
+- concurrent local source winner/dedup/redirect races;
+- cancel-versus-confirm and duplicate-confirm races;
+- answer/correction optimistic concurrency and mutation collision;
+- restart/replay after every public transition and before/after dispatch;
+- forged cross-organization access rejected before another object is resolved;
+- private Worker and object double-decode rejection for malformed clones;
+- no D1, R2, service-binding, Workflow, Queue, or provider call while a local
+  transaction is active;
+- outbox alarm/delivery replay without duplicate product mutation;
+- planning reads only the local approved Recipe Bank;
+- Recipe Bank and planning pagination work beyond 128 approved recipes without
+  an arbitrary household capacity failure;
+- public projections remain privacy-safe and stable;
+- structural guards reject production imports of removed D1 import/review/
+  Recipe Bank repositories after cutover.
+
+Evidence, settlement, and batch slices add real Workerd/Miniflare Workflow,
+Queue, R2, alarm, restart, stale-generation, retry, DLQ, and deletion proof
+appropriate to their boundaries. Provider tests remain fakes or installed
+provider-free seams unless a live call is separately approved.
+
+## Acceptance gates
+
+Every delivery slice must finish with all of these:
+
+1. The implementation is based on freshly fetched exact `origin/main` in an
+   isolated worktree.
+2. One canonical writer exists for every moved fact; no atomic command spans
+   canonical authorities.
+3. Superseded code, routes, repositories, tables, triggers, and tests for moved
+   state are deleted in the same PR.
+4. Public and internal Schema contracts, tagged failures, privacy rules,
+   transaction boundaries, and object-owned authority facts are proven.
+5. Focused RGR tests, real Workerd/Miniflare SQLite restart/replay/
+   authorization tests, and structural guards pass.
+6. Root `pnpm check`, `pnpm test`, `pnpm lint`, `pnpm format:check`, required
+   builds, and `git diff --check` pass.
+7. Generated Drizzle migrations are checked in, byte-stable on regeneration,
+   and report no unexpected schema diff.
+8. The PR head is immutable, CI is green, and an independent exact-head review
+   reports no actionable findings.
+9. The orchestrator verifies spec compliance, merges only the reviewed head,
+   then cleans the task, branch, and worktree.
+10. No live provider call, Cloudflare deployment, D1 mutation, destructive R2
+    action, or other external change occurs without separate approval.
+
+## Alternatives considered
+
+### Keep shared tenant-scoped D1
+
+This is simpler for fleet SQL, support queries, reporting, and one-shot
+migrations. It retains pervasive tenant filters and does not provide the chosen
+per-household coordination and physical storage boundary. Rejected for
+canonical household product state; Better Auth and approved global operational
+facts remain valid D1 uses.
+
+### Split review/Recipe Bank from import lifecycle using eventual consistency
+
+This would let smaller slices commit independently, but approval could no
+longer synchronously return a succeeded import. It would introduce intermediate
+states, saga recovery, and two authorities before lifecycle moved. Rejected
+because it changes product/API semantics and violates the current atomic
+confirmation contract.
+
+### Create one Durable Object per domain noun
+
+Recipe, review, plan, and shopping objects would turn local transactions into
+distributed sagas and add binding hops, failure modes, and principal boundaries
+without a measured scale or lifetime need. Rejected. Apply the child-object
+criteria only when evidence establishes an independent coordination boundary.
+
+### Hybrid household DO plus global product read model
+
+This adds projections, lag, replay, privacy deletion duplication, and a second
+product representation. Rejected under the greenfield policy. Add only a
+minimal noncanonical operational index for an approved concrete use case.
+
+## Decision log
+
+| Decision | Status | Consequence |
+| --- | --- | --- |
+| One canonical `HouseholdObject` per Better Auth organization | Accepted | Physical tenant isolation and one household-local consistency host |
+| DDD-informed, feature-first vertical capability modules | Accepted | Decompose code without pre-sharding storage |
+| Cross-capability operations own required multi-module transactions | Accepted | Atomic commands stay local and explicit |
+| Complete import/review/Recipe Bank cutover replaces old Slices 1-3 | Accepted | PR #184 and Recipe Bank-only delivery are superseded |
+| Object authority owns time, versions, ordinals, identities, and receipts | Accepted | Callers cannot manufacture ordering or results |
+| Privacy-safe, authority-derived routing | Accepted | One locator derives object names only after authorization |
+| External I/O forbidden inside local transactions | Accepted | Outbox/alarm/Workflow handles post-commit effects |
+| Alchemy class lifecycle separate from per-object Drizzle migrations | Accepted | Deployment changes cannot substitute for SQLite schema evolution |
+| No compatibility, dual write, backfill, or old D1 preservation | Accepted | Superseded greenfield paths are deleted at each cutover |
+| Global operational facts remain noncanonical for household product state | Accepted | Future global product queries require a new explicit decision |
+| More child Durable Objects only after measured boundary criteria | Accepted | Domain nouns remain modules in one household database by default |
+| Direct scheduled Workflows | Deferred | Pinned Alchemy beta.72 lacks schedule configuration; use cron Worker to start Workflow |
+
+## Immediate handoff
+
+The immediate delivery is **Slice 0: harden the household foundation**. It is a
+bounded prerequisite, not another product authority migration. Once its exact
+head is green, reviewed, and merged, dispatch Slice 1 as the complete import,
+review, and Recipe Bank cutover. Do not restart the superseded Recipe Bank-only
+session.
