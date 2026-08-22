@@ -420,6 +420,10 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const eventDecoderSource = readRepoFile(
       "./apps/api/src/features/imports/import-evidence-event.ts"
     );
+    const requestLayerSource = readRepoFile(
+      "./apps/api/src/features/imports/import-worker-request-layer.ts"
+    );
+    const apiWorkerSource = readRepoFile("./apps/api/src/worker.ts");
 
     expect(stackSource).toContain("ImportEvidenceEventQueue");
     expect(stackSource).toContain("Cloudflare.R2.BucketEventNotification(");
@@ -429,8 +433,40 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "Cloudflare.Queues.consumeQueueMessages("
     );
     expect(eventWorkerSource).toContain("Cloudflare.Queues.EventSourceLive");
-    expect(eventDecoderSource).not.toContain("organizationId");
-    expect(eventDecoderSource).not.toContain("HouseholdDomainWorker");
+    expect(eventWorkerSource).toContain("ImportEvidenceEventRoutes");
+    expect(eventWorkerSource).toContain("Cloudflare.KV.ReadWriteNamespace(");
+    expect(eventWorkerSource).toContain("Cloudflare.R2.ReadWriteBucket(");
+    expect(eventWorkerSource).toContain("Cloudflare.Workers.bindWorker(");
+    expect(eventWorkerSource).toContain(
+      "reconcileImportEvidenceQueueMessage(message.body"
+    );
+    expect(eventWorkerSource).toContain(
+      "householdDomain.observeEvidenceReference(input)"
+    );
+    expect(eventWorkerSource).toContain(
+      "householdDomain.readEvidenceReferences(input)"
+    );
+    expect(eventDecoderSource).toContain("RegisterImportEvidenceRoute");
+    expect(eventDecoderSource).toContain("HouseholdOrganizationId");
+    expect(eventDecoderSource).toContain(
+      "ports.household.observeEvidenceReference({"
+    );
+    expect(eventDecoderSource).toContain(
+      'metadata["importId"] !== event.importId'
+    );
+    expect(eventDecoderSource).toContain(
+      'metadata["generation"] !== String(event.executionGeneration)'
+    );
+    expect(eventDecoderSource).toContain(
+      'metadata["sha256"] !== reference.sha256'
+    );
+    expect(apiWorkerSource).toContain(
+      "Cloudflare.Queues.WriteQueue(\n      ImportEvidenceEventQueue"
+    );
+    expect(apiWorkerSource).toContain("registerEvidenceRoute: (message) =>");
+    expect(requestLayerSource.indexOf(".registerEvidenceRoute({")).toBeLessThan(
+      requestLayerSource.indexOf(".dispatchAdmission({")
+    );
   });
 
   it("commits acquisition and provider evidence only through the household authority", () => {

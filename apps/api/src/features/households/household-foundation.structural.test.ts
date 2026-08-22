@@ -193,6 +193,24 @@ describe("household foundation structural boundaries", () => {
     );
   });
 
+  it("wires R2 lifecycle notifications to household evidence observation", async () => {
+    const [consumer, reconciler] = await Promise.all([
+      read(
+        path.join(
+          apiFeaturesRoot,
+          "../infrastructure/import-evidence-event-queue.ts"
+        )
+      ),
+      read(path.join(apiFeaturesRoot, "imports/import-evidence-event.ts")),
+    ]);
+    expect(consumer).toContain("reconcileImportEvidenceQueueMessage(");
+    expect(consumer).toContain("householdDomain.observeEvidenceReference(");
+    expect(consumer).toContain("householdDomain.readEvidenceReferences(");
+    expect(consumer).toContain("ImportEvidenceEventRoutes");
+    expect(reconciler).toContain("ports.bucket.head(event.objectKey)");
+    expect(reconciler).toContain("ports.household.observeEvidenceReference({");
+  });
+
   it("keeps the Alchemy host thin and SQLite evolution migration-owned", async () => {
     const host = await read(path.join(householdRoot, "household-object.ts"));
     expect(host.split("\n").length).toBeLessThanOrEqual(14);

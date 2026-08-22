@@ -29,12 +29,14 @@ import {
   HouseholdCommitAcquisitionEvidenceInput,
   HouseholdMutateEvidenceStageInput,
   HouseholdObserveEvidenceReferenceInput,
+  HouseholdReadEvidenceReferencesInput,
   HouseholdReadEvidenceStageInput,
 } from "./evidence/household-evidence.contract.js";
 import type {
   HouseholdCommitAcquisitionEvidenceResult,
   HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceResult,
+  HouseholdReadEvidenceReferencesResult,
   HouseholdReadEvidenceStageResult,
 } from "./evidence/household-evidence.contract.js";
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
@@ -135,6 +137,9 @@ interface HouseholdApiFixtureEnv {
     readonly observeEvidenceReference: (
       input: typeof HouseholdObserveEvidenceReferenceInput.Encoded
     ) => Promise<typeof HouseholdObserveEvidenceReferenceResult.Encoded>;
+    readonly readEvidenceReferences: (
+      input: typeof HouseholdReadEvidenceReferencesInput.Encoded
+    ) => Promise<typeof HouseholdReadEvidenceReferencesResult.Encoded>;
     readonly readEvidenceStage: (
       input: typeof HouseholdReadEvidenceStageInput.Encoded
     ) => Promise<typeof HouseholdReadEvidenceStageResult.Encoded>;
@@ -207,6 +212,7 @@ export default {
       testSystemOperation === "commit-acquisition-evidence" ||
       testSystemOperation === "mutate-evidence-stage" ||
       testSystemOperation === "observe-evidence-reference" ||
+      testSystemOperation === "read-evidence-references" ||
       testSystemOperation === "read-evidence-stage" ||
       testSystemOperation === "resolve" ||
       testSystemOperation === "commit-draft"
@@ -243,6 +249,14 @@ export default {
             result = await env.HouseholdDomainWorker.readEvidenceStage(
               Schema.decodeUnknownSync(
                 Schema.toEncoded(HouseholdReadEvidenceStageInput)
+              )(input)
+            );
+            break;
+          }
+          case "read-evidence-references": {
+            result = await env.HouseholdDomainWorker.readEvidenceReferences(
+              Schema.decodeUnknownSync(
+                Schema.toEncoded(HouseholdReadEvidenceReferencesInput)
               )(input)
             );
             break;

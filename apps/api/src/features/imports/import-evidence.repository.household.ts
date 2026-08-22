@@ -404,6 +404,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
                 ),
                 operation: {
                   _tag: "Complete",
+                  dispatchId: evidence.dispatchId,
                   reference: {
                     byteLength: evidence.byteLength,
                     deleteAt: evidence.deleteAt,
@@ -449,6 +450,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
               operation: {
                 _tag: "Fail",
                 completedAt: failure.completedAt,
+                dispatchId: failure.dispatchId,
                 failureCode: failure.failureCode,
                 recovery: "retry_later",
                 stage: "speech",
@@ -559,6 +561,7 @@ export const makeHouseholdVisualEvidenceRepository = (
                 ),
                 operation: {
                   _tag: "Complete",
+                  dispatchId: evidence.dispatchId,
                   reference: {
                     byteLength: evidence.byteLength,
                     deleteAt: evidence.deleteAt,
@@ -604,6 +607,7 @@ export const makeHouseholdVisualEvidenceRepository = (
               operation: {
                 _tag: "Fail",
                 completedAt: failure.completedAt,
+                dispatchId: failure.dispatchId,
                 failureCode: failure.failureCode,
                 recovery: "operator_review",
                 stage: "visual",
@@ -703,6 +707,7 @@ export const makeHouseholdCarouselEvidenceRepository = (
                 ),
                 operation: {
                   _tag: "Complete",
+                  dispatchId: evidence.dispatchId,
                   reference: {
                     byteLength: evidence.byteLength,
                     deleteAt: evidence.deleteAt,
@@ -743,6 +748,7 @@ export const makeHouseholdCarouselEvidenceRepository = (
               operation: {
                 _tag: "Fail",
                 completedAt: failure.completedAt,
+                dispatchId: `carousel:${failure.importId}:${failure.generation}`,
                 failureCode: failure.code,
                 recovery: failure.recovery,
                 stage: "carousel",
@@ -846,6 +852,7 @@ export const makeHouseholdRecipeDraftRepository = (
               inputFingerprint: draft.extractionFingerprint,
               operation: {
                 _tag: "Complete",
+                dispatchId: draft.extractionFingerprint,
                 result: { _tag: "Extraction", draft },
                 stage: "extraction",
               },
@@ -865,6 +872,7 @@ export const makeHouseholdRecipeDraftRepository = (
             operation: {
               _tag: "Fail",
               completedAt: failure.completedAt,
+              dispatchId: failure.extractionFingerprint,
               failureCode: failure.failureCode,
               recovery: "operator_review",
               stage: "extraction",

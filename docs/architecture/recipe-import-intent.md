@@ -105,6 +105,14 @@ are recorded as availability observations without altering the committed
 reference. Routing and object lookup occur only after the admitted household
 and import identity are proved.
 
+The authenticated API registers an immutable private import-to-organization
+event route before starting the Workflow. The Queue consumer resolves that
+noncanonical route, reads the household's committed references through the
+private service binding, and requires exact import, generation, object-key,
+kind, native R2 checksum, and custom-metadata agreement before committing an
+idempotent availability observation. The route is not public and never grants
+member authority.
+
 ## Public lifecycle and review
 
 Public statuses remain `processing`, `requires_action`, `succeeded`, `failed`,

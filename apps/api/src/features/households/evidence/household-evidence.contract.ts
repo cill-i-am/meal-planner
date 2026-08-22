@@ -286,6 +286,7 @@ export const HouseholdMutateEvidenceStageInput = Schema.Struct({
     }),
     Schema.Struct({
       _tag: Schema.Literal("Complete"),
+      dispatchId: DispatchId,
       reference: Schema.optionalKey(HouseholdEvidenceStageReference),
       result: HouseholdEvidenceStageResult,
       stage: HouseholdEvidenceStage,
@@ -293,6 +294,7 @@ export const HouseholdMutateEvidenceStageInput = Schema.Struct({
     Schema.Struct({
       _tag: Schema.Literal("Fail"),
       completedAt: ImportTimestamp,
+      dispatchId: DispatchId,
       failureCode: HouseholdEvidenceStageFailureCode,
       recovery: Schema.optionalKey(
         Schema.Literals([

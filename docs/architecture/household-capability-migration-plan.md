@@ -520,6 +520,16 @@ have provider-free runtime proof. Shared D1 retains only the existing Slice 3
 settlement and terminal-recovery boundary; this slice does not redesign or move
 that capability.
 
+R2 notification reconciliation uses one bounded noncanonical operational
+index: after authenticated admission, the API enqueues an immutable
+import-to-organization route before Workflow start, and the private consumer
+stores it in a dedicated KV namespace. That route can only reconstruct the
+enumerated lifecycle system admission; conflicting registration fails closed,
+and the consumer re-proves import, generation, object key, kind, hash, and
+stored metadata before an idempotent household availability observation. It is
+not a household registry, product read model, object-name source, or Slice 3
+recovery ledger.
+
 ### Slice 3: settlement and recovery
 
 Move household-owned terminal checkpoints, recovery attempts, generation

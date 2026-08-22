@@ -177,7 +177,7 @@ const validateStageMutation = (
       ? String(result.draft.importId) === String(input.intentId) &&
         result.draft.generation === input.expectedGeneration &&
         result.draft.extractionFingerprint === input.inputFingerprint
-      : result.dispatchId.length > 0;
+      : result.dispatchId === input.operation.dispatchId;
   if (!identityValid) {
     return Effect.fail(failure("invalid_input"));
   }
@@ -571,6 +571,7 @@ export const makeHouseholdEvidenceRepository = (
             const [intent] = yield* transaction
               .select({
                 executionGeneration: householdRecipeImports.executionGeneration,
+                status: householdRecipeImports.status,
               })
               .from(householdRecipeImports)
               .where(eq(householdRecipeImports.intentId, input.intentId))
@@ -581,6 +582,9 @@ export const makeHouseholdEvidenceRepository = (
             }
             if (intent.executionGeneration !== input.expectedGeneration) {
               return yield* Effect.fail(failure("generation_conflict"));
+            }
+            if (intent.status !== "processing") {
+              return yield* Effect.fail(failure("illegal_transition"));
             }
             const [current] = yield* transaction
               .select()
@@ -639,9 +643,16 @@ export const makeHouseholdEvidenceRepository = (
               }
               if (
                 current === undefined ||
-                current.inputFingerprint !== input.inputFingerprint
+                current.inputFingerprint !== input.inputFingerprint ||
+                current.dispatchId !== input.operation.dispatchId
               ) {
-                return yield* Effect.fail(failure("illegal_transition"));
+                return yield* Effect.fail(
+                  failure(
+                    current === undefined
+                      ? "illegal_transition"
+                      : "idempotency_conflict"
+                  )
+                );
               }
               const encodedResult = yield* Schema.encodeEffect(
                 HouseholdEvidenceStageResult
@@ -670,6 +681,10 @@ export const makeHouseholdEvidenceRepository = (
                       eq(
                         householdEvidenceStageExecutions.stage,
                         input.operation.stage
+                      ),
+                      eq(
+                        householdEvidenceStageExecutions.dispatchId,
+                        input.operation.dispatchId
                       ),
                       eq(householdEvidenceStageExecutions.state, "dispatching")
                     )
@@ -705,9 +720,16 @@ export const makeHouseholdEvidenceRepository = (
               }
               if (
                 current === undefined ||
-                current.inputFingerprint !== input.inputFingerprint
+                current.inputFingerprint !== input.inputFingerprint ||
+                current.dispatchId !== input.operation.dispatchId
               ) {
-                return yield* Effect.fail(failure("illegal_transition"));
+                return yield* Effect.fail(
+                  failure(
+                    current === undefined
+                      ? "illegal_transition"
+                      : "idempotency_conflict"
+                  )
+                );
               }
               if (current.state === "failed") {
                 if (current.failureCode !== input.operation.failureCode) {
@@ -734,6 +756,10 @@ export const makeHouseholdEvidenceRepository = (
                       eq(
                         householdEvidenceStageExecutions.stage,
                         input.operation.stage
+                      ),
+                      eq(
+                        householdEvidenceStageExecutions.dispatchId,
+                        input.operation.dispatchId
                       ),
                       eq(householdEvidenceStageExecutions.state, "dispatching")
                     )

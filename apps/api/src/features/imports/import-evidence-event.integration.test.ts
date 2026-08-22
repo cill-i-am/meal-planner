@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const compatibilityDate = "2026-07-14";
 const importId = "018f7f67-e0c7-7d34-a593-8c20c6f7b868";
+const organizationId = "organization-event-reconciliation-proof";
 let persistenceDirectory = "";
 let runtime: Miniflare | undefined;
 
@@ -85,7 +86,7 @@ describe("import evidence Queue runtime", () => {
       workers: [
         {
           compatibilityDate,
-          kvNamespaces: ["RESULTS"],
+          kvNamespaces: ["RESULTS", "ROUTES"],
           modules: [...(await bundleFixture())],
           name: "consumer",
           queueConsumers: ["evidence-events"],
@@ -104,8 +105,20 @@ describe("import evidence Queue runtime", () => {
     }
   });
 
-  it("delivers and privacy-projects an R2 lifecycle deletion", async () => {
+  it("delivers an R2 lifecycle deletion through the production reconciliation core", async () => {
     const queue = await runtime?.getQueueProducer("EVENTS", "consumer");
+    await queue?.send({
+      _tag: "RegisterImportEvidenceRoute",
+      importId,
+      organizationId,
+      routeVersion: 1,
+    });
+    await expect(result()).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Registered" },
+    });
+    const results = await runtime?.getKVNamespace("RESULTS", "consumer");
+    await results?.delete("last");
     await queue?.send({
       account: "must-not-escape",
       action: "LifecycleDeletion",
@@ -119,11 +132,12 @@ describe("import evidence Queue runtime", () => {
     await expect(result()).resolves.toEqual({
       _tag: "Accepted",
       value: {
-        action: "LifecycleDeletion",
-        artifact: "acquisition_manifest",
-        executionGeneration: 4,
-        trackedReference: true,
+        _tag: "Observed",
+        availability: "deleted",
       },
     });
+    expect(JSON.stringify(await result())).not.toMatch(
+      /organization-event|imports\/|must-not-escape/u
+    );
   });
 });

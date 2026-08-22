@@ -187,11 +187,16 @@ outside the bucket and are not retention targets.
 
 R2 object-create and object-delete notifications for the bounded evidence
 prefix feed `ImportEvidenceEventQueue` and its private consumer Worker. The
-consumer Schema-decodes the event, validates the generation-scoped key and
-integrity metadata, then records a household-local availability observation.
-Notifications are transport evidence: missing, duplicate, stale, or late
-events cannot rewrite the committed R2 reference or current result. The Queue
-and R2 bindings are never used inside a `HouseholdObject` transaction.
+authenticated API first places an immutable import-to-organization route on
+that Queue before it starts the Workflow. The consumer stores the route in a
+dedicated private KV namespace, Schema-decodes R2 events, resolves only that
+admitted route, validates the generation-scoped key and integrity metadata,
+then records a household-local availability observation through the private
+service binding. Conflicting routes fail closed. Notifications are transport
+evidence: missing, duplicate, stale, or late events cannot rewrite the
+committed R2 reference or current result. Queue, KV, service-binding, and R2
+I/O remain outside every `HouseholdObject` transaction, and raw organization
+identifiers are neither logged nor returned.
 
 Public admission commits a compact household outbox intent before the API host
 starts the deterministic generation-specific Workflow. Host retries reconcile

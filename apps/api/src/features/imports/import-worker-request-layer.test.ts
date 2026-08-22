@@ -18,6 +18,8 @@ describe("recipe import Workflow outbox dispatch", () => {
   it("retries the same committed Workflow identity and records each delivery outcome", async () => {
     const outcomes: ("started" | "unavailable")[] = [];
     const dispatchedIdentities: string[] = [];
+    const registeredRoutes: string[] = [];
+    const executionOrder: string[] = [];
     let attempts = 0;
     const committed = Schema.decodeUnknownSync(
       HouseholdAdmitRecipeImportResult
@@ -63,11 +65,19 @@ describe("recipe import Workflow outbox dispatch", () => {
           Effect.suspend(() => {
             attempts += 1;
             dispatchedIdentities.push(input.workflowIdentity);
+            executionOrder.push(`workflow:${attempts}`);
             return attempts < 3
               ? Effect.fail(workflowStartUnavailable())
               : Effect.succeed("already_active" as const);
           }),
       },
+      registerEvidenceRoute: (message) =>
+        Effect.sync(() => {
+          executionOrder.push(`route:${attempts + 1}`);
+          registeredRoutes.push(
+            `${message.organizationId}:${message.importId}:${message.routeVersion}`
+          );
+        }),
       retryDelaysMilliseconds: [0, 0, 0, 0],
       scheduleRetry: (effect) => effect,
       trace: TestImportTrace,
@@ -88,6 +98,19 @@ describe("recipe import Workflow outbox dispatch", () => {
       workflowIdentity,
       workflowIdentity,
       workflowIdentity,
+    ]);
+    expect(registeredRoutes).toEqual([
+      `organization-retry-proof:${intentId}:1`,
+      `organization-retry-proof:${intentId}:1`,
+      `organization-retry-proof:${intentId}:1`,
+    ]);
+    expect(executionOrder).toEqual([
+      "route:1",
+      "workflow:1",
+      "route:2",
+      "workflow:2",
+      "route:3",
+      "workflow:3",
     ]);
   });
 });
