@@ -13,13 +13,20 @@ import {
   RecipeImportIntentId,
   RecipeImportTimeline,
   RecipeReviewActionView,
+  RecoveryGuidance,
+  StablePublicErrorCode,
+  StepProgress,
 } from "@meal-planner/recipe-import-api";
 import { Schema } from "effect";
 
+import { HouseholdDispatchId } from "../foundation/import-workflow-admission.contract.js";
 import {
   HouseholdMemberAdmission,
   HouseholdSystemAdmission,
 } from "../rpc/command-envelope.js";
+import { ImportWorkflowIdentity } from "../shared-kernel/workflow-identity.js";
+
+export { HouseholdImportWorkflowDispatchView as HouseholdRecordRecipeImportDispatchResult } from "../foundation/import-workflow-admission.contract.js";
 
 const Sha256Hex = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
@@ -69,6 +76,15 @@ export const HouseholdAdmitRecipeImportResult = Schema.Struct({
 export type HouseholdAdmitRecipeImportResult =
   typeof HouseholdAdmitRecipeImportResult.Type;
 
+export const HouseholdRecordRecipeImportDispatchInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  dispatchId: HouseholdDispatchId,
+  outcome: Schema.Literals(["started", "unavailable"]),
+  workflowIdentity: ImportWorkflowIdentity,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdRecordRecipeImportDispatchInput =
+  typeof HouseholdRecordRecipeImportDispatchInput.Type;
+
 export const HouseholdResolveRecipeImportSourceInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   canonicalSourceId: Schema.String.pipe(
@@ -98,6 +114,87 @@ export const HouseholdCommitRecipeImportDraftInput = Schema.Struct({
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type HouseholdCommitRecipeImportDraftInput =
   typeof HouseholdCommitRecipeImportDraftInput.Type;
+
+export const HouseholdRecipeImportLifecycleTransition = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("AdvanceStage"),
+    stage: Schema.Literals([
+      "analyzing_evidence",
+      "extracting_recipe",
+      "grounding_recipe",
+      "preparing_review",
+    ]),
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("AdvanceComponent"),
+    component: Schema.Literals(["speech", "visuals"]),
+    progress: StepProgress,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("SetActivity"),
+    activity: Schema.Literals(["working", "retrying"]),
+    attempt: PositiveSafeInteger,
+    boundary: Schema.Literals([
+      "acquisition",
+      "speech",
+      "visual",
+      "recipe",
+      "executor",
+    ]),
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Fail"),
+    boundary: Schema.Literals([
+      "acquisition",
+      "speech",
+      "visual",
+      "recipe",
+      "executor",
+    ]),
+    code: StablePublicErrorCode,
+    message: Schema.String.pipe(
+      Schema.check(
+        Schema.isTrimmed(),
+        Schema.isNonEmpty(),
+        Schema.isMaxLength(4096)
+      )
+    ),
+    recovery: RecoveryGuidance,
+  }),
+]);
+export type HouseholdRecipeImportLifecycleTransition =
+  typeof HouseholdRecipeImportLifecycleTransition.Type;
+
+export const HouseholdTransitionRecipeImportLifecycleInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+  transition: HouseholdRecipeImportLifecycleTransition,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdTransitionRecipeImportLifecycleInput =
+  typeof HouseholdTransitionRecipeImportLifecycleInput.Type;
+
+export const HouseholdReadRecipeImportExecutionInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdReadRecipeImportExecutionInput =
+  typeof HouseholdReadRecipeImportExecutionInput.Type;
+
+export const HouseholdRecipeImportExecutionView = Schema.Struct({
+  executionGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+  submittedSourceUrl: Schema.String.pipe(
+    Schema.check(
+      Schema.isTrimmed(),
+      Schema.isNonEmpty(),
+      Schema.isMaxLength(2048)
+    )
+  ),
+});
+export type HouseholdRecipeImportExecutionView =
+  typeof HouseholdRecipeImportExecutionView.Type;
 
 export const HouseholdAnswerRecipeImportActionInput = Schema.Struct({
   actionId: RecipeImportActionId,
@@ -132,17 +229,22 @@ export const HouseholdReadRecipeImportInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
   intentId: RecipeImportIntentId,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdReadRecipeImportInput =
+  typeof HouseholdReadRecipeImportInput.Type;
 
 export const HouseholdReadRecipeImportActionInput = Schema.Struct({
   actionId: RecipeImportActionId,
   admission: HouseholdMemberAdmission,
   intentId: RecipeImportIntentId,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdReadRecipeImportActionInput =
+  typeof HouseholdReadRecipeImportActionInput.Type;
 
 export const HouseholdReadRecipeInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
   recipeId: Recipe.fields.id,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdReadRecipeInput = typeof HouseholdReadRecipeInput.Type;
 
 export const HouseholdRecipePageCursor = Schema.String.pipe(
   Schema.check(Schema.isUUID()),
@@ -164,6 +266,7 @@ export const HouseholdRecipePageInput = Schema.Struct({
     )
   ),
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdRecipePageInput = typeof HouseholdRecipePageInput.Type;
 
 export const HouseholdRecipePage = Schema.Struct({
   items: Schema.Array(MealPlanRecipeSnapshot),

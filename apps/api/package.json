@@ -7,7 +7,7 @@
     "auth:schema:generate": "auth generate --config ./auth.config.ts --output ./src/features/auth/auth.database-schema.ts --yes",
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "db:generate": "drizzle-kit generate --name recipe_imports",
+    "db:generate": "drizzle-kit generate --name import_execution",
     "household:db:generate": "drizzle-kit generate --config household.drizzle.config.ts --name household_domain",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",

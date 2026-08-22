@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
@@ -37,7 +37,11 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workflowSource).toContain("runProviderTask,");
     expect(workflowSource).toContain("runProviderTaskAttempt,");
     expect(providerTaskSource).toContain("ProviderTaskStepConfig");
-    expect(requestLayerSource).toContain("stageOperatorCarouselForWorkflow");
+    expect(requestLayerSource).toContain("RecipeImportHouseholdDomain.of");
+    expect(requestLayerSource).toContain("RecipeImportWorkflowDispatcher");
+    expect(requestLayerSource).not.toContain(
+      "stageOperatorCarouselForWorkflow"
+    );
     expect(workerSource).not.toContain("carouselProcessingUnavailable");
     expect(gatewaySource).toContain('"ImportProviderGateway"');
     expect(gatewaySource).toContain("collectLogs: false");
@@ -72,8 +76,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workerSource).toContain("HealthRoutes");
     expect(workerSource).toContain("makeRecipeImportHttpApiLayer");
     expect(workerSource).toContain("makeHouseholdRequestLayer");
-    expect(workerSource).toContain("OperatorCarouselRouteDefinitions");
-    expect(workerSource).toContain("ImportBatchRouteDefinitions");
+    expect(workerSource).not.toContain("OperatorCarouselRouteDefinitions");
+    expect(workerSource).not.toContain("ImportBatchRouteDefinitions");
     expect(workerSource).toContain(
       "ProviderTerminalSettlementRouteDefinitions"
     );
@@ -88,7 +92,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "./apps/api/src/infrastructure/meal-planner-database.ts"
     );
     const migration = readRepoFile(
-      "./apps/api/migrations/0000_recipe_imports.sql"
+      "./apps/api/migrations/20260822083458_import_execution/migration.sql"
     );
 
     expect(databaseSource).toContain('"MealPlannerDatabase"');
@@ -97,20 +101,17 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(databaseSource.match(/Cloudflare\.D1\.Database\(/gu)).toHaveLength(
       1
     );
-    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "recipe_imports"');
-    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "import_requests"');
+    expect(migration).toContain("CREATE TABLE `import_execution_runs`");
     expect(migration).toContain(
       "CREATE TABLE `import_recipe_executor_terminal_checkpoints`"
     );
     expect(migration).toContain("`correlation_id` text NOT NULL");
-    expect(migration).toContain(
-      "`execution_generation` integer NOT NULL DEFAULT 1"
-    );
-    expect(migration).toContain("`intent_id` text");
-    expect(migration).toContain("`replay_intent_id` text");
-    expect(migration).toContain("`item_count` integer NOT NULL");
-    expect(migration).toContain("INSERT INTO `pilot_provider_stage_budget`");
-    expect(migration).not.toMatch(/`canonical_source_id`/u);
+    expect(migration).toContain("`acquisition_generation` integer");
+    expect(migration).toContain("`canonical_source_id` text NOT NULL");
+    expect(migration).not.toContain("recipe_imports");
+    expect(migration).not.toContain("import_requests");
+    expect(migration).not.toContain("recipe_reviews");
+    expect(migration).not.toContain("recipe_import_intent_history");
     expect(migration).not.toContain("__new_");
     expect(migration).not.toContain("migration_snapshot");
     expect(migration).not.toContain("import_recipe_terminal_projections");
@@ -127,7 +128,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       .filter((path) => path.endsWith(".sql"))
       .toSorted();
 
-    expect(sqlFiles).toEqual(["0000_recipe_imports.sql"]);
+    expect(sqlFiles).toEqual(["20260822083458_import_execution/migration.sql"]);
   });
 
   it("provisions Better Auth D1 while Drizzle Kit owns its checked-in migrations", () => {
@@ -195,6 +196,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const domainWorkerSource = readRepoFile(
       "./apps/api/src/features/households/household-domain-worker.ts"
     );
+    const domainWorkerBindingSource = readRepoFile(
+      "./apps/api/src/features/households/household-domain-binding.ts"
+    );
     const objectSource = readRepoFile(
       "./apps/api/src/features/households/household-object.ts"
     );
@@ -215,7 +219,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(apiWorkerSource).toMatch(
       /Cloudflare\.Workers\.bindWorker\(\s*HouseholdDomainWorker\s*\)/u
     );
-    expect(domainWorkerSource).toContain('>()("HouseholdDomainWorker")');
+    expect(domainWorkerBindingSource).toContain('>()("HouseholdDomainWorker")');
     expect(domainWorkerSource).toContain("workersDev: false");
     expect(domainWorkerSource).toContain(
       'Schema.decodeUnknownEffect(schema, { onExcessProperty: "error" })'
@@ -264,6 +268,45 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
           path.includes(".test-fixture.") || path.includes(".test-types.")
       )
     ).toEqual([]);
+  });
+
+  it("rejects superseded D1 import, review, and Recipe Bank authorities", () => {
+    const apiRoot = fileURLToPath(new URL("apps/api", import.meta.url));
+    const configPath = `${apiRoot}/tsconfig.build.json`;
+    const config = ts.readConfigFile(configPath, ts.sys.readFile);
+    const parsed = ts.parseJsonConfigFileContent(
+      config.config,
+      ts.sys,
+      apiRoot,
+      undefined,
+      configPath
+    );
+    const productionSource = parsed.fileNames
+      .map((path) => readFileSync(path, "utf-8"))
+      .join("\n");
+    const removedModules = [
+      "import-approved-recipe-projection.d1.ts",
+      "import-intent-review.repository.d1.ts",
+      "import-recipe-review.repository.d1.ts",
+      "import.repository.d1.ts",
+    ] as const;
+
+    for (const removedModule of removedModules) {
+      expect(
+        existsSync(`${apiRoot}/src/features/imports/${removedModule}`)
+      ).toBe(false);
+      expect(productionSource).not.toContain(
+        removedModule.replace(/\.ts$/u, ".js")
+      );
+    }
+    expect(productionSource).not.toContain(
+      "makeD1ImportIntentReviewRepository"
+    );
+    expect(productionSource).not.toContain(
+      "makeD1ImportRecipeReviewRepository"
+    );
+    expect(productionSource).not.toContain("makeD1ImportRepository");
+    expect(productionSource).not.toContain("makeD1RecipeProjectionRepository");
   });
 
   it("uses production household compositions in the real-runtime boundary proof", () => {
@@ -369,40 +412,15 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(allSource).not.toMatch(/Cloudflare\.Images|Images\.|sharp/iu);
   });
 
-  it("declares isolated queues with bounded primary and dead-letter consumers", () => {
+  it("keeps the pre-Slice-4 batch Queue prototype physically retired", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
-    const compositionSource = readRepoFile(
-      "./apps/api/src/features/imports/import-runtime-composition.ts"
-    );
-    const queueSource = readRepoFile(
-      "./apps/api/src/infrastructure/import-batch-queue.ts"
-    );
 
-    expect(queueSource).toContain('"ImportBatchQueue"');
-    expect(queueSource).toContain('"ImportBatchDeadLetterQueue"');
-    expect(queueSource).toContain("makeCloudflareImportBatchQueue");
-    expect(queueSource).not.toContain("Consumer(");
-    expect(queueSource).not.toContain("consumeQueueMessages");
-    expect(workerSource.match(/consumeQueueMessages/gu)).toHaveLength(2);
-    expect(compositionSource).toContain("ImportBatchQueueMessage");
-    expect(workerSource).toContain("ImportBatchDeadLetterQueue");
-    expect(workerSource).toContain(
-      "deadLetterQueue: importBatchDeadLetterQueue.queueName"
-    );
-    expect(workerSource).toContain(
-      "deadLetterQueueId: importBatchDeadLetterQueue.queueId"
-    );
-    expect(workerSource).not.toMatch(
-      /yield\*\s+yield\*\s+importBatchDeadLetterQueue/u
-    );
-    expect(workerSource).toContain("Cloudflare.Queues.EventSourceLive");
-    expect(workerSource).toContain("batchSize: 1");
-    expect(workerSource).toContain("maxConcurrency: 1");
-    expect(workerSource).toContain("maxRetries: 3");
-    expect(workerSource).toContain(".deadLetter(message)");
-    expect(stackSource).toContain("importBatchQueueName");
-    expect(stackSource).toContain("importBatchDeadLetterQueueName");
+    expect(stackSource).not.toContain("ImportBatchQueue");
+    expect(stackSource).not.toContain("ImportBatchDeadLetterQueue");
+    expect(workerSource).not.toContain("consumeQueueMessages");
+    expect(workerSource).not.toContain("ImportBatchRouteDefinitions");
+    expect(workerSource).not.toContain("OperatorCarouselRouteDefinitions");
   });
 
   it("keeps Workflow checkpoints generation-fenced and acquisition R2 writes non-destructive", () => {
@@ -495,11 +513,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(docs).toContain("`.env.example` is intentionally trackable");
     expect(docs).toContain("internally enables automatic approval");
     expect(docs).toMatch(/shared state\s+store is not stage-owned cleanup/u);
-    expect(docs).toContain("one shared household-scoped D1");
-    expect(docs).toContain("household Durable Object tracer");
-    expect(docs).toContain("system principal");
+    expect(docs).toContain("D1 persists only");
+    expect(docs).toContain("The household object persists submitted-source");
+    expect(docs).toContain("privately binds `HouseholdDomainWorker`");
+    expect(docs).toMatch(/system\s+principal/u);
     expect(architecture).toMatch(
-      /does not use its own Durable Object\s+storage/u
+      /remains a noncanonical, generation-fenced\s+execution coordinator/u
     );
     expect(architecture).toContain("Better Auth");
     expect(webDocs).toContain("same-origin email/password authentication");

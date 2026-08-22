@@ -24,10 +24,7 @@ import {
   MealPlanPolicy,
   MealPlanRequest,
 } from "../meal-planning/meal-plan.js";
-import {
-  HouseholdImportWorkflowAdmissionResult,
-  HouseholdImportWorkflowDispatchView,
-} from "./foundation/import-workflow-admission.contract.js";
+import { HouseholdImportWorkflowDispatchView } from "./foundation/import-workflow-admission.contract.js";
 import {
   HouseholdManualMealSwapCommand,
   HouseholdMealPlanDecisionCommand,
@@ -38,6 +35,10 @@ import {
   HouseholdMetadata,
   HouseholdOrganizationId,
 } from "./household.contract.js";
+import {
+  HouseholdAdmitRecipeImportResult,
+  HouseholdRecipePage,
+} from "./recipe-import/household-recipe-import.contract.js";
 import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-services.live.js";
 
 const compatibilityDate = "2026-07-14";
@@ -69,10 +70,10 @@ const HouseholdEnsureResponse = Schema.Union([
   }),
 ]);
 
-const ImportWorkflowAdmissionResponse = Schema.Union([
+const RecipeImportAdmissionResponse = Schema.Union([
   Schema.Struct({
     ok: Schema.Literal(true),
-    value: HouseholdImportWorkflowAdmissionResult,
+    value: HouseholdAdmitRecipeImportResult,
   }),
   Schema.Struct({ error: Schema.Unknown, ok: Schema.Literal(false) }),
 ]);
@@ -85,8 +86,8 @@ const ImportWorkflowDispatchResponse = Schema.Union([
   Schema.Struct({ error: Schema.Unknown, ok: Schema.Literal(false) }),
 ]);
 
-const CountResponse = Schema.Union([
-  Schema.Struct({ ok: Schema.Literal(true), value: Schema.Number }),
+const RecipePageResponse = Schema.Union([
+  Schema.Struct({ ok: Schema.Literal(true), value: HouseholdRecipePage }),
   Schema.Struct({ error: Schema.Unknown, ok: Schema.Literal(false) }),
 ]);
 
@@ -230,44 +231,24 @@ const objectNameFor = (organizationId: string) =>
     )
   );
 
-const admitImportWorkflow = async (input: {
-  readonly alarmFailure?: boolean;
-  readonly dispatchId?: string;
-  readonly executionGeneration: number;
-  readonly importId: string;
-  readonly mutationId: string;
+const admitRecipeImport = async (input: {
+  readonly idempotencyKey: string;
   readonly objectName: string;
   readonly organizationId: string;
+  readonly sourceUrl: string;
 }) => {
-  const command: {
-    alarmFailure?: boolean;
-    dispatchId?: string;
-    executionGeneration: number;
-    importId: string;
-    mutationId: string;
-    objectName: string;
-    operation: "admitImportWorkflow";
-    organizationId: string;
-  } = {
-    executionGeneration: input.executionGeneration,
-    importId: input.importId,
-    mutationId: input.mutationId,
-    objectName: input.objectName,
-    operation: "admitImportWorkflow",
-    organizationId: input.organizationId,
-  };
-  if (input.alarmFailure !== undefined) {
-    command.alarmFailure = input.alarmFailure;
-  }
-  if (input.dispatchId !== undefined) {
-    command.dispatchId = input.dispatchId;
-  }
   const response = await runtime.dispatchFetch("http://localhost/", {
-    body: JSON.stringify(command),
+    body: JSON.stringify({
+      idempotencyKey: input.idempotencyKey,
+      objectName: input.objectName,
+      operation: "admitRecipeImport",
+      organizationId: input.organizationId,
+      source: { kind: "tiktok", url: input.sourceUrl },
+    }),
     method: "POST",
   });
   expect(response.status).toBe(200);
-  return Schema.decodeUnknownPromise(ImportWorkflowAdmissionResponse)(
+  return Schema.decodeUnknownPromise(RecipeImportAdmissionResponse)(
     await response.json()
   );
 };
@@ -320,35 +301,24 @@ const corruptHouseholdProvenanceCreatedAt = async (input: {
   return response.json();
 };
 
-const inspectImportWorkflowAdmissionCount = async (input: {
-  readonly executionGeneration: number;
-  readonly importId: string;
-  readonly objectName: string;
-}) => {
-  const response = await runtime.dispatchFetch("http://localhost/", {
-    body: JSON.stringify({
-      ...input,
-      operation: "inspectImportWorkflowAdmissionCount",
-    }),
-    method: "POST",
-  });
-  return Schema.decodeUnknownPromise(CountResponse)(await response.json());
-};
-
-const markImportWorkflowDispatchExhausted = async (input: {
+const recordRecipeImportDispatch = async (input: {
   readonly dispatchId: string;
-  readonly exhaustedAtEpochMs: number;
   readonly objectName: string;
+  readonly organizationId: string;
+  readonly outcome: "started" | "unavailable";
+  readonly workflowIdentity: string;
 }) => {
   const response = await runtime.dispatchFetch("http://localhost/", {
     body: JSON.stringify({
       ...input,
-      operation: "markImportWorkflowDispatchExhausted",
+      operation: "recordRecipeImportDispatch",
     }),
     method: "POST",
   });
   expect(response.status).toBe(200);
-  return response.json();
+  return Schema.decodeUnknownPromise(ImportWorkflowDispatchResponse)(
+    await response.json()
+  );
 };
 
 const commandHousehold = async (objectName: string, organizationId: string) => {
@@ -707,6 +677,503 @@ describe("household Durable Object", () => {
     ).toEqual(confirmed);
   });
 
+  it("persists generation-fenced executor lifecycle transitions and replay across restart", async () => {
+    const organizationId = "organization-recipe-import-lifecycle";
+    const objectName = await objectNameFor(organizationId);
+    const dispatch = async (command: object) => {
+      const response = await runtime.dispatchFetch("http://localhost/", {
+        body: JSON.stringify({ objectName, organizationId, ...command }),
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      return response.json() as Promise<{
+        readonly error?: { readonly reason?: string };
+        readonly ok: boolean;
+        readonly value?: unknown;
+      }>;
+    };
+    const admitted = await dispatch({
+      idempotencyKey: "lifecycle-admission",
+      operation: "admitRecipeImport",
+      source: {
+        kind: "tiktok",
+        url: "https://www.tiktok.com/@mealplanner/video/7000000000000000201",
+      },
+    });
+    const intentId = (
+      admitted.value as { readonly intent: { readonly id: string } }
+    ).intent.id;
+    await dispatch({
+      canonicalSourceId: "tiktok:video:7000000000000000201",
+      canonicalUrl:
+        "https://www.tiktok.com/@mealplanner/video/7000000000000000201",
+      expectedGeneration: 1,
+      intentId,
+      mutationId: "8".repeat(64),
+      operation: "resolveRecipeImportSource",
+      sourceKind: "carousel",
+    });
+
+    const transition = (value: object, expectedGeneration = 1) =>
+      dispatch({
+        expectedGeneration,
+        intentId,
+        operation: "transitionRecipeImportLifecycle",
+        transition: value,
+      });
+    expect(
+      await transition({ _tag: "AdvanceStage", stage: "analyzing_evidence" })
+    ).toMatchObject({
+      ok: true,
+      value: {
+        intentVersion: 3,
+        processing: {
+          speech: "not_started",
+          type: "analyzing_evidence",
+          visuals: "not_started",
+        },
+      },
+    });
+    await transition({
+      _tag: "AdvanceComponent",
+      component: "speech",
+      progress: "processing",
+    });
+    await transition({
+      _tag: "AdvanceComponent",
+      component: "speech",
+      progress: "completed",
+    });
+    await transition({
+      _tag: "AdvanceComponent",
+      component: "visuals",
+      progress: "skipped",
+    });
+    expect(
+      await transition({ _tag: "AdvanceStage", stage: "extracting_recipe" })
+    ).toMatchObject({
+      ok: true,
+      value: {
+        intentVersion: 7,
+        processing: { type: "extracting_recipe" },
+      },
+    });
+    const retrying = await transition({
+      _tag: "SetActivity",
+      activity: "retrying",
+      attempt: 2,
+      boundary: "recipe",
+    });
+    expect(retrying).toMatchObject({
+      ok: true,
+      value: { activity: { type: "retrying" }, intentVersion: 8 },
+    });
+    expect(
+      await transition({
+        _tag: "SetActivity",
+        activity: "retrying",
+        attempt: 2,
+        boundary: "recipe",
+      })
+    ).toEqual(retrying);
+    expect(
+      await transition({ _tag: "AdvanceStage", stage: "grounding_recipe" }, 2)
+    ).toMatchObject({ error: { reason: "generation_conflict" }, ok: false });
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    expect(
+      await dispatch({ intentId, operation: "readRecipeImport" })
+    ).toMatchObject({
+      ok: true,
+      value: { activity: { type: "retrying" }, intentVersion: 8 },
+    });
+  });
+
+  it("paginates and plans from more than 128 approved household recipes across restart", async () => {
+    const organizationId = "organization-recipe-bank-pagination";
+    const objectName = await objectNameFor(organizationId);
+    await ensureHousehold(objectName, organizationId);
+    const seedResponse = await runtime.dispatchFetch("http://localhost/", {
+      body: JSON.stringify({
+        count: 129,
+        objectName,
+        operation: "seedApprovedRecipes",
+      }),
+      method: "POST",
+    });
+    expect(await seedResponse.json()).toEqual({ ok: true });
+
+    const listPage = async (cursor: string | null) => {
+      const response = await runtime.dispatchFetch("http://localhost/", {
+        body: JSON.stringify({
+          byteLimit: 1_048_576,
+          cursor,
+          limit: 100,
+          objectName,
+          operation: "listRecipeBank",
+          organizationId,
+        }),
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      return Schema.decodeUnknownPromise(RecipePageResponse)(
+        await response.json()
+      );
+    };
+
+    const first = await listPage(null);
+    expect(first).toMatchObject({
+      ok: true,
+      value: { items: { length: 100 } },
+    });
+    if (!first.ok || first.value.nextCursor === null) {
+      throw new Error("Expected a bounded first Recipe Bank page.");
+    }
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const second = await listPage(first.value.nextCursor);
+    expect(second).toMatchObject({
+      ok: true,
+      value: { items: { length: 29 }, nextCursor: null },
+    });
+
+    const plannedResponse = await runtime.dispatchFetch("http://localhost/", {
+      body: JSON.stringify({
+        objectName,
+        operation: "createMealPlanFromRecipeBank",
+        organizationId,
+        policy: Schema.encodeSync(MealPlanPolicy)(syntheticPlanningPolicy),
+        request: Schema.encodeSync(MealPlanRequest)(syntheticMealPlanRequest),
+      }),
+      method: "POST",
+    });
+    expect(
+      await Schema.decodeUnknownPromise(MealPlanResponse)(
+        await plannedResponse.json()
+      )
+    ).toMatchObject({
+      ok: true,
+      value: { meals: expect.arrayContaining([expect.any(Object)]) },
+    });
+  });
+
+  it("settles deduplication, stale fences, cancel-confirm races, and mutation collisions across restart", async () => {
+    const organizationId = "organization-recipe-import-races";
+    const objectName = await objectNameFor(organizationId);
+    const dispatch = async (command: object) => {
+      const response = await runtime.dispatchFetch("http://localhost/", {
+        body: JSON.stringify({ objectName, organizationId, ...command }),
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      return response.json() as Promise<{
+        readonly error?: { readonly reason?: string };
+        readonly ok: boolean;
+        readonly value?: unknown;
+      }>;
+    };
+    const admit = (key: string, videoId: string) =>
+      dispatch({
+        idempotencyKey: key,
+        operation: "admitRecipeImport",
+        source: {
+          kind: "tiktok",
+          url: `https://www.tiktok.com/@mealplanner/video/${videoId}`,
+        },
+      });
+    const first = await admit("dedup-first", "7000000000000000101");
+    const second = await admit("dedup-second", "7000000000000000102");
+    const firstIntentId = (
+      first.value as { readonly intent: { readonly id: string } }
+    ).intent.id;
+    const secondIntentId = (
+      second.value as { readonly intent: { readonly id: string } }
+    ).intent.id;
+    expect(
+      await dispatch({
+        idempotencyKey: "dedup-first",
+        operation: "admitRecipeImport",
+        source: {
+          kind: "tiktok",
+          url: "https://www.tiktok.com/@mealplanner/video/7999999999999999999",
+        },
+      })
+    ).toMatchObject({
+      error: { reason: "idempotency_conflict" },
+      ok: false,
+    });
+
+    const canonicalSourceId = "tiktok:video:7000000000000000199";
+    const resolutions = await Promise.all(
+      [firstIntentId, secondIntentId].map((intentId, index) =>
+        dispatch({
+          canonicalSourceId,
+          canonicalUrl:
+            "https://www.tiktok.com/@mealplanner/video/7000000000000000199",
+          expectedGeneration: 1,
+          intentId,
+          mutationId: `${index + 1}`.repeat(64),
+          operation: "resolveRecipeImportSource",
+          sourceKind: "video",
+        })
+      )
+    );
+    expect(
+      resolutions.map((result) =>
+        result.ok
+          ? (result.value as { readonly status: string }).status
+          : result.error?.reason
+      )
+    ).toEqual(expect.arrayContaining(["processing", "redirected"]));
+    const winner = resolutions.find(
+      (result) =>
+        result.ok &&
+        (result.value as { readonly status: string }).status === "processing"
+    );
+    if (winner === undefined) {
+      throw new Error("Expected one canonical source winner.");
+    }
+    const winnerIntentId = (winner.value as { readonly id: string }).id;
+    expect(
+      await dispatch({
+        evidenceFingerprint: "3".repeat(64),
+        expectedGeneration: 2,
+        extractionFingerprint: "4".repeat(64),
+        intentId: winnerIntentId,
+        mutationId: "5".repeat(64),
+        operation: "commitRecipeImportDraft",
+        review: {
+          answers: [],
+          blockers: { invalidFields: [], unresolvedRequiredFields: [] },
+          editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+          recipe: {
+            author: null,
+            category: null,
+            cookTimeMinutes: 15,
+            cuisine: "Irish",
+            description: null,
+            ingredientLines: ["1 race-safe ingredient"],
+            ingredientQuantities: null,
+            ingredientUnits: null,
+            instructions: ["Cook safely."],
+            name: "Race-safe stew",
+            nutrition: null,
+            prepTimeMinutes: 10,
+            temperatureCelsius: null,
+            tools: ["Pot"],
+            totalTimeMinutes: 25,
+            yield: "2 servings",
+          },
+          tags: {
+            cuisines: ["Irish"],
+            dietaryFit: "household_match",
+            difficulty: "easy",
+            leftovers: "one_meal",
+            mealTypes: ["dinner"],
+            totalTimeBand: "under_30_minutes",
+          },
+        },
+      })
+    ).toMatchObject({ error: { reason: "generation_conflict" }, ok: false });
+
+    const seedCollision = await runtime.dispatchFetch("http://localhost/", {
+      body: JSON.stringify({
+        count: 1,
+        objectName,
+        operation: "seedApprovedRecipes",
+      }),
+      method: "POST",
+    });
+    expect(await seedCollision.json()).toEqual({ ok: true });
+    const rollbackDraft = await dispatch({
+      evidenceFingerprint: "a".repeat(64),
+      expectedGeneration: 1,
+      extractionFingerprint: "b".repeat(64),
+      intentId: winnerIntentId,
+      mutationId: "c".repeat(64),
+      operation: "commitRecipeImportDraft",
+      review: {
+        answers: [],
+        blockers: { invalidFields: [], unresolvedRequiredFields: [] },
+        editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+        recipe: {
+          author: null,
+          category: null,
+          cookTimeMinutes: 15,
+          cuisine: "Irish",
+          description: null,
+          ingredientLines: ["1 rollback ingredient"],
+          ingredientQuantities: null,
+          ingredientUnits: null,
+          instructions: ["Commit atomically."],
+          name: "Rollback stew",
+          nutrition: null,
+          prepTimeMinutes: 10,
+          temperatureCelsius: null,
+          tools: ["Pot"],
+          totalTimeMinutes: 25,
+          yield: "2 servings",
+        },
+        tags: {
+          cuisines: ["Irish"],
+          dietaryFit: "household_match",
+          difficulty: "easy",
+          leftovers: "one_meal",
+          mealTypes: ["dinner"],
+          totalTimeBand: "under_30_minutes",
+        },
+      },
+    });
+    const rollbackActionId = (
+      rollbackDraft.value as { readonly action: { readonly id: string } }
+    ).action.id;
+    expect(
+      await dispatch({
+        actionId: rollbackActionId,
+        expectedActionVersion: 1,
+        idempotencyKey: "forced-precommit-failure",
+        intentId: winnerIntentId,
+        operation: "confirmRecipeImportActionWithRecipeId",
+        recipeId: "10000000-0000-4000-8000-000000000001",
+      })
+    ).toMatchObject({
+      error: { reason: "persistence_unavailable" },
+      ok: false,
+    });
+    expect(
+      await dispatch({
+        intentId: winnerIntentId,
+        operation: "readRecipeImport",
+      })
+    ).toMatchObject({ ok: true, value: { status: "requires_action" } });
+    expect(
+      await dispatch({
+        actionId: rollbackActionId,
+        expectedActionVersion: 1,
+        idempotencyKey: "post-rollback-confirm",
+        intentId: winnerIntentId,
+        operation: "confirmRecipeImportAction",
+      })
+    ).toMatchObject({ ok: true, value: { status: "succeeded" } });
+
+    const raceImport = await admit("terminal-race", "7000000000000000103");
+    const raceIntentId = (
+      raceImport.value as { readonly intent: { readonly id: string } }
+    ).intent.id;
+    await dispatch({
+      canonicalSourceId: "tiktok:video:7000000000000000103",
+      canonicalUrl:
+        "https://www.tiktok.com/@mealplanner/video/7000000000000000103",
+      expectedGeneration: 1,
+      intentId: raceIntentId,
+      mutationId: "6".repeat(64),
+      operation: "resolveRecipeImportSource",
+      sourceKind: "video",
+    });
+    const draft = await dispatch({
+      evidenceFingerprint: "7".repeat(64),
+      expectedGeneration: 1,
+      extractionFingerprint: "8".repeat(64),
+      intentId: raceIntentId,
+      mutationId: "9".repeat(64),
+      operation: "commitRecipeImportDraft",
+      review: {
+        answers: [],
+        blockers: { invalidFields: [], unresolvedRequiredFields: [] },
+        editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+        recipe: {
+          author: null,
+          category: null,
+          cookTimeMinutes: 15,
+          cuisine: "Irish",
+          description: null,
+          ingredientLines: ["1 local ingredient"],
+          ingredientQuantities: null,
+          ingredientUnits: null,
+          instructions: ["Cook locally."],
+          name: "Terminal race stew",
+          nutrition: null,
+          prepTimeMinutes: 10,
+          temperatureCelsius: null,
+          tools: ["Pot"],
+          totalTimeMinutes: 25,
+          yield: "2 servings",
+        },
+        tags: {
+          cuisines: ["Irish"],
+          dietaryFit: "household_match",
+          difficulty: "easy",
+          leftovers: "one_meal",
+          mealTypes: ["dinner"],
+          totalTimeBand: "under_30_minutes",
+        },
+      },
+    });
+    const actionId = (
+      draft.value as { readonly action: { readonly id: string } }
+    ).action.id;
+    expect(
+      await dispatch({
+        actionId,
+        expectedActionVersion: 2,
+        idempotencyKey: "stale-confirm",
+        intentId: raceIntentId,
+        operation: "confirmRecipeImportAction",
+      })
+    ).toMatchObject({ error: { reason: "version_conflict" }, ok: false });
+
+    const [cancelled, confirmed] = await Promise.all([
+      dispatch({
+        expectedIntentVersion: 3,
+        idempotencyKey: "race-cancel",
+        intentId: raceIntentId,
+        operation: "cancelRecipeImport",
+      }),
+      dispatch({
+        actionId,
+        expectedActionVersion: 1,
+        idempotencyKey: "race-confirm",
+        intentId: raceIntentId,
+        operation: "confirmRecipeImportAction",
+      }),
+    ]);
+    expect([cancelled, confirmed].filter(({ ok }) => ok)).toHaveLength(1);
+    const terminal = cancelled.ok ? cancelled : confirmed;
+    const terminalStatus = (terminal.value as { readonly status: string })
+      .status;
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const persisted = await dispatch({
+      intentId: raceIntentId,
+      operation: "readRecipeImport",
+    });
+    expect(persisted).toMatchObject({
+      ok: true,
+      value: { status: terminalStatus },
+    });
+    const collision = cancelled.ok
+      ? await dispatch({
+          expectedIntentVersion: 2,
+          idempotencyKey: "race-cancel",
+          intentId: raceIntentId,
+          operation: "cancelRecipeImport",
+        })
+      : await dispatch({
+          actionId,
+          expectedActionVersion: 2,
+          idempotencyKey: "race-confirm",
+          intentId: raceIntentId,
+          operation: "confirmRecipeImportAction",
+        });
+    expect(collision).toMatchObject({
+      error: { reason: "idempotency_conflict" },
+      ok: false,
+    });
+  });
+
   it("initializes once and rejects a conflicting organization provenance", async () => {
     const objectName = await objectNameFor("organization-a");
     const initial = await ensureHousehold(objectName, "organization-a");
@@ -790,38 +1257,32 @@ describe("household Durable Object", () => {
     expect(await probe()).toMatchObject({ ok: false });
   });
 
-  it("keeps a committed Workflow admission final across alarm failure, exhaustion, replay, generation, and restart", async () => {
+  it("keeps a committed import admission final across dispatch exhaustion, replay, and restart", async () => {
     const organizationId = "organization-workflow-admission";
     const objectName = await objectNameFor(organizationId);
     const initialInput = {
-      alarmFailure: true,
-      dispatchId: "dispatch-workflow-generation-1",
-      executionGeneration: 1,
-      importId: "35c4f35a-d410-47d3-8c5a-b5c27dac52d8",
-      mutationId: "1".repeat(64),
+      idempotencyKey: "workflow-admission-restart-proof",
       objectName,
       organizationId,
+      sourceUrl:
+        "https://www.tiktok.com/@mealplanner/video/7000000000000000101",
     } as const;
 
-    const committed = await admitImportWorkflow(initialInput);
+    const committed = await admitRecipeImport(initialInput);
     if (!committed.ok) {
       throw new Error(
-        `Expected Workflow admission to commit: ${JSON.stringify(committed.error)}`
+        `Expected recipe import admission to commit: ${JSON.stringify(committed.error)}`
       );
     }
     expect(committed.value.workflowIdentity).toMatch(
       /^import-acquisition:v1:[a-f\d]{64}$/u
     );
     expect(committed.value.workflowIdentity).not.toContain(
-      initialInput.importId
+      committed.value.intent.id
     );
     expect(JSON.stringify(committed.value)).not.toContain(organizationId);
 
-    const replay = await admitImportWorkflow({
-      ...initialInput,
-      alarmFailure: false,
-      dispatchId: "a-replay-must-not-mint-this-dispatch-id",
-    });
+    const replay = await admitRecipeImport(initialInput);
     expect(replay).toEqual(committed);
 
     const pending = await inspectImportWorkflowDispatch(
@@ -831,18 +1292,30 @@ describe("household Durable Object", () => {
     expect(pending).toEqual({
       ok: true,
       value: {
-        admission: committed.value,
+        admission: expect.objectContaining({
+          dispatchId: committed.value.dispatchId,
+          workflowIdentity: committed.value.workflowIdentity,
+        }),
         attempts: 0,
         exhaustedAtEpochMs: null,
         state: "pending",
       },
     });
 
-    await markImportWorkflowDispatchExhausted({
-      dispatchId: committed.value.dispatchId,
-      exhaustedAtEpochMs: committed.value.committedAtEpochMs + 10_000,
-      objectName,
-    });
+    const unavailableAttempts = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        recordRecipeImportDispatch({
+          dispatchId: committed.value.dispatchId,
+          objectName,
+          organizationId,
+          outcome: "unavailable",
+          workflowIdentity: committed.value.workflowIdentity,
+        })
+      )
+    );
+    for (const unavailable of unavailableAttempts) {
+      expect(unavailable).toMatchObject({ ok: true });
+    }
     const exhausted = await inspectImportWorkflowDispatch(
       objectName,
       committed.value.dispatchId
@@ -850,80 +1323,52 @@ describe("household Durable Object", () => {
     expect(exhausted).toMatchObject({
       ok: true,
       value: {
-        admission: committed.value,
+        admission: expect.objectContaining({
+          dispatchId: committed.value.dispatchId,
+          workflowIdentity: committed.value.workflowIdentity,
+        }),
+        attempts: 5,
         state: "exhausted",
       },
     });
 
     await runtime.dispose();
     runtime = makeRuntime();
-    expect(await admitImportWorkflow(initialInput)).toEqual(committed);
-
-    const nextGeneration = await admitImportWorkflow({
-      ...initialInput,
-      alarmFailure: false,
-      dispatchId: "dispatch-workflow-generation-2",
-      executionGeneration: 2,
-      mutationId: "2".repeat(64),
+    expect(await admitRecipeImport(initialInput)).toEqual(committed);
+    expect(
+      await inspectImportWorkflowDispatch(
+        objectName,
+        committed.value.dispatchId
+      )
+    ).toMatchObject({
+      ok: true,
+      value: { attempts: 5, state: "exhausted" },
     });
-    expect(nextGeneration).toMatchObject({ ok: true });
-    if (!nextGeneration.ok) {
-      throw new Error("Expected a new execution generation to commit.");
+
+    const nextImport = await admitRecipeImport({
+      ...initialInput,
+      idempotencyKey: "workflow-admission-next-import-proof",
+      sourceUrl:
+        "https://www.tiktok.com/@mealplanner/video/7000000000000000102",
+    });
+    expect(nextImport).toMatchObject({ ok: true });
+    if (!nextImport.ok) {
+      throw new Error("Expected a new recipe import to commit.");
     }
-    expect(nextGeneration.value.workflowIdentity).not.toBe(
+    expect(nextImport.value.workflowIdentity).not.toBe(
       committed.value.workflowIdentity
     );
-  });
-
-  it("rolls back admission when its required outbox insert cannot commit", async () => {
-    const organizationId = "organization-workflow-atomicity";
-    const objectName = await objectNameFor(organizationId);
-    const dispatchId = "dispatch-forced-atomicity-collision";
-    const first = await admitImportWorkflow({
-      dispatchId,
-      executionGeneration: 1,
-      importId: "a5670d4d-6300-4395-8ed7-7a8257d46067",
-      mutationId: "3".repeat(64),
-      objectName,
-      organizationId,
-    });
-    if (!first.ok) {
-      throw new Error(
-        `Expected atomicity fixture admission to commit: ${JSON.stringify(first.error)}`
-      );
-    }
-
-    const rejected = await admitImportWorkflow({
-      dispatchId,
-      executionGeneration: 1,
-      importId: "b2d1d9af-8b35-43be-b53e-6aa801f571ca",
-      mutationId: "4".repeat(64),
-      objectName,
-      organizationId,
-    });
-    expect(rejected).toMatchObject({
-      error: { _tag: "HouseholdWorkflowAdmissionPersistenceFailure" },
-      ok: false,
-    });
-    expect(
-      await inspectImportWorkflowAdmissionCount({
-        executionGeneration: 1,
-        importId: "b2d1d9af-8b35-43be-b53e-6aa801f571ca",
-        objectName,
-      })
-    ).toEqual({ ok: true, value: 0 });
   });
 
   it("rejects corrupt persisted outbox projections at the repository boundary", async () => {
     const organizationId = "organization-workflow-corrupt-outbox";
     const objectName = await objectNameFor(organizationId);
-    const committed = await admitImportWorkflow({
-      dispatchId: "dispatch-corrupt-outbox",
-      executionGeneration: 1,
-      importId: "e3dbe6a7-bc0f-4f7d-b938-bdd80544b7be",
-      mutationId: "5".repeat(64),
+    const committed = await admitRecipeImport({
+      idempotencyKey: "corrupt-outbox-projection-proof",
       objectName,
       organizationId,
+      sourceUrl:
+        "https://www.tiktok.com/@mealplanner/video/7000000000000000103",
     });
     if (!committed.ok) {
       throw new Error("Expected corrupt outbox fixture admission to commit.");

@@ -505,7 +505,7 @@ const seedMissingRecipeTerminalCheckpoint = async (
   ]);
   await testEnv.MealPlannerDatabase.batch([
     testEnv.MealPlannerDatabase.prepare(
-      `UPDATE recipe_imports
+      `UPDATE import_execution_runs
           SET status = 'transcribed',
               status_code = NULL,
               recovery_action = NULL,
@@ -757,7 +757,7 @@ const readPreservedImport = async (input: {
   import: await testEnv.MealPlannerDatabase.prepare(
     `SELECT status, status_code, recovery_action, evidence_references_json,
             updated_at
-       FROM recipe_imports
+       FROM import_execution_runs
       WHERE id = ? AND acquisition_generation = ?`
   )
     .bind(input.importId, input.acquisitionGeneration)
@@ -789,7 +789,7 @@ const readPreservedVisualImport = async (input: {
   import: await testEnv.MealPlannerDatabase.prepare(
     `SELECT status, status_code, recovery_action, evidence_references_json,
             updated_at
-       FROM recipe_imports
+       FROM import_execution_runs
       WHERE id = ? AND acquisition_generation = ?`
   )
     .bind(input.importId, input.acquisitionGeneration)
@@ -894,7 +894,7 @@ const readVisualCheckpointRepairProtectedRows = (input: {
       .first(),
     testEnv.MealPlannerDatabase.prepare(
       `SELECT *
-         FROM recipe_imports
+         FROM import_execution_runs
         WHERE id = ?
           AND acquisition_generation = ?`
     )
@@ -1023,7 +1023,7 @@ const readRecipeCheckpointRepairProtectedRows = (input: {
       .then(({ results }) => results),
     testEnv.MealPlannerDatabase.prepare(
       `SELECT *
-         FROM recipe_imports
+         FROM import_execution_runs
         WHERE id = ? AND acquisition_generation = ?`
     )
       .bind(input.importId, input.acquisitionGeneration)
@@ -1382,7 +1382,7 @@ describe("authenticated terminal unknown-cost provider settlement", () => {
         `${seeded.dispatchId}:recovery:1`
       ),
       testEnv.MealPlannerDatabase.prepare(
-        `UPDATE recipe_imports
+        `UPDATE import_execution_runs
             SET status = 'failed',
                 status_code = 'transcription_failed',
                 recovery_action = 'retry_later',
@@ -2497,7 +2497,7 @@ describe("authenticated recipe executor terminal checkpoint repair", () => {
     [
       "parent status drift",
       "000000000407",
-      `UPDATE recipe_imports
+      `UPDATE import_execution_runs
           SET status = 'queued',
               evidence_references_json = '[]'
         WHERE id = ? AND acquisition_generation = ?`,
@@ -2519,7 +2519,7 @@ describe("authenticated recipe executor terminal checkpoint repair", () => {
          actual_cost_was_unknown, authority, created_at
        ) SELECT 'pilot-gaia-118', ?, 100000, 1,
                 'authenticated_operator', ?
-          FROM recipe_imports
+          FROM import_execution_runs
          WHERE id = ? AND acquisition_generation = ?`,
     ],
   ] as const)(
@@ -2590,7 +2590,7 @@ describe("authenticated terminal recipe unknown-cost reconciliation", () => {
       import: await testEnv.MealPlannerDatabase.prepare(
         `SELECT status, status_code, recovery_action,
                 evidence_references_json, updated_at
-           FROM recipe_imports
+           FROM import_execution_runs
           WHERE id = ?`
       )
         .bind(seeded.importId)
@@ -2685,7 +2685,7 @@ describe("authenticated terminal recipe unknown-cost reconciliation", () => {
         testEnv.MealPlannerDatabase.prepare(
           `SELECT status, status_code, recovery_action,
                   evidence_references_json, updated_at
-             FROM recipe_imports
+             FROM import_execution_runs
             WHERE id = ?`
         )
           .bind(seeded.importId)

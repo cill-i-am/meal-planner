@@ -222,7 +222,7 @@ export const makeD1VisualEvidenceRepository = (
                )
                SELECT parent.id, parent.acquisition_generation, ?, ?,
                       'dispatching', ?, ?
-                 FROM recipe_imports AS parent
+                 FROM import_execution_runs AS parent
                  JOIN import_transcriptions AS transcription
                    ON transcription.import_id = parent.id
                   AND transcription.acquisition_generation = parent.acquisition_generation
@@ -248,7 +248,7 @@ export const makeD1VisualEvidenceRepository = (
             .prepare(
               `SELECT visual.*
                  FROM import_visual_evidence AS visual
-                 JOIN recipe_imports AS parent
+                 JOIN import_execution_runs AS parent
                    ON parent.id = visual.import_id
                   AND parent.acquisition_generation = visual.acquisition_generation
                  JOIN import_transcriptions AS transcription

@@ -12,10 +12,13 @@ import {
 } from "@meal-planner/recipe-import-api";
 import { DateTime, Schema } from "effect";
 
-import type { ApprovedReview, Review } from "./import-recipe-review.js";
+import type { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
+import type { ApprovedReview } from "./import-recipe-review.js";
 import {
   approvalBlockers,
   applyCorrectionOverlay,
+  recipeReviewNullablePolicy,
+  Review,
 } from "./import-recipe-review.js";
 
 const editableFields = [
@@ -73,6 +76,26 @@ const projectReview = (review: PubliclyProjectableReview) => ({
   recipe: applyCorrectionOverlay(review.draft, review.corrections),
   tags: review.tags,
 });
+
+/** Project the provider result into the closed draft snapshot admitted by HouseholdObject. */
+export const projectRecipeDraftReviewActionView = (draft: RecipeDraft) => {
+  const review = Review.make({
+    _tag: "NeedsReview",
+    corrections: [],
+    draft,
+    evidence: [],
+    lifecycle: "needs_review",
+    nullablePolicy: recipeReviewNullablePolicy,
+    tags: null,
+    transitions: [],
+    unresolvedRequiredFields: draft.extraction.unresolvedFields,
+    version: 0,
+  });
+  if (review._tag !== "NeedsReview") {
+    throw new Error("Recipe draft projection produced an invalid lifecycle");
+  }
+  return projectReview(review);
+};
 
 export const projectActiveRecipeImportAction = (input: {
   readonly actionId: RecipeImportActionId;

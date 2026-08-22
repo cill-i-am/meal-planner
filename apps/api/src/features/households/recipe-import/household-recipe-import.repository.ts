@@ -3,6 +3,8 @@ import {
   ActiveRecipeImportAction,
   CancelledRecipeImportIntent,
   CompletedRecipeImportAction,
+  FailedRecipeImportIntent,
+  ProcessingActivity,
   ProcessingRecipeImportIntent,
   Recipe,
   RecipeImportAction,
@@ -12,6 +14,7 @@ import {
   RecipeReviewActionView,
   RedirectedRecipeImportIntent,
   RequiresActionRecipeImportIntent,
+  ResolvedProcessingStage,
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
 import { and, asc, eq, gt } from "drizzle-orm";
@@ -44,6 +47,7 @@ import {
 import { makeImportWorkflowIdentity } from "../shared-kernel/workflow-identity.js";
 import {
   HouseholdRecipeImportFailure,
+  HouseholdRecipeImportExecutionView,
   HouseholdRecipePageCursor,
 } from "./household-recipe-import.contract.js";
 import type {
@@ -53,17 +57,23 @@ import type {
   HouseholdCommitRecipeImportDraftInput,
   HouseholdConfirmRecipeImportActionInput,
   HouseholdReadRecipeImportActionInput,
+  HouseholdReadRecipeImportExecutionInput,
   HouseholdReadRecipeImportInput,
   HouseholdReadRecipeInput,
   HouseholdRecipePageInput,
   HouseholdResolveRecipeImportSourceInput,
+  HouseholdTransitionRecipeImportLifecycleInput,
 } from "./household-recipe-import.contract.js";
 
 const failure = (reason: HouseholdRecipeImportFailure["reason"]) =>
   HouseholdRecipeImportFailure.make({ reason });
 const persistenceFailure = () => failure("persistence_unavailable");
+const normalizePersistenceFailure = <E>(error: E) =>
+  Schema.is(HouseholdRecipeImportFailure)(error) ? error : persistenceFailure();
 const mapPersistence = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.mapError(persistenceFailure));
+const mapTransaction = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(Effect.mapError(normalizePersistenceFailure));
 
 const EncodedIntent = Schema.fromJsonString(RecipeImportIntent);
 const EncodedAction = Schema.fromJsonString(RecipeImportAction);
@@ -101,6 +111,17 @@ const linksFor = (intentId: string) => ({
 
 const actionLink = (intentId: string, actionId: string) =>
   `/v1/recipe-import-intents/${intentId}/actions/${actionId}`;
+
+const stageOrdinal = (stage: string) =>
+  [
+    "resolving_source",
+    "acquiring_media",
+    "analyzing_evidence",
+    "extracting_recipe",
+    "grounding_recipe",
+    "preparing_review",
+    "finalizing_recipe",
+  ].indexOf(stage);
 
 const answerProperty = {
   author: "author",
@@ -193,8 +214,11 @@ export const makeHouseholdRecipeImportRepository = (
       Effect.mapError(persistenceFailure)
     );
 
-  const findIntentRow = (intentId: string) =>
-    database
+  const findIntentRow = (
+    connection: EffectSQLiteDoDatabase,
+    intentId: string
+  ) =>
+    connection
       .select()
       .from(householdRecipeImports)
       .where(eq(householdRecipeImports.intentId, intentId))
@@ -206,8 +230,11 @@ export const makeHouseholdRecipeImportRepository = (
         )
       );
 
-  const requireIntentRow = (intentId: string) =>
-    findIntentRow(intentId).pipe(
+  const requireIntentRow = (
+    connection: EffectSQLiteDoDatabase,
+    intentId: string
+  ) =>
+    findIntentRow(connection, intentId).pipe(
       Effect.flatMap((row) =>
         Option.isSome(row)
           ? Effect.succeed(row.value)
@@ -219,11 +246,12 @@ export const makeHouseholdRecipeImportRepository = (
     decode(EncodedIntent, row.intentJson);
 
   const readReceipt = <S extends Schema.Top>(
+    connection: EffectSQLiteDoDatabase,
     mutationId: string,
     commandDigest: string,
     schema: S
   ) =>
-    database
+    connection
       .select()
       .from(householdRecipeImportMutationReceipts)
       .where(eq(householdRecipeImportMutationReceipts.mutationId, mutationId))
@@ -286,47 +314,6 @@ export const makeHouseholdRecipeImportRepository = (
           version: 1,
         }),
       ]);
-      const [existingRequest] = yield* database
-        .select()
-        .from(householdRecipeImportRequests)
-        .where(
-          eq(
-            householdRecipeImportRequests.idempotencyKeyDigest,
-            idempotencyKeyDigest
-          )
-        )
-        .limit(1)
-        .pipe(mapPersistence);
-      if (existingRequest !== undefined) {
-        if (existingRequest.requestDigest !== requestDigest) {
-          return yield* Effect.fail(failure("idempotency_conflict"));
-        }
-        const row = yield* requireIntentRow(existingRequest.intentId);
-        const [admissionRow] = yield* database
-          .select()
-          .from(householdImportWorkflowAdmissions)
-          .where(
-            and(
-              eq(householdImportWorkflowAdmissions.importId, row.intentId),
-              eq(householdImportWorkflowAdmissions.executionGeneration, 1)
-            )
-          )
-          .limit(1)
-          .pipe(mapPersistence);
-        if (admissionRow === undefined) {
-          return yield* Effect.fail(persistenceFailure());
-        }
-        const workflow = yield* decode(
-          EncodedAdmission,
-          admissionRow.committedResultJson
-        );
-        return {
-          dispatchId: workflow.dispatchId,
-          intent: yield* readIntentFromRow(row),
-          workflowIdentity: workflow.workflowIdentity,
-        };
-      }
-
       const identities = yield* HouseholdIdentityGenerator;
       const [intentIdentity, dispatchIdentity, nowEpochMs] = yield* Effect.all([
         identities.generate(),
@@ -390,9 +377,55 @@ export const makeHouseholdRecipeImportRepository = (
         importId: intentId,
         workflowIdentity,
       });
-      yield* database
+      return yield* database
         .transaction((transaction) =>
           Effect.gen(function* commitAdmission() {
+            const [existingRequest] = yield* transaction
+              .select()
+              .from(householdRecipeImportRequests)
+              .where(
+                eq(
+                  householdRecipeImportRequests.idempotencyKeyDigest,
+                  idempotencyKeyDigest
+                )
+              )
+              .limit(1)
+              .pipe(mapPersistence);
+            if (existingRequest !== undefined) {
+              if (existingRequest.requestDigest !== requestDigest) {
+                return yield* Effect.fail(failure("idempotency_conflict"));
+              }
+              const row = yield* requireIntentRow(
+                transaction,
+                existingRequest.intentId
+              );
+              const [admissionRow] = yield* transaction
+                .select()
+                .from(householdImportWorkflowAdmissions)
+                .where(
+                  and(
+                    eq(
+                      householdImportWorkflowAdmissions.importId,
+                      row.intentId
+                    ),
+                    eq(householdImportWorkflowAdmissions.executionGeneration, 1)
+                  )
+                )
+                .limit(1)
+                .pipe(mapPersistence);
+              if (admissionRow === undefined) {
+                return yield* Effect.fail(persistenceFailure());
+              }
+              const workflow = yield* decode(
+                EncodedAdmission,
+                admissionRow.committedResultJson
+              );
+              return {
+                dispatchId: workflow.dispatchId,
+                intent: yield* readIntentFromRow(row),
+                workflowIdentity: workflow.workflowIdentity,
+              };
+            }
             yield* transaction.insert(householdRecipeImports).values({
               actionJson: null,
               actorId: input.admission.actor.actorId,
@@ -440,14 +473,10 @@ export const makeHouseholdRecipeImportRepository = (
               purpose: "import_workflow_dispatch",
               state: "pending",
             });
+            return { dispatchId, intent, workflowIdentity };
           })
         )
-        .pipe(mapPersistence);
-      return {
-        dispatchId,
-        intent,
-        workflowIdentity,
-      };
+        .pipe(mapTransaction);
     });
 
   const resolveSource = (input: HouseholdResolveRecipeImportSourceInput) =>
@@ -462,90 +491,94 @@ export const makeHouseholdRecipeImportRepository = (
         sourceKind: input.sourceKind,
         version: 1,
       });
-      const replay = yield* readReceipt(
-        input.mutationId,
-        commandDigest,
-        RecipeImportIntent
-      );
-      if (Option.isSome(replay)) {
-        return replay.value;
-      }
-      const row = yield* requireIntentRow(input.intentId);
-      if (row.executionGeneration !== input.expectedGeneration) {
-        return yield* Effect.fail(failure("generation_conflict"));
-      }
-      const current = yield* readIntentFromRow(row);
-      if (
-        current.status !== "processing" ||
-        current.processing.type !== "resolving_source"
-      ) {
-        return yield* Effect.fail(failure("illegal_transition"));
-      }
-      const [winner] = yield* database
-        .select()
-        .from(householdRecipeImports)
-        .where(
-          eq(householdRecipeImports.canonicalSourceId, input.canonicalSourceId)
-        )
-        .orderBy(
-          asc(householdRecipeImports.createdAt),
-          asc(householdRecipeImports.intentId)
-        )
-        .limit(1)
-        .pipe(mapPersistence);
       const now = instantFromEpoch(yield* Clock.currentTimeMillis);
-      const currentWire = yield* encode(RecipeImportIntent, current);
-      const nextVersion = current.intentVersion + 1;
-      const next =
-        winner === undefined
-          ? yield* decode(ProcessingRecipeImportIntent, {
-              ...currentWire,
-              intentVersion: nextVersion,
-              processing: {
-                sourceKind: input.sourceKind,
-                startedAt: now,
-                type: "acquiring_media",
-              },
-              source: {
-                canonicalUrl: input.canonicalUrl,
-                kind: "tiktok",
-                resolution: "resolved",
-              },
-              updatedAt: now,
-            })
-          : yield* decode(RedirectedRecipeImportIntent, {
-              ...currentWire,
-              intentVersion: nextVersion,
-              redirect: {
-                intentId: winner.intentId,
-                link: linksFor(winner.intentId).self,
-              },
-              redirectedAt: now,
-              source: {
-                canonicalUrl: input.canonicalUrl,
-                kind: "tiktok",
-                resolution: "resolved",
-              },
-              status: "redirected",
-              updatedAt: now,
-            });
-      const eventJson = yield* next.status === "redirected"
-        ? encodeTimelineEvent({
-            at: now,
-            intentVersion: nextVersion,
-            redirect: next.redirect,
-            type: "intent_redirected",
-          })
-        : encodeTimelineEvent({
-            at: now,
-            canonicalUrl: input.canonicalUrl,
-            intentVersion: nextVersion,
-            type: "source_resolved",
-          });
-      const intentJson = yield* encode(EncodedIntent, next);
-      yield* database
+      return yield* database
         .transaction((transaction) =>
           Effect.gen(function* commitSourceResolution() {
+            const transactionReplay = yield* readReceipt(
+              transaction,
+              input.mutationId,
+              commandDigest,
+              RecipeImportIntent
+            );
+            if (Option.isSome(transactionReplay)) {
+              return transactionReplay.value;
+            }
+            const row = yield* requireIntentRow(transaction, input.intentId);
+            if (row.executionGeneration !== input.expectedGeneration) {
+              return yield* Effect.fail(failure("generation_conflict"));
+            }
+            const current = yield* readIntentFromRow(row);
+            if (
+              current.status !== "processing" ||
+              current.processing.type !== "resolving_source"
+            ) {
+              return yield* Effect.fail(failure("illegal_transition"));
+            }
+            const [winner] = yield* transaction
+              .select()
+              .from(householdRecipeImports)
+              .where(
+                eq(
+                  householdRecipeImports.canonicalSourceId,
+                  input.canonicalSourceId
+                )
+              )
+              .orderBy(
+                asc(householdRecipeImports.createdAt),
+                asc(householdRecipeImports.intentId)
+              )
+              .limit(1)
+              .pipe(mapPersistence);
+            const currentWire = yield* encode(RecipeImportIntent, current);
+            const nextVersion = current.intentVersion + 1;
+            const next =
+              winner === undefined
+                ? yield* decode(ProcessingRecipeImportIntent, {
+                    ...currentWire,
+                    intentVersion: nextVersion,
+                    processing: {
+                      sourceKind: input.sourceKind,
+                      startedAt: now,
+                      type: "acquiring_media",
+                    },
+                    source: {
+                      canonicalUrl: input.canonicalUrl,
+                      kind: "tiktok",
+                      resolution: "resolved",
+                    },
+                    updatedAt: now,
+                  })
+                : yield* decode(RedirectedRecipeImportIntent, {
+                    ...currentWire,
+                    intentVersion: nextVersion,
+                    redirect: {
+                      intentId: winner.intentId,
+                      link: linksFor(winner.intentId).self,
+                    },
+                    redirectedAt: now,
+                    source: {
+                      canonicalUrl: input.canonicalUrl,
+                      kind: "tiktok",
+                      resolution: "resolved",
+                    },
+                    status: "redirected",
+                    updatedAt: now,
+                  });
+            const eventJson = yield* next.status === "redirected"
+              ? encodeTimelineEvent({
+                  at: now,
+                  intentVersion: nextVersion,
+                  redirect: next.redirect,
+                  type: "intent_redirected",
+                })
+              : encodeTimelineEvent({
+                  at: now,
+                  canonicalUrl: input.canonicalUrl,
+                  intentVersion: nextVersion,
+                  type: "source_resolved",
+                });
+            const intentJson = yield* encode(EncodedIntent, next);
             yield* transaction
               .update(householdRecipeImports)
               .set({
@@ -566,10 +599,10 @@ export const makeHouseholdRecipeImportRepository = (
               result: next,
               schema: RecipeImportIntent,
             });
+            return next;
           })
         )
-        .pipe(mapPersistence);
-      return next;
+        .pipe(mapTransaction);
     });
 
   const commitDraft = (input: HouseholdCommitRecipeImportDraftInput) =>
@@ -588,25 +621,6 @@ export const makeHouseholdRecipeImportRepository = (
         action: ActiveRecipeImportAction,
         intent: RecipeImportIntent,
       });
-      const replay = yield* readReceipt(
-        input.mutationId,
-        commandDigest,
-        resultSchema
-      );
-      if (Option.isSome(replay)) {
-        return replay.value;
-      }
-      const row = yield* requireIntentRow(input.intentId);
-      if (row.executionGeneration !== input.expectedGeneration) {
-        return yield* Effect.fail(failure("generation_conflict"));
-      }
-      const current = yield* readIntentFromRow(row);
-      if (
-        current.status !== "processing" ||
-        current.processing.type === "resolving_source"
-      ) {
-        return yield* Effect.fail(failure("illegal_transition"));
-      }
       const now = instantFromEpoch(yield* Clock.currentTimeMillis);
       const actionId = yield* digestJson({
         executionGeneration: input.expectedGeneration,
@@ -614,48 +628,67 @@ export const makeHouseholdRecipeImportRepository = (
         purpose: "review-recipe-action",
         version: 1,
       });
-      const action = yield* decode(ActiveRecipeImportAction, {
-        actionVersion: 1,
-        id: actionId,
-        intentId: input.intentId,
-        object: "recipe_import_action",
-        review: input.review,
-        status: "active",
-        type: "review_recipe",
-      });
-      const currentWire = yield* encode(RecipeImportIntent, current);
-      const next = yield* decode(RequiresActionRecipeImportIntent, {
-        ...currentWire,
-        action: {
-          id: actionId,
-          link: actionLink(input.intentId, actionId),
-          type: "review_recipe",
-        },
-        intentVersion: current.intentVersion + 1,
-        status: "requires_action",
-        updatedAt: now,
-      });
-      const result = { action, intent: next };
-      const [intentJson, actionJson, reviewJson, eventJson] = yield* Effect.all(
-        [
-          encode(EncodedIntent, next),
-          encode(EncodedAction, action),
-          encode(EncodedReview, {
-            evidenceFingerprint: input.evidenceFingerprint,
-            extractionFingerprint: input.extractionFingerprint,
-            review: input.review,
-          }),
-          encodeTimelineEvent({
-            action: next.action,
-            at: now,
-            intentVersion: next.intentVersion,
-            type: "action_available",
-          }),
-        ]
-      );
-      yield* database
+      return yield* database
         .transaction((transaction) =>
           Effect.gen(function* commitDraftTransaction() {
+            const replay = yield* readReceipt(
+              transaction,
+              input.mutationId,
+              commandDigest,
+              resultSchema
+            );
+            if (Option.isSome(replay)) {
+              return replay.value;
+            }
+            const row = yield* requireIntentRow(transaction, input.intentId);
+            if (row.executionGeneration !== input.expectedGeneration) {
+              return yield* Effect.fail(failure("generation_conflict"));
+            }
+            const current = yield* readIntentFromRow(row);
+            if (
+              current.status !== "processing" ||
+              current.processing.type === "resolving_source"
+            ) {
+              return yield* Effect.fail(failure("illegal_transition"));
+            }
+            const action = yield* decode(ActiveRecipeImportAction, {
+              actionVersion: 1,
+              id: actionId,
+              intentId: input.intentId,
+              object: "recipe_import_action",
+              review: input.review,
+              status: "active",
+              type: "review_recipe",
+            });
+            const currentWire = yield* encode(RecipeImportIntent, current);
+            const next = yield* decode(RequiresActionRecipeImportIntent, {
+              ...currentWire,
+              action: {
+                id: actionId,
+                link: actionLink(input.intentId, actionId),
+                type: "review_recipe",
+              },
+              intentVersion: current.intentVersion + 1,
+              status: "requires_action",
+              updatedAt: now,
+            });
+            const result = { action, intent: next };
+            const [intentJson, actionJson, reviewJson, eventJson] =
+              yield* Effect.all([
+                encode(EncodedIntent, next),
+                encode(EncodedAction, action),
+                encode(EncodedReview, {
+                  evidenceFingerprint: input.evidenceFingerprint,
+                  extractionFingerprint: input.extractionFingerprint,
+                  review: input.review,
+                }),
+                encodeTimelineEvent({
+                  action: next.action,
+                  at: now,
+                  intentVersion: next.intentVersion,
+                  type: "action_available",
+                }),
+              ]);
             yield* transaction
               .update(householdRecipeImports)
               .set({
@@ -679,10 +712,270 @@ export const makeHouseholdRecipeImportRepository = (
               result,
               schema: resultSchema,
             });
+            return result;
           })
         )
-        .pipe(mapPersistence);
-      return result;
+        .pipe(mapTransaction);
+    });
+
+  const transitionLifecycle = (
+    input: HouseholdTransitionRecipeImportLifecycleInput
+  ) =>
+    Effect.gen(function* transitionRecipeImportLifecycle() {
+      yield* authorize(input.admission.organizationId);
+      const commandDigest = yield* digestJson({
+        expectedGeneration: input.expectedGeneration,
+        intentId: input.intentId,
+        operation: "transition-lifecycle",
+        transition: input.transition,
+        version: 1,
+      });
+      const mutationId = yield* digestJson({
+        expectedGeneration: input.expectedGeneration,
+        intentId: input.intentId,
+        semanticTransition: input.transition,
+        version: 1,
+      });
+      const nowEpochMs = yield* Clock.currentTimeMillis;
+      const now = instantFromEpoch(nowEpochMs);
+      return yield* database
+        .transaction((transaction) =>
+          // eslint-disable-next-line complexity -- The exhaustive domain transition switch stays co-located with its atomic receipt and timeline commit.
+          Effect.gen(function* commitLifecycleTransition() {
+            const transactionReplay = yield* readReceipt(
+              transaction,
+              mutationId,
+              commandDigest,
+              RecipeImportIntent
+            );
+            if (Option.isSome(transactionReplay)) {
+              return transactionReplay.value;
+            }
+            const row = yield* requireIntentRow(transaction, input.intentId);
+            if (row.executionGeneration !== input.expectedGeneration) {
+              return yield* Effect.fail(failure("generation_conflict"));
+            }
+            const current = yield* readIntentFromRow(row);
+            if (current.status !== "processing") {
+              return yield* Effect.fail(failure("illegal_transition"));
+            }
+            const currentWire = yield* encode(RecipeImportIntent, current);
+            const currentActivityWire = yield* encode(
+              ProcessingActivity,
+              current.activity
+            );
+            let next: typeof RecipeImportIntent.Type;
+            let timeline: Schema.Json | null = null;
+            switch (input.transition._tag) {
+              case "AdvanceStage": {
+                const currentOrdinal = stageOrdinal(current.processing.type);
+                const requestedOrdinal = stageOrdinal(input.transition.stage);
+                if (requestedOrdinal <= currentOrdinal) {
+                  yield* persistReceipt(transaction, {
+                    commandDigest,
+                    mutationId,
+                    result: current,
+                    schema: RecipeImportIntent,
+                  });
+                  return current;
+                }
+                if (requestedOrdinal !== currentOrdinal + 1) {
+                  return yield* Effect.fail(failure("illegal_transition"));
+                }
+                const processing =
+                  input.transition.stage === "analyzing_evidence"
+                    ? {
+                        speech: "not_started" as const,
+                        startedAt: now,
+                        type: "analyzing_evidence" as const,
+                        visuals: "not_started" as const,
+                      }
+                    : {
+                        startedAt: now,
+                        type: input.transition.stage,
+                      };
+                next = yield* decode(ProcessingRecipeImportIntent, {
+                  ...currentWire,
+                  intentVersion: current.intentVersion + 1,
+                  processing,
+                  updatedAt: now,
+                });
+                timeline = {
+                  at: now,
+                  intentVersion: next.intentVersion,
+                  processing,
+                  type: "processing_stage_changed",
+                };
+                break;
+              }
+              case "AdvanceComponent": {
+                if (current.processing.type !== "analyzing_evidence") {
+                  return yield* Effect.fail(failure("illegal_transition"));
+                }
+                const existing = current.processing[input.transition.component];
+                const progressOrder = [
+                  "not_started",
+                  "processing",
+                  "completed",
+                  "skipped",
+                ];
+                if (existing === input.transition.progress) {
+                  yield* persistReceipt(transaction, {
+                    commandDigest,
+                    mutationId,
+                    result: current,
+                    schema: RecipeImportIntent,
+                  });
+                  return current;
+                }
+                if (
+                  progressOrder.indexOf(input.transition.progress) <
+                    progressOrder.indexOf(existing) ||
+                  existing === "completed" ||
+                  existing === "skipped"
+                ) {
+                  return yield* Effect.fail(failure("illegal_transition"));
+                }
+                const processing = {
+                  ...(yield* encode(
+                    ResolvedProcessingStage,
+                    current.processing
+                  )),
+                  [input.transition.component]: input.transition.progress,
+                };
+                next = yield* decode(ProcessingRecipeImportIntent, {
+                  ...currentWire,
+                  intentVersion: current.intentVersion + 1,
+                  processing,
+                  updatedAt: now,
+                });
+                timeline = {
+                  at: now,
+                  intentVersion: next.intentVersion,
+                  processing,
+                  type: "processing_stage_changed",
+                };
+                break;
+              }
+              case "SetActivity": {
+                const activity =
+                  input.transition.activity === "retrying"
+                    ? {
+                        nextAttemptAt: instantFromEpoch(
+                          nowEpochMs +
+                            Math.min(
+                              60_000,
+                              2 ** input.transition.attempt * 1000
+                            )
+                        ),
+                        type: "retrying" as const,
+                      }
+                    : { type: "working" as const };
+                if (
+                  currentActivityWire.type === activity.type &&
+                  (activity.type === "working" ||
+                    (currentActivityWire.type === "retrying" &&
+                      currentActivityWire.nextAttemptAt ===
+                        activity.nextAttemptAt))
+                ) {
+                  yield* persistReceipt(transaction, {
+                    commandDigest,
+                    mutationId,
+                    result: current,
+                    schema: RecipeImportIntent,
+                  });
+                  return current;
+                }
+                next = yield* decode(ProcessingRecipeImportIntent, {
+                  ...currentWire,
+                  activity,
+                  intentVersion: current.intentVersion + 1,
+                  updatedAt: now,
+                });
+                timeline =
+                  activity.type === "retrying"
+                    ? {
+                        at: now,
+                        intentVersion: next.intentVersion,
+                        nextAttemptAt: activity.nextAttemptAt,
+                        type: "retrying",
+                      }
+                    : {
+                        at: now,
+                        intentVersion: next.intentVersion,
+                        type: "recovered",
+                      };
+                break;
+              }
+              case "Fail": {
+                next = yield* decode(FailedRecipeImportIntent, {
+                  ...currentWire,
+                  error: {
+                    code: input.transition.code,
+                    message: input.transition.message,
+                    recovery: input.transition.recovery,
+                  },
+                  failedAt: now,
+                  intentVersion: current.intentVersion + 1,
+                  status: "failed",
+                  updatedAt: now,
+                });
+                timeline = {
+                  at: now,
+                  code: input.transition.code,
+                  intentVersion: next.intentVersion,
+                  type: "intent_failed",
+                };
+                break;
+              }
+              default: {
+                return input.transition satisfies never;
+              }
+            }
+            const intentJson = yield* encode(EncodedIntent, next);
+            yield* transaction
+              .update(householdRecipeImports)
+              .set({
+                intentJson,
+                status: next.status,
+                updatedAt: now,
+              })
+              .where(eq(householdRecipeImports.intentId, input.intentId));
+            if (timeline !== null) {
+              yield* transaction.insert(householdRecipeImportTimeline).values({
+                eventJson: yield* encodeTimelineEvent(timeline),
+                intentId: input.intentId,
+                intentVersion: next.intentVersion,
+              });
+            }
+            yield* persistReceipt(transaction, {
+              commandDigest,
+              mutationId,
+              result: next,
+              schema: RecipeImportIntent,
+            });
+            return next;
+          })
+        )
+        .pipe(mapTransaction);
+    });
+
+  const readExecution = (input: HouseholdReadRecipeImportExecutionInput) =>
+    Effect.gen(function* readRecipeImportExecution() {
+      yield* authorize(input.admission.organizationId);
+      const row = yield* requireIntentRow(database, input.intentId);
+      if (row.executionGeneration !== input.expectedGeneration) {
+        return yield* Effect.fail(failure("generation_conflict"));
+      }
+      const intent = yield* readIntentFromRow(row);
+      if (intent.status !== "processing") {
+        return yield* Effect.fail(failure("illegal_transition"));
+      }
+      return yield* decode(HouseholdRecipeImportExecutionView, {
+        executionGeneration: row.executionGeneration,
+        intentId: row.intentId,
+        submittedSourceUrl: row.submittedSourceUrl,
+      });
     });
 
   const answer = (input: HouseholdAnswerRecipeImportActionInput) =>
@@ -704,56 +997,59 @@ export const makeHouseholdRecipeImportRepository = (
         operation: "answer-review",
         version: 1,
       });
-      const replay = yield* readReceipt(
-        mutationId,
-        commandDigest,
-        RecipeImportIntent
-      );
-      if (Option.isSome(replay)) {
-        return replay.value;
-      }
-      const row = yield* requireIntentRow(input.intentId);
-      if (row.actionJson === null || row.reviewJson === null) {
-        return yield* Effect.fail(failure("action_not_found"));
-      }
-      const [intent, action, storedReview] = yield* Effect.all([
-        readIntentFromRow(row),
-        decode(EncodedAction, row.actionJson),
-        decode(EncodedReview, row.reviewJson),
-      ]);
-      if (
-        action.status !== "active" ||
-        action.id !== input.actionId ||
-        action.actionVersion !== input.request.expectedActionVersion ||
-        intent.status !== "requires_action"
-      ) {
-        return yield* Effect.fail(
-          action.actionVersion === input.request.expectedActionVersion
-            ? failure("illegal_transition")
-            : failure("version_conflict")
-        );
-      }
       const now = instantFromEpoch(yield* Clock.currentTimeMillis);
-      const review = applyAnswers(storedReview.review, input.request.answers);
-      const nextAction = yield* decode(ActiveRecipeImportAction, {
-        ...action,
-        actionVersion: action.actionVersion + 1,
-        review,
-      });
-      const intentWire = yield* encode(RecipeImportIntent, intent);
-      const nextIntent = yield* decode(RequiresActionRecipeImportIntent, {
-        ...intentWire,
-        intentVersion: intent.intentVersion + 1,
-        updatedAt: now,
-      });
-      const [actionJson, intentJson, reviewJson] = yield* Effect.all([
-        encode(EncodedAction, nextAction),
-        encode(EncodedIntent, nextIntent),
-        encode(EncodedReview, { ...storedReview, review }),
-      ]);
-      yield* database
+      return yield* database
         .transaction((transaction) =>
           Effect.gen(function* commitReviewAnswers() {
+            const replay = yield* readReceipt(
+              transaction,
+              mutationId,
+              commandDigest,
+              RecipeImportIntent
+            );
+            if (Option.isSome(replay)) {
+              return replay.value;
+            }
+            const row = yield* requireIntentRow(transaction, input.intentId);
+            if (row.actionJson === null || row.reviewJson === null) {
+              return yield* Effect.fail(failure("action_not_found"));
+            }
+            const [intent, action, storedReview] = yield* Effect.all([
+              readIntentFromRow(row),
+              decode(EncodedAction, row.actionJson),
+              decode(EncodedReview, row.reviewJson),
+            ]);
+            if (
+              action.status !== "active" ||
+              action.id !== input.actionId ||
+              action.actionVersion !== input.request.expectedActionVersion ||
+              intent.status !== "requires_action"
+            ) {
+              return yield* Effect.fail(
+                action.actionVersion === input.request.expectedActionVersion
+                  ? failure("illegal_transition")
+                  : failure("version_conflict")
+              );
+            }
+            const review = applyAnswers(
+              storedReview.review,
+              input.request.answers
+            );
+            const nextAction = yield* decode(ActiveRecipeImportAction, {
+              ...action,
+              actionVersion: action.actionVersion + 1,
+              review,
+            });
+            const intentWire = yield* encode(RecipeImportIntent, intent);
+            const nextIntent = yield* decode(RequiresActionRecipeImportIntent, {
+              ...intentWire,
+              updatedAt: now,
+            });
+            const [actionJson, intentJson, reviewJson] = yield* Effect.all([
+              encode(EncodedAction, nextAction),
+              encode(EncodedIntent, nextIntent),
+              encode(EncodedReview, { ...storedReview, review }),
+            ]);
             yield* transaction
               .update(householdRecipeImports)
               .set({
@@ -784,10 +1080,10 @@ export const makeHouseholdRecipeImportRepository = (
               result: nextIntent,
               schema: RecipeImportIntent,
             });
+            return nextIntent;
           })
         )
-        .pipe(mapPersistence);
-      return nextIntent;
+        .pipe(mapTransaction);
     });
 
   const confirm = (input: HouseholdConfirmRecipeImportActionInput) =>
@@ -809,6 +1105,7 @@ export const makeHouseholdRecipeImportRepository = (
         version: 1,
       });
       const replay = yield* readReceipt(
+        database,
         mutationId,
         commandDigest,
         SucceededRecipeImportIntent
@@ -816,26 +1113,6 @@ export const makeHouseholdRecipeImportRepository = (
       if (Option.isSome(replay)) {
         return replay.value;
       }
-      const row = yield* requireIntentRow(input.intentId);
-      if (row.actionJson === null || row.reviewJson === null) {
-        return yield* Effect.fail(failure("action_not_found"));
-      }
-      const [intent, action, storedReview] = yield* Effect.all([
-        readIntentFromRow(row),
-        decode(EncodedAction, row.actionJson),
-        decode(EncodedReview, row.reviewJson),
-      ]);
-      if (
-        action.status !== "active" ||
-        action.id !== input.actionId ||
-        intent.status !== "requires_action"
-      ) {
-        return yield* Effect.fail(failure("illegal_transition"));
-      }
-      if (action.actionVersion !== input.request.expectedActionVersion) {
-        return yield* Effect.fail(failure("version_conflict"));
-      }
-      const publishable = yield* requirePublishable(action.review);
       const identities = yield* HouseholdIdentityGenerator;
       const [recipeIdentity, nowEpochMs] = yield* Effect.all([
         identities.generate(),
@@ -843,75 +1120,107 @@ export const makeHouseholdRecipeImportRepository = (
       ]).pipe(Effect.mapError(persistenceFailure));
       const recipeId = yield* decode(Recipe.fields.id, recipeIdentity);
       const confirmedAt = instantFromEpoch(nowEpochMs);
-      const finalizingVersion = intent.intentVersion + 1;
-      const succeededVersion = finalizingVersion + 1;
-      const publicRecipe = yield* decode(Recipe, {
-        id: recipeId,
-        object: "recipe",
-        recipe: action.review.recipe,
-        tags: publishable.tags,
-      });
-      const planningRecipe = yield* decode(MealPlanRecipeSnapshot, {
-        approvedAt: confirmedAt,
-        extractionFingerprint: storedReview.extractionFingerprint,
-        importId: input.intentId,
-        recipe: {
-          ingredientLines: publishable.ingredientLines,
-          instructions: publishable.instructions,
-          name: publishable.name,
-        },
-        source: {
-          evidenceFingerprint: storedReview.evidenceFingerprint,
-          sourceUrl:
-            intent.source.resolution === "resolved"
-              ? intent.source.canonicalUrl
-              : null,
-        },
-        tags: publishable.tags,
-        version: 1,
-      });
-      const completedAction = yield* decode(CompletedRecipeImportAction, {
-        ...action,
-        completion: { confirmedAt, type: "confirmed" },
-        status: "completed",
-      });
-      const intentWire = yield* encode(RecipeImportIntent, intent);
-      const succeeded = yield* decode(SucceededRecipeImportIntent, {
-        ...intentWire,
-        completedAt: confirmedAt,
-        intentVersion: succeededVersion,
-        result: { recipeId },
-        status: "succeeded",
-        updatedAt: confirmedAt,
-      });
-      const [
-        intentJson,
-        actionJson,
-        publicRecipeJson,
-        planningRecipeJson,
-        finalizingEventJson,
-        succeededEventJson,
-      ] = yield* Effect.all([
-        encode(EncodedIntent, succeeded),
-        encode(EncodedAction, completedAction),
-        encode(EncodedRecipe, publicRecipe),
-        encode(EncodedPlanningRecipe, planningRecipe),
-        encodeTimelineEvent({
-          at: confirmedAt,
-          intentVersion: finalizingVersion,
-          processing: { startedAt: confirmedAt, type: "finalizing_recipe" },
-          type: "processing_stage_changed",
-        }),
-        encodeTimelineEvent({
-          at: confirmedAt,
-          intentVersion: succeededVersion,
-          recipeId,
-          type: "intent_succeeded",
-        }),
-      ]);
-      yield* database
+      return yield* database
         .transaction((transaction) =>
           Effect.gen(function* confirmReviewAndPublish() {
+            const transactionReplay = yield* readReceipt(
+              transaction,
+              mutationId,
+              commandDigest,
+              SucceededRecipeImportIntent
+            );
+            if (Option.isSome(transactionReplay)) {
+              return transactionReplay.value;
+            }
+            const row = yield* requireIntentRow(transaction, input.intentId);
+            if (row.actionJson === null || row.reviewJson === null) {
+              return yield* Effect.fail(failure("action_not_found"));
+            }
+            const [intent, action, storedReview] = yield* Effect.all([
+              readIntentFromRow(row),
+              decode(EncodedAction, row.actionJson),
+              decode(EncodedReview, row.reviewJson),
+            ]);
+            if (
+              action.status !== "active" ||
+              action.id !== input.actionId ||
+              intent.status !== "requires_action"
+            ) {
+              return yield* Effect.fail(failure("illegal_transition"));
+            }
+            if (action.actionVersion !== input.request.expectedActionVersion) {
+              return yield* Effect.fail(failure("version_conflict"));
+            }
+            const publishable = yield* requirePublishable(action.review);
+            const finalizingVersion = intent.intentVersion + 1;
+            const succeededVersion = finalizingVersion + 1;
+            const publicRecipe = yield* decode(Recipe, {
+              id: recipeId,
+              object: "recipe",
+              recipe: action.review.recipe,
+              tags: publishable.tags,
+            });
+            const planningRecipe = yield* decode(MealPlanRecipeSnapshot, {
+              approvedAt: confirmedAt,
+              extractionFingerprint: storedReview.extractionFingerprint,
+              importId: input.intentId,
+              recipe: {
+                ingredientLines: publishable.ingredientLines,
+                instructions: publishable.instructions,
+                name: publishable.name,
+              },
+              source: {
+                evidenceFingerprint: storedReview.evidenceFingerprint,
+                sourceUrl:
+                  intent.source.resolution === "resolved"
+                    ? intent.source.canonicalUrl
+                    : null,
+              },
+              tags: publishable.tags,
+              version: 1,
+            });
+            const completedAction = yield* decode(CompletedRecipeImportAction, {
+              ...action,
+              completion: { confirmedAt, type: "confirmed" },
+              status: "completed",
+            });
+            const intentWire = yield* encode(RecipeImportIntent, intent);
+            const succeeded = yield* decode(SucceededRecipeImportIntent, {
+              ...intentWire,
+              completedAt: confirmedAt,
+              intentVersion: succeededVersion,
+              result: { recipeId },
+              status: "succeeded",
+              updatedAt: confirmedAt,
+            });
+            const [
+              intentJson,
+              actionJson,
+              publicRecipeJson,
+              planningRecipeJson,
+              finalizingEventJson,
+              succeededEventJson,
+            ] = yield* Effect.all([
+              encode(EncodedIntent, succeeded),
+              encode(EncodedAction, completedAction),
+              encode(EncodedRecipe, publicRecipe),
+              encode(EncodedPlanningRecipe, planningRecipe),
+              encodeTimelineEvent({
+                at: confirmedAt,
+                intentVersion: finalizingVersion,
+                processing: {
+                  startedAt: confirmedAt,
+                  type: "finalizing_recipe",
+                },
+                type: "processing_stage_changed",
+              }),
+              encodeTimelineEvent({
+                at: confirmedAt,
+                intentVersion: succeededVersion,
+                recipeId,
+                type: "intent_succeeded",
+              }),
+            ]);
             yield* transaction.insert(householdRecipes).values({
               importId: input.intentId,
               planningRecipeJson,
@@ -958,10 +1267,10 @@ export const makeHouseholdRecipeImportRepository = (
               result: succeeded,
               schema: SucceededRecipeImportIntent,
             });
+            return succeeded;
           })
         )
-        .pipe(mapPersistence);
-      return succeeded;
+        .pipe(mapTransaction);
     });
 
   const cancel = (input: HouseholdCancelRecipeImportInput) =>
@@ -980,46 +1289,47 @@ export const makeHouseholdRecipeImportRepository = (
         operation: "cancel-import",
         version: 1,
       });
-      const replay = yield* readReceipt(
-        mutationId,
-        commandDigest,
-        CancelledRecipeImportIntent
-      );
-      if (Option.isSome(replay)) {
-        return replay.value;
-      }
-      const row = yield* requireIntentRow(input.intentId);
-      const intent = yield* readIntentFromRow(row);
-      if (intent.intentVersion !== input.request.expectedIntentVersion) {
-        return yield* Effect.fail(failure("version_conflict"));
-      }
-      if (
-        intent.status === "succeeded" ||
-        intent.status === "cancelled" ||
-        intent.status === "redirected"
-      ) {
-        return yield* Effect.fail(failure("illegal_transition"));
-      }
       const now = instantFromEpoch(yield* Clock.currentTimeMillis);
-      const intentWire = yield* encode(RecipeImportIntent, intent);
-      const cancelled = yield* decode(CancelledRecipeImportIntent, {
-        ...intentWire,
-        cancelledAt: now,
-        intentVersion: intent.intentVersion + 1,
-        status: "cancelled",
-        updatedAt: now,
-      });
-      const [intentJson, eventJson] = yield* Effect.all([
-        encode(EncodedIntent, cancelled),
-        encodeTimelineEvent({
-          at: now,
-          intentVersion: cancelled.intentVersion,
-          type: "intent_cancelled",
-        }),
-      ]);
-      yield* database
+      return yield* database
         .transaction((transaction) =>
           Effect.gen(function* commitCancellation() {
+            const replay = yield* readReceipt(
+              transaction,
+              mutationId,
+              commandDigest,
+              CancelledRecipeImportIntent
+            );
+            if (Option.isSome(replay)) {
+              return replay.value;
+            }
+            const row = yield* requireIntentRow(transaction, input.intentId);
+            const intent = yield* readIntentFromRow(row);
+            if (intent.intentVersion !== input.request.expectedIntentVersion) {
+              return yield* Effect.fail(failure("version_conflict"));
+            }
+            if (
+              intent.status === "succeeded" ||
+              intent.status === "cancelled" ||
+              intent.status === "redirected"
+            ) {
+              return yield* Effect.fail(failure("illegal_transition"));
+            }
+            const intentWire = yield* encode(RecipeImportIntent, intent);
+            const cancelled = yield* decode(CancelledRecipeImportIntent, {
+              ...intentWire,
+              cancelledAt: now,
+              intentVersion: intent.intentVersion + 1,
+              status: "cancelled",
+              updatedAt: now,
+            });
+            const [intentJson, eventJson] = yield* Effect.all([
+              encode(EncodedIntent, cancelled),
+              encodeTimelineEvent({
+                at: now,
+                intentVersion: cancelled.intentVersion,
+                type: "intent_cancelled",
+              }),
+            ]);
             yield* transaction
               .update(householdRecipeImports)
               .set({
@@ -1040,16 +1350,16 @@ export const makeHouseholdRecipeImportRepository = (
               result: cancelled,
               schema: CancelledRecipeImportIntent,
             });
+            return cancelled;
           })
         )
-        .pipe(mapPersistence);
-      return cancelled;
+        .pipe(mapTransaction);
     });
 
   const readIntent = (input: typeof HouseholdReadRecipeImportInput.Type) =>
     Effect.andThen(
       authorize(input.admission.organizationId),
-      requireIntentRow(input.intentId)
+      requireIntentRow(database, input.intentId)
     ).pipe(Effect.flatMap(readIntentFromRow));
 
   const readAction = (
@@ -1057,7 +1367,7 @@ export const makeHouseholdRecipeImportRepository = (
   ) =>
     Effect.andThen(
       authorize(input.admission.organizationId),
-      requireIntentRow(input.intentId)
+      requireIntentRow(database, input.intentId)
     ).pipe(
       Effect.flatMap((row) =>
         row.actionJson === null
@@ -1073,7 +1383,7 @@ export const makeHouseholdRecipeImportRepository = (
   const readTimeline = (input: typeof HouseholdReadRecipeImportInput.Type) =>
     Effect.andThen(
       authorize(input.admission.organizationId),
-      requireIntentRow(input.intentId)
+      requireIntentRow(database, input.intentId)
     ).pipe(
       Effect.andThen(
         database
@@ -1183,10 +1493,12 @@ export const makeHouseholdRecipeImportRepository = (
     confirm,
     listRecipePage,
     readAction,
+    readExecution,
     readIntent,
     readPlanningRecipe,
     readRecipe,
     readTimeline,
     resolveSource,
+    transitionLifecycle,
   };
 };

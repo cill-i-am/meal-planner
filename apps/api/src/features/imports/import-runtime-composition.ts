@@ -1,7 +1,5 @@
-import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Config, Effect, Option, Schema } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
@@ -13,24 +11,13 @@ import {
   makePilotProviderBudgetRuntime,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
-import {
-  ImportBatchDeliveryAttempt,
-  ImportBatchQueueMessage,
-} from "./import-batch.contracts.js";
-import type {
-  ImportBatchDeliveryAttempt as ImportBatchDeliveryAttemptType,
-  ImportBatchQueueMessage as ImportBatchQueueMessageType,
-} from "./import-batch.contracts.js";
-import { makeImportIntentApplication } from "./import-intent.js";
-import type { ImportPrincipal } from "./import-intent.js";
+import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
-import type { ImportTraceContext } from "./import-observability.js";
 import {
   ImportObservabilityTraceStore,
   observeImportWorkflowStart,
 } from "./import-observability.js";
-import { DeadLetterReplayClaimId } from "./import-operations.js";
 import {
   makePilotProviderDispatchGate,
   makeWorkersAiTransport,
@@ -41,7 +28,6 @@ import {
   ProviderTaskStepConfig,
   runProviderTaskAttempt,
 } from "./import-provider-workflow-task.js";
-import { makeD1ImportQueueAcceptance } from "./import-queue-acceptance.d1.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import {
@@ -58,97 +44,8 @@ import type {
   RecipeRecoveryWorkflowInput,
   RecipeRecoveryWorkflowInputEncoded,
 } from "./import-recipe-recovery.js";
-import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type { ImportWorkflowReconciler } from "./import.workflow.js";
 
 export { runImportVisualAndRecipeWorkflow } from "./import-application-workflows.js";
-
-const ImportBatchQueueDelivery = Schema.Struct({
-  deliveryAttempt: ImportBatchDeliveryAttempt,
-  message: ImportBatchQueueMessage,
-});
-
-/** Safe typed failure for a malformed Cloudflare import queue delivery. */
-export interface InvalidImportBatchQueueMessage {
-  readonly _tag: "InvalidImportBatchQueueMessage";
-}
-
-/** Raw Cloudflare Queue input before the composition seam decodes it. */
-export interface ImportBatchQueueDeliveryInput {
-  readonly attempts: number;
-  readonly body: unknown;
-}
-
-/** Narrow runtime acquired only after a queue delivery passes decoding. */
-export interface ImportBatchQueueDeliveryRuntime<Error, Requirements> {
-  readonly consume: (
-    message: ImportBatchQueueMessageType,
-    deliveryAttempt: ImportBatchDeliveryAttemptType,
-    trace: ImportTraceContext
-  ) => Effect.Effect<void, Error, Requirements>;
-  readonly observeReceipt: () => Effect.Effect<ImportTraceContext>;
-}
-
-/** Deferred acquisition for the admitted queue-delivery runtime. */
-export interface ImportBatchQueueDeliveryDependencies<Error, Requirements> {
-  readonly acquire: () => Effect.Effect<
-    ImportBatchQueueDeliveryRuntime<Error, Requirements>,
-    Error,
-    Requirements
-  >;
-}
-
-/**
- * Decode one Cloudflare Queue delivery before observing and delegating it.
- * Malformed bodies cannot acquire or invoke downstream import services.
- */
-export const consumeImportBatchQueueDelivery = Effect.fn(
-  "ImportRuntime.consumeBatchQueueDelivery"
-)(function* consumeImportBatchQueueDeliveryEffect<Error, Requirements>(
-  input: ImportBatchQueueDeliveryInput,
-  dependencies: ImportBatchQueueDeliveryDependencies<Error, Requirements>
-) {
-  const { deliveryAttempt, message } = yield* Schema.decodeUnknownEffect(
-    ImportBatchQueueDelivery
-  )(
-    { deliveryAttempt: input.attempts, message: input.body },
-    { onExcessProperty: "error" }
-  ).pipe(
-    Effect.mapError(
-      (): InvalidImportBatchQueueMessage => ({
-        _tag: "InvalidImportBatchQueueMessage",
-      })
-    )
-  );
-  const runtime = yield* dependencies.acquire();
-  const trace = yield* runtime.observeReceipt();
-  yield* runtime.consume(message, deliveryAttempt, trace);
-});
-
-/**
- * Decode one Cloudflare dead-letter delivery before invoking its D1 handler.
- * The queue body remains an ID-only transport contract.
- */
-export const consumeImportBatchDeadLetterDelivery = Effect.fn(
-  "ImportRuntime.consumeBatchDeadLetterDelivery"
-)(function* consumeImportBatchDeadLetterDeliveryEffect<Error, Requirements>(
-  body: typeof ImportBatchQueueMessage.Encoded,
-  consume: (
-    message: ImportBatchQueueMessageType
-  ) => Effect.Effect<void, Error, Requirements>
-) {
-  const message = yield* Schema.decodeUnknownEffect(ImportBatchQueueMessage)(
-    body,
-    { onExcessProperty: "error" }
-  ).pipe(
-    Effect.mapError(
-      (): InvalidImportBatchQueueMessage => ({
-        _tag: "InvalidImportBatchQueueMessage",
-      })
-    )
-  );
-  yield* consume(message);
-});
 
 type RecoveryCheckpoint = typeof ProviderTaskCheckpoint.Type;
 
@@ -353,7 +250,8 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                         bucket,
                         extractor,
                         importId: attempt.importId,
-                        importRepository: makeD1ImportRepository(database),
+                        importRepository:
+                          makeD1ImportExecutionRepository(database),
                         now: currentPilotBudgetTimestamp,
                         recipeRepository,
                         recovery: {
@@ -398,32 +296,3 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
         );
       });
   });
-
-/** Construct queue acceptance only after a queue message is admitted. */
-export const makeImportBatchQueueAcceptance = (input: {
-  readonly database: AnyD1Database;
-  readonly importWorkflowStarter: Pick<
-    ImportWorkflowReconciler,
-    "ensureStarted"
-  >;
-  readonly now: () => string;
-  readonly principal: ImportPrincipal;
-  readonly trace: ImportTraceContext;
-}) => {
-  const application = makeImportIntentApplication(
-    makeD1ImportRepository(input.database),
-    input.importWorkflowStarter,
-    input.trace
-  );
-  return makeD1ImportQueueAcceptance({
-    application,
-    database: input.database,
-    newIntentId: () =>
-      Schema.decodeUnknownSync(RecipeImportIntentId)(crypto.randomUUID()),
-    newReplayClaimId: () =>
-      Schema.decodeUnknownSync(DeadLetterReplayClaimId)(crypto.randomUUID()),
-    now: input.now,
-    principal: input.principal,
-    replayClaimLeaseMilliseconds: 60_000,
-  });
-};

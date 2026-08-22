@@ -117,9 +117,11 @@ describe("native current workflow input", () => {
     const id = "current-input-restart";
     const importId = "00000000-0000-4000-8000-000000000188";
     const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2188";
+    const organizationId = "organization-workflow-input-restart";
     const input = {
       executionGeneration: 1,
       importId,
+      organizationId,
       trace: { correlationId },
     };
 
@@ -177,13 +179,14 @@ describe("native current workflow input", () => {
     const id = "current-input-missing-generation";
     const importId = "00000000-0000-4000-8000-000000000189";
     const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2188";
+    const organizationId = "organization-workflow-input-missing-generation";
 
     await expect(
       commandWorkflow({
         action: "run",
         expectedStatus: "errored",
         id,
-        input: { importId, trace: { correlationId } },
+        input: { importId, organizationId, trace: { correlationId } },
       })
     ).resolves.toMatchObject({
       status: "errored",
@@ -201,13 +204,14 @@ describe("native current workflow input", () => {
   it("rejects missing trace before the provider boundary", async () => {
     const id = "current-input-missing-trace";
     const importId = "00000000-0000-4000-8000-000000000190";
+    const organizationId = "organization-workflow-input-missing-trace";
 
     await expect(
       commandWorkflow({
         action: "run",
         expectedStatus: "errored",
         id,
-        input: { executionGeneration: 1, importId },
+        input: { executionGeneration: 1, importId, organizationId },
       })
     ).resolves.toMatchObject({
       status: "errored",

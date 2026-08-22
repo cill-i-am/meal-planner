@@ -32,8 +32,8 @@ export const householdMealPlanMutationReceipts = sqliteTable(
 );
 
 /**
- * Preparatory execution admission only. Import product authority remains in
- * the current import stores until the complete Slice 1 cutover.
+ * Canonical admission and dispatch ledger for household-owned recipe imports.
+ * Workflow execution is downstream of this committed local authority.
  */
 export const householdImportWorkflowAdmissions = sqliteTable(
   "household_import_workflow_admissions",

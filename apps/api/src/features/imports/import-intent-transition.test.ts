@@ -173,6 +173,7 @@ describe("recipe import intent transition policy", () => {
       decodeImportWorkflowInput({
         executionGeneration: 1,
         importId: intentId,
+        organizationId: "organization-transition-fence",
         trace: {
           correlationId: "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2201",
         },

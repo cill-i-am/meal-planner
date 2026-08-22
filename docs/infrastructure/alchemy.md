@@ -87,7 +87,6 @@ mutation, and cleanup boundary.
 
 The stack returns the safe resource inventory `apiWorkerName`, `databaseName`,
 `authDatabaseName`, `evidenceBucketName`, `evidenceRetentionSeconds`,
-`importBatchQueueName`, `importBatchDeadLetterQueueName`,
 `importProviderGatewayId`, `websiteWorkerName`, and `websiteUrl`, plus the
 optional `apiUrl`. The household domain Worker is private and is deliberately
 not surfaced as a public URL. Alchemy types Worker and Website URLs as
@@ -104,24 +103,26 @@ configured routes/domains before testing an endpoint.
 
 ## Recipe import storage and caller authentication
 
-`MealPlannerDatabase` is one shared household-scoped D1, bound to the Worker
-through Alchemy's Effect-native D1 query binding. Household ownership is the
-`household_scope_id` on canonical recipe-import aggregates and every public
-recipe-import read or mutation. That existing domain data has not moved into
-the household Durable Object tracer. Its fresh canonical SQL baseline is under
-`apps/api/migrations`;
-the stable tracking table is `d1_migrations`. Generate Drizzle metadata with
-`pnpm db:generate`, review the SQL, and move the approved SQL to a numerically
-prefixed top-level file. Keep only Drizzle snapshot JSON under `migrations/meta`:
-Alchemy recursively discovers every `.sql` file beneath its migrations
-directory, so leaving a generated metadata copy there would apply it twice.
+`HouseholdObject` Durable SQLite is the canonical authority for import intake,
+public lifecycle and timeline, source ownership, review, publication, Recipe
+Bank, receipts, and meal planning. Its generated Drizzle migrations live under
+`apps/api/household-migrations` and are applied inside each object by the
+Alchemy Durable Object Drizzle runtime.
 
-The baseline creates the recipe-import intent aggregate, request and history
-records, execution and provider checkpoints, recovery ledgers, evidence
-references, review data, complete mutation receipts, foreign keys, indexes, and
-immutability guards directly on an empty D1 database. Local Workerd proof applies
-that baseline through the real D1 binding, checks `foreign_key_check`, and
-exercises the transactional race and receipt constraints without cloud access.
+`MealPlannerDatabase` remains a shared operational D1 for the execution and
+evidence facts scheduled for later migration slices. Its generated migration is
+under `apps/api/migrations`; the stable tracking table is `d1_migrations`.
+Run `pnpm --filter @meal-planner/api db:generate` or
+`pnpm --dir apps/api db:generate`, then review the generated timestamped
+`migration.sql` and `snapshot.json` together. Regeneration without a schema
+change must create no new migration.
+
+The D1 baseline contains `import_execution_runs` plus acquisition terminal,
+transcription, visual, carousel, and extraction records. It deliberately omits
+the former public intent, idempotency, timeline, review, Recipe Bank, batch, and
+moved receipt tables. Those prototype tables are discarded rather than copied
+or backfilled. Structural tests reject both their SQL names and their removed
+production repository imports.
 
 `MealPlannerAuthDatabase` is a separate D1 database for Better Auth identity,
 cookie sessions, organizations, invitations, and membership. The runtime uses
@@ -137,7 +138,7 @@ membership through Better Auth's public API before constructing the typed
 household principal. The active organization value alone is not authorization.
 `MEAL_PLANNER_IMPORT_API_TOKEN`, `MEAL_PLANNER_IMPORT_ACTOR_ID`, and
 `MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID` remain the distinct designated system
-principal for batch and provider terminal-settlement routes only. Secrets are
+principal for the provider terminal-settlement route only. Secrets are
 read through `Config.redacted`; they must never be logged, returned, or
 committed.
 
@@ -159,40 +160,35 @@ Better Auth. The Alchemy class host owns the stable namespace lifecycle, while
 the per-object Drizzle migration owns schema evolution. No lookup mapper,
 shared read model, dual write, or public household Worker route is added.
 
-D1 persists source identity, intent state, idempotency metadata, durable
-execution facts, review data, recipes, and safe evidence references. It does
-not persist credentials, raw provider payloads, or media. TikTok requests are
-limited to the bounded source-resolution and acquisition workflow.
+The household object persists submitted-source ownership, public import state,
+idempotency, review, recipes, and compact dispatch receipts. D1 persists only
+the remaining operational execution and safe evidence facts. Neither database
+persists credentials, raw provider payloads, or media. TikTok requests are
+limited to the bounded source-resolution and acquisition Workflow.
 
 `ImportMediaAcquisitionObject` is addressed by the globally random `importId`
 for per-import media/container coordination and private artifact transport.
 Artifact commands validate an ID containing that import ID and acquisition
-execution generation. It does not use Durable Object storage: durable lifecycle
-and domain state stay in D1, while short-lived private artifacts stay in R2.
+execution generation. It does not use Durable Object storage: canonical
+lifecycle and domain state stay in the household object, remaining operational
+execution facts stay in D1, and short-lived private artifacts stay in R2.
 The object is noncanonical and is neither a household partition, import
 lifecycle authority, recovery authority, nor household authorization boundary.
 
-## Import operations staging topology
+## Import execution topology
 
 `ImportEvidenceBucket` deletes private objects under `imports/` after seven
-days. The lifecycle policy is the deployable deletion boundary; D1 imports,
-idempotency records, recipe reviews, audit transitions, and approved meal plans
-are outside the bucket and are not retention targets.
+days. The lifecycle policy is the deployable deletion boundary; household
+imports, idempotency records, reviews, timelines, recipes, and meal plans are
+outside the bucket and are not retention targets.
 
-`ImportBatchQueue` and `ImportBatchDeadLetterQueue` are isolated, stage-owned
-Queue resources. The Cloudflare producer adapter sends the existing ID-only
-`{ batchId, itemId }` message contract and maps provider failures to the safe
-application error. It must never enqueue source URLs, provider payloads, media,
-or credentials.
-
-The Worker registers one serial consumer for each Queue. Primary deliveries are
-fenced and settled through the D1-backed batch store, and exhausted deliveries
-move to the configured dead-letter queue. Dead-letter replay claims and their
-leases are also durable in D1. Both consumers bind canonical intent admission
-to the designated system principal; messages continue to carry IDs only. The
-operational service remains the authority for role checks, the pre-side-effect
-replay quota boundary, idempotent intent admission, and the closed privacy-safe
-event union.
+Public admission commits a compact household outbox intent before the API host
+starts the deterministic generation-specific Workflow. Host retries reconcile
+the same Workflow identity and record their delivery result through a closed
+system command. No Queue or batch writer participates in Slice 1. The existing
+provider terminal-settlement route remains a private, explicitly authorized
+execution seam for later-slice evidence and recovery behavior; it cannot write
+canonical public import, review, or Recipe Bank state directly.
 
 ## Cleanup and test boundaries
 

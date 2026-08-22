@@ -65,10 +65,12 @@ const parseCanonicalPath = (
 ):
   | {
       readonly _tag: "UnsupportedIdentity";
+      readonly canonicalUrl: ValidatedVideoUrl;
       readonly identity: CanonicalSourceIdentity;
     }
   | {
       readonly _tag: "VideoIdentity";
+      readonly canonicalUrl: ValidatedVideoUrl;
       readonly identity: CanonicalSourceIdentity;
       readonly videoUrl: ValidatedVideoUrl;
     }
@@ -78,12 +80,14 @@ const parseCanonicalPath = (
   );
   const videoId = videoMatch?.groups?.["canonicalId"];
   if (videoId !== undefined) {
+    const canonicalUrl = Schema.decodeUnknownSync(ValidatedVideoUrl)(
+      sanitizeLocator(url)
+    );
     return {
       _tag: "VideoIdentity",
+      canonicalUrl,
       identity: makeIdentity(videoId),
-      videoUrl: Schema.decodeUnknownSync(ValidatedVideoUrl)(
-        sanitizeLocator(url)
-      ),
+      videoUrl: canonicalUrl,
     };
   }
 
@@ -93,6 +97,9 @@ const parseCanonicalPath = (
   if (photoId !== undefined) {
     return {
       _tag: "UnsupportedIdentity",
+      canonicalUrl: Schema.decodeUnknownSync(ValidatedVideoUrl)(
+        sanitizeLocator(url)
+      ),
       identity: makeIdentity(photoId),
     };
   }

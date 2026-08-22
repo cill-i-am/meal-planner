@@ -53,7 +53,7 @@ export default defineConfig({
                 AUTH_TEST_MIGRATIONS: await readDrizzleD1Migrations(
                   fileURLToPath(new URL("auth-migrations", import.meta.url))
                 ),
-                TEST_MIGRATIONS: await readD1Migrations(
+                TEST_MIGRATIONS: await readDrizzleD1Migrations(
                   fileURLToPath(new URL("migrations", import.meta.url))
                 ),
               },

@@ -44,7 +44,7 @@ class/namespace lifecycle and installs the runtime layers. Feature-first
 runtime modules own command composition. Per-object Drizzle migrations alone
 own SQLite schema evolution; a class deployment is not a database migration.
 
-## Foundation authority services and dispatch preparation
+## Authority services and post-commit dispatch
 
 Effect services provide authoritative Clock access, identity generation,
 canonical encoding, and SHA-256 digests. Domain operations and repositories do
@@ -52,17 +52,14 @@ not call ambient `Date.now()`, `crypto.randomUUID()`, or hashing APIs. Tests
 replace those services with deterministic implementations, and structural
 guards keep ambient APIs confined to the live adapter.
 
-The household schema includes preparatory import-Workflow admission and local
-outbox tables. One short SQLite transaction records the command digest,
-immutable committed result, deterministic privacy-safe Workflow identity, and
-compact dispatch intent. External I/O is forbidden in that transaction. Alarm
-scheduling happens only after commit through a local port. Dispatch state can
-move from `pending` to `exhausted`, but replay still returns the original
+Recipe-import admission uses these services in one short SQLite transaction to
+record the intent, idempotency ledger, command digest, immutable committed
+result, deterministic privacy-safe Workflow identity, and compact outbox
+intent. External I/O is forbidden in that transaction. The host starts or
+reconciles the Workflow only after commit, records every delivery outcome, and
+retries the same persisted Workflow identity. Dispatch status can move from
+`pending` to `dispatched` or `exhausted`, but replay always returns the original
 committed domain result.
-
-This preparation is intentionally unmounted from the production private Worker
-until the complete import authority cutover. It does not write current import
-state, start a Workflow, or change public import behavior.
 
 ## Meal-plan authority
 
@@ -86,18 +83,24 @@ digest and an Effect-provided Clock instant only after those checks pass.
 Better Auth D1 remains the global identity and organization control plane. It
 does not store meal-plan aggregate state.
 
-## Approved-recipe boundary
+## Recipe-import and Recipe Bank authority
 
-The existing shared D1 database remains the authority for recipe-import records,
-recipe reviews, and whether a recipe is approved. Before meal-plan creation or a
-manual swap, the API reads only the admitted organization's approved recipes and
-converts them to the neutral, typed recipe snapshots accepted by the household
-domain. The `HouseholdObject` stores those snapshots as part of the meal plan;
-it does not become the authority for the underlying recipe or review.
+`HouseholdObject` SQLite is the canonical store for import admission, source
+ownership and deduplication, public lifecycle and timeline, execution fences,
+active review, answers and corrections, cancellation, approval, publication,
+recipes, and replay receipts. Public handlers and internal Workflow commands
+reach that state only through the private household boundary.
 
-This is a one-way read at the application boundary. Meal-plan commands do not
-write recipe state back to shared D1, and shared D1 does not receive a copy of
-household meal-plan state.
+Review confirmation is a cross-capability local transaction: it completes the
+active action, publishes the Recipe Bank record, advances the import through
+finalizing to succeeded, appends timeline facts, and stores the replay receipt
+atomically. Source-dedup and cancel-versus-confirm races therefore serialize in
+the same household authority.
+
+Meal-plan creation and swaps query the local Recipe Bank capability directly.
+Iteration is cursor-, item-, and byte-bounded, so planning can consume more than
+128 approved recipes without an unbounded snapshot. The removed shared-D1
+recipe-source gateway and transfer-size workaround have no compatibility path.
 
 ## Current scope
 
@@ -111,16 +114,13 @@ organization using an organization-keyed TanStack Query. Its generated
 same-origin client calls `GET /v1/household` without placing an organization ID,
 bearer token, or household scope in the request.
 
-The current delivered product authority in `HouseholdObject` is still only the
-meal-plan aggregate. It does not add a meal-plan frontend because
-the product policy for meal-plan creation and review is unresolved. Adding that
-interface here would invent product behavior.
-
-Recipe-import storage, recipe reviews, workflows, queues, R2 evidence, provider
-integrations, shopping lists, and preferences remain where they are. The new
-admission/outbox contract is foundation preparation, not a dual write. There is
-no registry, organization-to-object lookup table, shared meal-plan read model,
-dual write, legacy adapter, or compatibility path.
+The delivered product authorities in `HouseholdObject` are meal planning plus
+the complete recipe-import/review/Recipe Bank capability. Compact provider and
+evidence execution records remain in the operational D1 and R2 boundaries for
+later slices, but cannot author public lifecycle, review, or Recipe Bank state.
+Shopping lists and preferences have not moved. There is no registry,
+organization-to-object lookup table, shared product read model, dual write,
+legacy adapter, or compatibility path.
 
 ## Proof boundary
 
@@ -141,12 +141,12 @@ fail-closed migration failure, provenance mismatch rejection, double-decode
 rejection at private Worker and object boundaries, and rejection of a forged
 active organization before private household routing. They also prove physical
 object isolation, restart durability, atomic admission/outbox rollback,
-deterministic Workflow identity by execution generation, stable replay while
-dispatch is pending or exhausted, and post-commit alarm failure against real
-Durable Object SQLite. Persisted dispatch projections are Schema-decoded and
-corrupt outbox state fails closed. Meal-plan tests retain create/read restart,
-replay, collision, optimistic concurrency, and terminal-state proof.
-Structural guards cover routing privacy, Better Auth placement,
-authority-service use, transaction I/O, the thin host, and the acquisition
-generation fence. These tests do not prove a cloud deployment or provider
-lifecycle.
+deterministic Workflow identity by execution generation, stable replay across
+dispatch outcomes, source ownership, generation/version fences, review and
+terminal races, atomic confirmation/publication, and bounded Recipe Bank use
+beyond 128 recipes. Meal-plan tests retain create/read restart, replay,
+collision, optimistic concurrency, and terminal-state proof. Structural guards
+cover routing privacy, Better Auth placement, authority-service use,
+transaction I/O, the thin host, the acquisition generation fence, and permanent
+removal of superseded D1 authorities. These tests do not prove a cloud
+deployment or provider lifecycle.

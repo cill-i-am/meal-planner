@@ -675,7 +675,7 @@ describe("recipe recovery attempt ledger", () => {
                 ?, transcript.source_media_sha256, transcript.transcript_sha256,
                 visual.manifest_sha256,
                 parent.evidence_references_json, ?
-           FROM recipe_imports AS parent
+           FROM import_execution_runs AS parent
            JOIN import_transcriptions AS transcript
              ON transcript.import_id = parent.id
            JOIN import_visual_evidence AS visual

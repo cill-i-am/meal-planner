@@ -11,7 +11,7 @@ export type HouseholdOrganizationId = typeof HouseholdOrganizationId.Type;
 
 export const HouseholdEnsureInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
-});
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type HouseholdEnsureInput = typeof HouseholdEnsureInput.Type;
 
 export const HouseholdMetadata = Schema.Struct({

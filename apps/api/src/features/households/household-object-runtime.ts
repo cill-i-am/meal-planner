@@ -5,7 +5,11 @@ import {
   MealPlanRequest,
 } from "@meal-planner/household-api";
 import {
+  CancelledRecipeImportIntent,
+  Recipe,
+  RecipeImportAction,
   RecipeImportIntent,
+  RecipeImportTimeline,
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -22,8 +26,8 @@ import {
   MealPlanRecipeAuthorityToken,
   selectMealPlanCandidates,
 } from "../meal-planning/meal-plan.js";
-import { makeHouseholdOutboxAlarm } from "./foundation/household-outbox-alarm.live.js";
 import { ensureHouseholdProvenance } from "./foundation/household-provenance.js";
+import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
 import {
   admitManualMealSwap,
   admitMealPlanDecision,
@@ -36,6 +40,7 @@ import {
   HouseholdMealPlanDecisionCommand,
   HouseholdReadMealPlanInput,
   HouseholdSwapMealPlanInput,
+  HouseholdSwapMealPlanFromRecipeBankInput,
 } from "./household-meal-plan.contract.js";
 import { makeHouseholdMealPlanRepository } from "./household-meal-plan.repository.js";
 import {
@@ -46,14 +51,24 @@ import {
   HouseholdAdmitRecipeImportInput,
   HouseholdAdmitRecipeImportResult,
   HouseholdActiveRecipeImportActionResult,
+  HouseholdAnswerRecipeImportActionInput,
+  HouseholdCancelRecipeImportInput,
   HouseholdCommitRecipeImportDraftInput,
   HouseholdConfirmRecipeImportActionInput,
-  HouseholdResolveRecipeImportSourceInput,
-} from "./recipe-import/household-recipe-import.contract.js";
-import type {
+  HouseholdReadRecipeImportActionInput,
+  HouseholdReadRecipeImportExecutionInput,
+  HouseholdReadRecipeImportInput,
+  HouseholdReadRecipeInput,
+  HouseholdRecordRecipeImportDispatchInput,
+  HouseholdRecordRecipeImportDispatchResult,
+  HouseholdRecipeImportExecutionView,
+  HouseholdRecipeImportFailure,
   HouseholdRecipePage,
-  HouseholdRecipePageCursor,
+  HouseholdRecipePageInput,
+  HouseholdResolveRecipeImportSourceInput,
+  HouseholdTransitionRecipeImportLifecycleInput,
 } from "./recipe-import/household-recipe-import.contract.js";
+import type { HouseholdRecipePageCursor } from "./recipe-import/household-recipe-import.contract.js";
 import { makeHouseholdRecipeImportRepository } from "./recipe-import/household-recipe-import.repository.js";
 import { requireHouseholdCommandAdmission } from "./rpc/command-envelope.js";
 import {
@@ -133,14 +148,33 @@ export const HouseholdObjectRuntime = Effect.gen(
               yield* makeHouseholdRecipeImportRepository(connection).admit(
                 command
               );
-            const alarm = makeHouseholdOutboxAlarm(durableObjectState);
-            yield* Clock.currentTimeMillis.pipe(
-              Effect.flatMap(alarm.schedule),
-              Effect.catch(() => Effect.void)
-            );
             return yield* encodeRecipeImportResult(
               HouseholdAdmitRecipeImportResult,
               committed
+            );
+          })
+        ),
+      answerRecipeImportAction: (
+        untrustedInput: HouseholdAnswerRecipeImportActionInput
+      ) =>
+        scoped(
+          Effect.gen(function* answerHouseholdRecipeImportAction() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdAnswerRecipeImportActionInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "answer_recipe_import_action"
+            );
+            const connection = yield* database;
+            const answered =
+              yield* makeHouseholdRecipeImportRepository(connection).answer(
+                command
+              );
+            return yield* encodeRecipeImportResult(
+              RecipeImportIntent,
+              answered
             );
           })
         ),
@@ -239,11 +273,16 @@ export const HouseholdObjectRuntime = Effect.gen(
                 });
               const candidates = yield* Effect.forEach(
                 (recipe: (typeof page.items)[number]) =>
-                  Schema.decodeUnknownEffect(MealPlanRecipeAuthorityToken)({
-                    extractionFingerprint: recipe.extractionFingerprint,
-                    reviewVersion: recipe.version,
-                    tagsFingerprint: recipe.extractionFingerprint,
-                  }).pipe(
+                  canonicalEncoding.encode(recipe.tags).pipe(
+                    Effect.flatMap(digest.sha256),
+                    Effect.mapError(invalidInput),
+                    Effect.flatMap((tagsFingerprint) =>
+                      Schema.decodeUnknownEffect(MealPlanRecipeAuthorityToken)({
+                        extractionFingerprint: recipe.extractionFingerprint,
+                        reviewVersion: recipe.version,
+                        tagsFingerprint,
+                      })
+                    ),
                     Effect.mapError(invalidInput),
                     Effect.map((authorityToken) => ({
                       authorityToken,
@@ -272,6 +311,28 @@ export const HouseholdObjectRuntime = Effect.gen(
               selectedRecipes
             ).create(request, policy);
             return yield* encodeMealPlan(plan);
+          })
+        ),
+      cancelRecipeImport: (untrustedInput: HouseholdCancelRecipeImportInput) =>
+        scoped(
+          Effect.gen(function* cancelHouseholdRecipeImport() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdCancelRecipeImportInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "cancel_recipe_import"
+            );
+            const connection = yield* database;
+            const cancelled =
+              yield* makeHouseholdRecipeImportRepository(connection).cancel(
+                command
+              );
+            return yield* encodeRecipeImportResult(
+              CancelledRecipeImportIntent,
+              cancelled
+            );
           })
         ),
       commitRecipeImportDraft: (
@@ -365,6 +426,175 @@ export const HouseholdObjectRuntime = Effect.gen(
             });
           })
         ),
+      readRecipe: (untrustedInput: typeof HouseholdReadRecipeInput.Type) =>
+        scoped(
+          Effect.gen(function* readHouseholdRecipe() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadRecipeInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_recipe"
+            );
+            const connection = yield* database;
+            const recipe =
+              yield* makeHouseholdRecipeImportRepository(connection).readRecipe(
+                command
+              );
+            return yield* encodeRecipeImportResult(Recipe, recipe);
+          })
+        ),
+      readRecipeImport: (
+        untrustedInput: typeof HouseholdReadRecipeImportInput.Type
+      ) =>
+        scoped(
+          Effect.gen(function* readHouseholdRecipeImport() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadRecipeImportInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_recipe_import"
+            );
+            const connection = yield* database;
+            const intent =
+              yield* makeHouseholdRecipeImportRepository(connection).readIntent(
+                command
+              );
+            return yield* encodeRecipeImportResult(RecipeImportIntent, intent);
+          })
+        ),
+      readRecipeImportExecution: (
+        untrustedInput: HouseholdReadRecipeImportExecutionInput
+      ) =>
+        scoped(
+          Effect.gen(function* readHouseholdRecipeImportExecution() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadRecipeImportExecutionInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_recipe_import_execution"
+            );
+            const connection = yield* database;
+            const execution =
+              yield* makeHouseholdRecipeImportRepository(
+                connection
+              ).readExecution(command);
+            return yield* encodeRecipeImportResult(
+              HouseholdRecipeImportExecutionView,
+              execution
+            );
+          })
+        ),
+      readRecipeImportAction: (
+        untrustedInput: typeof HouseholdReadRecipeImportActionInput.Type
+      ) =>
+        scoped(
+          Effect.gen(function* readHouseholdRecipeImportAction() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadRecipeImportActionInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_recipe_import_action"
+            );
+            const connection = yield* database;
+            const action =
+              yield* makeHouseholdRecipeImportRepository(connection).readAction(
+                command
+              );
+            return yield* encodeRecipeImportResult(RecipeImportAction, action);
+          })
+        ),
+      readRecipeImportTimeline: (
+        untrustedInput: typeof HouseholdReadRecipeImportInput.Type
+      ) =>
+        scoped(
+          Effect.gen(function* readHouseholdRecipeImportTimeline() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadRecipeImportInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_recipe_import_timeline"
+            );
+            const connection = yield* database;
+            const timeline =
+              yield* makeHouseholdRecipeImportRepository(
+                connection
+              ).readTimeline(command);
+            return yield* encodeRecipeImportResult(
+              RecipeImportTimeline,
+              timeline
+            );
+          })
+        ),
+      recordRecipeImportDispatch: (
+        untrustedInput: HouseholdRecordRecipeImportDispatchInput
+      ) =>
+        scoped(
+          Effect.gen(function* recordHouseholdRecipeImportDispatch() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdRecordRecipeImportDispatchInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "record_recipe_import_dispatch"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const nowEpochMs = yield* Clock.currentTimeMillis;
+            const view = yield* makeImportWorkflowAdmissionRepository(
+              connection
+            )
+              .recordDispatch({
+                dispatchId: command.dispatchId,
+                nowEpochMs,
+                outcome: command.outcome,
+                workflowIdentity: command.workflowIdentity,
+              })
+              .pipe(
+                Effect.mapError(() =>
+                  HouseholdRecipeImportFailure.make({
+                    reason: "persistence_unavailable",
+                  })
+                )
+              );
+            return yield* encodeRecipeImportResult(
+              HouseholdRecordRecipeImportDispatchResult,
+              view
+            );
+          })
+        ),
+      listRecipeBank: (untrustedInput: typeof HouseholdRecipePageInput.Type) =>
+        scoped(
+          Effect.gen(function* listHouseholdRecipeBank() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdRecipePageInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "list_recipe_bank"
+            );
+            const connection = yield* database;
+            const page =
+              yield* makeHouseholdRecipeImportRepository(
+                connection
+              ).listRecipePage(command);
+            return yield* encodeRecipeImportResult(HouseholdRecipePage, page);
+          })
+        ),
       rejectMealPlan: (untrustedInput: HouseholdDecideMealPlanInput) =>
         scoped(
           Effect.gen(function* rejectHouseholdMealPlan() {
@@ -416,6 +646,30 @@ export const HouseholdObjectRuntime = Effect.gen(
             );
           })
         ),
+      transitionRecipeImportLifecycle: (
+        untrustedInput: HouseholdTransitionRecipeImportLifecycleInput
+      ) =>
+        scoped(
+          Effect.gen(function* transitionHouseholdRecipeImportLifecycle() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdTransitionRecipeImportLifecycleInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "transition_recipe_import_lifecycle"
+            );
+            const connection = yield* database;
+            const transitioned =
+              yield* makeHouseholdRecipeImportRepository(
+                connection
+              ).transitionLifecycle(command);
+            return yield* encodeRecipeImportResult(
+              RecipeImportIntent,
+              transitioned
+            );
+          })
+        ),
       swapMealPlan: (untrustedInput: HouseholdSwapMealPlanInput) =>
         scoped(
           Effect.gen(function* swapHouseholdMealPlan() {
@@ -451,6 +705,43 @@ export const HouseholdObjectRuntime = Effect.gen(
               digest,
               approvedRecipes
             ).swap(request);
+            return yield* encodeMealPlan(plan);
+          })
+        ),
+      swapMealPlanFromRecipeBank: (
+        untrustedInput: HouseholdSwapMealPlanFromRecipeBankInput
+      ) =>
+        scoped(
+          Effect.gen(function* swapHouseholdMealPlanFromRecipeBank() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdSwapMealPlanFromRecipeBankInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "swap_meal_plan_from_recipe_bank"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const admittedCommand = yield* Schema.decodeUnknownEffect(
+              HouseholdManualMealSwapCommand
+            )(command.request).pipe(Effect.mapError(invalidInput));
+            const replacement = yield* makeHouseholdRecipeImportRepository(
+              connection
+            ).readPlanningRecipe(
+              command.admission,
+              admittedCommand.replacementImportId
+            );
+            const request = yield* admitManualMealSwap(
+              command.admission,
+              admittedCommand
+            ).pipe(Effect.mapError(invalidInput));
+            const plan = yield* makeService(connection, digest, [
+              replacement,
+            ]).swap(request);
             return yield* encodeMealPlan(plan);
           })
         ),

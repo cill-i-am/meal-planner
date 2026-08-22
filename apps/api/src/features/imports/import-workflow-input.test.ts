@@ -5,6 +5,7 @@ import { decodeImportWorkflowInput } from "./import-workflow-input.js";
 
 const importId = "00000000-0000-4000-8000-000000000188";
 const correlationId = "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2188";
+const organizationId = "organization-workflow-input";
 
 describe("import workflow input", () => {
   it("preserves the exact current generation and trace context", async () => {
@@ -13,19 +14,25 @@ describe("import workflow input", () => {
         decodeImportWorkflowInput({
           executionGeneration: 1,
           importId,
+          organizationId,
           trace: { correlationId },
         })
       )
     ).resolves.toEqual({
       executionGeneration: 1,
       importId,
+      organizationId,
       trace: { correlationId },
     });
   });
 
   it.each([
-    ["generation", { importId, trace: { correlationId } }],
-    ["trace", { executionGeneration: 1, importId }],
+    ["generation", { importId, organizationId, trace: { correlationId } }],
+    [
+      "organization",
+      { executionGeneration: 1, importId, trace: { correlationId } },
+    ],
+    ["trace", { executionGeneration: 1, importId, organizationId }],
   ])(
     "rejects missing %s before downstream workflow work",
     async (_name, input) => {
@@ -47,7 +54,12 @@ describe("import workflow input", () => {
 
   it.each([
     {},
-    { executionGeneration: 0, importId, trace: { correlationId } },
+    {
+      executionGeneration: 0,
+      importId,
+      organizationId,
+      trace: { correlationId },
+    },
     { importId, sourceUrl: "sensitive-source-sentinel" },
     { correlationId, importId, transcript: "sensitive-text-sentinel" },
     {
@@ -57,6 +69,7 @@ describe("import workflow input", () => {
     {
       executionGeneration: 1,
       importId,
+      organizationId,
       resume: "prepared_visual_recovery",
       trace: { correlationId },
     },

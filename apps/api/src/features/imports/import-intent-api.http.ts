@@ -3,20 +3,25 @@ import {
   IdempotencyConflictProblemDetails,
   IllegalTransitionProblemDetails,
   IntentNotFoundProblemDetails,
-  IntentRedirectedProblem,
   InternalErrorProblemDetails,
   InvalidRequestProblemDetails,
+  Recipe,
   RecipeImportApi,
+  RecipeImportAction,
   RecipeImportCurrentPrincipal,
   RecipeImportDefectBoundary,
   RecipeImportPrincipal,
   RecipeImportSessionAuth,
   RecipeImportSchemaErrors,
+  RecipeImportIntent,
+  RecipeImportTimeline,
+  RequiresActionRecipeImportIntent,
+  SucceededRecipeImportIntent,
+  CancelledRecipeImportIntent,
   RecipeNotFoundProblemDetails,
   UnauthorizedProblemDetails,
   VersionConflictProblemDetails,
 } from "@meal-planner/recipe-import-api";
-import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import {
   absurd,
   Cause,
@@ -40,46 +45,24 @@ import {
   HttpApiSchema,
 } from "effect/unstable/httpapi";
 
-import { AuthPrincipalResolver } from "../auth/auth.principal.js";
-import type { ImportWorkflowTerminationUnavailable } from "./import-intent-execution.js";
-import type {
-  RecipeImportActionMutationConflict,
-  RecipeImportActionNotFound,
-  RecipeImportActionTransitionRejected,
-  RecipeImportActionVersionConflict,
-  RecipeImportRecipeNotFound,
-} from "./import-intent-review.js";
-import { RecipeImportIntentReviewApplication } from "./import-intent-review.js";
-import type { ImportIntentTransitionMutationConflict } from "./import-intent-transition.js";
 import {
-  ImportPrincipal as ImportPrincipalSchema,
-  ReconcileStalledImportIntentContinuationsRequest,
-} from "./import-intent.js";
+  AuthenticatedOrganizationResolver,
+  AuthPrincipalResolver,
+} from "../auth/auth.principal.js";
 import type {
-  ImportPrincipal,
-  RecipeImportIntentIdempotencyConflict,
-  RecipeImportIntentNotFound,
-  RecipeImportIntentRedirected,
-  RecipeImportIntentTransitionRejected,
-  RecipeImportIntentVersionConflict,
-  makeImportIntentApplication,
-} from "./import-intent.js";
-import type {
-  ImportPersistenceCorrupt,
-  ImportPersistenceUnavailable,
-} from "./import.errors.js";
+  HouseholdDomainWorkerMethods,
+  HouseholdRecipeImportDomainFailure,
+} from "../households/household-domain-worker.js";
+import { HouseholdAdmitRecipeImportResult } from "../households/recipe-import/household-recipe-import.contract.js";
+import { HouseholdMemberAdmission as HouseholdMemberAdmissionSchema } from "../households/rpc/command-envelope.js";
+import { RecipeImportWorkflowDispatcher } from "./import-workflow-dispatcher.js";
 
-export type RecipeImportIntentApplication = ReturnType<
-  typeof makeImportIntentApplication
->;
-
-export const RecipeImportIntentApplication =
-  Context.Service<RecipeImportIntentApplication>(
-    "meal-planner/RecipeImportIntentApplication"
-  );
+export class RecipeImportHouseholdDomain extends Context.Service<
+  RecipeImportHouseholdDomain,
+  HouseholdDomainWorkerMethods
+>()("meal-planner/RecipeImportHouseholdDomain") {}
 
 const decodeApiPrincipal = Schema.decodeUnknownSync(RecipeImportPrincipal);
-const decodeDomainPrincipal = Schema.decodeUnknownSync(ImportPrincipalSchema);
 
 const invalidRequestProblem = Schema.decodeUnknownSync(
   InvalidRequestProblemDetails
@@ -163,181 +146,161 @@ const internalErrorProblem = Schema.decodeUnknownSync(
   type: "https://meal-planner.local/problems/internal-error",
 });
 
-type PersistenceError = ImportPersistenceCorrupt | ImportPersistenceUnavailable;
-type ReviewMutationError =
-  | PersistenceError
-  | RecipeImportActionMutationConflict
-  | RecipeImportActionNotFound
-  | RecipeImportActionTransitionRejected
-  | RecipeImportActionVersionConflict
-  | RecipeImportRecipeNotFound;
-
-const mapPersistenceError = (_error: PersistenceError) => internalErrorProblem;
-
-const mapIntentReadError = (
-  error: PersistenceError | RecipeImportIntentNotFound
+const mapInfrastructureFailure = (
+  error: Exclude<
+    HouseholdRecipeImportDomainFailure,
+    { readonly _tag: "HouseholdRecipeImportFailure" }
+  >
 ) =>
-  error._tag === "RecipeImportIntentNotFound"
-    ? intentNotFoundProblem
-    : mapPersistenceError(error);
-
-const mapActionReadError = (error: ReviewMutationError) => {
-  switch (error._tag) {
-    case "RecipeImportActionNotFound": {
-      return actionNotFoundProblem;
-    }
-    case "ImportPersistenceCorrupt":
-    case "ImportPersistenceUnavailable":
-    case "RecipeImportActionMutationConflict":
-    case "RecipeImportActionTransitionRejected":
-    case "RecipeImportActionVersionConflict":
-    case "RecipeImportRecipeNotFound": {
-      return internalErrorProblem;
-    }
-    default: {
-      return absurd<never>(error);
-    }
-  }
-};
-
-const mapActionMutationError = (error: ReviewMutationError) => {
-  switch (error._tag) {
-    case "ImportPersistenceCorrupt":
-    case "ImportPersistenceUnavailable": {
-      return internalErrorProblem;
-    }
-    case "RecipeImportActionMutationConflict": {
-      return idempotencyConflictProblem;
-    }
-    case "RecipeImportActionNotFound": {
-      return actionNotFoundProblem;
-    }
-    case "RecipeImportActionTransitionRejected": {
-      return illegalTransitionProblem;
-    }
-    case "RecipeImportActionVersionConflict": {
-      return versionConflictProblem;
-    }
-    case "RecipeImportRecipeNotFound": {
-      return internalErrorProblem;
-    }
-    default: {
-      return absurd<never>(error);
-    }
-  }
-};
-
-const mapRecipeReadError = (error: ReviewMutationError) =>
-  error._tag === "RecipeImportRecipeNotFound"
-    ? recipeNotFoundProblem
+  error._tag === "HouseholdInvalidInput"
+    ? invalidRequestProblem
     : internalErrorProblem;
 
-const mapAdmitError = (
-  error:
-    | ImportIntentTransitionMutationConflict
-    | PersistenceError
-    | RecipeImportIntentIdempotencyConflict
-    | RecipeImportIntentNotFound
-    | RecipeImportIntentRedirected
-    | RecipeImportIntentTransitionRejected
-) => {
-  switch (error._tag) {
-    case "RecipeImportIntentIdempotencyConflict": {
-      return idempotencyConflictProblem;
-    }
-    case "ImportPersistenceCorrupt":
-    case "ImportPersistenceUnavailable":
-    case "ImportIntentTransitionMutationConflict":
-    case "RecipeImportIntentNotFound":
-    case "RecipeImportIntentRedirected":
-    case "RecipeImportIntentTransitionRejected": {
-      return internalErrorProblem;
-    }
-    default: {
-      return absurd<never>(error);
-    }
+const mapAdmitFailure = (error: HouseholdRecipeImportDomainFailure) => {
+  if (error._tag !== "HouseholdRecipeImportFailure") {
+    return mapInfrastructureFailure(error);
   }
+  if (error.reason === "idempotency_conflict") {
+    return idempotencyConflictProblem;
+  }
+  return error.reason === "invalid_input"
+    ? invalidRequestProblem
+    : internalErrorProblem;
 };
 
-type IntentMutationError =
-  | ImportIntentTransitionMutationConflict
-  | ImportWorkflowTerminationUnavailable
-  | PersistenceError
-  | RecipeImportIntentNotFound
-  | RecipeImportIntentRedirected
-  | RecipeImportIntentTransitionRejected
-  | RecipeImportIntentVersionConflict;
+const mapIntentReadFailure = (error: HouseholdRecipeImportDomainFailure) => {
+  if (error._tag !== "HouseholdRecipeImportFailure") {
+    return mapInfrastructureFailure(error);
+  }
+  if (error.reason === "intent_not_found") {
+    return intentNotFoundProblem;
+  }
+  return error.reason === "invalid_input"
+    ? invalidRequestProblem
+    : internalErrorProblem;
+};
 
-const mapIntentMutationError = (error: IntentMutationError) => {
-  switch (error._tag) {
-    case "ImportIntentTransitionMutationConflict": {
+const mapActionReadFailure = (error: HouseholdRecipeImportDomainFailure) => {
+  if (error._tag !== "HouseholdRecipeImportFailure") {
+    return mapInfrastructureFailure(error);
+  }
+  if (error.reason === "action_not_found") {
+    return actionNotFoundProblem;
+  }
+  return error.reason === "invalid_input"
+    ? invalidRequestProblem
+    : internalErrorProblem;
+};
+
+const mapActionMutationFailure = (
+  error: HouseholdRecipeImportDomainFailure
+) => {
+  if (error._tag !== "HouseholdRecipeImportFailure") {
+    return mapInfrastructureFailure(error);
+  }
+  switch (error.reason) {
+    case "action_not_found": {
+      return actionNotFoundProblem;
+    }
+    case "idempotency_conflict": {
       return idempotencyConflictProblem;
     }
-    case "RecipeImportIntentNotFound": {
-      return intentNotFoundProblem;
-    }
-    case "RecipeImportIntentRedirected": {
-      return Schema.decodeUnknownSync(IntentRedirectedProblem)({
-        code: "intent_redirected",
-        detail: "This intent redirects to the canonical recipe import intent.",
-        intent: error.intent,
-        redirect: error.redirect,
-        status: 409,
-        title: "Intent redirected",
-        type: "https://meal-planner.local/problems/intent-redirected",
-      });
-    }
-    case "RecipeImportIntentTransitionRejected": {
+    case "illegal_transition": {
       return illegalTransitionProblem;
     }
-    case "RecipeImportIntentVersionConflict": {
+    case "intent_not_found": {
+      return internalErrorProblem;
+    }
+    case "recipe_not_found": {
+      return internalErrorProblem;
+    }
+    case "generation_conflict":
+    case "version_conflict": {
       return versionConflictProblem;
     }
-    case "ImportWorkflowTerminationUnavailable": {
+    case "invalid_input": {
+      return invalidRequestProblem;
+    }
+    case "persistence_unavailable": {
       return internalErrorProblem;
     }
     default: {
-      return internalErrorProblem;
+      return absurd<never>(error.reason);
     }
   }
 };
 
-const toDomainPrincipal = (
-  principal: typeof RecipeImportPrincipal.Type
-): ImportPrincipal =>
-  decodeDomainPrincipal({
-    actorId: principal.actorId,
-    householdScopeId: principal.householdScopeId,
-  });
+const mapIntentMutationFailure = (
+  error: HouseholdRecipeImportDomainFailure
+) => {
+  if (error._tag !== "HouseholdRecipeImportFailure") {
+    return mapInfrastructureFailure(error);
+  }
+  switch (error.reason) {
+    case "idempotency_conflict": {
+      return idempotencyConflictProblem;
+    }
+    case "illegal_transition": {
+      return illegalTransitionProblem;
+    }
+    case "intent_not_found": {
+      return intentNotFoundProblem;
+    }
+    case "generation_conflict":
+    case "version_conflict": {
+      return versionConflictProblem;
+    }
+    case "invalid_input": {
+      return invalidRequestProblem;
+    }
+    case "action_not_found":
+    case "persistence_unavailable":
+    case "recipe_not_found": {
+      return internalErrorProblem;
+    }
+    default: {
+      return absurd<never>(error.reason);
+    }
+  }
+};
+
+const mapRecipeReadFailure = (error: HouseholdRecipeImportDomainFailure) => {
+  if (error._tag !== "HouseholdRecipeImportFailure") {
+    return mapInfrastructureFailure(error);
+  }
+  if (error.reason === "recipe_not_found") {
+    return recipeNotFoundProblem;
+  }
+  return error.reason === "invalid_input"
+    ? invalidRequestProblem
+    : internalErrorProblem;
+};
 
 const retryAfterSeconds = 2;
 const retryAfterHeaders = (status: string) =>
   status === "processing" ? { "retry-after": retryAfterSeconds } : {};
 
-const stalledContinuationRequest = Schema.decodeUnknownSync(
-  ReconcileStalledImportIntentContinuationsRequest
-)({ limit: 25, minimumAgeMilliseconds: 300_000 });
-
-const deferIntentContinuations = (
-  application: RecipeImportIntentApplication,
-  principal: ImportPrincipal,
-  intentId?: RecipeImportIntentId
-) =>
-  Effect.addFinalizer(() =>
-    Effect.all(
-      [
-        ...(intentId === undefined
-          ? []
-          : [application.continueSourceResolution(principal, intentId)]),
-        application.reconcileStalledContinuations(stalledContinuationRequest),
-      ],
-      { concurrency: 1, discard: true }
-    ).pipe(
-      Effect.catchCause(() =>
-        Effect.logError("recipe_import.intent_continuation_failed")
-      )
+const decodeHouseholdResult = <S extends Schema.Top>(schema: S) =>
+  Effect.flatMap((result: Schema.Json) =>
+    Schema.decodeUnknownEffect(schema)(result).pipe(
+      Effect.mapError(() => internalErrorProblem)
     )
   );
+
+const currentHouseholdAdmission = Effect.gen(
+  function* resolveCurrentHouseholdAdmission() {
+    const principal = yield* RecipeImportCurrentPrincipal;
+    const resolver = yield* AuthenticatedOrganizationResolver;
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const organization = yield* resolver
+      .resolve(new globalThis.Headers(Object.entries(request.headers)))
+      .pipe(Effect.mapError(() => unauthorizedProblem));
+    return yield* Schema.decodeUnknownEffect(HouseholdMemberAdmissionSchema)({
+      actor: { _tag: "Member", actorId: principal.actorId },
+      organizationId: organization.organizationId,
+    }).pipe(Effect.mapError(() => unauthorizedProblem));
+  }
+);
 
 const RecipeImportIntentHandlers = HttpApiBuilder.group(
   RecipeImportApi,
@@ -346,18 +309,27 @@ const RecipeImportIntentHandlers = HttpApiBuilder.group(
     handlers
       .handle("create", ({ headers, payload }) =>
         Effect.gen(function* createRecipeImportIntent() {
-          const principal = toDomainPrincipal(
-            yield* RecipeImportCurrentPrincipal
-          );
-          const application = yield* RecipeImportIntentApplication;
-          const admitted = yield* application
-            .admit(principal, payload, headers["idempotency-key"])
-            .pipe(Effect.mapError(mapAdmitError));
+          const admission = yield* currentHouseholdAdmission;
+          const household = yield* RecipeImportHouseholdDomain;
+          const workflowDispatcher = yield* RecipeImportWorkflowDispatcher;
+          const admitted = yield* household
+            .admitRecipeImport({
+              admission,
+              idempotencyKey: headers["idempotency-key"],
+              source: payload.source,
+            })
+            .pipe(
+              Effect.mapError(mapAdmitFailure),
+              decodeHouseholdResult(HouseholdAdmitRecipeImportResult)
+            );
           const { intent } = admitted;
           if (intent.status !== "processing") {
             return yield* Effect.fail(internalErrorProblem);
           }
-          yield* deferIntentContinuations(application, principal, intent.id);
+          yield* workflowDispatcher.dispatch({
+            admission,
+            committed: admitted,
+          });
           return HttpApiSchema.withHeaders({
             body: intent,
             headers: {
@@ -369,21 +341,14 @@ const RecipeImportIntentHandlers = HttpApiBuilder.group(
       )
       .handle("get", ({ params }) =>
         Effect.gen(function* getRecipeImportIntent() {
-          const principal = toDomainPrincipal(
-            yield* RecipeImportCurrentPrincipal
-          );
-          const application = yield* RecipeImportIntentApplication;
-          const intent = yield* application
-            .get(principal, params.id)
-            .pipe(Effect.mapError(mapIntentReadError));
-          yield* deferIntentContinuations(
-            application,
-            principal,
-            intent.status === "processing" &&
-              intent.processing.type === "resolving_source"
-              ? intent.id
-              : undefined
-          );
+          const admission = yield* currentHouseholdAdmission;
+          const household = yield* RecipeImportHouseholdDomain;
+          const intent = yield* household
+            .readRecipeImport({ admission, intentId: params.id })
+            .pipe(
+              Effect.mapError(mapIntentReadFailure),
+              decodeHouseholdResult(RecipeImportIntent)
+            );
           return HttpApiSchema.withHeaders({
             body: intent,
             headers: retryAfterHeaders(intent.status),
@@ -392,72 +357,84 @@ const RecipeImportIntentHandlers = HttpApiBuilder.group(
       )
       .handle("getAction", ({ params }) =>
         Effect.gen(function* getRecipeImportAction() {
-          const principal = toDomainPrincipal(
-            yield* RecipeImportCurrentPrincipal
-          );
-          const application = yield* RecipeImportIntentReviewApplication;
-          return yield* application
-            .getAction(principal, params.id, params.actionId)
-            .pipe(Effect.mapError(mapActionReadError));
+          const admission = yield* currentHouseholdAdmission;
+          const household = yield* RecipeImportHouseholdDomain;
+          return yield* household
+            .readRecipeImportAction({
+              actionId: params.actionId,
+              admission,
+              intentId: params.id,
+            })
+            .pipe(
+              Effect.mapError(mapActionReadFailure),
+              decodeHouseholdResult(RecipeImportAction)
+            );
         })
       )
       .handle("answerAction", ({ headers, params, payload }) =>
         Effect.gen(function* answerRecipeImportAction() {
-          const principal = toDomainPrincipal(
-            yield* RecipeImportCurrentPrincipal
-          );
-          const application = yield* RecipeImportIntentReviewApplication;
-          return yield* application
-            .answerAction(
-              principal,
-              params.id,
-              params.actionId,
-              payload,
-              headers["idempotency-key"]
-            )
-            .pipe(Effect.mapError(mapActionMutationError));
+          const admission = yield* currentHouseholdAdmission;
+          const household = yield* RecipeImportHouseholdDomain;
+          return yield* household
+            .answerRecipeImportAction({
+              actionId: params.actionId,
+              admission,
+              idempotencyKey: headers["idempotency-key"],
+              intentId: params.id,
+              request: payload,
+            })
+            .pipe(
+              Effect.mapError(mapActionMutationFailure),
+              decodeHouseholdResult(RequiresActionRecipeImportIntent)
+            );
         })
       )
       .handle("confirmAction", ({ headers, params, payload }) =>
         Effect.gen(function* confirmRecipeImportAction() {
-          const principal = toDomainPrincipal(
-            yield* RecipeImportCurrentPrincipal
-          );
-          const application = yield* RecipeImportIntentReviewApplication;
-          return yield* application
-            .confirmAction(
-              principal,
-              params.id,
-              params.actionId,
-              payload,
-              headers["idempotency-key"]
-            )
-            .pipe(Effect.mapError(mapActionMutationError));
+          const admission = yield* currentHouseholdAdmission;
+          const household = yield* RecipeImportHouseholdDomain;
+          return yield* household
+            .confirmRecipeImportAction({
+              actionId: params.actionId,
+              admission,
+              idempotencyKey: headers["idempotency-key"],
+              intentId: params.id,
+              request: payload,
+            })
+            .pipe(
+              Effect.mapError(mapActionMutationFailure),
+              decodeHouseholdResult(SucceededRecipeImportIntent)
+            );
         })
       )
       .handle("cancel", ({ headers, params, payload }) =>
         Effect.gen(function* cancelRecipeImportIntent() {
-          const principal = toDomainPrincipal(
-            yield* RecipeImportCurrentPrincipal
-          );
-          const application = yield* RecipeImportIntentApplication;
-          const result = yield* application
-            .cancel(principal, params.id, payload, headers["idempotency-key"])
-            .pipe(Effect.mapError(mapIntentMutationError));
-          return result.status === "cancelled"
-            ? result
-            : yield* Effect.fail(internalErrorProblem);
+          const admission = yield* currentHouseholdAdmission;
+          const household = yield* RecipeImportHouseholdDomain;
+          const result = yield* household
+            .cancelRecipeImport({
+              admission,
+              idempotencyKey: headers["idempotency-key"],
+              intentId: params.id,
+              request: payload,
+            })
+            .pipe(
+              Effect.mapError(mapIntentMutationFailure),
+              decodeHouseholdResult(CancelledRecipeImportIntent)
+            );
+          return result;
         })
       )
       .handle("timeline", ({ params }) =>
         Effect.gen(function* getRecipeImportTimeline() {
-          const principal = toDomainPrincipal(
-            yield* RecipeImportCurrentPrincipal
-          );
-          const application = yield* RecipeImportIntentApplication;
-          return yield* application
-            .timeline(principal, params.id)
-            .pipe(Effect.mapError(mapIntentReadError));
+          const admission = yield* currentHouseholdAdmission;
+          const household = yield* RecipeImportHouseholdDomain;
+          return yield* household
+            .readRecipeImportTimeline({ admission, intentId: params.id })
+            .pipe(
+              Effect.mapError(mapIntentReadFailure),
+              decodeHouseholdResult(RecipeImportTimeline)
+            );
         })
       )
 );
@@ -468,13 +445,14 @@ const RecipeHandlers = HttpApiBuilder.group(
   (handlers) =>
     handlers.handle("get", ({ params }) =>
       Effect.gen(function* getRecipe() {
-        const principal = toDomainPrincipal(
-          yield* RecipeImportCurrentPrincipal
-        );
-        const application = yield* RecipeImportIntentReviewApplication;
-        return yield* application
-          .getRecipe(principal, params.recipeId)
-          .pipe(Effect.mapError(mapRecipeReadError));
+        const admission = yield* currentHouseholdAdmission;
+        const household = yield* RecipeImportHouseholdDomain;
+        return yield* household
+          .readRecipe({ admission, recipeId: params.recipeId })
+          .pipe(
+            Effect.mapError(mapRecipeReadFailure),
+            decodeHouseholdResult(Recipe)
+          );
       })
     )
 );
@@ -482,18 +460,19 @@ const RecipeHandlers = HttpApiBuilder.group(
 const RecipeImportSessionAuthLive = Layer.effect(
   RecipeImportSessionAuth,
   AuthPrincipalResolver.pipe(
-    Effect.map((resolver) =>
+    Effect.map((principalResolver) =>
       RecipeImportSessionAuth.of((httpEffect) =>
         Effect.gen(function* resolveRecipeImportSession() {
           const request = yield* HttpServerRequest.HttpServerRequest;
-          const principal = yield* resolver
-            .resolve(new globalThis.Headers(Object.entries(request.headers)))
-            .pipe(
-              Effect.map(decodeApiPrincipal),
-              Effect.mapError(() => unauthorizedProblem)
-            );
+          const headers = new globalThis.Headers(
+            Object.entries(request.headers)
+          );
+          const apiPrincipal = yield* principalResolver.resolve(headers).pipe(
+            Effect.map(decodeApiPrincipal),
+            Effect.mapError(() => unauthorizedProblem)
+          );
           return yield* httpEffect.pipe(
-            Effect.provideService(RecipeImportCurrentPrincipal, principal)
+            Effect.provideService(RecipeImportCurrentPrincipal, apiPrincipal)
           );
         })
       )

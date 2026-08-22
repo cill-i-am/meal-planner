@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
+import { readdirSync, statSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+// oxlint-disable-next-line unicorn/import-style -- This ESM test intentionally keeps TypeScript synthetic default imports disabled.
+import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
 import * as Bundle from "alchemy/Bundle";
 import { Effect, Schema } from "effect";
+import type { ModuleDefinition } from "miniflare";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -64,6 +68,29 @@ const decodeRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
 const decodeStageId = Schema.decodeUnknownSync(PilotBudgetProviderStageId);
 const decodeDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
 
+const readDrizzleD1Migrations = (migrationsPath: string) => {
+  const sqlFiles = readdirSync(migrationsPath, { recursive: true })
+    .map(String)
+    .filter((name) => name.endsWith(".sql"))
+    .toSorted();
+  return Promise.all(
+    sqlFiles.map(async (name) => {
+      const migrationPath = path.join(migrationsPath, name);
+      if (!statSync(migrationPath).isFile()) {
+        throw new Error(`Expected a migration file at ${migrationPath}.`);
+      }
+      const [migration] = await readD1Migrations(path.dirname(migrationPath));
+      if (migration === undefined) {
+        throw new Error(`Unable to read Drizzle migration ${migrationPath}.`);
+      }
+      return {
+        ...migration,
+        name: path.relative(migrationsPath, migrationPath),
+      };
+    })
+  );
+};
+
 const buildFixture = async (outputDirectory: string) => {
   const output = await Effect.runPromise(
     Bundle.build(
@@ -90,17 +117,30 @@ const buildFixture = async (outputDirectory: string) => {
       }
     )
   );
-  const {
-    files: [{ content }],
-  } = output;
-  return Schema.is(Schema.String)(content)
-    ? content
-    : new TextDecoder().decode(content);
+  const [entry, ...assets] = output.files;
+  return [
+    {
+      contents: Schema.is(Schema.String)(entry.content)
+        ? entry.content
+        : new TextDecoder().decode(entry.content),
+      path: entry.path,
+      type: "ESModule",
+    },
+    ...assets.map(
+      (asset): ModuleDefinition => ({
+        contents: Schema.is(Schema.String)(asset.content)
+          ? asset.content
+          : new TextDecoder().decode(asset.content),
+        path: asset.path,
+        type: "Text",
+      })
+    ),
+  ] as const satisfies readonly [ModuleDefinition, ...ModuleDefinition[]];
 };
 
 const applyMigrations = async () => {
   const database = await runtime.getD1Database("MealPlannerDatabase");
-  const migrations = await readD1Migrations(
+  const migrations = await readDrizzleD1Migrations(
     fileURLToPath(new URL("../../../migrations", import.meta.url))
   );
   await database
@@ -320,19 +360,13 @@ beforeAll(async () => {
     `${tmpdir()}/meal-planner-gaia-163-native-`
   );
   temporaryDirectories.push(temporaryDirectory);
-  const fixtureScript = await buildFixture(temporaryDirectory);
+  const fixtureModules = await buildFixture(temporaryDirectory);
   runtime = new Miniflare({
     compatibilityDate,
     compatibilityFlags,
     d1Databases: { MealPlannerDatabase: "gaia-163-test" },
     kvNamespaces: ["PROVIDER_WORKFLOW_STATE"],
-    modules: [
-      {
-        contents: fixtureScript,
-        path: "provider-workflow-fixture.js",
-        type: "ESModule",
-      },
-    ],
+    modules: [...fixtureModules],
     workflows: {
       ProviderRetryWorkflow: {
         className: "ProviderRetryWorkflow",
@@ -734,7 +768,7 @@ describe("provider workflow task retry exhaustion", () => {
       database
         .prepare(
           `SELECT status, status_code, recovery_action
-             FROM recipe_imports
+             FROM import_execution_runs
             WHERE id = ?`
         )
         .bind(importId)

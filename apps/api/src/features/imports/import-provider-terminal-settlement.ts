@@ -5,6 +5,7 @@ import {
   PilotBudgetDispatchId,
   PilotProviderBudgetStage,
 } from "../pilots/pilot-provider-budget.js";
+import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { settleSpeechTerminalUnknown } from "./import-provider-speech-terminal-settlement.js";
 import { makeD1ProviderTerminalRecoveryRepository } from "./import-provider-terminal.js";
@@ -18,7 +19,6 @@ import type {
 } from "./import-recipe-recovery.js";
 import { ImportId } from "./import.contracts.js";
 import type { ImportTimestamp } from "./import.contracts.js";
-import { makeD1ImportRepository } from "./import.repository.d1.js";
 import type { ImportWorkflowStarter } from "./import.workflow.js";
 
 const TerminalUnknownSettlementRequest = Schema.Struct({
@@ -395,7 +395,7 @@ const readVisualSettled = (
               )
             )
             AND visual.completed_at = checkpoint.completed_at
-           JOIN recipe_imports AS parent
+           JOIN import_execution_runs AS parent
              ON parent.id = checkpoint.import_id
             AND parent.acquisition_generation =
                   checkpoint.acquisition_generation
@@ -519,7 +519,7 @@ const repairVisualTerminalCheckpoint = (
           AND visual.state = 'failed'
           AND visual.failure_code = 'visual_extraction_failed'
           AND visual.completed_at IS NOT NULL
-         JOIN recipe_imports AS parent
+         JOIN import_execution_runs AS parent
            ON parent.id = visual.import_id
           AND parent.acquisition_generation =
                 visual.acquisition_generation
@@ -645,7 +645,7 @@ const readVisualTerminalCheckpointRepair = (
             AND visual.failure_code = checkpoint.failure_code
             AND visual.completed_at = checkpoint.completed_at
             AND checkpoint.created_at = visual.completed_at
-           JOIN recipe_imports AS parent
+           JOIN import_execution_runs AS parent
              ON parent.id = visual.import_id
             AND parent.acquisition_generation =
                   visual.acquisition_generation
@@ -807,7 +807,7 @@ const settleVisualBatch = (
               )
             )
             AND visual.completed_at = checkpoint.completed_at
-           JOIN recipe_imports AS parent
+           JOIN import_execution_runs AS parent
              ON parent.id = checkpoint.import_id
             AND parent.acquisition_generation =
                   checkpoint.acquisition_generation
@@ -923,7 +923,7 @@ const settleVisualBatch = (
                      )
                    )
                    AND visual.completed_at = checkpoint.completed_at
-                  JOIN recipe_imports AS parent
+                  JOIN import_execution_runs AS parent
                     ON parent.id = checkpoint.import_id
                    AND parent.acquisition_generation =
                          checkpoint.acquisition_generation
@@ -1034,7 +1034,7 @@ const repairRecipeTerminalCheckpoint = (
           AND extraction.state = 'failed'
           AND extraction.failure_code = 'provider_error'
           AND extraction.completed_at IS NOT NULL
-         JOIN recipe_imports AS parent
+         JOIN import_execution_runs AS parent
            ON parent.id = extraction.import_id
           AND parent.acquisition_generation =
                 extraction.acquisition_generation
@@ -1194,7 +1194,7 @@ const readRecipeTerminalCheckpointRepair = (
                   checkpoint.acquisition_generation
             AND projection.ownership_id = checkpoint.ownership_id
             AND projection.checkpointed_at = checkpoint.completed_at
-           JOIN recipe_imports AS parent
+           JOIN import_execution_runs AS parent
              ON parent.id = extraction.import_id
             AND parent.acquisition_generation =
                   extraction.acquisition_generation
@@ -1359,7 +1359,7 @@ const readRecipeSettled = (
                   checkpoint.acquisition_generation
             AND projection.ownership_id = checkpoint.ownership_id
             AND projection.checkpointed_at = checkpoint.completed_at
-           JOIN recipe_imports AS parent
+           JOIN import_execution_runs AS parent
              ON parent.id = checkpoint.import_id
             AND parent.acquisition_generation =
                   checkpoint.acquisition_generation
@@ -1482,7 +1482,7 @@ const settleRecipeBatch = (
                   checkpoint.acquisition_generation
             AND projection.ownership_id = checkpoint.ownership_id
             AND projection.checkpointed_at = checkpoint.completed_at
-           JOIN recipe_imports AS parent
+           JOIN import_execution_runs AS parent
              ON parent.id = checkpoint.import_id
             AND parent.acquisition_generation =
                   checkpoint.acquisition_generation
@@ -1571,7 +1571,7 @@ const settleRecipeBatch = (
                          checkpoint.acquisition_generation
                    AND projection.ownership_id = checkpoint.ownership_id
                    AND projection.checkpointed_at = checkpoint.completed_at
-                  JOIN recipe_imports AS parent
+                  JOIN import_execution_runs AS parent
                     ON parent.id = checkpoint.import_id
                    AND parent.acquisition_generation =
                          checkpoint.acquisition_generation
@@ -1667,7 +1667,7 @@ const recipeRecoveryUnknownAuthority = `
    AND projection.acquisition_generation = recovery.acquisition_generation
    AND projection.ownership_id = recovery.root_extraction_fingerprint
    AND projection.checkpointed_at = recovery.terminal_checkpoint_completed_at
-  JOIN recipe_imports AS parent
+  JOIN import_execution_runs AS parent
     ON parent.id = recovery.import_id
    AND parent.acquisition_generation = recovery.acquisition_generation
    AND parent.status = 'transcribed'
@@ -1772,7 +1772,7 @@ const readRecipeRecoverySettled = (
                   recovery.root_extraction_fingerprint
             AND projection.checkpointed_at =
                   recovery.terminal_checkpoint_completed_at
-           JOIN recipe_imports AS parent
+           JOIN import_execution_runs AS parent
              ON parent.id = recovery.import_id
             AND parent.acquisition_generation =
                   recovery.acquisition_generation
@@ -1949,7 +1949,7 @@ const settleRecipeRecoveryBatch = (
                          recovery.root_extraction_fingerprint
                    AND projection.checkpointed_at =
                          recovery.terminal_checkpoint_completed_at
-                  JOIN recipe_imports AS parent
+                  JOIN import_execution_runs AS parent
                     ON parent.id = recovery.import_id
                    AND parent.acquisition_generation =
                          recovery.acquisition_generation
@@ -2051,7 +2051,7 @@ const readAuthoritativeImportTrace = (
   database: AnyD1Database,
   importId: ImportId
 ) =>
-  makeD1ImportRepository(database)
+  makeD1ImportExecutionRepository(database)
     .findById(importId)
     .pipe(
       // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.mapError preserves the typed persistence error channel.

@@ -649,7 +649,7 @@ const readSettledRecovery = (
           AND checkpoint.provider_stage = 'speech'
           AND checkpoint.ownership_id = audit.dispatch_id
           AND checkpoint.failure_code = 'outcome_unknown'
-         JOIN recipe_imports AS parent
+         JOIN import_execution_runs AS parent
            ON parent.id = checkpoint.import_id
           AND parent.acquisition_generation = checkpoint.acquisition_generation
          JOIN import_transcriptions AS transcription
@@ -742,7 +742,7 @@ const assertSpeechRecoveryActivatable = (
            parent.status AS parent_status,
            transcription.dispatch_id AS recovery_dispatch_id,
            transcription.state AS transcription_state
-         FROM recipe_imports AS parent
+         FROM import_execution_runs AS parent
          LEFT JOIN import_transcriptions AS transcription
            ON transcription.import_id = parent.id
           AND transcription.acquisition_generation =
@@ -837,7 +837,7 @@ const readSettledRecoveryCandidate = (
               AND transcription.state = 'failed'
               AND transcription.failure_code = 'outcome_unknown'
               AND transcription.completed_at = checkpoint.completed_at
-             JOIN recipe_imports AS parent
+             JOIN import_execution_runs AS parent
                ON parent.id = checkpoint.import_id
               AND parent.acquisition_generation =
                     checkpoint.acquisition_generation
@@ -900,7 +900,7 @@ const prepareSettledRecovery = (
     database.batch([
       database
         .prepare(
-          `UPDATE recipe_imports AS parent
+          `UPDATE import_execution_runs AS parent
               SET status = 'acquired',
                   status_code = NULL,
                   recovery_action = NULL,
@@ -974,7 +974,7 @@ const prepareSettledRecovery = (
               AND failure_code = 'outcome_unknown'
               AND EXISTS (
                 SELECT 1
-                  FROM recipe_imports AS parent
+                  FROM import_execution_runs AS parent
                   JOIN import_provider_terminal_checkpoints AS checkpoint
                     ON checkpoint.import_id = parent.id
                    AND checkpoint.acquisition_generation =
@@ -1033,7 +1033,7 @@ const prepareSettledRecovery = (
            )
            SELECT parent.id, parent.acquisition_generation, ?, ?,
                   'dispatching', ?, ?
-             FROM recipe_imports AS parent
+             FROM import_execution_runs AS parent
              JOIN import_provider_terminal_checkpoints AS checkpoint
                ON checkpoint.import_id = parent.id
               AND checkpoint.acquisition_generation =
@@ -1186,7 +1186,7 @@ const readSettledVisualSecondRecoveryCandidate = (
           AND visual.state = 'failed'
           AND visual.failure_code = checkpoint.failure_code
           AND visual.completed_at = checkpoint.completed_at
-         JOIN recipe_imports AS parent
+         JOIN import_execution_runs AS parent
            ON parent.id = checkpoint.import_id
           AND parent.acquisition_generation =
                 checkpoint.acquisition_generation
@@ -1291,7 +1291,7 @@ const readSettledVisualRecoveryCandidate = (
             AND visual.dispatch_id = checkpoint.ownership_id
             AND visual.state = 'failed'
             AND visual.failure_code = 'visual_extraction_failed'
-           JOIN recipe_imports AS parent
+           JOIN import_execution_runs AS parent
              ON parent.id = checkpoint.import_id
             AND parent.acquisition_generation =
                   checkpoint.acquisition_generation
