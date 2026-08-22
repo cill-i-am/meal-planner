@@ -193,6 +193,33 @@ describe("household foundation structural boundaries", () => {
     );
   });
 
+  it("routes production recipe recovery evidence through household authority", async () => {
+    const [recoveryComposition, recoveryHousehold] = await Promise.all([
+      read(path.join(apiFeaturesRoot, "imports/import-runtime-composition.ts")),
+      read(
+        path.join(
+          apiFeaturesRoot,
+          "imports/import-recipe-recovery.household.ts"
+        )
+      ),
+    ]);
+    const [, productionRecovery] = recoveryComposition.split(
+      "export const makeImportRecipeRecoveryWorkflowHandler"
+    );
+
+    expect(productionRecovery).toBeDefined();
+    expect(recoveryHousehold).toContain(
+      "makeHouseholdImportEvidenceViewRepository"
+    );
+    expect(recoveryHousehold).toContain("makeHouseholdRecipeDraftRepository");
+    expect(productionRecovery).toContain(
+      "makeRecipeRecoveryHouseholdEvidenceRepositories"
+    );
+    expect(productionRecovery).toContain("householdDomain");
+    expect(productionRecovery).not.toContain("makeD1RecipeDraftRepository");
+    expect(productionRecovery).not.toContain("makeD1ImportExecutionRepository");
+  });
+
   it("wires R2 lifecycle notifications to household evidence observation", async () => {
     const [consumer, reconciler] = await Promise.all([
       read(

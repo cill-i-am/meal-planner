@@ -32,8 +32,8 @@ import type {
   VisualDispatchClaim,
   VisualEvidenceRepository,
 } from "./import-visual-evidence.repository.js";
-import type { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
-import { ImportId, ImportView } from "./import.contracts.js";
+import type { SourceCanonicalId } from "./import.contracts.js";
+import { ImportId, ImportTimestamp, ImportView } from "./import.contracts.js";
 import {
   importPersistenceUnavailable,
   importTransitionRejected,
@@ -46,11 +46,16 @@ import type {
 
 type MutationId = (seed: string) => Effect.Effect<HouseholdImportMutationId>;
 
+export type HouseholdEvidenceDomain = Pick<
+  HouseholdDomainWorkerMethods,
+  "mutateEvidenceStage" | "readEvidenceReferences" | "readEvidenceStage"
+>;
+
 interface HouseholdEvidenceRepositoryInput {
   readonly canonicalSourceId: SourceCanonicalId;
   readonly correlationId: ImportCorrelationId;
   readonly generation: AcquisitionGeneration;
-  readonly householdDomain: HouseholdDomainWorkerMethods;
+  readonly householdDomain: HouseholdEvidenceDomain;
   readonly intentId: RecipeImportIntentId;
   readonly mutationId: MutationId;
   readonly organizationId: HouseholdOrganizationId;
@@ -291,12 +296,12 @@ export const makeHouseholdImportEvidenceViewRepository = (
         const view = Schema.decodeUnknownSync(ImportView, {
           onExcessProperty: "error",
         })({
-          createdAt: references.committedAt,
+          createdAt: Schema.encodeSync(ImportTimestamp)(references.committedAt),
           evidence,
           id: importId,
           source: { canonicalId: input.canonicalSourceId, kind: "tiktok" },
           status,
-          updatedAt,
+          updatedAt: Schema.encodeSync(ImportTimestamp)(updatedAt),
         });
         return Effect.succeed(
           Option.some<StoredImport>({

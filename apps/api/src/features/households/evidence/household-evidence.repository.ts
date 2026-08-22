@@ -170,6 +170,15 @@ const stageOutcome = (state: string) => {
   return "Dispatching" as const;
 };
 
+const sourcePermitsStage = (
+  sourceKind: "carousel" | "video" | null,
+  stage: "carousel" | "extraction" | "speech" | "visual"
+) =>
+  sourceKind === "video"
+    ? stage !== "carousel"
+    : sourceKind === "carousel" &&
+      (stage === "carousel" || stage === "extraction");
+
 const validateStageMutation = (
   input: HouseholdMutateEvidenceStageInputType,
   nowEpochMs: number
@@ -333,19 +342,11 @@ export const makeHouseholdEvidenceRepository = (
       return yield* database
         .transaction((transaction) =>
           Effect.gen(function* commitEvidenceTransaction() {
-            const replay = yield* readReceipt(
-              transaction,
-              input.mutationId,
-              commandDigest,
-              (value) => decode(EncodedCommitResult, value)
-            );
-            if (Option.isSome(replay)) {
-              return replay.value;
-            }
             const [intent] = yield* transaction
               .select({
                 canonicalSourceId: householdRecipeImports.canonicalSourceId,
                 executionGeneration: householdRecipeImports.executionGeneration,
+                sourceKind: householdRecipeImports.sourceKind,
                 status: householdRecipeImports.status,
               })
               .from(householdRecipeImports)
@@ -357,6 +358,18 @@ export const makeHouseholdEvidenceRepository = (
             }
             if (intent.executionGeneration !== input.expectedGeneration) {
               return yield* Effect.fail(failure("generation_conflict"));
+            }
+            if (intent.sourceKind !== "video") {
+              return yield* Effect.fail(failure("illegal_transition"));
+            }
+            const replay = yield* readReceipt(
+              transaction,
+              input.mutationId,
+              commandDigest,
+              (value) => decode(EncodedCommitResult, value)
+            );
+            if (Option.isSome(replay)) {
+              return replay.value;
             }
             if (
               intent.status !== "processing" ||
@@ -596,18 +609,10 @@ export const makeHouseholdEvidenceRepository = (
       return yield* database
         .transaction((transaction) =>
           Effect.gen(function* mutateEvidenceStageTransaction() {
-            const replay = yield* readReceipt(
-              transaction,
-              input.mutationId,
-              commandDigest,
-              (value) => decode(EncodedStageMutationResult, value)
-            );
-            if (Option.isSome(replay)) {
-              return replay.value;
-            }
             const [intent] = yield* transaction
               .select({
                 executionGeneration: householdRecipeImports.executionGeneration,
+                sourceKind: householdRecipeImports.sourceKind,
                 status: householdRecipeImports.status,
               })
               .from(householdRecipeImports)
@@ -619,6 +624,18 @@ export const makeHouseholdEvidenceRepository = (
             }
             if (intent.executionGeneration !== input.expectedGeneration) {
               return yield* Effect.fail(failure("generation_conflict"));
+            }
+            if (!sourcePermitsStage(intent.sourceKind, input.operation.stage)) {
+              return yield* Effect.fail(failure("illegal_transition"));
+            }
+            const replay = yield* readReceipt(
+              transaction,
+              input.mutationId,
+              commandDigest,
+              (value) => decode(EncodedStageMutationResult, value)
+            );
+            if (Option.isSome(replay)) {
+              return replay.value;
             }
             if (intent.status !== "processing") {
               return yield* Effect.fail(failure("illegal_transition"));

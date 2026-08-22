@@ -183,8 +183,11 @@ export type HouseholdReadRecipeImportExecutionInput =
   typeof HouseholdReadRecipeImportExecutionInput.Type;
 
 export const HouseholdRecipeImportExecutionView = Schema.Struct({
+  canonicalSourceId:
+    HouseholdResolveRecipeImportSourceInput.fields.canonicalSourceId,
   executionGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,
+  sourceKind: HouseholdResolveRecipeImportSourceInput.fields.sourceKind,
   submittedSourceUrl: Schema.String.pipe(
     Schema.check(
       Schema.isTrimmed(),

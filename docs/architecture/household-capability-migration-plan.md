@@ -511,15 +511,17 @@ The exact table boundary is refined from live dependencies after Slice 1; no
 state needed by the confirmation transaction may be left behind.
 
 The production acquisition Workflow now commits closed acquisition and stage
-results only through the private household authority. Household SQLite owns
-compact current-result metadata, integrity-checked generation-scoped R2
-references, availability observations, and replay receipts. Large bytes remain
-in R2. Missing objects, lifecycle deletion, late events, restart, exact retry,
-conflicting replay, stale generations, and physical cross-household isolation
-have provider-free runtime proof. Shared D1 retains the bounded operational
-event route plus the existing Slice 3 settlement and terminal-recovery
-boundary; neither can author household evidence. This slice does not redesign
-or move the Slice 3 capability.
+results only through the private household authority. Recipe recovery also
+reads current evidence and claims, completes, or fails extraction only through
+authenticated household authority. Household SQLite owns compact
+current-result metadata, integrity-checked generation-scoped R2 references,
+availability observations, and replay receipts. Large bytes remain in R2.
+Missing objects, lifecycle deletion, late events, restart, exact retry,
+conflicting replay, stale generations, physical cross-household isolation, and
+provider-free recipe recovery have runtime proof. Shared D1 retains the
+bounded operational event route plus the existing Slice 3 settlement and
+terminal-recovery boundary; neither can author household evidence or
+extraction. This slice does not redesign or move the Slice 3 capability.
 
 R2 notification reconciliation uses one bounded noncanonical operational
 index: after authenticated admission, the API enqueues an immutable

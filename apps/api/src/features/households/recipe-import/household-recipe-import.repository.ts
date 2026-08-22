@@ -981,9 +981,14 @@ export const makeHouseholdRecipeImportRepository = (
       if (intent.status !== "processing") {
         return yield* Effect.fail(failure("illegal_transition"));
       }
+      if (row.canonicalSourceId === null || row.sourceKind === null) {
+        return yield* Effect.fail(failure("illegal_transition"));
+      }
       return yield* decode(HouseholdRecipeImportExecutionView, {
+        canonicalSourceId: row.canonicalSourceId,
         executionGeneration: row.executionGeneration,
         intentId: row.intentId,
+        sourceKind: row.sourceKind,
         submittedSourceUrl: row.submittedSourceUrl,
       });
     });

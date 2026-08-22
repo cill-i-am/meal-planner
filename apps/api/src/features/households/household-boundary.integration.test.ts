@@ -1804,35 +1804,12 @@ describe("household public API to private Durable Object boundary", () => {
     ).resolves.toEqual(references);
   }, 30_000);
 
-  it("rejects source-mixed evidence reference shapes at the real household boundary", async () => {
-    const { admission, admitted } = await admitResolvedEvidenceImport({
-      label: "Mixed Evidence Shape Member",
-      mutationId: "5".repeat(64),
-      sourceKind: "video",
-      videoId: "7000000000000000134",
-    });
-    const inputFingerprint = "6".repeat(64);
+  it("rejects source-mixed evidence reference wire shapes", async () => {
+    const intentId = "00000000-0000-4000-8000-000000000134";
     const manifestSha256 = "7".repeat(64);
-    const { completedAt, deleteAt, manifestKey } = await commitCarouselManifest(
-      {
-        admission,
-        inputFingerprint,
-        intentId: admitted.id,
-        manifestSha256,
-        mutationIds: ["8".repeat(64), "9".repeat(64)],
-      }
-    );
-
-    const read = await systemCommand("read-evidence-references", {
-      admission,
-      expectedGeneration: 1,
-      intentId: admitted.id,
-    });
-    expect(read.status).toBe(400);
-    await expect(read.json()).resolves.toMatchObject({
-      reason: "persistence_unavailable",
-      rejected: true,
-    });
+    const completedAt = new Date("2026-08-22T12:10:00.000Z");
+    const deleteAt = new Date("2026-08-29T12:10:00.000Z");
+    const manifestKey = `imports/${intentId}/carousel/v1/generations/1/manifest.json`;
 
     const referenceFields = {
       availability: "available" as const,
@@ -1843,28 +1820,28 @@ describe("household public API to private Durable Object boundary", () => {
     };
     const original = {
       ...referenceFields,
-      key: `imports/${admitted.id}/acquisition/v1/generations/1/original.mp4`,
+      key: `imports/${intentId}/acquisition/v1/generations/1/original.mp4`,
       kind: "original_media" as const,
     };
     const acquisition = {
       ...referenceFields,
-      key: `imports/${admitted.id}/acquisition/v1/generations/1/manifest.json`,
+      key: `imports/${intentId}/acquisition/v1/generations/1/manifest.json`,
       kind: "acquisition_manifest" as const,
     };
     const speech = {
       ...referenceFields,
-      key: `imports/${admitted.id}/speech/v1/generations/1/transcript.json`,
+      key: `imports/${intentId}/speech/v1/generations/1/transcript.json`,
       kind: "speech_transcript" as const,
     };
     const visual = {
       ...referenceFields,
-      key: `imports/${admitted.id}/visual/v1/generations/1/manifest.json`,
+      key: `imports/${intentId}/visual/v1/generations/1/manifest.json`,
       kind: "visual_manifest" as const,
     };
     const resultIdentity = {
       committedAt: completedAt.toISOString(),
       executionGeneration: 1,
-      intentId: admitted.id,
+      intentId,
     };
 
     await expect(
@@ -1893,6 +1870,123 @@ describe("household public API to private Durable Object boundary", () => {
         ],
       })
     ).rejects.toBeDefined();
+  }, 30_000);
+
+  it("rejects wrong-source evidence commands before authoring household evidence", async () => {
+    const carousel = await admitResolvedEvidenceImport({
+      label: "Wrong Acquisition Source Member",
+      mutationId: "b".repeat(64),
+      sourceKind: "carousel",
+      videoId: "7000000000000000135",
+    });
+    const acquisitionMutationId = "c".repeat(64);
+    const wrongAcquisition = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        admission: carousel.admission,
+        expectedGeneration: 1,
+        intentId: carousel.admitted.id,
+        mutationId: acquisitionMutationId,
+        result: evidenceRetentionResult({
+          acquiredAt: new Date(Date.now() + 60_000),
+          generation: 1,
+          intentId: carousel.admitted.id,
+        }),
+      }
+    );
+    expect(wrongAcquisition.status).toBe(400);
+    await expect(wrongAcquisition.json()).resolves.toMatchObject({
+      reason: "illegal_transition",
+      rejected: true,
+    });
+    await expect(
+      readEvidenceReferences(carousel.admission, carousel.admitted.id)
+    ).resolves.toBeNull();
+    const emptyCarouselStage = await systemCommand("read-evidence-stage", {
+      admission: carousel.admission,
+      expectedGeneration: 1,
+      intentId: carousel.admitted.id,
+      stage: "carousel",
+    });
+    expect(emptyCarouselStage.status).toBe(200);
+    await expect(emptyCarouselStage.json()).resolves.toBeNull();
+
+    const correctedCarouselClaim = await systemCommand(
+      "mutate-evidence-stage",
+      {
+        admission: carousel.admission,
+        expectedGeneration: 1,
+        inputFingerprint: "d".repeat(64),
+        intentId: carousel.admitted.id,
+        mutationId: acquisitionMutationId,
+        operation: {
+          _tag: "Claim",
+          dispatchId: `carousel:${carousel.admitted.id}:1`,
+          stage: "carousel",
+          startedAt: new Date(Date.now() + 120_000).toISOString(),
+        },
+      }
+    );
+    expect(
+      correctedCarouselClaim.status,
+      await correctedCarouselClaim.clone().text()
+    ).toBe(200);
+
+    const video = await admitResolvedEvidenceImport({
+      label: "Wrong Stage Source Member",
+      mutationId: "e".repeat(64),
+      sourceKind: "video",
+      videoId: "7000000000000000136",
+    });
+    const stageMutationId = "f".repeat(64);
+    const stageFingerprint = "0".repeat(64);
+    const wrongStage = await systemCommand("mutate-evidence-stage", {
+      admission: video.admission,
+      expectedGeneration: 1,
+      inputFingerprint: stageFingerprint,
+      intentId: video.admitted.id,
+      mutationId: stageMutationId,
+      operation: {
+        _tag: "Claim",
+        dispatchId: `carousel:${video.admitted.id}:1`,
+        stage: "carousel",
+        startedAt: new Date(Date.now() + 180_000).toISOString(),
+      },
+    });
+    expect(wrongStage.status).toBe(400);
+    await expect(wrongStage.json()).resolves.toMatchObject({
+      reason: "illegal_transition",
+      rejected: true,
+    });
+    await expect(
+      readEvidenceReferences(video.admission, video.admitted.id)
+    ).resolves.toBeNull();
+    const emptyVideoStage = await systemCommand("read-evidence-stage", {
+      admission: video.admission,
+      expectedGeneration: 1,
+      intentId: video.admitted.id,
+      stage: "carousel",
+    });
+    expect(emptyVideoStage.status).toBe(200);
+    await expect(emptyVideoStage.json()).resolves.toBeNull();
+
+    const correctedSpeechClaim = await systemCommand("mutate-evidence-stage", {
+      admission: video.admission,
+      expectedGeneration: 1,
+      inputFingerprint: stageFingerprint,
+      intentId: video.admitted.id,
+      mutationId: stageMutationId,
+      operation: {
+        _tag: "Claim",
+        dispatchId: `speech:${video.admitted.id}:1`,
+        stage: "speech",
+        startedAt: new Date(Date.now() + 240_000).toISOString(),
+      },
+    });
+    expect(
+      correctedSpeechClaim.status,
+      await correctedSpeechClaim.clone().text()
+    ).toBe(200);
   }, 30_000);
 
   it("rejects a forged cross-organization session before private routing", async () => {
