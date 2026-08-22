@@ -65,6 +65,12 @@ export const householdOutbox = sqliteTable("household_outbox", {
   state: text("state").notNull(),
 });
 
+export const householdLiveRecipeImportStatuses = [
+  "processing",
+  "requires_action",
+  "succeeded",
+] as const;
+
 export const householdRecipeImports = sqliteTable(
   "household_recipe_imports",
   {

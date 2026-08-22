@@ -43,6 +43,40 @@ import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-servic
 
 const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
+const recipeImportReview = (
+  name: string,
+  ingredientLines: readonly string[] = ["1 local ingredient"]
+) => ({
+  answers: [],
+  blockers: { invalidFields: [], unresolvedRequiredFields: [] },
+  editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+  recipe: {
+    author: null,
+    category: null,
+    cookTimeMinutes: 15,
+    cuisine: "Irish",
+    description: null,
+    ingredientLines,
+    ingredientQuantities: null,
+    ingredientUnits: null,
+    instructions: ["Cook locally."],
+    name,
+    nutrition: null,
+    prepTimeMinutes: 10,
+    temperatureCelsius: null,
+    tools: ["Pot"],
+    totalTimeMinutes: 25,
+    yield: "2 servings",
+  },
+  tags: {
+    cuisines: ["Irish"],
+    dietaryFit: "household_match",
+    difficulty: "easy",
+    leftovers: "one_meal",
+    mealTypes: ["dinner"],
+    totalTimeBand: "under_30_minutes",
+  },
+});
 const MealPlanWire = Schema.toEncoded(MealPlan);
 const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
 const ManualMealSwapRequestWire = Schema.toEncoded(
@@ -853,6 +887,276 @@ describe("household Durable Object", () => {
       await Schema.decodeUnknownPromise(MealPlanResponse)(
         await plannedResponse.json()
       )
+    ).toMatchObject({
+      ok: true,
+      value: { meals: expect.arrayContaining([expect.any(Object)]) },
+    });
+  });
+
+  it("releases terminal canonical-source ownership across restart", async () => {
+    const organizationId = "organization-terminal-source-release";
+    const objectName = await objectNameFor(organizationId);
+    const dispatch = async (command: object) => {
+      const response = await runtime.dispatchFetch("http://localhost/", {
+        body: JSON.stringify({ objectName, organizationId, ...command }),
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      return response.json() as Promise<{
+        readonly error?: { readonly reason?: string };
+        readonly ok: boolean;
+        readonly value?: unknown;
+      }>;
+    };
+    const admit = async (key: string, videoId: string) => {
+      const result = await dispatch({
+        idempotencyKey: key,
+        operation: "admitRecipeImport",
+        source: {
+          kind: "tiktok",
+          url: `https://www.tiktok.com/@mealplanner/video/${videoId}`,
+        },
+      });
+      return (result.value as { readonly intent: { readonly id: string } })
+        .intent.id;
+    };
+    const canonicalSourceId = "tiktok:video:7000000000000000300";
+    const canonicalUrl =
+      "https://www.tiktok.com/@mealplanner/video/7000000000000000300";
+    const firstIntentId = await admit(
+      "terminal-source-first",
+      "7000000000000000301"
+    );
+    const redirectedIntentId = await admit(
+      "terminal-source-redirected",
+      "7000000000000000302"
+    );
+    const initial = await Promise.all(
+      [firstIntentId, redirectedIntentId].map((intentId, index) =>
+        dispatch({
+          canonicalSourceId,
+          canonicalUrl,
+          expectedGeneration: 1,
+          intentId,
+          mutationId: `${index + 1}`.repeat(64),
+          operation: "resolveRecipeImportSource",
+          sourceKind: "video",
+        })
+      )
+    );
+    const liveOwner = initial.find(
+      ({ value }) =>
+        (value as { readonly status?: string } | undefined)?.status ===
+        "processing"
+    );
+    expect(
+      initial.map(
+        ({ value }) =>
+          (value as { readonly status?: string } | undefined)?.status
+      )
+    ).toEqual(expect.arrayContaining(["processing", "redirected"]));
+    if (liveOwner === undefined) {
+      throw new Error("Expected a live canonical-source owner.");
+    }
+    const liveOwnerIntent = liveOwner.value as {
+      readonly id: string;
+      readonly intentVersion: number;
+    };
+    expect(
+      await dispatch({
+        expectedIntentVersion: liveOwnerIntent.intentVersion,
+        idempotencyKey: "terminal-source-cancel",
+        intentId: liveOwnerIntent.id,
+        operation: "cancelRecipeImport",
+      })
+    ).toMatchObject({ ok: true, value: { status: "cancelled" } });
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const afterCancellationId = await admit(
+      "terminal-source-after-cancel",
+      "7000000000000000303"
+    );
+    expect(
+      await dispatch({
+        canonicalSourceId,
+        canonicalUrl,
+        expectedGeneration: 1,
+        intentId: afterCancellationId,
+        mutationId: "a".repeat(64),
+        operation: "resolveRecipeImportSource",
+        sourceKind: "video",
+      })
+    ).toMatchObject({ ok: true, value: { status: "processing" } });
+    expect(
+      await dispatch({
+        expectedGeneration: 1,
+        intentId: afterCancellationId,
+        operation: "transitionRecipeImportLifecycle",
+        transition: {
+          _tag: "Fail",
+          boundary: "acquisition",
+          code: "source_unavailable",
+          message: "The source became unavailable.",
+          recovery: "create_new_intent",
+        },
+      })
+    ).toMatchObject({ ok: true, value: { status: "failed" } });
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const afterFailureId = await admit(
+      "terminal-source-after-failure",
+      "7000000000000000304"
+    );
+    expect(
+      await dispatch({
+        canonicalSourceId,
+        canonicalUrl,
+        expectedGeneration: 1,
+        intentId: afterFailureId,
+        mutationId: "b".repeat(64),
+        operation: "resolveRecipeImportSource",
+        sourceKind: "video",
+      })
+    ).toMatchObject({ ok: true, value: { status: "processing" } });
+  });
+
+  it("rejects an oversized correction and keeps the largest bounded recipe usable across restart", async () => {
+    const organizationId = "organization-recipe-bank-byte-bound";
+    const objectName = await objectNameFor(organizationId);
+    const dispatch = async (command: object) => {
+      const response = await runtime.dispatchFetch("http://localhost/", {
+        body: JSON.stringify({ objectName, organizationId, ...command }),
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      return response.json() as Promise<{
+        readonly error?: { readonly reason?: string };
+        readonly ok: boolean;
+        readonly value?: unknown;
+      }>;
+    };
+    const prepareReview = async (key: string, videoId: string) => {
+      const admitted = await dispatch({
+        idempotencyKey: `${key}-admit`,
+        operation: "admitRecipeImport",
+        source: {
+          kind: "tiktok",
+          url: `https://www.tiktok.com/@mealplanner/video/${videoId}`,
+        },
+      });
+      const intentId = (
+        admitted.value as { readonly intent: { readonly id: string } }
+      ).intent.id;
+      await dispatch({
+        canonicalSourceId: `tiktok:video:${videoId}`,
+        canonicalUrl: `https://www.tiktok.com/@mealplanner/video/${videoId}`,
+        expectedGeneration: 1,
+        intentId,
+        mutationId: key.at(0)?.repeat(64),
+        operation: "resolveRecipeImportSource",
+        sourceKind: "video",
+      });
+      const draft = await dispatch({
+        evidenceFingerprint: "c".repeat(64),
+        expectedGeneration: 1,
+        extractionFingerprint: "d".repeat(64),
+        intentId,
+        mutationId: key.at(-1)?.repeat(64),
+        operation: "commitRecipeImportDraft",
+        review: recipeImportReview(`${key} recipe`),
+      });
+      return {
+        actionId: (draft.value as { readonly action: { readonly id: string } })
+          .action.id,
+        intentId,
+      };
+    };
+
+    const oversized = await prepareReview("ef", "7000000000000000401");
+    const oversizedAnswer = await dispatch({
+      actionId: oversized.actionId,
+      answers: [
+        {
+          field: "ingredient_lines",
+          value: Array.from({ length: 132 }, () => "x".repeat(4000)),
+        },
+      ],
+      expectedActionVersion: 1,
+      idempotencyKey: "oversized-correction",
+      intentId: oversized.intentId,
+      operation: "answerRecipeImportAction",
+    });
+    expect(
+      oversizedAnswer,
+      JSON.stringify(oversizedAnswer.error)
+    ).toMatchObject({ ok: true });
+    expect(
+      await dispatch({
+        actionId: oversized.actionId,
+        expectedActionVersion: 2,
+        idempotencyKey: "oversized-confirmation",
+        intentId: oversized.intentId,
+        operation: "confirmRecipeImportAction",
+      })
+    ).toMatchObject({ error: { reason: "invalid_input" }, ok: false });
+
+    const bounded = await prepareReview("ab", "7000000000000000402");
+    const boundedIngredientLines = Array.from({ length: 124 }, () =>
+      "y".repeat(4000)
+    );
+    expect(
+      await dispatch({
+        actionId: bounded.actionId,
+        answers: [{ field: "ingredient_lines", value: boundedIngredientLines }],
+        expectedActionVersion: 1,
+        idempotencyKey: "bounded-correction",
+        intentId: bounded.intentId,
+        operation: "answerRecipeImportAction",
+      })
+    ).toMatchObject({ ok: true });
+    expect(
+      await dispatch({
+        actionId: bounded.actionId,
+        expectedActionVersion: 2,
+        idempotencyKey: "bounded-confirmation",
+        intentId: bounded.intentId,
+        operation: "confirmRecipeImportAction",
+      })
+    ).toMatchObject({ ok: true, value: { status: "succeeded" } });
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const listed: unknown[] = [];
+    let cursor: string | null = null;
+    do {
+      // eslint-disable-next-line no-await-in-loop -- Each bounded page depends on the preceding exclusive cursor.
+      const page = await dispatch({
+        byteLimit: 524_288,
+        cursor,
+        limit: 100,
+        objectName,
+        operation: "listRecipeBank",
+      });
+      expect(page.ok, JSON.stringify(page.error)).toBe(true);
+      const value = page.value as {
+        readonly items: readonly unknown[];
+        readonly nextCursor: string | null;
+      };
+      listed.push(...value.items);
+      cursor = value.nextCursor;
+    } while (cursor !== null);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({
+      recipe: { ingredientLines: { length: boundedIngredientLines.length } },
+    });
+    expect(
+      await dispatch({
+        operation: "createMealPlanFromRecipeBank",
+        policy: Schema.encodeSync(MealPlanPolicy)(syntheticPlanningPolicy),
+        request: Schema.encodeSync(MealPlanRequest)(syntheticMealPlanRequest),
+      })
     ).toMatchObject({
       ok: true,
       value: { meals: expect.arrayContaining([expect.any(Object)]) },

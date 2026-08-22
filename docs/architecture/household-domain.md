@@ -98,9 +98,11 @@ atomically. Source-dedup and cancel-versus-confirm races therefore serialize in
 the same household authority.
 
 Meal-plan creation and swaps query the local Recipe Bank capability directly.
-Iteration is cursor-, item-, and byte-bounded, so planning can consume more than
-128 approved recipes without an unbounded snapshot. The removed shared-D1
-recipe-source gateway and transfer-size workaround have no compatibility path.
+Iteration is cursor-, item-, and byte-bounded, and publication rejects an
+encoded recipe above the planning page's safe per-item budget. Planning can
+therefore consume more than 128 approved recipes without an unbounded snapshot
+or one oversized row blocking iteration. The removed shared-D1 recipe-source
+gateway and transfer-size workaround have no compatibility path.
 
 ## Current scope
 

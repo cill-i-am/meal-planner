@@ -37,6 +37,7 @@ import {
 } from "./household.database-schema.js";
 import {
   HouseholdAdmitRecipeImportInput,
+  HouseholdAnswerRecipeImportActionInput,
   HouseholdCancelRecipeImportInput,
   HouseholdCommitRecipeImportDraftInput,
   HouseholdConfirmRecipeImportActionInput,
@@ -320,6 +321,9 @@ interface HouseholdObjectClient {
   readonly admitRecipeImport: (
     input: typeof HouseholdAdmitRecipeImportInput.Type
   ) => Effect.Effect<unknown, unknown>;
+  readonly answerRecipeImportAction: (
+    input: typeof HouseholdAnswerRecipeImportActionInput.Type
+  ) => Effect.Effect<unknown, unknown>;
   readonly approveMealPlan: (input: {
     readonly admission: HouseholdMemberAdmission;
     readonly request: typeof MealPlanDecisionRequestWire.Type;
@@ -413,6 +417,20 @@ interface HouseholdObjectClient {
 }
 
 const HouseholdTestCommand = Schema.Union([
+  Schema.Struct({
+    actionId: HouseholdAnswerRecipeImportActionInput.fields.actionId,
+    answers:
+      HouseholdAnswerRecipeImportActionInput.fields.request.fields.answers,
+    expectedActionVersion:
+      HouseholdAnswerRecipeImportActionInput.fields.request.fields
+        .expectedActionVersion,
+    idempotencyKey:
+      HouseholdAnswerRecipeImportActionInput.fields.idempotencyKey,
+    intentId: HouseholdAnswerRecipeImportActionInput.fields.intentId,
+    objectName: Schema.String,
+    operation: Schema.Literal("answerRecipeImportAction"),
+    organizationId: HouseholdOrganizationId,
+  }),
   Schema.Struct({
     expectedIntentVersion:
       HouseholdCancelRecipeImportInput.fields.request.fields
@@ -659,6 +677,20 @@ export default {
         household.approveMealPlan({
           admission: memberAdmission(command.organizationId),
           request: command.request,
+        })
+      );
+    }
+    if (command.operation === "answerRecipeImportAction") {
+      return respond(
+        household.answerRecipeImportAction({
+          actionId: command.actionId,
+          admission: memberAdmission(command.organizationId),
+          idempotencyKey: command.idempotencyKey,
+          intentId: command.intentId,
+          request: {
+            answers: command.answers,
+            expectedActionVersion: command.expectedActionVersion,
+          },
         })
       );
     }

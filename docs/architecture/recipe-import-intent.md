@@ -121,9 +121,11 @@ Failure before commit leaves none of those facts behind.
 
 Recipe Bank iteration is ordered by stable recipe ID and uses an exclusive
 cursor. Every page is bounded independently by item count and encoded byte
-size. An individual item larger than the transport bound fails closed. Meal
-planning consumes pages through the local capability rather than loading an
-unbounded snapshot. There is no product-level 128-recipe ceiling.
+size. Confirmation rejects any encoded public or planning recipe at 500,000
+bytes, below planning's 524,288-byte page budget, so an approved row cannot
+poison iteration. Meal planning consumes pages through the local capability
+rather than loading an unbounded snapshot. There is no product-level
+128-recipe ceiling.
 
 ## Public API
 

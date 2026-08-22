@@ -63,6 +63,7 @@ import {
   HouseholdRecordRecipeImportDispatchResult,
   HouseholdRecipeImportExecutionView,
   HouseholdRecipeImportFailure,
+  householdRecipePlanningPageByteLimit,
   HouseholdRecipePage,
   HouseholdRecipePageInput,
   HouseholdResolveRecipeImportSourceInput,
@@ -267,7 +268,7 @@ export const HouseholdObjectRuntime = Effect.gen(
               const page: typeof HouseholdRecipePage.Type =
                 yield* recipes.listRecipePage({
                   admission: command.admission,
-                  byteLimit: 524_288,
+                  byteLimit: householdRecipePlanningPageByteLimit,
                   cursor,
                   limit: 100,
                 });

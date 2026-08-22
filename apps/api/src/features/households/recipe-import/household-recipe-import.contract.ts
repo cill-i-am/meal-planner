@@ -250,6 +250,8 @@ export const HouseholdRecipePageCursor = Schema.String.pipe(
   Schema.check(Schema.isUUID()),
   Schema.brand("HouseholdRecipePageCursor")
 );
+export const householdRecipeMaximumEncodedBytes = 500_000;
+export const householdRecipePlanningPageByteLimit = 524_288;
 export const HouseholdRecipePageInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
   byteLimit: Schema.Int.pipe(

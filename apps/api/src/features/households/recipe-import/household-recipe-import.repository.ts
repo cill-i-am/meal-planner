@@ -17,7 +17,7 @@ import {
   ResolvedProcessingStage,
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, Effect, Option, Schema } from "effect";
 
@@ -30,6 +30,7 @@ import {
 } from "../foundation/import-workflow-admission.contract.js";
 import {
   householdImportWorkflowAdmissions,
+  householdLiveRecipeImportStatuses,
   householdOutbox,
   householdRecipeImportMutationReceipts,
   householdRecipeImportRequests,
@@ -49,6 +50,7 @@ import {
   HouseholdRecipeImportFailure,
   HouseholdRecipeImportExecutionView,
   HouseholdRecipePageCursor,
+  householdRecipeMaximumEncodedBytes,
 } from "./household-recipe-import.contract.js";
 import type {
   HouseholdAdmitRecipeImportInput,
@@ -519,9 +521,15 @@ export const makeHouseholdRecipeImportRepository = (
               .select()
               .from(householdRecipeImports)
               .where(
-                eq(
-                  householdRecipeImports.canonicalSourceId,
-                  input.canonicalSourceId
+                and(
+                  eq(
+                    householdRecipeImports.canonicalSourceId,
+                    input.canonicalSourceId
+                  ),
+                  inArray(
+                    householdRecipeImports.status,
+                    householdLiveRecipeImportStatuses
+                  )
                 )
               )
               .orderBy(
@@ -1221,6 +1229,15 @@ export const makeHouseholdRecipeImportRepository = (
                 type: "intent_succeeded",
               }),
             ]);
+            const textEncoder = new TextEncoder();
+            if (
+              textEncoder.encode(publicRecipeJson).byteLength >
+                householdRecipeMaximumEncodedBytes ||
+              textEncoder.encode(planningRecipeJson).byteLength >
+                householdRecipeMaximumEncodedBytes
+            ) {
+              return yield* Effect.fail(failure("invalid_input"));
+            }
             yield* transaction.insert(householdRecipes).values({
               importId: input.intentId,
               planningRecipeJson,
