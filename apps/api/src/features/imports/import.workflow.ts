@@ -18,6 +18,7 @@ import {
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
+import { HouseholdReadEvidenceReferencesResult } from "../households/evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdOrganizationId } from "../households/household.contract.js";
@@ -55,6 +56,7 @@ import {
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
+import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
 import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import { ImportWorkflowTerminationUnavailable } from "./import-intent-execution.js";
 import type { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
@@ -976,10 +978,57 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 findStored: repository.findById(importId),
                 importId,
                 readEvidence: (stored) =>
-                  readVerifiedAcquisitionEvidence(bucket, {
-                    canonicalId: stored.canonicalSourceId,
-                    generation: stored.acquisitionGeneration,
-                    importId,
+                  Effect.gen(function* readHouseholdAcquisitionEvidence() {
+                    const encodedReferences = yield* householdDomain
+                      .readEvidenceReferences({
+                        admission,
+                        expectedGeneration: executionGeneration,
+                        intentId,
+                      })
+                      .pipe(Effect.orDie);
+                    const references = yield* Schema.decodeUnknownEffect(
+                      HouseholdReadEvidenceReferencesResult,
+                      { onExcessProperty: "error" }
+                    )(encodedReferences).pipe(Effect.orDie);
+                    const presence = yield* inspectHouseholdEvidenceReferences(
+                      bucket,
+                      references.references
+                    );
+                    const missing = presence.filter(
+                      ({ availability }) => availability === "missing"
+                    );
+                    yield* Effect.forEach(
+                      missing,
+                      ({ reference }) =>
+                        workflowMutationId(
+                          `${intentId}:${executionGeneration}:observe-evidence-missing:${reference.kind}:${reference.sha256}`
+                        ).pipe(
+                          Effect.flatMap((mutationId) =>
+                            householdDomain.observeEvidenceReference({
+                              admission,
+                              availability: "missing",
+                              expectedGeneration: executionGeneration,
+                              intentId,
+                              mutationId,
+                              reference: {
+                                key: reference.key,
+                                kind: reference.kind,
+                                sha256: reference.sha256,
+                              },
+                            })
+                          ),
+                          Effect.orDie
+                        ),
+                      { concurrency: 1 }
+                    );
+                    if (missing.length > 0) {
+                      return null;
+                    }
+                    return yield* readVerifiedAcquisitionEvidence(bucket, {
+                      canonicalId: stored.canonicalSourceId,
+                      generation: stored.acquisitionGeneration,
+                      importId,
+                    });
                   }),
               }).pipe(
                 Effect.flatMap(

@@ -22,7 +22,10 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
-import { HouseholdCommitAcquisitionEvidenceResult } from "./evidence/household-evidence.contract.js";
+import {
+  HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdObserveEvidenceReferenceResult,
+} from "./evidence/household-evidence.contract.js";
 import { HouseholdMetadata } from "./household.contract.js";
 
 const compatibilityDate = "2026-07-14";
@@ -271,7 +274,11 @@ const createOrganization = async (label: string, cookie: string) => {
 };
 
 const systemCommand = (
-  operation: "commit-acquisition-evidence" | "commit-draft" | "resolve",
+  operation:
+    | "commit-acquisition-evidence"
+    | "commit-draft"
+    | "observe-evidence-reference"
+    | "resolve",
   input: object
 ) =>
   getRuntime().dispatchFetch(
@@ -880,6 +887,124 @@ describe("household public API to private Durable Object boundary", () => {
       }
     );
     expect(correctedResponse.status, await correctedResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("records a missing R2 observation without weakening committed integrity metadata", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Missing Evidence Member",
+      mutationId: "5".repeat(64),
+      videoId: "7000000000000000109",
+    });
+    const evidence = evidenceRetentionResult({
+      acquiredAt: new Date(Date.now() + 60_000),
+      generation: 1,
+      intentId: admitted.id,
+    });
+    const committed = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "6".repeat(64),
+      result: evidence,
+    });
+    expect(committed.status, await committed.text()).toBe(200);
+
+    const [media] = evidence.references;
+    const observed = await systemCommand("observe-evidence-reference", {
+      admission,
+      availability: "missing",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "7".repeat(64),
+      reference: {
+        key: media.key,
+        kind: media.kind,
+        sha256: media.sha256,
+      },
+    });
+    const observedBody = await observed.text();
+    expect(observed.status, observedBody).toBe(200);
+    const missingReceipt = await Schema.decodeUnknownPromise(
+      HouseholdObserveEvidenceReferenceResult
+    )(JSON.parse(observedBody));
+    expect(missingReceipt).toMatchObject({
+      availability: "missing",
+      executionGeneration: 1,
+      intentId: admitted.id,
+      kind: "original_media",
+      observationOrdinal: 1,
+    });
+    expect(JSON.stringify(missingReceipt)).not.toMatch(
+      /imports\/|sha256|deleteAt/u
+    );
+
+    const retry = await systemCommand("observe-evidence-reference", {
+      admission,
+      availability: "missing",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "7".repeat(64),
+      reference: {
+        key: media.key,
+        kind: media.kind,
+        sha256: media.sha256,
+      },
+    });
+    expect(retry.status).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(
+        HouseholdObserveEvidenceReferenceResult
+      )(await retry.json())
+    ).toEqual(missingReceipt);
+
+    const forged = await systemCommand("observe-evidence-reference", {
+      admission,
+      availability: "missing",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "8".repeat(64),
+      reference: {
+        key: media.key,
+        kind: media.kind,
+        sha256: "9".repeat(64),
+      },
+    });
+    expect(forged.status).toBe(400);
+
+    const lateStaleDeletion = await systemCommand(
+      "observe-evidence-reference",
+      {
+        admission,
+        availability: "deleted",
+        expectedGeneration: 2,
+        intentId: admitted.id,
+        mutationId: "9".repeat(64),
+        reference: {
+          key: media.key,
+          kind: media.kind,
+          sha256: media.sha256,
+        },
+      }
+    );
+    expect(lateStaleDeletion.status).toBe(409);
+
+    const deletion = await systemCommand("observe-evidence-reference", {
+      admission,
+      availability: "deleted",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "9".repeat(64),
+      reference: {
+        key: media.key,
+        kind: media.kind,
+        sha256: media.sha256,
+      },
+    });
+    expect(deletion.status).toBe(200);
+    expect(await deletion.json()).toMatchObject({
+      availability: "deleted",
+      observationOrdinal: 2,
+    });
   }, 30_000);
 
   it("rejects a forged cross-organization session before private routing", async () => {

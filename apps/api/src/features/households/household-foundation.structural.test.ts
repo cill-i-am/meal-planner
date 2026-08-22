@@ -156,7 +156,7 @@ describe("household foundation structural boundaries", () => {
     ]);
     expect(evidenceRepository).toMatch(/database\s*\.\s*transaction\s*\(/);
     expect(evidenceRepository).not.toMatch(
-      /cloudflare:workers|alchemy\/Cloudflare|ImportEvidenceBucket|\.getByName\(|\bfetch\s*\(|\.put\s*\(|\.send\s*\(/u
+      /cloudflare:workers|alchemy\/Cloudflare|ImportEvidenceBucket|\.getByName\(|\bfetch\s*\(|\.head\s*\(|\.put\s*\(|\.send\s*\(/u
     );
 
     const recordStep = workflow
@@ -165,6 +165,18 @@ describe("household foundation structural boundaries", () => {
     expect(recordStep).toBeDefined();
     expect(recordStep).toContain("commitAcquisitionEvidence(");
     expect(recordStep).not.toContain("recordAcquired(");
+
+    const recoveryReadStep = workflow
+      .split("readHouseholdAcquisitionEvidence")[1]
+      ?.split("runAcquisitionTask(")[0];
+    expect(recoveryReadStep).toBeDefined();
+    expect(recoveryReadStep).toContain("inspectHouseholdEvidenceReferences(");
+    expect(recoveryReadStep).toContain("observeEvidenceReference(");
+    expect(
+      recoveryReadStep?.indexOf("inspectHouseholdEvidenceReferences(")
+    ).toBeLessThan(
+      recoveryReadStep?.indexOf("observeEvidenceReference(") ?? -1
+    );
   });
 
   it("keeps the Alchemy host thin and SQLite evolution migration-owned", async () => {

@@ -3,11 +3,13 @@ import { Cause, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { HouseholdReadEvidenceReferencesResult } from "../households/evidence/household-evidence.contract.js";
 import {
   makeR2SpeechAudioExtractor,
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
+import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
 import {
   VerifiedPreparedMediaArtifact,
   acquireStoreVerify,
@@ -219,6 +221,56 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("household evidence availability inspection", () => {
+  it("reports a physically missing R2 object without changing compact integrity metadata", async () => {
+    const importId = id(410);
+    const generation = decodeGeneration(1);
+    const mediaKey = mediaObjectKey(importId, generation);
+    const manifestKey = manifestObjectKey(importId, generation);
+    await testEnv.ImportEvidenceBucket.put(manifestKey, "{}", {
+      httpMetadata: { contentType: "application/json" },
+    });
+    const result = Schema.decodeUnknownSync(
+      HouseholdReadEvidenceReferencesResult
+    )({
+      executionGeneration: generation,
+      intentId: importId,
+      references: [
+        {
+          availability: "available",
+          byteLength: 8,
+          deleteAt: "2026-08-29T12:00:00.000Z",
+          key: mediaKey,
+          kind: "original_media",
+          observationOrdinal: 0,
+          sha256: "a".repeat(64),
+        },
+        {
+          availability: "available",
+          byteLength: 2,
+          deleteAt: "2026-08-29T12:00:00.000Z",
+          key: manifestKey,
+          kind: "acquisition_manifest",
+          observationOrdinal: 0,
+          sha256: "b".repeat(64),
+        },
+      ],
+    });
+
+    const inspected = await Effect.runPromise(
+      inspectHouseholdEvidenceReferences(bucket(), result.references)
+    );
+
+    expect(inspected.map(({ availability }) => availability)).toEqual([
+      "missing",
+      "available",
+    ]);
+    expect(inspected.map(({ reference }) => reference)).toEqual(
+      result.references
+    );
+  });
 });
 
 describe("derived provider evidence", () => {

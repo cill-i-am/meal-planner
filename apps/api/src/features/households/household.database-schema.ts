@@ -86,12 +86,15 @@ export const householdImportEvidenceExecutions = sqliteTable(
 export const householdEvidenceReferences = sqliteTable(
   "household_evidence_references",
   {
+    availability: text("availability").notNull().default("available"),
     byteLength: integer("byte_length").notNull(),
     deleteAt: text("delete_at").notNull(),
     executionGeneration: integer("execution_generation").notNull(),
     intentId: text("intent_id").notNull(),
     kind: text("kind").notNull(),
     objectKey: text("object_key").notNull(),
+    observationOrdinal: integer("observation_ordinal").notNull().default(0),
+    observedAt: text("observed_at"),
     ordinal: integer("ordinal").notNull(),
     sha256: text("sha256").notNull(),
   },

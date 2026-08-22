@@ -28,6 +28,8 @@ import { RecipeImportWorkflowDispatcher } from "../imports/import-workflow-dispa
 import type {
   HouseholdCommitAcquisitionEvidenceInput,
   HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdObserveEvidenceReferenceInput,
+  HouseholdObserveEvidenceReferenceResult,
 } from "./evidence/household-evidence.contract.js";
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 import type {
@@ -127,6 +129,9 @@ interface HouseholdApiFixtureEnv {
     readonly commitRecipeImportDraft: (
       input: HouseholdCommitRecipeImportDraftInput
     ) => Promise<typeof HouseholdActiveRecipeImportActionResult.Encoded>;
+    readonly observeEvidenceReference: (
+      input: HouseholdObserveEvidenceReferenceInput
+    ) => Promise<typeof HouseholdObserveEvidenceReferenceResult.Encoded>;
     readonly confirmRecipeImportAction: (
       input: HouseholdConfirmRecipeImportActionInput
     ) => Promise<typeof SucceededRecipeImportIntent.Encoded>;
@@ -194,6 +199,7 @@ export default {
     );
     if (
       testSystemOperation === "commit-acquisition-evidence" ||
+      testSystemOperation === "observe-evidence-reference" ||
       testSystemOperation === "resolve" ||
       testSystemOperation === "commit-draft"
     ) {
@@ -208,9 +214,13 @@ export default {
               ? await env.HouseholdDomainWorker.commitRecipeImportDraft(
                   input as HouseholdCommitRecipeImportDraftInput
                 )
-              : await env.HouseholdDomainWorker.commitAcquisitionEvidence(
-                  input as HouseholdCommitAcquisitionEvidenceInput
-                );
+              : testSystemOperation === "observe-evidence-reference"
+                ? await env.HouseholdDomainWorker.observeEvidenceReference(
+                    input as HouseholdObserveEvidenceReferenceInput
+                  )
+                : await env.HouseholdDomainWorker.commitAcquisitionEvidence(
+                    input as HouseholdCommitAcquisitionEvidenceInput
+                  );
         return rpcResponse(result);
       } catch {
         return Response.json({ rejected: true }, { status: 400 });

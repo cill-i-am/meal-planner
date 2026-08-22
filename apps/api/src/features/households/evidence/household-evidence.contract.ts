@@ -9,7 +9,7 @@ import { ImportTimestamp } from "../../imports/import.contracts.js";
 import { HouseholdImportMutationId } from "../recipe-import/household-recipe-import.contract.js";
 import { HouseholdSystemAdmission } from "../rpc/command-envelope.js";
 
-const Sha256Hex = Schema.String.pipe(
+export const HouseholdEvidenceSha256 = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
 );
 const PositiveSafeInteger = Schema.Int.pipe(
@@ -26,20 +26,20 @@ const R2ObjectKey = Schema.String.pipe(
   )
 );
 
-const OriginalMediaReference = Schema.Struct({
+export const HouseholdOriginalMediaReference = Schema.Struct({
   byteLength: PositiveSafeInteger,
   deleteAt: ImportTimestamp,
   key: R2ObjectKey,
   kind: Schema.Literal("original_media"),
-  sha256: Sha256Hex,
+  sha256: HouseholdEvidenceSha256,
 });
 
-const AcquisitionManifestReference = Schema.Struct({
+export const HouseholdAcquisitionManifestReference = Schema.Struct({
   byteLength: PositiveSafeInteger,
   deleteAt: ImportTimestamp,
   key: R2ObjectKey,
   kind: Schema.Literal("acquisition_manifest"),
-  sha256: Sha256Hex,
+  sha256: HouseholdEvidenceSha256,
 });
 
 export const HouseholdCommitAcquisitionEvidenceInput = Schema.Struct({
@@ -54,8 +54,8 @@ export const HouseholdCommitAcquisitionEvidenceInput = Schema.Struct({
       Schema.check(Schema.isFinite(), Schema.isGreaterThan(0))
     ),
     references: Schema.Tuple([
-      OriginalMediaReference,
-      AcquisitionManifestReference,
+      HouseholdOriginalMediaReference,
+      HouseholdAcquisitionManifestReference,
     ]),
     source: Schema.optionalKey(VerifiedSourceMetadata),
     videoStreams: Schema.NonEmptyArray(MediaStreamSummary),
@@ -74,3 +74,80 @@ export const HouseholdCommitAcquisitionEvidenceResult = Schema.Struct({
 });
 export type HouseholdCommitAcquisitionEvidenceResult =
   typeof HouseholdCommitAcquisitionEvidenceResult.Type;
+
+export const HouseholdEvidenceReferenceKind = Schema.Literals([
+  "acquisition_manifest",
+  "carousel_manifest",
+  "original_media",
+  "speech_transcript",
+  "visual_manifest",
+]);
+export type HouseholdEvidenceReferenceKind =
+  typeof HouseholdEvidenceReferenceKind.Type;
+
+export const HouseholdEvidenceAvailability = Schema.Literals([
+  "available",
+  "deleted",
+  "missing",
+]);
+export type HouseholdEvidenceAvailability =
+  typeof HouseholdEvidenceAvailability.Type;
+
+export const HouseholdObserveEvidenceReferenceInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  availability: HouseholdEvidenceAvailability,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+  mutationId: HouseholdImportMutationId,
+  reference: Schema.Struct({
+    key: R2ObjectKey,
+    kind: HouseholdEvidenceReferenceKind,
+    sha256: HouseholdEvidenceSha256,
+  }),
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdObserveEvidenceReferenceInput =
+  typeof HouseholdObserveEvidenceReferenceInput.Type;
+
+/** Privacy-safe lifecycle receipt; integrity metadata never crosses this result. */
+export const HouseholdObserveEvidenceReferenceResult = Schema.Struct({
+  availability: HouseholdEvidenceAvailability,
+  committedAt: ImportTimestamp,
+  executionGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+  kind: HouseholdEvidenceReferenceKind,
+  observationOrdinal: PositiveSafeInteger,
+  receiptVersion: Schema.Literal(1),
+});
+export type HouseholdObserveEvidenceReferenceResult =
+  typeof HouseholdObserveEvidenceReferenceResult.Type;
+
+export const HouseholdReadEvidenceReferencesInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdReadEvidenceReferencesInput =
+  typeof HouseholdReadEvidenceReferencesInput.Type;
+
+const HouseholdEvidenceObservationOrdinal = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+
+export const HouseholdReadEvidenceReferencesResult = Schema.Struct({
+  executionGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+  references: Schema.Tuple([
+    Schema.Struct({
+      ...HouseholdOriginalMediaReference.fields,
+      availability: HouseholdEvidenceAvailability,
+      observationOrdinal: HouseholdEvidenceObservationOrdinal,
+    }),
+    Schema.Struct({
+      ...HouseholdAcquisitionManifestReference.fields,
+      availability: HouseholdEvidenceAvailability,
+      observationOrdinal: HouseholdEvidenceObservationOrdinal,
+    }),
+  ]),
+});
+export type HouseholdReadEvidenceReferencesResult =
+  typeof HouseholdReadEvidenceReferencesResult.Type;

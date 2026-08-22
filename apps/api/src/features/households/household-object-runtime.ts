@@ -29,6 +29,10 @@ import {
 import {
   HouseholdCommitAcquisitionEvidenceInput,
   HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdObserveEvidenceReferenceInput,
+  HouseholdObserveEvidenceReferenceResult,
+  HouseholdReadEvidenceReferencesInput,
+  HouseholdReadEvidenceReferencesResult,
 } from "./evidence/household-evidence.contract.js";
 import { makeHouseholdEvidenceRepository } from "./evidence/household-evidence.repository.js";
 import { ensureHouseholdProvenance } from "./foundation/household-provenance.js";
@@ -389,6 +393,30 @@ export const HouseholdObjectRuntime = Effect.gen(
             );
           })
         ),
+      observeEvidenceReference: (
+        untrustedInput: typeof HouseholdObserveEvidenceReferenceInput.Encoded
+      ) =>
+        scoped(
+          Effect.gen(function* observeHouseholdEvidenceReference() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdObserveEvidenceReferenceInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "observe_evidence_reference"
+            );
+            const connection = yield* database;
+            const committed =
+              yield* makeHouseholdEvidenceRepository(
+                connection
+              ).observeReference(command);
+            return yield* encodeRecipeImportResult(
+              HouseholdObserveEvidenceReferenceResult,
+              committed
+            );
+          })
+        ),
       confirmRecipeImportAction: (
         untrustedInput: HouseholdConfirmRecipeImportActionInput
       ) =>
@@ -454,6 +482,30 @@ export const HouseholdObjectRuntime = Effect.gen(
               onNone: () => Effect.succeed(null),
               onSome: encodeMealPlan,
             });
+          })
+        ),
+      readEvidenceReferences: (
+        untrustedInput: HouseholdReadEvidenceReferencesInput
+      ) =>
+        scoped(
+          Effect.gen(function* readHouseholdEvidenceReferences() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadEvidenceReferencesInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_evidence_references"
+            );
+            const connection = yield* database;
+            const references =
+              yield* makeHouseholdEvidenceRepository(connection).readReferences(
+                command
+              );
+            return yield* encodeRecipeImportResult(
+              HouseholdReadEvidenceReferencesResult,
+              references
+            );
           })
         ),
       readRecipe: (untrustedInput: typeof HouseholdReadRecipeInput.Type) =>
