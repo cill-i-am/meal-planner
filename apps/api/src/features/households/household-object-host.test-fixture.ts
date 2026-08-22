@@ -25,6 +25,7 @@ import {
 } from "./foundation/import-workflow-admission.contract.js";
 import type { HouseholdImportWorkflowAdmissionResult } from "./foundation/import-workflow-admission.contract.js";
 import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
+import type { HouseholdCreateMealPlanFromRecipeBankInput } from "./household-meal-plan.contract.js";
 import {
   HouseholdManualMealSwapCommand,
   HouseholdMealPlanDecisionCommand,
@@ -43,9 +44,16 @@ import {
   householdOutbox,
 } from "./household.database-schema.js";
 import {
+  HouseholdAdmitRecipeImportInput,
+  HouseholdCommitRecipeImportDraftInput,
+  HouseholdConfirmRecipeImportActionInput,
+  HouseholdResolveRecipeImportSourceInput,
+} from "./recipe-import/household-recipe-import.contract.js";
+import {
   HouseholdMemberAdmission,
   HouseholdSystemAdmission,
 } from "./rpc/command-envelope.js";
+import type { HouseholdSystemPurpose } from "./rpc/command-envelope.js";
 import {
   HouseholdCanonicalEncoding,
   HouseholdDigest,
@@ -281,6 +289,9 @@ const BrokenMigrationObjectBridge = Cloudflare.makeDurableObjectBridge(
 export class BrokenMigrationObject extends BrokenMigrationObjectBridge {}
 
 interface HouseholdObjectClient {
+  readonly admitRecipeImport: (
+    input: typeof HouseholdAdmitRecipeImportInput.Type
+  ) => Effect.Effect<unknown, unknown>;
   readonly admitImportWorkflow: (
     input: HouseholdAdmitImportWorkflowInput,
     testOptions?: {
@@ -304,6 +315,15 @@ interface HouseholdObjectClient {
     typeof MealPlanWire.Type,
     HouseholdDomainFailure | MealPlanServiceError
   >;
+  readonly createMealPlanFromRecipeBank: (
+    input: typeof HouseholdCreateMealPlanFromRecipeBankInput.Type
+  ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
+  readonly commitRecipeImportDraft: (
+    input: typeof HouseholdCommitRecipeImportDraftInput.Type
+  ) => Effect.Effect<unknown, unknown>;
+  readonly confirmRecipeImportAction: (
+    input: typeof HouseholdConfirmRecipeImportActionInput.Type
+  ) => Effect.Effect<unknown, unknown>;
   readonly corruptImportWorkflowDispatchState: (
     dispatchId: typeof HouseholdDispatchId.Type,
     state: string
@@ -342,6 +362,9 @@ interface HouseholdObjectClient {
     typeof MealPlanWire.Type,
     HouseholdDomainFailure | MealPlanServiceError
   >;
+  readonly resolveRecipeImportSource: (
+    input: typeof HouseholdResolveRecipeImportSourceInput.Type
+  ) => Effect.Effect<unknown, unknown>;
   readonly markImportWorkflowDispatchExhausted: (
     dispatchId: typeof HouseholdDispatchId.Type,
     exhaustedAtEpochMs: number
@@ -357,6 +380,13 @@ interface HouseholdObjectClient {
 }
 
 const HouseholdTestCommand = Schema.Union([
+  Schema.Struct({
+    idempotencyKey: HouseholdAdmitRecipeImportInput.fields.idempotencyKey,
+    objectName: Schema.String,
+    operation: Schema.Literal("admitRecipeImport"),
+    organizationId: HouseholdOrganizationId,
+    source: HouseholdAdmitRecipeImportInput.fields.source,
+  }),
   Schema.Struct({
     createdAtEpochMs: Schema.Int,
     objectName: Schema.String,
@@ -395,9 +425,42 @@ const HouseholdTestCommand = Schema.Union([
     organizationId: HouseholdOrganizationId,
   }),
   Schema.Struct({
+    evidenceFingerprint:
+      HouseholdCommitRecipeImportDraftInput.fields.evidenceFingerprint,
+    expectedGeneration:
+      HouseholdCommitRecipeImportDraftInput.fields.expectedGeneration,
+    extractionFingerprint:
+      HouseholdCommitRecipeImportDraftInput.fields.extractionFingerprint,
+    intentId: HouseholdCommitRecipeImportDraftInput.fields.intentId,
+    mutationId: HouseholdCommitRecipeImportDraftInput.fields.mutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("commitRecipeImportDraft"),
+    organizationId: HouseholdOrganizationId,
+    review: HouseholdCommitRecipeImportDraftInput.fields.review,
+  }),
+  Schema.Struct({
+    actionId: HouseholdConfirmRecipeImportActionInput.fields.actionId,
+    expectedActionVersion:
+      HouseholdConfirmRecipeImportActionInput.fields.request.fields
+        .expectedActionVersion,
+    idempotencyKey:
+      HouseholdConfirmRecipeImportActionInput.fields.idempotencyKey,
+    intentId: HouseholdConfirmRecipeImportActionInput.fields.intentId,
+    objectName: Schema.String,
+    operation: Schema.Literal("confirmRecipeImportAction"),
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
     approvedRecipes: Schema.Array(ApprovedRecipeWire),
     objectName: Schema.String,
     operation: Schema.Literal("createMealPlan"),
+    organizationId: HouseholdOrganizationId,
+    policy: MealPlanPolicyWire,
+    request: MealPlanRequestWire,
+  }),
+  Schema.Struct({
+    objectName: Schema.String,
+    operation: Schema.Literal("createMealPlanFromRecipeBank"),
     organizationId: HouseholdOrganizationId,
     policy: MealPlanPolicyWire,
     request: MealPlanRequestWire,
@@ -443,6 +506,19 @@ const HouseholdTestCommand = Schema.Union([
     request: MealPlanDecisionRequestWire,
   }),
   Schema.Struct({
+    canonicalSourceId:
+      HouseholdResolveRecipeImportSourceInput.fields.canonicalSourceId,
+    canonicalUrl: HouseholdResolveRecipeImportSourceInput.fields.canonicalUrl,
+    expectedGeneration:
+      HouseholdResolveRecipeImportSourceInput.fields.expectedGeneration,
+    intentId: HouseholdResolveRecipeImportSourceInput.fields.intentId,
+    mutationId: HouseholdResolveRecipeImportSourceInput.fields.mutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("resolveRecipeImportSource"),
+    organizationId: HouseholdOrganizationId,
+    sourceKind: HouseholdResolveRecipeImportSourceInput.fields.sourceKind,
+  }),
+  Schema.Struct({
     approvedRecipes: Schema.Array(ApprovedRecipeWire),
     objectName: Schema.String,
     operation: Schema.Literal("swapMealPlan"),
@@ -466,9 +542,12 @@ const memberAdmission = (organizationId: typeof HouseholdOrganizationId.Type) =>
     organizationId,
   });
 
-const systemAdmission = (organizationId: typeof HouseholdOrganizationId.Type) =>
+const systemAdmission = (
+  organizationId: typeof HouseholdOrganizationId.Type,
+  purpose: typeof HouseholdSystemPurpose.Type = "import_workflow_dispatch"
+) =>
   Schema.decodeUnknownSync(HouseholdSystemAdmission)({
-    actor: { _tag: "System", purpose: "import_workflow_dispatch" },
+    actor: { _tag: "System", purpose },
     organizationId,
   });
 
@@ -483,6 +562,7 @@ const respond = <A, E>(effect: Effect.Effect<A, E>) =>
   );
 
 export default {
+  // eslint-disable-next-line complexity -- Closed test routing enumerates the complete object RPC surface.
   fetch: async (request: Request, env: HouseholdTestEnv) => {
     const command = await Schema.decodeUnknownPromise(HouseholdTestCommand)(
       await request.json()
@@ -496,6 +576,15 @@ export default {
     const household = Cloudflare.makeRpcStub<HouseholdObjectClient>(
       env.HouseholdObject.getByName(command.objectName)
     );
+    if (command.operation === "admitRecipeImport") {
+      return respond(
+        household.admitRecipeImport({
+          admission: memberAdmission(command.organizationId),
+          idempotencyKey: command.idempotencyKey,
+          source: command.source,
+        })
+      );
+    }
     if (command.operation === "admitImportWorkflow") {
       const testOptions: {
         alarmFailure?: boolean;
@@ -534,6 +623,42 @@ export default {
           approvedRecipes: command.approvedRecipes,
           policy: command.policy,
           request: command.request,
+        })
+      );
+    }
+    if (command.operation === "createMealPlanFromRecipeBank") {
+      return respond(
+        household.createMealPlanFromRecipeBank({
+          admission: memberAdmission(command.organizationId),
+          policy: command.policy,
+          request: command.request,
+        })
+      );
+    }
+    if (command.operation === "commitRecipeImportDraft") {
+      return respond(
+        household.commitRecipeImportDraft({
+          admission: systemAdmission(
+            command.organizationId,
+            "recipe_import_lifecycle_commit"
+          ),
+          evidenceFingerprint: command.evidenceFingerprint,
+          expectedGeneration: command.expectedGeneration,
+          extractionFingerprint: command.extractionFingerprint,
+          intentId: command.intentId,
+          mutationId: command.mutationId,
+          review: command.review,
+        })
+      );
+    }
+    if (command.operation === "confirmRecipeImportAction") {
+      return respond(
+        household.confirmRecipeImportAction({
+          actionId: command.actionId,
+          admission: memberAdmission(command.organizationId),
+          idempotencyKey: command.idempotencyKey,
+          intentId: command.intentId,
+          request: { expectedActionVersion: command.expectedActionVersion },
         })
       );
     }
@@ -597,6 +722,22 @@ export default {
         household.rejectMealPlan({
           admission: memberAdmission(command.organizationId),
           request: command.request,
+        })
+      );
+    }
+    if (command.operation === "resolveRecipeImportSource") {
+      return respond(
+        household.resolveRecipeImportSource({
+          admission: systemAdmission(
+            command.organizationId,
+            "recipe_import_lifecycle_commit"
+          ),
+          canonicalSourceId: command.canonicalSourceId,
+          canonicalUrl: command.canonicalUrl,
+          expectedGeneration: command.expectedGeneration,
+          intentId: command.intentId,
+          mutationId: command.mutationId,
+          sourceKind: command.sourceKind,
         })
       );
     }

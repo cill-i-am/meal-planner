@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   integer,
   primaryKey,
@@ -62,4 +63,96 @@ export const householdOutbox = sqliteTable("household_outbox", {
   payloadJson: text("payload_json").notNull(),
   purpose: text("purpose").notNull(),
   state: text("state").notNull(),
+});
+
+export const householdRecipeImports = sqliteTable(
+  "household_recipe_imports",
+  {
+    actionJson: text("action_json"),
+    actorId: text("actor_id").notNull(),
+    canonicalSourceId: text("canonical_source_id"),
+    createdAt: text("created_at").notNull(),
+    evidenceFingerprint: text("evidence_fingerprint"),
+    executionGeneration: integer("execution_generation").notNull(),
+    extractionFingerprint: text("extraction_fingerprint"),
+    intentId: text("intent_id").primaryKey(),
+    intentJson: text("intent_json").notNull(),
+    recipeId: text("recipe_id"),
+    reviewJson: text("review_json"),
+    status: text("status").notNull(),
+    submittedSourceUrl: text("submitted_source_url").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("household_recipe_imports_recipe_unique").on(table.recipeId),
+    uniqueIndex("household_recipe_imports_live_source_unique")
+      .on(table.canonicalSourceId)
+      .where(
+        // The object is already one household, so canonical source ownership
+        // is physically tenant-local.
+        sql`${table.canonicalSourceId} IS NOT NULL AND ${table.status} IN ('processing', 'requires_action', 'succeeded')`
+      ),
+  ]
+);
+
+export const householdRecipeImportRequests = sqliteTable(
+  "household_recipe_import_requests",
+  {
+    idempotencyKeyDigest: text("idempotency_key_digest").primaryKey(),
+    intentId: text("intent_id").notNull(),
+    requestDigest: text("request_digest").notNull(),
+  }
+);
+
+export const householdRecipeImportTimeline = sqliteTable(
+  "household_recipe_import_timeline",
+  {
+    eventJson: text("event_json").notNull(),
+    intentId: text("intent_id").notNull(),
+    intentVersion: integer("intent_version").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.intentId, table.intentVersion] })]
+);
+
+export const householdRecipeImportMutationReceipts = sqliteTable(
+  "household_recipe_import_mutation_receipts",
+  {
+    commandDigest: text("command_digest").notNull(),
+    mutationId: text("mutation_id").primaryKey(),
+    resultJson: text("result_json").notNull(),
+  }
+);
+
+export const householdRecipeReviewCorrections = sqliteTable(
+  "household_recipe_review_corrections",
+  {
+    actionVersion: integer("action_version").notNull(),
+    correctionJson: text("correction_json").notNull(),
+    intentId: text("intent_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.intentId, table.actionVersion, table.ordinal],
+    }),
+  ]
+);
+
+export const householdRecipeReviewTransitions = sqliteTable(
+  "household_recipe_review_transitions",
+  {
+    intentId: text("intent_id").notNull(),
+    transitionJson: text("transition_json").notNull(),
+    version: integer("version").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.intentId, table.version] })]
+);
+
+export const householdRecipes = sqliteTable("household_recipes", {
+  importId: text("import_id").notNull().unique(),
+  planningRecipeJson: text("planning_recipe_json").notNull(),
+  publicRecipeJson: text("public_recipe_json").notNull(),
+  publishedAt: text("published_at").notNull(),
+  recipeId: text("recipe_id").primaryKey(),
+  version: integer("version").notNull(),
 });

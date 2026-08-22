@@ -566,6 +566,147 @@ const inspectMealPlanStorage = async (objectName: string, draftId: string) => {
 };
 
 describe("household Durable Object", () => {
+  it("owns the provider-free admission-to-confirmation-to-planning tracer", async () => {
+    const organizationId = "organization-recipe-import-tracer";
+    const objectName = await objectNameFor(organizationId);
+    const dispatch = async (command: object) => {
+      const response = await runtime.dispatchFetch("http://localhost/", {
+        body: JSON.stringify({ objectName, organizationId, ...command }),
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      return response.json() as Promise<{
+        readonly error?: { readonly _tag?: string; readonly reason?: string };
+        readonly ok: boolean;
+        readonly value?: unknown;
+      }>;
+    };
+
+    const admitted = await dispatch({
+      idempotencyKey: "tracer-admission",
+      operation: "admitRecipeImport",
+      source: {
+        kind: "tiktok",
+        url: "https://www.tiktok.com/@mealplanner/video/7000000000000000001",
+      },
+    });
+    expect(admitted, JSON.stringify(admitted)).toMatchObject({
+      ok: true,
+      value: {
+        intent: { intentVersion: 1, status: "processing" },
+        workflowIdentity: expect.stringMatching(
+          /^import-acquisition:v1:[a-f\d]{64}$/u
+        ),
+      },
+    });
+    const admission = admitted.value as {
+      readonly intent: { readonly id: string };
+    };
+
+    const resolved = await dispatch({
+      canonicalSourceId: "tiktok:video:7000000000000000001",
+      canonicalUrl:
+        "https://www.tiktok.com/@mealplanner/video/7000000000000000001",
+      expectedGeneration: 1,
+      intentId: admission.intent.id,
+      mutationId: "1".repeat(64),
+      operation: "resolveRecipeImportSource",
+      sourceKind: "video",
+    });
+    expect(resolved).toMatchObject({
+      ok: true,
+      value: { intentVersion: 2, status: "processing" },
+    });
+
+    const draft = await dispatch({
+      evidenceFingerprint: "2".repeat(64),
+      expectedGeneration: 1,
+      extractionFingerprint: "3".repeat(64),
+      intentId: admission.intent.id,
+      mutationId: "4".repeat(64),
+      operation: "commitRecipeImportDraft",
+      review: {
+        answers: [],
+        blockers: { invalidFields: [], unresolvedRequiredFields: [] },
+        editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+        recipe: {
+          author: null,
+          category: null,
+          cookTimeMinutes: 15,
+          cuisine: "Irish",
+          description: "Provider-free household tracer.",
+          ingredientLines: ["1 local ingredient"],
+          ingredientQuantities: null,
+          ingredientUnits: null,
+          instructions: ["Cook locally."],
+          name: "Household tracer stew",
+          nutrition: null,
+          prepTimeMinutes: 10,
+          temperatureCelsius: null,
+          tools: ["Pot"],
+          totalTimeMinutes: 25,
+          yield: "2 servings",
+        },
+        tags: {
+          cuisines: ["Irish"],
+          dietaryFit: "household_match",
+          difficulty: "easy",
+          leftovers: "one_meal",
+          mealTypes: ["dinner"],
+          totalTimeBand: "under_30_minutes",
+        },
+      },
+    });
+    expect(draft).toMatchObject({
+      ok: true,
+      value: {
+        action: { actionVersion: 1, status: "active" },
+        intent: { intentVersion: 3, status: "requires_action" },
+      },
+    });
+    const active = draft.value as {
+      readonly action: { readonly id: string };
+      readonly intent: { readonly intentVersion: number };
+    };
+
+    const confirmed = await dispatch({
+      actionId: active.action.id,
+      expectedActionVersion: 1,
+      idempotencyKey: "tracer-confirmation",
+      intentId: admission.intent.id,
+      operation: "confirmRecipeImportAction",
+    });
+    expect(confirmed).toMatchObject({
+      ok: true,
+      value: {
+        result: { recipeId: expect.any(String) },
+        status: "succeeded",
+      },
+    });
+
+    const planned = await dispatch({
+      operation: "createMealPlanFromRecipeBank",
+      policy: Schema.encodeSync(MealPlanPolicy)(syntheticPlanningPolicy),
+      request: Schema.encodeSync(MealPlanRequest)(syntheticMealPlanRequest),
+    });
+    expect(planned).toMatchObject({
+      ok: true,
+      value: { meals: expect.arrayContaining([expect.any(Object)]) },
+    });
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    expect(
+      await dispatch({
+        actionId: active.action.id,
+        expectedActionVersion: 1,
+        idempotencyKey: "tracer-confirmation",
+        intentId: admission.intent.id,
+        operation: "confirmRecipeImportAction",
+      })
+    ).toEqual(confirmed);
+  });
+
   it("initializes once and rejects a conflicting organization provenance", async () => {
     const objectName = await objectNameFor("organization-a");
     const initial = await ensureHousehold(objectName, "organization-a");
