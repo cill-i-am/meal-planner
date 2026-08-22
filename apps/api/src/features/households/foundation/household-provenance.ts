@@ -1,9 +1,9 @@
-import { HouseholdOrganizationId } from "@meal-planner/household-api";
+import type { HouseholdOrganizationId } from "@meal-planner/household-api";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, Effect, Schema } from "effect";
 
-import type { HouseholdMetadata } from "../household.contract.js";
 import {
+  HouseholdMetadata,
   HouseholdPersistenceFailure,
   HouseholdProvenanceMismatch,
 } from "../household.contract.js";
@@ -40,22 +40,16 @@ export const ensureHouseholdProvenance = (
         HouseholdPersistenceFailure.make({ operation: "read" })
       );
     }
-    const persistedOrganizationId = yield* Schema.decodeUnknownEffect(
-      HouseholdOrganizationId
-    )(persisted.organizationId).pipe(
-      Effect.flatMap((value) =>
-        value === organizationId
-          ? Effect.succeed(organizationId)
-          : Effect.fail(HouseholdProvenanceMismatch.make({}))
-      ),
-      Effect.mapError((failure) =>
-        failure._tag === "HouseholdProvenanceMismatch"
-          ? failure
-          : HouseholdPersistenceFailure.make({ operation: "read" })
+    const metadata = yield* Schema.decodeUnknownEffect(HouseholdMetadata)({
+      createdAtEpochMs: persisted.createdAtEpochMs,
+      organizationId: persisted.organizationId,
+    }).pipe(
+      Effect.mapError(() =>
+        HouseholdPersistenceFailure.make({ operation: "read" })
       )
     );
-    return {
-      createdAtEpochMs: persisted.createdAtEpochMs,
-      organizationId: persistedOrganizationId,
-    } satisfies HouseholdMetadata;
+    if (metadata.organizationId !== organizationId) {
+      return yield* Effect.fail(HouseholdProvenanceMismatch.make({}));
+    }
+    return metadata;
   });

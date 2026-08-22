@@ -27,9 +27,19 @@ const readProductionHouseholdSources = async () => {
   );
 };
 
+const readHouseholdAuthoritySources = async () => [
+  ...(await readProductionHouseholdSources()),
+  {
+    path: "../meal-planning/meal-plan.ts",
+    source: await read(
+      path.join(apiFeaturesRoot, "meal-planning/meal-plan.ts")
+    ),
+  },
+];
+
 describe("household foundation structural boundaries", () => {
   it("confines ambient authority generation to the Effect live adapter", async () => {
-    const sources = await readProductionHouseholdSources();
+    const sources = await readHouseholdAuthoritySources();
     const forbidden = [
       "Date.now(",
       "crypto.randomUUID(",
@@ -96,18 +106,32 @@ describe("household foundation structural boundaries", () => {
   });
 
   it("keeps external I/O outside the atomic admission/outbox repository", async () => {
-    const repository = await read(
-      path.join(
-        householdRoot,
-        "foundation/import-workflow-admission.repository.ts"
-      )
+    const sources = await readHouseholdAuthoritySources();
+    const transactionOwners = sources.filter(({ source }) =>
+      source.includes(".transaction(")
     );
+    expect(
+      transactionOwners.map(({ path: sourcePath }) => sourcePath).toSorted()
+    ).toEqual(
+      [
+        "foundation/import-workflow-admission.repository.ts",
+        "household-meal-plan.repository.ts",
+      ].toSorted()
+    );
+    for (const { path: sourcePath, source } of transactionOwners) {
+      expect(source, `${sourcePath} performs external I/O`).not.toMatch(
+        /\bfetch\s*\(|\.getByName\(|\.send\s*\(|\.put\s*\(|cloudflare:workers|alchemy\/Cloudflare/u
+      );
+    }
+
+    const repository =
+      transactionOwners.find(
+        ({ path: sourcePath }) =>
+          sourcePath === "foundation/import-workflow-admission.repository.ts"
+      )?.source ?? "";
     expect(repository).toContain("database.transaction(");
     expect(repository).toContain(".insert(householdImportWorkflowAdmissions)");
     expect(repository).toContain(".insert(householdOutbox)");
-    expect(repository).not.toMatch(
-      /\bfetch\s*\(|\.getByName\(|\.send\s*\(|\.put\s*\(|cloudflare:workers|alchemy\/Cloudflare/u
-    );
 
     const operation = await read(
       path.join(householdRoot, "foundation/admit-import-workflow.ts")

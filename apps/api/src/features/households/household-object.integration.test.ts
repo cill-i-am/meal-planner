@@ -305,6 +305,21 @@ const corruptImportWorkflowDispatchState = async (input: {
   return response.json();
 };
 
+const corruptHouseholdProvenanceCreatedAt = async (input: {
+  readonly createdAtEpochMs: number;
+  readonly objectName: string;
+}) => {
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify({
+      ...input,
+      operation: "corruptHouseholdProvenanceCreatedAt",
+    }),
+    method: "POST",
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+};
+
 const inspectImportWorkflowAdmissionCount = async (input: {
   readonly executionGeneration: number;
   readonly importId: string;
@@ -596,6 +611,24 @@ describe("household Durable Object", () => {
     });
     await expect(response.json()).resolves.toEqual({
       error: { _tag: "HouseholdInvalidInput" },
+      ok: false,
+    });
+  });
+
+  it("rejects corrupt persisted household provenance metadata", async () => {
+    const organizationId = "organization-corrupt-provenance";
+    const objectName = await objectNameFor(organizationId);
+    expect(await ensureHousehold(objectName, organizationId)).toMatchObject({
+      ok: true,
+    });
+
+    await corruptHouseholdProvenanceCreatedAt({
+      createdAtEpochMs: -1,
+      objectName,
+    });
+
+    expect(await ensureHousehold(objectName, organizationId)).toEqual({
+      error: { _tag: "HouseholdPersistenceFailure", operation: "read" },
       ok: false,
     });
   });

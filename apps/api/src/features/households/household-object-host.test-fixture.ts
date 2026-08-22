@@ -38,6 +38,7 @@ import type {
 import { HouseholdOrganizationId } from "./household.contract.js";
 import {
   householdImportWorkflowAdmissions,
+  householdMeta,
   householdMealPlans,
   householdOutbox,
 } from "./household.database-schema.js";
@@ -154,6 +155,16 @@ const HouseholdObjectTestRuntime = Effect.gen(
               .update(householdOutbox)
               .set({ state })
               .where(eq(householdOutbox.dispatchId, dispatchId));
+          })
+        ),
+      corruptHouseholdProvenanceCreatedAt: (createdAtEpochMs: number) =>
+        scoped(
+          Effect.gen(function* corruptHouseholdProvenanceCreatedAt() {
+            const connection = yield* database;
+            yield* connection
+              .update(householdMeta)
+              .set({ createdAtEpochMs })
+              .where(eq(householdMeta.singletonKey, "household"));
           })
         ),
       inspectImportWorkflowDispatch: (dispatchId: HouseholdDispatchId) =>
@@ -297,6 +308,9 @@ interface HouseholdObjectClient {
     dispatchId: typeof HouseholdDispatchId.Type,
     state: string
   ) => Effect.Effect<void, unknown>;
+  readonly corruptHouseholdProvenanceCreatedAt: (
+    createdAtEpochMs: number
+  ) => Effect.Effect<void, unknown>;
   readonly ensureHousehold: (
     input: HouseholdEnsureInput
   ) => Effect.Effect<HouseholdMetadata, HouseholdDomainFailure>;
@@ -343,6 +357,11 @@ interface HouseholdObjectClient {
 }
 
 const HouseholdTestCommand = Schema.Union([
+  Schema.Struct({
+    createdAtEpochMs: Schema.Int,
+    objectName: Schema.String,
+    operation: Schema.Literal("corruptHouseholdProvenanceCreatedAt"),
+  }),
   Schema.Struct({
     dispatchId: HouseholdDispatchId,
     objectName: Schema.String,
@@ -524,6 +543,11 @@ export default {
           command.dispatchId,
           command.state
         )
+      );
+    }
+    if (command.operation === "corruptHouseholdProvenanceCreatedAt") {
+      return respond(
+        household.corruptHouseholdProvenanceCreatedAt(command.createdAtEpochMs)
       );
     }
     if (command.operation === "ensure") {
