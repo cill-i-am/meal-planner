@@ -134,25 +134,44 @@ const HouseholdEvidenceObservationOrdinal = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0))
 );
 
-const HouseholdEvidenceReference = Schema.Struct({
+const HouseholdEvidenceReferenceFields = {
   availability: HouseholdEvidenceAvailability,
   byteLength: PositiveSafeInteger,
   deleteAt: ImportTimestamp,
   key: R2ObjectKey,
-  kind: HouseholdEvidenceReferenceKind,
   observationOrdinal: HouseholdEvidenceObservationOrdinal,
   sha256: HouseholdEvidenceSha256,
+} as const;
+
+const HouseholdEvidenceReference = Schema.Struct({
+  ...HouseholdEvidenceReferenceFields,
+  kind: HouseholdEvidenceReferenceKind,
 });
 
+const HouseholdCarouselEvidenceReference = Schema.Struct({
+  ...HouseholdEvidenceReferenceFields,
+  kind: Schema.Literal("carousel_manifest"),
+});
+
+const HouseholdEvidenceReferenceIdentity = {
+  committedAt: ImportTimestamp,
+  executionGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+} as const;
+
 export const HouseholdReadEvidenceReferencesResult = Schema.NullOr(
-  Schema.Struct({
-    committedAt: ImportTimestamp,
-    executionGeneration: PositiveSafeInteger,
-    intentId: RecipeImportIntentId,
-    references: Schema.Array(HouseholdEvidenceReference).pipe(
-      Schema.check(Schema.isMinLength(2), Schema.isMaxLength(5))
-    ),
-  })
+  Schema.Union([
+    Schema.Struct({
+      ...HouseholdEvidenceReferenceIdentity,
+      references: Schema.Tuple([HouseholdCarouselEvidenceReference]),
+    }),
+    Schema.Struct({
+      ...HouseholdEvidenceReferenceIdentity,
+      references: Schema.Array(HouseholdEvidenceReference).pipe(
+        Schema.check(Schema.isMinLength(2), Schema.isMaxLength(5))
+      ),
+    }),
+  ])
 );
 export type HouseholdReadEvidenceReferencesResult =
   typeof HouseholdReadEvidenceReferencesResult.Type;

@@ -115,13 +115,15 @@ identity or a stale generation fails without mutation.
 
 Large media, transcripts, manifests, and other evidence bytes remain private
 R2 objects. Their references carry generation, byte length, SHA-256, and
-retention time. Workflows and Queue consumers inspect R2 before or after a
-household command, never during the local transaction. Missing or deleted
-objects change only the household-local availability observation; they do not
-rewrite the committed reference or corrupt the current result. R2 lifecycle
-deletion remains asynchronous defense in depth, and late or replayed event
-notifications are fenced by household, import, generation, object key, and
-integrity metadata.
+retention time. Reference reads preserve the committed source shape: video
+acquisition starts with media and manifest references, while a carousel starts
+with its single manifest and the carousel stage's stable commit identity and
+time. Workflows and Queue consumers inspect R2 before or after a household
+command, never during the local transaction. Missing or deleted objects change
+only the household-local availability observation; they do not rewrite the
+committed reference or corrupt the current result. R2 lifecycle deletion
+remains asynchronous defense in depth, and late or replayed event notifications
+are fenced by household, import, generation, object key, and integrity metadata.
 
 After authenticated import admission, the API registers a private,
 noncanonical import-to-organization route with the reconciliation Queue before

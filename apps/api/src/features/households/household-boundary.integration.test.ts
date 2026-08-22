@@ -405,6 +405,7 @@ const evidenceRetentionResult = (input: {
 const admitResolvedEvidenceImport = async (input: {
   readonly label: string;
   readonly mutationId: string;
+  readonly sourceKind?: "carousel" | "video";
   readonly videoId: string;
 }) => {
   const cookie = await signUp(input.label);
@@ -444,7 +445,7 @@ const admitResolvedEvidenceImport = async (input: {
     expectedGeneration: 1,
     intentId: admitted.id,
     mutationId: input.mutationId,
-    sourceKind: "video",
+    sourceKind: input.sourceKind ?? "video",
   });
   expect(resolvedResponse.status, await resolvedResponse.text()).toBe(200);
   return { admission, admitted, cookie, organization } as const;
@@ -1560,6 +1561,132 @@ describe("household public API to private Durable Object boundary", () => {
     expect(
       references?.references.find(({ kind }) => kind === "acquisition_manifest")
     ).toMatchObject({ availability: "missing", observationOrdinal: 3 });
+  }, 30_000);
+
+  it("reconciles a carousel manifest lifecycle deletion without acquisition evidence", async () => {
+    const { admission, admitted, cookie, organization } =
+      await admitResolvedEvidenceImport({
+        label: "Carousel Lifecycle Event Member",
+        mutationId: "a".repeat(64),
+        sourceKind: "carousel",
+        videoId: "7000000000000000133",
+      });
+    const inputFingerprint = "b".repeat(64);
+    const manifestSha256 = "c".repeat(64);
+    const dispatchId = `carousel:${admitted.id}:1`;
+    const manifestKey = `imports/${admitted.id}/carousel/v1/generations/1/manifest.json`;
+    const startedAt = new Date(Date.now() + 60_000);
+    const completedAt = new Date(startedAt.getTime() + 1000);
+    const deleteAt = new Date(startedAt.getTime() + 604_800_000);
+    const claim = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      mutationId: "d".repeat(64),
+      operation: {
+        _tag: "Claim",
+        dispatchId,
+        stage: "carousel",
+        startedAt: startedAt.toISOString(),
+      },
+    });
+    expect(claim.status, await claim.text()).toBe(200);
+    const completion = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      mutationId: "e".repeat(64),
+      operation: {
+        _tag: "Complete",
+        dispatchId,
+        reference: {
+          byteLength: 512,
+          deleteAt: deleteAt.toISOString(),
+          key: manifestKey,
+          kind: "carousel_manifest",
+          sha256: manifestSha256,
+        },
+        result: {
+          _tag: "Carousel",
+          completedAt: completedAt.toISOString(),
+          descriptorFingerprint: inputFingerprint,
+          dispatchId,
+          imageCount: 3,
+          manifestKey,
+          manifestSha256,
+        },
+        stage: "carousel",
+      },
+    });
+    expect(completion.status, await completion.clone().text()).toBe(200);
+    const completionReceipt = await Schema.decodeUnknownPromise(
+      HouseholdMutateEvidenceStageResult
+    )(await completion.json());
+
+    await expect(
+      sendEvidenceEvent({
+        _tag: "RegisterImportEvidenceRoute",
+        importId: admitted.id,
+        organizationId: organization.id,
+        routeVersion: 1,
+      })
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Registered" },
+    });
+    const cancelled = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}/cancel`,
+      {
+        body: JSON.stringify({ expectedIntentVersion: 2 }),
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "idempotency-key": "carousel-lifecycle-terminal-proof",
+        },
+        method: "POST",
+      }
+    );
+    expect(cancelled.status, await cancelled.text()).toBe(200);
+
+    const deletionEvent = {
+      account: "must-not-escape",
+      action: "LifecycleDeletion",
+      bucket: "must-not-escape",
+      eventTime: "2026-08-22T12:11:00.000Z",
+      object: { key: manifestKey },
+    } as const;
+    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "deleted" },
+    });
+    const references = await readEvidenceReferences(admission, admitted.id);
+    expect(references?.references).toHaveLength(1);
+    expect(references).toMatchObject({
+      committedAt: completionReceipt.committedAt,
+      executionGeneration: 1,
+      intentId: admitted.id,
+      references: [
+        {
+          availability: "deleted",
+          byteLength: 512,
+          key: manifestKey,
+          kind: "carousel_manifest",
+          observationOrdinal: 1,
+          sha256: manifestSha256,
+        },
+      ],
+    });
+
+    await restartRuntime();
+    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "deleted" },
+    });
+    await expect(
+      readEvidenceReferences(admission, admitted.id)
+    ).resolves.toEqual(references);
   }, 30_000);
 
   it("rejects a forged cross-organization session before private routing", async () => {

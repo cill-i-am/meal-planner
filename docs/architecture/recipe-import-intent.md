@@ -100,10 +100,12 @@ or provider payload. Exact retries are stable; conflicting replays and stale
 generations leave no mutation.
 
 R2 references include byte length, SHA-256, deletion time, object kind, and
-generation. Missing objects, lifecycle deletion, and late Queue notifications
-are recorded as availability observations without altering the committed
-reference. Routing and object lookup occur only after the admitted household
-and import identity are proved.
+generation. Reads return the video acquisition's media-and-manifest set or the
+carousel stage's single committed manifest with the same stable import,
+generation, and commit time across restart. Missing objects, lifecycle deletion,
+and late Queue notifications are recorded as availability observations without
+altering the committed reference. Routing and object lookup occur only after
+the admitted household and import identity are proved.
 
 The authenticated API registers an immutable private import-to-organization
 event route before starting the Workflow. The Queue consumer resolves that

@@ -929,7 +929,7 @@ export const makeHouseholdEvidenceRepository = (
       if (intent.executionGeneration !== input.expectedGeneration) {
         return yield* Effect.fail(failure("generation_conflict"));
       }
-      const [execution] = yield* database
+      const [acquisitionExecution] = yield* database
         .select({ committedAt: householdImportEvidenceExecutions.committedAt })
         .from(householdImportEvidenceExecutions)
         .where(
@@ -943,7 +943,30 @@ export const makeHouseholdEvidenceRepository = (
         )
         .limit(1)
         .pipe(mapPersistence);
-      if (execution === undefined) {
+      const [carouselExecution] =
+        acquisitionExecution === undefined
+          ? yield* database
+              .select({
+                committedAt: householdEvidenceStageExecutions.committedAt,
+              })
+              .from(householdEvidenceStageExecutions)
+              .where(
+                and(
+                  eq(householdEvidenceStageExecutions.intentId, input.intentId),
+                  eq(
+                    householdEvidenceStageExecutions.executionGeneration,
+                    input.expectedGeneration
+                  ),
+                  eq(householdEvidenceStageExecutions.stage, "carousel"),
+                  eq(householdEvidenceStageExecutions.state, "completed")
+                )
+              )
+              .limit(1)
+              .pipe(mapPersistence)
+          : [undefined];
+      const committedAt =
+        acquisitionExecution?.committedAt ?? carouselExecution?.committedAt;
+      if (committedAt === undefined) {
         return null;
       }
       const references = yield* database
@@ -961,7 +984,7 @@ export const makeHouseholdEvidenceRepository = (
         .orderBy(asc(householdEvidenceReferences.ordinal))
         .pipe(mapPersistence);
       return yield* decode(HouseholdReadEvidenceReferencesResult, {
-        committedAt: execution.committedAt,
+        committedAt,
         executionGeneration: input.expectedGeneration,
         intentId: input.intentId,
         references: references.map((reference) => ({
