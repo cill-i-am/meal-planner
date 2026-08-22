@@ -60,12 +60,15 @@ const sha256Hex = (bytes: Uint8Array) =>
 
 const completedFromDocument = (
   document: TranscriptEvidenceDocument,
+  byteLength: number,
   transcriptSha256: string,
   transcriptKey: string
 ): CompletedTranscriptEvidence => ({
+  byteLength,
   completedAt: document.createdAt,
   cost: document.cost,
   detectedLanguage: document.detectedLanguage,
+  deleteAt: document.deleteAt,
   dispatchId: document.dispatchId,
   generation: document.acquisitionGeneration,
   importId: document.importId,
@@ -157,6 +160,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
         const completed = yield* input.transcriptionRepository.complete(
           completedFromDocument(
             recovered.value.document,
+            recovered.value.byteLength,
             recovered.value.sha256,
             recovered.value.key
           )
@@ -251,6 +255,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       return yield* input.transcriptionRepository.complete(
         completedFromDocument(
           committed.document,
+          committed.byteLength,
           committed.sha256,
           committed.key
         )

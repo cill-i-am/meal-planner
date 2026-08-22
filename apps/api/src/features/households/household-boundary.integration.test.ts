@@ -24,7 +24,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as authSchema from "../auth/auth.database-schema.js";
 import {
   HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceResult,
+  HouseholdReadEvidenceStageResult,
 } from "./evidence/household-evidence.contract.js";
 import { HouseholdMetadata } from "./household.contract.js";
 
@@ -277,7 +279,9 @@ const systemCommand = (
   operation:
     | "commit-acquisition-evidence"
     | "commit-draft"
+    | "mutate-evidence-stage"
     | "observe-evidence-reference"
+    | "read-evidence-stage"
     | "resolve",
   input: object
 ) =>
@@ -694,6 +698,115 @@ describe("household public API to private Durable Object boundary", () => {
       }
     );
     expect(correctedResponse.status, await correctedResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("commits a closed speech result with replay and generation fencing", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Speech Evidence Stage Member",
+      mutationId: "1".repeat(64),
+      videoId: "7000000000000000130",
+    });
+    const inputFingerprint = "2".repeat(64);
+    const dispatchId = `speech:${admitted.id}:1`;
+    const stale = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: 2,
+      inputFingerprint,
+      intentId: admitted.id,
+      mutationId: "3".repeat(64),
+      operation: {
+        _tag: "Claim",
+        dispatchId,
+        stage: "speech",
+        startedAt: new Date().toISOString(),
+      },
+    });
+    expect(stale.status).toBe(409);
+    const claim = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      mutationId: "4".repeat(64),
+      operation: {
+        _tag: "Claim",
+        dispatchId,
+        stage: "speech",
+        startedAt: new Date().toISOString(),
+      },
+    });
+    expect(claim.status, await claim.text()).toBe(200);
+
+    const completedAt = new Date();
+    const deleteAt = new Date(completedAt.getTime() + 604_800_000);
+    const transcriptKey = `imports/${admitted.id}/transcription/v1/generations/1/transcript.json`;
+    const command = {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      mutationId: "5".repeat(64),
+      operation: {
+        _tag: "Complete",
+        reference: {
+          byteLength: 512,
+          deleteAt: deleteAt.toISOString(),
+          key: transcriptKey,
+          kind: "speech_transcript",
+          sha256: "6".repeat(64),
+        },
+        result: {
+          _tag: "Speech",
+          completedAt: completedAt.toISOString(),
+          cost: {
+            certainty: "known",
+            currency: "USD",
+            estimatedMicroUsd: 12,
+          },
+          detectedLanguage: "en",
+          dispatchId,
+          model: "provider-model",
+          provider: "workers-ai",
+          segmentsCount: 4,
+          sourceMediaSha256: inputFingerprint,
+          transcriptKey,
+          transcriptSha256: "6".repeat(64),
+          usage: { audioDurationMilliseconds: 20_000, inputBytes: 1024 },
+        },
+        stage: "speech",
+      },
+    } as const;
+    const completed = await systemCommand("mutate-evidence-stage", command);
+    expect(completed.status, await completed.clone().text()).toBe(200);
+    const receipt = await Schema.decodeUnknownPromise(
+      HouseholdMutateEvidenceStageResult
+    )(await completed.json());
+    const retry = await systemCommand("mutate-evidence-stage", command);
+    expect(retry.status, await retry.clone().text()).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(HouseholdMutateEvidenceStageResult)(
+        await retry.json()
+      )
+    ).toEqual(receipt);
+    expect(receipt).not.toHaveProperty("result");
+    expect(receipt).not.toHaveProperty("transcriptKey");
+
+    const read = await systemCommand("read-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      stage: "speech",
+    });
+    expect(read.status, await read.clone().text()).toBe(200);
+    const stage = await Schema.decodeUnknownPromise(
+      HouseholdReadEvidenceStageResult
+    )(await read.json());
+    expect(stage).toMatchObject({
+      inputFingerprint,
+      outcome: "Completed",
+      result: { _tag: "Speech", transcriptKey },
+      stage: "speech",
+    });
   }, 30_000);
 
   it("physically isolates household evidence routing", async () => {

@@ -13,16 +13,22 @@ import { Effect, Schema } from "effect";
 import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
 import type {
   HouseholdCommitAcquisitionEvidenceInput,
+  HouseholdMutateEvidenceStageInput,
   HouseholdObserveEvidenceReferenceInput,
+  HouseholdReadEvidenceStageInput,
   HouseholdReadEvidenceReferencesInput,
 } from "./evidence/household-evidence.contract.js";
 import {
   HouseholdCommitAcquisitionEvidenceInput as HouseholdCommitAcquisitionEvidenceInputSchema,
   HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdMutateEvidenceStageInput as HouseholdMutateEvidenceStageInputSchema,
+  HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceInput as HouseholdObserveEvidenceReferenceInputSchema,
   HouseholdObserveEvidenceReferenceResult,
   HouseholdReadEvidenceReferencesInput as HouseholdReadEvidenceReferencesInputSchema,
   HouseholdReadEvidenceReferencesResult,
+  HouseholdReadEvidenceStageInput as HouseholdReadEvidenceStageInputSchema,
+  HouseholdReadEvidenceStageResult,
 } from "./evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "./household-domain-binding.js";
 import type {
@@ -127,6 +133,12 @@ export interface HouseholdDomainWorkerMethods {
     typeof HouseholdCommitAcquisitionEvidenceResult.Encoded,
     HouseholdRecipeImportDomainFailure
   >;
+  readonly mutateEvidenceStage: (
+    input: HouseholdMutateEvidenceStageInput
+  ) => Effect.Effect<
+    typeof HouseholdMutateEvidenceStageResult.Encoded,
+    HouseholdRecipeImportDomainFailure
+  >;
   readonly observeEvidenceReference: (
     input: HouseholdObserveEvidenceReferenceInput
   ) => Effect.Effect<
@@ -158,6 +170,12 @@ export interface HouseholdDomainWorkerMethods {
     input: HouseholdReadEvidenceReferencesInput
   ) => Effect.Effect<
     typeof HouseholdReadEvidenceReferencesResult.Encoded,
+    HouseholdRecipeImportDomainFailure
+  >;
+  readonly readEvidenceStage: (
+    input: HouseholdReadEvidenceStageInput
+  ) => Effect.Effect<
+    typeof HouseholdReadEvidenceStageResult.Encoded,
     HouseholdRecipeImportDomainFailure
   >;
   readonly readRecipe: (
@@ -317,6 +335,30 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         )
       )
     );
+  const routeEvidenceStage = (input: HouseholdMutateEvidenceStageInput) =>
+    Schema.decodeUnknownEffect(HouseholdMutateEvidenceStageInputSchema, {
+      onExcessProperty: "error",
+    })(input).pipe(
+      Effect.mapError(() => HouseholdInvalidInput.make({})),
+      Effect.flatMap((command) =>
+        Schema.encodeEffect(HouseholdMutateEvidenceStageInputSchema)(
+          command
+        ).pipe(
+          Effect.mapError(() => HouseholdInvalidInput.make({})),
+          Effect.flatMap((encodedCommand) =>
+            locator.locate(command.admission.organizationId).pipe(
+              Effect.mapError(() => HouseholdInvalidInput.make({})),
+              Effect.flatMap((objectName) =>
+                households
+                  .getByName(objectName)
+                  .mutateEvidenceStage(encodedCommand)
+                  .pipe(Effect.provideService(RuntimeContext, runtimeContext))
+              )
+            )
+          )
+        )
+      )
+    );
   return {
     admitRecipeImport: (input: HouseholdAdmitRecipeImportInput) =>
       route(
@@ -343,6 +385,8 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
     commitAcquisitionEvidence: (
       input: HouseholdCommitAcquisitionEvidenceInput
     ) => routeAcquisitionEvidence(input),
+    mutateEvidenceStage: (input: HouseholdMutateEvidenceStageInput) =>
+      routeEvidenceStage(input),
     commitRecipeImportDraft: (input: HouseholdCommitRecipeImportDraftInput) =>
       route(
         HouseholdCommitRecipeImportDraftInputSchema,
@@ -388,6 +432,12 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         HouseholdReadEvidenceReferencesInputSchema,
         input,
         (household, command) => household.readEvidenceReferences(command)
+      ),
+    readEvidenceStage: (input: HouseholdReadEvidenceStageInput) =>
+      route(
+        HouseholdReadEvidenceStageInputSchema,
+        input,
+        (household, command) => household.readEvidenceStage(command)
       ),
     readRecipe: (input: typeof HouseholdReadRecipeInputSchema.Type) =>
       route(HouseholdReadRecipeInputSchema, input, (household, command) =>

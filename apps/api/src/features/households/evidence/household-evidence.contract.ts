@@ -5,6 +5,7 @@ import {
   MediaStreamSummary,
   VerifiedSourceMetadata,
 } from "../../imports/import-media.model.js";
+import { RecipeDraft } from "../../imports/import-recipe-draft.repository.js";
 import { ImportTimestamp } from "../../imports/import.contracts.js";
 import { HouseholdImportMutationId } from "../recipe-import/household-recipe-import.contract.js";
 import { HouseholdSystemAdmission } from "../rpc/command-envelope.js";
@@ -133,21 +134,218 @@ const HouseholdEvidenceObservationOrdinal = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0))
 );
 
+const HouseholdEvidenceReference = Schema.Struct({
+  availability: HouseholdEvidenceAvailability,
+  byteLength: PositiveSafeInteger,
+  deleteAt: ImportTimestamp,
+  key: R2ObjectKey,
+  kind: HouseholdEvidenceReferenceKind,
+  observationOrdinal: HouseholdEvidenceObservationOrdinal,
+  sha256: HouseholdEvidenceSha256,
+});
+
 export const HouseholdReadEvidenceReferencesResult = Schema.Struct({
+  committedAt: ImportTimestamp,
   executionGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,
-  references: Schema.Tuple([
-    Schema.Struct({
-      ...HouseholdOriginalMediaReference.fields,
-      availability: HouseholdEvidenceAvailability,
-      observationOrdinal: HouseholdEvidenceObservationOrdinal,
-    }),
-    Schema.Struct({
-      ...HouseholdAcquisitionManifestReference.fields,
-      availability: HouseholdEvidenceAvailability,
-      observationOrdinal: HouseholdEvidenceObservationOrdinal,
-    }),
-  ]),
+  references: Schema.Array(HouseholdEvidenceReference).pipe(
+    Schema.check(Schema.isMinLength(2), Schema.isMaxLength(5))
+  ),
 });
 export type HouseholdReadEvidenceReferencesResult =
   typeof HouseholdReadEvidenceReferencesResult.Type;
+
+export const HouseholdEvidenceStage = Schema.Literals([
+  "carousel",
+  "extraction",
+  "speech",
+  "visual",
+]);
+export type HouseholdEvidenceStage = typeof HouseholdEvidenceStage.Type;
+
+const NonNegativeSafeInteger = Schema.Int.pipe(
+  Schema.check(
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+  )
+);
+const DispatchId = Schema.String.pipe(
+  Schema.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(256))
+);
+const EvidenceCost = Schema.Struct({
+  certainty: Schema.Literals(["estimated", "known"]),
+  currency: Schema.Literal("USD"),
+  estimatedMicroUsd: NonNegativeSafeInteger,
+});
+
+export const HouseholdSpeechEvidenceResult = Schema.Struct({
+  _tag: Schema.Literal("Speech"),
+  completedAt: ImportTimestamp,
+  cost: EvidenceCost,
+  detectedLanguage: Schema.String,
+  dispatchId: DispatchId,
+  model: Schema.String,
+  provider: Schema.String,
+  segmentsCount: NonNegativeSafeInteger,
+  sourceMediaSha256: HouseholdEvidenceSha256,
+  transcriptKey: R2ObjectKey,
+  transcriptSha256: HouseholdEvidenceSha256,
+  usage: Schema.Struct({
+    audioDurationMilliseconds: NonNegativeSafeInteger,
+    inputBytes: NonNegativeSafeInteger,
+  }),
+});
+export const HouseholdVisualEvidenceResult = Schema.Struct({
+  _tag: Schema.Literal("Visual"),
+  completedAt: ImportTimestamp,
+  cost: EvidenceCost,
+  dispatchId: DispatchId,
+  manifestKey: R2ObjectKey,
+  manifestSha256: HouseholdEvidenceSha256,
+  model: Schema.String,
+  observationsCount: NonNegativeSafeInteger,
+  outcome: Schema.Literals(["empty", "found", "low_confidence"]),
+  provider: Schema.String,
+  sourceMediaSha256: HouseholdEvidenceSha256,
+  usage: Schema.Struct({
+    inputBytes: NonNegativeSafeInteger,
+    inputFrames: NonNegativeSafeInteger,
+    modelCalls: Schema.Literal(1),
+  }),
+});
+export const HouseholdCarouselEvidenceResult = Schema.Struct({
+  _tag: Schema.Literal("Carousel"),
+  completedAt: ImportTimestamp,
+  descriptorFingerprint: HouseholdEvidenceSha256,
+  dispatchId: DispatchId,
+  imageCount: PositiveSafeInteger,
+  manifestKey: R2ObjectKey,
+  manifestSha256: HouseholdEvidenceSha256,
+});
+export const HouseholdExtractionEvidenceResult = Schema.Struct({
+  _tag: Schema.Literal("Extraction"),
+  draft: RecipeDraft,
+});
+export const HouseholdEvidenceStageResult = Schema.Union([
+  HouseholdCarouselEvidenceResult,
+  HouseholdExtractionEvidenceResult,
+  HouseholdSpeechEvidenceResult,
+  HouseholdVisualEvidenceResult,
+]);
+export type HouseholdEvidenceStageResult =
+  typeof HouseholdEvidenceStageResult.Type;
+
+export const HouseholdEvidenceStageFailureCode = Schema.Literals([
+  "audio_extraction_failed",
+  "carousel_inaccessible",
+  "carousel_layout_drift",
+  "carousel_partial",
+  "download_exhausted",
+  "frame_evidence_failed",
+  "frame_sampling_failed",
+  "insufficient_evidence",
+  "invalid_schema",
+  "invalid_source",
+  "model_refusal",
+  "outcome_unknown",
+  "provider_error",
+  "source_evidence_invalid",
+  "transcription_failed",
+  "transcript_evidence_failed",
+  "unsupported_media",
+  "visual_evidence_failed",
+  "visual_extraction_failed",
+]);
+
+const HouseholdEvidenceStageReference = Schema.Struct({
+  byteLength: PositiveSafeInteger,
+  deleteAt: ImportTimestamp,
+  key: R2ObjectKey,
+  kind: Schema.Literals([
+    "carousel_manifest",
+    "speech_transcript",
+    "visual_manifest",
+  ]),
+  sha256: HouseholdEvidenceSha256,
+});
+
+export const HouseholdMutateEvidenceStageInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  expectedGeneration: PositiveSafeInteger,
+  inputFingerprint: HouseholdEvidenceSha256,
+  intentId: RecipeImportIntentId,
+  mutationId: HouseholdImportMutationId,
+  operation: Schema.Union([
+    Schema.Struct({
+      _tag: Schema.Literal("Claim"),
+      dispatchId: DispatchId,
+      stage: HouseholdEvidenceStage,
+      startedAt: ImportTimestamp,
+    }),
+    Schema.Struct({
+      _tag: Schema.Literal("Complete"),
+      result: HouseholdEvidenceStageResult,
+      stage: HouseholdEvidenceStage,
+      reference: Schema.optionalKey(HouseholdEvidenceStageReference),
+    }),
+    Schema.Struct({
+      _tag: Schema.Literal("Fail"),
+      completedAt: ImportTimestamp,
+      failureCode: HouseholdEvidenceStageFailureCode,
+      recovery: Schema.optionalKey(
+        Schema.Literals([
+          "check_source_visibility",
+          "operator_review",
+          "request_complete_carousel",
+          "retry_later",
+          "submit_supported_media",
+          "update_carousel_adapter",
+        ])
+      ),
+      stage: HouseholdEvidenceStage,
+    }),
+  ]),
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdMutateEvidenceStageInput =
+  typeof HouseholdMutateEvidenceStageInput.Type;
+
+export const HouseholdMutateEvidenceStageResult = Schema.Struct({
+  committedAt: ImportTimestamp,
+  executionGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+  outcome: Schema.Literals([
+    "Completed",
+    "DispatchClaimed",
+    "Failed",
+    "ResumeDispatch",
+  ]),
+  receiptVersion: Schema.Literal(1),
+  stage: HouseholdEvidenceStage,
+});
+export type HouseholdMutateEvidenceStageResult =
+  typeof HouseholdMutateEvidenceStageResult.Type;
+
+export const HouseholdReadEvidenceStageInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+  stage: HouseholdEvidenceStage,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdReadEvidenceStageInput =
+  typeof HouseholdReadEvidenceStageInput.Type;
+
+export const HouseholdReadEvidenceStageResult = Schema.NullOr(
+  Schema.Struct({
+    committedAt: ImportTimestamp,
+    executionGeneration: PositiveSafeInteger,
+    failureCode: Schema.NullOr(HouseholdEvidenceStageFailureCode),
+    inputFingerprint: HouseholdEvidenceSha256,
+    intentId: RecipeImportIntentId,
+    outcome: Schema.Literals(["Completed", "Dispatching", "Failed"]),
+    reference: Schema.NullOr(HouseholdEvidenceStageReference),
+    result: Schema.NullOr(HouseholdEvidenceStageResult),
+    stage: HouseholdEvidenceStage,
+  })
+);
+export type HouseholdReadEvidenceStageResult =
+  typeof HouseholdReadEvidenceStageResult.Type;

@@ -2,9 +2,9 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { DateTime, Effect, Option, Schema } from "effect";
 
 import type {
-  TikTokCarouselFailureCode,
-  TikTokCarouselRecovery,
-} from "./import-carousel-adapter.js";
+  CarouselEvidenceRepository,
+  CompletedCarouselEvidence,
+} from "./import-carousel.repository.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import {
   ImportId,
@@ -16,7 +16,12 @@ import {
   importPersistenceUnavailable,
   importTransitionRejected,
 } from "./import.errors.js";
-import type { ImportTransitionError } from "./import.repository.js";
+
+export type {
+  CarouselEvidenceClaim,
+  CarouselEvidenceRepository,
+  CompletedCarouselEvidence,
+} from "./import-carousel.repository.js";
 
 const Sha256Hex = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
@@ -62,56 +67,6 @@ const CarouselParentRow = Schema.Struct({
   canonical_source_id: SourceCanonicalId,
   status: Schema.String,
 });
-
-export interface CompletedCarouselEvidence {
-  readonly completedAt: ImportTimestamp;
-  readonly descriptorFingerprint: string;
-  readonly dispatchId: string;
-  readonly generation: AcquisitionGeneration;
-  readonly imageCount: number;
-  readonly importId: ImportId;
-  readonly manifestKey: string;
-  readonly manifestSha256: string;
-}
-
-export type CarouselEvidenceClaim =
-  | { readonly _tag: "Completed"; readonly evidence: CompletedCarouselEvidence }
-  | {
-      readonly _tag: "Failed";
-      readonly code: TikTokCarouselFailureCode;
-      readonly recovery: TikTokCarouselRecovery;
-    }
-  | { readonly _tag: "DispatchClaimed" }
-  | { readonly _tag: "ResumeDispatch" };
-
-export interface CarouselEvidenceRepository {
-  readonly findParent: (importId: ImportId) => Effect.Effect<
-    Option.Option<{
-      readonly canonicalId: SourceCanonicalId;
-      readonly generation: AcquisitionGeneration;
-      readonly status: string;
-    }>,
-    ImportTransitionError
-  >;
-  readonly claim: (input: {
-    readonly descriptorFingerprint: string;
-    readonly dispatchId: string;
-    readonly generation: AcquisitionGeneration;
-    readonly importId: ImportId;
-    readonly startedAt: ImportTimestamp;
-  }) => Effect.Effect<CarouselEvidenceClaim, ImportTransitionError>;
-  readonly complete: (
-    evidence: CompletedCarouselEvidence
-  ) => Effect.Effect<CompletedCarouselEvidence, ImportTransitionError>;
-  readonly fail: (input: {
-    readonly code: TikTokCarouselFailureCode;
-    readonly completedAt: ImportTimestamp;
-    readonly descriptorFingerprint: string;
-    readonly generation: AcquisitionGeneration;
-    readonly importId: ImportId;
-    readonly recovery: TikTokCarouselRecovery;
-  }) => Effect.Effect<void, ImportTransitionError>;
-}
 
 const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({

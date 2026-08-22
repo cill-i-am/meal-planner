@@ -479,7 +479,7 @@ const storeManifest = (
         sha256: checksumBuffer(sha256),
       })
       .pipe(Effect.exit);
-    return { key, sha256 };
+    return { byteLength: bytes.byteLength, key, sha256 };
   });
 
 const recipeEvidenceItems = (
@@ -563,11 +563,14 @@ const assembleRecipeEvidence = (
 
 const completedEvidence = (
   document: CarouselEvidenceManifestDocument,
+  byteLength: number,
   manifestKey: string,
   manifestSha256: string
 ): CompletedCarouselEvidence => ({
+  byteLength,
   completedAt: document.createdAt,
   descriptorFingerprint: document.descriptorFingerprint,
+  deleteAt: document.images[0].deleteAt,
   dispatchId: document.dispatchId,
   generation: document.acquisitionGeneration,
   imageCount: document.images.length,
@@ -797,6 +800,7 @@ export const prepareTikTokCarouselEvidence = Effect.fn(
   const storedManifest = yield* storeManifest(input.bucket, document);
   const pendingEvidence = completedEvidence(
     document,
+    storedManifest.byteLength,
     storedManifest.key,
     storedManifest.sha256
   );

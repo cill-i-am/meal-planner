@@ -28,8 +28,12 @@ import { RecipeImportWorkflowDispatcher } from "../imports/import-workflow-dispa
 import type {
   HouseholdCommitAcquisitionEvidenceInput,
   HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdMutateEvidenceStageInput,
+  HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceInput,
   HouseholdObserveEvidenceReferenceResult,
+  HouseholdReadEvidenceStageInput,
+  HouseholdReadEvidenceStageResult,
 } from "./evidence/household-evidence.contract.js";
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 import type {
@@ -126,12 +130,18 @@ interface HouseholdApiFixtureEnv {
     readonly commitAcquisitionEvidence: (
       input: HouseholdCommitAcquisitionEvidenceInput
     ) => Promise<typeof HouseholdCommitAcquisitionEvidenceResult.Encoded>;
+    readonly mutateEvidenceStage: (
+      input: HouseholdMutateEvidenceStageInput
+    ) => Promise<typeof HouseholdMutateEvidenceStageResult.Encoded>;
     readonly commitRecipeImportDraft: (
       input: HouseholdCommitRecipeImportDraftInput
     ) => Promise<typeof HouseholdActiveRecipeImportActionResult.Encoded>;
     readonly observeEvidenceReference: (
       input: HouseholdObserveEvidenceReferenceInput
     ) => Promise<typeof HouseholdObserveEvidenceReferenceResult.Encoded>;
+    readonly readEvidenceStage: (
+      input: HouseholdReadEvidenceStageInput
+    ) => Promise<typeof HouseholdReadEvidenceStageResult.Encoded>;
     readonly confirmRecipeImportAction: (
       input: HouseholdConfirmRecipeImportActionInput
     ) => Promise<typeof SucceededRecipeImportIntent.Encoded>;
@@ -199,7 +209,9 @@ export default {
     );
     if (
       testSystemOperation === "commit-acquisition-evidence" ||
+      testSystemOperation === "mutate-evidence-stage" ||
       testSystemOperation === "observe-evidence-reference" ||
+      testSystemOperation === "read-evidence-stage" ||
       testSystemOperation === "resolve" ||
       testSystemOperation === "commit-draft"
     ) {
@@ -214,13 +226,21 @@ export default {
               ? await env.HouseholdDomainWorker.commitRecipeImportDraft(
                   input as HouseholdCommitRecipeImportDraftInput
                 )
-              : testSystemOperation === "observe-evidence-reference"
-                ? await env.HouseholdDomainWorker.observeEvidenceReference(
-                    input as HouseholdObserveEvidenceReferenceInput
+              : testSystemOperation === "mutate-evidence-stage"
+                ? await env.HouseholdDomainWorker.mutateEvidenceStage(
+                    input as HouseholdMutateEvidenceStageInput
                   )
-                : await env.HouseholdDomainWorker.commitAcquisitionEvidence(
-                    input as HouseholdCommitAcquisitionEvidenceInput
-                  );
+                : testSystemOperation === "read-evidence-stage"
+                  ? await env.HouseholdDomainWorker.readEvidenceStage(
+                      input as HouseholdReadEvidenceStageInput
+                    )
+                  : testSystemOperation === "observe-evidence-reference"
+                    ? await env.HouseholdDomainWorker.observeEvidenceReference(
+                        input as HouseholdObserveEvidenceReferenceInput
+                      )
+                    : await env.HouseholdDomainWorker.commitAcquisitionEvidence(
+                        input as HouseholdCommitAcquisitionEvidenceInput
+                      );
         return rpcResponse(result);
       } catch {
         return Response.json({ rejected: true }, { status: 400 });

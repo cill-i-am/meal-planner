@@ -119,6 +119,27 @@ export const householdEvidenceMutationReceipts = sqliteTable(
   }
 );
 
+/** Provider-free stage ledger; provider payload bytes remain outside SQLite. */
+export const householdEvidenceStageExecutions = sqliteTable(
+  "household_evidence_stage_executions",
+  {
+    committedAt: text("committed_at").notNull(),
+    dispatchId: text("dispatch_id").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    failureCode: text("failure_code"),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    intentId: text("intent_id").notNull(),
+    resultJson: text("result_json"),
+    stage: text("stage").notNull(),
+    state: text("state").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.intentId, table.executionGeneration, table.stage],
+    }),
+  ]
+);
+
 export const householdLiveRecipeImportStatuses = [
   "processing",
   "requires_action",

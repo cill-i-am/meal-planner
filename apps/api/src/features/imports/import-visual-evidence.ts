@@ -70,12 +70,15 @@ const observationsMatchFrames = (
   );
 const completedFromDocument = (
   document: VisualEvidenceManifest,
+  byteLength: number,
   manifestSha256: string,
   manifestKey: string
 ): CompletedVisualEvidence => ({
+  byteLength,
   completedAt: document.createdAt,
   cost: document.cost,
   dispatchId: document.dispatchId,
+  deleteAt: document.sourceEvidenceDeleteAt,
   generation: document.acquisitionGeneration,
   importId: document.importId,
   manifestKey,
@@ -177,6 +180,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
           : yield* input.visualRepository.complete(
               completedFromDocument(
                 committed.value.document,
+                committed.value.byteLength,
                 committed.value.sha256,
                 committed.value.manifestKey
               )
@@ -290,6 +294,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     return yield* input.visualRepository.complete(
       completedFromDocument(
         committed.document,
+        committed.byteLength,
         committed.sha256,
         committed.manifestKey
       )

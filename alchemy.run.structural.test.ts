@@ -412,6 +412,56 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(allSource).not.toMatch(/Cloudflare\.Images|Images\.|sharp/iu);
   });
 
+  it("wires R2 lifecycle events to a privacy-safe evidence Queue consumer", () => {
+    const stackSource = readRepoFile("./alchemy.run.ts");
+    const eventWorkerSource = readRepoFile(
+      "./apps/api/src/infrastructure/import-evidence-event-queue.ts"
+    );
+    const eventDecoderSource = readRepoFile(
+      "./apps/api/src/features/imports/import-evidence-event.ts"
+    );
+
+    expect(stackSource).toContain("ImportEvidenceEventQueue");
+    expect(stackSource).toContain("Cloudflare.R2.BucketEventNotification(");
+    expect(stackSource).toContain('prefix: "imports/"');
+    expect(stackSource).toContain('"LifecycleDeletion"');
+    expect(eventWorkerSource).toContain(
+      "Cloudflare.Queues.consumeQueueMessages("
+    );
+    expect(eventWorkerSource).toContain("Cloudflare.Queues.EventSourceLive");
+    expect(eventDecoderSource).not.toContain("organizationId");
+    expect(eventDecoderSource).not.toContain("HouseholdDomainWorker");
+  });
+
+  it("commits acquisition and provider evidence only through the household authority", () => {
+    const workflowSource = readRepoFile(
+      "./apps/api/src/features/imports/import.workflow.ts"
+    );
+    const householdRepositorySource = readRepoFile(
+      "./apps/api/src/features/households/evidence/household-evidence.repository.ts"
+    );
+
+    expect(workflowSource).toContain("commitAcquisitionEvidence");
+    expect(workflowSource).toContain(
+      "makeHouseholdImportEvidenceViewRepository"
+    );
+    expect(workflowSource).toContain(
+      "makeHouseholdSpeechTranscriptionRepository"
+    );
+    expect(workflowSource).toContain("makeHouseholdVisualEvidenceRepository");
+    expect(workflowSource).toContain("makeHouseholdCarouselEvidenceRepository");
+    expect(workflowSource).toContain("makeHouseholdRecipeDraftRepository");
+    expect(workflowSource).not.toContain("repository.recordAcquired(");
+    expect(workflowSource).not.toContain("makeD1SpeechTranscriptionRepository");
+    expect(workflowSource).not.toContain("makeD1VisualEvidenceRepository");
+    expect(workflowSource).not.toContain("makeD1CarouselEvidenceRepository");
+    expect(workflowSource).not.toContain("makeD1RecipeDraftRepository");
+
+    expect(householdRepositorySource).not.toMatch(
+      /Cloudflare|fetch\s*\(|\.put\s*\(|\.delete\s*\(|R2|Workflow|Queue|service binding|provider gateway/iu
+    );
+  });
+
   it("keeps the pre-Slice-4 batch Queue prototype physically retired", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
     const workerSource = readRepoFile("./apps/api/src/worker.ts");

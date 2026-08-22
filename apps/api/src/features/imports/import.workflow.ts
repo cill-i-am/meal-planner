@@ -50,13 +50,19 @@ import {
   prepareTikTokCarouselEvidence,
   produceTikTokCarouselRecipeDraft,
 } from "./import-carousel.js";
-import { makeD1CarouselEvidenceRepository } from "./import-carousel.repository.d1.js";
 import {
   makeR2SpeechAudioExtractor,
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
 import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
+import {
+  makeHouseholdCarouselEvidenceRepository,
+  makeHouseholdImportEvidenceViewRepository,
+  makeHouseholdRecipeDraftRepository,
+  makeHouseholdSpeechTranscriptionRepository,
+  makeHouseholdVisualEvidenceRepository,
+} from "./import-evidence.repository.household.js";
 import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import { ImportWorkflowTerminationUnavailable } from "./import-intent-execution.js";
 import type { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
@@ -122,11 +128,8 @@ import {
   publicIntentFailureForProviderStage,
 } from "./import-public-failure.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
-import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
-import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
-import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import {
   decodeImportWorkflowInput,
   ImportWorkflowInput,
@@ -674,6 +677,29 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               intentId,
               organizationId,
             });
+            const evidenceRepositories = (
+              generation: AcquisitionGeneration
+            ) => {
+              const evidenceInput = {
+                canonicalSourceId: identityResolution.identity.canonicalId,
+                correlationId,
+                generation,
+                householdDomain,
+                intentId,
+                mutationId: workflowMutationId,
+                organizationId,
+              };
+              return {
+                carousel:
+                  makeHouseholdCarouselEvidenceRepository(evidenceInput),
+                current:
+                  makeHouseholdImportEvidenceViewRepository(evidenceInput),
+                recipe: makeHouseholdRecipeDraftRepository(evidenceInput),
+                speech:
+                  makeHouseholdSpeechTranscriptionRepository(evidenceInput),
+                visual: makeHouseholdVisualEvidenceRepository(evidenceInput),
+              } as const;
+            };
             const recipeLifecycle = {
               grounding: intentTransitions
                 .advanceStage("grounding_recipe")
@@ -829,10 +855,14 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     bucket,
                     extractor: recipeExtractor,
                     importId,
-                    importRepository: repository,
+                    importRepository: evidenceRepositories(
+                      acquisitionGeneration
+                    ).current,
                     lifecycle: recipeLifecycle,
                     now,
-                    recipeRepository: makeD1RecipeDraftRepository(database),
+                    recipeRepository: evidenceRepositories(
+                      acquisitionGeneration
+                    ).recipe,
                   })
                 ),
                 visual: (() => {
@@ -851,12 +881,15 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         extractor: visualExtractor,
                         frameSampler: makeR2VisualFrameSampler(bucket),
                         importId,
-                        importRepository: repository,
+                        importRepository: evidenceRepositories(
+                          acquisitionGeneration
+                        ).current,
                         now,
                         speechDispatchId,
                         visualDispatchId,
-                        visualRepository:
-                          makeD1VisualEvidenceRepository(database),
+                        visualRepository: evidenceRepositories(
+                          acquisitionGeneration
+                        ).visual,
                       })
                     );
                   return preparedDispatchIds === undefined
@@ -874,6 +907,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               importId,
             }).pipe(Effect.orDie);
             if (stagedCarousel !== null) {
+              const carouselGeneration = Schema.decodeUnknownSync(
+                AcquisitionGeneration
+              )(executionGeneration);
               const carouselResult =
                 yield* runImportCarouselVisualAndRecipeWorkflow({
                   lifecycle: {
@@ -909,7 +945,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         importId,
                         lifecycle: recipeLifecycle,
                         now,
-                        recipeRepository: makeD1RecipeDraftRepository(database),
+                        recipeRepository:
+                          evidenceRepositories(carouselGeneration).recipe,
                       })
                     ),
                   visual: runProviderTask(
@@ -919,7 +956,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                       adapter: stagedCarousel.adapter,
                       bucket,
                       carouselRepository:
-                        makeD1CarouselEvidenceRepository(database),
+                        evidenceRepositories(carouselGeneration).carousel,
                       descriptor: stagedCarousel.descriptor,
                       importId,
                       now,
@@ -1213,15 +1250,18 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         runProviderTaskAttempt(
                           "speech",
                           transcribeAcquiredImport({
-                            acquisitionRepository: repository,
+                            acquisitionRepository: evidenceRepositories(
+                              outcome.generation
+                            ).current,
                             audioExtractor: makeR2SpeechAudioExtractor(bucket),
                             bucket,
                             dispatchId: speechDispatchId,
                             importId,
                             now,
                             speechTranscriber,
-                            transcriptionRepository:
-                              makeD1SpeechTranscriptionRepository(database),
+                            transcriptionRepository: evidenceRepositories(
+                              outcome.generation
+                            ).speech,
                           }),
                           () => ({
                             _tag: "Succeeded" as const,
