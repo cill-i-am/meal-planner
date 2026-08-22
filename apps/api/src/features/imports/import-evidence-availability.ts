@@ -3,8 +3,9 @@ import { Effect } from "effect";
 import type { HouseholdReadEvidenceReferencesResult } from "../households/evidence/household-evidence.contract.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 
-type EvidenceReference =
-  (typeof HouseholdReadEvidenceReferencesResult.Type)["references"][number];
+type EvidenceReference = NonNullable<
+  typeof HouseholdReadEvidenceReferencesResult.Type
+>["references"][number];
 
 export interface InspectedEvidenceReference {
   readonly availability: "available" | "missing";

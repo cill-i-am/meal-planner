@@ -9,7 +9,7 @@ import type {
 } from "@meal-planner/recipe-import-api";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 
 import * as authSchema from "../auth/auth.database-schema.js";
@@ -25,14 +25,16 @@ import {
   makeRecipeImportHttpApiLayer,
 } from "../imports/import-intent-api.http.js";
 import { RecipeImportWorkflowDispatcher } from "../imports/import-workflow-dispatcher.js";
-import type {
+import {
   HouseholdCommitAcquisitionEvidenceInput,
-  HouseholdCommitAcquisitionEvidenceResult,
   HouseholdMutateEvidenceStageInput,
-  HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceInput,
-  HouseholdObserveEvidenceReferenceResult,
   HouseholdReadEvidenceStageInput,
+} from "./evidence/household-evidence.contract.js";
+import type {
+  HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdMutateEvidenceStageResult,
+  HouseholdObserveEvidenceReferenceResult,
   HouseholdReadEvidenceStageResult,
 } from "./evidence/household-evidence.contract.js";
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
@@ -75,37 +77,31 @@ const baseURL = "https://meal-planner.test";
 const recipeImportFailure = () =>
   HouseholdRecipeImportFailure.make({ reason: "persistence_unavailable" });
 
-const isRpcErrorEnvelope = (
-  value: unknown
-): value is { readonly _tag: "~alchemy/rpc/error"; readonly error: unknown } =>
-  typeof value === "object" &&
-  value !== null &&
-  "_tag" in value &&
-  value._tag === "~alchemy/rpc/error" &&
-  "error" in value;
+const RpcErrorEnvelope = Schema.Struct({
+  _tag: Schema.Literal("~alchemy/rpc/error"),
+  error: Schema.Struct({
+    _tag: Schema.optionalKey(Schema.String),
+    reason: Schema.optionalKey(Schema.String),
+  }),
+});
 
-const rpcResponse = (value: unknown) => {
-  if (!isRpcErrorEnvelope(value)) {
+const failureStatus = (reason: string | undefined) => {
+  if (reason === "intent_not_found") {
+    return 404;
+  }
+  if (reason === "generation_conflict" || reason === "idempotency_conflict") {
+    return 409;
+  }
+  return 400;
+};
+
+const rpcResponse = (value: Schema.Json) => {
+  const decoded = Schema.decodeUnknownOption(RpcErrorEnvelope)(value);
+  if (Option.isNone(decoded)) {
     return Response.json(value);
   }
-  const reason =
-    typeof value.error === "object" &&
-    value.error !== null &&
-    "reason" in value.error
-      ? value.error.reason
-      : undefined;
-  const errorTag =
-    typeof value.error === "object" &&
-    value.error !== null &&
-    "_tag" in value.error
-      ? value.error._tag
-      : undefined;
-  const status =
-    reason === "intent_not_found"
-      ? 404
-      : reason === "generation_conflict" || reason === "idempotency_conflict"
-        ? 409
-        : 400;
+  const { _tag: errorTag, reason } = decoded.value.error;
+  const status = failureStatus(reason);
   return Response.json({ errorTag, reason, rejected: true }, { status });
 };
 
@@ -128,19 +124,19 @@ interface HouseholdApiFixtureEnv {
       input: HouseholdCancelRecipeImportInput
     ) => Promise<typeof CancelledRecipeImportIntent.Encoded>;
     readonly commitAcquisitionEvidence: (
-      input: HouseholdCommitAcquisitionEvidenceInput
+      input: typeof HouseholdCommitAcquisitionEvidenceInput.Encoded
     ) => Promise<typeof HouseholdCommitAcquisitionEvidenceResult.Encoded>;
     readonly mutateEvidenceStage: (
-      input: HouseholdMutateEvidenceStageInput
+      input: typeof HouseholdMutateEvidenceStageInput.Encoded
     ) => Promise<typeof HouseholdMutateEvidenceStageResult.Encoded>;
     readonly commitRecipeImportDraft: (
       input: HouseholdCommitRecipeImportDraftInput
     ) => Promise<typeof HouseholdActiveRecipeImportActionResult.Encoded>;
     readonly observeEvidenceReference: (
-      input: HouseholdObserveEvidenceReferenceInput
+      input: typeof HouseholdObserveEvidenceReferenceInput.Encoded
     ) => Promise<typeof HouseholdObserveEvidenceReferenceResult.Encoded>;
     readonly readEvidenceStage: (
-      input: HouseholdReadEvidenceStageInput
+      input: typeof HouseholdReadEvidenceStageInput.Encoded
     ) => Promise<typeof HouseholdReadEvidenceStageResult.Encoded>;
     readonly confirmRecipeImportAction: (
       input: HouseholdConfirmRecipeImportActionInput
@@ -216,31 +212,55 @@ export default {
       testSystemOperation === "commit-draft"
     ) {
       try {
-        const input: unknown = await request.json();
-        const result =
-          testSystemOperation === "resolve"
-            ? await env.HouseholdDomainWorker.resolveRecipeImportSource(
-                input as HouseholdResolveRecipeImportSourceInput
-              )
-            : testSystemOperation === "commit-draft"
-              ? await env.HouseholdDomainWorker.commitRecipeImportDraft(
-                  input as HouseholdCommitRecipeImportDraftInput
-                )
-              : testSystemOperation === "mutate-evidence-stage"
-                ? await env.HouseholdDomainWorker.mutateEvidenceStage(
-                    input as HouseholdMutateEvidenceStageInput
-                  )
-                : testSystemOperation === "read-evidence-stage"
-                  ? await env.HouseholdDomainWorker.readEvidenceStage(
-                      input as HouseholdReadEvidenceStageInput
-                    )
-                  : testSystemOperation === "observe-evidence-reference"
-                    ? await env.HouseholdDomainWorker.observeEvidenceReference(
-                        input as HouseholdObserveEvidenceReferenceInput
-                      )
-                    : await env.HouseholdDomainWorker.commitAcquisitionEvidence(
-                        input as HouseholdCommitAcquisitionEvidenceInput
-                      );
+        const input = Schema.decodeUnknownSync(Schema.Json)(
+          await request.json()
+        );
+        let result: Schema.Json;
+        switch (testSystemOperation) {
+          case "commit-draft": {
+            result = await env.HouseholdDomainWorker.commitRecipeImportDraft(
+              input as HouseholdCommitRecipeImportDraftInput
+            );
+            break;
+          }
+          case "mutate-evidence-stage": {
+            result = await env.HouseholdDomainWorker.mutateEvidenceStage(
+              Schema.decodeUnknownSync(
+                Schema.toEncoded(HouseholdMutateEvidenceStageInput)
+              )(input)
+            );
+            break;
+          }
+          case "observe-evidence-reference": {
+            result = await env.HouseholdDomainWorker.observeEvidenceReference(
+              Schema.decodeUnknownSync(
+                Schema.toEncoded(HouseholdObserveEvidenceReferenceInput)
+              )(input)
+            );
+            break;
+          }
+          case "read-evidence-stage": {
+            result = await env.HouseholdDomainWorker.readEvidenceStage(
+              Schema.decodeUnknownSync(
+                Schema.toEncoded(HouseholdReadEvidenceStageInput)
+              )(input)
+            );
+            break;
+          }
+          case "resolve": {
+            result = await env.HouseholdDomainWorker.resolveRecipeImportSource(
+              input as HouseholdResolveRecipeImportSourceInput
+            );
+            break;
+          }
+          default: {
+            result = await env.HouseholdDomainWorker.commitAcquisitionEvidence(
+              Schema.decodeUnknownSync(
+                Schema.toEncoded(HouseholdCommitAcquisitionEvidenceInput)
+              )(input)
+            );
+          }
+        }
         return rpcResponse(result);
       } catch {
         return Response.json({ rejected: true }, { status: 400 });

@@ -369,7 +369,7 @@ extra binding is another invocation and another principal-propagation boundary.
 | Now | Workflow, Queue, R2, private service binding | Keep orchestration, delivery, bytes, and private routing outside household transactions. Pass and re-prove the application principal across the binding. |
 | Next | SQLite DO PITR and recovery runbook | Add operator tooling for per-object bookmarks and 30-day restore, destructive-command/migration procedures, authorization, audit, and a production drill. PITR is per-object recovery, not fleet backup or inventory, and is unavailable locally. |
 | Next | Durable Object alarms | Multiplex a local schedule/outbox table onto the single alarm. Handlers are idempotent and limited to local wake-up, pruning, deletion, or dispatch retry; provider work remains in Workflows. |
-| Next | R2 Queue event notifications | Send relevant create/delete/lifecycle-deletion events through a reconciliation Queue with strict prefix/suffix and generation validation. Notifications are delivery evidence, not household truth. |
+| Now | R2 Queue event notifications | Relevant create/delete/lifecycle-deletion events pass through a reconciliation Queue with strict key, integrity, household, and generation validation. Notifications are delivery evidence, not household truth. |
 | Next | Scheduled maintenance | On Alchemy beta.72, use an Alchemy-managed cron Worker that starts a bound Workflow. Direct Workflow schedules exist in Cloudflare but are not exposed by the pinned Alchemy resource API; revisit after support lands. |
 | Next | Rate Limiting binding | Protect expensive admission/provider routes with privacy-safe household/actor/capability keys. Location-local permissive counters are abuse and load protection, never authorization, quota, budget, billing, or idempotency. |
 | Next | Secrets Store evaluation | Prefer reusable account-level provider/system credentials if the open-beta, async binding and local-development constraints pass an exact-version spike. Do not store household product data or retail grants there. |
@@ -499,7 +499,7 @@ and its transfer-size workaround. Do not preserve prototype rows or reinstate
 an arbitrary product-level recipe-count ceiling such as the old 128-item limit;
 use pagination, bounded pages, and byte limits at real transport/storage seams.
 
-### Slice 2: evidence and extraction metadata
+### Completed: Slice 2 evidence and extraction metadata
 
 Move compact transcription, visual, carousel, extraction, manifest, current
 result, and generation metadata plus integrity-checked R2 references. Large
@@ -509,6 +509,16 @@ retention, missing-object, deletion, restart, and stale-generation proof.
 
 The exact table boundary is refined from live dependencies after Slice 1; no
 state needed by the confirmation transaction may be left behind.
+
+The production acquisition Workflow now commits closed acquisition and stage
+results only through the private household authority. Household SQLite owns
+compact current-result metadata, integrity-checked generation-scoped R2
+references, availability observations, and replay receipts. Large bytes remain
+in R2. Missing objects, lifecycle deletion, late events, restart, exact retry,
+conflicting replay, stale generations, and physical cross-household isolation
+have provider-free runtime proof. Shared D1 retains only the existing Slice 3
+settlement and terminal-recovery boundary; this slice does not redesign or move
+that capability.
 
 ### Slice 3: settlement and recovery
 
@@ -671,7 +681,6 @@ minimal noncanonical operational index for an approved concrete use case.
 
 ## Immediate handoff
 
-The next authority delivery is **Slice 2: evidence and extraction metadata**.
-It must start from the merged Slice 1 cutover and must not move settlement,
-recovery, batch, or final shared-D1 retirement work from later slices into its
-scope.
+The next authority delivery is **Slice 3: settlement and recovery**. It must
+start from the merged Slice 2 cutover and must not move batch or final shared-D1
+retirement work from later slices into its scope.

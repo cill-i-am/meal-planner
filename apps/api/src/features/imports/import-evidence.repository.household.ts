@@ -1,4 +1,4 @@
-import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { Effect, Option, Schema } from "effect";
 
 import {
@@ -14,7 +14,8 @@ import type {
   CarouselEvidenceRepository,
   CompletedCarouselEvidence,
 } from "./import-carousel.repository.js";
-import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
+import type { AcquisitionGeneration } from "./import-media.model.js";
+import { Sha256Hex } from "./import-media.model.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import type {
   RecipeDispatchClaim,
@@ -31,12 +32,8 @@ import type {
   VisualDispatchClaim,
   VisualEvidenceRepository,
 } from "./import-visual-evidence.repository.js";
-import {
-  ImportId,
-  ImportTimestamp,
-  ImportView,
-  SourceCanonicalId,
-} from "./import.contracts.js";
+import type { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
+import { ImportId, ImportView } from "./import.contracts.js";
 import {
   importPersistenceUnavailable,
   importTransitionRejected,
@@ -59,11 +56,12 @@ interface HouseholdEvidenceRepositoryInput {
   readonly organizationId: HouseholdOrganizationId;
 }
 
-const mapFailure = (error: unknown): ImportTransitionError =>
-  typeof error === "object" &&
-  error !== null &&
-  "reason" in error &&
-  error.reason === "persistence_unavailable"
+const PersistenceUnavailableFailure = Schema.Struct({
+  reason: Schema.Literal("persistence_unavailable"),
+});
+
+const mapFailure = <E>(error: E): ImportTransitionError =>
+  Schema.is(PersistenceUnavailableFailure)(error)
     ? importPersistenceUnavailable()
     : importTransitionRejected();
 
@@ -145,6 +143,38 @@ const assertIdentity = (
 const decodeImportId = (intentId: RecipeImportIntentId) =>
   Schema.decodeUnknownSync(ImportId)(intentId);
 
+const visualStatus = (outcome: "empty" | "found" | "low_confidence") => {
+  if (outcome === "found") {
+    return "visual_evidence_found" as const;
+  }
+  if (outcome === "empty") {
+    return "visual_evidence_empty" as const;
+  }
+  return "visual_evidence_low_confidence" as const;
+};
+
+const resumedClaimTag = (outcome: "DispatchClaimed" | "ResumeDispatch") => {
+  if (outcome === "DispatchClaimed") {
+    return "DispatchClaimed" as const;
+  }
+  return "ResumeDispatch" as const;
+};
+
+const carouselRecovery = (
+  failureCode:
+    | "carousel_inaccessible"
+    | "carousel_layout_drift"
+    | "carousel_partial"
+) => {
+  if (failureCode === "carousel_inaccessible") {
+    return "check_source_visibility" as const;
+  }
+  if (failureCode === "carousel_partial") {
+    return "request_complete_carousel" as const;
+  }
+  return "update_carousel_adapter" as const;
+};
+
 /**
  * Internal provider-stage projection assembled only from household-owned
  * metadata. It intentionally exposes the legacy ImportRepository shape only
@@ -166,7 +196,11 @@ export const makeHouseholdImportEvidenceViewRepository = (
         })
       : Effect.fail(importTransitionRejected())
     ).pipe(
+      // eslint-disable-next-line complexity -- one closed projection preserves the precedence of mutually exclusive provider-stage states
       Effect.flatMap(({ extraction, references, speech, visual }) => {
+        if (references === null) {
+          return Effect.succeed(Option.none<StoredImport>());
+        }
         const original = references.references.find(
           ({ kind }) => kind === "original_media"
         );
@@ -176,7 +210,7 @@ export const makeHouseholdImportEvidenceViewRepository = (
         if (original === undefined || manifest === undefined) {
           return Effect.fail(importTransitionRejected());
         }
-        const evidence: Array<{ kind: string; referenceId: string }> = [
+        const evidence: { kind: string; referenceId: string }[] = [
           { kind: "original_media", referenceId: original.key },
           { kind: "acquisition_manifest", referenceId: manifest.key },
         ];
@@ -233,12 +267,7 @@ export const makeHouseholdImportEvidenceViewRepository = (
             referenceId: visualManifest.key,
           });
           status = {
-            kind:
-              visual.result.outcome === "found"
-                ? "visual_evidence_found"
-                : visual.result.outcome === "empty"
-                  ? "visual_evidence_empty"
-                  : "visual_evidence_low_confidence",
+            kind: visualStatus(visual.result.outcome),
           };
           updatedAt = visual.committedAt;
         }
@@ -301,7 +330,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
     ) {
       return Effect.fail(importTransitionRejected());
     }
-    const result = stage.result;
+    const { result } = stage;
     return Effect.succeed({
       byteLength: stage.reference.byteLength,
       completedAt: result.completedAt,
@@ -322,9 +351,11 @@ export const makeHouseholdSpeechTranscriptionRepository = (
   };
   return {
     claim: (claim) =>
-      assertIdentity(input, claim.importId, claim.generation).pipe(
-        Effect.andThen(
-          boundary.mutate(`speech:claim:${claim.sourceMediaSha256}`, {
+      Effect.gen(function* claimSpeechEvidence() {
+        yield* assertIdentity(input, claim.importId, claim.generation);
+        const receipt = yield* boundary.mutate(
+          `speech:claim:${claim.sourceMediaSha256}`,
+          {
             inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
               claim.sourceMediaSha256
             ),
@@ -334,44 +365,34 @@ export const makeHouseholdSpeechTranscriptionRepository = (
               stage: "speech",
               startedAt: claim.startedAt,
             },
-          })
-        ),
-        Effect.flatMap((receipt) =>
-          receipt.outcome === "Completed"
-            ? boundary.read("speech").pipe(
-                Effect.flatMap((stage) =>
-                  stage === null
-                    ? Effect.fail(importTransitionRejected())
-                    : completed(stage)
-                ),
-                Effect.map(
-                  (evidence): SpeechDispatchClaim => ({
-                    _tag: "Completed",
-                    evidence,
-                  })
-                )
-              )
-            : receipt.outcome === "Failed"
-              ? boundary.read("speech").pipe(
-                  Effect.flatMap((stage) =>
-                    stage?.failureCode === null || stage === null
-                      ? Effect.fail(importTransitionRejected())
-                      : Effect.succeed<SpeechDispatchClaim>({
-                          _tag: "Failed",
-                          code: stage.failureCode,
-                          dispatchId: claim.dispatchId,
-                        })
-                  )
-                )
-              : Effect.succeed<SpeechDispatchClaim>({
-                  _tag:
-                    receipt.outcome === "DispatchClaimed"
-                      ? "DispatchClaimed"
-                      : "ResumeDispatch",
-                  dispatchId: claim.dispatchId,
-                })
-        )
-      ),
+          }
+        );
+        if (receipt.outcome === "Completed") {
+          const stage = yield* boundary.read("speech");
+          if (stage === null) {
+            return yield* Effect.fail(importTransitionRejected());
+          }
+          return {
+            _tag: "Completed" as const,
+            evidence: yield* completed(stage),
+          };
+        }
+        if (receipt.outcome === "Failed") {
+          const stage = yield* boundary.read("speech");
+          if (stage === null || stage.failureCode === null) {
+            return yield* Effect.fail(importTransitionRejected());
+          }
+          return {
+            _tag: "Failed" as const,
+            code: stage.failureCode,
+            dispatchId: claim.dispatchId,
+          };
+        }
+        return {
+          _tag: resumedClaimTag(receipt.outcome),
+          dispatchId: claim.dispatchId,
+        } satisfies SpeechDispatchClaim;
+      }),
     complete: (evidence) =>
       assertIdentity(input, evidence.importId, evidence.generation).pipe(
         Effect.andThen(
@@ -454,7 +475,7 @@ export const makeHouseholdVisualEvidenceRepository = (
     ) {
       return Effect.fail(importTransitionRejected());
     }
-    const result = stage.result;
+    const { result } = stage;
     return Effect.succeed({
       byteLength: stage.reference.byteLength,
       completedAt: result.completedAt,
@@ -609,7 +630,7 @@ export const makeHouseholdCarouselEvidenceRepository = (
     ) {
       return Effect.fail(importTransitionRejected());
     }
-    const result = stage.result;
+    const { result } = stage;
     return Effect.succeed({
       byteLength: stage.reference.byteLength,
       completedAt: result.completedAt,
@@ -624,20 +645,12 @@ export const makeHouseholdCarouselEvidenceRepository = (
     } satisfies CompletedCarouselEvidence);
   };
   return {
-    findParent: (importId) =>
-      String(importId) === String(input.intentId)
-        ? Effect.succeed(
-            Option.some({
-              canonicalId: input.canonicalSourceId,
-              generation: input.generation,
-              status: "queued",
-            })
-          )
-        : Effect.succeed(Option.none()),
     claim: (claim) =>
-      assertIdentity(input, claim.importId, claim.generation).pipe(
-        Effect.andThen(
-          boundary.mutate(`carousel:claim:${claim.descriptorFingerprint}`, {
+      Effect.gen(function* claimCarouselEvidence() {
+        yield* assertIdentity(input, claim.importId, claim.generation);
+        const receipt = yield* boundary.mutate(
+          `carousel:claim:${claim.descriptorFingerprint}`,
+          {
             inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
               claim.descriptorFingerprint
             ),
@@ -647,50 +660,38 @@ export const makeHouseholdCarouselEvidenceRepository = (
               stage: "carousel",
               startedAt: claim.startedAt,
             },
-          })
-        ),
-        Effect.flatMap((receipt) =>
-          receipt.outcome === "Completed"
-            ? boundary.read("carousel").pipe(
-                Effect.flatMap((stage) =>
-                  stage === null
-                    ? Effect.fail(importTransitionRejected())
-                    : completed(stage)
-                ),
-                Effect.map(
-                  (evidence): CarouselEvidenceClaim => ({
-                    _tag: "Completed",
-                    evidence,
-                  })
-                )
-              )
-            : receipt.outcome === "Failed"
-              ? boundary.read("carousel").pipe(
-                  Effect.flatMap((stage) =>
-                    stage?.failureCode === "carousel_inaccessible" ||
-                    stage?.failureCode === "carousel_layout_drift" ||
-                    stage?.failureCode === "carousel_partial"
-                      ? Effect.succeed<CarouselEvidenceClaim>({
-                          _tag: "Failed",
-                          code: stage.failureCode,
-                          recovery:
-                            stage.failureCode === "carousel_inaccessible"
-                              ? "check_source_visibility"
-                              : stage.failureCode === "carousel_partial"
-                                ? "request_complete_carousel"
-                                : "update_carousel_adapter",
-                        })
-                      : Effect.fail(importTransitionRejected())
-                  )
-                )
-              : Effect.succeed<CarouselEvidenceClaim>({
-                  _tag:
-                    receipt.outcome === "DispatchClaimed"
-                      ? "DispatchClaimed"
-                      : "ResumeDispatch",
-                })
-        )
-      ),
+          }
+        );
+        if (receipt.outcome === "Completed") {
+          const stage = yield* boundary.read("carousel");
+          if (stage === null) {
+            return yield* Effect.fail(importTransitionRejected());
+          }
+          return {
+            _tag: "Completed" as const,
+            evidence: yield* completed(stage),
+          };
+        }
+        if (receipt.outcome === "Failed") {
+          const stage = yield* boundary.read("carousel");
+          const code = stage?.failureCode;
+          if (
+            code !== "carousel_inaccessible" &&
+            code !== "carousel_layout_drift" &&
+            code !== "carousel_partial"
+          ) {
+            return yield* Effect.fail(importTransitionRejected());
+          }
+          return {
+            _tag: "Failed" as const,
+            code,
+            recovery: carouselRecovery(code),
+          };
+        }
+        return {
+          _tag: resumedClaimTag(receipt.outcome),
+        } satisfies CarouselEvidenceClaim;
+      }),
     complete: (evidence) =>
       assertIdentity(input, evidence.importId, evidence.generation).pipe(
         Effect.andThen(
@@ -751,6 +752,16 @@ export const makeHouseholdCarouselEvidenceRepository = (
         ),
         Effect.asVoid
       ),
+    findParent: (importId) =>
+      String(importId) === String(input.intentId)
+        ? Effect.succeed(
+            Option.some({
+              canonicalId: input.canonicalSourceId,
+              generation: input.generation,
+              status: "queued",
+            })
+          )
+        : Effect.succeed(Option.none()),
   };
 };
 
@@ -809,13 +820,19 @@ export const makeHouseholdRecipeDraftRepository = (
           }
         )
       ),
-      Effect.flatMap((receipt) =>
-        receipt.outcome === "DispatchClaimed"
-          ? Effect.succeed<RecipeDispatchClaim>({ _tag: "DispatchClaimed" })
-          : receipt.outcome === "ResumeDispatch"
-            ? Effect.succeed<RecipeDispatchClaim>({ _tag: "ResumeDispatch" })
-            : claimResult(claimInput.extractionFingerprint)
-      )
+      Effect.flatMap((receipt) => {
+        if (receipt.outcome === "DispatchClaimed") {
+          return Effect.succeed<RecipeDispatchClaim>({
+            _tag: "DispatchClaimed",
+          });
+        }
+        if (receipt.outcome === "ResumeDispatch") {
+          return Effect.succeed<RecipeDispatchClaim>({
+            _tag: "ResumeDispatch",
+          });
+        }
+        return claimResult(claimInput.extractionFingerprint);
+      })
     );
   return {
     claim,

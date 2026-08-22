@@ -14,7 +14,7 @@ import {
 import type {
   CarouselEvidenceRepository,
   CompletedCarouselEvidence,
-} from "./import-carousel.repository.d1.js";
+} from "./import-carousel.repository.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import {
   AcquisitionGeneration,
@@ -23,7 +23,7 @@ import {
 } from "./import-media.model.js";
 import { produceRecipeDraftFromEvidence } from "./import-recipe-draft.js";
 import type { ProduceRecipeDraftFromEvidenceInput } from "./import-recipe-draft.js";
-import type { RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import type { RecipeDraftRepository } from "./import-recipe-draft.repository.js";
 import type {
   RecipeEvidenceAssembly,
   RecipeEvidenceItem,
@@ -569,8 +569,8 @@ const completedEvidence = (
 ): CompletedCarouselEvidence => ({
   byteLength,
   completedAt: document.createdAt,
-  descriptorFingerprint: document.descriptorFingerprint,
   deleteAt: document.images[0].deleteAt,
+  descriptorFingerprint: document.descriptorFingerprint,
   dispatchId: document.dispatchId,
   generation: document.acquisitionGeneration,
   imageCount: document.images.length,

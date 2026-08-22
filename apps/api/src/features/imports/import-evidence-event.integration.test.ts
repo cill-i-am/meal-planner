@@ -1,5 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
@@ -14,6 +15,13 @@ const importId = "018f7f67-e0c7-7d34-a593-8c20c6f7b868";
 let persistenceDirectory = "";
 let runtime: Miniflare | undefined;
 
+const moduleContents = (value: string | Uint8Array<ArrayBufferLike>) => {
+  if (value instanceof Uint8Array) {
+    return new TextDecoder().decode(value);
+  }
+  return value;
+};
+
 const bundleFixture = async (): Promise<
   readonly [ModuleDefinition, ...ModuleDefinition[]]
 > => {
@@ -22,7 +30,7 @@ const bundleFixture = async (): Promise<
       {
         external: ["cloudflare:workers"],
         input: fileURLToPath(
-          new URL("./import-evidence-event.test-fixture.ts", import.meta.url)
+          new URL("import-evidence-event.test-fixture.ts", import.meta.url)
         ),
         plugins: [cloudflareRolldown({ compatibilityDate })],
       },
@@ -30,13 +38,15 @@ const bundleFixture = async (): Promise<
     )
   );
   const [entry, ...assets] = output.files;
-  const text = (value: string | Uint8Array<ArrayBufferLike>) =>
-    typeof value === "string" ? value : new TextDecoder().decode(value);
   return [
-    { contents: text(entry.content), path: entry.path, type: "ESModule" },
+    {
+      contents: moduleContents(entry.content),
+      path: entry.path,
+      type: "ESModule",
+    },
     ...assets.map(
       (asset): ModuleDefinition => ({
-        contents: text(asset.content),
+        contents: moduleContents(asset.content),
         path: asset.path,
         type: "Text",
       })
@@ -44,14 +54,24 @@ const bundleFixture = async (): Promise<
   ];
 };
 
+const readResult = async (
+  namespace: Awaited<ReturnType<Miniflare["getKVNamespace"]>> | undefined,
+  attemptsRemaining: number
+): Promise<unknown> => {
+  const value = await namespace?.get("last", "json");
+  if (value !== null && value !== undefined) {
+    return value;
+  }
+  if (attemptsRemaining === 0) {
+    throw new Error("Queue event was not processed");
+  }
+  await delay(25);
+  return readResult(namespace, attemptsRemaining - 1);
+};
+
 const result = async () => {
   const namespace = await runtime?.getKVNamespace("RESULTS", "consumer");
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const value = await namespace?.get("last", "json");
-    if (value !== null && value !== undefined) return value;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error("Queue event was not processed");
+  return readResult(namespace, 39);
 };
 
 describe("import evidence Queue runtime", () => {

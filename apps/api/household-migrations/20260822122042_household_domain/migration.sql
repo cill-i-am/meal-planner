@@ -5,15 +5,31 @@ CREATE TABLE `household_evidence_mutation_receipts` (
 );
 --> statement-breakpoint
 CREATE TABLE `household_evidence_references` (
+	`availability` text DEFAULT 'available' NOT NULL,
 	`byte_length` integer NOT NULL,
 	`delete_at` text NOT NULL,
 	`execution_generation` integer NOT NULL,
 	`intent_id` text NOT NULL,
 	`kind` text NOT NULL,
 	`object_key` text NOT NULL,
+	`observation_ordinal` integer DEFAULT 0 NOT NULL,
+	`observed_at` text,
 	`ordinal` integer NOT NULL,
 	`sha256` text NOT NULL,
 	CONSTRAINT `household_evidence_references_pk` PRIMARY KEY(`intent_id`, `execution_generation`, `ordinal`)
+);
+--> statement-breakpoint
+CREATE TABLE `household_evidence_stage_executions` (
+	`committed_at` text NOT NULL,
+	`dispatch_id` text NOT NULL,
+	`execution_generation` integer NOT NULL,
+	`failure_code` text,
+	`input_fingerprint` text NOT NULL,
+	`intent_id` text NOT NULL,
+	`result_json` text,
+	`stage` text NOT NULL,
+	`state` text NOT NULL,
+	CONSTRAINT `household_evidence_stage_executions_pk` PRIMARY KEY(`intent_id`, `execution_generation`, `stage`)
 );
 --> statement-breakpoint
 CREATE TABLE `household_import_evidence_executions` (

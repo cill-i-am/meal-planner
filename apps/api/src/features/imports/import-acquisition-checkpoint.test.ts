@@ -39,7 +39,9 @@ const verifiedOutcome = () => {
       deleteAt: "2026-08-04T10:00:00.000Z",
       durationSeconds: 30,
       generation: 1,
+      manifestByteLength: 512,
       manifestKey: manifestObjectKey(importId, generation),
+      manifestSha256: "b".repeat(64),
       mediaKey: mediaObjectKey(importId, generation),
       sha256: "a".repeat(64),
       source: {

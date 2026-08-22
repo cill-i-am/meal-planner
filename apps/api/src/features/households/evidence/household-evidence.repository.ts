@@ -89,44 +89,76 @@ const validateEvidence = (
   return valid ? Effect.void : Effect.fail(failure("invalid_input"));
 };
 
-const resultStage = (tag: string) =>
-  tag === "Speech"
-    ? "speech"
-    : tag === "Visual"
-      ? "visual"
-      : tag === "Carousel"
-        ? "carousel"
-        : tag === "Extraction"
-          ? "extraction"
-          : undefined;
+const resultStage = (
+  tag: string
+): "carousel" | "extraction" | "speech" | "visual" | null => {
+  switch (tag) {
+    case "Carousel": {
+      return "carousel";
+    }
+    case "Extraction": {
+      return "extraction";
+    }
+    case "Speech": {
+      return "speech";
+    }
+    case "Visual": {
+      return "visual";
+    }
+    default: {
+      return null;
+    }
+  }
+};
 
 const expectedStageReference = (
   stage: "carousel" | "extraction" | "speech" | "visual",
   intentId: string,
   generation: number
-) => {
+): {
+  readonly key: string;
+  readonly kind: "carousel_manifest" | "speech_transcript" | "visual_manifest";
+  readonly ordinal: number;
+} | null => {
   switch (stage) {
-    case "carousel":
+    case "carousel": {
       return {
         key: `imports/${intentId}/carousel/v1/generations/${generation}/manifest.json`,
         kind: "carousel_manifest" as const,
         ordinal: 0,
       };
-    case "speech":
+    }
+    case "speech": {
       return {
         key: `imports/${intentId}/transcription/v1/generations/${generation}/transcript.json`,
         kind: "speech_transcript" as const,
         ordinal: 2,
       };
-    case "visual":
+    }
+    case "visual": {
       return {
         key: `imports/${intentId}/visual/v1/generations/${generation}/manifest.json`,
         kind: "visual_manifest" as const,
         ordinal: 3,
       };
-    case "extraction":
-      return undefined;
+    }
+    case "extraction": {
+      return null;
+    }
+    default: {
+      return null;
+    }
   }
+};
+
+const stageOutcome = (state: string) => {
+  if (state === "completed") {
+    return "Completed" as const;
+  }
+  if (state === "failed") {
+    return "Failed" as const;
+  }
+  return "Dispatching" as const;
 };
 
 const validateStageMutation = (
@@ -139,7 +171,7 @@ const validateStageMutation = (
   if (resultStage(input.operation.result._tag) !== input.operation.stage) {
     return Effect.fail(failure("invalid_input"));
   }
-  const result = input.operation.result;
+  const { result } = input.operation;
   const identityValid =
     result._tag === "Extraction"
       ? String(result.draft.importId) === String(input.intentId) &&
@@ -154,20 +186,31 @@ const validateStageMutation = (
     input.intentId,
     input.expectedGeneration
   );
-  if (expected === undefined) {
-    return input.operation.reference === undefined
-      ? Effect.void
-      : Effect.fail(failure("invalid_input"));
+  if (expected === null) {
+    if (input.operation.reference === undefined) {
+      return Effect.void;
+    }
+    return Effect.fail(failure("invalid_input"));
   }
-  const reference = input.operation.reference;
-  const resultReference =
-    result._tag === "Speech"
-      ? { key: result.transcriptKey, sha256: result.transcriptSha256 }
-      : result._tag === "Visual" || result._tag === "Carousel"
-        ? { key: result.manifestKey, sha256: result.manifestSha256 }
-        : undefined;
+  const { reference } = input.operation;
+  let resultReference: {
+    readonly key: string;
+    readonly sha256: string;
+  } | null = null;
+  if (result._tag === "Speech") {
+    resultReference = {
+      key: result.transcriptKey,
+      sha256: result.transcriptSha256,
+    };
+  } else if (result._tag === "Visual" || result._tag === "Carousel") {
+    resultReference = {
+      key: result.manifestKey,
+      sha256: result.manifestSha256,
+    };
+  }
   return reference !== undefined &&
     resultReference !== undefined &&
+    resultReference !== null &&
     reference.kind === expected.kind &&
     reference.key === expected.key &&
     reference.key === resultReference.key &&
@@ -261,15 +304,22 @@ export const makeHouseholdEvidenceRepository = (
         receiptVersion: 1,
       });
       const resultJson = yield* encode(EncodedCommitResult, result);
-      const acquisitionJson = JSON.stringify({
+      const acquisition: {
+        readonly acquiredAt: typeof encodedInput.result.acquiredAt;
+        readonly audioStreams: typeof encodedInput.result.audioStreams;
+        readonly durationSeconds: number;
+        source?: NonNullable<typeof encodedInput.result.source>;
+        readonly videoStreams: typeof encodedInput.result.videoStreams;
+      } = {
         acquiredAt: encodedInput.result.acquiredAt,
         audioStreams: encodedInput.result.audioStreams,
         durationSeconds: encodedInput.result.durationSeconds,
-        ...(encodedInput.result.source === undefined
-          ? {}
-          : { source: encodedInput.result.source }),
         videoStreams: encodedInput.result.videoStreams,
-      });
+      };
+      if (encodedInput.result.source !== undefined) {
+        acquisition.source = encodedInput.result.source;
+      }
+      const acquisitionJson = JSON.stringify(acquisition);
 
       return yield* database
         .transaction((transaction) =>
@@ -551,12 +601,10 @@ export const makeHouseholdEvidenceRepository = (
               .limit(1)
               .pipe(mapPersistence);
             const committedAt = new Date(nowEpochMs).toISOString();
-            let outcome:
-              | "Completed"
-              | "DispatchClaimed"
-              | "Failed"
-              | "ResumeDispatch";
-            if (input.operation._tag === "Claim") {
+            const claimStage = Effect.gen(function* claimEvidenceStage() {
+              if (input.operation._tag !== "Claim") {
+                return yield* Effect.fail(failure("invalid_input"));
+              }
               if (current === undefined) {
                 yield* transaction
                   .insert(householdEvidenceStageExecutions)
@@ -569,22 +617,26 @@ export const makeHouseholdEvidenceRepository = (
                     stage: input.operation.stage,
                     state: "dispatching",
                   });
-                outcome = "DispatchClaimed";
-              } else {
-                if (
-                  current.inputFingerprint !== input.inputFingerprint ||
-                  current.dispatchId !== input.operation.dispatchId
-                ) {
-                  return yield* Effect.fail(failure("idempotency_conflict"));
-                }
-                outcome =
-                  current.state === "completed"
-                    ? "Completed"
-                    : current.state === "failed"
-                      ? "Failed"
-                      : "ResumeDispatch";
+                return "DispatchClaimed" as const;
               }
-            } else if (input.operation._tag === "Complete") {
+              if (
+                current.inputFingerprint !== input.inputFingerprint ||
+                current.dispatchId !== input.operation.dispatchId
+              ) {
+                return yield* Effect.fail(failure("idempotency_conflict"));
+              }
+              if (current.state === "completed") {
+                return "Completed" as const;
+              }
+              if (current.state === "failed") {
+                return "Failed" as const;
+              }
+              return "ResumeDispatch" as const;
+            });
+            const completeStage = Effect.gen(function* completeEvidenceStage() {
+              if (input.operation._tag !== "Complete") {
+                return yield* Effect.fail(failure("invalid_input"));
+              }
               if (
                 current === undefined ||
                 current.inputFingerprint !== input.inputFingerprint
@@ -601,9 +653,7 @@ export const makeHouseholdEvidenceRepository = (
                 if (current.resultJson !== resultJson) {
                   return yield* Effect.fail(failure("idempotency_conflict"));
                 }
-              } else if (current.state !== "dispatching") {
-                return yield* Effect.fail(failure("illegal_transition"));
-              } else {
+              } else if (current.state === "dispatching") {
                 yield* transaction
                   .update(householdEvidenceStageExecutions)
                   .set({ committedAt, resultJson, state: "completed" })
@@ -624,13 +674,13 @@ export const makeHouseholdEvidenceRepository = (
                       eq(householdEvidenceStageExecutions.state, "dispatching")
                     )
                   );
-                const reference = input.operation.reference;
+                const { reference } = input.operation;
                 const expected = expectedStageReference(
                   input.operation.stage,
                   input.intentId,
                   input.expectedGeneration
                 );
-                if (reference !== undefined && expected !== undefined) {
+                if (reference !== undefined && expected !== null) {
                   yield* transaction
                     .insert(householdEvidenceReferences)
                     .values({
@@ -644,9 +694,15 @@ export const makeHouseholdEvidenceRepository = (
                       sha256: reference.sha256,
                     });
                 }
+              } else {
+                return yield* Effect.fail(failure("illegal_transition"));
               }
-              outcome = "Completed";
-            } else {
+              return "Completed" as const;
+            });
+            const failStage = Effect.gen(function* failEvidenceStage() {
+              if (input.operation._tag !== "Fail") {
+                return yield* Effect.fail(failure("invalid_input"));
+              }
               if (
                 current === undefined ||
                 current.inputFingerprint !== input.inputFingerprint
@@ -657,9 +713,7 @@ export const makeHouseholdEvidenceRepository = (
                 if (current.failureCode !== input.operation.failureCode) {
                   return yield* Effect.fail(failure("idempotency_conflict"));
                 }
-              } else if (current.state !== "dispatching") {
-                return yield* Effect.fail(failure("illegal_transition"));
-              } else {
+              } else if (current.state === "dispatching") {
                 yield* transaction
                   .update(householdEvidenceStageExecutions)
                   .set({
@@ -684,8 +738,32 @@ export const makeHouseholdEvidenceRepository = (
                       eq(householdEvidenceStageExecutions.state, "dispatching")
                     )
                   );
+              } else {
+                return yield* Effect.fail(failure("illegal_transition"));
               }
-              outcome = "Failed";
+              return "Failed" as const;
+            });
+            let outcome:
+              | "Completed"
+              | "DispatchClaimed"
+              | "Failed"
+              | "ResumeDispatch";
+            switch (input.operation._tag) {
+              case "Claim": {
+                outcome = yield* claimStage;
+                break;
+              }
+              case "Complete": {
+                outcome = yield* completeStage;
+                break;
+              }
+              case "Fail": {
+                outcome = yield* failStage;
+                break;
+              }
+              default: {
+                return yield* Effect.fail(failure("invalid_input"));
+              }
             }
             const result = yield* decode(HouseholdMutateEvidenceStageResult, {
               committedAt,
@@ -761,7 +839,7 @@ export const makeHouseholdEvidenceRepository = (
         input.expectedGeneration
       );
       const [reference] =
-        expectedReference === undefined
+        expectedReference === null
           ? [undefined]
           : yield* database
               .select()
@@ -789,12 +867,7 @@ export const makeHouseholdEvidenceRepository = (
         failureCode: stage.failureCode,
         inputFingerprint: stage.inputFingerprint,
         intentId: input.intentId,
-        outcome:
-          stage.state === "completed"
-            ? "Completed"
-            : stage.state === "failed"
-              ? "Failed"
-              : "Dispatching",
+        outcome: stageOutcome(stage.state),
         reference:
           reference === undefined
             ? null
@@ -845,7 +918,7 @@ export const makeHouseholdEvidenceRepository = (
         .limit(1)
         .pipe(mapPersistence);
       if (execution === undefined) {
-        return yield* Effect.fail(failure("illegal_transition"));
+        return null;
       }
       const references = yield* database
         .select()

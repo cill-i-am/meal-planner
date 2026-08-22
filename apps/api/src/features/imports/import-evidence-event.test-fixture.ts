@@ -19,15 +19,17 @@ interface Environment {
 
 export default {
   async queue(batch: TestMessageBatch, environment: Environment) {
-    for (const message of batch.messages) {
-      const projection = await Effect.runPromise(
-        decodeSafeImportEvidenceEvent(message.body).pipe(
-          Effect.map((value) => ({ _tag: "Accepted" as const, value })),
-          Effect.catch(() => Effect.succeed({ _tag: "Rejected" as const }))
-        )
-      );
-      await environment.RESULTS.put("last", JSON.stringify(projection));
-      message.ack();
-    }
+    await Promise.all(
+      batch.messages.map(async (message) => {
+        const projection = await Effect.runPromise(
+          decodeSafeImportEvidenceEvent(message.body).pipe(
+            Effect.map((value) => ({ _tag: "Accepted" as const, value })),
+            Effect.catch(() => Effect.succeed({ _tag: "Rejected" as const }))
+          )
+        );
+        await environment.RESULTS.put("last", JSON.stringify(projection));
+        message.ack();
+      })
+    );
   },
 };

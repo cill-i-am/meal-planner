@@ -144,14 +144,16 @@ const HouseholdEvidenceReference = Schema.Struct({
   sha256: HouseholdEvidenceSha256,
 });
 
-export const HouseholdReadEvidenceReferencesResult = Schema.Struct({
-  committedAt: ImportTimestamp,
-  executionGeneration: PositiveSafeInteger,
-  intentId: RecipeImportIntentId,
-  references: Schema.Array(HouseholdEvidenceReference).pipe(
-    Schema.check(Schema.isMinLength(2), Schema.isMaxLength(5))
-  ),
-});
+export const HouseholdReadEvidenceReferencesResult = Schema.NullOr(
+  Schema.Struct({
+    committedAt: ImportTimestamp,
+    executionGeneration: PositiveSafeInteger,
+    intentId: RecipeImportIntentId,
+    references: Schema.Array(HouseholdEvidenceReference).pipe(
+      Schema.check(Schema.isMinLength(2), Schema.isMaxLength(5))
+    ),
+  })
+);
 export type HouseholdReadEvidenceReferencesResult =
   typeof HouseholdReadEvidenceReferencesResult.Type;
 
@@ -284,9 +286,9 @@ export const HouseholdMutateEvidenceStageInput = Schema.Struct({
     }),
     Schema.Struct({
       _tag: Schema.Literal("Complete"),
+      reference: Schema.optionalKey(HouseholdEvidenceStageReference),
       result: HouseholdEvidenceStageResult,
       stage: HouseholdEvidenceStage,
-      reference: Schema.optionalKey(HouseholdEvidenceStageReference),
     }),
     Schema.Struct({
       _tag: Schema.Literal("Fail"),

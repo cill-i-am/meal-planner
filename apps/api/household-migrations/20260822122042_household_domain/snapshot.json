@@ -1,10 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "605757e9-b3c5-41e0-8489-a33faeda8799",
-  "prevIds": [
-    "a48205a7-59df-4fa3-a240-c619c67f8a8d"
-  ],
+  "id": "5723a15a-f6b3-429a-b186-d840ba2e5cb0",
+  "prevIds": ["5a9b605b-2eba-4971-83b4-111a1138833f"],
   "ddl": [
     {
       "name": "household_evidence_mutation_receipts",
@@ -12,6 +10,10 @@
     },
     {
       "name": "household_evidence_references",
+      "entityType": "tables"
+    },
+    {
+      "name": "household_evidence_stage_executions",
       "entityType": "tables"
     },
     {
@@ -205,6 +207,96 @@
       "name": "sha256",
       "entityType": "columns",
       "table": "household_evidence_references"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "committed_at",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "execution_generation",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failure_code",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_fingerprint",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "intent_id",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "result_json",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "stage",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
     },
     {
       "type": "text",
@@ -897,143 +989,112 @@
       "table": "household_recipes"
     },
     {
-      "columns": [
-        "intent_id",
-        "execution_generation",
-        "ordinal"
-      ],
+      "columns": ["intent_id", "execution_generation", "ordinal"],
       "nameExplicit": false,
       "name": "household_evidence_references_pk",
       "entityType": "pks",
       "table": "household_evidence_references"
     },
     {
-      "columns": [
-        "intent_id",
-        "execution_generation"
-      ],
+      "columns": ["intent_id", "execution_generation", "stage"],
+      "nameExplicit": false,
+      "name": "household_evidence_stage_executions_pk",
+      "entityType": "pks",
+      "table": "household_evidence_stage_executions"
+    },
+    {
+      "columns": ["intent_id", "execution_generation"],
       "nameExplicit": false,
       "name": "household_import_evidence_executions_pk",
       "entityType": "pks",
       "table": "household_import_evidence_executions"
     },
     {
-      "columns": [
-        "draft_id",
-        "mutation_id"
-      ],
+      "columns": ["draft_id", "mutation_id"],
       "nameExplicit": false,
       "name": "household_meal_plan_mutation_receipts_pk",
       "entityType": "pks",
       "table": "household_meal_plan_mutation_receipts"
     },
     {
-      "columns": [
-        "intent_id",
-        "intent_version"
-      ],
+      "columns": ["intent_id", "intent_version"],
       "nameExplicit": false,
       "name": "household_recipe_import_timeline_pk",
       "entityType": "pks",
       "table": "household_recipe_import_timeline"
     },
     {
-      "columns": [
-        "intent_id",
-        "action_version",
-        "ordinal"
-      ],
+      "columns": ["intent_id", "action_version", "ordinal"],
       "nameExplicit": false,
       "name": "household_recipe_review_corrections_pk",
       "entityType": "pks",
       "table": "household_recipe_review_corrections"
     },
     {
-      "columns": [
-        "intent_id",
-        "version"
-      ],
+      "columns": ["intent_id", "version"],
       "nameExplicit": false,
       "name": "household_recipe_review_transitions_pk",
       "entityType": "pks",
       "table": "household_recipe_review_transitions"
     },
     {
-      "columns": [
-        "mutation_id"
-      ],
+      "columns": ["mutation_id"],
       "nameExplicit": false,
       "name": "household_evidence_mutation_receipts_pk",
       "table": "household_evidence_mutation_receipts",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "mutation_id"
-      ],
+      "columns": ["mutation_id"],
       "nameExplicit": false,
       "name": "household_import_workflow_admissions_pk",
       "table": "household_import_workflow_admissions",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "draft_id"
-      ],
+      "columns": ["draft_id"],
       "nameExplicit": false,
       "name": "household_meal_plans_pk",
       "table": "household_meal_plans",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "singleton_key"
-      ],
+      "columns": ["singleton_key"],
       "nameExplicit": false,
       "name": "household_meta_pk",
       "table": "household_meta",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "dispatch_id"
-      ],
+      "columns": ["dispatch_id"],
       "nameExplicit": false,
       "name": "household_outbox_pk",
       "table": "household_outbox",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "mutation_id"
-      ],
+      "columns": ["mutation_id"],
       "nameExplicit": false,
       "name": "household_recipe_import_mutation_receipts_pk",
       "table": "household_recipe_import_mutation_receipts",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "idempotency_key_digest"
-      ],
+      "columns": ["idempotency_key_digest"],
       "nameExplicit": false,
       "name": "household_recipe_import_requests_pk",
       "table": "household_recipe_import_requests",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "intent_id"
-      ],
+      "columns": ["intent_id"],
       "nameExplicit": false,
       "name": "household_recipe_imports_pk",
       "table": "household_recipe_imports",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "recipe_id"
-      ],
+      "columns": ["recipe_id"],
       "nameExplicit": false,
       "name": "household_recipes_pk",
       "table": "household_recipes",
@@ -1108,36 +1169,28 @@
       "table": "household_recipe_imports"
     },
     {
-      "columns": [
-        "dispatch_id"
-      ],
+      "columns": ["dispatch_id"],
       "nameExplicit": false,
       "name": "household_import_workflow_admissions_dispatch_id_unique",
       "entityType": "uniques",
       "table": "household_import_workflow_admissions"
     },
     {
-      "columns": [
-        "workflow_identity"
-      ],
+      "columns": ["workflow_identity"],
       "nameExplicit": false,
       "name": "household_import_workflow_admissions_workflow_identity_unique",
       "entityType": "uniques",
       "table": "household_import_workflow_admissions"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "nameExplicit": false,
       "name": "household_meta_organization_id_unique",
       "entityType": "uniques",
       "table": "household_meta"
     },
     {
-      "columns": [
-        "import_id"
-      ],
+      "columns": ["import_id"],
       "nameExplicit": false,
       "name": "household_recipes_import_id_unique",
       "entityType": "uniques",

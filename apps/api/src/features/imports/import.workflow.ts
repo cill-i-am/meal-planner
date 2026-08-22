@@ -1012,7 +1012,11 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               "resolve-acquire-store-verify-v2",
               recoverVerifiedAcquisitionCheckpoint({
                 expectedCanonicalId: claim.canonicalId,
-                findStored: repository.findById(importId),
+                findStored: evidenceRepositories(
+                  Schema.decodeUnknownSync(AcquisitionGeneration)(
+                    executionGeneration
+                  )
+                ).current.findById(importId),
                 importId,
                 readEvidence: (stored) =>
                   Effect.gen(function* readHouseholdAcquisitionEvidence() {
@@ -1027,6 +1031,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                       HouseholdReadEvidenceReferencesResult,
                       { onExcessProperty: "error" }
                     )(encodedReferences).pipe(Effect.orDie);
+                    if (references === null) {
+                      return null;
+                    }
                     const presence = yield* inspectHouseholdEvidenceReferences(
                       bucket,
                       references.references
@@ -1141,60 +1148,48 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             const encodedFinalization = yield* Cloudflare.Workflows.task(
               "record-acquisition-v2",
               (outcome._tag === "VerifiedAcquisition"
-                ? continueAcquisitionCheckpoint({
-                    findStored: repository.findById(importId),
-                    importId,
-                    onAccepted: () => Effect.succeed<"Recorded">("Recorded"),
-                    outcome,
-                  }).pipe(
-                    Effect.flatMap((continuation) =>
-                      continuation === "Recorded"
-                        ? Effect.succeed(continuation)
-                        : Effect.gen(
-                            function* commitHouseholdAcquisitionEvidence() {
-                              const mutationId = yield* workflowMutationId(
-                                `${intentId}:${executionGeneration}:commit-acquisition-evidence:${outcome.evidence.manifestSha256}`
-                              );
-                              const committed = yield* householdDomain
-                                .commitAcquisitionEvidence({
-                                  admission,
-                                  expectedGeneration: executionGeneration,
-                                  intentId,
-                                  mutationId,
-                                  result: {
-                                    acquiredAt: outcome.evidence.acquiredAt,
-                                    audioStreams: outcome.evidence.audioStreams,
-                                    durationSeconds:
-                                      outcome.evidence.durationSeconds,
-                                    references: [
-                                      {
-                                        byteLength: outcome.evidence.bytes,
-                                        deleteAt: outcome.evidence.deleteAt,
-                                        key: outcome.evidence.mediaKey,
-                                        kind: "original_media",
-                                        sha256: outcome.evidence.sha256,
-                                      },
-                                      {
-                                        byteLength:
-                                          outcome.evidence.manifestByteLength,
-                                        deleteAt: outcome.evidence.deleteAt,
-                                        key: outcome.evidence.manifestKey,
-                                        kind: "acquisition_manifest",
-                                        sha256: outcome.evidence.manifestSha256,
-                                      },
-                                    ],
-                                    ...(outcome.evidence.source === undefined
-                                      ? {}
-                                      : { source: outcome.evidence.source }),
-                                    videoStreams: outcome.evidence.videoStreams,
-                                  },
-                                })
-                                .pipe(Effect.orDie);
-                              return committed.outcome;
-                            }
-                          )
-                    )
-                  )
+                ? Effect.gen(function* commitHouseholdAcquisitionEvidence() {
+                    const mutationId = yield* workflowMutationId(
+                      `${intentId}:${executionGeneration}:commit-acquisition-evidence:${outcome.evidence.manifestSha256}`
+                    );
+                    let result: Parameters<
+                      HouseholdDomainWorkerMethods["commitAcquisitionEvidence"]
+                    >[0]["result"] = {
+                      acquiredAt: outcome.evidence.acquiredAt,
+                      audioStreams: outcome.evidence.audioStreams,
+                      durationSeconds: outcome.evidence.durationSeconds,
+                      references: [
+                        {
+                          byteLength: outcome.evidence.bytes,
+                          deleteAt: outcome.evidence.deleteAt,
+                          key: outcome.evidence.mediaKey,
+                          kind: "original_media",
+                          sha256: outcome.evidence.sha256,
+                        },
+                        {
+                          byteLength: outcome.evidence.manifestByteLength,
+                          deleteAt: outcome.evidence.deleteAt,
+                          key: outcome.evidence.manifestKey,
+                          kind: "acquisition_manifest",
+                          sha256: outcome.evidence.manifestSha256,
+                        },
+                      ],
+                      videoStreams: outcome.evidence.videoStreams,
+                    };
+                    if (outcome.evidence.source !== undefined) {
+                      result = { ...result, source: outcome.evidence.source };
+                    }
+                    const committed = yield* householdDomain
+                      .commitAcquisitionEvidence({
+                        admission,
+                        expectedGeneration: executionGeneration,
+                        intentId,
+                        mutationId,
+                        result,
+                      })
+                      .pipe(Effect.orDie);
+                    return committed.outcome;
+                  })
                 : repository.recordAcquisitionFailure(
                     importId,
                     outcome.generation,
@@ -1236,7 +1231,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             const encodedSpeech = yield* Cloudflare.Workflows.task(
               "transcribe-video-v1",
               continueAcquisitionCheckpoint({
-                findStored: repository.findById(importId),
+                findStored: evidenceRepositories(
+                  outcome.generation
+                ).current.findById(importId),
                 importId,
                 onAccepted: () =>
                   terminalRecovery

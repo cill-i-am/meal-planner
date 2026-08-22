@@ -148,13 +148,20 @@ describe("household foundation structural boundaries", () => {
   });
 
   it("keeps acquisition R2 work outside the household commit and removes its D1 write seam", async () => {
-    const [evidenceRepository, workflow] = await Promise.all([
-      read(
-        path.join(householdRoot, "evidence/household-evidence.repository.ts")
-      ),
-      read(path.join(apiFeaturesRoot, "imports/import.workflow.ts")),
-    ]);
-    expect(evidenceRepository).toMatch(/database\s*\.\s*transaction\s*\(/);
+    const [evidenceRepository, executionRepository, workflow] =
+      await Promise.all([
+        read(
+          path.join(householdRoot, "evidence/household-evidence.repository.ts")
+        ),
+        read(
+          path.join(
+            apiFeaturesRoot,
+            "imports/import-execution.repository.d1.ts"
+          )
+        ),
+        read(path.join(apiFeaturesRoot, "imports/import.workflow.ts")),
+      ]);
+    expect(evidenceRepository).toMatch(/database\s*\.\s*transaction\s*\(/u);
     expect(evidenceRepository).not.toMatch(
       /cloudflare:workers|alchemy\/Cloudflare|ImportEvidenceBucket|\.getByName\(|\bfetch\s*\(|\.head\s*\(|\.put\s*\(|\.send\s*\(/u
     );
@@ -165,6 +172,13 @@ describe("household foundation structural boundaries", () => {
     expect(recordStep).toBeDefined();
     expect(recordStep).toContain("commitAcquisitionEvidence(");
     expect(recordStep).not.toContain("recordAcquired(");
+    expect(recordStep).not.toMatch(
+      /makeD1(?:CarouselEvidence|RecipeDraft|SpeechTranscription|VisualEvidence)Repository/u
+    );
+    expect(executionRepository).not.toContain("recordAcquired:");
+    expect(executionRepository).not.toMatch(
+      /\.(?:delete|insert|update)\(\s*import(?:CarouselEvidence|RecipeExtractions|Transcriptions|VisualEvidence)/u
+    );
 
     const recoveryReadStep = workflow
       .split("readHouseholdAcquisitionEvidence")[1]

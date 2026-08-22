@@ -114,6 +114,7 @@ const patterns = [
  * Discards the raw key and all account/bucket identifiers. Queue delivery is
  * evidence only: it never has enough authority to resolve a household.
  */
+// eslint-disable-next-line anti-slop/no-unknown-parameters -- this is the closed Queue I/O boundary and immediately Schema-decodes the untrusted body
 export const decodeSafeImportEvidenceEvent = (untrusted: unknown) =>
   Schema.decodeUnknownEffect(R2EvidenceEvent, {
     onExcessProperty: "error",

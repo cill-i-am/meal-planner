@@ -17,18 +17,18 @@ import type {
   HouseholdObserveEvidenceReferenceInput,
   HouseholdReadEvidenceStageInput,
   HouseholdReadEvidenceReferencesInput,
+  HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdMutateEvidenceStageResult,
+  HouseholdObserveEvidenceReferenceResult,
+  HouseholdReadEvidenceReferencesResult,
+  HouseholdReadEvidenceStageResult,
 } from "./evidence/household-evidence.contract.js";
 import {
   HouseholdCommitAcquisitionEvidenceInput as HouseholdCommitAcquisitionEvidenceInputSchema,
-  HouseholdCommitAcquisitionEvidenceResult,
   HouseholdMutateEvidenceStageInput as HouseholdMutateEvidenceStageInputSchema,
-  HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceInput as HouseholdObserveEvidenceReferenceInputSchema,
-  HouseholdObserveEvidenceReferenceResult,
   HouseholdReadEvidenceReferencesInput as HouseholdReadEvidenceReferencesInputSchema,
-  HouseholdReadEvidenceReferencesResult,
   HouseholdReadEvidenceStageInput as HouseholdReadEvidenceStageInputSchema,
-  HouseholdReadEvidenceStageResult,
 } from "./evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "./household-domain-binding.js";
 import type {
@@ -385,16 +385,12 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
     commitAcquisitionEvidence: (
       input: HouseholdCommitAcquisitionEvidenceInput
     ) => routeAcquisitionEvidence(input),
-    mutateEvidenceStage: (input: HouseholdMutateEvidenceStageInput) =>
-      routeEvidenceStage(input),
     commitRecipeImportDraft: (input: HouseholdCommitRecipeImportDraftInput) =>
       route(
         HouseholdCommitRecipeImportDraftInputSchema,
         input,
         (household, command) => household.commitRecipeImportDraft(command)
       ),
-    observeEvidenceReference: (input: HouseholdObserveEvidenceReferenceInput) =>
-      routeEvidenceObservation(input),
     confirmRecipeImportAction: (
       input: HouseholdConfirmRecipeImportActionInput
     ) =>
@@ -423,10 +419,10 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
       route(HouseholdRecipePageInputSchema, input, (household, command) =>
         household.listRecipeBank(command)
       ),
-    readMealPlan: (input: HouseholdReadMealPlanInput) =>
-      route(HouseholdReadMealPlanInputSchema, input, (household, command) =>
-        household.readMealPlan(command)
-      ),
+    mutateEvidenceStage: (input: HouseholdMutateEvidenceStageInput) =>
+      routeEvidenceStage(input),
+    observeEvidenceReference: (input: HouseholdObserveEvidenceReferenceInput) =>
+      routeEvidenceObservation(input),
     readEvidenceReferences: (input: HouseholdReadEvidenceReferencesInput) =>
       route(
         HouseholdReadEvidenceReferencesInputSchema,
@@ -438,6 +434,10 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         HouseholdReadEvidenceStageInputSchema,
         input,
         (household, command) => household.readEvidenceStage(command)
+      ),
+    readMealPlan: (input: HouseholdReadMealPlanInput) =>
+      route(HouseholdReadMealPlanInputSchema, input, (household, command) =>
+        household.readMealPlan(command)
       ),
     readRecipe: (input: typeof HouseholdReadRecipeInputSchema.Type) =>
       route(HouseholdReadRecipeInputSchema, input, (household, command) =>

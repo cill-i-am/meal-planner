@@ -50,10 +50,12 @@ describe("import evidence R2 notifications", () => {
       },
     ];
 
-    for (const candidate of invalid) {
-      await expect(
-        Effect.runPromise(decodeSafeImportEvidenceEvent(candidate))
-      ).rejects.toBeDefined();
-    }
+    await Promise.all(
+      invalid.map((candidate) =>
+        expect(
+          Effect.runPromise(decodeSafeImportEvidenceEvent(candidate))
+        ).rejects.toBeDefined()
+      )
+    );
   });
 });

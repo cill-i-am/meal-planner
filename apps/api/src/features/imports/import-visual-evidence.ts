@@ -17,7 +17,7 @@ import type {
   CompletedVisualEvidence,
   VisualEvidenceFailureCode,
   VisualEvidenceRepository,
-} from "./import-visual-evidence.repository.d1.js";
+} from "./import-visual-evidence.repository.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { importTransitionRejected } from "./import.errors.js";
 import type { ImportRepository } from "./import.repository.js";
@@ -77,8 +77,8 @@ const completedFromDocument = (
   byteLength,
   completedAt: document.createdAt,
   cost: document.cost,
-  dispatchId: document.dispatchId,
   deleteAt: document.sourceEvidenceDeleteAt,
+  dispatchId: document.dispatchId,
   generation: document.acquisitionGeneration,
   importId: document.importId,
   manifestKey,

@@ -235,6 +235,7 @@ describe("household evidence availability inspection", () => {
     const result = Schema.decodeUnknownSync(
       HouseholdReadEvidenceReferencesResult
     )({
+      committedAt: "2026-08-22T12:00:00.000Z",
       executionGeneration: generation,
       intentId: importId,
       references: [
@@ -258,6 +259,9 @@ describe("household evidence availability inspection", () => {
         },
       ],
     });
+    if (result === null) {
+      throw new Error("expected committed evidence references");
+    }
 
     const inspected = await Effect.runPromise(
       inspectHouseholdEvidenceReferences(bucket(), result.references)

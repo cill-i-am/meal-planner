@@ -14,7 +14,7 @@ import {
 import type {
   CompletedTranscriptEvidence,
   SpeechTranscriptionRepository,
-} from "./import-speech-transcription.repository.d1.js";
+} from "./import-speech-transcription.repository.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { importTransitionRejected } from "./import.errors.js";
 import type { ImportRepository } from "./import.repository.js";
@@ -67,8 +67,8 @@ const completedFromDocument = (
   byteLength,
   completedAt: document.createdAt,
   cost: document.cost,
-  detectedLanguage: document.detectedLanguage,
   deleteAt: document.deleteAt,
+  detectedLanguage: document.detectedLanguage,
   dispatchId: document.dispatchId,
   generation: document.acquisitionGeneration,
   importId: document.importId,

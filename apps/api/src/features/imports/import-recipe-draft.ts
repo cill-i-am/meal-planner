@@ -15,7 +15,7 @@ import type {
   RecipeDraft,
   RecipeDispatchClaim,
   RecipeDraftRepository,
-} from "./import-recipe-draft.repository.d1.js";
+} from "./import-recipe-draft.repository.js";
 import type {
   RecipeEvidenceAssembly,
   RecipeEvidenceItem,
