@@ -1,9 +1,10 @@
 import type { RuntimeContext } from "alchemy";
-import { Context, Data, Effect } from "effect";
+import { Context } from "effect";
+import type { Effect } from "effect";
 
-export class HouseholdOutboxAlarmFailure extends Data.TaggedError(
-  "HouseholdOutboxAlarmFailure"
-) {}
+import type { HouseholdOutboxAlarmFailure } from "./household-outbox-alarm-failure.js";
+
+export { HouseholdOutboxAlarmFailure } from "./household-outbox-alarm-failure.js";
 
 export interface HouseholdOutboxAlarmService {
   readonly schedule: (

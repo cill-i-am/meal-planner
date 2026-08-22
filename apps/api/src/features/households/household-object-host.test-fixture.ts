@@ -23,24 +23,23 @@ import {
 import {
   HouseholdAdmitImportWorkflowInput,
   HouseholdDispatchId,
-  HouseholdImportWorkflowAdmissionResult,
   HouseholdWorkflowAdmissionMutationId,
 } from "./foundation/import-workflow-admission.contract.js";
+import type { HouseholdImportWorkflowAdmissionResult } from "./foundation/import-workflow-admission.contract.js";
 import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
 import { HouseholdObjectRuntime } from "./household-object-runtime.js";
 import type {
   HouseholdDomainFailure,
+  HouseholdEnsureInput,
   HouseholdMetadata,
 } from "./household.contract.js";
-import { HouseholdEnsureInput } from "./household.contract.js";
 import { HouseholdOrganizationId } from "./household.contract.js";
 import {
   householdImportWorkflowAdmissions,
   householdMealPlans,
 } from "./household.database-schema.js";
-import type { HouseholdMemberAdmission } from "./rpc/command-envelope.js";
 import {
-  HouseholdMemberAdmission as HouseholdMemberAdmissionSchema,
+  HouseholdMemberAdmission,
   HouseholdSystemAdmission,
 } from "./rpc/command-envelope.js";
 import {
@@ -76,6 +75,7 @@ const HouseholdObjectTestRuntime = Effect.gen(
         ),
         Effect.scoped
       );
+    // eslint-disable-next-line sort-keys -- Fixture RPC follows the production runtime surface, then foundation-only probes.
     return Effect.succeed({
       ...household,
       admitImportWorkflow: (
@@ -88,11 +88,12 @@ const HouseholdObjectTestRuntime = Effect.gen(
         scoped(
           Effect.gen(function* admitImportWorkflowForTest() {
             const connection = yield* database;
+            const forcedDispatchId = testOptions?.dispatchId;
             const identity =
-              testOptions?.dispatchId === undefined
+              forcedDispatchId === undefined
                 ? liveIdentity
                 : HouseholdIdentityGenerator.of({
-                    generate: () => Effect.succeed(testOptions.dispatchId!),
+                    generate: () => Effect.succeed(forcedDispatchId),
                   });
             return yield* admitImportWorkflow(connection, input).pipe(
               Effect.provideService(
@@ -146,7 +147,7 @@ const HouseholdObjectTestRuntime = Effect.gen(
             return Option.getOrNull(result);
           })
         ),
-      invokeMalformedEnsure: (payload: unknown) =>
+      invokeMalformedEnsure: (payload: Schema.Json) =>
         household.ensureHousehold(payload as HouseholdEnsureInput),
       markImportWorkflowDispatchExhausted: (
         dispatchId: HouseholdDispatchId,
@@ -245,6 +246,7 @@ const BrokenMigrationObjectBridge = Cloudflare.makeDurableObjectBridge(
   }
 )("BrokenMigrationObject");
 
+// eslint-disable-next-line max-classes-per-file -- The installed fixture exports both production and deliberately broken migration classes.
 export class BrokenMigrationObject extends BrokenMigrationObjectBridge {}
 
 interface HouseholdObjectClient {
@@ -254,10 +256,7 @@ interface HouseholdObjectClient {
       readonly alarmFailure?: boolean;
       readonly dispatchId?: string;
     }
-  ) => Effect.Effect<
-    typeof HouseholdImportWorkflowAdmissionResult.Type,
-    unknown
-  >;
+  ) => Effect.Effect<HouseholdImportWorkflowAdmissionResult, unknown>;
   readonly approveMealPlan: (input: {
     readonly admission: HouseholdMemberAdmission;
     readonly request: typeof MealPlanDecisionRequestWire.Type;
@@ -289,7 +288,7 @@ interface HouseholdObjectClient {
     readonly replayKeyBytes: number;
   } | null>;
   readonly invokeMalformedEnsure: (
-    payload: unknown
+    payload: Schema.Json
   ) => Effect.Effect<unknown, HouseholdDomainFailure>;
   readonly readMealPlan: (input: {
     readonly admission: HouseholdMemberAdmission;
@@ -364,7 +363,7 @@ const HouseholdTestCommand = Schema.Union([
   Schema.Struct({
     objectName: Schema.String,
     operation: Schema.Literal("invokeMalformedEnsure"),
-    payload: Schema.Unknown,
+    payload: Schema.Json,
   }),
   Schema.Struct({
     dispatchId: HouseholdDispatchId,
@@ -413,7 +412,7 @@ interface HouseholdTestEnv {
 }
 
 const memberAdmission = (organizationId: typeof HouseholdOrganizationId.Type) =>
-  Schema.decodeUnknownSync(HouseholdMemberAdmissionSchema)({
+  Schema.decodeUnknownSync(HouseholdMemberAdmission)({
     actor: { _tag: "Member", actorId: "a".repeat(64) },
     organizationId,
   });
@@ -449,14 +448,16 @@ export default {
       env.HouseholdObject.getByName(command.objectName)
     );
     if (command.operation === "admitImportWorkflow") {
-      const testOptions = {
-        ...(command.alarmFailure === undefined
-          ? {}
-          : { alarmFailure: command.alarmFailure }),
-        ...(command.dispatchId === undefined
-          ? {}
-          : { dispatchId: command.dispatchId }),
-      };
+      const testOptions: {
+        alarmFailure?: boolean;
+        dispatchId?: string;
+      } = {};
+      if (command.alarmFailure !== undefined) {
+        testOptions.alarmFailure = command.alarmFailure;
+      }
+      if (command.dispatchId !== undefined) {
+        testOptions.dispatchId = command.dispatchId;
+      }
       return respond(
         household.admitImportWorkflow(
           {

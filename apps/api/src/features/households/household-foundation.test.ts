@@ -126,7 +126,18 @@ describe("household foundation contracts", () => {
       Effect.gen(function* canonicalAuthorityFacts() {
         const canonical = yield* HouseholdCanonicalEncoding;
         const digest = yield* HouseholdDigest;
-        const value = yield* canonical.encode({ z: 1, a: { c: 3, b: 2 } });
+        const value = yield* canonical.encode(
+          Object.fromEntries([
+            ["z", 1],
+            [
+              "a",
+              Object.fromEntries([
+                ["c", 3],
+                ["b", 2],
+              ]),
+            ],
+          ])
+        );
         return {
           digest: yield* digest.sha256(value),
           value,

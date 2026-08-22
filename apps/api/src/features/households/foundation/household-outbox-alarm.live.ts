@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare";
+import type * as Cloudflare from "alchemy/Cloudflare";
 import { Effect } from "effect";
 
 import {

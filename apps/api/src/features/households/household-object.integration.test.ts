@@ -233,21 +233,31 @@ const admitImportWorkflow = async (input: {
   readonly objectName: string;
   readonly organizationId: string;
 }) => {
+  const command: {
+    alarmFailure?: boolean;
+    dispatchId?: string;
+    executionGeneration: number;
+    importId: string;
+    mutationId: string;
+    objectName: string;
+    operation: "admitImportWorkflow";
+    organizationId: string;
+  } = {
+    executionGeneration: input.executionGeneration,
+    importId: input.importId,
+    mutationId: input.mutationId,
+    objectName: input.objectName,
+    operation: "admitImportWorkflow",
+    organizationId: input.organizationId,
+  };
+  if (input.alarmFailure !== undefined) {
+    command.alarmFailure = input.alarmFailure;
+  }
+  if (input.dispatchId !== undefined) {
+    command.dispatchId = input.dispatchId;
+  }
   const response = await runtime.dispatchFetch("http://localhost/", {
-    body: JSON.stringify({
-      ...(input.alarmFailure === undefined
-        ? {}
-        : { alarmFailure: input.alarmFailure }),
-      ...(input.dispatchId === undefined
-        ? {}
-        : { dispatchId: input.dispatchId }),
-      executionGeneration: input.executionGeneration,
-      importId: input.importId,
-      mutationId: input.mutationId,
-      objectName: input.objectName,
-      operation: "admitImportWorkflow",
-      organizationId: input.organizationId,
-    }),
+    body: JSON.stringify(command),
     method: "POST",
   });
   expect(response.status).toBe(200);

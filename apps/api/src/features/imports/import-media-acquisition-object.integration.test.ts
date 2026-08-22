@@ -41,6 +41,7 @@ import {
   AcquisitionGeneration,
   MaximumMediaProcessMilliseconds,
   ProductionMediaLimits,
+  acquisitionCoordinatorId,
 } from "./import-media.model.js";
 import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
@@ -202,7 +203,11 @@ type InstalledAcquisitionBoundary = AcquisitionMediaObjectStub;
 
 const withInstalledAcquisitionBoundary = async <A>(
   runtime: ReturnType<typeof makeTikTokMediaContainerRuntime>,
-  use: (stub: InstalledAcquisitionBoundary) => Promise<A>,
+  use: (
+    stubFor: (
+      generation: typeof AcquisitionGeneration.Type
+    ) => InstalledAcquisitionBoundary
+  ) => Promise<A>,
   rpcFailure?: Error
 ) => {
   const bindingKey = "~alchemy/Container/Binding";
@@ -248,17 +253,6 @@ const withInstalledAcquisitionBoundary = async <A>(
     }
   }
   const pending: Promise<unknown>[] = [];
-  const state = {
-    blockConcurrencyWhile: <Value>(operation: () => Promise<Value>) =>
-      operation(),
-    container: {},
-    id: { toString: () => "gaia-167-installed-boundary" },
-    storage: {},
-    waitUntil: (promise: Promise<unknown>) => {
-      pending.push(promise);
-    },
-  };
-
   try {
     const Bridge = Cloudflare.makeDurableObjectBridge(
       TestDurableObject as never,
@@ -267,9 +261,28 @@ const withInstalledAcquisitionBoundary = async <A>(
         stack: { name: "MealPlanner", stage: "test-gaia-167" },
       }
     )("ImportMediaAcquisitionObject");
-    const object = new Bridge(state as never, {});
-    const stub = Cloudflare.makeRpcStub<InstalledAcquisitionBoundary>(object);
-    return await use(stub);
+    const stubFor = (generation: typeof AcquisitionGeneration.Type) => {
+      const coordinatorName = acquisitionCoordinatorId(
+        identity.importId,
+        generation
+      );
+      const state = {
+        blockConcurrencyWhile: <Value>(operation: () => Promise<Value>) =>
+          operation(),
+        container: {},
+        id: {
+          name: coordinatorName,
+          toString: () => coordinatorName,
+        },
+        storage: {},
+        waitUntil: (promise: Promise<unknown>) => {
+          pending.push(promise);
+        },
+      };
+      const object = new Bridge(state as never, {});
+      return Cloudflare.makeRpcStub<InstalledAcquisitionBoundary>(object);
+    };
+    return await use(stubFor);
   } finally {
     await Promise.allSettled(pending);
     if (originalBinding === undefined) {
@@ -328,6 +341,38 @@ const runContainerRequest = (
 };
 
 describe("installed acquisition Durable Object boundary", () => {
+  it("rejects a command for a different execution generation before container work", async () => {
+    let acquireCalls = 0;
+    let resolveCalls = 0;
+    const runtime = makeTikTokMediaContainerRuntime({
+      acquirer: {
+        acquire: () => {
+          acquireCalls += 1;
+          return Effect.die("cross-generation acquisition must not start");
+        },
+      },
+      artifacts: makeTemporaryArtifactStore(() => Promise.resolve()),
+      processRunner: makeProcessRunner(),
+      resolver: {
+        resolve: () => {
+          resolveCalls += 1;
+          return Effect.die("cross-generation resolution must not start");
+        },
+      },
+    });
+    const otherGeneration = Schema.decodeUnknownSync(AcquisitionGeneration)(2);
+
+    await withInstalledAcquisitionBoundary(runtime, async (stubFor) => {
+      const stub = stubFor(identity.generation);
+      const exit = await Effect.runPromiseExit(
+        stub.prepare({ ...identity, generation: otherGeneration })
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+    });
+    expect(resolveCalls).toBe(0);
+    expect(acquireCalls).toBe(0);
+  });
+
   it("streams a registered private artifact above 128 KiB exactly", async () => {
     const root = await mkdtemp(join(tmpdir(), "private-artifact-read-"));
     const artifactId = "018f47ad-91aa-7c35-b6fe-000000000001:1:source";
@@ -514,7 +559,8 @@ describe("installed acquisition Durable Object boundary", () => {
     });
 
     try {
-      await withInstalledAcquisitionBoundary(runtime, async (stub) => {
+      await withInstalledAcquisitionBoundary(runtime, async (stubFor) => {
+        const stub = stubFor(identity.generation);
         const prepared = await Effect.runPromise(stub.prepare(identity));
         expect(prepared).toMatchObject({
           bytes: mediaBytes.byteLength,
@@ -580,7 +626,8 @@ describe("installed acquisition Durable Object boundary", () => {
 
     await withInstalledAcquisitionBoundary(
       runtime,
-      async (stub) => {
+      async (stubFor) => {
+        const stub = stubFor(identity.generation);
         const exit = await Effect.runPromiseExit(
           acquireStoreVerify(
             untouchedBucket(),
@@ -651,7 +698,7 @@ describe("installed acquisition Durable Object boundary", () => {
         Effect.succeed(events.filter((event) => event.correlationId === id)),
     });
 
-    await withInstalledAcquisitionBoundary(runtime, async (stub) => {
+    await withInstalledAcquisitionBoundary(runtime, async (stubFor) => {
       const execute = () =>
         runAcquisitionTask(
           () =>
@@ -664,7 +711,7 @@ describe("installed acquisition Durable Object boundary", () => {
           (allocation) =>
             acquireStoreVerify(
               untouchedBucket(),
-              makeAcquisitionMediaObject(stub),
+              makeAcquisitionMediaObject(stubFor(allocation.generation)),
               {
                 canonicalId: allocation.canonicalSourceId,
                 generation: allocation.generation,
@@ -793,7 +840,7 @@ describe("installed acquisition Durable Object boundary", () => {
       resolver: makeTikTokSourceResolver(processRunner),
     });
 
-    await withInstalledAcquisitionBoundary(runtime, async (stub) => {
+    await withInstalledAcquisitionBoundary(runtime, async (stubFor) => {
       const outcome = await Effect.runPromise(
         runAcquisitionTask(
           () =>
@@ -806,7 +853,7 @@ describe("installed acquisition Durable Object boundary", () => {
           (allocation) =>
             acquireStoreVerify(
               untouchedBucket(),
-              makeAcquisitionMediaObject(stub),
+              makeAcquisitionMediaObject(stubFor(allocation.generation)),
               {
                 canonicalId: allocation.canonicalSourceId,
                 generation: allocation.generation,

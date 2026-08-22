@@ -2,9 +2,7 @@
   "version": "7",
   "dialect": "sqlite",
   "id": "c094d909-5e6d-48fa-995d-76d146931666",
-  "prevIds": [
-    "4a8798e6-bd8c-4bff-b69f-72711a170898"
-  ],
+  "prevIds": ["4a8798e6-bd8c-4bff-b69f-72711a170898"],
   "ddl": [
     {
       "name": "household_import_workflow_admissions",
@@ -287,46 +285,35 @@
       "table": "household_outbox"
     },
     {
-      "columns": [
-        "draft_id",
-        "mutation_id"
-      ],
+      "columns": ["draft_id", "mutation_id"],
       "nameExplicit": false,
       "name": "household_meal_plan_mutation_receipts_pk",
       "entityType": "pks",
       "table": "household_meal_plan_mutation_receipts"
     },
     {
-      "columns": [
-        "mutation_id"
-      ],
+      "columns": ["mutation_id"],
       "nameExplicit": false,
       "name": "household_import_workflow_admissions_pk",
       "table": "household_import_workflow_admissions",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "draft_id"
-      ],
+      "columns": ["draft_id"],
       "nameExplicit": false,
       "name": "household_meal_plans_pk",
       "table": "household_meal_plans",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "singleton_key"
-      ],
+      "columns": ["singleton_key"],
       "nameExplicit": false,
       "name": "household_meta_pk",
       "table": "household_meta",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "dispatch_id"
-      ],
+      "columns": ["dispatch_id"],
       "nameExplicit": false,
       "name": "household_outbox_pk",
       "table": "household_outbox",
@@ -351,27 +338,21 @@
       "table": "household_import_workflow_admissions"
     },
     {
-      "columns": [
-        "dispatch_id"
-      ],
+      "columns": ["dispatch_id"],
       "nameExplicit": false,
       "name": "household_import_workflow_admissions_dispatch_id_unique",
       "entityType": "uniques",
       "table": "household_import_workflow_admissions"
     },
     {
-      "columns": [
-        "workflow_identity"
-      ],
+      "columns": ["workflow_identity"],
       "nameExplicit": false,
       "name": "household_import_workflow_admissions_workflow_identity_unique",
       "entityType": "uniques",
       "table": "household_import_workflow_admissions"
     },
     {
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "nameExplicit": false,
       "name": "household_meta_organization_id_unique",
       "entityType": "uniques",

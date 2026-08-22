@@ -8,8 +8,8 @@ import {
   MealPlanRecipeSnapshot,
   MealPlanRequest,
 } from "@meal-planner/household-api";
-import type { HouseholdOrganizationId } from "@meal-planner/household-api";
 import type {
+  HouseholdOrganizationId,
   MealPlanMutationConflict,
   MealPlanRequestConflict,
   MealPlanSwapRejected,
@@ -65,7 +65,6 @@ import {
   makeHouseholdMealPlanHttpApiLayer,
 } from "./household.http.js";
 import { makeHouseholdMemberAdmission } from "./rpc/command-envelope.js";
-import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-services.live.js";
 
 interface HouseholdDomainPort {
   readonly ensureHousehold: (
@@ -387,7 +386,6 @@ export const makeHouseholdRequestLayer = (options: {
     Layer.succeed(HouseholdDomainGatewayService, options.gateway)
   );
   return makeHouseholdHttpApiLayer().pipe(
-    Layer.provide(HouseholdAuthorityServicesLive),
     Layer.provide(RecipeImportHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)
@@ -404,7 +402,6 @@ export const makeHouseholdMealPlanRequestLayer = (options: {
     Layer.succeed(HouseholdMealPlanGatewayService, options.gateway)
   );
   return makeHouseholdMealPlanHttpApiLayer().pipe(
-    Layer.provide(HouseholdAuthorityServicesLive),
     Layer.provide(RecipeImportHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)

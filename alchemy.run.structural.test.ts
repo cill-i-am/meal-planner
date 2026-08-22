@@ -198,6 +198,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const objectSource = readRepoFile(
       "./apps/api/src/features/households/household-object.ts"
     );
+    const objectRuntimeSource = readRepoFile(
+      "./apps/api/src/features/households/household-object-runtime.ts"
+    );
     const schemaSource = readRepoFile(
       "./apps/api/src/features/households/household.database-schema.ts"
     );
@@ -215,13 +218,19 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(domainWorkerSource).toContain('>()("HouseholdDomainWorker")');
     expect(domainWorkerSource).toContain("workersDev: false");
     expect(domainWorkerSource).toContain(
-      "Schema.decodeUnknownEffect(HouseholdEnsureInputSchema)(input)"
+      'Schema.decodeUnknownEffect(schema, { onExcessProperty: "error" })'
     );
     expect(domainWorkerSource).toContain(
-      "householdObjectName(command.organizationId)"
+      "route(HouseholdEnsureInputSchema, input"
+    );
+    expect(domainWorkerSource).toContain(
+      "locator.locate(command.admission.organizationId)"
     );
     expect(domainWorkerSource).not.toContain("better-auth");
-    expect(objectSource).toContain("Drizzle.DurableObject({ migrations })");
+    expect(objectSource).toContain("HouseholdObjectRuntime.pipe(");
+    expect(objectRuntimeSource).toContain(
+      "Drizzle.DurableObject({ migrations })"
+    );
     expect(schemaSource).toContain('sqliteTable("household_meta"');
     expect(drizzleConfigSource).toContain('driver: "durable-sqlite"');
     expect(migration).toContain("CREATE TABLE `household_meta`");
@@ -337,7 +346,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(objectSource).not.toMatch(
       /this\.ctx\.storage|DurableObjectStorage/u
     );
-    expect(workflowSource).toContain("mediaObjects.getByName(importId)");
+    expect(workflowSource).toContain("mediaObjects.getByName(");
+    expect(workflowSource).toContain("acquisitionCoordinatorId(");
     expect(allSource).not.toMatch(/Household\w*DurableObject/iu);
     expect(objectSource).toContain("enableInternet: true");
     expect(bucketSource).toContain('"ImportEvidenceBucket"');

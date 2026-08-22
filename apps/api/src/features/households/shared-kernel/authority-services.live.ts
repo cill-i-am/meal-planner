@@ -1,4 +1,5 @@
 import { Effect, Layer } from "effect";
+import type { Schema } from "effect";
 
 import {
   HouseholdAuthorityServiceFailure,
@@ -7,60 +8,20 @@ import {
   HouseholdIdentityGenerator,
 } from "./authority-services.js";
 
-type CanonicalJson =
-  | boolean
-  | null
-  | number
-  | string
-  | readonly CanonicalJson[]
-  | { readonly [key: string]: CanonicalJson };
-
-const toCanonicalJson = (
-  value: unknown,
-  seen: WeakSet<object>
-): CanonicalJson => {
-  if (
-    value === null ||
-    typeof value === "boolean" ||
-    typeof value === "string"
-  ) {
-    return value;
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    if (seen.has(value)) {
-      throw new HouseholdAuthorityServiceFailure();
-    }
-    seen.add(value);
-    const encoded = value.map((item) => toCanonicalJson(item, seen));
-    seen.delete(value);
-    return encoded;
-  }
-  if (typeof value === "object") {
-    if (seen.has(value)) {
-      throw new HouseholdAuthorityServiceFailure();
-    }
-    seen.add(value);
-    const encoded = Object.fromEntries(
-      Object.entries(value)
-        .toSorted(([left], [right]) =>
-          left < right ? -1 : left > right ? 1 : 0
-        )
-        .map(([key, item]) => [key, toCanonicalJson(item, seen)])
-    );
-    seen.delete(value);
-    return encoded;
-  }
-  throw new HouseholdAuthorityServiceFailure();
+const encodeCanonicalJson = (value: Schema.Json) => {
+  const keys = new Set<string>();
+  JSON.stringify(value, (key, item: Schema.Json) => {
+    keys.add(key);
+    return item;
+  });
+  return JSON.stringify(value, [...keys].toSorted());
 };
 
 const canonicalEncoding = HouseholdCanonicalEncoding.of({
   encode: (value) =>
     Effect.try({
       catch: () => new HouseholdAuthorityServiceFailure(),
-      try: () => JSON.stringify(toCanonicalJson(value, new WeakSet())),
+      try: () => encodeCanonicalJson(value),
     }),
 });
 
