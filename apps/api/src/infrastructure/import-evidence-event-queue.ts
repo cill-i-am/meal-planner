@@ -2,21 +2,20 @@ import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect, Layer, Schema, Stream } from "effect";
 
+import { HouseholdObserveEvidenceReferenceInput } from "../features/households/evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "../features/households/household-domain-binding.js";
 import { HouseholdRecipeImportFailure } from "../features/households/recipe-import/household-recipe-import.contract.js";
 import {
   ImportEvidenceEventFailure,
   reconcileImportEvidenceQueueMessage,
 } from "../features/imports/import-evidence-event.js";
+import { makeD1ImportEvidenceRouteRepository } from "../features/imports/import-evidence-route.repository.d1.js";
 import { ImportEvidenceBucket } from "./import-evidence-bucket.js";
+import { MealPlannerDatabase } from "./meal-planner-database.js";
 
 export const ImportEvidenceEventQueue = Cloudflare.Queues.Queue(
   "ImportEvidenceEventQueue"
 );
-export const ImportEvidenceEventRoutes = Cloudflare.KV.Namespace(
-  "ImportEvidenceEventRoutes"
-);
-
 const dependencyFailure = () =>
   new ImportEvidenceEventFailure({
     reason: "dependency_unavailable",
@@ -40,9 +39,8 @@ export default class ImportEvidenceEventWorker extends Cloudflare.Worker<ImportE
   { main: import.meta.url, workersDev: false },
   Effect.gen(function* ImportEvidenceEventWorkerInit() {
     const queue = yield* ImportEvidenceEventQueue;
-    const routes = yield* Cloudflare.KV.ReadWriteNamespace(
-      ImportEvidenceEventRoutes
-    );
+    const queryDatabase =
+      yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
     const bucket = yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
     const householdDomain = yield* Cloudflare.Workers.bindWorker(
       HouseholdDomainWorker
@@ -60,6 +58,9 @@ export default class ImportEvidenceEventWorker extends Cloudflare.Worker<ImportE
               effect.pipe(
                 Effect.provideService(RuntimeContext, runtimeContext)
               );
+            const routes = makeD1ImportEvidenceRouteRepository(
+              yield* provideRuntime(queryDatabase.raw)
+            );
             return yield* reconcileImportEvidenceQueueMessage(message.body, {
               bucket: {
                 head: (key) =>
@@ -69,9 +70,17 @@ export default class ImportEvidenceEventWorker extends Cloudflare.Worker<ImportE
               },
               household: {
                 observeEvidenceReference: (input) =>
-                  provideRuntime(
-                    householdDomain.observeEvidenceReference(input)
-                  ).pipe(Effect.mapError(householdFailure)),
+                  Schema.encodeEffect(HouseholdObserveEvidenceReferenceInput)(
+                    input
+                  ).pipe(
+                    Effect.mapError(householdFailure),
+                    Effect.flatMap((encoded) =>
+                      provideRuntime(
+                        householdDomain.observeEvidenceReference(encoded)
+                      )
+                    ),
+                    Effect.mapError(householdFailure)
+                  ),
                 readEvidenceReferences: (input) =>
                   provideRuntime(
                     householdDomain.readEvidenceReferences(input)
@@ -79,13 +88,11 @@ export default class ImportEvidenceEventWorker extends Cloudflare.Worker<ImportE
               },
               routes: {
                 get: (importId) =>
-                  provideRuntime(routes.get(importId)).pipe(
-                    Effect.mapError(dependencyFailure)
-                  ),
-                put: (importId, value) =>
-                  provideRuntime(routes.put(importId, value)).pipe(
-                    Effect.mapError(dependencyFailure)
-                  ),
+                  routes.get(importId).pipe(Effect.mapError(dependencyFailure)),
+                register: (route) =>
+                  routes
+                    .register(route)
+                    .pipe(Effect.mapError(dependencyFailure)),
               },
             });
           }).pipe(
@@ -107,7 +114,7 @@ export default class ImportEvidenceEventWorker extends Cloudflare.Worker<ImportE
     Effect.provide(
       Layer.mergeAll(
         Cloudflare.Queues.EventSourceLive,
-        Cloudflare.KV.ReadWriteNamespaceBinding,
+        Cloudflare.D1.QueryDatabaseBinding,
         Cloudflare.R2.ReadWriteBucketBinding
       )
     )

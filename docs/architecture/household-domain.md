@@ -127,11 +127,13 @@ are fenced by household, import, generation, object key, and integrity metadata.
 
 After authenticated import admission, the API registers a private,
 noncanonical import-to-organization route with the reconciliation Queue before
-starting the Workflow. Its dedicated KV namespace exists only so an R2 event
-consumer can reconstruct an admitted system command; it is never a public
-lookup, household authority, product read model, or source of object names.
-Conflicting route registration fails closed, and raw organization identifiers
-are never logged or returned.
+starting the Workflow. A private D1 table stores that route with import ID as
+its unique key only so an R2 event consumer can reconstruct an admitted system
+command. Registration atomically inserts and reads the immutable winner, so
+concurrent conflicting organizations fail closed instead of overwriting one
+another. The route is never a public lookup, household authority, product read
+model, or source of object names, and raw organization identifiers are never
+logged or returned.
 
 ## Current scope
 
@@ -148,9 +150,9 @@ bearer token, or household scope in the request.
 The delivered product authorities in `HouseholdObject` are meal planning, the
 complete recipe-import/review/Recipe Bank capability, and compact evidence and
 extraction metadata. R2 retains only large private bytes. Shared D1 retains the
-later Slice 3 settlement and recovery ledger and approved global operational
-facts; it cannot author household evidence, public lifecycle, review, or Recipe
-Bank state.
+private immutable import-event route, the later Slice 3 settlement and recovery
+ledger, and approved global operational facts; it cannot author household
+evidence, public lifecycle, review, or Recipe Bank state.
 Shopping lists and preferences have not moved. Apart from the private,
 noncanonical import-event route above, there is no registry,
 organization-to-object lookup table, shared product read model, dual write,

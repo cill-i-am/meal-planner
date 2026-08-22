@@ -131,9 +131,12 @@ const bundleFixture = async (
 
 type MiniflareD1Database = Awaited<ReturnType<Miniflare["getD1Database"]>>;
 
-const applyAuthMigrations = async (database: MiniflareD1Database) => {
+const applyD1Migrations = async (
+  database: MiniflareD1Database,
+  migrationsDirectory: "auth-migrations" | "migrations"
+) => {
   const migrationsRoot = fileURLToPath(
-    new URL("../../../auth-migrations", import.meta.url)
+    new URL(`../../../${migrationsDirectory}`, import.meta.url)
   );
   const migrationDirectories = await readdir(migrationsRoot);
   const directories = migrationDirectories.toSorted();
@@ -193,7 +196,8 @@ const makeRuntime = () =>
       {
         compatibilityDate,
         compatibilityFlags,
-        kvNamespaces: ["EVIDENCE_EVENT_RESULTS", "ImportEvidenceEventRoutes"],
+        d1Databases: { MealPlannerDatabase: "household-route-test" },
+        kvNamespaces: ["EVIDENCE_EVENT_RESULTS"],
         modules: [...evidenceEventModules],
         name: "evidence-consumer",
         queueConsumers: ["evidence-events"],
@@ -237,9 +241,19 @@ beforeAll(async () => {
       ),
     ]);
   runtime = makeRuntime();
-  await applyAuthMigrations(
-    await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
-  );
+  await Promise.all([
+    applyD1Migrations(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api"),
+      "auth-migrations"
+    ),
+    applyD1Migrations(
+      await getRuntime().getD1Database(
+        "MealPlannerDatabase",
+        "evidence-consumer"
+      ),
+      "migrations"
+    ),
+  ]);
 }, 30_000);
 
 afterAll(async () => {
@@ -449,6 +463,71 @@ const admitResolvedEvidenceImport = async (input: {
   });
   expect(resolvedResponse.status, await resolvedResponse.text()).toBe(200);
   return { admission, admitted, cookie, organization } as const;
+};
+
+const commitCarouselManifest = async (input: {
+  readonly admission: object;
+  readonly inputFingerprint: string;
+  readonly intentId: string;
+  readonly manifestSha256: string;
+  readonly mutationIds: readonly [claim: string, complete: string];
+}) => {
+  const dispatchId = `carousel:${input.intentId}:1`;
+  const manifestKey = `imports/${input.intentId}/carousel/v1/generations/1/manifest.json`;
+  const startedAt = new Date(Date.now() + 60_000);
+  const completedAt = new Date(startedAt.getTime() + 1000);
+  const deleteAt = new Date(startedAt.getTime() + 604_800_000);
+  const claim = await systemCommand("mutate-evidence-stage", {
+    admission: input.admission,
+    expectedGeneration: 1,
+    inputFingerprint: input.inputFingerprint,
+    intentId: input.intentId,
+    mutationId: input.mutationIds[0],
+    operation: {
+      _tag: "Claim",
+      dispatchId,
+      stage: "carousel",
+      startedAt: startedAt.toISOString(),
+    },
+  });
+  expect(claim.status, await claim.text()).toBe(200);
+  const completion = await systemCommand("mutate-evidence-stage", {
+    admission: input.admission,
+    expectedGeneration: 1,
+    inputFingerprint: input.inputFingerprint,
+    intentId: input.intentId,
+    mutationId: input.mutationIds[1],
+    operation: {
+      _tag: "Complete",
+      dispatchId,
+      reference: {
+        byteLength: 512,
+        deleteAt: deleteAt.toISOString(),
+        key: manifestKey,
+        kind: "carousel_manifest",
+        sha256: input.manifestSha256,
+      },
+      result: {
+        _tag: "Carousel",
+        completedAt: completedAt.toISOString(),
+        descriptorFingerprint: input.inputFingerprint,
+        dispatchId,
+        imageCount: 3,
+        manifestKey,
+        manifestSha256: input.manifestSha256,
+      },
+      stage: "carousel",
+    },
+  });
+  expect(completion.status, await completion.clone().text()).toBe(200);
+  return {
+    completedAt,
+    completionReceipt: await Schema.decodeUnknownPromise(
+      HouseholdMutateEvidenceStageResult
+    )(await completion.json()),
+    deleteAt,
+    manifestKey,
+  } as const;
 };
 
 const review = {
@@ -1245,6 +1324,10 @@ describe("household public API to private Durable Object boundary", () => {
     const observed = await systemCommand("observe-evidence-reference", {
       admission,
       availability: "missing",
+      event: {
+        action: "IntegrityProbe",
+        eventTime: "2026-08-22T11:00:00.000Z",
+      },
       expectedGeneration: 1,
       intentId: admitted.id,
       mutationId: "7".repeat(64),
@@ -1273,6 +1356,10 @@ describe("household public API to private Durable Object boundary", () => {
     const retry = await systemCommand("observe-evidence-reference", {
       admission,
       availability: "missing",
+      event: {
+        action: "IntegrityProbe",
+        eventTime: "2026-08-22T11:00:00.000Z",
+      },
       expectedGeneration: 1,
       intentId: admitted.id,
       mutationId: "7".repeat(64),
@@ -1292,6 +1379,10 @@ describe("household public API to private Durable Object boundary", () => {
     const forged = await systemCommand("observe-evidence-reference", {
       admission,
       availability: "missing",
+      event: {
+        action: "IntegrityProbe",
+        eventTime: "2026-08-22T11:01:00.000Z",
+      },
       expectedGeneration: 1,
       intentId: admitted.id,
       mutationId: "8".repeat(64),
@@ -1308,6 +1399,10 @@ describe("household public API to private Durable Object boundary", () => {
       {
         admission,
         availability: "deleted",
+        event: {
+          action: "LifecycleDeletion",
+          eventTime: "2026-08-22T11:02:00.000Z",
+        },
         expectedGeneration: 2,
         intentId: admitted.id,
         mutationId: "9".repeat(64),
@@ -1323,6 +1418,10 @@ describe("household public API to private Durable Object boundary", () => {
     const deletion = await systemCommand("observe-evidence-reference", {
       admission,
       availability: "deleted",
+      event: {
+        action: "LifecycleDeletion",
+        eventTime: "2026-08-22T11:02:00.000Z",
+      },
       expectedGeneration: 1,
       intentId: admitted.id,
       mutationId: "9".repeat(64),
@@ -1427,6 +1526,10 @@ describe("household public API to private Durable Object boundary", () => {
       retryable: false,
     });
     const beforeDeletion = await readEvidenceReferences(admission, admitted.id);
+    expect(beforeDeletion?.references.map(({ kind }) => kind)).toEqual([
+      "original_media",
+      "acquisition_manifest",
+    ]);
     expect(
       beforeDeletion?.references.find(
         ({ kind }) => kind === "acquisition_manifest"
@@ -1495,7 +1598,7 @@ describe("household public API to private Durable Object boundary", () => {
       references?.references.find(({ kind }) => kind === "acquisition_manifest")
     ).toMatchObject({ availability: "deleted", observationOrdinal: 1 });
 
-    const bucket = await getRuntime().getR2Bucket(
+    let bucket = await getRuntime().getR2Bucket(
       "ImportEvidenceBucket",
       "evidence-consumer"
     );
@@ -1546,6 +1649,62 @@ describe("household public API to private Durable Object boundary", () => {
       references?.references.find(({ kind }) => kind === "acquisition_manifest")
     ).toMatchObject({ availability: "available", observationOrdinal: 2 });
 
+    await expect(
+      sendEvidenceEvent({
+        ...deletionEvent,
+        eventTime: "2026-08-22T12:01:30.000Z",
+      })
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Ignored", reason: "stale" },
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "available", observationOrdinal: 2 });
+
+    await expect(
+      sendEvidenceEvent({
+        ...deletionEvent,
+        action: "DeleteObject",
+        eventTime: "2026-08-22T12:02:00.000Z",
+      })
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "deleted" },
+    });
+    const sameTimeLowerPrecedenceEvent = {
+      ...deletionEvent,
+      action: "CopyObject",
+      eventTime: "2026-08-22T12:02:00.000Z",
+    } as const;
+    await expect(
+      sendEvidenceEvent(sameTimeLowerPrecedenceEvent)
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Ignored", reason: "stale" },
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "deleted", observationOrdinal: 3 });
+
+    await restartRuntime();
+    await expect(
+      sendEvidenceEvent(sameTimeLowerPrecedenceEvent)
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Ignored", reason: "stale" },
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "deleted", observationOrdinal: 3 });
+
+    bucket = await getRuntime().getR2Bucket(
+      "ImportEvidenceBucket",
+      "evidence-consumer"
+    );
     await bucket.delete(manifest.key);
     await expect(
       sendEvidenceEvent({
@@ -1560,7 +1719,7 @@ describe("household public API to private Durable Object boundary", () => {
     references = await readEvidenceReferences(admission, admitted.id);
     expect(
       references?.references.find(({ kind }) => kind === "acquisition_manifest")
-    ).toMatchObject({ availability: "missing", observationOrdinal: 3 });
+    ).toMatchObject({ availability: "missing", observationOrdinal: 4 });
   }, 30_000);
 
   it("reconciles a carousel manifest lifecycle deletion without acquisition evidence", async () => {
@@ -1573,57 +1732,13 @@ describe("household public API to private Durable Object boundary", () => {
       });
     const inputFingerprint = "b".repeat(64);
     const manifestSha256 = "c".repeat(64);
-    const dispatchId = `carousel:${admitted.id}:1`;
-    const manifestKey = `imports/${admitted.id}/carousel/v1/generations/1/manifest.json`;
-    const startedAt = new Date(Date.now() + 60_000);
-    const completedAt = new Date(startedAt.getTime() + 1000);
-    const deleteAt = new Date(startedAt.getTime() + 604_800_000);
-    const claim = await systemCommand("mutate-evidence-stage", {
+    const { completionReceipt, manifestKey } = await commitCarouselManifest({
       admission,
-      expectedGeneration: 1,
       inputFingerprint,
       intentId: admitted.id,
-      mutationId: "d".repeat(64),
-      operation: {
-        _tag: "Claim",
-        dispatchId,
-        stage: "carousel",
-        startedAt: startedAt.toISOString(),
-      },
+      manifestSha256,
+      mutationIds: ["d".repeat(64), "e".repeat(64)],
     });
-    expect(claim.status, await claim.text()).toBe(200);
-    const completion = await systemCommand("mutate-evidence-stage", {
-      admission,
-      expectedGeneration: 1,
-      inputFingerprint,
-      intentId: admitted.id,
-      mutationId: "e".repeat(64),
-      operation: {
-        _tag: "Complete",
-        dispatchId,
-        reference: {
-          byteLength: 512,
-          deleteAt: deleteAt.toISOString(),
-          key: manifestKey,
-          kind: "carousel_manifest",
-          sha256: manifestSha256,
-        },
-        result: {
-          _tag: "Carousel",
-          completedAt: completedAt.toISOString(),
-          descriptorFingerprint: inputFingerprint,
-          dispatchId,
-          imageCount: 3,
-          manifestKey,
-          manifestSha256,
-        },
-        stage: "carousel",
-      },
-    });
-    expect(completion.status, await completion.clone().text()).toBe(200);
-    const completionReceipt = await Schema.decodeUnknownPromise(
-      HouseholdMutateEvidenceStageResult
-    )(await completion.json());
 
     await expect(
       sendEvidenceEvent({
@@ -1687,6 +1802,97 @@ describe("household public API to private Durable Object boundary", () => {
     await expect(
       readEvidenceReferences(admission, admitted.id)
     ).resolves.toEqual(references);
+  }, 30_000);
+
+  it("rejects source-mixed evidence reference shapes at the real household boundary", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Mixed Evidence Shape Member",
+      mutationId: "5".repeat(64),
+      sourceKind: "video",
+      videoId: "7000000000000000134",
+    });
+    const inputFingerprint = "6".repeat(64);
+    const manifestSha256 = "7".repeat(64);
+    const { completedAt, deleteAt, manifestKey } = await commitCarouselManifest(
+      {
+        admission,
+        inputFingerprint,
+        intentId: admitted.id,
+        manifestSha256,
+        mutationIds: ["8".repeat(64), "9".repeat(64)],
+      }
+    );
+
+    const read = await systemCommand("read-evidence-references", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(read.status).toBe(400);
+    await expect(read.json()).resolves.toMatchObject({
+      reason: "persistence_unavailable",
+      rejected: true,
+    });
+
+    const referenceFields = {
+      availability: "available" as const,
+      byteLength: 1,
+      deleteAt: deleteAt.toISOString(),
+      observationOrdinal: 0,
+      sha256: "a".repeat(64),
+    };
+    const original = {
+      ...referenceFields,
+      key: `imports/${admitted.id}/acquisition/v1/generations/1/original.mp4`,
+      kind: "original_media" as const,
+    };
+    const acquisition = {
+      ...referenceFields,
+      key: `imports/${admitted.id}/acquisition/v1/generations/1/manifest.json`,
+      kind: "acquisition_manifest" as const,
+    };
+    const speech = {
+      ...referenceFields,
+      key: `imports/${admitted.id}/speech/v1/generations/1/transcript.json`,
+      kind: "speech_transcript" as const,
+    };
+    const visual = {
+      ...referenceFields,
+      key: `imports/${admitted.id}/visual/v1/generations/1/manifest.json`,
+      kind: "visual_manifest" as const,
+    };
+    const resultIdentity = {
+      committedAt: completedAt.toISOString(),
+      executionGeneration: 1,
+      intentId: admitted.id,
+    };
+
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdReadEvidenceReferencesResult)({
+        ...resultIdentity,
+        references: [original, acquisition, speech, visual],
+      })
+    ).resolves.toBeDefined();
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdReadEvidenceReferencesResult)({
+        ...resultIdentity,
+        references: [original, acquisition, visual, speech],
+      })
+    ).rejects.toBeDefined();
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdReadEvidenceReferencesResult)({
+        ...resultIdentity,
+        references: [
+          original,
+          {
+            ...referenceFields,
+            key: manifestKey,
+            kind: "carousel_manifest",
+            sha256: manifestSha256,
+          },
+        ],
+      })
+    ).rejects.toBeDefined();
   }, 30_000);
 
   it("rejects a forged cross-organization session before private routing", async () => {

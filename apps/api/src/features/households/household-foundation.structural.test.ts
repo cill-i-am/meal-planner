@@ -206,7 +206,9 @@ describe("household foundation structural boundaries", () => {
     expect(consumer).toContain("reconcileImportEvidenceQueueMessage(");
     expect(consumer).toContain("householdDomain.observeEvidenceReference(");
     expect(consumer).toContain("householdDomain.readEvidenceReferences(");
-    expect(consumer).toContain("ImportEvidenceEventRoutes");
+    expect(consumer).toContain("MealPlannerDatabase");
+    expect(consumer).toContain("makeD1ImportEvidenceRouteRepository");
+    expect(consumer).not.toContain("Cloudflare.KV");
     expect(reconciler).toContain("ports.bucket.head(event.objectKey)");
     expect(reconciler).toContain("ports.household.observeEvidenceReference({");
   });

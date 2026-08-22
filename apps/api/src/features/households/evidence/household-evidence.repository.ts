@@ -151,6 +151,15 @@ const expectedStageReference = (
   }
 };
 
+const observationActionRank = {
+  CompleteMultipartUpload: 0,
+  CopyObject: 1,
+  DeleteObject: 4,
+  IntegrityProbe: 3,
+  LifecycleDeletion: 5,
+  PutObject: 2,
+} as const;
+
 const stageOutcome = (state: string) => {
   if (state === "completed") {
     return "Completed" as const;
@@ -433,7 +442,7 @@ export const makeHouseholdEvidenceRepository = (
         HouseholdObserveEvidenceReferenceInput
       )(input).pipe(Effect.mapError(persistenceFailure));
       const commandDigest = yield* digestJson({
-        availability: encodedInput.availability,
+        event: encodedInput.event,
         expectedGeneration: encodedInput.expectedGeneration,
         intentId: encodedInput.intentId,
         operation: "observe-evidence-reference",
@@ -491,41 +500,69 @@ export const makeHouseholdEvidenceRepository = (
             }
             const nowEpochMs = yield* Clock.currentTimeMillis;
             const committedAt = new Date(nowEpochMs).toISOString();
-            const observationOrdinal = reference.observationOrdinal + 1;
+            const incomingEventTime = DateTime.toEpochMillis(
+              input.event.eventTime
+            );
+            const currentEventTime =
+              reference.observedEventTime === null
+                ? null
+                : Date.parse(reference.observedEventTime);
+            const currentActionRank =
+              reference.observedEventAction === null
+                ? null
+                : observationActionRank[reference.observedEventAction];
+            const incomingActionRank =
+              observationActionRank[input.event.action];
+            const ignored =
+              currentEventTime !== null &&
+              (incomingEventTime < currentEventTime ||
+                (incomingEventTime === currentEventTime &&
+                  currentActionRank !== null &&
+                  incomingActionRank <= currentActionRank));
+            const observationOrdinal = ignored
+              ? reference.observationOrdinal
+              : reference.observationOrdinal + 1;
             const result = yield* decode(
               HouseholdObserveEvidenceReferenceResult,
               {
-                availability: input.availability,
+                availability: ignored
+                  ? reference.availability
+                  : input.availability,
                 committedAt,
                 executionGeneration: input.expectedGeneration,
                 intentId: input.intentId,
                 kind: input.reference.kind,
                 observationOrdinal,
+                outcome: ignored ? "IgnoredOlder" : "Applied",
                 receiptVersion: 1,
               }
             );
             const resultJson = yield* encode(EncodedObservationResult, result);
-            yield* transaction
-              .update(householdEvidenceReferences)
-              .set({
-                availability: input.availability,
-                observationOrdinal,
-                observedAt: committedAt,
-              })
-              .where(
-                and(
-                  eq(householdEvidenceReferences.intentId, input.intentId),
-                  eq(
-                    householdEvidenceReferences.executionGeneration,
-                    input.expectedGeneration
-                  ),
-                  eq(householdEvidenceReferences.kind, input.reference.kind),
-                  eq(
-                    householdEvidenceReferences.observationOrdinal,
-                    reference.observationOrdinal
+            if (!ignored) {
+              yield* transaction
+                .update(householdEvidenceReferences)
+                .set({
+                  availability: input.availability,
+                  observationOrdinal,
+                  observedAt: committedAt,
+                  observedEventAction: input.event.action,
+                  observedEventTime: encodedInput.event.eventTime,
+                })
+                .where(
+                  and(
+                    eq(householdEvidenceReferences.intentId, input.intentId),
+                    eq(
+                      householdEvidenceReferences.executionGeneration,
+                      input.expectedGeneration
+                    ),
+                    eq(householdEvidenceReferences.kind, input.reference.kind),
+                    eq(
+                      householdEvidenceReferences.observationOrdinal,
+                      reference.observationOrdinal
+                    )
                   )
-                )
-              );
+                );
+            }
             yield* persistReceipt(transaction, {
               commandDigest,
               mutationId: input.mutationId,
@@ -918,6 +955,7 @@ export const makeHouseholdEvidenceRepository = (
       const [intent] = yield* database
         .select({
           executionGeneration: householdRecipeImports.executionGeneration,
+          sourceKind: householdRecipeImports.sourceKind,
         })
         .from(householdRecipeImports)
         .where(eq(householdRecipeImports.intentId, input.intentId))
@@ -943,29 +981,40 @@ export const makeHouseholdEvidenceRepository = (
         )
         .limit(1)
         .pipe(mapPersistence);
-      const [carouselExecution] =
-        acquisitionExecution === undefined
-          ? yield* database
-              .select({
-                committedAt: householdEvidenceStageExecutions.committedAt,
-              })
-              .from(householdEvidenceStageExecutions)
-              .where(
-                and(
-                  eq(householdEvidenceStageExecutions.intentId, input.intentId),
-                  eq(
-                    householdEvidenceStageExecutions.executionGeneration,
-                    input.expectedGeneration
-                  ),
-                  eq(householdEvidenceStageExecutions.stage, "carousel"),
-                  eq(householdEvidenceStageExecutions.state, "completed")
-                )
-              )
-              .limit(1)
-              .pipe(mapPersistence)
-          : [undefined];
-      const committedAt =
-        acquisitionExecution?.committedAt ?? carouselExecution?.committedAt;
+      const [carouselExecution] = yield* database
+        .select({
+          committedAt: householdEvidenceStageExecutions.committedAt,
+        })
+        .from(householdEvidenceStageExecutions)
+        .where(
+          and(
+            eq(householdEvidenceStageExecutions.intentId, input.intentId),
+            eq(
+              householdEvidenceStageExecutions.executionGeneration,
+              input.expectedGeneration
+            ),
+            eq(householdEvidenceStageExecutions.stage, "carousel"),
+            eq(householdEvidenceStageExecutions.state, "completed")
+          )
+        )
+        .limit(1)
+        .pipe(mapPersistence);
+      if (
+        (intent.sourceKind === "video" && carouselExecution !== undefined) ||
+        (intent.sourceKind === "carousel" &&
+          acquisitionExecution !== undefined) ||
+        (intent.sourceKind === null &&
+          (acquisitionExecution !== undefined ||
+            carouselExecution !== undefined))
+      ) {
+        return yield* Effect.fail(persistenceFailure());
+      }
+      let committedAt: string | undefined;
+      if (intent.sourceKind === "video") {
+        committedAt = acquisitionExecution?.committedAt;
+      } else if (intent.sourceKind === "carousel") {
+        committedAt = carouselExecution?.committedAt;
+      }
       if (committedAt === undefined) {
         return null;
       }

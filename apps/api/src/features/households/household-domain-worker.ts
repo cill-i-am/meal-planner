@@ -14,7 +14,6 @@ import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
 import type {
   HouseholdCommitAcquisitionEvidenceInput,
   HouseholdMutateEvidenceStageInput,
-  HouseholdObserveEvidenceReferenceInput,
   HouseholdReadEvidenceStageInput,
   HouseholdReadEvidenceReferencesInput,
   HouseholdCommitAcquisitionEvidenceResult,
@@ -140,7 +139,7 @@ export interface HouseholdDomainWorkerMethods {
     HouseholdRecipeImportDomainFailure
   >;
   readonly observeEvidenceReference: (
-    input: HouseholdObserveEvidenceReferenceInput
+    input: typeof HouseholdObserveEvidenceReferenceInputSchema.Encoded
   ) => Effect.Effect<
     typeof HouseholdObserveEvidenceReferenceResult.Encoded,
     HouseholdRecipeImportDomainFailure
@@ -310,7 +309,7 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
       )
     );
   const routeEvidenceObservation = (
-    input: HouseholdObserveEvidenceReferenceInput
+    input: typeof HouseholdObserveEvidenceReferenceInputSchema.Encoded
   ) =>
     Schema.decodeUnknownEffect(HouseholdObserveEvidenceReferenceInputSchema, {
       onExcessProperty: "error",
@@ -421,8 +420,9 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
       ),
     mutateEvidenceStage: (input: HouseholdMutateEvidenceStageInput) =>
       routeEvidenceStage(input),
-    observeEvidenceReference: (input: HouseholdObserveEvidenceReferenceInput) =>
-      routeEvidenceObservation(input),
+    observeEvidenceReference: (
+      input: typeof HouseholdObserveEvidenceReferenceInputSchema.Encoded
+    ) => routeEvidenceObservation(input),
     readEvidenceReferences: (input: HouseholdReadEvidenceReferencesInput) =>
       route(
         HouseholdReadEvidenceReferencesInputSchema,

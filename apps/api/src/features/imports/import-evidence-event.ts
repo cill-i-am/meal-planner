@@ -5,6 +5,7 @@ import {
   HouseholdEvidenceReferenceKind,
   HouseholdReadEvidenceReferencesResult,
 } from "../households/evidence/household-evidence.contract.js";
+import type { HouseholdObserveEvidenceReferenceInput } from "../households/evidence/household-evidence.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
@@ -43,11 +44,12 @@ export const RegisterImportEvidenceRoute = Schema.Struct({
 export type RegisterImportEvidenceRoute =
   typeof RegisterImportEvidenceRoute.Type;
 
-const ImportEvidenceRoute = Schema.Struct({
+export const ImportEvidenceRoute = Schema.Struct({
   importId: ImportId,
   organizationId: HouseholdOrganizationId,
   routeVersion: Schema.Literal(1),
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type ImportEvidenceRoute = typeof ImportEvidenceRoute.Type;
 
 const SafeImportEvidenceEvent = Schema.Struct({
   action: R2EvidenceEventAction,
@@ -204,9 +206,7 @@ export interface ImportEvidenceEventPorts {
   };
   readonly household: {
     readonly observeEvidenceReference: (
-      input: Parameters<
-        HouseholdDomainWorkerMethods["observeEvidenceReference"]
-      >[0]
+      input: HouseholdObserveEvidenceReferenceInput
     ) => Effect.Effect<
       Effect.Success<
         ReturnType<HouseholdDomainWorkerMethods["observeEvidenceReference"]>
@@ -227,11 +227,13 @@ export interface ImportEvidenceEventPorts {
   readonly routes: {
     readonly get: (
       importId: string
-    ) => Effect.Effect<string | null, ImportEvidenceEventFailure>;
-    readonly put: (
-      importId: string,
-      value: string
-    ) => Effect.Effect<void, ImportEvidenceEventFailure>;
+    ) => Effect.Effect<ImportEvidenceRoute | null, ImportEvidenceEventFailure>;
+    readonly register: (
+      route: ImportEvidenceRoute
+    ) => Effect.Effect<
+      "ConflictRejected" | "Registered",
+      ImportEvidenceEventFailure
+    >;
   };
 }
 
@@ -267,33 +269,19 @@ const registerRoute = (
   message: RegisterImportEvidenceRoute,
   routes: ImportEvidenceEventPorts["routes"]
 ): Effect.Effect<ImportEvidenceEventOutcome, ImportEvidenceEventFailure> =>
-  routes.get(message.importId).pipe(
-    Effect.flatMap((stored) => {
-      const route = Schema.decodeUnknownSync(ImportEvidenceRoute)({
-        importId: message.importId,
-        organizationId: message.organizationId,
-        routeVersion: message.routeVersion,
-      });
-      const encoded = JSON.stringify(route);
-      if (stored === null) {
-        return routes
-          .put(message.importId, encoded)
-          .pipe(Effect.as({ _tag: "Registered" as const }));
-      }
-      return Effect.try({
-        catch: () => failure("route_unavailable", true),
-        try: () => JSON.parse(stored),
-      }).pipe(
-        Effect.flatMap(Schema.decodeUnknownEffect(ImportEvidenceRoute)),
-        Effect.mapError(() => failure("route_unavailable", true)),
-        Effect.map((current) =>
-          current.organizationId === message.organizationId
-            ? ({ _tag: "Registered" } as const)
-            : ({ _tag: "RouteConflictRejected" } as const)
-        )
-      );
+  routes
+    .register({
+      importId: message.importId,
+      organizationId: message.organizationId,
+      routeVersion: message.routeVersion,
     })
-  );
+    .pipe(
+      Effect.map((outcome) =>
+        outcome === "Registered"
+          ? ({ _tag: "Registered" } as const)
+          : ({ _tag: "RouteConflictRejected" } as const)
+      )
+    );
 
 const route = (
   event: SafeImportEvidenceEvent,
@@ -303,17 +291,10 @@ const route = (
     if (event.referenceKind === null) {
       return { _tag: "Ignored", reason: "untracked" } as const;
     }
-    const routeJson = yield* ports.routes.get(event.importId);
-    if (routeJson === null) {
+    const resolved = yield* ports.routes.get(event.importId);
+    if (resolved === null) {
       return yield* Effect.fail(failure("route_unavailable", true));
     }
-    const resolved = yield* Effect.try({
-      catch: () => failure("route_unavailable", true),
-      try: () => JSON.parse(routeJson),
-    }).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(ImportEvidenceRoute)),
-      Effect.mapError(() => failure("route_unavailable", true))
-    );
     if (resolved.importId !== event.importId) {
       return yield* Effect.fail(failure("route_conflict", false));
     }
@@ -326,6 +307,9 @@ const route = (
     };
     const intentId = yield* Schema.decodeUnknownEffect(RecipeImportIntentId)(
       event.importId
+    ).pipe(Effect.mapError(() => failure("invalid_event", false)));
+    const eventTime = yield* Schema.decodeUnknownEffect(ImportTimestamp)(
+      event.eventTime
     ).pipe(Effect.mapError(() => failure("invalid_event", false)));
     const encodedReferences = yield* ports.household.readEvidenceReferences({
       admission,
@@ -377,12 +361,15 @@ const route = (
         event.eventTime,
         event.objectKey,
         reference.sha256,
-        availability,
       ])
     );
-    yield* ports.household.observeEvidenceReference({
+    const observation = yield* ports.household.observeEvidenceReference({
       admission,
       availability,
+      event: {
+        action: event.action,
+        eventTime,
+      },
       expectedGeneration: event.executionGeneration,
       intentId,
       mutationId,
@@ -392,7 +379,9 @@ const route = (
         sha256: reference.sha256,
       },
     });
-    return { _tag: "Observed", availability } as const;
+    return observation.outcome === "IgnoredOlder"
+      ? ({ _tag: "Ignored", reason: "stale" } as const)
+      : ({ _tag: "Observed", availability: observation.availability } as const);
   });
 
 /** Production reconciliation core shared by the Worker and Workerd proof. */

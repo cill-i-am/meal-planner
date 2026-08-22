@@ -1,7 +1,8 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import {
   ImportEvidenceEventFailure,
+  ImportEvidenceRoute,
   reconcileImportEvidenceQueueMessage,
 } from "./import-evidence-event.js";
 
@@ -54,6 +55,7 @@ export default {
                     intentId: importId,
                     kind: "acquisition_manifest" as const,
                     observationOrdinal: 1,
+                    outcome: "Applied" as const,
                     receiptVersion: 1 as const,
                   })
                 : Effect.fail(
@@ -101,11 +103,51 @@ export default {
           routes: {
             get: (key) =>
               Effect.promise(() => environment.ROUTES.get(key)).pipe(
-                Effect.mapError(dependencyFailure)
+                Effect.mapError(dependencyFailure),
+                Effect.flatMap((value) =>
+                  value === null
+                    ? Effect.succeed(null)
+                    : Effect.try({
+                        catch: dependencyFailure,
+                        try: () => JSON.parse(value),
+                      }).pipe(
+                        Effect.flatMap(
+                          Schema.decodeUnknownEffect(ImportEvidenceRoute)
+                        ),
+                        Effect.mapError(dependencyFailure)
+                      )
+                )
               ),
-            put: (key, value) =>
-              Effect.promise(() => environment.ROUTES.put(key, value)).pipe(
-                Effect.mapError(dependencyFailure)
+            register: (route) =>
+              Effect.promise(() => environment.ROUTES.get(route.importId)).pipe(
+                Effect.mapError(dependencyFailure),
+                Effect.flatMap((stored) => {
+                  if (stored === null) {
+                    return Effect.promise(() =>
+                      environment.ROUTES.put(
+                        route.importId,
+                        JSON.stringify(route)
+                      )
+                    ).pipe(
+                      Effect.mapError(dependencyFailure),
+                      Effect.as("Registered" as const)
+                    );
+                  }
+                  return Effect.try({
+                    catch: dependencyFailure,
+                    try: () => JSON.parse(stored),
+                  }).pipe(
+                    Effect.flatMap(
+                      Schema.decodeUnknownEffect(ImportEvidenceRoute)
+                    ),
+                    Effect.mapError(dependencyFailure),
+                    Effect.map((current) =>
+                      current.organizationId === route.organizationId
+                        ? ("Registered" as const)
+                        : ("ConflictRejected" as const)
+                    )
+                  );
+                })
               ),
           },
         });

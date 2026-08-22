@@ -18,7 +18,10 @@ import {
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
-import { HouseholdReadEvidenceReferencesResult } from "../households/evidence/household-evidence.contract.js";
+import {
+  HouseholdObserveEvidenceReferenceInput,
+  HouseholdReadEvidenceReferencesResult,
+} from "../households/evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdOrganizationId } from "../households/household.contract.js";
@@ -1043,14 +1046,24 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     );
                     yield* Effect.forEach(
                       missing,
-                      ({ reference }) =>
-                        workflowMutationId(
-                          `${intentId}:${executionGeneration}:observe-evidence-missing:${reference.kind}:${reference.sha256}`
+                      ({ reference }) => {
+                        const eventTime = new Date().toISOString();
+                        return workflowMutationId(
+                          `${intentId}:${executionGeneration}:observe-evidence-missing:${reference.kind}:${reference.sha256}:${eventTime}`
                         ).pipe(
                           Effect.flatMap((mutationId) =>
-                            householdDomain.observeEvidenceReference({
+                            Schema.encodeEffect(
+                              HouseholdObserveEvidenceReferenceInput
+                            )({
                               admission,
                               availability: "missing",
+                              event: {
+                                action: "IntegrityProbe",
+                                eventTime:
+                                  Schema.decodeUnknownSync(ImportTimestamp)(
+                                    eventTime
+                                  ),
+                              },
                               expectedGeneration: executionGeneration,
                               intentId,
                               mutationId,
@@ -1059,10 +1072,18 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                                 kind: reference.kind,
                                 sha256: reference.sha256,
                               },
-                            })
+                            }).pipe(
+                              Effect.orDie,
+                              Effect.flatMap((encoded) =>
+                                householdDomain.observeEvidenceReference(
+                                  encoded
+                                )
+                              )
+                            )
                           ),
                           Effect.orDie
-                        ),
+                        );
+                      },
                       { concurrency: 1 }
                     );
                     if (missing.length > 0) {

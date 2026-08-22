@@ -1,11 +1,13 @@
+import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 
 import {
   ImportEvidenceEventFailure,
   reconcileImportEvidenceQueueMessage,
 } from "../imports/import-evidence-event.js";
+import { makeD1ImportEvidenceRouteRepository } from "../imports/import-evidence-route.repository.d1.js";
+import { HouseholdObserveEvidenceReferenceInput } from "./evidence/household-evidence.contract.js";
 import type {
-  HouseholdObserveEvidenceReferenceInput,
   HouseholdObserveEvidenceReferenceResult,
   HouseholdReadEvidenceReferencesInput,
   HouseholdReadEvidenceReferencesResult,
@@ -34,10 +36,10 @@ interface TestMessageBatch {
 interface Environment {
   readonly EVIDENCE_EVENT_RESULTS: TestKvNamespace;
   readonly ImportEvidenceBucket: TestR2Bucket;
-  readonly ImportEvidenceEventRoutes: TestKvNamespace;
+  readonly MealPlannerDatabase: AnyD1Database;
   readonly HouseholdDomainWorker: {
     readonly observeEvidenceReference: (
-      input: HouseholdObserveEvidenceReferenceInput
+      input: typeof HouseholdObserveEvidenceReferenceInput.Encoded
     ) => Promise<typeof HouseholdObserveEvidenceReferenceResult.Encoded>;
     readonly readEvidenceReferences: (
       input: HouseholdReadEvidenceReferencesInput
@@ -81,6 +83,9 @@ const rpc = <A>(run: () => Promise<A>) =>
 
 export default {
   async queue(batch: TestMessageBatch, environment: Environment) {
+    const routes = makeD1ImportEvidenceRouteRepository(
+      environment.MealPlannerDatabase
+    );
     await Promise.all(
       batch.messages.map(async (message) => {
         const safeResult = await Effect.runPromise(
@@ -93,9 +98,16 @@ export default {
             },
             household: {
               observeEvidenceReference: (input) =>
-                rpc(() =>
-                  environment.HouseholdDomainWorker.observeEvidenceReference(
-                    input
+                Schema.encodeEffect(HouseholdObserveEvidenceReferenceInput)(
+                  input
+                ).pipe(
+                  Effect.mapError(dependencyFailure),
+                  Effect.flatMap((encoded) =>
+                    rpc(() =>
+                      environment.HouseholdDomainWorker.observeEvidenceReference(
+                        encoded
+                      )
+                    )
                   )
                 ),
               readEvidenceReferences: (input) =>
@@ -106,14 +118,10 @@ export default {
                 ),
             },
             routes: {
-              get: (key) =>
-                Effect.promise(() =>
-                  environment.ImportEvidenceEventRoutes.get(key)
-                ).pipe(Effect.mapError(dependencyFailure)),
-              put: (key, value) =>
-                Effect.promise(() =>
-                  environment.ImportEvidenceEventRoutes.put(key, value)
-                ).pipe(Effect.mapError(dependencyFailure)),
+              get: (importId) =>
+                routes.get(importId).pipe(Effect.mapError(dependencyFailure)),
+              register: (route) =>
+                routes.register(route).pipe(Effect.mapError(dependencyFailure)),
             },
           }).pipe(
             Effect.match({

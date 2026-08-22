@@ -440,6 +440,7 @@ export const makeHouseholdRecipeImportRepository = (
               intentJson,
               recipeId: null,
               reviewJson: null,
+              sourceKind: null,
               status: "processing",
               submittedSourceUrl: input.source.url,
               updatedAt: createdAt,
@@ -592,6 +593,7 @@ export const makeHouseholdRecipeImportRepository = (
               .set({
                 canonicalSourceId: input.canonicalSourceId,
                 intentJson,
+                sourceKind: input.sourceKind,
                 status: next.status,
                 updatedAt: now,
               })

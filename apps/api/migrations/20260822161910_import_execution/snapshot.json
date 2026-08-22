@@ -1,0 +1,1365 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "59a5392a-2b8a-43a2-b119-6c4253eec613",
+  "prevIds": ["6eeef938-75b2-4a27-ad8d-a8e8085f3224"],
+  "ddl": [
+    {
+      "name": "import_carousel_evidence",
+      "entityType": "tables"
+    },
+    {
+      "name": "import_evidence_routes",
+      "entityType": "tables"
+    },
+    {
+      "name": "import_execution_runs",
+      "entityType": "tables"
+    },
+    {
+      "name": "import_recipe_executor_terminal_checkpoints",
+      "entityType": "tables"
+    },
+    {
+      "name": "import_recipe_extractions",
+      "entityType": "tables"
+    },
+    {
+      "name": "import_transcriptions",
+      "entityType": "tables"
+    },
+    {
+      "name": "import_visual_evidence",
+      "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "acquisition_generation",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "descriptor_fingerprint",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failure_code",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "image_count",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "manifest_key",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "manifest_sha256",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recovery_action",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "table": "import_evidence_routes"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "import_evidence_routes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "route_version",
+      "entityType": "columns",
+      "table": "import_evidence_routes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "acquisition_generation",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "canonical_source_id",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "correlation_id",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "evidence_references_json",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recovery_action",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_kind",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_type",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status_code",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "acquisition_generation",
+      "entityType": "columns",
+      "table": "import_recipe_executor_terminal_checkpoints"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "checkpointed_at",
+      "entityType": "columns",
+      "table": "import_recipe_executor_terminal_checkpoints"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "evidence_references_json",
+      "entityType": "columns",
+      "table": "import_recipe_executor_terminal_checkpoints"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "table": "import_recipe_executor_terminal_checkpoints"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ownership_id",
+      "entityType": "columns",
+      "table": "import_recipe_executor_terminal_checkpoints"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "acquisition_generation",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cost_certainty",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cost_currency",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "draft_json",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "estimated_cost_micro_usd",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "evidence_fingerprint",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "extraction_fingerprint",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "extractor_model",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "extractor_provider",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "extractor_version",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failure_code",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_evidence_items",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_tokens",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "is_current",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "latency_milliseconds",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model_calls",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "output_tokens",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "acquisition_generation",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cost_certainty",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cost_currency",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "detected_language",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "estimated_cost_micro_usd",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failure_code",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provider",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "segments_count",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_media_sha256",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "transcript_key",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "transcript_sha256",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "usage_audio_milliseconds",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "usage_input_bytes",
+      "entityType": "columns",
+      "table": "import_transcriptions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "acquisition_generation",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cost_certainty",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cost_currency",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "estimated_cost_micro_usd",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failure_code",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_bytes",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_frames",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "manifest_key",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "manifest_sha256",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model_calls",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "observations_count",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "outcome",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provider",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_media_sha256",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "import_visual_evidence"
+    },
+    {
+      "columns": ["import_id", "acquisition_generation"],
+      "tableTo": "import_execution_runs",
+      "columnsTo": ["id", "acquisition_generation"],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "nameExplicit": true,
+      "name": "import_carousel_evidence_import_generation_fk",
+      "entityType": "fks",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "columns": ["import_id", "acquisition_generation"],
+      "tableTo": "import_execution_runs",
+      "columnsTo": ["id", "acquisition_generation"],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "nameExplicit": true,
+      "name": "import_recipe_executor_terminal_checkpoints_import_generation_fk",
+      "entityType": "fks",
+      "table": "import_recipe_executor_terminal_checkpoints"
+    },
+    {
+      "columns": ["import_id", "acquisition_generation"],
+      "tableTo": "import_execution_runs",
+      "columnsTo": ["id", "acquisition_generation"],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "nameExplicit": true,
+      "name": "import_recipe_extractions_import_generation_fk",
+      "entityType": "fks",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "columns": ["import_id", "acquisition_generation"],
+      "tableTo": "import_execution_runs",
+      "columnsTo": ["id", "acquisition_generation"],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "nameExplicit": true,
+      "name": "import_transcriptions_import_generation_fk",
+      "entityType": "fks",
+      "table": "import_transcriptions"
+    },
+    {
+      "columns": ["import_id", "acquisition_generation"],
+      "tableTo": "import_execution_runs",
+      "columnsTo": ["id", "acquisition_generation"],
+      "onUpdate": "RESTRICT",
+      "onDelete": "RESTRICT",
+      "nameExplicit": true,
+      "name": "import_visual_evidence_import_generation_fk",
+      "entityType": "fks",
+      "table": "import_visual_evidence"
+    },
+    {
+      "columns": ["import_id", "acquisition_generation"],
+      "nameExplicit": false,
+      "name": "import_carousel_evidence_pk",
+      "entityType": "pks",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "import_execution_runs_pk",
+      "entityType": "pks",
+      "table": "import_execution_runs"
+    },
+    {
+      "columns": ["import_id", "acquisition_generation"],
+      "nameExplicit": false,
+      "name": "import_recipe_executor_terminal_checkpoints_pk",
+      "entityType": "pks",
+      "table": "import_recipe_executor_terminal_checkpoints"
+    },
+    {
+      "columns": ["extraction_fingerprint"],
+      "nameExplicit": false,
+      "name": "import_recipe_extractions_pk",
+      "entityType": "pks",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "columns": ["import_id", "acquisition_generation"],
+      "nameExplicit": false,
+      "name": "import_transcriptions_pk",
+      "entityType": "pks",
+      "table": "import_transcriptions"
+    },
+    {
+      "columns": ["import_id", "acquisition_generation"],
+      "nameExplicit": false,
+      "name": "import_visual_evidence_pk",
+      "entityType": "pks",
+      "table": "import_visual_evidence"
+    },
+    {
+      "columns": ["import_id"],
+      "nameExplicit": false,
+      "name": "import_evidence_routes_pk",
+      "table": "import_evidence_routes",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "dispatch_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "import_carousel_evidence_dispatch_id_unique",
+      "entityType": "indexes",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "columns": [
+        {
+          "value": "state",
+          "isExpression": false
+        },
+        {
+          "value": "updated_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "import_carousel_evidence_state_updated_index",
+      "entityType": "indexes",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "columns": [
+        {
+          "value": "id",
+          "isExpression": false
+        },
+        {
+          "value": "acquisition_generation",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "import_execution_runs_id_generation_unique",
+      "entityType": "indexes",
+      "table": "import_execution_runs"
+    },
+    {
+      "columns": [
+        {
+          "value": "import_id",
+          "isExpression": false
+        },
+        {
+          "value": "acquisition_generation",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"import_recipe_extractions\".\"is_current\" = 1",
+      "origin": "manual",
+      "name": "import_recipe_extractions_current_unique",
+      "entityType": "indexes",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "columns": [
+        {
+          "value": "state",
+          "isExpression": false
+        },
+        {
+          "value": "updated_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "import_recipe_extractions_state_updated_index",
+      "entityType": "indexes",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "columns": [
+        {
+          "value": "dispatch_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "import_transcriptions_dispatch_id_unique",
+      "entityType": "indexes",
+      "table": "import_transcriptions"
+    },
+    {
+      "columns": [
+        {
+          "value": "state",
+          "isExpression": false
+        },
+        {
+          "value": "updated_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "import_transcriptions_state_updated_index",
+      "entityType": "indexes",
+      "table": "import_transcriptions"
+    },
+    {
+      "columns": [
+        {
+          "value": "dispatch_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "import_visual_evidence_dispatch_id_unique",
+      "entityType": "indexes",
+      "table": "import_visual_evidence"
+    },
+    {
+      "columns": [
+        {
+          "value": "state",
+          "isExpression": false
+        },
+        {
+          "value": "updated_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "import_visual_evidence_state_updated_index",
+      "entityType": "indexes",
+      "table": "import_visual_evidence"
+    },
+    {
+      "value": "typeof(\"acquisition_generation\") = 'integer' AND \"acquisition_generation\" >= 0 AND \"acquisition_generation\" <= 9007199254740991",
+      "name": "import_carousel_evidence_generation_check",
+      "entityType": "checks",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "value": "length(\"descriptor_fingerprint\") = 64 AND \"descriptor_fingerprint\" NOT GLOB '*[^0-9a-f]*' AND length(\"dispatch_id\") BETWEEN 1 AND 100",
+      "name": "import_carousel_evidence_identity_check",
+      "entityType": "checks",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "value": "(\n        \"state\" = 'dispatching'\n        AND \"manifest_key\" IS NULL\n        AND \"manifest_sha256\" IS NULL\n        AND \"image_count\" IS NULL\n        AND \"failure_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n        AND \"completed_at\" IS NULL\n      ) OR (\n        \"state\" = 'completed'\n        AND length(\"manifest_key\") BETWEEN 1 AND 500\n        AND length(\"manifest_sha256\") = 64\n        AND \"manifest_sha256\" NOT GLOB '*[^0-9a-f]*'\n        AND typeof(\"image_count\") = 'integer'\n        AND \"image_count\" BETWEEN 1 AND 12\n        AND \"failure_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n        AND \"completed_at\" IS NOT NULL\n      ) OR (\n        \"state\" = 'failed'\n        AND \"manifest_key\" IS NULL\n        AND \"manifest_sha256\" IS NULL\n        AND \"image_count\" IS NULL\n        AND \"completed_at\" IS NOT NULL\n        AND (\n          (\"failure_code\" = 'carousel_inaccessible' AND \"recovery_action\" = 'check_source_visibility')\n          OR (\"failure_code\" = 'carousel_partial' AND \"recovery_action\" = 'request_complete_carousel')\n          OR (\"failure_code\" = 'carousel_layout_drift' AND \"recovery_action\" = 'update_carousel_adapter')\n        )\n      )",
+      "name": "import_carousel_evidence_state_check",
+      "entityType": "checks",
+      "table": "import_carousel_evidence"
+    },
+    {
+      "value": "\"route_version\" = 1",
+      "name": "import_evidence_routes_version_check",
+      "entityType": "checks",
+      "table": "import_evidence_routes"
+    },
+    {
+      "value": "json_valid(\"evidence_references_json\")",
+      "name": "import_execution_runs_evidence_json_check",
+      "entityType": "checks",
+      "table": "import_execution_runs"
+    },
+    {
+      "value": "typeof(\"acquisition_generation\") = 'integer' AND \"acquisition_generation\" >= 0 AND \"acquisition_generation\" <= 9007199254740991",
+      "name": "import_execution_runs_acquisition_generation_check",
+      "entityType": "checks",
+      "table": "import_execution_runs"
+    },
+    {
+      "value": "(\n        \"status\" = 'queued'\n        AND \"status_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n        AND json_array_length(\"evidence_references_json\") = 0\n      ) OR (\n        \"status\" = 'acquiring'\n        AND \"status_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n        AND json_array_length(\"evidence_references_json\") = 0\n      ) OR (\n        \"status\" = 'acquired'\n        AND \"status_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n        AND json_array_length(\"evidence_references_json\") = 2\n        AND json_extract(\"evidence_references_json\", '$[0].kind') = 'original_media'\n        AND json_extract(\"evidence_references_json\", '$[0].referenceId') = 'imports/' || \"id\" || '/acquisition/v1/generations/' || \"acquisition_generation\" || '/original.mp4'\n        AND json_extract(\"evidence_references_json\", '$[1].kind') = 'acquisition_manifest'\n        AND json_extract(\"evidence_references_json\", '$[1].referenceId') = 'imports/' || \"id\" || '/acquisition/v1/generations/' || \"acquisition_generation\" || '/manifest.json'\n      ) OR (\n        \"status\" = 'transcribing'\n        AND \"status_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n        AND json_array_length(\"evidence_references_json\") = 2\n        AND json_extract(\"evidence_references_json\", '$[0].kind') = 'original_media'\n        AND json_extract(\"evidence_references_json\", '$[0].referenceId') = 'imports/' || \"id\" || '/acquisition/v1/generations/' || \"acquisition_generation\" || '/original.mp4'\n        AND json_extract(\"evidence_references_json\", '$[1].kind') = 'acquisition_manifest'\n        AND json_extract(\"evidence_references_json\", '$[1].referenceId') = 'imports/' || \"id\" || '/acquisition/v1/generations/' || \"acquisition_generation\" || '/manifest.json'\n      ) OR (\n        \"status\" = 'transcribed'\n        AND \"status_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n        AND json_array_length(\"evidence_references_json\") = 3\n        AND json_extract(\"evidence_references_json\", '$[0].kind') = 'original_media'\n        AND json_extract(\"evidence_references_json\", '$[0].referenceId') = 'imports/' || \"id\" || '/acquisition/v1/generations/' || \"acquisition_generation\" || '/original.mp4'\n        AND json_extract(\"evidence_references_json\", '$[1].kind') = 'acquisition_manifest'\n        AND json_extract(\"evidence_references_json\", '$[1].referenceId') = 'imports/' || \"id\" || '/acquisition/v1/generations/' || \"acquisition_generation\" || '/manifest.json'\n        AND json_extract(\"evidence_references_json\", '$[2].kind') = 'speech_transcript'\n        AND json_extract(\"evidence_references_json\", '$[2].referenceId') = 'imports/' || \"id\" || '/transcription/v1/generations/' || \"acquisition_generation\" || '/transcript.json'\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'private_or_unavailable'\n        AND \"recovery_action\" = 'check_source_visibility'\n        AND json_array_length(\"evidence_references_json\") = 0\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'acquisition_temporarily_unavailable'\n        AND \"recovery_action\" = 'retry_later'\n        AND json_array_length(\"evidence_references_json\") = 0\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'invalid_or_unsupported_media'\n        AND \"recovery_action\" = 'submit_supported_public_video'\n        AND json_array_length(\"evidence_references_json\") = 0\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'transcription_failed'\n        AND \"recovery_action\" = 'retry_later'\n        AND json_array_length(\"evidence_references_json\") = 2\n        AND json_extract(\"evidence_references_json\", '$[0].kind') = 'original_media'\n        AND json_extract(\"evidence_references_json\", '$[0].referenceId') = 'imports/' || \"id\" || '/acquisition/v1/generations/' || \"acquisition_generation\" || '/original.mp4'\n        AND json_extract(\"evidence_references_json\", '$[1].kind') = 'acquisition_manifest'\n        AND json_extract(\"evidence_references_json\", '$[1].referenceId') = 'imports/' || \"id\" || '/acquisition/v1/generations/' || \"acquisition_generation\" || '/manifest.json'\n      ) OR (\n        \"status\" = 'unsupported'\n        AND \"status_code\" = 'unsupported_post_type'\n        AND \"recovery_action\" = 'submit_supported_public_video'\n        AND json_array_length(\"evidence_references_json\") = 0\n      )",
+      "name": "import_execution_runs_status_details_check",
+      "entityType": "checks",
+      "table": "import_execution_runs"
+    },
+    {
+      "value": "json_valid(\"evidence_references_json\") AND json_array_length(\"evidence_references_json\") IN (0, 3) AND length(\"ownership_id\") = 64 AND \"ownership_id\" NOT GLOB '*[^0-9a-f]*'",
+      "name": "import_recipe_executor_terminal_checkpoints_details_check",
+      "entityType": "checks",
+      "table": "import_recipe_executor_terminal_checkpoints"
+    },
+    {
+      "value": "length(\"evidence_fingerprint\") = 64 AND \"evidence_fingerprint\" NOT GLOB '*[^0-9a-f]*' AND length(\"extraction_fingerprint\") = 64 AND \"extraction_fingerprint\" NOT GLOB '*[^0-9a-f]*'",
+      "name": "import_recipe_extractions_fingerprint_check",
+      "entityType": "checks",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "value": "length(\"extractor_provider\") BETWEEN 1 AND 64 AND length(\"extractor_model\") BETWEEN 1 AND 64 AND length(\"extractor_version\") BETWEEN 1 AND 64",
+      "name": "import_recipe_extractions_descriptor_check",
+      "entityType": "checks",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "value": "(\n        \"state\" = 'dispatching'\n        AND \"draft_json\" IS NULL\n        AND \"failure_code\" IS NULL\n        AND \"input_evidence_items\" IS NULL\n        AND \"input_tokens\" IS NULL\n        AND \"output_tokens\" IS NULL\n        AND \"model_calls\" IS NULL\n        AND \"latency_milliseconds\" IS NULL\n        AND \"estimated_cost_micro_usd\" IS NULL\n        AND \"cost_currency\" IS NULL\n        AND \"cost_certainty\" IS NULL\n        AND \"completed_at\" IS NULL\n        AND \"is_current\" = 0\n      ) OR (\n        \"state\" = 'needs_review'\n        AND json_valid(\"draft_json\")\n        AND \"failure_code\" IS NULL\n        AND typeof(\"input_evidence_items\") = 'integer' AND \"input_evidence_items\" > 0\n        AND typeof(\"input_tokens\") = 'integer' AND \"input_tokens\" >= 0\n        AND typeof(\"output_tokens\") = 'integer' AND \"output_tokens\" >= 0\n        AND \"model_calls\" = 1\n        AND typeof(\"latency_milliseconds\") = 'integer' AND \"latency_milliseconds\" >= 0\n        AND typeof(\"estimated_cost_micro_usd\") = 'integer' AND \"estimated_cost_micro_usd\" >= 0\n        AND \"cost_currency\" = 'USD'\n        AND \"cost_certainty\" IN ('estimated', 'known')\n        AND \"completed_at\" IS NOT NULL\n        AND \"is_current\" IN (0, 1)\n      ) OR (\n        \"state\" = 'failed'\n        AND \"draft_json\" IS NULL\n        AND \"failure_code\" IN ('insufficient_evidence', 'invalid_schema', 'model_refusal', 'provider_error')\n        AND \"input_evidence_items\" IS NULL\n        AND \"input_tokens\" IS NULL\n        AND \"output_tokens\" IS NULL\n        AND \"model_calls\" IS NULL\n        AND \"latency_milliseconds\" IS NULL\n        AND \"estimated_cost_micro_usd\" IS NULL\n        AND \"cost_currency\" IS NULL\n        AND \"cost_certainty\" IS NULL\n        AND \"completed_at\" IS NOT NULL\n        AND \"is_current\" = 0\n      )",
+      "name": "import_recipe_extractions_state_check",
+      "entityType": "checks",
+      "table": "import_recipe_extractions"
+    },
+    {
+      "value": "typeof(\"acquisition_generation\") = 'integer' AND \"acquisition_generation\" >= 0 AND \"acquisition_generation\" <= 9007199254740991",
+      "name": "import_transcriptions_generation_check",
+      "entityType": "checks",
+      "table": "import_transcriptions"
+    },
+    {
+      "value": "length(\"dispatch_id\") BETWEEN 1 AND 100",
+      "name": "import_transcriptions_dispatch_id_check",
+      "entityType": "checks",
+      "table": "import_transcriptions"
+    },
+    {
+      "value": "length(\"source_media_sha256\") = 64 AND \"source_media_sha256\" NOT GLOB '*[^0-9a-f]*'",
+      "name": "import_transcriptions_source_sha_check",
+      "entityType": "checks",
+      "table": "import_transcriptions"
+    },
+    {
+      "value": "(\n        \"state\" = 'dispatching'\n        AND \"transcript_key\" IS NULL\n        AND \"transcript_sha256\" IS NULL\n        AND \"provider\" IS NULL\n        AND \"model\" IS NULL\n        AND \"detected_language\" IS NULL\n        AND \"usage_audio_milliseconds\" IS NULL\n        AND \"usage_input_bytes\" IS NULL\n        AND \"estimated_cost_micro_usd\" IS NULL\n        AND \"cost_currency\" IS NULL\n        AND \"cost_certainty\" IS NULL\n        AND \"segments_count\" IS NULL\n        AND \"failure_code\" IS NULL\n        AND \"completed_at\" IS NULL\n      ) OR (\n        \"state\" = 'transcribed'\n        AND \"transcript_key\" IS NOT NULL\n        AND length(\"transcript_sha256\") = 64\n        AND \"transcript_sha256\" NOT GLOB '*[^0-9a-f]*'\n        AND length(\"provider\") BETWEEN 1 AND 64\n        AND length(\"model\") BETWEEN 1 AND 64\n        AND \"detected_language\" GLOB '[a-z][a-z]'\n        AND typeof(\"usage_audio_milliseconds\") = 'integer'\n        AND \"usage_audio_milliseconds\" > 0\n        AND typeof(\"usage_input_bytes\") = 'integer'\n        AND \"usage_input_bytes\" > 0\n        AND typeof(\"estimated_cost_micro_usd\") = 'integer'\n        AND \"estimated_cost_micro_usd\" >= 0\n        AND \"cost_currency\" = 'USD'\n        AND \"cost_certainty\" IN ('estimated', 'known')\n        AND typeof(\"segments_count\") = 'integer'\n        AND \"segments_count\" > 0\n        AND \"failure_code\" IS NULL\n        AND \"completed_at\" IS NOT NULL\n      ) OR (\n        \"state\" = 'failed'\n        AND \"transcript_key\" IS NULL\n        AND \"transcript_sha256\" IS NULL\n        AND \"provider\" IS NULL\n        AND \"model\" IS NULL\n        AND \"detected_language\" IS NULL\n        AND \"usage_audio_milliseconds\" IS NULL\n        AND \"usage_input_bytes\" IS NULL\n        AND \"estimated_cost_micro_usd\" IS NULL\n        AND \"cost_currency\" IS NULL\n        AND \"cost_certainty\" IS NULL\n        AND \"segments_count\" IS NULL\n        AND \"failure_code\" IN (\n          'audio_extraction_failed', 'outcome_unknown',\n          'source_evidence_invalid', 'transcription_failed',\n          'transcript_evidence_failed'\n        )\n        AND \"completed_at\" IS NOT NULL\n      )",
+      "name": "import_transcriptions_state_check",
+      "entityType": "checks",
+      "table": "import_transcriptions"
+    },
+    {
+      "value": "typeof(\"acquisition_generation\") = 'integer' AND \"acquisition_generation\" >= 0 AND \"acquisition_generation\" <= 9007199254740991",
+      "name": "import_visual_evidence_generation_check",
+      "entityType": "checks",
+      "table": "import_visual_evidence"
+    },
+    {
+      "value": "length(\"dispatch_id\") BETWEEN 1 AND 100",
+      "name": "import_visual_evidence_dispatch_id_check",
+      "entityType": "checks",
+      "table": "import_visual_evidence"
+    },
+    {
+      "value": "length(\"source_media_sha256\") = 64 AND \"source_media_sha256\" NOT GLOB '*[^0-9a-f]*'",
+      "name": "import_visual_evidence_source_sha_check",
+      "entityType": "checks",
+      "table": "import_visual_evidence"
+    },
+    {
+      "value": "(\n        \"state\" = 'dispatching'\n        AND \"outcome\" IS NULL\n        AND \"manifest_key\" IS NULL\n        AND \"manifest_sha256\" IS NULL\n        AND \"provider\" IS NULL\n        AND \"model\" IS NULL\n        AND \"input_frames\" IS NULL\n        AND \"input_bytes\" IS NULL\n        AND \"model_calls\" IS NULL\n        AND \"estimated_cost_micro_usd\" IS NULL\n        AND \"cost_currency\" IS NULL\n        AND \"cost_certainty\" IS NULL\n        AND \"observations_count\" IS NULL\n        AND \"failure_code\" IS NULL\n        AND \"completed_at\" IS NULL\n      ) OR (\n        \"state\" = 'completed'\n        AND \"outcome\" IN ('empty', 'found', 'low_confidence')\n        AND \"manifest_key\" IS NOT NULL\n        AND length(\"manifest_sha256\") = 64\n        AND \"manifest_sha256\" NOT GLOB '*[^0-9a-f]*'\n        AND length(\"provider\") BETWEEN 1 AND 64\n        AND length(\"model\") BETWEEN 1 AND 64\n        AND typeof(\"input_frames\") = 'integer'\n        AND \"input_frames\" BETWEEN 1 AND 12\n        AND typeof(\"input_bytes\") = 'integer'\n        AND \"input_bytes\" > 0\n        AND typeof(\"model_calls\") = 'integer'\n        AND \"model_calls\" = 1\n        AND typeof(\"estimated_cost_micro_usd\") = 'integer'\n        AND \"estimated_cost_micro_usd\" >= 0\n        AND \"cost_currency\" = 'USD'\n        AND \"cost_certainty\" IN ('estimated', 'known')\n        AND typeof(\"observations_count\") = 'integer'\n        AND \"observations_count\" >= 0\n        AND \"failure_code\" IS NULL\n        AND \"completed_at\" IS NOT NULL\n      ) OR (\n        \"state\" = 'failed'\n        AND \"outcome\" IS NULL\n        AND \"manifest_key\" IS NULL\n        AND \"manifest_sha256\" IS NULL\n        AND \"provider\" IS NULL\n        AND \"model\" IS NULL\n        AND \"input_frames\" IS NULL\n        AND \"input_bytes\" IS NULL\n        AND \"model_calls\" IS NULL\n        AND \"estimated_cost_micro_usd\" IS NULL\n        AND \"cost_currency\" IS NULL\n        AND \"cost_certainty\" IS NULL\n        AND \"observations_count\" IS NULL\n        AND \"failure_code\" IN (\n          'frame_evidence_failed', 'frame_sampling_failed', 'outcome_unknown',\n          'source_evidence_invalid', 'visual_evidence_failed',\n          'visual_extraction_failed'\n        )\n        AND \"completed_at\" IS NOT NULL\n      )",
+      "name": "import_visual_evidence_state_check",
+      "entityType": "checks",
+      "table": "import_visual_evidence"
+    }
+  ],
+  "renames": []
+}

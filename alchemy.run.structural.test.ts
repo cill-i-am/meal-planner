@@ -128,7 +128,10 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       .filter((path) => path.endsWith(".sql"))
       .toSorted();
 
-    expect(sqlFiles).toEqual(["20260822083458_import_execution/migration.sql"]);
+    expect(sqlFiles).toEqual([
+      "20260822083458_import_execution/migration.sql",
+      "20260822161910_import_execution/migration.sql",
+    ]);
   });
 
   it("provisions Better Auth D1 while Drizzle Kit owns its checked-in migrations", () => {
@@ -433,15 +436,17 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "Cloudflare.Queues.consumeQueueMessages("
     );
     expect(eventWorkerSource).toContain("Cloudflare.Queues.EventSourceLive");
-    expect(eventWorkerSource).toContain("ImportEvidenceEventRoutes");
-    expect(eventWorkerSource).toContain("Cloudflare.KV.ReadWriteNamespace(");
+    expect(eventWorkerSource).toContain("MealPlannerDatabase");
+    expect(eventWorkerSource).toContain("Cloudflare.D1.QueryDatabase(");
+    expect(eventWorkerSource).toContain("Cloudflare.D1.QueryDatabaseBinding");
+    expect(eventWorkerSource).toContain("makeD1ImportEvidenceRouteRepository(");
     expect(eventWorkerSource).toContain("Cloudflare.R2.ReadWriteBucket(");
     expect(eventWorkerSource).toContain("Cloudflare.Workers.bindWorker(");
     expect(eventWorkerSource).toContain(
       "reconcileImportEvidenceQueueMessage(message.body"
     );
     expect(eventWorkerSource).toContain(
-      "householdDomain.observeEvidenceReference(input)"
+      "householdDomain.observeEvidenceReference(encoded)"
     );
     expect(eventWorkerSource).toContain(
       "householdDomain.readEvidenceReferences(input)"

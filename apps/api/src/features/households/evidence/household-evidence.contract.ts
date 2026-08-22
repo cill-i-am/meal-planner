@@ -97,6 +97,17 @@ export type HouseholdEvidenceAvailability =
 export const HouseholdObserveEvidenceReferenceInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   availability: HouseholdEvidenceAvailability,
+  event: Schema.Struct({
+    action: Schema.Literals([
+      "CompleteMultipartUpload",
+      "CopyObject",
+      "DeleteObject",
+      "IntegrityProbe",
+      "LifecycleDeletion",
+      "PutObject",
+    ]),
+    eventTime: ImportTimestamp,
+  }),
   expectedGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,
   mutationId: HouseholdImportMutationId,
@@ -117,6 +128,7 @@ export const HouseholdObserveEvidenceReferenceResult = Schema.Struct({
   intentId: RecipeImportIntentId,
   kind: HouseholdEvidenceReferenceKind,
   observationOrdinal: PositiveSafeInteger,
+  outcome: Schema.Literals(["Applied", "IgnoredOlder"]),
   receiptVersion: Schema.Literal(1),
 });
 export type HouseholdObserveEvidenceReferenceResult =
@@ -143,9 +155,24 @@ const HouseholdEvidenceReferenceFields = {
   sha256: HouseholdEvidenceSha256,
 } as const;
 
-const HouseholdEvidenceReference = Schema.Struct({
+const HouseholdOriginalEvidenceReference = Schema.Struct({
   ...HouseholdEvidenceReferenceFields,
-  kind: HouseholdEvidenceReferenceKind,
+  kind: Schema.Literal("original_media"),
+});
+
+const HouseholdAcquisitionEvidenceReference = Schema.Struct({
+  ...HouseholdEvidenceReferenceFields,
+  kind: Schema.Literal("acquisition_manifest"),
+});
+
+const HouseholdSpeechEvidenceReference = Schema.Struct({
+  ...HouseholdEvidenceReferenceFields,
+  kind: Schema.Literal("speech_transcript"),
+});
+
+const HouseholdVisualEvidenceReference = Schema.Struct({
+  ...HouseholdEvidenceReferenceFields,
+  kind: Schema.Literal("visual_manifest"),
 });
 
 const HouseholdCarouselEvidenceReference = Schema.Struct({
@@ -167,9 +194,28 @@ export const HouseholdReadEvidenceReferencesResult = Schema.NullOr(
     }),
     Schema.Struct({
       ...HouseholdEvidenceReferenceIdentity,
-      references: Schema.Array(HouseholdEvidenceReference).pipe(
-        Schema.check(Schema.isMinLength(2), Schema.isMaxLength(5))
-      ),
+      references: Schema.Union([
+        Schema.Tuple([
+          HouseholdOriginalEvidenceReference,
+          HouseholdAcquisitionEvidenceReference,
+        ]),
+        Schema.Tuple([
+          HouseholdOriginalEvidenceReference,
+          HouseholdAcquisitionEvidenceReference,
+          HouseholdSpeechEvidenceReference,
+        ]),
+        Schema.Tuple([
+          HouseholdOriginalEvidenceReference,
+          HouseholdAcquisitionEvidenceReference,
+          HouseholdVisualEvidenceReference,
+        ]),
+        Schema.Tuple([
+          HouseholdOriginalEvidenceReference,
+          HouseholdAcquisitionEvidenceReference,
+          HouseholdSpeechEvidenceReference,
+          HouseholdVisualEvidenceReference,
+        ]),
+      ]),
     }),
   ])
 );

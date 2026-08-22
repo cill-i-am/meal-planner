@@ -516,19 +516,24 @@ compact current-result metadata, integrity-checked generation-scoped R2
 references, availability observations, and replay receipts. Large bytes remain
 in R2. Missing objects, lifecycle deletion, late events, restart, exact retry,
 conflicting replay, stale generations, and physical cross-household isolation
-have provider-free runtime proof. Shared D1 retains only the existing Slice 3
-settlement and terminal-recovery boundary; this slice does not redesign or move
-that capability.
+have provider-free runtime proof. Shared D1 retains the bounded operational
+event route plus the existing Slice 3 settlement and terminal-recovery
+boundary; neither can author household evidence. This slice does not redesign
+or move the Slice 3 capability.
 
 R2 notification reconciliation uses one bounded noncanonical operational
 index: after authenticated admission, the API enqueues an immutable
 import-to-organization route before Workflow start, and the private consumer
-stores it in a dedicated KV namespace. That route can only reconstruct the
-enumerated lifecycle system admission; conflicting registration fails closed,
-and the consumer re-proves import, generation, object key, kind, hash, and
-stored metadata before an idempotent household availability observation. It is
-not a household registry, product read model, object-name source, or Slice 3
-recovery ledger.
+atomically inserts it into a private D1 table keyed by import ID. Concurrent
+registration is serialized by that uniqueness boundary: the first route is
+immutable and every conflicting organization fails closed. The route can only
+reconstruct the enumerated lifecycle system admission, and the consumer
+re-proves import, authoritative source kind, generation, object key, kind,
+hash, and stored metadata before an idempotent household availability
+observation. Household state fences observations by event time and a fixed
+same-time action precedence, so delayed deletion cannot replace newer
+availability. The route is not a household registry, product read model,
+object-name source, or Slice 3 recovery ledger.
 
 ### Slice 3: settlement and recovery
 
