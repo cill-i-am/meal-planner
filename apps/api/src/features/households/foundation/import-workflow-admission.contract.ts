@@ -63,17 +63,27 @@ export const HouseholdImportWorkflowOutboxPayload = Schema.Struct({
 export type HouseholdImportWorkflowOutboxPayload =
   typeof HouseholdImportWorkflowOutboxPayload.Type;
 
-export const HouseholdOutboxState = Schema.Literals(["pending", "exhausted"]);
-export type HouseholdOutboxState = typeof HouseholdOutboxState.Type;
+const HouseholdOutboxAttempts = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+const HouseholdOutboxEpochMs = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
 
-export const HouseholdImportWorkflowDispatchView = Schema.Struct({
-  admission: HouseholdImportWorkflowAdmissionResult,
-  attempts: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
-  exhaustedAtEpochMs: Schema.NullOr(
-    Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
-  ),
-  state: HouseholdOutboxState,
-});
+export const HouseholdImportWorkflowDispatchView = Schema.Union([
+  Schema.Struct({
+    admission: HouseholdImportWorkflowAdmissionResult,
+    attempts: HouseholdOutboxAttempts,
+    exhaustedAtEpochMs: Schema.Null,
+    state: Schema.Literal("pending"),
+  }),
+  Schema.Struct({
+    admission: HouseholdImportWorkflowAdmissionResult,
+    attempts: HouseholdOutboxAttempts,
+    exhaustedAtEpochMs: HouseholdOutboxEpochMs,
+    state: Schema.Literal("exhausted"),
+  }),
+]);
 export type HouseholdImportWorkflowDispatchView =
   typeof HouseholdImportWorkflowDispatchView.Type;
 

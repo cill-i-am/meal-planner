@@ -1,7 +1,5 @@
 import {
-  ManualMealSwapRequest,
   MealPlan,
-  MealPlanDecisionRequest,
   MealPlanNotFound,
   MealPlanPersistenceFailure,
   MealPlanPolicy,
@@ -36,6 +34,10 @@ import type {
   HouseholdMealPlanWire,
   HouseholdReadMealPlanInput,
   HouseholdSwapMealPlanInput,
+} from "./household-meal-plan.contract.js";
+import {
+  HouseholdManualMealSwapCommand,
+  HouseholdMealPlanDecisionCommand,
 } from "./household-meal-plan.contract.js";
 import {
   findApprovedMealPlanRecipeSnapshot,
@@ -247,15 +249,15 @@ export const makeHouseholdMealPlanGateway = (options: {
       );
 
   return {
-    approve: ({ decidedAt, draftId, payload, principal }) =>
+    approve: ({ draftId, payload, principal }) =>
       Effect.gen(function* approveHouseholdMealPlan() {
         const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
           Effect.mapError(() => persistenceFailure("save"))
         );
-        const request = yield* Schema.encodeEffect(MealPlanDecisionRequest)({
+        const request = yield* Schema.encodeEffect(
+          HouseholdMealPlanDecisionCommand
+        )({
           ...payload,
-          actorId: principal.actorId,
-          decidedAt,
           draftId,
         }).pipe(Effect.mapError(() => persistenceFailure("save")));
         const wire = yield* options.domain
@@ -312,15 +314,15 @@ export const makeHouseholdMealPlanGateway = (options: {
         }
         return yield* decodeMealPlan(wire);
       }),
-    reject: ({ decidedAt, draftId, payload, principal }) =>
+    reject: ({ draftId, payload, principal }) =>
       Effect.gen(function* rejectHouseholdMealPlan() {
         const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
           Effect.mapError(() => persistenceFailure("save"))
         );
-        const request = yield* Schema.encodeEffect(MealPlanDecisionRequest)({
+        const request = yield* Schema.encodeEffect(
+          HouseholdMealPlanDecisionCommand
+        )({
           ...payload,
-          actorId: principal.actorId,
-          decidedAt,
           draftId,
         }).pipe(Effect.mapError(() => persistenceFailure("save")));
         const wire = yield* options.domain
@@ -331,7 +333,7 @@ export const makeHouseholdMealPlanGateway = (options: {
           .pipe(Effect.mapError(mapDecisionFailure));
         return yield* decodeMealPlan(wire);
       }),
-    swap: ({ draftId, payload, principal, swappedAt }) =>
+    swap: ({ draftId, payload, principal }) =>
       Effect.gen(function* swapHouseholdMealPlan() {
         const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
           Effect.mapError(() => persistenceFailure("save"))
@@ -341,11 +343,9 @@ export const makeHouseholdMealPlanGateway = (options: {
             principal.organizationId,
             payload.replacementImportId
           ),
-          Schema.encodeEffect(ManualMealSwapRequest)({
+          Schema.encodeEffect(HouseholdManualMealSwapCommand)({
             ...payload,
-            actorId: principal.actorId,
             draftId,
-            swappedAt,
           }).pipe(Effect.mapError(() => persistenceFailure("save"))),
         ]);
         const wire = yield* options.domain

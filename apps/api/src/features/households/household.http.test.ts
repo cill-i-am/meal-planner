@@ -464,13 +464,11 @@ describe("household meal-plan HttpApi boundary", () => {
             draftId,
             payload: swapMealPlanPayload,
             principal: { actorId: admittedActorId, organizationId },
-            swappedAt: expect.anything(),
           },
           operation: "swap",
         },
         {
           input: {
-            decidedAt: expect.anything(),
             draftId,
             payload: decideMealPlanPayload,
             principal: { actorId: admittedActorId, organizationId },
@@ -479,7 +477,6 @@ describe("household meal-plan HttpApi boundary", () => {
         },
         {
           input: {
-            decidedAt: expect.anything(),
             draftId,
             payload: decideMealPlanPayload,
             principal: { actorId: admittedActorId, organizationId },

@@ -11,10 +11,9 @@ import {
   HouseholdMealPlanPrincipal,
   HouseholdMealPlanSchemaErrors,
   HouseholdSessionAuth,
-  MealPlanInstant,
   toHouseholdMealPlanResponse,
 } from "@meal-planner/household-api";
-import { Clock, Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import { HttpApiBuilder, HttpApiMiddleware } from "effect/unstable/httpapi";
@@ -77,12 +76,6 @@ const mealPlanInternalProblem = Schema.decodeUnknownSync(
   message: "Household storage is temporarily unavailable.",
   status: 500,
 });
-
-const currentMealPlanInstant = Clock.currentTimeMillis.pipe(
-  Effect.map((millis) =>
-    Schema.decodeUnknownSync(MealPlanInstant)(new Date(millis).toISOString())
-  )
-);
 
 const mapCreateMealPlanError = (error: MealPlanCreateFailure) =>
   error._tag === "MealPlanRequestConflict"
@@ -189,13 +182,11 @@ const HouseholdMealPlanHandlers = HttpApiBuilder.group(
         Effect.gen(function* swapMealPlan() {
           const principal = yield* HouseholdMealPlanCurrentPrincipal;
           const gateway = yield* HouseholdMealPlanGateway;
-          const swappedAt = yield* currentMealPlanInstant;
           return yield* exposeMealPlanResult(
             gateway.swap({
               draftId: params.draftId,
               payload,
               principal,
-              swappedAt,
             }),
             mapSwapMealPlanError
           );
@@ -205,10 +196,8 @@ const HouseholdMealPlanHandlers = HttpApiBuilder.group(
         Effect.gen(function* approveMealPlan() {
           const principal = yield* HouseholdMealPlanCurrentPrincipal;
           const gateway = yield* HouseholdMealPlanGateway;
-          const decidedAt = yield* currentMealPlanInstant;
           return yield* exposeMealPlanResult(
             gateway.approve({
-              decidedAt,
               draftId: params.draftId,
               payload,
               principal,
@@ -221,10 +210,8 @@ const HouseholdMealPlanHandlers = HttpApiBuilder.group(
         Effect.gen(function* rejectMealPlan() {
           const principal = yield* HouseholdMealPlanCurrentPrincipal;
           const gateway = yield* HouseholdMealPlanGateway;
-          const decidedAt = yield* currentMealPlanInstant;
           return yield* exposeMealPlanResult(
             gateway.reject({
-              decidedAt,
               draftId: params.draftId,
               payload,
               principal,

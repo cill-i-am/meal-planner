@@ -1,7 +1,5 @@
 import {
-  ManualMealSwapRequest,
   MealPlan,
-  MealPlanDecisionRequest,
   MealPlanPolicy,
   MealPlanRecipeSnapshot,
   MealPlanRequest,
@@ -18,8 +16,14 @@ import {
 } from "../meal-planning/meal-plan.js";
 import { ensureHouseholdProvenance } from "./foundation/household-provenance.js";
 import {
+  admitManualMealSwap,
+  admitMealPlanDecision,
+} from "./household-meal-plan-admission.js";
+import {
   HouseholdCreateMealPlanInput,
   HouseholdDecideMealPlanInput,
+  HouseholdManualMealSwapCommand,
+  HouseholdMealPlanDecisionCommand,
   HouseholdReadMealPlanInput,
   HouseholdSwapMealPlanInput,
 } from "./household-meal-plan.contract.js";
@@ -91,9 +95,13 @@ export const HouseholdObjectRuntime = Effect.gen(
               connection,
               command.admission.organizationId
             );
-            const request = yield* Schema.decodeUnknownEffect(
-              MealPlanDecisionRequest
+            const admittedCommand = yield* Schema.decodeUnknownEffect(
+              HouseholdMealPlanDecisionCommand
             )(command.request).pipe(Effect.mapError(invalidInput));
+            const request = yield* admitMealPlanDecision(
+              command.admission,
+              admittedCommand
+            ).pipe(Effect.mapError(invalidInput));
             const plan = yield* makeService(connection, digest).approve(
               request
             );
@@ -192,9 +200,13 @@ export const HouseholdObjectRuntime = Effect.gen(
               connection,
               command.admission.organizationId
             );
-            const request = yield* Schema.decodeUnknownEffect(
-              MealPlanDecisionRequest
+            const admittedCommand = yield* Schema.decodeUnknownEffect(
+              HouseholdMealPlanDecisionCommand
             )(command.request).pipe(Effect.mapError(invalidInput));
+            const request = yield* admitMealPlanDecision(
+              command.admission,
+              admittedCommand
+            ).pipe(Effect.mapError(invalidInput));
             const plan = yield* makeService(connection, digest).reject(request);
             return yield* encodeMealPlan(plan);
           })
@@ -222,9 +234,13 @@ export const HouseholdObjectRuntime = Effect.gen(
                 )
               )
             );
-            const request = yield* Schema.decodeUnknownEffect(
-              ManualMealSwapRequest
+            const admittedCommand = yield* Schema.decodeUnknownEffect(
+              HouseholdManualMealSwapCommand
             )(command.request).pipe(Effect.mapError(invalidInput));
+            const request = yield* admitManualMealSwap(
+              command.admission,
+              admittedCommand
+            ).pipe(Effect.mapError(invalidInput));
             const plan = yield* makeService(
               connection,
               digest,

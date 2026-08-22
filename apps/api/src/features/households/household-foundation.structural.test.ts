@@ -61,6 +61,22 @@ describe("household foundation structural boundaries", () => {
     }
   });
 
+  it("assigns mutation audit authority only after object admission", async () => {
+    const [contract, http, objectRuntime, admission] = await Promise.all([
+      read(path.join(householdRoot, "household-meal-plan.contract.ts")),
+      read(path.join(householdRoot, "household.http.ts")),
+      read(path.join(householdRoot, "household-object-runtime.ts")),
+      read(path.join(householdRoot, "household-meal-plan-admission.ts")),
+    ]);
+    expect(http).not.toContain("Clock.currentTimeMillis");
+    expect(contract).not.toMatch(/actorId|decidedAt|swappedAt/u);
+    expect(objectRuntime).toContain("ensureHouseholdProvenance(");
+    expect(objectRuntime).toContain("admitMealPlanDecision(");
+    expect(objectRuntime).toContain("admitManualMealSwap(");
+    expect(admission).toContain("Clock.currentTimeMillis");
+    expect(admission).toContain("actorId: admission.actor.actorId");
+  });
+
   it("routes household objects only through the versioned locator", async () => {
     const sources = await readProductionHouseholdSources();
     const routeSites = sources.filter(({ source }) =>

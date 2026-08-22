@@ -17,8 +17,32 @@ export type HouseholdMealPlanWire = typeof HouseholdMealPlanWire.Type;
 const MealPlanPolicyWire = Schema.toEncoded(MealPlanPolicy);
 const MealPlanRecipeSnapshotWire = Schema.toEncoded(MealPlanRecipeSnapshot);
 const MealPlanRequestWire = Schema.toEncoded(MealPlanRequest);
-const ManualMealSwapRequestWire = Schema.toEncoded(ManualMealSwapRequest);
-const MealPlanDecisionRequestWire = Schema.toEncoded(MealPlanDecisionRequest);
+export const HouseholdManualMealSwapCommand = Schema.Struct({
+  draftId: ManualMealSwapRequest.fields.draftId,
+  expectedRevision: ManualMealSwapRequest.fields.expectedRevision,
+  mutationId: ManualMealSwapRequest.fields.mutationId,
+  reason: ManualMealSwapRequest.fields.reason,
+  replacementImportId: ManualMealSwapRequest.fields.replacementImportId,
+  slotId: ManualMealSwapRequest.fields.slotId,
+});
+export type HouseholdManualMealSwapCommand =
+  typeof HouseholdManualMealSwapCommand.Type;
+
+export const HouseholdMealPlanDecisionCommand = Schema.Struct({
+  draftId: MealPlanDecisionRequest.fields.draftId,
+  expectedRevision: MealPlanDecisionRequest.fields.expectedRevision,
+  mutationId: MealPlanDecisionRequest.fields.mutationId,
+  reason: MealPlanDecisionRequest.fields.reason,
+});
+export type HouseholdMealPlanDecisionCommand =
+  typeof HouseholdMealPlanDecisionCommand.Type;
+
+const HouseholdManualMealSwapCommandWire = Schema.toEncoded(
+  HouseholdManualMealSwapCommand
+);
+const HouseholdMealPlanDecisionCommandWire = Schema.toEncoded(
+  HouseholdMealPlanDecisionCommand
+);
 
 export const HouseholdCreateMealPlanInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
@@ -38,13 +62,13 @@ export type HouseholdReadMealPlanInput = typeof HouseholdReadMealPlanInput.Type;
 export const HouseholdSwapMealPlanInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
   approvedRecipes: Schema.Array(MealPlanRecipeSnapshotWire),
-  request: ManualMealSwapRequestWire,
+  request: HouseholdManualMealSwapCommandWire,
 });
 export type HouseholdSwapMealPlanInput = typeof HouseholdSwapMealPlanInput.Type;
 
 export const HouseholdDecideMealPlanInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
-  request: MealPlanDecisionRequestWire,
+  request: HouseholdMealPlanDecisionCommandWire,
 });
 export type HouseholdDecideMealPlanInput =
   typeof HouseholdDecideMealPlanInput.Type;

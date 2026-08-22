@@ -5,7 +5,6 @@ import type {
   HouseholdStatus,
   MealPlan,
   MealPlanDraftId,
-  MealPlanInstant,
   MealPlanMutationConflict,
   MealPlanNotFound,
   MealPlanPersistenceFailure,
@@ -57,7 +56,6 @@ export interface HouseholdMealPlanGateway {
   readonly approve: (input: {
     readonly payload: DecideMealPlanPayload;
     readonly principal: HouseholdMealPlanPrincipal;
-    readonly decidedAt: MealPlanInstant;
     readonly draftId: MealPlanDraftId;
   }) => Effect.Effect<MealPlan, MealPlanDecisionFailure>;
   readonly create: (input: {
@@ -71,13 +69,11 @@ export interface HouseholdMealPlanGateway {
   readonly reject: (input: {
     readonly payload: DecideMealPlanPayload;
     readonly principal: HouseholdMealPlanPrincipal;
-    readonly decidedAt: MealPlanInstant;
     readonly draftId: MealPlanDraftId;
   }) => Effect.Effect<MealPlan, MealPlanDecisionFailure>;
   readonly swap: (input: {
     readonly payload: SwapMealPlanPayload;
     readonly principal: HouseholdMealPlanPrincipal;
-    readonly swappedAt: MealPlanInstant;
     readonly draftId: MealPlanDraftId;
   }) => Effect.Effect<MealPlan, MealPlanSwapFailure>;
 }

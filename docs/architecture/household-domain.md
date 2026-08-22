@@ -79,7 +79,9 @@ organization membership, the API calls the private `HouseholdDomainWorker`
 through its service binding. The domain Worker validates the admitted command
 and asks the central locator for the corresponding opaque object name. The
 object verifies the admitted actor category and its persisted organization
-provenance; it does not query Better Auth.
+provenance; it does not query Better Auth. Mutation commands cannot supply an
+independent actor or audit timestamp: the object binds the admitted member
+digest and an Effect-provided Clock instant only after those checks pass.
 
 Better Auth D1 remains the global identity and organization control plane. It
 does not store meal-plan aggregate state.
@@ -141,8 +143,10 @@ active organization before private household routing. They also prove physical
 object isolation, restart durability, atomic admission/outbox rollback,
 deterministic Workflow identity by execution generation, stable replay while
 dispatch is pending or exhausted, and post-commit alarm failure against real
-Durable Object SQLite. Meal-plan tests retain create/read restart, replay,
-collision, optimistic concurrency, and terminal-state proof. Structural guards
-cover routing privacy, Better Auth placement, authority-service use, transaction
-I/O, the thin host, and the acquisition generation fence. These tests do not
-prove a cloud deployment or provider lifecycle.
+Durable Object SQLite. Persisted dispatch projections are Schema-decoded and
+corrupt outbox state fails closed. Meal-plan tests retain create/read restart,
+replay, collision, optimistic concurrency, and terminal-state proof.
+Structural guards cover routing privacy, Better Auth placement,
+authority-service use, transaction I/O, the thin host, and the acquisition
+generation fence. These tests do not prove a cloud deployment or provider
+lifecycle.

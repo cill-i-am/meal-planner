@@ -7,9 +7,7 @@ import { Context, Effect, Option, Schema } from "effect";
 import migrations from "../../../household-migrations/migrations.js";
 import { ApprovedRecipe } from "../imports/import-recipe-review.js";
 import {
-  ManualMealSwapRequest,
   MealPlan,
-  MealPlanDecisionRequest,
   MealPlanDraftId,
   MealPlanPolicy,
   MealPlanRequest,
@@ -27,6 +25,10 @@ import {
 } from "./foundation/import-workflow-admission.contract.js";
 import type { HouseholdImportWorkflowAdmissionResult } from "./foundation/import-workflow-admission.contract.js";
 import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
+import {
+  HouseholdManualMealSwapCommand,
+  HouseholdMealPlanDecisionCommand,
+} from "./household-meal-plan.contract.js";
 import { HouseholdObjectRuntime } from "./household-object-runtime.js";
 import type {
   HouseholdDomainFailure,
@@ -37,6 +39,7 @@ import { HouseholdOrganizationId } from "./household.contract.js";
 import {
   householdImportWorkflowAdmissions,
   householdMealPlans,
+  householdOutbox,
 } from "./household.database-schema.js";
 import {
   HouseholdMemberAdmission,
@@ -53,8 +56,12 @@ const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
 const MealPlanWire = Schema.toEncoded(MealPlan);
 const MealPlanPolicyWire = Schema.toEncoded(MealPlanPolicy);
 const MealPlanRequestWire = Schema.toEncoded(MealPlanRequest);
-const ManualMealSwapRequestWire = Schema.toEncoded(ManualMealSwapRequest);
-const MealPlanDecisionRequestWire = Schema.toEncoded(MealPlanDecisionRequest);
+const ManualMealSwapRequestWire = Schema.toEncoded(
+  HouseholdManualMealSwapCommand
+);
+const MealPlanDecisionRequestWire = Schema.toEncoded(
+  HouseholdMealPlanDecisionCommand
+);
 
 const alchemyRuntimeContractKey = "shape";
 const HouseholdObjectTestRuntime = Effect.gen(
@@ -134,6 +141,19 @@ const HouseholdObjectTestRuntime = Effect.gen(
                 )
               );
             return row?.value ?? 0;
+          })
+        ),
+      corruptImportWorkflowDispatchState: (
+        dispatchId: HouseholdDispatchId,
+        state: string
+      ) =>
+        scoped(
+          Effect.gen(function* corruptImportWorkflowDispatchState() {
+            const connection = yield* database;
+            yield* connection
+              .update(householdOutbox)
+              .set({ state })
+              .where(eq(householdOutbox.dispatchId, dispatchId));
           })
         ),
       inspectImportWorkflowDispatch: (dispatchId: HouseholdDispatchId) =>
@@ -273,6 +293,10 @@ interface HouseholdObjectClient {
     typeof MealPlanWire.Type,
     HouseholdDomainFailure | MealPlanServiceError
   >;
+  readonly corruptImportWorkflowDispatchState: (
+    dispatchId: typeof HouseholdDispatchId.Type,
+    state: string
+  ) => Effect.Effect<void, unknown>;
   readonly ensureHousehold: (
     input: HouseholdEnsureInput
   ) => Effect.Effect<HouseholdMetadata, HouseholdDomainFailure>;
@@ -319,6 +343,12 @@ interface HouseholdObjectClient {
 }
 
 const HouseholdTestCommand = Schema.Union([
+  Schema.Struct({
+    dispatchId: HouseholdDispatchId,
+    objectName: Schema.String,
+    operation: Schema.Literal("corruptImportWorkflowDispatchState"),
+    state: Schema.String,
+  }),
   Schema.Struct({
     objectName: Schema.String,
     operation: Schema.Literal("probeMigrationFailure"),
@@ -486,6 +516,14 @@ export default {
           policy: command.policy,
           request: command.request,
         })
+      );
+    }
+    if (command.operation === "corruptImportWorkflowDispatchState") {
+      return respond(
+        household.corruptImportWorkflowDispatchState(
+          command.dispatchId,
+          command.state
+        )
       );
     }
     if (command.operation === "ensure") {

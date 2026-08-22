@@ -10,6 +10,7 @@ import {
 } from "../household.database-schema.js";
 import type { ImportWorkflowIdentity } from "../shared-kernel/workflow-identity.js";
 import {
+  HouseholdImportWorkflowDispatchView,
   HouseholdImportWorkflowAdmissionResult,
   HouseholdImportWorkflowOutboxPayload,
   HouseholdWorkflowAdmissionConflict,
@@ -17,8 +18,6 @@ import {
 } from "./import-workflow-admission.contract.js";
 import type {
   HouseholdDispatchId,
-  HouseholdImportWorkflowDispatchView,
-  HouseholdOutboxState,
   HouseholdWorkflowAdmissionCommandDigest,
   HouseholdWorkflowAdmissionMutationId,
 } from "./import-workflow-admission.contract.js";
@@ -218,11 +217,14 @@ export const makeImportWorkflowAdmissionRepository = (
           return yield* Effect.fail(persistenceFailure());
         }
         const admission = yield* decodeResult(admissionRow.committedResultJson);
-        return Option.some({
+        const view = yield* Schema.decodeUnknownEffect(
+          HouseholdImportWorkflowDispatchView
+        )({
           admission,
           attempts: row.attempts,
           exhaustedAtEpochMs: row.exhaustedAtEpochMs,
-          state: row.state as HouseholdOutboxState,
-        });
+          state: row.state,
+        }).pipe(Effect.mapError(persistenceFailure));
+        return Option.some(view);
       }),
   });
