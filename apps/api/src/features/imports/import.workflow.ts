@@ -1064,11 +1064,48 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     Effect.flatMap((continuation) =>
                       continuation === "Recorded"
                         ? Effect.succeed(continuation)
-                        : repository.recordAcquired(
-                            importId,
-                            outcome.generation,
-                            outcome.evidence,
-                            outcome.evidence.acquiredAt
+                        : Effect.gen(
+                            function* commitHouseholdAcquisitionEvidence() {
+                              const mutationId = yield* workflowMutationId(
+                                `${intentId}:${executionGeneration}:commit-acquisition-evidence:${outcome.evidence.manifestSha256}`
+                              );
+                              const committed = yield* householdDomain
+                                .commitAcquisitionEvidence({
+                                  admission,
+                                  expectedGeneration: executionGeneration,
+                                  intentId,
+                                  mutationId,
+                                  result: {
+                                    acquiredAt: outcome.evidence.acquiredAt,
+                                    audioStreams: outcome.evidence.audioStreams,
+                                    durationSeconds:
+                                      outcome.evidence.durationSeconds,
+                                    references: [
+                                      {
+                                        byteLength: outcome.evidence.bytes,
+                                        deleteAt: outcome.evidence.deleteAt,
+                                        key: outcome.evidence.mediaKey,
+                                        kind: "original_media",
+                                        sha256: outcome.evidence.sha256,
+                                      },
+                                      {
+                                        byteLength:
+                                          outcome.evidence.manifestByteLength,
+                                        deleteAt: outcome.evidence.deleteAt,
+                                        key: outcome.evidence.manifestKey,
+                                        kind: "acquisition_manifest",
+                                        sha256: outcome.evidence.manifestSha256,
+                                      },
+                                    ],
+                                    ...(outcome.evidence.source === undefined
+                                      ? {}
+                                      : { source: outcome.evidence.source }),
+                                    videoStreams: outcome.evidence.videoStreams,
+                                  },
+                                })
+                                .pipe(Effect.orDie);
+                              return committed.outcome;
+                            }
                           )
                     )
                   )

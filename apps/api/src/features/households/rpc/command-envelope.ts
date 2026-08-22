@@ -57,6 +57,7 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "answer_recipe_import_action",
   "approve_meal_plan",
   "cancel_recipe_import",
+  "commit_acquisition_evidence",
   "commit_recipe_import_draft",
   "create_meal_plan",
   "create_meal_plan_from_recipe_bank",
@@ -113,7 +114,8 @@ export const requireHouseholdCommandAdmission = (
     admission.actor._tag === "Member"
       ? memberPurposes.has(purpose)
       : (admission.actor.purpose === "recipe_import_lifecycle_commit" &&
-          (purpose === "commit_recipe_import_draft" ||
+          (purpose === "commit_acquisition_evidence" ||
+            purpose === "commit_recipe_import_draft" ||
             purpose === "read_recipe_import_execution" ||
             purpose === "resolve_recipe_import_source" ||
             purpose === "transition_recipe_import_lifecycle")) ||

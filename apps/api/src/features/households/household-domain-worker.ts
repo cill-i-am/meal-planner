@@ -11,6 +11,11 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect, Schema } from "effect";
 
 import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
+import type { HouseholdCommitAcquisitionEvidenceInput } from "./evidence/household-evidence.contract.js";
+import {
+  HouseholdCommitAcquisitionEvidenceInput as HouseholdCommitAcquisitionEvidenceInputSchema,
+  HouseholdCommitAcquisitionEvidenceResult,
+} from "./evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "./household-domain-binding.js";
 import type {
   HouseholdCreateMealPlanFromRecipeBankInput,
@@ -106,6 +111,12 @@ export interface HouseholdDomainWorkerMethods {
     input: HouseholdCancelRecipeImportInput
   ) => Effect.Effect<
     typeof CancelledRecipeImportIntent.Encoded,
+    HouseholdRecipeImportDomainFailure
+  >;
+  readonly commitAcquisitionEvidence: (
+    input: HouseholdCommitAcquisitionEvidenceInput
+  ) => Effect.Effect<
+    typeof HouseholdCommitAcquisitionEvidenceResult.Encoded,
     HouseholdRecipeImportDomainFailure
   >;
   readonly commitRecipeImportDraft: (
@@ -256,6 +267,14 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         HouseholdCancelRecipeImportInputSchema,
         input,
         (household, command) => household.cancelRecipeImport(command)
+      ),
+    commitAcquisitionEvidence: (
+      input: HouseholdCommitAcquisitionEvidenceInput
+    ) =>
+      route(
+        HouseholdCommitAcquisitionEvidenceInputSchema,
+        input,
+        (household, command) => household.commitAcquisitionEvidence(command)
       ),
     commitRecipeImportDraft: (input: HouseholdCommitRecipeImportDraftInput) =>
       route(

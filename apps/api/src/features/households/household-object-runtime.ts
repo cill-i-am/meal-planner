@@ -26,6 +26,11 @@ import {
   MealPlanRecipeAuthorityToken,
   selectMealPlanCandidates,
 } from "../meal-planning/meal-plan.js";
+import {
+  HouseholdCommitAcquisitionEvidenceInput,
+  HouseholdCommitAcquisitionEvidenceResult,
+} from "./evidence/household-evidence.contract.js";
+import { makeHouseholdEvidenceRepository } from "./evidence/household-evidence.repository.js";
 import { ensureHouseholdProvenance } from "./foundation/household-provenance.js";
 import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
 import {
@@ -333,6 +338,30 @@ export const HouseholdObjectRuntime = Effect.gen(
             return yield* encodeRecipeImportResult(
               CancelledRecipeImportIntent,
               cancelled
+            );
+          })
+        ),
+      commitAcquisitionEvidence: (
+        untrustedInput: HouseholdCommitAcquisitionEvidenceInput
+      ) =>
+        scoped(
+          Effect.gen(function* commitHouseholdAcquisitionEvidence() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdCommitAcquisitionEvidenceInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "commit_acquisition_evidence"
+            );
+            const connection = yield* database;
+            const committed =
+              yield* makeHouseholdEvidenceRepository(
+                connection
+              ).commitAcquisition(command);
+            return yield* encodeRecipeImportResult(
+              HouseholdCommitAcquisitionEvidenceResult,
+              committed
             );
           })
         ),

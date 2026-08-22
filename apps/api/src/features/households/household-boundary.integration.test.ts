@@ -254,7 +254,10 @@ const createOrganization = async (label: string, cookie: string) => {
   );
 };
 
-const systemCommand = (operation: "commit-draft" | "resolve", input: object) =>
+const systemCommand = (
+  operation: "commit-acquisition-evidence" | "commit-draft" | "resolve",
+  input: object
+) =>
   getRuntime().dispatchFetch(
     "https://meal-planner.test/v1/__test/system-import",
     {
@@ -476,6 +479,82 @@ describe("household public API to private Durable Object boundary", () => {
         },
       ],
     });
+  }, 30_000);
+
+  it("commits verified R2 acquisition evidence through the private household authority", async () => {
+    const cookie = await signUp("Evidence Boundary Member");
+    const organization = await createOrganization(
+      "Evidence Boundary Household",
+      cookie
+    );
+    const createResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/recipe-import-intents",
+      {
+        body: JSON.stringify({
+          source: {
+            kind: "tiktok",
+            url: "https://www.tiktok.com/@mealplanner/video/7000000000000000100",
+          },
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "idempotency-key": "provider-free-evidence-admission",
+        },
+        method: "POST",
+      }
+    );
+    expect(createResponse.status).toBe(201);
+    const admitted = await Schema.decodeUnknownPromise(RecipeImportIntent)(
+      await createResponse.json()
+    );
+    const admission = {
+      actor: { _tag: "System", purpose: "recipe_import_lifecycle_commit" },
+      organizationId: organization.id,
+    } as const;
+    const resolvedResponse = await systemCommand("resolve", {
+      admission,
+      canonicalSourceId: "tiktok:video:7000000000000000100",
+      canonicalUrl:
+        "https://www.tiktok.com/@mealplanner/video/7000000000000000100",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "5".repeat(64),
+      sourceKind: "video",
+    });
+    expect(resolvedResponse.status).toBe(200);
+
+    const mediaKey = `imports/${admitted.id}/acquisition/v1/generations/1/original.mp4`;
+    const manifestKey = `imports/${admitted.id}/acquisition/v1/generations/1/manifest.json`;
+    const commitResponse = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "6".repeat(64),
+      result: {
+        acquiredAt: "2026-08-22T10:00:00.000Z",
+        audioStreams: [{ codec: "aac", index: 0 }],
+        durationSeconds: 20,
+        references: [
+          {
+            byteLength: 4096,
+            deleteAt: "2026-08-29T10:00:00.000Z",
+            key: mediaKey,
+            kind: "original_media",
+            sha256: "7".repeat(64),
+          },
+          {
+            byteLength: 512,
+            deleteAt: "2026-08-29T10:00:00.000Z",
+            key: manifestKey,
+            kind: "acquisition_manifest",
+            sha256: "8".repeat(64),
+          },
+        ],
+        videoStreams: [{ codec: "h264", index: 0 }],
+      },
+    });
+    expect(commitResponse.status, await commitResponse.text()).toBe(200);
   }, 30_000);
 
   it("rejects a forged cross-organization session before private routing", async () => {

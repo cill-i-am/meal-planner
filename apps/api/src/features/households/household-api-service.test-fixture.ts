@@ -25,6 +25,10 @@ import {
   makeRecipeImportHttpApiLayer,
 } from "../imports/import-intent-api.http.js";
 import { RecipeImportWorkflowDispatcher } from "../imports/import-workflow-dispatcher.js";
+import type {
+  HouseholdCommitAcquisitionEvidenceInput,
+  HouseholdCommitAcquisitionEvidenceResult,
+} from "./evidence/household-evidence.contract.js";
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 import type {
   HouseholdCreateMealPlanFromRecipeBankInput,
@@ -83,6 +87,9 @@ interface HouseholdApiFixtureEnv {
     readonly cancelRecipeImport: (
       input: HouseholdCancelRecipeImportInput
     ) => Promise<typeof CancelledRecipeImportIntent.Encoded>;
+    readonly commitAcquisitionEvidence: (
+      input: HouseholdCommitAcquisitionEvidenceInput
+    ) => Promise<typeof HouseholdCommitAcquisitionEvidenceResult.Encoded>;
     readonly commitRecipeImportDraft: (
       input: HouseholdCommitRecipeImportDraftInput
     ) => Promise<typeof HouseholdActiveRecipeImportActionResult.Encoded>;
@@ -152,6 +159,7 @@ export default {
       "x-test-household-system-operation"
     );
     if (
+      testSystemOperation === "commit-acquisition-evidence" ||
       testSystemOperation === "resolve" ||
       testSystemOperation === "commit-draft"
     ) {
@@ -162,9 +170,13 @@ export default {
             ? await env.HouseholdDomainWorker.resolveRecipeImportSource(
                 input as HouseholdResolveRecipeImportSourceInput
               )
-            : await env.HouseholdDomainWorker.commitRecipeImportDraft(
-                input as HouseholdCommitRecipeImportDraftInput
-              );
+            : testSystemOperation === "commit-draft"
+              ? await env.HouseholdDomainWorker.commitRecipeImportDraft(
+                  input as HouseholdCommitRecipeImportDraftInput
+                )
+              : await env.HouseholdDomainWorker.commitAcquisitionEvidence(
+                  input as HouseholdCommitAcquisitionEvidenceInput
+                );
         return Response.json(result);
       } catch {
         return Response.json({ rejected: true }, { status: 400 });

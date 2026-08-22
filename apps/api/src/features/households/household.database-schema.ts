@@ -65,6 +65,57 @@ export const householdOutbox = sqliteTable("household_outbox", {
   state: text("state").notNull(),
 });
 
+/** Compact current acquisition result; immutable media and manifests stay in R2. */
+export const householdImportEvidenceExecutions = sqliteTable(
+  "household_import_evidence_executions",
+  {
+    acquisitionJson: text("acquisition_json").notNull(),
+    commandDigest: text("command_digest").notNull(),
+    committedAt: text("committed_at").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    intentId: text("intent_id").notNull(),
+    resultJson: text("result_json").notNull(),
+    status: text("status").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.intentId, table.executionGeneration] }),
+  ]
+);
+
+/** Integrity metadata for household/generation-fenced R2 objects. */
+export const householdEvidenceReferences = sqliteTable(
+  "household_evidence_references",
+  {
+    byteLength: integer("byte_length").notNull(),
+    deleteAt: text("delete_at").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    intentId: text("intent_id").notNull(),
+    kind: text("kind").notNull(),
+    objectKey: text("object_key").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    sha256: text("sha256").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.intentId, table.executionGeneration, table.ordinal],
+    }),
+    uniqueIndex("household_evidence_reference_kind_unique").on(
+      table.intentId,
+      table.executionGeneration,
+      table.kind
+    ),
+  ]
+);
+
+export const householdEvidenceMutationReceipts = sqliteTable(
+  "household_evidence_mutation_receipts",
+  {
+    commandDigest: text("command_digest").notNull(),
+    mutationId: text("mutation_id").primaryKey(),
+    resultJson: text("result_json").notNull(),
+  }
+);
+
 export const householdLiveRecipeImportStatuses = [
   "processing",
   "requires_action",
