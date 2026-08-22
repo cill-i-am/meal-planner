@@ -3,7 +3,7 @@ import type { CorrectedRecipe as CorrectedRecipeType } from "@meal-planner/recip
 import { Option, Schema } from "effect";
 import type { Effect } from "effect";
 
-import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
+import { RecipeDraft } from "./import-recipe-draft.repository.js";
 import { RecipeUnresolvedField } from "./import-recipe-extractor.js";
 import {
   EvidenceReference,

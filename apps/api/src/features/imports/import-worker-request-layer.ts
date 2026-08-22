@@ -12,6 +12,7 @@ import {
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
+import type { RegisterImportEvidenceRoute } from "./import-evidence-event.js";
 import { RecipeImportHouseholdDomain } from "./import-intent-api.http.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
@@ -39,6 +40,9 @@ export interface ImportWorkerRequestLayerInput {
   readonly organizationResolver: AuthenticatedOrganizationResolver;
   readonly principalResolver: AuthPrincipalResolver;
   readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarter;
+  readonly registerEvidenceRoute: (
+    message: RegisterImportEvidenceRoute
+  ) => Effect.Effect<void, object>;
   readonly runtimeStage: string;
   readonly runtimeContext: Effect.Success<typeof RuntimeContext>;
   readonly systemApiToken: Redacted.Redacted<string>;
@@ -60,6 +64,9 @@ export const makeRecipeImportWorkflowDispatcher = (input: {
     "dispatchAdmission"
   >;
   readonly retryDelaysMilliseconds: readonly number[];
+  readonly registerEvidenceRoute: (
+    message: RegisterImportEvidenceRoute
+  ) => Effect.Effect<void, object>;
   readonly scheduleRetry: (effect: Effect.Effect<void>) => Effect.Effect<void>;
   readonly trace: ImportTraceContext;
 }) =>
@@ -78,15 +85,23 @@ export const makeRecipeImportWorkflowDispatcher = (input: {
         const workflowIdentity = yield* Schema.decodeUnknownEffect(
           ImportWorkflowIdentity
         )(committed.workflowIdentity);
-        const dispatchOnce = input.importWorkflowStarter
-          .dispatchAdmission({
-            executionGeneration,
+        const dispatchOnce = input
+          .registerEvidenceRoute({
+            _tag: "RegisterImportEvidenceRoute",
             importId,
             organizationId: admission.organizationId,
-            trace: input.trace,
-            workflowIdentity,
+            routeVersion: 1,
           })
           .pipe(
+            Effect.flatMap(() =>
+              input.importWorkflowStarter.dispatchAdmission({
+                executionGeneration,
+                importId,
+                organizationId: admission.organizationId,
+                trace: input.trace,
+                workflowIdentity,
+              })
+            ),
             Effect.as("started" as const),
             Effect.catchCause(() => Effect.succeed("unavailable" as const)),
             Effect.tap((outcome) =>
@@ -151,6 +166,7 @@ export const makeImportWorkerRequestLayer = (
   const workflowDispatcher = makeRecipeImportWorkflowDispatcher({
     householdDomain: input.householdDomain,
     importWorkflowStarter: input.importWorkflowStarter,
+    registerEvidenceRoute: input.registerEvidenceRoute,
     retryDelaysMilliseconds: [2000, 4000, 8000, 16_000],
     scheduleRetry: (effect) =>
       Effect.gen(function* scheduleImportDispatchRetry() {

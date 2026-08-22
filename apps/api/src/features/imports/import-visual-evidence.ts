@@ -17,7 +17,7 @@ import type {
   CompletedVisualEvidence,
   VisualEvidenceFailureCode,
   VisualEvidenceRepository,
-} from "./import-visual-evidence.repository.d1.js";
+} from "./import-visual-evidence.repository.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { importTransitionRejected } from "./import.errors.js";
 import type { ImportRepository } from "./import.repository.js";
@@ -70,11 +70,14 @@ const observationsMatchFrames = (
   );
 const completedFromDocument = (
   document: VisualEvidenceManifest,
+  byteLength: number,
   manifestSha256: string,
   manifestKey: string
 ): CompletedVisualEvidence => ({
+  byteLength,
   completedAt: document.createdAt,
   cost: document.cost,
+  deleteAt: document.sourceEvidenceDeleteAt,
   dispatchId: document.dispatchId,
   generation: document.acquisitionGeneration,
   importId: document.importId,
@@ -177,6 +180,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
           : yield* input.visualRepository.complete(
               completedFromDocument(
                 committed.value.document,
+                committed.value.byteLength,
                 committed.value.sha256,
                 committed.value.manifestKey
               )
@@ -290,6 +294,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     return yield* input.visualRepository.complete(
       completedFromDocument(
         committed.document,
+        committed.byteLength,
         committed.sha256,
         committed.manifestKey
       )

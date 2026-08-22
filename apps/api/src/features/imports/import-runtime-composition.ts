@@ -5,13 +5,15 @@ import { Config, Effect, Option, Schema } from "effect";
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
+import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
+import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
+import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import {
   PilotBudgetRunId,
   PilotBudgetTimestamp,
   makePilotProviderBudgetRuntime,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
-import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import {
@@ -29,7 +31,7 @@ import {
   runProviderTaskAttempt,
 } from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
-import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import { makeRecipeRecoveryHouseholdEvidenceRepositories } from "./import-recipe-recovery.household.js";
 import {
   RecipeRecoveryAuthorization,
   RecipeRecoveryOrdinal,
@@ -154,6 +156,23 @@ export const runRecipeRecoveryLoop = Effect.fn(
 const currentPilotBudgetTimestamp = () =>
   Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
 
+const recoveryMutationId = (semanticKey: string) =>
+  Effect.promise(() =>
+    crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(
+        `household-recipe-import-recovery-workflow:v1:${semanticKey}`
+      )
+    )
+  ).pipe(
+    Effect.map((digest) =>
+      Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0")
+      ).join("")
+    ),
+    Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId))
+  );
+
 /** Cloudflare primitives retained by the recipe recovery Workflow host. */
 export interface ImportRecipeRecoveryDurableHost {
   readonly task: typeof Cloudflare.Workflows.task;
@@ -173,6 +192,8 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
     const evidenceBucket =
       yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
+    const householdDomain: HouseholdDomainWorkerMethods =
+      yield* Cloudflare.Workers.bindWorker(HouseholdDomainWorker);
     const providerGateway = yield* Cloudflare.AI.QueryGateway(
       ImportProviderGateway
     );
@@ -190,6 +211,15 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
           database,
           runtimeStage
         );
+        const evidenceRepositories =
+          yield* makeRecipeRecoveryHouseholdEvidenceRepositories({
+            correlationId: workflowInput.trace.correlationId,
+            database,
+            generation: workflowInput.acquisitionGeneration,
+            householdDomain,
+            importId: workflowInput.importId,
+            mutationId: recoveryMutationId,
+          }).pipe(Effect.orDie);
         const dispatch = makePilotProviderDispatchGate({
           correlationId: workflowInput.trace.correlationId,
           now: currentPilotBudgetTimestamp,
@@ -215,7 +245,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
           dispatch,
           transport: transport.recipe,
         });
-        const recipeRepository = makeD1RecipeDraftRepository(database);
+        const recipeRepository = evidenceRepositories.recipe;
 
         return yield* observeImportWorkflowStart(workflowInput.trace).pipe(
           Effect.andThen(
@@ -250,8 +280,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                         bucket,
                         extractor,
                         importId: attempt.importId,
-                        importRepository:
-                          makeD1ImportExecutionRepository(database),
+                        importRepository: evidenceRepositories.current,
                         now: currentPilotBudgetTimestamp,
                         recipeRepository,
                         recovery: {

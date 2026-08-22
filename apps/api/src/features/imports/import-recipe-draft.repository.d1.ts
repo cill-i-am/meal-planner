@@ -2,45 +2,21 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { DateTime, Effect, Schema } from "effect";
 
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
-import {
-  RecipeExtraction,
-  RecipeExtractorDescriptor,
-} from "./import-recipe-extractor.js";
-import type { DurableRecipeExtractionFailureCode } from "./import-recipe-extractor.js";
+import type { RecipeDraftRepository } from "./import-recipe-draft.repository.js";
+import { RecipeDraft } from "./import-recipe-draft.repository.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import {
   importPersistenceCorrupt,
   importPersistenceUnavailable,
   importTransitionRejected,
 } from "./import.errors.js";
-import type { ImportTransitionError } from "./import.repository.js";
 
-const RecipeDraftV1 = Schema.Struct({
-  createdAt: ImportTimestamp,
-  evidenceFingerprint: Sha256Hex,
-  extraction: RecipeExtraction,
-  extractionFingerprint: Sha256Hex,
-  extractor: RecipeExtractorDescriptor,
-  generation: AcquisitionGeneration,
-  importId: ImportId,
-  lifecycle: Schema.Literal("needs_review"),
-  schemaVersion: Schema.Literal(1),
-});
-
-const CarouselTranscriptDisposition = Schema.Struct({
-  reason: Schema.Literal("source_type_carousel"),
-  status: Schema.Literal("not_applicable"),
-});
-
-const RecipeDraftV2 = Schema.Struct({
-  ...RecipeDraftV1.fields,
-  schemaVersion: Schema.Literal(2),
-  transcript: CarouselTranscriptDisposition,
-});
-
-/** V1 remains decodable; carousel drafts add an explicit transcript disposition. */
-export const RecipeDraft = Schema.Union([RecipeDraftV1, RecipeDraftV2]);
-export type RecipeDraft = typeof RecipeDraft.Type;
+export {
+  RecipeDraft,
+  type RecipeDispatchClaim,
+  type RecipeDraftRepository,
+  type RecipeExtractionFailureCode,
+} from "./import-recipe-draft.repository.js";
 
 const NullableString = Schema.NullOr(Schema.String);
 const NullableNumber = Schema.NullOr(Schema.Number);
@@ -87,45 +63,6 @@ const D1CompleteBatchResults = Schema.Tuple([
   D1MutationResult,
   D1RecipeExtractionRows,
 ]);
-
-export type RecipeExtractionFailureCode = DurableRecipeExtractionFailureCode;
-
-export type RecipeDispatchClaim =
-  | { readonly _tag: "DispatchClaimed" }
-  | { readonly _tag: "Failed"; readonly code: RecipeExtractionFailureCode }
-  | { readonly _tag: "NeedsReview"; readonly draft: RecipeDraft }
-  | { readonly _tag: "ResumeDispatch" };
-
-export interface RecipeDraftRepository {
-  readonly claim: (input: {
-    readonly descriptor: RecipeExtractorDescriptor;
-    readonly evidenceFingerprint: string;
-    readonly extractionFingerprint: string;
-    readonly generation: AcquisitionGeneration;
-    readonly importId: ImportId;
-    readonly sourceMediaSha256: string;
-    readonly startedAt: ImportTimestamp;
-    readonly transcriptSha256: string;
-    readonly visualManifestSha256: string;
-  }) => Effect.Effect<RecipeDispatchClaim, ImportTransitionError>;
-  readonly claimCarousel: (input: {
-    readonly carouselManifestSha256: string;
-    readonly descriptor: RecipeExtractorDescriptor;
-    readonly evidenceFingerprint: string;
-    readonly extractionFingerprint: string;
-    readonly generation: AcquisitionGeneration;
-    readonly importId: ImportId;
-    readonly startedAt: ImportTimestamp;
-  }) => Effect.Effect<RecipeDispatchClaim, ImportTransitionError>;
-  readonly complete: (
-    draft: RecipeDraft
-  ) => Effect.Effect<RecipeDraft, ImportTransitionError>;
-  readonly fail: (input: {
-    readonly completedAt: ImportTimestamp;
-    readonly extractionFingerprint: string;
-    readonly failureCode: RecipeExtractionFailureCode;
-  }) => Effect.Effect<void, ImportTransitionError>;
-}
 
 const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({

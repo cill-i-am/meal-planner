@@ -18,6 +18,10 @@ import {
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
+import {
+  HouseholdObserveEvidenceReferenceInput,
+  HouseholdReadEvidenceReferencesResult,
+} from "../households/evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdOrganizationId } from "../households/household.contract.js";
@@ -49,12 +53,19 @@ import {
   prepareTikTokCarouselEvidence,
   produceTikTokCarouselRecipeDraft,
 } from "./import-carousel.js";
-import { makeD1CarouselEvidenceRepository } from "./import-carousel.repository.d1.js";
 import {
   makeR2SpeechAudioExtractor,
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
+import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
+import {
+  makeHouseholdCarouselEvidenceRepository,
+  makeHouseholdImportEvidenceViewRepository,
+  makeHouseholdRecipeDraftRepository,
+  makeHouseholdSpeechTranscriptionRepository,
+  makeHouseholdVisualEvidenceRepository,
+} from "./import-evidence.repository.household.js";
 import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import { ImportWorkflowTerminationUnavailable } from "./import-intent-execution.js";
 import type { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
@@ -120,11 +131,8 @@ import {
   publicIntentFailureForProviderStage,
 } from "./import-public-failure.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
-import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
-import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
-import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import {
   decodeImportWorkflowInput,
   ImportWorkflowInput,
@@ -672,6 +680,29 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               intentId,
               organizationId,
             });
+            const evidenceRepositories = (
+              generation: AcquisitionGeneration
+            ) => {
+              const evidenceInput = {
+                canonicalSourceId: identityResolution.identity.canonicalId,
+                correlationId,
+                generation,
+                householdDomain,
+                intentId,
+                mutationId: workflowMutationId,
+                organizationId,
+              };
+              return {
+                carousel:
+                  makeHouseholdCarouselEvidenceRepository(evidenceInput),
+                current:
+                  makeHouseholdImportEvidenceViewRepository(evidenceInput),
+                recipe: makeHouseholdRecipeDraftRepository(evidenceInput),
+                speech:
+                  makeHouseholdSpeechTranscriptionRepository(evidenceInput),
+                visual: makeHouseholdVisualEvidenceRepository(evidenceInput),
+              } as const;
+            };
             const recipeLifecycle = {
               grounding: intentTransitions
                 .advanceStage("grounding_recipe")
@@ -827,10 +858,14 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     bucket,
                     extractor: recipeExtractor,
                     importId,
-                    importRepository: repository,
+                    importRepository: evidenceRepositories(
+                      acquisitionGeneration
+                    ).current,
                     lifecycle: recipeLifecycle,
                     now,
-                    recipeRepository: makeD1RecipeDraftRepository(database),
+                    recipeRepository: evidenceRepositories(
+                      acquisitionGeneration
+                    ).recipe,
                   })
                 ),
                 visual: (() => {
@@ -849,12 +884,15 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         extractor: visualExtractor,
                         frameSampler: makeR2VisualFrameSampler(bucket),
                         importId,
-                        importRepository: repository,
+                        importRepository: evidenceRepositories(
+                          acquisitionGeneration
+                        ).current,
                         now,
                         speechDispatchId,
                         visualDispatchId,
-                        visualRepository:
-                          makeD1VisualEvidenceRepository(database),
+                        visualRepository: evidenceRepositories(
+                          acquisitionGeneration
+                        ).visual,
                       })
                     );
                   return preparedDispatchIds === undefined
@@ -872,6 +910,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               importId,
             }).pipe(Effect.orDie);
             if (stagedCarousel !== null) {
+              const carouselGeneration = Schema.decodeUnknownSync(
+                AcquisitionGeneration
+              )(executionGeneration);
               const carouselResult =
                 yield* runImportCarouselVisualAndRecipeWorkflow({
                   lifecycle: {
@@ -907,7 +948,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         importId,
                         lifecycle: recipeLifecycle,
                         now,
-                        recipeRepository: makeD1RecipeDraftRepository(database),
+                        recipeRepository:
+                          evidenceRepositories(carouselGeneration).recipe,
                       })
                     ),
                   visual: runProviderTask(
@@ -917,7 +959,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                       adapter: stagedCarousel.adapter,
                       bucket,
                       carouselRepository:
-                        makeD1CarouselEvidenceRepository(database),
+                        evidenceRepositories(carouselGeneration).carousel,
                       descriptor: stagedCarousel.descriptor,
                       importId,
                       now,
@@ -973,13 +1015,85 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               "resolve-acquire-store-verify-v2",
               recoverVerifiedAcquisitionCheckpoint({
                 expectedCanonicalId: claim.canonicalId,
-                findStored: repository.findById(importId),
+                findStored: evidenceRepositories(
+                  Schema.decodeUnknownSync(AcquisitionGeneration)(
+                    executionGeneration
+                  )
+                ).current.findById(importId),
                 importId,
                 readEvidence: (stored) =>
-                  readVerifiedAcquisitionEvidence(bucket, {
-                    canonicalId: stored.canonicalSourceId,
-                    generation: stored.acquisitionGeneration,
-                    importId,
+                  Effect.gen(function* readHouseholdAcquisitionEvidence() {
+                    const encodedReferences = yield* householdDomain
+                      .readEvidenceReferences({
+                        admission,
+                        expectedGeneration: executionGeneration,
+                        intentId,
+                      })
+                      .pipe(Effect.orDie);
+                    const references = yield* Schema.decodeUnknownEffect(
+                      HouseholdReadEvidenceReferencesResult,
+                      { onExcessProperty: "error" }
+                    )(encodedReferences).pipe(Effect.orDie);
+                    if (references === null) {
+                      return null;
+                    }
+                    const presence = yield* inspectHouseholdEvidenceReferences(
+                      bucket,
+                      references.references
+                    );
+                    const missing = presence.filter(
+                      ({ availability }) => availability === "missing"
+                    );
+                    yield* Effect.forEach(
+                      missing,
+                      ({ reference }) => {
+                        const eventTime = new Date().toISOString();
+                        return workflowMutationId(
+                          `${intentId}:${executionGeneration}:observe-evidence-missing:${reference.kind}:${reference.sha256}:${eventTime}`
+                        ).pipe(
+                          Effect.flatMap((mutationId) =>
+                            Schema.encodeEffect(
+                              HouseholdObserveEvidenceReferenceInput
+                            )({
+                              admission,
+                              availability: "missing",
+                              event: {
+                                action: "IntegrityProbe",
+                                eventTime:
+                                  Schema.decodeUnknownSync(ImportTimestamp)(
+                                    eventTime
+                                  ),
+                              },
+                              expectedGeneration: executionGeneration,
+                              intentId,
+                              mutationId,
+                              reference: {
+                                key: reference.key,
+                                kind: reference.kind,
+                                sha256: reference.sha256,
+                              },
+                            }).pipe(
+                              Effect.orDie,
+                              Effect.flatMap((encoded) =>
+                                householdDomain.observeEvidenceReference(
+                                  encoded
+                                )
+                              )
+                            )
+                          ),
+                          Effect.orDie
+                        );
+                      },
+                      { concurrency: 1 }
+                    );
+                    if (missing.length > 0) {
+                      return null;
+                    }
+                    return yield* readVerifiedAcquisitionEvidence(bucket, {
+                      canonicalId: stored.canonicalSourceId,
+                      generation: stored.acquisitionGeneration,
+                      importId,
+                    });
                   }),
               }).pipe(
                 Effect.flatMap(
@@ -1055,23 +1169,48 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             const encodedFinalization = yield* Cloudflare.Workflows.task(
               "record-acquisition-v2",
               (outcome._tag === "VerifiedAcquisition"
-                ? continueAcquisitionCheckpoint({
-                    findStored: repository.findById(importId),
-                    importId,
-                    onAccepted: () => Effect.succeed<"Recorded">("Recorded"),
-                    outcome,
-                  }).pipe(
-                    Effect.flatMap((continuation) =>
-                      continuation === "Recorded"
-                        ? Effect.succeed(continuation)
-                        : repository.recordAcquired(
-                            importId,
-                            outcome.generation,
-                            outcome.evidence,
-                            outcome.evidence.acquiredAt
-                          )
-                    )
-                  )
+                ? Effect.gen(function* commitHouseholdAcquisitionEvidence() {
+                    const mutationId = yield* workflowMutationId(
+                      `${intentId}:${executionGeneration}:commit-acquisition-evidence:${outcome.evidence.manifestSha256}`
+                    );
+                    let result: Parameters<
+                      HouseholdDomainWorkerMethods["commitAcquisitionEvidence"]
+                    >[0]["result"] = {
+                      acquiredAt: outcome.evidence.acquiredAt,
+                      audioStreams: outcome.evidence.audioStreams,
+                      durationSeconds: outcome.evidence.durationSeconds,
+                      references: [
+                        {
+                          byteLength: outcome.evidence.bytes,
+                          deleteAt: outcome.evidence.deleteAt,
+                          key: outcome.evidence.mediaKey,
+                          kind: "original_media",
+                          sha256: outcome.evidence.sha256,
+                        },
+                        {
+                          byteLength: outcome.evidence.manifestByteLength,
+                          deleteAt: outcome.evidence.deleteAt,
+                          key: outcome.evidence.manifestKey,
+                          kind: "acquisition_manifest",
+                          sha256: outcome.evidence.manifestSha256,
+                        },
+                      ],
+                      videoStreams: outcome.evidence.videoStreams,
+                    };
+                    if (outcome.evidence.source !== undefined) {
+                      result = { ...result, source: outcome.evidence.source };
+                    }
+                    const committed = yield* householdDomain
+                      .commitAcquisitionEvidence({
+                        admission,
+                        expectedGeneration: executionGeneration,
+                        intentId,
+                        mutationId,
+                        result,
+                      })
+                      .pipe(Effect.orDie);
+                    return committed.outcome;
+                  })
                 : repository.recordAcquisitionFailure(
                     importId,
                     outcome.generation,
@@ -1113,7 +1252,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             const encodedSpeech = yield* Cloudflare.Workflows.task(
               "transcribe-video-v1",
               continueAcquisitionCheckpoint({
-                findStored: repository.findById(importId),
+                findStored: evidenceRepositories(
+                  outcome.generation
+                ).current.findById(importId),
                 importId,
                 onAccepted: () =>
                   terminalRecovery
@@ -1127,15 +1268,18 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         runProviderTaskAttempt(
                           "speech",
                           transcribeAcquiredImport({
-                            acquisitionRepository: repository,
+                            acquisitionRepository: evidenceRepositories(
+                              outcome.generation
+                            ).current,
                             audioExtractor: makeR2SpeechAudioExtractor(bucket),
                             bucket,
                             dispatchId: speechDispatchId,
                             importId,
                             now,
                             speechTranscriber,
-                            transcriptionRepository:
-                              makeD1SpeechTranscriptionRepository(database),
+                            transcriptionRepository: evidenceRepositories(
+                              outcome.generation
+                            ).speech,
                           }),
                           () => ({
                             _tag: "Succeeded" as const,

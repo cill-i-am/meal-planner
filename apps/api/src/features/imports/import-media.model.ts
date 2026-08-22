@@ -104,6 +104,16 @@ export const MediaByteCount = Schema.Number.pipe(
 );
 export type MediaByteCount = typeof MediaByteCount.Type;
 
+export const ManifestByteCount = Schema.Number.pipe(
+  Schema.check(
+    Schema.isInt(),
+    Schema.isGreaterThan(0),
+    Schema.isLessThanOrEqualTo(MaximumMetadataStdoutBytes)
+  ),
+  Schema.brand("ManifestByteCount")
+);
+export type ManifestByteCount = typeof ManifestByteCount.Type;
+
 export const MediaDurationSeconds = Schema.Number.pipe(
   Schema.check(
     Schema.isFinite(),
@@ -211,7 +221,9 @@ export const VerifiedAcquisitionEvidence = Schema.Struct({
   deleteAt: ImportTimestamp,
   durationSeconds: MediaDurationSeconds,
   generation: AcquisitionGeneration,
+  manifestByteLength: ManifestByteCount,
   manifestKey: ManifestObjectKey,
+  manifestSha256: Sha256Hex,
   mediaKey: MediaObjectKey,
   sha256: Sha256Hex,
   source: Schema.optionalKey(VerifiedSourceMetadata),

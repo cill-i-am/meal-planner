@@ -10,6 +10,22 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+/** Private immutable routing authority for household-owned R2 evidence. */
+export const importEvidenceRoutes = sqliteTable(
+  "import_evidence_routes",
+  {
+    importId: text("import_id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    routeVersion: integer("route_version").notNull(),
+  },
+  (table) => [
+    check(
+      "import_evidence_routes_version_check",
+      sql`${table.routeVersion} = 1`
+    ),
+  ]
+);
+
 export const importExecutionRuns = sqliteTable(
   "import_execution_runs",
   {

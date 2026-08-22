@@ -43,6 +43,7 @@ import {
   PilotProviderBudgetRuntime,
   makePilotProviderBudgetRuntime,
 } from "./features/pilots/pilot-provider-budget.js";
+import { ImportEvidenceEventQueue } from "./infrastructure/import-evidence-event-queue.js";
 import { MealPlannerAuthDatabase } from "./infrastructure/meal-planner-auth-database.js";
 import { MealPlannerDatabase } from "./infrastructure/meal-planner-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
@@ -89,6 +90,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       makePilotProviderBudgetRuntime(runtimeStage);
     const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
     const importRecipeRecoveryWorkflow = yield* ImportRecipeRecoveryWorkflow;
+    const importEvidenceEvents = yield* Cloudflare.Queues.WriteQueue(
+      ImportEvidenceEventQueue
+    );
     const householdDomain = yield* Cloudflare.Workers.bindWorker(
       HouseholdDomainWorker
     );
@@ -145,6 +149,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
             importRecipeRecoveryWorkflow
           ),
+          registerEvidenceRoute: (message) =>
+            importEvidenceEvents
+              .send(message)
+              .pipe(Effect.provideService(RuntimeContext, runtimeContext)),
           runtimeContext,
           runtimeStage,
           systemApiToken: importSystemApiToken,
@@ -187,7 +195,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     Effect.provide(
       Layer.mergeAll(
         Cloudflare.D1.QueryDatabaseBinding,
-        Cloudflare.R2.ReadWriteBucketBinding
+        Cloudflare.R2.ReadWriteBucketBinding,
+        Cloudflare.Queues.WriteQueueBinding
       )
     )
   )

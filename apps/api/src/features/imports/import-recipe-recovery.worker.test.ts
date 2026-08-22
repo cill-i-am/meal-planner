@@ -4,6 +4,8 @@ import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { HouseholdOrganizationId } from "../households/household.contract.js";
+import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import {
   PilotBudgetDispatchId,
   PilotBudgetProviderStageId,
@@ -12,7 +14,10 @@ import {
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
-import { ImportTraceContext } from "./import-observability.js";
+import {
+  ImportCorrelationId,
+  ImportTraceContext,
+} from "./import-observability.js";
 import type { ImportTraceContext as ImportTraceContextType } from "./import-observability.js";
 import {
   ProviderTerminalSettlementService,
@@ -21,6 +26,9 @@ import {
 import { ProviderTerminalSettlementRoutes } from "./import-provider-terminal-settlement.routes.js";
 import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-terminal.js";
 import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import { RecipeDraft } from "./import-recipe-draft.repository.js";
+import { makeRecipeRecoveryHouseholdEvidenceRepositories } from "./import-recipe-recovery.household.js";
+import type { RecipeRecoveryHouseholdAuthority } from "./import-recipe-recovery.household.js";
 import {
   makeD1RecipeRecoveryRepository,
   makeRecipeRecoveryWorkflowStarter,
@@ -60,6 +68,8 @@ const decodeBudgetTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
 const decodeRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
 const decodeStageId = Schema.decodeUnknownSync(PilotBudgetProviderStageId);
 const decodeDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
+const decodeCorrelationId = Schema.decodeUnknownSync(ImportCorrelationId);
+const decodeOrganizationId = Schema.decodeUnknownSync(HouseholdOrganizationId);
 
 beforeAll(async () => {
   await applyD1Migrations(
@@ -500,7 +510,239 @@ const postOperation = (
     )
   );
 
+const unsupportedRecoveryField = (reason: string) => ({
+  citations: [] as const,
+  origin: "unresolved" as const,
+  reason,
+  state: "unresolved" as const,
+});
+
+const supportedRecoveryField = (value: string) => ({
+  citations: [
+    {
+      confidence: 1,
+      evidenceId: "recovery:fixture",
+      origin: "creator_provided" as const,
+    },
+  ],
+  origin: "creator_provided" as const,
+  state: "supported" as const,
+  value,
+});
+
+const supportedRecoveryList = (values: readonly string[]) => ({
+  items: values.map(supportedRecoveryField),
+  state: "supported" as const,
+});
+
+const recoveryMutationDigest = (seed: string) => {
+  if (seed.includes("complete")) {
+    return "e".repeat(64);
+  }
+  if (seed.includes("fail")) {
+    return "f".repeat(64);
+  }
+  return "0".repeat(64);
+};
+
+const mutationOutcome = (operation: "Claim" | "Complete" | "Fail") => {
+  if (operation === "Claim") {
+    return "DispatchClaimed" as const;
+  }
+  if (operation === "Complete") {
+    return "Completed" as const;
+  }
+  return "Failed" as const;
+};
+
+const providerFreeRecoveryDraft = (importId: typeof ImportId.Type) =>
+  Schema.decodeUnknownSync(RecipeDraft)({
+    createdAt: "2026-08-09T00:02:00.000Z",
+    evidenceFingerprint: "a".repeat(64),
+    extraction: {
+      author: unsupportedRecoveryField("not visible"),
+      category: unsupportedRecoveryField("not visible"),
+      cookTimeMinutes: unsupportedRecoveryField("not visible"),
+      cost: {
+        certainty: "known",
+        currency: "USD",
+        estimatedMicroUsd: 0,
+      },
+      cuisine: unsupportedRecoveryField("not visible"),
+      description: supportedRecoveryField("Provider-free recovery fixture."),
+      ingredientLines: supportedRecoveryList(["1 ingredient"]),
+      instructions: supportedRecoveryList(["Cook the ingredient."]),
+      name: supportedRecoveryField("Recovery recipe"),
+      nutrition: unsupportedRecoveryField("not visible"),
+      prepTimeMinutes: unsupportedRecoveryField("not visible"),
+      sourceUrl: supportedRecoveryField(
+        "https://www.tiktok.com/@fixture/video/7000000000000000208"
+      ),
+      supportedClaims: supportedRecoveryList(["Cook the ingredient."]),
+      temperatureCelsius: unsupportedRecoveryField("not visible"),
+      tools: supportedRecoveryList(["Pan"]),
+      totalTimeMinutes: unsupportedRecoveryField("not visible"),
+      unresolvedFields: [
+        "author",
+        "category",
+        "cook_time_minutes",
+        "cuisine",
+        "nutrition",
+        "prep_time_minutes",
+        "temperature_celsius",
+        "total_time_minutes",
+        "yield",
+        "ingredient_quantities",
+        "ingredient_units",
+      ],
+      usage: {
+        inputEvidenceItems: 3,
+        inputTokens: 0,
+        latencyMilliseconds: 0,
+        modelCalls: 1,
+        outputTokens: 0,
+      },
+      yield: unsupportedRecoveryField("not visible"),
+    },
+    extractionFingerprint: "b".repeat(64),
+    extractor: {
+      model: "fixture-v1",
+      provider: "deterministic_fake",
+      version: "schema-1",
+    },
+    generation: 1,
+    importId,
+    lifecycle: "needs_review",
+    schemaVersion: 1,
+  });
+
 describe("recipe recovery attempt ledger", () => {
+  it("uses household recovery evidence without authoring shared-D1 extraction", async () => {
+    const importId = decodeImportId("00000000-0000-4000-8000-000000000208");
+    const organizationId = decodeOrganizationId(
+      "00000000-0000-4000-8000-000000000209"
+    );
+    const correlationId = decodeCorrelationId(
+      "00000000-0000-4000-8000-000000000210"
+    );
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_evidence_routes (
+         import_id, organization_id, route_version
+       ) VALUES (?, ?, 1)`
+    )
+      .bind(importId, organizationId)
+      .run();
+
+    const mutations: string[] = [];
+    const authority = {
+      mutateEvidenceStage: (input) => {
+        mutations.push(input.operation._tag);
+        return Effect.succeed({
+          committedAt: "2026-08-09T00:02:00.000Z",
+          executionGeneration: input.expectedGeneration,
+          intentId: input.intentId,
+          outcome: mutationOutcome(input.operation._tag),
+          receiptVersion: 1,
+          stage: input.operation.stage,
+        } as const);
+      },
+      readEvidenceReferences: (input) =>
+        Effect.succeed({
+          committedAt: "2026-08-09T00:00:00.000Z",
+          executionGeneration: input.expectedGeneration,
+          intentId: input.intentId,
+          references: [
+            {
+              availability: "available",
+              byteLength: 1024,
+              deleteAt: "2026-08-16T00:00:00.000Z",
+              key: `imports/${importId}/acquisition/v1/generations/1/original.mp4`,
+              kind: "original_media",
+              observationOrdinal: 0,
+              sha256: "c".repeat(64),
+            },
+            {
+              availability: "available",
+              byteLength: 512,
+              deleteAt: "2026-08-16T00:00:00.000Z",
+              key: `imports/${importId}/acquisition/v1/generations/1/manifest.json`,
+              kind: "acquisition_manifest",
+              observationOrdinal: 0,
+              sha256: "d".repeat(64),
+            },
+          ] as const,
+        } as const),
+      readEvidenceStage: () => Effect.succeed(null),
+      readRecipeImportExecution: (input) =>
+        Effect.succeed({
+          canonicalSourceId: "tiktok:video:7000000000000000208",
+          executionGeneration: input.expectedGeneration,
+          intentId: input.intentId,
+          sourceKind: "video",
+          submittedSourceUrl:
+            "https://www.tiktok.com/@fixture/video/7000000000000000208",
+        } as const),
+    } satisfies RecipeRecoveryHouseholdAuthority;
+    const repositories = await Effect.runPromise(
+      makeRecipeRecoveryHouseholdEvidenceRepositories({
+        correlationId,
+        database: testEnv.MealPlannerDatabase,
+        generation: decodeGeneration(1),
+        householdDomain: authority,
+        importId,
+        mutationId: (seed) =>
+          Effect.succeed(
+            Schema.decodeUnknownSync(HouseholdImportMutationId)(
+              recoveryMutationDigest(seed)
+            )
+          ),
+      })
+    );
+
+    await expect(
+      Effect.runPromise(repositories.current.findById(importId))
+    ).resolves.toMatchObject({ _tag: "Some" });
+    const draft = providerFreeRecoveryDraft(importId);
+    await expect(
+      Effect.runPromise(
+        repositories.recipe.claim({
+          descriptor: draft.extractor,
+          evidenceFingerprint: draft.evidenceFingerprint,
+          extractionFingerprint: draft.extractionFingerprint,
+          generation: draft.generation,
+          importId,
+          sourceMediaSha256: "c".repeat(64),
+          startedAt: draft.createdAt,
+          transcriptSha256: "1".repeat(64),
+          visualManifestSha256: "2".repeat(64),
+        })
+      )
+    ).resolves.toEqual({ _tag: "DispatchClaimed" });
+    await expect(
+      Effect.runPromise(repositories.recipe.complete(draft))
+    ).resolves.toEqual(draft);
+    await expect(
+      Effect.runPromise(
+        repositories.recipe.fail({
+          completedAt: draft.createdAt,
+          extractionFingerprint: draft.extractionFingerprint,
+          failureCode: "provider_error",
+        })
+      )
+    ).resolves.toBeUndefined();
+
+    expect(mutations).toEqual(["Claim", "Complete", "Fail"]);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS extraction_count
+           FROM import_recipe_extractions
+          WHERE import_id = ?`
+      )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({ extraction_count: 0 });
+  });
+
   it("admits one row under concurrency and replays the same command", async () => {
     const seeded = await seedRoot("000000000301");
     const repository = makeD1RecipeRecoveryRepository(

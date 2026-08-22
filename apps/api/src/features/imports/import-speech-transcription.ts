@@ -14,7 +14,7 @@ import {
 import type {
   CompletedTranscriptEvidence,
   SpeechTranscriptionRepository,
-} from "./import-speech-transcription.repository.d1.js";
+} from "./import-speech-transcription.repository.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { importTransitionRejected } from "./import.errors.js";
 import type { ImportRepository } from "./import.repository.js";
@@ -60,11 +60,14 @@ const sha256Hex = (bytes: Uint8Array) =>
 
 const completedFromDocument = (
   document: TranscriptEvidenceDocument,
+  byteLength: number,
   transcriptSha256: string,
   transcriptKey: string
 ): CompletedTranscriptEvidence => ({
+  byteLength,
   completedAt: document.createdAt,
   cost: document.cost,
+  deleteAt: document.deleteAt,
   detectedLanguage: document.detectedLanguage,
   dispatchId: document.dispatchId,
   generation: document.acquisitionGeneration,
@@ -157,6 +160,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
         const completed = yield* input.transcriptionRepository.complete(
           completedFromDocument(
             recovered.value.document,
+            recovered.value.byteLength,
             recovered.value.sha256,
             recovered.value.key
           )
@@ -251,6 +255,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       return yield* input.transcriptionRepository.complete(
         completedFromDocument(
           committed.document,
+          committed.byteLength,
           committed.sha256,
           committed.key
         )

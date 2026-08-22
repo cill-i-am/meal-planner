@@ -2,13 +2,22 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { DateTime, Effect, Schema } from "effect";
 
 import { AcquisitionGeneration } from "./import-media.model.js";
+import type {
+  CompletedTranscriptEvidence,
+  SpeechTranscriptionRepository,
+} from "./import-speech-transcription.repository.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import {
   importPersistenceCorrupt,
   importPersistenceUnavailable,
   importTransitionRejected,
 } from "./import.errors.js";
-import type { ImportTransitionError } from "./import.repository.js";
+
+export type {
+  CompletedTranscriptEvidence,
+  SpeechDispatchClaim,
+  SpeechTranscriptionRepository,
+} from "./import-speech-transcription.repository.js";
 
 const NullableString = Schema.NullOr(Schema.String);
 const NullableNumber = Schema.NullOr(Schema.Number);
@@ -47,77 +56,6 @@ const D1CompleteBatchResults = Schema.Tuple([
   D1MutationResult,
   D1TranscriptionRows,
 ]);
-
-/** Metadata persisted after one transcript object has been verified. */
-export interface CompletedTranscriptEvidence {
-  readonly completedAt: ImportTimestamp;
-  readonly cost: {
-    readonly certainty: "estimated" | "known";
-    readonly currency: "USD";
-    readonly estimatedMicroUsd: number;
-  };
-  readonly detectedLanguage: string;
-  readonly dispatchId: string;
-  readonly generation: AcquisitionGeneration;
-  readonly importId: ImportId;
-  readonly model: string;
-  readonly provider: string;
-  readonly segmentsCount: number;
-  readonly sourceMediaSha256: string;
-  readonly transcriptKey: string;
-  readonly transcriptSha256: string;
-  readonly usage: {
-    readonly audioDurationMilliseconds: number;
-    readonly inputBytes: number;
-  };
-}
-
-/** Generation-fenced durable dispatch claim. */
-export type SpeechDispatchClaim =
-  | {
-      readonly _tag: "Completed";
-      readonly evidence: CompletedTranscriptEvidence;
-    }
-  | {
-      readonly _tag: "DispatchClaimed";
-      readonly dispatchId: string;
-    }
-  | {
-      readonly _tag: "Failed";
-      readonly code: string;
-      readonly dispatchId: string;
-    }
-  | {
-      readonly _tag: "ResumeDispatch";
-      readonly dispatchId: string;
-    };
-
-/** D1 capability needed by the provider-free transcription use case. */
-export interface SpeechTranscriptionRepository {
-  readonly claim: (input: {
-    readonly dispatchId: string;
-    readonly generation: AcquisitionGeneration;
-    readonly importId: ImportId;
-    readonly sourceMediaSha256: string;
-    readonly startedAt: ImportTimestamp;
-  }) => Effect.Effect<SpeechDispatchClaim, ImportTransitionError>;
-  readonly complete: (
-    evidence: CompletedTranscriptEvidence
-  ) => Effect.Effect<CompletedTranscriptEvidence, ImportTransitionError>;
-  readonly fail: (input: {
-    readonly completedAt: ImportTimestamp;
-    readonly dispatchId: string;
-    readonly failureCode:
-      | "audio_extraction_failed"
-      | "outcome_unknown"
-      | "source_evidence_invalid"
-      | "transcription_failed"
-      | "transcript_evidence_failed";
-    readonly generation: AcquisitionGeneration;
-    readonly importId: ImportId;
-    readonly sourceMediaSha256: string;
-  }) => Effect.Effect<void, ImportTransitionError>;
-}
 
 const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({

@@ -440,6 +440,7 @@ export const makeHouseholdRecipeImportRepository = (
               intentJson,
               recipeId: null,
               reviewJson: null,
+              sourceKind: null,
               status: "processing",
               submittedSourceUrl: input.source.url,
               updatedAt: createdAt,
@@ -592,6 +593,7 @@ export const makeHouseholdRecipeImportRepository = (
               .set({
                 canonicalSourceId: input.canonicalSourceId,
                 intentJson,
+                sourceKind: input.sourceKind,
                 status: next.status,
                 updatedAt: now,
               })
@@ -979,9 +981,14 @@ export const makeHouseholdRecipeImportRepository = (
       if (intent.status !== "processing") {
         return yield* Effect.fail(failure("illegal_transition"));
       }
+      if (row.canonicalSourceId === null || row.sourceKind === null) {
+        return yield* Effect.fail(failure("illegal_transition"));
+      }
       return yield* decode(HouseholdRecipeImportExecutionView, {
+        canonicalSourceId: row.canonicalSourceId,
         executionGeneration: row.executionGeneration,
         intentId: row.intentId,
+        sourceKind: row.sourceKind,
         submittedSourceUrl: row.submittedSourceUrl,
       });
     });

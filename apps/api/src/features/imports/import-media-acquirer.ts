@@ -23,6 +23,7 @@ import {
   MaximumMediaBytes,
   MaximumMediaDurationSeconds,
   MaximumR2OperationMilliseconds,
+  ManifestByteCount as ManifestByteCountSchema,
   ManifestObjectKey as ManifestObjectKeySchema,
   MediaArtifactId as MediaArtifactIdSchema,
   MediaByteCount as MediaByteCountSchema,
@@ -566,7 +567,11 @@ const decodeCommittedEvidence = Effect.fn(
     deleteAt: value.deleteAt,
     durationSeconds: value.durationSeconds,
     generation,
+    manifestByteLength: Schema.decodeUnknownSync(ManifestByteCountSchema)(
+      manifestBytes.byteLength
+    ),
     manifestKey: value.manifestKey,
+    manifestSha256,
     mediaKey: value.mediaKey,
     sha256: value.sha256,
     source: {

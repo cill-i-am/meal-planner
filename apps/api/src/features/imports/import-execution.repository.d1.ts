@@ -6,14 +6,8 @@ import { DateTime, Effect, Option, Schema } from "effect";
 import type {
   AcquisitionGeneration,
   ClassifiedAcquisitionFailure,
-  VerifiedAcquisitionEvidence,
 } from "./import-media.model.js";
-import {
-  AcquisitionGeneration as AcquisitionGenerationSchema,
-  EvidenceRetentionSeconds,
-  manifestObjectKey,
-  mediaObjectKey,
-} from "./import-media.model.js";
+import { AcquisitionGeneration as AcquisitionGenerationSchema } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
 import {
@@ -68,12 +62,6 @@ export interface D1ImportExecutionRepository extends ImportRepository {
   readonly ensureRun: (
     input: EnsureImportExecutionRunInput
   ) => Effect.Effect<void, ImportTransitionError>;
-  readonly recordAcquired: (
-    id: ImportId,
-    generation: AcquisitionGeneration,
-    evidence: VerifiedAcquisitionEvidence,
-    acquiredAt: ImportTimestamp
-  ) => Effect.Effect<"Recorded" | "Superseded", ImportTransitionError>;
   readonly recordAcquisitionFailure: (
     id: ImportId,
     generation: AcquisitionGeneration,
@@ -149,23 +137,6 @@ const statusColumns = (status: AcquisitionFailureStatus) => ({
   recoveryAction: status.recovery,
   statusCode: status.code,
 });
-
-const isVerifiedEvidenceFor = (
-  id: ImportId,
-  evidence: VerifiedAcquisitionEvidence,
-  acquiredAt: ImportTimestamp
-) =>
-  evidence.mediaKey === mediaObjectKey(id, evidence.generation) &&
-  evidence.manifestKey === manifestObjectKey(id, evidence.generation) &&
-  evidence.acquiredAt === acquiredAt &&
-  evidence.sha256.length === 64 &&
-  evidence.bytes > 0 &&
-  evidence.durationSeconds > 0 &&
-  evidence.audioStreams.length > 0 &&
-  evidence.videoStreams.length > 0 &&
-  DateTime.toEpochMillis(evidence.deleteAt) -
-    DateTime.toEpochMillis(evidence.acquiredAt) ===
-    EvidenceRetentionSeconds * 1000;
 
 const persistedStatus = (row: typeof importExecutionRuns.$inferSelect) => {
   if (row.statusCode === null && row.recoveryAction === null) {
@@ -531,46 +502,6 @@ export const makeD1ImportExecutionRepository = (
           )
           .limit(1)
       ).pipe(Effect.map((rows) => rows.length === 1)),
-    recordAcquired: (id, generation, evidence, acquiredAt) =>
-      Effect.gen(function* recordAcquired() {
-        if (
-          evidence.generation !== generation ||
-          !isVerifiedEvidenceFor(id, evidence, acquiredAt) ||
-          DateTime.toEpochMillis(evidence.deleteAt) <= currentTimeMillis()
-        ) {
-          return yield* Effect.fail(importTransitionRejected());
-        }
-        const references = [
-          { kind: "original_media", referenceId: evidence.mediaKey },
-          { kind: "acquisition_manifest", referenceId: evidence.manifestKey },
-        ];
-        yield* persistence(() =>
-          database
-            .update(importExecutionRuns)
-            .set({
-              evidenceReferencesJson: JSON.stringify(references),
-              recoveryAction: null,
-              status: "acquired",
-              statusCode: null,
-              updatedAt: DateTime.formatIso(acquiredAt),
-            })
-            .where(
-              and(
-                eq(importExecutionRuns.id, id),
-                eq(importExecutionRuns.status, "acquiring"),
-                eq(importExecutionRuns.acquisitionGeneration, generation)
-              )
-            )
-        );
-        const stored = yield* requireRun(id);
-        if (stored.acquisitionGeneration > generation) {
-          return "Superseded";
-        }
-        return stored.acquisitionGeneration === generation &&
-          stored.view.status.kind === "acquired"
-          ? "Recorded"
-          : yield* Effect.fail(importTransitionRejected());
-      }),
     recordAcquisitionFailure: (id, generation, failure, failedAt) =>
       Effect.gen(function* recordAcquisitionFailure() {
         if (failure.generation !== generation) {

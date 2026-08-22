@@ -26,6 +26,19 @@ import {
   MealPlanRecipeAuthorityToken,
   selectMealPlanCandidates,
 } from "../meal-planning/meal-plan.js";
+import {
+  HouseholdCommitAcquisitionEvidenceInput,
+  HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdMutateEvidenceStageInput,
+  HouseholdMutateEvidenceStageResult,
+  HouseholdObserveEvidenceReferenceInput,
+  HouseholdObserveEvidenceReferenceResult,
+  HouseholdReadEvidenceReferencesInput,
+  HouseholdReadEvidenceReferencesResult,
+  HouseholdReadEvidenceStageInput,
+  HouseholdReadEvidenceStageResult,
+} from "./evidence/household-evidence.contract.js";
+import { makeHouseholdEvidenceRepository } from "./evidence/household-evidence.repository.js";
 import { ensureHouseholdProvenance } from "./foundation/household-provenance.js";
 import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
 import {
@@ -336,6 +349,54 @@ export const HouseholdObjectRuntime = Effect.gen(
             );
           })
         ),
+      commitAcquisitionEvidence: (
+        untrustedInput: typeof HouseholdCommitAcquisitionEvidenceInput.Encoded
+      ) =>
+        scoped(
+          Effect.gen(function* commitHouseholdAcquisitionEvidence() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdCommitAcquisitionEvidenceInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "commit_acquisition_evidence"
+            );
+            const connection = yield* database;
+            const committed =
+              yield* makeHouseholdEvidenceRepository(
+                connection
+              ).commitAcquisition(command);
+            return yield* encodeRecipeImportResult(
+              HouseholdCommitAcquisitionEvidenceResult,
+              committed
+            );
+          })
+        ),
+      mutateEvidenceStage: (
+        untrustedInput: typeof HouseholdMutateEvidenceStageInput.Encoded
+      ) =>
+        scoped(
+          Effect.gen(function* mutateHouseholdEvidenceStage() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdMutateEvidenceStageInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "mutate_evidence_stage"
+            );
+            const connection = yield* database;
+            const committed =
+              yield* makeHouseholdEvidenceRepository(connection).mutateStage(
+                command
+              );
+            return yield* encodeRecipeImportResult(
+              HouseholdMutateEvidenceStageResult,
+              committed
+            );
+          })
+        ),
       commitRecipeImportDraft: (
         untrustedInput: HouseholdCommitRecipeImportDraftInput
       ) =>
@@ -356,6 +417,30 @@ export const HouseholdObjectRuntime = Effect.gen(
               ).commitDraft(command);
             return yield* encodeRecipeImportResult(
               HouseholdActiveRecipeImportActionResult,
+              committed
+            );
+          })
+        ),
+      observeEvidenceReference: (
+        untrustedInput: typeof HouseholdObserveEvidenceReferenceInput.Encoded
+      ) =>
+        scoped(
+          Effect.gen(function* observeHouseholdEvidenceReference() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdObserveEvidenceReferenceInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "observe_evidence_reference"
+            );
+            const connection = yield* database;
+            const committed =
+              yield* makeHouseholdEvidenceRepository(
+                connection
+              ).observeReference(command);
+            return yield* encodeRecipeImportResult(
+              HouseholdObserveEvidenceReferenceResult,
               committed
             );
           })
@@ -425,6 +510,54 @@ export const HouseholdObjectRuntime = Effect.gen(
               onNone: () => Effect.succeed(null),
               onSome: encodeMealPlan,
             });
+          })
+        ),
+      readEvidenceReferences: (
+        untrustedInput: HouseholdReadEvidenceReferencesInput
+      ) =>
+        scoped(
+          Effect.gen(function* readHouseholdEvidenceReferences() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadEvidenceReferencesInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_evidence_references"
+            );
+            const connection = yield* database;
+            const references =
+              yield* makeHouseholdEvidenceRepository(connection).readReferences(
+                command
+              );
+            return yield* encodeRecipeImportResult(
+              HouseholdReadEvidenceReferencesResult,
+              references
+            );
+          })
+        ),
+      readEvidenceStage: (
+        untrustedInput: typeof HouseholdReadEvidenceStageInput.Encoded
+      ) =>
+        scoped(
+          Effect.gen(function* readHouseholdEvidenceStage() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadEvidenceStageInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_evidence_stage"
+            );
+            const connection = yield* database;
+            const stage =
+              yield* makeHouseholdEvidenceRepository(connection).readStage(
+                command
+              );
+            return yield* encodeRecipeImportResult(
+              HouseholdReadEvidenceStageResult,
+              stage
+            );
           })
         ),
       readRecipe: (untrustedInput: typeof HouseholdReadRecipeInput.Type) =>

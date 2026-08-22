@@ -128,7 +128,10 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       .filter((path) => path.endsWith(".sql"))
       .toSorted();
 
-    expect(sqlFiles).toEqual(["20260822083458_import_execution/migration.sql"]);
+    expect(sqlFiles).toEqual([
+      "20260822083458_import_execution/migration.sql",
+      "20260822161910_import_execution/migration.sql",
+    ]);
   });
 
   it("provisions Better Auth D1 while Drizzle Kit owns its checked-in migrations", () => {
@@ -410,6 +413,94 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       'Config.string("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID")'
     );
     expect(allSource).not.toMatch(/Cloudflare\.Images|Images\.|sharp/iu);
+  });
+
+  it("wires R2 lifecycle events to a privacy-safe evidence Queue consumer", () => {
+    const stackSource = readRepoFile("./alchemy.run.ts");
+    const eventWorkerSource = readRepoFile(
+      "./apps/api/src/infrastructure/import-evidence-event-queue.ts"
+    );
+    const eventDecoderSource = readRepoFile(
+      "./apps/api/src/features/imports/import-evidence-event.ts"
+    );
+    const requestLayerSource = readRepoFile(
+      "./apps/api/src/features/imports/import-worker-request-layer.ts"
+    );
+    const apiWorkerSource = readRepoFile("./apps/api/src/worker.ts");
+
+    expect(stackSource).toContain("ImportEvidenceEventQueue");
+    expect(stackSource).toContain("Cloudflare.R2.BucketEventNotification(");
+    expect(stackSource).toContain('prefix: "imports/"');
+    expect(stackSource).toContain('"LifecycleDeletion"');
+    expect(eventWorkerSource).toContain(
+      "Cloudflare.Queues.consumeQueueMessages("
+    );
+    expect(eventWorkerSource).toContain("Cloudflare.Queues.EventSourceLive");
+    expect(eventWorkerSource).toContain("MealPlannerDatabase");
+    expect(eventWorkerSource).toContain("Cloudflare.D1.QueryDatabase(");
+    expect(eventWorkerSource).toContain("Cloudflare.D1.QueryDatabaseBinding");
+    expect(eventWorkerSource).toContain("makeD1ImportEvidenceRouteRepository(");
+    expect(eventWorkerSource).toContain("Cloudflare.R2.ReadWriteBucket(");
+    expect(eventWorkerSource).toContain("Cloudflare.Workers.bindWorker(");
+    expect(eventWorkerSource).toContain(
+      "reconcileImportEvidenceQueueMessage(message.body"
+    );
+    expect(eventWorkerSource).toContain(
+      "householdDomain.observeEvidenceReference(encoded)"
+    );
+    expect(eventWorkerSource).toContain(
+      "householdDomain.readEvidenceReferences(input)"
+    );
+    expect(eventDecoderSource).toContain("RegisterImportEvidenceRoute");
+    expect(eventDecoderSource).toContain("HouseholdOrganizationId");
+    expect(eventDecoderSource).toContain(
+      "ports.household.observeEvidenceReference({"
+    );
+    expect(eventDecoderSource).toContain(
+      'metadata["importId"] !== event.importId'
+    );
+    expect(eventDecoderSource).toContain(
+      'metadata["generation"] !== String(event.executionGeneration)'
+    );
+    expect(eventDecoderSource).toContain(
+      'metadata["sha256"] !== reference.sha256'
+    );
+    expect(apiWorkerSource).toContain(
+      "Cloudflare.Queues.WriteQueue(\n      ImportEvidenceEventQueue"
+    );
+    expect(apiWorkerSource).toContain("registerEvidenceRoute: (message) =>");
+    expect(requestLayerSource.indexOf(".registerEvidenceRoute({")).toBeLessThan(
+      requestLayerSource.indexOf(".dispatchAdmission({")
+    );
+  });
+
+  it("commits acquisition and provider evidence only through the household authority", () => {
+    const workflowSource = readRepoFile(
+      "./apps/api/src/features/imports/import.workflow.ts"
+    );
+    const householdRepositorySource = readRepoFile(
+      "./apps/api/src/features/households/evidence/household-evidence.repository.ts"
+    );
+
+    expect(workflowSource).toContain("commitAcquisitionEvidence");
+    expect(workflowSource).toContain(
+      "makeHouseholdImportEvidenceViewRepository"
+    );
+    expect(workflowSource).toContain(
+      "makeHouseholdSpeechTranscriptionRepository"
+    );
+    expect(workflowSource).toContain("makeHouseholdVisualEvidenceRepository");
+    expect(workflowSource).toContain("makeHouseholdCarouselEvidenceRepository");
+    expect(workflowSource).toContain("makeHouseholdRecipeDraftRepository");
+    expect(workflowSource).not.toContain("repository.recordAcquired(");
+    expect(workflowSource).not.toContain("makeD1SpeechTranscriptionRepository");
+    expect(workflowSource).not.toContain("makeD1VisualEvidenceRepository");
+    expect(workflowSource).not.toContain("makeD1CarouselEvidenceRepository");
+    expect(workflowSource).not.toContain("makeD1RecipeDraftRepository");
+
+    expect(householdRepositorySource).not.toMatch(
+      /Cloudflare|fetch\s*\(|\.put\s*\(|\.delete\s*\(|R2|Workflow|Queue|service binding|provider gateway/iu
+    );
   });
 
   it("keeps the pre-Slice-4 batch Queue prototype physically retired", () => {
