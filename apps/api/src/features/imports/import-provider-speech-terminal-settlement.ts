@@ -95,7 +95,7 @@ const readSettled = (
             AND transcription.state = 'failed'
             AND transcription.failure_code = 'outcome_unknown'
             AND transcription.completed_at = checkpoint.completed_at
-           JOIN recipe_imports AS parent
+           JOIN import_execution_runs AS parent
              ON parent.id = checkpoint.import_id
             AND parent.acquisition_generation =
                   checkpoint.acquisition_generation
@@ -202,7 +202,7 @@ const settleBatch = (
             AND transcription.state = 'failed'
             AND transcription.failure_code = 'outcome_unknown'
             AND transcription.completed_at = checkpoint.completed_at
-           JOIN recipe_imports AS parent
+           JOIN import_execution_runs AS parent
              ON parent.id = checkpoint.import_id
             AND parent.acquisition_generation =
                   checkpoint.acquisition_generation
@@ -280,7 +280,7 @@ const settleBatch = (
                    AND transcription.state = 'failed'
                    AND transcription.failure_code = 'outcome_unknown'
                    AND transcription.completed_at = checkpoint.completed_at
-                  JOIN recipe_imports AS parent
+                  JOIN import_execution_runs AS parent
                     ON parent.id = checkpoint.import_id
                    AND parent.acquisition_generation =
                          checkpoint.acquisition_generation

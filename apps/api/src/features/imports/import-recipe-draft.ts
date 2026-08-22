@@ -12,6 +12,7 @@ import type {
 import { Sha256Hex } from "./import-media.model.js";
 import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
+  RecipeDraft,
   RecipeDispatchClaim,
   RecipeDraftRepository,
 } from "./import-recipe-draft.repository.d1.js";
@@ -557,7 +558,8 @@ export interface ProduceRecipeDraftFromEvidenceInput {
     readonly grounding: Effect.Effect<void>;
     readonly preparingReview: Effect.Effect<void>;
     readonly reviewAvailable: (
-      actionId: typeof RecipeImportActionId.Type
+      actionId: typeof RecipeImportActionId.Type,
+      draft: RecipeDraft
     ) => Effect.Effect<void>;
   };
   readonly now: ImportTimestamp;
@@ -611,7 +613,8 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
       yield* input.lifecycle.reviewAvailable(
         Schema.decodeUnknownSync(RecipeImportActionId)(
           claim.draft.extractionFingerprint
-        )
+        ),
+        claim.draft
       );
     }
     return claim.draft;
@@ -705,7 +708,8 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
     yield* input.lifecycle.reviewAvailable(
       Schema.decodeUnknownSync(RecipeImportActionId)(
         draft.extractionFingerprint
-      )
+      ),
+      draft
     );
   }
   return draft;

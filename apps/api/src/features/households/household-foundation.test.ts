@@ -65,7 +65,7 @@ describe("household foundation contracts", () => {
       Effect.runSync(
         requireHouseholdCommandAdmission(
           systemAdmission,
-          "admit_import_workflow"
+          "record_recipe_import_dispatch"
         )
       )
     ).toEqual(systemAdmission);
@@ -102,7 +102,7 @@ describe("household foundation contracts", () => {
     expect(nextGeneration).not.toBe(first);
   });
 
-  it("keeps the future Workflow dispatch payload compact and closed", () => {
+  it("keeps the Workflow dispatch payload compact and closed", () => {
     const payload = {
       executionGeneration: 1,
       importId: "019f9a6b-a4ee-7f8f-b5a3-9dc7aa0c65ea",

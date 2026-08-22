@@ -6,11 +6,11 @@ This plan is the source of truth for moving household-owned product state from
 the shared D1 prototype into one canonical SQLite-backed `HouseholdObject` per
 Better Auth organization.
 
-The foundation tracer from PR #182 and the household meal-plan slice from PR
-#183 are merged. They prove private routing, per-object Drizzle migrations,
-provenance, restart durability, replay receipts, optimistic concurrency, and
-physical cross-household isolation. Foundation hardening remains before the
-next authority cutover.
+The foundation tracer from PR #182, the household meal-plan slice from PR #183,
+and Slice 0 hardening from PR #186 are merged. They prove private routing,
+per-object Drizzle migrations, provenance, restart durability, replay receipts,
+optimistic concurrency, physical cross-household isolation, and object-owned
+authority services.
 
 PR #184 and the former Recipe Bank-only first slice are **superseded**. They
 split state changed by the existing confirmation command across separate
@@ -18,11 +18,9 @@ canonical stores. Do not merge, revive, or adapt that delivery lane. Reuse
 only independently useful findings or tests after revalidating them against
 this plan.
 
-The next product cutover moves the complete import intake, lifecycle, review,
-and Recipe Bank authority together. Red or incomplete work may exist only
-during branch-local implementation. Every preparatory PR merged into `main`
-must compile, pass its tests, and leave its production path unmounted.
-Production routes and writers switch only once, as one cutover.
+Slice 1 moves the complete import intake, lifecycle, review, and Recipe Bank
+authority together. Production routes and writers switch only once, as one
+cutover; the delivered state has no shared-D1 compatibility read or dual write.
 
 ## Architectural goal
 
@@ -440,10 +438,9 @@ the user's explicit approval under the greenfield policy.
 ### Completed: foundation tracer and meal planning
 
 PRs #182 and #183 established one per-organization SQLite DO and moved meal
-plan state, decisions, receipts, and restart/concurrency proof into it. The
-temporary meal-plan recipe source still reads approved recipes from shared D1
-and transfers snapshots over RPC; that seam is deleted by the complete import
-cutover.
+plan state, decisions, receipts, and restart/concurrency proof into it. Slice 1
+deletes the temporary shared-D1 recipe source and makes planning consume the
+local Recipe Bank directly.
 
 ### Completed: Slice 0 foundation hardening
 
@@ -457,7 +454,8 @@ The foundation is hardened without moving another product authority:
   digests, and receipts with deterministic test implementations;
 - thin object host plus feature-first runtime composition;
 - clear Alchemy class lifecycle versus per-object Drizzle migrations;
-- local outbox/alarm port with no external I/O in transactions;
+- local outbox with host-driven post-commit Workflow dispatch and no external
+  I/O in transactions;
 - deterministic Workflow instance identity per import execution generation,
   persisted atomically with its admission and outbox intent;
 - explicit committed-result semantics independent of later dispatch status;
@@ -473,7 +471,7 @@ The foundation is hardened without moving another product authority:
 This slice deletes obsolete foundation shapes rather than preserving adapters.
 It does not change import authority, deploy to Cloudflare, or call providers.
 
-### Slice 1: complete import, review, and Recipe Bank authority cutover
+### Completed: Slice 1 import, review, and Recipe Bank authority cutover
 
 Move these together and switch all public writers/readers in one delivery:
 
@@ -673,7 +671,7 @@ minimal noncanonical operational index for an approved concrete use case.
 
 ## Immediate handoff
 
-The next delivery is **Slice 1: complete import, review, and Recipe Bank
-authority cutover**. Dispatch it as one separately owned slice only after the
-Slice 0 head is green, independently reviewed, and merged. Do not restart the
-superseded Recipe Bank-only session.
+The next authority delivery is **Slice 2: evidence and extraction metadata**.
+It must start from the merged Slice 1 cutover and must not move settlement,
+recovery, batch, or final shared-D1 retirement work from later slices into its
+scope.

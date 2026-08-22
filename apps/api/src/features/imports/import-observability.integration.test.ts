@@ -2,6 +2,8 @@ import { RuntimeContext } from "alchemy";
 import { Effect, Schema, Tracer } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
+import { HouseholdOrganizationId } from "../households/household.contract.js";
+import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
 import {
   PilotBudgetRunId,
   PilotBudgetTimestamp,
@@ -40,6 +42,12 @@ const now = Schema.decodeUnknownSync(PilotBudgetTimestamp)(
 );
 const runId = Schema.decodeUnknownSync(PilotBudgetRunId)(
   "gaia-118:correlation-proof"
+);
+const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
+  "organization-observability-proof"
+);
+const workflowIdentity = Schema.decodeUnknownSync(ImportWorkflowIdentity)(
+  `import-acquisition:v1:${"a".repeat(64)}`
 );
 
 const repository: PilotProviderBudgetRepository = {
@@ -188,15 +196,18 @@ describe("opaque import correlation continuity", () => {
         });
         expect(creations).toBe(1);
         expect(trace).toEqual({ correlationId });
-        yield* createdStarter.ensureStarted(
-          importId,
+        yield* createdStarter.dispatchAdmission({
           executionGeneration,
-          trace
-        );
+          importId,
+          organizationId,
+          trace,
+          workflowIdentity,
+        });
         const input = Schema.decodeUnknownSync(
           Schema.Struct({
             executionGeneration: Schema.Literal(1),
             importId: ImportId,
+            organizationId: HouseholdOrganizationId,
             trace: Schema.Struct({ correlationId: ImportCorrelationId }),
           })
         )(workflowParams);
@@ -277,11 +288,13 @@ describe("opaque import correlation continuity", () => {
     await Effect.runPromise(
       Effect.gen(function* reconcileExistingWorkflow() {
         yield* observeImportQueueReceipt(() => reconciliationCorrelationId);
-        yield* reconciliationStarter.ensureStarted(
-          importId,
+        yield* reconciliationStarter.dispatchAdmission({
           executionGeneration,
-          { correlationId: reconciliationCorrelationId }
-        );
+          importId,
+          organizationId,
+          trace: { correlationId: reconciliationCorrelationId },
+          workflowIdentity,
+        });
       }).pipe(Effect.provideService(ImportObservabilityTraceStore, traceStore))
     );
 

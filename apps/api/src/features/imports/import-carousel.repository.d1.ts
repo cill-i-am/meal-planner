@@ -59,7 +59,7 @@ const D1CompleteBatchResults = Schema.Tuple([
 
 const CarouselParentRow = Schema.Struct({
   acquisition_generation: AcquisitionGeneration,
-  resolved_canonical_source_id: SourceCanonicalId,
+  canonical_source_id: SourceCanonicalId,
   status: Schema.String,
 });
 
@@ -219,7 +219,7 @@ export const makeD1CarouselEvidenceRepository = (
                )
                SELECT parent.id, parent.acquisition_generation, ?, ?,
                       'dispatching', ?, ?
-                 FROM recipe_imports AS parent
+                 FROM import_execution_runs AS parent
                 WHERE parent.id = ? AND parent.acquisition_generation = ?
                   AND parent.status = 'queued'
                ON CONFLICT(import_id, acquisition_generation) DO NOTHING
@@ -327,8 +327,8 @@ export const makeD1CarouselEvidenceRepository = (
       const raw = yield* persistenceEffect(() =>
         binding
           .prepare(
-            `SELECT resolved_canonical_source_id, acquisition_generation, status
-               FROM recipe_imports WHERE id = ?`
+            `SELECT canonical_source_id, acquisition_generation, status
+               FROM import_execution_runs WHERE id = ?`
           )
           .bind(importId)
           .first()
@@ -340,7 +340,7 @@ export const makeD1CarouselEvidenceRepository = (
         onExcessProperty: "ignore",
       })(raw).pipe(Effect.mapError(() => importPersistenceCorrupt()));
       return Option.some({
-        canonicalId: row.resolved_canonical_source_id,
+        canonicalId: row.canonical_source_id,
         generation: row.acquisition_generation,
         status: row.status,
       });

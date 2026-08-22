@@ -221,7 +221,7 @@ export const makeD1SpeechTranscriptionRepository = (
                  source_media_sha256, state, created_at, updated_at
                )
                SELECT id, acquisition_generation, ?, ?, 'dispatching', ?, ?
-                 FROM recipe_imports
+                 FROM import_execution_runs
                 WHERE id = ? AND acquisition_generation = ?
                   AND status = 'acquired'
                   AND json_extract(evidence_references_json, '$[0].kind') = 'original_media'
@@ -241,7 +241,7 @@ export const makeD1SpeechTranscriptionRepository = (
             .prepare(
               `SELECT transcription.*
                  FROM import_transcriptions AS transcription
-                 JOIN recipe_imports AS parent
+                 JOIN import_execution_runs AS parent
                    ON parent.id = transcription.import_id
                   AND parent.acquisition_generation = transcription.acquisition_generation
                 WHERE transcription.import_id = ?
@@ -315,7 +315,7 @@ export const makeD1SpeechTranscriptionRepository = (
             .prepare(
               `SELECT transcription.*
                  FROM import_transcriptions AS transcription
-                 JOIN recipe_imports AS parent
+                 JOIN import_execution_runs AS parent
                    ON parent.id = transcription.import_id
                   AND parent.acquisition_generation = transcription.acquisition_generation
                 WHERE transcription.import_id = ?

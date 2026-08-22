@@ -9,6 +9,7 @@ export type HouseholdActorId = typeof HouseholdActorId.Type;
 
 export const HouseholdSystemPurpose = Schema.Literals([
   "import_workflow_dispatch",
+  "recipe_import_lifecycle_commit",
 ]);
 export type HouseholdSystemPurpose = typeof HouseholdSystemPurpose.Type;
 
@@ -52,13 +53,28 @@ export const makeHouseholdMemberAdmission = (input: {
   });
 
 export const HouseholdCommandPurpose = Schema.Literals([
-  "admit_import_workflow",
+  "admit_recipe_import",
+  "answer_recipe_import_action",
   "approve_meal_plan",
+  "cancel_recipe_import",
+  "commit_recipe_import_draft",
   "create_meal_plan",
+  "create_meal_plan_from_recipe_bank",
   "ensure_household",
+  "confirm_recipe_import_action",
+  "list_recipe_bank",
+  "read_recipe",
+  "read_recipe_import",
+  "read_recipe_import_action",
+  "read_recipe_import_execution",
+  "read_recipe_import_timeline",
+  "record_recipe_import_dispatch",
   "read_meal_plan",
   "reject_meal_plan",
+  "resolve_recipe_import_source",
   "swap_meal_plan",
+  "swap_meal_plan_from_recipe_bank",
+  "transition_recipe_import_lifecycle",
 ]);
 export type HouseholdCommandPurpose = typeof HouseholdCommandPurpose.Type;
 
@@ -70,12 +86,23 @@ export type HouseholdAuthorizationFailure =
   typeof HouseholdAuthorizationFailure.Type;
 
 const memberPurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
+  "admit_recipe_import",
+  "answer_recipe_import_action",
   "approve_meal_plan",
+  "cancel_recipe_import",
   "create_meal_plan",
+  "create_meal_plan_from_recipe_bank",
   "ensure_household",
+  "confirm_recipe_import_action",
+  "list_recipe_bank",
+  "read_recipe",
+  "read_recipe_import",
+  "read_recipe_import_action",
+  "read_recipe_import_timeline",
   "read_meal_plan",
   "reject_meal_plan",
   "swap_meal_plan",
+  "swap_meal_plan_from_recipe_bank",
 ]);
 
 export const requireHouseholdCommandAdmission = (
@@ -85,8 +112,13 @@ export const requireHouseholdCommandAdmission = (
   const permitted =
     admission.actor._tag === "Member"
       ? memberPurposes.has(purpose)
-      : admission.actor.purpose === "import_workflow_dispatch" &&
-        purpose === "admit_import_workflow";
+      : (admission.actor.purpose === "recipe_import_lifecycle_commit" &&
+          (purpose === "commit_recipe_import_draft" ||
+            purpose === "read_recipe_import_execution" ||
+            purpose === "resolve_recipe_import_source" ||
+            purpose === "transition_recipe_import_lifecycle")) ||
+        (admission.actor.purpose === "import_workflow_dispatch" &&
+          purpose === "record_recipe_import_dispatch");
   return permitted
     ? Effect.succeed(admission)
     : Effect.fail(HouseholdAuthorizationFailure.make({}));

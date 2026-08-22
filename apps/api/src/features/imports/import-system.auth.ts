@@ -1,6 +1,6 @@
 import { Context, Effect, Redacted } from "effect";
 
-import type { ImportPrincipal } from "./import-intent.js";
+import type { ImportPrincipal } from "./import-system-principal.js";
 import { unauthorizedImportCaller } from "./import.errors.js";
 import type { UnauthorizedImportCaller } from "./import.errors.js";
 

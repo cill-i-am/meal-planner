@@ -20,6 +20,7 @@ export interface CanonicalSourceIdentity {
 
 export interface VideoIdentity {
   readonly _tag: "VideoIdentity";
+  readonly canonicalUrl?: ValidatedVideoUrl;
   readonly identity: CanonicalSourceIdentity;
   /** Ephemeral validated locator. It must never be persisted or logged. */
   readonly videoUrl: ValidatedVideoUrl;
@@ -27,6 +28,7 @@ export interface VideoIdentity {
 
 export interface UnsupportedIdentity {
   readonly _tag: "UnsupportedIdentity";
+  readonly canonicalUrl?: ValidatedVideoUrl;
   readonly identity: CanonicalSourceIdentity;
 }
 

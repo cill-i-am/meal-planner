@@ -342,7 +342,7 @@ const readImportEvidence = (database: AnyD1Database, importId: ImportId) =>
                 visual.state AS visual_state,
                 visual.manifest_sha256 AS visual_manifest_sha256,
                 visual.source_media_sha256 AS visual_source_sha256
-           FROM recipe_imports AS parent
+           FROM import_execution_runs AS parent
            LEFT JOIN import_transcriptions AS transcript
              ON transcript.import_id = parent.id
             AND transcript.acquisition_generation =

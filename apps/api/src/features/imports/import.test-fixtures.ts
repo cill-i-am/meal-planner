@@ -1,22 +1,14 @@
-import {
-  CanonicalTikTokUrl,
-  CreateRecipeImportIntentRequest,
-  IdempotencyKey,
-  RecipeImportIntentId,
-  RecipeImportPrincipal,
-} from "@meal-planner/recipe-import-api";
+import { RecipeImportPrincipal } from "@meal-planner/recipe-import-api";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Redacted, Schema } from "effect";
 
 import { AuthPrincipalResolutionError } from "../auth/auth.principal.js";
 import type { AuthPrincipalResolver } from "../auth/auth.principal.js";
-import {
-  ImportIntentIdGenerator,
-  ImportPrincipal,
-  makeImportIntentApplication,
-} from "./import-intent.js";
+import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
+import type { D1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import type { AcquisitionGeneration } from "./import-media.model.js";
 import { ImportTraceContext } from "./import-observability.js";
+import { ImportPrincipal } from "./import-system-principal.js";
 import { makeImportSystemAuthorizer } from "./import-system.auth.js";
 import { ImportTimestamp } from "./import.contracts.js";
 import type {
@@ -24,8 +16,6 @@ import type {
   ImportView,
   SourceCanonicalId,
 } from "./import.contracts.js";
-import { makeD1ImportRepository } from "./import.repository.d1.js";
-import type { ImportIntentRepository } from "./import.repository.js";
 
 export const TestImportPrincipal = Schema.decodeUnknownSync(ImportPrincipal)({
   actorId: "a".repeat(64),
@@ -59,43 +49,19 @@ export const makeTestAuthPrincipalResolver = (
 export const admitResolvedTestImport = (input: {
   readonly canonicalId: SourceCanonicalId;
   readonly importId: ImportId;
-  readonly repository: ImportIntentRepository;
+  readonly repository: D1ImportExecutionRepository;
   readonly sourceKind: "carousel" | "video";
   readonly trace?: ImportTraceContext;
 }) => {
-  const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
-    input.importId
-  );
-  const canonicalUrl = Schema.decodeUnknownSync(CanonicalTikTokUrl)(
-    `https://www.tiktok.com/@cook/${input.sourceKind === "carousel" ? "photo" : "video"}/${input.canonicalId}`
-  );
-  const application = makeImportIntentApplication(
-    input.repository,
-    { ensureStarted: () => Effect.succeed("created" as const) },
-    input.trace ?? TestImportTrace
-  );
-  const request = Schema.decodeUnknownSync(CreateRecipeImportIntentRequest)({
-    source: { kind: "tiktok", url: canonicalUrl },
-  });
-  const idempotencyKey = Schema.decodeUnknownSync(IdempotencyKey)(
-    `test-import-${intentId}`
-  );
-
-  return Effect.gen(function* admitResolvedFixture() {
-    yield* application
-      .admit(TestImportPrincipal, request, idempotencyKey)
-      .pipe(
-        Effect.provideService(
-          ImportIntentIdGenerator,
-          ImportIntentIdGenerator.of({ next: Effect.succeed(intentId) })
-        )
-      );
-    return yield* application.resolveSource(TestImportPrincipal, {
-      canonicalSourceId: input.canonicalId,
-      canonicalUrl,
-      intentId,
-      sourceKind: input.sourceKind,
-    });
+  const trace = input.trace ?? TestImportTrace;
+  return input.repository.ensureRun({
+    canonicalSourceId: input.canonicalId,
+    correlationId: trace.correlationId,
+    importId: input.importId,
+    sourceType: input.sourceKind,
+    startedAt: Schema.decodeUnknownSync(ImportTimestamp)(
+      "2026-07-21T09:59:00.000Z"
+    ),
   });
 };
 
@@ -111,7 +77,7 @@ export const seedResolvedTestImportExecution = async (input: {
   readonly updatedAt: ImportTimestamp;
 }): Promise<void> => {
   const updatedAt = Schema.encodeSync(ImportTimestamp)(input.updatedAt);
-  const repository = makeD1ImportRepository(input.database, () =>
+  const repository = makeD1ImportExecutionRepository(input.database, () =>
     Date.parse(updatedAt)
   );
   const admission = {
@@ -132,7 +98,7 @@ export const seedResolvedTestImportExecution = async (input: {
     "recovery" in input.status ? input.status.recovery : null;
   await input.database
     .prepare(
-      `UPDATE recipe_imports
+      `UPDATE import_execution_runs
           SET acquisition_generation = ?, evidence_references_json = ?,
               recovery_action = ?, status = ?, status_code = ?, updated_at = ?
         WHERE id = ?`

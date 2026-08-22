@@ -12,6 +12,7 @@ import {
   runPilotProviderDispatch,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
 import type {
   AcquisitionBucketLike,
@@ -53,7 +54,6 @@ import {
   SourceCanonicalId,
 } from "./import.contracts.js";
 import { importPersistenceUnavailable } from "./import.errors.js";
-import { makeD1ImportRepository } from "./import.repository.d1.js";
 import { admitResolvedTestImport } from "./import.test-fixtures.js";
 
 const SpeechTranscriptionFailureSchema = Schema.Struct({
@@ -286,8 +286,9 @@ const makeAcquiredImport = async ({
   readonly fixtureCanonicalId?: SourceCanonicalId;
   readonly fixtureImportId?: ImportId;
 } = {}) => {
-  const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase, () =>
-    Date.parse("2026-07-21T09:59:00.000Z")
+  const repository = makeD1ImportExecutionRepository(
+    testEnv.MealPlannerDatabase,
+    () => Date.parse("2026-07-21T09:59:00.000Z")
   );
   await Effect.runPromise(
     admitResolvedTestImport({

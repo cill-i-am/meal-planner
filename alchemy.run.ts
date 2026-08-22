@@ -5,10 +5,6 @@ import * as Effect from "effect/Effect";
 import HouseholdDomainWorkerLive from "./apps/api/src/features/households/household-domain-worker.js";
 import TikTokMediaContainerLive from "./apps/api/src/features/imports/import-media-container.runtime.js";
 import { EvidenceRetentionSeconds } from "./apps/api/src/features/imports/import-media.model.js";
-import {
-  ImportBatchDeadLetterQueue,
-  ImportBatchQueue,
-} from "./apps/api/src/infrastructure/import-batch-queue.js";
 import { ImportEvidenceBucket } from "./apps/api/src/infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "./apps/api/src/infrastructure/import-provider-gateway.js";
 import { MealPlannerAuthDatabase } from "./apps/api/src/infrastructure/meal-planner-auth-database.js";
@@ -25,8 +21,6 @@ export default Alchemy.Stack(
     const database = yield* MealPlannerDatabase;
     const authDatabase = yield* MealPlannerAuthDatabase;
     const evidenceBucket = yield* ImportEvidenceBucket;
-    const importBatchQueue = yield* ImportBatchQueue;
-    const importBatchDeadLetterQueue = yield* ImportBatchDeadLetterQueue;
     const importProviderGateway = yield* ImportProviderGateway;
     const api = yield* MealPlannerApi;
     const website = yield* Cloudflare.Website.Vite("MealPlannerWebsite", {
@@ -54,8 +48,6 @@ export default Alchemy.Stack(
       databaseName: database.databaseName,
       evidenceBucketName: evidenceBucket.bucketName,
       evidenceRetentionSeconds: EvidenceRetentionSeconds,
-      importBatchDeadLetterQueueName: importBatchDeadLetterQueue.queueName,
-      importBatchQueueName: importBatchQueue.queueName,
       importProviderGatewayId: importProviderGateway.gatewayId,
       websiteUrl: website.url,
       websiteWorkerName: website.workerName,

@@ -1,163 +1,137 @@
 # Recipe import intent architecture
 
-## Authority
+## Canonical authority
 
-`recipe_imports` is the durable `RecipeImportIntent` aggregate and the only
-authority for the user-visible import lifecycle. D1 owns intent state, history,
-review state, recipes, execution fencing, and recovery ledgers. Cloudflare
-Workflow executes work but may advance an import only through guarded intent
-commands.
+One per-organization SQLite-backed `HouseholdObject` is the only authority for
+the moved recipe-import product state. It owns:
 
-`import_recipe_executor_terminal_checkpoints` is a separate immutable
-operational fact. It records the import, acquisition generation, ownership,
-evidence references, and checkpoint time needed for replay and recovery. It
-does not store or project a second public status. Provider terminal settlement
-records that checkpoint and advances the intent through the canonical reducer
-and public history in one atomic operation.
+- admission, import identity, idempotency, and deterministic Workflow identity;
+- submitted-source ownership, canonical-source deduplication, redirects, and
+  execution-generation fences;
+- public lifecycle, version, timeline, active review action, answers,
+  corrections, tags, and transitions;
+- cancellation, approval, publication, recipe identity and history; and
+- mutation and dispatch receipts.
 
-## Household tenancy and organization identity
+The same household database also owns meal plans and the local Recipe Bank.
+Meal planning reads bounded pages of approved recipes directly from that local
+capability. There is no shared-D1 recipe projection, recipe-source gateway,
+dual write, legacy read, or compatibility adapter.
 
-All current recipe-import households share the single `MealPlannerDatabase` D1
-database. `household_scope_id` scopes the canonical aggregate and its import
-requests, idempotency records, history, actions, recipes, deduplication, and
-safe not-found behavior. This slice does not move those tables into the private
-household Durable Object; that object currently owns meal-plan state plus
-unmounted foundation preparation for the later import cutover.
-`ImportMediaAcquisitionObject` remains a noncanonical execution/transport
-coordinator addressed by the globally random `importId`. Every temporary
-artifact command is Schema-fenced by that import ID and its acquisition
-execution generation. The coordinator transports private media and artifacts
-but does not use its own Durable Object storage: durable import lifecycle state
-stays in D1, while private artifacts stay in R2. It is not a tenancy,
-household-storage, lifecycle, recovery, or product-authority boundary.
+The shared `MealPlannerDatabase` D1 is noncanonical for this moved state. It
+currently retains only execution/evidence records that are scheduled for later
+migration slices: acquisition runs and terminal checkpoints, transcription,
+visual/carousel evidence, and extraction records. Those records cannot publish
+a recipe, answer a review, change public lifecycle state, or serve a public
+Recipe Bank read.
 
-Better Auth is the global identity and organization control plane. Its dedicated
-D1 database contains identity, session, organization, invitation, and membership
-tables only; recipe-import domain state remains in `MealPlannerDatabase`.
-Email/password sessions use same-origin HttpOnly cookies. An application request
-resolves the Better Auth session, reads its active organization, and then
-requires an explicit matching membership row before creating the typed Effect
-principal. Possession or manipulation of `activeOrganizationId` alone grants no
-authority.
+`ImportMediaAcquisitionObject` remains a noncanonical, generation-fenced
+execution coordinator. It transports temporary media and artifacts but is not
+a tenancy, lifecycle, review, Recipe Bank, or recovery authority.
 
-The public Website Worker forwards auth and `/v1` application requests to the
-private API Worker through a Cloudflare service binding without reconstructing
-the request or response. The browser calls the generated
-`RecipeImportApiClient` at its own origin; native cookie handling supplies the
-session, and no bearer credential, actor ID, or household-scope value is exposed
-to browser code.
+## Authorization and private routing
 
-## Admission, ownership, and duplicate handling
+Better Auth D1 remains the global identity and organization control plane. The
+public API resolves the same-origin session, reads the active organization, and
+proves a matching membership through Better Auth's public API before creating
+an admitted member command. Possession of an active organization identifier is
+not sufficient authorization.
 
-Admission creates the intent immediately, before source resolution. One D1
-transaction inserts:
+The API then calls the private `HouseholdDomainWorker` through a service
+binding. The Worker and `HouseholdObject` both Schema-decode a closed command.
+The private Worker derives the object name through the sole privacy-safe
+locator; callers cannot choose an object name or household route. Member
+commands carry a one-way actor digest. System commands carry one enumerated
+purpose, either Workflow dispatch bookkeeping or recipe-import lifecycle
+commit. Each purpose admits only its named operations.
 
-- the unresolved `processing` / `resolving_source` intent;
-- its household-scoped idempotency record; and
-- version 1 `intent_admitted` history.
+The object verifies the persisted organization provenance before every read or
+mutation. Cross-household access fails closed without exposing whether the
+other household owns a matching import, source, action, or recipe.
 
-The caller therefore receives an addressable intent as soon as the request is
-accepted. An exact `(household, Idempotency-Key)` replay returns that result.
-Reusing a key for a different canonical request is a conflict.
+## Admission and Workflow dispatch
 
-The configured private-auth principal provides a stable opaque household scope
-and actor identity. Bearer values are redacted and never persisted. A resource
-owned by another household is indistinguishable from a missing resource for
-reads and mutations, and cannot participate in deduplication.
+Admission is one local Drizzle transaction. Before any Workflow call it commits:
 
-Source resolution is asynchronous. A successful resolver stores a sanitized
-canonical HTTPS source and media kind, advances the intent to
-`acquiring_media`, claims the next execution generation, appends
-`source_resolved`, and then idempotently ensures the deterministic Workflow
-instance. A start failure leaves the durable state available to the bounded
-stalled-start reconciler.
+- a new unresolved `processing` intent and version-one timeline event;
+- the household-local idempotency request fingerprint;
+- a deterministic generation-one Workflow instance ID;
+- an immutable admission result and dispatch ID; and
+- a compact local outbox intent.
 
-Within one household, at most one `processing`, `requires_action`, or
-`succeeded` intent owns a resolved canonical source. Concurrent resolution has
-one database winner. Each loser becomes a terminal `redirected` intent pointing
-to the same-household owner and never starts an executor. Cross-household
-matches do not redirect or reveal an identifier. Failed and cancelled intents
-release canonical-source ownership; their original idempotency keys still
-replay their original results.
+An exact idempotency replay returns the committed result. Reusing the key for a
+different request is a conflict. The object owns authoritative time, generated
+identities, canonical encoding, digests, versions, ordinals, and receipts;
+callers cannot supply them.
 
-The submitted URL is private execution input. Before resolution, public state
-says only that source resolution is pending. Raw and redirect URLs never enter
-public errors, history, logs, or traces.
+The host attempts Workflow dispatch only after commit. Each retry reconciles
+the same persisted Workflow identity and records `started` or `unavailable` in
+the household outbox. A dispatch failure never rolls back or rewrites the
+committed domain result. Retrying the outbox cannot duplicate admission.
 
-## Public lifecycle
+No D1, R2, `fetch`, Workflow, Queue, service binding, provider, container, or
+other network I/O occurs inside a household transaction.
 
-Public statuses are exactly:
+## Source ownership and execution
 
-- `processing`
-- `requires_action`
-- `succeeded`
-- `failed`
-- `cancelled`
-- `redirected`
+The Workflow reads its admitted execution view through the private household
+boundary. It receives only the stored source input, import ID, organization,
+and expected generation. Source resolution commits the sanitized canonical URL,
+media kind, next stage, and mutation receipt in one transaction.
 
-Processing stages progress monotonically through `resolving_source`,
-`acquiring_media`, `analyzing_evidence`, `extracting_recipe`,
-`grounding_recipe`, `preparing_review`, and `finalizing_recipe`.
-`analyzing_evidence` exposes independent speech and visual progress. Video
-completes both; carousel skips speech and completes visuals.
+A partial unique index grants one live owner of a canonical source within a
+household. Concurrent contenders therefore have one deterministic winner; a
+loser becomes `redirected` to that same-household winner. Failed or cancelled
+imports release live-source ownership. Identical sources in different objects
+are physically isolated and reveal nothing across households.
 
-Meaningful stage, component, action, recovery, or terminal changes increment
-the intent version exactly once and append exactly one public history event.
-Heartbeats, attempts, and private checkpoints do not change the public version.
-Safe activity is `working` or `retrying`; `nextAttemptAt` is present only when
-the executor has a truthful retry instant.
+Every internal lifecycle or draft command carries a closed system purpose, an
+expected execution generation, and authority-derived mutation identity where
+the command is replayable. Stale generations and stale public/action versions
+fail without partial writes or provider calls. Terminal state cannot be
+revived.
 
-Every executor command carries an explicit branded execution generation,
-deterministic correlation identity, stable mutation identity, and command
-digest. Missing or invalid workflow input is rejected before work begins.
-Exact replays preserve timestamps and versions. Stale generations and
-superseded milestones cannot call providers or regress state. Terminal intents
-cannot be revived.
+## Public lifecycle and review
 
-The household foundation now defines the future deterministic, privacy-safe
-Workflow identity for one import intent execution generation and persists it
-atomically with future admission/outbox state. That path is not mounted yet;
-the current D1 admission and Workflow start remain authoritative until the
-complete import/review/Recipe Bank cutover replaces them in one slice.
+Public statuses remain `processing`, `requires_action`, `succeeded`, `failed`,
+`cancelled`, and `redirected`. Processing progresses through
+`resolving_source`, `acquiring_media`, `analyzing_evidence`,
+`extracting_recipe`, `grounding_recipe`, `preparing_review`, and
+`finalizing_recipe`.
 
-Three generation values protect different boundaries:
+The household stores the admitted draft snapshot needed for active review and
+publication. It exposes only the privacy-safe recipe projection, questions,
+answers, tags, blockers, available actions, public lifecycle, and timeline.
+Provider payloads, evidence contents, storage keys, actor material, submitted
+URLs, and mutation provenance remain private.
 
-- `intentVersion` provides public optimistic concurrency;
-- `executionGeneration` fences Workflow execution; and
-- `acquisitionGeneration` fences provider ownership and evidence.
+Answer, cancellation, and confirmation mutations bind their command digest to
+a stable local receipt. An exact replay returns the original result; the same
+mutation identity with changed input is rejected. Cancel-versus-confirm and
+other concurrent terminal races serialize in the same SQLite authority, so
+only one legal terminal result commits.
 
-Expected executor failures map exhaustively to stable provider-neutral codes,
-messages, retryability, and recovery choices. Raw exceptions, provider codes,
-storage keys, transcripts, evidence, and source URLs remain private.
+`confirm-import-review` is one Drizzle transaction. It verifies the active
+action and optimistic versions, approves the review, completes the action,
+publishes the canonical Recipe Bank row, advances through `finalizing_recipe`
+to `succeeded`, appends both timeline facts, and stores the replay receipt.
+Failure before commit leaves none of those facts behind.
 
-Cancellation is legal only from `processing` or `requires_action` and requires
-the expected intent version plus an idempotency key. D1 commits cancellation and
-history before best-effort Workflow termination. The terminal fence prevents
-later executor work even when termination fails.
+## Recipe Bank pagination
 
-## Review actions and recipes
+Recipe Bank iteration is ordered by stable recipe ID and uses an exclusive
+cursor. Every page is bounded independently by item count and encoded byte
+size. Confirmation rejects any encoded public or planning recipe at 500,000
+bytes, below planning's 524,288-byte page budget, so an approved row cannot
+poison iteration. Meal planning consumes pages through the local capability
+rather than loading an unbounded snapshot. There is no product-level
+128-recipe ceiling.
 
-At most one review action is active. The action contains its safe editable
-recipe projection, questions, answers, planning tags, blockers, and independent
-action version. Evidence, extraction fingerprints, provider metadata, actors,
-and mutation provenance are never exposed.
+## Public API
 
-Answer and confirmation commands are separately idempotent. Each compares the
-active action version and commits the intent, review data, history, provenance,
-and a complete non-null mutation receipt atomically. Exact replays return the
-original result; changed commands under the same key conflict; stale commands
-leave no partial state.
-
-Confirmation commits `processing` / `finalizing_recipe`, approval, and
-`succeeded` in one transaction. The succeeded intent references its recipe by
-the branded import identifier. `GET /v1/recipes/:recipeId` household-scopes
-through that intent and projects the approved review.
-
-## HTTP boundary
-
-`@meal-planner/recipe-import-api` owns the shared Effect Schema, Effect HttpApi,
-generated client, OpenAPI metadata, and safe Problem Details contract. Its
-authenticated surface is:
+`@meal-planner/recipe-import-api` remains the shared Effect Schema, HttpApi,
+generated client, OpenAPI, and privacy-safe Problem Details contract. The
+authenticated surface supports:
 
 - create and read a recipe-import intent;
 - read its timeline;
@@ -165,52 +139,28 @@ authenticated surface is:
 - cancel an active intent; and
 - read the recipe produced by a succeeded intent.
 
-Authentication establishes the typed household principal before request-body
-decoding. Schema failures and typed domain failures map exhaustively to safe
-Problem Details. The production Worker composes this API with explicitly named
-health, batch, operator-carousel, and provider-settlement routes, followed by
-one final 404 handler. Batch routes and provider terminal settlement authorize
-one explicitly configured system principal. Operator-carousel remains
-household-principal scoped; associating it with operational routes does not
-grant it system authority. Better Auth organization membership cannot control
-either system-only surface.
+Public requests never accept an organization ID, actor ID, authoritative time,
+result ID, version, ordinal, receipt, Workflow ID, or object name. Expected
+domain failures are closed and tagged at the private boundary, then exhaustively
+mapped to stable public errors.
 
-The TanStack Start application calls the generated client from the browser
-through an injected Effect Layer at the current origin. TanStack Query owns
-browser reactivity and polling; TanStack Form owns mutations. The browser never
-receives a private bearer token or constructs a parallel handwritten API
-contract.
+## Migrations and proof
 
-## Persistence and recovery
+Drizzle Kit owns the checked-in per-object SQLite migration under
+`apps/api/household-migrations`. It contains the household import, timeline,
+review, Recipe Bank, receipt, admission, and outbox tables. Alchemy owns the
+Durable Object class/namespace lifecycle but does not replace database
+migrations.
 
-The fresh D1 baseline creates only the canonical aggregate and its operational
-children: request idempotency, append-only public history, execution and
-provider checkpoints, recovery-attempt ledgers, evidence references, review
-records, receipts, and guards. Foreign keys, unique indexes, and immutable
-triggers are installed directly on an empty database.
+The fresh D1 migration under `apps/api/migrations` contains only the remaining
+operational execution/evidence schema. The former D1 import requests, public
+intent/history, review, Recipe Bank, batch, and moved receipt tables are deleted
+rather than migrated or backfilled. Structural tests reject reintroducing their
+production repositories or SQL tables.
 
-`recipe_import_intent_history` records meaningful public facts with immutable
-identity `(intent_id, intent_version)`. Timeline reads are pure household-scoped
-projections and exclude mutation provenance, actor hashes, providers, storage
-keys, transcripts, and evidence.
-
-The stalled-start reconciler scans only `processing` / `acquiring_media` owners,
-rechecks the exact execution fence, and idempotently ensures that Workflow
-generation. Post-acquisition journals and provider recovery ledgers retain the
-checkpoints required to continue safely after retries. Immutable terminal
-checkpoints make exact provider settlement replay a no-op while preserving
-owner, generation, evidence, and recovery ancestry.
-
-Private evidence is stored in short-retention R2. D1 stores durable control
-state and safe references, not provider payloads, media, credentials, or raw
-source material.
-
-## Proof boundary
-
-Contract tests cover the Effect schemas and generated client. Node tests cover
-pure reducers and services. Workerd tests exercise the real local D1 and R2
-bindings, migrations, constraints, races, receipts, household isolation, and
-mounted HTTP flow without calling external providers. Workflow tests prove
-generation fencing, checkpoints, retries, and recovery. Browser acceptance
-covers the responsive submit, processing, action, confirmation, success,
-failure, redirect, and cancellation states through canonical `/v1` requests.
+Provider-free Workerd tests exercise the actual Website/API/private-Worker/
+`HouseholdObject` composition with Better Auth membership, first activation,
+restart, repeated migrations, cross-household isolation, admission through
+confirmation and planning, replay/collision behavior, source and terminal
+races, post-commit dispatch failure, and pagination beyond 128 recipes. These
+tests do not claim provider, deployment, cloud migration, or production proof.

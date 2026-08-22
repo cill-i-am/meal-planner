@@ -644,16 +644,16 @@ describe("pilot provider stage budget", () => {
       "`budget_cap_micro_usd` = 10000000"
     );
     expect(byName.get("import_transcriptions")).toContain(
-      "`state` = 'dispatching'"
+      "\"state\" = 'dispatching'"
     );
     expect(byName.get("import_transcriptions")).toContain(
-      "`estimated_cost_micro_usd` IS NULL"
+      '"estimated_cost_micro_usd" IS NULL'
     );
     expect(byName.get("import_visual_evidence")).toContain(
-      "`estimated_cost_micro_usd` IS NULL"
+      '"estimated_cost_micro_usd" IS NULL'
     );
     expect(byName.get("import_recipe_extractions")).toContain(
-      "`estimated_cost_micro_usd` IS NULL"
+      '"estimated_cost_micro_usd" IS NULL'
     );
     const authorityRows = await testEnv.MealPlannerDatabase.prepare(
       "SELECT runtime_stage FROM pilot_provider_stage_budget"

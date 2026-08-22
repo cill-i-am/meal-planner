@@ -116,6 +116,7 @@ describe("household foundation structural boundaries", () => {
       [
         "foundation/import-workflow-admission.repository.ts",
         "household-meal-plan.repository.ts",
+        "recipe-import/household-recipe-import.repository.ts",
       ].toSorted()
     );
     for (const { path: sourcePath, source } of transactionOwners) {
@@ -130,15 +131,19 @@ describe("household foundation structural boundaries", () => {
           sourcePath === "foundation/import-workflow-admission.repository.ts"
       )?.source ?? "";
     expect(repository).toContain("database.transaction(");
-    expect(repository).toContain(".insert(householdImportWorkflowAdmissions)");
-    expect(repository).toContain(".insert(householdOutbox)");
+    expect(repository).toContain(".update(householdOutbox)");
 
-    const operation = await read(
-      path.join(householdRoot, "foundation/admit-import-workflow.ts")
+    const recipeImportRepository =
+      transactionOwners.find(
+        ({ path: sourcePath }) =>
+          sourcePath === "recipe-import/household-recipe-import.repository.ts"
+      )?.source ?? "";
+    expect(recipeImportRepository).toContain("confirmRecipeImportAction");
+    expect(recipeImportRepository).toContain(
+      ".insert(householdImportWorkflowAdmissions)"
     );
-    expect(operation.indexOf("repository.persist(")).toBeLessThan(
-      operation.indexOf("alarm\n      .schedule(")
-    );
+    expect(recipeImportRepository).toContain(".insert(householdRecipes)");
+    expect(recipeImportRepository).toContain(".insert(householdOutbox)");
   });
 
   it("keeps the Alchemy host thin and SQLite evolution migration-owned", async () => {

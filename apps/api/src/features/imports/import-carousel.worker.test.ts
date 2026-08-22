@@ -1,12 +1,9 @@
-import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { applyD1Migrations, env } from "cloudflare:test";
 import { DateTime, Effect, Schema } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { makeDeterministicTikTokCarouselAdapter } from "./import-carousel-adapter.fake.js";
 import type { TikTokCarouselAdapterFailure } from "./import-carousel-adapter.js";
-import { OperatorCarouselBundle } from "./import-carousel-operator.js";
-import { makeOperatorCarouselImportService } from "./import-carousel-operator.service.js";
 import {
   CarouselEvidenceManifestDocument,
   carouselImageObjectKey,
@@ -14,7 +11,7 @@ import {
   importTikTokCarouselToRecipeDraft,
 } from "./import-carousel.js";
 import { makeD1CarouselEvidenceRepository } from "./import-carousel.repository.d1.js";
-import { makeImportIntentApplication } from "./import-intent.js";
+import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import type {
   AcquisitionBucketLike,
   R2ObjectBodyLike,
@@ -36,25 +33,16 @@ import type {
   WorkerTestR2ObjectBody,
 } from "./import-worker-test-environment.js";
 import {
-  IdempotencyKey,
   ImportId,
   ImportTimestamp,
   SourceCanonicalId,
   SourceUrl,
 } from "./import.contracts.js";
-import { makeD1ImportRepository } from "./import.repository.d1.js";
-import {
-  admitResolvedTestImport,
-  TestImportPrincipal,
-  TestImportTrace,
-} from "./import.test-fixtures.js";
-import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
+import { admitResolvedTestImport } from "./import.test-fixtures.js";
 
 const testEnv: ImportWorkerR2TestEnvironment = env;
 
-const decodeIntentId = Schema.decodeUnknownSync(RecipeImportIntentId);
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
-const decodeIdempotencyKey = Schema.decodeUnknownSync(IdempotencyKey);
 const decodeTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
 const decodeCanonicalId = Schema.decodeUnknownSync(SourceCanonicalId);
 const decodeSourceUrl = Schema.decodeUnknownSync(SourceUrl);
@@ -126,7 +114,9 @@ const acquisitionBucket = (): AcquisitionBucketLike => ({
 const seedQueuedImport = async (identity: string) => {
   const importId = decodeImportId(`018f47ad-91aa-7c35-b6fe-${identity}`);
   const canonicalId = decodeCanonicalId(`752${identity}`);
-  const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
+  const repository = makeD1ImportExecutionRepository(
+    testEnv.MealPlannerDatabase
+  );
   await Effect.runPromise(
     admitResolvedTestImport({
       canonicalId,
@@ -293,14 +283,6 @@ const recipeFixture = (input: RecipeEvidenceAssembly) => {
     },
     yield: unresolvedRecipeFact("not stated"),
   };
-};
-
-const base64 = (bytes: Uint8Array) => {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCodePoint(byte);
-  }
-  return btoa(binary);
 };
 
 const runTracer = async (
@@ -587,171 +569,5 @@ describe("provider-free TikTok carousel tracer", () => {
     });
     expect(tracer.visual.calls).toEqual([]);
     expect(tracer.recipe.calls).toEqual([]);
-  });
-
-  it("admits, stages, and starts one canonical operator intent exactly once", async () => {
-    const identity = "000000000306";
-    const intentId = decodeIntentId(`018f47ad-91aa-7c35-b6fe-${identity}`);
-    const canonicalId = decodeCanonicalId(`752${identity}`);
-    const output = completeAdapterOutput(canonicalId);
-    const repository = makeD1ImportRepository(testEnv.MealPlannerDatabase);
-    const stageCalls: unknown[] = [];
-    const starterCalls: unknown[][] = [];
-    let providerCalls = 0;
-    const application = makeImportIntentApplication(
-      repository,
-      {
-        ensureStarted: (startedImportId, executionGeneration, startedTrace) =>
-          Effect.sync(() => {
-            starterCalls.push([
-              startedImportId,
-              executionGeneration,
-              startedTrace,
-            ]);
-            return "created" as const;
-          }),
-      },
-      TestImportTrace
-    );
-    const service = makeOperatorCarouselImportService({
-      application,
-      identityResolver: makeTikTokCanonicalSourceIdentityResolver(() => {
-        providerCalls += 1;
-        return Promise.reject(new Error("Provider must not be used"));
-      }),
-      newIntentId: () => intentId,
-      now: () => Schema.encodeSync(ImportTimestamp)(completedAt),
-      pipeline: {
-        stage: (input) =>
-          Effect.sync(() => {
-            stageCalls.push(input);
-          }),
-      },
-    });
-    const bundle = Schema.decodeUnknownSync(OperatorCarouselBundle)({
-      declaredPageCount: 2,
-      images: output.images.map(
-        ({ bytes, height, orderIndex, sha256, width }) => ({
-          height,
-          jpegBase64: base64(bytes),
-          orderIndex,
-          sha256,
-          width,
-        })
-      ),
-      source: {
-        kind: "tiktok",
-        url: `${descriptorFor(canonicalId).sourceUrl}?tracking=discard`,
-      },
-    });
-
-    const idempotencyKey = decodeIdempotencyKey("operator-306");
-    const admitted = await Effect.runPromise(
-      service.admit(TestImportPrincipal, bundle, idempotencyKey)
-    );
-    const replay = await Effect.runPromise(
-      service.admit(TestImportPrincipal, bundle, idempotencyKey)
-    );
-
-    expect(admitted).toMatchObject({
-      id: intentId,
-      intentVersion: 2,
-      processing: { sourceKind: "carousel", type: "acquiring_media" },
-      source: { resolution: "resolved" },
-      status: "processing",
-    });
-    expect(replay).toEqual(admitted);
-    expect(stageCalls).toEqual([
-      expect.objectContaining({
-        canonicalId,
-        declaredPageCount: 2,
-        importId: intentId,
-        sourceUrl: descriptorFor(canonicalId).sourceUrl,
-      }),
-    ]);
-    expect(starterCalls).toEqual([[intentId, 1, TestImportTrace]]);
-    expect(providerCalls).toBe(0);
-    expect(
-      await testEnv.MealPlannerDatabase.prepare(
-        `SELECT public_source_kind AS sourceKind,
-                public_stage AS stage,
-                public_status AS status,
-                resolved_canonical_source_id AS canonicalId
-           FROM recipe_imports WHERE id = ?`
-      )
-        .bind(intentId)
-        .first()
-    ).toEqual({
-      canonicalId,
-      sourceKind: "carousel",
-      stage: "acquiring_media",
-      status: "processing",
-    });
-    expect(
-      await testEnv.MealPlannerDatabase.prepare(
-        "SELECT count(*) AS count FROM import_requests WHERE import_id = ?"
-      )
-        .bind(intentId)
-        .first()
-    ).toEqual({ count: 1 });
-
-    const fingerprintConflictBundle = Schema.decodeUnknownSync(
-      OperatorCarouselBundle
-    )({
-      ...bundle,
-      declaredPageCount: 1,
-      images: [bundle.images[0]],
-    });
-    await expect(
-      Effect.runPromise(
-        service.admit(
-          TestImportPrincipal,
-          fingerprintConflictBundle,
-          idempotencyKey
-        )
-      )
-    ).rejects.toMatchObject({ _tag: "IdempotencyConflict" });
-    expect(stageCalls).toHaveLength(1);
-    expect(starterCalls).toHaveLength(1);
-    expect(providerCalls).toBe(0);
-
-    const invalidCanonicalId = decodeCanonicalId("752000000000308");
-    const invalidOutput = completeAdapterOutput(invalidCanonicalId);
-    const [duplicateImage] = invalidOutput.images;
-    if (duplicateImage === undefined) {
-      throw new Error("Expected a synthetic carousel image");
-    }
-    const invalidBundle = Schema.decodeUnknownSync(OperatorCarouselBundle)({
-      declaredPageCount: 2,
-      images: [0, 1].map((orderIndex) => ({
-        height: duplicateImage.height,
-        jpegBase64: base64(duplicateImage.bytes),
-        orderIndex,
-        sha256: duplicateImage.sha256,
-        width: duplicateImage.width,
-      })),
-      source: {
-        kind: "tiktok",
-        url: descriptorFor(invalidCanonicalId).sourceUrl,
-      },
-    });
-    await expect(
-      Effect.runPromise(
-        service.admit(
-          TestImportPrincipal,
-          invalidBundle,
-          decodeIdempotencyKey("operator-308-invalid")
-        )
-      )
-    ).rejects.toMatchObject({
-      _tag: "InvalidCarouselBundle",
-    });
-    expect(
-      await testEnv.MealPlannerDatabase.prepare(
-        "SELECT count(*) AS count FROM recipe_imports WHERE resolved_canonical_source_id = ?"
-      )
-        .bind(invalidCanonicalId)
-        .first()
-    ).toEqual({ count: 0 });
   });
 });

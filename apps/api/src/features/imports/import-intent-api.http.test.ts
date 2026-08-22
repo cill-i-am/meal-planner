@@ -1,3 +1,4 @@
+import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import {
   CancelledRecipeImportIntent,
   IdempotencyKey,
@@ -18,28 +19,26 @@ import { FetchHttpClient, HttpRouter } from "effect/unstable/http";
 import { OpenApi } from "effect/unstable/httpapi";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { AuthPrincipalResolver } from "../auth/auth.principal.js";
-import { HealthRoutes } from "../health/health.routes.js";
-import { ImportBatchRouteDefinitions } from "./import-batch.routes.js";
-import { ImportBatchService } from "./import-batch.service.js";
-import { OperatorCarouselRouteDefinitions } from "./import-carousel-operator.routes.js";
-import { OperatorCarouselImportService } from "./import-carousel-operator.service.js";
 import {
-  RecipeImportIntentApplication,
+  AuthenticatedOrganizationResolver,
+  AuthPrincipalResolver,
+} from "../auth/auth.principal.js";
+import { HealthRoutes } from "../health/health.routes.js";
+import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
+import {
+  RecipeImportHouseholdDomain,
   makeRecipeImportHttpApiLayer,
   makeRecipeImportWorkerHttpLayer,
 } from "./import-intent-api.http.js";
-import { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
-import { RecipeImportIntentReviewApplication } from "./import-intent-review.js";
-import { ImportIntentIdGenerator } from "./import-intent.js";
 import { ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
 import { ProviderTerminalSettlementRouteDefinitions } from "./import-provider-terminal-settlement.routes.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
+import { RecipeImportWorkflowDispatcher } from "./import-workflow-dispatcher.js";
+import type { RecipeImportWorkflowDispatcherService } from "./import-workflow-dispatcher.js";
 import {
   makeTestAuthPrincipalResolver,
   makeTestSystemAuthorizer,
 } from "./import.test-fixtures.js";
-import { CanonicalSourceIdentityResolver } from "./source-identity.js";
 
 const intentId = "018f47ad-91aa-7c35-b6fe-000000000001";
 const actionId = "a".repeat(64);
@@ -171,84 +170,91 @@ const recipe = Schema.decodeUnknownSync(Recipe)({
   recipe: emptyRecipe,
   tags: planningTags,
 });
+const processingIntentWire = Schema.encodeUnknownSync(
+  ProcessingRecipeImportIntent
+)(processingIntent);
+const requiresActionIntentWire = Schema.encodeUnknownSync(
+  RequiresActionRecipeImportIntent
+)(requiresActionIntent);
+const succeededIntentWire = Schema.encodeUnknownSync(
+  SucceededRecipeImportIntent
+)(succeededIntent);
+const cancelledIntentWire = Schema.encodeUnknownSync(
+  CancelledRecipeImportIntent
+)(cancelledIntent);
+const activeActionWire =
+  Schema.encodeUnknownSync(RecipeImportAction)(activeAction);
+const timelineWire = Schema.encodeUnknownSync(RecipeImportTimeline)(timeline);
+const recipeWire = Schema.encodeUnknownSync(Recipe)(recipe);
 
 const unused = () => Effect.die("not used by this HTTP boundary test");
 // eslint-disable-next-line typescript/no-explicit-any -- Effect's test route collection intentionally accepts heterogeneous error and context parameters.
 type AnyHttpRoute = HttpRouter.Route<any, any>;
 
 interface MakeAppOptions {
-  readonly intent?: Partial<RecipeImportIntentApplication>;
+  readonly household?: Partial<
+    Record<keyof HouseholdDomainWorkerMethods, unknown>
+  >;
   readonly operationalRoutes?: readonly AnyHttpRoute[];
-  readonly review?: Partial<RecipeImportIntentReviewApplication>;
+  readonly workflowDispatcher?: RecipeImportWorkflowDispatcherService;
 }
 
 const makeApp = async (options: MakeAppOptions = {}) => {
   const systemAuthorizer = await Effect.runPromise(
     makeTestSystemAuthorizer("system-import-token")
   );
-  const intentApplication = {
-    admit: unused,
-    cancel: unused,
-    continueSourceResolution: () =>
-      Effect.succeed({
-        disposition: "no_op" as const,
-        intent: requiresActionIntent,
-      }),
-    get: unused,
-    reconcileStalledContinuations: () =>
-      Effect.succeed({
-        continuationFailures: 0,
-        continued: 0,
-        ensured: 0,
-        examined: 0,
-        skipped: 0,
-        startFailures: 0,
-      }),
-    requireMutable: unused,
-    resolveSource: unused,
-    timeline: unused,
-    ...options.intent,
-  } as RecipeImportIntentApplication;
-  const reviewApplication = {
-    answerAction: unused,
-    confirmAction: unused,
-    getAction: unused,
-    getRecipe: unused,
-    ...options.review,
-  } as RecipeImportIntentReviewApplication;
+  const household = {
+    admitRecipeImport: unused,
+    answerRecipeImportAction: unused,
+    approveMealPlan: unused,
+    cancelRecipeImport: unused,
+    commitRecipeImportDraft: unused,
+    confirmRecipeImportAction: unused,
+    createMealPlan: unused,
+    createMealPlanFromRecipeBank: unused,
+    ensureHousehold: unused,
+    listRecipeBank: unused,
+    readMealPlan: unused,
+    readRecipe: unused,
+    readRecipeImport: unused,
+    readRecipeImportAction: unused,
+    readRecipeImportTimeline: unused,
+    rejectMealPlan: unused,
+    resolveRecipeImportSource: unused,
+    swapMealPlan: unused,
+    swapMealPlanFromRecipeBank: unused,
+    ...options.household,
+  } as unknown as HouseholdDomainWorkerMethods;
   const services = Layer.mergeAll(
-    ImportIntentIdGenerator.live,
-    Layer.succeed(
-      CanonicalSourceIdentityResolver,
-      CanonicalSourceIdentityResolver.of({ resolve: unused })
-    ),
-    Layer.succeed(
-      ImportIntentWorkflowTerminator,
-      ImportIntentWorkflowTerminator.of({ terminate: () => Effect.void })
-    ),
     Layer.succeed(
       AuthPrincipalResolver,
       AuthPrincipalResolver.of(makeTestAuthPrincipalResolver("test-session"))
+    ),
+    Layer.succeed(
+      AuthenticatedOrganizationResolver,
+      AuthenticatedOrganizationResolver.of({
+        resolve: () =>
+          Effect.succeed({
+            organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
+              "test-household"
+            ),
+            userId: "test-user",
+          }),
+      })
     ),
     Layer.succeed(
       ImportSystemAuthorizer,
       ImportSystemAuthorizer.of(systemAuthorizer)
     ),
     Layer.succeed(
-      RecipeImportIntentApplication,
-      RecipeImportIntentApplication.of(intentApplication)
+      RecipeImportHouseholdDomain,
+      RecipeImportHouseholdDomain.of(household)
     ),
     Layer.succeed(
-      RecipeImportIntentReviewApplication,
-      RecipeImportIntentReviewApplication.of(reviewApplication)
-    ),
-    Layer.succeed(
-      ImportBatchService,
-      ImportBatchService.of({ create: unused, get: unused })
-    ),
-    Layer.succeed(
-      OperatorCarouselImportService,
-      OperatorCarouselImportService.of({ admit: unused })
+      RecipeImportWorkflowDispatcher,
+      RecipeImportWorkflowDispatcher.of(
+        options.workflowDispatcher ?? { dispatch: () => Effect.void }
+      )
     ),
     Layer.succeed(
       ProviderTerminalSettlementService,
@@ -343,8 +349,8 @@ describe("recipe import HttpApi boundary", () => {
   it("rejects an excess private mutation field before invoking the application", async () => {
     let invoked = false;
     const app = await makeApp({
-      intent: {
-        admit: () => {
+      household: {
+        admitRecipeImport: () => {
           invoked = true;
           return Effect.die("application must not run");
         },
@@ -378,11 +384,60 @@ describe("recipe import HttpApi boundary", () => {
     expect(invoked).toBe(false);
   });
 
+  it("dispatches the atomically recorded Workflow identity after admission without changing the committed response", async () => {
+    const dispatches: Parameters<
+      RecipeImportWorkflowDispatcherService["dispatch"]
+    >[0][] = [];
+    const committed = {
+      dispatchId: "dispatch-test",
+      intent: processingIntentWire,
+      workflowIdentity: `import-acquisition:v1:${"a".repeat(64)}`,
+    } as const;
+    const app = await makeApp({
+      household: {
+        admitRecipeImport: () => Effect.succeed(committed),
+      },
+      workflowDispatcher: {
+        dispatch: (input) => {
+          dispatches.push(input);
+          return Effect.void;
+        },
+      },
+    });
+    apps.push(app);
+
+    const response = await app.handler(
+      new Request("https://meal-planner.test/v1/recipe-import-intents", {
+        body: JSON.stringify({
+          source: {
+            kind: "tiktok",
+            url: "https://vm.tiktok.com/valid-source",
+          },
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: "better-auth.session_token=test-session",
+          "idempotency-key": "test-key",
+        },
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(dispatches).toHaveLength(1);
+    expect(dispatches[0]?.committed).toMatchObject({
+      dispatchId: committed.dispatchId,
+      intent: { id: processingIntent.id },
+      workflowIdentity: committed.workflowIdentity,
+    });
+    await expect(response.json()).resolves.toEqual(processingIntentWire);
+  });
+
   it("maps response encoding failures to a logged, privacy-safe 500", async () => {
     const privateResponse = "private-response-schema-sentinel";
     const app = await makeApp({
-      intent: {
-        get: () => Effect.succeed({ privateResponse } as never),
+      household: {
+        readRecipeImport: () => Effect.succeed({ privateResponse } as never),
       },
     });
     apps.push(app);
@@ -412,7 +467,7 @@ describe("recipe import HttpApi boundary", () => {
   it("maps defects to a logged 500 without exposing the cause", async () => {
     const privateCause = "private-provider-defect-sentinel";
     const app = await makeApp({
-      intent: { get: () => Effect.die(privateCause) },
+      household: { readRecipeImport: () => Effect.die(privateCause) },
     });
     apps.push(app);
 
@@ -445,33 +500,22 @@ describe("recipe import HttpApi boundary", () => {
       "0".repeat(64),
       "1".repeat(64),
     ] as const;
-    const privateTransport = {
-      evidence: sentinels[6],
-      fingerprint: sentinels[7],
-      model: sentinels[3],
-      provider: sentinels[2],
-      r2Reference: sentinels[4],
-      transcript: sentinels[5],
-    };
-    const withPrivateTransport = <Value extends object>(value: Value) => ({
-      ...value,
-      privateTransport,
-    });
     const app = await makeApp({
-      intent: {
-        admit: () =>
-          Effect.succeed({ disposition: "created", intent: processingIntent }),
-        cancel: () => Effect.succeed(cancelledIntent),
-        get: () => Effect.succeed(withPrivateTransport(processingIntent)),
-        timeline: () => Effect.succeed(withPrivateTransport(timeline)),
-      },
-      review: {
-        answerAction: () =>
-          Effect.succeed(withPrivateTransport(requiresActionIntent)),
-        confirmAction: () =>
-          Effect.succeed(withPrivateTransport(succeededIntent)),
-        getAction: () => Effect.succeed(withPrivateTransport(activeAction)),
-        getRecipe: () => Effect.succeed(withPrivateTransport(recipe)),
+      household: {
+        admitRecipeImport: () =>
+          Effect.succeed({
+            dispatchId: "dispatch-test",
+            intent: processingIntentWire,
+            workflowIdentity: `import-acquisition:v1:${"a".repeat(64)}`,
+          }),
+        answerRecipeImportAction: () =>
+          Effect.succeed(requiresActionIntentWire),
+        cancelRecipeImport: () => Effect.succeed(cancelledIntentWire),
+        confirmRecipeImportAction: () => Effect.succeed(succeededIntentWire),
+        readRecipe: () => Effect.succeed(recipeWire),
+        readRecipeImport: () => Effect.succeed(processingIntentWire),
+        readRecipeImportAction: () => Effect.succeed(activeActionWire),
+        readRecipeImportTimeline: () => Effect.succeed(timelineWire),
       },
     });
     apps.push(app);
@@ -584,11 +628,11 @@ describe("recipe import HttpApi boundary", () => {
 
   it("mounts only the canonical and current operational surface before a safe wildcard 404", async () => {
     const app = await makeApp({
-      intent: { get: () => Effect.succeed(processingIntent) },
+      household: {
+        readRecipeImport: () => Effect.succeed(processingIntentWire),
+      },
       operationalRoutes: [
         ...HealthRoutes,
-        ...OperatorCarouselRouteDefinitions,
-        ...ImportBatchRouteDefinitions,
         ...ProviderTerminalSettlementRouteDefinitions,
       ],
     });
@@ -622,8 +666,8 @@ describe("recipe import HttpApi boundary", () => {
 
     expect(health.status).toBe(200);
     expect(typed.status).toBe(200);
-    expect(carousel.status).toBe(401);
-    expect(batch.status).toBe(401);
+    expect(carousel.status).toBe(404);
+    expect(batch.status).toBe(404);
     expect(settlement.status).toBe(401);
 
     const removedRequests = [
@@ -634,6 +678,12 @@ describe("recipe import HttpApi boundary", () => {
         method: "PATCH",
       }),
       new Request("https://meal-planner.test/recipe-bank"),
+      new Request("https://meal-planner.test/import-batches", {
+        method: "POST",
+      }),
+      new Request("https://meal-planner.test/imports/operator-carousel", {
+        method: "POST",
+      }),
       new Request("https://meal-planner.test/not-a-route"),
     ];
     const removedResponses = await Promise.all(
@@ -669,17 +719,11 @@ describe("recipe import HttpApi boundary", () => {
 
   it("keeps browser principals out of the system-only import surfaces", async () => {
     const app = await makeApp({
-      operationalRoutes: [
-        ...ImportBatchRouteDefinitions,
-        ...ProviderTerminalSettlementRouteDefinitions,
-      ],
+      operationalRoutes: [...ProviderTerminalSettlementRouteDefinitions],
     });
     apps.push(app);
 
-    const systemOnlyPaths = [
-      "/import-batches",
-      "/imports/operator-provider-terminal-settlement",
-    ];
+    const systemOnlyPaths = ["/imports/operator-provider-terminal-settlement"];
     const [browserPrincipalResponses, systemPrincipalResponses] =
       await Promise.all([
         Promise.all(
@@ -695,11 +739,9 @@ describe("recipe import HttpApi boundary", () => {
       ]);
 
     expect(browserPrincipalResponses.map(({ status }) => status)).toEqual([
-      401, 401,
+      401,
     ]);
-    expect(systemPrincipalResponses.map(({ status }) => status)).toEqual([
-      400, 400,
-    ]);
+    expect(systemPrincipalResponses.map(({ status }) => status)).toEqual([400]);
   });
 
   it("keeps the security principal schema at the shared protocol boundary", () => {

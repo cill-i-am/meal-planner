@@ -10,6 +10,7 @@ import {
   PilotBudgetTimestamp,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { makeD1ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
 import {
@@ -21,7 +22,6 @@ import {
   ImportTimestamp,
   SourceCanonicalId,
 } from "./import.contracts.js";
-import { makeD1ImportRepository } from "./import.repository.d1.js";
 import { seedResolvedTestImportExecution } from "./import.test-fixtures.js";
 
 const testEnv = env as unknown as {
@@ -351,7 +351,7 @@ describe("provider terminal recovery", () => {
     });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        "SELECT status, status_code, recovery_action FROM recipe_imports WHERE id = ?"
+        "SELECT status, status_code, recovery_action FROM import_execution_runs WHERE id = ?"
       )
         .bind(seeded.importId)
         .first()
@@ -361,7 +361,7 @@ describe("provider terminal recovery", () => {
       status_code: null,
     });
 
-    const importRepository = makeD1ImportRepository(
+    const importRepository = makeD1ImportExecutionRepository(
       testEnv.MealPlannerDatabase
     );
     const currentImport = Option.getOrThrow(
@@ -372,24 +372,24 @@ describe("provider terminal recovery", () => {
     await expect(
       Effect.runPromise(importRepository.claimAcquisition(seeded.importId))
     ).resolves.toMatchObject({
-      _tag: "Finished",
+      _tag: "Acquiring",
       import: {
         view: {
           status: {
-            kind: "queued",
+            kind: "acquiring",
           },
         },
       },
     });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        "SELECT status, acquisition_generation FROM recipe_imports WHERE id = ?"
+        "SELECT status, acquisition_generation FROM import_execution_runs WHERE id = ?"
       )
         .bind(seeded.importId)
         .first()
     ).resolves.toEqual({
       acquisition_generation: seeded.generation,
-      status: "queued",
+      status: "acquiring",
     });
   });
 
@@ -464,7 +464,7 @@ describe("provider terminal recovery", () => {
 
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        `UPDATE recipe_imports
+        `UPDATE import_execution_runs
             SET acquisition_generation = 2
           WHERE id = ?`
       )
@@ -474,7 +474,9 @@ describe("provider terminal recovery", () => {
 
     const current = Option.getOrThrow(
       await Effect.runPromise(
-        makeD1ImportRepository(testEnv.MealPlannerDatabase).findById(importId)
+        makeD1ImportExecutionRepository(testEnv.MealPlannerDatabase).findById(
+          importId
+        )
       )
     );
     expect(current.acquisitionGeneration).toBe(1);
@@ -531,7 +533,7 @@ describe("provider terminal recovery", () => {
     });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        "SELECT status, status_code, recovery_action FROM recipe_imports WHERE id = ?"
+        "SELECT status, status_code, recovery_action FROM import_execution_runs WHERE id = ?"
       )
         .bind(seeded.importId)
         .first()
@@ -680,7 +682,7 @@ describe("provider terminal recovery", () => {
     ).resolves.toEqual({ count: 0 });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        "SELECT status, status_code, recovery_action FROM recipe_imports WHERE id = ?"
+        "SELECT status, status_code, recovery_action FROM import_execution_runs WHERE id = ?"
       )
         .bind(seeded.importId)
         .first()
@@ -861,7 +863,7 @@ describe("provider terminal recovery", () => {
       testEnv.MealPlannerDatabase.prepare(
         `SELECT status, status_code, recovery_action,
                 evidence_references_json
-           FROM recipe_imports
+           FROM import_execution_runs
           WHERE id = ?`
       )
         .bind(seeded.importId)
@@ -1021,7 +1023,7 @@ describe("provider terminal recovery", () => {
     await expect(
       testEnv.MealPlannerDatabase.prepare(
         `SELECT status, status_code, recovery_action
-           FROM recipe_imports
+           FROM import_execution_runs
           WHERE id = ?`
       )
         .bind(seeded.importId)
@@ -1100,7 +1102,7 @@ describe("provider terminal recovery", () => {
     await expect(
       testEnv.MealPlannerDatabase.prepare(
         `SELECT status, status_code, recovery_action
-           FROM recipe_imports
+           FROM import_execution_runs
           WHERE id = ?`
       )
         .bind(seeded.importId)

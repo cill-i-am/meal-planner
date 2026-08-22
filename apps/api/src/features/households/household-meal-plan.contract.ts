@@ -53,6 +53,14 @@ export const HouseholdCreateMealPlanInput = Schema.Struct({
 export type HouseholdCreateMealPlanInput =
   typeof HouseholdCreateMealPlanInput.Type;
 
+export const HouseholdCreateMealPlanFromRecipeBankInput = Schema.Struct({
+  admission: HouseholdMemberAdmission,
+  policy: MealPlanPolicyWire,
+  request: MealPlanRequestWire,
+});
+export type HouseholdCreateMealPlanFromRecipeBankInput =
+  typeof HouseholdCreateMealPlanFromRecipeBankInput.Type;
+
 export const HouseholdReadMealPlanInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
   draftId: MealPlanDraftId,
@@ -65,6 +73,13 @@ export const HouseholdSwapMealPlanInput = Schema.Struct({
   request: HouseholdManualMealSwapCommandWire,
 });
 export type HouseholdSwapMealPlanInput = typeof HouseholdSwapMealPlanInput.Type;
+
+export const HouseholdSwapMealPlanFromRecipeBankInput = Schema.Struct({
+  admission: HouseholdMemberAdmission,
+  request: HouseholdManualMealSwapCommandWire,
+});
+export type HouseholdSwapMealPlanFromRecipeBankInput =
+  typeof HouseholdSwapMealPlanFromRecipeBankInput.Type;
 
 export const HouseholdDecideMealPlanInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
