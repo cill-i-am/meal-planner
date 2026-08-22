@@ -245,6 +245,32 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         )
       )
     );
+  const routeAcquisitionEvidence = (
+    input: HouseholdCommitAcquisitionEvidenceInput
+  ) =>
+    Schema.decodeUnknownEffect(HouseholdCommitAcquisitionEvidenceInputSchema, {
+      onExcessProperty: "error",
+    })(input).pipe(
+      Effect.mapError(() => HouseholdInvalidInput.make({})),
+      Effect.flatMap((command) =>
+        Schema.encodeEffect(HouseholdCommitAcquisitionEvidenceInputSchema)(
+          command
+        ).pipe(
+          Effect.mapError(() => HouseholdInvalidInput.make({})),
+          Effect.flatMap((encodedCommand) =>
+            locator.locate(command.admission.organizationId).pipe(
+              Effect.mapError(() => HouseholdInvalidInput.make({})),
+              Effect.flatMap((objectName) =>
+                households
+                  .getByName(objectName)
+                  .commitAcquisitionEvidence(encodedCommand)
+                  .pipe(Effect.provideService(RuntimeContext, runtimeContext))
+              )
+            )
+          )
+        )
+      )
+    );
   return {
     admitRecipeImport: (input: HouseholdAdmitRecipeImportInput) =>
       route(
@@ -270,12 +296,7 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
       ),
     commitAcquisitionEvidence: (
       input: HouseholdCommitAcquisitionEvidenceInput
-    ) =>
-      route(
-        HouseholdCommitAcquisitionEvidenceInputSchema,
-        input,
-        (household, command) => household.commitAcquisitionEvidence(command)
-      ),
+    ) => routeAcquisitionEvidence(input),
     commitRecipeImportDraft: (input: HouseholdCommitRecipeImportDraftInput) =>
       route(
         HouseholdCommitRecipeImportDraftInputSchema,

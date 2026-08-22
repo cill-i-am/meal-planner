@@ -69,6 +69,40 @@ const baseURL = "https://meal-planner.test";
 const recipeImportFailure = () =>
   HouseholdRecipeImportFailure.make({ reason: "persistence_unavailable" });
 
+const isRpcErrorEnvelope = (
+  value: unknown
+): value is { readonly _tag: "~alchemy/rpc/error"; readonly error: unknown } =>
+  typeof value === "object" &&
+  value !== null &&
+  "_tag" in value &&
+  value._tag === "~alchemy/rpc/error" &&
+  "error" in value;
+
+const rpcResponse = (value: unknown) => {
+  if (!isRpcErrorEnvelope(value)) {
+    return Response.json(value);
+  }
+  const reason =
+    typeof value.error === "object" &&
+    value.error !== null &&
+    "reason" in value.error
+      ? value.error.reason
+      : undefined;
+  const errorTag =
+    typeof value.error === "object" &&
+    value.error !== null &&
+    "_tag" in value.error
+      ? value.error._tag
+      : undefined;
+  const status =
+    reason === "intent_not_found"
+      ? 404
+      : reason === "generation_conflict" || reason === "idempotency_conflict"
+        ? 409
+        : 400;
+  return Response.json({ errorTag, reason, rejected: true }, { status });
+};
+
 interface HouseholdApiFixtureEnv {
   readonly BETTER_AUTH_SECRET: string;
   readonly HouseholdDomainWorker: {
@@ -177,7 +211,7 @@ export default {
               : await env.HouseholdDomainWorker.commitAcquisitionEvidence(
                   input as HouseholdCommitAcquisitionEvidenceInput
                 );
-        return Response.json(result);
+        return rpcResponse(result);
       } catch {
         return Response.json({ rejected: true }, { status: 400 });
       }

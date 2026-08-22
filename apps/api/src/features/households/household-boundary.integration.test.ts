@@ -22,6 +22,7 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
+import { HouseholdCommitAcquisitionEvidenceResult } from "./evidence/household-evidence.contract.js";
 import { HouseholdMetadata } from "./household.contract.js";
 
 const compatibilityDate = "2026-07-14";
@@ -29,6 +30,10 @@ const compatibilityFlags = ["nodejs_compat"];
 const secret = "local-boundary-test-secret-at-least-32-characters";
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare | undefined;
+let persistenceDirectory = "";
+let websiteModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
+let apiModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
+let domainModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
 
 const getRuntime = (): Miniflare => {
   if (runtime === undefined) {
@@ -143,25 +148,12 @@ const applyAuthMigrations = async (database: MiniflareD1Database) => {
   );
 };
 
-beforeAll(async () => {
-  const temporaryDirectory = await mkdtemp(
-    `${tmpdir()}/meal-planner-household-boundary-`
-  );
-  temporaryDirectories.push(temporaryDirectory);
-  const [websiteModules, apiModules, domainModules] = await Promise.all([
-    bundleFixture(
-      "household-website-service.test-fixture.js",
-      temporaryDirectory
-    ),
-    bundleFixture("household-api-service.test-fixture.ts", temporaryDirectory),
-    bundleFixture(
-      "household-domain-service.test-fixture.js",
-      temporaryDirectory
-    ),
-  ]);
-  runtime = new Miniflare({
+const makeRuntime = () =>
+  new Miniflare({
     compatibilityDate,
     compatibilityFlags,
+    d1Persist: persistenceDirectory,
+    durableObjectsPersist: persistenceDirectory,
     workers: [
       {
         compatibilityDate,
@@ -190,6 +182,30 @@ beforeAll(async () => {
       },
     ],
   });
+
+const restartRuntime = async () => {
+  await runtime?.dispose();
+  runtime = makeRuntime();
+};
+
+beforeAll(async () => {
+  const temporaryDirectory = await mkdtemp(
+    `${tmpdir()}/meal-planner-household-boundary-`
+  );
+  temporaryDirectories.push(temporaryDirectory);
+  persistenceDirectory = `${temporaryDirectory}/runtime-storage`;
+  [websiteModules, apiModules, domainModules] = await Promise.all([
+    bundleFixture(
+      "household-website-service.test-fixture.js",
+      temporaryDirectory
+    ),
+    bundleFixture("household-api-service.test-fixture.ts", temporaryDirectory),
+    bundleFixture(
+      "household-domain-service.test-fixture.js",
+      temporaryDirectory
+    ),
+  ]);
+  runtime = makeRuntime();
   await applyAuthMigrations(
     await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
   );
@@ -269,6 +285,84 @@ const systemCommand = (
       method: "POST",
     }
   );
+
+const evidenceRetentionResult = (input: {
+  readonly acquiredAt: Date;
+  readonly generation: number;
+  readonly intentId: string;
+}) => {
+  const deleteAt = new Date(input.acquiredAt.getTime() + 604_800_000);
+  return {
+    acquiredAt: input.acquiredAt.toISOString(),
+    audioStreams: [{ codec: "aac", index: 0 }],
+    durationSeconds: 20,
+    references: [
+      {
+        byteLength: 4096,
+        deleteAt: deleteAt.toISOString(),
+        key: `imports/${input.intentId}/acquisition/v1/generations/${input.generation}/original.mp4`,
+        kind: "original_media",
+        sha256: "7".repeat(64),
+      },
+      {
+        byteLength: 512,
+        deleteAt: deleteAt.toISOString(),
+        key: `imports/${input.intentId}/acquisition/v1/generations/${input.generation}/manifest.json`,
+        kind: "acquisition_manifest",
+        sha256: "8".repeat(64),
+      },
+    ],
+    videoStreams: [{ codec: "h264", index: 0 }],
+  } as const;
+};
+
+const admitResolvedEvidenceImport = async (input: {
+  readonly label: string;
+  readonly mutationId: string;
+  readonly videoId: string;
+}) => {
+  const cookie = await signUp(input.label);
+  const organization = await createOrganization(
+    `${input.label} Household`,
+    cookie
+  );
+  const createResponse = await getRuntime().dispatchFetch(
+    "https://meal-planner.test/v1/recipe-import-intents",
+    {
+      body: JSON.stringify({
+        source: {
+          kind: "tiktok",
+          url: `https://www.tiktok.com/@mealplanner/video/${input.videoId}`,
+        },
+      }),
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "idempotency-key": `evidence-${input.videoId}`,
+      },
+      method: "POST",
+    }
+  );
+  expect(createResponse.status).toBe(201);
+  const admitted = await Schema.decodeUnknownPromise(RecipeImportIntent)(
+    await createResponse.json()
+  );
+  const admission = {
+    actor: { _tag: "System", purpose: "recipe_import_lifecycle_commit" },
+    organizationId: organization.id,
+  } as const;
+  const resolvedResponse = await systemCommand("resolve", {
+    admission,
+    canonicalSourceId: `tiktok:video:${input.videoId}`,
+    canonicalUrl: `https://www.tiktok.com/@mealplanner/video/${input.videoId}`,
+    expectedGeneration: 1,
+    intentId: admitted.id,
+    mutationId: input.mutationId,
+    sourceKind: "video",
+  });
+  expect(resolvedResponse.status, await resolvedResponse.text()).toBe(200);
+  return { admission, admitted, organization } as const;
+};
 
 const review = {
   answers: [],
@@ -555,6 +649,237 @@ describe("household public API to private Durable Object boundary", () => {
       },
     });
     expect(commitResponse.status, await commitResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("rejects stale evidence without mutation and accepts the corrected generation", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Stale Evidence Member",
+      mutationId: "9".repeat(64),
+      videoId: "7000000000000000104",
+    });
+    const acquiredAt = new Date(Date.now() + 60_000);
+    const mutationId = "a".repeat(64);
+    const staleResponse = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 2,
+      intentId: admitted.id,
+      mutationId,
+      result: evidenceRetentionResult({
+        acquiredAt,
+        generation: 2,
+        intentId: admitted.id,
+      }),
+    });
+    expect(staleResponse.status).toBe(409);
+
+    const correctedResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        admission,
+        expectedGeneration: 1,
+        intentId: admitted.id,
+        mutationId,
+        result: evidenceRetentionResult({
+          acquiredAt,
+          generation: 1,
+          intentId: admitted.id,
+        }),
+      }
+    );
+    expect(correctedResponse.status, await correctedResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("physically isolates household evidence routing", async () => {
+    const householdA = await admitResolvedEvidenceImport({
+      label: "Evidence Isolation A",
+      mutationId: "b".repeat(64),
+      videoId: "7000000000000000105",
+    });
+    const cookieB = await signUp("Evidence Isolation B");
+    const organizationB = await createOrganization(
+      "Evidence Isolation B Household",
+      cookieB
+    );
+    const result = evidenceRetentionResult({
+      acquiredAt: new Date(Date.now() + 60_000),
+      generation: 1,
+      intentId: householdA.admitted.id,
+    });
+    const mutationId = "c".repeat(64);
+    const crossHouseholdResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        admission: {
+          ...householdA.admission,
+          organizationId: organizationB.id,
+        },
+        expectedGeneration: 1,
+        intentId: householdA.admitted.id,
+        mutationId,
+        result,
+      }
+    );
+    expect(crossHouseholdResponse.status).toBe(404);
+
+    const ownerResponse = await systemCommand("commit-acquisition-evidence", {
+      admission: householdA.admission,
+      expectedGeneration: 1,
+      intentId: householdA.admitted.id,
+      mutationId,
+      result,
+    });
+    expect(ownerResponse.status, await ownerResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("returns the same private receipt on retry and rejects a conflicting replay without mutation", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Evidence Replay Member",
+      mutationId: "d".repeat(64),
+      videoId: "7000000000000000106",
+    });
+    const result = evidenceRetentionResult({
+      acquiredAt: new Date(Date.now() + 60_000),
+      generation: 1,
+      intentId: admitted.id,
+    });
+    const command = {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "e".repeat(64),
+      result,
+    } as const;
+    const firstResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      command
+    );
+    expect(firstResponse.status).toBe(200);
+    const firstReceipt = await Schema.decodeUnknownPromise(
+      HouseholdCommitAcquisitionEvidenceResult
+    )(await firstResponse.json());
+    expect(JSON.stringify(firstReceipt)).not.toMatch(
+      /imports\/|sha256|deleteAt/u
+    );
+
+    const retryResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      command
+    );
+    expect(retryResponse.status).toBe(200);
+    const retryReceipt = await Schema.decodeUnknownPromise(
+      HouseholdCommitAcquisitionEvidenceResult
+    )(await retryResponse.json());
+    expect(retryReceipt).toEqual(firstReceipt);
+
+    const conflictingResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        ...command,
+        result: {
+          ...result,
+          references: [
+            { ...result.references[0], sha256: "f".repeat(64) },
+            result.references[1],
+          ],
+        },
+      }
+    );
+    expect(conflictingResponse.status).toBe(409);
+
+    const afterConflictResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      command
+    );
+    expect(afterConflictResponse.status).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(
+        HouseholdCommitAcquisitionEvidenceResult
+      )(await afterConflictResponse.json())
+    ).toEqual(firstReceipt);
+  }, 30_000);
+
+  it("persists household evidence receipts across a real runtime restart", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Evidence Restart Member",
+      mutationId: "1".repeat(64),
+      videoId: "7000000000000000107",
+    });
+    const command = {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "2".repeat(64),
+      result: evidenceRetentionResult({
+        acquiredAt: new Date(Date.now() + 60_000),
+        generation: 1,
+        intentId: admitted.id,
+      }),
+    } as const;
+    const firstResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      command
+    );
+    expect(firstResponse.status).toBe(200);
+    const receipt = await Schema.decodeUnknownPromise(
+      HouseholdCommitAcquisitionEvidenceResult
+    )(await firstResponse.json());
+
+    await restartRuntime();
+
+    const replayResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      command
+    );
+    expect(replayResponse.status).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(
+        HouseholdCommitAcquisitionEvidenceResult
+      )(await replayResponse.json())
+    ).toEqual(receipt);
+  }, 30_000);
+
+  it("rejects invalid retention without mutation and accepts the corrected deadline", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Evidence Retention Member",
+      mutationId: "3".repeat(64),
+      videoId: "7000000000000000108",
+    });
+    const acquiredAt = new Date(Date.now() + 60_000);
+    const result = evidenceRetentionResult({
+      acquiredAt,
+      generation: 1,
+      intentId: admitted.id,
+    });
+    const mutationId = "4".repeat(64);
+    const invalidDeleteAt = new Date(
+      acquiredAt.getTime() + 604_800_001
+    ).toISOString();
+    const invalidResponse = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId,
+      result: {
+        ...result,
+        references: result.references.map((reference) => ({
+          ...reference,
+          deleteAt: invalidDeleteAt,
+        })),
+      },
+    });
+    expect(invalidResponse.status).toBe(400);
+
+    const correctedResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        admission,
+        expectedGeneration: 1,
+        intentId: admitted.id,
+        mutationId,
+        result,
+      }
+    );
+    expect(correctedResponse.status, await correctedResponse.text()).toBe(200);
   }, 30_000);
 
   it("rejects a forged cross-organization session before private routing", async () => {

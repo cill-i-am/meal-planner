@@ -342,7 +342,7 @@ export const HouseholdObjectRuntime = Effect.gen(
           })
         ),
       commitAcquisitionEvidence: (
-        untrustedInput: HouseholdCommitAcquisitionEvidenceInput
+        untrustedInput: typeof HouseholdCommitAcquisitionEvidenceInput.Encoded
       ) =>
         scoped(
           Effect.gen(function* commitHouseholdAcquisitionEvidence() {

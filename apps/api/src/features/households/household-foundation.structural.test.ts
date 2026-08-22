@@ -114,6 +114,7 @@ describe("household foundation structural boundaries", () => {
       transactionOwners.map(({ path: sourcePath }) => sourcePath).toSorted()
     ).toEqual(
       [
+        "evidence/household-evidence.repository.ts",
         "foundation/import-workflow-admission.repository.ts",
         "household-meal-plan.repository.ts",
         "recipe-import/household-recipe-import.repository.ts",
@@ -144,6 +145,26 @@ describe("household foundation structural boundaries", () => {
     );
     expect(recipeImportRepository).toContain(".insert(householdRecipes)");
     expect(recipeImportRepository).toContain(".insert(householdOutbox)");
+  });
+
+  it("keeps acquisition R2 work outside the household commit and removes its D1 write seam", async () => {
+    const [evidenceRepository, workflow] = await Promise.all([
+      read(
+        path.join(householdRoot, "evidence/household-evidence.repository.ts")
+      ),
+      read(path.join(apiFeaturesRoot, "imports/import.workflow.ts")),
+    ]);
+    expect(evidenceRepository).toMatch(/database\s*\.\s*transaction\s*\(/);
+    expect(evidenceRepository).not.toMatch(
+      /cloudflare:workers|alchemy\/Cloudflare|ImportEvidenceBucket|\.getByName\(|\bfetch\s*\(|\.put\s*\(|\.send\s*\(/u
+    );
+
+    const recordStep = workflow
+      .split('"record-acquisition-v2"')[1]
+      ?.split("AcquisitionTaskStepConfig")[0];
+    expect(recordStep).toBeDefined();
+    expect(recordStep).toContain("commitAcquisitionEvidence(");
+    expect(recordStep).not.toContain("recordAcquired(");
   });
 
   it("keeps the Alchemy host thin and SQLite evolution migration-owned", async () => {
