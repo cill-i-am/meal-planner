@@ -240,6 +240,20 @@ interface HouseholdApiFixtureEnv {
  */
 export default {
   fetch: async (request: Request, env: HouseholdApiFixtureEnv) => {
+    if (request.headers.get("x-test-private-household-malformed") === "1") {
+      try {
+        await env.HouseholdDomainWorker.ensureHousehold({
+          admission: {
+            actor: { _tag: "Member", actorId: "a".repeat(64) },
+            organizationId: "organization-private-malformed",
+          },
+          unexpectedAuthority: true,
+        } as never);
+        return Response.json({ rejected: false }, { status: 500 });
+      } catch {
+        return Response.json({ rejected: true }, { status: 400 });
+      }
+    }
     const auth = makeMealPlannerAuth({
       baseURL,
       database: drizzle(env.MealPlannerAuthDatabase),

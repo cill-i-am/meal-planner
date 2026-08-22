@@ -547,6 +547,19 @@ const createOrganization = async (label: string, cookie: string) => {
 };
 
 describe("household Website-to-Durable-Object boundary", () => {
+  it("re-decodes and rejects a malformed clone at the private Worker boundary", async () => {
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household",
+      {
+        headers: { "x-test-private-household-malformed": "1" },
+      }
+    );
+    expect(response.status).toBe(500);
+    const body = await response.text();
+    expect(body).not.toContain("organization-private-malformed");
+    expect(body).not.toContain("unexpectedAuthority");
+  });
+
   it("keeps recipe-authority test controls outside the production API build", async () => {
     const BuildTsconfig = Schema.Struct({
       exclude: Schema.Array(Schema.String),

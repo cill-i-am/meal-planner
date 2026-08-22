@@ -1,7 +1,5 @@
 import {
-  ManualMealSwapRequest,
   MealPlan,
-  MealPlanDecisionRequest,
   MealPlanNotFound,
   MealPlanPersistenceFailure,
   MealPlanPolicy,
@@ -9,6 +7,7 @@ import {
   MealPlanRequest,
 } from "@meal-planner/household-api";
 import type {
+  HouseholdOrganizationId,
   MealPlanMutationConflict,
   MealPlanRequestConflict,
   MealPlanSwapRejected,
@@ -37,6 +36,10 @@ import type {
   HouseholdSwapMealPlanInput,
 } from "./household-meal-plan.contract.js";
 import {
+  HouseholdManualMealSwapCommand,
+  HouseholdMealPlanDecisionCommand,
+} from "./household-meal-plan.contract.js";
+import {
   findApprovedMealPlanRecipeSnapshot,
   hydrateApprovedMealPlanRecipeSnapshots,
   readApprovedMealPlanRecipeCandidateCatalogue,
@@ -46,6 +49,7 @@ import type {
   HouseholdEnsureInput,
   HouseholdMetadata,
 } from "./household.contract.js";
+import { HouseholdInvalidInput } from "./household.contract.js";
 import type {
   HouseholdDomainGateway,
   HouseholdMealPlanGateway,
@@ -62,6 +66,7 @@ import {
   makeHouseholdHttpApiLayer,
   makeHouseholdMealPlanHttpApiLayer,
 } from "./household.http.js";
+import { makeHouseholdMemberAdmission } from "./rpc/command-envelope.js";
 
 interface HouseholdDomainPort {
   readonly ensureHousehold: (
@@ -181,7 +186,7 @@ export const makeHouseholdMealPlanGateway = (options: {
   const recipeAuthority =
     options.recipeAuthority ?? ProductionMealPlanRecipeAuthority;
   const encodeRecipes = (
-    organizationId: HouseholdCreateMealPlanInput["organizationId"],
+    organizationId: HouseholdOrganizationId,
     request: typeof MealPlanRequest.Type,
     policy: typeof MealPlanPolicy.Type
   ) =>
@@ -225,7 +230,7 @@ export const makeHouseholdMealPlanGateway = (options: {
     }).pipe(Effect.mapError(() => persistenceFailure("read")));
 
   const encodeExplicitRecipe = (
-    organizationId: HouseholdCreateMealPlanInput["organizationId"],
+    organizationId: HouseholdOrganizationId,
     importId: Parameters<typeof findApprovedMealPlanRecipeSnapshot>[2]
   ) =>
     recipeAuthority
@@ -244,17 +249,20 @@ export const makeHouseholdMealPlanGateway = (options: {
       );
 
   return {
-    approve: ({ decidedAt, draftId, payload, principal }) =>
+    approve: ({ draftId, payload, principal }) =>
       Effect.gen(function* approveHouseholdMealPlan() {
-        const request = yield* Schema.encodeEffect(MealPlanDecisionRequest)({
+        const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
+          Effect.mapError(() => persistenceFailure("save"))
+        );
+        const request = yield* Schema.encodeEffect(
+          HouseholdMealPlanDecisionCommand
+        )({
           ...payload,
-          actorId: principal.actorId,
-          decidedAt,
           draftId,
         }).pipe(Effect.mapError(() => persistenceFailure("save")));
         const wire = yield* options.domain
           .approveMealPlan({
-            organizationId: principal.organizationId,
+            admission,
             request,
           })
           .pipe(Effect.mapError(mapDecisionFailure));
@@ -262,6 +270,9 @@ export const makeHouseholdMealPlanGateway = (options: {
       }),
     create: ({ payload, principal }) =>
       Effect.gen(function* createHouseholdMealPlan() {
+        const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
+          Effect.mapError(() => persistenceFailure("create"))
+        );
         const [recipes, policy, request] = yield* Effect.all([
           encodeRecipes(
             principal.organizationId,
@@ -277,8 +288,8 @@ export const makeHouseholdMealPlanGateway = (options: {
         ]);
         const wire = yield* options.domain
           .createMealPlan({
+            admission,
             approvedRecipes: recipes,
-            organizationId: principal.organizationId,
             policy,
             request,
           })
@@ -289,10 +300,13 @@ export const makeHouseholdMealPlanGateway = (options: {
       }),
     read: ({ draftId, principal }) =>
       Effect.gen(function* readHouseholdMealPlan() {
+        const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
+          Effect.mapError(() => persistenceFailure("read"))
+        );
         const wire = yield* options.domain
           .readMealPlan({
+            admission,
             draftId,
-            organizationId: principal.organizationId,
           })
           .pipe(Effect.mapError(mapReadFailure));
         if (wire === null) {
@@ -300,40 +314,44 @@ export const makeHouseholdMealPlanGateway = (options: {
         }
         return yield* decodeMealPlan(wire);
       }),
-    reject: ({ decidedAt, draftId, payload, principal }) =>
+    reject: ({ draftId, payload, principal }) =>
       Effect.gen(function* rejectHouseholdMealPlan() {
-        const request = yield* Schema.encodeEffect(MealPlanDecisionRequest)({
+        const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
+          Effect.mapError(() => persistenceFailure("save"))
+        );
+        const request = yield* Schema.encodeEffect(
+          HouseholdMealPlanDecisionCommand
+        )({
           ...payload,
-          actorId: principal.actorId,
-          decidedAt,
           draftId,
         }).pipe(Effect.mapError(() => persistenceFailure("save")));
         const wire = yield* options.domain
           .rejectMealPlan({
-            organizationId: principal.organizationId,
+            admission,
             request,
           })
           .pipe(Effect.mapError(mapDecisionFailure));
         return yield* decodeMealPlan(wire);
       }),
-    swap: ({ draftId, payload, principal, swappedAt }) =>
+    swap: ({ draftId, payload, principal }) =>
       Effect.gen(function* swapHouseholdMealPlan() {
+        const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
+          Effect.mapError(() => persistenceFailure("save"))
+        );
         const [recipes, request] = yield* Effect.all([
           encodeExplicitRecipe(
             principal.organizationId,
             payload.replacementImportId
           ),
-          Schema.encodeEffect(ManualMealSwapRequest)({
+          Schema.encodeEffect(HouseholdManualMealSwapCommand)({
             ...payload,
-            actorId: principal.actorId,
             draftId,
-            swappedAt,
           }).pipe(Effect.mapError(() => persistenceFailure("save"))),
         ]);
         const wire = yield* options.domain
           .swapMealPlan({
+            admission,
             approvedRecipes: recipes,
-            organizationId: principal.organizationId,
             request,
           })
           .pipe(Effect.mapError(mapSwapFailure));
@@ -346,12 +364,11 @@ export const makeHouseholdMealPlanGateway = (options: {
 export const makeHouseholdDomainGateway = (
   domain: HouseholdDomainPort
 ): HouseholdDomainGateway => ({
-  ensure: (organizationId) =>
-    domain.ensureHousehold({ organizationId }).pipe(
-      Effect.map((metadata) => ({
-        ...metadata,
-        status: "ready" as const,
-      }))
+  ensure: (principal) =>
+    makeHouseholdMemberAdmission(principal).pipe(
+      Effect.mapError(() => HouseholdInvalidInput.make({})),
+      Effect.flatMap((admission) => domain.ensureHousehold({ admission })),
+      Effect.map((metadata) => ({ ...metadata, status: "ready" as const }))
     ),
 });
 

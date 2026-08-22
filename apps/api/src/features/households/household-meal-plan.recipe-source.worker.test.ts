@@ -1611,7 +1611,8 @@ describe("household meal-plan approved recipe authority", () => {
       },
     });
     const principal = Schema.decodeUnknownSync(HouseholdMealPlanPrincipal)({
-      actorId: "oversized-authority-test",
+      actorId:
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       organizationId: oversizedOrganizationId,
     });
     const payload = Schema.decodeUnknownSync(CreateMealPlanPayload)({

@@ -17,21 +17,52 @@ access.
 ## Private household storage
 
 The private `HouseholdDomainWorker` owns the `HouseholdObject` Durable Object
-namespace. The API Worker calls it through a Cloudflare service binding after
-authorization. Neither the domain Worker nor the object imports Better Auth.
+namespace. The API Worker calls it through a Cloudflare service binding only
+after authorization. It sends a closed admitted envelope: a member actor is a
+one-way digest, while a system actor has one enumerated internal purpose. The
+private Worker Schema-decodes that envelope, derives the route, and admits only
+the command purposes allowed for that actor category. The object Schema-decodes
+the clone again before domain code. Neither boundary imports or queries Better
+Auth.
 
-One object is addressed deterministically as
-`household:v1:<immutableOrganizationId>`. The name is an internal routing
-detail, not a public identifier or authorization mechanism. The object stores
-one `household_meta` row through Drizzle SQLite, including the organization ID
-and its creation time. Every ensure/read asserts that the stored organization
-ID matches the admitted routing input. Initialization is lazy, idempotent, and
-safe to retry.
+The central locator addresses one object as
+`household:v1:<sha256(canonical-v1-organization-payload)>`. The opaque versioned
+name contains no raw organization identifier. Only the locator may derive the
+name, and it runs after Better Auth session and membership proof. The object
+stores one `household_meta` row through Drizzle SQLite, including the immutable
+organization ID and its creation time. Every operation asserts that persisted
+provenance matches the admitted organization before reading or mutating
+capability state. A mismatch exposes only a closed privacy-safe failure.
 
 Drizzle Kit owns the checked-in Durable SQLite migration under
 `apps/api/household-migrations`. Alchemy's Durable Object Drizzle runtime
 applies it inside the object. Application data access uses Drizzle; it does not
 issue raw SQL.
+
+The Alchemy class host is deliberately thin and stable: it owns Cloudflare
+class/namespace lifecycle and installs the runtime layers. Feature-first
+runtime modules own command composition. Per-object Drizzle migrations alone
+own SQLite schema evolution; a class deployment is not a database migration.
+
+## Foundation authority services and dispatch preparation
+
+Effect services provide authoritative Clock access, identity generation,
+canonical encoding, and SHA-256 digests. Domain operations and repositories do
+not call ambient `Date.now()`, `crypto.randomUUID()`, or hashing APIs. Tests
+replace those services with deterministic implementations, and structural
+guards keep ambient APIs confined to the live adapter.
+
+The household schema includes preparatory import-Workflow admission and local
+outbox tables. One short SQLite transaction records the command digest,
+immutable committed result, deterministic privacy-safe Workflow identity, and
+compact dispatch intent. External I/O is forbidden in that transaction. Alarm
+scheduling happens only after commit through a local port. Dispatch state can
+move from `pending` to `exhausted`, but replay still returns the original
+committed domain result.
+
+This preparation is intentionally unmounted from the production private Worker
+until the complete import authority cutover. It does not write current import
+state, start a Workflow, or change public import behavior.
 
 ## Meal-plan authority
 
@@ -45,9 +76,12 @@ the mutation identifier for a different request is a conflict.
 The authenticated API derives the organization and actor from the Better Auth
 session. Public meal-plan requests do not accept either value. After checking
 organization membership, the API calls the private `HouseholdDomainWorker`
-through its service binding. The domain Worker validates the command and routes
-the immutable organization identifier to the corresponding object. The object
-does not authenticate callers and does not import Better Auth.
+through its service binding. The domain Worker validates the admitted command
+and asks the central locator for the corresponding opaque object name. The
+object verifies the admitted actor category and its persisted organization
+provenance; it does not query Better Auth. Mutation commands cannot supply an
+independent actor or audit timestamp: the object binds the admitted member
+digest and an Effect-provided Clock instant only after those checks pass.
 
 Better Auth D1 remains the global identity and organization control plane. It
 does not store meal-plan aggregate state.
@@ -77,14 +111,15 @@ organization using an organization-keyed TanStack Query. Its generated
 same-origin client calls `GET /v1/household` without placing an organization ID,
 bearer token, or household scope in the request.
 
-This slice adds the authenticated meal-plan API and moves only the meal-plan
-aggregate into `HouseholdObject`. It does not add a meal-plan frontend because
+The current delivered product authority in `HouseholdObject` is still only the
+meal-plan aggregate. It does not add a meal-plan frontend because
 the product policy for meal-plan creation and review is unresolved. Adding that
 interface here would invent product behavior.
 
 Recipe-import storage, recipe reviews, workflows, queues, R2 evidence, provider
-integrations, shopping lists, and preferences remain where they are. There is no
-registry, organization-to-object lookup table, shared meal-plan read model,
+integrations, shopping lists, and preferences remain where they are. The new
+admission/outbox contract is foundation preparation, not a dual write. There is
+no registry, organization-to-object lookup table, shared meal-plan read model,
 dual write, legacy adapter, or compatibility path.
 
 ## Proof boundary
@@ -101,10 +136,17 @@ and domain compositions, not either full deployable entrypoint. Separate
 structural guards tie those compositions and private bindings to the real
 Workers.
 
-The runtime tests prove idempotent initialization, provenance mismatch
-rejection, and rejection of a forged active organization before private
-household routing. Meal-plan tests additionally exercise create and read across
-a runtime restart, organization isolation, create-request replay and collision,
-optimistic revision conflicts, mutation replay and collision, and terminal-state
-protection against real Durable Object SQLite. They do not prove a cloud
-deployment or provider lifecycle.
+The runtime tests prove first activation, idempotent/repeated migrations,
+fail-closed migration failure, provenance mismatch rejection, double-decode
+rejection at private Worker and object boundaries, and rejection of a forged
+active organization before private household routing. They also prove physical
+object isolation, restart durability, atomic admission/outbox rollback,
+deterministic Workflow identity by execution generation, stable replay while
+dispatch is pending or exhausted, and post-commit alarm failure against real
+Durable Object SQLite. Persisted dispatch projections are Schema-decoded and
+corrupt outbox state fails closed. Meal-plan tests retain create/read restart,
+replay, collision, optimistic concurrency, and terminal-state proof.
+Structural guards cover routing privacy, Better Auth placement,
+authority-service use, transaction I/O, the thin host, and the acquisition
+generation fence. These tests do not prove a cloud deployment or provider
+lifecycle.

@@ -21,12 +21,15 @@ All current recipe-import households share the single `MealPlannerDatabase` D1
 database. `household_scope_id` scopes the canonical aggregate and its import
 requests, idempotency records, history, actions, recipes, deduplication, and
 safe not-found behavior. This slice does not move those tables into the private
-household Durable Object; that object currently owns only its organization
-provenance tracer. `ImportMediaAcquisitionObject` is addressed by the globally
-random `importId` for per-import media/container coordination and transports
-private acquired media and artifacts. It does not use its own Durable Object
-storage: durable import lifecycle state stays in D1, while private artifacts
-stay in R2. It is not a tenancy or household-storage boundary.
+household Durable Object; that object currently owns meal-plan state plus
+unmounted foundation preparation for the later import cutover.
+`ImportMediaAcquisitionObject` remains a noncanonical execution/transport
+coordinator addressed by the globally random `importId`. Every temporary
+artifact command is Schema-fenced by that import ID and its acquisition
+execution generation. The coordinator transports private media and artifacts
+but does not use its own Durable Object storage: durable import lifecycle state
+stays in D1, while private artifacts stay in R2. It is not a tenancy,
+household-storage, lifecycle, recovery, or product-authority boundary.
 
 Better Auth is the global identity and organization control plane. Its dedicated
 D1 database contains identity, session, organization, invitation, and membership
@@ -110,6 +113,12 @@ digest. Missing or invalid workflow input is rejected before work begins.
 Exact replays preserve timestamps and versions. Stale generations and
 superseded milestones cannot call providers or regress state. Terminal intents
 cannot be revived.
+
+The household foundation now defines the future deterministic, privacy-safe
+Workflow identity for one import intent execution generation and persists it
+atomically with future admission/outbox state. That path is not mounted yet;
+the current D1 admission and Workflow start remain authoritative until the
+complete import/review/Recipe Bank cutover replaces them in one slice.
 
 Three generation values protect different boundaries:
 

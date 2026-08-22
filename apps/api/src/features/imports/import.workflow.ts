@@ -68,6 +68,7 @@ import {
   AcquisitionTaskOutcome,
   MaximumAcquisitionAttemptSeconds,
   MaximumLocalCleanupMilliseconds,
+  acquisitionCoordinatorId,
 } from "./import-media.model.js";
 import type {
   AcquisitionFailureReason,
@@ -825,8 +826,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               if (claim._tag === "Finished") {
                 return { _tag: "NoAcquisitionRequired" as const };
               }
-              const stub = mediaObjects.getByName(importId);
-              const mediaObject = makeAcquisitionMediaObject(stub);
               const encodedOutcome = yield* Cloudflare.Workflows.task(
                 "resolve-acquire-store-verify-v2",
                 recoverVerifiedAcquisitionCheckpoint({
@@ -852,24 +851,35 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                             () => repository.beginAcquisitionAttempt(importId),
                             (allocation) =>
                               allocation.canonicalSourceId === claim.canonicalId
-                                ? acquireStoreVerify(bucket, mediaObject, {
-                                    beforeCleanup: (
-                                      prepared,
-                                      acquisitionMediaObject
-                                    ) =>
-                                      persistDerivedProviderEvidence(
-                                        bucket,
-                                        acquisitionMediaObject,
-                                        prepared,
-                                        {
-                                          generation: allocation.generation,
+                                ? acquireStoreVerify(
+                                    bucket,
+                                    makeAcquisitionMediaObject(
+                                      mediaObjects.getByName(
+                                        acquisitionCoordinatorId(
                                           importId,
-                                        }
-                                      ),
-                                    canonicalId: allocation.canonicalSourceId,
-                                    generation: allocation.generation,
-                                    importId,
-                                  })
+                                          allocation.generation
+                                        )
+                                      )
+                                    ),
+                                    {
+                                      beforeCleanup: (
+                                        prepared,
+                                        acquisitionMediaObject
+                                      ) =>
+                                        persistDerivedProviderEvidence(
+                                          bucket,
+                                          acquisitionMediaObject,
+                                          prepared,
+                                          {
+                                            generation: allocation.generation,
+                                            importId,
+                                          }
+                                        ),
+                                      canonicalId: allocation.canonicalSourceId,
+                                      generation: allocation.generation,
+                                      importId,
+                                    }
+                                  )
                                 : Effect.die(
                                     "Persisted canonical identity changed"
                                   ),

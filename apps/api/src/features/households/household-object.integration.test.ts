@@ -20,23 +20,36 @@ import {
   syntheticRecipeReviews,
 } from "../meal-planning/meal-plan.fake.js";
 import {
-  ManualMealSwapRequest,
   MealPlan,
-  MealPlanDecisionRequest,
   MealPlanPolicy,
   MealPlanRequest,
 } from "../meal-planning/meal-plan.js";
 import {
+  HouseholdImportWorkflowAdmissionResult,
+  HouseholdImportWorkflowDispatchView,
+} from "./foundation/import-workflow-admission.contract.js";
+import {
+  HouseholdManualMealSwapCommand,
+  HouseholdMealPlanDecisionCommand,
+} from "./household-meal-plan.contract.js";
+import { HouseholdObjectLocator } from "./household-object-locator.js";
+import {
   HouseholdDomainFailure,
   HouseholdMetadata,
+  HouseholdOrganizationId,
 } from "./household.contract.js";
+import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-services.live.js";
 
 const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
 const MealPlanWire = Schema.toEncoded(MealPlan);
 const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
-const ManualMealSwapRequestWire = Schema.toEncoded(ManualMealSwapRequest);
-const MealPlanDecisionRequestWire = Schema.toEncoded(MealPlanDecisionRequest);
+const ManualMealSwapRequestWire = Schema.toEncoded(
+  HouseholdManualMealSwapCommand
+);
+const MealPlanDecisionRequestWire = Schema.toEncoded(
+  HouseholdMealPlanDecisionCommand
+);
 const fixturePath = fileURLToPath(
   new URL("household-object-host.test-fixture.ts", import.meta.url)
 );
@@ -54,6 +67,27 @@ const HouseholdEnsureResponse = Schema.Union([
     error: HouseholdDomainFailure,
     ok: Schema.Literal(false),
   }),
+]);
+
+const ImportWorkflowAdmissionResponse = Schema.Union([
+  Schema.Struct({
+    ok: Schema.Literal(true),
+    value: HouseholdImportWorkflowAdmissionResult,
+  }),
+  Schema.Struct({ error: Schema.Unknown, ok: Schema.Literal(false) }),
+]);
+
+const ImportWorkflowDispatchResponse = Schema.Union([
+  Schema.Struct({
+    ok: Schema.Literal(true),
+    value: Schema.NullOr(HouseholdImportWorkflowDispatchView),
+  }),
+  Schema.Struct({ error: Schema.Unknown, ok: Schema.Literal(false) }),
+]);
+
+const CountResponse = Schema.Union([
+  Schema.Struct({ ok: Schema.Literal(true), value: Schema.Number }),
+  Schema.Struct({ error: Schema.Unknown, ok: Schema.Literal(false) }),
 ]);
 
 const MealPlanResponse = Schema.Union([
@@ -151,6 +185,10 @@ const makeRuntime = () =>
     compatibilityDate,
     compatibilityFlags,
     durableObjects: {
+      BrokenMigrationObject: {
+        className: "BrokenMigrationObject",
+        useSQLite: true,
+      },
       HouseholdObject: {
         className: "HouseholdObject",
         useSQLite: true,
@@ -178,6 +216,140 @@ afterAll(async () => {
     )
   );
 });
+
+const objectNameFor = (organizationId: string) =>
+  Effect.runPromise(
+    Effect.gen(function* locateTestHousehold() {
+      const locator = yield* HouseholdObjectLocator;
+      return yield* locator.locate(
+        Schema.decodeUnknownSync(HouseholdOrganizationId)(organizationId)
+      );
+    }).pipe(
+      Effect.provide(HouseholdObjectLocator.layer),
+      Effect.provide(HouseholdAuthorityServicesLive)
+    )
+  );
+
+const admitImportWorkflow = async (input: {
+  readonly alarmFailure?: boolean;
+  readonly dispatchId?: string;
+  readonly executionGeneration: number;
+  readonly importId: string;
+  readonly mutationId: string;
+  readonly objectName: string;
+  readonly organizationId: string;
+}) => {
+  const command: {
+    alarmFailure?: boolean;
+    dispatchId?: string;
+    executionGeneration: number;
+    importId: string;
+    mutationId: string;
+    objectName: string;
+    operation: "admitImportWorkflow";
+    organizationId: string;
+  } = {
+    executionGeneration: input.executionGeneration,
+    importId: input.importId,
+    mutationId: input.mutationId,
+    objectName: input.objectName,
+    operation: "admitImportWorkflow",
+    organizationId: input.organizationId,
+  };
+  if (input.alarmFailure !== undefined) {
+    command.alarmFailure = input.alarmFailure;
+  }
+  if (input.dispatchId !== undefined) {
+    command.dispatchId = input.dispatchId;
+  }
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify(command),
+    method: "POST",
+  });
+  expect(response.status).toBe(200);
+  return Schema.decodeUnknownPromise(ImportWorkflowAdmissionResponse)(
+    await response.json()
+  );
+};
+
+const inspectImportWorkflowDispatch = async (
+  objectName: string,
+  dispatchId: string
+) => {
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify({
+      dispatchId,
+      objectName,
+      operation: "inspectImportWorkflowDispatch",
+    }),
+    method: "POST",
+  });
+  return Schema.decodeUnknownPromise(ImportWorkflowDispatchResponse)(
+    await response.json()
+  );
+};
+
+const corruptImportWorkflowDispatchState = async (input: {
+  readonly dispatchId: string;
+  readonly objectName: string;
+  readonly state: string;
+}) => {
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify({
+      ...input,
+      operation: "corruptImportWorkflowDispatchState",
+    }),
+    method: "POST",
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+};
+
+const corruptHouseholdProvenanceCreatedAt = async (input: {
+  readonly createdAtEpochMs: number;
+  readonly objectName: string;
+}) => {
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify({
+      ...input,
+      operation: "corruptHouseholdProvenanceCreatedAt",
+    }),
+    method: "POST",
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+};
+
+const inspectImportWorkflowAdmissionCount = async (input: {
+  readonly executionGeneration: number;
+  readonly importId: string;
+  readonly objectName: string;
+}) => {
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify({
+      ...input,
+      operation: "inspectImportWorkflowAdmissionCount",
+    }),
+    method: "POST",
+  });
+  return Schema.decodeUnknownPromise(CountResponse)(await response.json());
+};
+
+const markImportWorkflowDispatchExhausted = async (input: {
+  readonly dispatchId: string;
+  readonly exhaustedAtEpochMs: number;
+  readonly objectName: string;
+}) => {
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify({
+      ...input,
+      operation: "markImportWorkflowDispatchExhausted",
+    }),
+    method: "POST",
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+};
 
 const commandHousehold = async (objectName: string, organizationId: string) => {
   const response = await runtime.dispatchFetch("http://localhost/", {
@@ -395,7 +567,7 @@ const inspectMealPlanStorage = async (objectName: string, draftId: string) => {
 
 describe("household Durable Object", () => {
   it("initializes once and rejects a conflicting organization provenance", async () => {
-    const objectName = "household:v1:organization-a";
+    const objectName = await objectNameFor("organization-a");
     const initial = await ensureHousehold(objectName, "organization-a");
     const replay = await ensureHousehold(objectName, "organization-a");
 
@@ -417,15 +589,224 @@ describe("household Durable Object", () => {
     if (mismatch.ok) {
       throw new Error("Expected conflicting household provenance to fail.");
     }
-    expect(mismatch.error).toMatchObject({
-      _tag: "HouseholdProvenanceMismatch",
-      organizationId: "organization-b",
-      persistedOrganizationId: "organization-a",
+    expect(mismatch.error).toEqual({ _tag: "HouseholdProvenanceMismatch" });
+    expect(JSON.stringify(mismatch.error)).not.toContain("organization-");
+  });
+
+  it("re-decodes and rejects a malformed internal command at the object boundary", async () => {
+    const objectName = await objectNameFor("organization-malformed-object");
+    const response = await runtime.dispatchFetch("http://localhost/", {
+      body: JSON.stringify({
+        objectName,
+        operation: "invokeMalformedEnsure",
+        payload: {
+          admission: {
+            actor: { _tag: "Member", actorId: "a".repeat(64) },
+            organizationId: "organization-malformed-object",
+          },
+          unexpectedAuthority: true,
+        },
+      }),
+      method: "POST",
+    });
+    await expect(response.json()).resolves.toEqual({
+      error: { _tag: "HouseholdInvalidInput" },
+      ok: false,
+    });
+  });
+
+  it("rejects corrupt persisted household provenance metadata", async () => {
+    const organizationId = "organization-corrupt-provenance";
+    const objectName = await objectNameFor(organizationId);
+    expect(await ensureHousehold(objectName, organizationId)).toMatchObject({
+      ok: true,
+    });
+
+    await corruptHouseholdProvenanceCreatedAt({
+      createdAtEpochMs: -1,
+      objectName,
+    });
+
+    expect(await ensureHousehold(objectName, organizationId)).toEqual({
+      error: { _tag: "HouseholdPersistenceFailure", operation: "read" },
+      ok: false,
+    });
+  });
+
+  it("fails closed and repeatably when a per-object migration cannot apply", async () => {
+    const probe = async () => {
+      const response = await runtime.dispatchFetch("http://localhost/", {
+        body: JSON.stringify({
+          objectName: "broken-migration-proof",
+          operation: "probeMigrationFailure",
+        }),
+        method: "POST",
+      });
+      return response.json();
+    };
+
+    expect(await probe()).toMatchObject({ ok: false });
+    expect(await probe()).toMatchObject({ ok: false });
+  });
+
+  it("keeps a committed Workflow admission final across alarm failure, exhaustion, replay, generation, and restart", async () => {
+    const organizationId = "organization-workflow-admission";
+    const objectName = await objectNameFor(organizationId);
+    const initialInput = {
+      alarmFailure: true,
+      dispatchId: "dispatch-workflow-generation-1",
+      executionGeneration: 1,
+      importId: "35c4f35a-d410-47d3-8c5a-b5c27dac52d8",
+      mutationId: "1".repeat(64),
+      objectName,
+      organizationId,
+    } as const;
+
+    const committed = await admitImportWorkflow(initialInput);
+    if (!committed.ok) {
+      throw new Error(
+        `Expected Workflow admission to commit: ${JSON.stringify(committed.error)}`
+      );
+    }
+    expect(committed.value.workflowIdentity).toMatch(
+      /^import-acquisition:v1:[a-f\d]{64}$/u
+    );
+    expect(committed.value.workflowIdentity).not.toContain(
+      initialInput.importId
+    );
+    expect(JSON.stringify(committed.value)).not.toContain(organizationId);
+
+    const replay = await admitImportWorkflow({
+      ...initialInput,
+      alarmFailure: false,
+      dispatchId: "a-replay-must-not-mint-this-dispatch-id",
+    });
+    expect(replay).toEqual(committed);
+
+    const pending = await inspectImportWorkflowDispatch(
+      objectName,
+      committed.value.dispatchId
+    );
+    expect(pending).toEqual({
+      ok: true,
+      value: {
+        admission: committed.value,
+        attempts: 0,
+        exhaustedAtEpochMs: null,
+        state: "pending",
+      },
+    });
+
+    await markImportWorkflowDispatchExhausted({
+      dispatchId: committed.value.dispatchId,
+      exhaustedAtEpochMs: committed.value.committedAtEpochMs + 10_000,
+      objectName,
+    });
+    const exhausted = await inspectImportWorkflowDispatch(
+      objectName,
+      committed.value.dispatchId
+    );
+    expect(exhausted).toMatchObject({
+      ok: true,
+      value: {
+        admission: committed.value,
+        state: "exhausted",
+      },
+    });
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    expect(await admitImportWorkflow(initialInput)).toEqual(committed);
+
+    const nextGeneration = await admitImportWorkflow({
+      ...initialInput,
+      alarmFailure: false,
+      dispatchId: "dispatch-workflow-generation-2",
+      executionGeneration: 2,
+      mutationId: "2".repeat(64),
+    });
+    expect(nextGeneration).toMatchObject({ ok: true });
+    if (!nextGeneration.ok) {
+      throw new Error("Expected a new execution generation to commit.");
+    }
+    expect(nextGeneration.value.workflowIdentity).not.toBe(
+      committed.value.workflowIdentity
+    );
+  });
+
+  it("rolls back admission when its required outbox insert cannot commit", async () => {
+    const organizationId = "organization-workflow-atomicity";
+    const objectName = await objectNameFor(organizationId);
+    const dispatchId = "dispatch-forced-atomicity-collision";
+    const first = await admitImportWorkflow({
+      dispatchId,
+      executionGeneration: 1,
+      importId: "a5670d4d-6300-4395-8ed7-7a8257d46067",
+      mutationId: "3".repeat(64),
+      objectName,
+      organizationId,
+    });
+    if (!first.ok) {
+      throw new Error(
+        `Expected atomicity fixture admission to commit: ${JSON.stringify(first.error)}`
+      );
+    }
+
+    const rejected = await admitImportWorkflow({
+      dispatchId,
+      executionGeneration: 1,
+      importId: "b2d1d9af-8b35-43be-b53e-6aa801f571ca",
+      mutationId: "4".repeat(64),
+      objectName,
+      organizationId,
+    });
+    expect(rejected).toMatchObject({
+      error: { _tag: "HouseholdWorkflowAdmissionPersistenceFailure" },
+      ok: false,
+    });
+    expect(
+      await inspectImportWorkflowAdmissionCount({
+        executionGeneration: 1,
+        importId: "b2d1d9af-8b35-43be-b53e-6aa801f571ca",
+        objectName,
+      })
+    ).toEqual({ ok: true, value: 0 });
+  });
+
+  it("rejects corrupt persisted outbox projections at the repository boundary", async () => {
+    const organizationId = "organization-workflow-corrupt-outbox";
+    const objectName = await objectNameFor(organizationId);
+    const committed = await admitImportWorkflow({
+      dispatchId: "dispatch-corrupt-outbox",
+      executionGeneration: 1,
+      importId: "e3dbe6a7-bc0f-4f7d-b938-bdd80544b7be",
+      mutationId: "5".repeat(64),
+      objectName,
+      organizationId,
+    });
+    if (!committed.ok) {
+      throw new Error("Expected corrupt outbox fixture admission to commit.");
+    }
+
+    await corruptImportWorkflowDispatchState({
+      dispatchId: committed.value.dispatchId,
+      objectName,
+      state: "caller-invented-state",
+    });
+
+    expect(
+      await inspectImportWorkflowDispatch(
+        objectName,
+        committed.value.dispatchId
+      )
+    ).toMatchObject({
+      error: { _tag: "HouseholdWorkflowAdmissionPersistenceFailure" },
+      ok: false,
     });
   });
 
   it("creates and reads a meal plan after a runtime restart", async () => {
-    const objectName = "household:v1:organization-meal-plan";
+    const objectName = await objectNameFor("organization-meal-plan");
     const created = await createMealPlan(objectName, "organization-meal-plan");
     if (!created.ok) {
       throw new Error(
@@ -446,7 +827,7 @@ describe("household Durable Object", () => {
   });
 
   it("rejects an oversized encoded plan without leaving a partial draft", async () => {
-    const objectName = "household:v1:organization-oversized-create";
+    const objectName = await objectNameFor("organization-oversized-create");
     const organizationId = "organization-oversized-create";
     const request = makeMaximumSlotRequest("oversized-create");
     const created = await createMealPlan(objectName, organizationId, {
@@ -475,7 +856,7 @@ describe("household Durable Object", () => {
   });
 
   it("rejects a draft that cannot reserve a terminal decision", async () => {
-    const objectName = "household:v1:organization-terminal-headroom";
+    const objectName = await objectNameFor("organization-terminal-headroom");
     const organizationId = "organization-terminal-headroom";
     const request = makeMaximumSlotRequest("terminal-headroom");
     const created = await createMealPlan(objectName, organizationId, {
@@ -509,7 +890,7 @@ describe("household Durable Object", () => {
   });
 
   it("persists a valid encoded plan near the conservative size limit", async () => {
-    const objectName = "household:v1:organization-near-limit-create";
+    const objectName = await objectNameFor("organization-near-limit-create");
     const organizationId = "organization-near-limit-create";
     const request = makeMaximumSlotRequest("near-limit-create");
     const created = await createMealPlan(objectName, organizationId, {
@@ -540,11 +921,14 @@ describe("household Durable Object", () => {
   });
 
   it("keeps every accepted near-limit draft terminalizable", async () => {
-    const approvalObjectName = "household:v1:organization-near-limit-approval";
+    const approvalObjectName = await objectNameFor(
+      "organization-near-limit-approval"
+    );
     const approvalOrganizationId = "organization-near-limit-approval";
     const approvalRequest = makeMaximumSlotRequest("near-limit-approval");
-    const rejectionObjectName =
-      "household:v1:organization-near-limit-rejection";
+    const rejectionObjectName = await objectNameFor(
+      "organization-near-limit-rejection"
+    );
     const rejectionOrganizationId = "organization-near-limit-rejection";
     const rejectionRequest = makeMaximumSlotRequest("near-limit-rejection");
     const nearLimitRecipe = makeLargeApprovedRecipe({
@@ -584,8 +968,6 @@ describe("household Durable Object", () => {
         operation: "approveMealPlan",
         organizationId: approvalOrganizationId,
         request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
-          actorId: "a".repeat(128),
-          decidedAt: "2026-08-01T12:30:00.000Z",
           draftId: approvalCreated.value.draftId,
           expectedRevision: approvalCreated.value.revision,
           mutationId: "p".repeat(128),
@@ -597,8 +979,6 @@ describe("household Durable Object", () => {
         operation: "rejectMealPlan",
         organizationId: rejectionOrganizationId,
         request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
-          actorId: "a".repeat(128),
-          decidedAt: "2026-08-01T12:30:00.000Z",
           draftId: rejectionCreated.value.draftId,
           expectedRevision: rejectionCreated.value.revision,
           mutationId: "r".repeat(128),
@@ -639,15 +1019,17 @@ describe("household Durable Object", () => {
   }, 20_000);
 
   it("keeps fingerprint-heavy drafts replayable and terminalizable", async () => {
-    const approvalObjectName =
-      "household:v1:organization-fingerprint-heavy-approval";
+    const approvalObjectName = await objectNameFor(
+      "organization-fingerprint-heavy-approval"
+    );
     const approvalOrganizationId = "organization-fingerprint-heavy-approval";
     const approvalRequest = Schema.decodeUnknownSync(MealPlanRequest)({
       ...Schema.encodeSync(MealPlanRequest)(syntheticMealPlanRequest),
       requestKey: "fingerprint-heavy-approval",
     });
-    const rejectionObjectName =
-      "household:v1:organization-fingerprint-heavy-rejection";
+    const rejectionObjectName = await objectNameFor(
+      "organization-fingerprint-heavy-rejection"
+    );
     const rejectionOrganizationId = "organization-fingerprint-heavy-rejection";
     const rejectionRequest = Schema.decodeUnknownSync(MealPlanRequest)({
       ...Schema.encodeSync(MealPlanRequest)(syntheticMealPlanRequest),
@@ -699,8 +1081,6 @@ describe("household Durable Object", () => {
         operation: "approveMealPlan",
         organizationId: approvalOrganizationId,
         request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
-          actorId: "a".repeat(128),
-          decidedAt: "2026-08-01T12:30:00.000Z",
           draftId: approvalCreated.value.draftId,
           expectedRevision: approvalCreated.value.revision,
           mutationId: "p".repeat(128),
@@ -712,8 +1092,6 @@ describe("household Durable Object", () => {
         operation: "rejectMealPlan",
         organizationId: rejectionOrganizationId,
         request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
-          actorId: "a".repeat(128),
-          decidedAt: "2026-08-01T12:30:00.000Z",
           draftId: rejectionCreated.value.draftId,
           expectedRevision: rejectionCreated.value.revision,
           mutationId: "r".repeat(128),
@@ -799,14 +1177,12 @@ describe("household Durable Object", () => {
           throw new Error("Expected an alternate large recipe fixture.");
         }
         const request = Schema.decodeUnknownSync(ManualMealSwapRequestWire)({
-          actorId: "actor-large-audit",
           draftId: created.value.draftId,
           expectedRevision: lastValid.value.revision,
           mutationId: `${input.requestKey}-swap-${index}`,
           reason: "Exercise the persisted audit size boundary.",
           replacementImportId: replacement.importId,
           slotId: "large-audit-dinner",
-          swappedAt: "2026-08-01T12:00:00.000Z",
         });
         const result = await mutateMealPlan({
           approvedRecipes: largeRecipes,
@@ -827,12 +1203,12 @@ describe("household Durable Object", () => {
     };
 
     const approvalInput = {
-      objectName: "household:v1:organization-large-swap-approval",
+      objectName: await objectNameFor("organization-large-swap-approval"),
       organizationId: "organization-large-swap-approval",
       requestKey: "large-swap-approval",
     };
     const rejectionInput = {
-      objectName: "household:v1:organization-large-swap-rejection",
+      objectName: await objectNameFor("organization-large-swap-rejection"),
       organizationId: "organization-large-swap-rejection",
       requestKey: "large-swap-rejection",
     };
@@ -899,8 +1275,6 @@ describe("household Durable Object", () => {
         operation: "approveMealPlan",
         organizationId: approvalInput.organizationId,
         request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
-          actorId: "a".repeat(128),
-          decidedAt: "2026-08-01T12:30:00.000Z",
           draftId: approvalScenario.created.value.draftId,
           expectedRevision: approvalScenario.lastValid.value.revision,
           mutationId: "p".repeat(128),
@@ -912,8 +1286,6 @@ describe("household Durable Object", () => {
         operation: "rejectMealPlan",
         organizationId: rejectionInput.organizationId,
         request: Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
-          actorId: "a".repeat(128),
-          decidedAt: "2026-08-01T12:30:00.000Z",
           draftId: rejectionScenario.created.value.draftId,
           expectedRevision: rejectionScenario.lastValid.value.revision,
           mutationId: "r".repeat(128),
@@ -932,7 +1304,7 @@ describe("household Durable Object", () => {
   }, 30_000);
 
   it("replays an identical create and rejects a changed request with the same key", async () => {
-    const objectName = "household:v1:organization-create-replay";
+    const objectName = await objectNameFor("organization-create-replay");
     const organizationId = "organization-create-replay";
     const created = await createMealPlan(objectName, organizationId);
     const replay = await createMealPlan(objectName, organizationId);
@@ -956,12 +1328,12 @@ describe("household Durable Object", () => {
       throw new Error("Expected two approved recipe fixtures.");
     }
     const first = await createMealPlan(
-      "household:v1:organization-isolated-a",
+      await objectNameFor("organization-isolated-a"),
       "organization-isolated-a",
       { approvedRecipes: [firstRecipe] }
     );
     const second = await createMealPlan(
-      "household:v1:organization-isolated-b",
+      await objectNameFor("organization-isolated-b"),
       "organization-isolated-b",
       { approvedRecipes: [secondRecipe] }
     );
@@ -972,12 +1344,12 @@ describe("household Durable Object", () => {
     expect(second.value.meals).not.toEqual(first.value.meals);
 
     const rereadFirst = await readMealPlan(
-      "household:v1:organization-isolated-a",
+      await objectNameFor("organization-isolated-a"),
       "organization-isolated-a",
       first.value.draftId
     );
     const rereadSecond = await readMealPlan(
-      "household:v1:organization-isolated-b",
+      await objectNameFor("organization-isolated-b"),
       "organization-isolated-b",
       second.value.draftId
     );
@@ -986,7 +1358,7 @@ describe("household Durable Object", () => {
   });
 
   it("serializes concurrent stale mutations so exactly one revision wins", async () => {
-    const objectName = "household:v1:organization-concurrent-mutations";
+    const objectName = await objectNameFor("organization-concurrent-mutations");
     const organizationId = "organization-concurrent-mutations";
     const created = await createMealPlan(objectName, organizationId);
     if (!created.ok) {
@@ -996,14 +1368,12 @@ describe("household Durable Object", () => {
     }
     const request = (mutationId: string, reason: string) =>
       Schema.decodeUnknownSync(ManualMealSwapRequestWire)({
-        actorId: "actor-concurrent",
         draftId: created.value.draftId,
         expectedRevision: 0,
         mutationId,
         reason,
         replacementImportId: syntheticReplacementRecipeId,
         slotId: "synthetic-dinner",
-        swappedAt: "2026-07-22T10:59:00.000Z",
       });
 
     const results = await Promise.all([
@@ -1040,13 +1410,13 @@ describe("household Durable Object", () => {
     }
     expect(persisted.value).toMatchObject({
       _tag: "Draft",
-      audit: [{ actorId: "actor-concurrent" }],
+      audit: [{ actorId: "a".repeat(64) }],
       revision: 1,
     });
   });
 
   it("persists swap and decision idempotency, concurrency, terminality, and audit", async () => {
-    const objectName = "household:v1:organization-mutations";
+    const objectName = await objectNameFor("organization-mutations");
     const organizationId = "organization-mutations";
     const created = await createMealPlan(objectName, organizationId);
     if (!created.ok) {
@@ -1054,14 +1424,12 @@ describe("household Durable Object", () => {
     }
 
     const swap = Schema.decodeUnknownSync(ManualMealSwapRequestWire)({
-      actorId: "actor-a",
       draftId: created.value.draftId,
       expectedRevision: 0,
       mutationId: "swap-a",
       reason: "Use the household alternative.",
       replacementImportId: syntheticReplacementRecipeId,
       slotId: "synthetic-dinner",
-      swappedAt: "2026-07-22T11:00:00.000Z",
     });
     const swapped = await mutateMealPlan({
       objectName,
@@ -1081,7 +1449,7 @@ describe("household Durable Object", () => {
     }
     expect(swapped.value).toMatchObject({
       _tag: "Draft",
-      audit: [{ actorId: "actor-a", mutationId: "swap-a" }],
+      audit: [{ actorId: "a".repeat(64), mutationId: "swap-a" }],
       revision: 1,
     });
 
@@ -1108,8 +1476,6 @@ describe("household Durable Object", () => {
     expect(failureTag(staleSwap)).toBe("MealPlanVersionConflict");
 
     const approval = Schema.decodeUnknownSync(MealPlanDecisionRequestWire)({
-      actorId: "actor-a",
-      decidedAt: "2026-07-22T11:05:00.000Z",
       draftId: created.value.draftId,
       expectedRevision: 1,
       mutationId: "decision-a",
@@ -1133,8 +1499,8 @@ describe("household Durable Object", () => {
     }
     expect(approved.value).toMatchObject({
       _tag: "Approved",
-      audit: [{ actorId: "actor-a", mutationId: "swap-a" }],
-      decision: { actorId: "actor-a", mutationId: "decision-a" },
+      audit: [{ actorId: "a".repeat(64), mutationId: "swap-a" }],
+      decision: { actorId: "a".repeat(64), mutationId: "decision-a" },
       revision: 2,
     });
 

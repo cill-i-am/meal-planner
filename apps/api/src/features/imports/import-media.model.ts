@@ -43,6 +43,25 @@ export const MediaArtifactId = Schema.String.pipe(
 );
 export type MediaArtifactId = typeof MediaArtifactId.Type;
 
+const AcquisitionExecutionFence = MediaArtifactId.pipe(
+  Schema.check(
+    Schema.isPattern(
+      new RegExp(`^${ImportUuidPattern}:acquisition-generation:[0-9]+$`, "iu")
+    )
+  )
+);
+
+/** Import/generation fence for the noncanonical acquisition coordinator. */
+export const AcquisitionCoordinatorId = AcquisitionExecutionFence.pipe(
+  Schema.brand("AcquisitionCoordinatorId")
+);
+export type AcquisitionCoordinatorId = typeof AcquisitionCoordinatorId.Type;
+
+export const AcquisitionArtifactId = AcquisitionExecutionFence.pipe(
+  Schema.brand("AcquisitionArtifactId")
+);
+export type AcquisitionArtifactId = typeof AcquisitionArtifactId.Type;
+
 export const MediaObjectKey = Schema.String.pipe(
   Schema.check(
     Schema.isPattern(
@@ -292,7 +311,15 @@ export const acquisitionArtifactId = (
   importId: ImportId,
   generation: AcquisitionGeneration
 ) =>
-  Schema.decodeUnknownSync(MediaArtifactId)(
+  Schema.decodeUnknownSync(AcquisitionArtifactId)(
+    `${importId}:acquisition-generation:${generation}`
+  );
+
+export const acquisitionCoordinatorId = (
+  importId: ImportId,
+  generation: AcquisitionGeneration
+) =>
+  Schema.decodeUnknownSync(AcquisitionCoordinatorId)(
     `${importId}:acquisition-generation:${generation}`
   );
 

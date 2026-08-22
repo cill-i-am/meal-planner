@@ -42,6 +42,9 @@ const householdStatus = Schema.decodeUnknownSync(HouseholdStatus)({
   status: "ready",
 });
 const actorId = Schema.decodeUnknownSync(MealPlanActorId)("authenticated-user");
+const admittedActorId = Schema.decodeUnknownSync(MealPlanActorId)(
+  "b6613fdfccc63dff6de05dfe53238e12f9469481e51f4da22b72beb7d17bfb4e"
+);
 const draftId = Schema.decodeUnknownSync(MealPlanDraftId)("draft-week-1");
 const createMealPlanPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
   policy: {
@@ -137,9 +140,9 @@ describe("household HttpApi boundary", () => {
     const routedOrganizationIds: string[] = [];
     const app = makeApp({
       gateway: HouseholdDomainGatewayService.of({
-        ensure: (admittedOrganizationId) =>
+        ensure: (principal) =>
           Effect.sync(() => {
-            routedOrganizationIds.push(admittedOrganizationId);
+            routedOrganizationIds.push(principal.organizationId);
             return householdStatus;
           }),
       }),
@@ -266,7 +269,7 @@ describe("household meal-plan HttpApi boundary", () => {
       {
         payload: createMealPlanPayload,
         principal: Schema.decodeUnknownSync(HouseholdMealPlanPrincipal)({
-          actorId,
+          actorId: admittedActorId,
           organizationId,
         }),
       },
@@ -446,39 +449,42 @@ describe("household meal-plan HttpApi boundary", () => {
     expect(responseBodies[2]).not.toHaveProperty("decision.actorId");
     expect(responseBodies[3]).not.toHaveProperty("decision.actorId");
     expect(JSON.stringify(responseBodies)).not.toContain(actorId);
-    expect(calls).toEqual([
-      {
-        input: { draftId, principal: { actorId, organizationId } },
-        operation: "read",
-      },
-      {
-        input: {
-          draftId,
-          payload: swapMealPlanPayload,
-          principal: { actorId, organizationId },
-          swappedAt: expect.anything(),
+    expect(calls).toHaveLength(4);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        {
+          input: {
+            draftId,
+            principal: { actorId: admittedActorId, organizationId },
+          },
+          operation: "read",
         },
-        operation: "swap",
-      },
-      {
-        input: {
-          decidedAt: expect.anything(),
-          draftId,
-          payload: decideMealPlanPayload,
-          principal: { actorId, organizationId },
+        {
+          input: {
+            draftId,
+            payload: swapMealPlanPayload,
+            principal: { actorId: admittedActorId, organizationId },
+          },
+          operation: "swap",
         },
-        operation: "approve",
-      },
-      {
-        input: {
-          decidedAt: expect.anything(),
-          draftId,
-          payload: decideMealPlanPayload,
-          principal: { actorId, organizationId },
+        {
+          input: {
+            draftId,
+            payload: decideMealPlanPayload,
+            principal: { actorId: admittedActorId, organizationId },
+          },
+          operation: "approve",
         },
-        operation: "reject",
-      },
-    ]);
+        {
+          input: {
+            draftId,
+            payload: decideMealPlanPayload,
+            principal: { actorId: admittedActorId, organizationId },
+          },
+          operation: "reject",
+        },
+      ])
+    );
   });
 
   it("maps domain and storage failures to stable non-leaking problems", async () => {

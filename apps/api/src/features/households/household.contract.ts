@@ -1,11 +1,16 @@
 import { HouseholdOrganizationId as HouseholdOrganizationIdSchema } from "@meal-planner/household-api";
 import { Schema } from "effect";
 
+import {
+  HouseholdAuthorizationFailure,
+  HouseholdMemberAdmission,
+} from "./rpc/command-envelope.js";
+
 export const HouseholdOrganizationId = HouseholdOrganizationIdSchema;
 export type HouseholdOrganizationId = typeof HouseholdOrganizationId.Type;
 
 export const HouseholdEnsureInput = Schema.Struct({
-  organizationId: HouseholdOrganizationId,
+  admission: HouseholdMemberAdmission,
 });
 export type HouseholdEnsureInput = typeof HouseholdEnsureInput.Type;
 
@@ -19,10 +24,7 @@ export type HouseholdMetadata = typeof HouseholdMetadata.Type;
 
 export const HouseholdProvenanceMismatch = Schema.TaggedStruct(
   "HouseholdProvenanceMismatch",
-  {
-    organizationId: HouseholdOrganizationId,
-    persistedOrganizationId: HouseholdOrganizationId,
-  }
+  {}
 );
 export type HouseholdProvenanceMismatch =
   typeof HouseholdProvenanceMismatch.Type;
@@ -44,11 +46,8 @@ export type HouseholdInvalidInput = typeof HouseholdInvalidInput.Type;
 
 export const HouseholdDomainFailure = Schema.Union([
   HouseholdInvalidInput,
+  HouseholdAuthorizationFailure,
   HouseholdProvenanceMismatch,
   HouseholdPersistenceFailure,
 ]);
 export type HouseholdDomainFailure = typeof HouseholdDomainFailure.Type;
-
-export const householdObjectName = (
-  organizationId: HouseholdOrganizationId
-): string => `household:v1:${organizationId}`;

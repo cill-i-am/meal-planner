@@ -17,6 +17,7 @@ import {
   householdMealPlanMutationReceipts,
   householdMealPlans,
 } from "./household.database-schema.js";
+import type { HouseholdDigestService } from "./shared-kernel/authority-services.js";
 
 const EncodedMealPlan = Schema.fromJsonString(MealPlan);
 
@@ -34,20 +35,6 @@ const utf8Encoder = new TextEncoder();
 const persistenceFailure = (
   operation: (typeof MealPlanPersistenceFailure.Type)["operation"]
 ) => MealPlanPersistenceFailure.make({ operation });
-
-const digestRequestFingerprint = (requestFingerprint: string) =>
-  Effect.tryPromise({
-    catch: () => persistenceFailure("create"),
-    try: async () => {
-      const digest = await crypto.subtle.digest(
-        "SHA-256",
-        utf8Encoder.encode(requestFingerprint)
-      );
-      return Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("");
-    },
-  });
 
 const encodePersistablePlan = (
   plan: typeof MealPlan.Type,
@@ -74,12 +61,14 @@ const queryFailure =
     effect.pipe(Effect.mapError(() => persistenceFailure(operation)));
 
 export const makeHouseholdMealPlanRepository = (
-  database: EffectSQLiteDoDatabase
+  database: EffectSQLiteDoDatabase,
+  digest: HouseholdDigestService
 ): MealPlanDraftRepository => ({
   create: ({ draft, requestFingerprint }) =>
     Effect.gen(function* createMealPlanWithReplayDigest() {
-      const requestFingerprintDigest =
-        yield* digestRequestFingerprint(requestFingerprint);
+      const requestFingerprintDigest = yield* digest
+        .sha256(requestFingerprint)
+        .pipe(Effect.mapError(() => persistenceFailure("create")));
       return yield* database.transaction((transaction) =>
         Effect.gen(function* createHouseholdMealPlan() {
           const [existing] = yield* transaction
