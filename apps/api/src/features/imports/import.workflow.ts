@@ -813,15 +813,30 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             ) =>
               Cloudflare.Workflows.task(
                 `persist-${failure.stage}-terminal-v1`,
-                terminalCheckpoints
-                  .persist({
+                Effect.gen(function* persistHouseholdOwnedTerminalCheckpoint() {
+                  const stage = yield* householdDomain.readEvidenceStage({
+                    admission,
+                    expectedGeneration: generation,
+                    intentId,
+                    stage:
+                      failure.stage === "recipe" ? "extraction" : failure.stage,
+                  });
+                  if (stage === null || stage.outcome !== "Failed") {
+                    return yield* Effect.die(
+                      "Expected household terminal evidence stage authority"
+                    );
+                  }
+                  return yield* terminalCheckpoints.persist({
                     acquisitionGeneration: generation,
-                    completedAt: now(),
+                    completedAt: Schema.decodeUnknownSync(ImportTimestamp)(
+                      stage.committedAt
+                    ),
                     failureCode: failure.code,
                     importId,
+                    ownershipId: stage.dispatchId,
                     providerStage: failure.stage,
-                  })
-                  .pipe(Effect.orDie)
+                  });
+                }).pipe(Effect.orDie)
               );
             const completeVisualAndRecipe = (
               acquisitionGeneration: AcquisitionGeneration,

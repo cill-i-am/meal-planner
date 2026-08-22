@@ -15,6 +15,20 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  HouseholdMutateEvidenceStageInput,
+  HouseholdMutateEvidenceStageResult,
+  HouseholdReadEvidenceStageInput,
+  HouseholdReadEvidenceStageResult,
+} from "../households/evidence/household-evidence.contract.js";
+import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
+import {
+  HouseholdAdmitRecipeImportInput,
+  HouseholdAdmitRecipeImportResult,
+  HouseholdReadRecipeImportExecutionInput,
+  HouseholdRecipeImportExecutionView,
+  HouseholdResolveRecipeImportSourceInput,
+} from "../households/recipe-import/household-recipe-import.contract.js";
+import {
   PilotBudgetDispatchId,
   PilotBudgetProviderStageId,
   PilotBudgetRunId,
@@ -24,6 +38,7 @@ import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-bu
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { makeD1ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
 import { makeD1ProviderTerminalCheckpointRepository } from "./import-provider-terminal.js";
+import type { RecipeRecoveryPreparationHouseholdAuthority } from "./import-recipe-recovery.household.js";
 import { makeD1RecipeRecoveryRepository } from "./import-recipe-recovery.js";
 import {
   ImportId,
@@ -56,6 +71,12 @@ const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
 const fixturePath = fileURLToPath(
   new URL("import-provider-workflow-task.test-fixture.ts", import.meta.url)
+);
+const householdDomainFixturePath = fileURLToPath(
+  new URL(
+    "../households/household-domain-service.test-fixture.js",
+    import.meta.url
+  )
 );
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare;
@@ -91,7 +112,7 @@ const readDrizzleD1Migrations = (migrationsPath: string) => {
   );
 };
 
-const buildFixture = async (outputDirectory: string) => {
+const buildFixture = async (inputPath: string, outputDirectory: string) => {
   const output = await Effect.runPromise(
     Bundle.build(
       {
@@ -100,7 +121,7 @@ const buildFixture = async (outputDirectory: string) => {
           unresolvedImport: false,
         },
         external: ["cloudflare:workers"],
-        input: fixturePath,
+        input: inputPath,
         plugins: [
           cloudflareRolldown({
             compatibilityDate,
@@ -170,9 +191,31 @@ const applyMigrations = async () => {
   await applyRemaining(migrations);
 };
 
-const prepareRecipeRecovery = async (importIdValue: string) => {
+interface HouseholdRecoveryWorkerBinding {
+  readonly admitRecipeImport: (
+    input: typeof HouseholdAdmitRecipeImportInput.Encoded
+  ) => typeof HouseholdAdmitRecipeImportResult.Encoded;
+  readonly mutateEvidenceStage: (
+    input: typeof HouseholdMutateEvidenceStageInput.Encoded
+  ) => typeof HouseholdMutateEvidenceStageResult.Encoded;
+  readonly readRecipeImportExecution: (
+    input: typeof HouseholdReadRecipeImportExecutionInput.Encoded
+  ) => typeof HouseholdRecipeImportExecutionView.Encoded;
+  readonly readEvidenceStage: (
+    input: typeof HouseholdReadEvidenceStageInput.Encoded
+  ) => typeof HouseholdReadEvidenceStageResult.Encoded;
+  readonly resolveRecipeImportSource: (
+    input: typeof HouseholdResolveRecipeImportSourceInput.Encoded
+  ) => Effect.Success<
+    ReturnType<HouseholdDomainWorkerMethods["resolveRecipeImportSource"]>
+  >;
+}
+
+const prepareRecipeRecovery = async () => {
   const database = await runtime.getD1Database("MealPlannerDatabase");
-  const importId = decodeImportId(importIdValue);
+  const { HouseholdDomainWorker: householdWorker } = await runtime.getBindings<{
+    readonly HouseholdDomainWorker: HouseholdRecoveryWorkerBinding;
+  }>("provider-workflow");
   const generation = decodeGeneration(1);
   const now = "2026-07-30T00:00:00.000Z";
   const sourceSha256 = "a".repeat(64);
@@ -180,6 +223,97 @@ const prepareRecipeRecovery = async (importIdValue: string) => {
   const visualManifestSha256 = "c".repeat(64);
   const evidenceFingerprint = "e".repeat(64);
   const extractionFingerprint = "f".repeat(64);
+  const organizationId = `recovery-household-${randomUUID()}`;
+  const admitted = await Schema.decodeUnknownPromise(
+    HouseholdAdmitRecipeImportResult
+  )(
+    await householdWorker.admitRecipeImport(
+      Schema.encodeSync(HouseholdAdmitRecipeImportInput)(
+        Schema.decodeUnknownSync(HouseholdAdmitRecipeImportInput)({
+          admission: {
+            actor: { _tag: "Member", actorId: "a".repeat(64) },
+            organizationId,
+          },
+          idempotencyKey: `recovery-${randomUUID()}`,
+          source: {
+            kind: "tiktok",
+            url: "https://www.tiktok.com/@mealplanner/video/7000000000000000201",
+          },
+        })
+      )
+    )
+  );
+  const importId = decodeImportId(admitted.intent.id);
+  const systemAdmission = {
+    actor: {
+      _tag: "System" as const,
+      purpose: "recipe_import_lifecycle_commit" as const,
+    },
+    organizationId,
+  };
+  await householdWorker.resolveRecipeImportSource(
+    Schema.encodeSync(HouseholdResolveRecipeImportSourceInput)(
+      Schema.decodeUnknownSync(HouseholdResolveRecipeImportSourceInput)({
+        admission: systemAdmission,
+        canonicalSourceId: `recovery-canonical-${importId}`,
+        canonicalUrl:
+          "https://www.tiktok.com/@mealplanner/video/7000000000000000201",
+        expectedGeneration: generation,
+        intentId: admitted.intent.id,
+        mutationId: "1".repeat(64),
+        sourceKind: "video",
+      })
+    )
+  );
+  await Schema.decodeUnknownPromise(HouseholdRecipeImportExecutionView)(
+    await householdWorker.readRecipeImportExecution(
+      Schema.encodeSync(HouseholdReadRecipeImportExecutionInput)(
+        Schema.decodeUnknownSync(HouseholdReadRecipeImportExecutionInput)({
+          admission: systemAdmission,
+          expectedGeneration: generation,
+          intentId: admitted.intent.id,
+        })
+      )
+    )
+  );
+  const claimInput = Schema.decodeUnknownSync(
+    HouseholdMutateEvidenceStageInput
+  )({
+    admission: systemAdmission,
+    expectedGeneration: generation,
+    inputFingerprint: extractionFingerprint,
+    intentId: admitted.intent.id,
+    mutationId: "2".repeat(64),
+    operation: {
+      _tag: "Claim",
+      dispatchId: extractionFingerprint,
+      stage: "extraction",
+      startedAt: now,
+    },
+  });
+  await Schema.decodeUnknownPromise(HouseholdMutateEvidenceStageResult)(
+    await householdWorker.mutateEvidenceStage(
+      Schema.encodeSync(HouseholdMutateEvidenceStageInput)(claimInput)
+    )
+  );
+  await Schema.decodeUnknownPromise(HouseholdMutateEvidenceStageResult)(
+    await householdWorker.mutateEvidenceStage(
+      Schema.encodeSync(HouseholdMutateEvidenceStageInput)(
+        Schema.decodeUnknownSync(HouseholdMutateEvidenceStageInput)({
+          ...claimInput,
+          mutationId: "3".repeat(64),
+          operation: {
+            _tag: "Fail",
+            completedAt: "2026-07-30T00:01:00.000Z",
+            dispatchId: extractionFingerprint,
+            failureCode: "provider_error",
+            recovery: "operator_review",
+            stage: "extraction",
+          },
+        })
+      )
+    )
+  );
   const dispatchId = decodeDispatchId(
     `recipe:${importId}:${generation}:${evidenceFingerprint}`
   );
@@ -206,6 +340,14 @@ const prepareRecipeRecovery = async (importIdValue: string) => {
     status: { kind: "transcribed" },
     updatedAt: decodeImportTimestamp(now),
   });
+  await database
+    .prepare(
+      `INSERT INTO import_evidence_routes (
+         import_id, organization_id, route_version
+       ) VALUES (?, ?, 1)`
+    )
+    .bind(importId, organizationId)
+    .run();
   await database.batch([
     database
       .prepare(
@@ -326,9 +468,19 @@ const prepareRecipeRecovery = async (importIdValue: string) => {
       completedAt: decodeImportTimestamp(now),
       failureCode: "outcome_unknown",
       importId,
+      ownershipId: extractionFingerprint,
       providerStage: "recipe",
     })
   );
+  await database
+    .prepare(
+      `INSERT INTO import_provider_terminal_checkpoints (
+         import_id, acquisition_generation, provider_stage, ownership_id,
+         failure_code, completed_at, created_at
+       ) VALUES (?, ?, 'recipe', ?, 'outcome_unknown', ?, ?)`
+    )
+    .bind(importId, generation, extractionFingerprint, now, now)
+    .run();
   await Effect.runPromise(
     makeD1ProviderTerminalSettlementService({
       database,
@@ -341,18 +493,76 @@ const prepareRecipeRecovery = async (importIdValue: string) => {
       operation: "settle_recipe_unknown",
     })
   );
-  const recovery = await Effect.runPromise(
-    makeD1RecipeRecoveryRepository(
-      database,
-      "pilot-gaia-118"
-    ).prepareNextAttempt({
+  const householdDomain: RecipeRecoveryPreparationHouseholdAuthority = {
+    mutateEvidenceStage: (input) =>
+      Effect.sync(() =>
+        householdWorker.mutateEvidenceStage(
+          Schema.encodeSync(HouseholdMutateEvidenceStageInput)(input)
+        )
+      ),
+    readRecipeImportExecution: (input) =>
+      Effect.sync(() =>
+        householdWorker.readRecipeImportExecution(
+          Schema.encodeSync(HouseholdReadRecipeImportExecutionInput)(input)
+        )
+      ),
+  };
+  const recoveryService = makeD1ProviderTerminalSettlementService({
+    database,
+    householdDomain,
+    now: () => decodeImportTimestamp("2026-07-30T00:02:00.000Z"),
+    recipeRecoveryStarter: { start: () => Effect.void },
+    runtimeStage: "pilot-gaia-118",
+  });
+  await Effect.runPromise(
+    recoveryService.settle({
       acquisitionGeneration: generation,
-      createdAt: decodeImportTimestamp("2026-07-30T00:02:00.000Z"),
+      dispatchId,
       importId,
-      predecessorDispatchId: dispatchId,
+      operation: "prepare_recipe_recovery",
     })
   );
-  return { database, recovery };
+  const recovery = await Effect.runPromise(
+    makeD1RecipeRecoveryRepository(database, "pilot-gaia-118").readResumable({
+      acquisitionGeneration: generation,
+      importId,
+      rootDispatchId: dispatchId,
+    })
+  );
+  const readHouseholdExtraction = () =>
+    Schema.decodeUnknownPromise(HouseholdReadEvidenceStageResult)(
+      householdWorker.readEvidenceStage(
+        Schema.encodeSync(HouseholdReadEvidenceStageInput)(
+          Schema.decodeUnknownSync(HouseholdReadEvidenceStageInput)({
+            admission: systemAdmission,
+            expectedGeneration: generation,
+            intentId: admitted.intent.id,
+            stage: "extraction",
+          })
+        )
+      )
+    );
+  await expect(readHouseholdExtraction()).resolves.toMatchObject({
+    dispatchId: recovery.currentExtractionFingerprint,
+    failureCode: null,
+    inputFingerprint: recovery.currentExtractionFingerprint,
+    outcome: "Dispatching",
+    result: null,
+  });
+  await Effect.runPromise(
+    recoveryService.settle({
+      acquisitionGeneration: generation,
+      dispatchId,
+      importId,
+      operation: "resume_recipe_recovery",
+    })
+  );
+  await expect(readHouseholdExtraction()).resolves.toMatchObject({
+    dispatchId: recovery.currentExtractionFingerprint,
+    inputFingerprint: recovery.currentExtractionFingerprint,
+    outcome: "Dispatching",
+  });
+  return { database, importId, recovery };
 };
 
 beforeAll(async () => {
@@ -360,19 +570,39 @@ beforeAll(async () => {
     `${tmpdir()}/meal-planner-gaia-163-native-`
   );
   temporaryDirectories.push(temporaryDirectory);
-  const fixtureModules = await buildFixture(temporaryDirectory);
+  const [fixtureModules, householdDomainModules] = await Promise.all([
+    buildFixture(fixturePath, `${temporaryDirectory}/provider-workflow`),
+    buildFixture(householdDomainFixturePath, `${temporaryDirectory}/household`),
+  ]);
   runtime = new Miniflare({
     compatibilityDate,
     compatibilityFlags,
-    d1Databases: { MealPlannerDatabase: "gaia-163-test" },
-    kvNamespaces: ["PROVIDER_WORKFLOW_STATE"],
-    modules: [...fixtureModules],
-    workflows: {
-      ProviderRetryWorkflow: {
-        className: "ProviderRetryWorkflow",
-        name: "provider-retry-workflow",
+    workers: [
+      {
+        compatibilityDate,
+        compatibilityFlags,
+        d1Databases: { MealPlannerDatabase: "gaia-163-test" },
+        kvNamespaces: ["PROVIDER_WORKFLOW_STATE"],
+        modules: [...fixtureModules],
+        name: "provider-workflow",
+        serviceBindings: { HouseholdDomainWorker: "household-domain" },
+        workflows: {
+          ProviderRetryWorkflow: {
+            className: "ProviderRetryWorkflow",
+            name: "provider-retry-workflow",
+          },
+        },
       },
-    },
+      {
+        compatibilityDate,
+        compatibilityFlags,
+        durableObjects: {
+          HouseholdObject: { className: "HouseholdObject", useSQLite: true },
+        },
+        modules: [...householdDomainModules],
+        name: "household-domain",
+      },
+    ],
   });
   await applyMigrations();
 }, 30_000);
@@ -1606,9 +1836,8 @@ describe("provider workflow task retry exhaustion", () => {
   });
 
   it("retries and replays the recipe recovery native task without another provider call", async () => {
+    const { database, importId, recovery } = await prepareRecipeRecovery();
     const instanceId = `gaia-207-recipe-recovery-${randomUUID()}`;
-    const importId = randomUUID();
-    const { database, recovery } = await prepareRecipeRecovery(importId);
     const stageBefore = await database
       .prepare(
         `SELECT settled_micro_usd

@@ -694,6 +694,12 @@ const speechTerminalRecoveryDispatch = (
       "pilot-gaia-118"
     ).speechDispatchId({ acquisitionGeneration, importId });
     const isRecovery = dispatchId.endsWith(":recovery:1");
+    yield* Effect.promise(() =>
+      env.PROVIDER_WORKFLOW_STATE.put(
+        stateKey(instanceId, "speech-terminal-ownership-id"),
+        dispatchId
+      )
+    );
     const reservation = {
       dispatchId: decodeDispatchId(dispatchId),
       maximumCostMicroUsd: 100,
@@ -975,19 +981,51 @@ const providerWorkflowExport = {
           if (checkpoint._tag === "Failed") {
             yield* task(
               "persist-speech-terminal-v1",
-              makeD1ProviderTerminalCheckpointRepository(
-                env.MealPlannerDatabase
-              )
-                .persist({
+              Effect.gen(function* persistSpeechTerminalAuthority() {
+                const ownershipId = yield* Effect.promise(() =>
+                  env.PROVIDER_WORKFLOW_STATE.get(
+                    stateKey(event.instanceId, "speech-terminal-ownership-id")
+                  )
+                );
+                if (ownershipId === null) {
+                  return yield* Effect.die(
+                    "Missing explicit speech terminal ownership identity"
+                  );
+                }
+                yield* makeD1ProviderTerminalCheckpointRepository(
+                  env.MealPlannerDatabase
+                ).persist({
                   acquisitionGeneration,
                   completedAt: decodeImportTimestamp(
                     "2026-07-27T09:10:30.000Z"
                   ),
                   failureCode: checkpoint.code,
                   importId,
+                  ownershipId,
                   providerStage: "speech",
-                })
-                .pipe(Effect.orDie)
+                });
+                yield* Effect.promise(() =>
+                  env.MealPlannerDatabase.prepare(
+                    `INSERT INTO import_provider_terminal_checkpoints (
+                       import_id, acquisition_generation, provider_stage,
+                       ownership_id, failure_code, completed_at, created_at
+                     ) VALUES (?, ?, 'speech', ?, ?, ?, ?)
+                     ON CONFLICT(
+                       import_id, acquisition_generation, provider_stage,
+                       ownership_id
+                     ) DO NOTHING`
+                  )
+                    .bind(
+                      importId,
+                      acquisitionGeneration,
+                      ownershipId,
+                      checkpoint.code,
+                      "2026-07-27T09:10:30.000Z",
+                      "2026-07-27T09:10:30.000Z"
+                    )
+                    .run()
+                );
+              }).pipe(Effect.orDie)
             );
             return yield* task(
               "finalize-terminal",
@@ -1444,7 +1482,10 @@ export default {
           workflow.unsafeWaitForStatus(command.id, "errored"),
         ]);
       } else {
-        await workflow.unsafeWaitForStatus(command.id, "complete");
+        await Promise.race([
+          workflow.unsafeWaitForStatus(command.id, "complete"),
+          workflow.unsafeWaitForStatus(command.id, "errored"),
+        ]);
       }
       return Response.json(await instance.status());
     } finally {

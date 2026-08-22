@@ -9,6 +9,8 @@ import { makeD1ImportExecutionRepository } from "./import-execution.repository.d
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { settleSpeechTerminalUnknown } from "./import-provider-speech-terminal-settlement.js";
 import { makeD1ProviderTerminalRecoveryRepository } from "./import-provider-terminal.js";
+import { prepareRecipeRecoveryHouseholdExtraction } from "./import-recipe-recovery.household.js";
+import type { RecipeRecoveryPreparationHouseholdAuthority } from "./import-recipe-recovery.household.js";
 import {
   makeD1RecipeRecoveryRepository,
   RecipeRecoveryOrdinal,
@@ -2041,11 +2043,35 @@ export const ProviderTerminalSettlementService =
 
 interface ProviderTerminalSettlementServiceInput {
   readonly database: AnyD1Database;
+  readonly householdDomain?: RecipeRecoveryPreparationHouseholdAuthority;
   readonly now: () => ImportTimestamp;
   readonly runtimeStage: string;
   readonly recipeRecoveryStarter?: RecipeRecoveryWorkflowStarter;
   readonly workflowStarter?: Pick<ImportWorkflowStarter, "restartFromSpeech">;
 }
+
+const mapHouseholdRecipeRecoveryError = (error: {
+  readonly _tag: "ImportPersistenceUnavailable" | "ImportTransitionRejected";
+}) =>
+  providerTerminalSettlementError(
+    error._tag === "ImportPersistenceUnavailable"
+      ? "persistence_unavailable"
+      : "not_allowed"
+  );
+
+const prepareHouseholdRecipeRecovery = (
+  input: ProviderTerminalSettlementServiceInput,
+  attempt: Parameters<
+    typeof prepareRecipeRecoveryHouseholdExtraction
+  >[0]["attempt"]
+) =>
+  input.householdDomain === undefined
+    ? Effect.fail(providerTerminalSettlementError("persistence_unavailable"))
+    : prepareRecipeRecoveryHouseholdExtraction({
+        attempt,
+        database: input.database,
+        householdDomain: input.householdDomain,
+      }).pipe(Effect.mapError(mapHouseholdRecipeRecoveryError));
 
 const readAuthoritativeImportTrace = (
   database: AnyD1Database,
@@ -2220,6 +2246,7 @@ export const makeD1ProviderTerminalSettlementService = (
             predecessorDispatchId: request.dispatchId,
           })
           .pipe(Effect.mapError(mapRecipeRecoveryFailure));
+        yield* prepareHouseholdRecipeRecovery(input, recovery);
         const start = input.recipeRecoveryStarter?.start;
         if (start === undefined) {
           return yield* Effect.fail(
@@ -2264,6 +2291,7 @@ export const makeD1ProviderTerminalSettlementService = (
           })
           .pipe(Effect.mapError(mapRecipeRecoveryFailure));
         const recovery = current;
+        yield* prepareHouseholdRecipeRecovery(input, recovery);
         const start = input.recipeRecoveryStarter?.start;
         if (start === undefined) {
           return yield* Effect.fail(

@@ -273,9 +273,19 @@ const seedRoot = async (
         completedAt: decodeImportTimestamp(now),
         failureCode: "outcome_unknown",
         importId,
+        ownershipId: extractionFingerprint,
         providerStage: "recipe",
       })
     );
+    await database
+      .prepare(
+        `INSERT INTO import_provider_terminal_checkpoints (
+           import_id, acquisition_generation, provider_stage, ownership_id,
+           failure_code, completed_at, created_at
+         ) VALUES (?, ?, 'recipe', ?, 'outcome_unknown', ?, ?)`
+      )
+      .bind(importId, generation, extractionFingerprint, now, now)
+      .run();
   }
   if (options.reconcile !== false && options.terminalCheckpoint !== false) {
     await Effect.runPromise(
@@ -446,11 +456,17 @@ const corruptSourceIdentity = async (
   }
 };
 
-const makeApp = async (started: unknown[]) => {
+const makeApp = async (
+  started: unknown[],
+  householdDomain?: Pick<
+    RecipeRecoveryHouseholdAuthority,
+    "mutateEvidenceStage" | "readRecipeImportExecution"
+  >
+) => {
   const authorizer = await Effect.runPromise(
     makeTestSystemAuthorizer("test-import-token")
   );
-  const service = makeD1ProviderTerminalSettlementService({
+  const serviceInput = {
     database: testEnv.MealPlannerDatabase,
     now: () => decodeImportTimestamp("2026-08-09T00:02:00.000Z"),
     recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter({
@@ -468,7 +484,12 @@ const makeApp = async (started: unknown[]) => {
       get: () => Effect.die("new recovery must not reconcile"),
     }),
     runtimeStage,
-  });
+  } as const;
+  const service = makeD1ProviderTerminalSettlementService(
+    householdDomain === undefined
+      ? serviceInput
+      : { ...serviceInput, householdDomain }
+  );
   return HttpRouter.toWebHandler(
     Layer.mergeAll(
       ProviderTerminalSettlementRoutes,
@@ -545,12 +566,17 @@ const recoveryMutationDigest = (seed: string) => {
   return "0".repeat(64);
 };
 
-const mutationOutcome = (operation: "Claim" | "Complete" | "Fail") => {
+const mutationOutcome = (
+  operation: "Claim" | "Complete" | "Fail" | "PrepareRecovery"
+) => {
   if (operation === "Claim") {
     return "DispatchClaimed" as const;
   }
   if (operation === "Complete") {
     return "Completed" as const;
+  }
+  if (operation === "PrepareRecovery") {
+    return "RecoveryPrepared" as const;
   }
   return "Failed" as const;
 };
@@ -1277,11 +1303,47 @@ describe("recipe recovery attempt ledger", () => {
 
   it("exposes one generic prepare and resume route", async () => {
     const seeded = await seedRoot("000000000313");
+    const organizationId = decodeOrganizationId(
+      "00000000-0000-4000-8000-000000000313"
+    );
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_evidence_routes (
+         import_id, organization_id, route_version
+       ) VALUES (?, ?, 1)`
+    )
+      .bind(seeded.importId, organizationId)
+      .run();
     const operatorTrace = Schema.decodeUnknownSync(ImportTraceContext)({
       correlationId: "60000000-0000-4000-8000-000000000313",
     });
     const started: unknown[] = [];
-    const app = await makeApp(started);
+    const preparations: unknown[] = [];
+    const householdDomain = {
+      mutateEvidenceStage: (input) => {
+        preparations.push(input);
+        return Effect.succeed({
+          committedAt: "2026-08-09T00:02:00.000Z",
+          executionGeneration: input.expectedGeneration,
+          intentId: input.intentId,
+          outcome: "RecoveryPrepared",
+          receiptVersion: 1,
+          stage: "extraction",
+        } as const);
+      },
+      readRecipeImportExecution: (input) =>
+        Effect.succeed({
+          canonicalSourceId: "tiktok:video:7000000000000000313",
+          executionGeneration: input.expectedGeneration,
+          intentId: input.intentId,
+          sourceKind: "video",
+          submittedSourceUrl:
+            "https://www.tiktok.com/@fixture/video/7000000000000000313",
+        } as const),
+    } satisfies Pick<
+      RecipeRecoveryHouseholdAuthority,
+      "mutateEvidenceStage" | "readRecipeImportExecution"
+    >;
+    const app = await makeApp(started, householdDomain);
 
     const prepared = await postOperation(
       app,
@@ -1296,9 +1358,25 @@ describe("recipe recovery attempt ledger", () => {
       recoveryOrdinal: 1,
     });
     expect(started).toHaveLength(1);
+    expect(preparations).toHaveLength(1);
+    expect(preparations[0]).toMatchObject({
+      admission: {
+        actor: { _tag: "System", purpose: "recipe_import_lifecycle_commit" },
+        organizationId,
+      },
+      expectedGeneration: seeded.generation,
+      inputFingerprint: expect.stringMatching(/^[a-f\d]{64}$/u),
+      intentId: seeded.importId,
+      operation: {
+        _tag: "PrepareRecovery",
+        predecessorDispatchId: seeded.extractionFingerprint,
+        predecessorInputFingerprint: seeded.extractionFingerprint,
+        stage: "extraction",
+      },
+    });
 
     const resumedStarted: unknown[] = [];
-    const reconstructedApp = await makeApp(resumedStarted);
+    const reconstructedApp = await makeApp(resumedStarted, householdDomain);
     const resumed = await postOperation(
       reconstructedApp,
       seeded,
@@ -1311,6 +1389,7 @@ describe("recipe recovery attempt ledger", () => {
     });
     expect(started).toHaveLength(1);
     expect(resumedStarted).toEqual(started);
+    expect(preparations).toHaveLength(2);
 
     expect(started).toHaveLength(1);
     expect(resumedStarted).toHaveLength(1);

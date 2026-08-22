@@ -137,9 +137,18 @@ const seedPoisonedTerminalSpeechImport = async (
         completedAt: decodeImportTimestamp(now),
         failureCode: "outcome_unknown",
         importId,
+        ownershipId: dispatchId,
         providerStage: "speech",
       })
     );
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_provider_terminal_checkpoints (
+         import_id, acquisition_generation, provider_stage, ownership_id,
+         failure_code, completed_at, created_at
+       ) VALUES (?, ?, 'speech', ?, 'outcome_unknown', ?, ?)`
+    )
+      .bind(importId, acquisitionGeneration, dispatchId, now, now)
+      .run();
   }
 
   return { acquisitionGeneration, dispatchId, importId, now, reservation };
@@ -273,9 +282,20 @@ const seedPoisonedTerminalVisualImport = async (
         completedAt: decodeImportTimestamp(now),
         failureCode: options.terminalFailureCode ?? "visual_extraction_failed",
         importId,
+        ownershipId: dispatchId,
         providerStage: "visual",
       })
     );
+    const failureCode =
+      options.terminalFailureCode ?? "visual_extraction_failed";
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_provider_terminal_checkpoints (
+         import_id, acquisition_generation, provider_stage, ownership_id,
+         failure_code, completed_at, created_at
+       ) VALUES (?, ?, 'visual', ?, ?, ?, ?)`
+    )
+      .bind(importId, acquisitionGeneration, dispatchId, failureCode, now, now)
+      .run();
   }
 
   return {
@@ -462,9 +482,18 @@ const seedPoisonedTerminalRecipeImport = async (
         completedAt: decodeImportTimestamp(now),
         failureCode: "outcome_unknown",
         importId,
+        ownershipId: dispatchId,
         providerStage: "recipe",
       })
     );
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_provider_terminal_checkpoints (
+         import_id, acquisition_generation, provider_stage, ownership_id,
+         failure_code, completed_at, created_at
+       ) VALUES (?, ?, 'recipe', ?, 'outcome_unknown', ?, ?)`
+    )
+      .bind(importId, acquisitionGeneration, extractionFingerprint, now, now)
+      .run();
   }
 
   return {

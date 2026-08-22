@@ -40,15 +40,6 @@ const RecoveryRow = Schema.Struct({
   recovery_dispatch_id: Schema.String,
 });
 
-const RecipeTerminalOwnershipRow = Schema.Struct({
-  completed_at: Schema.NullOr(Schema.String),
-  failure_code: Schema.NullOr(Schema.String),
-  ownership_id: Schema.String,
-  state: Schema.Literals(["dispatching", "failed"]),
-});
-
-const VisualTerminalOwnershipRow = RecipeTerminalOwnershipRow;
-
 const SpeechRecoveryActivationRow = Schema.Struct({
   parent_status: Schema.String,
   recovery_dispatch_id: Schema.NullOr(Schema.String),
@@ -61,11 +52,6 @@ const NonEmptyPersistenceString = Schema.String.pipe(
 const PersistenceSha256 = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[\da-f]{64}$/u))
 );
-const ActiveOwnershipResults = Schema.Struct({
-  results: Schema.Tuple([
-    Schema.Struct({ ownership_id: NonEmptyPersistenceString }),
-  ]),
-});
 const SettledRecoveryCandidate = Schema.Struct({
   original_dispatch_id: NonEmptyPersistenceString,
   source_media_sha256: PersistenceSha256,
@@ -156,145 +142,6 @@ const decodeRecovery = flow(
   Effect.map(recoveryFromRow)
 );
 
-const readActiveOwnership = (
-  database: AnyD1Database,
-  input: {
-    readonly acquisitionGeneration: AcquisitionGeneration;
-    readonly importId: ImportId;
-    readonly providerStage: ProviderTaskStage;
-  }
-) =>
-  persistenceEffect<{
-    readonly results: readonly { readonly ownership_id: string }[];
-  }>(
-    () =>
-      database
-        .prepare(
-          `SELECT ownership_id
-           FROM (
-             SELECT dispatch_id AS ownership_id
-               FROM import_transcriptions
-              WHERE ? = 'speech'
-                AND import_id = ?
-                AND acquisition_generation = ?
-                AND state IN ('dispatching', 'failed')
-             UNION ALL
-             SELECT dispatch_id AS ownership_id
-               FROM import_visual_evidence
-              WHERE ? = 'visual'
-                AND import_id = ?
-                AND acquisition_generation = ?
-                AND state IN ('dispatching', 'failed')
-             UNION ALL
-             SELECT extraction_fingerprint AS ownership_id
-               FROM import_recipe_extractions
-              WHERE ? = 'recipe'
-                AND import_id = ?
-                AND acquisition_generation = ?
-                AND state IN ('dispatching', 'failed')
-           )
-          LIMIT 2`
-        )
-        .bind(
-          input.providerStage,
-          input.importId,
-          input.acquisitionGeneration,
-          input.providerStage,
-          input.importId,
-          input.acquisitionGeneration,
-          input.providerStage,
-          input.importId,
-          input.acquisitionGeneration
-        )
-        .all<{ readonly ownership_id: string }>() as PromiseLike<{
-        readonly results: readonly { readonly ownership_id: string }[];
-      }>
-  ).pipe(
-    Effect.flatMap((result) => {
-      const decoded = Schema.decodeUnknownOption(ActiveOwnershipResults)(
-        result
-      );
-      return decoded._tag === "Some"
-        ? Effect.succeed(decoded.value.results[0].ownership_id)
-        : Effect.fail(providerTerminalPersistenceError("persistence_corrupt"));
-    })
-  );
-
-const readActiveRecipeOwnership = (
-  database: AnyD1Database,
-  input: {
-    readonly acquisitionGeneration: AcquisitionGeneration;
-    readonly importId: ImportId;
-  }
-) =>
-  persistenceEffect<unknown | null>(
-    () =>
-      database
-        .prepare(
-          `SELECT extraction_fingerprint AS ownership_id, state,
-                failure_code, completed_at
-           FROM import_recipe_extractions
-          WHERE import_id = ?
-            AND acquisition_generation = ?
-            AND state IN ('dispatching', 'failed')
-          ORDER BY updated_at DESC,
-                   CASE state WHEN 'dispatching' THEN 0 ELSE 1 END,
-                   extraction_fingerprint DESC
-          LIMIT 1`
-        )
-        .bind(input.importId, input.acquisitionGeneration)
-        .first() as PromiseLike<unknown | null>
-  ).pipe(
-    Effect.flatMap((row) =>
-      row === null
-        ? Effect.fail(providerTerminalPersistenceError("persistence_corrupt"))
-        : Schema.decodeUnknownEffect(RecipeTerminalOwnershipRow, {
-            onExcessProperty: "ignore",
-          })(row).pipe(
-            Effect.mapError(() =>
-              providerTerminalPersistenceError("persistence_corrupt")
-            )
-          )
-    )
-  );
-
-const readActiveVisualOwnership = (
-  database: AnyD1Database,
-  input: {
-    readonly acquisitionGeneration: AcquisitionGeneration;
-    readonly importId: ImportId;
-  }
-) =>
-  persistenceEffect<unknown | null>(
-    () =>
-      database
-        .prepare(
-          `SELECT dispatch_id AS ownership_id, state, failure_code, completed_at
-             FROM import_visual_evidence
-            WHERE import_id = ?
-              AND acquisition_generation = ?
-              AND state IN ('dispatching', 'failed')
-            ORDER BY updated_at DESC,
-                     CASE state WHEN 'dispatching' THEN 0 ELSE 1 END,
-                     dispatch_id DESC
-            LIMIT 1`
-        )
-        .bind(input.importId, input.acquisitionGeneration)
-        .first() as PromiseLike<unknown | null>
-  ).pipe(
-    Effect.flatMap((row) =>
-      row === null
-        ? Effect.fail(providerTerminalPersistenceError("persistence_corrupt"))
-        : Schema.decodeUnknownEffect(VisualTerminalOwnershipRow, {
-            onExcessProperty: "ignore",
-          })(row).pipe(
-            Effect.mapError(() =>
-              providerTerminalPersistenceError("persistence_corrupt")
-            )
-          )
-    )
-  );
-
 const readCheckpoint = (
   database: AnyD1Database,
   input: {
@@ -310,7 +157,7 @@ const readCheckpoint = (
         .prepare(
           `SELECT import_id, acquisition_generation, provider_stage,
                 ownership_id, failure_code, completed_at
-           FROM import_provider_terminal_checkpoints
+           FROM pilot_provider_terminal_checkpoints
           WHERE import_id = ?
             AND acquisition_generation = ?
             AND provider_stage = ?
@@ -331,192 +178,13 @@ const readCheckpoint = (
     )
   );
 
-const readOptionalCheckpoint = (
-  database: AnyD1Database,
-  input: {
-    readonly acquisitionGeneration: AcquisitionGeneration;
-    readonly importId: ImportId;
-    readonly ownershipId: string;
-    readonly providerStage: ProviderTaskStage;
-  }
-) =>
-  persistenceEffect<unknown | null>(
-    () =>
-      database
-        .prepare(
-          `SELECT import_id, acquisition_generation, provider_stage,
-                ownership_id, failure_code, completed_at
-           FROM import_provider_terminal_checkpoints
-          WHERE import_id = ?
-            AND acquisition_generation = ?
-            AND provider_stage = ?
-            AND ownership_id = ?`
-        )
-        .bind(
-          input.importId,
-          input.acquisitionGeneration,
-          input.providerStage,
-          input.ownershipId
-        )
-        .first() as PromiseLike<unknown | null>
-  ).pipe(
-    Effect.flatMap((row) =>
-      row === null ? Effect.succeed(null) : decodeCheckpoint(row)
-    )
-  );
-
-const resolveRecipeTerminalFacts = (
-  database: AnyD1Database,
-  input: {
-    readonly acquisitionGeneration: AcquisitionGeneration;
-    readonly failureCode: string;
-    readonly importId: ImportId;
-    readonly providerStage: "recipe";
-  },
-  requestedCompletedAt: string
-) =>
-  Effect.gen(function* resolveRecipeFacts() {
-    const ownership = yield* readActiveRecipeOwnership(database, input);
-    if (ownership.state === "dispatching") {
-      return {
-        existingCheckpoint: null,
-        ownershipId: ownership.ownership_id,
-        terminalFacts: {
-          completedAt: requestedCompletedAt,
-          failureCode: input.failureCode,
-        },
-      } as const;
-    }
-
-    const existingCheckpoint = yield* readOptionalCheckpoint(database, {
-      ...input,
-      ownershipId: ownership.ownership_id,
-    });
-    if (existingCheckpoint !== null) {
-      if (
-        existingCheckpoint.failureCode !== input.failureCode ||
-        (ownership.failure_code !== "provider_error" &&
-          ownership.failure_code !== existingCheckpoint.failureCode) ||
-        ownership.completed_at !== existingCheckpoint.completedAt
-      ) {
-        return yield* Effect.fail(
-          providerTerminalPersistenceError("persistence_corrupt")
-        );
-      }
-      return {
-        existingCheckpoint,
-        ownershipId: ownership.ownership_id,
-        terminalFacts: {
-          completedAt: existingCheckpoint.completedAt,
-          failureCode: existingCheckpoint.failureCode,
-        },
-      } as const;
-    }
-
-    if (
-      ownership.failure_code !== input.failureCode ||
-      ownership.completed_at === null ||
-      ownership.completed_at.length === 0
-    ) {
-      return yield* Effect.fail(
-        providerTerminalPersistenceError("persistence_corrupt")
-      );
-    }
-    return {
-      existingCheckpoint: null,
-      ownershipId: ownership.ownership_id,
-      terminalFacts: {
-        completedAt: ownership.completed_at,
-        failureCode: ownership.failure_code,
-      },
-    } as const;
-  });
-
-const resolveVisualTerminalFacts = (
-  database: AnyD1Database,
-  input: {
-    readonly acquisitionGeneration: AcquisitionGeneration;
-    readonly failureCode: string;
-    readonly importId: ImportId;
-    readonly providerStage: "visual";
-  },
-  requestedCompletedAt: string
-) =>
-  Effect.gen(function* resolveVisualFacts() {
-    const ownership = yield* readActiveVisualOwnership(database, input);
-    if (ownership.state === "dispatching") {
-      return {
-        existingCheckpoint: null,
-        ownershipId: ownership.ownership_id,
-        terminalFacts: {
-          completedAt: requestedCompletedAt,
-          failureCode: input.failureCode,
-        },
-      } as const;
-    }
-
-    const existingCheckpoint = yield* readOptionalCheckpoint(database, {
-      ...input,
-      ownershipId: ownership.ownership_id,
-    });
-    if (existingCheckpoint !== null) {
-      if (
-        existingCheckpoint.failureCode !== input.failureCode ||
-        ownership.failure_code !== existingCheckpoint.failureCode ||
-        ownership.completed_at !== existingCheckpoint.completedAt
-      ) {
-        return yield* Effect.fail(
-          providerTerminalPersistenceError("persistence_corrupt")
-        );
-      }
-      return {
-        existingCheckpoint,
-        ownershipId: ownership.ownership_id,
-        terminalFacts: {
-          completedAt: existingCheckpoint.completedAt,
-          failureCode: existingCheckpoint.failureCode,
-        },
-      } as const;
-    }
-
-    if (
-      ownership.failure_code === input.failureCode &&
-      ownership.completed_at !== null &&
-      ownership.completed_at.length > 0
-    ) {
-      return {
-        existingCheckpoint: null,
-        ownershipId: ownership.ownership_id,
-        terminalFacts: {
-          completedAt: ownership.completed_at,
-          failureCode: ownership.failure_code,
-        },
-      } as const;
-    }
-    if (
-      ownership.failure_code === "outcome_unknown" &&
-      input.failureCode === "visual_extraction_failed"
-    ) {
-      return {
-        existingCheckpoint: null,
-        ownershipId: ownership.ownership_id,
-        terminalFacts: {
-          completedAt: requestedCompletedAt,
-          failureCode: input.failureCode,
-        },
-      } as const;
-    }
-    return yield* Effect.fail(
-      providerTerminalPersistenceError("persistence_corrupt")
-    );
-  });
-
 export interface ProviderTerminalCheckpointRepository {
   readonly persist: (input: {
     readonly acquisitionGeneration: AcquisitionGeneration;
     readonly completedAt: ImportTimestamp;
     readonly failureCode: string;
     readonly importId: ImportId;
+    readonly ownershipId: string;
     readonly providerStage: ProviderTaskStage;
   }) => Effect.Effect<
     ProviderTerminalCheckpoint,
@@ -529,44 +197,11 @@ export const makeD1ProviderTerminalCheckpointRepository = (
 ): ProviderTerminalCheckpointRepository => ({
   persist: (input) =>
     Effect.gen(function* persistProviderTerminalCheckpoint() {
-      const requestedCompletedAt = DateTime.formatIso(input.completedAt);
-      const recipeTerminal =
-        input.providerStage === "recipe"
-          ? yield* resolveRecipeTerminalFacts(
-              database,
-              { ...input, providerStage: "recipe" },
-              requestedCompletedAt
-            )
-          : undefined;
-      const visualTerminal =
-        input.providerStage === "visual"
-          ? yield* resolveVisualTerminalFacts(
-              database,
-              { ...input, providerStage: "visual" },
-              requestedCompletedAt
-            )
-          : undefined;
-      const ownershipId =
-        recipeTerminal?.ownershipId ??
-        visualTerminal?.ownershipId ??
-        (yield* readActiveOwnership(database, input));
-      const existingCheckpoint =
-        recipeTerminal?.existingCheckpoint ??
-        visualTerminal?.existingCheckpoint;
-      if (existingCheckpoint) {
-        return existingCheckpoint;
-      }
-      const terminalFacts =
-        recipeTerminal?.terminalFacts ??
-        visualTerminal?.terminalFacts ??
-        ({
-          completedAt: requestedCompletedAt,
-          failureCode: input.failureCode,
-        } as const);
+      const completedAt = DateTime.formatIso(input.completedAt);
       yield* persistenceEffect(() =>
         database
           .prepare(
-            `INSERT INTO import_provider_terminal_checkpoints (
+            `INSERT INTO pilot_provider_terminal_checkpoints (
                import_id, acquisition_generation, provider_stage, ownership_id,
                failure_code, completed_at, created_at
              ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -578,20 +213,20 @@ export const makeD1ProviderTerminalCheckpointRepository = (
             input.importId,
             input.acquisitionGeneration,
             input.providerStage,
-            ownershipId,
-            terminalFacts.failureCode,
-            terminalFacts.completedAt,
-            terminalFacts.completedAt
+            input.ownershipId,
+            input.failureCode,
+            completedAt,
+            completedAt
           )
           .run()
       );
       const checkpoint = yield* readCheckpoint(database, {
         ...input,
-        ownershipId,
+        ownershipId: input.ownershipId,
       });
       if (
-        checkpoint.failureCode !== terminalFacts.failureCode ||
-        checkpoint.completedAt !== terminalFacts.completedAt
+        checkpoint.failureCode !== input.failureCode ||
+        checkpoint.completedAt !== completedAt
       ) {
         return yield* Effect.fail(
           providerTerminalPersistenceError("persistence_corrupt")

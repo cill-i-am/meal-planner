@@ -156,6 +156,7 @@ export const makeImportWorkerRequestLayer = (
     ProviderTerminalSettlementService.of(
       makeD1ProviderTerminalSettlementService({
         database: input.database,
+        householdDomain: input.householdDomain,
         now: () => timestamp(input.now),
         recipeRecoveryStarter: input.recipeRecoveryStarter,
         runtimeStage: input.runtimeStage,

@@ -393,6 +393,9 @@ export const makeHouseholdSpeechTranscriptionRepository = (
             dispatchId: claim.dispatchId,
           };
         }
+        if (receipt.outcome === "RecoveryPrepared") {
+          return yield* Effect.fail(importTransitionRejected());
+        }
         return {
           _tag: resumedClaimTag(receipt.outcome),
           dispatchId: claim.dispatchId,
@@ -696,6 +699,9 @@ export const makeHouseholdCarouselEvidenceRepository = (
             code,
             recovery: carouselRecovery(code),
           };
+        }
+        if (receipt.outcome === "RecoveryPrepared") {
+          return yield* Effect.fail(importTransitionRejected());
         }
         return {
           _tag: resumedClaimTag(receipt.outcome),

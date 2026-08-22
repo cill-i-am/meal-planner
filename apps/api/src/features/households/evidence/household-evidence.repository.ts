@@ -68,9 +68,8 @@ const expectedReferenceKeys = (intentId: string, generation: number) =>
     `imports/${intentId}/acquisition/v1/generations/${generation}/manifest.json`,
   ] as const;
 
-const validateEvidence = (
-  input: HouseholdCommitAcquisitionEvidenceInputType,
-  nowEpochMs: number
+const validateEvidenceStructure = (
+  input: HouseholdCommitAcquisitionEvidenceInputType
 ) => {
   const [media, manifest] = input.result.references;
   const [expectedMediaKey, expectedManifestKey] = expectedReferenceKeys(
@@ -84,10 +83,17 @@ const validateEvidence = (
     media.key === expectedMediaKey &&
     manifest.key === expectedManifestKey &&
     deleteAtEpochMs === manifestDeleteAtEpochMs &&
-    deleteAtEpochMs - acquiredAtEpochMs === EvidenceRetentionSeconds * 1000 &&
-    deleteAtEpochMs > nowEpochMs;
+    deleteAtEpochMs - acquiredAtEpochMs === EvidenceRetentionSeconds * 1000;
   return valid ? Effect.void : Effect.fail(failure("invalid_input"));
 };
+
+const validateEvidenceFreshness = (
+  input: HouseholdCommitAcquisitionEvidenceInputType,
+  nowEpochMs: number
+) =>
+  DateTime.toEpochMillis(input.result.references[0].deleteAt) > nowEpochMs
+    ? Effect.void
+    : Effect.fail(failure("invalid_input"));
 
 const resultStage = (
   tag: string
@@ -179,9 +185,19 @@ const sourcePermitsStage = (
     : sourceKind === "carousel" &&
       (stage === "carousel" || stage === "extraction");
 
-const validateStageMutation = (
-  input: HouseholdMutateEvidenceStageInputType,
-  nowEpochMs: number
+const validateRecoveryStageMutationStructure = (
+  input: HouseholdMutateEvidenceStageInputType
+) =>
+  input.operation._tag !== "PrepareRecovery" ||
+  (input.operation.dispatchId === input.inputFingerprint &&
+    input.operation.predecessorDispatchId ===
+      input.operation.predecessorInputFingerprint &&
+    input.operation.dispatchId !== input.operation.predecessorDispatchId)
+    ? Effect.void
+    : Effect.fail(failure("invalid_input"));
+
+const validateStageMutationStructure = (
+  input: HouseholdMutateEvidenceStageInputType
 ) => {
   if (input.operation._tag !== "Complete") {
     return Effect.void;
@@ -232,11 +248,20 @@ const validateStageMutation = (
     reference.kind === expected.kind &&
     reference.key === expected.key &&
     reference.key === resultReference.key &&
-    reference.sha256 === resultReference.sha256 &&
-    DateTime.toEpochMillis(reference.deleteAt) > nowEpochMs
+    reference.sha256 === resultReference.sha256
     ? Effect.void
     : Effect.fail(failure("invalid_input"));
 };
+
+const validateStageMutationFreshness = (
+  input: HouseholdMutateEvidenceStageInputType,
+  nowEpochMs: number
+) =>
+  input.operation._tag !== "Complete" ||
+  input.operation.reference === undefined ||
+  DateTime.toEpochMillis(input.operation.reference.deleteAt) > nowEpochMs
+    ? Effect.void
+    : Effect.fail(failure("invalid_input"));
 
 export const makeHouseholdEvidenceRepository = (
   database: EffectSQLiteDoDatabase
@@ -302,7 +327,7 @@ export const makeHouseholdEvidenceRepository = (
         input.admission.organizationId
       ).pipe(Effect.mapError(persistenceFailure));
       const nowEpochMs = yield* Clock.currentTimeMillis;
-      yield* validateEvidence(input, nowEpochMs);
+      yield* validateEvidenceStructure(input);
       const encodedInput = yield* Schema.encodeEffect(
         HouseholdCommitAcquisitionEvidenceInput
       )(input).pipe(Effect.mapError(persistenceFailure));
@@ -371,6 +396,7 @@ export const makeHouseholdEvidenceRepository = (
             if (Option.isSome(replay)) {
               return replay.value;
             }
+            yield* validateEvidenceFreshness(input, nowEpochMs);
             if (
               intent.status !== "processing" ||
               intent.canonicalSourceId === null
@@ -594,7 +620,8 @@ export const makeHouseholdEvidenceRepository = (
         input.admission.organizationId
       ).pipe(Effect.mapError(persistenceFailure));
       const nowEpochMs = yield* Clock.currentTimeMillis;
-      yield* validateStageMutation(input, nowEpochMs);
+      yield* validateRecoveryStageMutationStructure(input);
+      yield* validateStageMutationStructure(input);
       const encodedInput = yield* Schema.encodeEffect(
         HouseholdMutateEvidenceStageInput
       )(input).pipe(Effect.mapError(persistenceFailure));
@@ -637,6 +664,7 @@ export const makeHouseholdEvidenceRepository = (
             if (Option.isSome(replay)) {
               return replay.value;
             }
+            yield* validateStageMutationFreshness(input, nowEpochMs);
             if (intent.status !== "processing") {
               return yield* Effect.fail(failure("illegal_transition"));
             }
@@ -823,10 +851,73 @@ export const makeHouseholdEvidenceRepository = (
               }
               return "Failed" as const;
             });
+            const prepareRecoveryStage = Effect.gen(
+              function* prepareFailedExtractionRecovery() {
+                if (input.operation._tag !== "PrepareRecovery") {
+                  return yield* Effect.fail(failure("invalid_input"));
+                }
+                if (
+                  current?.inputFingerprint === input.inputFingerprint &&
+                  current.dispatchId === input.operation.dispatchId
+                ) {
+                  return "RecoveryPrepared" as const;
+                }
+                if (
+                  current === undefined ||
+                  current.inputFingerprint !==
+                    input.operation.predecessorInputFingerprint ||
+                  current.dispatchId !== input.operation.predecessorDispatchId
+                ) {
+                  return yield* Effect.fail(
+                    failure(
+                      current === undefined
+                        ? "illegal_transition"
+                        : "idempotency_conflict"
+                    )
+                  );
+                }
+                if (
+                  current.state !== "failed" ||
+                  current.failureCode !== "provider_error"
+                ) {
+                  return yield* Effect.fail(failure("illegal_transition"));
+                }
+                yield* transaction
+                  .update(householdEvidenceStageExecutions)
+                  .set({
+                    committedAt,
+                    dispatchId: input.operation.dispatchId,
+                    failureCode: null,
+                    inputFingerprint: input.inputFingerprint,
+                    resultJson: null,
+                    state: "dispatching",
+                  })
+                  .where(
+                    and(
+                      eq(
+                        householdEvidenceStageExecutions.intentId,
+                        input.intentId
+                      ),
+                      eq(
+                        householdEvidenceStageExecutions.executionGeneration,
+                        input.expectedGeneration
+                      ),
+                      eq(householdEvidenceStageExecutions.stage, "extraction"),
+                      eq(
+                        householdEvidenceStageExecutions.dispatchId,
+                        input.operation.predecessorDispatchId
+                      ),
+                      eq(householdEvidenceStageExecutions.state, "failed")
+                    )
+                  );
+                return "RecoveryPrepared" as const;
+              }
+            );
             let outcome:
               | "Completed"
               | "DispatchClaimed"
               | "Failed"
+              | "RecoveryPrepared"
               | "ResumeDispatch";
             switch (input.operation._tag) {
               case "Claim": {
@@ -839,6 +930,10 @@ export const makeHouseholdEvidenceRepository = (
               }
               case "Fail": {
                 outcome = yield* failStage;
+                break;
+              }
+              case "PrepareRecovery": {
+                outcome = yield* prepareRecoveryStage;
                 break;
               }
               default: {
@@ -943,6 +1038,7 @@ export const makeHouseholdEvidenceRepository = (
         }
       )({
         committedAt: stage.committedAt,
+        dispatchId: stage.dispatchId,
         executionGeneration: input.expectedGeneration,
         failureCode: stage.failureCode,
         inputFingerprint: stage.inputFingerprint,

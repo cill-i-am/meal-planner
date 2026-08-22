@@ -107,6 +107,14 @@ const seedPoisonedSpeechImport = async (
   await Effect.runPromise(budget.reserve(reservation));
   await Effect.runPromise(budget.beginInvocation(reservation));
   await Effect.runPromise(budget.settleUnknown(reservation));
+  await testEnv.MealPlannerDatabase.prepare(
+    `INSERT INTO import_provider_terminal_checkpoints (
+       import_id, acquisition_generation, provider_stage, ownership_id,
+       failure_code, completed_at, created_at
+     ) VALUES (?, ?, 'speech', ?, 'outcome_unknown', ?, ?)`
+  )
+    .bind(importId, generation, dispatchId, now, now)
+    .run();
   return {
     dispatchId,
     generation,
@@ -134,11 +142,20 @@ const seedDispatchingRecipeImport = async (suffix: string) => {
     `INSERT INTO import_recipe_extractions (
        extraction_fingerprint, import_id, acquisition_generation,
        evidence_fingerprint, extractor_provider, extractor_model,
-       extractor_version, state, created_at, updated_at
+       extractor_version, state, failure_code, completed_at, created_at,
+       updated_at
      ) VALUES (?, ?, ?, ?, 'cloudflare-workers-ai', 'recipe-model',
-               'installed-v1', 'dispatching', ?, ?)`
+               'installed-v1', 'failed', 'provider_error', ?, ?, ?)`
   )
-    .bind(extractionFingerprint, importId, generation, "d".repeat(64), now, now)
+    .bind(
+      extractionFingerprint,
+      importId,
+      generation,
+      "d".repeat(64),
+      now,
+      now,
+      now
+    )
     .run();
   return { extractionFingerprint, generation, importId, now };
 };
@@ -250,6 +267,54 @@ const seedFailedVisualImport = async (suffix: string) => {
 };
 
 describe("provider terminal recovery", () => {
+  it("persists household-owned terminal identities without shared-D1 evidence rows", async () => {
+    const repository = makeD1ProviderTerminalCheckpointRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const completedAt = decodeImportTimestamp("2026-08-22T18:00:00.000Z");
+    const stages = ["speech", "visual", "recipe"] as const;
+
+    await Promise.all(
+      stages.map(async (providerStage, index) => {
+        const suffix = `000000000${260 + index}`;
+        const importId = decodeImportId(`00000000-0000-4000-8000-${suffix}`);
+        const generation = decodeGeneration(1);
+        await seedResolvedTestImportExecution({
+          acquisitionGeneration: generation,
+          canonicalId: decodeCanonicalId(`terminal-no-d1-${providerStage}`),
+          database: testEnv.MealPlannerDatabase,
+          evidence: [],
+          importId,
+          status: { kind: "acquiring" },
+          updatedAt: completedAt,
+        });
+        const ownershipId =
+          providerStage === "recipe"
+            ? "a".repeat(64)
+            : `${providerStage}:${importId}:1`;
+        const command = {
+          acquisitionGeneration: generation,
+          completedAt,
+          failureCode: "outcome_unknown",
+          importId,
+          ownershipId,
+          providerStage,
+        };
+
+        await expect(
+          Effect.runPromise(repository.persist(command))
+        ).resolves.toEqual({
+          acquisitionGeneration: generation,
+          completedAt: "2026-08-22T18:00:00.000Z",
+          failureCode: "outcome_unknown",
+          importId,
+          ownershipId,
+          providerStage,
+        });
+      })
+    );
+  });
+
   it("adopts immutable terminal facts from an already-failed visual dispatch", async () => {
     const seeded = await seedFailedVisualImport("000000000245");
     const repository = makeD1ProviderTerminalCheckpointRepository(
@@ -258,9 +323,10 @@ describe("provider terminal recovery", () => {
     const first = await Effect.runPromise(
       repository.persist({
         acquisitionGeneration: seeded.generation,
-        completedAt: decodeImportTimestamp("2026-08-01T17:01:00.000Z"),
+        completedAt: decodeImportTimestamp(seeded.completedAt),
         failureCode: "visual_extraction_failed",
         importId: seeded.importId,
+        ownershipId: seeded.dispatchId,
         providerStage: "visual",
       })
     );
@@ -277,9 +343,10 @@ describe("provider terminal recovery", () => {
       Effect.runPromise(
         repository.persist({
           acquisitionGeneration: seeded.generation,
-          completedAt: decodeImportTimestamp("2026-08-01T17:02:00.000Z"),
+          completedAt: decodeImportTimestamp(seeded.completedAt),
           failureCode: "visual_extraction_failed",
           importId: seeded.importId,
+          ownershipId: seeded.dispatchId,
           providerStage: "visual",
         })
       )
@@ -291,13 +358,14 @@ describe("provider terminal recovery", () => {
           completedAt: decodeImportTimestamp("2026-08-01T17:03:00.000Z"),
           failureCode: "outcome_unknown",
           importId: seeded.importId,
+          ownershipId: seeded.dispatchId,
           providerStage: "visual",
         })
       )
     ).rejects.toMatchObject({ code: "persistence_corrupt" });
   });
 
-  it("records one immutable recipe executor terminal checkpoint", async () => {
+  it("records one immutable operational recipe terminal checkpoint", async () => {
     const seeded = await seedDispatchingRecipeImport("000000000215");
     const repository = makeD1ProviderTerminalCheckpointRepository(
       testEnv.MealPlannerDatabase
@@ -307,6 +375,7 @@ describe("provider terminal recovery", () => {
       completedAt: decodeImportTimestamp(seeded.now),
       failureCode: "retry_exhausted",
       importId: seeded.importId,
+      ownershipId: seeded.extractionFingerprint,
       providerStage: "recipe" as const,
     };
 
@@ -338,17 +407,26 @@ describe("provider terminal recovery", () => {
     });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        `SELECT checkpointed_at, evidence_references_json, ownership_id
-           FROM import_recipe_executor_terminal_checkpoints
+        `SELECT completed_at, failure_code, ownership_id
+           FROM pilot_provider_terminal_checkpoints
           WHERE import_id = ?`
       )
         .bind(seeded.importId)
         .first()
     ).resolves.toEqual({
-      checkpointed_at: seeded.now,
-      evidence_references_json: "[]",
+      completed_at: seeded.now,
+      failure_code: "retry_exhausted",
       ownership_id: seeded.extractionFingerprint,
     });
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM import_recipe_executor_terminal_checkpoints
+          WHERE import_id = ?`
+      )
+        .bind(seeded.importId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
         "SELECT status, status_code, recovery_action FROM import_execution_runs WHERE id = ?"
@@ -401,9 +479,10 @@ describe("provider terminal recovery", () => {
     const checkpoint = await Effect.runPromise(
       repository.persist({
         acquisitionGeneration: seeded.generation,
-        completedAt: decodeImportTimestamp("2026-08-01T10:01:00.000Z"),
+        completedAt: decodeImportTimestamp(seeded.completedAt),
         failureCode: "invalid_schema",
         importId: seeded.importId,
+        ownershipId: seeded.extractionFingerprint,
         providerStage: "recipe",
       })
     );
@@ -420,23 +499,24 @@ describe("provider terminal recovery", () => {
       Effect.runPromise(
         repository.persist({
           acquisitionGeneration: seeded.generation,
-          completedAt: decodeImportTimestamp("2026-08-01T10:02:00.000Z"),
+          completedAt: decodeImportTimestamp(seeded.completedAt),
           failureCode: "invalid_schema",
           importId: seeded.importId,
+          ownershipId: seeded.extractionFingerprint,
           providerStage: "recipe",
         })
       )
     ).resolves.toEqual(checkpoint);
     await expect(
       testEnv.MealPlannerDatabase.prepare(
-        `SELECT checkpointed_at, ownership_id
-           FROM import_recipe_executor_terminal_checkpoints
+        `SELECT completed_at, ownership_id
+           FROM pilot_provider_terminal_checkpoints
           WHERE import_id = ? AND acquisition_generation = ?`
       )
         .bind(seeded.importId, seeded.generation)
         .first()
     ).resolves.toEqual({
-      checkpointed_at: seeded.completedAt,
+      completed_at: seeded.completedAt,
       ownership_id: seeded.extractionFingerprint,
     });
   });
@@ -502,6 +582,7 @@ describe("provider terminal recovery", () => {
       completedAt: decodeImportTimestamp(seeded.now),
       failureCode: "outcome_unknown",
       importId: seeded.importId,
+      ownershipId: seeded.dispatchId,
       providerStage: "speech" as const,
     };
 
@@ -566,6 +647,7 @@ describe("provider terminal recovery", () => {
         completedAt: decodeImportTimestamp(seeded.now),
         failureCode: "outcome_unknown",
         importId: seeded.importId,
+        ownershipId: seeded.dispatchId,
         providerStage: "speech",
       })
     );
@@ -704,6 +786,7 @@ describe("provider terminal recovery", () => {
         completedAt: decodeImportTimestamp(seeded.now),
         failureCode: "outcome_unknown",
         importId: seeded.importId,
+        ownershipId: seeded.dispatchId,
         providerStage: "speech",
       })
     );
@@ -895,6 +978,7 @@ describe("provider terminal recovery", () => {
         completedAt: decodeImportTimestamp(seeded.now),
         failureCode: "outcome_unknown",
         importId: seeded.importId,
+        ownershipId: seeded.dispatchId,
         providerStage: "speech",
       })
     );
@@ -979,6 +1063,7 @@ describe("provider terminal recovery", () => {
         completedAt: decodeImportTimestamp(seeded.now),
         failureCode: "outcome_unknown",
         importId: seeded.importId,
+        ownershipId: seeded.dispatchId,
         providerStage: "speech",
       })
     );
@@ -1056,6 +1141,7 @@ describe("provider terminal recovery", () => {
         completedAt: decodeImportTimestamp(seeded.now),
         failureCode: "outcome_unknown",
         importId: seeded.importId,
+        ownershipId: seeded.dispatchId,
         providerStage: "speech",
       })
     );
@@ -1154,6 +1240,7 @@ describe("provider terminal recovery", () => {
         completedAt: decodeImportTimestamp(seeded.now),
         failureCode: "outcome_unknown",
         importId: seeded.importId,
+        ownershipId: seeded.dispatchId,
         providerStage: "speech",
       })
     );
@@ -1200,9 +1287,24 @@ describe("provider terminal recovery", () => {
         completedAt: decodeImportTimestamp("2026-07-27T09:06:30.000Z"),
         failureCode: "outcome_unknown",
         importId: seeded.importId,
+        ownershipId: prepared.recoveryDispatchId,
         providerStage: "speech",
       })
     );
+    await testEnv.MealPlannerDatabase.prepare(
+      `INSERT INTO import_provider_terminal_checkpoints (
+         import_id, acquisition_generation, provider_stage, ownership_id,
+         failure_code, completed_at, created_at
+       ) VALUES (?, ?, 'speech', ?, 'outcome_unknown', ?, ?)`
+    )
+      .bind(
+        seeded.importId,
+        seeded.generation,
+        prepared.recoveryDispatchId,
+        "2026-07-27T09:06:30.000Z",
+        "2026-07-27T09:06:30.000Z"
+      )
+      .run();
 
     await expect(
       Effect.runPromise(
@@ -1298,6 +1400,7 @@ describe("provider terminal recovery", () => {
         completedAt: decodeImportTimestamp(seeded.now),
         failureCode: "outcome_unknown",
         importId: seeded.importId,
+        ownershipId: seeded.dispatchId,
         providerStage: "speech",
       })
     );
@@ -1347,7 +1450,7 @@ describe("provider terminal recovery", () => {
     ).resolves.toEqual({ count: 0 });
   });
 
-  it("promotes an uncertain visual projection after native retries exhaust", async () => {
+  it("records exhausted visual operations without rewriting legacy evidence", async () => {
     const importId = decodeImportId("00000000-0000-4000-8000-000000000205");
     const generation = decodeGeneration(1);
     const dispatchId = decodeDispatchId(`visual:${importId}:${generation}`);
@@ -1430,6 +1533,7 @@ describe("provider terminal recovery", () => {
           completedAt: exhaustedAt,
           failureCode: "visual_extraction_failed",
           importId,
+          ownershipId: dispatchId,
           providerStage: "visual",
         })
       )
@@ -1446,8 +1550,8 @@ describe("provider terminal recovery", () => {
         .bind(importId, generation)
         .first()
     ).resolves.toEqual({
-      completed_at: "2026-07-29T06:09:42.000Z",
-      failure_code: "visual_extraction_failed",
+      completed_at: "2026-07-29T06:09:00.000Z",
+      failure_code: "outcome_unknown",
       state: "failed",
     });
   });

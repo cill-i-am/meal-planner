@@ -373,6 +373,14 @@ export const HouseholdMutateEvidenceStageInput = Schema.Struct({
       ),
       stage: HouseholdEvidenceStage,
     }),
+    Schema.Struct({
+      _tag: Schema.Literal("PrepareRecovery"),
+      dispatchId: DispatchId,
+      predecessorDispatchId: DispatchId,
+      predecessorInputFingerprint: HouseholdEvidenceSha256,
+      stage: Schema.Literal("extraction"),
+      startedAt: ImportTimestamp,
+    }),
   ]),
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type HouseholdMutateEvidenceStageInput =
@@ -386,6 +394,7 @@ export const HouseholdMutateEvidenceStageResult = Schema.Struct({
     "Completed",
     "DispatchClaimed",
     "Failed",
+    "RecoveryPrepared",
     "ResumeDispatch",
   ]),
   receiptVersion: Schema.Literal(1),
@@ -406,6 +415,7 @@ export type HouseholdReadEvidenceStageInput =
 export const HouseholdReadEvidenceStageResult = Schema.NullOr(
   Schema.Struct({
     committedAt: ImportTimestamp,
+    dispatchId: DispatchId,
     executionGeneration: PositiveSafeInteger,
     failureCode: Schema.NullOr(HouseholdEvidenceStageFailureCode),
     inputFingerprint: HouseholdEvidenceSha256,

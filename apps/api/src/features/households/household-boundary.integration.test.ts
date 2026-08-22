@@ -23,6 +23,14 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
+import { AcquisitionGeneration } from "../imports/import-media.model.js";
+import { makeD1ProviderTerminalCheckpointRepository } from "../imports/import-provider-terminal.js";
+import {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "../imports/import.contracts.js";
+import { seedResolvedTestImportExecution } from "../imports/import.test-fixtures.js";
 import {
   HouseholdCommitAcquisitionEvidenceResult,
   HouseholdMutateEvidenceStageResult,
@@ -893,7 +901,8 @@ describe("household public API to private Durable Object boundary", () => {
     expect(claim.status, await claim.text()).toBe(200);
 
     const completedAt = new Date();
-    const deleteAt = new Date(completedAt.getTime() + 604_800_000);
+    const expiresAtEpochMs = Date.now() + 2000;
+    const deleteAt = new Date(expiresAtEpochMs);
     const transcriptKey = `imports/${admitted.id}/transcription/v1/generations/1/transcript.json`;
     const command = {
       admission,
@@ -958,6 +967,21 @@ describe("household public API to private Durable Object boundary", () => {
     ).toEqual(receipt);
     expect(receipt).not.toHaveProperty("result");
     expect(receipt).not.toHaveProperty("transcriptKey");
+
+    await delay(Math.max(0, expiresAtEpochMs - Date.now() + 100));
+    await restartRuntime();
+    const expiredReplay = await systemCommand("mutate-evidence-stage", command);
+    expect(expiredReplay.status, await expiredReplay.clone().text()).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(HouseholdMutateEvidenceStageResult)(
+        await expiredReplay.json()
+      )
+    ).toEqual(receipt);
+    const expiredFirstWrite = await systemCommand("mutate-evidence-stage", {
+      ...command,
+      mutationId: "0".repeat(64),
+    });
+    expect(expiredFirstWrite.status).toBe(400);
 
     const read = await systemCommand("read-evidence-stage", {
       admission,
@@ -1222,13 +1246,14 @@ describe("household public API to private Durable Object boundary", () => {
       mutationId: "1".repeat(64),
       videoId: "7000000000000000107",
     });
+    const expiresAtEpochMs = Date.now() + 2000;
     const command = {
       admission,
       expectedGeneration: 1,
       intentId: admitted.id,
       mutationId: "2".repeat(64),
       result: evidenceRetentionResult({
-        acquiredAt: new Date(Date.now() + 60_000),
+        acquiredAt: new Date(expiresAtEpochMs - 604_800_000),
         generation: 1,
         intentId: admitted.id,
       }),
@@ -1242,6 +1267,7 @@ describe("household public API to private Durable Object boundary", () => {
       HouseholdCommitAcquisitionEvidenceResult
     )(await firstResponse.json());
 
+    await delay(Math.max(0, expiresAtEpochMs - Date.now() + 100));
     await restartRuntime();
 
     const replayResponse = await systemCommand(
@@ -1254,6 +1280,15 @@ describe("household public API to private Durable Object boundary", () => {
         HouseholdCommitAcquisitionEvidenceResult
       )(await replayResponse.json())
     ).toEqual(receipt);
+
+    const expiredFirstWrite = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        ...command,
+        mutationId: "0".repeat(64),
+      }
+    );
+    expect(expiredFirstWrite.status).toBe(400);
   }, 30_000);
 
   it("rejects invalid retention without mutation and accepts the corrected deadline", async () => {
@@ -2029,5 +2064,279 @@ describe("household public API to private Durable Object boundary", () => {
     expect(JSON.stringify(await response.json())).not.toContain(
       organizationB.id
     );
+  });
+
+  it("checkpoints household-owned terminal identities without shared-D1 evidence rows", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Household Terminal Ownership",
+      mutationId: "d".repeat(64),
+      videoId: "7000000000000000101",
+    });
+    const acquiredAt = new Date(Date.now() + 60_000);
+    const acquisition = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "e".repeat(64),
+      result: evidenceRetentionResult({
+        acquiredAt,
+        generation: 1,
+        intentId: admitted.id,
+      }),
+    });
+    expect(acquisition.status, await acquisition.text()).toBe(200);
+
+    const identities = [
+      { failureCode: "transcription_failed", stage: "speech" },
+      { failureCode: "visual_extraction_failed", stage: "visual" },
+      { failureCode: "provider_error", stage: "extraction" },
+    ] as const;
+    const stages = await Promise.all(
+      identities.map(async (identity, ordinal) => {
+        const fingerprint = String(ordinal + 1).repeat(64);
+        const dispatchId =
+          identity.stage === "extraction"
+            ? fingerprint
+            : `${identity.stage}:${admitted.id}:1`;
+        const claim = await systemCommand("mutate-evidence-stage", {
+          admission,
+          expectedGeneration: 1,
+          inputFingerprint: fingerprint,
+          intentId: admitted.id,
+          mutationId: String(ordinal + 4).repeat(64),
+          operation: {
+            _tag: "Claim",
+            dispatchId,
+            stage: identity.stage,
+            startedAt: new Date(
+              acquiredAt.getTime() + ordinal + 1
+            ).toISOString(),
+          },
+        });
+        expect(claim.status, await claim.text()).toBe(200);
+        const failedAt = new Date(
+          acquiredAt.getTime() + identities.length + ordinal + 1
+        ).toISOString();
+        const failure = await systemCommand("mutate-evidence-stage", {
+          admission,
+          expectedGeneration: 1,
+          inputFingerprint: fingerprint,
+          intentId: admitted.id,
+          mutationId: String(ordinal + 7).repeat(64),
+          operation: {
+            _tag: "Fail",
+            completedAt: failedAt,
+            dispatchId,
+            failureCode: identity.failureCode,
+            recovery: "operator_review",
+            stage: identity.stage,
+          },
+        });
+        expect(failure.status, await failure.text()).toBe(200);
+        const stageResponse = await systemCommand("read-evidence-stage", {
+          admission,
+          expectedGeneration: 1,
+          intentId: admitted.id,
+          stage: identity.stage,
+        });
+        expect(stageResponse.status, await stageResponse.clone().text()).toBe(
+          200
+        );
+        const stage = await Schema.decodeUnknownPromise(
+          HouseholdReadEvidenceStageResult
+        )(await stageResponse.json());
+        expect(stage).toMatchObject({
+          dispatchId,
+          inputFingerprint: fingerprint,
+          outcome: "Failed",
+        });
+        if (stage === null) {
+          throw new Error("Expected household terminal stage authority.");
+        }
+        return { identity, stage };
+      })
+    );
+
+    const database = await getRuntime().getD1Database(
+      "MealPlannerDatabase",
+      "evidence-consumer"
+    );
+    const importId = Schema.decodeUnknownSync(ImportId)(admitted.id);
+    const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
+    await seedResolvedTestImportExecution({
+      acquisitionGeneration: generation,
+      canonicalId: Schema.decodeUnknownSync(SourceCanonicalId)(
+        "tiktok:video:7000000000000000101"
+      ),
+      database,
+      evidence: [],
+      importId,
+      status: { kind: "queued" },
+      updatedAt: Schema.decodeUnknownSync(ImportTimestamp)(
+        acquiredAt.toISOString()
+      ),
+    });
+    const repository = makeD1ProviderTerminalCheckpointRepository(database);
+    await Promise.all(
+      stages.map(({ identity, stage }) =>
+        Effect.runPromise(
+          repository.persist({
+            acquisitionGeneration: generation,
+            completedAt: stage.committedAt,
+            failureCode: identity.failureCode,
+            importId,
+            ownershipId: stage.dispatchId,
+            providerStage:
+              identity.stage === "extraction" ? "recipe" : identity.stage,
+          })
+        )
+      )
+    );
+    await expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+             FROM pilot_provider_terminal_checkpoints
+            WHERE import_id = ?`
+        )
+        .bind(importId)
+        .first()
+    ).resolves.toEqual({ count: 3 });
+    await expect(
+      database
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM import_transcriptions WHERE import_id = ?) +
+             (SELECT COUNT(*) FROM import_visual_evidence WHERE import_id = ?) +
+             (SELECT COUNT(*) FROM import_recipe_extractions WHERE import_id = ?)
+               AS count`
+        )
+        .bind(importId, importId, importId)
+        .first()
+    ).resolves.toEqual({ count: 0 });
+  });
+
+  it("prepares a fenced replacement for a failed household extraction stage", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Household Recipe Recovery",
+      mutationId: "1".repeat(64),
+      videoId: "7000000000000000102",
+    });
+    const predecessorFingerprint = "2".repeat(64);
+    const recoveryFingerprint = "3".repeat(64);
+    const predecessorClaim = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint: predecessorFingerprint,
+      intentId: admitted.id,
+      mutationId: "4".repeat(64),
+      operation: {
+        _tag: "Claim",
+        dispatchId: predecessorFingerprint,
+        stage: "extraction",
+        startedAt: "2026-08-22T10:00:00.000Z",
+      },
+    });
+    expect(predecessorClaim.status, await predecessorClaim.clone().text()).toBe(
+      200
+    );
+    const predecessorFailure = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint: predecessorFingerprint,
+      intentId: admitted.id,
+      mutationId: "5".repeat(64),
+      operation: {
+        _tag: "Fail",
+        completedAt: "2026-08-22T10:01:00.000Z",
+        dispatchId: predecessorFingerprint,
+        failureCode: "provider_error",
+        recovery: "operator_review",
+        stage: "extraction",
+      },
+    });
+    expect(
+      predecessorFailure.status,
+      await predecessorFailure.clone().text()
+    ).toBe(200);
+
+    const command = {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint: recoveryFingerprint,
+      intentId: admitted.id,
+      mutationId: "6".repeat(64),
+      operation: {
+        _tag: "PrepareRecovery",
+        dispatchId: recoveryFingerprint,
+        predecessorDispatchId: predecessorFingerprint,
+        predecessorInputFingerprint: predecessorFingerprint,
+        stage: "extraction",
+        startedAt: "2026-08-22T10:02:00.000Z",
+      },
+    } as const;
+    const stalePredecessor = await systemCommand("mutate-evidence-stage", {
+      ...command,
+      inputFingerprint: "7".repeat(64),
+      mutationId: "8".repeat(64),
+      operation: {
+        ...command.operation,
+        dispatchId: "7".repeat(64),
+        predecessorDispatchId: "9".repeat(64),
+        predecessorInputFingerprint: "9".repeat(64),
+      },
+    });
+    expect(stalePredecessor.status).toBe(409);
+
+    const prepared = await systemCommand("mutate-evidence-stage", command);
+    expect(prepared.status, await prepared.clone().text()).toBe(200);
+    const preparedReceipt = await prepared.json();
+    expect(preparedReceipt).toMatchObject({
+      executionGeneration: 1,
+      intentId: admitted.id,
+      outcome: "RecoveryPrepared",
+      stage: "extraction",
+    });
+
+    const stageResponse = await systemCommand("read-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      stage: "extraction",
+    });
+    expect(stageResponse.status, await stageResponse.clone().text()).toBe(200);
+    await expect(stageResponse.json()).resolves.toMatchObject({
+      dispatchId: recoveryFingerprint,
+      failureCode: null,
+      inputFingerprint: recoveryFingerprint,
+      outcome: "Dispatching",
+      result: null,
+    });
+
+    const replay = await systemCommand("mutate-evidence-stage", command);
+    expect(replay.status, await replay.clone().text()).toBe(200);
+    expect(await replay.json()).toEqual(preparedReceipt);
+
+    const conflictingReplay = await systemCommand("mutate-evidence-stage", {
+      ...command,
+      inputFingerprint: "a".repeat(64),
+      operation: {
+        ...command.operation,
+        dispatchId: "a".repeat(64),
+      },
+    });
+    expect(conflictingReplay.status).toBe(409);
+    const afterConflict = await systemCommand("read-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      stage: "extraction",
+    });
+    expect(afterConflict.status, await afterConflict.clone().text()).toBe(200);
+    await expect(afterConflict.json()).resolves.toMatchObject({
+      dispatchId: recoveryFingerprint,
+      inputFingerprint: recoveryFingerprint,
+      outcome: "Dispatching",
+    });
   });
 });

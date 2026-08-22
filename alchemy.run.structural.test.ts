@@ -131,6 +131,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(sqlFiles).toEqual([
       "20260822083458_import_execution/migration.sql",
       "20260822161910_import_execution/migration.sql",
+      "20260822183847_import_execution/migration.sql",
     ]);
   });
 
