@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ImportIntentExecutionGeneration } from "../imports/import-intent-transition.js";
 import { ImportId } from "../imports/import.contracts.js";
 import { HouseholdImportWorkflowOutboxPayload } from "./foundation/import-workflow-admission.contract.js";
+import { routeAdmittedHouseholdCommand } from "./household-command-router.js";
 import {
   HouseholdObjectLocator,
   makeHouseholdObjectLocator,
@@ -74,6 +75,45 @@ describe("household foundation contracts", () => {
         requireHouseholdCommandAdmission(systemAdmission, "ensure_household")
       )
     ).toThrow();
+  });
+
+  it("rejects the wrong command purpose before any household routing step", async () => {
+    const systemAdmission = Schema.decodeUnknownSync(HouseholdSystemAdmission)({
+      actor: {
+        _tag: "System",
+        purpose: "import_workflow_dispatch",
+      },
+      organizationId,
+    });
+    const calls = {
+      getByName: 0,
+      invoke: 0,
+      locate: 0,
+    };
+
+    const routed = routeAdmittedHouseholdCommand({
+      admission: systemAdmission,
+      getByName: () => {
+        calls.getByName += 1;
+        return {};
+      },
+      invoke: () => {
+        calls.invoke += 1;
+        return Effect.void;
+      },
+      locate: () => {
+        calls.locate += 1;
+        return Effect.succeed("household-object-name");
+      },
+      purpose: "ensure_household",
+    });
+
+    await expect(Effect.runPromise(routed)).rejects.toBeDefined();
+    expect(calls).toEqual({
+      getByName: 0,
+      invoke: 0,
+      locate: 0,
+    });
   });
 
   it("derives one privacy-safe Workflow identity per execution generation", async () => {

@@ -142,6 +142,73 @@ const activeInstance = {
   status: () => Effect.succeed({ status: "running" }),
 };
 
+describe("speech recovery workflow restart reconciliation", () => {
+  it("accepts an active workflow after a lost restart response", async () => {
+    await Promise.all(
+      (["queued", "running", "waiting", "waitingForPause"] as const).map(
+        async (activeStatus) => {
+          let restartCalls = 0;
+          let statusReads = 0;
+          const starter = makeImportWorkflowStarter({
+            createBatch: () => Effect.die("speech recovery must not create"),
+            get: () =>
+              Effect.succeed({
+                restart: () =>
+                  Effect.sync(() => {
+                    restartCalls += 1;
+                  }).pipe(Effect.andThen(Effect.die("response lost"))),
+                status: () =>
+                  Effect.sync(() => {
+                    const status =
+                      statusReads === 0 ? "complete" : activeStatus;
+                    statusReads += 1;
+                    return { status };
+                  }),
+              }),
+          });
+
+          await Effect.runPromise(
+            starter.restartFromSpeech?.(workflowIdentity) ??
+              Effect.die("missing speech recovery restart")
+          );
+
+          expect(restartCalls).toBe(1);
+          expect(statusReads).toBe(2);
+        }
+      )
+    );
+  });
+
+  it("rejects a terminal instance when restart failed before activation", async () => {
+    let restartCalls = 0;
+    let statusReads = 0;
+    const starter = makeImportWorkflowStarter({
+      createBatch: () => Effect.die("speech recovery must not create"),
+      get: () =>
+        Effect.succeed({
+          restart: () =>
+            Effect.sync(() => {
+              restartCalls += 1;
+            }).pipe(Effect.andThen(Effect.die("restart rejected"))),
+          status: () =>
+            Effect.sync(() => {
+              statusReads += 1;
+              return { status: "complete" };
+            }),
+        }),
+    });
+
+    await expect(
+      Effect.runPromise(
+        starter.restartFromSpeech?.(workflowIdentity) ??
+          Effect.die("missing speech recovery restart")
+      )
+    ).rejects.toMatchObject({ _tag: "WorkflowStartUnavailable" });
+    expect(restartCalls).toBe(1);
+    expect(statusReads).toBe(2);
+  });
+});
+
 describe("opaque import correlation continuity", () => {
   it("traverses queue, workflow, installed transport, budget and settlement without diverging on reconciliation", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());

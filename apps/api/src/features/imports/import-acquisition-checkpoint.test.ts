@@ -2,32 +2,24 @@ import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  continueHouseholdAcquisitionCheckpoint,
   decodeAcquisitionCheckpoint,
-  recoverVerifiedAcquisitionCheckpoint,
-  verifyAcquisitionCheckpointContinuation,
+  recoverHouseholdVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
+import type { HouseholdImportEvidenceCurrent } from "./import-evidence.repository.household.js";
 import {
   AcquisitionTaskOutcome,
   AcquisitionGeneration,
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
-import { ImportTraceContext } from "./import-observability.js";
-import {
-  ImportId,
-  ImportTimestamp,
-  SourceCanonicalId,
-} from "./import.contracts.js";
-import type { StoredImport } from "./import.repository.js";
+import { ImportId, SourceCanonicalId } from "./import.contracts.js";
 
 const importId = Schema.decodeUnknownSync(ImportId)(
   "00000000-0000-4000-8000-000000000189"
 );
 const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
 const acquiredAt = "2026-07-28T10:00:00.000Z";
-const trace = Schema.decodeUnknownSync(ImportTraceContext)({
-  correlationId: "10000000-0000-4000-8000-000000000002",
-});
 
 const verifiedOutcome = () => {
   const outcome = Schema.decodeUnknownSync(AcquisitionTaskOutcome)({
@@ -39,7 +31,9 @@ const verifiedOutcome = () => {
       deleteAt: "2026-08-04T10:00:00.000Z",
       durationSeconds: 30,
       generation: 1,
+      manifestByteLength: 512,
       manifestKey: manifestObjectKey(importId, generation),
+      manifestSha256: "b".repeat(64),
       mediaKey: mediaObjectKey(importId, generation),
       sha256: "a".repeat(64),
       source: {
@@ -76,42 +70,19 @@ const verifiedOutcome = () => {
 const currentCheckpoint = () =>
   Schema.encodeSync(AcquisitionTaskOutcome)(verifiedOutcome());
 
-const storedImport = (overrides: Partial<StoredImport> = {}): StoredImport => ({
+const currentEvidence = (
+  overrides: Partial<HouseholdImportEvidenceCurrent> = {}
+): HouseholdImportEvidenceCurrent => ({
   acquisitionGeneration: generation,
   canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)(
     "synthetic-canonical-id"
   ),
+  importId,
   sourceKind: "tiktok",
-  trace,
-  view: {
-    createdAt: Schema.decodeUnknownSync(ImportTimestamp)(
-      "2026-07-28T09:59:00.000Z"
-    ),
-    evidence: [
-      {
-        kind: "original_media",
-        referenceId: mediaObjectKey(importId, generation),
-      },
-      {
-        kind: "acquisition_manifest",
-        referenceId: manifestObjectKey(importId, generation),
-      },
-    ],
-    id: importId,
-    source: {
-      canonicalId: Schema.decodeUnknownSync(SourceCanonicalId)(
-        "synthetic-canonical-id"
-      ),
-      kind: "tiktok",
-    },
-    status: {
-      code: "transcription_failed",
-      kind: "failed",
-      recovery: "retry_later",
-    },
-    updatedAt: Schema.decodeUnknownSync(ImportTimestamp)(
-      "2026-07-28T10:01:00.000Z"
-    ),
+  status: {
+    code: "transcription_failed",
+    kind: "failed",
+    recovery: "retry_later",
   },
   ...overrides,
 });
@@ -158,100 +129,73 @@ describe("acquisition checkpoint boundary", () => {
 
   it.each([
     {
-      name: "foreign import identity",
-      stored: storedImport({
-        view: {
-          ...storedImport().view,
-          id: Schema.decodeUnknownSync(ImportId)(
-            "00000000-0000-4000-8000-000000000999"
-          ),
-        },
+      current: currentEvidence({
+        importId: Schema.decodeUnknownSync(ImportId)(
+          "00000000-0000-4000-8000-000000000999"
+        ),
       }),
+      name: "foreign import identity",
     },
     {
-      name: "foreign generation",
-      stored: storedImport({
+      current: currentEvidence({
         acquisitionGeneration: Schema.decodeUnknownSync(AcquisitionGeneration)(
           2
         ),
       }),
+      name: "foreign generation",
     },
     {
+      current: currentEvidence({ status: { kind: "queued" } }),
       name: "non-owned lifecycle",
-      stored: storedImport({
-        view: {
-          ...storedImport().view,
-          evidence: [],
-          status: { kind: "queued" } as const,
-        },
-      }),
     },
-    {
-      name: "mismatched evidence references",
-      stored: storedImport({
-        view: {
-          ...storedImport().view,
-          evidence: [
-            {
-              kind: "original_media",
-              referenceId: "synthetic-mismatch",
-            },
-            {
-              kind: "acquisition_manifest",
-              referenceId: manifestObjectKey(importId, generation),
-            },
-          ],
-        } as unknown as StoredImport["view"],
-      }),
-    },
-  ])("fails closed for $name", ({ stored }) => {
+  ])("fails closed for $name", async ({ current }) => {
     const decoded = decodeAcquisitionCheckpoint(currentCheckpoint());
     if (decoded._tag !== "Accepted") {
       throw new Error("Expected the synthetic checkpoint to decode");
     }
-    expect(
-      verifyAcquisitionCheckpointContinuation({
-        importId,
-        outcome: decoded.outcome,
-        stored,
-      })
-    ).toEqual({
+    await expect(
+      Effect.runPromise(
+        continueHouseholdAcquisitionCheckpoint({
+          current: Effect.succeed(Option.some(current)),
+          importId,
+          onAccepted: () => Effect.succeed("continued" as const),
+          outcome: decoded.outcome,
+        })
+      )
+    ).resolves.toEqual({
       _tag: "AcquisitionCheckpointRejected",
       code: "acquisition_checkpoint_invalid",
     });
   });
 
-  it("accepts exact import, generation, lifecycle ownership, and evidence refs", () => {
+  it("accepts exact household import, generation, and lifecycle ownership", async () => {
     const decoded = decodeAcquisitionCheckpoint(currentCheckpoint());
     if (decoded._tag !== "Accepted") {
       throw new Error("Expected the synthetic checkpoint to decode");
     }
-    expect(
-      verifyAcquisitionCheckpointContinuation({
-        importId,
-        outcome: decoded.outcome,
-        stored: storedImport(),
-      })
-    ).toEqual({ _tag: "Accepted" });
+    await expect(
+      Effect.runPromise(
+        continueHouseholdAcquisitionCheckpoint({
+          current: Effect.succeed(Option.some(currentEvidence())),
+          importId,
+          onAccepted: () => Effect.succeed("continued" as const),
+          outcome: decoded.outcome,
+        })
+      )
+    ).resolves.toBe("continued");
   });
 });
 
 describe("retained acquisition recovery boundary", () => {
   it("leaves an acquiring import on the ordinary acquisition path", async () => {
     let evidenceReads = 0;
-    const acquiring = storedImport({
-      view: {
-        ...storedImport().view,
-        evidence: [],
-        status: { kind: "acquiring" },
-      },
-    });
+    const acquiring = currentEvidence({ status: { kind: "acquiring" } });
 
     await expect(
       Effect.runPromise(
-        recoverVerifiedAcquisitionCheckpoint({
+        recoverHouseholdVerifiedAcquisitionCheckpoint({
+          current: Effect.succeed(Option.some(acquiring)),
           expectedCanonicalId: acquiring.canonicalSourceId,
-          findStored: Effect.succeed(Option.some(acquiring)),
           importId,
           readEvidence: () =>
             Effect.sync(() => {
@@ -270,9 +214,9 @@ describe("retained acquisition recovery boundary", () => {
 
     await expect(
       Effect.runPromise(
-        recoverVerifiedAcquisitionCheckpoint({
-          expectedCanonicalId: storedImport().canonicalSourceId,
-          findStored: Effect.succeed(Option.some(storedImport())),
+        recoverHouseholdVerifiedAcquisitionCheckpoint({
+          current: Effect.succeed(Option.some(currentEvidence())),
+          expectedCanonicalId: currentEvidence().canonicalSourceId,
           importId,
           readEvidence: () =>
             Effect.sync(() => {
@@ -292,9 +236,9 @@ describe("retained acquisition recovery boundary", () => {
   it("fails closed when retained evidence is absent", async () => {
     await expect(
       Effect.runPromise(
-        recoverVerifiedAcquisitionCheckpoint({
-          expectedCanonicalId: storedImport().canonicalSourceId,
-          findStored: Effect.succeed(Option.some(storedImport())),
+        recoverHouseholdVerifiedAcquisitionCheckpoint({
+          current: Effect.succeed(Option.some(currentEvidence())),
+          expectedCanonicalId: currentEvidence().canonicalSourceId,
           importId,
           readEvidence: () => Effect.succeed(null),
         })
@@ -307,7 +251,7 @@ describe("retained acquisition recovery boundary", () => {
 
   it("fails closed before reading evidence for incompatible identity", async () => {
     let evidenceReads = 0;
-    const incompatible = storedImport({
+    const incompatible = currentEvidence({
       canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)(
         "different-canonical-id"
       ),
@@ -315,9 +259,9 @@ describe("retained acquisition recovery boundary", () => {
 
     await expect(
       Effect.runPromise(
-        recoverVerifiedAcquisitionCheckpoint({
-          expectedCanonicalId: storedImport().canonicalSourceId,
-          findStored: Effect.succeed(Option.some(incompatible)),
+        recoverHouseholdVerifiedAcquisitionCheckpoint({
+          current: Effect.succeed(Option.some(incompatible)),
+          expectedCanonicalId: currentEvidence().canonicalSourceId,
           importId,
           readEvidence: () =>
             Effect.sync(() => {

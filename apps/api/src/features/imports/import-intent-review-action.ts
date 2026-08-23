@@ -12,7 +12,7 @@ import {
 } from "@meal-planner/recipe-import-api";
 import { DateTime, Schema } from "effect";
 
-import type { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
+import type { RecipeDraft } from "./import-recipe-draft.repository.js";
 import type { ApprovedReview } from "./import-recipe-review.js";
 import {
   approvalBlockers,

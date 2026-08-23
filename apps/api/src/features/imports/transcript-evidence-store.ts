@@ -57,6 +57,7 @@ export const TranscriptEvidenceStoreError =
   );
 
 export interface VerifiedTranscriptEvidence {
+  readonly byteLength: number;
   readonly document: TranscriptEvidenceDocument;
   readonly sha256: Sha256Hex;
   readonly key: string;
@@ -221,7 +222,7 @@ const readVerified = (bucket: AcquisitionBucketLike) =>
         failure("identity_mismatch", "transcript_identity_mismatch")
       );
     }
-    return Option.some({ document, key, sha256 });
+    return Option.some({ byteLength: bytes.byteLength, document, key, sha256 });
   });
 
 const putVerified = (bucket: AcquisitionBucketLike) =>

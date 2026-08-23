@@ -369,7 +369,7 @@ extra binding is another invocation and another principal-propagation boundary.
 | Now | Workflow, Queue, R2, private service binding | Keep orchestration, delivery, bytes, and private routing outside household transactions. Pass and re-prove the application principal across the binding. |
 | Next | SQLite DO PITR and recovery runbook | Add operator tooling for per-object bookmarks and 30-day restore, destructive-command/migration procedures, authorization, audit, and a production drill. PITR is per-object recovery, not fleet backup or inventory, and is unavailable locally. |
 | Next | Durable Object alarms | Multiplex a local schedule/outbox table onto the single alarm. Handlers are idempotent and limited to local wake-up, pruning, deletion, or dispatch retry; provider work remains in Workflows. |
-| Next | R2 Queue event notifications | Send relevant create/delete/lifecycle-deletion events through a reconciliation Queue with strict prefix/suffix and generation validation. Notifications are delivery evidence, not household truth. |
+| Now | R2 Queue event notifications | Relevant create/delete/lifecycle-deletion events pass through a reconciliation Queue with strict key, integrity, household, and generation validation. Notifications are delivery evidence, not household truth. |
 | Next | Scheduled maintenance | On Alchemy beta.72, use an Alchemy-managed cron Worker that starts a bound Workflow. Direct Workflow schedules exist in Cloudflare but are not exposed by the pinned Alchemy resource API; revisit after support lands. |
 | Next | Rate Limiting binding | Protect expensive admission/provider routes with privacy-safe household/actor/capability keys. Location-local permissive counters are abuse and load protection, never authorization, quota, budget, billing, or idempotency. |
 | Next | Secrets Store evaluation | Prefer reusable account-level provider/system credentials if the open-beta, async binding and local-development constraints pass an exact-version spike. Do not store household product data or retail grants there. |
@@ -499,7 +499,7 @@ and its transfer-size workaround. Do not preserve prototype rows or reinstate
 an arbitrary product-level recipe-count ceiling such as the old 128-item limit;
 use pagination, bounded pages, and byte limits at real transport/storage seams.
 
-### Slice 2: evidence and extraction metadata
+### Completed: Slice 2 evidence and extraction metadata
 
 Move compact transcription, visual, carousel, extraction, manifest, current
 result, and generation metadata plus integrity-checked R2 references. Large
@@ -510,17 +510,73 @@ retention, missing-object, deletion, restart, and stale-generation proof.
 The exact table boundary is refined from live dependencies after Slice 1; no
 state needed by the confirmation transaction may be left behind.
 
-### Slice 3: settlement and recovery
+The production acquisition Workflow now commits closed acquisition and stage
+results only through the private household authority. Recipe recovery also
+reads current evidence and claims, completes, or fails extraction only through
+authenticated household authority. Household SQLite owns compact
+current-result metadata, integrity-checked generation-scoped R2 references,
+availability observations, and replay receipts. Large bytes remain in R2.
+One household-owned timestamp makes Claim, Fail, artifact, and replay commands
+byte-stable for each native Workflow dispatch. Execution generation remains the
+domain fence while a separate acquisition-attempt generation scopes retry R2
+objects. Shared D1 acquisition bookkeeping has no household evidence projection
+or provider-stage completion status.
+Missing objects, lifecycle deletion, late events, restart, exact retry,
+conflicting replay, stale generations, physical cross-household isolation, and
+provider-free recipe recovery have runtime proof. Shared D1 retains the
+bounded operational event route plus objectively global provider-budget
+settlement and reconciliation; neither can author household evidence,
+extraction, terminal checkpoints, or recovery attempts.
 
-Move household-owned terminal checkpoints, recovery attempts, generation
-fences, replay guards, and receipts. Workflow owns waits, retries, provider
-calls, and saga execution; the object decides and records household outcomes.
+The approved architectural correction also moves terminal checkpoint and
+recovery authority into this slice. Household SQLite owns the stable
+`import_terminal_checkpoints` and `import_recipe_recovery_attempts` tables,
+generation/dispatch fences, replay identities, and privacy-safe receipts.
+Settlement and recovery read or commit those facts only through the private
+household boundary after provider/R2 work. The superseded
+`pilot_provider_terminal_checkpoints`, legacy
+`import_provider_terminal_checkpoints`, and pilot recovery tables and
+repositories are physically absent; there are no compatibility reads, fixture
+seeds, dual writes, or backfills.
+
+R2 notification reconciliation uses one bounded noncanonical operational
+index: after authenticated admission, the API synchronously inserts and reads
+an immutable import-to-organization route in a private D1 table before
+Workflow start. The unordered Queue carries only R2 notifications, so an event
+cannot overtake route registration. Concurrent registration is serialized by
+the route's unique import ID: the first route is immutable and every
+conflicting organization fails closed. The route can only reconstruct the
+enumerated lifecycle system admission, and the consumer
+re-proves import, authoritative source kind, object key, kind, hash, and stored
+metadata before an idempotent household availability observation. The route's
+execution generation fences the household RPC; the R2 key and metadata's
+acquisition-attempt generation validate the artifact. Household state fences
+observations by event time and a fixed
+same-time action precedence, so delayed deletion cannot replace newer
+availability. The route is not a household registry, product read model,
+object-name source, or Slice 3 recovery ledger.
+The consumer uses a read-only R2 binding; retryable notifications that exhaust
+the bounded delivery policy are retained by the R2-event-only DLQ.
+
+Speech and visual recovery preparation commit the next fenced recovery
+dispatch before activating the corresponding Workflow step. Exact preparation
+replays return the same receipt. A lost activation response is accepted only
+when the same household generation, recovery dispatch, and input fingerprint
+has already made terminal progress; a still-dispatching attempt remains
+retryable. Recovery reuses the admitted trace and exact persisted
+generation-specific Workflow identity.
+
+### Slice 3: global provider accounting
+
+Workflow continues to own waits, retries, provider calls, and saga execution;
+the household object already decides and records terminal/recovery outcomes.
 Retain only proven cross-household budget or safe operational facts globally.
 If the global provider budget remains required, move its model, repository,
 settlement policy, and operational schema from `features/pilots` into a
 production-owned `provider-accounting` capability during this slice. Otherwise
-delete the pilot ledger and its composition. Production import code must not
-depend on an experiments or pilots namespace.
+delete the pilot ledger and its composition. Shared D1 must not gate household
+recovery, and production import code must not depend on an experiments or
+pilots namespace.
 
 ### Slice 4: batches
 
@@ -671,7 +727,7 @@ minimal noncanonical operational index for an approved concrete use case.
 
 ## Immediate handoff
 
-The next authority delivery is **Slice 2: evidence and extraction metadata**.
-It must start from the merged Slice 1 cutover and must not move settlement,
-recovery, batch, or final shared-D1 retirement work from later slices into its
-scope.
+The next delivery is **Slice 3: global provider accounting**. It must start
+from the merged Slice 2 cutover, preserve household-owned terminal/recovery
+authority, and must not move batch or final shared-D1 retirement work from later
+slices into its scope.

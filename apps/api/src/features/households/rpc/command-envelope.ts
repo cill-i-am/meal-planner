@@ -57,16 +57,24 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "answer_recipe_import_action",
   "approve_meal_plan",
   "cancel_recipe_import",
+  "commit_acquisition_evidence",
+  "mutate_evidence_stage",
   "commit_recipe_import_draft",
   "create_meal_plan",
   "create_meal_plan_from_recipe_bank",
   "ensure_household",
   "confirm_recipe_import_action",
   "list_recipe_bank",
+  "observe_evidence_reference",
+  "prepare_recipe_recovery",
   "read_recipe",
   "read_recipe_import",
   "read_recipe_import_action",
   "read_recipe_import_execution",
+  "read_evidence_references",
+  "read_evidence_stage",
+  "read_import_terminal_checkpoint",
+  "read_recipe_recovery_attempt",
   "read_recipe_import_timeline",
   "record_recipe_import_dispatch",
   "read_meal_plan",
@@ -108,12 +116,20 @@ const memberPurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
 export const requireHouseholdCommandAdmission = (
   admission: HouseholdCommandAdmission,
   purpose: HouseholdCommandPurpose
-) => {
+): Effect.Effect<HouseholdCommandAdmission, HouseholdAuthorizationFailure> => {
   const permitted =
     admission.actor._tag === "Member"
       ? memberPurposes.has(purpose)
       : (admission.actor.purpose === "recipe_import_lifecycle_commit" &&
-          (purpose === "commit_recipe_import_draft" ||
+          (purpose === "commit_acquisition_evidence" ||
+            purpose === "commit_recipe_import_draft" ||
+            purpose === "observe_evidence_reference" ||
+            purpose === "prepare_recipe_recovery" ||
+            purpose === "read_evidence_references" ||
+            purpose === "mutate_evidence_stage" ||
+            purpose === "read_evidence_stage" ||
+            purpose === "read_import_terminal_checkpoint" ||
+            purpose === "read_recipe_recovery_attempt" ||
             purpose === "read_recipe_import_execution" ||
             purpose === "resolve_recipe_import_source" ||
             purpose === "transition_recipe_import_lifecycle")) ||

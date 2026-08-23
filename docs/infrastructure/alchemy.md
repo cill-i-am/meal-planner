@@ -87,9 +87,11 @@ mutation, and cleanup boundary.
 
 The stack returns the safe resource inventory `apiWorkerName`, `databaseName`,
 `authDatabaseName`, `evidenceBucketName`, `evidenceRetentionSeconds`,
+`evidenceEventQueueName`, `evidenceEventDeadLetterQueueName`,
+`evidenceEventWorkerName`,
 `importProviderGatewayId`, `websiteWorkerName`, and `websiteUrl`, plus the
-optional `apiUrl`. The household domain Worker is private and is deliberately
-not surfaced as a public URL. Alchemy types Worker and Website URLs as
+optional `apiUrl`. The household domain and evidence-event Workers are private
+and deliberately have no public URL. Alchemy types Worker and Website URLs as
 `string | undefined`: a resource can exist without a generated workers.dev
 URL. Operator tooling must not invent a URL or cast it to a required string.
 When `apiUrl` is present, `GET <apiUrl>/health` returns:
@@ -109,16 +111,21 @@ Bank, receipts, and meal planning. Its generated Drizzle migrations live under
 `apps/api/household-migrations` and are applied inside each object by the
 Alchemy Durable Object Drizzle runtime.
 
-`MealPlannerDatabase` remains a shared operational D1 for the execution and
-evidence facts scheduled for later migration slices. Its generated migration is
-under `apps/api/migrations`; the stable tracking table is `d1_migrations`.
+`MealPlannerDatabase` remains a shared operational D1 for objectively global
+provider-budget settlement and reconciliation plus the private evidence-event
+route. Terminal checkpoints, recovery attempts, and recovery replay authority
+are household-local. The D1 generated migration is under
+`apps/api/migrations`; the stable tracking table is `d1_migrations`.
 Run `pnpm --filter @meal-planner/api db:generate` or
 `pnpm --dir apps/api db:generate`, then review the generated timestamped
 `migration.sql` and `snapshot.json` together. Regeneration without a schema
 change must create no new migration.
 
-The D1 baseline contains `import_execution_runs` plus acquisition terminal,
-transcription, visual, carousel, and extraction records. It deliberately omits
+The D1 baseline contains the remaining acquisition bookkeeping and global
+settlement controls. Its execution row has no evidence-reference projection or
+provider-stage completion status. Production evidence stages, terminal
+checkpoints, and recovery attempts do not write household authority to D1. The
+schema deliberately omits
 the former public intent, idempotency, timeline, review, Recipe Bank, batch, and
 moved receipt tables. Those prototype tables are discarded rather than copied
 or backfilled. Structural tests reject both their SQL names and their removed
@@ -161,8 +168,10 @@ the per-object Drizzle migration owns schema evolution. No lookup mapper,
 shared read model, dual write, or public household Worker route is added.
 
 The household object persists submitted-source ownership, public import state,
-idempotency, review, recipes, and compact dispatch receipts. D1 persists only
-the remaining operational execution and safe evidence facts. Neither database
+idempotency, review, recipes, compact evidence metadata and R2 references,
+terminal checkpoints, recovery attempts, and dispatch/replay receipts.
+D1 persists only noncanonical execution bookkeeping and objectively global
+provider-budget settlement/reconciliation facts. Neither database
 persists credentials, raw provider payloads, or media. TikTok requests are
 limited to the bounded source-resolution and acquisition Workflow.
 
@@ -182,13 +191,34 @@ days. The lifecycle policy is the deployable deletion boundary; household
 imports, idempotency records, reviews, timelines, recipes, and meal plans are
 outside the bucket and are not retention targets.
 
+R2 object-create and object-delete notifications for the bounded evidence
+prefix feed `ImportEvidenceEventQueue` and its private consumer Worker. The
+authenticated API first stores the immutable import-to-organization route in a
+private D1 table through an atomic insert-and-read batch keyed by import ID,
+then starts the Workflow. The unordered Queue carries only R2 events, so a
+notification cannot overtake route registration. The consumer Schema-decodes
+those events, resolves only that admitted route, validates the authoritative
+source shape, acquisition-attempt-scoped key, and integrity metadata, then
+records a household-local availability observation through the private service
+binding using the route's immutable execution generation as the RPC fence.
+Concurrent conflicting routes fail closed. Notifications are transport
+evidence: missing, duplicate, stale, or late events cannot rewrite the
+committed R2 reference or current result. The household compares event time
+plus fixed same-time action precedence before applying availability. Queue,
+D1, service-binding, and R2 I/O remain outside every `HouseholdObject`
+transaction, and raw organization identifiers are neither logged nor returned.
+The consumer is bound to R2 read operations only. Retryable events receive one
+initial delivery plus three retries; exhausted messages are retained in
+`ImportEvidenceEventDeadLetterQueue` for operator inspection.
+
 Public admission commits a compact household outbox intent before the API host
 starts the deterministic generation-specific Workflow. Host retries reconcile
 the same Workflow identity and record their delivery result through a closed
-system command. No Queue or batch writer participates in Slice 1. The existing
-provider terminal-settlement route remains a private, explicitly authorized
-execution seam for later-slice evidence and recovery behavior; it cannot write
-canonical public import, review, or Recipe Bank state directly.
+system command. No Queue or batch writer participates in Slice 1. The provider
+terminal-settlement route remains a private, explicitly authorized execution
+seam. It proves the household-local terminal identity before globally settling
+provider cost, and routes recovery preparation through the household boundary;
+it cannot author recovery or other household product state in D1.
 
 ## Cleanup and test boundaries
 

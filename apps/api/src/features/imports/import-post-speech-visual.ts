@@ -1,8 +1,18 @@
 import { Effect } from "effect";
 
 import type { AcquisitionGeneration } from "./import-media.model.js";
-import type { ProviderTerminalRecoveryRepository } from "./import-provider-terminal.js";
 import type { ImportId } from "./import.contracts.js";
+
+export interface ProviderTerminalDispatchAuthority {
+  readonly speechDispatchId: (input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly importId: ImportId;
+  }) => Effect.Effect<string, unknown>;
+  readonly visualDispatchId: (input: {
+    readonly acquisitionGeneration: AcquisitionGeneration;
+    readonly importId: ImportId;
+  }) => Effect.Effect<string, unknown>;
+}
 
 /**
  * Continue into visual work with the exact speech dispatch that owns the
@@ -16,7 +26,7 @@ export const continueVisualFromSettledSpeech = <A, E, R>(input: {
     readonly visualDispatchId: string;
   }) => Effect.Effect<A, E, R>;
   readonly importId: ImportId;
-  readonly terminalRecovery: ProviderTerminalRecoveryRepository;
+  readonly terminalRecovery: ProviderTerminalDispatchAuthority;
 }): Effect.Effect<A, E, R> =>
   Effect.all({
     speechDispatchId: input.terminalRecovery.speechDispatchId({

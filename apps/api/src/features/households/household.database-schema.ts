@@ -45,6 +45,7 @@ export const householdImportWorkflowAdmissions = sqliteTable(
     executionGeneration: integer("execution_generation").notNull(),
     importId: text("import_id").notNull(),
     mutationId: text("mutation_id").primaryKey(),
+    originalTraceJson: text("original_trace_json"),
     workflowIdentity: text("workflow_identity").notNull().unique(),
   },
   (table) => [
@@ -64,6 +65,173 @@ export const householdOutbox = sqliteTable("household_outbox", {
   purpose: text("purpose").notNull(),
   state: text("state").notNull(),
 });
+
+/** Compact current acquisition result; immutable media and manifests stay in R2. */
+export const householdImportEvidenceExecutions = sqliteTable(
+  "household_import_evidence_executions",
+  {
+    acquisitionAttemptGeneration: integer(
+      "acquisition_attempt_generation"
+    ).notNull(),
+    acquisitionJson: text("acquisition_json").notNull(),
+    commandDigest: text("command_digest").notNull(),
+    committedAt: text("committed_at").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    intentId: text("intent_id").notNull(),
+    resultJson: text("result_json").notNull(),
+    status: text("status").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.intentId, table.executionGeneration] }),
+  ]
+);
+
+/** Integrity metadata for household/generation-fenced R2 objects. */
+export const householdEvidenceReferences = sqliteTable(
+  "household_evidence_references",
+  {
+    availability: text("availability").notNull().default("available"),
+    byteLength: integer("byte_length").notNull(),
+    deleteAt: text("delete_at").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    intentId: text("intent_id").notNull(),
+    kind: text("kind").notNull(),
+    objectKey: text("object_key").notNull(),
+    observationOrdinal: integer("observation_ordinal").notNull().default(0),
+    observedAt: text("observed_at"),
+    observedEventAction: text("observed_event_action", {
+      enum: [
+        "CompleteMultipartUpload",
+        "CopyObject",
+        "DeleteObject",
+        "IntegrityProbe",
+        "LifecycleDeletion",
+        "PutObject",
+      ],
+    }),
+    observedEventTime: text("observed_event_time"),
+    ordinal: integer("ordinal").notNull(),
+    sha256: text("sha256").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.intentId, table.executionGeneration, table.ordinal],
+    }),
+    uniqueIndex("household_evidence_reference_kind_unique").on(
+      table.intentId,
+      table.executionGeneration,
+      table.kind
+    ),
+  ]
+);
+
+export const householdEvidenceMutationReceipts = sqliteTable(
+  "household_evidence_mutation_receipts",
+  {
+    commandDigest: text("command_digest").notNull(),
+    mutationId: text("mutation_id").primaryKey(),
+    resultJson: text("result_json").notNull(),
+  }
+);
+
+/** Provider-free stage ledger; provider payload bytes remain outside SQLite. */
+export const householdEvidenceStageExecutions = sqliteTable(
+  "household_evidence_stage_executions",
+  {
+    acquisitionAttemptGeneration: integer(
+      "acquisition_attempt_generation"
+    ).notNull(),
+    claimJson: text("claim_json"),
+    committedAt: text("committed_at").notNull(),
+    completedAt: text("completed_at"),
+    dispatchId: text("dispatch_id").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    failureCode: text("failure_code"),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    intentId: text("intent_id").notNull(),
+    resultJson: text("result_json"),
+    stage: text("stage").notNull(),
+    startedAt: text("started_at").notNull(),
+    state: text("state").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.intentId, table.executionGeneration, table.stage],
+    }),
+  ]
+);
+
+/** Immutable household authority for terminal provider-stage identities. */
+export const importTerminalCheckpoints = sqliteTable(
+  "import_terminal_checkpoints",
+  {
+    completedAt: text("completed_at").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    failureCode: text("failure_code").notNull(),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    intentId: text("intent_id").notNull(),
+    ownershipId: text("ownership_id").notNull(),
+    stage: text("stage", {
+      enum: ["extraction", "speech", "visual"],
+    }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.intentId,
+        table.executionGeneration,
+        table.stage,
+        table.ownershipId,
+      ],
+    }),
+  ]
+);
+
+/** Canonical household recipe-recovery ancestry and restart authority. */
+export const importRecipeRecoveryAttempts = sqliteTable(
+  "import_recipe_recovery_attempts",
+  {
+    acquisitionAttemptGeneration: integer(
+      "acquisition_attempt_generation"
+    ).notNull(),
+    createdAt: text("created_at").notNull(),
+    currentDispatchId: text("current_dispatch_id").notNull(),
+    currentExtractionFingerprint: text(
+      "current_extraction_fingerprint"
+    ).notNull(),
+    evidenceFingerprint: text("evidence_fingerprint").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    intentId: text("intent_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    predecessorDispatchId: text("predecessor_dispatch_id").notNull(),
+    predecessorExtractionFingerprint: text(
+      "predecessor_extraction_fingerprint"
+    ).notNull(),
+    rootDispatchId: text("root_dispatch_id").notNull(),
+    rootExtractionFingerprint: text("root_extraction_fingerprint").notNull(),
+    sourceMediaSha256: text("source_media_sha256").notNull(),
+    terminalCheckpointCompletedAt: text(
+      "terminal_checkpoint_completed_at"
+    ).notNull(),
+    transcriptSha256: text("transcript_sha256").notNull(),
+    visualManifestSha256: text("visual_manifest_sha256").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.intentId, table.executionGeneration, table.ordinal],
+    }),
+    uniqueIndex("import_recipe_recovery_current_dispatch_unique").on(
+      table.intentId,
+      table.executionGeneration,
+      table.currentDispatchId
+    ),
+    uniqueIndex("import_recipe_recovery_current_extraction_unique").on(
+      table.intentId,
+      table.executionGeneration,
+      table.currentExtractionFingerprint
+    ),
+  ]
+);
 
 export const householdLiveRecipeImportStatuses = [
   "processing",
@@ -85,6 +253,7 @@ export const householdRecipeImports = sqliteTable(
     intentJson: text("intent_json").notNull(),
     recipeId: text("recipe_id"),
     reviewJson: text("review_json"),
+    sourceKind: text("source_kind", { enum: ["video", "carousel"] }),
     status: text("status").notNull(),
     submittedSourceUrl: text("submitted_source_url").notNull(),
     updatedAt: text("updated_at").notNull(),

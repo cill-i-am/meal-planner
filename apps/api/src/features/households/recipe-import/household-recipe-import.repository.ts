@@ -22,6 +22,7 @@ import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, Effect, Option, Schema } from "effect";
 
 import { ImportIntentExecutionGeneration } from "../../imports/import-intent-transition.js";
+import { ImportTraceContext } from "../../imports/import-observability.js";
 import { ImportId } from "../../imports/import.contracts.js";
 import { ensureHouseholdProvenance } from "../foundation/household-provenance.js";
 import {
@@ -30,6 +31,7 @@ import {
 } from "../foundation/import-workflow-admission.contract.js";
 import {
   householdImportWorkflowAdmissions,
+  householdImportEvidenceExecutions,
   householdLiveRecipeImportStatuses,
   householdOutbox,
   householdRecipeImportMutationReceipts,
@@ -440,6 +442,7 @@ export const makeHouseholdRecipeImportRepository = (
               intentJson,
               recipeId: null,
               reviewJson: null,
+              sourceKind: null,
               status: "processing",
               submittedSourceUrl: input.source.url,
               updatedAt: createdAt,
@@ -592,6 +595,7 @@ export const makeHouseholdRecipeImportRepository = (
               .set({
                 canonicalSourceId: input.canonicalSourceId,
                 intentJson,
+                sourceKind: input.sourceKind,
                 status: next.status,
                 updatedAt: now,
               })
@@ -976,13 +980,69 @@ export const makeHouseholdRecipeImportRepository = (
         return yield* Effect.fail(failure("generation_conflict"));
       }
       const intent = yield* readIntentFromRow(row);
-      if (intent.status !== "processing") {
+      if (intent.status !== "processing" && intent.status !== "failed") {
         return yield* Effect.fail(failure("illegal_transition"));
       }
+      if (row.canonicalSourceId === null || row.sourceKind === null) {
+        return yield* Effect.fail(failure("illegal_transition"));
+      }
+      const [evidence] = yield* database
+        .select({
+          acquisitionAttemptGeneration:
+            householdImportEvidenceExecutions.acquisitionAttemptGeneration,
+        })
+        .from(householdImportEvidenceExecutions)
+        .where(
+          and(
+            eq(householdImportEvidenceExecutions.intentId, input.intentId),
+            eq(
+              householdImportEvidenceExecutions.executionGeneration,
+              input.expectedGeneration
+            )
+          )
+        )
+        .limit(1)
+        .pipe(mapPersistence);
+      const [workflow] = yield* database
+        .select({
+          originalTraceJson:
+            householdImportWorkflowAdmissions.originalTraceJson,
+          workflowIdentity: householdImportWorkflowAdmissions.workflowIdentity,
+        })
+        .from(householdImportWorkflowAdmissions)
+        .where(
+          and(
+            eq(householdImportWorkflowAdmissions.importId, input.intentId),
+            eq(
+              householdImportWorkflowAdmissions.executionGeneration,
+              input.expectedGeneration
+            )
+          )
+        )
+        .limit(1)
+        .pipe(mapPersistence);
+      if (workflow === undefined || workflow.originalTraceJson === null) {
+        return yield* Effect.fail(failure("illegal_transition"));
+      }
+      const originalTraceText = workflow.originalTraceJson;
+      const originalTraceJson = yield* Effect.try({
+        catch: persistenceFailure,
+        try: () => JSON.parse(originalTraceText) as Schema.Json,
+      });
+      const originalTrace = yield* decode(
+        ImportTraceContext,
+        originalTraceJson
+      );
       return yield* decode(HouseholdRecipeImportExecutionView, {
+        acquisitionAttemptGeneration:
+          evidence?.acquisitionAttemptGeneration ?? null,
+        canonicalSourceId: row.canonicalSourceId,
         executionGeneration: row.executionGeneration,
         intentId: row.intentId,
+        originalTrace,
+        sourceKind: row.sourceKind,
         submittedSourceUrl: row.submittedSourceUrl,
+        workflowIdentity: workflow.workflowIdentity,
       });
     });
 

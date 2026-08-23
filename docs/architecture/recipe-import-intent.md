@@ -18,12 +18,14 @@ Meal planning reads bounded pages of approved recipes directly from that local
 capability. There is no shared-D1 recipe projection, recipe-source gateway,
 dual write, legacy read, or compatibility adapter.
 
-The shared `MealPlannerDatabase` D1 is noncanonical for this moved state. It
-currently retains only execution/evidence records that are scheduled for later
-migration slices: acquisition runs and terminal checkpoints, transcription,
-visual/carousel evidence, and extraction records. Those records cannot publish
-a recipe, answer a review, change public lifecycle state, or serve a public
-Recipe Bank read.
+The shared `MealPlannerDatabase` D1 is noncanonical for this moved state. The
+production acquisition Workflow commits acquisition, transcription, visual,
+carousel, and extraction metadata only through the private household boundary.
+Terminal checkpoints and recovery attempts are committed and read only through
+that boundary. Shared D1 retains provider-budget settlement/reconciliation and
+approved global operational controls; those records cannot author household
+evidence or recovery, publish a recipe, answer a review, change public lifecycle
+state, or serve a public Recipe Bank read.
 
 `ImportMediaAcquisitionObject` remains a noncanonical, generation-fenced
 execution coordinator. It transports temporary media and artifacts but is not
@@ -91,6 +93,56 @@ the command is replayable. Stale generations and stale public/action versions
 fail without partial writes or provider calls. Terminal state cannot be
 revived.
 
+Provider and R2 work is completed before the Workflow sends a closed evidence
+result to the household. The object decodes the command again and atomically
+commits generation-fenced stage metadata, integrity-checked R2 references, the
+current result, and a replay receipt. The private result exposes no storage key
+or provider payload. Exact retries are stable; conflicting replays and stale
+generations leave no mutation.
+
+Each provider dispatch, including a recovery dispatch, checkpoints one
+household-owned start time and reuses it in every Claim, Fail, artifact, and
+replay command. The execution generation remains the household lifecycle
+fence, while a separate acquisition-attempt generation scopes retry-created R2
+keys. Native Workflow response loss therefore reconstructs the same encoded
+command instead of changing the mutation digest.
+
+R2 references include byte length, SHA-256, deletion time, object kind, and
+generation. Reads return the video acquisition's media-and-manifest set or the
+carousel stage's single committed manifest with the same stable import,
+generation, and commit time across restart. The authoritative admitted source
+kind selects that exact closed shape; mixed kinds and out-of-order stage
+references fail closed. Missing objects and lifecycle deletion are recorded as
+availability observations without altering the committed reference. Each
+reference persists the last R2 event time and fixed same-time action
+precedence, so duplicate, delayed, and restart-replayed Queue notifications
+cannot overwrite a newer observation. Routing and object lookup occur only
+after the admitted household and import identity are proved.
+
+The authenticated API registers an immutable private import-to-organization
+event route synchronously before starting the Workflow. The unordered Queue
+carries only R2 notifications, so the consumer cannot observe an event before
+the route exists. It resolves that noncanonical route, reads the household's
+committed references through the private service binding, and requires exact
+import, object-key, kind, native R2 checksum, and custom-metadata agreement
+before committing an idempotent availability observation. The route carries
+the immutable execution generation for the household RPC fence; the R2 key and
+metadata carry the acquisition-attempt generation used to validate the
+artifact. The route is not public and never grants member authority.
+The consumer has only an R2 read binding. A notification that remains retryable
+after the configured attempts is retained in the dedicated evidence-event DLQ
+rather than silently discarded.
+
+Terminal ambiguity commits an immutable household checkpoint before recovery.
+Speech and visual recovery each prepare a generation-, predecessor-, and
+dispatch-fenced household attempt, then activate the matching Workflow step.
+Preparation reuses the originally admitted correlation trace and exact
+generation-specific Workflow identity stored by the household; an operator
+retry cannot replace either value.
+If activation reports an error after the Workflow has already progressed,
+settlement accepts only matching terminal household authority; Workflow status
+alone cannot turn a still-dispatching recovery into success.
+
 ## Public lifecycle and review
 
 Public statuses remain `processing`, `requires_action`, `succeeded`, `failed`,
@@ -152,9 +204,11 @@ review, Recipe Bank, receipt, admission, and outbox tables. Alchemy owns the
 Durable Object class/namespace lifecycle but does not replace database
 migrations.
 
-The fresh D1 migration under `apps/api/migrations` contains only the remaining
-operational execution/evidence schema. The former D1 import requests, public
-intent/history, review, Recipe Bank, batch, and moved receipt tables are deleted
+The fresh D1 migration under `apps/api/migrations` contains only remaining
+acquisition bookkeeping and global provider-budget controls. Its execution row
+does not project household evidence references or provider-stage outcomes. The
+former D1 import requests, public intent/history, review, Recipe Bank, terminal
+checkpoint, recovery-attempt, batch, and moved receipt tables are deleted
 rather than migrated or backfilled. Structural tests reject reintroducing their
 production repositories or SQL tables.
 
@@ -163,4 +217,7 @@ Provider-free Workerd tests exercise the actual Website/API/private-Worker/
 restart, repeated migrations, cross-household isolation, admission through
 confirmation and planning, replay/collision behavior, source and terminal
 races, post-commit dispatch failure, and pagination beyond 128 recipes. These
-tests do not claim provider, deployment, cloud migration, or production proof.
+tests also prove evidence replay, stale-generation rejection, restart
+persistence, retention, missing and deleted R2 objects, and late event
+handling. They do not claim provider, deployment, cloud migration, or
+production proof.

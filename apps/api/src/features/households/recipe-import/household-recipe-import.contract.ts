@@ -19,6 +19,7 @@ import {
 } from "@meal-planner/recipe-import-api";
 import { Schema } from "effect";
 
+import { ImportTraceContext } from "../../imports/import-observability.js";
 import { HouseholdDispatchId } from "../foundation/import-workflow-admission.contract.js";
 import {
   HouseholdMemberAdmission,
@@ -79,7 +80,8 @@ export type HouseholdAdmitRecipeImportResult =
 export const HouseholdRecordRecipeImportDispatchInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   dispatchId: HouseholdDispatchId,
-  outcome: Schema.Literals(["started", "unavailable"]),
+  originalTrace: ImportTraceContext,
+  outcome: Schema.Literals(["prepared", "started", "unavailable"]),
   workflowIdentity: ImportWorkflowIdentity,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type HouseholdRecordRecipeImportDispatchInput =
@@ -144,6 +146,13 @@ export const HouseholdRecipeImportLifecycleTransition = Schema.Union([
   }),
   Schema.Struct({
     _tag: Schema.Literal("Fail"),
+    attemptIdentity: Schema.String.pipe(
+      Schema.check(
+        Schema.isTrimmed(),
+        Schema.isNonEmpty(),
+        Schema.isMaxLength(256)
+      )
+    ),
     boundary: Schema.Literals([
       "acquisition",
       "speech",
@@ -183,8 +192,13 @@ export type HouseholdReadRecipeImportExecutionInput =
   typeof HouseholdReadRecipeImportExecutionInput.Type;
 
 export const HouseholdRecipeImportExecutionView = Schema.Struct({
+  acquisitionAttemptGeneration: Schema.NullOr(PositiveSafeInteger),
+  canonicalSourceId:
+    HouseholdResolveRecipeImportSourceInput.fields.canonicalSourceId,
   executionGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,
+  originalTrace: ImportTraceContext,
+  sourceKind: HouseholdResolveRecipeImportSourceInput.fields.sourceKind,
   submittedSourceUrl: Schema.String.pipe(
     Schema.check(
       Schema.isTrimmed(),
@@ -192,6 +206,7 @@ export const HouseholdRecipeImportExecutionView = Schema.Struct({
       Schema.isMaxLength(2048)
     )
   ),
+  workflowIdentity: ImportWorkflowIdentity,
 });
 export type HouseholdRecipeImportExecutionView =
   typeof HouseholdRecipeImportExecutionView.Type;

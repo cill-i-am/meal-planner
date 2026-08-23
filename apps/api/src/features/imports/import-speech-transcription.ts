@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 
+import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import type { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
@@ -14,10 +15,9 @@ import {
 import type {
   CompletedTranscriptEvidence,
   SpeechTranscriptionRepository,
-} from "./import-speech-transcription.repository.d1.js";
+} from "./import-speech-transcription.repository.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { importTransitionRejected } from "./import.errors.js";
-import type { ImportRepository } from "./import.repository.js";
 import type { TranscriptEvidenceDocument } from "./transcript-evidence-store.js";
 import {
   TranscriptEvidenceStore,
@@ -60,11 +60,14 @@ const sha256Hex = (bytes: Uint8Array) =>
 
 const completedFromDocument = (
   document: TranscriptEvidenceDocument,
+  byteLength: number,
   transcriptSha256: string,
   transcriptKey: string
 ): CompletedTranscriptEvidence => ({
+  byteLength,
   completedAt: document.createdAt,
   cost: document.cost,
+  deleteAt: document.deleteAt,
   detectedLanguage: document.detectedLanguage,
   dispatchId: document.dispatchId,
   generation: document.acquisitionGeneration,
@@ -81,7 +84,7 @@ const completedFromDocument = (
 /** Run one replay-safe provider-free acquired-to-transcript use case. */
 export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
   function* transcribeAcquired(input: {
-    readonly acquisitionRepository: ImportRepository;
+    readonly acquisitionRepository: HouseholdImportEvidenceCurrentRepository;
     readonly audioExtractor: SpeechAudioExtractor;
     readonly bucket: AcquisitionBucketLike;
     readonly dispatchId?: string;
@@ -90,7 +93,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
     readonly speechTranscriber: SpeechTranscriber;
     readonly transcriptionRepository: SpeechTranscriptionRepository;
   }) {
-    const storedOption = yield* input.acquisitionRepository.findById(
+    const storedOption = yield* input.acquisitionRepository.readCurrent(
       input.importId
     );
     const stored = yield* Option.match(storedOption, {
@@ -98,9 +101,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       onSome: Effect.succeed,
     });
     if (
-      !["acquired", "transcribing", "transcribed"].includes(
-        stored.view.status.kind
-      )
+      !["acquired", "transcribing", "transcribed"].includes(stored.status.kind)
     ) {
       return yield* Effect.fail(importTransitionRejected());
     }
@@ -132,7 +133,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       };
     }
     if (claim._tag === "Failed") {
-      return yield* Effect.fail(pipelineFailure("outcome_unknown"));
+      return yield* Effect.fail(pipelineFailure(claim.code));
     }
     if (claim._tag === "ResumeDispatch") {
       const recovered = yield* TranscriptEvidenceStore.pipe(
@@ -157,6 +158,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
         const completed = yield* input.transcriptionRepository.complete(
           completedFromDocument(
             recovered.value.document,
+            recovered.value.byteLength,
             recovered.value.sha256,
             recovered.value.key
           )
@@ -224,7 +226,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       const document: TranscriptEvidenceDocument = {
         acquisitionGeneration: evidence.generation,
         cost: transcript.cost,
-        createdAt: now,
+        createdAt: claim.startedAt,
         deleteAt: evidence.deleteAt,
         detectedLanguage: transcript.detectedLanguage,
         dispatchId,
@@ -251,6 +253,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       return yield* input.transcriptionRepository.complete(
         completedFromDocument(
           committed.document,
+          committed.byteLength,
           committed.sha256,
           committed.key
         )

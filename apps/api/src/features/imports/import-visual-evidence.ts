@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 
+import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { EvidenceRetentionSeconds } from "./import-media.model.js";
@@ -17,10 +18,9 @@ import type {
   CompletedVisualEvidence,
   VisualEvidenceFailureCode,
   VisualEvidenceRepository,
-} from "./import-visual-evidence.repository.d1.js";
+} from "./import-visual-evidence.repository.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { importTransitionRejected } from "./import.errors.js";
-import type { ImportRepository } from "./import.repository.js";
 import {
   TranscriptEvidenceStore,
   TranscriptEvidenceStoreLive,
@@ -70,11 +70,14 @@ const observationsMatchFrames = (
   );
 const completedFromDocument = (
   document: VisualEvidenceManifest,
+  byteLength: number,
   manifestSha256: string,
   manifestKey: string
 ): CompletedVisualEvidence => ({
+  byteLength,
   completedAt: document.createdAt,
   cost: document.cost,
+  deleteAt: document.sourceEvidenceDeleteAt,
   dispatchId: document.dispatchId,
   generation: document.acquisitionGeneration,
   importId: document.importId,
@@ -95,13 +98,13 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
   readonly extractor: VisualEvidenceExtractor;
   readonly frameSampler: VisualFrameSampler;
   readonly importId: ImportId;
-  readonly importRepository: ImportRepository;
+  readonly importRepository: HouseholdImportEvidenceCurrentRepository;
   readonly now: () => ImportTimestamp;
   readonly speechDispatchId?: string;
   readonly visualDispatchId?: string;
   readonly visualRepository: VisualEvidenceRepository;
 }) {
-  const stored = yield* input.importRepository.findById(input.importId).pipe(
+  const stored = yield* input.importRepository.readCurrent(input.importId).pipe(
     Effect.flatMap(
       Option.match({
         onNone: () => Effect.fail(importTransitionRejected()),
@@ -116,7 +119,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
       "visual_evidence_empty",
       "visual_evidence_found",
       "visual_evidence_low_confidence",
-    ].includes(stored.view.status.kind)
+    ].includes(stored.status.kind)
   ) {
     return yield* Effect.fail(importTransitionRejected());
   }
@@ -177,6 +180,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
           : yield* input.visualRepository.complete(
               completedFromDocument(
                 committed.value.document,
+                committed.value.byteLength,
                 committed.value.sha256,
                 committed.value.manifestKey
               )
@@ -196,17 +200,14 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
         outcome: completed.outcome,
       };
     }
-    return yield* Effect.fail(
-      pipelineFailure(
-        claim._tag === "Completed"
-          ? "visual_evidence_failed"
-          : "outcome_unknown"
-      )
-    );
+    if (claim._tag === "Completed") {
+      return yield* Effect.fail(pipelineFailure("visual_evidence_failed"));
+    }
   }
   if (claim._tag === "Failed") {
-    return yield* Effect.fail(pipelineFailure("outcome_unknown"));
+    return yield* Effect.fail(pipelineFailure(claim.code));
   }
+  const dispatchStartedAt = claim.startedAt;
   const completed = yield* Effect.gen(function* completed() {
     const durationMilliseconds = Math.round(evidence.durationSeconds * 1000);
     const frames = yield* input.frameSampler
@@ -266,7 +267,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     const manifest: VisualEvidenceManifest = {
       acquisitionGeneration: evidence.generation,
       cost: visualEvidence.cost,
-      createdAt: now,
+      createdAt: dispatchStartedAt,
       dispatchId,
       importId: input.importId,
       model: visualEvidence.model,
@@ -290,6 +291,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     return yield* input.visualRepository.complete(
       completedFromDocument(
         committed.document,
+        committed.byteLength,
         committed.sha256,
         committed.manifestKey
       )

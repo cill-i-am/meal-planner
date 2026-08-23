@@ -104,6 +104,50 @@ therefore consume more than 128 approved recipes without an unbounded snapshot
 or one oversized row blocking iteration. The removed shared-D1 recipe-source
 gateway and transfer-size workaround have no compatibility path.
 
+## Evidence metadata and R2 references
+
+`HouseholdObject` SQLite also owns the compact acquisition, transcription,
+visual, carousel, and extraction outcomes needed by the household product. A
+single generation-fenced transaction commits each closed stage result, its
+integrity metadata, compact R2 references, and replay receipt. Exact retries
+return the same privacy-safe result; a changed command under the same mutation
+identity or a stale generation fails without mutation.
+
+The household also checkpoints one stable start time for every provider
+dispatch and recovery dispatch. Claim, Fail, artifact, and retry commands reuse
+that value, so a lost native Workflow response cannot change the command digest.
+Execution generation fences household state; acquisition-attempt generation is
+tracked separately for retry-scoped R2 objects.
+
+Large media, transcripts, manifests, and other evidence bytes remain private
+R2 objects. Their references carry generation, byte length, SHA-256, and
+retention time. Reference reads preserve the committed source shape: video
+acquisition starts with media and manifest references, while a carousel starts
+with its single manifest and the carousel stage's stable commit identity and
+time. Workflows and Queue consumers inspect R2 before or after a household
+command, never during the local transaction. Missing or deleted objects change
+only the household-local availability observation; they do not rewrite the
+committed reference or corrupt the current result. R2 lifecycle deletion
+remains asynchronous defense in depth, and late or replayed event notifications
+are fenced by household, import, generation, object key, and integrity metadata.
+
+After authenticated import admission, the API synchronously registers a
+private, noncanonical import-to-organization route before starting the
+Workflow. A private D1 table stores that route with import ID as its unique key
+and the immutable execution generation only so an R2 event consumer can
+reconstruct an admitted system command. The generation encoded in the R2 key
+and custom metadata is the acquisition-attempt generation: it scopes artifact
+identity and integrity checks, while the route's execution generation remains
+the household RPC and ownership fence. The unordered Queue carries R2
+notifications only, so a valid lifecycle event
+cannot overtake registration. Registration atomically inserts and reads the
+immutable winner, so concurrent conflicting organizations fail closed instead
+of overwriting one another. The route is never a public lookup, household
+authority, product read model, or source of object names, and raw organization
+identifiers are never logged or returned. The consumer receives a read-only R2
+binding, and exhausted retryable notifications are retained by a dedicated
+evidence-event DLQ.
+
 ## Current scope
 
 The ordered replacement of the remaining household-owned capabilities is
@@ -116,11 +160,17 @@ organization using an organization-keyed TanStack Query. Its generated
 same-origin client calls `GET /v1/household` without placing an organization ID,
 bearer token, or household scope in the request.
 
-The delivered product authorities in `HouseholdObject` are meal planning plus
-the complete recipe-import/review/Recipe Bank capability. Compact provider and
-evidence execution records remain in the operational D1 and R2 boundaries for
-later slices, but cannot author public lifecycle, review, or Recipe Bank state.
-Shopping lists and preferences have not moved. There is no registry,
+The delivered product authorities in `HouseholdObject` are meal planning, the
+complete recipe-import/review/Recipe Bank capability, compact evidence and
+extraction metadata, terminal checkpoints, and recovery attempts. R2 retains
+only large private bytes. Shared D1 retains the private immutable import-event
+route, global provider-budget settlement/reconciliation, and approved global
+operational facts; it cannot author household evidence, terminal or recovery
+state, public lifecycle, review, or Recipe Bank state.
+Its acquisition execution row contains no evidence-reference projection or
+provider-stage completion status.
+Shopping lists and preferences have not moved. Apart from the private,
+noncanonical import-event route above, there is no registry,
 organization-to-object lookup table, shared product read model, dual write,
 legacy adapter, or compatibility path.
 
@@ -147,8 +197,11 @@ deterministic Workflow identity by execution generation, stable replay across
 dispatch outcomes, source ownership, generation/version fences, review and
 terminal races, atomic confirmation/publication, and bounded Recipe Bank use
 beyond 128 recipes. Meal-plan tests retain create/read restart, replay,
-collision, optimistic concurrency, and terminal-state proof. Structural guards
-cover routing privacy, Better Auth placement, authority-service use,
-transaction I/O, the thin host, the acquisition generation fence, and permanent
-removal of superseded D1 authorities. These tests do not prove a cloud
+collision, optimistic concurrency, and terminal-state proof. Evidence tests
+also cover household-only terminal failure through settlement/recovery,
+identical replay, conflicting replay, stale generation, restart persistence,
+and physical absence of legacy D1 authority. Structural guards cover routing
+privacy, Better Auth placement, authority-service use, transaction I/O, the
+thin host, the acquisition generation fence, and permanent removal of
+superseded D1 authorities. These tests do not prove a cloud
 deployment or provider lifecycle.

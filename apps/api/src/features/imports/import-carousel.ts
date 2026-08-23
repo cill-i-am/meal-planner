@@ -14,7 +14,7 @@ import {
 import type {
   CarouselEvidenceRepository,
   CompletedCarouselEvidence,
-} from "./import-carousel.repository.d1.js";
+} from "./import-carousel.repository.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import {
   AcquisitionGeneration,
@@ -23,7 +23,7 @@ import {
 } from "./import-media.model.js";
 import { produceRecipeDraftFromEvidence } from "./import-recipe-draft.js";
 import type { ProduceRecipeDraftFromEvidenceInput } from "./import-recipe-draft.js";
-import type { RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import type { RecipeDraftRepository } from "./import-recipe-draft.repository.js";
 import type {
   RecipeEvidenceAssembly,
   RecipeEvidenceItem,
@@ -479,7 +479,7 @@ const storeManifest = (
         sha256: checksumBuffer(sha256),
       })
       .pipe(Effect.exit);
-    return { key, sha256 };
+    return { byteLength: bytes.byteLength, key, sha256 };
   });
 
 const recipeEvidenceItems = (
@@ -563,10 +563,13 @@ const assembleRecipeEvidence = (
 
 const completedEvidence = (
   document: CarouselEvidenceManifestDocument,
+  byteLength: number,
   manifestKey: string,
   manifestSha256: string
 ): CompletedCarouselEvidence => ({
+  byteLength,
   completedAt: document.createdAt,
+  deleteAt: document.images[0].deleteAt,
   descriptorFingerprint: document.descriptorFingerprint,
   dispatchId: document.dispatchId,
   generation: document.acquisitionGeneration,
@@ -797,6 +800,7 @@ export const prepareTikTokCarouselEvidence = Effect.fn(
   const storedManifest = yield* storeManifest(input.bucket, document);
   const pendingEvidence = completedEvidence(
     document,
+    storedManifest.byteLength,
     storedManifest.key,
     storedManifest.sha256
   );

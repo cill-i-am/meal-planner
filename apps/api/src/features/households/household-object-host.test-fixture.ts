@@ -562,6 +562,8 @@ const HouseholdTestCommand = Schema.Union([
     objectName: Schema.String,
     operation: Schema.Literal("recordRecipeImportDispatch"),
     organizationId: HouseholdOrganizationId,
+    originalTrace:
+      HouseholdRecordRecipeImportDispatchInput.fields.originalTrace,
     outcome: HouseholdRecordRecipeImportDispatchInput.fields.outcome,
     workflowIdentity:
       HouseholdRecordRecipeImportDispatchInput.fields.workflowIdentity,
@@ -800,6 +802,7 @@ export default {
         household.recordRecipeImportDispatch({
           admission: systemAdmission(command.organizationId),
           dispatchId: command.dispatchId,
+          originalTrace: command.originalTrace,
           outcome: command.outcome,
           workflowIdentity: command.workflowIdentity,
         })

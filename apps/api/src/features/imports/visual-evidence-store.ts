@@ -105,6 +105,7 @@ const failure = (code: VisualEvidenceStoreError["code"], reasonCode?: string) =>
   );
 
 export interface VerifiedVisualEvidence {
+  readonly byteLength: number;
   readonly document: VisualEvidenceManifestDocument;
   readonly sha256: Sha256Hex;
   readonly manifestKey: string;
@@ -426,7 +427,12 @@ const readVerified = (bucket: AcquisitionBucketLike) =>
         verifyExpectedFrame(bucket, expected, document, frame, frameIndex),
       { concurrency: 1, discard: true }
     );
-    return Option.some({ document, manifestKey: key, sha256 });
+    return Option.some({
+      byteLength: bytes.byteLength,
+      document,
+      manifestKey: key,
+      sha256,
+    });
   });
 
 const putVerified = (bucket: AcquisitionBucketLike) =>

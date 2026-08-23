@@ -10,7 +10,7 @@ import {
   produceRecipeDraftFromEvidence,
   projectRecipeExtractionFailure,
 } from "./import-recipe-draft.js";
-import type { RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import type { RecipeDraftRepository } from "./import-recipe-draft.repository.js";
 import { RecipeExtractionFailure } from "./import-recipe-extractor.js";
 import type {
   RecipeEvidenceAssembly,

@@ -5,13 +5,15 @@ import { Config, Effect, Option, Schema } from "effect";
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
+import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
+import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
+import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import {
   PilotBudgetRunId,
   PilotBudgetTimestamp,
   makePilotProviderBudgetRuntime,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
-import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import {
@@ -29,11 +31,13 @@ import {
   runProviderTaskAttempt,
 } from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
-import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import {
+  makeRecipeRecoveryHouseholdEvidenceRepositories,
+  readHouseholdRecipeRecovery,
+} from "./import-recipe-recovery.household.js";
 import {
   RecipeRecoveryAuthorization,
   RecipeRecoveryOrdinal,
-  makeD1RecipeRecoveryRepository,
   recipeRecoveryAuthorizationEventType,
   recipeRecoveryDurableTaskNames,
   resolveRecipeRecoveryWorkflowInput,
@@ -107,6 +111,7 @@ export const runRecipeRecoveryLoop = Effect.fn(
       attempt === null ||
       attempt.importId !== input.importId ||
       attempt.acquisitionGeneration !== input.acquisitionGeneration ||
+      attempt.executionGeneration !== input.executionGeneration ||
       attempt.ordinal !== ordinal
     ) {
       return failedRecoveryCheckpoint("recovery_attempt_unavailable");
@@ -142,6 +147,7 @@ export const runRecipeRecoveryLoop = Effect.fn(
       authorization.value.importId !== input.importId ||
       authorization.value.acquisitionGeneration !==
         input.acquisitionGeneration ||
+      authorization.value.executionGeneration !== input.executionGeneration ||
       authorization.value.attemptOrdinal !== next.value
     ) {
       return failedRecoveryCheckpoint("recovery_authorization_invalid");
@@ -153,6 +159,23 @@ export const runRecipeRecoveryLoop = Effect.fn(
 
 const currentPilotBudgetTimestamp = () =>
   Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
+
+const recoveryMutationId = (semanticKey: string) =>
+  Effect.promise(() =>
+    crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(
+        `household-recipe-import-recovery-workflow:v1:${semanticKey}`
+      )
+    )
+  ).pipe(
+    Effect.map((digest) =>
+      Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0")
+      ).join("")
+    ),
+    Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId))
+  );
 
 /** Cloudflare primitives retained by the recipe recovery Workflow host. */
 export interface ImportRecipeRecoveryDurableHost {
@@ -173,6 +196,8 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
     const evidenceBucket =
       yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
+    const householdDomain: HouseholdDomainWorkerMethods =
+      yield* Cloudflare.Workers.bindWorker(HouseholdDomainWorker);
     const providerGateway = yield* Cloudflare.AI.QueryGateway(
       ImportProviderGateway
     );
@@ -186,10 +211,16 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
         ).pipe(Effect.orDie);
         const database = yield* queryDatabase.raw;
         const bucket = adaptAcquisitionBucket(evidenceBucket, runtimeContext);
-        const recoveryRepository = makeD1RecipeRecoveryRepository(
-          database,
-          runtimeStage
-        );
+        const evidenceRepositories =
+          yield* makeRecipeRecoveryHouseholdEvidenceRepositories({
+            acquisitionGeneration: workflowInput.acquisitionGeneration,
+            correlationId: workflowInput.trace.correlationId,
+            database,
+            executionGeneration: workflowInput.executionGeneration,
+            householdDomain,
+            importId: workflowInput.importId,
+            mutationId: recoveryMutationId,
+          }).pipe(Effect.orDie);
         const dispatch = makePilotProviderDispatchGate({
           correlationId: workflowInput.trace.correlationId,
           now: currentPilotBudgetTimestamp,
@@ -215,7 +246,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
           dispatch,
           transport: transport.recipe,
         });
-        const recipeRepository = makeD1RecipeDraftRepository(database);
+        const recipeRepository = evidenceRepositories.recipe;
 
         return yield* observeImportWorkflowStart(workflowInput.trace).pipe(
           Effect.andThen(
@@ -233,13 +264,20 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                     .pipe(Effect.orDie)
                 ),
               readAttempt: (ordinal) =>
-                recoveryRepository
-                  .readAttempt({
-                    acquisitionGeneration: workflowInput.acquisitionGeneration,
-                    importId: workflowInput.importId,
+                readHouseholdRecipeRecovery({
+                  acquisitionGeneration: workflowInput.acquisitionGeneration,
+                  database,
+                  executionGeneration: workflowInput.executionGeneration,
+                  householdDomain,
+                  importId: workflowInput.importId,
+                  selector: {
+                    _tag: "Ordinal",
                     ordinal,
-                  })
-                  .pipe(Effect.map(Option.getOrNull), Effect.orDie),
+                  },
+                }).pipe(
+                  Effect.map((attempt) => attempt as RecipeRecoveryAttempt),
+                  Effect.catch(() => Effect.succeed(null))
+                ),
               runAttempt: (attempt, durableTaskName) =>
                 durable
                   .task(
@@ -250,8 +288,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                         bucket,
                         extractor,
                         importId: attempt.importId,
-                        importRepository:
-                          makeD1ImportExecutionRepository(database),
+                        importRepository: evidenceRepositories.current,
                         now: currentPilotBudgetTimestamp,
                         recipeRepository,
                         recovery: {

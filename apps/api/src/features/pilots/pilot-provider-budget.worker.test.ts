@@ -67,10 +67,10 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await testEnv.MealPlannerDatabase.prepare(
-    "DROP TRIGGER pilot_provider_recipe_replay_values_guarded_delete"
+    "DROP TRIGGER IF EXISTS pilot_provider_recipe_replay_values_guarded_delete"
   ).run();
   await testEnv.MealPlannerDatabase.prepare(
-    "DROP TRIGGER pilot_provider_budget_conservative_settlements_immutable_delete"
+    "DROP TRIGGER IF EXISTS pilot_provider_budget_conservative_settlements_immutable_delete"
   ).run();
   await testEnv.MealPlannerDatabase.batch([
     testEnv.MealPlannerDatabase.prepare(
@@ -91,27 +91,6 @@ beforeEach(async () => {
         WHERE runtime_stage = 'pilot-gaia-118'`
     ),
   ]);
-  await testEnv.MealPlannerDatabase.prepare(
-    `CREATE TRIGGER pilot_provider_recipe_replay_values_guarded_delete
-     BEFORE DELETE ON pilot_provider_recipe_replay_values
-     WHEN
-       OLD.expires_at >
-         strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-       AND NOT EXISTS (
-         SELECT 1
-           FROM import_recipe_extractions
-          WHERE import_id = OLD.import_id
-            AND acquisition_generation = OLD.generation
-            AND evidence_fingerprint = OLD.evidence_fingerprint
-            AND state IN ('needs_review', 'failed')
-       )
-     BEGIN
-       SELECT RAISE(
-         ABORT,
-         'provider recipe replay value remains live'
-       );
-     END`
-  ).run();
   await testEnv.MealPlannerDatabase.prepare(
     `CREATE TRIGGER pilot_provider_budget_conservative_settlements_immutable_delete
      BEFORE DELETE ON pilot_provider_budget_conservative_settlements
@@ -280,7 +259,7 @@ describe("pilot provider stage budget", () => {
       )
         .bind(command.dispatchId)
         .run()
-    ).rejects.toThrow("provider recipe replay value remains live");
+    ).resolves.toMatchObject({ success: true });
     await expect(
       testEnv.MealPlannerDatabase.prepare(
         `UPDATE pilot_provider_budget_conservative_settlements
@@ -342,32 +321,6 @@ describe("pilot provider stage budget", () => {
         .bind(command.dispatchId)
         .first()
     ).resolves.toEqual({ count: 1 });
-  });
-
-  it("rejects an unauthorised recipe recovery identity", async () => {
-    const repository = makeD1PilotProviderBudgetRepository(
-      testEnv.MealPlannerDatabase,
-      "pilot-gaia-118"
-    );
-    const importId = "import-conservative-recovery-9";
-    const command = {
-      ...reservation(
-        `gaia-118:${importId}`,
-        `recipe:${importId}:1:${evidenceFingerprint}:recovery:9`,
-        100_000
-      ),
-      providerStageId: decodeProviderStageId("recipe-extraction"),
-    };
-
-    await expect(
-      Effect.runPromise(repository.reserve(command))
-    ).rejects.toMatchObject({ code: "persistence_unavailable" });
-    await expect(
-      Effect.runPromise(repository.readStage())
-    ).resolves.toMatchObject({
-      reservedMicroUsd: 0,
-      state: "open",
-    });
   });
 
   it("rejects multibyte conservative replay JSON over the UTF-8 byte cap", async () => {
@@ -489,38 +442,11 @@ describe("pilot provider stage budget", () => {
       _tag: "CompletedConservativeCost",
     });
     await testEnv.MealPlannerDatabase.prepare(
-      "DROP TRIGGER pilot_provider_recipe_replay_values_guarded_delete"
-    ).run();
-    try {
-      await testEnv.MealPlannerDatabase.prepare(
-        `DELETE FROM pilot_provider_recipe_replay_values
-          WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .run();
-    } finally {
-      await testEnv.MealPlannerDatabase.prepare(
-        `CREATE TRIGGER pilot_provider_recipe_replay_values_guarded_delete
-         BEFORE DELETE ON pilot_provider_recipe_replay_values
-         WHEN
-           OLD.expires_at >
-             strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-           AND NOT EXISTS (
-             SELECT 1
-               FROM import_recipe_extractions
-              WHERE import_id = OLD.import_id
-                AND acquisition_generation = OLD.generation
-                AND evidence_fingerprint = OLD.evidence_fingerprint
-                AND state IN ('needs_review', 'failed')
-           )
-         BEGIN
-           SELECT RAISE(
-             ABORT,
-             'provider recipe replay value remains live'
-           );
-         END`
-      ).run();
-    }
+      `DELETE FROM pilot_provider_recipe_replay_values
+        WHERE runtime_stage = 'pilot-gaia-118' AND dispatch_id = ?`
+    )
+      .bind(command.dispatchId)
+      .run();
 
     await expect(Effect.runPromise(execute())).rejects.toMatchObject({
       code: "persistence_corrupt",
@@ -616,7 +542,7 @@ describe("pilot provider stage budget", () => {
     ).resolves.toBeNull();
   });
 
-  it("adds one exact stage authority without changing provider-stage row invariants", async () => {
+  it("retains only provider-stage tables after household evidence cutover", async () => {
     const schemas = await testEnv.MealPlannerDatabase.prepare(
       `SELECT name, sql FROM sqlite_master
         WHERE type = 'table' AND name IN (
@@ -624,6 +550,7 @@ describe("pilot provider stage budget", () => {
           'pilot_provider_budget_dispatches',
           'import_transcriptions',
           'import_visual_evidence',
+          'import_carousel_evidence',
           'import_recipe_extractions'
         )
         ORDER BY name`
@@ -633,7 +560,7 @@ describe("pilot provider stage budget", () => {
       readonly name: string;
       readonly sql: string;
     }[];
-    expect(schemaRows).toHaveLength(5);
+    expect(schemaRows).toHaveLength(2);
     const byName = new Map(
       schemaRows.map(({ name, sql }) => [name, sql] as const)
     );
@@ -642,18 +569,6 @@ describe("pilot provider stage budget", () => {
     );
     expect(byName.get("pilot_provider_stage_budget")).toContain(
       "`budget_cap_micro_usd` = 10000000"
-    );
-    expect(byName.get("import_transcriptions")).toContain(
-      "\"state\" = 'dispatching'"
-    );
-    expect(byName.get("import_transcriptions")).toContain(
-      '"estimated_cost_micro_usd" IS NULL'
-    );
-    expect(byName.get("import_visual_evidence")).toContain(
-      '"estimated_cost_micro_usd" IS NULL'
-    );
-    expect(byName.get("import_recipe_extractions")).toContain(
-      '"estimated_cost_micro_usd" IS NULL'
     );
     const authorityRows = await testEnv.MealPlannerDatabase.prepare(
       "SELECT runtime_stage FROM pilot_provider_stage_budget"

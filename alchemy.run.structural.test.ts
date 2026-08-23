@@ -102,9 +102,6 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       1
     );
     expect(migration).toContain("CREATE TABLE `import_execution_runs`");
-    expect(migration).toContain(
-      "CREATE TABLE `import_recipe_executor_terminal_checkpoints`"
-    );
     expect(migration).toContain("`correlation_id` text NOT NULL");
     expect(migration).toContain("`acquisition_generation` integer");
     expect(migration).toContain("`canonical_source_id` text NOT NULL");
@@ -128,7 +125,55 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       .filter((path) => path.endsWith(".sql"))
       .toSorted();
 
-    expect(sqlFiles).toEqual(["20260822083458_import_execution/migration.sql"]);
+    expect(sqlFiles).toEqual([
+      "20260822083458_import_execution/migration.sql",
+      "20260823055120_import_execution/migration.sql",
+      "20260823080018_import_execution/migration.sql",
+      "20260823113951_import_execution/migration.sql",
+      "20260823135058_import_execution/migration.sql",
+      "20260823164025_import_execution/migration.sql",
+    ]);
+    const retirementMigration = readRepoFile(
+      "./apps/api/migrations/20260823080018_import_execution/migration.sql"
+    );
+    expect(retirementMigration).toContain(
+      "DROP TRIGGER IF EXISTS `import_recipe_executor_terminal_checkpoints_immutable_update`;"
+    );
+    expect(retirementMigration).toContain(
+      "DROP TRIGGER IF EXISTS `import_recipe_executor_terminal_checkpoints_immutable_delete`;"
+    );
+    expect(retirementMigration).toContain(
+      "DROP TABLE `import_recipe_executor_terminal_checkpoints`;"
+    );
+    const evidenceRetirementMigration = readRepoFile(
+      "./apps/api/migrations/20260823113951_import_execution/migration.sql"
+    );
+    for (const authority of [
+      "import_carousel_evidence",
+      "import_recipe_extractions",
+      "import_transcriptions",
+      "import_visual_evidence",
+    ]) {
+      expect(evidenceRetirementMigration).toContain(
+        `DROP TABLE \`${authority}\`;`
+      );
+    }
+    const executionProjectionRetirementMigration = readRepoFile(
+      "./apps/api/migrations/20260823135058_import_execution/migration.sql"
+    );
+    expect(executionProjectionRetirementMigration).toContain(
+      "DROP TABLE `import_execution_runs`;"
+    );
+    expect(executionProjectionRetirementMigration).not.toContain(
+      "evidence_references_json"
+    );
+    expect(executionProjectionRetirementMigration).not.toContain("INSERT INTO");
+    const evidenceRouteGenerationMigration = readRepoFile(
+      "./apps/api/migrations/20260823164025_import_execution/migration.sql"
+    );
+    expect(evidenceRouteGenerationMigration).toContain(
+      "ADD `execution_generation` integer NOT NULL"
+    );
   });
 
   it("provisions Better Auth D1 while Drizzle Kit owns its checked-in migrations", () => {
@@ -196,6 +241,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const domainWorkerSource = readRepoFile(
       "./apps/api/src/features/households/household-domain-worker.ts"
     );
+    const commandRouterSource = readRepoFile(
+      "./apps/api/src/features/households/household-command-router.ts"
+    );
     const domainWorkerBindingSource = readRepoFile(
       "./apps/api/src/features/households/household-domain-binding.ts"
     );
@@ -224,11 +272,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(domainWorkerSource).toContain(
       'Schema.decodeUnknownEffect(schema, { onExcessProperty: "error" })'
     );
-    expect(domainWorkerSource).toContain(
-      "route(HouseholdEnsureInputSchema, input"
+    expect(domainWorkerSource).toMatch(
+      /route\(\s*HouseholdEnsureInputSchema,\s*input,\s*"ensure_household"/u
     );
-    expect(domainWorkerSource).toContain(
-      "locator.locate(command.admission.organizationId)"
+    expect(domainWorkerSource).toContain(".locate(organizationId)");
+    expect(commandRouterSource).toContain(
+      "requireHouseholdCommandAdmission(input.admission, input.purpose)"
     );
     expect(domainWorkerSource).not.toContain("better-auth");
     expect(objectSource).toContain("HouseholdObjectRuntime.pipe(");
@@ -238,6 +287,32 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(schemaSource).toContain('sqliteTable("household_meta"');
     expect(drizzleConfigSource).toContain('driver: "durable-sqlite"');
     expect(migration).toContain("CREATE TABLE `household_meta`");
+
+    const householdMigrationsDirectory = fileURLToPath(
+      new URL("apps/api/household-migrations", import.meta.url)
+    );
+    const householdSqlFiles = readdirSync(householdMigrationsDirectory, {
+      recursive: true,
+    })
+      .map(String)
+      .filter((path) => path.endsWith(".sql"))
+      .toSorted();
+    expect(householdSqlFiles).toEqual([
+      "20260819075508_household_domain/migration.sql",
+      "20260819135904_household_meal_plans/migration.sql",
+      "20260821231430_household_domain/migration.sql",
+      "20260822065001_household_domain/migration.sql",
+      "20260823163811_household_domain/migration.sql",
+    ]);
+    const evidenceMigration = readRepoFile(
+      "./apps/api/household-migrations/20260823163811_household_domain/migration.sql"
+    );
+    expect(evidenceMigration).toContain(
+      "CREATE TABLE `household_evidence_stage_executions`"
+    );
+    expect(evidenceMigration).toContain(
+      "`acquisition_attempt_generation` integer NOT NULL"
+    );
   });
 
   it("keeps household host fixtures out of the API production program", () => {
@@ -410,6 +485,101 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       'Config.string("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID")'
     );
     expect(allSource).not.toMatch(/Cloudflare\.Images|Images\.|sharp/iu);
+  });
+
+  it("wires R2 lifecycle events to a privacy-safe evidence Queue consumer", () => {
+    const stackSource = readRepoFile("./alchemy.run.ts");
+    const eventWorkerSource = readRepoFile(
+      "./apps/api/src/infrastructure/import-evidence-event-queue.ts"
+    );
+    const eventDecoderSource = readRepoFile(
+      "./apps/api/src/features/imports/import-evidence-event.ts"
+    );
+    const requestLayerSource = readRepoFile(
+      "./apps/api/src/features/imports/import-worker-request-layer.ts"
+    );
+    const apiWorkerSource = readRepoFile("./apps/api/src/worker.ts");
+
+    expect(stackSource).toContain("ImportEvidenceEventQueue");
+    expect(stackSource).toContain("Cloudflare.R2.BucketEventNotification(");
+    expect(stackSource).toContain('prefix: "imports/"');
+    expect(stackSource).toContain('"LifecycleDeletion"');
+    expect(eventWorkerSource).toContain(
+      "Cloudflare.Queues.consumeQueueMessages("
+    );
+    expect(eventWorkerSource).toContain("Cloudflare.Queues.EventSourceLive");
+    expect(eventWorkerSource).toContain("MealPlannerDatabase");
+    expect(eventWorkerSource).toContain("Cloudflare.D1.QueryDatabase(");
+    expect(eventWorkerSource).toContain("Cloudflare.D1.QueryDatabaseBinding");
+    expect(eventWorkerSource).toContain("makeD1ImportEvidenceRouteRepository(");
+    expect(eventWorkerSource).toContain("Cloudflare.R2.ReadBucket(");
+    expect(eventWorkerSource).toContain("Cloudflare.R2.ReadBucketBinding");
+    expect(eventWorkerSource).not.toContain("Cloudflare.R2.ReadWriteBucket(");
+    expect(eventWorkerSource).toContain("Cloudflare.Workers.bindWorker(");
+    expect(eventWorkerSource).toContain(
+      "reconcileImportEvidenceQueueMessage(message.body"
+    );
+    expect(eventWorkerSource).toContain(
+      "householdDomain.observeEvidenceReference(encoded)"
+    );
+    expect(eventWorkerSource).toContain(
+      "householdDomain.readEvidenceReferences(input)"
+    );
+    expect(eventDecoderSource).not.toContain("RegisterImportEvidenceRoute");
+    expect(eventDecoderSource).toContain(
+      "ports.household.observeEvidenceReference({"
+    );
+    expect(eventDecoderSource).toContain(
+      'metadata["importId"] !== event.importId'
+    );
+    expect(eventDecoderSource).toContain(
+      'metadata["generation"] !== String(event.acquisitionGeneration)'
+    );
+    expect(eventDecoderSource).toContain(
+      "expectedGeneration: resolved.executionGeneration"
+    );
+    expect(eventDecoderSource).toContain(
+      'metadata["sha256"] !== reference.sha256'
+    );
+    expect(apiWorkerSource).toContain("makeD1ImportEvidenceRouteRepository(");
+    expect(apiWorkerSource).not.toContain(
+      "registerEvidenceRoute: (message) =>"
+    );
+    expect(requestLayerSource.indexOf(".registerEvidenceRoute({")).toBeLessThan(
+      requestLayerSource.indexOf(".dispatchAdmission({")
+    );
+  });
+
+  it("commits acquisition and provider evidence only through the household authority", () => {
+    const workflowSource = readRepoFile(
+      "./apps/api/src/features/imports/import.workflow.ts"
+    );
+    const householdRepositorySource = readRepoFile(
+      "./apps/api/src/features/households/evidence/household-evidence.repository.ts"
+    );
+
+    expect(workflowSource).toContain("commitAcquisitionEvidence");
+    expect(workflowSource).toContain(
+      "makeHouseholdImportEvidenceCurrentRepository"
+    );
+    expect(workflowSource).not.toContain(
+      "makeHouseholdImportEvidenceViewRepository"
+    );
+    expect(workflowSource).toContain(
+      "makeHouseholdSpeechTranscriptionRepository"
+    );
+    expect(workflowSource).toContain("makeHouseholdVisualEvidenceRepository");
+    expect(workflowSource).toContain("makeHouseholdCarouselEvidenceRepository");
+    expect(workflowSource).toContain("makeHouseholdRecipeDraftRepository");
+    expect(workflowSource).not.toContain("repository.recordAcquired(");
+    expect(workflowSource).not.toContain("makeD1SpeechTranscriptionRepository");
+    expect(workflowSource).not.toContain("makeD1VisualEvidenceRepository");
+    expect(workflowSource).not.toContain("makeD1CarouselEvidenceRepository");
+    expect(workflowSource).not.toContain("makeD1RecipeDraftRepository");
+
+    expect(householdRepositorySource).not.toMatch(
+      /Cloudflare|fetch\s*\(|\.put\s*\(|\.delete\s*\(|R2|Workflow|Queue|service binding|provider gateway/iu
+    );
   });
 
   it("keeps the pre-Slice-4 batch Queue prototype physically retired", () => {

@@ -21,6 +21,7 @@ import {
   makeHouseholdMealPlanRequestLayer,
   makeHouseholdRequestLayer,
 } from "./features/households/household-request-composition.js";
+import { makeD1ImportEvidenceRouteRepository } from "./features/imports/import-evidence-route.repository.d1.js";
 import {
   makeRecipeImportHttpApiLayer,
   makeRecipeImportNotFoundHttpLayer,
@@ -115,6 +116,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           return yield* Effect.die("Expected a Web Request source.");
         }
         const database = yield* queryDatabase.raw;
+        const evidenceRoutes = makeD1ImportEvidenceRouteRepository(database);
         const authDatabase = drizzle(yield* authQueryDatabase.raw);
         const requestOrigin = new URL(webRequest.url).origin;
         const auth = makeMealPlannerAuth({
@@ -145,6 +147,14 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
             importRecipeRecoveryWorkflow
           ),
+          registerEvidenceRoute: (route) =>
+            evidenceRoutes.register(route).pipe(
+              Effect.filterOrFail(
+                (outcome) => outcome === "Registered",
+                () => ({ reason: "route_conflict" })
+              ),
+              Effect.asVoid
+            ),
           runtimeContext,
           runtimeStage,
           systemApiToken: importSystemApiToken,

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -36,7 +36,9 @@ const repositoryFiles = execFileSync(
   }
 )
   .split("\0")
-  .filter((file) => file.length > 0);
+  .filter(
+    (file) => file.length > 0 && existsSync(new URL(file, repositoryRootUrl))
+  );
 
 const ownedSourceFiles = repositoryFiles.filter(
   (file) =>

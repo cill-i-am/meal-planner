@@ -18,6 +18,10 @@ import {
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
+import {
+  HouseholdObserveEvidenceReferenceInput,
+  HouseholdReadEvidenceReferencesResult,
+} from "../households/evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdOrganizationId } from "../households/household.contract.js";
@@ -36,9 +40,9 @@ import type {
   DecodedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
 import {
-  continueAcquisitionCheckpoint,
+  continueHouseholdAcquisitionCheckpoint,
   decodeAcquisitionCheckpoint,
-  recoverVerifiedAcquisitionCheckpoint,
+  recoverHouseholdVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
 import {
   runImportCarouselVisualAndRecipeWorkflow,
@@ -49,15 +53,20 @@ import {
   prepareTikTokCarouselEvidence,
   produceTikTokCarouselRecipeDraft,
 } from "./import-carousel.js";
-import { makeD1CarouselEvidenceRepository } from "./import-carousel.repository.d1.js";
 import {
   makeR2SpeechAudioExtractor,
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
+import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
+import {
+  makeHouseholdCarouselEvidenceRepository,
+  makeHouseholdImportEvidenceCurrentRepository,
+  makeHouseholdRecipeDraftRepository,
+  makeHouseholdSpeechTranscriptionRepository,
+  makeHouseholdVisualEvidenceRepository,
+} from "./import-evidence.repository.household.js";
 import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
-import { ImportWorkflowTerminationUnavailable } from "./import-intent-execution.js";
-import type { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
 import { projectRecipeDraftReviewActionView } from "./import-intent-review-action.js";
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
@@ -97,10 +106,7 @@ import {
 } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
-import {
-  makeD1ProviderTerminalCheckpointRepository,
-  makeD1ProviderTerminalRecoveryRepository,
-} from "./import-provider-terminal.js";
+import { persistHouseholdProviderTerminalAuthority } from "./import-provider-terminal-authority.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import {
   ProviderTaskCheckpoint,
@@ -120,11 +126,9 @@ import {
   publicIntentFailureForProviderStage,
 } from "./import-public-failure.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
-import { makeD1RecipeDraftRepository } from "./import-recipe-draft.repository.d1.js";
+import { readHouseholdProviderDispatchId } from "./import-recipe-recovery.household.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
-import { makeD1SpeechTranscriptionRepository } from "./import-speech-transcription.repository.d1.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
-import { makeD1VisualEvidenceRepository } from "./import-visual-evidence.repository.d1.js";
 import {
   decodeImportWorkflowInput,
   ImportWorkflowInput,
@@ -554,8 +558,9 @@ const makeHouseholdIntentTransitions = (input: {
     ) => apply({ _tag: "AdvanceStage", stage }),
     fail: (
       boundary: "acquisition" | "speech" | "visual" | "recipe" | "executor",
-      failure: ReturnType<typeof publicIntentFailureForProviderStage>
-    ) => apply({ _tag: "Fail", boundary, ...failure }),
+      failure: ReturnType<typeof publicIntentFailureForProviderStage>,
+      attemptIdentity: string
+    ) => apply({ _tag: "Fail", attemptIdentity, boundary, ...failure }),
     setActivity: (
       boundary: "acquisition" | "speech" | "visual" | "recipe" | "executor",
       attempt: number,
@@ -672,6 +677,30 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               intentId,
               organizationId,
             });
+            const evidenceRepositories = (
+              generation: AcquisitionGeneration
+            ) => {
+              const evidenceInput = {
+                acquisitionGeneration: generation,
+                canonicalSourceId: identityResolution.identity.canonicalId,
+                correlationId,
+                executionGeneration,
+                householdDomain,
+                intentId,
+                mutationId: workflowMutationId,
+                organizationId,
+              };
+              return {
+                carousel:
+                  makeHouseholdCarouselEvidenceRepository(evidenceInput),
+                current:
+                  makeHouseholdImportEvidenceCurrentRepository(evidenceInput),
+                recipe: makeHouseholdRecipeDraftRepository(evidenceInput),
+                speech:
+                  makeHouseholdSpeechTranscriptionRepository(evidenceInput),
+                visual: makeHouseholdVisualEvidenceRepository(evidenceInput),
+              } as const;
+            };
             const recipeLifecycle = {
               grounding: intentTransitions
                 .advanceStage("grounding_recipe")
@@ -710,12 +739,38 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   .setActivity(boundary, attempt, "working")
                   .pipe(Effect.orDie),
             });
-            const terminalCheckpoints =
-              makeD1ProviderTerminalCheckpointRepository(database);
-            const terminalRecovery = makeD1ProviderTerminalRecoveryRepository(
-              database,
-              pilotProviderBudgetRuntime.runtimeStage
-            );
+            const terminalRecovery = {
+              speechDispatchId: ({
+                acquisitionGeneration,
+                importId: requestedImportId,
+              }: {
+                readonly acquisitionGeneration: AcquisitionGeneration;
+                readonly importId: ImportId;
+              }) =>
+                readHouseholdProviderDispatchId({
+                  acquisitionGeneration,
+                  database,
+                  executionGeneration,
+                  householdDomain,
+                  importId: requestedImportId,
+                  stage: "speech",
+                }),
+              visualDispatchId: ({
+                acquisitionGeneration,
+                importId: requestedImportId,
+              }: {
+                readonly acquisitionGeneration: AcquisitionGeneration;
+                readonly importId: ImportId;
+              }) =>
+                readHouseholdProviderDispatchId({
+                  acquisitionGeneration,
+                  database,
+                  executionGeneration,
+                  householdDomain,
+                  importId: requestedImportId,
+                  stage: "visual",
+                }),
+            };
             const now = currentPilotBudgetTimestamp;
             const dispatch = makePilotProviderDispatchGate({
               correlationId,
@@ -782,15 +837,23 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             ) =>
               Cloudflare.Workflows.task(
                 `persist-${failure.stage}-terminal-v1`,
-                terminalCheckpoints
-                  .persist({
-                    acquisitionGeneration: generation,
-                    completedAt: now(),
-                    failureCode: failure.code,
-                    importId,
-                    providerStage: failure.stage,
-                  })
-                  .pipe(Effect.orDie)
+                persistHouseholdProviderTerminalAuthority({
+                  acquisitionGeneration: generation,
+                  admission,
+                  executionGeneration,
+                  failAmbiguous: (input) =>
+                    (failure.stage === "speech"
+                      ? evidenceRepositories(generation).speech
+                      : evidenceRepositories(generation).visual
+                    ).fail(input),
+                  failure,
+                  householdDomain,
+                  intentId,
+                  now: () =>
+                    Schema.decodeUnknownSync(ImportTimestamp)(
+                      new Date().toISOString()
+                    ),
+                }).pipe(Effect.orDie)
               );
             const completeVisualAndRecipe = (
               acquisitionGeneration: AcquisitionGeneration,
@@ -807,11 +870,12 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   beforeVisual: intentTransitions
                     .advanceComponent("visuals", "processing")
                     .pipe(Effect.orDie),
-                  failurePersisted: (failure) =>
+                  failurePersisted: (failure, terminal) =>
                     intentTransitions
                       .fail(
                         failure.stage,
-                        publicIntentFailureForProviderStage(failure.stage)
+                        publicIntentFailureForProviderStage(failure.stage),
+                        terminal.ownershipId
                       )
                       .pipe(Effect.orDie),
                   visualCompleted: intentTransitions
@@ -827,10 +891,14 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     bucket,
                     extractor: recipeExtractor,
                     importId,
-                    importRepository: repository,
+                    importRepository: evidenceRepositories(
+                      acquisitionGeneration
+                    ).current,
                     lifecycle: recipeLifecycle,
                     now,
-                    recipeRepository: makeD1RecipeDraftRepository(database),
+                    recipeRepository: evidenceRepositories(
+                      acquisitionGeneration
+                    ).recipe,
                   })
                 ),
                 visual: (() => {
@@ -849,12 +917,15 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         extractor: visualExtractor,
                         frameSampler: makeR2VisualFrameSampler(bucket),
                         importId,
-                        importRepository: repository,
+                        importRepository: evidenceRepositories(
+                          acquisitionGeneration
+                        ).current,
                         now,
                         speechDispatchId,
                         visualDispatchId,
-                        visualRepository:
-                          makeD1VisualEvidenceRepository(database),
+                        visualRepository: evidenceRepositories(
+                          acquisitionGeneration
+                        ).visual,
                       })
                     );
                   return preparedDispatchIds === undefined
@@ -872,6 +943,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               importId,
             }).pipe(Effect.orDie);
             if (stagedCarousel !== null) {
+              const carouselGeneration = Schema.decodeUnknownSync(
+                AcquisitionGeneration
+              )(executionGeneration);
               const carouselResult =
                 yield* runImportCarouselVisualAndRecipeWorkflow({
                   lifecycle: {
@@ -907,7 +981,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         importId,
                         lifecycle: recipeLifecycle,
                         now,
-                        recipeRepository: makeD1RecipeDraftRepository(database),
+                        recipeRepository:
+                          evidenceRepositories(carouselGeneration).recipe,
                       })
                     ),
                   visual: runProviderTask(
@@ -917,7 +992,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                       adapter: stagedCarousel.adapter,
                       bucket,
                       carouselRepository:
-                        makeD1CarouselEvidenceRepository(database),
+                        evidenceRepositories(carouselGeneration).carousel,
                       descriptor: stagedCarousel.descriptor,
                       importId,
                       now,
@@ -943,7 +1018,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 yield* intentTransitions
                   .fail(
                     carouselResult.stage,
-                    publicIntentFailureForProviderStage(carouselResult.stage)
+                    publicIntentFailureForProviderStage(carouselResult.stage),
+                    `carousel:${carouselGeneration}`
                   )
                   .pipe(Effect.orDie);
               }
@@ -957,7 +1033,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     ? ({ _tag: "Finished" } as const)
                     : {
                         _tag: "Acquiring" as const,
-                        canonicalId: claim.import.canonicalSourceId,
+                        canonicalId: claim.canonicalSourceId,
                       }
                 ),
                 Effect.orDie
@@ -971,15 +1047,87 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             }
             const encodedOutcome = yield* Cloudflare.Workflows.task(
               "resolve-acquire-store-verify-v2",
-              recoverVerifiedAcquisitionCheckpoint({
+              recoverHouseholdVerifiedAcquisitionCheckpoint({
+                current: evidenceRepositories(
+                  Schema.decodeUnknownSync(AcquisitionGeneration)(
+                    executionGeneration
+                  )
+                ).current.readCurrent(importId),
                 expectedCanonicalId: claim.canonicalId,
-                findStored: repository.findById(importId),
                 importId,
                 readEvidence: (stored) =>
-                  readVerifiedAcquisitionEvidence(bucket, {
-                    canonicalId: stored.canonicalSourceId,
-                    generation: stored.acquisitionGeneration,
-                    importId,
+                  Effect.gen(function* readHouseholdAcquisitionEvidence() {
+                    const encodedReferences = yield* householdDomain
+                      .readEvidenceReferences({
+                        admission,
+                        expectedGeneration: executionGeneration,
+                        intentId,
+                      })
+                      .pipe(Effect.orDie);
+                    const references = yield* Schema.decodeUnknownEffect(
+                      HouseholdReadEvidenceReferencesResult,
+                      { onExcessProperty: "error" }
+                    )(encodedReferences).pipe(Effect.orDie);
+                    if (references === null) {
+                      return null;
+                    }
+                    const presence = yield* inspectHouseholdEvidenceReferences(
+                      bucket,
+                      references.references
+                    );
+                    const missing = presence.filter(
+                      ({ availability }) => availability === "missing"
+                    );
+                    yield* Effect.forEach(
+                      missing,
+                      ({ reference }) => {
+                        const eventTime = new Date().toISOString();
+                        return workflowMutationId(
+                          `${intentId}:${executionGeneration}:observe-evidence-missing:${reference.kind}:${reference.sha256}:${eventTime}`
+                        ).pipe(
+                          Effect.flatMap((mutationId) =>
+                            Schema.encodeEffect(
+                              HouseholdObserveEvidenceReferenceInput
+                            )({
+                              admission,
+                              availability: "missing",
+                              event: {
+                                action: "IntegrityProbe",
+                                eventTime:
+                                  Schema.decodeUnknownSync(ImportTimestamp)(
+                                    eventTime
+                                  ),
+                              },
+                              expectedGeneration: executionGeneration,
+                              intentId,
+                              mutationId,
+                              reference: {
+                                key: reference.key,
+                                kind: reference.kind,
+                                sha256: reference.sha256,
+                              },
+                            }).pipe(
+                              Effect.orDie,
+                              Effect.flatMap((encoded) =>
+                                householdDomain.observeEvidenceReference(
+                                  encoded
+                                )
+                              )
+                            )
+                          ),
+                          Effect.orDie
+                        );
+                      },
+                      { concurrency: 1 }
+                    );
+                    if (missing.length > 0) {
+                      return null;
+                    }
+                    return yield* readVerifiedAcquisitionEvidence(bucket, {
+                      canonicalId: stored.canonicalSourceId,
+                      generation: stored.acquisitionGeneration,
+                      importId,
+                    });
                   }),
               }).pipe(
                 Effect.flatMap(
@@ -1055,23 +1203,49 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             const encodedFinalization = yield* Cloudflare.Workflows.task(
               "record-acquisition-v2",
               (outcome._tag === "VerifiedAcquisition"
-                ? continueAcquisitionCheckpoint({
-                    findStored: repository.findById(importId),
-                    importId,
-                    onAccepted: () => Effect.succeed<"Recorded">("Recorded"),
-                    outcome,
-                  }).pipe(
-                    Effect.flatMap((continuation) =>
-                      continuation === "Recorded"
-                        ? Effect.succeed(continuation)
-                        : repository.recordAcquired(
-                            importId,
-                            outcome.generation,
-                            outcome.evidence,
-                            outcome.evidence.acquiredAt
-                          )
-                    )
-                  )
+                ? Effect.gen(function* commitHouseholdAcquisitionEvidence() {
+                    const mutationId = yield* workflowMutationId(
+                      `${intentId}:${executionGeneration}:commit-acquisition-evidence:${outcome.evidence.manifestSha256}`
+                    );
+                    let result: Parameters<
+                      HouseholdDomainWorkerMethods["commitAcquisitionEvidence"]
+                    >[0]["result"] = {
+                      acquiredAt: outcome.evidence.acquiredAt,
+                      audioStreams: outcome.evidence.audioStreams,
+                      durationSeconds: outcome.evidence.durationSeconds,
+                      references: [
+                        {
+                          byteLength: outcome.evidence.bytes,
+                          deleteAt: outcome.evidence.deleteAt,
+                          key: outcome.evidence.mediaKey,
+                          kind: "original_media",
+                          sha256: outcome.evidence.sha256,
+                        },
+                        {
+                          byteLength: outcome.evidence.manifestByteLength,
+                          deleteAt: outcome.evidence.deleteAt,
+                          key: outcome.evidence.manifestKey,
+                          kind: "acquisition_manifest",
+                          sha256: outcome.evidence.manifestSha256,
+                        },
+                      ],
+                      videoStreams: outcome.evidence.videoStreams,
+                    };
+                    if (outcome.evidence.source !== undefined) {
+                      result = { ...result, source: outcome.evidence.source };
+                    }
+                    const committed = yield* householdDomain
+                      .commitAcquisitionEvidence({
+                        acquisitionAttemptGeneration: outcome.generation,
+                        admission,
+                        expectedGeneration: executionGeneration,
+                        intentId,
+                        mutationId,
+                        result,
+                      })
+                      .pipe(Effect.orDie);
+                    return committed.outcome;
+                  })
                 : repository.recordAcquisitionFailure(
                     importId,
                     outcome.generation,
@@ -1098,7 +1272,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 yield* intentTransitions
                   .fail(
                     "acquisition",
-                    publicIntentFailureForAcquisitionOutcome(outcome)
+                    publicIntentFailureForAcquisitionOutcome(outcome),
+                    `acquisition:${outcome.generation}`
                   )
                   .pipe(Effect.orDie);
               }
@@ -1112,8 +1287,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               .pipe(Effect.orDie);
             const encodedSpeech = yield* Cloudflare.Workflows.task(
               "transcribe-video-v1",
-              continueAcquisitionCheckpoint({
-                findStored: repository.findById(importId),
+              continueHouseholdAcquisitionCheckpoint({
+                current: evidenceRepositories(
+                  outcome.generation
+                ).current.readCurrent(importId),
                 importId,
                 onAccepted: () =>
                   terminalRecovery
@@ -1127,15 +1304,18 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                         runProviderTaskAttempt(
                           "speech",
                           transcribeAcquiredImport({
-                            acquisitionRepository: repository,
+                            acquisitionRepository: evidenceRepositories(
+                              outcome.generation
+                            ).current,
                             audioExtractor: makeR2SpeechAudioExtractor(bucket),
                             bucket,
                             dispatchId: speechDispatchId,
                             importId,
                             now,
                             speechTranscriber,
-                            transcriptionRepository:
-                              makeD1SpeechTranscriptionRepository(database),
+                            transcriptionRepository: evidenceRepositories(
+                              outcome.generation
+                            ).speech,
                           }),
                           () => ({
                             _tag: "Succeeded" as const,
@@ -1157,9 +1337,16 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               return speech;
             }
             if (speech._tag === "Failed") {
-              yield* persistTerminal(speech, outcome.generation);
+              const terminal = yield* persistTerminal(
+                speech,
+                outcome.generation
+              );
               yield* intentTransitions
-                .fail("speech", publicIntentFailureForProviderStage("speech"))
+                .fail(
+                  "speech",
+                  publicIntentFailureForProviderStage("speech"),
+                  terminal.ownershipId
+                )
                 .pipe(Effect.orDie);
               return speech;
             }
@@ -1201,10 +1388,6 @@ export const EnsureStartedResult = Schema.Literals([
 ]);
 export type EnsureStartedResult = typeof EnsureStartedResult.Type;
 
-export const importWorkflowInstanceId = (
-  importId: ImportId | RecipeImportIntentId
-) => `import-acquisition-${importId}`;
-
 export interface ImportWorkflowStarter {
   readonly dispatchAdmission: (input: {
     readonly executionGeneration: ImportIntentExecutionGeneration;
@@ -1219,10 +1402,13 @@ export interface ImportWorkflowStarter {
     trace: ImportTraceContext
   ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
   readonly restartFromSpeech?: (
-    importId: ImportId
-  ) => Effect.Effect<void, WorkflowStartUnavailable>;
+    workflowIdentity: ImportWorkflowIdentity
+  ) => Effect.Effect<ProviderRestartResult, WorkflowStartUnavailable>;
+  readonly restartFromVisual?: (
+    workflowIdentity: ImportWorkflowIdentity
+  ) => Effect.Effect<ProviderRestartResult, WorkflowStartUnavailable>;
   readonly restartPostAcquisition?: (
-    importId: ImportId,
+    workflowIdentity: ImportWorkflowIdentity,
     checkpoint: PostAcquisitionJournalCheckpoint
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
 }
@@ -1247,26 +1433,11 @@ interface WorkflowHandleLike {
   readonly get: (id: string) => Effect.Effect<WorkflowInstanceLike>;
 }
 
-interface WorkflowTerminationHandleLike {
-  readonly get: (
-    id: string
-  ) => Effect.Effect<Pick<Cloudflare.Workflows.WorkflowInstance, "terminate">>;
-}
-
-export const makeImportWorkflowTerminator = (
-  workflow: WorkflowTerminationHandleLike
-): ImportIntentWorkflowTerminator => ({
-  terminate: Effect.fn("ImportWorkflow.terminate")(
-    (intentId: RecipeImportIntentId) =>
-      workflow.get(importWorkflowInstanceId(intentId)).pipe(
-        Effect.flatMap((instance) => instance.terminate()),
-        Effect.catchCauseIf(
-          (cause) => !Cause.hasInterrupts(cause),
-          () => Effect.fail(new ImportWorkflowTerminationUnavailable())
-        )
-      )
-  ),
-});
+export const ProviderRestartResult = Schema.Literals([
+  "RestartAmbiguous",
+  "RestartRequested",
+]);
+export type ProviderRestartResult = typeof ProviderRestartResult.Type;
 
 const reconcileExisting = (instance: WorkflowInstanceLike) =>
   Effect.flatMap(
@@ -1296,7 +1467,10 @@ const reconcileExisting = (instance: WorkflowInstanceLike) =>
     }
   );
 
-const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
+const reconcileProviderRestart = (
+  instance: WorkflowInstanceLike,
+  name: "extract-visual-evidence-v1" | "record-acquisition-v2"
+) =>
   instance.status().pipe(
     Effect.flatMap(({ status }) => {
       switch (status) {
@@ -1304,7 +1478,7 @@ const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
         case "running":
         case "waiting":
         case "waitingForPause": {
-          return Effect.void;
+          return Effect.succeed("RestartAmbiguous" as const);
         }
         case "complete":
         case "errored":
@@ -1312,11 +1486,12 @@ const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
           return instance
             .restart({
               from: {
-                name: "record-acquisition-v2",
+                name,
                 type: "do",
               },
             })
             .pipe(
+              Effect.as("RestartRequested" as const),
               Effect.catchCauseIf(
                 (cause) => !Cause.hasInterrupts(cause),
                 () =>
@@ -1330,7 +1505,7 @@ const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
                           "waiting",
                           "waitingForPause",
                         ].includes(reconciledStatus)
-                          ? Effect.void
+                          ? Effect.succeed("RestartAmbiguous" as const)
                           : Effect.fail(workflowStartUnavailable())
                       )
                     )
@@ -1352,7 +1527,7 @@ export const makeImportWorkflowStarter = (
   workflow: WorkflowHandleLike
 ): ImportWorkflowReconciler => {
   const restartPostAcquisition = (
-    importId: ImportId,
+    workflowIdentity: ImportWorkflowIdentity,
     rawCheckpoint: PostAcquisitionJournalCheckpoint
   ) =>
     Schema.decodeUnknownEffect(PostAcquisitionJournalCheckpoint)(
@@ -1361,7 +1536,7 @@ export const makeImportWorkflowStarter = (
       Effect.mapError(() => workflowStartUnavailable()),
       Effect.flatMap((checkpoint) =>
         workflow
-          .get(importWorkflowInstanceId(importId))
+          .get(workflowIdentity)
           .pipe(
             Effect.flatMap((instance) =>
               instance.restart(postAcquisitionRestartOptions(checkpoint))
@@ -1440,10 +1615,22 @@ export const makeImportWorkflowStarter = (
     dispatchAdmission: (input) =>
       start({ ...input, instanceId: input.workflowIdentity }),
     ensureStarted: () => Effect.fail(workflowStartUnavailable()),
-    restartFromSpeech: (importId) =>
+    restartFromSpeech: (workflowIdentity) =>
       workflow
-        .get(importWorkflowInstanceId(importId))
-        .pipe(Effect.flatMap(reconcileSpeechRestart)),
+        .get(workflowIdentity)
+        .pipe(
+          Effect.flatMap((instance) =>
+            reconcileProviderRestart(instance, "record-acquisition-v2")
+          )
+        ),
+    restartFromVisual: (workflowIdentity) =>
+      workflow
+        .get(workflowIdentity)
+        .pipe(
+          Effect.flatMap((instance) =>
+            reconcileProviderRestart(instance, "extract-visual-evidence-v1")
+          )
+        ),
     restartPostAcquisition,
   };
 };

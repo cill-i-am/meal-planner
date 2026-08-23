@@ -1,5 +1,6 @@
 import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
@@ -22,6 +23,23 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
+import {
+  PilotBudgetDispatchId,
+  PilotBudgetProviderStageId,
+  PilotBudgetRunId,
+  PilotBudgetTimestamp,
+} from "../pilots/pilot-provider-budget.js";
+import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+import {
+  HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdMutateEvidenceStageResult,
+  HouseholdObserveEvidenceReferenceResult,
+  HouseholdPrepareRecipeRecoveryResult,
+  HouseholdReadEvidenceReferencesResult,
+  HouseholdReadEvidenceStageResult,
+  HouseholdReadImportTerminalCheckpointResult,
+  HouseholdReadRecipeRecoveryAttemptResult,
+} from "./evidence/household-evidence.contract.js";
 import { HouseholdMetadata } from "./household.contract.js";
 
 const compatibilityDate = "2026-07-14";
@@ -29,6 +47,11 @@ const compatibilityFlags = ["nodejs_compat"];
 const secret = "local-boundary-test-secret-at-least-32-characters";
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare | undefined;
+let persistenceDirectory = "";
+let websiteModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
+let apiModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
+let domainModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
+let evidenceEventModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
 
 const getRuntime = (): Miniflare => {
   if (runtime === undefined) {
@@ -118,9 +141,12 @@ const bundleFixture = async (
 
 type MiniflareD1Database = Awaited<ReturnType<Miniflare["getD1Database"]>>;
 
-const applyAuthMigrations = async (database: MiniflareD1Database) => {
+const applyD1Migrations = async (
+  database: MiniflareD1Database,
+  migrationsDirectory: "auth-migrations" | "migrations"
+) => {
   const migrationsRoot = fileURLToPath(
-    new URL("../../../auth-migrations", import.meta.url)
+    new URL(`../../../${migrationsDirectory}`, import.meta.url)
   );
   const migrationDirectories = await readdir(migrationsRoot);
   const directories = migrationDirectories.toSorted();
@@ -143,25 +169,14 @@ const applyAuthMigrations = async (database: MiniflareD1Database) => {
   );
 };
 
-beforeAll(async () => {
-  const temporaryDirectory = await mkdtemp(
-    `${tmpdir()}/meal-planner-household-boundary-`
-  );
-  temporaryDirectories.push(temporaryDirectory);
-  const [websiteModules, apiModules, domainModules] = await Promise.all([
-    bundleFixture(
-      "household-website-service.test-fixture.js",
-      temporaryDirectory
-    ),
-    bundleFixture("household-api-service.test-fixture.ts", temporaryDirectory),
-    bundleFixture(
-      "household-domain-service.test-fixture.js",
-      temporaryDirectory
-    ),
-  ]);
-  runtime = new Miniflare({
+const makeRuntime = () =>
+  new Miniflare({
     compatibilityDate,
     compatibilityFlags,
+    d1Persist: persistenceDirectory,
+    durableObjectsPersist: persistenceDirectory,
+    kvPersist: persistenceDirectory,
+    r2Persist: persistenceDirectory,
     workers: [
       {
         compatibilityDate,
@@ -188,11 +203,67 @@ beforeAll(async () => {
         modules: [...domainModules],
         name: "household-domain",
       },
+      {
+        compatibilityDate,
+        compatibilityFlags,
+        d1Databases: { MealPlannerDatabase: "household-route-test" },
+        kvNamespaces: ["EVIDENCE_EVENT_RESULTS"],
+        modules: [...evidenceEventModules],
+        name: "evidence-consumer",
+        queueConsumers: ["evidence-events"],
+        queueProducers: {
+          EVENTS: { queueName: "evidence-events" },
+        },
+        r2Buckets: ["ImportEvidenceBucket"],
+        serviceBindings: { HouseholdDomainWorker: "household-domain" },
+      },
     ],
   });
-  await applyAuthMigrations(
-    await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+
+const restartRuntime = async () => {
+  await runtime?.dispose();
+  runtime = makeRuntime();
+};
+
+beforeAll(async () => {
+  const temporaryDirectory = await mkdtemp(
+    `${tmpdir()}/meal-planner-household-boundary-`
   );
+  temporaryDirectories.push(temporaryDirectory);
+  persistenceDirectory = `${temporaryDirectory}/runtime-storage`;
+  [websiteModules, apiModules, domainModules, evidenceEventModules] =
+    await Promise.all([
+      bundleFixture(
+        "household-website-service.test-fixture.js",
+        temporaryDirectory
+      ),
+      bundleFixture(
+        "household-api-service.test-fixture.ts",
+        temporaryDirectory
+      ),
+      bundleFixture(
+        "household-domain-service.test-fixture.js",
+        temporaryDirectory
+      ),
+      bundleFixture(
+        "household-evidence-event.test-fixture.ts",
+        temporaryDirectory
+      ),
+    ]);
+  runtime = makeRuntime();
+  await Promise.all([
+    applyD1Migrations(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api"),
+      "auth-migrations"
+    ),
+    applyD1Migrations(
+      await getRuntime().getD1Database(
+        "MealPlannerDatabase",
+        "evidence-consumer"
+      ),
+      "migrations"
+    ),
+  ]);
 }, 30_000);
 
 afterAll(async () => {
@@ -254,11 +325,41 @@ const createOrganization = async (label: string, cookie: string) => {
   );
 };
 
-const systemCommand = (operation: "commit-draft" | "resolve", input: object) =>
-  getRuntime().dispatchFetch(
+const systemCommand = (
+  operation:
+    | "commit-acquisition-evidence"
+    | "commit-draft"
+    | "mutate-evidence-stage"
+    | "observe-evidence-reference"
+    | "prepare-recipe-recovery"
+    | "read-evidence-references"
+    | "read-evidence-stage"
+    | "read-terminal-checkpoint"
+    | "read-recipe-recovery-attempt"
+    | "resolve",
+  input: object
+) => {
+  let attemptGeneration: string | undefined;
+  if (operation === "commit-acquisition-evidence") {
+    attemptGeneration = /\/generations\/(?<generation>\d+)\//u.exec(
+      JSON.stringify(input)
+    )?.groups?.["generation"];
+  } else if (operation === "mutate-evidence-stage") {
+    attemptGeneration = /"expectedGeneration":(?<generation>\d+)/u.exec(
+      JSON.stringify(input)
+    )?.groups?.["generation"];
+  }
+  const command =
+    attemptGeneration === undefined
+      ? input
+      : {
+          acquisitionAttemptGeneration: Number(attemptGeneration),
+          ...input,
+        };
+  return getRuntime().dispatchFetch(
     "https://meal-planner.test/v1/__test/system-import",
     {
-      body: JSON.stringify(input),
+      body: JSON.stringify(command),
       headers: {
         "content-type": "application/json",
         "x-test-household-system-operation": operation,
@@ -266,6 +367,456 @@ const systemCommand = (operation: "commit-draft" | "resolve", input: object) =>
       method: "POST",
     }
   );
+};
+
+const terminalSettlementCommand = async (
+  input: object,
+  options?: {
+    readonly speechRestart?: "fail" | "lose-response" | "terminal-then-fail";
+  }
+) => {
+  const worker = await getRuntime().getWorker("evidence-consumer");
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-test-terminal-settlement": "1",
+  };
+  if (options?.speechRestart !== undefined) {
+    headers["x-test-speech-restart"] = options.speechRestart;
+  }
+  return worker.fetch("https://evidence-consumer.test/terminal-settlement", {
+    body: JSON.stringify(input),
+    headers,
+    method: "POST",
+  });
+};
+
+const providerTerminalAttemptCommand = async (input: object) => {
+  const worker = await getRuntime().getWorker("evidence-consumer");
+  return worker.fetch("https://evidence-consumer.test/provider-terminal", {
+    body: JSON.stringify(input),
+    headers: {
+      "content-type": "application/json",
+      "x-test-provider-terminal-attempt": "1",
+    },
+    method: "POST",
+  });
+};
+
+const visualResumeCommand = async (input: object) => {
+  const worker = await getRuntime().getWorker("evidence-consumer");
+  return worker.fetch("https://evidence-consumer.test/visual-resume", {
+    body: JSON.stringify(input),
+    headers: {
+      "content-type": "application/json",
+      "x-test-visual-resume": "1",
+    },
+    method: "POST",
+  });
+};
+
+const dispatchTraceDurabilityCommand = async (input: object) => {
+  const worker = await getRuntime().getWorker("evidence-consumer");
+  return worker.fetch("https://evidence-consumer.test/dispatch-trace", {
+    body: JSON.stringify(input),
+    headers: {
+      "content-type": "application/json",
+      "x-test-dispatch-trace-durability": "1",
+    },
+    method: "POST",
+  });
+};
+
+const settleUnknownProviderBudget = async (input: {
+  readonly dispatchId: string;
+  readonly importId: string;
+  readonly providerStageId: "speech-transcription" | "visual-evidence";
+}) => {
+  const database = await getRuntime().getD1Database(
+    "MealPlannerDatabase",
+    "evidence-consumer"
+  );
+  const budget = makeD1PilotProviderBudgetRepository(
+    database,
+    "pilot-gaia-118"
+  );
+  const reservation = {
+    dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+      input.dispatchId
+    ),
+    maximumCostMicroUsd: 50_000,
+    providerStageId: Schema.decodeUnknownSync(PilotBudgetProviderStageId)(
+      input.providerStageId
+    ),
+    runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
+      `gaia-118:${input.importId}`
+    ),
+    timestamp: Schema.decodeUnknownSync(PilotBudgetTimestamp)(
+      new Date().toISOString()
+    ),
+  };
+  await Effect.runPromise(budget.reserve(reservation));
+  await Effect.runPromise(budget.beginInvocation(reservation));
+  await Effect.runPromise(budget.settleUnknown(reservation));
+};
+
+const evidenceEventResult = async (
+  attemptsRemaining = 80
+): Promise<unknown> => {
+  const results = await getRuntime().getKVNamespace(
+    "EVIDENCE_EVENT_RESULTS",
+    "evidence-consumer"
+  );
+  const value = await results.get("last", "json");
+  if (value !== null) {
+    return value;
+  }
+  if (attemptsRemaining === 0) {
+    throw new Error("Evidence event was not processed.");
+  }
+  await delay(25);
+  return evidenceEventResult(attemptsRemaining - 1);
+};
+
+const sendEvidenceEvent = async (message: object) => {
+  const results = await getRuntime().getKVNamespace(
+    "EVIDENCE_EVENT_RESULTS",
+    "evidence-consumer"
+  );
+  await results.delete("last");
+  const queue = await getRuntime().getQueueProducer(
+    "EVENTS",
+    "evidence-consumer"
+  );
+  await queue.send(message);
+  return evidenceEventResult();
+};
+
+const registerEvidenceRoute = async (input: {
+  readonly executionGeneration?: number;
+  readonly importId: string;
+  readonly organizationId: string;
+}) => {
+  const database = await getRuntime().getD1Database(
+    "MealPlannerDatabase",
+    "evidence-consumer"
+  );
+  await database
+    .prepare(
+      `INSERT INTO import_evidence_routes (
+         import_id, execution_generation, organization_id, route_version
+       ) VALUES (?, ?, ?, 1)
+       ON CONFLICT (import_id) DO NOTHING`
+    )
+    .bind(input.importId, input.executionGeneration ?? 1, input.organizationId)
+    .run();
+  const winner = await database
+    .prepare(
+      `SELECT organization_id AS organizationId
+         FROM import_evidence_routes
+        WHERE import_id = ?`
+    )
+    .bind(input.importId)
+    .first<{ readonly organizationId: string }>();
+  return winner?.organizationId === input.organizationId
+    ? "Registered"
+    : "ConflictRejected";
+};
+
+const readEvidenceReferences = async (
+  admission: object,
+  intentId: string,
+  expectedGeneration = 1
+) => {
+  const response = await systemCommand("read-evidence-references", {
+    admission,
+    expectedGeneration,
+    intentId,
+  });
+  expect(response.status, await response.clone().text()).toBe(200);
+  return Schema.decodeUnknownPromise(HouseholdReadEvidenceReferencesResult)(
+    await response.json()
+  );
+};
+
+const evidenceRetentionResult = (input: {
+  readonly acquiredAt: Date;
+  readonly generation: number;
+  readonly intentId: string;
+}) => {
+  const deleteAt = new Date(input.acquiredAt.getTime() + 604_800_000);
+  return {
+    acquiredAt: input.acquiredAt.toISOString(),
+    audioStreams: [{ codec: "aac", index: 0 }],
+    durationSeconds: 20,
+    references: [
+      {
+        byteLength: 4096,
+        deleteAt: deleteAt.toISOString(),
+        key: `imports/${input.intentId}/acquisition/v1/generations/${input.generation}/original.mp4`,
+        kind: "original_media",
+        sha256: "7".repeat(64),
+      },
+      {
+        byteLength: 512,
+        deleteAt: deleteAt.toISOString(),
+        key: `imports/${input.intentId}/acquisition/v1/generations/${input.generation}/manifest.json`,
+        kind: "acquisition_manifest",
+        sha256: "8".repeat(64),
+      },
+    ],
+    videoStreams: [{ codec: "h264", index: 0 }],
+  } as const;
+};
+
+const admitResolvedEvidenceImport = async (input: {
+  readonly canonicalSourceId?: string;
+  readonly label: string;
+  readonly mutationId: string;
+  readonly sourceKind?: "carousel" | "video";
+  readonly videoId: string;
+}) => {
+  const cookie = await signUp(input.label);
+  const organization = await createOrganization(
+    `${input.label} Household`,
+    cookie
+  );
+  const createResponse = await getRuntime().dispatchFetch(
+    "https://meal-planner.test/v1/recipe-import-intents",
+    {
+      body: JSON.stringify({
+        source: {
+          kind: "tiktok",
+          url: `https://www.tiktok.com/@mealplanner/video/${input.videoId}`,
+        },
+      }),
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "idempotency-key": `evidence-${input.videoId}`,
+      },
+      method: "POST",
+    }
+  );
+  expect(createResponse.status).toBe(201);
+  const admitted = await Schema.decodeUnknownPromise(RecipeImportIntent)(
+    await createResponse.json()
+  );
+  const admission = {
+    actor: { _tag: "System", purpose: "recipe_import_lifecycle_commit" },
+    organizationId: organization.id,
+  } as const;
+  const resolvedResponse = await systemCommand("resolve", {
+    admission,
+    canonicalSourceId:
+      input.canonicalSourceId ?? `tiktok:video:${input.videoId}`,
+    canonicalUrl: `https://www.tiktok.com/@mealplanner/video/${input.videoId}`,
+    expectedGeneration: 1,
+    intentId: admitted.id,
+    mutationId: input.mutationId,
+    sourceKind: input.sourceKind ?? "video",
+  });
+  expect(resolvedResponse.status, await resolvedResponse.text()).toBe(200);
+  return { admission, admitted, cookie, organization } as const;
+};
+
+const readSpeechStage = async (input: {
+  readonly admission: object;
+  readonly generation: number;
+  readonly intentId: string;
+}) => {
+  const response = await systemCommand("read-evidence-stage", {
+    admission: input.admission,
+    expectedGeneration: input.generation,
+    intentId: input.intentId,
+    stage: "speech",
+  });
+  expect(response.status, await response.clone().text()).toBe(200);
+  return Schema.decodeUnknownPromise(HouseholdReadEvidenceStageResult)(
+    await response.json()
+  );
+};
+
+const prepareUnknownSpeechTerminal = async (input: {
+  readonly acquisitionGeneration?: number;
+  readonly label: string;
+  readonly mutationIds: readonly [resolve: string, claim: string, fail: string];
+  readonly videoId: string;
+}) => {
+  const { admission, admitted, organization } =
+    await admitResolvedEvidenceImport({
+      label: input.label,
+      mutationId: input.mutationIds[0],
+      videoId: input.videoId,
+    });
+  const executionGeneration = 1;
+  const acquisitionGeneration = input.acquisitionGeneration ?? 1;
+  const acquisition = evidenceRetentionResult({
+    acquiredAt: new Date("2026-08-23T12:00:00.000Z"),
+    generation: acquisitionGeneration,
+    intentId: admitted.id,
+  });
+  const committed = await systemCommand("commit-acquisition-evidence", {
+    admission,
+    expectedGeneration: executionGeneration,
+    intentId: admitted.id,
+    mutationId: input.mutationIds[1],
+    result: acquisition,
+  });
+  expect(committed.status, await committed.clone().text()).toBe(200);
+  const inputFingerprint = "2".repeat(64);
+  const dispatchId = `speech:${admitted.id}:${acquisitionGeneration}`;
+  const terminal = await providerTerminalAttemptCommand({
+    acquisitionGeneration,
+    admission,
+    canonicalSourceId: `tiktok:video:${input.videoId}`,
+    correlationId: "00000000-0000-4000-8000-000000000188",
+    dispatchId,
+    executionGeneration,
+    inputFingerprint,
+    intentId: admitted.id,
+    stage: "speech",
+  });
+  expect(terminal.status, await terminal.clone().text()).toBe(200);
+  const terminalStage = await readSpeechStage({
+    admission,
+    generation: executionGeneration,
+    intentId: admitted.id,
+  });
+  expect(terminalStage).toMatchObject({
+    dispatchId,
+    failureCode: "outcome_unknown",
+    inputFingerprint,
+    outcome: "Failed",
+  });
+  if (terminalStage === null) {
+    throw new Error("Expected household speech terminal authority.");
+  }
+  const terminalCheckpoint = await systemCommand("read-terminal-checkpoint", {
+    admission,
+    expectedGeneration: executionGeneration,
+    intentId: admitted.id,
+    ownershipId: terminalStage.dispatchId,
+    stage: "speech",
+  });
+  expect(
+    terminalCheckpoint.status,
+    await terminalCheckpoint.clone().text()
+  ).toBe(200);
+  expect(await terminalCheckpoint.json()).toMatchObject({
+    failureCode: "outcome_unknown",
+    ownershipId: dispatchId,
+    stage: "speech",
+  });
+
+  const database = await getRuntime().getD1Database(
+    "MealPlannerDatabase",
+    "evidence-consumer"
+  );
+  await database
+    .prepare(
+      `INSERT INTO import_evidence_routes (
+         import_id, execution_generation, organization_id, route_version
+       ) VALUES (?, 1, ?, 1)`
+    )
+    .bind(admitted.id, organization.id)
+    .run();
+  await settleUnknownProviderBudget({
+    dispatchId,
+    importId: admitted.id,
+    providerStageId: "speech-transcription",
+  });
+  const settled = await terminalSettlementCommand({
+    acquisitionGeneration,
+    dispatchId,
+    executionGeneration,
+    importId: admitted.id,
+  });
+  expect(settled.status, await settled.clone().text()).toBe(200);
+
+  return {
+    acquisitionGeneration,
+    admission,
+    canonicalSourceId: `tiktok:video:${input.videoId}`,
+    dispatchId,
+    executionGeneration,
+    generation: executionGeneration,
+    inputFingerprint,
+    intentId: admitted.id,
+    recoveryCommand: {
+      acquisitionGeneration,
+      dispatchId,
+      executionGeneration,
+      importId: admitted.id,
+      operation: "prepare_speech_recovery",
+    } as const,
+    recoveryDispatchId: `${dispatchId}:recovery:1`,
+  } as const;
+};
+
+const commitCarouselManifest = async (input: {
+  readonly admission: object;
+  readonly inputFingerprint: string;
+  readonly intentId: string;
+  readonly manifestSha256: string;
+  readonly mutationIds: readonly [claim: string, complete: string];
+}) => {
+  const dispatchId = `carousel:${input.intentId}:1`;
+  const manifestKey = `imports/${input.intentId}/carousel/v1/generations/1/manifest.json`;
+  const startedAt = new Date(Date.now() + 60_000);
+  const completedAt = new Date(startedAt.getTime() + 1000);
+  const deleteAt = new Date(startedAt.getTime() + 604_800_000);
+  const claim = await systemCommand("mutate-evidence-stage", {
+    admission: input.admission,
+    expectedGeneration: 1,
+    inputFingerprint: input.inputFingerprint,
+    intentId: input.intentId,
+    mutationId: input.mutationIds[0],
+    operation: {
+      _tag: "Claim",
+      dispatchId,
+      stage: "carousel",
+      startedAt: startedAt.toISOString(),
+    },
+  });
+  expect(claim.status, await claim.text()).toBe(200);
+  const completion = await systemCommand("mutate-evidence-stage", {
+    admission: input.admission,
+    expectedGeneration: 1,
+    inputFingerprint: input.inputFingerprint,
+    intentId: input.intentId,
+    mutationId: input.mutationIds[1],
+    operation: {
+      _tag: "Complete",
+      dispatchId,
+      reference: {
+        byteLength: 512,
+        deleteAt: deleteAt.toISOString(),
+        key: manifestKey,
+        kind: "carousel_manifest",
+        sha256: input.manifestSha256,
+      },
+      result: {
+        _tag: "Carousel",
+        completedAt: completedAt.toISOString(),
+        descriptorFingerprint: input.inputFingerprint,
+        dispatchId,
+        imageCount: 3,
+        manifestKey,
+        manifestSha256: input.manifestSha256,
+      },
+      stage: "carousel",
+    },
+  });
+  expect(completion.status, await completion.clone().text()).toBe(200);
+  return {
+    completedAt,
+    completionReceipt: await Schema.decodeUnknownPromise(
+      HouseholdMutateEvidenceStageResult
+    )(await completion.json()),
+    deleteAt,
+    manifestKey,
+  } as const;
+};
 
 const review = {
   answers: [],
@@ -478,6 +1029,1269 @@ describe("household public API to private Durable Object boundary", () => {
     });
   }, 30_000);
 
+  it("commits verified R2 acquisition evidence through the private household authority", async () => {
+    const cookie = await signUp("Evidence Boundary Member");
+    const organization = await createOrganization(
+      "Evidence Boundary Household",
+      cookie
+    );
+    const createResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/recipe-import-intents",
+      {
+        body: JSON.stringify({
+          source: {
+            kind: "tiktok",
+            url: "https://www.tiktok.com/@mealplanner/video/7000000000000000100",
+          },
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "idempotency-key": "provider-free-evidence-admission",
+        },
+        method: "POST",
+      }
+    );
+    expect(createResponse.status).toBe(201);
+    const admitted = await Schema.decodeUnknownPromise(RecipeImportIntent)(
+      await createResponse.json()
+    );
+    const admission = {
+      actor: { _tag: "System", purpose: "recipe_import_lifecycle_commit" },
+      organizationId: organization.id,
+    } as const;
+    const resolvedResponse = await systemCommand("resolve", {
+      admission,
+      canonicalSourceId: "tiktok:video:7000000000000000100",
+      canonicalUrl:
+        "https://www.tiktok.com/@mealplanner/video/7000000000000000100",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "5".repeat(64),
+      sourceKind: "video",
+    });
+    expect(resolvedResponse.status).toBe(200);
+
+    const mediaKey = `imports/${admitted.id}/acquisition/v1/generations/1/original.mp4`;
+    const manifestKey = `imports/${admitted.id}/acquisition/v1/generations/1/manifest.json`;
+    const commitResponse = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "6".repeat(64),
+      result: {
+        acquiredAt: "2026-08-22T10:00:00.000Z",
+        audioStreams: [{ codec: "aac", index: 0 }],
+        durationSeconds: 20,
+        references: [
+          {
+            byteLength: 4096,
+            deleteAt: "2026-08-29T10:00:00.000Z",
+            key: mediaKey,
+            kind: "original_media",
+            sha256: "7".repeat(64),
+          },
+          {
+            byteLength: 512,
+            deleteAt: "2026-08-29T10:00:00.000Z",
+            key: manifestKey,
+            kind: "acquisition_manifest",
+            sha256: "8".repeat(64),
+          },
+        ],
+        videoStreams: [{ codec: "h264", index: 0 }],
+      },
+    });
+    expect(commitResponse.status, await commitResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("rejects stale evidence without mutation and accepts the corrected generation", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Stale Evidence Member",
+      mutationId: "9".repeat(64),
+      videoId: "7000000000000000104",
+    });
+    const acquiredAt = new Date(Date.now() + 60_000);
+    const mutationId = "a".repeat(64);
+    const staleResponse = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 2,
+      intentId: admitted.id,
+      mutationId,
+      result: evidenceRetentionResult({
+        acquiredAt,
+        generation: 2,
+        intentId: admitted.id,
+      }),
+    });
+    expect(staleResponse.status).toBe(409);
+
+    const correctedResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        admission,
+        expectedGeneration: 1,
+        intentId: admitted.id,
+        mutationId,
+        result: evidenceRetentionResult({
+          acquiredAt,
+          generation: 1,
+          intentId: admitted.id,
+        }),
+      }
+    );
+    expect(correctedResponse.status, await correctedResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("commits a closed speech result with replay and generation fencing", async () => {
+    const { admission, admitted, cookie } = await admitResolvedEvidenceImport({
+      label: "Speech Evidence Stage Member",
+      mutationId: "1".repeat(64),
+      videoId: "7000000000000000130",
+    });
+    const inputFingerprint = "2".repeat(64);
+    const dispatchId = `speech:${admitted.id}:1`;
+    const stale = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: 2,
+      inputFingerprint,
+      intentId: admitted.id,
+      mutationId: "3".repeat(64),
+      operation: {
+        _tag: "Claim",
+        dispatchId,
+        stage: "speech",
+        startedAt: new Date().toISOString(),
+      },
+    });
+    expect(stale.status).toBe(409);
+    const claim = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      mutationId: "4".repeat(64),
+      operation: {
+        _tag: "Claim",
+        dispatchId,
+        stage: "speech",
+        startedAt: new Date().toISOString(),
+      },
+    });
+    expect(claim.status, await claim.text()).toBe(200);
+
+    const completedAt = new Date();
+    const expiresAtEpochMs = Date.now() + 2000;
+    const deleteAt = new Date(expiresAtEpochMs);
+    const transcriptKey = `imports/${admitted.id}/transcription/v1/generations/1/transcript.json`;
+    const command = {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      mutationId: "5".repeat(64),
+      operation: {
+        _tag: "Complete",
+        dispatchId,
+        reference: {
+          byteLength: 512,
+          deleteAt: deleteAt.toISOString(),
+          key: transcriptKey,
+          kind: "speech_transcript",
+          sha256: "6".repeat(64),
+        },
+        result: {
+          _tag: "Speech",
+          completedAt: completedAt.toISOString(),
+          cost: {
+            certainty: "known",
+            currency: "USD",
+            estimatedMicroUsd: 12,
+          },
+          detectedLanguage: "en",
+          dispatchId,
+          model: "provider-model",
+          provider: "workers-ai",
+          segmentsCount: 4,
+          sourceMediaSha256: inputFingerprint,
+          transcriptKey,
+          transcriptSha256: "6".repeat(64),
+          usage: { audioDurationMilliseconds: 20_000, inputBytes: 1024 },
+        },
+        stage: "speech",
+      },
+    } as const;
+    const staleDispatchId = `speech:${admitted.id}:stale`;
+    const mismatched = await systemCommand("mutate-evidence-stage", {
+      ...command,
+      mutationId: "7".repeat(64),
+      operation: {
+        ...command.operation,
+        dispatchId: staleDispatchId,
+        result: { ...command.operation.result, dispatchId: staleDispatchId },
+      },
+    });
+    expect(mismatched.status).toBe(409);
+
+    const completed = await systemCommand("mutate-evidence-stage", command);
+    expect(completed.status, await completed.clone().text()).toBe(200);
+    const receipt = await Schema.decodeUnknownPromise(
+      HouseholdMutateEvidenceStageResult
+    )(await completed.json());
+    const retry = await systemCommand("mutate-evidence-stage", command);
+    expect(retry.status, await retry.clone().text()).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(HouseholdMutateEvidenceStageResult)(
+        await retry.json()
+      )
+    ).toEqual(receipt);
+    expect(receipt).not.toHaveProperty("result");
+    expect(receipt).not.toHaveProperty("transcriptKey");
+
+    await delay(Math.max(0, expiresAtEpochMs - Date.now() + 100));
+    await restartRuntime();
+    const expiredReplay = await systemCommand("mutate-evidence-stage", command);
+    expect(expiredReplay.status, await expiredReplay.clone().text()).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(HouseholdMutateEvidenceStageResult)(
+        await expiredReplay.json()
+      )
+    ).toEqual(receipt);
+    const expiredFirstWrite = await systemCommand("mutate-evidence-stage", {
+      ...command,
+      mutationId: "0".repeat(64),
+    });
+    expect(expiredFirstWrite.status).toBe(400);
+
+    const read = await systemCommand("read-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      stage: "speech",
+    });
+    expect(read.status, await read.clone().text()).toBe(200);
+    const stage = await Schema.decodeUnknownPromise(
+      HouseholdReadEvidenceStageResult
+    )(await read.json());
+    expect(stage).toMatchObject({
+      inputFingerprint,
+      outcome: "Completed",
+      result: { _tag: "Speech", transcriptKey },
+      stage: "speech",
+    });
+
+    const cancelled = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}/cancel`,
+      {
+        body: JSON.stringify({ expectedIntentVersion: 2 }),
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "idempotency-key": "complete-receipt-terminal-replay",
+        },
+        method: "POST",
+      }
+    );
+    expect(cancelled.status, await cancelled.text()).toBe(200);
+    const terminalReplay = await systemCommand(
+      "mutate-evidence-stage",
+      command
+    );
+    expect(terminalReplay.status, await terminalReplay.clone().text()).toBe(
+      200
+    );
+    expect(
+      await Schema.decodeUnknownPromise(HouseholdMutateEvidenceStageResult)(
+        await terminalReplay.json()
+      )
+    ).toEqual(receipt);
+    const newTerminalCompletion = await systemCommand("mutate-evidence-stage", {
+      ...command,
+      mutationId: "f".repeat(64),
+    });
+    expect(newTerminalCompletion.status).toBe(400);
+  }, 30_000);
+
+  it("rejects new stage mutations after cancellation while replaying the committed claim receipt", async () => {
+    const { admission, admitted, cookie } = await admitResolvedEvidenceImport({
+      label: "Cancelled Evidence Stage Member",
+      mutationId: "8".repeat(64),
+      videoId: "7000000000000000131",
+    });
+    const dispatchId = `speech:${admitted.id}:1`;
+    const claimCommand = {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint: "9".repeat(64),
+      intentId: admitted.id,
+      mutationId: "a".repeat(64),
+      operation: {
+        _tag: "Claim",
+        dispatchId,
+        stage: "speech",
+        startedAt: new Date().toISOString(),
+      },
+    } as const;
+    const claimed = await systemCommand("mutate-evidence-stage", claimCommand);
+    expect(claimed.status, await claimed.clone().text()).toBe(200);
+    const claimReceipt = await Schema.decodeUnknownPromise(
+      HouseholdMutateEvidenceStageResult
+    )(await claimed.json());
+    const failureCommand = {
+      ...claimCommand,
+      mutationId: "c".repeat(64),
+      operation: {
+        _tag: "Fail",
+        completedAt: new Date().toISOString(),
+        dispatchId,
+        failureCode: "transcription_failed",
+        recovery: "retry_later",
+        stage: "speech",
+      },
+    } as const;
+    const staleDispatchId = `speech:${admitted.id}:stale`;
+    const mismatchedFailure = await systemCommand("mutate-evidence-stage", {
+      ...failureCommand,
+      mutationId: "d".repeat(64),
+      operation: { ...failureCommand.operation, dispatchId: staleDispatchId },
+    });
+    expect(mismatchedFailure.status).toBe(409);
+    const committedFailure = await systemCommand(
+      "mutate-evidence-stage",
+      failureCommand
+    );
+    expect(committedFailure.status, await committedFailure.clone().text()).toBe(
+      200
+    );
+    const failureReceipt = await Schema.decodeUnknownPromise(
+      HouseholdMutateEvidenceStageResult
+    )(await committedFailure.json());
+
+    const cancelled = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}/cancel`,
+      {
+        body: JSON.stringify({ expectedIntentVersion: 2 }),
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "idempotency-key": "cancel-stage-race",
+        },
+        method: "POST",
+      }
+    );
+    expect(cancelled.status, await cancelled.text()).toBe(200);
+
+    const replay = await systemCommand("mutate-evidence-stage", claimCommand);
+    expect(replay.status, await replay.clone().text()).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(HouseholdMutateEvidenceStageResult)(
+        await replay.json()
+      )
+    ).toEqual(claimReceipt);
+
+    const newClaim = await systemCommand("mutate-evidence-stage", {
+      ...claimCommand,
+      mutationId: "b".repeat(64),
+    });
+    expect(newClaim.status).toBe(400);
+    const failureReplay = await systemCommand(
+      "mutate-evidence-stage",
+      failureCommand
+    );
+    expect(failureReplay.status, await failureReplay.clone().text()).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(HouseholdMutateEvidenceStageResult)(
+        await failureReplay.json()
+      )
+    ).toEqual(failureReceipt);
+    const terminalFailure = await systemCommand("mutate-evidence-stage", {
+      ...failureCommand,
+      mutationId: "e".repeat(64),
+    });
+    expect(terminalFailure.status).toBe(400);
+  }, 30_000);
+
+  it("physically isolates household evidence routing", async () => {
+    const householdA = await admitResolvedEvidenceImport({
+      label: "Evidence Isolation A",
+      mutationId: "b".repeat(64),
+      videoId: "7000000000000000105",
+    });
+    const cookieB = await signUp("Evidence Isolation B");
+    const organizationB = await createOrganization(
+      "Evidence Isolation B Household",
+      cookieB
+    );
+    const result = evidenceRetentionResult({
+      acquiredAt: new Date(Date.now() + 60_000),
+      generation: 1,
+      intentId: householdA.admitted.id,
+    });
+    const mutationId = "c".repeat(64);
+    const crossHouseholdResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        admission: {
+          ...householdA.admission,
+          organizationId: organizationB.id,
+        },
+        expectedGeneration: 1,
+        intentId: householdA.admitted.id,
+        mutationId,
+        result,
+      }
+    );
+    expect(crossHouseholdResponse.status).toBe(404);
+
+    const ownerResponse = await systemCommand("commit-acquisition-evidence", {
+      admission: householdA.admission,
+      expectedGeneration: 1,
+      intentId: householdA.admitted.id,
+      mutationId,
+      result,
+    });
+    expect(ownerResponse.status, await ownerResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("returns the same private receipt on retry and rejects a conflicting replay without mutation", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Evidence Replay Member",
+      mutationId: "d".repeat(64),
+      videoId: "7000000000000000106",
+    });
+    const result = evidenceRetentionResult({
+      acquiredAt: new Date(Date.now() + 60_000),
+      generation: 1,
+      intentId: admitted.id,
+    });
+    const command = {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "e".repeat(64),
+      result,
+    } as const;
+    const firstResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      command
+    );
+    expect(firstResponse.status).toBe(200);
+    const firstReceipt = await Schema.decodeUnknownPromise(
+      HouseholdCommitAcquisitionEvidenceResult
+    )(await firstResponse.json());
+    expect(JSON.stringify(firstReceipt)).not.toMatch(
+      /imports\/|sha256|deleteAt/u
+    );
+
+    const retryResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      command
+    );
+    expect(retryResponse.status).toBe(200);
+    const retryReceipt = await Schema.decodeUnknownPromise(
+      HouseholdCommitAcquisitionEvidenceResult
+    )(await retryResponse.json());
+    expect(retryReceipt).toEqual(firstReceipt);
+
+    const conflictingResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        ...command,
+        result: {
+          ...result,
+          references: [
+            { ...result.references[0], sha256: "f".repeat(64) },
+            result.references[1],
+          ],
+        },
+      }
+    );
+    expect(conflictingResponse.status).toBe(409);
+
+    const afterConflictResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      command
+    );
+    expect(afterConflictResponse.status).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(
+        HouseholdCommitAcquisitionEvidenceResult
+      )(await afterConflictResponse.json())
+    ).toEqual(firstReceipt);
+  }, 30_000);
+
+  it("persists household evidence receipts across a real runtime restart", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Evidence Restart Member",
+      mutationId: "1".repeat(64),
+      videoId: "7000000000000000107",
+    });
+    const expiresAtEpochMs = Date.now() + 2000;
+    const command = {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "2".repeat(64),
+      result: evidenceRetentionResult({
+        acquiredAt: new Date(expiresAtEpochMs - 604_800_000),
+        generation: 1,
+        intentId: admitted.id,
+      }),
+    } as const;
+    const firstResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      command
+    );
+    expect(firstResponse.status).toBe(200);
+    const receipt = await Schema.decodeUnknownPromise(
+      HouseholdCommitAcquisitionEvidenceResult
+    )(await firstResponse.json());
+
+    await delay(Math.max(0, expiresAtEpochMs - Date.now() + 100));
+    await restartRuntime();
+
+    const replayResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      command
+    );
+    expect(replayResponse.status).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(
+        HouseholdCommitAcquisitionEvidenceResult
+      )(await replayResponse.json())
+    ).toEqual(receipt);
+
+    const expiredFirstWrite = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        ...command,
+        mutationId: "0".repeat(64),
+      }
+    );
+    expect(expiredFirstWrite.status).toBe(400);
+  }, 30_000);
+
+  it("rejects invalid retention without mutation and accepts the corrected deadline", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Evidence Retention Member",
+      mutationId: "3".repeat(64),
+      videoId: "7000000000000000108",
+    });
+    const acquiredAt = new Date(Date.now() + 60_000);
+    const result = evidenceRetentionResult({
+      acquiredAt,
+      generation: 1,
+      intentId: admitted.id,
+    });
+    const mutationId = "4".repeat(64);
+    const invalidDeleteAt = new Date(
+      acquiredAt.getTime() + 604_800_001
+    ).toISOString();
+    const invalidResponse = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId,
+      result: {
+        ...result,
+        references: result.references.map((reference) => ({
+          ...reference,
+          deleteAt: invalidDeleteAt,
+        })),
+      },
+    });
+    expect(invalidResponse.status).toBe(400);
+
+    const correctedResponse = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        admission,
+        expectedGeneration: 1,
+        intentId: admitted.id,
+        mutationId,
+        result,
+      }
+    );
+    expect(correctedResponse.status, await correctedResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("records a missing R2 observation without weakening committed integrity metadata", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Missing Evidence Member",
+      mutationId: "5".repeat(64),
+      videoId: "7000000000000000109",
+    });
+    const evidence = evidenceRetentionResult({
+      acquiredAt: new Date(Date.now() + 60_000),
+      generation: 1,
+      intentId: admitted.id,
+    });
+    const committed = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "6".repeat(64),
+      result: evidence,
+    });
+    expect(committed.status, await committed.text()).toBe(200);
+
+    const [media] = evidence.references;
+    const observed = await systemCommand("observe-evidence-reference", {
+      admission,
+      availability: "missing",
+      event: {
+        action: "IntegrityProbe",
+        eventTime: "2026-08-22T11:00:00.000Z",
+      },
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "7".repeat(64),
+      reference: {
+        key: media.key,
+        kind: media.kind,
+        sha256: media.sha256,
+      },
+    });
+    const observedBody = await observed.text();
+    expect(observed.status, observedBody).toBe(200);
+    const missingReceipt = await Schema.decodeUnknownPromise(
+      HouseholdObserveEvidenceReferenceResult
+    )(JSON.parse(observedBody));
+    expect(missingReceipt).toMatchObject({
+      availability: "missing",
+      executionGeneration: 1,
+      intentId: admitted.id,
+      kind: "original_media",
+      observationOrdinal: 1,
+    });
+    expect(JSON.stringify(missingReceipt)).not.toMatch(
+      /imports\/|sha256|deleteAt/u
+    );
+
+    const retry = await systemCommand("observe-evidence-reference", {
+      admission,
+      availability: "missing",
+      event: {
+        action: "IntegrityProbe",
+        eventTime: "2026-08-22T11:00:00.000Z",
+      },
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "7".repeat(64),
+      reference: {
+        key: media.key,
+        kind: media.kind,
+        sha256: media.sha256,
+      },
+    });
+    expect(retry.status).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(
+        HouseholdObserveEvidenceReferenceResult
+      )(await retry.json())
+    ).toEqual(missingReceipt);
+
+    const forged = await systemCommand("observe-evidence-reference", {
+      admission,
+      availability: "missing",
+      event: {
+        action: "IntegrityProbe",
+        eventTime: "2026-08-22T11:01:00.000Z",
+      },
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "8".repeat(64),
+      reference: {
+        key: media.key,
+        kind: media.kind,
+        sha256: "9".repeat(64),
+      },
+    });
+    expect(forged.status).toBe(400);
+
+    const lateStaleDeletion = await systemCommand(
+      "observe-evidence-reference",
+      {
+        admission,
+        availability: "deleted",
+        event: {
+          action: "LifecycleDeletion",
+          eventTime: "2026-08-22T11:02:00.000Z",
+        },
+        expectedGeneration: 2,
+        intentId: admitted.id,
+        mutationId: "9".repeat(64),
+        reference: {
+          key: media.key,
+          kind: media.kind,
+          sha256: media.sha256,
+        },
+      }
+    );
+    expect(lateStaleDeletion.status).toBe(409);
+
+    const deletion = await systemCommand("observe-evidence-reference", {
+      admission,
+      availability: "deleted",
+      event: {
+        action: "LifecycleDeletion",
+        eventTime: "2026-08-22T11:02:00.000Z",
+      },
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "9".repeat(64),
+      reference: {
+        key: media.key,
+        kind: media.kind,
+        sha256: media.sha256,
+      },
+    });
+    expect(deletion.status).toBe(200);
+    expect(await deletion.json()).toMatchObject({
+      availability: "deleted",
+      observationOrdinal: 2,
+    });
+  }, 30_000);
+
+  it("reconciles authorized R2 lifecycle events into household availability across terminal state and restart", async () => {
+    const { admission, admitted, cookie, organization } =
+      await admitResolvedEvidenceImport({
+        label: "Lifecycle Event Member",
+        mutationId: "1".repeat(64),
+        videoId: "7000000000000000132",
+      });
+    const manifestBytes = new TextEncoder().encode(
+      JSON.stringify({ proof: "household-r2-event" })
+    );
+    const manifestShaBuffer = await crypto.subtle.digest(
+      "SHA-256",
+      manifestBytes
+    );
+    const manifestSha = Array.from(new Uint8Array(manifestShaBuffer), (byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join("");
+    const baseline = evidenceRetentionResult({
+      acquiredAt: new Date(Date.now() + 60_000),
+      generation: 1,
+      intentId: admitted.id,
+    });
+    const evidence = {
+      ...baseline,
+      references: [
+        baseline.references[0],
+        {
+          ...baseline.references[1],
+          byteLength: manifestBytes.byteLength,
+          sha256: manifestSha,
+        },
+      ],
+    } as const;
+    const committed = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "2".repeat(64),
+      result: evidence,
+    });
+    expect(committed.status, await committed.text()).toBe(200);
+    const [, manifest] = evidence.references;
+
+    await expect(
+      registerEvidenceRoute({
+        importId: admitted.id,
+        organizationId: organization.id,
+      })
+    ).resolves.toBe("Registered");
+
+    const otherCookie = await signUp("Lifecycle Event Other Member");
+    const otherOrganization = await createOrganization(
+      "Lifecycle Event Other Household",
+      otherCookie
+    );
+    await expect(
+      registerEvidenceRoute({
+        importId: admitted.id,
+        organizationId: otherOrganization.id,
+      })
+    ).resolves.toBe("ConflictRejected");
+
+    await expect(
+      sendEvidenceEvent({
+        account: "must-not-escape",
+        action: "LifecycleDeletion",
+        bucket: "must-not-escape",
+        eventTime: "2026-08-22T12:00:00.000Z",
+        object: {
+          key: `imports/${admitted.id}/acquisition/v1/generations/2/manifest.json`,
+        },
+      })
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Ignored", reason: "stale" },
+    });
+    const beforeDeletion = await readEvidenceReferences(admission, admitted.id);
+    expect(beforeDeletion?.references.map(({ kind }) => kind)).toEqual([
+      "original_media",
+      "acquisition_manifest",
+    ]);
+    expect(
+      beforeDeletion?.references.find(
+        ({ kind }) => kind === "acquisition_manifest"
+      )
+    ).toMatchObject({ availability: "available", observationOrdinal: 0 });
+
+    const cancelled = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}/cancel`,
+      {
+        body: JSON.stringify({ expectedIntentVersion: 2 }),
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "idempotency-key": "lifecycle-event-terminal-proof",
+        },
+        method: "POST",
+      }
+    );
+    expect(cancelled.status, await cancelled.text()).toBe(200);
+
+    const deletionEvent = {
+      account: "must-not-escape",
+      action: "LifecycleDeletion",
+      bucket: "must-not-escape",
+      eventTime: "2026-08-22T12:01:00.000Z",
+      object: { key: manifest.key },
+    } as const;
+    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "deleted" },
+    });
+    let references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "deleted", observationOrdinal: 1 });
+
+    const publicRead = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}`,
+      { headers: { cookie } }
+    );
+    expect(publicRead.status, await publicRead.clone().text()).toBe(200);
+    const publicIntent = await Schema.decodeUnknownPromise(RecipeImportIntent)(
+      await publicRead.json()
+    );
+    expect(publicIntent.status).toBe("cancelled");
+    expect(JSON.stringify(publicIntent)).not.toMatch(
+      /availability|sha256|imports\/|organization/u
+    );
+
+    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "deleted" },
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "deleted", observationOrdinal: 1 });
+
+    await restartRuntime();
+    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "deleted" },
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "deleted", observationOrdinal: 1 });
+
+    let bucket = await getRuntime().getR2Bucket(
+      "ImportEvidenceBucket",
+      "evidence-consumer"
+    );
+    await bucket.put(manifest.key, manifestBytes, {
+      customMetadata: {
+        generation: "1",
+        importId: admitted.id,
+        sha256: "0".repeat(64),
+      },
+      sha256: manifestShaBuffer,
+    });
+    await expect(
+      sendEvidenceEvent({
+        ...deletionEvent,
+        action: "PutObject",
+        eventTime: "2026-08-22T12:01:30.000Z",
+      })
+    ).resolves.toEqual({
+      _tag: "Rejected",
+      reason: "integrity_mismatch",
+      retryable: false,
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "deleted", observationOrdinal: 1 });
+
+    await bucket.put(manifest.key, manifestBytes, {
+      customMetadata: {
+        generation: "1",
+        importId: admitted.id,
+        sha256: manifest.sha256,
+      },
+      sha256: manifestShaBuffer,
+    });
+    await expect(
+      sendEvidenceEvent({
+        ...deletionEvent,
+        action: "PutObject",
+        eventTime: "2026-08-22T12:02:00.000Z",
+      })
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "available" },
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "available", observationOrdinal: 2 });
+
+    await expect(
+      sendEvidenceEvent({
+        ...deletionEvent,
+        eventTime: "2026-08-22T12:01:30.000Z",
+      })
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Ignored", reason: "stale" },
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "available", observationOrdinal: 2 });
+
+    await expect(
+      sendEvidenceEvent({
+        ...deletionEvent,
+        action: "DeleteObject",
+        eventTime: "2026-08-22T12:02:00.000Z",
+      })
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "deleted" },
+    });
+    const sameTimeLowerPrecedenceEvent = {
+      ...deletionEvent,
+      action: "CopyObject",
+      copySource: {
+        bucket: "ImportEvidenceBucket",
+        object: "imports/source/manifest.json",
+      },
+      eventTime: "2026-08-22T12:02:00.000Z",
+    } as const;
+    await expect(
+      sendEvidenceEvent(sameTimeLowerPrecedenceEvent)
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Ignored", reason: "stale" },
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "deleted", observationOrdinal: 3 });
+
+    await restartRuntime();
+    await expect(
+      sendEvidenceEvent(sameTimeLowerPrecedenceEvent)
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Ignored", reason: "stale" },
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "deleted", observationOrdinal: 3 });
+
+    bucket = await getRuntime().getR2Bucket(
+      "ImportEvidenceBucket",
+      "evidence-consumer"
+    );
+    await bucket.delete(manifest.key);
+    await expect(
+      sendEvidenceEvent({
+        ...deletionEvent,
+        action: "PutObject",
+        eventTime: "2026-08-22T12:03:00.000Z",
+      })
+    ).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "missing" },
+    });
+    references = await readEvidenceReferences(admission, admitted.id);
+    expect(
+      references?.references.find(({ kind }) => kind === "acquisition_manifest")
+    ).toMatchObject({ availability: "missing", observationOrdinal: 4 });
+  }, 30_000);
+
+  it("reconciles a carousel manifest lifecycle deletion without acquisition evidence", async () => {
+    const { admission, admitted, cookie, organization } =
+      await admitResolvedEvidenceImport({
+        label: "Carousel Lifecycle Event Member",
+        mutationId: "a".repeat(64),
+        sourceKind: "carousel",
+        videoId: "7000000000000000133",
+      });
+    const inputFingerprint = "b".repeat(64);
+    const manifestSha256 = "c".repeat(64);
+    const { completionReceipt, manifestKey } = await commitCarouselManifest({
+      admission,
+      inputFingerprint,
+      intentId: admitted.id,
+      manifestSha256,
+      mutationIds: ["d".repeat(64), "e".repeat(64)],
+    });
+
+    await expect(
+      registerEvidenceRoute({
+        importId: admitted.id,
+        organizationId: organization.id,
+      })
+    ).resolves.toBe("Registered");
+    const cancelled = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}/cancel`,
+      {
+        body: JSON.stringify({ expectedIntentVersion: 2 }),
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "idempotency-key": "carousel-lifecycle-terminal-proof",
+        },
+        method: "POST",
+      }
+    );
+    expect(cancelled.status, await cancelled.text()).toBe(200);
+
+    const deletionEvent = {
+      account: "must-not-escape",
+      action: "LifecycleDeletion",
+      bucket: "must-not-escape",
+      eventTime: "2026-08-22T12:11:00.000Z",
+      object: { key: manifestKey },
+    } as const;
+    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "deleted" },
+    });
+    const references = await readEvidenceReferences(admission, admitted.id);
+    expect(references?.references).toHaveLength(1);
+    expect(references).toMatchObject({
+      committedAt: completionReceipt.committedAt,
+      executionGeneration: 1,
+      intentId: admitted.id,
+      references: [
+        {
+          availability: "deleted",
+          byteLength: 512,
+          key: manifestKey,
+          kind: "carousel_manifest",
+          observationOrdinal: 1,
+          sha256: manifestSha256,
+        },
+      ],
+    });
+
+    await restartRuntime();
+    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
+      _tag: "Accepted",
+      value: { _tag: "Observed", availability: "deleted" },
+    });
+    await expect(
+      readEvidenceReferences(admission, admitted.id)
+    ).resolves.toEqual(references);
+  }, 30_000);
+
+  it("rejects source-mixed evidence reference wire shapes", async () => {
+    const intentId = "00000000-0000-4000-8000-000000000134";
+    const manifestSha256 = "7".repeat(64);
+    const completedAt = new Date("2026-08-22T12:10:00.000Z");
+    const deleteAt = new Date("2026-08-29T12:10:00.000Z");
+    const manifestKey = `imports/${intentId}/carousel/v1/generations/1/manifest.json`;
+
+    const referenceFields = {
+      availability: "available" as const,
+      byteLength: 1,
+      deleteAt: deleteAt.toISOString(),
+      observationOrdinal: 0,
+      sha256: "a".repeat(64),
+    };
+    const original = {
+      ...referenceFields,
+      key: `imports/${intentId}/acquisition/v1/generations/1/original.mp4`,
+      kind: "original_media" as const,
+    };
+    const acquisition = {
+      ...referenceFields,
+      key: `imports/${intentId}/acquisition/v1/generations/1/manifest.json`,
+      kind: "acquisition_manifest" as const,
+    };
+    const speech = {
+      ...referenceFields,
+      key: `imports/${intentId}/speech/v1/generations/1/transcript.json`,
+      kind: "speech_transcript" as const,
+    };
+    const visual = {
+      ...referenceFields,
+      key: `imports/${intentId}/visual/v1/generations/1/manifest.json`,
+      kind: "visual_manifest" as const,
+    };
+    const resultIdentity = {
+      committedAt: completedAt.toISOString(),
+      executionGeneration: 1,
+      intentId,
+    };
+
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdReadEvidenceReferencesResult)({
+        ...resultIdentity,
+        references: [original, acquisition, speech, visual],
+      })
+    ).resolves.toBeDefined();
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdReadEvidenceReferencesResult)({
+        ...resultIdentity,
+        references: [original, acquisition, visual, speech],
+      })
+    ).rejects.toBeDefined();
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdReadEvidenceReferencesResult)({
+        ...resultIdentity,
+        references: [
+          original,
+          {
+            ...referenceFields,
+            key: manifestKey,
+            kind: "carousel_manifest",
+            sha256: manifestSha256,
+          },
+        ],
+      })
+    ).rejects.toBeDefined();
+  }, 30_000);
+
+  it("rejects wrong-source evidence commands before authoring household evidence", async () => {
+    const carousel = await admitResolvedEvidenceImport({
+      label: "Wrong Acquisition Source Member",
+      mutationId: "b".repeat(64),
+      sourceKind: "carousel",
+      videoId: "7000000000000000135",
+    });
+    const acquisitionMutationId = "c".repeat(64);
+    const wrongAcquisition = await systemCommand(
+      "commit-acquisition-evidence",
+      {
+        admission: carousel.admission,
+        expectedGeneration: 1,
+        intentId: carousel.admitted.id,
+        mutationId: acquisitionMutationId,
+        result: evidenceRetentionResult({
+          acquiredAt: new Date(Date.now() + 60_000),
+          generation: 1,
+          intentId: carousel.admitted.id,
+        }),
+      }
+    );
+    expect(wrongAcquisition.status).toBe(400);
+    await expect(wrongAcquisition.json()).resolves.toMatchObject({
+      reason: "illegal_transition",
+      rejected: true,
+    });
+    await expect(
+      readEvidenceReferences(carousel.admission, carousel.admitted.id)
+    ).resolves.toBeNull();
+    const emptyCarouselStage = await systemCommand("read-evidence-stage", {
+      admission: carousel.admission,
+      expectedGeneration: 1,
+      intentId: carousel.admitted.id,
+      stage: "carousel",
+    });
+    expect(emptyCarouselStage.status).toBe(200);
+    await expect(emptyCarouselStage.json()).resolves.toBeNull();
+
+    const correctedCarouselClaim = await systemCommand(
+      "mutate-evidence-stage",
+      {
+        admission: carousel.admission,
+        expectedGeneration: 1,
+        inputFingerprint: "d".repeat(64),
+        intentId: carousel.admitted.id,
+        mutationId: acquisitionMutationId,
+        operation: {
+          _tag: "Claim",
+          dispatchId: `carousel:${carousel.admitted.id}:1`,
+          stage: "carousel",
+          startedAt: new Date(Date.now() + 120_000).toISOString(),
+        },
+      }
+    );
+    expect(
+      correctedCarouselClaim.status,
+      await correctedCarouselClaim.clone().text()
+    ).toBe(200);
+
+    const video = await admitResolvedEvidenceImport({
+      label: "Wrong Stage Source Member",
+      mutationId: "e".repeat(64),
+      sourceKind: "video",
+      videoId: "7000000000000000136",
+    });
+    const stageMutationId = "f".repeat(64);
+    const stageFingerprint = "0".repeat(64);
+    const wrongStage = await systemCommand("mutate-evidence-stage", {
+      admission: video.admission,
+      expectedGeneration: 1,
+      inputFingerprint: stageFingerprint,
+      intentId: video.admitted.id,
+      mutationId: stageMutationId,
+      operation: {
+        _tag: "Claim",
+        dispatchId: `carousel:${video.admitted.id}:1`,
+        stage: "carousel",
+        startedAt: new Date(Date.now() + 180_000).toISOString(),
+      },
+    });
+    expect(wrongStage.status).toBe(400);
+    await expect(wrongStage.json()).resolves.toMatchObject({
+      reason: "illegal_transition",
+      rejected: true,
+    });
+    await expect(
+      readEvidenceReferences(video.admission, video.admitted.id)
+    ).resolves.toBeNull();
+    const emptyVideoStage = await systemCommand("read-evidence-stage", {
+      admission: video.admission,
+      expectedGeneration: 1,
+      intentId: video.admitted.id,
+      stage: "carousel",
+    });
+    expect(emptyVideoStage.status).toBe(200);
+    await expect(emptyVideoStage.json()).resolves.toBeNull();
+
+    const correctedSpeechClaim = await systemCommand("mutate-evidence-stage", {
+      admission: video.admission,
+      expectedGeneration: 1,
+      inputFingerprint: stageFingerprint,
+      intentId: video.admitted.id,
+      mutationId: stageMutationId,
+      operation: {
+        _tag: "Claim",
+        dispatchId: `speech:${video.admitted.id}:1`,
+        stage: "speech",
+        startedAt: new Date(Date.now() + 240_000).toISOString(),
+      },
+    });
+    expect(
+      correctedSpeechClaim.status,
+      await correctedSpeechClaim.clone().text()
+    ).toBe(200);
+  }, 30_000);
+
   it("rejects a forged cross-organization session before private routing", async () => {
     const cookieA = await signUp("Boundary A");
     const cookieB = await signUp("Boundary B");
@@ -518,5 +2332,1093 @@ describe("household public API to private Durable Object boundary", () => {
     expect(JSON.stringify(await response.json())).not.toContain(
       organizationB.id
     );
+  });
+
+  it("checkpoints household-owned terminal identities without shared-D1 evidence rows", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Household Terminal Ownership",
+      mutationId: "d".repeat(64),
+      videoId: "7000000000000000101",
+    });
+    const acquiredAt = new Date(Date.now() + 60_000);
+    const acquisition = await systemCommand("commit-acquisition-evidence", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "e".repeat(64),
+      result: evidenceRetentionResult({
+        acquiredAt,
+        generation: 1,
+        intentId: admitted.id,
+      }),
+    });
+    expect(acquisition.status, await acquisition.text()).toBe(200);
+
+    const identities = [
+      { failureCode: "transcription_failed", stage: "speech" },
+      { failureCode: "visual_extraction_failed", stage: "visual" },
+      { failureCode: "provider_error", stage: "extraction" },
+    ] as const;
+    const stages = await Promise.all(
+      identities.map(async (identity, ordinal) => {
+        const fingerprint = String(ordinal + 1).repeat(64);
+        const dispatchId =
+          identity.stage === "extraction"
+            ? fingerprint
+            : `${identity.stage}:${admitted.id}:1`;
+        const extractionContext =
+          identity.stage === "extraction"
+            ? {
+                descriptor: {
+                  model: "fixture-v1",
+                  provider: "deterministic_fake" as const,
+                  version: "schema-1",
+                },
+                evidenceFingerprint: "a".repeat(64),
+                sourceMediaSha256: "b".repeat(64),
+                transcriptSha256: "c".repeat(64),
+                visualManifestSha256: "d".repeat(64),
+              }
+            : undefined;
+        const claim = await systemCommand("mutate-evidence-stage", {
+          admission,
+          expectedGeneration: 1,
+          inputFingerprint: fingerprint,
+          intentId: admitted.id,
+          mutationId: String(ordinal + 4).repeat(64),
+          operation: {
+            _tag: "Claim",
+            dispatchId,
+            extractionContext,
+            stage: identity.stage,
+            startedAt: new Date(
+              acquiredAt.getTime() + ordinal + 1
+            ).toISOString(),
+          },
+        });
+        expect(claim.status, await claim.text()).toBe(200);
+        const failedAt = new Date(
+          acquiredAt.getTime() + identities.length + ordinal + 1
+        ).toISOString();
+        const failure = await systemCommand("mutate-evidence-stage", {
+          admission,
+          expectedGeneration: 1,
+          inputFingerprint: fingerprint,
+          intentId: admitted.id,
+          mutationId: String(ordinal + 7).repeat(64),
+          operation: {
+            _tag: "Fail",
+            completedAt: failedAt,
+            dispatchId,
+            failureCode: identity.failureCode,
+            recovery: "operator_review",
+            stage: identity.stage,
+          },
+        });
+        expect(failure.status, await failure.text()).toBe(200);
+        const stageResponse = await systemCommand("read-evidence-stage", {
+          admission,
+          expectedGeneration: 1,
+          intentId: admitted.id,
+          stage: identity.stage,
+        });
+        expect(stageResponse.status, await stageResponse.clone().text()).toBe(
+          200
+        );
+        const stage = await Schema.decodeUnknownPromise(
+          HouseholdReadEvidenceStageResult
+        )(await stageResponse.json());
+        expect(stage).toMatchObject({
+          dispatchId,
+          inputFingerprint: fingerprint,
+          outcome: "Failed",
+        });
+        if (stage === null) {
+          throw new Error("Expected household terminal stage authority.");
+        }
+        return { identity, stage };
+      })
+    );
+
+    expect(stages).toHaveLength(3);
+    await Promise.all(
+      stages.map(async ({ identity, stage }) => {
+        const checkpointResponse = await systemCommand(
+          "read-terminal-checkpoint",
+          {
+            admission,
+            expectedGeneration: 1,
+            intentId: admitted.id,
+            ownershipId: stage.dispatchId,
+            stage: identity.stage,
+          }
+        );
+        expect(
+          checkpointResponse.status,
+          await checkpointResponse.clone().text()
+        ).toBe(200);
+        const checkpoint = await Schema.decodeUnknownPromise(
+          HouseholdReadImportTerminalCheckpointResult
+        )(await checkpointResponse.json());
+        expect(checkpoint).toMatchObject({
+          executionGeneration: 1,
+          failureCode: identity.failureCode,
+          intentId: admitted.id,
+          ownershipId: stage.dispatchId,
+          stage: identity.stage,
+        });
+      })
+    );
+    const database = await getRuntime().getD1Database(
+      "MealPlannerDatabase",
+      "evidence-consumer"
+    );
+    const sharedCheckpointTables = await database
+      .prepare(
+        `SELECT name
+           FROM sqlite_master
+          WHERE name IN (
+              'import_recipe_executor_terminal_checkpoints',
+              'import_recipe_executor_terminal_checkpoints_immutable_delete',
+              'import_recipe_executor_terminal_checkpoints_immutable_update',
+              'pilot_provider_terminal_checkpoints',
+              'import_provider_terminal_checkpoints',
+              'pilot_provider_recipe_replay_values_guarded_delete',
+              'import_transcriptions',
+              'import_visual_evidence',
+              'import_carousel_evidence',
+              'import_recipe_extractions'
+            )
+          ORDER BY name`
+      )
+      .all();
+    expect(sharedCheckpointTables.results).toEqual([]);
+    const executionColumns = await database
+      .prepare("PRAGMA table_info(import_execution_runs)")
+      .all<{ readonly name: string }>();
+    expect(executionColumns.results.map(({ name }) => name)).not.toContain(
+      "evidence_references_json"
+    );
+    const executionTable = await database
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'import_execution_runs'"
+      )
+      .first<{ readonly sql: string }>();
+    expect(executionTable?.sql).not.toMatch(
+      /(?:acquired|transcribed|transcribing)/u
+    );
+  });
+
+  it.each([
+    { stage: "speech", videoId: "7000000000000000143" },
+    { stage: "visual", videoId: "7000000000000000144" },
+  ] as const)(
+    "replays the exact first $stage failure after a changed-clock lost response",
+    async ({ stage, videoId }) => {
+      const { admission, admitted } = await admitResolvedEvidenceImport({
+        label: `Household ${stage} Failure Replay`,
+        mutationId: (stage === "speech" ? "3" : "4").repeat(64),
+        videoId,
+      });
+      const acquisition = await systemCommand("commit-acquisition-evidence", {
+        admission,
+        expectedGeneration: 1,
+        intentId: admitted.id,
+        mutationId: (stage === "speech" ? "5" : "6").repeat(64),
+        result: evidenceRetentionResult({
+          acquiredAt: new Date(Date.now() + 60_000),
+          generation: 1,
+          intentId: admitted.id,
+        }),
+      });
+      expect(acquisition.status, await acquisition.clone().text()).toBe(200);
+      const dispatchId = `${stage}:${admitted.id}:1`;
+      const completedAt = new Date(Date.now() + 120_000).toISOString();
+      const command = {
+        acquisitionGeneration: 1,
+        admission,
+        canonicalSourceId: `tiktok:video:${videoId}`,
+        completedAt,
+        correlationId:
+          stage === "speech"
+            ? "00000000-0000-4000-8000-000000000197"
+            : "00000000-0000-4000-8000-000000000198",
+        dispatchId,
+        executionGeneration: 1,
+        inputFingerprint: (stage === "speech" ? "7" : "8").repeat(64),
+        intentId: admitted.id,
+        stage,
+      } as const;
+      const first = await providerTerminalAttemptCommand(command);
+      expect(first.status, await first.clone().text()).toBe(200);
+      const firstReceipt = await first.json();
+      expect(firstReceipt).toMatchObject({
+        completedAt,
+        failureCode: "outcome_unknown",
+        ownershipId: dispatchId,
+        stage,
+      });
+
+      const replay = await providerTerminalAttemptCommand({
+        ...command,
+        completedAt: new Date(Date.now() + 240_000).toISOString(),
+      });
+      expect(replay.status, await replay.clone().text()).toBe(200);
+      expect(await replay.json()).toEqual(firstReceipt);
+
+      const providerState = await getRuntime().getKVNamespace(
+        "EVIDENCE_EVENT_RESULTS",
+        "evidence-consumer"
+      );
+      await expect(
+        providerState.get(`provider-attempt-calls:${dispatchId}`)
+      ).resolves.toBe("1");
+      const stageResponse = await systemCommand("read-evidence-stage", {
+        admission,
+        expectedGeneration: 1,
+        intentId: admitted.id,
+        stage,
+      });
+      expect(stageResponse.status, await stageResponse.clone().text()).toBe(
+        200
+      );
+      await expect(stageResponse.json()).resolves.toMatchObject({
+        completedAt,
+        failureCode: "outcome_unknown",
+        outcome: "Failed",
+      });
+    },
+    30_000
+  );
+
+  it("replays household speech recovery after the external restart fails", async () => {
+    const fixture = await prepareUnknownSpeechTerminal({
+      label: "Household Speech Recovery Failure Replay",
+      mutationIds: ["1".repeat(64), "3".repeat(64), "4".repeat(64)],
+      videoId: "7000000000000000107",
+    });
+    const failedRestart = await terminalSettlementCommand(
+      fixture.recoveryCommand,
+      {
+        speechRestart: "fail",
+      }
+    );
+    expect(failedRestart.status).toBe(409);
+    const restartState = await getRuntime().getKVNamespace(
+      "EVIDENCE_EVENT_RESULTS",
+      "evidence-consumer"
+    );
+    await expect(
+      restartState.get(`speech-restart:${fixture.intentId}`)
+    ).resolves.toBeNull();
+    const preparedStage = await readSpeechStage(fixture);
+    expect(preparedStage).toMatchObject({
+      dispatchId: fixture.recoveryDispatchId,
+      inputFingerprint: fixture.inputFingerprint,
+      outcome: "Dispatching",
+    });
+
+    const staleGeneration = await terminalSettlementCommand({
+      ...fixture.recoveryCommand,
+      executionGeneration: 2,
+    });
+    expect(staleGeneration.status).toBe(409);
+    const staleOwnership = await terminalSettlementCommand({
+      ...fixture.recoveryCommand,
+      dispatchId: `${fixture.dispatchId}:stale`,
+    });
+    expect(staleOwnership.status).toBe(409);
+    expect(await readSpeechStage(fixture)).toEqual(preparedStage);
+
+    const replay = await terminalSettlementCommand(fixture.recoveryCommand);
+    expect(replay.status, await replay.clone().text()).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      acquisitionGeneration: fixture.generation,
+      importId: fixture.intentId,
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: fixture.recoveryDispatchId,
+    });
+    expect(await readSpeechStage(fixture)).toEqual(preparedStage);
+  }, 30_000);
+
+  it("replays household speech recovery after a completed restart response is lost", async () => {
+    const fixture = await prepareUnknownSpeechTerminal({
+      label: "Household Speech Recovery Lost Response",
+      mutationIds: ["5".repeat(64), "6".repeat(64), "7".repeat(64)],
+      videoId: "7000000000000000108",
+    });
+    const recoveredResponse = await terminalSettlementCommand(
+      fixture.recoveryCommand,
+      { speechRestart: "terminal-then-fail" }
+    );
+    expect(
+      recoveredResponse.status,
+      await recoveredResponse.clone().text()
+    ).toBe(200);
+    await expect(recoveredResponse.json()).resolves.toMatchObject({
+      acquisitionGeneration: fixture.generation,
+      importId: fixture.intentId,
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: fixture.recoveryDispatchId,
+    });
+    const restartState = await getRuntime().getKVNamespace(
+      "EVIDENCE_EVENT_RESULTS",
+      "evidence-consumer"
+    );
+    await expect(
+      restartState.get(`speech-restart:${fixture.intentId}`)
+    ).resolves.toBe("complete");
+    await expect(
+      restartState.get(`speech-restart-calls:${fixture.intentId}`)
+    ).resolves.toBe("1");
+    const preparedStage = await readSpeechStage(fixture);
+    expect(preparedStage).toMatchObject({
+      dispatchId: fixture.recoveryDispatchId,
+      outcome: "Failed",
+    });
+
+    const replay = await terminalSettlementCommand(fixture.recoveryCommand);
+    expect(replay.status, await replay.clone().text()).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      acquisitionGeneration: fixture.generation,
+      importId: fixture.intentId,
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: fixture.recoveryDispatchId,
+    });
+    expect(await readSpeechStage(fixture)).toEqual(preparedStage);
+    await expect(
+      restartState.get(`speech-restart-calls:${fixture.intentId}`)
+    ).resolves.toBe("1");
+  }, 30_000);
+
+  it("returns one exact household speech recovery across concurrent replays", async () => {
+    const fixture = await prepareUnknownSpeechTerminal({
+      label: "Household Concurrent Speech Recovery Replay",
+      mutationIds: ["8".repeat(64), "9".repeat(64), "a".repeat(64)],
+      videoId: "7000000000000000109",
+    });
+    const [first, second] = await Promise.all([
+      terminalSettlementCommand(fixture.recoveryCommand),
+      terminalSettlementCommand(fixture.recoveryCommand),
+    ]);
+    expect(first.status, await first.clone().text()).toBe(200);
+    expect(second.status, await second.clone().text()).toBe(200);
+    const firstResult = await first.json();
+    expect(await second.json()).toEqual(firstResult);
+    expect(firstResult).toMatchObject({
+      acquisitionGeneration: fixture.generation,
+      importId: fixture.intentId,
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: fixture.recoveryDispatchId,
+    });
+    expect(await readSpeechStage(fixture)).toMatchObject({
+      dispatchId: fixture.recoveryDispatchId,
+      inputFingerprint: fixture.inputFingerprint,
+      outcome: "Dispatching",
+    });
+    const restartState = await getRuntime().getKVNamespace(
+      "EVIDENCE_EVENT_RESULTS",
+      "evidence-consumer"
+    );
+    await expect(
+      restartState.get(`speech-restart-calls:${fixture.intentId}`)
+    ).resolves.toBe("1");
+  }, 30_000);
+
+  it("keeps execution generation one across acquisition attempt two and successive speech recovery", async () => {
+    const fixture = await prepareUnknownSpeechTerminal({
+      acquisitionGeneration: 2,
+      label: "Household Speech Recovery Execution",
+      mutationIds: ["b".repeat(64), "c".repeat(64), "d".repeat(64)],
+      videoId: "7000000000000000110",
+    });
+    const firstRecovery = await terminalSettlementCommand(
+      fixture.recoveryCommand
+    );
+    expect(firstRecovery.status, await firstRecovery.clone().text()).toBe(200);
+
+    const firstAttempt = await providerTerminalAttemptCommand({
+      acquisitionGeneration: fixture.acquisitionGeneration,
+      admission: fixture.admission,
+      canonicalSourceId: fixture.canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000189",
+      dispatchId: fixture.recoveryDispatchId,
+      executionGeneration: fixture.executionGeneration,
+      inputFingerprint: fixture.inputFingerprint,
+      intentId: fixture.intentId,
+      stage: "speech",
+    });
+    expect(firstAttempt.status, await firstAttempt.clone().text()).toBe(200);
+    await expect(firstAttempt.json()).resolves.toMatchObject({
+      failureCode: "outcome_unknown",
+      ownershipId: fixture.recoveryDispatchId,
+      stage: "speech",
+    });
+
+    await settleUnknownProviderBudget({
+      dispatchId: fixture.recoveryDispatchId,
+      importId: fixture.intentId,
+      providerStageId: "speech-transcription",
+    });
+    const settlement = await terminalSettlementCommand({
+      acquisitionGeneration: fixture.acquisitionGeneration,
+      dispatchId: fixture.recoveryDispatchId,
+      executionGeneration: fixture.executionGeneration,
+      importId: fixture.intentId,
+    });
+    expect(settlement.status, await settlement.clone().text()).toBe(200);
+    const secondRecovery = await terminalSettlementCommand({
+      acquisitionGeneration: fixture.acquisitionGeneration,
+      dispatchId: fixture.recoveryDispatchId,
+      executionGeneration: fixture.executionGeneration,
+      importId: fixture.intentId,
+      operation: "prepare_speech_recovery",
+    });
+    expect(secondRecovery.status, await secondRecovery.clone().text()).toBe(
+      200
+    );
+    const recoveryTwoDispatchId = `${fixture.dispatchId}:recovery:2`;
+    await expect(secondRecovery.json()).resolves.toMatchObject({
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: recoveryTwoDispatchId,
+    });
+
+    const secondAttempt = await providerTerminalAttemptCommand({
+      acquisitionGeneration: fixture.acquisitionGeneration,
+      admission: fixture.admission,
+      canonicalSourceId: fixture.canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000190",
+      dispatchId: recoveryTwoDispatchId,
+      executionGeneration: fixture.executionGeneration,
+      inputFingerprint: fixture.inputFingerprint,
+      intentId: fixture.intentId,
+      stage: "speech",
+    });
+    expect(secondAttempt.status, await secondAttempt.clone().text()).toBe(200);
+    await expect(secondAttempt.json()).resolves.toMatchObject({
+      failureCode: "outcome_unknown",
+      ownershipId: recoveryTwoDispatchId,
+      stage: "speech",
+    });
+  }, 30_000);
+
+  it("settles and executes two household visual recovery attempts after provider ambiguity", async () => {
+    const videoId = "7000000000000000111";
+    const { admission, admitted, organization } =
+      await admitResolvedEvidenceImport({
+        label: "Household Visual Recovery Execution",
+        mutationId: "e".repeat(64),
+        videoId,
+      });
+    const generation = 1;
+    const canonicalSourceId = `tiktok:video:${videoId}`;
+    const inputFingerprint = "f".repeat(64);
+    const dispatchId = `visual:${admitted.id}:${generation}`;
+    const database = await getRuntime().getD1Database(
+      "MealPlannerDatabase",
+      "evidence-consumer"
+    );
+    await database
+      .prepare(
+        `INSERT INTO import_evidence_routes (
+           import_id, execution_generation, organization_id, route_version
+         ) VALUES (?, 1, ?, 1)`
+      )
+      .bind(admitted.id, organization.id)
+      .run();
+
+    const originalAttempt = await providerTerminalAttemptCommand({
+      acquisitionGeneration: generation,
+      admission,
+      canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000191",
+      dispatchId,
+      executionGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(originalAttempt.status, await originalAttempt.clone().text()).toBe(
+      200
+    );
+    const originalReplay = await providerTerminalAttemptCommand({
+      acquisitionGeneration: generation,
+      admission,
+      canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000191",
+      dispatchId,
+      executionGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(originalReplay.status, await originalReplay.clone().text()).toBe(
+      200
+    );
+    const providerState = await getRuntime().getKVNamespace(
+      "EVIDENCE_EVENT_RESULTS",
+      "evidence-consumer"
+    );
+    await expect(
+      providerState.get(`provider-attempt-calls:${dispatchId}`)
+    ).resolves.toBe("1");
+    await settleUnknownProviderBudget({
+      dispatchId,
+      importId: admitted.id,
+      providerStageId: "visual-evidence",
+    });
+    const originalSettlement = await terminalSettlementCommand({
+      acquisitionGeneration: generation,
+      dispatchId,
+      executionGeneration: 1,
+      importId: admitted.id,
+      operation: "settle_visual_unknown",
+    });
+    expect(
+      originalSettlement.status,
+      await originalSettlement.clone().text()
+    ).toBe(200);
+    const firstRecoveryCommand = {
+      acquisitionGeneration: generation,
+      dispatchId,
+      executionGeneration: 1,
+      importId: admitted.id,
+      operation: "prepare_visual_recovery",
+    } as const;
+    const [firstRecovery, concurrentRecovery] = await Promise.all([
+      terminalSettlementCommand(firstRecoveryCommand),
+      terminalSettlementCommand(firstRecoveryCommand),
+    ]);
+    expect(firstRecovery.status, await firstRecovery.clone().text()).toBe(200);
+    expect(
+      concurrentRecovery.status,
+      await concurrentRecovery.clone().text()
+    ).toBe(200);
+    const recoveryOneDispatchId = `${dispatchId}:recovery:1`;
+    const firstRecoveryReceipt = await firstRecovery.json();
+    expect(await concurrentRecovery.json()).toEqual(firstRecoveryReceipt);
+    expect(firstRecoveryReceipt).toMatchObject({
+      outcome: "visual_recovery_activated",
+      recoveryDispatchId: recoveryOneDispatchId,
+    });
+
+    const [staleGeneration, staleDispatch, staleFingerprint] =
+      await Promise.all([
+        providerTerminalAttemptCommand({
+          acquisitionGeneration: generation,
+          admission,
+          canonicalSourceId,
+          correlationId: "00000000-0000-4000-8000-000000000192",
+          dispatchId: recoveryOneDispatchId,
+          executionGeneration: 2,
+          inputFingerprint,
+          intentId: admitted.id,
+          stage: "visual",
+        }),
+        providerTerminalAttemptCommand({
+          acquisitionGeneration: generation,
+          admission,
+          canonicalSourceId,
+          correlationId: "00000000-0000-4000-8000-000000000192",
+          dispatchId: `${recoveryOneDispatchId}:stale`,
+          executionGeneration: 1,
+          inputFingerprint,
+          intentId: admitted.id,
+          stage: "visual",
+        }),
+        providerTerminalAttemptCommand({
+          acquisitionGeneration: generation,
+          admission,
+          canonicalSourceId,
+          correlationId: "00000000-0000-4000-8000-000000000192",
+          dispatchId: recoveryOneDispatchId,
+          executionGeneration: 1,
+          inputFingerprint: "0".repeat(64),
+          intentId: admitted.id,
+          stage: "visual",
+        }),
+      ]);
+    expect(staleGeneration.status).toBe(409);
+    expect(staleDispatch.status).toBe(409);
+    expect(staleFingerprint.status).toBe(409);
+    const unchangedStageResponse = await systemCommand("read-evidence-stage", {
+      admission,
+      expectedGeneration: generation,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(
+      unchangedStageResponse.status,
+      await unchangedStageResponse.clone().text()
+    ).toBe(200);
+    await expect(unchangedStageResponse.json()).resolves.toMatchObject({
+      dispatchId: recoveryOneDispatchId,
+      inputFingerprint,
+      outcome: "Dispatching",
+    });
+
+    const firstAttempt = await providerTerminalAttemptCommand({
+      acquisitionGeneration: generation,
+      admission,
+      canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000192",
+      dispatchId: recoveryOneDispatchId,
+      executionGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(firstAttempt.status, await firstAttempt.clone().text()).toBe(200);
+    await expect(firstAttempt.json()).resolves.toMatchObject({
+      failureCode: "outcome_unknown",
+      ownershipId: recoveryOneDispatchId,
+      stage: "visual",
+    });
+    const firstAttemptReplay = await providerTerminalAttemptCommand({
+      acquisitionGeneration: generation,
+      admission,
+      canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000192",
+      dispatchId: recoveryOneDispatchId,
+      executionGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(
+      firstAttemptReplay.status,
+      await firstAttemptReplay.clone().text()
+    ).toBe(200);
+    await expect(
+      providerState.get(`provider-attempt-calls:${recoveryOneDispatchId}`)
+    ).resolves.toBe("1");
+    await settleUnknownProviderBudget({
+      dispatchId: recoveryOneDispatchId,
+      importId: admitted.id,
+      providerStageId: "visual-evidence",
+    });
+    const recoveryOneSettlement = await terminalSettlementCommand({
+      acquisitionGeneration: generation,
+      dispatchId: recoveryOneDispatchId,
+      executionGeneration: 1,
+      importId: admitted.id,
+      operation: "settle_visual_unknown",
+    });
+    expect(
+      recoveryOneSettlement.status,
+      await recoveryOneSettlement.clone().text()
+    ).toBe(200);
+    const secondRecovery = await terminalSettlementCommand({
+      acquisitionGeneration: generation,
+      dispatchId: recoveryOneDispatchId,
+      executionGeneration: 1,
+      importId: admitted.id,
+      operation: "prepare_visual_recovery",
+    });
+    expect(secondRecovery.status, await secondRecovery.clone().text()).toBe(
+      200
+    );
+    const recoveryTwoDispatchId = `${dispatchId}:recovery:2`;
+    await expect(secondRecovery.json()).resolves.toMatchObject({
+      outcome: "visual_recovery_activated",
+      recoveryDispatchId: recoveryTwoDispatchId,
+    });
+
+    const secondAttempt = await providerTerminalAttemptCommand({
+      acquisitionGeneration: generation,
+      admission,
+      canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000193",
+      dispatchId: recoveryTwoDispatchId,
+      executionGeneration: 1,
+      inputFingerprint,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(secondAttempt.status, await secondAttempt.clone().text()).toBe(200);
+    await expect(secondAttempt.json()).resolves.toMatchObject({
+      failureCode: "outcome_unknown",
+      ownershipId: recoveryTwoDispatchId,
+      stage: "visual",
+    });
+  }, 30_000);
+
+  it.each([
+    { mode: "absent", providerCalls: 1 },
+    { mode: "present", providerCalls: 0 },
+  ] as const)(
+    "runs the installed visual ResumeDispatch seam with R2 $mode",
+    async ({ mode, providerCalls }) => {
+      const videoId =
+        mode === "absent" ? "7000000000000000141" : "7000000000000000142";
+      const { admission, admitted } = await admitResolvedEvidenceImport({
+        canonicalSourceId: videoId,
+        label: `Installed Visual Resume ${mode}`,
+        mutationId: (mode === "absent" ? "1" : "2").repeat(64),
+        videoId,
+      });
+      const response = await visualResumeCommand({
+        acquisitionGeneration: 2,
+        admission,
+        canonicalSourceId: videoId,
+        importId: admitted.id,
+        mode,
+      });
+      expect(response.status, await response.clone().text()).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        first: { _tag: "VisualEvidenceReady" },
+        providerCalls,
+        replay: { _tag: "VisualEvidenceReady" },
+        stage: { outcome: "Completed" },
+      });
+    },
+    30_000
+  );
+
+  it.each([
+    { mode: "start_response_lost", suffix: "145" },
+    { mode: "record_response_lost", suffix: "146" },
+  ] as const)(
+    "persists the original trace before a $mode ambiguity without duplicate provider work",
+    async ({ mode, suffix }) => {
+      const cookie = await signUp(`Dispatch Trace ${mode}`);
+      const organization = await createOrganization(
+        `Dispatch Trace ${mode} Household`,
+        cookie
+      );
+      const correlationId = `00000000-0000-4000-8000-000000000${suffix}`;
+      const response = await dispatchTraceDurabilityCommand({
+        admission: {
+          actor: { _tag: "Member", actorId: "9".repeat(64) },
+          organizationId: organization.id,
+        },
+        mode,
+        sourceUrl: `https://www.tiktok.com/@mealplanner/video/7000000000000000${suffix}`,
+        trace: { correlationId },
+      });
+      expect(response.status, await response.clone().text()).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        originalTrace: { correlationId },
+        providerCalls: 1,
+        startCalls: 2,
+        workflowIdentity: expect.stringMatching(
+          /^import-acquisition:v1:[a-f\d]{64}$/u
+        ),
+      });
+    },
+    30_000
+  );
+
+  it("atomically prepares and persists a fenced household recipe recovery", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Household Recipe Recovery",
+      mutationId: "1".repeat(64),
+      videoId: "7000000000000000102",
+    });
+    const predecessorFingerprint = "2".repeat(64);
+    const evidenceFingerprint = "a".repeat(64);
+    const predecessorClaim = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint: predecessorFingerprint,
+      intentId: admitted.id,
+      mutationId: "4".repeat(64),
+      operation: {
+        _tag: "Claim",
+        dispatchId: predecessorFingerprint,
+        extractionContext: {
+          descriptor: {
+            model: "fixture-v1",
+            provider: "deterministic_fake",
+            version: "schema-1",
+          },
+          evidenceFingerprint,
+          sourceMediaSha256: "b".repeat(64),
+          transcriptSha256: "c".repeat(64),
+          visualManifestSha256: "d".repeat(64),
+        },
+        stage: "extraction",
+        startedAt: "2026-08-22T10:00:00.000Z",
+      },
+    });
+    expect(predecessorClaim.status, await predecessorClaim.clone().text()).toBe(
+      200
+    );
+    const predecessorFailure = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      inputFingerprint: predecessorFingerprint,
+      intentId: admitted.id,
+      mutationId: "5".repeat(64),
+      operation: {
+        _tag: "Fail",
+        completedAt: "2026-08-22T10:01:00.000Z",
+        dispatchId: predecessorFingerprint,
+        failureCode: "provider_error",
+        recovery: "operator_review",
+        stage: "extraction",
+      },
+    });
+    expect(
+      predecessorFailure.status,
+      await predecessorFailure.clone().text()
+    ).toBe(200);
+
+    const predecessorDispatchId = `recipe:${admitted.id}:1:${evidenceFingerprint}`;
+    const command = {
+      acquisitionAttemptGeneration: 1,
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      mutationId: "6".repeat(64),
+      predecessorDispatchId,
+      settlement: {
+        completedAt: new Date(Date.now() + 60_000).toISOString(),
+        dispatchId: predecessorDispatchId,
+        outcome: "settled_unknown",
+      },
+    } as const;
+    const prepared = await systemCommand("prepare-recipe-recovery", command);
+    expect(prepared.status, await prepared.clone().text()).toBe(200);
+    const preparedReceipt = await Schema.decodeUnknownPromise(
+      HouseholdPrepareRecipeRecoveryResult
+    )(await prepared.json());
+    expect(preparedReceipt).toMatchObject({
+      attempt: {
+        acquisitionGeneration: 1,
+        importId: admitted.id,
+        ordinal: 1,
+        predecessorDispatchId,
+        predecessorExtractionFingerprint: predecessorFingerprint,
+        rootDispatchId: predecessorDispatchId,
+        rootExtractionFingerprint: predecessorFingerprint,
+      },
+      outcome: "Prepared",
+      receiptVersion: 1,
+    });
+    const recoveryFingerprint =
+      preparedReceipt.attempt.currentExtractionFingerprint;
+
+    const stageResponse = await systemCommand("read-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      stage: "extraction",
+    });
+    expect(stageResponse.status, await stageResponse.clone().text()).toBe(200);
+    await expect(stageResponse.json()).resolves.toMatchObject({
+      dispatchId: recoveryFingerprint,
+      failureCode: null,
+      inputFingerprint: recoveryFingerprint,
+      outcome: "Dispatching",
+      result: null,
+    });
+
+    const replay = await systemCommand("prepare-recipe-recovery", command);
+    expect(replay.status, await replay.clone().text()).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(HouseholdPrepareRecipeRecoveryResult)(
+        await replay.json()
+      )
+    ).toEqual(preparedReceipt);
+
+    const stalePredecessor = await systemCommand("prepare-recipe-recovery", {
+      ...command,
+      mutationId: "8".repeat(64),
+      predecessorDispatchId: `${predecessorDispatchId}:stale`,
+      settlement: {
+        ...command.settlement,
+        dispatchId: `${predecessorDispatchId}:stale`,
+      },
+    });
+    expect(stalePredecessor.status, await stalePredecessor.clone().text()).toBe(
+      409
+    );
+
+    const conflictingReplay = await systemCommand("prepare-recipe-recovery", {
+      ...command,
+      settlement: {
+        ...command.settlement,
+        completedAt: new Date(Date.now() + 120_000).toISOString(),
+      },
+    });
+    expect(conflictingReplay.status).toBe(409);
+    const afterConflict = await systemCommand("read-evidence-stage", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      stage: "extraction",
+    });
+    expect(afterConflict.status, await afterConflict.clone().text()).toBe(200);
+    await expect(afterConflict.json()).resolves.toMatchObject({
+      dispatchId: recoveryFingerprint,
+      inputFingerprint: recoveryFingerprint,
+      outcome: "Dispatching",
+    });
+
+    await restartRuntime();
+    const persisted = await systemCommand("read-recipe-recovery-attempt", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      selector: { _tag: "Latest", rootDispatchId: predecessorDispatchId },
+    });
+    expect(persisted.status, await persisted.clone().text()).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(
+        HouseholdReadRecipeRecoveryAttemptResult
+      )(await persisted.json())
+    ).toEqual(preparedReceipt.attempt);
+  });
+
+  it("settles a clean household terminal failure and starts household-only recovery", async () => {
+    const { admission, admitted, organization } =
+      await admitResolvedEvidenceImport({
+        label: "Household Terminal Settlement",
+        mutationId: "a".repeat(64),
+        videoId: "7000000000000000103",
+      });
+    const generation = 1;
+    const extractionFingerprint = "b".repeat(64);
+    const evidenceFingerprint = "c".repeat(64);
+    const dispatchId = `recipe:${admitted.id}:${generation}:${evidenceFingerprint}`;
+    const claim = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: generation,
+      inputFingerprint: extractionFingerprint,
+      intentId: admitted.id,
+      mutationId: "d".repeat(64),
+      operation: {
+        _tag: "Claim",
+        dispatchId: extractionFingerprint,
+        extractionContext: {
+          descriptor: {
+            model: "fixture-v1",
+            provider: "deterministic_fake",
+            version: "schema-1",
+          },
+          evidenceFingerprint,
+          sourceMediaSha256: "e".repeat(64),
+          transcriptSha256: "f".repeat(64),
+          visualManifestSha256: "1".repeat(64),
+        },
+        stage: "extraction",
+        startedAt: "2026-08-23T07:55:00.000Z",
+      },
+    });
+    expect(claim.status, await claim.clone().text()).toBe(200);
+    const failed = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: generation,
+      inputFingerprint: extractionFingerprint,
+      intentId: admitted.id,
+      mutationId: "2".repeat(64),
+      operation: {
+        _tag: "Fail",
+        completedAt: "2026-08-23T07:56:00.000Z",
+        dispatchId: extractionFingerprint,
+        failureCode: "provider_error",
+        recovery: "operator_review",
+        stage: "extraction",
+      },
+    });
+    expect(failed.status, await failed.clone().text()).toBe(200);
+
+    const database = await getRuntime().getD1Database(
+      "MealPlannerDatabase",
+      "evidence-consumer"
+    );
+    await database
+      .prepare(
+        `INSERT INTO import_evidence_routes (
+           import_id, execution_generation, organization_id, route_version
+         ) VALUES (?, 1, ?, 1)`
+      )
+      .bind(admitted.id, organization.id)
+      .run();
+    const budget = makeD1PilotProviderBudgetRepository(
+      database,
+      "pilot-gaia-118"
+    );
+    const reservation = {
+      dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(dispatchId),
+      maximumCostMicroUsd: 100_000,
+      providerStageId: Schema.decodeUnknownSync(PilotBudgetProviderStageId)(
+        "recipe-extraction"
+      ),
+      runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
+        `gaia-118:${admitted.id}`
+      ),
+      timestamp: Schema.decodeUnknownSync(PilotBudgetTimestamp)(
+        "2026-08-23T07:55:00.000Z"
+      ),
+    };
+    await Effect.runPromise(budget.reserve(reservation));
+    await Effect.runPromise(budget.beginInvocation(reservation));
+    await Effect.runPromise(budget.settleUnknown(reservation));
+
+    const settlement = await terminalSettlementCommand({
+      acquisitionGeneration: generation,
+      dispatchId,
+      executionGeneration: generation,
+      importId: admitted.id,
+      operation: "settle_recipe_unknown",
+    });
+    expect(settlement.status, await settlement.clone().text()).toBe(200);
+    await expect(settlement.json()).resolves.toMatchObject({
+      acquisitionGeneration: generation,
+      conservativeChargeMicroUsd: 100_000,
+      dispatchId,
+      importId: admitted.id,
+      outcome: "recipe_terminal_unknown_cost_settled",
+    });
+
+    const preparationCommand = {
+      acquisitionGeneration: generation,
+      dispatchId,
+      executionGeneration: generation,
+      importId: admitted.id,
+      operation: "prepare_recipe_recovery",
+    } as const;
+    const prepared = await terminalSettlementCommand(preparationCommand);
+    expect(prepared.status, await prepared.clone().text()).toBe(200);
+    const preparedBody = (await prepared.json()) as {
+      readonly recoveryDispatchId: string;
+      readonly recoveryExtractionFingerprint: string;
+    };
+    expect(preparedBody).toMatchObject({
+      recoveryDispatchId: `${dispatchId}:recovery:1`,
+    });
+
+    const replay = await terminalSettlementCommand(preparationCommand);
+    expect(replay.status, await replay.clone().text()).toBe(200);
+    expect(await replay.json()).toEqual(preparedBody);
+    const attempt = await systemCommand("read-recipe-recovery-attempt", {
+      admission,
+      expectedGeneration: generation,
+      intentId: admitted.id,
+      selector: { _tag: "Latest", rootDispatchId: dispatchId },
+    });
+    expect(attempt.status, await attempt.clone().text()).toBe(200);
+    await expect(attempt.json()).resolves.toMatchObject({
+      currentDispatchId: `${dispatchId}:recovery:1`,
+      currentExtractionFingerprint: preparedBody.recoveryExtractionFingerprint,
+      ordinal: 1,
+      rootDispatchId: dispatchId,
+    });
+    const removedSharedAuthority = await database
+      .prepare(
+        `SELECT name FROM sqlite_master
+          WHERE name IN (
+              'import_recipe_executor_terminal_checkpoints',
+              'import_recipe_executor_terminal_checkpoints_immutable_delete',
+              'import_recipe_executor_terminal_checkpoints_immutable_update',
+              'pilot_provider_terminal_checkpoints',
+              'import_provider_terminal_checkpoints',
+              'pilot_provider_recipe_recovery_attempts'
+            )`
+      )
+      .all();
+    expect(removedSharedAuthority.results).toEqual([]);
   });
 });

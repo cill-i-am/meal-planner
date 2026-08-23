@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Effect, Option, Schema } from "effect";
 
+import type { ImportTraceContext } from "../../imports/import-observability.js";
 import {
   householdImportWorkflowAdmissions,
   householdOutbox,
@@ -72,7 +73,8 @@ export const makeImportWorkflowAdmissionRepository = (
   recordDispatch: (input: {
     readonly dispatchId: HouseholdDispatchId;
     readonly nowEpochMs: number;
-    readonly outcome: "started" | "unavailable";
+    readonly outcome: "prepared" | "started" | "unavailable";
+    readonly originalTrace: ImportTraceContext;
     readonly workflowIdentity: ImportWorkflowIdentity;
   }) =>
     database.transaction((transaction) =>
@@ -97,6 +99,32 @@ export const makeImportWorkflowAdmissionRepository = (
           admissionRow.workflowIdentity !== input.workflowIdentity
         ) {
           return yield* Effect.fail(persistenceFailure());
+        }
+        const originalTraceJson = JSON.stringify(input.originalTrace);
+        if (
+          admissionRow.originalTraceJson !== null &&
+          admissionRow.originalTraceJson !== originalTraceJson
+        ) {
+          return yield* Effect.fail(persistenceFailure());
+        }
+        if (admissionRow.originalTraceJson === null) {
+          yield* transaction
+            .update(householdImportWorkflowAdmissions)
+            .set({ originalTraceJson })
+            .where(
+              eq(householdImportWorkflowAdmissions.dispatchId, input.dispatchId)
+            )
+            .pipe(mapQueryFailure);
+        }
+        if (input.outcome === "prepared") {
+          return yield* Schema.decodeUnknownEffect(
+            HouseholdImportWorkflowDispatchView
+          )({
+            admission: yield* decodeResult(admissionRow.committedResultJson),
+            attempts: row.attempts,
+            exhaustedAtEpochMs: row.exhaustedAtEpochMs,
+            state: row.state,
+          }).pipe(Effect.mapError(persistenceFailure));
         }
         if (row.state === "dispatched" || row.state === "exhausted") {
           return yield* Schema.decodeUnknownEffect(
