@@ -13,6 +13,7 @@ Drafts remain inactive until explicitly approved.
 
 ## Product And Engineering
 
+- [Household product blueprint](product-blueprint/README.md)
 - [Household domain boundary](architecture/household-domain.md)
 - [Recipe import intent authority and lifecycle](architecture/recipe-import-intent.md)
 - [TikTok recipe-import feasibility report](tiktok-recipe-import-feasibility.html)
@@ -21,7 +22,9 @@ Drafts remain inactive until explicitly approved.
 - [Operator TikTok carousel bundle runbook](operator-carousel-import-runbook.md)
 - [Tesco API facade](../apps/api/README.md)
 
-Non-trivial software product intent, readiness, blockers, and delivery state
+The product blueprint owns accepted long-horizon household product direction.
+Current technical boundaries remain in the architecture documents, while
+non-trivial software product intent, readiness, blockers, and delivery state
 live in Linear and should be read there at action time.
 
 ## Agent Workflow
