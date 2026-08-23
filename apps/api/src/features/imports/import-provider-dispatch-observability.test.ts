@@ -4,11 +4,10 @@ import { TestClock } from "effect/testing";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  PilotBudgetRunId,
-  PilotBudgetTimestamp,
-  makePilotProviderBudgetRuntime,
-} from "../pilots/pilot-provider-budget.js";
-import type { PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.js";
+  ProviderAccountingRunId,
+  ProviderAccountingTimestamp,
+} from "../provider-accounting/provider-accounting.js";
+import type { ProviderAccountingRepository } from "../provider-accounting/provider-accounting.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import {
   ImportCorrelationId,
@@ -16,20 +15,20 @@ import {
 } from "./import-observability.js";
 import {
   failAfter,
-  makePilotProviderDispatchGate,
+  makeProviderDispatchGate,
 } from "./import-provider-kernel.js";
 
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a"
 );
-const now = Schema.decodeUnknownSync(PilotBudgetTimestamp)(
+const now = Schema.decodeUnknownSync(ProviderAccountingTimestamp)(
   "2026-07-27T20:00:00.000Z"
 );
-const runId = Schema.decodeUnknownSync(PilotBudgetRunId)(
-  "gaia-118:opaque-import"
+const runId = Schema.decodeUnknownSync(ProviderAccountingRunId)(
+  "recipe-import:opaque-import"
 );
 
-const repository: PilotProviderBudgetRepository = {
+const repository: ProviderAccountingRepository = {
   beginInvocation: (input) =>
     Effect.succeed({
       _tag: "Claimed",
@@ -157,12 +156,11 @@ describe("provider dispatch observability", () => {
 
   it("emits the closed poison event only after an unknown-cost settlement", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
-    const gate = makePilotProviderDispatchGate({
+    const gate = makeProviderDispatchGate({
       correlationId,
       now: () => now,
       repository,
       runId,
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
 
     await expect(
@@ -222,12 +220,11 @@ describe("provider dispatch observability", () => {
 
   it("correlates dispatch and durable settlement without provider data", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
-    const gate = makePilotProviderDispatchGate({
+    const gate = makeProviderDispatchGate({
       correlationId,
       now: () => now,
       repository,
       runId,
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
 
     await expect(
@@ -279,7 +276,7 @@ describe("provider dispatch observability", () => {
 
   it("does not report a dispatch when budget authority rejects before invocation", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
-    const rejectingRepository: PilotProviderBudgetRepository = {
+    const rejectingRepository: ProviderAccountingRepository = {
       ...repository,
       reserve: (input) =>
         Effect.succeed({
@@ -288,12 +285,11 @@ describe("provider dispatch observability", () => {
           state: "settled_unknown",
         }),
     };
-    const gate = makePilotProviderDispatchGate({
+    const gate = makeProviderDispatchGate({
       correlationId,
       now: () => now,
       repository: rejectingRepository,
       runId,
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
 
     await expect(
@@ -323,7 +319,7 @@ describe("provider dispatch observability", () => {
       _tag: "ProviderFailure",
       code: "provider_unavailable",
     } as const;
-    const trackingRepository: PilotProviderBudgetRepository = {
+    const trackingRepository: ProviderAccountingRepository = {
       ...repository,
       beginInvocation: (input) =>
         Effect.sync(() => {
@@ -347,12 +343,11 @@ describe("provider dispatch observability", () => {
           };
         }),
     };
-    const gate = makePilotProviderDispatchGate({
+    const gate = makeProviderDispatchGate({
       correlationId,
       now: () => now,
       repository: trackingRepository,
       runId,
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
 
     const exit = await Effect.runPromiseExit(
@@ -394,12 +389,11 @@ describe("provider dispatch observability", () => {
       _tag: "ProviderFailure",
       code: "provider_unavailable",
     } as const;
-    const gate = makePilotProviderDispatchGate({
+    const gate = makeProviderDispatchGate({
       correlationId,
       now: () => now,
       repository,
       runId,
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
 
     const exit = await Effect.runPromiseExit(
@@ -441,12 +435,11 @@ describe("provider dispatch observability", () => {
           : Effect.void,
       read: () => Effect.succeed([]),
     });
-    const gate = makePilotProviderDispatchGate({
+    const gate = makeProviderDispatchGate({
       correlationId,
       now: () => now,
       repository,
       runId,
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
 
     const exit = await Effect.runPromiseExit(

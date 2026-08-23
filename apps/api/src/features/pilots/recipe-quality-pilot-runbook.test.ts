@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import {
-  RecipeQualityPilotBudgetCapMicroUsd,
+  RecipeQualityProviderAccountingCapMicroUsd,
   RecipeQualityPilotStage,
 } from "./recipe-quality-pilot.js";
 
@@ -25,14 +25,15 @@ describe("real-source pilot operator documentation", () => {
       readFile(runbookUrl, "utf-8"),
       readFile(inputPackageUrl, "utf-8"),
     ]);
-    const exactBudget = formatMicroUsd(RecipeQualityPilotBudgetCapMicroUsd);
+    const exactBudget = formatMicroUsd(
+      RecipeQualityProviderAccountingCapMicroUsd
+    );
 
     for (const document of [runbook, inputPackage]) {
       expect(document).toContain(`\`${RecipeQualityPilotStage}\``);
       expect(document).toContain(`\`${exactBudget}\``);
     }
 
-    expect(runbook).not.toContain("pilot-gaia-117");
     expect(runbook).not.toContain("positive whole-number budget cap");
   });
 

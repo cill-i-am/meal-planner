@@ -67,7 +67,7 @@ const preflightInput = () => ({
     cleanupVerification: "required_after_run" as const,
     evidenceRetentionSeconds: EvidenceRetentionSeconds,
   },
-  stage: "pilot-gaia-118",
+  stage: "recipe-import",
 });
 
 type CostInput =
@@ -272,7 +272,10 @@ describe("recipe quality pilot readiness", () => {
         "authorization_missing",
       ],
       [(input) => (input.stage = "prod"), "stage_not_allowed"],
-      [(input) => (input.stage = "pilot-gaia-117"), "stage_not_allowed"],
+      [
+        (input) => (input.stage = "unsupported-accounting-scope"),
+        "stage_not_allowed",
+      ],
       [(input) => (input.stage = "development"), "stage_not_allowed"],
       [(input) => (input.budgetCapMicroUsd = 0), "budget_missing"],
       [(input) => (input.budgetCapMicroUsd = 9_999_999), "budget_exceeded"],

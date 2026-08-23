@@ -1,7 +1,7 @@
 import { RecipeImportActionId } from "@meal-planner/recipe-import-api";
 import { Effect, Option, Schema } from "effect";
 
-import type { PilotBudgetDispatchId } from "../pilots/pilot-provider-budget.js";
+import type { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
@@ -725,7 +725,7 @@ export const produceRecipeDraftForImport = Effect.fn(
   readonly now: () => ImportTimestamp;
   readonly recovery?: {
     readonly acquisitionGeneration: AcquisitionGeneration;
-    readonly dispatchId: PilotBudgetDispatchId;
+    readonly dispatchId: HouseholdDispatchId;
     readonly evidenceFingerprint: Sha256Hex;
     readonly extractionFingerprint: Sha256Hex;
     readonly sourceMediaSha256: Sha256Hex;

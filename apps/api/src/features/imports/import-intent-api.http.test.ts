@@ -25,13 +25,15 @@ import {
 } from "../auth/auth.principal.js";
 import { HealthRoutes } from "../health/health.routes.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
+import { ProviderAccountingRouteDefinitions } from "../provider-accounting/provider-accounting.routes.js";
+import { ProviderAccountingService } from "../provider-accounting/provider-accounting.service.js";
 import {
   RecipeImportHouseholdDomain,
   makeRecipeImportHttpApiLayer,
   makeRecipeImportWorkerHttpLayer,
 } from "./import-intent-api.http.js";
-import { ProviderTerminalSettlementService } from "./import-provider-terminal-settlement.js";
-import { ProviderTerminalSettlementRouteDefinitions } from "./import-provider-terminal-settlement.routes.js";
+import { ProviderRecoveryService } from "./import-provider-recovery.js";
+import { ProviderRecoveryRouteDefinitions } from "./import-provider-recovery.routes.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
 import { RecipeImportWorkflowDispatcher } from "./import-workflow-dispatcher.js";
 import type { RecipeImportWorkflowDispatcherService } from "./import-workflow-dispatcher.js";
@@ -257,8 +259,12 @@ const makeApp = async (options: MakeAppOptions = {}) => {
       )
     ),
     Layer.succeed(
-      ProviderTerminalSettlementService,
-      ProviderTerminalSettlementService.of({ settle: unused })
+      ProviderAccountingService,
+      ProviderAccountingService.of({ reconcile: unused })
+    ),
+    Layer.succeed(
+      ProviderRecoveryService,
+      ProviderRecoveryService.of({ recover: unused })
     )
   );
   const apiLayer =
@@ -633,7 +639,8 @@ describe("recipe import HttpApi boundary", () => {
       },
       operationalRoutes: [
         ...HealthRoutes,
-        ...ProviderTerminalSettlementRouteDefinitions,
+        ...ProviderAccountingRouteDefinitions,
+        ...ProviderRecoveryRouteDefinitions,
       ],
     });
     apps.push(app);
@@ -658,7 +665,7 @@ describe("recipe import HttpApi boundary", () => {
       ),
       app.handler(
         new Request(
-          "https://meal-planner.test/imports/operator-provider-terminal-settlement",
+          "https://meal-planner.test/imports/operator-provider-accounting",
           { method: "POST" }
         )
       ),
@@ -719,11 +726,17 @@ describe("recipe import HttpApi boundary", () => {
 
   it("keeps browser principals out of the system-only import surfaces", async () => {
     const app = await makeApp({
-      operationalRoutes: [...ProviderTerminalSettlementRouteDefinitions],
+      operationalRoutes: [
+        ...ProviderAccountingRouteDefinitions,
+        ...ProviderRecoveryRouteDefinitions,
+      ],
     });
     apps.push(app);
 
-    const systemOnlyPaths = ["/imports/operator-provider-terminal-settlement"];
+    const systemOnlyPaths = [
+      "/imports/operator-provider-accounting",
+      "/imports/operator-provider-recovery",
+    ];
     const [browserPrincipalResponses, systemPrincipalResponses] =
       await Promise.all([
         Promise.all(
@@ -739,9 +752,11 @@ describe("recipe import HttpApi boundary", () => {
       ]);
 
     expect(browserPrincipalResponses.map(({ status }) => status)).toEqual([
-      401,
+      401, 401,
     ]);
-    expect(systemPrincipalResponses.map(({ status }) => status)).toEqual([400]);
+    expect(systemPrincipalResponses.map(({ status }) => status)).toEqual([
+      400, 400,
+    ]);
   });
 
   it("keeps the security principal schema at the shared protocol boundary", () => {

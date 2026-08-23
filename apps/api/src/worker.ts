@@ -27,7 +27,7 @@ import {
   makeRecipeImportNotFoundHttpLayer,
 } from "./features/imports/import-intent-api.http.js";
 import { makeImportTraceContext } from "./features/imports/import-observability.js";
-import { ProviderTerminalSettlementRouteDefinitions } from "./features/imports/import-provider-terminal-settlement.routes.js";
+import { ProviderRecoveryRouteDefinitions } from "./features/imports/import-provider-recovery.routes.js";
 import { makeRecipeRecoveryWorkflowStarter } from "./features/imports/import-recipe-recovery.js";
 import ImportRecipeRecoveryWorkflow from "./features/imports/import-recipe-recovery.workflow.js";
 import {
@@ -40,17 +40,15 @@ import { ImportSystemAuthorizationConfig } from "./features/imports/import.auth.
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
-import {
-  PilotProviderBudgetRuntime,
-  makePilotProviderBudgetRuntime,
-} from "./features/pilots/pilot-provider-budget.js";
+import { ProviderAccountingRouteDefinitions } from "./features/provider-accounting/provider-accounting.routes.js";
 import { MealPlannerAuthDatabase } from "./infrastructure/meal-planner-auth-database.js";
 import { MealPlannerDatabase } from "./infrastructure/meal-planner-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
 
 const MealPlannerOperationalRoutes = [
   ...HealthRoutes,
-  ...ProviderTerminalSettlementRouteDefinitions,
+  ...ProviderAccountingRouteDefinitions,
+  ...ProviderRecoveryRouteDefinitions,
 ] as const;
 
 const currentIsoTimestamp = () => new Date().toISOString();
@@ -85,9 +83,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const authQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
       MealPlannerAuthDatabase
     );
-    const runtimeStage = yield* Config.string("ALCHEMY_STAGE");
-    const pilotProviderBudgetRuntime =
-      makePilotProviderBudgetRuntime(runtimeStage);
     const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
     const importRecipeRecoveryWorkflow = yield* ImportRecipeRecoveryWorkflow;
     const householdDomain = yield* Cloudflare.Workers.bindWorker(
@@ -156,7 +151,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
               Effect.asVoid
             ),
           runtimeContext,
-          runtimeStage,
           systemApiToken: importSystemApiToken,
           systemPrincipal: importSystemPrincipal,
           trace,
@@ -186,12 +180,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           )
         );
         return yield* withCurrentRequestCancellation(routeHandler);
-      }).pipe(
-        Effect.provideService(
-          PilotProviderBudgetRuntime,
-          pilotProviderBudgetRuntime
-        )
-      ),
+      }),
     };
   }).pipe(
     Effect.provide(

@@ -1,0 +1,868 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "507401db-05b9-47ad-a1ac-18272aaf5641",
+  "prevIds": ["de1dff97-4cd0-4b47-b43d-74c2e480b058"],
+  "ddl": [
+    {
+      "name": "import_evidence_routes",
+      "entityType": "tables"
+    },
+    {
+      "name": "import_execution_runs",
+      "entityType": "tables"
+    },
+    {
+      "name": "provider_accounting_budgets",
+      "entityType": "tables"
+    },
+    {
+      "name": "provider_accounting_conservative_settlements",
+      "entityType": "tables"
+    },
+    {
+      "name": "provider_accounting_dispatches",
+      "entityType": "tables"
+    },
+    {
+      "name": "provider_accounting_recipe_replay_values",
+      "entityType": "tables"
+    },
+    {
+      "name": "provider_accounting_reconciliations",
+      "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "execution_generation",
+      "entityType": "columns",
+      "table": "import_evidence_routes"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "table": "import_evidence_routes"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "import_evidence_routes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "route_version",
+      "entityType": "columns",
+      "table": "import_evidence_routes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "acquisition_generation",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "canonical_source_id",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "correlation_id",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recovery_action",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_kind",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_type",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status_code",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "import_execution_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "accounting_scope",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "10000000",
+      "generated": null,
+      "name": "budget_cap_micro_usd",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "settled_micro_usd",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "reserved_micro_usd",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'open'",
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "invoking_dispatch_id",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "poison_dispatch_id",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "actual_cost_was_unknown",
+      "entityType": "columns",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "authority",
+      "entityType": "columns",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "conservative_charge_micro_usd",
+      "entityType": "columns",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "accounting_scope",
+      "entityType": "columns",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "accounting_scope",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "run_id",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provider_stage_id",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "maximum_cost_micro_usd",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "actual_cost_micro_usd",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'reserved'",
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "invocation_started_at",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "evidence_fingerprint",
+      "entityType": "columns",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "accounting_scope",
+      "entityType": "columns",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value_json",
+      "entityType": "columns",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value_sha256",
+      "entityType": "columns",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "accounting_scope",
+      "entityType": "columns",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "conservative_charge_micro_usd",
+      "entityType": "columns",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "actual_cost_was_unknown",
+      "entityType": "columns",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "authority",
+      "entityType": "columns",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "columns": ["accounting_scope", "dispatch_id"],
+      "tableTo": "provider_accounting_dispatches",
+      "columnsTo": ["accounting_scope", "dispatch_id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "nameExplicit": true,
+      "name": "provider_accounting_conservative_settlements_dispatch_fk",
+      "entityType": "fks",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "columns": ["accounting_scope"],
+      "tableTo": "provider_accounting_budgets",
+      "columnsTo": ["accounting_scope"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "nameExplicit": true,
+      "name": "provider_accounting_dispatches_budget_fk",
+      "entityType": "fks",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "columns": ["accounting_scope", "dispatch_id"],
+      "tableTo": "provider_accounting_conservative_settlements",
+      "columnsTo": ["accounting_scope", "dispatch_id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "nameExplicit": true,
+      "name": "provider_accounting_recipe_replay_values_audit_fk",
+      "entityType": "fks",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "columns": ["accounting_scope", "dispatch_id"],
+      "tableTo": "provider_accounting_dispatches",
+      "columnsTo": ["accounting_scope", "dispatch_id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "nameExplicit": true,
+      "name": "provider_accounting_reconciliations_dispatch_fk",
+      "entityType": "fks",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "import_execution_runs_pk",
+      "entityType": "pks",
+      "table": "import_execution_runs"
+    },
+    {
+      "columns": ["accounting_scope", "dispatch_id"],
+      "nameExplicit": false,
+      "name": "provider_accounting_conservative_settlements_pk",
+      "entityType": "pks",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "columns": ["accounting_scope", "dispatch_id"],
+      "nameExplicit": false,
+      "name": "provider_accounting_dispatches_pk",
+      "entityType": "pks",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "columns": ["accounting_scope", "dispatch_id"],
+      "nameExplicit": false,
+      "name": "provider_accounting_recipe_replay_values_pk",
+      "entityType": "pks",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "columns": ["accounting_scope", "dispatch_id"],
+      "nameExplicit": false,
+      "name": "provider_accounting_reconciliations_pk",
+      "entityType": "pks",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "columns": ["import_id"],
+      "nameExplicit": false,
+      "name": "import_evidence_routes_pk",
+      "table": "import_evidence_routes",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["accounting_scope"],
+      "nameExplicit": false,
+      "name": "provider_accounting_budgets_pk",
+      "table": "provider_accounting_budgets",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "id",
+          "isExpression": false
+        },
+        {
+          "value": "acquisition_generation",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "import_execution_runs_id_generation_unique",
+      "entityType": "indexes",
+      "table": "import_execution_runs"
+    },
+    {
+      "columns": [
+        {
+          "value": "accounting_scope",
+          "isExpression": false
+        },
+        {
+          "value": "run_id",
+          "isExpression": false
+        },
+        {
+          "value": "dispatch_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "provider_accounting_dispatches_run_idx",
+      "entityType": "indexes",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "value": "\"route_version\" = 1",
+      "name": "import_evidence_routes_version_check",
+      "entityType": "checks",
+      "table": "import_evidence_routes"
+    },
+    {
+      "value": "typeof(\"acquisition_generation\") = 'integer' AND \"acquisition_generation\" >= 0 AND \"acquisition_generation\" <= 9007199254740991",
+      "name": "import_execution_runs_acquisition_generation_check",
+      "entityType": "checks",
+      "table": "import_execution_runs"
+    },
+    {
+      "value": "(\n        \"status\" = 'queued'\n        AND \"status_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n      ) OR (\n        \"status\" = 'acquiring'\n        AND \"status_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'private_or_unavailable'\n        AND \"recovery_action\" = 'check_source_visibility'\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'acquisition_temporarily_unavailable'\n        AND \"recovery_action\" = 'retry_later'\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'invalid_or_unsupported_media'\n        AND \"recovery_action\" = 'submit_supported_public_video'\n      ) OR (\n        \"status\" = 'unsupported'\n        AND \"status_code\" = 'unsupported_post_type'\n        AND \"recovery_action\" = 'submit_supported_public_video'\n      )",
+      "name": "import_execution_runs_status_details_check",
+      "entityType": "checks",
+      "table": "import_execution_runs"
+    },
+    {
+      "value": "\"accounting_scope\" = 'recipe-import'",
+      "name": "provider_accounting_budgets_scope_check",
+      "entityType": "checks",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "value": "typeof(\"budget_cap_micro_usd\") = 'integer' AND \"budget_cap_micro_usd\" = 10000000",
+      "name": "provider_accounting_budgets_cap_check",
+      "entityType": "checks",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "value": "typeof(\"settled_micro_usd\") = 'integer' AND \"settled_micro_usd\" >= 0 AND typeof(\"reserved_micro_usd\") = 'integer' AND \"reserved_micro_usd\" >= 0 AND \"settled_micro_usd\" + \"reserved_micro_usd\" <= \"budget_cap_micro_usd\"",
+      "name": "provider_accounting_budgets_amounts_check",
+      "entityType": "checks",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "value": "(\"state\" = 'open' AND \"invoking_dispatch_id\" IS NULL AND \"poison_dispatch_id\" IS NULL) OR (\"state\" = 'invoking' AND \"invoking_dispatch_id\" IS NOT NULL AND \"poison_dispatch_id\" IS NULL) OR (\"state\" = 'poisoned' AND \"invoking_dispatch_id\" IS NULL AND \"poison_dispatch_id\" IS NOT NULL)",
+      "name": "provider_accounting_budgets_state_check",
+      "entityType": "checks",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "value": "\"accounting_scope\" = 'recipe-import'",
+      "name": "provider_accounting_conservative_settlements_scope_check",
+      "entityType": "checks",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "value": "\"conservative_charge_micro_usd\" = 100000",
+      "name": "provider_accounting_conservative_settlements_charge_check",
+      "entityType": "checks",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "value": "\"actual_cost_was_unknown\" = 1",
+      "name": "provider_accounting_conservative_settlements_unknown_check",
+      "entityType": "checks",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "value": "\"authority\" = 'schema_valid_provider_response'",
+      "name": "provider_accounting_conservative_settlements_authority_check",
+      "entityType": "checks",
+      "table": "provider_accounting_conservative_settlements"
+    },
+    {
+      "value": "\"accounting_scope\" = 'recipe-import'",
+      "name": "provider_accounting_dispatches_scope_check",
+      "entityType": "checks",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "value": "typeof(\"maximum_cost_micro_usd\") = 'integer' AND \"maximum_cost_micro_usd\" > 0 AND \"maximum_cost_micro_usd\" <= 10000000",
+      "name": "provider_accounting_dispatches_maximum_check",
+      "entityType": "checks",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "value": "(\"state\" = 'reserved' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_started_at\" IS NULL AND \"completed_at\" IS NULL) OR (\"state\" = 'invoking' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_started_at\" IS NOT NULL AND \"completed_at\" IS NULL) OR (\"state\" = 'released' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_started_at\" IS NULL AND \"completed_at\" IS NOT NULL) OR (\"state\" = 'settled_known' AND typeof(\"actual_cost_micro_usd\") = 'integer' AND \"actual_cost_micro_usd\" >= 0 AND \"actual_cost_micro_usd\" <= \"maximum_cost_micro_usd\" AND \"invocation_started_at\" IS NOT NULL AND \"completed_at\" IS NOT NULL) OR (\"state\" = 'settled_unknown' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_started_at\" IS NOT NULL AND \"completed_at\" IS NOT NULL) OR (\"state\" = 'settled_conservative' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_started_at\" IS NOT NULL AND \"completed_at\" IS NOT NULL)",
+      "name": "provider_accounting_dispatches_shape_check",
+      "entityType": "checks",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "value": "\"accounting_scope\" = 'recipe-import'",
+      "name": "provider_accounting_recipe_replay_values_scope_check",
+      "entityType": "checks",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "value": "\"dispatch_id\" = 'recipe:' || \"import_id\" || ':' || \"generation\" || ':' || \"evidence_fingerprint\" OR \"dispatch_id\" = 'recipe:' || \"import_id\" || ':' || \"generation\" || ':' || \"evidence_fingerprint\" || ':recovery:1' OR \"dispatch_id\" = 'recipe:' || \"import_id\" || ':' || \"generation\" || ':' || \"evidence_fingerprint\" || ':recovery:2' OR \"dispatch_id\" = 'recipe:' || \"import_id\" || ':' || \"generation\" || ':' || \"evidence_fingerprint\" || ':recovery:3' OR \"dispatch_id\" = 'recipe:' || \"import_id\" || ':' || \"generation\" || ':' || \"evidence_fingerprint\" || ':recovery:4' OR \"dispatch_id\" = 'recipe:' || \"import_id\" || ':' || \"generation\" || ':' || \"evidence_fingerprint\" || ':recovery:5' OR \"dispatch_id\" = 'recipe:' || \"import_id\" || ':' || \"generation\" || ':' || \"evidence_fingerprint\" || ':recovery:6' OR \"dispatch_id\" = 'recipe:' || \"import_id\" || ':' || \"generation\" || ':' || \"evidence_fingerprint\" || ':recovery:7' OR \"dispatch_id\" = 'recipe:' || \"import_id\" || ':' || \"generation\" || ':' || \"evidence_fingerprint\" || ':recovery:8'",
+      "name": "provider_accounting_recipe_replay_values_dispatch_check",
+      "entityType": "checks",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "value": "length(\"import_id\") BETWEEN 1 AND 128 AND \"generation\" >= 1 AND length(\"evidence_fingerprint\") = 64 AND \"evidence_fingerprint\" NOT GLOB '*[^0-9a-f]*'",
+      "name": "provider_accounting_recipe_replay_values_identity_check",
+      "entityType": "checks",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "value": "length(CAST(\"value_json\" AS BLOB)) BETWEEN 1 AND 262144 AND json_valid(\"value_json\") AND length(\"value_sha256\") = 64 AND \"value_sha256\" NOT GLOB '*[^0-9a-f]*'",
+      "name": "provider_accounting_recipe_replay_values_value_check",
+      "entityType": "checks",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "value": "\"expires_at\" = strftime('%Y-%m-%dT%H:%M:%fZ', \"created_at\", '+7 days')",
+      "name": "provider_accounting_recipe_replay_values_lifecycle_check",
+      "entityType": "checks",
+      "table": "provider_accounting_recipe_replay_values"
+    },
+    {
+      "value": "\"accounting_scope\" = 'recipe-import'",
+      "name": "provider_accounting_reconciliations_scope_check",
+      "entityType": "checks",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "value": "typeof(\"conservative_charge_micro_usd\") = 'integer' AND \"conservative_charge_micro_usd\" > 0 AND \"conservative_charge_micro_usd\" <= 10000000",
+      "name": "provider_accounting_reconciliations_charge_check",
+      "entityType": "checks",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "value": "\"actual_cost_was_unknown\" = 1",
+      "name": "provider_accounting_reconciliations_unknown_check",
+      "entityType": "checks",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "value": "\"authority\" = 'authenticated_operator'",
+      "name": "provider_accounting_reconciliations_authority_check",
+      "entityType": "checks",
+      "table": "provider_accounting_reconciliations"
+    }
+  ],
+  "renames": []
+}

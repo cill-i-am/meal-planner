@@ -432,17 +432,12 @@ describe("household foundation structural boundaries", () => {
   });
 
   it("activates both speech and visual recovery through the production Workflow seam", async () => {
-    const [settlement, workflow] = await Promise.all([
-      read(
-        path.join(
-          apiFeaturesRoot,
-          "imports/import-provider-terminal-settlement.ts"
-        )
-      ),
+    const [recovery, workflow] = await Promise.all([
+      read(path.join(apiFeaturesRoot, "imports/import-provider-recovery.ts")),
       read(path.join(apiFeaturesRoot, "imports/import.workflow.ts")),
     ]);
-    expect(settlement).toContain("restartFromVisual");
-    expect(settlement).toMatch(
+    expect(recovery).toContain("restartFromVisual");
+    expect(recovery).toMatch(
       /recovery\.requiresWorkflowActivation[\s\S]*restartFromSpeech[\s\S]*restartFromVisual/u
     );
     expect(workflow).toContain("restartFromVisual");

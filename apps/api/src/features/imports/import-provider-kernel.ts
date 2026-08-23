@@ -10,20 +10,19 @@ import type { LanguageModel, Prompt } from "effect/unstable/ai";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
 import {
-  PilotBudgetDispatchId,
-  PilotBudgetProviderStageId,
-  PilotProviderBudgetRuntime,
-  isPilotProviderKnownZeroCostFailure,
-  pilotProviderKnownZeroCostFailure,
-  runPilotProviderDispatch,
-} from "../pilots/pilot-provider-budget.js";
+  ProviderAccountingDispatchId,
+  ProviderAccountingProviderStageId,
+  isProviderKnownZeroCostFailure,
+  providerKnownZeroCostFailure,
+  runAccountedProviderDispatch,
+} from "../provider-accounting/provider-accounting.js";
 import type {
-  PilotBudgetRunId,
-  PilotBudgetTimestamp,
-  PilotProviderConservativeReplayValue,
-  PilotProviderKnownZeroCostFailure,
-  PilotProviderBudgetRepository,
-} from "../pilots/pilot-provider-budget.js";
+  ProviderAccountingRunId,
+  ProviderAccountingTimestamp,
+  ProviderAccountingConservativeReplayValue,
+  ProviderKnownZeroCostFailure,
+  ProviderAccountingRepository,
+} from "../provider-accounting/provider-accounting.js";
 import {
   decodeForcedToolResponseResult,
   structurallyEqualJson,
@@ -70,11 +69,11 @@ export const isSafeProviderFailureCode = (
 export interface ProviderDispatchRequest<A, E> {
   readonly conservativeReplay?: {
     readonly decode: (
-      replay: PilotProviderConservativeReplayValue
+      replay: ProviderAccountingConservativeReplayValue
     ) => Effect.Effect<A, E>;
     readonly encode: (
       value: A
-    ) => Effect.Effect<PilotProviderConservativeReplayValue, E>;
+    ) => Effect.Effect<ProviderAccountingConservativeReplayValue, E>;
   };
   readonly dispatchId: string;
   readonly invoke: Effect.Effect<
@@ -113,12 +112,11 @@ const retryDispatchId = (base: string, attempt: number) =>
   attempt === 1 ? base : `${base}:attempt:${attempt}`;
 
 /** Compose the GAIA-161 reserve/claim/settle authority for adapter factories. */
-export const makePilotProviderDispatchGate = (input: {
+export const makeProviderDispatchGate = (input: {
   readonly correlationId: ImportCorrelationId;
-  readonly now: () => PilotBudgetTimestamp;
-  readonly repository: PilotProviderBudgetRepository;
-  readonly runId: PilotBudgetRunId;
-  readonly runtime: PilotProviderBudgetRuntime;
+  readonly now: () => ProviderAccountingTimestamp;
+  readonly repository: ProviderAccountingRepository;
+  readonly runId: ProviderAccountingRunId;
 }): ProviderDispatchGate => ({
   run: <A, E>(request: ProviderDispatchRequest<A, E>) =>
     Effect.gen(function* runBudgetedAdapterDispatch() {
@@ -131,13 +129,13 @@ export const makePilotProviderDispatchGate = (input: {
           : 1;
       const timestamp = input.now();
       const reservation = {
-        dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+        dispatchId: Schema.decodeUnknownSync(ProviderAccountingDispatchId)(
           retryDispatchId(request.dispatchId, attempt)
         ),
         maximumCostMicroUsd: request.maximumCostMicroUsd,
-        providerStageId: Schema.decodeUnknownSync(PilotBudgetProviderStageId)(
-          request.providerStageId
-        ),
+        providerStageId: Schema.decodeUnknownSync(
+          ProviderAccountingProviderStageId
+        )(request.providerStageId),
         runId: input.runId,
         timestamp,
       };
@@ -185,14 +183,13 @@ export const makePilotProviderDispatchGate = (input: {
               ...replayDispatch,
               previousAttempt: {
                 ...reservation,
-                dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
-                  retryDispatchId(request.dispatchId, attempt - 1)
-                ),
+                dispatchId: Schema.decodeUnknownSync(
+                  ProviderAccountingDispatchId
+                )(retryDispatchId(request.dispatchId, attempt - 1)),
               },
             };
-      return yield* runPilotProviderDispatch(dispatch);
+      return yield* runAccountedProviderDispatch(dispatch);
     }).pipe(
-      Effect.provideService(PilotProviderBudgetRuntime, input.runtime),
       Effect.flatMap((result) => {
         switch (result._tag) {
           case "Completed":
@@ -215,7 +212,7 @@ export const makePilotProviderDispatchGate = (input: {
       Effect.mapError((error) => {
         if (
           Schema.is(
-            Schema.Struct({ _tag: Schema.Literal("PilotProviderBudgetError") })
+            Schema.Struct({ _tag: Schema.Literal("ProviderAccountingError") })
           )(error)
         ) {
           return dispatchRejected;
@@ -377,7 +374,7 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     readonly value: S["Type"];
   },
   | SafeProviderFailureCode
-  | PilotProviderKnownZeroCostFailure<SafeProviderFailureCode>,
+  | ProviderKnownZeroCostFailure<SafeProviderFailureCode>,
   S["DecodingServices"]
 > => {
   const tool = Tool.dynamic(input.name, {
@@ -456,9 +453,7 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
           ProviderKnownZeroSetupFailureMessage
         )
       ) {
-        return pilotProviderKnownZeroCostFailure(
-          "provider_unavailable" as const
-        );
+        return providerKnownZeroCostFailure("provider_unavailable" as const);
       }
       return safeFailureCode(failure);
     }),
@@ -1094,7 +1089,7 @@ export const noLogWorkersAiClient = (
             try {
               response = await runWorkersAi(ai, String(model), body, gatewayId);
             } catch (error) {
-              if (isPilotProviderKnownZeroCostFailure(error)) {
+              if (isProviderKnownZeroCostFailure(error)) {
                 // Alchemy intentionally redacts the original thrown value into
                 // an AiError description. Preserve only this internal,
                 // payload-free authority marker so the outer budget gate can
@@ -1139,7 +1134,7 @@ export const makeWorkersAiTransport = (
       try {
         outcome = { _tag: "Success", response: await invoke() };
       } catch (error) {
-        outcome = isPilotProviderKnownZeroCostFailure(error)
+        outcome = isProviderKnownZeroCostFailure(error)
           ? { _tag: "KnownZeroCostFailure" }
           : { _tag: "TransportUnavailable" };
       }

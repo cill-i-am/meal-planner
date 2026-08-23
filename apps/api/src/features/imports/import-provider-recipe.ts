@@ -2,9 +2,9 @@ import { Effect, Option, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 
 import {
-  isPilotProviderKnownZeroCostFailure,
-  pilotProviderKnownZeroCostFailure,
-} from "../pilots/pilot-provider-budget.js";
+  isProviderKnownZeroCostFailure,
+  providerKnownZeroCostFailure,
+} from "../provider-accounting/provider-accounting.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import {
   ImportObservabilityTraceStore,
@@ -396,9 +396,7 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
                 )
               )) === ProviderKnownZeroSetupFailureMessage
         ) {
-          return pilotProviderKnownZeroCostFailure(
-            "provider_unavailable" as const
-          );
+          return providerKnownZeroCostFailure("provider_unavailable" as const);
         }
         return safeFailureCode(
           providerFailureFromEvidence(
@@ -509,7 +507,7 @@ export const makeInstalledRecipeExtractor = Effect.fn(
             // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
             (error): RecipeExtractionFailure => {
               const providerError =
-                isPilotProviderKnownZeroCostFailure(error) &&
+                isProviderKnownZeroCostFailure(error) &&
                 isSafeProviderFailureCode(error.error)
                   ? error.error
                   : undefined;

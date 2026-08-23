@@ -175,11 +175,6 @@ export const prepareHouseholdRecipeRecovery = (input: {
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly predecessorDispatchId: RecipeRecoveryAttempt["predecessorDispatchId"];
-  readonly settlement: {
-    readonly completedAt: RecipeRecoveryAttempt["createdAt"];
-    readonly dispatchId: RecipeRecoveryAttempt["predecessorDispatchId"];
-    readonly outcome: "settled_unknown";
-  };
 }) =>
   Effect.gen(function* prepareHouseholdRecipeRecoveryAttempt() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
@@ -201,7 +196,6 @@ export const prepareHouseholdRecipeRecovery = (input: {
       intentId: authority.intentId,
       mutationId,
       predecessorDispatchId: input.predecessorDispatchId,
-      settlement: input.settlement,
     }).pipe(Effect.mapError(() => importTransitionRejected()));
     const receipt = yield* input.householdDomain
       .prepareRecipeRecovery(command)
@@ -387,19 +381,11 @@ export const prepareHouseholdProviderRecovery = (input: {
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly originalDispatchId: string;
-  readonly settlement: {
-    readonly completedAt: RecipeRecoveryAttempt["createdAt"];
-    readonly dispatchId: string;
-    readonly outcome: "settled_unknown";
-  };
   readonly stage: "speech" | "visual";
 }) =>
   Effect.gen(function* prepareHouseholdEvidenceStageRecovery() {
     const recoveryDispatchId = nextRecoveryDispatchId(input.originalDispatchId);
-    if (
-      recoveryDispatchId === null ||
-      input.settlement.dispatchId !== input.originalDispatchId
-    ) {
+    if (recoveryDispatchId === null) {
       return yield* Effect.fail(importTransitionRejected());
     }
     const authority = yield* resolveHouseholdRecoveryAuthority({
@@ -452,9 +438,7 @@ export const prepareHouseholdProviderRecovery = (input: {
         dispatchId: recoveryDispatchId,
         predecessorDispatchId: input.originalDispatchId,
         predecessorInputFingerprint: checkpoint.inputFingerprint,
-        settlement: input.settlement,
         stage: input.stage,
-        startedAt: input.settlement.completedAt,
       },
     }).pipe(Effect.mapError(() => importTransitionRejected()));
     yield* input.householdDomain.mutateEvidenceStage(command).pipe(

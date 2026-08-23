@@ -214,8 +214,6 @@ const validateRecoveryStageMutationStructure = (
 ) =>
   input.operation._tag !== "PrepareRecovery" ||
   (input.inputFingerprint === input.operation.predecessorInputFingerprint &&
-    input.operation.settlement.dispatchId ===
-      input.operation.predecessorDispatchId &&
     input.operation.dispatchId !== input.operation.predecessorDispatchId)
     ? Effect.void
     : Effect.fail(failure("invalid_input"));
@@ -327,14 +325,11 @@ const requireRecoveryStage = (stage: RecoveryStageRow | undefined) =>
 
 const validateRecoveryCheckpoint = (
   checkpoint: TerminalCheckpointRow | undefined,
-  stage: RecoveryStageRow,
-  settlementCompletedAt: HouseholdPrepareRecipeRecoveryInputType["settlement"]["completedAt"]
+  stage: RecoveryStageRow
 ) =>
   checkpoint !== undefined &&
   checkpoint.failureCode === stage.failureCode &&
-  checkpoint.inputFingerprint === stage.inputFingerprint &&
-  DateTime.toEpochMillis(settlementCompletedAt) >=
-    Date.parse(checkpoint.completedAt)
+  checkpoint.inputFingerprint === stage.inputFingerprint
     ? Effect.succeed(checkpoint)
     : Effect.fail(failure("illegal_transition"));
 
@@ -1083,16 +1078,11 @@ export const makeHouseholdEvidenceRepository = (
                 if (
                   checkpoint === undefined ||
                   checkpoint.failureCode !== current.failureCode ||
-                  checkpoint.inputFingerprint !== current.inputFingerprint ||
-                  DateTime.toEpochMillis(
-                    input.operation.settlement.completedAt
-                  ) < Date.parse(checkpoint.completedAt)
+                  checkpoint.inputFingerprint !== current.inputFingerprint
                 ) {
                   return yield* Effect.fail(failure("illegal_transition"));
                 }
-                const recoveryStartedAt = DateTime.formatIso(
-                  input.operation.startedAt
-                );
+                const recoveryStartedAt = checkpoint.completedAt;
                 yield* transaction
                   .update(householdEvidenceStageExecutions)
                   .set({
@@ -1325,7 +1315,6 @@ export const makeHouseholdEvidenceRepository = (
         intentId: encodedInput.intentId,
         operation: "prepare-recipe-recovery",
         predecessorDispatchId: encodedInput.predecessorDispatchId,
-        settlement: encodedInput.settlement,
         version: 1,
       });
       const nowEpochMs = yield* Clock.currentTimeMillis;
@@ -1403,10 +1392,6 @@ export const makeHouseholdEvidenceRepository = (
             if (Option.isSome(replay)) {
               return replay.value;
             }
-            if (input.settlement.dispatchId !== input.predecessorDispatchId) {
-              return yield* Effect.fail(failure("invalid_input"));
-            }
-
             const [stage] = yield* transaction
               .select()
               .from(householdEvidenceStageExecutions)
@@ -1474,8 +1459,7 @@ export const makeHouseholdEvidenceRepository = (
               .pipe(mapPersistence);
             const validCheckpoint = yield* validateRecoveryCheckpoint(
               checkpoint,
-              validStage,
-              input.settlement.completedAt
+              validStage
             );
             const {
               ordinal,

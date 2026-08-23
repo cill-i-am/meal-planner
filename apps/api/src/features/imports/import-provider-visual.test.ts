@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
-import { isPilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
+import { isProviderKnownZeroCostFailure } from "../provider-accounting/provider-accounting.js";
 import {
   makeRawProviderTransports,
   makeProviderTransports,
@@ -89,7 +89,7 @@ describe("installed visual provider adapter", () => {
             Effect.tapError((error) =>
               Effect.sync(() => {
                 reachedDispatchAsKnownZero =
-                  isPilotProviderKnownZeroCostFailure(error);
+                  isProviderKnownZeroCostFailure(error);
               })
             ),
             Effect.map(({ value }) => value)
@@ -142,7 +142,7 @@ describe("installed visual provider adapter", () => {
           Effect.tapError((error) =>
             Effect.sync(() => {
               reachedDispatchAsKnownZero =
-                isPilotProviderKnownZeroCostFailure(error);
+                isProviderKnownZeroCostFailure(error);
             })
           ),
           Effect.map(({ value }) => value)

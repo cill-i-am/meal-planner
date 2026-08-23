@@ -2,7 +2,7 @@ import type * as Cloudflare from "alchemy/Cloudflare";
 import { Cause, Data, Effect, Schema } from "effect";
 import { flow } from "effect/Function";
 
-import { PilotBudgetDispatchId } from "../pilots/pilot-provider-budget.js";
+import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportTraceContext } from "./import-observability.js";
@@ -25,15 +25,15 @@ export const recipeRecoveryDurableTaskNames = (
 export const RecipeRecoveryAttempt = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   createdAt: ImportTimestamp,
-  currentDispatchId: PilotBudgetDispatchId,
+  currentDispatchId: HouseholdDispatchId,
   currentExtractionFingerprint: Sha256Hex,
   evidenceFingerprint: Sha256Hex,
   executionGeneration: ImportIntentExecutionGeneration,
   importId: ImportId,
   ordinal: RecipeRecoveryOrdinal,
-  predecessorDispatchId: PilotBudgetDispatchId,
+  predecessorDispatchId: HouseholdDispatchId,
   predecessorExtractionFingerprint: Sha256Hex,
-  rootDispatchId: PilotBudgetDispatchId,
+  rootDispatchId: HouseholdDispatchId,
   rootExtractionFingerprint: Sha256Hex,
   sourceMediaSha256: Sha256Hex,
   terminalCheckpointCompletedAt: ImportTimestamp,

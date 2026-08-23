@@ -391,13 +391,7 @@ export const HouseholdMutateEvidenceStageInput = Schema.Struct({
       dispatchId: DispatchId,
       predecessorDispatchId: DispatchId,
       predecessorInputFingerprint: HouseholdEvidenceSha256,
-      settlement: Schema.Struct({
-        completedAt: ImportTimestamp,
-        dispatchId: DispatchId,
-        outcome: Schema.Literal("settled_unknown"),
-      }),
       stage: Schema.Literals(["speech", "visual"]),
-      startedAt: ImportTimestamp,
     }),
   ]),
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
@@ -519,11 +513,6 @@ export const HouseholdPrepareRecipeRecoveryInput = Schema.Struct({
   intentId: RecipeImportIntentId,
   mutationId: HouseholdImportMutationId,
   predecessorDispatchId: DispatchId,
-  settlement: Schema.Struct({
-    completedAt: ImportTimestamp,
-    dispatchId: DispatchId,
-    outcome: Schema.Literal("settled_unknown"),
-  }),
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type HouseholdPrepareRecipeRecoveryInput =
   typeof HouseholdPrepareRecipeRecoveryInput.Type;

@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { PilotBudgetDispatchId } from "../pilots/pilot-provider-budget.js";
+import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
@@ -26,14 +26,14 @@ const timestamp = Schema.decodeUnknownSync(ImportTimestamp)(
   "2026-08-16T00:00:00.000Z"
 );
 const sha = (value: string) => Schema.decodeUnknownSync(Sha256Hex)(value);
-const rootDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+const rootDispatchId = Schema.decodeUnknownSync(HouseholdDispatchId)(
   `recipe:${importId}:${generation}:${"a".repeat(64)}`
 );
 
 const attempt = (ordinal: RecipeRecoveryOrdinal): RecipeRecoveryAttempt => ({
   acquisitionGeneration: generation,
   createdAt: timestamp,
-  currentDispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+  currentDispatchId: Schema.decodeUnknownSync(HouseholdDispatchId)(
     `${rootDispatchId}:recovery:${ordinal}`
   ),
   currentExtractionFingerprint: sha(String(ordinal).repeat(64)),
@@ -41,7 +41,7 @@ const attempt = (ordinal: RecipeRecoveryOrdinal): RecipeRecoveryAttempt => ({
   executionGeneration,
   importId,
   ordinal,
-  predecessorDispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+  predecessorDispatchId: Schema.decodeUnknownSync(HouseholdDispatchId)(
     ordinal === 1 ? rootDispatchId : `${rootDispatchId}:recovery:${ordinal - 1}`
   ),
   predecessorExtractionFingerprint: sha("b".repeat(64)),

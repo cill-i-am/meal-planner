@@ -1,4 +1,4 @@
-import { Context, Effect, Exit, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 
 import { ImportTimestamp } from "../imports/import.contracts.js";
 
@@ -6,28 +6,32 @@ const Identifier = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(128))
 );
 
-export const PilotBudgetRunId = Identifier.pipe(
-  Schema.brand("PilotBudgetRunId")
+export const ProviderAccountingRunId = Identifier.pipe(
+  Schema.brand("ProviderAccountingRunId")
 );
-export type PilotBudgetRunId = typeof PilotBudgetRunId.Type;
+export type ProviderAccountingRunId = typeof ProviderAccountingRunId.Type;
 
-export const PilotBudgetProviderStageId = Identifier.pipe(
-  Schema.brand("PilotBudgetProviderStageId")
+export const ProviderAccountingProviderStageId = Identifier.pipe(
+  Schema.brand("ProviderAccountingProviderStageId")
 );
-export type PilotBudgetProviderStageId = typeof PilotBudgetProviderStageId.Type;
+export type ProviderAccountingProviderStageId =
+  typeof ProviderAccountingProviderStageId.Type;
 
-export const PilotBudgetDispatchId = Identifier.pipe(
-  Schema.brand("PilotBudgetDispatchId")
+export const ProviderAccountingDispatchId = Identifier.pipe(
+  Schema.brand("ProviderAccountingDispatchId")
 );
-export type PilotBudgetDispatchId = typeof PilotBudgetDispatchId.Type;
+export type ProviderAccountingDispatchId =
+  typeof ProviderAccountingDispatchId.Type;
 
-export const PilotBudgetTimestamp = ImportTimestamp;
-export type PilotBudgetTimestamp = typeof PilotBudgetTimestamp.Type;
+export const ProviderAccountingTimestamp = ImportTimestamp;
+export type ProviderAccountingTimestamp =
+  typeof ProviderAccountingTimestamp.Type;
 
-export const PilotProviderBudgetStage = "pilot-gaia-118" as const;
-export const PilotProviderBudgetCapMicroUsd = 10_000_000 as const;
+/** One cross-household accounting scope per isolated deployment database. */
+export const ProviderAccountingScope = "recipe-import" as const;
+export const ProviderAccountingCapMicroUsd = 10_000_000 as const;
 
-export type PilotProviderBudgetErrorCode =
+export type ProviderAccountingErrorCode =
   | "budget_exceeded"
   | "cost_exceeds_reservation"
   | "dispatch_conflict"
@@ -35,40 +39,39 @@ export type PilotProviderBudgetErrorCode =
   | "persistence_corrupt"
   | "persistence_unavailable"
   | "stage_busy"
-  | "stage_not_allowed"
   | "stage_poisoned"
   | "transition_rejected";
 
-export interface PilotProviderBudgetError {
-  readonly _tag: "PilotProviderBudgetError";
-  readonly code: PilotProviderBudgetErrorCode;
+export interface ProviderAccountingError {
+  readonly _tag: "ProviderAccountingError";
+  readonly code: ProviderAccountingErrorCode;
 }
 
-export const pilotProviderBudgetError = (
-  code: PilotProviderBudgetErrorCode
-): PilotProviderBudgetError => ({
-  _tag: "PilotProviderBudgetError",
+export const providerAccountingError = (
+  code: ProviderAccountingErrorCode
+): ProviderAccountingError => ({
+  _tag: "ProviderAccountingError",
   code,
 });
 
-export interface PilotBudgetReservation {
-  readonly dispatchId: PilotBudgetDispatchId;
+export interface ProviderAccountingReservation {
+  readonly dispatchId: ProviderAccountingDispatchId;
   readonly maximumCostMicroUsd: number;
-  readonly providerStageId: PilotBudgetProviderStageId;
-  readonly runId: PilotBudgetRunId;
-  readonly timestamp: PilotBudgetTimestamp;
+  readonly providerStageId: ProviderAccountingProviderStageId;
+  readonly runId: ProviderAccountingRunId;
+  readonly timestamp: ProviderAccountingTimestamp;
 }
 
-export interface PilotBudgetKnownSettlement extends PilotBudgetReservation {
+export interface ProviderAccountingKnownSettlement extends ProviderAccountingReservation {
   readonly actualCostMicroUsd: number;
 }
 
-export interface PilotBudgetConservativeSettlement extends PilotBudgetReservation {
+export interface ProviderAccountingConservativeSettlement extends ProviderAccountingReservation {
   readonly conservativeChargeMicroUsd: number;
-  readonly replay: PilotProviderConservativeReplayValue;
+  readonly replay: ProviderAccountingConservativeReplayValue;
 }
 
-export interface PilotProviderConservativeReplayValue {
+export interface ProviderAccountingConservativeReplayValue {
   readonly evidenceFingerprint: string;
   readonly generation: number;
   readonly importId: string;
@@ -76,7 +79,7 @@ export interface PilotProviderConservativeReplayValue {
   readonly valueSha256: string;
 }
 
-export type PilotBudgetDispatchState =
+export type ProviderAccountingDispatchState =
   | "invoking"
   | "released"
   | "reserved"
@@ -84,78 +87,68 @@ export type PilotBudgetDispatchState =
   | "settled_known"
   | "settled_unknown";
 
-export interface PilotBudgetDispatch {
+export interface ProviderAccountingDispatch {
   readonly actualCostMicroUsd: number | null;
   readonly conservativeChargeMicroUsd?: number;
-  readonly conservativeReplay?: PilotProviderConservativeReplayValue;
-  readonly dispatchId: PilotBudgetDispatchId;
+  readonly conservativeReplay?: ProviderAccountingConservativeReplayValue;
+  readonly dispatchId: ProviderAccountingDispatchId;
   readonly maximumCostMicroUsd: number;
-  readonly providerStageId: PilotBudgetProviderStageId;
-  readonly runId: PilotBudgetRunId;
-  readonly state: PilotBudgetDispatchState;
+  readonly providerStageId: ProviderAccountingProviderStageId;
+  readonly runId: ProviderAccountingRunId;
+  readonly state: ProviderAccountingDispatchState;
 }
 
-export type PilotBudgetInvocationClaim =
+export type ProviderAccountingInvocationClaim =
   | {
       readonly _tag: "Claimed";
-      readonly dispatch: PilotBudgetDispatch;
+      readonly dispatch: ProviderAccountingDispatch;
     }
   | {
       readonly _tag: "NotClaimed";
-      readonly dispatch: PilotBudgetDispatch;
+      readonly dispatch: ProviderAccountingDispatch;
     };
 
-export interface PilotProviderStageBudget {
+export interface ProviderAccountingBudget {
   readonly budgetCapMicroUsd: number;
-  readonly invokingDispatchId?: PilotBudgetDispatchId;
-  readonly poisonDispatchId?: PilotBudgetDispatchId;
+  readonly invokingDispatchId?: ProviderAccountingDispatchId;
+  readonly poisonDispatchId?: ProviderAccountingDispatchId;
   readonly reservedMicroUsd: number;
   readonly settledMicroUsd: number;
   readonly state: "invoking" | "open" | "poisoned";
 }
 
-export interface PilotProviderBudgetRepository {
+export interface ProviderAccountingRepository {
   readonly beginInvocation: (
-    input: PilotBudgetReservation
-  ) => Effect.Effect<PilotBudgetInvocationClaim, PilotProviderBudgetError>;
+    input: ProviderAccountingReservation
+  ) => Effect.Effect<
+    ProviderAccountingInvocationClaim,
+    ProviderAccountingError
+  >;
   readonly readStage: () => Effect.Effect<
-    PilotProviderStageBudget,
-    PilotProviderBudgetError
+    ProviderAccountingBudget,
+    ProviderAccountingError
   >;
   readonly readDispatch: (
-    input: PilotBudgetReservation
-  ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
+    input: ProviderAccountingReservation
+  ) => Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError>;
   readonly releaseBeforeInvocation: (
-    input: PilotBudgetReservation
-  ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
+    input: ProviderAccountingReservation
+  ) => Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError>;
   readonly reserve: (
-    input: PilotBudgetReservation
-  ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
+    input: ProviderAccountingReservation
+  ) => Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError>;
   readonly settleKnown: (
-    input: PilotBudgetKnownSettlement
-  ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
+    input: ProviderAccountingKnownSettlement
+  ) => Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError>;
   readonly settleConservative: (
-    input: PilotBudgetConservativeSettlement
-  ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
+    input: ProviderAccountingConservativeSettlement
+  ) => Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError>;
   readonly settleUnknown: (
-    input: PilotBudgetReservation
-  ) => Effect.Effect<PilotBudgetDispatch, PilotProviderBudgetError>;
+    input: ProviderAccountingReservation
+  ) => Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError>;
 }
 
-export interface PilotProviderBudgetRuntime {
-  readonly runtimeStage: string;
-}
-
-export const PilotProviderBudgetRuntime =
-  Context.Service<PilotProviderBudgetRuntime>(
-    "meal-planner/PilotProviderBudgetRuntime"
-  );
-
-export const makePilotProviderBudgetRuntime = (
-  runtimeStage: string
-): PilotProviderBudgetRuntime => ({ runtimeStage });
-
-export type PilotProviderCost =
+export type ProviderCost =
   | {
       readonly _tag: "Known";
       readonly actualCostMicroUsd: number;
@@ -166,8 +159,8 @@ export type PilotProviderCost =
     }
   | { readonly _tag: "Unknown" };
 
-export interface PilotProviderInvocationResult<A> {
-  readonly cost: PilotProviderCost;
+export interface ProviderInvocationResult<A> {
+  readonly cost: ProviderCost;
   readonly value: A;
 }
 
@@ -175,13 +168,13 @@ export interface PilotProviderInvocationResult<A> {
  * The provider boundary may use this marker only when it has authoritative
  * evidence that a failed dispatch incurred exactly zero cost.
  */
-const PilotProviderKnownZeroCostFailureBrand = Symbol(
-  "PilotProviderKnownZeroCostFailure"
+const ProviderKnownZeroCostFailureBrand = Symbol(
+  "ProviderKnownZeroCostFailure"
 );
 
-export class PilotProviderKnownZeroCostFailure<E> {
-  readonly [PilotProviderKnownZeroCostFailureBrand] = true;
-  readonly _tag = "PilotProviderKnownZeroCostFailure";
+export class ProviderKnownZeroCostFailure<E> {
+  readonly [ProviderKnownZeroCostFailureBrand] = true;
+  readonly _tag = "ProviderKnownZeroCostFailure";
   readonly error: E;
 
   constructor(error: E) {
@@ -189,17 +182,16 @@ export class PilotProviderKnownZeroCostFailure<E> {
   }
 }
 
-export const pilotProviderKnownZeroCostFailure = <E>(
+export const providerKnownZeroCostFailure = <E>(
   error: E
-): PilotProviderKnownZeroCostFailure<E> =>
-  new PilotProviderKnownZeroCostFailure(error);
+): ProviderKnownZeroCostFailure<E> => new ProviderKnownZeroCostFailure(error);
 
-export const isPilotProviderKnownZeroCostFailure = <Error>(
-  error: Error | PilotProviderKnownZeroCostFailure<Error>
-): error is PilotProviderKnownZeroCostFailure<Error> =>
-  error instanceof PilotProviderKnownZeroCostFailure;
+export const isProviderKnownZeroCostFailure = <Error>(
+  error: Error | ProviderKnownZeroCostFailure<Error>
+): error is ProviderKnownZeroCostFailure<Error> =>
+  error instanceof ProviderKnownZeroCostFailure;
 
-export type PilotProviderDispatchResult<A> =
+export type AccountedProviderDispatchResult<A> =
   | {
       readonly _tag: "AlreadySettled";
       readonly actualCostMicroUsd: number;
@@ -230,8 +222,8 @@ interface KnownZeroFailureResult<E> {
 }
 
 const settleUnknown = (
-  repository: PilotProviderBudgetRepository,
-  reservation: PilotBudgetReservation,
+  repository: ProviderAccountingRepository,
+  reservation: ProviderAccountingReservation,
   observe: Effect.Effect<void>
 ) =>
   repository
@@ -239,8 +231,8 @@ const settleUnknown = (
     .pipe(Effect.andThen(observe), Effect.asVoid);
 
 const settleKnownZero = (
-  repository: PilotProviderBudgetRepository,
-  reservation: PilotBudgetReservation,
+  repository: ProviderAccountingRepository,
+  reservation: ProviderAccountingReservation,
   observe: Effect.Effect<void>
 ) =>
   repository
@@ -248,26 +240,26 @@ const settleKnownZero = (
     .pipe(Effect.andThen(observe), Effect.asVoid);
 
 const previousAttemptMatches = (
-  previous: PilotBudgetReservation,
-  current: PilotBudgetReservation
+  previous: ProviderAccountingReservation,
+  current: ProviderAccountingReservation
 ) =>
   previous.dispatchId !== current.dispatchId &&
   previous.maximumCostMicroUsd === current.maximumCostMicroUsd &&
   previous.providerStageId === current.providerStageId &&
   previous.runId === current.runId;
 
-export const runPilotProviderDispatch = <A, E>(input: {
+export const runAccountedProviderDispatch = <A, E>(input: {
   readonly conservativeReplay?: {
     readonly decode: (
-      replay: PilotProviderConservativeReplayValue
+      replay: ProviderAccountingConservativeReplayValue
     ) => Effect.Effect<A, E>;
     readonly encode: (
       value: A
-    ) => Effect.Effect<PilotProviderConservativeReplayValue, E>;
+    ) => Effect.Effect<ProviderAccountingConservativeReplayValue, E>;
   };
   readonly invoke: Effect.Effect<
-    PilotProviderInvocationResult<A>,
-    E | PilotProviderKnownZeroCostFailure<E>
+    ProviderInvocationResult<A>,
+    E | ProviderKnownZeroCostFailure<E>
   >;
   readonly onDispatch?: Effect.Effect<void>;
   readonly onPoison?: Effect.Effect<void>;
@@ -276,22 +268,21 @@ export const runPilotProviderDispatch = <A, E>(input: {
     outcome: "conservative" | "known" | "unknown"
   ) => Effect.Effect<void>;
   readonly prepare?: Effect.Effect<void, E>;
-  readonly previousAttempt?: PilotBudgetReservation;
-  readonly repository: PilotProviderBudgetRepository;
-  readonly reservation: PilotBudgetReservation;
+  readonly previousAttempt?: ProviderAccountingReservation;
+  readonly repository: ProviderAccountingRepository;
+  readonly reservation: ProviderAccountingReservation;
 }): Effect.Effect<
-  PilotProviderDispatchResult<A>,
-  E | PilotProviderBudgetError,
-  PilotProviderBudgetRuntime
+  AccountedProviderDispatchResult<A>,
+  E | ProviderAccountingError
 > =>
   // eslint-disable-next-line complexity -- The durable dispatch state machine keeps every settlement branch explicit.
   Effect.gen(function* runBudgetedProviderDispatch() {
     const replayConservative = (
       conservativeChargeMicroUsd: number,
-      replay: PilotProviderConservativeReplayValue | undefined
+      replay: ProviderAccountingConservativeReplayValue | undefined
     ) =>
       replay === undefined || input.conservativeReplay === undefined
-        ? Effect.fail(pilotProviderBudgetError("persistence_corrupt"))
+        ? Effect.fail(providerAccountingError("persistence_corrupt"))
         : input.conservativeReplay.decode(replay).pipe(
             Effect.map((value) => ({
               _tag: "AlreadyConservativelySettled" as const,
@@ -304,16 +295,9 @@ export const runPilotProviderDispatch = <A, E>(input: {
     const observeUnknownSettlement = observeSettlement("unknown").pipe(
       Effect.andThen(input.onPoison ?? Effect.void)
     );
-    const { runtimeStage } = yield* PilotProviderBudgetRuntime;
-    if (runtimeStage !== PilotProviderBudgetStage) {
-      return yield* Effect.fail(pilotProviderBudgetError("stage_not_allowed"));
-    }
-
     if (input.previousAttempt !== undefined) {
       if (!previousAttemptMatches(input.previousAttempt, input.reservation)) {
-        return yield* Effect.fail(
-          pilotProviderBudgetError("dispatch_conflict")
-        );
+        return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
       }
       const previous = yield* input.repository.readDispatch(
         input.previousAttempt
@@ -329,9 +313,9 @@ export const runPilotProviderDispatch = <A, E>(input: {
           input.previousAttempt,
           observeUnknownSettlement
         );
-        return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
+        return yield* Effect.fail(providerAccountingError("outcome_unknown"));
       } else {
-        return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
+        return yield* Effect.fail(providerAccountingError("outcome_unknown"));
       }
     }
 
@@ -339,7 +323,7 @@ export const runPilotProviderDispatch = <A, E>(input: {
     if (reserved.state === "settled_known") {
       if (reserved.actualCostMicroUsd === null) {
         return yield* Effect.fail(
-          pilotProviderBudgetError("persistence_corrupt")
+          providerAccountingError("persistence_corrupt")
         );
       }
       return {
@@ -353,7 +337,7 @@ export const runPilotProviderDispatch = <A, E>(input: {
         reserved.conservativeReplay === undefined
       ) {
         return yield* Effect.fail(
-          pilotProviderBudgetError("persistence_corrupt")
+          providerAccountingError("persistence_corrupt")
         );
       }
       return yield* replayConservative(
@@ -362,15 +346,13 @@ export const runPilotProviderDispatch = <A, E>(input: {
       );
     }
     if (reserved.state === "settled_unknown") {
-      return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
+      return yield* Effect.fail(providerAccountingError("outcome_unknown"));
     }
     if (reserved.state === "invoking") {
-      return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
+      return yield* Effect.fail(providerAccountingError("outcome_unknown"));
     }
     if (reserved.state !== "reserved") {
-      return yield* Effect.fail(
-        pilotProviderBudgetError("transition_rejected")
-      );
+      return yield* Effect.fail(providerAccountingError("transition_rejected"));
     }
     yield* input.onReservation ?? Effect.void;
 
@@ -406,12 +388,10 @@ export const runPilotProviderDispatch = <A, E>(input: {
           dispatch.conservativeReplay
         );
       }
-      return yield* Effect.fail(pilotProviderBudgetError("outcome_unknown"));
+      return yield* Effect.fail(providerAccountingError("outcome_unknown"));
     }
     if (invocationClaim.dispatch.state !== "invoking") {
-      return yield* Effect.fail(
-        pilotProviderBudgetError("transition_rejected")
-      );
+      return yield* Effect.fail(providerAccountingError("transition_rejected"));
     }
 
     const claimedResult = yield* Effect.gen(
@@ -438,7 +418,7 @@ export const runPilotProviderDispatch = <A, E>(input: {
               observeUnknownSettlement
             );
             return yield* Effect.fail(
-              pilotProviderBudgetError("cost_exceeds_reservation")
+              providerAccountingError("cost_exceeds_reservation")
             );
           }
           if (input.conservativeReplay === undefined) {
@@ -448,7 +428,7 @@ export const runPilotProviderDispatch = <A, E>(input: {
               observeUnknownSettlement
             );
             return yield* Effect.fail(
-              pilotProviderBudgetError("persistence_corrupt")
+              providerAccountingError("persistence_corrupt")
             );
           }
           const replay = yield* input.conservativeReplay.encode(result.value);
@@ -475,7 +455,7 @@ export const runPilotProviderDispatch = <A, E>(input: {
             observeUnknownSettlement
           );
           return yield* Effect.fail(
-            pilotProviderBudgetError("cost_exceeds_reservation")
+            providerAccountingError("cost_exceeds_reservation")
           );
         }
         yield* input.repository.settleKnown({
@@ -491,7 +471,7 @@ export const runPilotProviderDispatch = <A, E>(input: {
       }
     ).pipe(
       Effect.catch((error) =>
-        isPilotProviderKnownZeroCostFailure(error)
+        isProviderKnownZeroCostFailure(error)
           ? settleKnownZero(
               input.repository,
               input.reservation,

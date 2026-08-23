@@ -12,6 +12,10 @@ import {
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
+import {
+  ProviderAccountingService,
+  makeD1ProviderAccountingService,
+} from "../provider-accounting/provider-accounting.service.js";
 import type { ImportEvidenceRoute } from "./import-evidence-event.js";
 import { RecipeImportHouseholdDomain } from "./import-intent-api.http.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
@@ -19,9 +23,9 @@ import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.j
 import type { ImportTraceContext } from "./import-observability.js";
 import { ImportObservabilityTraceStore } from "./import-observability.js";
 import {
-  ProviderTerminalSettlementService,
-  makeD1ProviderTerminalSettlementService,
-} from "./import-provider-terminal-settlement.js";
+  ProviderRecoveryService,
+  makeProviderRecoveryService,
+} from "./import-provider-recovery.js";
 import type { RecipeRecoveryWorkflowStarter } from "./import-recipe-recovery.js";
 import type { ImportPrincipal } from "./import-system-principal.js";
 import {
@@ -43,7 +47,6 @@ export interface ImportWorkerRequestLayerInput {
   readonly registerEvidenceRoute: (
     route: ImportEvidenceRoute
   ) => Effect.Effect<void, object>;
-  readonly runtimeStage: string;
   readonly runtimeContext: Effect.Success<typeof RuntimeContext>;
   readonly systemApiToken: Redacted.Redacted<string>;
   readonly systemPrincipal: ImportPrincipal;
@@ -152,16 +155,22 @@ export const makeRecipeImportWorkflowDispatcher = (input: {
 export const makeImportWorkerRequestLayer = (
   input: ImportWorkerRequestLayerInput
 ) => {
-  const settlement = Layer.succeed(
-    ProviderTerminalSettlementService,
-    ProviderTerminalSettlementService.of(
-      makeD1ProviderTerminalSettlementService({
+  const accounting = Layer.succeed(
+    ProviderAccountingService,
+    ProviderAccountingService.of(
+      makeD1ProviderAccountingService({
+        database: input.database,
+        now: () => timestamp(input.now),
+      })
+    )
+  );
+  const recovery = Layer.succeed(
+    ProviderRecoveryService,
+    ProviderRecoveryService.of(
+      makeProviderRecoveryService({
         database: input.database,
         householdDomain: input.householdDomain,
-        now: () => timestamp(input.now),
         recipeRecoveryStarter: input.recipeRecoveryStarter,
-        runtimeStage: input.runtimeStage,
-        trace: input.trace,
         workflowStarter: input.importWorkflowStarter,
       })
     )
@@ -213,6 +222,7 @@ export const makeImportWorkerRequestLayer = (
       ImportObservabilityTraceStore,
       makeD1ImportObservabilityTraceStore(input.database, input.now)
     ),
-    settlement
+    accounting,
+    recovery
   );
 };

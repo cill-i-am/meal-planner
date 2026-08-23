@@ -5,15 +5,7 @@ import {
 import type { RecipeImportActionId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import {
-  Cause,
-  Config,
-  Context,
-  Effect,
-  Layer,
-  Schedule,
-  Schema,
-} from "effect";
+import { Cause, Context, Effect, Layer, Schedule, Schema } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
@@ -29,12 +21,10 @@ import { HouseholdImportMutationId } from "../households/recipe-import/household
 import type { HouseholdRecipeImportLifecycleTransition } from "../households/recipe-import/household-recipe-import.contract.js";
 import type { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
 import {
-  PilotBudgetRunId,
-  PilotBudgetTimestamp,
-  PilotProviderBudgetRuntime,
-  makePilotProviderBudgetRuntime,
-} from "../pilots/pilot-provider-budget.js";
-import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+  ProviderAccountingRunId,
+  ProviderAccountingTimestamp,
+} from "../provider-accounting/provider-accounting.js";
+import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
 import type {
   AcquisitionCheckpointRejected,
   DecodedAcquisitionCheckpoint,
@@ -101,7 +91,7 @@ import {
 } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
 import {
-  makePilotProviderDispatchGate,
+  makeProviderDispatchGate,
   makeWorkersAiTransport,
 } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
@@ -503,8 +493,10 @@ const CarouselEvidenceTaskCheckpoint = Schema.Union([
   }),
 ]);
 
-const currentPilotBudgetTimestamp = () =>
-  Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
+const currentProviderAccountingTimestamp = () =>
+  Schema.decodeUnknownSync(ProviderAccountingTimestamp)(
+    new Date().toISOString()
+  );
 
 const digestText = (value: string) =>
   Effect.promise(() =>
@@ -575,9 +567,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
     const runtimeContext = yield* RuntimeContext;
     const queryDatabase =
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
-    const pilotProviderBudgetRuntime = makePilotProviderBudgetRuntime(
-      yield* Config.string("ALCHEMY_STAGE")
-    );
     const providerGateway = yield* Cloudflare.AI.QueryGateway(
       ImportProviderGateway
     );
@@ -771,18 +760,14 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   stage: "visual",
                 }),
             };
-            const now = currentPilotBudgetTimestamp;
-            const dispatch = makePilotProviderDispatchGate({
+            const now = currentProviderAccountingTimestamp;
+            const dispatch = makeProviderDispatchGate({
               correlationId,
               now,
-              repository: makeD1PilotProviderBudgetRepository(
-                database,
-                pilotProviderBudgetRuntime.runtimeStage
+              repository: makeD1ProviderAccountingRepository(database),
+              runId: Schema.decodeUnknownSync(ProviderAccountingRunId)(
+                `recipe-import:${importId}`
               ),
-              runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
-                `gaia-118:${importId}`
-              ),
-              runtime: pilotProviderBudgetRuntime,
             });
             const workersAiTransport = yield* makeWorkersAiTransport(
               providerGateway,
@@ -1363,12 +1348,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           Effect.orDie,
           Effect.provideService(ImportObservabilityTraceStore, traceStore)
         );
-      }).pipe(
-        Effect.provideService(
-          PilotProviderBudgetRuntime,
-          pilotProviderBudgetRuntime
-        )
-      );
+      });
   }).pipe(
     Effect.provide(
       Layer.mergeAll(

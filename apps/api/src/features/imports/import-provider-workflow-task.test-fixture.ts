@@ -10,14 +10,14 @@ import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 
+import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import {
-  PilotBudgetDispatchId,
-  PilotBudgetRunId,
-  PilotBudgetTimestamp,
-  makePilotProviderBudgetRuntime,
-  pilotProviderKnownZeroCostFailure,
-} from "../pilots/pilot-provider-budget.js";
-import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+  ProviderAccountingDispatchId,
+  ProviderAccountingRunId,
+  ProviderAccountingTimestamp,
+  providerKnownZeroCostFailure,
+} from "../provider-accounting/provider-accounting.js";
+import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
@@ -26,7 +26,7 @@ import type { WorkersAiTransport } from "./import-provider-kernel.js";
 import {
   InstalledRecipeModel,
   InstalledSpeechModel,
-  makePilotProviderDispatchGate,
+  makeProviderDispatchGate,
 } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
@@ -95,7 +95,7 @@ interface ProviderWorkflowTestEnv {
   };
 }
 
-const decodeRunId = Schema.decodeUnknownSync(PilotBudgetRunId);
+const decodeRunId = Schema.decodeUnknownSync(ProviderAccountingRunId);
 const testRuntimeContext = RuntimeContext.of({
   Type: "TestRuntimeContext",
   env: {},
@@ -105,8 +105,11 @@ const testRuntimeContext = RuntimeContext.of({
   id: "installed-provider-workflow-test",
   set: (id) => Effect.succeed(id),
 });
-const decodeDispatchId = Schema.decodeUnknownSync(PilotBudgetDispatchId);
-const decodeTimestamp = Schema.decodeUnknownSync(PilotBudgetTimestamp);
+const decodeAccountingDispatchId = Schema.decodeUnknownSync(
+  ProviderAccountingDispatchId
+);
+const decodeHouseholdDispatchId = Schema.decodeUnknownSync(HouseholdDispatchId);
+const decodeTimestamp = Schema.decodeUnknownSync(ProviderAccountingTimestamp);
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeImportTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
@@ -166,14 +169,14 @@ const nativeRecipeRecoveryAttempt = (
     ImportIntentExecutionGeneration
   )(1);
   const evidenceFingerprint = decodeSha256("e".repeat(64));
-  const rootDispatchId = decodeDispatchId(
+  const rootDispatchId = decodeHouseholdDispatchId(
     `recipe:${importId}:${generation}:${evidenceFingerprint}`
   );
   const rootExtractionFingerprint = decodeSha256("f".repeat(64));
   return {
     acquisitionGeneration: generation,
     createdAt: decodeImportTimestamp("2026-08-16T00:00:00.000Z"),
-    currentDispatchId: decodeDispatchId(
+    currentDispatchId: decodeHouseholdDispatchId(
       `${rootDispatchId}:recovery:${ordinal}`
     ),
     currentExtractionFingerprint: decodeSha256(String(ordinal).repeat(64)),
@@ -181,7 +184,7 @@ const nativeRecipeRecoveryAttempt = (
     executionGeneration,
     importId,
     ordinal,
-    predecessorDispatchId: decodeDispatchId(
+    predecessorDispatchId: decodeHouseholdDispatchId(
       ordinal === 1
         ? rootDispatchId
         : `${rootDispatchId}:recovery:${ordinal - 1}`
@@ -231,21 +234,19 @@ const installedRecipeConservativeDispatch = (
     const correlationId = decodeCorrelationId(
       "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2205"
     );
-    const repository = makeD1PilotProviderBudgetRepository(
-      env.MealPlannerDatabase,
-      "pilot-gaia-118"
+    const repository = makeD1ProviderAccountingRepository(
+      env.MealPlannerDatabase
     );
     const dispatchTimestamp = decodeTimestamp(new Date().toISOString());
-    const dispatch = makePilotProviderDispatchGate({
+    const dispatch = makeProviderDispatchGate({
       correlationId,
       now: () => dispatchTimestamp,
       repository,
       runId: decodeRunId(
         recovery
-          ? `gaia-118:recipe-recovery:${importId}`
-          : `gaia-118:${importId}`
+          ? `recipe-import:recipe-recovery:${importId}`
+          : `recipe-import:${importId}`
       ),
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
     const transport: WorkersAiTransport["recipe"] = {
       model: InstalledRecipeModel,
@@ -277,7 +278,7 @@ const installedRecipeConservativeDispatch = (
       recovery
         ? {
             ...extractionInput,
-            dispatchId: decodeDispatchId(
+            dispatchId: decodeAccountingDispatchId(
               `recipe:${importId}:${generation}:${"e".repeat(64)}:recovery:1`
             ),
           }
@@ -321,11 +322,10 @@ const installedSpeechDispatch = (
         ? "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b86"
         : "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b87"
     );
-    const repository = makeD1PilotProviderBudgetRepository(
-      env.MealPlannerDatabase,
-      "pilot-gaia-118"
+    const repository = makeD1ProviderAccountingRepository(
+      env.MealPlannerDatabase
     );
-    const dispatch = makePilotProviderDispatchGate({
+    const dispatch = makeProviderDispatchGate({
       correlationId,
       now: () => decodeTimestamp("2026-07-28T08:00:00.000Z"),
       repository,
@@ -334,14 +334,13 @@ const installedSpeechDispatch = (
           ? "run_gaia_186_known_zero"
           : "run_gaia_186_ambiguous"
       ),
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
     const transport: WorkersAiTransport["speech"] = {
       model: InstalledSpeechModel,
       run: async () => {
         await Effect.runPromise(increment(env, instanceId, "provider-calls"));
         if (outcome === "known_zero") {
-          throw pilotProviderKnownZeroCostFailure("provider_unavailable");
+          throw providerKnownZeroCostFailure("provider_unavailable");
         }
         throw new Error("simulated ambiguous provider interruption");
       },
@@ -381,15 +380,11 @@ const installedVisualDispatch = (
     const correlationId = decodeCorrelationId(
       "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b88"
     );
-    const dispatch = makePilotProviderDispatchGate({
+    const dispatch = makeProviderDispatchGate({
       correlationId,
       now: () => decodeTimestamp("2026-07-28T08:00:00.000Z"),
-      repository: makeD1PilotProviderBudgetRepository(
-        env.MealPlannerDatabase,
-        "pilot-gaia-118"
-      ),
+      repository: makeD1ProviderAccountingRepository(env.MealPlannerDatabase),
       runId: decodeRunId("run_gaia_188_visual_ambiguous"),
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
     const transport = makeVisualTransport(
       () => {
@@ -462,21 +457,19 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
           })
         )
     );
-    const repository = makeD1PilotProviderBudgetRepository(
-      env.MealPlannerDatabase,
-      "pilot-gaia-118"
+    const repository = makeD1ProviderAccountingRepository(
+      env.MealPlannerDatabase
     );
     const correlationId = decodeCorrelationId(
       "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2199"
     );
     const runId = decodeRunId("gaia-199:missing-visual-usage");
     const now = decodeTimestamp("2026-07-29T09:00:00.000Z");
-    const dispatch = makePilotProviderDispatchGate({
+    const dispatch = makeProviderDispatchGate({
       correlationId,
       now: () => now,
       repository,
       runId,
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
     const visual = yield* makeInstalledVisualEvidenceExtractor({
       correlationId,

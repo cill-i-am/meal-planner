@@ -1,6 +1,6 @@
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Config, Effect, Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
@@ -9,11 +9,10 @@ import { HouseholdDomainWorker } from "../households/household-domain-binding.js
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import {
-  PilotBudgetRunId,
-  PilotBudgetTimestamp,
-  makePilotProviderBudgetRuntime,
-} from "../pilots/pilot-provider-budget.js";
-import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+  ProviderAccountingRunId,
+  ProviderAccountingTimestamp,
+} from "../provider-accounting/provider-accounting.js";
+import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
 import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import {
@@ -21,7 +20,7 @@ import {
   observeImportWorkflowStart,
 } from "./import-observability.js";
 import {
-  makePilotProviderDispatchGate,
+  makeProviderDispatchGate,
   makeWorkersAiTransport,
 } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
@@ -157,8 +156,10 @@ export const runRecipeRecoveryLoop = Effect.fn(
   return failedRecoveryCheckpoint("recovery_attempt_limit_reached");
 });
 
-const currentPilotBudgetTimestamp = () =>
-  Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
+const currentProviderAccountingTimestamp = () =>
+  Schema.decodeUnknownSync(ProviderAccountingTimestamp)(
+    new Date().toISOString()
+  );
 
 const recoveryMutationId = (semanticKey: string) =>
   Effect.promise(() =>
@@ -201,8 +202,6 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
     const providerGateway = yield* Cloudflare.AI.QueryGateway(
       ImportProviderGateway
     );
-    const runtimeStage = yield* Config.string("ALCHEMY_STAGE");
-    const budgetRuntime = makePilotProviderBudgetRuntime(runtimeStage);
 
     return (rawInput: RecipeRecoveryWorkflowInputEncoded) =>
       Effect.gen(function* runImportRecipeRecoveryWorkflow() {
@@ -221,17 +220,13 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
             importId: workflowInput.importId,
             mutationId: recoveryMutationId,
           }).pipe(Effect.orDie);
-        const dispatch = makePilotProviderDispatchGate({
+        const dispatch = makeProviderDispatchGate({
           correlationId: workflowInput.trace.correlationId,
-          now: currentPilotBudgetTimestamp,
-          repository: makeD1PilotProviderBudgetRepository(
-            database,
-            runtimeStage
+          now: currentProviderAccountingTimestamp,
+          repository: makeD1ProviderAccountingRepository(database),
+          runId: Schema.decodeUnknownSync(ProviderAccountingRunId)(
+            `recipe-import:recipe-recovery:${workflowInput.importId}`
           ),
-          runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
-            `gaia-118:recipe-recovery:${workflowInput.importId}`
-          ),
-          runtime: budgetRuntime,
         });
         const traceStore = makeD1ImportObservabilityTraceStore(database, () =>
           new Date().toISOString()
@@ -256,7 +251,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                   durableTaskName,
                   recipeRepository
                     .fail({
-                      completedAt: currentPilotBudgetTimestamp(),
+                      completedAt: currentProviderAccountingTimestamp(),
                       extractionFingerprint:
                         attempt.currentExtractionFingerprint,
                       failureCode: "provider_error",
@@ -289,7 +284,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                         extractor,
                         importId: attempt.importId,
                         importRepository: evidenceRepositories.current,
-                        now: currentPilotBudgetTimestamp,
+                        now: currentProviderAccountingTimestamp,
                         recipeRepository,
                         recovery: {
                           acquisitionGeneration: attempt.acquisitionGeneration,
