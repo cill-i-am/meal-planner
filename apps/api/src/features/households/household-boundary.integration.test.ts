@@ -23,7 +23,6 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
-import { ImportId } from "../imports/import.contracts.js";
 import {
   PilotBudgetDispatchId,
   PilotBudgetProviderStageId,
@@ -354,7 +353,9 @@ const systemCommand = (
 
 const terminalSettlementCommand = async (
   input: object,
-  options?: { readonly speechRestart?: "fail" | "lose-response" }
+  options?: {
+    readonly speechRestart?: "fail" | "lose-response" | "terminal-then-fail";
+  }
 ) => {
   const worker = await getRuntime().getWorker("evidence-consumer");
   const headers: Record<string, string> = {
@@ -446,6 +447,36 @@ const sendEvidenceEvent = async (message: object) => {
   );
   await queue.send(message);
   return evidenceEventResult();
+};
+
+const registerEvidenceRoute = async (input: {
+  readonly importId: string;
+  readonly organizationId: string;
+}) => {
+  const database = await getRuntime().getD1Database(
+    "MealPlannerDatabase",
+    "evidence-consumer"
+  );
+  await database
+    .prepare(
+      `INSERT INTO import_evidence_routes (
+         import_id, organization_id, route_version
+       ) VALUES (?, ?, 1)
+       ON CONFLICT (import_id) DO NOTHING`
+    )
+    .bind(input.importId, input.organizationId)
+    .run();
+  const winner = await database
+    .prepare(
+      `SELECT organization_id AS organizationId
+         FROM import_evidence_routes
+        WHERE import_id = ?`
+    )
+    .bind(input.importId)
+    .first<{ readonly organizationId: string }>();
+  return winner?.organizationId === input.organizationId
+    ? "Registered"
+    : "ConflictRejected";
 };
 
 const readEvidenceReferences = async (
@@ -1671,16 +1702,11 @@ describe("household public API to private Durable Object boundary", () => {
     const [, manifest] = evidence.references;
 
     await expect(
-      sendEvidenceEvent({
-        _tag: "RegisterImportEvidenceRoute",
+      registerEvidenceRoute({
         importId: admitted.id,
         organizationId: organization.id,
-        routeVersion: 1,
       })
-    ).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Registered" },
-    });
+    ).resolves.toBe("Registered");
 
     const otherCookie = await signUp("Lifecycle Event Other Member");
     const otherOrganization = await createOrganization(
@@ -1688,16 +1714,11 @@ describe("household public API to private Durable Object boundary", () => {
       otherCookie
     );
     await expect(
-      sendEvidenceEvent({
-        _tag: "RegisterImportEvidenceRoute",
+      registerEvidenceRoute({
         importId: admitted.id,
         organizationId: otherOrganization.id,
-        routeVersion: 1,
       })
-    ).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "RouteConflictRejected" },
-    });
+    ).resolves.toBe("ConflictRejected");
 
     await expect(
       sendEvidenceEvent({
@@ -1865,6 +1886,10 @@ describe("household public API to private Durable Object boundary", () => {
     const sameTimeLowerPrecedenceEvent = {
       ...deletionEvent,
       action: "CopyObject",
+      copySource: {
+        bucket: "ImportEvidenceBucket",
+        object: "imports/source/manifest.json",
+      },
       eventTime: "2026-08-22T12:02:00.000Z",
     } as const;
     await expect(
@@ -1930,16 +1955,11 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     await expect(
-      sendEvidenceEvent({
-        _tag: "RegisterImportEvidenceRoute",
+      registerEvidenceRoute({
         importId: admitted.id,
         organizationId: organization.id,
-        routeVersion: 1,
       })
-    ).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Registered" },
-    });
+    ).resolves.toBe("Registered");
     const cancelled = await getRuntime().dispatchFetch(
       `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}/cancel`,
       {
@@ -2359,7 +2379,6 @@ describe("household public API to private Durable Object boundary", () => {
       "MealPlannerDatabase",
       "evidence-consumer"
     );
-    const importId = Schema.decodeUnknownSync(ImportId)(admitted.id);
     const sharedCheckpointTables = await database
       .prepare(
         `SELECT name
@@ -2369,24 +2388,17 @@ describe("household public API to private Durable Object boundary", () => {
               'import_recipe_executor_terminal_checkpoints_immutable_delete',
               'import_recipe_executor_terminal_checkpoints_immutable_update',
               'pilot_provider_terminal_checkpoints',
-              'import_provider_terminal_checkpoints'
+              'import_provider_terminal_checkpoints',
+              'pilot_provider_recipe_replay_values_guarded_delete',
+              'import_transcriptions',
+              'import_visual_evidence',
+              'import_carousel_evidence',
+              'import_recipe_extractions'
             )
           ORDER BY name`
       )
       .all();
     expect(sharedCheckpointTables.results).toEqual([]);
-    await expect(
-      database
-        .prepare(
-          `SELECT
-             (SELECT COUNT(*) FROM import_transcriptions WHERE import_id = ?) +
-             (SELECT COUNT(*) FROM import_visual_evidence WHERE import_id = ?) +
-             (SELECT COUNT(*) FROM import_recipe_extractions WHERE import_id = ?)
-               AS count`
-        )
-        .bind(importId, importId, importId)
-        .first()
-    ).resolves.toEqual({ count: 0 });
   });
 
   it("replays household speech recovery after the external restart fails", async () => {
@@ -2445,36 +2457,30 @@ describe("household public API to private Durable Object boundary", () => {
       mutationIds: ["5".repeat(64), "6".repeat(64), "7".repeat(64)],
       videoId: "7000000000000000108",
     });
-    const lostResponse = await terminalSettlementCommand(
+    const recoveredResponse = await terminalSettlementCommand(
       fixture.recoveryCommand,
-      { speechRestart: "lose-response" }
+      { speechRestart: "terminal-then-fail" }
     );
-    expect(lostResponse.status).toBe(409);
+    expect(
+      recoveredResponse.status,
+      await recoveredResponse.clone().text()
+    ).toBe(200);
+    await expect(recoveredResponse.json()).resolves.toMatchObject({
+      acquisitionGeneration: fixture.generation,
+      importId: fixture.intentId,
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: fixture.recoveryDispatchId,
+    });
     const restartState = await getRuntime().getKVNamespace(
       "EVIDENCE_EVENT_RESULTS",
       "evidence-consumer"
     );
     await expect(
       restartState.get(`speech-restart:${fixture.intentId}`)
-    ).resolves.toBe("active");
+    ).resolves.toBe("complete");
     await expect(
       restartState.get(`speech-restart-calls:${fixture.intentId}`)
     ).resolves.toBe("1");
-    const completedRecovery = await providerTerminalAttemptCommand({
-      admission: fixture.admission,
-      canonicalSourceId: fixture.canonicalSourceId,
-      correlationId: "00000000-0000-4000-8000-000000000194",
-      dispatchId: fixture.recoveryDispatchId,
-      expectedGeneration: fixture.generation,
-      inputFingerprint: fixture.inputFingerprint,
-      intentId: fixture.intentId,
-      stage: "speech",
-    });
-    expect(
-      completedRecovery.status,
-      await completedRecovery.clone().text()
-    ).toBe(200);
-    await restartState.put(`speech-restart:${fixture.intentId}`, "complete");
     const preparedStage = await readSpeechStage(fixture);
     expect(preparedStage).toMatchObject({
       dispatchId: fixture.recoveryDispatchId,
@@ -2693,7 +2699,7 @@ describe("household public API to private Durable Object boundary", () => {
     const firstRecoveryReceipt = await firstRecovery.json();
     expect(await concurrentRecovery.json()).toEqual(firstRecoveryReceipt);
     expect(firstRecoveryReceipt).toMatchObject({
-      outcome: "visual_recovery_prepared",
+      outcome: "visual_recovery_activated",
       recoveryDispatchId: recoveryOneDispatchId,
     });
 
@@ -2808,7 +2814,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
     const recoveryTwoDispatchId = `${dispatchId}:recovery:2`;
     await expect(secondRecovery.json()).resolves.toMatchObject({
-      outcome: "visual_recovery_prepared",
+      outcome: "visual_recovery_activated",
       recoveryDispatchId: recoveryTwoDispatchId,
     });
 

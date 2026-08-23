@@ -113,12 +113,20 @@ cannot overwrite a newer observation. Routing and object lookup occur only
 after the admitted household and import identity are proved.
 
 The authenticated API registers an immutable private import-to-organization
-event route before starting the Workflow. The Queue consumer resolves that
-noncanonical route, reads the household's committed references through the
-private service binding, and requires exact import, generation, object-key,
-kind, native R2 checksum, and custom-metadata agreement before committing an
-idempotent availability observation. The route is not public and never grants
-member authority.
+event route synchronously before starting the Workflow. The unordered Queue
+carries only R2 notifications, so the consumer cannot observe an event before
+the route exists. It resolves that noncanonical route, reads the household's
+committed references through the private service binding, and requires exact
+import, generation, object-key, kind, native R2 checksum, and custom-metadata
+agreement before committing an idempotent availability observation. The route
+is not public and never grants member authority.
+
+Terminal ambiguity commits an immutable household checkpoint before recovery.
+Speech and visual recovery each prepare a generation-, predecessor-, and
+dispatch-fenced household attempt, then activate the matching Workflow step.
+If activation reports an error after the Workflow has already progressed,
+settlement accepts only matching terminal household authority; Workflow status
+alone cannot turn a still-dispatching recovery into success.
 
 ## Public lifecycle and review
 

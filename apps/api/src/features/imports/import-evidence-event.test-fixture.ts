@@ -118,37 +118,6 @@ export default {
                       )
                 )
               ),
-            register: (route) =>
-              Effect.promise(() => environment.ROUTES.get(route.importId)).pipe(
-                Effect.mapError(dependencyFailure),
-                Effect.flatMap((stored) => {
-                  if (stored === null) {
-                    return Effect.promise(() =>
-                      environment.ROUTES.put(
-                        route.importId,
-                        JSON.stringify(route)
-                      )
-                    ).pipe(
-                      Effect.mapError(dependencyFailure),
-                      Effect.as("Registered" as const)
-                    );
-                  }
-                  return Effect.try({
-                    catch: dependencyFailure,
-                    try: () => JSON.parse(stored),
-                  }).pipe(
-                    Effect.flatMap(
-                      Schema.decodeUnknownEffect(ImportEvidenceRoute)
-                    ),
-                    Effect.mapError(dependencyFailure),
-                    Effect.map((current) =>
-                      current.organizationId === route.organizationId
-                        ? ("Registered" as const)
-                        : ("ConflictRejected" as const)
-                    )
-                  );
-                })
-              ),
           },
         });
         const outcome = await Effect.runPromise(

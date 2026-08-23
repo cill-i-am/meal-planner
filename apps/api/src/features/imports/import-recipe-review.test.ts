@@ -1,7 +1,7 @@
 import { DateTime, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
+import { RecipeDraft } from "./import-recipe-draft.repository.js";
 import {
   RecipeCorrection,
   RecipeReviewView,

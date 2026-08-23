@@ -63,6 +63,7 @@ export type RecipeRecoveryPreparationHouseholdAuthority = Pick<
 export interface HouseholdProviderRecovery {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
+  readonly inputFingerprint: string;
   readonly originalDispatchId: string;
   readonly recoveryDispatchId: string;
   readonly requiresWorkflowActivation: boolean;
@@ -465,10 +466,53 @@ export const prepareHouseholdProviderRecovery = (input: {
     return {
       acquisitionGeneration: input.generation,
       importId: input.importId,
+      inputFingerprint: checkpoint.inputFingerprint,
       originalDispatchId: input.originalDispatchId,
       recoveryDispatchId,
       requiresWorkflowActivation: currentStage.outcome === "Dispatching",
     } satisfies HouseholdProviderRecovery;
+  });
+
+export const hasHouseholdProviderRecoveryProgress = (input: {
+  readonly database: AnyD1Database;
+  readonly generation: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
+  readonly householdDomain: Pick<
+    RecipeRecoveryHouseholdAuthority,
+    "readEvidenceStage" | "readRecipeImportExecution"
+  >;
+  readonly importId: RecipeRecoveryWorkflowInput["importId"];
+  readonly inputFingerprint: string;
+  readonly recoveryDispatchId: string;
+  readonly stage: "speech" | "visual";
+}) =>
+  Effect.gen(function* readHouseholdProviderRecoveryProgress() {
+    const authority = yield* resolveHouseholdRecoveryAuthority({
+      database: input.database,
+      generation: input.generation,
+      householdDomain: input.householdDomain,
+      importId: input.importId,
+    });
+    const stage = yield* input.householdDomain
+      .readEvidenceStage({
+        admission: authority.admission,
+        expectedGeneration: input.generation,
+        intentId: authority.intentId,
+        stage: input.stage,
+      })
+      .pipe(
+        Effect.mapError(mapHouseholdFailure),
+        Effect.flatMap((rawStage) =>
+          Schema.decodeUnknownEffect(HouseholdReadEvidenceStageResult, {
+            onExcessProperty: "error",
+          })(rawStage).pipe(Effect.mapError(() => importTransitionRejected()))
+        )
+      );
+    return (
+      stage !== null &&
+      stage.dispatchId === input.recoveryDispatchId &&
+      stage.inputFingerprint === input.inputFingerprint &&
+      stage.outcome !== "Dispatching"
+    );
   });
 
 export const readHouseholdProviderDispatchId = (input: {

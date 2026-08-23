@@ -8,7 +8,7 @@ import { Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { projectActiveRecipeImportAction } from "./import-intent-review-action.js";
-import { RecipeDraft } from "./import-recipe-draft.repository.d1.js";
+import { RecipeDraft } from "./import-recipe-draft.repository.js";
 import {
   PlanningTags,
   RecipeCorrection,

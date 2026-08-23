@@ -360,7 +360,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
       Effect.gen(function* claimSpeechEvidence() {
         yield* assertIdentity(input, claim.importId, claim.generation);
         const receipt = yield* boundary.mutate(
-          `speech:claim:${claim.dispatchId}:${claim.sourceMediaSha256}`,
+          `speech:claim:${claim.dispatchId}:${claim.sourceMediaSha256}:${claim.startedAt}`,
           {
             inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
               claim.sourceMediaSha256
@@ -451,7 +451,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
       assertIdentity(input, failure.importId, failure.generation).pipe(
         Effect.andThen(
           boundary.mutate(
-            `speech:fail:${failure.dispatchId}:${failure.sourceMediaSha256}:${failure.failureCode}`,
+            `speech:fail:${failure.dispatchId}:${failure.sourceMediaSha256}:${failure.failureCode}:${failure.completedAt}`,
             {
               inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
                 failure.sourceMediaSha256
@@ -510,7 +510,7 @@ export const makeHouseholdVisualEvidenceRepository = (
       assertIdentity(input, claim.importId, claim.generation).pipe(
         Effect.andThen(
           boundary.mutate(
-            `visual:claim:${claim.dispatchId}:${claim.sourceMediaSha256}`,
+            `visual:claim:${claim.dispatchId}:${claim.sourceMediaSha256}:${claim.startedAt}`,
             {
               inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
                 claim.sourceMediaSha256
@@ -611,7 +611,7 @@ export const makeHouseholdVisualEvidenceRepository = (
       assertIdentity(input, failure.importId, failure.generation).pipe(
         Effect.andThen(
           boundary.mutate(
-            `visual:fail:${failure.dispatchId}:${failure.sourceMediaSha256}:${failure.failureCode}`,
+            `visual:fail:${failure.dispatchId}:${failure.sourceMediaSha256}:${failure.failureCode}:${failure.completedAt}`,
             {
               inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
                 failure.sourceMediaSha256

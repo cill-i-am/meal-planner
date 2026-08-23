@@ -21,10 +21,8 @@ const R2EvidenceEventAction = Schema.Literals([
   "PutObject",
 ]);
 
-/** Closed Cloudflare R2 event-notification body. */
-export const R2EvidenceEvent = Schema.Struct({
+const R2EvidenceEventBase = {
   account: Schema.String,
-  action: R2EvidenceEventAction,
   bucket: Schema.String,
   eventTime: ImportTimestampEncoded,
   object: Schema.Struct({
@@ -32,17 +30,29 @@ export const R2EvidenceEvent = Schema.Struct({
     key: Schema.String,
     size: Schema.optionalKey(Schema.Number),
   }),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-export type R2EvidenceEvent = typeof R2EvidenceEvent.Type;
+};
 
-export const RegisterImportEvidenceRoute = Schema.Struct({
-  _tag: Schema.Literal("RegisterImportEvidenceRoute"),
-  importId: ImportId,
-  organizationId: HouseholdOrganizationId,
-  routeVersion: Schema.Literal(1),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-export type RegisterImportEvidenceRoute =
-  typeof RegisterImportEvidenceRoute.Type;
+/** Closed Cloudflare R2 event-notification body, discriminated by action. */
+export const R2EvidenceEvent = Schema.Union([
+  Schema.Struct({
+    ...R2EvidenceEventBase,
+    action: Schema.Literals([
+      "CompleteMultipartUpload",
+      "DeleteObject",
+      "LifecycleDeletion",
+      "PutObject",
+    ]),
+  }),
+  Schema.Struct({
+    ...R2EvidenceEventBase,
+    action: Schema.Literal("CopyObject"),
+    copySource: Schema.Struct({
+      bucket: Schema.String,
+      object: Schema.String,
+    }),
+  }),
+]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type R2EvidenceEvent = typeof R2EvidenceEvent.Type;
 
 export const ImportEvidenceRoute = Schema.Struct({
   importId: ImportId,
@@ -228,12 +238,6 @@ export interface ImportEvidenceEventPorts {
     readonly get: (
       importId: string
     ) => Effect.Effect<ImportEvidenceRoute | null, ImportEvidenceEventFailure>;
-    readonly register: (
-      route: ImportEvidenceRoute
-    ) => Effect.Effect<
-      "ConflictRejected" | "Registered",
-      ImportEvidenceEventFailure
-    >;
   };
 }
 
@@ -242,9 +246,7 @@ export type ImportEvidenceEventOutcome =
   | {
       readonly _tag: "Observed";
       readonly availability: "available" | "deleted" | "missing";
-    }
-  | { readonly _tag: "Registered" }
-  | { readonly _tag: "RouteConflictRejected" };
+    };
 
 const failure = (
   reason: ImportEvidenceEventFailure["reason"],
@@ -264,24 +266,6 @@ const digest = (value: string) =>
     Effect.flatMap(Schema.decodeUnknownEffect(HouseholdImportMutationId)),
     Effect.mapError(() => failure("dependency_unavailable", true))
   );
-
-const registerRoute = (
-  message: RegisterImportEvidenceRoute,
-  routes: ImportEvidenceEventPorts["routes"]
-): Effect.Effect<ImportEvidenceEventOutcome, ImportEvidenceEventFailure> =>
-  routes
-    .register({
-      importId: message.importId,
-      organizationId: message.organizationId,
-      routeVersion: message.routeVersion,
-    })
-    .pipe(
-      Effect.map((outcome) =>
-        outcome === "Registered"
-          ? ({ _tag: "Registered" } as const)
-          : ({ _tag: "RouteConflictRejected" } as const)
-      )
-    );
 
 const route = (
   event: SafeImportEvidenceEvent,
@@ -389,12 +373,8 @@ export const reconcileImportEvidenceQueueMessage = (
   // eslint-disable-next-line anti-slop/no-unknown-parameters -- closed Queue I/O boundary dispatches to one of two Schema-decoded bodies
   untrusted: unknown,
   ports: ImportEvidenceEventPorts
-): Effect.Effect<ImportEvidenceEventOutcome, ImportEvidenceEventFailure> => {
-  if (Schema.is(RegisterImportEvidenceRoute)(untrusted)) {
-    return registerRoute(untrusted, ports.routes);
-  }
-  return decodeSafeImportEvidenceEvent(untrusted).pipe(
+): Effect.Effect<ImportEvidenceEventOutcome, ImportEvidenceEventFailure> =>
+  decodeSafeImportEvidenceEvent(untrusted).pipe(
     Effect.mapError(() => failure("invalid_event", false)),
     Effect.flatMap((event) => route(event, ports))
   );
-};

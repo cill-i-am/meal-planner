@@ -8,6 +8,7 @@ import {
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import type { ImportTraceContext } from "./import-observability.js";
 import {
+  hasHouseholdProviderRecoveryProgress,
   prepareHouseholdProviderRecovery,
   prepareHouseholdRecipeRecovery,
   readHouseholdRecipeRecovery,
@@ -124,11 +125,11 @@ const SpeechRecoveryActivationResponse = Schema.Struct({
   recoveryDispatchId: PilotBudgetDispatchId,
   runtimeStage: Schema.Literal(PilotProviderBudgetStage),
 });
-const VisualRecoveryPreparationResponse = Schema.Struct({
+const VisualRecoveryActivationResponse = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   dispatchId: PilotBudgetDispatchId,
   importId: ImportId,
-  outcome: Schema.Literal("visual_recovery_prepared"),
+  outcome: Schema.Literal("visual_recovery_activated"),
   recoveryDispatchId: PilotBudgetDispatchId,
   runtimeStage: Schema.Literal(PilotProviderBudgetStage),
 });
@@ -161,7 +162,7 @@ const ExpiredRecipeReplaySweepResponse = Schema.Struct({
 export const ProviderTerminalSettlementResponse = Schema.Union([
   TerminalUnknownSettlementResponse,
   SpeechRecoveryActivationResponse,
-  VisualRecoveryPreparationResponse,
+  VisualRecoveryActivationResponse,
   VisualTerminalUnknownSettlementResponse,
   RecipeTerminalUnknownSettlementResponse,
   RecipeRecoveryUnknownSettlementResponse,
@@ -417,7 +418,10 @@ interface ProviderTerminalSettlementServiceInput {
   readonly now: () => typeof ImportTimestamp.Type;
   readonly runtimeStage: string;
   readonly recipeRecoveryStarter?: RecipeRecoveryWorkflowStarter;
-  readonly workflowStarter?: Pick<ImportWorkflowStarter, "restartFromSpeech">;
+  readonly workflowStarter?: Pick<
+    ImportWorkflowStarter,
+    "restartFromSpeech" | "restartFromVisual"
+  >;
   readonly trace: ImportTraceContext;
 }
 
@@ -481,7 +485,8 @@ const prepareProviderRecovery = (
   stage: "speech" | "visual"
 ) =>
   Effect.gen(function* prepareHouseholdOwnedProviderRecovery() {
-    if (service.householdDomain === undefined) {
+    const { householdDomain } = service;
+    if (householdDomain === undefined) {
       return yield* Effect.fail(failure("persistence_unavailable"));
     }
     const identity: GlobalSettlementIdentity = {
@@ -497,7 +502,7 @@ const prepareProviderRecovery = (
     const recovery = yield* prepareHouseholdProviderRecovery({
       database: service.database,
       generation: request.acquisitionGeneration,
-      householdDomain: service.householdDomain,
+      householdDomain,
       importId: request.importId,
       originalDispatchId: request.dispatchId,
       settlement: {
@@ -507,13 +512,33 @@ const prepareProviderRecovery = (
       },
       stage,
     }).pipe(Effect.mapError(mapHouseholdError));
-    if (stage === "speech" && recovery.requiresWorkflowActivation) {
-      const restart = service.workflowStarter?.restartFromSpeech;
+    if (recovery.requiresWorkflowActivation) {
+      const restart =
+        stage === "speech"
+          ? service.workflowStarter?.restartFromSpeech
+          : service.workflowStarter?.restartFromVisual;
       if (restart === undefined) {
         return yield* Effect.fail(failure("persistence_unavailable"));
       }
       yield* restart(request.importId).pipe(
-        Effect.mapError(() => failure("persistence_unavailable"))
+        Effect.catchCause(() =>
+          hasHouseholdProviderRecoveryProgress({
+            database: service.database,
+            generation: request.acquisitionGeneration,
+            householdDomain,
+            importId: request.importId,
+            inputFingerprint: recovery.inputFingerprint,
+            recoveryDispatchId: recovery.recoveryDispatchId,
+            stage,
+          }).pipe(
+            Effect.mapError(mapHouseholdError),
+            Effect.flatMap((hasProgress) =>
+              hasProgress
+                ? Effect.void
+                : Effect.fail(failure("persistence_unavailable"))
+            )
+          )
+        )
       );
     }
     return yield* Schema.decodeUnknownEffect(
@@ -525,7 +550,7 @@ const prepareProviderRecovery = (
       outcome:
         stage === "speech"
           ? "speech_recovery_activated"
-          : "visual_recovery_prepared",
+          : "visual_recovery_activated",
       recoveryDispatchId: recovery.recoveryDispatchId,
       runtimeStage: PilotProviderBudgetStage,
     }).pipe(Effect.mapError(() => failure("persistence_corrupt")));

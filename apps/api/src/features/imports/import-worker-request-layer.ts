@@ -12,7 +12,7 @@ import {
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
-import type { RegisterImportEvidenceRoute } from "./import-evidence-event.js";
+import type { ImportEvidenceRoute } from "./import-evidence-event.js";
 import { RecipeImportHouseholdDomain } from "./import-intent-api.http.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
@@ -41,7 +41,7 @@ export interface ImportWorkerRequestLayerInput {
   readonly principalResolver: AuthPrincipalResolver;
   readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarter;
   readonly registerEvidenceRoute: (
-    message: RegisterImportEvidenceRoute
+    route: ImportEvidenceRoute
   ) => Effect.Effect<void, object>;
   readonly runtimeStage: string;
   readonly runtimeContext: Effect.Success<typeof RuntimeContext>;
@@ -65,7 +65,7 @@ export const makeRecipeImportWorkflowDispatcher = (input: {
   >;
   readonly retryDelaysMilliseconds: readonly number[];
   readonly registerEvidenceRoute: (
-    message: RegisterImportEvidenceRoute
+    route: ImportEvidenceRoute
   ) => Effect.Effect<void, object>;
   readonly scheduleRetry: (effect: Effect.Effect<void>) => Effect.Effect<void>;
   readonly trace: ImportTraceContext;
@@ -87,7 +87,6 @@ export const makeRecipeImportWorkflowDispatcher = (input: {
         )(committed.workflowIdentity);
         const dispatchOnce = input
           .registerEvidenceRoute({
-            _tag: "RegisterImportEvidenceRoute",
             importId,
             organizationId: admission.organizationId,
             routeVersion: 1,

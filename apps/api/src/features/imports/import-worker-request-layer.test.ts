@@ -1,11 +1,13 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import {
   HouseholdAdmitRecipeImportResult,
   HouseholdRecordRecipeImportDispatchResult,
 } from "../households/recipe-import/household-recipe-import.contract.js";
 import { HouseholdMemberAdmission } from "../households/rpc/command-envelope.js";
+import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
 import { makeRecipeImportWorkflowDispatcher } from "./import-worker-request-layer.js";
 import { workflowStartUnavailable } from "./import.errors.js";
 import { TestImportTrace } from "./import.test-fixtures.js";
@@ -112,5 +114,81 @@ describe("recipe import Workflow outbox dispatch", () => {
       "route:3",
       "workflow:3",
     ]);
+  });
+
+  it("never starts a Workflow before the immutable evidence route exists", async () => {
+    let workflowStarts = 0;
+    let routeAttempts = 0;
+    const committedDispatchId = Schema.decodeUnknownSync(HouseholdDispatchId)(
+      "dispatch-route-failure-proof"
+    );
+    const committedWorkflowIdentity = Schema.decodeUnknownSync(
+      ImportWorkflowIdentity
+    )(workflowIdentity);
+    const committed = Schema.decodeUnknownSync(
+      HouseholdAdmitRecipeImportResult
+    )({
+      dispatchId: committedDispatchId,
+      intent: {
+        activity: { type: "working" },
+        createdAt,
+        id: intentId,
+        intentVersion: 1,
+        links: {
+          self: `/v1/recipe-import-intents/${intentId}`,
+          timeline: `/v1/recipe-import-intents/${intentId}/timeline`,
+        },
+        object: "recipe_import_intent",
+        processing: { startedAt: createdAt, type: "resolving_source" },
+        source: { kind: "tiktok", resolution: "pending" },
+        status: "processing",
+        updatedAt: createdAt,
+      },
+      workflowIdentity: committedWorkflowIdentity,
+    });
+    const dispatcher = makeRecipeImportWorkflowDispatcher({
+      householdDomain: {
+        recordRecipeImportDispatch: () =>
+          Effect.succeed(
+            Schema.encodeSync(HouseholdRecordRecipeImportDispatchResult)({
+              admission: {
+                committedAtEpochMs: 1,
+                dispatchId: committedDispatchId,
+                workflowIdentity: committedWorkflowIdentity,
+              },
+              attempts: routeAttempts,
+              exhaustedAtEpochMs: null,
+              state: "pending",
+            })
+          ),
+      },
+      importWorkflowStarter: {
+        dispatchAdmission: () =>
+          Effect.sync(() => {
+            workflowStarts += 1;
+            return "created" as const;
+          }),
+      },
+      registerEvidenceRoute: () =>
+        Effect.sync(() => {
+          routeAttempts += 1;
+        }).pipe(Effect.andThen(Effect.fail({ _tag: "route_unavailable" }))),
+      retryDelaysMilliseconds: [0, 0],
+      scheduleRetry: (effect) => effect,
+      trace: TestImportTrace,
+    });
+
+    await Effect.runPromise(
+      dispatcher.dispatch({
+        admission: Schema.decodeUnknownSync(HouseholdMemberAdmission)({
+          actor: { _tag: "Member", actorId: "b".repeat(64) },
+          organizationId: "organization-route-failure-proof",
+        }),
+        committed,
+      })
+    );
+
+    expect(routeAttempts).toBe(3);
+    expect(workflowStarts).toBe(0);
   });
 });

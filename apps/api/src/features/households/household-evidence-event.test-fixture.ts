@@ -31,7 +31,10 @@ import {
   SourceCanonicalId,
 } from "../imports/import.contracts.js";
 import { workflowStartUnavailable } from "../imports/import.errors.js";
-import { HouseholdObserveEvidenceReferenceInput } from "./evidence/household-evidence.contract.js";
+import {
+  HouseholdObserveEvidenceReferenceInput,
+  HouseholdReadEvidenceStageResult,
+} from "./evidence/household-evidence.contract.js";
 import type {
   HouseholdMutateEvidenceStageInput,
   HouseholdMutateEvidenceStageResult,
@@ -41,7 +44,6 @@ import type {
   HouseholdReadEvidenceReferencesInput,
   HouseholdReadEvidenceReferencesResult,
   HouseholdReadEvidenceStageInput,
-  HouseholdReadEvidenceStageResult,
   HouseholdReadImportTerminalCheckpointInput,
   HouseholdReadImportTerminalCheckpointResult,
   HouseholdReadRecipeRecoveryAttemptInput,
@@ -49,12 +51,10 @@ import type {
 } from "./evidence/household-evidence.contract.js";
 import {
   HouseholdImportMutationId,
+  HouseholdRecipeImportExecutionView,
   HouseholdRecipeImportFailure,
 } from "./recipe-import/household-recipe-import.contract.js";
-import type {
-  HouseholdReadRecipeImportExecutionInput,
-  HouseholdRecipeImportExecutionView,
-} from "./recipe-import/household-recipe-import.contract.js";
+import type { HouseholdReadRecipeImportExecutionInput } from "./recipe-import/household-recipe-import.contract.js";
 import { HouseholdSystemAdmission } from "./rpc/command-envelope.js";
 
 interface TestKvNamespace {
@@ -331,6 +331,128 @@ export default {
         ProviderTerminalSettlementRequest,
         { onExcessProperty: "error" }
       )(await request.json());
+      const restartProviderStage = (
+        stage: "speech" | "visual",
+        importId: typeof ImportId.Type
+      ) =>
+        Effect.tryPromise({
+          catch: workflowStartUnavailable,
+          try: async () => {
+            const stateKey = `${stage}-restart:${importId}`;
+            const state =
+              await environment.EVIDENCE_EVENT_RESULTS.get(stateKey);
+            if (state === "active" || state === "complete") {
+              return;
+            }
+            const callsKey = `${stage}-restart-calls:${importId}`;
+            const calls = Number(
+              (await environment.EVIDENCE_EVENT_RESULTS.get(callsKey)) ?? "0"
+            );
+            await environment.EVIDENCE_EVENT_RESULTS.put(
+              callsKey,
+              String(calls + 1)
+            );
+            await environment.EVIDENCE_EVENT_RESULTS.put(stateKey, "active");
+          },
+        });
+      const completeProviderStageBeforeRestartResponse = (
+        stage: "speech" | "visual",
+        importId: typeof ImportId.Type,
+        generation: typeof AcquisitionGeneration.Type
+      ) =>
+        Effect.gen(function* completeProviderRecoveryBeforeResponseLoss() {
+          yield* restartProviderStage(stage, importId);
+          const routes = makeD1ImportEvidenceRouteRepository(
+            environment.MealPlannerDatabase
+          );
+          const route = yield* routes
+            .get(importId)
+            .pipe(Effect.mapError(workflowStartUnavailable));
+          if (route === null) {
+            return yield* Effect.fail(workflowStartUnavailable());
+          }
+          const admission = Schema.decodeUnknownSync(HouseholdSystemAdmission)({
+            actor: {
+              _tag: "System",
+              purpose: "recipe_import_lifecycle_commit",
+            },
+            organizationId: route.organizationId,
+          });
+          const intentId =
+            Schema.decodeUnknownSync(RecipeImportIntentId)(importId);
+          const household = terminalHousehold(environment);
+          const execution = yield* household
+            .readRecipeImportExecution({
+              admission,
+              expectedGeneration: generation,
+              intentId,
+            })
+            .pipe(
+              Effect.flatMap(
+                Schema.decodeUnknownEffect(HouseholdRecipeImportExecutionView, {
+                  onExcessProperty: "error",
+                })
+              ),
+              Effect.mapError(workflowStartUnavailable)
+            );
+          const currentStage = yield* household
+            .readEvidenceStage({
+              admission,
+              expectedGeneration: generation,
+              intentId,
+              stage,
+            })
+            .pipe(
+              Effect.flatMap(
+                Schema.decodeUnknownEffect(HouseholdReadEvidenceStageResult, {
+                  onExcessProperty: "error",
+                })
+              ),
+              Effect.mapError(workflowStartUnavailable)
+            );
+          if (currentStage === null) {
+            return yield* Effect.fail(workflowStartUnavailable());
+          }
+          yield* runAmbiguousProviderAttempt(environment, {
+            admission,
+            canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)(
+              execution.canonicalSourceId
+            ),
+            correlationId: Schema.decodeUnknownSync(ImportCorrelationId)(
+              "00000000-0000-4000-8000-000000000195"
+            ),
+            dispatchId: currentStage.dispatchId,
+            expectedGeneration: generation,
+            inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+              currentStage.inputFingerprint
+            ),
+            intentId,
+            stage,
+          });
+          yield* Effect.promise(() =>
+            environment.EVIDENCE_EVENT_RESULTS.put(
+              `${stage}-restart:${importId}`,
+              "complete"
+            )
+          );
+          return yield* Effect.fail(workflowStartUnavailable());
+        }).pipe(Effect.mapError(workflowStartUnavailable));
+      const restartSpeech = (importId: typeof ImportId.Type) => {
+        const behavior = request.headers.get("x-test-speech-restart");
+        if (behavior === "fail") {
+          return Effect.fail(workflowStartUnavailable());
+        }
+        if (behavior === "terminal-then-fail") {
+          return "acquisitionGeneration" in command
+            ? completeProviderStageBeforeRestartResponse(
+                "speech",
+                importId,
+                command.acquisitionGeneration
+              )
+            : Effect.fail(workflowStartUnavailable());
+        }
+        return restartProviderStage("speech", importId);
+      };
       const result = await Effect.runPromise(
         makeD1ProviderTerminalSettlementService({
           database: environment.MealPlannerDatabase,
@@ -343,34 +465,9 @@ export default {
             correlationId: "00000000-0000-4000-8000-000000000188",
           }),
           workflowStarter: {
-            restartFromSpeech: (importId) =>
-              request.headers.get("x-test-speech-restart") === "fail"
-                ? Effect.fail(workflowStartUnavailable())
-                : Effect.tryPromise({
-                    catch: workflowStartUnavailable,
-                    try: async () => {
-                      const stateKey = `speech-restart:${importId}`;
-                      const state =
-                        await environment.EVIDENCE_EVENT_RESULTS.get(stateKey);
-                      if (state === "active" || state === "complete") {
-                        return;
-                      }
-                      const callsKey = `speech-restart-calls:${importId}`;
-                      const calls = Number(
-                        (await environment.EVIDENCE_EVENT_RESULTS.get(
-                          callsKey
-                        )) ?? "0"
-                      );
-                      await environment.EVIDENCE_EVENT_RESULTS.put(
-                        callsKey,
-                        String(calls + 1)
-                      );
-                      await environment.EVIDENCE_EVENT_RESULTS.put(
-                        stateKey,
-                        "active"
-                      );
-                    },
-                  }),
+            restartFromSpeech: restartSpeech,
+            restartFromVisual: (importId) =>
+              restartProviderStage("visual", importId),
           },
         }).settle(command)
       );
@@ -425,8 +522,6 @@ export default {
             routes: {
               get: (importId) =>
                 routes.get(importId).pipe(Effect.mapError(dependencyFailure)),
-              register: (route) =>
-                routes.register(route).pipe(Effect.mapError(dependencyFailure)),
             },
           }).pipe(
             Effect.match({

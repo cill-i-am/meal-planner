@@ -28,7 +28,8 @@ interface ProviderWorkflowInput {
     | "recipe_recovery_loop_success"
     | "success"
     | "terminal"
-    | "unknown";
+    | "unknown"
+    | "visual_unknown";
 }
 
 const compatibilityDate = "2026-07-14";
@@ -499,6 +500,50 @@ describe("provider workflow task retry exhaustion", () => {
         )
         .first()
     ).resolves.toEqual({ count: dispatchesBefore.count + 1 });
+  });
+
+  it("replays an ambiguous installed visual adapter checkpoint without a second provider call", async () => {
+    const instanceId = "slice-2-native-visual-unknown-replay";
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    await resetGlobalProviderBudgetStage(database);
+
+    await expect(
+      runWorkflow(instanceId, { scenario: "visual_unknown" })
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Failed",
+        stage: "visual",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT dispatch_id, provider_stage_id, state
+             FROM pilot_provider_budget_dispatches
+            WHERE dispatch_id = 'visual:gaia-188-ambiguous:1'`
+        )
+        .first()
+    ).resolves.toEqual({
+      dispatch_id: "visual:gaia-188-ambiguous:1",
+      provider_stage_id: "visual-evidence",
+      state: "settled_unknown",
+    });
+
+    await expect(
+      restartFromAfterProviderCheckpoint(instanceId)
+    ).resolves.toMatchObject({
+      output: {
+        _tag: "Failed",
+        stage: "visual",
+      },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
   });
 
   it.each([

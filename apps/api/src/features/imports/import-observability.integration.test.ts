@@ -143,10 +143,10 @@ const activeInstance = {
 };
 
 describe("speech recovery workflow restart reconciliation", () => {
-  it("accepts a terminal workflow after a lost restart response", async () => {
+  it("accepts an active workflow after a lost restart response", async () => {
     await Promise.all(
-      (["complete", "errored", "terminated"] as const).map(
-        async (terminalStatus) => {
+      (["queued", "running", "waiting", "waitingForPause"] as const).map(
+        async (activeStatus) => {
           let restartCalls = 0;
           let statusReads = 0;
           const starter = makeImportWorkflowStarter({
@@ -160,7 +160,7 @@ describe("speech recovery workflow restart reconciliation", () => {
                 status: () =>
                   Effect.sync(() => {
                     const status =
-                      statusReads === 0 ? "complete" : terminalStatus;
+                      statusReads === 0 ? "complete" : activeStatus;
                     statusReads += 1;
                     return { status };
                   }),
@@ -177,6 +177,35 @@ describe("speech recovery workflow restart reconciliation", () => {
         }
       )
     );
+  });
+
+  it("rejects a terminal instance when restart failed before activation", async () => {
+    let restartCalls = 0;
+    let statusReads = 0;
+    const starter = makeImportWorkflowStarter({
+      createBatch: () => Effect.die("speech recovery must not create"),
+      get: () =>
+        Effect.succeed({
+          restart: () =>
+            Effect.sync(() => {
+              restartCalls += 1;
+            }).pipe(Effect.andThen(Effect.die("restart rejected"))),
+          status: () =>
+            Effect.sync(() => {
+              statusReads += 1;
+              return { status: "complete" };
+            }),
+        }),
+    });
+
+    await expect(
+      Effect.runPromise(
+        starter.restartFromSpeech?.(importId) ??
+          Effect.die("missing speech recovery restart")
+      )
+    ).rejects.toMatchObject({ _tag: "WorkflowStartUnavailable" });
+    expect(restartCalls).toBe(1);
+    expect(statusReads).toBe(2);
   });
 });
 

@@ -125,15 +125,16 @@ committed reference or corrupt the current result. R2 lifecycle deletion
 remains asynchronous defense in depth, and late or replayed event notifications
 are fenced by household, import, generation, object key, and integrity metadata.
 
-After authenticated import admission, the API registers a private,
-noncanonical import-to-organization route with the reconciliation Queue before
-starting the Workflow. A private D1 table stores that route with import ID as
-its unique key only so an R2 event consumer can reconstruct an admitted system
-command. Registration atomically inserts and reads the immutable winner, so
-concurrent conflicting organizations fail closed instead of overwriting one
-another. The route is never a public lookup, household authority, product read
-model, or source of object names, and raw organization identifiers are never
-logged or returned.
+After authenticated import admission, the API synchronously registers a
+private, noncanonical import-to-organization route before starting the
+Workflow. A private D1 table stores that route with import ID as its unique key
+only so an R2 event consumer can reconstruct an admitted system command. The
+unordered Queue carries R2 notifications only, so a valid lifecycle event
+cannot overtake registration. Registration atomically inserts and reads the
+immutable winner, so concurrent conflicting organizations fail closed instead
+of overwriting one another. The route is never a public lookup, household
+authority, product read model, or source of object names, and raw organization
+identifiers are never logged or returned.
 
 ## Current scope
 

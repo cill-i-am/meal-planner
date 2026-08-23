@@ -10,6 +10,8 @@ import type { ModuleDefinition } from "miniflare";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { decodeSafeImportEvidenceEvent } from "./import-evidence-event.js";
+
 const compatibilityDate = "2026-07-14";
 const importId = "018f7f67-e0c7-7d34-a593-8c20c6f7b868";
 const organizationId = "organization-event-reconciliation-proof";
@@ -107,18 +109,11 @@ describe("import evidence Queue runtime", () => {
 
   it("delivers an R2 lifecycle deletion through the production reconciliation core", async () => {
     const queue = await runtime?.getQueueProducer("EVENTS", "consumer");
-    await queue?.send({
-      _tag: "RegisterImportEvidenceRoute",
+    const routes = await runtime?.getKVNamespace("ROUTES", "consumer");
+    await routes?.put(
       importId,
-      organizationId,
-      routeVersion: 1,
-    });
-    await expect(result()).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Registered" },
-    });
-    const results = await runtime?.getKVNamespace("RESULTS", "consumer");
-    await results?.delete("last");
+      JSON.stringify({ importId, organizationId, routeVersion: 1 })
+    );
     await queue?.send({
       account: "must-not-escape",
       action: "LifecycleDeletion",
@@ -139,5 +134,27 @@ describe("import evidence Queue runtime", () => {
     expect(JSON.stringify(await result())).not.toMatch(
       /organization-event|imports\/|must-not-escape/u
     );
+  });
+
+  it("strictly decodes Cloudflare's CopyObject notification shape", async () => {
+    await expect(
+      Effect.runPromise(
+        decodeSafeImportEvidenceEvent({
+          account: "must-not-escape",
+          action: "CopyObject",
+          bucket: "must-not-escape",
+          copySource: {
+            bucket: "source-bucket",
+            object: "source-key",
+          },
+          eventTime: "2026-08-22T12:00:00.000Z",
+          object: {
+            eTag: "etag",
+            key: `imports/${importId}/acquisition/v1/generations/4/manifest.json`,
+            size: 42,
+          },
+        })
+      )
+    ).resolves.toMatchObject({ action: "CopyObject", importId });
   });
 });

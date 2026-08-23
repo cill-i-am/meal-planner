@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect";
 
-import { RecipeDraft } from "../imports/import-recipe-draft.repository.d1.js";
+import { RecipeDraft } from "../imports/import-recipe-draft.repository.js";
 import {
   ApprovedRecipe,
   RecipeReviewView,

@@ -295,16 +295,16 @@ describe("household foundation structural boundaries", () => {
     );
 
     expect(repository).toContain(
-      `\`speech:claim:\${claim.dispatchId}:\${claim.sourceMediaSha256}\``
+      `\`speech:claim:\${claim.dispatchId}:\${claim.sourceMediaSha256}:\${claim.startedAt}\``
     );
     expect(repository).toContain(
-      `\`speech:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}\``
+      `\`speech:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}:\${failure.completedAt}\``
     );
     expect(repository).toContain(
-      `\`visual:claim:\${claim.dispatchId}:\${claim.sourceMediaSha256}\``
+      `\`visual:claim:\${claim.dispatchId}:\${claim.sourceMediaSha256}:\${claim.startedAt}\``
     );
     expect(repository).toContain(
-      `\`visual:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}\``
+      `\`visual:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}:\${failure.completedAt}\``
     );
   });
 
@@ -376,6 +376,84 @@ describe("household foundation structural boundaries", () => {
     expect(evidenceRepository).not.toMatch(
       /cloudflare:workers|alchemy\/Cloudflare|R2Bucket|Workflow|Queue|\.getByName\(|\bfetch\s*\(|\.head\s*\(|\.send\s*\(/u
     );
+  });
+
+  it("removes all shared-D1 evidence and extraction authority", async () => {
+    const sources = await readProductionFeatureSources();
+    const forbidden = [
+      "import_transcriptions",
+      "import_visual_evidence",
+      "import_carousel_evidence",
+      "import_recipe_extractions",
+      "makeD1SpeechTranscriptionRepository",
+      "makeD1VisualEvidenceRepository",
+      "makeD1CarouselEvidenceRepository",
+      "makeD1RecipeDraftRepository",
+    ];
+    for (const { path: sourcePath, source } of sources) {
+      for (const token of forbidden) {
+        expect(source, `${sourcePath} retains ${token}`).not.toContain(token);
+      }
+    }
+    for (const removedRepository of [
+      "imports/import-speech-transcription.repository.d1.ts",
+      "imports/import-visual-evidence.repository.d1.ts",
+      "imports/import-carousel.repository.d1.ts",
+      "imports/import-recipe-draft.repository.d1.ts",
+    ]) {
+      expect(sources.map(({ path: sourcePath }) => sourcePath)).not.toContain(
+        removedRepository
+      );
+    }
+  });
+
+  it("binds provider evidence mutations to every command field that Household hashes", async () => {
+    const repository = await read(
+      path.join(
+        apiFeaturesRoot,
+        "imports/import-evidence.repository.household.ts"
+      )
+    );
+    expect(repository).toMatch(/speech:claim:[^`]*\$\{claim\.startedAt\}/u);
+    expect(repository).toMatch(/visual:claim:[^`]*\$\{claim\.startedAt\}/u);
+    expect(repository).toMatch(/speech:fail:[^`]*\$\{failure\.completedAt\}/u);
+    expect(repository).toMatch(/visual:fail:[^`]*\$\{failure\.completedAt\}/u);
+  });
+
+  it("activates both speech and visual recovery through the production Workflow seam", async () => {
+    const [settlement, workflow] = await Promise.all([
+      read(
+        path.join(
+          apiFeaturesRoot,
+          "imports/import-provider-terminal-settlement.ts"
+        )
+      ),
+      read(path.join(apiFeaturesRoot, "imports/import.workflow.ts")),
+    ]);
+    expect(settlement).toContain("restartFromVisual");
+    expect(settlement).toMatch(
+      /recovery\.requiresWorkflowActivation[\s\S]*restartFromSpeech[\s\S]*restartFromVisual/u
+    );
+    expect(workflow).toContain("restartFromVisual");
+    expect(workflow).toContain('name: "extract-visual-evidence-v1"');
+  });
+
+  it("registers the immutable evidence route synchronously before Workflow dispatch", async () => {
+    const worker = await read(path.join(apiFeaturesRoot, "../worker.ts"));
+    expect(worker).toContain("makeD1ImportEvidenceRouteRepository");
+    expect(worker).toMatch(/registerEvidenceRoute:[\s\S]*\.register\(/u);
+    expect(worker).not.toContain("Cloudflare.Queues.WriteQueue");
+    expect(worker).not.toMatch(
+      /registerEvidenceRoute:[\s\S]{0,180}importEvidenceEvents\s*\.send/u
+    );
+  });
+
+  it("models CopyObject as its closed Cloudflare notification variant", async () => {
+    const reconciler = await read(
+      path.join(apiFeaturesRoot, "imports/import-evidence-event.ts")
+    );
+    expect(reconciler).toContain("copySource");
+    expect(reconciler).toContain('action: Schema.Literal("CopyObject")');
   });
 
   it("wires R2 lifecycle notifications to household evidence observation", async () => {

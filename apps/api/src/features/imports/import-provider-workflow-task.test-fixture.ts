@@ -59,6 +59,7 @@ const ProviderWorkflowInput = Schema.Struct({
     "success",
     "terminal",
     "unknown",
+    "visual_unknown",
   ]),
 });
 type ProviderWorkflowInput = typeof ProviderWorkflowInput.Type;
@@ -366,6 +367,54 @@ const installedSpeechDispatch = (
     });
   });
 
+const installedVisualDispatch = (
+  env: ProviderWorkflowTestEnv,
+  instanceId: string
+) =>
+  Effect.gen(function* runInstalledVisualDispatch() {
+    yield* increment(env, instanceId, "task-attempts");
+    const correlationId = decodeCorrelationId(
+      "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b88"
+    );
+    const dispatch = makePilotProviderDispatchGate({
+      correlationId,
+      now: () => decodeTimestamp("2026-07-28T08:00:00.000Z"),
+      repository: makeD1PilotProviderBudgetRepository(
+        env.MealPlannerDatabase,
+        "pilot-gaia-118"
+      ),
+      runId: decodeRunId("run_gaia_188_visual_ambiguous"),
+      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
+    });
+    const transport = makeVisualTransport(
+      () => {
+        throw new Error("simulated ambiguous visual provider interruption");
+      },
+      () => Effect.runPromise(increment(env, instanceId, "provider-calls"))
+    );
+    const visual = yield* makeInstalledVisualEvidenceExtractor({
+      correlationId,
+      dispatch,
+      transport,
+    });
+    return yield* visual.extract({
+      dispatchId: "visual:gaia-188-ambiguous:1",
+      frames: [
+        {
+          bytes: new Uint8Array([1, 2, 3]),
+          height: 1,
+          mimeType: "image/jpeg",
+          sha256: "a".repeat(64),
+          timestampMilliseconds: 0,
+          width: 1,
+        },
+      ],
+      generation: decodeGeneration(1),
+      importId: decodeImportId("00000000-0000-4000-8000-000000000188"),
+      sourceMediaSha256: "b".repeat(64),
+    });
+  });
+
 const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
   Effect.gen(function* runBudgetedComposition() {
     const responses = [
@@ -506,6 +555,7 @@ const providerStageByScenario = {
   success: "visual",
   terminal: "visual",
   unknown: "speech",
+  visual_unknown: "visual",
 } as const satisfies Record<
   ProviderWorkflowInput["scenario"],
   "recipe" | "speech" | "visual"
@@ -672,6 +722,12 @@ const providerWorkflowExport = {
             Effect.mapError(providerFailureCode),
             Effect.provideService(RuntimeContext, testRuntimeContext)
           );
+        } else if (input.scenario === "visual_unknown") {
+          provider = installedVisualDispatch(env, event.instanceId).pipe(
+            Effect.as("unexpected-success"),
+            Effect.mapError(providerFailureCode),
+            Effect.provideService(RuntimeContext, testRuntimeContext)
+          );
         } else if (input.scenario === "retry_exhausted") {
           provider = installedSpeechDispatch(
             env,
@@ -686,7 +742,9 @@ const providerWorkflowExport = {
           provider = directProviderEffect(env, event.instanceId, input);
         }
         const checkpoint = yield* runProviderTask(
-          "provider-dispatch",
+          stage === "speech"
+            ? "record-acquisition-v2"
+            : "extract-visual-evidence-v1",
           stage,
           provider,
           (value) =>
@@ -757,6 +815,8 @@ export default {
           {
             steps: [
               { name: "provider-dispatch" },
+              { name: "record-acquisition-v2" },
+              { name: "extract-visual-evidence-v1" },
               { name: "transcribe-video-v1" },
             ],
             type: "disableRetryDelays",

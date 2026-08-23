@@ -1394,6 +1394,9 @@ export interface ImportWorkflowStarter {
   readonly restartFromSpeech?: (
     importId: ImportId
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
+  readonly restartFromVisual?: (
+    importId: ImportId
+  ) => Effect.Effect<void, WorkflowStartUnavailable>;
   readonly restartPostAcquisition?: (
     importId: ImportId,
     checkpoint: PostAcquisitionJournalCheckpoint
@@ -1469,7 +1472,10 @@ const reconcileExisting = (instance: WorkflowInstanceLike) =>
     }
   );
 
-const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
+const reconcileProviderRestart = (
+  instance: WorkflowInstanceLike,
+  name: "extract-visual-evidence-v1" | "record-acquisition-v2"
+) =>
   instance.status().pipe(
     Effect.flatMap(({ status }) => {
       switch (status) {
@@ -1485,7 +1491,7 @@ const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
           return instance
             .restart({
               from: {
-                name: "record-acquisition-v2",
+                name,
                 type: "do",
               },
             })
@@ -1498,11 +1504,8 @@ const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
                     .pipe(
                       Effect.flatMap(({ status: reconciledStatus }) =>
                         [
-                          "complete",
-                          "errored",
                           "queued",
                           "running",
-                          "terminated",
                           "waiting",
                           "waitingForPause",
                         ].includes(reconciledStatus)
@@ -1619,7 +1622,19 @@ export const makeImportWorkflowStarter = (
     restartFromSpeech: (importId) =>
       workflow
         .get(importWorkflowInstanceId(importId))
-        .pipe(Effect.flatMap(reconcileSpeechRestart)),
+        .pipe(
+          Effect.flatMap((instance) =>
+            reconcileProviderRestart(instance, "record-acquisition-v2")
+          )
+        ),
+    restartFromVisual: (importId) =>
+      workflow
+        .get(importWorkflowInstanceId(importId))
+        .pipe(
+          Effect.flatMap((instance) =>
+            reconcileProviderRestart(instance, "extract-visual-evidence-v1")
+          )
+        ),
     restartPostAcquisition,
   };
 };

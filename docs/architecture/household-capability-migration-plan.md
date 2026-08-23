@@ -535,18 +535,26 @@ repositories are physically absent; there are no compatibility reads, fixture
 seeds, dual writes, or backfills.
 
 R2 notification reconciliation uses one bounded noncanonical operational
-index: after authenticated admission, the API enqueues an immutable
-import-to-organization route before Workflow start, and the private consumer
-atomically inserts it into a private D1 table keyed by import ID. Concurrent
-registration is serialized by that uniqueness boundary: the first route is
-immutable and every conflicting organization fails closed. The route can only
-reconstruct the enumerated lifecycle system admission, and the consumer
+index: after authenticated admission, the API synchronously inserts and reads
+an immutable import-to-organization route in a private D1 table before
+Workflow start. The unordered Queue carries only R2 notifications, so an event
+cannot overtake route registration. Concurrent registration is serialized by
+the route's unique import ID: the first route is immutable and every
+conflicting organization fails closed. The route can only reconstruct the
+enumerated lifecycle system admission, and the consumer
 re-proves import, authoritative source kind, generation, object key, kind,
 hash, and stored metadata before an idempotent household availability
 observation. Household state fences observations by event time and a fixed
 same-time action precedence, so delayed deletion cannot replace newer
 availability. The route is not a household registry, product read model,
 object-name source, or Slice 3 recovery ledger.
+
+Speech and visual recovery preparation commit the next fenced recovery
+dispatch before activating the corresponding Workflow step. Exact preparation
+replays return the same receipt. A lost activation response is accepted only
+when the same household generation, recovery dispatch, and input fingerprint
+has already made terminal progress; a still-dispatching attempt remains
+retryable.
 
 ### Slice 3: global provider accounting
 

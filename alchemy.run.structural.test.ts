@@ -129,6 +129,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260822083458_import_execution/migration.sql",
       "20260823055120_import_execution/migration.sql",
       "20260823080018_import_execution/migration.sql",
+      "20260823113951_import_execution/migration.sql",
     ]);
     const retirementMigration = readRepoFile(
       "./apps/api/migrations/20260823080018_import_execution/migration.sql"
@@ -142,6 +143,19 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(retirementMigration).toContain(
       "DROP TABLE `import_recipe_executor_terminal_checkpoints`;"
     );
+    const evidenceRetirementMigration = readRepoFile(
+      "./apps/api/migrations/20260823113951_import_execution/migration.sql"
+    );
+    for (const authority of [
+      "import_carousel_evidence",
+      "import_recipe_extractions",
+      "import_transcriptions",
+      "import_visual_evidence",
+    ]) {
+      expect(evidenceRetirementMigration).toContain(
+        `DROP TABLE \`${authority}\`;`
+      );
+    }
   });
 
   it("provisions Better Auth D1 while Drizzle Kit owns its checked-in migrations", () => {
@@ -465,8 +479,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(eventWorkerSource).toContain(
       "householdDomain.readEvidenceReferences(input)"
     );
-    expect(eventDecoderSource).toContain("RegisterImportEvidenceRoute");
-    expect(eventDecoderSource).toContain("HouseholdOrganizationId");
+    expect(eventDecoderSource).not.toContain("RegisterImportEvidenceRoute");
     expect(eventDecoderSource).toContain(
       "ports.household.observeEvidenceReference({"
     );
@@ -479,10 +492,10 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(eventDecoderSource).toContain(
       'metadata["sha256"] !== reference.sha256'
     );
-    expect(apiWorkerSource).toContain(
-      "Cloudflare.Queues.WriteQueue(\n      ImportEvidenceEventQueue"
+    expect(apiWorkerSource).toContain("makeD1ImportEvidenceRouteRepository(");
+    expect(apiWorkerSource).not.toContain(
+      "registerEvidenceRoute: (message) =>"
     );
-    expect(apiWorkerSource).toContain("registerEvidenceRoute: (message) =>");
     expect(requestLayerSource.indexOf(".registerEvidenceRoute({")).toBeLessThan(
       requestLayerSource.indexOf(".dispatchAdmission({")
     );

@@ -89,10 +89,6 @@ export default class ImportEvidenceEventWorker extends Cloudflare.Worker<ImportE
               routes: {
                 get: (importId) =>
                   routes.get(importId).pipe(Effect.mapError(dependencyFailure)),
-                register: (route) =>
-                  routes
-                    .register(route)
-                    .pipe(Effect.mapError(dependencyFailure)),
               },
             });
           }).pipe(
