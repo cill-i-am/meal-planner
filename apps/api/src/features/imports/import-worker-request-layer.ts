@@ -85,49 +85,49 @@ export const makeRecipeImportWorkflowDispatcher = (input: {
         const workflowIdentity = yield* Schema.decodeUnknownEffect(
           ImportWorkflowIdentity
         )(committed.workflowIdentity);
-        const dispatchOnce = input
+        const recordDispatch = (
+          outcome: "prepared" | "started" | "unavailable"
+        ) =>
+          input.householdDomain.recordRecipeImportDispatch({
+            admission: {
+              actor: {
+                _tag: "System",
+                purpose: "import_workflow_dispatch",
+              },
+              organizationId: admission.organizationId,
+            },
+            dispatchId,
+            originalTrace: input.trace,
+            outcome,
+            workflowIdentity,
+          });
+        const prepareDispatch = input
           .registerEvidenceRoute({
             importId,
             organizationId: admission.organizationId,
             routeVersion: 1,
           })
-          .pipe(
-            Effect.flatMap(() =>
-              input.importWorkflowStarter.dispatchAdmission({
+          .pipe(Effect.flatMap(() => recordDispatch("prepared")));
+        const dispatchOnce = prepareDispatch.pipe(
+          Effect.flatMap(() =>
+            input.importWorkflowStarter
+              .dispatchAdmission({
                 executionGeneration,
                 importId,
                 organizationId: admission.organizationId,
                 trace: input.trace,
                 workflowIdentity,
               })
-            ),
-            Effect.as("started" as const),
-            Effect.catchCause(() => Effect.succeed("unavailable" as const)),
-            Effect.tap((outcome) =>
-              input.householdDomain
-                .recordRecipeImportDispatch({
-                  admission: {
-                    actor: {
-                      _tag: "System",
-                      purpose: "import_workflow_dispatch",
-                    },
-                    organizationId: admission.organizationId,
-                  },
-                  dispatchId,
-                  originalTrace: input.trace,
-                  outcome,
-                  workflowIdentity,
-                })
-                .pipe(
-                  Effect.asVoid,
-                  Effect.catchCause(() =>
-                    Effect.logWarning(
-                      "recipe_import.workflow_dispatch_state_unavailable"
-                    )
-                  )
+              .pipe(
+                Effect.as("started" as const),
+                Effect.catchCause(() => Effect.succeed("unavailable" as const)),
+                Effect.flatMap((outcome) =>
+                  recordDispatch(outcome).pipe(Effect.as(outcome))
                 )
-            )
-          );
+              )
+          ),
+          Effect.catchCause(() => Effect.succeed("unavailable" as const))
+        );
         if ((yield* dispatchOnce) === "unavailable") {
           yield* input.scheduleRetry(
             Effect.gen(function* retryCommittedRecipeImportDispatch() {

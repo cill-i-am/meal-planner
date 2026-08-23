@@ -53,6 +53,7 @@ export type SpeechDispatchClaim =
   | {
       readonly _tag: "Failed";
       readonly code: SpeechTranscriptionFailureCode;
+      readonly completedAt: ImportTimestamp;
       readonly dispatchId: string;
     }
   | {

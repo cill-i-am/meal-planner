@@ -7,6 +7,7 @@ import {
 } from "../households/evidence/household-evidence.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdSystemAdmission } from "../households/rpc/command-envelope.js";
+import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import type { AcquisitionGeneration } from "./import-media.model.js";
 import type { ProviderTaskFailureCheckpoint } from "./import-provider-workflow-task.js";
 import { ImportId } from "./import.contracts.js";
@@ -30,12 +31,13 @@ interface AmbiguousProviderTerminalFailureInput {
 }
 
 export const persistHouseholdProviderTerminalAuthority = <Failure>(input: {
+  readonly acquisitionGeneration: AcquisitionGeneration;
   readonly admission: HouseholdSystemAdmission;
   readonly failAmbiguous: (
     failure: AmbiguousProviderTerminalFailureInput
   ) => Effect.Effect<void, Failure>;
   readonly failure: ProviderTaskFailureCheckpoint;
-  readonly generation: AcquisitionGeneration;
+  readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: Pick<
     HouseholdDomainWorkerMethods,
     "readEvidenceStage" | "readImportTerminalCheckpoint"
@@ -50,7 +52,7 @@ export const persistHouseholdProviderTerminalAuthority = <Failure>(input: {
       input.householdDomain
         .readEvidenceStage({
           admission: input.admission,
-          expectedGeneration: input.generation,
+          expectedGeneration: input.executionGeneration,
           intentId: input.intentId,
           stage: terminalStage,
         })
@@ -71,7 +73,7 @@ export const persistHouseholdProviderTerminalAuthority = <Failure>(input: {
         completedAt: input.now(),
         dispatchId: stage.dispatchId,
         failureCode: "outcome_unknown",
-        generation: input.generation,
+        generation: input.acquisitionGeneration,
         importId: Schema.decodeUnknownSync(ImportId)(input.intentId),
         sourceMediaSha256: stage.inputFingerprint,
       });
@@ -85,7 +87,7 @@ export const persistHouseholdProviderTerminalAuthority = <Failure>(input: {
     const checkpoint = yield* input.householdDomain
       .readImportTerminalCheckpoint({
         admission: input.admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: input.intentId,
         ownershipId: stage.dispatchId,
         stage: terminalStage,

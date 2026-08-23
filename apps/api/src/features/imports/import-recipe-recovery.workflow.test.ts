@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { PilotBudgetDispatchId } from "../pilots/pilot-provider-budget.js";
+import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import type {
@@ -15,6 +16,9 @@ const importId = Schema.decodeUnknownSync(ImportId)(
   "00000000-0000-4000-8000-000000000217"
 );
 const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
+const executionGeneration = Schema.decodeUnknownSync(
+  ImportIntentExecutionGeneration
+)(1);
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
   "00000000-0000-4000-8000-000000000218"
 );
@@ -34,6 +38,7 @@ const attempt = (ordinal: RecipeRecoveryOrdinal): RecipeRecoveryAttempt => ({
   ),
   currentExtractionFingerprint: sha(String(ordinal).repeat(64)),
   evidenceFingerprint: sha("a".repeat(64)),
+  executionGeneration,
   importId,
   ordinal,
   predecessorDispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
@@ -51,12 +56,14 @@ const attempt = (ordinal: RecipeRecoveryOrdinal): RecipeRecoveryAttempt => ({
 const input = (attemptOrdinal: RecipeRecoveryOrdinal) => ({
   acquisitionGeneration: generation,
   attemptOrdinal,
+  executionGeneration,
   importId,
   trace: { correlationId },
 });
 const authorization = (attemptOrdinal: RecipeRecoveryOrdinal) => ({
   acquisitionGeneration: generation,
   attemptOrdinal,
+  executionGeneration,
   importId,
 });
 

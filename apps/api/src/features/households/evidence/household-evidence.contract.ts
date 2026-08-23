@@ -432,6 +432,7 @@ export type HouseholdReadEvidenceStageInput =
 export const HouseholdReadEvidenceStageResult = Schema.NullOr(
   Schema.Struct({
     committedAt: ImportTimestamp,
+    completedAt: Schema.NullOr(ImportTimestamp),
     dispatchId: DispatchId,
     executionGeneration: PositiveSafeInteger,
     extractionContext: Schema.NullOr(HouseholdExtractionClaimContext),
@@ -493,6 +494,7 @@ export const HouseholdRecipeRecoveryAttempt = Schema.Struct({
   currentDispatchId: DispatchId,
   currentExtractionFingerprint: HouseholdEvidenceSha256,
   evidenceFingerprint: HouseholdEvidenceSha256,
+  executionGeneration: PositiveSafeInteger,
   importId: RecipeImportIntentId,
   ordinal: HouseholdRecipeRecoveryOrdinal,
   predecessorDispatchId: DispatchId,
@@ -508,6 +510,7 @@ export type HouseholdRecipeRecoveryAttempt =
   typeof HouseholdRecipeRecoveryAttempt.Type;
 
 export const HouseholdPrepareRecipeRecoveryInput = Schema.Struct({
+  acquisitionAttemptGeneration: PositiveSafeInteger,
   admission: HouseholdSystemAdmission,
   expectedGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,

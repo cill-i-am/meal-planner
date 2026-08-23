@@ -339,6 +339,7 @@ const validateRecoveryCheckpoint = (
     : Effect.fail(failure("illegal_transition"));
 
 const validateRecoverySequence = (input: {
+  readonly acquisitionAttemptGeneration: number;
   readonly current: RecoveryAttemptRow | undefined;
   readonly expectedPredecessorFingerprint: string;
   readonly expectedOrdinal: number;
@@ -359,6 +360,9 @@ const validateRecoverySequence = (input: {
   }
   const valid =
     ordinal === input.expectedOrdinal &&
+    (input.current === undefined ||
+      input.current.acquisitionAttemptGeneration ===
+        input.acquisitionAttemptGeneration) &&
     input.stage.inputFingerprint === input.expectedPredecessorFingerprint &&
     input.predecessorDispatchId === expectedPredecessorDispatchId &&
     input.stage.inputFingerprint === predecessorExtractionFingerprint;
@@ -454,7 +458,6 @@ export const makeHouseholdEvidenceRepository = (
         HouseholdCommitAcquisitionEvidenceInput
       )(input).pipe(Effect.mapError(persistenceFailure));
       const commandDigest = yield* digestJson({
-        acquisitionAttemptGeneration: encodedInput.acquisitionAttemptGeneration,
         expectedGeneration: encodedInput.expectedGeneration,
         intentId: encodedInput.intentId,
         operation: "commit-acquisition-evidence",
@@ -956,7 +959,11 @@ export const makeHouseholdEvidenceRepository = (
                 );
               }
               if (current.state === "failed") {
-                if (current.failureCode !== input.operation.failureCode) {
+                if (
+                  current.failureCode !== input.operation.failureCode ||
+                  current.completedAt !==
+                    DateTime.formatIso(input.operation.completedAt)
+                ) {
                   return yield* Effect.fail(failure("idempotency_conflict"));
                 }
               } else if (current.state === "dispatching") {
@@ -964,6 +971,9 @@ export const makeHouseholdEvidenceRepository = (
                   .update(householdEvidenceStageExecutions)
                   .set({
                     committedAt,
+                    completedAt: DateTime.formatIso(
+                      input.operation.completedAt
+                    ),
                     failureCode: input.operation.failureCode,
                     state: "failed",
                   })
@@ -990,7 +1000,9 @@ export const makeHouseholdEvidenceRepository = (
                   );
                 if (input.operation.stage !== "carousel") {
                   yield* transaction.insert(importTerminalCheckpoints).values({
-                    completedAt: committedAt,
+                    completedAt: DateTime.formatIso(
+                      input.operation.completedAt
+                    ),
                     executionGeneration: input.expectedGeneration,
                     failureCode: input.operation.failureCode,
                     inputFingerprint: input.inputFingerprint,
@@ -1074,6 +1086,7 @@ export const makeHouseholdEvidenceRepository = (
                   .update(householdEvidenceStageExecutions)
                   .set({
                     committedAt,
+                    completedAt: null,
                     dispatchId: input.operation.dispatchId,
                     failureCode: null,
                     inputFingerprint: input.inputFingerprint,
@@ -1293,6 +1306,7 @@ export const makeHouseholdEvidenceRepository = (
         HouseholdPrepareRecipeRecoveryInput
       )(input).pipe(Effect.mapError(persistenceFailure));
       const commandDigest = yield* digestJson({
+        acquisitionAttemptGeneration: encodedInput.acquisitionAttemptGeneration,
         expectedGeneration: encodedInput.expectedGeneration,
         intentId: encodedInput.intentId,
         operation: "prepare-recipe-recovery",
@@ -1455,12 +1469,13 @@ export const makeHouseholdEvidenceRepository = (
               rootDispatchId,
               rootExtractionFingerprint,
             } = yield* validateRecoverySequence({
+              acquisitionAttemptGeneration: input.acquisitionAttemptGeneration,
               current,
               evidenceFingerprint: claim.evidenceFingerprint,
               expectedOrdinal: preflightOrdinal,
               expectedPredecessorFingerprint:
                 preflightPredecessorExtractionFingerprint,
-              generation: input.expectedGeneration,
+              generation: input.acquisitionAttemptGeneration,
               intentId: input.intentId,
               predecessorDispatchId: input.predecessorDispatchId,
               stage: validStage,
@@ -1471,11 +1486,12 @@ export const makeHouseholdEvidenceRepository = (
               HouseholdReadRecipeRecoveryAttemptResult,
               { onExcessProperty: "error" }
             )({
-              acquisitionGeneration: input.expectedGeneration,
+              acquisitionGeneration: input.acquisitionAttemptGeneration,
               createdAt,
               currentDispatchId,
               currentExtractionFingerprint,
               evidenceFingerprint: claim.evidenceFingerprint,
+              executionGeneration: input.expectedGeneration,
               importId: input.intentId,
               ordinal,
               predecessorDispatchId: input.predecessorDispatchId,
@@ -1500,6 +1516,7 @@ export const makeHouseholdEvidenceRepository = (
               result
             );
             yield* transaction.insert(importRecipeRecoveryAttempts).values({
+              acquisitionAttemptGeneration: input.acquisitionAttemptGeneration,
               createdAt,
               currentDispatchId,
               currentExtractionFingerprint,
@@ -1605,12 +1622,13 @@ export const makeHouseholdEvidenceRepository = (
         attempt === undefined
           ? null
           : {
-              acquisitionGeneration: attempt.executionGeneration,
+              acquisitionGeneration: attempt.acquisitionAttemptGeneration,
               createdAt: attempt.createdAt,
               currentDispatchId: attempt.currentDispatchId,
               currentExtractionFingerprint:
                 attempt.currentExtractionFingerprint,
               evidenceFingerprint: attempt.evidenceFingerprint,
+              executionGeneration: attempt.executionGeneration,
               importId: attempt.intentId,
               ordinal: attempt.ordinal,
               predecessorDispatchId: attempt.predecessorDispatchId,
@@ -1709,6 +1727,7 @@ export const makeHouseholdEvidenceRepository = (
         }
       )({
         committedAt: stage.committedAt,
+        completedAt: stage.completedAt,
         dispatchId: stage.dispatchId,
         executionGeneration: input.expectedGeneration,
         extractionContext,

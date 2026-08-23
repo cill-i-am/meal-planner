@@ -26,6 +26,7 @@ import {
   makeHouseholdImportEvidenceCurrentRepository,
   makeHouseholdRecipeDraftRepository,
 } from "./import-evidence.repository.household.js";
+import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import type {
   RecipeRecoveryAttempt,
   RecipeRecoveryWorkflowInput,
@@ -94,8 +95,9 @@ const mapHouseholdFailure = (error: HouseholdRecipeImportDomainFailure) =>
     : importTransitionRejected();
 
 export const resolveHouseholdRecoveryAuthority = (input: {
+  readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly database: AnyD1Database;
-  readonly generation: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
+  readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: Pick<
     RecipeRecoveryHouseholdAuthority,
     "readRecipeImportExecution"
@@ -122,7 +124,7 @@ export const resolveHouseholdRecoveryAuthority = (input: {
     const execution = yield* input.householdDomain
       .readRecipeImportExecution({
         admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId,
       })
       .pipe(
@@ -164,8 +166,9 @@ const decodeWorkflowAttempt = (attempt: HouseholdRecipeRecoveryAttempt) =>
   );
 
 export const prepareHouseholdRecipeRecovery = (input: {
+  readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly database: AnyD1Database;
-  readonly generation: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
+  readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly predecessorDispatchId: RecipeRecoveryAttempt["predecessorDispatchId"];
@@ -177,19 +180,21 @@ export const prepareHouseholdRecipeRecovery = (input: {
 }) =>
   Effect.gen(function* prepareHouseholdRecipeRecoveryAttempt() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
+      acquisitionGeneration: input.acquisitionGeneration,
       database: input.database,
-      generation: input.generation,
+      executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
     });
     const mutationId = yield* recipeRecoveryHouseholdMutationId(
-      `prepare:${input.importId}:${input.generation}:${input.predecessorDispatchId}`
+      `prepare:${input.importId}:${input.executionGeneration}:${input.acquisitionGeneration}:${input.predecessorDispatchId}`
     );
     const command = yield* Schema.encodeEffect(
       HouseholdPrepareRecipeRecoveryInput
     )({
+      acquisitionAttemptGeneration: input.acquisitionGeneration,
       admission: authority.admission,
-      expectedGeneration: input.generation,
+      expectedGeneration: input.executionGeneration,
       intentId: authority.intentId,
       mutationId,
       predecessorDispatchId: input.predecessorDispatchId,
@@ -209,8 +214,9 @@ export const prepareHouseholdRecipeRecovery = (input: {
   });
 
 export const readHouseholdRecipeRecovery = (input: {
+  readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly database: AnyD1Database;
-  readonly generation: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
+  readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly selector:
@@ -225,15 +231,16 @@ export const readHouseholdRecipeRecovery = (input: {
 }) =>
   Effect.gen(function* readHouseholdRecipeRecoveryAttempt() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
+      acquisitionGeneration: input.acquisitionGeneration,
       database: input.database,
-      generation: input.generation,
+      executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
     });
     const result = yield* input.householdDomain
       .readRecipeRecoveryAttempt({
         admission: authority.admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: authority.intentId,
         selector: input.selector,
       })
@@ -252,8 +259,9 @@ export const readHouseholdRecipeRecovery = (input: {
   });
 
 export const readHouseholdTerminalAuthority = (input: {
+  readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly database: AnyD1Database;
-  readonly generation: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
+  readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly providerDispatchId: string;
@@ -261,15 +269,16 @@ export const readHouseholdTerminalAuthority = (input: {
 }) =>
   Effect.gen(function* readHouseholdTerminalStageAuthority() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
+      acquisitionGeneration: input.acquisitionGeneration,
       database: input.database,
-      generation: input.generation,
+      executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
     });
     const stage = yield* input.householdDomain
       .readEvidenceStage({
         admission: authority.admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: authority.intentId,
         stage: input.stage,
       })
@@ -293,7 +302,7 @@ export const readHouseholdTerminalAuthority = (input: {
       expectedProviderDispatchId =
         stage.extractionContext === null
           ? null
-          : `recipe:${input.importId}:${input.generation}:${stage.extractionContext.evidenceFingerprint}`;
+          : `recipe:${input.importId}:${input.acquisitionGeneration}:${stage.extractionContext.evidenceFingerprint}`;
       const recoveryMatch = /^(?<root>.*):recovery:(?<ordinal>\d+)$/u.exec(
         input.providerDispatchId
       );
@@ -301,7 +310,7 @@ export const readHouseholdTerminalAuthority = (input: {
         const recovery = yield* input.householdDomain
           .readRecipeRecoveryAttempt({
             admission: authority.admission,
-            expectedGeneration: input.generation,
+            expectedGeneration: input.executionGeneration,
             intentId: authority.intentId,
             selector: {
               _tag: "Latest",
@@ -334,7 +343,7 @@ export const readHouseholdTerminalAuthority = (input: {
     const checkpoint = yield* input.householdDomain
       .readImportTerminalCheckpoint({
         admission: authority.admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: authority.intentId,
         ownershipId: stage.dispatchId,
         stage: input.stage,
@@ -369,8 +378,9 @@ const nextRecoveryDispatchId = (dispatchId: string) => {
 };
 
 export const prepareHouseholdProviderRecovery = (input: {
+  readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly database: AnyD1Database;
-  readonly generation: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
+  readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly originalDispatchId: string;
@@ -390,15 +400,16 @@ export const prepareHouseholdProviderRecovery = (input: {
       return yield* Effect.fail(importTransitionRejected());
     }
     const authority = yield* resolveHouseholdRecoveryAuthority({
+      acquisitionGeneration: input.acquisitionGeneration,
       database: input.database,
-      generation: input.generation,
+      executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
     });
     const checkpoint = yield* input.householdDomain
       .readImportTerminalCheckpoint({
         admission: authority.admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: authority.intentId,
         ownershipId: input.originalDispatchId,
         stage: input.stage,
@@ -422,13 +433,13 @@ export const prepareHouseholdProviderRecovery = (input: {
       return yield* Effect.fail(importTransitionRejected());
     }
     const mutationId = yield* recipeRecoveryHouseholdMutationId(
-      `prepare:${input.stage}:${input.importId}:${input.generation}:${input.originalDispatchId}`
+      `prepare:${input.stage}:${input.importId}:${input.executionGeneration}:${input.acquisitionGeneration}:${input.originalDispatchId}`
     );
     const command = yield* Schema.encodeEffect(
       HouseholdMutateEvidenceStageInput
     )({
       admission: authority.admission,
-      expectedGeneration: input.generation,
+      expectedGeneration: input.executionGeneration,
       inputFingerprint: checkpoint.inputFingerprint,
       intentId: authority.intentId,
       mutationId,
@@ -453,7 +464,7 @@ export const prepareHouseholdProviderRecovery = (input: {
     const currentStage = yield* input.householdDomain
       .readEvidenceStage({
         admission: authority.admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: authority.intentId,
         stage: input.stage,
       })
@@ -473,7 +484,7 @@ export const prepareHouseholdProviderRecovery = (input: {
       return yield* Effect.fail(importTransitionRejected());
     }
     return {
-      acquisitionGeneration: input.generation,
+      acquisitionGeneration: input.acquisitionGeneration,
       importId: input.importId,
       inputFingerprint: checkpoint.inputFingerprint,
       originalDispatchId: input.originalDispatchId,
@@ -485,8 +496,9 @@ export const prepareHouseholdProviderRecovery = (input: {
   });
 
 export const hasHouseholdProviderRecoveryProgress = (input: {
+  readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly database: AnyD1Database;
-  readonly generation: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
+  readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: Pick<
     RecipeRecoveryHouseholdAuthority,
     "readEvidenceStage" | "readRecipeImportExecution"
@@ -498,15 +510,16 @@ export const hasHouseholdProviderRecoveryProgress = (input: {
 }) =>
   Effect.gen(function* readHouseholdProviderRecoveryProgress() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
+      acquisitionGeneration: input.acquisitionGeneration,
       database: input.database,
-      generation: input.generation,
+      executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
     });
     const stage = yield* input.householdDomain
       .readEvidenceStage({
         admission: authority.admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: authority.intentId,
         stage: input.stage,
       })
@@ -527,8 +540,9 @@ export const hasHouseholdProviderRecoveryProgress = (input: {
   });
 
 export const readHouseholdProviderDispatchId = (input: {
+  readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly database: AnyD1Database;
-  readonly generation: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
+  readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: Pick<
     RecipeRecoveryHouseholdAuthority,
     "readEvidenceStage" | "readRecipeImportExecution"
@@ -538,15 +552,16 @@ export const readHouseholdProviderDispatchId = (input: {
 }) =>
   Effect.gen(function* readHouseholdEvidenceStageDispatchId() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
+      acquisitionGeneration: input.acquisitionGeneration,
       database: input.database,
-      generation: input.generation,
+      executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
     });
     const stage = yield* input.householdDomain
       .readEvidenceStage({
         admission: authority.admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: authority.intentId,
         stage: input.stage,
       })
@@ -560,14 +575,15 @@ export const readHouseholdProviderDispatchId = (input: {
       );
     return (
       stage?.dispatchId ??
-      `${input.stage}:${input.importId}:${input.generation}`
+      `${input.stage}:${input.importId}:${input.acquisitionGeneration}`
     );
   });
 
 export const makeRecipeRecoveryHouseholdEvidenceRepositories = (input: {
+  readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly correlationId: RecipeRecoveryWorkflowInput["trace"]["correlationId"];
   readonly database: AnyD1Database;
-  readonly generation: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
+  readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: RecipeRecoveryHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly mutationId: (
@@ -578,9 +594,10 @@ export const makeRecipeRecoveryHouseholdEvidenceRepositories = (input: {
     const { canonicalSourceId, intentId, route } =
       yield* resolveHouseholdRecoveryAuthority(input);
     const repositoryInput = {
+      acquisitionGeneration: input.acquisitionGeneration,
       canonicalSourceId,
       correlationId: input.correlationId,
-      generation: input.generation,
+      executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       intentId,
       mutationId: input.mutationId,

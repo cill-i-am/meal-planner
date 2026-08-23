@@ -42,6 +42,7 @@ export type VisualDispatchClaim =
   | {
       readonly _tag: "Failed";
       readonly code: VisualEvidenceFailureCode;
+      readonly completedAt: ImportTimestamp;
       readonly dispatchId: string;
     }
   | {

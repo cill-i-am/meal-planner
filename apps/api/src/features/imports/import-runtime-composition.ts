@@ -111,6 +111,7 @@ export const runRecipeRecoveryLoop = Effect.fn(
       attempt === null ||
       attempt.importId !== input.importId ||
       attempt.acquisitionGeneration !== input.acquisitionGeneration ||
+      attempt.executionGeneration !== input.executionGeneration ||
       attempt.ordinal !== ordinal
     ) {
       return failedRecoveryCheckpoint("recovery_attempt_unavailable");
@@ -146,6 +147,7 @@ export const runRecipeRecoveryLoop = Effect.fn(
       authorization.value.importId !== input.importId ||
       authorization.value.acquisitionGeneration !==
         input.acquisitionGeneration ||
+      authorization.value.executionGeneration !== input.executionGeneration ||
       authorization.value.attemptOrdinal !== next.value
     ) {
       return failedRecoveryCheckpoint("recovery_authorization_invalid");
@@ -211,9 +213,10 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
         const bucket = adaptAcquisitionBucket(evidenceBucket, runtimeContext);
         const evidenceRepositories =
           yield* makeRecipeRecoveryHouseholdEvidenceRepositories({
+            acquisitionGeneration: workflowInput.acquisitionGeneration,
             correlationId: workflowInput.trace.correlationId,
             database,
-            generation: workflowInput.acquisitionGeneration,
+            executionGeneration: workflowInput.executionGeneration,
             householdDomain,
             importId: workflowInput.importId,
             mutationId: recoveryMutationId,
@@ -262,8 +265,9 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                 ),
               readAttempt: (ordinal) =>
                 readHouseholdRecipeRecovery({
+                  acquisitionGeneration: workflowInput.acquisitionGeneration,
                   database,
-                  generation: workflowInput.acquisitionGeneration,
+                  executionGeneration: workflowInput.executionGeneration,
                   householdDomain,
                   importId: workflowInput.importId,
                   selector: {

@@ -397,6 +397,30 @@ const providerTerminalAttemptCommand = async (input: object) => {
   });
 };
 
+const visualResumeCommand = async (input: object) => {
+  const worker = await getRuntime().getWorker("evidence-consumer");
+  return worker.fetch("https://evidence-consumer.test/visual-resume", {
+    body: JSON.stringify(input),
+    headers: {
+      "content-type": "application/json",
+      "x-test-visual-resume": "1",
+    },
+    method: "POST",
+  });
+};
+
+const dispatchTraceDurabilityCommand = async (input: object) => {
+  const worker = await getRuntime().getWorker("evidence-consumer");
+  return worker.fetch("https://evidence-consumer.test/dispatch-trace", {
+    body: JSON.stringify(input),
+    headers: {
+      "content-type": "application/json",
+      "x-test-dispatch-trace-durability": "1",
+    },
+    method: "POST",
+  });
+};
+
 const settleUnknownProviderBudget = async (input: {
   readonly dispatchId: string;
   readonly importId: string;
@@ -539,6 +563,7 @@ const evidenceRetentionResult = (input: {
 };
 
 const admitResolvedEvidenceImport = async (input: {
+  readonly canonicalSourceId?: string;
   readonly label: string;
   readonly mutationId: string;
   readonly sourceKind?: "carousel" | "video";
@@ -576,7 +601,8 @@ const admitResolvedEvidenceImport = async (input: {
   } as const;
   const resolvedResponse = await systemCommand("resolve", {
     admission,
-    canonicalSourceId: `tiktok:video:${input.videoId}`,
+    canonicalSourceId:
+      input.canonicalSourceId ?? `tiktok:video:${input.videoId}`,
     canonicalUrl: `https://www.tiktok.com/@mealplanner/video/${input.videoId}`,
     expectedGeneration: 1,
     intentId: admitted.id,
@@ -605,6 +631,7 @@ const readSpeechStage = async (input: {
 };
 
 const prepareUnknownSpeechTerminal = async (input: {
+  readonly acquisitionGeneration?: number;
   readonly label: string;
   readonly mutationIds: readonly [resolve: string, claim: string, fail: string];
   readonly videoId: string;
@@ -615,28 +642,30 @@ const prepareUnknownSpeechTerminal = async (input: {
       mutationId: input.mutationIds[0],
       videoId: input.videoId,
     });
-  const generation = 1;
+  const executionGeneration = 1;
+  const acquisitionGeneration = input.acquisitionGeneration ?? 1;
   const acquisition = evidenceRetentionResult({
     acquiredAt: new Date("2026-08-23T12:00:00.000Z"),
-    generation,
+    generation: acquisitionGeneration,
     intentId: admitted.id,
   });
   const committed = await systemCommand("commit-acquisition-evidence", {
     admission,
-    expectedGeneration: generation,
+    expectedGeneration: executionGeneration,
     intentId: admitted.id,
     mutationId: input.mutationIds[1],
     result: acquisition,
   });
   expect(committed.status, await committed.clone().text()).toBe(200);
   const inputFingerprint = "2".repeat(64);
-  const dispatchId = `speech:${admitted.id}:${generation}`;
+  const dispatchId = `speech:${admitted.id}:${acquisitionGeneration}`;
   const terminal = await providerTerminalAttemptCommand({
+    acquisitionGeneration,
     admission,
     canonicalSourceId: `tiktok:video:${input.videoId}`,
     correlationId: "00000000-0000-4000-8000-000000000188",
     dispatchId,
-    expectedGeneration: generation,
+    executionGeneration,
     inputFingerprint,
     intentId: admitted.id,
     stage: "speech",
@@ -644,7 +673,7 @@ const prepareUnknownSpeechTerminal = async (input: {
   expect(terminal.status, await terminal.clone().text()).toBe(200);
   const terminalStage = await readSpeechStage({
     admission,
-    generation,
+    generation: executionGeneration,
     intentId: admitted.id,
   });
   expect(terminalStage).toMatchObject({
@@ -658,7 +687,7 @@ const prepareUnknownSpeechTerminal = async (input: {
   }
   const terminalCheckpoint = await systemCommand("read-terminal-checkpoint", {
     admission,
-    expectedGeneration: generation,
+    expectedGeneration: executionGeneration,
     intentId: admitted.id,
     ownershipId: terminalStage.dispatchId,
     stage: "speech",
@@ -691,22 +720,26 @@ const prepareUnknownSpeechTerminal = async (input: {
     providerStageId: "speech-transcription",
   });
   const settled = await terminalSettlementCommand({
-    acquisitionGeneration: generation,
+    acquisitionGeneration,
     dispatchId,
+    executionGeneration,
     importId: admitted.id,
   });
   expect(settled.status, await settled.clone().text()).toBe(200);
 
   return {
+    acquisitionGeneration,
     admission,
     canonicalSourceId: `tiktok:video:${input.videoId}`,
     dispatchId,
-    generation,
+    executionGeneration,
+    generation: executionGeneration,
     inputFingerprint,
     intentId: admitted.id,
     recoveryCommand: {
-      acquisitionGeneration: generation,
+      acquisitionGeneration,
       dispatchId,
+      executionGeneration,
       importId: admitted.id,
       operation: "prepare_speech_recovery",
     } as const,
@@ -2471,6 +2504,88 @@ describe("household public API to private Durable Object boundary", () => {
     );
   });
 
+  it.each([
+    { stage: "speech", videoId: "7000000000000000143" },
+    { stage: "visual", videoId: "7000000000000000144" },
+  ] as const)(
+    "replays the exact first $stage failure after a changed-clock lost response",
+    async ({ stage, videoId }) => {
+      const { admission, admitted } = await admitResolvedEvidenceImport({
+        label: `Household ${stage} Failure Replay`,
+        mutationId: (stage === "speech" ? "3" : "4").repeat(64),
+        videoId,
+      });
+      const acquisition = await systemCommand("commit-acquisition-evidence", {
+        admission,
+        expectedGeneration: 1,
+        intentId: admitted.id,
+        mutationId: (stage === "speech" ? "5" : "6").repeat(64),
+        result: evidenceRetentionResult({
+          acquiredAt: new Date(Date.now() + 60_000),
+          generation: 1,
+          intentId: admitted.id,
+        }),
+      });
+      expect(acquisition.status, await acquisition.clone().text()).toBe(200);
+      const dispatchId = `${stage}:${admitted.id}:1`;
+      const completedAt = new Date(Date.now() + 120_000).toISOString();
+      const command = {
+        acquisitionGeneration: 1,
+        admission,
+        canonicalSourceId: `tiktok:video:${videoId}`,
+        completedAt,
+        correlationId:
+          stage === "speech"
+            ? "00000000-0000-4000-8000-000000000197"
+            : "00000000-0000-4000-8000-000000000198",
+        dispatchId,
+        executionGeneration: 1,
+        inputFingerprint: (stage === "speech" ? "7" : "8").repeat(64),
+        intentId: admitted.id,
+        stage,
+      } as const;
+      const first = await providerTerminalAttemptCommand(command);
+      expect(first.status, await first.clone().text()).toBe(200);
+      const firstReceipt = await first.json();
+      expect(firstReceipt).toMatchObject({
+        completedAt,
+        failureCode: "outcome_unknown",
+        ownershipId: dispatchId,
+        stage,
+      });
+
+      const replay = await providerTerminalAttemptCommand({
+        ...command,
+        completedAt: new Date(Date.now() + 240_000).toISOString(),
+      });
+      expect(replay.status, await replay.clone().text()).toBe(200);
+      expect(await replay.json()).toEqual(firstReceipt);
+
+      const providerState = await getRuntime().getKVNamespace(
+        "EVIDENCE_EVENT_RESULTS",
+        "evidence-consumer"
+      );
+      await expect(
+        providerState.get(`provider-attempt-calls:${dispatchId}`)
+      ).resolves.toBe("1");
+      const stageResponse = await systemCommand("read-evidence-stage", {
+        admission,
+        expectedGeneration: 1,
+        intentId: admitted.id,
+        stage,
+      });
+      expect(stageResponse.status, await stageResponse.clone().text()).toBe(
+        200
+      );
+      await expect(stageResponse.json()).resolves.toMatchObject({
+        completedAt,
+        failureCode: "outcome_unknown",
+        outcome: "Failed",
+      });
+    },
+    30_000
+  );
+
   it("replays household speech recovery after the external restart fails", async () => {
     const fixture = await prepareUnknownSpeechTerminal({
       label: "Household Speech Recovery Failure Replay",
@@ -2500,7 +2615,7 @@ describe("household public API to private Durable Object boundary", () => {
 
     const staleGeneration = await terminalSettlementCommand({
       ...fixture.recoveryCommand,
-      acquisitionGeneration: 2,
+      executionGeneration: 2,
     });
     expect(staleGeneration.status).toBe(409);
     const staleOwnership = await terminalSettlementCommand({
@@ -2605,8 +2720,9 @@ describe("household public API to private Durable Object boundary", () => {
     ).resolves.toBe("1");
   }, 30_000);
 
-  it("executes household speech recovery one and advances an unknown outcome to recovery two", async () => {
+  it("keeps execution generation one across acquisition attempt two and successive speech recovery", async () => {
     const fixture = await prepareUnknownSpeechTerminal({
+      acquisitionGeneration: 2,
       label: "Household Speech Recovery Execution",
       mutationIds: ["b".repeat(64), "c".repeat(64), "d".repeat(64)],
       videoId: "7000000000000000110",
@@ -2617,11 +2733,12 @@ describe("household public API to private Durable Object boundary", () => {
     expect(firstRecovery.status, await firstRecovery.clone().text()).toBe(200);
 
     const firstAttempt = await providerTerminalAttemptCommand({
+      acquisitionGeneration: fixture.acquisitionGeneration,
       admission: fixture.admission,
       canonicalSourceId: fixture.canonicalSourceId,
       correlationId: "00000000-0000-4000-8000-000000000189",
       dispatchId: fixture.recoveryDispatchId,
-      expectedGeneration: fixture.generation,
+      executionGeneration: fixture.executionGeneration,
       inputFingerprint: fixture.inputFingerprint,
       intentId: fixture.intentId,
       stage: "speech",
@@ -2639,14 +2756,16 @@ describe("household public API to private Durable Object boundary", () => {
       providerStageId: "speech-transcription",
     });
     const settlement = await terminalSettlementCommand({
-      acquisitionGeneration: fixture.generation,
+      acquisitionGeneration: fixture.acquisitionGeneration,
       dispatchId: fixture.recoveryDispatchId,
+      executionGeneration: fixture.executionGeneration,
       importId: fixture.intentId,
     });
     expect(settlement.status, await settlement.clone().text()).toBe(200);
     const secondRecovery = await terminalSettlementCommand({
-      acquisitionGeneration: fixture.generation,
+      acquisitionGeneration: fixture.acquisitionGeneration,
       dispatchId: fixture.recoveryDispatchId,
+      executionGeneration: fixture.executionGeneration,
       importId: fixture.intentId,
       operation: "prepare_speech_recovery",
     });
@@ -2660,11 +2779,12 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     const secondAttempt = await providerTerminalAttemptCommand({
+      acquisitionGeneration: fixture.acquisitionGeneration,
       admission: fixture.admission,
       canonicalSourceId: fixture.canonicalSourceId,
       correlationId: "00000000-0000-4000-8000-000000000190",
       dispatchId: recoveryTwoDispatchId,
-      expectedGeneration: fixture.generation,
+      executionGeneration: fixture.executionGeneration,
       inputFingerprint: fixture.inputFingerprint,
       intentId: fixture.intentId,
       stage: "speech",
@@ -2703,11 +2823,12 @@ describe("household public API to private Durable Object boundary", () => {
       .run();
 
     const originalAttempt = await providerTerminalAttemptCommand({
+      acquisitionGeneration: generation,
       admission,
       canonicalSourceId,
       correlationId: "00000000-0000-4000-8000-000000000191",
       dispatchId,
-      expectedGeneration: generation,
+      executionGeneration: 1,
       inputFingerprint,
       intentId: admitted.id,
       stage: "visual",
@@ -2716,11 +2837,12 @@ describe("household public API to private Durable Object boundary", () => {
       200
     );
     const originalReplay = await providerTerminalAttemptCommand({
+      acquisitionGeneration: generation,
       admission,
       canonicalSourceId,
       correlationId: "00000000-0000-4000-8000-000000000191",
       dispatchId,
-      expectedGeneration: generation,
+      executionGeneration: 1,
       inputFingerprint,
       intentId: admitted.id,
       stage: "visual",
@@ -2743,6 +2865,7 @@ describe("household public API to private Durable Object boundary", () => {
     const originalSettlement = await terminalSettlementCommand({
       acquisitionGeneration: generation,
       dispatchId,
+      executionGeneration: 1,
       importId: admitted.id,
       operation: "settle_visual_unknown",
     });
@@ -2753,6 +2876,7 @@ describe("household public API to private Durable Object boundary", () => {
     const firstRecoveryCommand = {
       acquisitionGeneration: generation,
       dispatchId,
+      executionGeneration: 1,
       importId: admitted.id,
       operation: "prepare_visual_recovery",
     } as const;
@@ -2776,31 +2900,34 @@ describe("household public API to private Durable Object boundary", () => {
     const [staleGeneration, staleDispatch, staleFingerprint] =
       await Promise.all([
         providerTerminalAttemptCommand({
+          acquisitionGeneration: generation,
           admission,
           canonicalSourceId,
           correlationId: "00000000-0000-4000-8000-000000000192",
           dispatchId: recoveryOneDispatchId,
-          expectedGeneration: 2,
+          executionGeneration: 2,
           inputFingerprint,
           intentId: admitted.id,
           stage: "visual",
         }),
         providerTerminalAttemptCommand({
+          acquisitionGeneration: generation,
           admission,
           canonicalSourceId,
           correlationId: "00000000-0000-4000-8000-000000000192",
           dispatchId: `${recoveryOneDispatchId}:stale`,
-          expectedGeneration: generation,
+          executionGeneration: 1,
           inputFingerprint,
           intentId: admitted.id,
           stage: "visual",
         }),
         providerTerminalAttemptCommand({
+          acquisitionGeneration: generation,
           admission,
           canonicalSourceId,
           correlationId: "00000000-0000-4000-8000-000000000192",
           dispatchId: recoveryOneDispatchId,
-          expectedGeneration: generation,
+          executionGeneration: 1,
           inputFingerprint: "0".repeat(64),
           intentId: admitted.id,
           stage: "visual",
@@ -2826,11 +2953,12 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     const firstAttempt = await providerTerminalAttemptCommand({
+      acquisitionGeneration: generation,
       admission,
       canonicalSourceId,
       correlationId: "00000000-0000-4000-8000-000000000192",
       dispatchId: recoveryOneDispatchId,
-      expectedGeneration: generation,
+      executionGeneration: 1,
       inputFingerprint,
       intentId: admitted.id,
       stage: "visual",
@@ -2842,11 +2970,12 @@ describe("household public API to private Durable Object boundary", () => {
       stage: "visual",
     });
     const firstAttemptReplay = await providerTerminalAttemptCommand({
+      acquisitionGeneration: generation,
       admission,
       canonicalSourceId,
       correlationId: "00000000-0000-4000-8000-000000000192",
       dispatchId: recoveryOneDispatchId,
-      expectedGeneration: generation,
+      executionGeneration: 1,
       inputFingerprint,
       intentId: admitted.id,
       stage: "visual",
@@ -2866,6 +2995,7 @@ describe("household public API to private Durable Object boundary", () => {
     const recoveryOneSettlement = await terminalSettlementCommand({
       acquisitionGeneration: generation,
       dispatchId: recoveryOneDispatchId,
+      executionGeneration: 1,
       importId: admitted.id,
       operation: "settle_visual_unknown",
     });
@@ -2876,6 +3006,7 @@ describe("household public API to private Durable Object boundary", () => {
     const secondRecovery = await terminalSettlementCommand({
       acquisitionGeneration: generation,
       dispatchId: recoveryOneDispatchId,
+      executionGeneration: 1,
       importId: admitted.id,
       operation: "prepare_visual_recovery",
     });
@@ -2889,11 +3020,12 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     const secondAttempt = await providerTerminalAttemptCommand({
+      acquisitionGeneration: generation,
       admission,
       canonicalSourceId,
       correlationId: "00000000-0000-4000-8000-000000000193",
       dispatchId: recoveryTwoDispatchId,
-      expectedGeneration: generation,
+      executionGeneration: 1,
       inputFingerprint,
       intentId: admitted.id,
       stage: "visual",
@@ -2905,6 +3037,71 @@ describe("household public API to private Durable Object boundary", () => {
       stage: "visual",
     });
   }, 30_000);
+
+  it.each([
+    { mode: "absent", providerCalls: 1 },
+    { mode: "present", providerCalls: 0 },
+  ] as const)(
+    "runs the installed visual ResumeDispatch seam with R2 $mode",
+    async ({ mode, providerCalls }) => {
+      const videoId =
+        mode === "absent" ? "7000000000000000141" : "7000000000000000142";
+      const { admission, admitted } = await admitResolvedEvidenceImport({
+        canonicalSourceId: videoId,
+        label: `Installed Visual Resume ${mode}`,
+        mutationId: (mode === "absent" ? "1" : "2").repeat(64),
+        videoId,
+      });
+      const response = await visualResumeCommand({
+        admission,
+        canonicalSourceId: videoId,
+        importId: admitted.id,
+        mode,
+      });
+      expect(response.status, await response.clone().text()).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        first: { _tag: "VisualEvidenceReady" },
+        providerCalls,
+        replay: { _tag: "VisualEvidenceReady" },
+        stage: { outcome: "Completed" },
+      });
+    },
+    30_000
+  );
+
+  it.each([
+    { mode: "start_response_lost", suffix: "145" },
+    { mode: "record_response_lost", suffix: "146" },
+  ] as const)(
+    "persists the original trace before a $mode ambiguity without duplicate provider work",
+    async ({ mode, suffix }) => {
+      const cookie = await signUp(`Dispatch Trace ${mode}`);
+      const organization = await createOrganization(
+        `Dispatch Trace ${mode} Household`,
+        cookie
+      );
+      const correlationId = `00000000-0000-4000-8000-000000000${suffix}`;
+      const response = await dispatchTraceDurabilityCommand({
+        admission: {
+          actor: { _tag: "Member", actorId: "9".repeat(64) },
+          organizationId: organization.id,
+        },
+        mode,
+        sourceUrl: `https://www.tiktok.com/@mealplanner/video/7000000000000000${suffix}`,
+        trace: { correlationId },
+      });
+      expect(response.status, await response.clone().text()).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        originalTrace: { correlationId },
+        providerCalls: 1,
+        startCalls: 2,
+        workflowIdentity: expect.stringMatching(
+          /^import-acquisition:v1:[a-f\d]{64}$/u
+        ),
+      });
+    },
+    30_000
+  );
 
   it("atomically prepares and persists a fenced household recipe recovery", async () => {
     const { admission, admitted } = await admitResolvedEvidenceImport({
@@ -2963,6 +3160,7 @@ describe("household public API to private Durable Object boundary", () => {
 
     const predecessorDispatchId = `recipe:${admitted.id}:1:${evidenceFingerprint}`;
     const command = {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       intentId: admitted.id,
@@ -3156,6 +3354,7 @@ describe("household public API to private Durable Object boundary", () => {
     const settlement = await terminalSettlementCommand({
       acquisitionGeneration: generation,
       dispatchId,
+      executionGeneration: generation,
       importId: admitted.id,
       operation: "settle_recipe_unknown",
     });
@@ -3171,6 +3370,7 @@ describe("household public API to private Durable Object boundary", () => {
     const preparationCommand = {
       acquisitionGeneration: generation,
       dispatchId,
+      executionGeneration: generation,
       importId: admitted.id,
       operation: "prepare_recipe_recovery",
     } as const;

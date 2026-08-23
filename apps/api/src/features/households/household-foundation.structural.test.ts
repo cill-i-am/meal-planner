@@ -307,9 +307,12 @@ describe("household foundation structural boundaries", () => {
       `\`visual:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}\``
     );
     expect(repository.match(/\? current\.startedAt/gu)).toHaveLength(2);
-    expect(repository.match(/completedAt: current\.startedAt/gu)).toHaveLength(
-      2
-    );
+    expect(
+      repository.match(/completedAt: failure\.completedAt/gu)
+    ).toHaveLength(4);
+    expect(
+      repository.match(/completedAt: current\.completedAt/gu)
+    ).toHaveLength(2);
   });
 
   it("routes production recipe recovery evidence through household authority", async () => {

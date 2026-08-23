@@ -18,6 +18,7 @@ import {
   pilotProviderKnownZeroCostFailure,
 } from "../pilots/pilot-provider-budget.js";
 import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { makeVisualTransport } from "./import-provider-adapters.test-fixture.js";
@@ -161,6 +162,9 @@ const nativeRecipeRecoveryAttempt = (
   ordinal: RecipeRecoveryOrdinal
 ): RecipeRecoveryAttempt => {
   const generation = decodeGeneration(1);
+  const executionGeneration = Schema.decodeUnknownSync(
+    ImportIntentExecutionGeneration
+  )(1);
   const evidenceFingerprint = decodeSha256("e".repeat(64));
   const rootDispatchId = decodeDispatchId(
     `recipe:${importId}:${generation}:${evidenceFingerprint}`
@@ -174,6 +178,7 @@ const nativeRecipeRecoveryAttempt = (
     ),
     currentExtractionFingerprint: decodeSha256(String(ordinal).repeat(64)),
     evidenceFingerprint,
+    executionGeneration,
     importId,
     ordinal,
     predecessorDispatchId: decodeDispatchId(
@@ -620,6 +625,9 @@ const providerWorkflowExport = {
             {
               acquisitionGeneration: generation,
               attemptOrdinal: 1,
+              executionGeneration: Schema.decodeUnknownSync(
+                ImportIntentExecutionGeneration
+              )(generation),
               importId,
               trace: {
                 correlationId: decodeCorrelationId(
@@ -683,6 +691,9 @@ const providerWorkflowExport = {
                       Effect.succeed({
                         acquisitionGeneration: generation,
                         attemptOrdinal: ordinal,
+                        executionGeneration: Schema.decodeUnknownSync(
+                          ImportIntentExecutionGeneration
+                        )(generation),
                         importId,
                       })
                     ),

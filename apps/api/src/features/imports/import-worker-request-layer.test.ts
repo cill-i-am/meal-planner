@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import {
   HouseholdAdmitRecipeImportResult,
+  HouseholdRecipeImportFailure,
   HouseholdRecordRecipeImportDispatchResult,
 } from "../households/recipe-import/household-recipe-import.contract.js";
 import { HouseholdMemberAdmission } from "../households/rpc/command-envelope.js";
@@ -18,7 +19,7 @@ const workflowIdentity = `import-acquisition:v1:${"a".repeat(64)}`;
 
 describe("recipe import Workflow outbox dispatch", () => {
   it("retries the same committed Workflow identity and records each delivery outcome", async () => {
-    const outcomes: ("started" | "unavailable")[] = [];
+    const outcomes: ("prepared" | "started" | "unavailable")[] = [];
     const dispatchedIdentities: string[] = [];
     const registeredRoutes: string[] = [];
     const executionOrder: string[] = [];
@@ -95,7 +96,14 @@ describe("recipe import Workflow outbox dispatch", () => {
       })
     );
 
-    expect(outcomes).toEqual(["unavailable", "unavailable", "started"]);
+    expect(outcomes).toEqual([
+      "prepared",
+      "unavailable",
+      "prepared",
+      "unavailable",
+      "prepared",
+      "started",
+    ]);
     expect(dispatchedIdentities).toEqual([
       workflowIdentity,
       workflowIdentity,
@@ -190,5 +198,94 @@ describe("recipe import Workflow outbox dispatch", () => {
 
     expect(routeAttempts).toBe(3);
     expect(workflowStarts).toBe(0);
+  });
+
+  it("persists the original trace before starting the Workflow", async () => {
+    const events: string[] = [];
+    let recordAttempts = 0;
+    let workflowStarts = 0;
+    const committed = Schema.decodeUnknownSync(
+      HouseholdAdmitRecipeImportResult
+    )({
+      dispatchId: "dispatch-trace-durability-proof",
+      intent: {
+        activity: { type: "working" },
+        createdAt,
+        id: intentId,
+        intentVersion: 1,
+        links: {
+          self: `/v1/recipe-import-intents/${intentId}`,
+          timeline: `/v1/recipe-import-intents/${intentId}/timeline`,
+        },
+        object: "recipe_import_intent",
+        processing: { startedAt: createdAt, type: "resolving_source" },
+        source: { kind: "tiktok", resolution: "pending" },
+        status: "processing",
+        updatedAt: createdAt,
+      },
+      workflowIdentity,
+    });
+    const dispatcher = makeRecipeImportWorkflowDispatcher({
+      householdDomain: {
+        recordRecipeImportDispatch: (input) => {
+          recordAttempts += 1;
+          events.push(`record:${input.outcome}`);
+          if (recordAttempts === 1) {
+            return Effect.fail(
+              HouseholdRecipeImportFailure.make({
+                reason: "persistence_unavailable",
+              })
+            );
+          }
+          return Effect.succeed(
+            Schema.encodeSync(HouseholdRecordRecipeImportDispatchResult)({
+              admission: {
+                committedAtEpochMs: 1,
+                dispatchId: input.dispatchId,
+                workflowIdentity: input.workflowIdentity,
+              },
+              attempts: 1,
+              exhaustedAtEpochMs: null,
+              state: input.outcome === "started" ? "dispatched" : "pending",
+            })
+          );
+        },
+      },
+      importWorkflowStarter: {
+        dispatchAdmission: () =>
+          Effect.sync(() => {
+            workflowStarts += 1;
+            events.push("workflow");
+            return "created" as const;
+          }),
+      },
+      registerEvidenceRoute: () =>
+        Effect.sync(() => {
+          events.push("route");
+        }),
+      retryDelaysMilliseconds: [0],
+      scheduleRetry: (effect) => effect,
+      trace: TestImportTrace,
+    });
+
+    await Effect.runPromise(
+      dispatcher.dispatch({
+        admission: Schema.decodeUnknownSync(HouseholdMemberAdmission)({
+          actor: { _tag: "Member", actorId: "b".repeat(64) },
+          organizationId: "organization-trace-durability-proof",
+        }),
+        committed,
+      })
+    );
+
+    expect(events).toEqual([
+      "route",
+      "record:prepared",
+      "route",
+      "record:prepared",
+      "workflow",
+      "record:started",
+    ]);
+    expect(workflowStarts).toBe(1);
   });
 });

@@ -81,7 +81,7 @@ export const HouseholdRecordRecipeImportDispatchInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   dispatchId: HouseholdDispatchId,
   originalTrace: ImportTraceContext,
-  outcome: Schema.Literals(["started", "unavailable"]),
+  outcome: Schema.Literals(["prepared", "started", "unavailable"]),
   workflowIdentity: ImportWorkflowIdentity,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type HouseholdRecordRecipeImportDispatchInput =

@@ -3,6 +3,7 @@ import { Cause, Data, Effect, Schema } from "effect";
 import { flow } from "effect/Function";
 
 import { PilotBudgetDispatchId } from "../pilots/pilot-provider-budget.js";
+import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportTraceContext } from "./import-observability.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
@@ -27,6 +28,7 @@ export const RecipeRecoveryAttempt = Schema.Struct({
   currentDispatchId: PilotBudgetDispatchId,
   currentExtractionFingerprint: Sha256Hex,
   evidenceFingerprint: Sha256Hex,
+  executionGeneration: ImportIntentExecutionGeneration,
   importId: ImportId,
   ordinal: RecipeRecoveryOrdinal,
   predecessorDispatchId: PilotBudgetDispatchId,
@@ -43,6 +45,7 @@ export type RecipeRecoveryAttempt = typeof RecipeRecoveryAttempt.Type;
 export const RecipeRecoveryWorkflowInput = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   attemptOrdinal: RecipeRecoveryOrdinal,
+  executionGeneration: ImportIntentExecutionGeneration,
   importId: ImportId,
   trace: ImportTraceContext,
 });
@@ -65,6 +68,7 @@ export const resolveRecipeRecoveryWorkflowInput = flow(
 export const RecipeRecoveryAuthorization = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   attemptOrdinal: RecipeRecoveryOrdinal,
+  executionGeneration: ImportIntentExecutionGeneration,
   importId: ImportId,
 });
 export type RecipeRecoveryAuthorization =
@@ -106,6 +110,7 @@ const signalRecoveryAuthorization = (
         payload: {
           acquisitionGeneration: attempt.acquisitionGeneration,
           attemptOrdinal: attempt.ordinal,
+          executionGeneration: attempt.executionGeneration,
           importId: attempt.importId,
         },
         type: recipeRecoveryAuthorizationEventType(attempt.ordinal),
@@ -159,6 +164,7 @@ export const makeRecipeRecoveryWorkflowStarter = (
       )({
         acquisitionGeneration: attempt.acquisitionGeneration,
         attemptOrdinal: attempt.ordinal,
+        executionGeneration: attempt.executionGeneration,
         importId: attempt.importId,
         trace,
       }).pipe(Effect.mapError(() => workflowStartUnavailable()));

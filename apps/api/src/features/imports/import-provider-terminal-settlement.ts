@@ -5,6 +5,7 @@ import {
   PilotBudgetDispatchId,
   PilotProviderBudgetStage,
 } from "../pilots/pilot-provider-budget.js";
+import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import type { ImportTraceContext } from "./import-observability.js";
 import {
@@ -24,6 +25,7 @@ import type { ImportWorkflowStarter } from "./import.workflow.js";
 const terminalRequest = {
   acquisitionGeneration: AcquisitionGeneration,
   dispatchId: PilotBudgetDispatchId,
+  executionGeneration: ImportIntentExecutionGeneration,
   importId: ImportId,
 };
 const TerminalUnknownSettlementRequest = Schema.Struct(terminalRequest);
@@ -215,6 +217,7 @@ const GlobalSettlementRow = Schema.Struct({
 interface GlobalSettlementInput {
   readonly acquisitionGeneration: typeof AcquisitionGeneration.Type;
   readonly dispatchId: typeof PilotBudgetDispatchId.Type;
+  readonly executionGeneration: typeof ImportIntentExecutionGeneration.Type;
   readonly importId: typeof ImportId.Type;
 }
 interface GlobalSettlementIdentity {
@@ -438,8 +441,9 @@ const validateHouseholdTerminal = (
   service.householdDomain === undefined
     ? Effect.fail(failure("persistence_unavailable"))
     : readHouseholdTerminalAuthority({
+        acquisitionGeneration: request.acquisitionGeneration,
         database: service.database,
-        generation: request.acquisitionGeneration,
+        executionGeneration: request.executionGeneration,
         householdDomain: service.householdDomain,
         importId: request.importId,
         providerDispatchId: request.dispatchId,
@@ -501,8 +505,9 @@ const prepareProviderRecovery = (
       identity
     );
     const recovery = yield* prepareHouseholdProviderRecovery({
+      acquisitionGeneration: request.acquisitionGeneration,
       database: service.database,
-      generation: request.acquisitionGeneration,
+      executionGeneration: request.executionGeneration,
       householdDomain,
       importId: request.importId,
       originalDispatchId: request.dispatchId,
@@ -524,8 +529,9 @@ const prepareProviderRecovery = (
       const restartOutcome = yield* restart(recovery.workflowIdentity).pipe(
         Effect.catchCause(() =>
           hasHouseholdProviderRecoveryProgress({
+            acquisitionGeneration: request.acquisitionGeneration,
             database: service.database,
-            generation: request.acquisitionGeneration,
+            executionGeneration: request.executionGeneration,
             householdDomain,
             importId: request.importId,
             inputFingerprint: recovery.inputFingerprint,
@@ -543,8 +549,9 @@ const prepareProviderRecovery = (
       );
       if (restartOutcome === "RestartAmbiguous") {
         const hasProgress = yield* hasHouseholdProviderRecoveryProgress({
+          acquisitionGeneration: request.acquisitionGeneration,
           database: service.database,
-          generation: request.acquisitionGeneration,
+          executionGeneration: request.executionGeneration,
           householdDomain,
           importId: request.importId,
           inputFingerprint: recovery.inputFingerprint,
@@ -642,8 +649,9 @@ export const makeD1ProviderTerminalSettlementService = (
           }
         );
         const recovery = yield* prepareHouseholdRecipeRecovery({
+          acquisitionGeneration: request.acquisitionGeneration,
           database: input.database,
-          generation: request.acquisitionGeneration,
+          executionGeneration: request.executionGeneration,
           householdDomain: input.householdDomain,
           importId: request.importId,
           predecessorDispatchId: request.dispatchId,
@@ -658,8 +666,9 @@ export const makeD1ProviderTerminalSettlementService = (
           return yield* Effect.fail(failure("persistence_unavailable"));
         }
         const authority = yield* resolveHouseholdRecoveryAuthority({
+          acquisitionGeneration: request.acquisitionGeneration,
           database: input.database,
-          generation: request.acquisitionGeneration,
+          executionGeneration: request.executionGeneration,
           householdDomain: input.householdDomain,
           importId: request.importId,
         }).pipe(Effect.mapError(mapHouseholdError));
@@ -684,8 +693,9 @@ export const makeD1ProviderTerminalSettlementService = (
           return yield* Effect.fail(failure("persistence_unavailable"));
         }
         const recovery = yield* readHouseholdRecipeRecovery({
+          acquisitionGeneration: request.acquisitionGeneration,
           database: input.database,
-          generation: request.acquisitionGeneration,
+          executionGeneration: request.executionGeneration,
           householdDomain: input.householdDomain,
           importId: request.importId,
           selector: { _tag: "Latest", rootDispatchId: request.dispatchId },
@@ -695,8 +705,9 @@ export const makeD1ProviderTerminalSettlementService = (
           return yield* Effect.fail(failure("persistence_unavailable"));
         }
         const authority = yield* resolveHouseholdRecoveryAuthority({
+          acquisitionGeneration: request.acquisitionGeneration,
           database: input.database,
-          generation: request.acquisitionGeneration,
+          executionGeneration: request.executionGeneration,
           householdDomain: input.householdDomain,
           importId: request.importId,
         }).pipe(Effect.mapError(mapHouseholdError));

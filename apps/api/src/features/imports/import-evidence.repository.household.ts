@@ -16,6 +16,7 @@ import type {
   CarouselEvidenceRepository,
   CompletedCarouselEvidence,
 } from "./import-carousel.repository.js";
+import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import type {
@@ -54,9 +55,10 @@ export type HouseholdEvidenceDomain = Pick<
 >;
 
 interface HouseholdEvidenceRepositoryInput {
+  readonly acquisitionGeneration: AcquisitionGeneration;
   readonly canonicalSourceId: SourceCanonicalId;
   readonly correlationId: ImportCorrelationId;
-  readonly generation: AcquisitionGeneration;
+  readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: HouseholdEvidenceDomain;
   readonly intentId: RecipeImportIntentId;
   readonly mutationId: MutationId;
@@ -91,7 +93,7 @@ const makeBoundary = (input: HouseholdEvidenceRepositoryInput) => {
       Effect.flatMap((mutationId) =>
         Schema.encodeEffect(HouseholdMutateEvidenceStageInput)({
           admission,
-          expectedGeneration: input.generation,
+          expectedGeneration: input.executionGeneration,
           intentId: input.intentId,
           mutationId,
           ...command,
@@ -108,7 +110,7 @@ const makeBoundary = (input: HouseholdEvidenceRepositoryInput) => {
     input.householdDomain
       .readEvidenceStage({
         admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: input.intentId,
         stage,
       })
@@ -124,7 +126,7 @@ const makeBoundary = (input: HouseholdEvidenceRepositoryInput) => {
     input.householdDomain
       .readEvidenceReferences({
         admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: input.intentId,
       })
       .pipe(
@@ -139,7 +141,7 @@ const makeBoundary = (input: HouseholdEvidenceRepositoryInput) => {
     input.householdDomain
       .readRecipeImportExecution({
         admission,
-        expectedGeneration: input.generation,
+        expectedGeneration: input.executionGeneration,
         intentId: input.intentId,
       })
       .pipe(
@@ -158,7 +160,8 @@ const assertIdentity = (
   importId: string,
   generation: number
 ) =>
-  String(input.intentId) === importId && input.generation === generation
+  String(input.intentId) === importId &&
+  input.acquisitionGeneration === generation
     ? Effect.void
     : Effect.fail(importTransitionRejected());
 
@@ -240,11 +243,13 @@ const projectSpeechStatus = (
     return Effect.succeed({ kind: "transcribing" });
   }
   if (stage?.outcome === "Failed") {
-    return Effect.succeed({
-      code: "transcription_failed",
-      kind: "failed",
-      recovery: "retry_later",
-    });
+    return Schema.is(SpeechTranscriptionFailureCode)(stage.failureCode)
+      ? Effect.succeed({
+          code: stage.failureCode,
+          kind: "failed",
+          recovery: "retry_later",
+        })
+      : Effect.fail(importTransitionRejected());
   }
   if (stage?.outcome !== "Completed") {
     return Effect.succeed(null);
@@ -262,11 +267,13 @@ const projectVisualStatus = (
     return Effect.succeed({ kind: "extracting_visual" });
   }
   if (stage?.outcome === "Failed") {
-    return Effect.succeed({
-      code: "visual_evidence_failed",
-      kind: "failed",
-      recovery: "operator_reconcile",
-    });
+    return Schema.is(VisualEvidenceFailureCode)(stage.failureCode)
+      ? Effect.succeed({
+          code: stage.failureCode,
+          kind: "failed",
+          recovery: "operator_reconcile",
+        })
+      : Effect.fail(importTransitionRejected());
   }
   if (stage?.outcome !== "Completed" || stage.result?._tag !== "Visual") {
     return Effect.succeed(null);
@@ -370,7 +377,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
       deleteAt: stage.reference.deleteAt,
       detectedLanguage: result.detectedLanguage,
       dispatchId: result.dispatchId,
-      generation: input.generation,
+      generation: input.acquisitionGeneration,
       importId: decodeImportId(input.intentId),
       model: result.model,
       provider: result.provider,
@@ -389,6 +396,20 @@ export const makeHouseholdSpeechTranscriptionRepository = (
           claim.sourceMediaSha256
         );
         const current = yield* boundary.read("speech");
+        if (
+          current?.outcome === "Failed" &&
+          current.dispatchId === claim.dispatchId &&
+          current.inputFingerprint === inputFingerprint &&
+          current.completedAt !== null &&
+          Schema.is(SpeechTranscriptionFailureCode)(current.failureCode)
+        ) {
+          return {
+            _tag: "Failed" as const,
+            code: current.failureCode,
+            completedAt: current.completedAt,
+            dispatchId: claim.dispatchId,
+          };
+        }
         const startedAt =
           current?.dispatchId === claim.dispatchId &&
           current.inputFingerprint === inputFingerprint
@@ -420,6 +441,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
           const stage = yield* boundary.read("speech");
           if (
             stage === null ||
+            stage.completedAt === null ||
             !Schema.is(SpeechTranscriptionFailureCode)(stage.failureCode)
           ) {
             return yield* Effect.fail(importTransitionRejected());
@@ -427,6 +449,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
           return {
             _tag: "Failed" as const,
             code: stage.failureCode,
+            completedAt: stage.completedAt,
             dispatchId: claim.dispatchId,
           };
         }
@@ -504,7 +527,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
             inputFingerprint,
             operation: {
               _tag: "Fail",
-              completedAt: current.startedAt,
+              completedAt: failure.completedAt,
               dispatchId: failure.dispatchId,
               failureCode: failure.failureCode,
               recovery: "retry_later",
@@ -537,7 +560,7 @@ export const makeHouseholdVisualEvidenceRepository = (
       cost: result.cost,
       deleteAt: stage.reference.deleteAt,
       dispatchId: result.dispatchId,
-      generation: input.generation,
+      generation: input.acquisitionGeneration,
       importId: decodeImportId(input.intentId),
       manifestKey: result.manifestKey,
       manifestSha256: result.manifestSha256,
@@ -557,6 +580,20 @@ export const makeHouseholdVisualEvidenceRepository = (
           claim.sourceMediaSha256
         );
         const current = yield* boundary.read("visual");
+        if (
+          current?.outcome === "Failed" &&
+          current.dispatchId === claim.dispatchId &&
+          current.inputFingerprint === inputFingerprint &&
+          current.completedAt !== null &&
+          Schema.is(VisualEvidenceFailureCode)(current.failureCode)
+        ) {
+          return {
+            _tag: "Failed" as const,
+            code: current.failureCode,
+            completedAt: current.completedAt,
+            dispatchId: claim.dispatchId,
+          };
+        }
         const startedAt =
           current?.dispatchId === claim.dispatchId &&
           current.inputFingerprint === inputFingerprint
@@ -593,11 +630,13 @@ export const makeHouseholdVisualEvidenceRepository = (
           return yield* boundary.read("visual").pipe(
             Effect.flatMap((stage) =>
               stage === null ||
+              stage.completedAt === null ||
               !Schema.is(VisualEvidenceFailureCode)(stage.failureCode)
                 ? Effect.fail(importTransitionRejected())
                 : Effect.succeed<VisualDispatchClaim>({
                     _tag: "Failed",
                     code: stage.failureCode,
+                    completedAt: stage.completedAt,
                     dispatchId: claim.dispatchId,
                   })
             )
@@ -677,7 +716,7 @@ export const makeHouseholdVisualEvidenceRepository = (
             inputFingerprint,
             operation: {
               _tag: "Fail",
-              completedAt: current.startedAt,
+              completedAt: failure.completedAt,
               dispatchId: failure.dispatchId,
               failureCode: failure.failureCode,
               recovery: "operator_review",
@@ -710,7 +749,7 @@ export const makeHouseholdCarouselEvidenceRepository = (
       deleteAt: stage.reference.deleteAt,
       descriptorFingerprint: result.descriptorFingerprint,
       dispatchId: result.dispatchId,
-      generation: input.generation,
+      generation: input.acquisitionGeneration,
       imageCount: result.imageCount,
       importId: decodeImportId(input.intentId),
       manifestKey: result.manifestKey,
@@ -835,7 +874,7 @@ export const makeHouseholdCarouselEvidenceRepository = (
         ? Effect.succeed(
             Option.some({
               canonicalId: input.canonicalSourceId,
-              generation: input.generation,
+              generation: input.acquisitionGeneration,
               status: "queued",
             })
           )

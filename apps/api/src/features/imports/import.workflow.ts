@@ -681,9 +681,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               generation: AcquisitionGeneration
             ) => {
               const evidenceInput = {
+                acquisitionGeneration: generation,
                 canonicalSourceId: identityResolution.identity.canonicalId,
                 correlationId,
-                generation,
+                executionGeneration,
                 householdDomain,
                 intentId,
                 mutationId: workflowMutationId,
@@ -747,8 +748,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 readonly importId: ImportId;
               }) =>
                 readHouseholdProviderDispatchId({
+                  acquisitionGeneration,
                   database,
-                  generation: acquisitionGeneration,
+                  executionGeneration,
                   householdDomain,
                   importId: requestedImportId,
                   stage: "speech",
@@ -761,8 +763,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 readonly importId: ImportId;
               }) =>
                 readHouseholdProviderDispatchId({
+                  acquisitionGeneration,
                   database,
-                  generation: acquisitionGeneration,
+                  executionGeneration,
                   householdDomain,
                   importId: requestedImportId,
                   stage: "visual",
@@ -835,14 +838,15 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               Cloudflare.Workflows.task(
                 `persist-${failure.stage}-terminal-v1`,
                 persistHouseholdProviderTerminalAuthority({
+                  acquisitionGeneration: generation,
                   admission,
+                  executionGeneration,
                   failAmbiguous: (input) =>
                     (failure.stage === "speech"
                       ? evidenceRepositories(generation).speech
                       : evidenceRepositories(generation).visual
                     ).fail(input),
                   failure,
-                  generation,
                   householdDomain,
                   intentId,
                   now: () =>

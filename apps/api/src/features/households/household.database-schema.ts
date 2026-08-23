@@ -140,6 +140,7 @@ export const householdEvidenceStageExecutions = sqliteTable(
   {
     claimJson: text("claim_json"),
     committedAt: text("committed_at").notNull(),
+    completedAt: text("completed_at"),
     dispatchId: text("dispatch_id").notNull(),
     executionGeneration: integer("execution_generation").notNull(),
     failureCode: text("failure_code"),
@@ -187,6 +188,9 @@ export const importTerminalCheckpoints = sqliteTable(
 export const importRecipeRecoveryAttempts = sqliteTable(
   "import_recipe_recovery_attempts",
   {
+    acquisitionAttemptGeneration: integer(
+      "acquisition_attempt_generation"
+    ).notNull(),
     createdAt: text("created_at").notNull(),
     currentDispatchId: text("current_dispatch_id").notNull(),
     currentExtractionFingerprint: text(

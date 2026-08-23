@@ -73,7 +73,7 @@ export const makeImportWorkflowAdmissionRepository = (
   recordDispatch: (input: {
     readonly dispatchId: HouseholdDispatchId;
     readonly nowEpochMs: number;
-    readonly outcome: "started" | "unavailable";
+    readonly outcome: "prepared" | "started" | "unavailable";
     readonly originalTrace: ImportTraceContext;
     readonly workflowIdentity: ImportWorkflowIdentity;
   }) =>
@@ -115,6 +115,16 @@ export const makeImportWorkflowAdmissionRepository = (
               eq(householdImportWorkflowAdmissions.dispatchId, input.dispatchId)
             )
             .pipe(mapQueryFailure);
+        }
+        if (input.outcome === "prepared") {
+          return yield* Schema.decodeUnknownEffect(
+            HouseholdImportWorkflowDispatchView
+          )({
+            admission: yield* decodeResult(admissionRow.committedResultJson),
+            attempts: row.attempts,
+            exhaustedAtEpochMs: row.exhaustedAtEpochMs,
+            state: row.state,
+          }).pipe(Effect.mapError(persistenceFailure));
         }
         if (row.state === "dispatched" || row.state === "exhausted") {
           return yield* Schema.decodeUnknownEffect(

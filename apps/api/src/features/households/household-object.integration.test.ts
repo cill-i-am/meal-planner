@@ -339,7 +339,7 @@ const recordRecipeImportDispatch = async (input: {
   readonly dispatchId: string;
   readonly objectName: string;
   readonly organizationId: string;
-  readonly outcome: "started" | "unavailable";
+  readonly outcome: "prepared" | "started" | "unavailable";
   readonly workflowIdentity: string;
 }) => {
   const response = await runtime.dispatchFetch("http://localhost/", {
