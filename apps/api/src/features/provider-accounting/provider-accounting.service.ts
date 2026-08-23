@@ -131,7 +131,7 @@ const readGlobalSettlement = (
             AND dispatch.actual_cost_micro_usd IS NULL
             AND dispatch.maximum_cost_micro_usd = audit.conservative_charge_micro_usd
             AND (? IS NULL OR audit.conservative_charge_micro_usd = ?)
-            AND budget.state = 'open' AND budget.reserved_micro_usd = 0
+            AND budget.state = 'open'
             AND budget.invoking_dispatch_id IS NULL
             AND budget.poison_dispatch_id IS NULL`
       )
@@ -179,7 +179,7 @@ const settleGlobalUnknown = (
             WHERE budget.accounting_scope = ? AND budget.state = 'poisoned'
               AND budget.poison_dispatch_id = ?
               AND budget.invoking_dispatch_id IS NULL
-              AND budget.reserved_micro_usd = dispatch.maximum_cost_micro_usd
+              AND budget.reserved_micro_usd >= dispatch.maximum_cost_micro_usd
               AND budget.settled_micro_usd + budget.reserved_micro_usd <= budget.budget_cap_micro_usd
               AND dispatch.state = 'settled_unknown'
               AND dispatch.provider_stage_id = ? AND dispatch.run_id = ?
@@ -213,6 +213,11 @@ const settleGlobalUnknown = (
                   poison_dispatch_id = NULL, updated_at = ?
             WHERE accounting_scope = ? AND state = 'poisoned'
               AND poison_dispatch_id = ? AND invoking_dispatch_id IS NULL
+              AND reserved_micro_usd >= (
+                SELECT conservative_charge_micro_usd
+                  FROM provider_accounting_reconciliations
+                 WHERE accounting_scope = ? AND dispatch_id = ?
+              )
               AND EXISTS (
                 SELECT 1
                   FROM provider_accounting_dispatches AS dispatch
@@ -235,6 +240,8 @@ const settleGlobalUnknown = (
           ProviderAccountingScope,
           input.dispatchId,
           timestamp,
+          ProviderAccountingScope,
+          input.dispatchId,
           ProviderAccountingScope,
           input.dispatchId,
           ProviderAccountingScope,

@@ -62,11 +62,15 @@ export interface ProviderAccountingReservation {
   readonly timestamp: ProviderAccountingTimestamp;
 }
 
-export interface ProviderAccountingKnownSettlement extends ProviderAccountingReservation {
+export interface ProviderAccountingInvocationSettlement extends ProviderAccountingReservation {
+  readonly invocationGeneration: number;
+}
+
+export interface ProviderAccountingKnownSettlement extends ProviderAccountingInvocationSettlement {
   readonly actualCostMicroUsd: number;
 }
 
-export interface ProviderAccountingConservativeSettlement extends ProviderAccountingReservation {
+export interface ProviderAccountingConservativeSettlement extends ProviderAccountingInvocationSettlement {
   readonly conservativeChargeMicroUsd: number;
   readonly replay: ProviderAccountingConservativeReplayValue;
 }
@@ -92,6 +96,8 @@ export interface ProviderAccountingDispatch {
   readonly conservativeChargeMicroUsd?: number;
   readonly conservativeReplay?: ProviderAccountingConservativeReplayValue;
   readonly dispatchId: ProviderAccountingDispatchId;
+  readonly invocationExpiresAt?: ProviderAccountingTimestamp;
+  readonly invocationGeneration: number;
   readonly maximumCostMicroUsd: number;
   readonly providerStageId: ProviderAccountingProviderStageId;
   readonly runId: ProviderAccountingRunId;
@@ -144,7 +150,7 @@ export interface ProviderAccountingRepository {
     input: ProviderAccountingConservativeSettlement
   ) => Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError>;
   readonly settleUnknown: (
-    input: ProviderAccountingReservation
+    input: ProviderAccountingInvocationSettlement
   ) => Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError>;
 }
 
@@ -224,19 +230,25 @@ interface KnownZeroFailureResult<E> {
 const settleUnknown = (
   repository: ProviderAccountingRepository,
   reservation: ProviderAccountingReservation,
+  invocationGeneration: number,
   observe: Effect.Effect<void>
 ) =>
   repository
-    .settleUnknown(reservation)
+    .settleUnknown({ ...reservation, invocationGeneration })
     .pipe(Effect.andThen(observe), Effect.asVoid);
 
 const settleKnownZero = (
   repository: ProviderAccountingRepository,
   reservation: ProviderAccountingReservation,
+  invocationGeneration: number,
   observe: Effect.Effect<void>
 ) =>
   repository
-    .settleKnown({ ...reservation, actualCostMicroUsd: 0 })
+    .settleKnown({
+      ...reservation,
+      actualCostMicroUsd: 0,
+      invocationGeneration,
+    })
     .pipe(Effect.andThen(observe), Effect.asVoid);
 
 const previousAttemptMatches = (
@@ -311,6 +323,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
         yield* settleUnknown(
           input.repository,
           input.previousAttempt,
+          previous.invocationGeneration,
           observeUnknownSettlement
         );
         return yield* Effect.fail(providerAccountingError("outcome_unknown"));
@@ -348,20 +361,19 @@ export const runAccountedProviderDispatch = <A, E>(input: {
     if (reserved.state === "settled_unknown") {
       return yield* Effect.fail(providerAccountingError("outcome_unknown"));
     }
-    if (reserved.state === "invoking") {
-      return yield* Effect.fail(providerAccountingError("outcome_unknown"));
-    }
-    if (reserved.state !== "reserved") {
+    if (reserved.state !== "reserved" && reserved.state !== "invoking") {
       return yield* Effect.fail(providerAccountingError("transition_rejected"));
     }
-    yield* input.onReservation ?? Effect.void;
+    if (reserved.state === "reserved") {
+      yield* input.onReservation ?? Effect.void;
 
-    if (input.prepare !== undefined) {
-      yield* input.prepare.pipe(
-        Effect.tapError(() =>
-          input.repository.releaseBeforeInvocation(input.reservation)
-        )
-      );
+      if (input.prepare !== undefined) {
+        yield* input.prepare.pipe(
+          Effect.tapError(() =>
+            input.repository.releaseBeforeInvocation(input.reservation)
+          )
+        );
+      }
     }
 
     const invocationClaim = yield* input.repository.beginInvocation(
@@ -393,6 +405,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
     if (invocationClaim.dispatch.state !== "invoking") {
       return yield* Effect.fail(providerAccountingError("transition_rejected"));
     }
+    const { invocationGeneration } = invocationClaim.dispatch;
 
     const claimedResult = yield* Effect.gen(
       function* finalizeClaimedInvocation() {
@@ -402,6 +415,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
           yield* settleUnknown(
             input.repository,
             input.reservation,
+            invocationGeneration,
             observeUnknownSettlement
           );
           return { _tag: "CompletedUnknownCost" as const, value: result.value };
@@ -415,6 +429,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
             yield* settleUnknown(
               input.repository,
               input.reservation,
+              invocationGeneration,
               observeUnknownSettlement
             );
             return yield* Effect.fail(
@@ -425,6 +440,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
             yield* settleUnknown(
               input.repository,
               input.reservation,
+              invocationGeneration,
               observeUnknownSettlement
             );
             return yield* Effect.fail(
@@ -435,6 +451,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
           yield* input.repository.settleConservative({
             ...input.reservation,
             conservativeChargeMicroUsd: result.cost.conservativeChargeMicroUsd,
+            invocationGeneration,
             replay,
           });
           yield* observeSettlement("conservative");
@@ -452,6 +469,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
           yield* settleUnknown(
             input.repository,
             input.reservation,
+            invocationGeneration,
             observeUnknownSettlement
           );
           return yield* Effect.fail(
@@ -461,6 +479,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
         yield* input.repository.settleKnown({
           ...input.reservation,
           actualCostMicroUsd: result.cost.actualCostMicroUsd,
+          invocationGeneration,
         });
         yield* observeSettlement("known");
         return {
@@ -475,6 +494,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
           ? settleKnownZero(
               input.repository,
               input.reservation,
+              invocationGeneration,
               observeSettlement("known")
             ).pipe(
               Effect.as<KnownZeroFailureResult<E>>({
@@ -491,6 +511,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
         return settleUnknown(
           input.repository,
           input.reservation,
+          invocationGeneration,
           observeUnknownSettlement
         );
       })

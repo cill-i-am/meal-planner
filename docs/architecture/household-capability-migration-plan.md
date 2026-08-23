@@ -739,7 +739,7 @@ minimal noncanonical operational index for an approved concrete use case.
 
 ## Immediate handoff
 
-The next delivery is **Slice 3: global provider accounting**. It must start
-from the merged Slice 2 cutover, preserve household-owned terminal/recovery
-authority, and must not move batch or final shared-D1 retirement work from later
-slices into its scope.
+The next delivery is **Slice 4: batches**. Shared D1 now retains only proven
+global provider accounting, while Household SQLite remains authoritative for
+terminal and recovery outcomes. This delivery must not pull final shared-D1
+retirement or unrelated UI work forward from later slices.

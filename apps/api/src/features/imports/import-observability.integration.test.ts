@@ -55,6 +55,7 @@ const repository: ProviderAccountingRepository = {
       _tag: "Claimed",
       dispatch: {
         actualCostMicroUsd: null,
+        invocationGeneration: 1,
         ...input,
         state: "invoking",
       },
@@ -62,6 +63,7 @@ const repository: ProviderAccountingRepository = {
   readDispatch: (input) =>
     Effect.succeed({
       actualCostMicroUsd: 0,
+      invocationGeneration: 1,
       ...input,
       state: "settled_known",
     }),
@@ -75,12 +77,14 @@ const repository: ProviderAccountingRepository = {
   releaseBeforeInvocation: (input) =>
     Effect.succeed({
       actualCostMicroUsd: null,
+      invocationGeneration: 0,
       ...input,
       state: "released",
     }),
   reserve: (input) =>
     Effect.succeed({
       actualCostMicroUsd: null,
+      invocationGeneration: 0,
       ...input,
       state: "reserved",
     }),

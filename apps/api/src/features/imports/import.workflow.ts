@@ -2,7 +2,6 @@ import {
   CanonicalTikTokUrl,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
-import type { RecipeImportActionId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { Cause, Context, Effect, Layer, Schedule, Schema } from "effect";
@@ -57,7 +56,6 @@ import {
   makeHouseholdVisualEvidenceRepository,
 } from "./import-evidence.repository.household.js";
 import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
-import { projectRecipeDraftReviewActionView } from "./import-intent-review-action.js";
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   acquireStoreVerify,
@@ -116,6 +114,7 @@ import {
   publicIntentFailureForProviderStage,
 } from "./import-public-failure.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
+import { makeHouseholdRecipeDraftLifecycle } from "./import-recipe-lifecycle.household.js";
 import { readHouseholdProviderDispatchId } from "./import-recipe-recovery.household.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
@@ -690,32 +689,13 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 visual: makeHouseholdVisualEvidenceRepository(evidenceInput),
               } as const;
             };
-            const recipeLifecycle = {
-              grounding: intentTransitions
-                .advanceStage("grounding_recipe")
-                .pipe(Effect.orDie),
-              preparingReview: intentTransitions
-                .advanceStage("preparing_review")
-                .pipe(Effect.orDie),
-              reviewAvailable: (
-                _actionId: RecipeImportActionId,
-                draft: Parameters<typeof projectRecipeDraftReviewActionView>[0]
-              ) =>
-                Effect.gen(function* commitHouseholdRecipeDraft() {
-                  const mutationId = yield* workflowMutationId(
-                    `${intentId}:${executionGeneration}:commit-draft:${draft.extractionFingerprint}`
-                  );
-                  yield* householdDomain.commitRecipeImportDraft({
-                    admission,
-                    evidenceFingerprint: draft.evidenceFingerprint,
-                    expectedGeneration: executionGeneration,
-                    extractionFingerprint: draft.extractionFingerprint,
-                    intentId,
-                    mutationId,
-                    review: projectRecipeDraftReviewActionView(draft),
-                  });
-                }).pipe(Effect.orDie),
-            };
+            const recipeLifecycle = makeHouseholdRecipeDraftLifecycle({
+              executionGeneration,
+              householdDomain,
+              intentId,
+              mutationId: workflowMutationId,
+              organizationId,
+            });
             const retryLifecycle = (
               boundary: "acquisition" | "speech" | "visual" | "recipe"
             ): ProviderTaskRetryLifecycle => ({
@@ -738,10 +718,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               }) =>
                 readHouseholdProviderDispatchId({
                   acquisitionGeneration,
-                  database,
                   executionGeneration,
                   householdDomain,
                   importId: requestedImportId,
+                  organizationId,
                   stage: "speech",
                 }),
               visualDispatchId: ({
@@ -753,10 +733,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               }) =>
                 readHouseholdProviderDispatchId({
                   acquisitionGeneration,
-                  database,
                   executionGeneration,
                   householdDomain,
                   importId: requestedImportId,
+                  organizationId,
                   stage: "visual",
                 }),
             };

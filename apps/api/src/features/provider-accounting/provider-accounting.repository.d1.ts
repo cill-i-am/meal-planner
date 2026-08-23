@@ -7,6 +7,7 @@ import {
   ProviderAccountingRunId,
   ProviderAccountingCapMicroUsd,
   ProviderAccountingScope,
+  ProviderAccountingTimestamp,
   providerAccountingError,
 } from "./provider-accounting.js";
 import type {
@@ -24,6 +25,8 @@ const DispatchRow = Schema.Struct({
   actual_cost_micro_usd: NullableNumber,
   conservative_charge_micro_usd: Schema.optionalKey(NullableNumber),
   dispatch_id: ProviderAccountingDispatchId,
+  invocation_expires_at: Schema.NullOr(ProviderAccountingTimestamp),
+  invocation_generation: Schema.Number,
   maximum_cost_micro_usd: Schema.Number,
   provider_stage_id: ProviderAccountingProviderStageId,
   replay_evidence_fingerprint: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -165,12 +168,42 @@ const replayFromRow = (
   };
 };
 
+const hasValidInvocationFence = (row: DispatchRow) =>
+  row.state === "reserved" || row.state === "released"
+    ? row.invocation_generation === 0 && row.invocation_expires_at === null
+    : Number.isSafeInteger(row.invocation_generation) &&
+      row.invocation_generation >= 1 &&
+      (row.state === "invoking"
+        ? row.invocation_expires_at !== null
+        : row.invocation_expires_at === null);
+
+const hasValidReplayFields = (row: DispatchRow) => {
+  const replayFields = [
+    row.replay_evidence_fingerprint,
+    row.replay_expires_at,
+    row.replay_generation,
+    row.replay_import_id,
+    row.replay_value_json,
+    row.replay_value_sha256,
+  ];
+  return (
+    replayFields.every((value) => value === null || value === undefined) ||
+    (row.state === "settled_unknown" &&
+      row.conservative_charge_micro_usd !== undefined &&
+      row.conservative_charge_micro_usd !== null &&
+      replayFromRow(row) !== undefined)
+  );
+};
+
 const isValidDispatchRow = (row: DispatchRow) => {
   if (
     !validMoney(row.maximum_cost_micro_usd) ||
     row.maximum_cost_micro_usd === 0 ||
     row.maximum_cost_micro_usd > ProviderAccountingCapMicroUsd
   ) {
+    return false;
+  }
+  if (!hasValidInvocationFence(row)) {
     return false;
   }
   if (
@@ -182,21 +215,7 @@ const isValidDispatchRow = (row: DispatchRow) => {
   ) {
     return false;
   }
-  const replayFields = [
-    row.replay_evidence_fingerprint,
-    row.replay_expires_at,
-    row.replay_generation,
-    row.replay_import_id,
-    row.replay_value_json,
-    row.replay_value_sha256,
-  ];
-  if (
-    replayFields.some((value) => value !== null && value !== undefined) &&
-    (row.state !== "settled_unknown" ||
-      row.conservative_charge_micro_usd === undefined ||
-      row.conservative_charge_micro_usd === null ||
-      replayFromRow(row) === undefined)
-  ) {
+  if (!hasValidReplayFields(row)) {
     return false;
   }
   return row.state === "settled_known"
@@ -216,6 +235,7 @@ const dispatchFromRow = (
   let dispatch: ProviderAccountingDispatch = {
     actualCostMicroUsd: row.actual_cost_micro_usd,
     dispatchId: row.dispatch_id,
+    invocationGeneration: row.invocation_generation,
     maximumCostMicroUsd: row.maximum_cost_micro_usd,
     providerStageId: row.provider_stage_id,
     runId: row.run_id,
@@ -226,6 +246,12 @@ const dispatchFromRow = (
         ? "settled_conservative"
         : row.state,
   };
+  if (row.invocation_expires_at !== null) {
+    dispatch = {
+      ...dispatch,
+      invocationExpiresAt: row.invocation_expires_at,
+    };
+  }
   if (
     row.conservative_charge_micro_usd !== null &&
     row.conservative_charge_micro_usd !== undefined
@@ -289,6 +315,8 @@ const readDispatch = (
         `SELECT dispatch.actual_cost_micro_usd,
                 audit.conservative_charge_micro_usd,
                 dispatch.dispatch_id, dispatch.maximum_cost_micro_usd,
+                dispatch.invocation_expires_at,
+                dispatch.invocation_generation,
                 dispatch.provider_stage_id,
                   replay.evidence_fingerprint AS replay_evidence_fingerprint,
                   replay.expires_at AS replay_expires_at,
@@ -447,20 +475,71 @@ export const makeD1ProviderAccountingRepository = (
       const current = yield* readDispatch(binding, input).pipe(
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
+      const timestamp = DateTime.formatIso(input.timestamp);
+      if (current.state === "invoking") {
+        if (current.invocationExpiresAt === undefined) {
+          return yield* Effect.fail(
+            providerAccountingError("persistence_corrupt")
+          );
+        }
+        if (
+          DateTime.toEpochMillis(current.invocationExpiresAt) >
+          DateTime.toEpochMillis(input.timestamp)
+        ) {
+          return { _tag: "NotClaimed", dispatch: current };
+        }
+        yield* persistenceEffect(() =>
+          binding
+            .prepare(
+              `UPDATE provider_accounting_dispatches
+                  SET state = 'settled_unknown', completed_at = ?,
+                      invocation_expires_at = NULL, updated_at = ?
+                WHERE accounting_scope = ? AND dispatch_id = ?
+                  AND state = 'invoking'
+                  AND invocation_generation = ?
+                  AND invocation_expires_at <= ?`
+            )
+            .bind(
+              timestamp,
+              timestamp,
+              ProviderAccountingScope,
+              input.dispatchId,
+              current.invocationGeneration,
+              timestamp
+            )
+            .run()
+        );
+        const dispatch = yield* readDispatch(binding, input).pipe(
+          Effect.flatMap((row) => requireIdentity(row, input))
+        );
+        return { _tag: "NotClaimed", dispatch };
+      }
       if (current.state !== "reserved") {
         return { _tag: "NotClaimed", dispatch: current };
       }
-      const timestamp = DateTime.formatIso(input.timestamp);
+      const invocationExpiresAt = new Date(
+        DateTime.toEpochMillis(input.timestamp) + 5 * 60 * 1000
+      ).toISOString();
       const rawClaim = yield* persistenceEffect(() =>
         binding
           .prepare(
             `UPDATE provider_accounting_dispatches
-                SET state = 'invoking', invocation_started_at = ?, updated_at = ?
+                SET state = 'invoking', invocation_started_at = ?,
+                    invocation_expires_at = ?,
+                    invocation_generation = invocation_generation + 1,
+                    updated_at = ?
               WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'reserved'
               RETURNING actual_cost_micro_usd, dispatch_id,
+                        invocation_expires_at, invocation_generation,
                         maximum_cost_micro_usd, provider_stage_id, run_id, state`
           )
-          .bind(timestamp, timestamp, ProviderAccountingScope, input.dispatchId)
+          .bind(
+            timestamp,
+            invocationExpiresAt,
+            timestamp,
+            ProviderAccountingScope,
+            input.dispatchId
+          )
           .all()
       );
       const claimRows = yield* Schema.decodeUnknownEffect(DispatchQueryRows, {
@@ -606,6 +685,11 @@ export const makeD1ProviderAccountingRepository = (
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
       if (current.state === "settled_conservative") {
+        if (current.invocationGeneration !== input.invocationGeneration) {
+          return yield* Effect.fail(
+            providerAccountingError("dispatch_conflict")
+          );
+        }
         yield* readConservativeSettlement(binding, input);
         const stage = yield* readStageRow(binding);
         return stage.state === "open" &&
@@ -620,6 +704,9 @@ export const makeD1ProviderAccountingRepository = (
           providerAccountingError("transition_rejected")
         );
       }
+      if (current.invocationGeneration !== input.invocationGeneration) {
+        return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
+      }
       const timestamp = DateTime.formatIso(input.timestamp);
       yield* persistenceEffect(() =>
         binding.batch([
@@ -627,21 +714,23 @@ export const makeD1ProviderAccountingRepository = (
             .prepare(
               `UPDATE provider_accounting_dispatches
                   SET state = 'settled_unknown', completed_at = ?,
-                      updated_at = ?
+                      invocation_expires_at = NULL, updated_at = ?
                 WHERE accounting_scope = ?
                   AND dispatch_id = ?
                   AND run_id = ?
                   AND provider_stage_id = 'recipe-extraction'
                   AND maximum_cost_micro_usd = 100000
                   AND actual_cost_micro_usd IS NULL
-                  AND state = 'invoking'`
+                  AND state = 'invoking'
+                  AND invocation_generation = ?`
             )
             .bind(
               timestamp,
               timestamp,
               ProviderAccountingScope,
               input.dispatchId,
-              input.runId
+              input.runId,
+              input.invocationGeneration
             ),
           binding
             .prepare(
@@ -662,6 +751,8 @@ export const makeD1ProviderAccountingRepository = (
                   AND dispatch.maximum_cost_micro_usd = 100000
                   AND dispatch.actual_cost_micro_usd IS NULL
                   AND dispatch.state = 'settled_unknown'
+                  AND dispatch.invocation_generation = ?
+                  AND dispatch.completed_at = ?
                   AND stage.state = 'poisoned'
                   AND stage.poison_dispatch_id = dispatch.dispatch_id
                   AND stage.invoking_dispatch_id IS NULL
@@ -675,7 +766,9 @@ export const makeD1ProviderAccountingRepository = (
               timestamp,
               ProviderAccountingScope,
               input.dispatchId,
-              input.runId
+              input.runId,
+              input.invocationGeneration,
+              timestamp
             ),
           binding
             .prepare(
@@ -699,6 +792,8 @@ export const makeD1ProviderAccountingRepository = (
                   AND dispatch.maximum_cost_micro_usd = 100000
                   AND dispatch.actual_cost_micro_usd IS NULL
                   AND dispatch.state = 'settled_unknown'
+                  AND dispatch.invocation_generation = ?
+                  AND dispatch.completed_at = ?
                   AND dispatch.dispatch_id IN (?, ?, ?, ?, ?, ?, ?, ?, ?)
                   AND audit.actual_cost_was_unknown = 1
                   AND audit.authority =
@@ -717,6 +812,8 @@ export const makeD1ProviderAccountingRepository = (
               ProviderAccountingScope,
               input.dispatchId,
               input.runId,
+              input.invocationGeneration,
+              timestamp,
               ...recipeReplayDispatchIds(input.replay)
             ),
           binding
@@ -750,6 +847,8 @@ export const makeD1ProviderAccountingRepository = (
                        AND dispatch.maximum_cost_micro_usd = 100000
                        AND dispatch.actual_cost_micro_usd IS NULL
                        AND dispatch.state = 'settled_unknown'
+                       AND dispatch.invocation_generation = ?
+                       AND dispatch.completed_at = ?
                        AND audit.actual_cost_was_unknown = 1
                        AND audit.authority =
                            'schema_valid_provider_response'
@@ -774,6 +873,8 @@ export const makeD1ProviderAccountingRepository = (
               input.dispatchId,
               input.dispatchId,
               input.runId,
+              input.invocationGeneration,
+              timestamp,
               input.replay.importId,
               input.replay.generation,
               input.replay.evidenceFingerprint,
@@ -810,7 +911,8 @@ export const makeD1ProviderAccountingRepository = (
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
       if (current.state === "settled_known") {
-        return current.actualCostMicroUsd === input.actualCostMicroUsd
+        return current.invocationGeneration === input.invocationGeneration &&
+          current.actualCostMicroUsd === input.actualCostMicroUsd
           ? current
           : yield* Effect.fail(providerAccountingError("dispatch_conflict"));
       }
@@ -819,20 +921,25 @@ export const makeD1ProviderAccountingRepository = (
           providerAccountingError("transition_rejected")
         );
       }
+      if (current.invocationGeneration !== input.invocationGeneration) {
+        return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
+      }
       const timestamp = DateTime.formatIso(input.timestamp);
       const settled = yield* transition(
         binding,
         input,
         `UPDATE provider_accounting_dispatches
             SET state = 'settled_known', actual_cost_micro_usd = ?,
-                completed_at = ?, updated_at = ?
-          WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'invoking'`,
+                completed_at = ?, invocation_expires_at = NULL, updated_at = ?
+          WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'invoking'
+            AND invocation_generation = ?`,
         [
           input.actualCostMicroUsd,
           timestamp,
           timestamp,
           ProviderAccountingScope,
           input.dispatchId,
+          input.invocationGeneration,
         ]
       );
       if (settled.state === "settled_unknown") {
@@ -849,21 +956,34 @@ export const makeD1ProviderAccountingRepository = (
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
       if (current.state === "settled_unknown") {
-        return current;
+        return current.invocationGeneration === input.invocationGeneration
+          ? current
+          : yield* Effect.fail(providerAccountingError("dispatch_conflict"));
       }
       if (current.state !== "invoking") {
         return yield* Effect.fail(
           providerAccountingError("transition_rejected")
         );
       }
+      if (current.invocationGeneration !== input.invocationGeneration) {
+        return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
+      }
       const timestamp = DateTime.formatIso(input.timestamp);
       const settled = yield* transition(
         binding,
         input,
         `UPDATE provider_accounting_dispatches
-            SET state = 'settled_unknown', completed_at = ?, updated_at = ?
-          WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'invoking'`,
-        [timestamp, timestamp, ProviderAccountingScope, input.dispatchId]
+            SET state = 'settled_unknown', completed_at = ?,
+                invocation_expires_at = NULL, updated_at = ?
+          WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'invoking'
+            AND invocation_generation = ?`,
+        [
+          timestamp,
+          timestamp,
+          ProviderAccountingScope,
+          input.dispatchId,
+          input.invocationGeneration,
+        ]
       );
       return settled.state === "settled_unknown"
         ? settled

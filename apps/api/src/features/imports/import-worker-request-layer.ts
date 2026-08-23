@@ -168,7 +168,6 @@ export const makeImportWorkerRequestLayer = (
     ProviderRecoveryService,
     ProviderRecoveryService.of(
       makeProviderRecoveryService({
-        database: input.database,
         householdDomain: input.householdDomain,
         recipeRecoveryStarter: input.recipeRecoveryStarter,
         workflowStarter: input.importWorkflowStarter,

@@ -11,12 +11,12 @@ DROP TABLE IF EXISTS `pilot_provider_stage_budget`;
 CREATE TABLE `provider_accounting_budgets` (
 	`accounting_scope` text PRIMARY KEY,
 	`budget_cap_micro_usd` integer DEFAULT 10000000 NOT NULL,
-	`settled_micro_usd` integer DEFAULT 0 NOT NULL,
-	`reserved_micro_usd` integer DEFAULT 0 NOT NULL,
-	`state` text DEFAULT 'open' NOT NULL,
+	`created_at` text NOT NULL,
 	`invoking_dispatch_id` text,
 	`poison_dispatch_id` text,
-	`created_at` text NOT NULL,
+	`reserved_micro_usd` integer DEFAULT 0 NOT NULL,
+	`settled_micro_usd` integer DEFAULT 0 NOT NULL,
+	`state` text DEFAULT 'open' NOT NULL,
 	`updated_at` text NOT NULL,
 	CONSTRAINT "provider_accounting_budgets_scope_check" CHECK("accounting_scope" = 'recipe-import'),
 	CONSTRAINT "provider_accounting_budgets_cap_check" CHECK(typeof("budget_cap_micro_usd") = 'integer' AND "budget_cap_micro_usd" = 10000000),
@@ -33,12 +33,12 @@ INSERT INTO `provider_accounting_budgets` (
 );
 --> statement-breakpoint
 CREATE TABLE `provider_accounting_conservative_settlements` (
+	`accounting_scope` text NOT NULL,
 	`actual_cost_was_unknown` integer NOT NULL,
 	`authority` text NOT NULL,
 	`conservative_charge_micro_usd` integer NOT NULL,
 	`created_at` text NOT NULL,
 	`dispatch_id` text NOT NULL,
-	`accounting_scope` text NOT NULL,
 	CONSTRAINT `provider_accounting_conservative_settlements_pk` PRIMARY KEY(`accounting_scope`, `dispatch_id`),
 	CONSTRAINT `provider_accounting_conservative_settlements_dispatch_fk` FOREIGN KEY (`accounting_scope`,`dispatch_id`) REFERENCES `provider_accounting_dispatches`(`accounting_scope`,`dispatch_id`) ON DELETE RESTRICT,
 	CONSTRAINT "provider_accounting_conservative_settlements_scope_check" CHECK("accounting_scope" = 'recipe-import'),
@@ -49,31 +49,33 @@ CREATE TABLE `provider_accounting_conservative_settlements` (
 --> statement-breakpoint
 CREATE TABLE `provider_accounting_dispatches` (
 	`accounting_scope` text NOT NULL,
-	`dispatch_id` text NOT NULL,
-	`run_id` text NOT NULL,
-	`provider_stage_id` text NOT NULL,
-	`maximum_cost_micro_usd` integer NOT NULL,
 	`actual_cost_micro_usd` integer,
-	`state` text DEFAULT 'reserved' NOT NULL,
-	`created_at` text NOT NULL,
-	`updated_at` text NOT NULL,
-	`invocation_started_at` text,
 	`completed_at` text,
+	`created_at` text NOT NULL,
+	`dispatch_id` text NOT NULL,
+	`invocation_expires_at` text,
+	`invocation_generation` integer DEFAULT 0 NOT NULL,
+	`invocation_started_at` text,
+	`maximum_cost_micro_usd` integer NOT NULL,
+	`provider_stage_id` text NOT NULL,
+	`run_id` text NOT NULL,
+	`state` text DEFAULT 'reserved' NOT NULL,
+	`updated_at` text NOT NULL,
 	CONSTRAINT `provider_accounting_dispatches_pk` PRIMARY KEY(`accounting_scope`, `dispatch_id`),
 	CONSTRAINT `provider_accounting_dispatches_budget_fk` FOREIGN KEY (`accounting_scope`) REFERENCES `provider_accounting_budgets`(`accounting_scope`) ON DELETE RESTRICT,
 	CONSTRAINT "provider_accounting_dispatches_scope_check" CHECK("accounting_scope" = 'recipe-import'),
 	CONSTRAINT "provider_accounting_dispatches_maximum_check" CHECK(typeof("maximum_cost_micro_usd") = 'integer' AND "maximum_cost_micro_usd" > 0 AND "maximum_cost_micro_usd" <= 10000000),
-	CONSTRAINT "provider_accounting_dispatches_shape_check" CHECK(("state" = 'reserved' AND "actual_cost_micro_usd" IS NULL AND "invocation_started_at" IS NULL AND "completed_at" IS NULL) OR ("state" = 'invoking' AND "actual_cost_micro_usd" IS NULL AND "invocation_started_at" IS NOT NULL AND "completed_at" IS NULL) OR ("state" = 'released' AND "actual_cost_micro_usd" IS NULL AND "invocation_started_at" IS NULL AND "completed_at" IS NOT NULL) OR ("state" = 'settled_known' AND typeof("actual_cost_micro_usd") = 'integer' AND "actual_cost_micro_usd" >= 0 AND "actual_cost_micro_usd" <= "maximum_cost_micro_usd" AND "invocation_started_at" IS NOT NULL AND "completed_at" IS NOT NULL) OR ("state" = 'settled_unknown' AND "actual_cost_micro_usd" IS NULL AND "invocation_started_at" IS NOT NULL AND "completed_at" IS NOT NULL) OR ("state" = 'settled_conservative' AND "actual_cost_micro_usd" IS NULL AND "invocation_started_at" IS NOT NULL AND "completed_at" IS NOT NULL))
+	CONSTRAINT "provider_accounting_dispatches_shape_check" CHECK(("state" = 'reserved' AND "actual_cost_micro_usd" IS NULL AND "invocation_generation" = 0 AND "invocation_started_at" IS NULL AND "invocation_expires_at" IS NULL AND "completed_at" IS NULL) OR ("state" = 'invoking' AND "actual_cost_micro_usd" IS NULL AND typeof("invocation_generation") = 'integer' AND "invocation_generation" >= 1 AND "invocation_started_at" IS NOT NULL AND "invocation_expires_at" IS NOT NULL AND "completed_at" IS NULL) OR ("state" = 'released' AND "actual_cost_micro_usd" IS NULL AND "invocation_generation" = 0 AND "invocation_started_at" IS NULL AND "invocation_expires_at" IS NULL AND "completed_at" IS NOT NULL) OR ("state" = 'settled_known' AND typeof("actual_cost_micro_usd") = 'integer' AND "actual_cost_micro_usd" >= 0 AND "actual_cost_micro_usd" <= "maximum_cost_micro_usd" AND typeof("invocation_generation") = 'integer' AND "invocation_generation" >= 1 AND "invocation_started_at" IS NOT NULL AND "invocation_expires_at" IS NULL AND "completed_at" IS NOT NULL) OR ("state" = 'settled_unknown' AND "actual_cost_micro_usd" IS NULL AND typeof("invocation_generation") = 'integer' AND "invocation_generation" >= 1 AND "invocation_started_at" IS NOT NULL AND "invocation_expires_at" IS NULL AND "completed_at" IS NOT NULL) OR ("state" = 'settled_conservative' AND "actual_cost_micro_usd" IS NULL AND typeof("invocation_generation") = 'integer' AND "invocation_generation" >= 1 AND "invocation_started_at" IS NOT NULL AND "invocation_expires_at" IS NULL AND "completed_at" IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE TABLE `provider_accounting_recipe_replay_values` (
+	`accounting_scope` text NOT NULL,
 	`created_at` text NOT NULL,
 	`dispatch_id` text NOT NULL,
 	`evidence_fingerprint` text NOT NULL,
 	`expires_at` text NOT NULL,
 	`generation` integer NOT NULL,
 	`import_id` text NOT NULL,
-	`accounting_scope` text NOT NULL,
 	`value_json` text NOT NULL,
 	`value_sha256` text NOT NULL,
 	CONSTRAINT `provider_accounting_recipe_replay_values_pk` PRIMARY KEY(`accounting_scope`, `dispatch_id`),
@@ -87,11 +89,11 @@ CREATE TABLE `provider_accounting_recipe_replay_values` (
 --> statement-breakpoint
 CREATE TABLE `provider_accounting_reconciliations` (
 	`accounting_scope` text NOT NULL,
-	`dispatch_id` text NOT NULL,
-	`conservative_charge_micro_usd` integer NOT NULL,
 	`actual_cost_was_unknown` integer DEFAULT 1 NOT NULL,
 	`authority` text NOT NULL,
+	`conservative_charge_micro_usd` integer NOT NULL,
 	`created_at` text NOT NULL,
+	`dispatch_id` text NOT NULL,
 	CONSTRAINT `provider_accounting_reconciliations_pk` PRIMARY KEY(`accounting_scope`, `dispatch_id`),
 	CONSTRAINT `provider_accounting_reconciliations_dispatch_fk` FOREIGN KEY (`accounting_scope`,`dispatch_id`) REFERENCES `provider_accounting_dispatches`(`accounting_scope`,`dispatch_id`) ON DELETE RESTRICT,
 	CONSTRAINT "provider_accounting_reconciliations_scope_check" CHECK("accounting_scope" = 'recipe-import'),

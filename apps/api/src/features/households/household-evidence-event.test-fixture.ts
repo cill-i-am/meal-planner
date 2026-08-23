@@ -1108,7 +1108,6 @@ export default {
       };
       const result = await Effect.runPromise(
         makeProviderRecoveryService({
-          database: environment.MealPlannerDatabase,
           householdDomain: terminalHousehold(environment),
           recipeRecoveryStarter: { start: () => Effect.void },
           workflowStarter: {

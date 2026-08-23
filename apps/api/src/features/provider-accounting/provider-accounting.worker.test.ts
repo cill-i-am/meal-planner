@@ -3,6 +3,7 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Deferred, Effect, Fiber, Schema } from "effect";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { ImportId } from "../imports/import.contracts.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingProviderStageId,
@@ -11,7 +12,12 @@ import {
   providerKnownZeroCostFailure,
   runAccountedProviderDispatch,
 } from "./provider-accounting.js";
+import type {
+  ProviderAccountingRepository,
+  ProviderAccountingReservation,
+} from "./provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "./provider-accounting.repository.d1.js";
+import { makeD1ProviderAccountingService } from "./provider-accounting.service.js";
 
 const testEnv = env as unknown as {
   readonly MealPlannerDatabase: AnyD1Database;
@@ -54,6 +60,27 @@ const reservation = (
   timestamp: now,
 });
 
+const reservationAt = (
+  runId: string,
+  dispatchId: string,
+  maximumCostMicroUsd: number,
+  timestamp: string
+) => ({
+  ...reservation(runId, dispatchId, maximumCostMicroUsd),
+  timestamp: decodeTimestamp(timestamp),
+});
+
+const claimInvocation = async (
+  repository: ProviderAccountingRepository,
+  input: ProviderAccountingReservation
+) => {
+  const claim = await Effect.runPromise(repository.beginInvocation(input));
+  if (claim._tag !== "Claimed") {
+    throw new Error("expected provider invocation claim");
+  }
+  return claim.dispatch.invocationGeneration;
+};
+
 beforeAll(async () => {
   await applyD1Migrations(
     testEnv.MealPlannerDatabase,
@@ -69,12 +96,18 @@ beforeEach(async () => {
   await testEnv.MealPlannerDatabase.prepare(
     "DROP TRIGGER IF EXISTS provider_accounting_conservative_settlements_immutable_delete"
   ).run();
+  await testEnv.MealPlannerDatabase.prepare(
+    "DROP TRIGGER IF EXISTS provider_accounting_reconciliations_immutable_delete"
+  ).run();
   await testEnv.MealPlannerDatabase.batch([
     testEnv.MealPlannerDatabase.prepare(
       "DELETE FROM provider_accounting_recipe_replay_values"
     ),
     testEnv.MealPlannerDatabase.prepare(
       "DELETE FROM provider_accounting_conservative_settlements"
+    ),
+    testEnv.MealPlannerDatabase.prepare(
+      "DELETE FROM provider_accounting_reconciliations"
     ),
     testEnv.MealPlannerDatabase.prepare(
       "DELETE FROM provider_accounting_dispatches"
@@ -96,6 +129,13 @@ beforeEach(async () => {
          ABORT,
          'provider conservative settlement audit is immutable'
        );
+     END`
+  ).run();
+  await testEnv.MealPlannerDatabase.prepare(
+    `CREATE TRIGGER provider_accounting_reconciliations_immutable_delete
+     BEFORE DELETE ON provider_accounting_reconciliations
+     BEGIN
+       SELECT RAISE(ABORT, 'provider accounting reconciliation is immutable');
      END`
   ).run();
 });
@@ -287,11 +327,12 @@ describe("provider accounting", () => {
       providerStageId: decodeProviderStageId("recipe-extraction"),
     };
     await Effect.runPromise(repository.reserve(command));
-    await Effect.runPromise(repository.beginInvocation(command));
+    const invocationGeneration = await claimInvocation(repository, command);
 
     const input = {
       ...command,
       conservativeChargeMicroUsd: 100_000,
+      invocationGeneration,
       replay: conservativeReplay("import-concurrent-conservative"),
     };
     const results = await Promise.allSettled([
@@ -336,13 +377,14 @@ describe("provider accounting", () => {
       262_144
     );
     await Effect.runPromise(repository.reserve(command));
-    await Effect.runPromise(repository.beginInvocation(command));
+    const invocationGeneration = await claimInvocation(repository, command);
 
     await expect(
       Effect.runPromise(
         repository.settleConservative({
           ...command,
           conservativeChargeMicroUsd: 100_000,
+          invocationGeneration,
           replay: {
             ...conservativeReplay(importId),
             valueJson,
@@ -351,7 +393,9 @@ describe("provider accounting", () => {
       )
     ).rejects.toMatchObject({ code: "cost_exceeds_reservation" });
 
-    await Effect.runPromise(repository.settleUnknown(command));
+    await Effect.runPromise(
+      repository.settleUnknown({ ...command, invocationGeneration })
+    );
     await testEnv.MealPlannerDatabase.prepare(
       `INSERT INTO provider_accounting_conservative_settlements (
          actual_cost_was_unknown, authority, conservative_charge_micro_usd,
@@ -579,6 +623,22 @@ describe("provider accounting", () => {
       readonly name: string;
       readonly sql: string;
     }[];
+    expect(triggerRows.map(({ name }) => name)).toEqual([
+      "provider_accounting_conservative_settlements_immutable_delete",
+      "provider_accounting_conservative_settlements_immutable_update",
+      "provider_accounting_dispatches_begin_invocation",
+      "provider_accounting_dispatches_release",
+      "provider_accounting_dispatches_reserve",
+      "provider_accounting_dispatches_settle_known",
+      "provider_accounting_dispatches_settle_unknown",
+      "provider_accounting_dispatches_transition_guard",
+      "provider_accounting_recipe_replay_values_dispatch_insert_cleanup",
+      "provider_accounting_recipe_replay_values_dispatch_update_cleanup",
+      "provider_accounting_recipe_replay_values_expired_cleanup",
+      "provider_accounting_recipe_replay_values_immutable_update",
+      "provider_accounting_reconciliations_immutable_delete",
+      "provider_accounting_reconciliations_immutable_update",
+    ]);
     const triggerSql = triggerRows
       .map(({ sql }) => sql)
       .join("\n")
@@ -636,17 +696,19 @@ describe("provider accounting", () => {
     );
     const known = reservation("run_known", "dispatch_known", 6_000_000);
     await Effect.runPromise(repository.reserve(known));
-    await Effect.runPromise(repository.beginInvocation(known));
+    const invocationGeneration = await claimInvocation(repository, known);
     await Effect.runPromise(
       repository.settleKnown({
         ...known,
         actualCostMicroUsd: 5_000_000,
+        invocationGeneration,
       })
     );
     await Effect.runPromise(
       repository.settleKnown({
         ...known,
         actualCostMicroUsd: 5_000_000,
+        invocationGeneration,
       })
     );
     expect(await Effect.runPromise(repository.readStage())).toMatchObject({
@@ -671,14 +733,22 @@ describe("provider accounting", () => {
     );
     const command = reservation("run_settle", "dispatch_settle", 10);
     await Effect.runPromise(repository.reserve(command));
-    await Effect.runPromise(repository.beginInvocation(command));
+    const invocationGeneration = await claimInvocation(repository, command);
 
     const outcomes = await Promise.allSettled([
       Effect.runPromise(
-        repository.settleKnown({ ...command, actualCostMicroUsd: 7 })
+        repository.settleKnown({
+          ...command,
+          actualCostMicroUsd: 7,
+          invocationGeneration,
+        })
       ),
       Effect.runPromise(
-        repository.settleKnown({ ...command, actualCostMicroUsd: 8 })
+        repository.settleKnown({
+          ...command,
+          actualCostMicroUsd: 8,
+          invocationGeneration,
+        })
       ),
     ]);
     expect(
@@ -702,8 +772,10 @@ describe("provider accounting", () => {
     );
     const unknown = reservation("run_unknown", "dispatch_unknown", 4_000_000);
     await Effect.runPromise(repository.reserve(unknown));
-    await Effect.runPromise(repository.beginInvocation(unknown));
-    await Effect.runPromise(repository.settleUnknown(unknown));
+    const invocationGeneration = await claimInvocation(repository, unknown);
+    await Effect.runPromise(
+      repository.settleUnknown({ ...unknown, invocationGeneration })
+    );
 
     await expect(
       Effect.runPromise(
@@ -742,6 +814,187 @@ describe("provider accounting", () => {
     expect(await Effect.runPromise(repository.readStage())).toMatchObject({
       reservedMicroUsd: 8_000_000,
       state: "invoking",
+    });
+  });
+
+  it("poisons a stale durable invocation claim after restart without reinvoking", async () => {
+    const repository = makeD1ProviderAccountingRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const claimed = reservationAt(
+      "run_stale_claim",
+      "dispatch_stale_claim",
+      10,
+      "2026-08-23T12:00:00.000Z"
+    );
+    await Effect.runPromise(repository.reserve(claimed));
+    await Effect.runPromise(repository.beginInvocation(claimed));
+
+    const restartedRepository = makeD1ProviderAccountingRepository(
+      testEnv.MealPlannerDatabase
+    );
+    let providerCalls = 0;
+    await expect(
+      Effect.runPromise(
+        runAccountedProviderDispatch({
+          invoke: Effect.sync(() => {
+            providerCalls += 1;
+            return {
+              cost: { _tag: "Known" as const, actualCostMicroUsd: 1 },
+              value: "must-not-run",
+            };
+          }),
+          repository: restartedRepository,
+          reservation: reservationAt(
+            "run_stale_claim",
+            "dispatch_stale_claim",
+            10,
+            "2026-08-23T12:06:00.000Z"
+          ),
+        })
+      )
+    ).rejects.toMatchObject({ code: "outcome_unknown" });
+
+    expect(providerCalls).toBe(0);
+    await expect(
+      restartedRepository.readStage().pipe(Effect.runPromise)
+    ).resolves.toMatchObject({
+      poisonDispatchId: claimed.dispatchId,
+      reservedMicroUsd: 10,
+      state: "poisoned",
+    });
+    await expect(
+      restartedRepository.readDispatch(claimed).pipe(Effect.runPromise)
+    ).resolves.toMatchObject({ state: "settled_unknown" });
+  });
+
+  it("keeps an active generation-fenced invocation claim live", async () => {
+    const repository = makeD1ProviderAccountingRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const claimed = reservationAt(
+      "run_active_claim",
+      "dispatch_active_claim",
+      10,
+      "2026-08-23T12:00:00.000Z"
+    );
+    await Effect.runPromise(repository.reserve(claimed));
+    const claim = await Effect.runPromise(repository.beginInvocation(claimed));
+    expect(claim).toMatchObject({
+      _tag: "Claimed",
+      dispatch: { invocationGeneration: 1, state: "invoking" },
+    });
+
+    let providerCalls = 0;
+    await expect(
+      Effect.runPromise(
+        runAccountedProviderDispatch({
+          invoke: Effect.sync(() => {
+            providerCalls += 1;
+            return {
+              cost: { _tag: "Known" as const, actualCostMicroUsd: 1 },
+              value: "must-not-run",
+            };
+          }),
+          repository,
+          reservation: reservationAt(
+            "run_active_claim",
+            "dispatch_active_claim",
+            10,
+            "2026-08-23T12:01:00.000Z"
+          ),
+        })
+      )
+    ).rejects.toMatchObject({ code: "outcome_unknown" });
+    expect(providerCalls).toBe(0);
+    await expect(
+      repository.readStage().pipe(Effect.runPromise)
+    ).resolves.toMatchObject({
+      invokingDispatchId: claimed.dispatchId,
+      reservedMicroUsd: 10,
+      state: "invoking",
+    });
+  });
+
+  it("reconciles one poisoned reservation while preserving another", async () => {
+    const repository = makeD1ProviderAccountingRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const importId = Schema.decodeUnknownSync(ImportId)(
+      "00000000-0000-4000-8000-000000000190"
+    );
+    const poisoned = reservation(
+      `recipe-import:${importId}`,
+      "dispatch_poisoned_with_residual",
+      4_000_000
+    );
+    const residual = reservation(
+      `recipe-import:${importId}`,
+      "dispatch_residual_reservation",
+      4_000_000
+    );
+    const speechPoisoned = {
+      ...poisoned,
+      providerStageId: decodeProviderStageId("speech-transcription"),
+    };
+    const speechResidual = {
+      ...residual,
+      providerStageId: decodeProviderStageId("speech-transcription"),
+    };
+    await Effect.runPromise(repository.reserve(speechPoisoned));
+    await Effect.runPromise(repository.reserve(speechResidual));
+    const poisonedGeneration = await claimInvocation(
+      repository,
+      speechPoisoned
+    );
+    await Effect.runPromise(
+      repository.settleUnknown({
+        ...speechPoisoned,
+        invocationGeneration: poisonedGeneration,
+      })
+    );
+
+    const accounting = makeD1ProviderAccountingService({
+      database: testEnv.MealPlannerDatabase,
+      now: () => now,
+    });
+    await expect(
+      accounting
+        .reconcile({
+          dispatchId: speechPoisoned.dispatchId,
+          importId,
+          operation: "settle_speech_unknown",
+        })
+        .pipe(Effect.runPromise)
+    ).resolves.toMatchObject({
+      conservativeChargeMicroUsd: 4_000_000,
+      dispatchId: speechPoisoned.dispatchId,
+    });
+    await expect(
+      repository.readStage().pipe(Effect.runPromise)
+    ).resolves.toMatchObject({
+      reservedMicroUsd: 4_000_000,
+      settledMicroUsd: 4_000_000,
+      state: "open",
+    });
+
+    const residualGeneration = await claimInvocation(
+      repository,
+      speechResidual
+    );
+    await Effect.runPromise(
+      repository.settleKnown({
+        ...speechResidual,
+        actualCostMicroUsd: 3_000_000,
+        invocationGeneration: residualGeneration,
+      })
+    );
+    await expect(
+      repository.readStage().pipe(Effect.runPromise)
+    ).resolves.toMatchObject({
+      reservedMicroUsd: 0,
+      settledMicroUsd: 7_000_000,
+      state: "open",
     });
   });
 

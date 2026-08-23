@@ -11,6 +11,7 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
+import { HouseholdOrganizationId } from "../households/household.contract.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingRunId,
@@ -28,7 +29,6 @@ import {
   InstalledSpeechModel,
   makeProviderDispatchGate,
 } from "./import-provider-kernel.js";
-import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import type { ProviderTaskCheckpoint } from "./import-provider-workflow-checkpoint.js";
@@ -43,7 +43,10 @@ import type {
   RecipeRecoveryAttempt,
   RecipeRecoveryOrdinal,
 } from "./import-recipe-recovery.js";
-import { runRecipeRecoveryLoop } from "./import-runtime-composition.js";
+import {
+  makeRecipeRecoveryProviderRuntime,
+  runRecipeRecoveryLoop,
+} from "./import-runtime-composition.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
 const ProviderWorkflowInput = Schema.Struct({
@@ -110,6 +113,9 @@ const decodeAccountingDispatchId = Schema.decodeUnknownSync(
 );
 const decodeHouseholdDispatchId = Schema.decodeUnknownSync(HouseholdDispatchId);
 const decodeTimestamp = Schema.decodeUnknownSync(ProviderAccountingTimestamp);
+const recoveryOrganizationId = Schema.decodeUnknownSync(
+  HouseholdOrganizationId
+)("organization-provider-workflow-recovery");
 const decodeGeneration = Schema.decodeUnknownSync(AcquisitionGeneration);
 const decodeImportId = Schema.decodeUnknownSync(ImportId);
 const decodeImportTimestamp = Schema.decodeUnknownSync(ImportTimestamp);
@@ -234,20 +240,7 @@ const installedRecipeConservativeDispatch = (
     const correlationId = decodeCorrelationId(
       "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2205"
     );
-    const repository = makeD1ProviderAccountingRepository(
-      env.MealPlannerDatabase
-    );
     const dispatchTimestamp = decodeTimestamp(new Date().toISOString());
-    const dispatch = makeProviderDispatchGate({
-      correlationId,
-      now: () => dispatchTimestamp,
-      repository,
-      runId: decodeRunId(
-        recovery
-          ? `recipe-import:recipe-recovery:${importId}`
-          : `recipe-import:${importId}`
-      ),
-    });
     const transport: WorkersAiTransport["recipe"] = {
       model: InstalledRecipeModel,
       run: async () => {
@@ -255,9 +248,15 @@ const installedRecipeConservativeDispatch = (
         return Response.json({ response: emptyRecipeProviderSelection });
       },
     };
-    const extractor = yield* makeInstalledRecipeExtractor({
+    const { extractor } = yield* makeRecipeRecoveryProviderRuntime({
       correlationId,
-      dispatch,
+      database: env.MealPlannerDatabase,
+      now: () => dispatchTimestamp,
+      runId: decodeRunId(
+        recovery
+          ? `recipe-import:recipe-recovery:${importId}`
+          : `recipe-import:${importId}`
+      ),
       transport,
     });
     const extractionInput: RecipeEvidenceAssembly = {
@@ -622,6 +621,7 @@ const providerWorkflowExport = {
                 ImportIntentExecutionGeneration
               )(generation),
               importId,
+              organizationId: recoveryOrganizationId,
               trace: {
                 correlationId: decodeCorrelationId(
                   "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2206"

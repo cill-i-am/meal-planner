@@ -294,7 +294,7 @@ const validateStageMutationStructure = (
 
 type RecoveryIntentRow = Pick<
   typeof householdRecipeImports.$inferSelect,
-  "executionGeneration" | "sourceKind" | "status"
+  "executionGeneration" | "intentJson" | "sourceKind" | "status"
 >;
 type RecoveryStageRow = typeof householdEvidenceStageExecutions.$inferSelect;
 type RecoveryAttemptRow = typeof importRecipeRecoveryAttempts.$inferSelect;
@@ -310,7 +310,8 @@ const requireRecoveryIntent = (
   if (intent.executionGeneration !== expectedGeneration) {
     return Effect.fail(failure("generation_conflict"));
   }
-  return intent.status === "processing" && intent.sourceKind === "video"
+  return (intent.status === "failed" || intent.status === "processing") &&
+    intent.sourceKind === "video"
     ? Effect.succeed(intent)
     : Effect.fail(failure("illegal_transition"));
 };
@@ -763,6 +764,7 @@ export const makeHouseholdEvidenceRepository = (
             const [intent] = yield* transaction
               .select({
                 executionGeneration: householdRecipeImports.executionGeneration,
+                intentJson: householdRecipeImports.intentJson,
                 sourceKind: householdRecipeImports.sourceKind,
                 status: householdRecipeImports.status,
               })
@@ -1375,6 +1377,7 @@ export const makeHouseholdEvidenceRepository = (
             const [intent] = yield* transaction
               .select({
                 executionGeneration: householdRecipeImports.executionGeneration,
+                intentJson: householdRecipeImports.intentJson,
                 sourceKind: householdRecipeImports.sourceKind,
                 status: householdRecipeImports.status,
               })
@@ -1382,7 +1385,10 @@ export const makeHouseholdEvidenceRepository = (
               .where(eq(householdRecipeImports.intentId, input.intentId))
               .limit(1)
               .pipe(mapPersistence);
-            yield* requireRecoveryIntent(intent, input.expectedGeneration);
+            const validIntent = yield* requireRecoveryIntent(
+              intent,
+              input.expectedGeneration
+            );
             const replay = yield* readReceipt(
               transaction,
               input.mutationId,
@@ -1461,6 +1467,66 @@ export const makeHouseholdEvidenceRepository = (
               checkpoint,
               validStage
             );
+            if (validIntent.status === "failed") {
+              const failedIntent = yield* decode(
+                EncodedRecipeImportIntent,
+                validIntent.intentJson
+              );
+              if (failedIntent.status !== "failed") {
+                return yield* Effect.fail(failure("illegal_transition"));
+              }
+              const failedWire = yield* encode(
+                FailedRecipeImportIntent,
+                failedIntent
+              );
+              const {
+                error: _error,
+                failedAt: _failedAt,
+                ...common
+              } = failedWire;
+              const recoveredIntent = yield* decode(
+                ProcessingRecipeImportIntent,
+                {
+                  ...common,
+                  activity: { type: "working" },
+                  intentVersion: failedIntent.intentVersion + 1,
+                  processing: {
+                    startedAt: createdAt,
+                    type: "extracting_recipe",
+                  },
+                  status: "processing",
+                  updatedAt: createdAt,
+                }
+              );
+              yield* transaction
+                .update(householdRecipeImports)
+                .set({
+                  intentJson: yield* encode(
+                    EncodedRecipeImportIntent,
+                    recoveredIntent
+                  ),
+                  status: "processing",
+                  updatedAt: createdAt,
+                })
+                .where(
+                  and(
+                    eq(householdRecipeImports.intentId, input.intentId),
+                    eq(householdRecipeImports.status, "failed")
+                  )
+                );
+              yield* transaction.insert(householdRecipeImportTimeline).values({
+                eventJson: yield* encode(
+                  EncodedRecipeImportTimelineEvent,
+                  yield* decode(RecipeImportTimelineEvent, {
+                    at: createdAt,
+                    intentVersion: recoveredIntent.intentVersion,
+                    type: "recovered",
+                  })
+                ),
+                intentId: input.intentId,
+                intentVersion: recoveredIntent.intentVersion,
+              });
+            }
             const {
               ordinal,
               predecessorExtractionFingerprint,
@@ -1535,10 +1601,12 @@ export const makeHouseholdEvidenceRepository = (
               .update(householdEvidenceStageExecutions)
               .set({
                 committedAt: createdAt,
+                completedAt: null,
                 dispatchId: currentExtractionFingerprint,
                 failureCode: null,
                 inputFingerprint: currentExtractionFingerprint,
                 resultJson: null,
+                startedAt: createdAt,
                 state: "dispatching",
               })
               .where(

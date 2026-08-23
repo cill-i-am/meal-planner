@@ -76,6 +76,7 @@ import type {
   HouseholdRecipePage,
   HouseholdRecipePageInput,
   HouseholdResolveRecipeImportSourceInput,
+  HouseholdTransitionRecipeImportLifecycleInput,
   HouseholdActiveRecipeImportActionResult,
   HouseholdAdmitRecipeImportResult,
   HouseholdRecordRecipeImportDispatchResult,
@@ -198,6 +199,9 @@ interface HouseholdApiFixtureEnv {
     readonly resolveRecipeImportSource: (
       input: HouseholdResolveRecipeImportSourceInput
     ) => Promise<typeof RecipeImportIntent.Encoded>;
+    readonly transitionRecipeImportLifecycle: (
+      input: HouseholdTransitionRecipeImportLifecycleInput
+    ) => Promise<typeof RecipeImportIntent.Encoded>;
   };
   readonly MealPlannerAuthDatabase: AnyD1Database;
 }
@@ -213,6 +217,7 @@ const testSystemOperations = [
   "read-recipe-recovery-attempt",
   "read-terminal-checkpoint",
   "resolve",
+  "transition-lifecycle",
 ] as const;
 type TestSystemOperation = (typeof testSystemOperations)[number];
 const isTestSystemOperation = (
@@ -316,6 +321,13 @@ const handleTestSystemOperation = async (
         result = await env.HouseholdDomainWorker.resolveRecipeImportSource(
           input as HouseholdResolveRecipeImportSourceInput
         );
+        break;
+      }
+      case "transition-lifecycle": {
+        result =
+          await env.HouseholdDomainWorker.transitionRecipeImportLifecycle(
+            input as HouseholdTransitionRecipeImportLifecycleInput
+          );
         break;
       }
       default: {

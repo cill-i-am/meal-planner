@@ -336,7 +336,8 @@ const systemCommand = (
     | "read-evidence-stage"
     | "read-terminal-checkpoint"
     | "read-recipe-recovery-attempt"
-    | "resolve",
+    | "resolve"
+    | "transition-lifecycle",
   input: object
 ) => {
   let attemptGeneration: string | undefined;
@@ -452,8 +453,16 @@ const settleUnknownProviderBudget = async (input: {
     ),
   };
   await Effect.runPromise(budget.reserve(reservation));
-  await Effect.runPromise(budget.beginInvocation(reservation));
-  await Effect.runPromise(budget.settleUnknown(reservation));
+  const claim = await Effect.runPromise(budget.beginInvocation(reservation));
+  if (claim._tag !== "Claimed") {
+    throw new Error("expected provider invocation claim");
+  }
+  await Effect.runPromise(
+    budget.settleUnknown({
+      ...reservation,
+      invocationGeneration: claim.dispatch.invocationGeneration,
+    })
+  );
 };
 
 const evidenceEventResult = async (
@@ -738,12 +747,14 @@ const prepareUnknownSpeechTerminal = async (input: {
     generation: executionGeneration,
     inputFingerprint,
     intentId: admitted.id,
+    organizationId: organization.id,
     recoveryCommand: {
       acquisitionGeneration,
       dispatchId,
       executionGeneration,
       importId: admitted.id,
       operation: "prepare_speech_recovery",
+      organizationId: organization.id,
     } as const,
     recoveryDispatchId: `${dispatchId}:recovery:1`,
   } as const;
@@ -2768,6 +2779,7 @@ describe("household public API to private Durable Object boundary", () => {
       executionGeneration: fixture.executionGeneration,
       importId: fixture.intentId,
       operation: "prepare_speech_recovery",
+      organizationId: fixture.organizationId,
     });
     expect(secondRecovery.status, await secondRecovery.clone().text()).toBe(
       200
@@ -2877,6 +2889,7 @@ describe("household public API to private Durable Object boundary", () => {
       executionGeneration: 1,
       importId: admitted.id,
       operation: "prepare_visual_recovery",
+      organizationId: organization.id,
     } as const;
     const [firstRecovery, concurrentRecovery] = await Promise.all([
       terminalSettlementCommand(firstRecoveryCommand),
@@ -3005,6 +3018,7 @@ describe("household public API to private Durable Object boundary", () => {
       executionGeneration: 1,
       importId: admitted.id,
       operation: "prepare_visual_recovery",
+      organizationId: organization.id,
     });
     expect(secondRecovery.status, await secondRecovery.clone().text()).toBe(
       200
@@ -3156,6 +3170,23 @@ describe("household public API to private Durable Object boundary", () => {
     ).toBe(200);
 
     const predecessorDispatchId = `recipe:${admitted.id}:1:${evidenceFingerprint}`;
+    const failedIntent = await systemCommand("transition-lifecycle", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      transition: {
+        _tag: "Fail",
+        attemptIdentity: predecessorDispatchId,
+        boundary: "recipe",
+        code: "recipe_extraction_failed",
+        message: "The recipe could not be extracted.",
+        recovery: "contact_support",
+      },
+    });
+    expect(failedIntent.status, await failedIntent.clone().text()).toBe(200);
+    await expect(failedIntent.json()).resolves.toMatchObject({
+      status: "failed",
+    });
     const command = {
       acquisitionAttemptGeneration: 1,
       admission,
@@ -3307,14 +3338,6 @@ describe("household public API to private Durable Object boundary", () => {
       "MealPlannerDatabase",
       "evidence-consumer"
     );
-    await database
-      .prepare(
-        `INSERT INTO import_evidence_routes (
-           import_id, execution_generation, organization_id, route_version
-         ) VALUES (?, 1, ?, 1)`
-      )
-      .bind(admitted.id, organization.id)
-      .run();
     const budget = makeD1ProviderAccountingRepository(database);
     const reservation = {
       dispatchId: Schema.decodeUnknownSync(ProviderAccountingDispatchId)(
@@ -3332,8 +3355,18 @@ describe("household public API to private Durable Object boundary", () => {
       ),
     };
     await Effect.runPromise(budget.reserve(reservation));
-    await Effect.runPromise(budget.beginInvocation(reservation));
-    await Effect.runPromise(budget.settleUnknown(reservation));
+    const providerClaim = await Effect.runPromise(
+      budget.beginInvocation(reservation)
+    );
+    if (providerClaim._tag !== "Claimed") {
+      throw new Error("expected provider invocation claim");
+    }
+    await Effect.runPromise(
+      budget.settleUnknown({
+        ...reservation,
+        invocationGeneration: providerClaim.dispatch.invocationGeneration,
+      })
+    );
 
     const settlement = await terminalSettlementCommand({
       dispatchId,
@@ -3354,6 +3387,7 @@ describe("household public API to private Durable Object boundary", () => {
       executionGeneration: generation,
       importId: admitted.id,
       operation: "prepare_recipe_recovery",
+      organizationId: organization.id,
     } as const;
     const prepared = await terminalSettlementCommand(preparationCommand);
     expect(prepared.status, await prepared.clone().text()).toBe(200);

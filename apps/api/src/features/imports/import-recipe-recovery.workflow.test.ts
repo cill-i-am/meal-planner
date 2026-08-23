@@ -1,10 +1,19 @@
+import {
+  RecipeImportActionId,
+  RecipeImportIntentId,
+} from "@meal-planner/recipe-import-api";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
+import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
+import { HouseholdOrganizationId } from "../households/household.contract.js";
+import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
+import { RecipeDraft } from "./import-recipe-draft.repository.js";
+import { makeHouseholdRecipeDraftLifecycle } from "./import-recipe-lifecycle.household.js";
 import type {
   RecipeRecoveryAttempt,
   RecipeRecoveryOrdinal,
@@ -28,6 +37,9 @@ const timestamp = Schema.decodeUnknownSync(ImportTimestamp)(
 const sha = (value: string) => Schema.decodeUnknownSync(Sha256Hex)(value);
 const rootDispatchId = Schema.decodeUnknownSync(HouseholdDispatchId)(
   `recipe:${importId}:${generation}:${"a".repeat(64)}`
+);
+const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
+  "organization-recipe-recovery-workflow"
 );
 
 const attempt = (ordinal: RecipeRecoveryOrdinal): RecipeRecoveryAttempt => ({
@@ -58,6 +70,7 @@ const input = (attemptOrdinal: RecipeRecoveryOrdinal) => ({
   attemptOrdinal,
   executionGeneration,
   importId,
+  organizationId,
   trace: { correlationId },
 });
 const authorization = (attemptOrdinal: RecipeRecoveryOrdinal) => ({
@@ -66,8 +79,133 @@ const authorization = (attemptOrdinal: RecipeRecoveryOrdinal) => ({
   executionGeneration,
   importId,
 });
+type CommitRecipeImportDraftCommand = Parameters<
+  HouseholdDomainWorkerMethods["commitRecipeImportDraft"]
+>[0];
+type TransitionRecipeImportLifecycleCommand = Parameters<
+  HouseholdDomainWorkerMethods["transitionRecipeImportLifecycle"]
+>[0];
 
 describe("bounded recipe recovery workflow", () => {
+  it("uses the production Household lifecycle to commit a recovered review action", async () => {
+    const transitions: unknown[] = [];
+    const commits: unknown[] = [];
+    const householdDomain = {
+      commitRecipeImportDraft: (command: CommitRecipeImportDraftCommand) =>
+        Effect.sync(() => {
+          commits.push(command);
+          return {};
+        }),
+      transitionRecipeImportLifecycle: (
+        command: TransitionRecipeImportLifecycleCommand
+      ) =>
+        Effect.sync(() => {
+          transitions.push(command);
+          return {};
+        }),
+    } as unknown as Pick<
+      HouseholdDomainWorkerMethods,
+      "commitRecipeImportDraft" | "transitionRecipeImportLifecycle"
+    >;
+    const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(importId);
+    const lifecycle = makeHouseholdRecipeDraftLifecycle({
+      executionGeneration,
+      householdDomain,
+      intentId,
+      mutationId: () =>
+        Effect.succeed(
+          Schema.decodeUnknownSync(HouseholdImportMutationId)("9".repeat(64))
+        ),
+      organizationId,
+    });
+    const citation = {
+      citations: [
+        {
+          confidence: 1,
+          evidenceId: "recovered-review-fixture",
+          origin: "creator_provided" as const,
+        },
+      ],
+      origin: "creator_provided" as const,
+      state: "supported" as const,
+    };
+    const supportedString = (value: string) => ({ ...citation, value });
+    const supportedList = (items: readonly string[]) => ({
+      items: items.map(supportedString),
+      state: "supported" as const,
+    });
+    const draft = Schema.decodeUnknownSync(RecipeDraft)({
+      createdAt: "2026-08-16T00:00:00.000Z",
+      evidenceFingerprint: "a".repeat(64),
+      extraction: {
+        author: supportedString("Fixture Cook"),
+        category: supportedString("Dinner"),
+        cookTimeMinutes: { ...citation, value: 20 },
+        cost: {
+          certainty: "known",
+          currency: "USD",
+          estimatedMicroUsd: 0,
+        },
+        cuisine: supportedString("Irish"),
+        description: supportedString("Recovered recipe"),
+        ingredientLines: supportedList(["1 onion"]),
+        instructions: supportedList(["Cook the onion."]),
+        name: supportedString("Recovered Onion"),
+        nutrition: supportedString("Not stated"),
+        prepTimeMinutes: { ...citation, value: 10 },
+        sourceUrl: supportedString(
+          "https://www.tiktok.com/@fixture/video/7520000000000000001"
+        ),
+        supportedClaims: supportedList(["Cook the onion."]),
+        temperatureCelsius: { ...citation, value: 180 },
+        tools: supportedList(["Saucepan"]),
+        totalTimeMinutes: { ...citation, value: 30 },
+        unresolvedFields: [],
+        usage: {
+          inputEvidenceItems: 1,
+          inputTokens: 0,
+          latencyMilliseconds: 0,
+          modelCalls: 1,
+          outputTokens: 0,
+        },
+        yield: supportedString("2 servings"),
+      },
+      extractionFingerprint: "b".repeat(64),
+      extractor: {
+        model: "fixture-model",
+        provider: "workers-ai",
+        version: "fixture-version",
+      },
+      generation: 1,
+      importId,
+      lifecycle: "needs_review",
+      schemaVersion: 1,
+    });
+
+    await Effect.runPromise(lifecycle.grounding);
+    await Effect.runPromise(lifecycle.preparingReview);
+    await Effect.runPromise(
+      lifecycle.reviewAvailable(
+        Schema.decodeUnknownSync(RecipeImportActionId)("c".repeat(64)),
+        draft
+      )
+    );
+
+    expect(transitions).toMatchObject([
+      { transition: { _tag: "AdvanceStage", stage: "grounding_recipe" } },
+      { transition: { _tag: "AdvanceStage", stage: "preparing_review" } },
+    ]);
+    expect(commits).toMatchObject([
+      {
+        evidenceFingerprint: "a".repeat(64),
+        expectedGeneration: 1,
+        extractionFingerprint: "b".repeat(64),
+        intentId,
+        review: { recipe: { name: "Recovered Onion" } },
+      },
+    ]);
+  });
+
   it("preserves the versioned durable checkpoint names for every ordinal", async () => {
     const durableTaskNames: string[] = [];
     const result = await Effect.runPromise(

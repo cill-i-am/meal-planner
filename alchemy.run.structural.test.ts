@@ -135,7 +135,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260823113951_import_execution/migration.sql",
       "20260823135058_import_execution/migration.sql",
       "20260823164025_import_execution/migration.sql",
-      "20260823180500_import_execution/migration.sql",
+      "20260823194331_import_execution/migration.sql",
     ]);
     const retirementMigration = readRepoFile(
       "./apps/api/migrations/20260823080018_import_execution/migration.sql"
@@ -179,7 +179,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "ADD `execution_generation` integer NOT NULL"
     );
     const providerAccountingMigration = readRepoFile(
-      "./apps/api/migrations/20260823180500_import_execution/migration.sql"
+      "./apps/api/migrations/20260823194331_import_execution/migration.sql"
     );
     for (const table of [
       "pilot_provider_budget_conservative_settlements",

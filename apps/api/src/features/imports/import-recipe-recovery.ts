@@ -3,6 +3,7 @@ import { Cause, Data, Effect, Schema } from "effect";
 import { flow } from "effect/Function";
 
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
+import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportTraceContext } from "./import-observability.js";
@@ -47,6 +48,7 @@ export const RecipeRecoveryWorkflowInput = Schema.Struct({
   attemptOrdinal: RecipeRecoveryOrdinal,
   executionGeneration: ImportIntentExecutionGeneration,
   importId: ImportId,
+  organizationId: HouseholdOrganizationId,
   trace: ImportTraceContext,
 });
 export type RecipeRecoveryWorkflowInput =
@@ -140,7 +142,8 @@ const reconcileWorkflowInstance = (
 export interface RecipeRecoveryWorkflowStarter {
   readonly start: (
     attempt: RecipeRecoveryAttempt,
-    trace: ImportTraceContext
+    trace: ImportTraceContext,
+    organizationId: HouseholdOrganizationId
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
 }
 
@@ -153,7 +156,7 @@ export const makeRecipeRecoveryWorkflowStarter = (
   workflow: WorkflowHandleLike
 ): RecipeRecoveryWorkflowStarter => ({
   start: Effect.fn("RecipeRecoveryWorkflowStarter.start")(
-    function* startRecipeRecoveryWorkflow(attempt, trace) {
+    function* startRecipeRecoveryWorkflow(attempt, trace, organizationId) {
       const id = recipeRecoveryWorkflowInstanceId(
         attempt.importId,
         attempt.acquisitionGeneration
@@ -166,6 +169,7 @@ export const makeRecipeRecoveryWorkflowStarter = (
         attemptOrdinal: attempt.ordinal,
         executionGeneration: attempt.executionGeneration,
         importId: attempt.importId,
+        organizationId,
         trace,
       }).pipe(Effect.mapError(() => workflowStartUnavailable()));
       return yield* workflow.createBatch([{ id, params }]).pipe(

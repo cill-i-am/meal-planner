@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "507401db-05b9-47ad-a1ac-18272aaf5641",
+  "id": "47920ab1-9185-4ac8-b614-f2d8f252498e",
   "prevIds": ["de1dff97-4cd0-4b47-b43d-74c2e480b058"],
   "ddl": [
     {
@@ -203,32 +203,12 @@
       "table": "provider_accounting_budgets"
     },
     {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "0",
-      "generated": null,
-      "name": "settled_micro_usd",
-      "entityType": "columns",
-      "table": "provider_accounting_budgets"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "0",
-      "generated": null,
-      "name": "reserved_micro_usd",
-      "entityType": "columns",
-      "table": "provider_accounting_budgets"
-    },
-    {
       "type": "text",
       "notNull": true,
       "autoincrement": false,
-      "default": "'open'",
+      "default": null,
       "generated": null,
-      "name": "state",
+      "name": "created_at",
       "entityType": "columns",
       "table": "provider_accounting_budgets"
     },
@@ -253,12 +233,32 @@
       "table": "provider_accounting_budgets"
     },
     {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "reserved_micro_usd",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "settled_micro_usd",
+      "entityType": "columns",
+      "table": "provider_accounting_budgets"
+    },
+    {
       "type": "text",
       "notNull": true,
       "autoincrement": false,
-      "default": null,
+      "default": "'open'",
       "generated": null,
-      "name": "created_at",
+      "name": "state",
       "entityType": "columns",
       "table": "provider_accounting_budgets"
     },
@@ -271,6 +271,16 @@
       "name": "updated_at",
       "entityType": "columns",
       "table": "provider_accounting_budgets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "accounting_scope",
+      "entityType": "columns",
+      "table": "provider_accounting_conservative_settlements"
     },
     {
       "type": "integer",
@@ -330,56 +340,6 @@
       "generated": null,
       "name": "accounting_scope",
       "entityType": "columns",
-      "table": "provider_accounting_conservative_settlements"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "accounting_scope",
-      "entityType": "columns",
-      "table": "provider_accounting_dispatches"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "dispatch_id",
-      "entityType": "columns",
-      "table": "provider_accounting_dispatches"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "run_id",
-      "entityType": "columns",
-      "table": "provider_accounting_dispatches"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "provider_stage_id",
-      "entityType": "columns",
-      "table": "provider_accounting_dispatches"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "maximum_cost_micro_usd",
-      "entityType": "columns",
       "table": "provider_accounting_dispatches"
     },
     {
@@ -394,11 +354,11 @@
     },
     {
       "type": "text",
-      "notNull": true,
+      "notNull": false,
       "autoincrement": false,
-      "default": "'reserved'",
+      "default": null,
       "generated": null,
-      "name": "state",
+      "name": "completed_at",
       "entityType": "columns",
       "table": "provider_accounting_dispatches"
     },
@@ -418,7 +378,27 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "updated_at",
+      "name": "dispatch_id",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "invocation_expires_at",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "invocation_generation",
       "entityType": "columns",
       "table": "provider_accounting_dispatches"
     },
@@ -433,14 +413,64 @@
       "table": "provider_accounting_dispatches"
     },
     {
-      "type": "text",
-      "notNull": false,
+      "type": "integer",
+      "notNull": true,
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "completed_at",
+      "name": "maximum_cost_micro_usd",
       "entityType": "columns",
       "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provider_stage_id",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "run_id",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'reserved'",
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "provider_accounting_dispatches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "accounting_scope",
+      "entityType": "columns",
+      "table": "provider_accounting_recipe_replay_values"
     },
     {
       "type": "text",
@@ -508,16 +538,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "accounting_scope",
-      "entityType": "columns",
-      "table": "provider_accounting_recipe_replay_values"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "value_json",
       "entityType": "columns",
       "table": "provider_accounting_recipe_replay_values"
@@ -543,26 +563,6 @@
       "table": "provider_accounting_reconciliations"
     },
     {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "dispatch_id",
-      "entityType": "columns",
-      "table": "provider_accounting_reconciliations"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "conservative_charge_micro_usd",
-      "entityType": "columns",
-      "table": "provider_accounting_reconciliations"
-    },
-    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -583,12 +583,32 @@
       "table": "provider_accounting_reconciliations"
     },
     {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "conservative_charge_micro_usd",
+      "entityType": "columns",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
       "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
       "generated": null,
       "name": "created_at",
+      "entityType": "columns",
+      "table": "provider_accounting_reconciliations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dispatch_id",
       "entityType": "columns",
       "table": "provider_accounting_reconciliations"
     },
@@ -804,7 +824,7 @@
       "table": "provider_accounting_dispatches"
     },
     {
-      "value": "(\"state\" = 'reserved' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_started_at\" IS NULL AND \"completed_at\" IS NULL) OR (\"state\" = 'invoking' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_started_at\" IS NOT NULL AND \"completed_at\" IS NULL) OR (\"state\" = 'released' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_started_at\" IS NULL AND \"completed_at\" IS NOT NULL) OR (\"state\" = 'settled_known' AND typeof(\"actual_cost_micro_usd\") = 'integer' AND \"actual_cost_micro_usd\" >= 0 AND \"actual_cost_micro_usd\" <= \"maximum_cost_micro_usd\" AND \"invocation_started_at\" IS NOT NULL AND \"completed_at\" IS NOT NULL) OR (\"state\" = 'settled_unknown' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_started_at\" IS NOT NULL AND \"completed_at\" IS NOT NULL) OR (\"state\" = 'settled_conservative' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_started_at\" IS NOT NULL AND \"completed_at\" IS NOT NULL)",
+      "value": "(\"state\" = 'reserved' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_generation\" = 0 AND \"invocation_started_at\" IS NULL AND \"invocation_expires_at\" IS NULL AND \"completed_at\" IS NULL) OR (\"state\" = 'invoking' AND \"actual_cost_micro_usd\" IS NULL AND typeof(\"invocation_generation\") = 'integer' AND \"invocation_generation\" >= 1 AND \"invocation_started_at\" IS NOT NULL AND \"invocation_expires_at\" IS NOT NULL AND \"completed_at\" IS NULL) OR (\"state\" = 'released' AND \"actual_cost_micro_usd\" IS NULL AND \"invocation_generation\" = 0 AND \"invocation_started_at\" IS NULL AND \"invocation_expires_at\" IS NULL AND \"completed_at\" IS NOT NULL) OR (\"state\" = 'settled_known' AND typeof(\"actual_cost_micro_usd\") = 'integer' AND \"actual_cost_micro_usd\" >= 0 AND \"actual_cost_micro_usd\" <= \"maximum_cost_micro_usd\" AND typeof(\"invocation_generation\") = 'integer' AND \"invocation_generation\" >= 1 AND \"invocation_started_at\" IS NOT NULL AND \"invocation_expires_at\" IS NULL AND \"completed_at\" IS NOT NULL) OR (\"state\" = 'settled_unknown' AND \"actual_cost_micro_usd\" IS NULL AND typeof(\"invocation_generation\") = 'integer' AND \"invocation_generation\" >= 1 AND \"invocation_started_at\" IS NOT NULL AND \"invocation_expires_at\" IS NULL AND \"completed_at\" IS NOT NULL) OR (\"state\" = 'settled_conservative' AND \"actual_cost_micro_usd\" IS NULL AND typeof(\"invocation_generation\") = 'integer' AND \"invocation_generation\" >= 1 AND \"invocation_started_at\" IS NOT NULL AND \"invocation_expires_at\" IS NULL AND \"completed_at\" IS NOT NULL)",
       "name": "provider_accounting_dispatches_shape_check",
       "entityType": "checks",
       "table": "provider_accounting_dispatches"

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 const providerAccountingRoot = import.meta.dirname;
 const featuresRoot = path.dirname(providerAccountingRoot);
 const apiSourceRoot = path.dirname(featuresRoot);
+const repositoryRoot = path.resolve(apiSourceRoot, "../../..");
 
 const read = (filePath: string) => readFile(filePath, "utf-8");
 
@@ -121,5 +122,61 @@ describe("provider accounting production boundary", () => {
     );
     expect(recoveryService).not.toContain("provider-accounting");
     expect(recoveryService).not.toContain("ProviderAccounting");
+    expect(recoveryService).not.toContain("AnyD1Database");
+    expect(recoveryService).toContain("organizationId");
+
+    const recoveryAuthority = await read(
+      path.join(featuresRoot, "imports/import-recipe-recovery.household.ts")
+    );
+    expect(recoveryAuthority).not.toContain(
+      "makeD1ImportEvidenceRouteRepository"
+    );
+  });
+
+  it("shares production recipe recovery composition with native Workflow tests", async () => {
+    const composition = await read(
+      path.join(featuresRoot, "imports/import-runtime-composition.ts")
+    );
+    const fixture = await read(
+      path.join(
+        featuresRoot,
+        "imports/import-provider-workflow-task.test-fixture.ts"
+      )
+    );
+    const initialWorkflow = await read(
+      path.join(featuresRoot, "imports/import.workflow.ts")
+    );
+    const installedRecovery = fixture
+      .split("const installedRecipeConservativeDispatch")[1]
+      ?.split("const installedSpeechDispatch")[0];
+
+    expect(composition).toContain("makeRecipeRecoveryProviderRuntime");
+    expect(fixture).toContain("makeRecipeRecoveryProviderRuntime");
+    expect(composition).toContain("makeHouseholdRecipeDraftLifecycle({");
+    expect(initialWorkflow).toContain("makeHouseholdRecipeDraftLifecycle({");
+    expect(installedRecovery).toBeDefined();
+    expect(installedRecovery).not.toContain("makeProviderDispatchGate");
+    expect(installedRecovery).not.toContain(
+      "makeD1ProviderAccountingRepository"
+    );
+  });
+
+  it("documents the split accounting and Household recovery topology", async () => {
+    const alchemy = await read(
+      path.join(repositoryRoot, "docs/infrastructure/alchemy.md")
+    );
+    const migrationPlan = await read(
+      path.join(
+        repositoryRoot,
+        "docs/architecture/household-capability-migration-plan.md"
+      )
+    );
+    const [, handoff] = migrationPlan.split("## Immediate handoff");
+
+    expect(alchemy).not.toContain("provider terminal-settlement route");
+    expect(alchemy).toContain("provider accounting reconciliation route");
+    expect(alchemy).toContain("Household recovery route");
+    expect(handoff).toContain("Slice 4");
+    expect(handoff).not.toContain("Slice 3");
   });
 });

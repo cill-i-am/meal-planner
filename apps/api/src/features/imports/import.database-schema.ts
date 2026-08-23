@@ -147,6 +147,8 @@ export const providerAccountingDispatches = sqliteTable(
     completedAt: text("completed_at"),
     createdAt: text("created_at").notNull(),
     dispatchId: text("dispatch_id").notNull(),
+    invocationExpiresAt: text("invocation_expires_at"),
+    invocationGeneration: integer("invocation_generation").notNull().default(0),
     invocationStartedAt: text("invocation_started_at"),
     maximumCostMicroUsd: integer("maximum_cost_micro_usd").notNull(),
     providerStageId: text("provider_stage_id").notNull(),
@@ -187,7 +189,7 @@ export const providerAccountingDispatches = sqliteTable(
     ),
     check(
       "provider_accounting_dispatches_shape_check",
-      sql`(${table.state} = 'reserved' AND ${table.actualCostMicroUsd} IS NULL AND ${table.invocationStartedAt} IS NULL AND ${table.completedAt} IS NULL) OR (${table.state} = 'invoking' AND ${table.actualCostMicroUsd} IS NULL AND ${table.invocationStartedAt} IS NOT NULL AND ${table.completedAt} IS NULL) OR (${table.state} = 'released' AND ${table.actualCostMicroUsd} IS NULL AND ${table.invocationStartedAt} IS NULL AND ${table.completedAt} IS NOT NULL) OR (${table.state} = 'settled_known' AND typeof(${table.actualCostMicroUsd}) = 'integer' AND ${table.actualCostMicroUsd} >= 0 AND ${table.actualCostMicroUsd} <= ${table.maximumCostMicroUsd} AND ${table.invocationStartedAt} IS NOT NULL AND ${table.completedAt} IS NOT NULL) OR (${table.state} = 'settled_unknown' AND ${table.actualCostMicroUsd} IS NULL AND ${table.invocationStartedAt} IS NOT NULL AND ${table.completedAt} IS NOT NULL) OR (${table.state} = 'settled_conservative' AND ${table.actualCostMicroUsd} IS NULL AND ${table.invocationStartedAt} IS NOT NULL AND ${table.completedAt} IS NOT NULL)`
+      sql`(${table.state} = 'reserved' AND ${table.actualCostMicroUsd} IS NULL AND ${table.invocationGeneration} = 0 AND ${table.invocationStartedAt} IS NULL AND ${table.invocationExpiresAt} IS NULL AND ${table.completedAt} IS NULL) OR (${table.state} = 'invoking' AND ${table.actualCostMicroUsd} IS NULL AND typeof(${table.invocationGeneration}) = 'integer' AND ${table.invocationGeneration} >= 1 AND ${table.invocationStartedAt} IS NOT NULL AND ${table.invocationExpiresAt} IS NOT NULL AND ${table.completedAt} IS NULL) OR (${table.state} = 'released' AND ${table.actualCostMicroUsd} IS NULL AND ${table.invocationGeneration} = 0 AND ${table.invocationStartedAt} IS NULL AND ${table.invocationExpiresAt} IS NULL AND ${table.completedAt} IS NOT NULL) OR (${table.state} = 'settled_known' AND typeof(${table.actualCostMicroUsd}) = 'integer' AND ${table.actualCostMicroUsd} >= 0 AND ${table.actualCostMicroUsd} <= ${table.maximumCostMicroUsd} AND typeof(${table.invocationGeneration}) = 'integer' AND ${table.invocationGeneration} >= 1 AND ${table.invocationStartedAt} IS NOT NULL AND ${table.invocationExpiresAt} IS NULL AND ${table.completedAt} IS NOT NULL) OR (${table.state} = 'settled_unknown' AND ${table.actualCostMicroUsd} IS NULL AND typeof(${table.invocationGeneration}) = 'integer' AND ${table.invocationGeneration} >= 1 AND ${table.invocationStartedAt} IS NOT NULL AND ${table.invocationExpiresAt} IS NULL AND ${table.completedAt} IS NOT NULL) OR (${table.state} = 'settled_conservative' AND ${table.actualCostMicroUsd} IS NULL AND typeof(${table.invocationGeneration}) = 'integer' AND ${table.invocationGeneration} >= 1 AND ${table.invocationStartedAt} IS NOT NULL AND ${table.invocationExpiresAt} IS NULL AND ${table.completedAt} IS NOT NULL)`
     ),
   ]
 );

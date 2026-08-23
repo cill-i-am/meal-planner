@@ -1,7 +1,7 @@
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Context, Effect, Schema } from "effect";
 
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
+import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import {
@@ -22,6 +22,7 @@ const recoveryRequest = {
   dispatchId: HouseholdDispatchId,
   executionGeneration: ImportIntentExecutionGeneration,
   importId: ImportId,
+  organizationId: HouseholdOrganizationId,
 };
 export const ProviderRecoveryRequest = Schema.Union([
   Schema.Struct({
@@ -100,7 +101,6 @@ export const ProviderRecoveryService = Context.Service<ProviderRecoveryService>(
 );
 
 interface ProviderRecoveryServiceInput {
-  readonly database: AnyD1Database;
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarter;
   readonly workflowStarter: Pick<
@@ -122,10 +122,10 @@ const prepareProviderRecovery = (
   Effect.gen(function* prepareHouseholdOwnedProviderRecovery() {
     const recovery = yield* prepareHouseholdProviderRecovery({
       acquisitionGeneration: request.acquisitionGeneration,
-      database: service.database,
       executionGeneration: request.executionGeneration,
       householdDomain: service.householdDomain,
       importId: request.importId,
+      organizationId: request.organizationId,
       originalDispatchId: request.dispatchId,
       stage,
     }).pipe(Effect.mapError(mapHouseholdError));
@@ -141,11 +141,11 @@ const prepareProviderRecovery = (
         Effect.catchCause(() =>
           hasHouseholdProviderRecoveryProgress({
             acquisitionGeneration: request.acquisitionGeneration,
-            database: service.database,
             executionGeneration: request.executionGeneration,
             householdDomain: service.householdDomain,
             importId: request.importId,
             inputFingerprint: recovery.inputFingerprint,
+            organizationId: request.organizationId,
             recoveryDispatchId: recovery.recoveryDispatchId,
             stage,
           }).pipe(
@@ -161,11 +161,11 @@ const prepareProviderRecovery = (
       if (restartOutcome === "RestartAmbiguous") {
         const hasProgress = yield* hasHouseholdProviderRecoveryProgress({
           acquisitionGeneration: request.acquisitionGeneration,
-          database: service.database,
           executionGeneration: request.executionGeneration,
           householdDomain: service.householdDomain,
           importId: request.importId,
           inputFingerprint: recovery.inputFingerprint,
+          organizationId: request.organizationId,
           recoveryDispatchId: recovery.recoveryDispatchId,
           stage,
         }).pipe(Effect.mapError(mapHouseholdError));
@@ -200,21 +200,21 @@ export const makeProviderRecoveryService = (
       if (request.operation === "prepare_recipe_recovery") {
         const recovery = yield* prepareHouseholdRecipeRecovery({
           acquisitionGeneration: request.acquisitionGeneration,
-          database: input.database,
           executionGeneration: request.executionGeneration,
           householdDomain: input.householdDomain,
           importId: request.importId,
+          organizationId: request.organizationId,
           predecessorDispatchId: request.dispatchId,
         }).pipe(Effect.mapError(mapHouseholdError));
         const authority = yield* resolveHouseholdRecoveryAuthority({
           acquisitionGeneration: request.acquisitionGeneration,
-          database: input.database,
           executionGeneration: request.executionGeneration,
           householdDomain: input.householdDomain,
           importId: request.importId,
+          organizationId: request.organizationId,
         }).pipe(Effect.mapError(mapHouseholdError));
         yield* input.recipeRecoveryStarter
-          .start(recovery, authority.originalTrace)
+          .start(recovery, authority.originalTrace, request.organizationId)
           .pipe(Effect.mapError(() => failure("persistence_unavailable")));
         return yield* Schema.decodeUnknownEffect(ProviderRecoveryResponse)({
           acquisitionGeneration: recovery.acquisitionGeneration,
@@ -228,21 +228,21 @@ export const makeProviderRecoveryService = (
       }
       const recovery = yield* readHouseholdRecipeRecovery({
         acquisitionGeneration: request.acquisitionGeneration,
-        database: input.database,
         executionGeneration: request.executionGeneration,
         householdDomain: input.householdDomain,
         importId: request.importId,
+        organizationId: request.organizationId,
         selector: { _tag: "Latest", rootDispatchId: request.dispatchId },
       }).pipe(Effect.mapError(mapHouseholdError));
       const authority = yield* resolveHouseholdRecoveryAuthority({
         acquisitionGeneration: request.acquisitionGeneration,
-        database: input.database,
         executionGeneration: request.executionGeneration,
         householdDomain: input.householdDomain,
         importId: request.importId,
+        organizationId: request.organizationId,
       }).pipe(Effect.mapError(mapHouseholdError));
       yield* input.recipeRecoveryStarter
-        .start(recovery, authority.originalTrace)
+        .start(recovery, authority.originalTrace, request.organizationId)
         .pipe(Effect.mapError(() => failure("persistence_unavailable")));
       return yield* Schema.decodeUnknownEffect(ProviderRecoveryResponse)({
         acquisitionGeneration: recovery.acquisitionGeneration,
