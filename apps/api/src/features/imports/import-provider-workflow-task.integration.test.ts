@@ -22,6 +22,8 @@ interface ProviderWorkflowInput {
     | "retry_exhausted"
     | "recipe_conservative_crash_replay"
     | "recipe_conservative_success"
+    | "recipe_recovery_accounted_crash_replay"
+    | "recipe_recovery_subsequent_success"
     | "recipe_recovery_loop_bounded"
     | "recipe_recovery_loop_non_retryable"
     | "recipe_recovery_loop_reconciliation_wait"
@@ -215,6 +217,12 @@ const commandWorkflow = async (
     | { readonly action: "run-visual-recipe-budget"; readonly id: string }
     | { readonly action: "restart"; readonly id: string }
     | {
+        readonly action: "activate-recovery";
+        readonly id: string;
+        readonly importId: string;
+        readonly outcome: "Prepared" | "Replay";
+      }
+    | {
         readonly action: "run";
         readonly id: string;
         readonly input: ProviderWorkflowInput;
@@ -241,6 +249,12 @@ const runWorkflow = (id: string, input: ProviderWorkflowInput) =>
 
 const runWaitingWorkflow = (id: string, input: ProviderWorkflowInput) =>
   commandWorkflow({ action: "run-waiting", id, input });
+
+const activateRecipeRecovery = (
+  id: string,
+  importId: string,
+  outcome: "Prepared" | "Replay"
+) => commandWorkflow({ action: "activate-recovery", id, importId, outcome });
 
 const runVisualRecipeBudget = (id: string) =>
   commandWorkflow({ action: "run-visual-recipe-budget", id });
@@ -688,6 +702,113 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "extract-recipe-recovery-v1")).toBe(1);
     expect(await readNumber(instanceId, "extract-recipe-recovery-v2")).toBe(0);
   });
+
+  it("runs native recovery through production accounting and replays after settlement without another provider call", async () => {
+    const instanceId = `recipe-recovery-accounted-${randomUUID()}`;
+    const importId = randomUUID();
+    const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:1`;
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    await resetGlobalProviderAccounting(database);
+
+    await expect(
+      runWorkflow(instanceId, {
+        importId,
+        scenario: "recipe_recovery_accounted_crash_replay",
+      })
+    ).resolves.toMatchObject({
+      output: { _tag: "Succeeded", stage: "recipe" },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "task-attempts")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "post-settlement-crashes")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT actual_cost_micro_usd, maximum_cost_micro_usd,
+                  provider_stage_id, run_id, state
+             FROM provider_accounting_dispatches
+            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+        )
+        .bind(dispatchId)
+        .first()
+    ).resolves.toEqual({
+      actual_cost_micro_usd: null,
+      maximum_cost_micro_usd: 100_000,
+      provider_stage_id: "recipe-extraction",
+      run_id: `recipe-import:recipe-recovery:${importId}`,
+      state: "settled_unknown",
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+             FROM provider_accounting_conservative_settlements
+            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+        )
+        .bind(dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+  });
+
+  it("restarts a completed provider-error recovery for a newly prepared higher ordinal and commits its review draft once", async () => {
+    const importId = randomUUID();
+    const instanceId = `import-recipe-recovery-${importId}-1`;
+    const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:2`;
+    const database = await runtime.getD1Database("MealPlannerDatabase");
+    await resetGlobalProviderAccounting(database);
+
+    await expect(
+      runWorkflow(instanceId, {
+        importId,
+        scenario: "recipe_recovery_subsequent_success",
+      })
+    ).resolves.toMatchObject({
+      output: { _tag: "Failed", code: "provider_error", stage: "recipe" },
+      status: "complete",
+    });
+
+    await expect(
+      activateRecipeRecovery(instanceId, importId, "Prepared")
+    ).resolves.toMatchObject({
+      output: { _tag: "Succeeded", stage: "recipe" },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "extract-recipe-recovery-v1")).toBe(2);
+    expect(await readNumber(instanceId, "extract-recipe-recovery-v2")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-draft-completions")).toBe(1);
+    expect(await readNumber(instanceId, "recovery-lifecycle-transitions")).toBe(
+      2
+    );
+    expect(await readNumber(instanceId, "recovery-review-commits")).toBe(1);
+    await expect(
+      database
+        .prepare(
+          `SELECT provider_stage_id, run_id, state
+             FROM provider_accounting_dispatches
+            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+        )
+        .bind(dispatchId)
+        .first()
+    ).resolves.toEqual({
+      provider_stage_id: "recipe-extraction",
+      run_id: `recipe-import:recipe-recovery:${importId}`,
+      state: "settled_unknown",
+    });
+
+    await expect(
+      activateRecipeRecovery(instanceId, importId, "Replay")
+    ).resolves.toMatchObject({
+      output: { _tag: "Succeeded", stage: "recipe" },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "recipe-draft-completions")).toBe(1);
+    expect(await readNumber(instanceId, "recovery-review-commits")).toBe(1);
+  }, 15_000);
 
   it("persists a conservative installed recipe result and replays its native task without another provider call", async () => {
     const instanceId = `gaia-205-recipe-conservative-${randomUUID()}`;

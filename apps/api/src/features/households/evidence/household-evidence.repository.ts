@@ -1396,7 +1396,7 @@ export const makeHouseholdEvidenceRepository = (
               (value) => decode(EncodedRecoveryPreparationResult, value)
             );
             if (Option.isSome(replay)) {
-              return replay.value;
+              return { ...replay.value, outcome: "Replay" } as const;
             }
             const [stage] = yield* transaction
               .select()

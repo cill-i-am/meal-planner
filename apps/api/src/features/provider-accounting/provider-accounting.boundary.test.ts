@@ -146,18 +146,30 @@ describe("provider accounting production boundary", () => {
     const initialWorkflow = await read(
       path.join(featuresRoot, "imports/import.workflow.ts")
     );
+    const recoveryComposition = composition
+      .split("export const makeImportRecipeRecoveryWorkflowHandler")[1]
+      ?.split("export const")[0];
     const installedRecovery = fixture
       .split("const installedRecipeConservativeDispatch")[1]
       ?.split("const installedSpeechDispatch")[0];
+    const nativeRecoveryRun = fixture
+      .split("function* runNativeRecoveryProvider()")[1]
+      ?.split("waitForAuthorization:")[0];
 
-    expect(composition).toContain("makeRecipeRecoveryProviderRuntime");
-    expect(fixture).toContain("makeRecipeRecoveryProviderRuntime");
-    expect(composition).toContain("makeHouseholdRecipeDraftLifecycle({");
+    expect(recoveryComposition).toMatch(
+      /makeRecipeRecoveryProviderRuntime\(\{[\s\S]*runRecipeRecoveryLoop\([\s\S]*produceRecipeDraftForImport\(\{[\s\S]*extractor,[\s\S]*lifecycle: recipeLifecycle,[\s\S]*recovery: \{[\s\S]*dispatchId: attempt\.currentDispatchId/u
+    );
     expect(initialWorkflow).toContain("makeHouseholdRecipeDraftLifecycle({");
     expect(installedRecovery).toBeDefined();
+    expect(installedRecovery).toMatch(
+      /makeRecipeRecoveryProviderRuntime\(\{[\s\S]*produceRecipeDraftFromEvidence\(\{[\s\S]*extractor,[\s\S]*lifecycle,/u
+    );
     expect(installedRecovery).not.toContain("makeProviderDispatchGate");
     expect(installedRecovery).not.toContain(
       "makeD1ProviderAccountingRepository"
+    );
+    expect(nativeRecoveryRun).toMatch(
+      /recipe_recovery_subsequent_success[\s\S]*installedRecipeConservativeDispatch\([\s\S]*_attempt\.ordinal/u
     );
   });
 

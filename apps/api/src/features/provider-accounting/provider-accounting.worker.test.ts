@@ -998,6 +998,73 @@ describe("provider accounting", () => {
     });
   });
 
+  it("replays an immutable reconciliation while an unrelated dispatch is invoking", async () => {
+    const repository = makeD1ProviderAccountingRepository(
+      testEnv.MealPlannerDatabase
+    );
+    const importId = Schema.decodeUnknownSync(ImportId)(
+      "00000000-0000-4000-8000-000000000291"
+    );
+    const target = {
+      ...reservation(
+        `recipe-import:${importId}`,
+        "dispatch_reconciliation_response_lost",
+        4_000_000
+      ),
+      providerStageId: decodeProviderStageId("speech-transcription"),
+    };
+    const unrelated = {
+      ...reservation(
+        "recipe-import:unrelated-active",
+        "dispatch_unrelated_active",
+        4_000_000
+      ),
+      providerStageId: decodeProviderStageId("speech-transcription"),
+    };
+    await Effect.runPromise(repository.reserve(target));
+    const targetGeneration = await claimInvocation(repository, target);
+    await Effect.runPromise(
+      repository.settleUnknown({
+        ...target,
+        invocationGeneration: targetGeneration,
+      })
+    );
+    const accounting = makeD1ProviderAccountingService({
+      database: testEnv.MealPlannerDatabase,
+      now: () => now,
+    });
+    const request = {
+      dispatchId: target.dispatchId,
+      importId,
+      operation: "settle_speech_unknown" as const,
+    };
+    const first = await Effect.runPromise(accounting.reconcile(request));
+
+    await Effect.runPromise(repository.reserve(unrelated));
+    await claimInvocation(repository, unrelated);
+
+    await expect(
+      Effect.runPromise(accounting.reconcile(request))
+    ).resolves.toEqual(first);
+    await expect(
+      testEnv.MealPlannerDatabase.prepare(
+        `SELECT COUNT(*) AS count
+           FROM provider_accounting_reconciliations
+          WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+      )
+        .bind(target.dispatchId)
+        .first()
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      repository.readStage().pipe(Effect.runPromise)
+    ).resolves.toMatchObject({
+      invokingDispatchId: unrelated.dispatchId,
+      reservedMicroUsd: 4_000_000,
+      settledMicroUsd: 4_000_000,
+      state: "invoking",
+    });
+  });
+
   it("grants one provider invocation to concurrent same-dispatch runners", async () => {
     const repository = makeD1ProviderAccountingRepository(
       testEnv.MealPlannerDatabase

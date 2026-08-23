@@ -2,6 +2,10 @@ import {
   RecipeImportActionId,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
+import type {
+  WorkflowInstanceEvent,
+  WorkflowInstanceRestartOptions,
+} from "alchemy/Cloudflare/Workflows";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -14,7 +18,9 @@ import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.js";
 import { makeHouseholdRecipeDraftLifecycle } from "./import-recipe-lifecycle.household.js";
+import { makeRecipeRecoveryWorkflowStarter } from "./import-recipe-recovery.js";
 import type {
+  RecipeRecoveryAuthorization,
   RecipeRecoveryAttempt,
   RecipeRecoveryOrdinal,
 } from "./import-recipe-recovery.js";
@@ -87,6 +93,81 @@ type TransitionRecipeImportLifecycleCommand = Parameters<
 >[0];
 
 describe("bounded recipe recovery workflow", () => {
+  it("restarts and authorizes a completed workflow for a newly prepared higher ordinal", async () => {
+    const restarts: unknown[] = [];
+    const events: unknown[] = [];
+    let restarted = false;
+    let statusCalls = 0;
+    const instance = {
+      restart: (options?: WorkflowInstanceRestartOptions) =>
+        Effect.sync(() => {
+          restarts.push(options);
+          restarted = true;
+        }),
+      sendEvent: (event: WorkflowInstanceEvent<RecipeRecoveryAuthorization>) =>
+        Effect.sync(() => {
+          events.push(event);
+        }),
+      status: () =>
+        Effect.sync(() => {
+          statusCalls += 1;
+          return {
+            status:
+              restarted && statusCalls > 2
+                ? ("running" as const)
+                : ("complete" as const),
+          };
+        }),
+    };
+    const starter = makeRecipeRecoveryWorkflowStarter({
+      createBatch: () => Effect.succeed([instance]),
+      get: () => Effect.die("existing instance must be reconciled directly"),
+    });
+
+    await Effect.runPromise(
+      starter.start(attempt(2), { correlationId }, organizationId, "Prepared")
+    );
+
+    expect(restarts).toEqual([
+      {
+        from: { name: "extract-recipe-recovery-v1", type: "do" },
+      },
+    ]);
+    expect(events).toEqual([
+      {
+        payload: authorization(2),
+        type: "recipe-recovery-authorized-2",
+      },
+    ]);
+  });
+
+  it("keeps an exact replay of a completed higher ordinal idempotent", async () => {
+    let restartCalls = 0;
+    let eventCalls = 0;
+    const starter = makeRecipeRecoveryWorkflowStarter({
+      createBatch: () => Effect.succeed([]),
+      get: () =>
+        Effect.succeed({
+          restart: () =>
+            Effect.sync(() => {
+              restartCalls += 1;
+            }),
+          sendEvent: () =>
+            Effect.sync(() => {
+              eventCalls += 1;
+            }),
+          status: () => Effect.succeed({ status: "complete" }),
+        }),
+    });
+
+    await Effect.runPromise(
+      starter.start(attempt(2), { correlationId }, organizationId, "Replay")
+    );
+
+    expect(restartCalls).toBe(0);
+    expect(eventCalls).toBe(0);
+  });
+
   it("uses the production Household lifecycle to commit a recovered review action", async () => {
     const transitions: unknown[] = [];
     const commits: unknown[] = [];

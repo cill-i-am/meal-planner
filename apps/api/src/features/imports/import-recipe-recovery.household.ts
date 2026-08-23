@@ -196,7 +196,8 @@ export const prepareHouseholdRecipeRecovery = (input: {
           })(rawReceipt).pipe(Effect.mapError(() => importTransitionRejected()))
         )
       );
-    return yield* decodeWorkflowAttempt(receipt.attempt);
+    const attempt = yield* decodeWorkflowAttempt(receipt.attempt);
+    return { attempt, outcome: receipt.outcome } as const;
   });
 
 export const readHouseholdRecipeRecovery = (input: {

@@ -3237,7 +3237,7 @@ describe("household public API to private Durable Object boundary", () => {
       await Schema.decodeUnknownPromise(HouseholdPrepareRecipeRecoveryResult)(
         await replay.json()
       )
-    ).toEqual(preparedReceipt);
+    ).toEqual({ ...preparedReceipt, outcome: "Replay" });
 
     const stalePredecessor = await systemCommand("prepare-recipe-recovery", {
       ...command,

@@ -121,8 +121,6 @@ const readGlobalSettlement = (
            JOIN provider_accounting_dispatches AS dispatch
              ON dispatch.accounting_scope = audit.accounting_scope
             AND dispatch.dispatch_id = audit.dispatch_id
-           JOIN provider_accounting_budgets AS budget
-             ON budget.accounting_scope = audit.accounting_scope
           WHERE audit.accounting_scope = ? AND audit.dispatch_id = ?
             AND audit.actual_cost_was_unknown = 1
             AND audit.authority = 'authenticated_operator'
@@ -130,10 +128,7 @@ const readGlobalSettlement = (
             AND dispatch.provider_stage_id = ? AND dispatch.run_id = ?
             AND dispatch.actual_cost_micro_usd IS NULL
             AND dispatch.maximum_cost_micro_usd = audit.conservative_charge_micro_usd
-            AND (? IS NULL OR audit.conservative_charge_micro_usd = ?)
-            AND budget.state = 'open'
-            AND budget.invoking_dispatch_id IS NULL
-            AND budget.poison_dispatch_id IS NULL`
+            AND (? IS NULL OR audit.conservative_charge_micro_usd = ?)`
       )
       .bind(
         ProviderAccountingScope,

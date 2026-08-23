@@ -1,3 +1,4 @@
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import {
   WorkflowEvent,
@@ -11,7 +12,9 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
+import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdOrganizationId } from "../households/household.contract.js";
+import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingRunId,
@@ -20,7 +23,11 @@ import {
 } from "../provider-accounting/provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
-import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+  VerifiedSourceMetadata,
+} from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { makeVisualTransport } from "./import-provider-adapters.test-fixture.js";
 import type { WorkersAiTransport } from "./import-provider-kernel.js";
@@ -34,8 +41,12 @@ import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.j
 import type { ProviderTaskCheckpoint } from "./import-provider-workflow-checkpoint.js";
 import type { ProviderTaskStage } from "./import-provider-workflow-task.js";
 import { runProviderTask } from "./import-provider-workflow-task.js";
+import { produceRecipeDraftFromEvidence } from "./import-recipe-draft.js";
+import type { RecipeDraftRepository } from "./import-recipe-draft.repository.js";
 import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
+import { makeHouseholdRecipeDraftLifecycle } from "./import-recipe-lifecycle.household.js";
 import {
+  makeRecipeRecoveryWorkflowStarter,
   RecipeRecoveryAuthorization,
   recipeRecoveryAuthorizationEventType,
 } from "./import-recipe-recovery.js";
@@ -56,6 +67,8 @@ const ProviderWorkflowInput = Schema.Struct({
     "retry_exhausted",
     "recipe_conservative_crash_replay",
     "recipe_conservative_success",
+    "recipe_recovery_accounted_crash_replay",
+    "recipe_recovery_subsequent_success",
     "recipe_recovery_loop_bounded",
     "recipe_recovery_loop_non_retryable",
     "recipe_recovery_loop_reconciliation_wait",
@@ -79,12 +92,13 @@ interface ProviderWorkflowTestEnv {
       readonly id: string;
       readonly params: Schema.Json;
     }) => Promise<void>;
-    readonly get: (id: string) => Promise<{
-      readonly restart: (
-        options: WorkflowInstanceRestartOptions
-      ) => Promise<void>;
-      readonly status: () => Promise<Schema.Json>;
-    }>;
+    readonly createBatch: (
+      batch: readonly {
+        readonly id?: string;
+        readonly params?: Schema.Json;
+      }[]
+    ) => Promise<readonly RawWorkflowInstance[]>;
+    readonly get: (id: string) => Promise<RawWorkflowInstance>;
     readonly unsafeSetIntrospectionOperations: (
       sessionId: string,
       operations: readonly Schema.Json[]
@@ -97,6 +111,29 @@ interface ProviderWorkflowTestEnv {
     ) => Promise<void>;
   };
 }
+
+interface RawWorkflowInstance {
+  readonly restart: (options?: WorkflowInstanceRestartOptions) => Promise<void>;
+  readonly sendEvent: (event: {
+    readonly payload?: Schema.Json;
+    readonly type: string;
+  }) => Promise<void>;
+  readonly status: () => Promise<Schema.Json>;
+}
+
+const NativeWorkflowStatus = Schema.Struct({
+  status: Schema.Literals([
+    "queued",
+    "running",
+    "paused",
+    "errored",
+    "terminated",
+    "complete",
+    "waiting",
+    "waitingForPause",
+    "unknown",
+  ]),
+});
 
 const decodeRunId = Schema.decodeUnknownSync(ProviderAccountingRunId);
 const testRuntimeContext = RuntimeContext.of({
@@ -166,6 +203,40 @@ const waitForNumber = async (
   return waitForNumber(env, instanceId, name, expected, attempt + 1);
 };
 
+const waitForWorkflowTerminal = async (
+  env: ProviderWorkflowTestEnv,
+  instanceId: string,
+  instance: RawWorkflowInstance,
+  attempt = 0
+): Promise<Schema.Json> => {
+  if (attempt >= 500) {
+    const diagnostics = await Promise.all(
+      [
+        "provider-calls",
+        "recipe-adapter-completions",
+        "recipe-draft-completions",
+        "recovery-lifecycle-transitions",
+        "recovery-review-commits",
+      ].map(async (name) => [
+        name,
+        await Effect.runPromise(readNumber(env, instanceId, name)),
+      ])
+    );
+    throw new Error(
+      `Timed out waiting for terminal Workflow status: ${JSON.stringify({ diagnostics, status: await instance.status() })}`
+    );
+  }
+  const status = await instance.status();
+  if (
+    Schema.is(NativeWorkflowStatus)(status) &&
+    (status.status === "complete" || status.status === "errored")
+  ) {
+    return status;
+  }
+  await Effect.runPromise(Effect.sleep(10));
+  return waitForWorkflowTerminal(env, instanceId, instance, attempt + 1);
+};
+
 const nativeRecipeRecoveryAttempt = (
   importId: ImportId,
   ordinal: RecipeRecoveryOrdinal
@@ -227,12 +298,20 @@ const emptyRecipeProviderSelection = {
   yield: null,
 } as const;
 
+const recoveredRecipeProviderSelection = {
+  ...emptyRecipeProviderSelection,
+  ingredientLines: ["1 onion"],
+  instructions: ["Cook the onion"],
+  name: "Recovered onion",
+  supportedClaims: ["Recovered onion", "1 onion", "Cook the onion"],
+} as const;
+
 const installedRecipeConservativeDispatch = (
   env: ProviderWorkflowTestEnv,
   instanceId: string,
   importId: ImportId,
   crashAfterSettlement: boolean,
-  recovery: boolean
+  recoveryOrdinal: RecipeRecoveryOrdinal | null
 ) =>
   Effect.gen(function* runInstalledRecipeConservativeDispatch() {
     yield* increment(env, instanceId, "task-attempts");
@@ -245,7 +324,12 @@ const installedRecipeConservativeDispatch = (
       model: InstalledRecipeModel,
       run: async () => {
         await Effect.runPromise(increment(env, instanceId, "provider-calls"));
-        return Response.json({ response: emptyRecipeProviderSelection });
+        return Response.json({
+          response:
+            recoveryOrdinal === 2
+              ? recoveredRecipeProviderSelection
+              : emptyRecipeProviderSelection,
+        });
       },
     };
     const { extractor } = yield* makeRecipeRecoveryProviderRuntime({
@@ -253,9 +337,9 @@ const installedRecipeConservativeDispatch = (
       database: env.MealPlannerDatabase,
       now: () => dispatchTimestamp,
       runId: decodeRunId(
-        recovery
-          ? `recipe-import:recipe-recovery:${importId}`
-          : `recipe-import:${importId}`
+        recoveryOrdinal === null
+          ? `recipe-import:${importId}`
+          : `recipe-import:recipe-recovery:${importId}`
       ),
       transport,
     });
@@ -269,20 +353,91 @@ const installedRecipeConservativeDispatch = (
           evidenceId: "evidence-1",
           kind: "caption",
           origin: "creator_provided",
-          value: "visible evidence",
+          value: "Recovered onion. Use 1 onion. Cook the onion.",
+        },
+        {
+          artifactReference: "private:source-url",
+          evidenceId: "source-url-1",
+          kind: "source_url",
+          origin: "observed",
+          value: "https://example.com/recovered-onion",
         },
       ],
     };
-    const output = yield* extractor.extract(
-      recovery
-        ? {
+    const accountingInput =
+      recoveryOrdinal === null
+        ? extractionInput
+        : {
             ...extractionInput,
             dispatchId: decodeAccountingDispatchId(
-              `recipe:${importId}:${generation}:${"e".repeat(64)}:recovery:1`
+              `recipe:${importId}:${generation}:${"e".repeat(64)}:recovery:${recoveryOrdinal}`
             ),
-          }
-        : extractionInput
-    );
+          };
+    const output = yield* recoveryOrdinal === 2
+      ? Effect.gen(function* runRecoveredDraftLifecycle() {
+          const householdDomain = {
+            commitRecipeImportDraft: () =>
+              increment(env, instanceId, "recovery-review-commits").pipe(
+                Effect.as({})
+              ),
+            transitionRecipeImportLifecycle: () =>
+              increment(env, instanceId, "recovery-lifecycle-transitions").pipe(
+                Effect.as({})
+              ),
+          } as unknown as Pick<
+            HouseholdDomainWorkerMethods,
+            "commitRecipeImportDraft" | "transitionRecipeImportLifecycle"
+          >;
+          const lifecycle = makeHouseholdRecipeDraftLifecycle({
+            executionGeneration: Schema.decodeUnknownSync(
+              ImportIntentExecutionGeneration
+            )(generation),
+            householdDomain,
+            intentId: Schema.decodeUnknownSync(RecipeImportIntentId)(importId),
+            mutationId: () =>
+              Effect.succeed(
+                Schema.decodeUnknownSync(HouseholdImportMutationId)(
+                  "9".repeat(64)
+                )
+              ),
+            organizationId: recoveryOrganizationId,
+          });
+          const recipeRepository: RecipeDraftRepository = {
+            claim: () => Effect.die("unexpected repository claim"),
+            claimCarousel: () => Effect.die("unexpected carousel claim"),
+            complete: (draft) =>
+              increment(env, instanceId, "recipe-draft-completions").pipe(
+                Effect.as(draft)
+              ),
+            fail: () => Effect.die("unexpected recipe failure"),
+          };
+          const source = Schema.decodeUnknownSync(VerifiedSourceMetadata)({
+            canonicalUrl: "https://example.com/recovered-onion",
+            caption: "Recovered onion. Use 1 onion. Cook the onion.",
+            creator: { displayName: null, handle: null, id: null },
+            observedAt: "2026-08-16T00:00:00.000Z",
+            provenance: {
+              canonicalUrl: "operator_supplied",
+              caption: "creator_provided",
+              creator: { displayName: null, handle: null, id: null },
+              publishedAt: null,
+            },
+            publishedAt: null,
+          });
+          const draft = yield* produceRecipeDraftFromEvidence({
+            assembly: accountingInput,
+            claim: () => Effect.succeed({ _tag: "DispatchClaimed" }),
+            extractionFingerprint: "2".repeat(64),
+            extractor,
+            lifecycle,
+            now: decodeImportTimestamp("2026-08-16T00:00:00.000Z"),
+            recipeRepository,
+            source,
+            transcript: { route: "video_v1" },
+          });
+          return draft.extraction;
+        })
+      : extractor.extract(accountingInput);
     yield* increment(env, instanceId, "recipe-adapter-completions");
     if (
       output.cost.certainty !== "estimated" ||
@@ -544,10 +699,12 @@ const directProviderEffect = (
 const providerStageByScenario = {
   recipe_conservative_crash_replay: "recipe",
   recipe_conservative_success: "recipe",
+  recipe_recovery_accounted_crash_replay: "recipe",
   recipe_recovery_loop_bounded: "recipe",
   recipe_recovery_loop_non_retryable: "recipe",
   recipe_recovery_loop_reconciliation_wait: "recipe",
   recipe_recovery_loop_success: "recipe",
+  recipe_recovery_subsequent_success: "recipe",
   retry_exhausted: "speech",
   success: "visual",
   terminal: "visual",
@@ -606,7 +763,9 @@ const providerWorkflowExport = {
           input.scenario === "recipe_recovery_loop_bounded" ||
           input.scenario === "recipe_recovery_loop_non_retryable" ||
           input.scenario === "recipe_recovery_loop_reconciliation_wait" ||
-          input.scenario === "recipe_recovery_loop_success"
+          input.scenario === "recipe_recovery_loop_success" ||
+          input.scenario === "recipe_recovery_accounted_crash_replay" ||
+          input.scenario === "recipe_recovery_subsequent_success"
         ) {
           if (input.importId === undefined) {
             return yield* Effect.die("Missing recovery loop import ID");
@@ -647,12 +806,54 @@ const providerWorkflowExport = {
                 task(
                   durableTaskName,
                   Effect.gen(function* runNativeRecoveryProvider() {
+                    yield* increment(env, event.instanceId, durableTaskName);
+                    if (
+                      input.scenario === "recipe_recovery_subsequent_success"
+                    ) {
+                      if (_attempt.ordinal === 1) {
+                        return (yield* readNumber(
+                          env,
+                          event.instanceId,
+                          "workflow-runs"
+                        )) === 1
+                          ? recipeRecoveryFailure("provider_error")
+                          : recipeRecoveryFailure("outcome_unknown");
+                      }
+                      return yield* installedRecipeConservativeDispatch(
+                        env,
+                        event.instanceId,
+                        importId,
+                        false,
+                        _attempt.ordinal
+                      ).pipe(
+                        Effect.as(recipeRecoverySuccess()),
+                        Effect.catch((error) =>
+                          Effect.succeed(
+                            recipeRecoveryFailure(
+                              "code" in error ? error.code : error._tag
+                            )
+                          )
+                        )
+                      );
+                    }
+                    if (
+                      input.scenario ===
+                      "recipe_recovery_accounted_crash_replay"
+                    ) {
+                      yield* installedRecipeConservativeDispatch(
+                        env,
+                        event.instanceId,
+                        importId,
+                        true,
+                        1
+                      ).pipe(Effect.orDie);
+                      return recipeRecoverySuccess();
+                    }
                     yield* increment(
                       env,
                       event.instanceId,
                       "recovery-loop-provider-calls"
                     );
-                    yield* increment(env, event.instanceId, durableTaskName);
                     if (input.scenario === "recipe_recovery_loop_success") {
                       return recipeRecoverySuccess();
                     }
@@ -665,7 +866,8 @@ const providerWorkflowExport = {
                   })
                 ),
               waitForAuthorization: (ordinal) =>
-                input.scenario === "recipe_recovery_loop_reconciliation_wait"
+                input.scenario === "recipe_recovery_loop_reconciliation_wait" ||
+                input.scenario === "recipe_recovery_subsequent_success"
                   ? waitForEvent<Schema.Json>(
                       `authorize-recipe-recovery-${ordinal}`,
                       {
@@ -708,7 +910,7 @@ const providerWorkflowExport = {
               event.instanceId,
               decodeImportId(input.importId),
               input.scenario === "recipe_conservative_crash_replay",
-              false
+              null
             ),
             (evidence) => providerWorkflowSuccess("recipe", evidence)
           );
@@ -779,11 +981,45 @@ const ProviderRetryWorkflowBridge = makeWorkflowBridge(WorkflowEntrypoint, {
 /** Installed Alchemy bridge hosted by the same native WorkflowEntrypoint used in deployment. */
 export class ProviderRetryWorkflow extends ProviderRetryWorkflowBridge {}
 
+const adaptWorkflowInstance = (instance: RawWorkflowInstance) => ({
+  restart: (options?: WorkflowInstanceRestartOptions) =>
+    Effect.promise(() => instance.restart(options)).pipe(Effect.orDie),
+  sendEvent: (event: {
+    readonly payload?: typeof RecipeRecoveryAuthorization.Encoded;
+    readonly type: string;
+  }) => Effect.promise(() => instance.sendEvent(event)).pipe(Effect.orDie),
+  status: () =>
+    Effect.promise(() => instance.status()).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(NativeWorkflowStatus)),
+      Effect.orDie
+    ),
+});
+
+const makeNativeRecipeRecoveryStarter = (env: ProviderWorkflowTestEnv) =>
+  makeRecipeRecoveryWorkflowStarter({
+    createBatch: (batch) =>
+      Effect.promise(() => env.ProviderRetryWorkflow.createBatch(batch)).pipe(
+        Effect.map((instances) => instances.map(adaptWorkflowInstance)),
+        Effect.orDie
+      ),
+    get: (id) =>
+      Effect.promise(() => env.ProviderRetryWorkflow.get(id)).pipe(
+        Effect.map(adaptWorkflowInstance),
+        Effect.orDie
+      ),
+  });
+
 const CommandId = Schema.Struct({ id: Schema.String });
 const ProviderWorkflowCommand = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("run-visual-recipe-budget"),
     ...CommandId.fields,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("activate-recovery"),
+    ...CommandId.fields,
+    importId: Schema.String,
+    outcome: Schema.Literals(["Prepared", "Replay"]),
   }),
   Schema.Struct({ action: Schema.Literal("restart"), ...CommandId.fields }),
   Schema.Struct({
@@ -811,6 +1047,40 @@ export default {
         return Response.json(
           await Effect.runPromise(runInstalledVisualThenRecipe(env))
         );
+      }
+      if (command.action === "activate-recovery") {
+        const workflowRunsBefore = await Effect.runPromise(
+          readNumber(env, command.id, "workflow-runs")
+        );
+        await Effect.runPromise(
+          makeNativeRecipeRecoveryStarter(env).start(
+            nativeRecipeRecoveryAttempt(decodeImportId(command.importId), 2),
+            {
+              correlationId: decodeCorrelationId(
+                "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2207"
+              ),
+            },
+            recoveryOrganizationId,
+            command.outcome
+          )
+        );
+        if (command.outcome === "Prepared") {
+          await waitForNumber(
+            env,
+            command.id,
+            "workflow-runs",
+            workflowRunsBefore + 1
+          );
+          return Response.json(
+            await waitForWorkflowTerminal(
+              env,
+              command.id,
+              await workflow.get(command.id)
+            )
+          );
+        }
+        const instance = await workflow.get(command.id);
+        return Response.json(await instance.status());
       }
       const start = async (
         input: Exclude<typeof command, { readonly action: "restart" }>["input"]

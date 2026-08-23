@@ -1,5 +1,5 @@
 import type * as Cloudflare from "alchemy/Cloudflare";
-import { Cause, Data, Effect, Schema } from "effect";
+import { Cause, Data, Effect, Schedule, Schema } from "effect";
 import { flow } from "effect/Function";
 
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
@@ -118,19 +118,49 @@ const signalRecoveryAuthorization = (
         type: recipeRecoveryAuthorizationEventType(attempt.ordinal),
       });
 
+const awaitSignalableWorkflowInstance = (instance: WorkflowInstanceLike) =>
+  instance.status().pipe(
+    Effect.filterOrFail(
+      ({ status }) => signalableWorkflowStatuses.has(status),
+      () => workflowStartUnavailable()
+    ),
+    Effect.retry({ schedule: Schedule.spaced("25 millis"), times: 40 }),
+    Effect.asVoid
+  );
+
 const reconcileWorkflowInstance = (
   instance: WorkflowInstanceLike,
-  attempt: RecipeRecoveryAttempt
+  attempt: RecipeRecoveryAttempt,
+  preparationOutcome: "Prepared" | "Replay"
 ) =>
   instance.status().pipe(
     Effect.flatMap(({ status }) => {
       if (status === "complete") {
-        return Effect.void;
+        return preparationOutcome === "Prepared" && attempt.ordinal > 1
+          ? instance
+              .restart({
+                from: {
+                  name: recipeRecoveryDurableTaskNames(
+                    Schema.decodeUnknownSync(RecipeRecoveryOrdinal)(
+                      attempt.ordinal - 1
+                    )
+                  ).extraction,
+                  type: "do",
+                },
+              })
+              .pipe(
+                Effect.andThen(awaitSignalableWorkflowInstance(instance)),
+                Effect.andThen(signalRecoveryAuthorization(instance, attempt))
+              )
+          : Effect.void;
       }
       if (status === "errored") {
         return instance
           .restart()
-          .pipe(Effect.andThen(signalRecoveryAuthorization(instance, attempt)));
+          .pipe(
+            Effect.andThen(awaitSignalableWorkflowInstance(instance)),
+            Effect.andThen(signalRecoveryAuthorization(instance, attempt))
+          );
       }
       if (!signalableWorkflowStatuses.has(status)) {
         return Effect.fail(workflowStartUnavailable());
@@ -143,7 +173,8 @@ export interface RecipeRecoveryWorkflowStarter {
   readonly start: (
     attempt: RecipeRecoveryAttempt,
     trace: ImportTraceContext,
-    organizationId: HouseholdOrganizationId
+    organizationId: HouseholdOrganizationId,
+    preparationOutcome: "Prepared" | "Replay"
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
 }
 
@@ -156,7 +187,12 @@ export const makeRecipeRecoveryWorkflowStarter = (
   workflow: WorkflowHandleLike
 ): RecipeRecoveryWorkflowStarter => ({
   start: Effect.fn("RecipeRecoveryWorkflowStarter.start")(
-    function* startRecipeRecoveryWorkflow(attempt, trace, organizationId) {
+    function* startRecipeRecoveryWorkflow(
+      attempt,
+      trace,
+      organizationId,
+      preparationOutcome
+    ) {
       const id = recipeRecoveryWorkflowInstanceId(
         attempt.importId,
         attempt.acquisitionGeneration
@@ -174,15 +210,24 @@ export const makeRecipeRecoveryWorkflowStarter = (
       }).pipe(Effect.mapError(() => workflowStartUnavailable()));
       return yield* workflow.createBatch([{ id, params }]).pipe(
         Effect.flatMap((created) => {
-          if (created.length === 1) {
-            return Effect.void;
+          const [createdInstance] = created;
+          if (created.length === 1 && createdInstance !== undefined) {
+            return reconcileWorkflowInstance(
+              createdInstance,
+              attempt,
+              preparationOutcome
+            );
           }
           if (created.length === 0) {
             return workflow
               .get(id)
               .pipe(
                 Effect.flatMap((instance) =>
-                  reconcileWorkflowInstance(instance, attempt)
+                  reconcileWorkflowInstance(
+                    instance,
+                    attempt,
+                    preparationOutcome
+                  )
                 )
               );
           }
@@ -195,7 +240,11 @@ export const makeRecipeRecoveryWorkflowStarter = (
               .get(id)
               .pipe(
                 Effect.flatMap((instance) =>
-                  reconcileWorkflowInstance(instance, attempt)
+                  reconcileWorkflowInstance(
+                    instance,
+                    attempt,
+                    preparationOutcome
+                  )
                 )
               )
         ),

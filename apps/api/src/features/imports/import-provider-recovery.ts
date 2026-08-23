@@ -214,16 +214,22 @@ export const makeProviderRecoveryService = (
           organizationId: request.organizationId,
         }).pipe(Effect.mapError(mapHouseholdError));
         yield* input.recipeRecoveryStarter
-          .start(recovery, authority.originalTrace, request.organizationId)
+          .start(
+            recovery.attempt,
+            authority.originalTrace,
+            request.organizationId,
+            recovery.outcome
+          )
           .pipe(Effect.mapError(() => failure("persistence_unavailable")));
         return yield* Schema.decodeUnknownEffect(ProviderRecoveryResponse)({
-          acquisitionGeneration: recovery.acquisitionGeneration,
-          dispatchId: recovery.predecessorDispatchId,
-          importId: recovery.importId,
+          acquisitionGeneration: recovery.attempt.acquisitionGeneration,
+          dispatchId: recovery.attempt.predecessorDispatchId,
+          importId: recovery.attempt.importId,
           outcome: "recipe_recovery_prepared",
-          recoveryDispatchId: recovery.currentDispatchId,
-          recoveryExtractionFingerprint: recovery.currentExtractionFingerprint,
-          recoveryOrdinal: recovery.ordinal,
+          recoveryDispatchId: recovery.attempt.currentDispatchId,
+          recoveryExtractionFingerprint:
+            recovery.attempt.currentExtractionFingerprint,
+          recoveryOrdinal: recovery.attempt.ordinal,
         }).pipe(Effect.mapError(() => failure("persistence_corrupt")));
       }
       const recovery = yield* readHouseholdRecipeRecovery({
@@ -242,7 +248,12 @@ export const makeProviderRecoveryService = (
         organizationId: request.organizationId,
       }).pipe(Effect.mapError(mapHouseholdError));
       yield* input.recipeRecoveryStarter
-        .start(recovery, authority.originalTrace, request.organizationId)
+        .start(
+          recovery,
+          authority.originalTrace,
+          request.organizationId,
+          "Replay"
+        )
         .pipe(Effect.mapError(() => failure("persistence_unavailable")));
       return yield* Schema.decodeUnknownEffect(ProviderRecoveryResponse)({
         acquisitionGeneration: recovery.acquisitionGeneration,
