@@ -159,6 +159,12 @@ describe("provider accounting production boundary", () => {
     expect(recoveryComposition).toMatch(
       /makeRecipeRecoveryProviderRuntime\(\{[\s\S]*runRecipeRecoveryLoop\([\s\S]*produceRecipeDraftForImport\(\{[\s\S]*extractor,[\s\S]*lifecycle: recipeLifecycle,[\s\S]*recovery: \{[\s\S]*dispatchId: attempt\.currentDispatchId/u
     );
+    expect(recoveryComposition).not.toContain(
+      "Effect.catch(() => Effect.succeed(null))"
+    );
+    expect(recoveryComposition).toMatch(
+      /readAttempt: \(ordinal\) =>[\s\S]*readHouseholdRecipeRecovery\(\{[\s\S]*selector: \{[\s\S]*ordinal,[\s\S]*\}\)[\s\S]*\.pipe\(Effect\.orDie\)/u
+    );
     expect(initialWorkflow).toContain("makeHouseholdRecipeDraftLifecycle({");
     expect(installedRecovery).toBeDefined();
     expect(installedRecovery).toMatch(

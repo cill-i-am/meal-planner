@@ -240,7 +240,7 @@ export const readHouseholdRecipeRecovery = (input: {
         )
       );
     if (result === null) {
-      return yield* Effect.fail(importTransitionRejected());
+      return null;
     }
     return yield* decodeWorkflowAttempt(result);
   });

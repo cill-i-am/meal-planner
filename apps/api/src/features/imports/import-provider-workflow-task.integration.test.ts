@@ -23,6 +23,7 @@ interface ProviderWorkflowInput {
     | "recipe_conservative_crash_replay"
     | "recipe_conservative_success"
     | "recipe_recovery_accounted_crash_replay"
+    | "recipe_recovery_attempt_read_transient"
     | "recipe_recovery_subsequent_success"
     | "recipe_recovery_loop_bounded"
     | "recipe_recovery_loop_non_retryable"
@@ -223,6 +224,11 @@ const commandWorkflow = async (
         readonly outcome: "Prepared" | "Replay";
       }
     | {
+        readonly action: "resume-recovery";
+        readonly id: string;
+        readonly importId: string;
+      }
+    | {
         readonly action: "run";
         readonly id: string;
         readonly input: ProviderWorkflowInput;
@@ -255,6 +261,9 @@ const activateRecipeRecovery = (
   importId: string,
   outcome: "Prepared" | "Replay"
 ) => commandWorkflow({ action: "activate-recovery", id, importId, outcome });
+
+const resumeRecipeRecovery = (id: string, importId: string) =>
+  commandWorkflow({ action: "resume-recovery", id, importId });
 
 const runVisualRecipeBudget = (id: string) =>
   commandWorkflow({ action: "run-visual-recipe-budget", id });
@@ -754,7 +763,8 @@ describe("provider workflow task retry exhaustion", () => {
   it("restarts a completed provider-error recovery for a newly prepared higher ordinal and commits its review draft once", async () => {
     const importId = randomUUID();
     const instanceId = `import-recipe-recovery-${importId}-1`;
-    const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:2`;
+    const firstDispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:1`;
+    const secondDispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:2`;
     const database = await runtime.getD1Database("MealPlannerDatabase");
     await resetGlobalProviderAccounting(database);
 
@@ -775,9 +785,16 @@ describe("provider workflow task retry exhaustion", () => {
       status: "complete",
     });
     expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
-    expect(await readNumber(instanceId, "extract-recipe-recovery-v1")).toBe(2);
+    expect(await readNumber(instanceId, "extract-recipe-recovery-v1")).toBe(3);
     expect(await readNumber(instanceId, "extract-recipe-recovery-v2")).toBe(1);
-    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "task-attempts")).toBe(4);
+    expect(await readNumber(instanceId, "post-settlement-crashes")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls-recovery-1")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls-recovery-2")).toBe(1);
+    expect(
+      await readNumber(instanceId, "recovery-loop-terminal-persistences")
+    ).toBe(0);
     expect(await readNumber(instanceId, "recipe-draft-completions")).toBe(1);
     expect(await readNumber(instanceId, "recovery-lifecycle-transitions")).toBe(
       2
@@ -790,9 +807,24 @@ describe("provider workflow task retry exhaustion", () => {
              FROM provider_accounting_dispatches
             WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
         )
-        .bind(dispatchId)
+        .bind(secondDispatchId)
         .first()
     ).resolves.toEqual({
+      provider_stage_id: "recipe-extraction",
+      run_id: `recipe-import:recipe-recovery:${importId}`,
+      state: "settled_unknown",
+    });
+    await expect(
+      database
+        .prepare(
+          `SELECT dispatch_id, provider_stage_id, run_id, state
+             FROM provider_accounting_dispatches
+            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+        )
+        .bind(firstDispatchId)
+        .first()
+    ).resolves.toEqual({
+      dispatch_id: firstDispatchId,
       provider_stage_id: "recipe-extraction",
       run_id: `recipe-import:recipe-recovery:${importId}`,
       state: "settled_unknown",
@@ -805,10 +837,41 @@ describe("provider workflow task retry exhaustion", () => {
       status: "complete",
     });
     expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
-    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls")).toBe(2);
+    expect(await readNumber(instanceId, "provider-calls-recovery-1")).toBe(1);
+    expect(await readNumber(instanceId, "provider-calls-recovery-2")).toBe(1);
     expect(await readNumber(instanceId, "recipe-draft-completions")).toBe(1);
     expect(await readNumber(instanceId, "recovery-review-commits")).toBe(1);
   }, 15_000);
+
+  it("leaves a transient Household attempt-read failure retryable and resumes the same native recovery", async () => {
+    const importId = randomUUID();
+    const instanceId = `import-recipe-recovery-${importId}-1`;
+
+    await expect(
+      runWorkflow(instanceId, {
+        importId,
+        scenario: "recipe_recovery_attempt_read_transient",
+      })
+    ).resolves.toMatchObject({ status: "errored" });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(1);
+    expect(await readNumber(instanceId, "recovery-attempt-reads")).toBe(1);
+    expect(await readNumber(instanceId, "recovery-loop-provider-calls")).toBe(
+      0
+    );
+
+    await expect(
+      resumeRecipeRecovery(instanceId, importId)
+    ).resolves.toMatchObject({
+      output: { _tag: "Succeeded", stage: "recipe" },
+      status: "complete",
+    });
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "recovery-attempt-reads")).toBe(2);
+    expect(await readNumber(instanceId, "recovery-loop-provider-calls")).toBe(
+      1
+    );
+  });
 
   it("persists a conservative installed recipe result and replays its native task without another provider call", async () => {
     const instanceId = `gaia-205-recipe-conservative-${randomUUID()}`;

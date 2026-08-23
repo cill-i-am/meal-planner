@@ -68,6 +68,7 @@ const ProviderWorkflowInput = Schema.Struct({
     "recipe_conservative_crash_replay",
     "recipe_conservative_success",
     "recipe_recovery_accounted_crash_replay",
+    "recipe_recovery_attempt_read_transient",
     "recipe_recovery_subsequent_success",
     "recipe_recovery_loop_bounded",
     "recipe_recovery_loop_non_retryable",
@@ -324,6 +325,15 @@ const installedRecipeConservativeDispatch = (
       model: InstalledRecipeModel,
       run: async () => {
         await Effect.runPromise(increment(env, instanceId, "provider-calls"));
+        if (recoveryOrdinal !== null) {
+          await Effect.runPromise(
+            increment(
+              env,
+              instanceId,
+              `provider-calls-recovery-${recoveryOrdinal}`
+            )
+          );
+        }
         return Response.json({
           response:
             recoveryOrdinal === 2
@@ -700,6 +710,7 @@ const providerStageByScenario = {
   recipe_conservative_crash_replay: "recipe",
   recipe_conservative_success: "recipe",
   recipe_recovery_accounted_crash_replay: "recipe",
+  recipe_recovery_attempt_read_transient: "recipe",
   recipe_recovery_loop_bounded: "recipe",
   recipe_recovery_loop_non_retryable: "recipe",
   recipe_recovery_loop_reconciliation_wait: "recipe",
@@ -765,6 +776,7 @@ const providerWorkflowExport = {
           input.scenario === "recipe_recovery_loop_reconciliation_wait" ||
           input.scenario === "recipe_recovery_loop_success" ||
           input.scenario === "recipe_recovery_accounted_crash_replay" ||
+          input.scenario === "recipe_recovery_attempt_read_transient" ||
           input.scenario === "recipe_recovery_subsequent_success"
         ) {
           if (input.importId === undefined) {
@@ -772,6 +784,29 @@ const providerWorkflowExport = {
           }
           const importId = decodeImportId(input.importId);
           const generation = decodeGeneration(1);
+          if (
+            input.scenario === "recipe_recovery_subsequent_success" &&
+            (yield* readNumber(env, event.instanceId, "workflow-runs")) === 1
+          ) {
+            return yield* task(
+              "extract-recipe-recovery-v1",
+              Effect.gen(function* completeExistingProviderErrorRecovery() {
+                yield* increment(
+                  env,
+                  event.instanceId,
+                  "extract-recipe-recovery-v1"
+                );
+                yield* installedRecipeConservativeDispatch(
+                  env,
+                  event.instanceId,
+                  importId,
+                  true,
+                  1
+                ).pipe(Effect.orDie);
+                return recipeRecoveryFailure("provider_error");
+              })
+            );
+          }
           return yield* runRecipeRecoveryLoop(
             {
               acquisitionGeneration: generation,
@@ -801,7 +836,29 @@ const providerWorkflowExport = {
                   })
                 ),
               readAttempt: (ordinal) =>
-                Effect.succeed(nativeRecipeRecoveryAttempt(importId, ordinal)),
+                Effect.gen(function* readNativeRecoveryAttempt() {
+                  yield* increment(
+                    env,
+                    event.instanceId,
+                    "recovery-attempt-reads"
+                  );
+                  if (
+                    input.scenario ===
+                      "recipe_recovery_attempt_read_transient" &&
+                    (yield* readNumber(
+                      env,
+                      event.instanceId,
+                      "workflow-runs"
+                    )) === 1
+                  ) {
+                    return yield* Effect.die(
+                      new Error(
+                        "simulated transient Household attempt-read failure"
+                      )
+                    );
+                  }
+                  return nativeRecipeRecoveryAttempt(importId, ordinal);
+                }),
               runAttempt: (_attempt, durableTaskName) =>
                 task(
                   durableTaskName,
@@ -811,13 +868,16 @@ const providerWorkflowExport = {
                       input.scenario === "recipe_recovery_subsequent_success"
                     ) {
                       if (_attempt.ordinal === 1) {
-                        return (yield* readNumber(
+                        return yield* installedRecipeConservativeDispatch(
                           env,
                           event.instanceId,
-                          "workflow-runs"
-                        )) === 1
-                          ? recipeRecoveryFailure("provider_error")
-                          : recipeRecoveryFailure("outcome_unknown");
+                          importId,
+                          true,
+                          _attempt.ordinal
+                        ).pipe(
+                          Effect.as(recipeRecoveryFailure("provider_error")),
+                          Effect.orDie
+                        );
                       }
                       return yield* installedRecipeConservativeDispatch(
                         env,
@@ -854,7 +914,11 @@ const providerWorkflowExport = {
                       event.instanceId,
                       "recovery-loop-provider-calls"
                     );
-                    if (input.scenario === "recipe_recovery_loop_success") {
+                    if (
+                      input.scenario === "recipe_recovery_loop_success" ||
+                      input.scenario ===
+                        "recipe_recovery_attempt_read_transient"
+                    ) {
                       return recipeRecoverySuccess();
                     }
                     if (
@@ -1021,6 +1085,11 @@ const ProviderWorkflowCommand = Schema.Union([
     importId: Schema.String,
     outcome: Schema.Literals(["Prepared", "Replay"]),
   }),
+  Schema.Struct({
+    action: Schema.Literal("resume-recovery"),
+    ...CommandId.fields,
+    importId: Schema.String,
+  }),
   Schema.Struct({ action: Schema.Literal("restart"), ...CommandId.fields }),
   Schema.Struct({
     action: Schema.Literals(["run", "run-waiting"]),
@@ -1081,6 +1150,27 @@ export default {
         }
         const instance = await workflow.get(command.id);
         return Response.json(await instance.status());
+      }
+      if (command.action === "resume-recovery") {
+        await Effect.runPromise(
+          makeNativeRecipeRecoveryStarter(env).start(
+            nativeRecipeRecoveryAttempt(decodeImportId(command.importId), 1),
+            {
+              correlationId: decodeCorrelationId(
+                "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2207"
+              ),
+            },
+            recoveryOrganizationId,
+            "Replay"
+          )
+        );
+        return Response.json(
+          await waitForWorkflowTerminal(
+            env,
+            command.id,
+            await workflow.get(command.id)
+          )
+        );
       }
       const start = async (
         input: Exclude<typeof command, { readonly action: "restart" }>["input"]

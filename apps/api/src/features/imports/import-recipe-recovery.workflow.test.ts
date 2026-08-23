@@ -402,6 +402,35 @@ describe("bounded recipe recovery workflow", () => {
     expect(persisted).toEqual([1]);
   });
 
+  it("advances a provider-error predecessor without rewriting it as unknown", async () => {
+    const providers: number[] = [];
+    const persisted: number[] = [];
+    const result = await Effect.runPromise(
+      runRecipeRecoveryLoop(input(1), {
+        persistUnknown: (value) =>
+          Effect.sync(() => persisted.push(value.ordinal)).pipe(Effect.asVoid),
+        readAttempt: (ordinal) => Effect.succeed(attempt(ordinal)),
+        runAttempt: (value) =>
+          Effect.sync(() => {
+            providers.push(value.ordinal);
+            return value.ordinal === 1
+              ? {
+                  _tag: "Failed" as const,
+                  code: "provider_error",
+                  stage: "recipe" as const,
+                }
+              : { _tag: "Succeeded" as const, stage: "recipe" as const };
+          }),
+        waitForAuthorization: (ordinal) =>
+          Effect.succeed(authorization(ordinal)),
+      })
+    );
+
+    expect(result._tag).toBe("Succeeded");
+    expect(providers).toEqual([1, 2]);
+    expect(persisted).toEqual([]);
+  });
+
   it("stops at attempt eight and supports reconstruction from a D1 cursor", async () => {
     const providers: number[] = [];
     const result = await Effect.runPromise(

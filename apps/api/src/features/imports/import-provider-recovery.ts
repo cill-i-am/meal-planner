@@ -240,6 +240,9 @@ export const makeProviderRecoveryService = (
         organizationId: request.organizationId,
         selector: { _tag: "Latest", rootDispatchId: request.dispatchId },
       }).pipe(Effect.mapError(mapHouseholdError));
+      if (recovery === null) {
+        return yield* Effect.fail(failure("not_allowed"));
+      }
       const authority = yield* resolveHouseholdRecoveryAuthority({
         acquisitionGeneration: request.acquisitionGeneration,
         executionGeneration: request.executionGeneration,

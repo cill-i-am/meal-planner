@@ -129,11 +129,16 @@ export const runRecipeRecoveryLoop = Effect.fn(
     if (checkpoint._tag === "Succeeded") {
       return checkpoint;
     }
-    if (checkpoint.code !== "outcome_unknown") {
+    if (
+      checkpoint.code !== "outcome_unknown" &&
+      checkpoint.code !== "provider_error"
+    ) {
       return checkpoint;
     }
 
-    yield* dependencies.persistUnknown(attempt, durableTaskNames.terminal);
+    if (checkpoint.code === "outcome_unknown") {
+      yield* dependencies.persistUnknown(attempt, durableTaskNames.terminal);
+    }
     const next = nextRecoveryOrdinal(ordinal);
     if (Option.isNone(next)) {
       return checkpoint;
@@ -301,10 +306,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                     _tag: "Ordinal",
                     ordinal,
                   },
-                }).pipe(
-                  Effect.map((attempt) => attempt as RecipeRecoveryAttempt),
-                  Effect.catch(() => Effect.succeed(null))
-                ),
+                }).pipe(Effect.orDie),
               runAttempt: (attempt, durableTaskName) =>
                 durable
                   .task(
