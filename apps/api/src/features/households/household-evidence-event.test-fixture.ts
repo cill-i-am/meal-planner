@@ -13,6 +13,7 @@ import {
   makeD1ProviderTerminalSettlementService,
 } from "../imports/import-provider-terminal-settlement.js";
 import { ImportTimestamp } from "../imports/import.contracts.js";
+import { workflowStartUnavailable } from "../imports/import.errors.js";
 import { HouseholdObserveEvidenceReferenceInput } from "./evidence/household-evidence.contract.js";
 import type {
   HouseholdMutateEvidenceStageInput,
@@ -205,9 +206,24 @@ export default {
           trace: Schema.decodeUnknownSync(ImportTraceContext)({
             correlationId: "00000000-0000-4000-8000-000000000188",
           }),
-          workflowStarter: { restartFromSpeech: () => Effect.void },
+          workflowStarter: {
+            restartFromSpeech: (importId) =>
+              request.headers.get("x-test-speech-restart") === "fail"
+                ? Effect.fail(workflowStartUnavailable())
+                : Effect.tryPromise({
+                    catch: workflowStartUnavailable,
+                    try: () =>
+                      environment.EVIDENCE_EVENT_RESULTS.put(
+                        `speech-restart:${importId}`,
+                        "active"
+                      ),
+                  }),
+          },
         }).settle(command)
       );
+      if (request.headers.get("x-test-speech-restart") === "lose-response") {
+        return Response.json({ responseLost: true }, { status: 409 });
+      }
       return Response.json(
         Schema.encodeSync(ProviderTerminalSettlementResponse)(result)
       );

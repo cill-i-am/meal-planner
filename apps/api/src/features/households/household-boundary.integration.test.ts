@@ -352,14 +352,21 @@ const systemCommand = (
     }
   );
 
-const terminalSettlementCommand = async (input: object) => {
+const terminalSettlementCommand = async (
+  input: object,
+  options?: { readonly speechRestart?: "fail" | "lose-response" }
+) => {
   const worker = await getRuntime().getWorker("evidence-consumer");
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-test-terminal-settlement": "1",
+  };
+  if (options?.speechRestart !== undefined) {
+    headers["x-test-speech-restart"] = options.speechRestart;
+  }
   return worker.fetch("https://evidence-consumer.test/terminal-settlement", {
     body: JSON.stringify(input),
-    headers: {
-      "content-type": "application/json",
-      "x-test-terminal-settlement": "1",
-    },
+    headers,
     method: "POST",
   });
 };
@@ -489,6 +496,123 @@ const admitResolvedEvidenceImport = async (input: {
   });
   expect(resolvedResponse.status, await resolvedResponse.text()).toBe(200);
   return { admission, admitted, cookie, organization } as const;
+};
+
+const prepareUnknownSpeechTerminal = async (input: {
+  readonly label: string;
+  readonly mutationIds: readonly [resolve: string, claim: string, fail: string];
+  readonly videoId: string;
+}) => {
+  const { admission, admitted, organization } =
+    await admitResolvedEvidenceImport({
+      label: input.label,
+      mutationId: input.mutationIds[0],
+      videoId: input.videoId,
+    });
+  const generation = 1;
+  const inputFingerprint = "2".repeat(64);
+  const dispatchId = `speech:${admitted.id}:${generation}`;
+  const claim = await systemCommand("mutate-evidence-stage", {
+    admission,
+    expectedGeneration: generation,
+    inputFingerprint,
+    intentId: admitted.id,
+    mutationId: input.mutationIds[1],
+    operation: {
+      _tag: "Claim",
+      dispatchId,
+      stage: "speech",
+      startedAt: new Date().toISOString(),
+    },
+  });
+  expect(claim.status, await claim.clone().text()).toBe(200);
+  const failed = await systemCommand("mutate-evidence-stage", {
+    admission,
+    expectedGeneration: generation,
+    inputFingerprint,
+    intentId: admitted.id,
+    mutationId: input.mutationIds[2],
+    operation: {
+      _tag: "Fail",
+      completedAt: new Date().toISOString(),
+      dispatchId,
+      failureCode: "outcome_unknown",
+      recovery: "operator_review",
+      stage: "speech",
+    },
+  });
+  expect(failed.status, await failed.clone().text()).toBe(200);
+
+  const database = await getRuntime().getD1Database(
+    "MealPlannerDatabase",
+    "evidence-consumer"
+  );
+  await database
+    .prepare(
+      `INSERT INTO import_evidence_routes (
+         import_id, organization_id, route_version
+       ) VALUES (?, ?, 1)`
+    )
+    .bind(admitted.id, organization.id)
+    .run();
+  const budget = makeD1PilotProviderBudgetRepository(
+    database,
+    "pilot-gaia-118"
+  );
+  const reservation = {
+    dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(dispatchId),
+    maximumCostMicroUsd: 50_000,
+    providerStageId: Schema.decodeUnknownSync(PilotBudgetProviderStageId)(
+      "speech-transcription"
+    ),
+    runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
+      `gaia-118:${admitted.id}`
+    ),
+    timestamp: Schema.decodeUnknownSync(PilotBudgetTimestamp)(
+      new Date().toISOString()
+    ),
+  };
+  await Effect.runPromise(budget.reserve(reservation));
+  await Effect.runPromise(budget.beginInvocation(reservation));
+  await Effect.runPromise(budget.settleUnknown(reservation));
+  const settled = await terminalSettlementCommand({
+    acquisitionGeneration: generation,
+    dispatchId,
+    importId: admitted.id,
+  });
+  expect(settled.status, await settled.clone().text()).toBe(200);
+
+  return {
+    admission,
+    dispatchId,
+    generation,
+    inputFingerprint,
+    intentId: admitted.id,
+    recoveryCommand: {
+      acquisitionGeneration: generation,
+      dispatchId,
+      importId: admitted.id,
+      operation: "prepare_speech_recovery",
+    } as const,
+    recoveryDispatchId: `${dispatchId}:recovery:1`,
+  } as const;
+};
+
+const readSpeechStage = async (input: {
+  readonly admission: object;
+  readonly generation: number;
+  readonly intentId: string;
+}) => {
+  const response = await systemCommand("read-evidence-stage", {
+    admission: input.admission,
+    expectedGeneration: input.generation,
+    intentId: input.intentId,
+    stage: "speech",
+  });
+  expect(response.status, await response.clone().text()).toBe(200);
+  return Schema.decodeUnknownPromise(HouseholdReadEvidenceStageResult)(
+    await response.json()
+  );
 };
 
 const commitCarouselManifest = async (input: {
@@ -2252,6 +2376,114 @@ describe("household public API to private Durable Object boundary", () => {
         .first()
     ).resolves.toEqual({ count: 0 });
   });
+
+  it("replays household speech recovery after the external restart fails", async () => {
+    const fixture = await prepareUnknownSpeechTerminal({
+      label: "Household Speech Recovery Failure Replay",
+      mutationIds: ["1".repeat(64), "3".repeat(64), "4".repeat(64)],
+      videoId: "7000000000000000107",
+    });
+    const failedRestart = await terminalSettlementCommand(
+      fixture.recoveryCommand,
+      {
+        speechRestart: "fail",
+      }
+    );
+    expect(failedRestart.status).toBe(409);
+    const restartState = await getRuntime().getKVNamespace(
+      "EVIDENCE_EVENT_RESULTS",
+      "evidence-consumer"
+    );
+    await expect(
+      restartState.get(`speech-restart:${fixture.intentId}`)
+    ).resolves.toBeNull();
+    const preparedStage = await readSpeechStage(fixture);
+    expect(preparedStage).toMatchObject({
+      dispatchId: fixture.recoveryDispatchId,
+      inputFingerprint: fixture.inputFingerprint,
+      outcome: "Dispatching",
+    });
+
+    const staleGeneration = await terminalSettlementCommand({
+      ...fixture.recoveryCommand,
+      acquisitionGeneration: 2,
+    });
+    expect(staleGeneration.status).toBe(409);
+    const staleOwnership = await terminalSettlementCommand({
+      ...fixture.recoveryCommand,
+      dispatchId: `${fixture.dispatchId}:stale`,
+    });
+    expect(staleOwnership.status).toBe(409);
+    expect(await readSpeechStage(fixture)).toEqual(preparedStage);
+
+    const replay = await terminalSettlementCommand(fixture.recoveryCommand);
+    expect(replay.status, await replay.clone().text()).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      acquisitionGeneration: fixture.generation,
+      importId: fixture.intentId,
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: fixture.recoveryDispatchId,
+    });
+    expect(await readSpeechStage(fixture)).toEqual(preparedStage);
+  }, 30_000);
+
+  it("replays household speech recovery after a completed restart response is lost", async () => {
+    const fixture = await prepareUnknownSpeechTerminal({
+      label: "Household Speech Recovery Lost Response",
+      mutationIds: ["5".repeat(64), "6".repeat(64), "7".repeat(64)],
+      videoId: "7000000000000000108",
+    });
+    const lostResponse = await terminalSettlementCommand(
+      fixture.recoveryCommand,
+      { speechRestart: "lose-response" }
+    );
+    expect(lostResponse.status).toBe(409);
+    const restartState = await getRuntime().getKVNamespace(
+      "EVIDENCE_EVENT_RESULTS",
+      "evidence-consumer"
+    );
+    await expect(
+      restartState.get(`speech-restart:${fixture.intentId}`)
+    ).resolves.toBe("active");
+    const preparedStage = await readSpeechStage(fixture);
+
+    const replay = await terminalSettlementCommand(fixture.recoveryCommand);
+    expect(replay.status, await replay.clone().text()).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      acquisitionGeneration: fixture.generation,
+      importId: fixture.intentId,
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: fixture.recoveryDispatchId,
+    });
+    expect(await readSpeechStage(fixture)).toEqual(preparedStage);
+  }, 30_000);
+
+  it("returns one exact household speech recovery across concurrent replays", async () => {
+    const fixture = await prepareUnknownSpeechTerminal({
+      label: "Household Concurrent Speech Recovery Replay",
+      mutationIds: ["8".repeat(64), "9".repeat(64), "a".repeat(64)],
+      videoId: "7000000000000000109",
+    });
+    const [first, second] = await Promise.all([
+      terminalSettlementCommand(fixture.recoveryCommand),
+      terminalSettlementCommand(fixture.recoveryCommand),
+    ]);
+    expect(first.status, await first.clone().text()).toBe(200);
+    expect(second.status, await second.clone().text()).toBe(200);
+    const firstResult = await first.json();
+    expect(await second.json()).toEqual(firstResult);
+    expect(firstResult).toMatchObject({
+      acquisitionGeneration: fixture.generation,
+      importId: fixture.intentId,
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: fixture.recoveryDispatchId,
+    });
+    expect(await readSpeechStage(fixture)).toMatchObject({
+      dispatchId: fixture.recoveryDispatchId,
+      inputFingerprint: fixture.inputFingerprint,
+      outcome: "Dispatching",
+    });
+  }, 30_000);
 
   it("atomically prepares and persists a fenced household recipe recovery", async () => {
     const { admission, admitted } = await admitResolvedEvidenceImport({

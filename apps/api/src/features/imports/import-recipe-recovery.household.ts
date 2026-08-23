@@ -371,18 +371,42 @@ export const prepareHouseholdProviderRecovery = (input: {
   readonly stage: "speech" | "visual";
 }) =>
   Effect.gen(function* prepareHouseholdEvidenceStageRecovery() {
-    const terminal = yield* readHouseholdTerminalAuthority({
-      database: input.database,
-      generation: input.generation,
-      householdDomain: input.householdDomain,
-      importId: input.importId,
-      providerDispatchId: input.originalDispatchId,
-      stage: input.stage,
-    });
     const recoveryDispatchId = nextRecoveryDispatchId(input.originalDispatchId);
     if (
       recoveryDispatchId === null ||
       input.settlement.dispatchId !== input.originalDispatchId
+    ) {
+      return yield* Effect.fail(importTransitionRejected());
+    }
+    const authority = yield* resolveHouseholdRecoveryAuthority({
+      database: input.database,
+      generation: input.generation,
+      householdDomain: input.householdDomain,
+      importId: input.importId,
+    });
+    const checkpoint = yield* input.householdDomain
+      .readImportTerminalCheckpoint({
+        admission: authority.admission,
+        expectedGeneration: input.generation,
+        intentId: authority.intentId,
+        ownershipId: input.originalDispatchId,
+        stage: input.stage,
+      })
+      .pipe(
+        Effect.mapError(mapHouseholdFailure),
+        Effect.flatMap((rawCheckpoint) =>
+          Schema.decodeUnknownEffect(
+            HouseholdReadImportTerminalCheckpointResult,
+            { onExcessProperty: "error" }
+          )(rawCheckpoint).pipe(
+            Effect.mapError(() => importTransitionRejected())
+          )
+        )
+      );
+    if (
+      checkpoint === null ||
+      checkpoint.failureCode !== "outcome_unknown" ||
+      checkpoint.ownershipId !== input.originalDispatchId
     ) {
       return yield* Effect.fail(importTransitionRejected());
     }
@@ -392,16 +416,16 @@ export const prepareHouseholdProviderRecovery = (input: {
     const command = yield* Schema.encodeEffect(
       HouseholdMutateEvidenceStageInput
     )({
-      admission: terminal.authority.admission,
+      admission: authority.admission,
       expectedGeneration: input.generation,
-      inputFingerprint: terminal.stage.inputFingerprint,
-      intentId: terminal.authority.intentId,
+      inputFingerprint: checkpoint.inputFingerprint,
+      intentId: authority.intentId,
       mutationId,
       operation: {
         _tag: "PrepareRecovery",
         dispatchId: recoveryDispatchId,
         predecessorDispatchId: input.originalDispatchId,
-        predecessorInputFingerprint: terminal.stage.inputFingerprint,
+        predecessorInputFingerprint: checkpoint.inputFingerprint,
         settlement: input.settlement,
         stage: input.stage,
         startedAt: input.settlement.completedAt,
