@@ -116,7 +116,7 @@ const memberPurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
 export const requireHouseholdCommandAdmission = (
   admission: HouseholdCommandAdmission,
   purpose: HouseholdCommandPurpose
-) => {
+): Effect.Effect<HouseholdCommandAdmission, HouseholdAuthorizationFailure> => {
   const permitted =
     admission.actor._tag === "Member"
       ? memberPurposes.has(purpose)

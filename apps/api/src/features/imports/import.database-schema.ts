@@ -159,36 +159,6 @@ export const importExecutionRuns = sqliteTable(
   ]
 );
 
-export const importRecipeExecutorTerminalCheckpoints = sqliteTable(
-  "import_recipe_executor_terminal_checkpoints",
-  {
-    acquisitionGeneration: integer("acquisition_generation").notNull(),
-    checkpointedAt: text("checkpointed_at").notNull(),
-    evidenceReferencesJson: text("evidence_references_json").notNull(),
-    importId: text("import_id").notNull(),
-    ownershipId: text("ownership_id").notNull(),
-  },
-  (table) => [
-    primaryKey({
-      columns: [table.importId, table.acquisitionGeneration],
-    }),
-    foreignKey({
-      columns: [table.importId, table.acquisitionGeneration],
-      foreignColumns: [
-        importExecutionRuns.id,
-        importExecutionRuns.acquisitionGeneration,
-      ],
-      name: "import_recipe_executor_terminal_checkpoints_import_generation_fk",
-    })
-      .onDelete("restrict")
-      .onUpdate("restrict"),
-    check(
-      "import_recipe_executor_terminal_checkpoints_details_check",
-      sql`json_valid(${table.evidenceReferencesJson}) AND json_array_length(${table.evidenceReferencesJson}) IN (0, 3) AND length(${table.ownershipId}) = 64 AND ${table.ownershipId} NOT GLOB '*[^0-9a-f]*'`
-    ),
-  ]
-);
-
 export const importTranscriptions = sqliteTable(
   "import_transcriptions",
   {

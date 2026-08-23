@@ -110,9 +110,13 @@ describe("household foundation structural boundaries", () => {
       source.includes(".getByName(")
     );
     expect(routeSites.map(({ path: sourcePath }) => sourcePath)).toEqual([
-      "household-domain-worker.ts",
+      "household-command-router.ts",
     ]);
-    expect(routeSites[0]?.source).toContain("HouseholdObjectLocator");
+    const worker = await read(
+      path.join(householdRoot, "household-domain-worker.ts")
+    );
+    expect(worker).toContain("HouseholdObjectLocator");
+    expect(worker).toContain(".locate(organizationId)");
 
     const locator = await read(
       path.join(householdRoot, "household-object-locator.ts")
@@ -120,6 +124,24 @@ describe("household foundation structural boundaries", () => {
     expect(locator).toContain("household:v1:");
     expect(locator).toContain("HouseholdDigest");
     expect(locator).not.toMatch(/household:v1:\$\{organizationId\}/u);
+  });
+
+  it("authorizes private Worker commands before household routing", async () => {
+    const [worker, router] = await Promise.all([
+      read(path.join(householdRoot, "household-domain-worker.ts")),
+      read(path.join(householdRoot, "household-command-router.ts")),
+    ]);
+    const routingSites = [
+      ...worker.matchAll(/routeAdmittedHouseholdCommand\(\{/gu),
+    ];
+    const admission = router.indexOf("requireHouseholdCommandAdmission(");
+    const locate = router.indexOf("input.locate(");
+    const getByName = router.indexOf("input.getByName(");
+
+    expect(routingSites).toHaveLength(5);
+    expect(admission).toBeGreaterThan(-1);
+    expect(locate).toBeGreaterThan(admission);
+    expect(getByName).toBeGreaterThan(locate);
   });
 
   it("keeps external I/O outside the atomic admission/outbox repository", async () => {
@@ -240,6 +262,7 @@ describe("household foundation structural boundaries", () => {
   it("removes legacy D1 terminal authority and keeps the household evidence transaction I/O-free", async () => {
     const sources = await readProductionFeatureSources();
     const forbiddenLegacyAuthority = [
+      "import_recipe_executor_terminal_checkpoints",
       "import_provider_terminal_checkpoints",
       "pilot_provider_terminal_checkpoints",
       "pilot_provider_speech_recoveries",

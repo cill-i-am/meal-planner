@@ -2228,8 +2228,10 @@ describe("household public API to private Durable Object boundary", () => {
       .prepare(
         `SELECT name
            FROM sqlite_master
-          WHERE type = 'table'
-            AND name IN (
+          WHERE name IN (
+              'import_recipe_executor_terminal_checkpoints',
+              'import_recipe_executor_terminal_checkpoints_immutable_delete',
+              'import_recipe_executor_terminal_checkpoints_immutable_update',
               'pilot_provider_terminal_checkpoints',
               'import_provider_terminal_checkpoints'
             )
@@ -2548,8 +2550,10 @@ describe("household public API to private Durable Object boundary", () => {
     const removedSharedAuthority = await database
       .prepare(
         `SELECT name FROM sqlite_master
-          WHERE type = 'table'
-            AND name IN (
+          WHERE name IN (
+              'import_recipe_executor_terminal_checkpoints',
+              'import_recipe_executor_terminal_checkpoints_immutable_delete',
+              'import_recipe_executor_terminal_checkpoints_immutable_update',
               'pilot_provider_terminal_checkpoints',
               'import_provider_terminal_checkpoints',
               'pilot_provider_recipe_recovery_attempts'

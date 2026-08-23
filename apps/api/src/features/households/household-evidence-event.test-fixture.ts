@@ -199,9 +199,7 @@ export default {
           database: environment.MealPlannerDatabase,
           householdDomain: terminalHousehold(environment),
           now: () =>
-            Schema.decodeUnknownSync(ImportTimestamp)(
-              "2026-08-23T08:00:00.000Z"
-            ),
+            Schema.decodeUnknownSync(ImportTimestamp)(new Date().toISOString()),
           recipeRecoveryStarter: { start: () => Effect.void },
           runtimeStage: "pilot-gaia-118",
           trace: Schema.decodeUnknownSync(ImportTraceContext)({

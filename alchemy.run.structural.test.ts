@@ -102,9 +102,6 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       1
     );
     expect(migration).toContain("CREATE TABLE `import_execution_runs`");
-    expect(migration).toContain(
-      "CREATE TABLE `import_recipe_executor_terminal_checkpoints`"
-    );
     expect(migration).toContain("`correlation_id` text NOT NULL");
     expect(migration).toContain("`acquisition_generation` integer");
     expect(migration).toContain("`canonical_source_id` text NOT NULL");
@@ -131,7 +128,20 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(sqlFiles).toEqual([
       "20260822083458_import_execution/migration.sql",
       "20260823055120_import_execution/migration.sql",
+      "20260823080018_import_execution/migration.sql",
     ]);
+    const retirementMigration = readRepoFile(
+      "./apps/api/migrations/20260823080018_import_execution/migration.sql"
+    );
+    expect(retirementMigration).toContain(
+      "DROP TRIGGER IF EXISTS `import_recipe_executor_terminal_checkpoints_immutable_update`;"
+    );
+    expect(retirementMigration).toContain(
+      "DROP TRIGGER IF EXISTS `import_recipe_executor_terminal_checkpoints_immutable_delete`;"
+    );
+    expect(retirementMigration).toContain(
+      "DROP TABLE `import_recipe_executor_terminal_checkpoints`;"
+    );
   });
 
   it("provisions Better Auth D1 while Drizzle Kit owns its checked-in migrations", () => {
@@ -199,6 +209,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const domainWorkerSource = readRepoFile(
       "./apps/api/src/features/households/household-domain-worker.ts"
     );
+    const commandRouterSource = readRepoFile(
+      "./apps/api/src/features/households/household-command-router.ts"
+    );
     const domainWorkerBindingSource = readRepoFile(
       "./apps/api/src/features/households/household-domain-binding.ts"
     );
@@ -227,11 +240,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(domainWorkerSource).toContain(
       'Schema.decodeUnknownEffect(schema, { onExcessProperty: "error" })'
     );
-    expect(domainWorkerSource).toContain(
-      "route(HouseholdEnsureInputSchema, input"
+    expect(domainWorkerSource).toMatch(
+      /route\(\s*HouseholdEnsureInputSchema,\s*input,\s*"ensure_household"/u
     );
-    expect(domainWorkerSource).toContain(
-      "locator.locate(command.admission.organizationId)"
+    expect(domainWorkerSource).toContain(".locate(organizationId)");
+    expect(commandRouterSource).toContain(
+      "requireHouseholdCommandAdmission(input.admission, input.purpose)"
     );
     expect(domainWorkerSource).not.toContain("better-auth");
     expect(objectSource).toContain("HouseholdObjectRuntime.pipe(");
