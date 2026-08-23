@@ -98,6 +98,7 @@ import {
   HouseholdResolveRecipeImportSourceInput as HouseholdResolveRecipeImportSourceInputSchema,
   HouseholdTransitionRecipeImportLifecycleInput as HouseholdTransitionRecipeImportLifecycleInputSchema,
 } from "./recipe-import/household-recipe-import.contract.js";
+import { requireHouseholdCommandAdmission } from "./rpc/command-envelope.js";
 import type {
   HouseholdCommandAdmission,
   HouseholdCommandPurpose,
@@ -325,9 +326,16 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
     })(input).pipe(
       Effect.mapError(() => HouseholdInvalidInput.make({})),
       Effect.flatMap((command) =>
-        Schema.encodeEffect(HouseholdCommitAcquisitionEvidenceInputSchema)(
-          command
+        requireHouseholdCommandAdmission(
+          command.admission,
+          "commit_acquisition_evidence"
         ).pipe(
+          Effect.mapError(() => HouseholdInvalidInput.make({})),
+          Effect.andThen(
+            Schema.encodeEffect(HouseholdCommitAcquisitionEvidenceInputSchema)(
+              command
+            )
+          ),
           Effect.mapError(() => HouseholdInvalidInput.make({})),
           Effect.flatMap((encodedCommand) =>
             routeAdmittedHouseholdCommand({
@@ -350,9 +358,16 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
     })(input).pipe(
       Effect.mapError(() => HouseholdInvalidInput.make({})),
       Effect.flatMap((command) =>
-        Schema.encodeEffect(HouseholdObserveEvidenceReferenceInputSchema)(
-          command
+        requireHouseholdCommandAdmission(
+          command.admission,
+          "observe_evidence_reference"
         ).pipe(
+          Effect.mapError(() => HouseholdInvalidInput.make({})),
+          Effect.andThen(
+            Schema.encodeEffect(HouseholdObserveEvidenceReferenceInputSchema)(
+              command
+            )
+          ),
           Effect.mapError(() => HouseholdInvalidInput.make({})),
           Effect.flatMap((encodedCommand) =>
             routeAdmittedHouseholdCommand({
@@ -375,9 +390,16 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
     })(input).pipe(
       Effect.mapError(() => HouseholdInvalidInput.make({})),
       Effect.flatMap((command) =>
-        Schema.encodeEffect(HouseholdMutateEvidenceStageInputSchema)(
-          command
+        requireHouseholdCommandAdmission(
+          command.admission,
+          "mutate_evidence_stage"
         ).pipe(
+          Effect.mapError(() => HouseholdInvalidInput.make({})),
+          Effect.andThen(
+            Schema.encodeEffect(HouseholdMutateEvidenceStageInputSchema)(
+              command
+            )
+          ),
           Effect.mapError(() => HouseholdInvalidInput.make({})),
           Effect.flatMap((encodedCommand) =>
             routeAdmittedHouseholdCommand({
@@ -400,9 +422,16 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
     })(input).pipe(
       Effect.mapError(() => HouseholdInvalidInput.make({})),
       Effect.flatMap((command) =>
-        Schema.encodeEffect(HouseholdPrepareRecipeRecoveryInputSchema)(
-          command
+        requireHouseholdCommandAdmission(
+          command.admission,
+          "prepare_recipe_recovery"
         ).pipe(
+          Effect.mapError(() => HouseholdInvalidInput.make({})),
+          Effect.andThen(
+            Schema.encodeEffect(HouseholdPrepareRecipeRecoveryInputSchema)(
+              command
+            )
+          ),
           Effect.mapError(() => HouseholdInvalidInput.make({})),
           Effect.flatMap((encodedCommand) =>
             routeAdmittedHouseholdCommand({

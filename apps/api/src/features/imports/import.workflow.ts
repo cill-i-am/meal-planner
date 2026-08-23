@@ -20,7 +20,6 @@ import { ImportProviderGateway } from "../../infrastructure/import-provider-gate
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
 import {
   HouseholdObserveEvidenceReferenceInput,
-  HouseholdReadImportTerminalCheckpointResult,
   HouseholdReadEvidenceReferencesResult,
 } from "../households/evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
@@ -109,6 +108,7 @@ import {
 } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
+import { persistHouseholdProviderTerminalAuthority } from "./import-provider-terminal-authority.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import {
   ProviderTaskCheckpoint,
@@ -835,48 +835,21 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             ) =>
               Cloudflare.Workflows.task(
                 `persist-${failure.stage}-terminal-v1`,
-                Effect.gen(function* persistHouseholdOwnedTerminalCheckpoint() {
-                  const stage = yield* householdDomain.readEvidenceStage({
-                    admission,
-                    expectedGeneration: generation,
-                    intentId,
-                    stage:
-                      failure.stage === "recipe" ? "extraction" : failure.stage,
-                  });
-                  if (stage === null || stage.outcome !== "Failed") {
-                    return yield* Effect.die(
-                      "Expected household terminal evidence stage authority"
-                    );
-                  }
-                  const checkpoint = yield* householdDomain
-                    .readImportTerminalCheckpoint({
-                      admission,
-                      expectedGeneration: generation,
-                      intentId,
-                      ownershipId: stage.dispatchId,
-                      stage:
-                        failure.stage === "recipe"
-                          ? "extraction"
-                          : failure.stage,
-                    })
-                    .pipe(
-                      Effect.flatMap(
-                        Schema.decodeUnknownEffect(
-                          HouseholdReadImportTerminalCheckpointResult,
-                          { onExcessProperty: "error" }
-                        )
-                      )
-                    );
-                  if (
-                    checkpoint === null ||
-                    checkpoint.failureCode !== failure.code ||
-                    checkpoint.inputFingerprint !== stage.inputFingerprint
-                  ) {
-                    return yield* Effect.die(
-                      "Expected matching household terminal checkpoint authority"
-                    );
-                  }
-                  return checkpoint;
+                persistHouseholdProviderTerminalAuthority({
+                  admission,
+                  failAmbiguous: (input) =>
+                    (failure.stage === "speech"
+                      ? evidenceRepositories(generation).speech
+                      : evidenceRepositories(generation).visual
+                    ).fail(input),
+                  failure,
+                  generation,
+                  householdDomain,
+                  intentId,
+                  now: () =>
+                    Schema.decodeUnknownSync(ImportTimestamp)(
+                      new Date().toISOString()
+                    ),
                 }).pipe(Effect.orDie)
               );
             const completeVisualAndRecipe = (
@@ -1525,8 +1498,11 @@ const reconcileSpeechRestart = (instance: WorkflowInstanceLike) =>
                     .pipe(
                       Effect.flatMap(({ status: reconciledStatus }) =>
                         [
+                          "complete",
+                          "errored",
                           "queued",
                           "running",
+                          "terminated",
                           "waiting",
                           "waitingForPause",
                         ].includes(reconciledStatus)

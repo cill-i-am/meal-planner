@@ -142,6 +142,44 @@ const activeInstance = {
   status: () => Effect.succeed({ status: "running" }),
 };
 
+describe("speech recovery workflow restart reconciliation", () => {
+  it("accepts a terminal workflow after a lost restart response", async () => {
+    await Promise.all(
+      (["complete", "errored", "terminated"] as const).map(
+        async (terminalStatus) => {
+          let restartCalls = 0;
+          let statusReads = 0;
+          const starter = makeImportWorkflowStarter({
+            createBatch: () => Effect.die("speech recovery must not create"),
+            get: () =>
+              Effect.succeed({
+                restart: () =>
+                  Effect.sync(() => {
+                    restartCalls += 1;
+                  }).pipe(Effect.andThen(Effect.die("response lost"))),
+                status: () =>
+                  Effect.sync(() => {
+                    const status =
+                      statusReads === 0 ? "complete" : terminalStatus;
+                    statusReads += 1;
+                    return { status };
+                  }),
+              }),
+          });
+
+          await Effect.runPromise(
+            starter.restartFromSpeech?.(importId) ??
+              Effect.die("missing speech recovery restart")
+          );
+
+          expect(restartCalls).toBe(1);
+          expect(statusReads).toBe(2);
+        }
+      )
+    );
+  });
+});
+
 describe("opaque import correlation continuity", () => {
   it("traverses queue, workflow, installed transport, budget and settlement without diverging on reconciliation", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());

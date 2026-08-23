@@ -1,3 +1,4 @@
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 
@@ -6,13 +7,29 @@ import {
   reconcileImportEvidenceQueueMessage,
 } from "../imports/import-evidence-event.js";
 import { makeD1ImportEvidenceRouteRepository } from "../imports/import-evidence-route.repository.d1.js";
-import { ImportTraceContext } from "../imports/import-observability.js";
+import {
+  makeHouseholdSpeechTranscriptionRepository,
+  makeHouseholdVisualEvidenceRepository,
+} from "../imports/import-evidence.repository.household.js";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+} from "../imports/import-media.model.js";
+import {
+  ImportCorrelationId,
+  ImportTraceContext,
+} from "../imports/import-observability.js";
+import { persistHouseholdProviderTerminalAuthority } from "../imports/import-provider-terminal-authority.js";
 import {
   ProviderTerminalSettlementRequest,
   ProviderTerminalSettlementResponse,
   makeD1ProviderTerminalSettlementService,
 } from "../imports/import-provider-terminal-settlement.js";
-import { ImportTimestamp } from "../imports/import.contracts.js";
+import {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "../imports/import.contracts.js";
 import { workflowStartUnavailable } from "../imports/import.errors.js";
 import { HouseholdObserveEvidenceReferenceInput } from "./evidence/household-evidence.contract.js";
 import type {
@@ -30,11 +47,15 @@ import type {
   HouseholdReadRecipeRecoveryAttemptInput,
   HouseholdReadRecipeRecoveryAttemptResult,
 } from "./evidence/household-evidence.contract.js";
-import { HouseholdRecipeImportFailure } from "./recipe-import/household-recipe-import.contract.js";
+import {
+  HouseholdImportMutationId,
+  HouseholdRecipeImportFailure,
+} from "./recipe-import/household-recipe-import.contract.js";
 import type {
   HouseholdReadRecipeImportExecutionInput,
   HouseholdRecipeImportExecutionView,
 } from "./recipe-import/household-recipe-import.contract.js";
+import { HouseholdSystemAdmission } from "./rpc/command-envelope.js";
 
 interface TestKvNamespace {
   readonly get: (key: string) => Promise<string | null>;
@@ -165,6 +186,10 @@ const terminalHousehold = (environment: Environment) => ({
     terminalRpc(() =>
       environment.HouseholdDomainWorker.prepareRecipeRecovery(input)
     ),
+  readEvidenceReferences: (input: HouseholdReadEvidenceReferencesInput) =>
+    terminalRpc(() =>
+      environment.HouseholdDomainWorker.readEvidenceReferences(input)
+    ),
   readEvidenceStage: (input: HouseholdReadEvidenceStageInput) =>
     terminalRpc(() =>
       environment.HouseholdDomainWorker.readEvidenceStage(input)
@@ -185,8 +210,119 @@ const terminalHousehold = (environment: Environment) => ({
     ),
 });
 
+const ProviderTerminalAttemptCommand = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  canonicalSourceId: SourceCanonicalId,
+  correlationId: ImportCorrelationId,
+  dispatchId: Schema.String,
+  expectedGeneration: AcquisitionGeneration,
+  inputFingerprint: Sha256Hex,
+  intentId: RecipeImportIntentId,
+  stage: Schema.Literals(["speech", "visual"]),
+});
+
+const testMutationId = (seed: string) =>
+  Effect.promise(() =>
+    crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(`household-provider-test:v1:${seed}`)
+    )
+  ).pipe(
+    Effect.map((digest) =>
+      Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0")
+      ).join("")
+    ),
+    Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId))
+  );
+
+const runAmbiguousProviderAttempt = (
+  environment: Environment,
+  command: typeof ProviderTerminalAttemptCommand.Type
+) => {
+  const householdDomain = terminalHousehold(environment);
+  const repositoryInput = {
+    canonicalSourceId: command.canonicalSourceId,
+    correlationId: command.correlationId,
+    generation: command.expectedGeneration,
+    householdDomain,
+    intentId: command.intentId,
+    mutationId: testMutationId,
+    organizationId: command.admission.organizationId,
+  };
+  const claim = {
+    dispatchId: command.dispatchId,
+    generation: command.expectedGeneration,
+    importId: Schema.decodeUnknownSync(ImportId)(command.intentId),
+    sourceMediaSha256: command.inputFingerprint,
+    startedAt: Schema.decodeUnknownSync(ImportTimestamp)(
+      "2026-08-23T10:00:00.000Z"
+    ),
+  };
+  const persist = (
+    failAmbiguous: Parameters<
+      typeof persistHouseholdProviderTerminalAuthority
+    >[0]["failAmbiguous"]
+  ) =>
+    persistHouseholdProviderTerminalAuthority({
+      admission: command.admission,
+      failAmbiguous,
+      failure: {
+        _tag: "Failed",
+        code: "outcome_unknown",
+        stage: command.stage,
+      },
+      generation: command.expectedGeneration,
+      householdDomain,
+      intentId: command.intentId,
+      now: () =>
+        Schema.decodeUnknownSync(ImportTimestamp)(new Date().toISOString()),
+    });
+  const invokeProviderOnce = Effect.promise(async () => {
+    const key = `provider-attempt-calls:${command.dispatchId}`;
+    if ((await environment.EVIDENCE_EVENT_RESULTS.get(key)) === null) {
+      await environment.EVIDENCE_EVENT_RESULTS.put(key, "1");
+    }
+  });
+  if (command.stage === "speech") {
+    const repository =
+      makeHouseholdSpeechTranscriptionRepository(repositoryInput);
+    return repository
+      .claim(claim)
+      .pipe(
+        Effect.andThen(invokeProviderOnce),
+        Effect.andThen(persist(repository.fail))
+      );
+  }
+  const repository = makeHouseholdVisualEvidenceRepository(repositoryInput);
+  return repository
+    .claim(claim)
+    .pipe(
+      Effect.andThen(invokeProviderOnce),
+      Effect.andThen(persist(repository.fail))
+    );
+};
+
 export default {
   async fetch(request: Request, environment: Environment) {
+    if (request.headers.get("x-test-provider-terminal-attempt") === "1") {
+      try {
+        const command = await Schema.decodeUnknownPromise(
+          ProviderTerminalAttemptCommand,
+          { onExcessProperty: "error" }
+        )(await request.json());
+        return Response.json(
+          await Effect.runPromise(
+            runAmbiguousProviderAttempt(environment, command)
+          )
+        );
+      } catch (error) {
+        return Response.json(
+          { error: JSON.stringify(error), rejected: true },
+          { status: 409 }
+        );
+      }
+    }
     if (request.headers.get("x-test-terminal-settlement") !== "1") {
       return new Response(null, { status: 404 });
     }
@@ -212,11 +348,28 @@ export default {
                 ? Effect.fail(workflowStartUnavailable())
                 : Effect.tryPromise({
                     catch: workflowStartUnavailable,
-                    try: () =>
-                      environment.EVIDENCE_EVENT_RESULTS.put(
-                        `speech-restart:${importId}`,
+                    try: async () => {
+                      const stateKey = `speech-restart:${importId}`;
+                      const state =
+                        await environment.EVIDENCE_EVENT_RESULTS.get(stateKey);
+                      if (state === "active" || state === "complete") {
+                        return;
+                      }
+                      const callsKey = `speech-restart-calls:${importId}`;
+                      const calls = Number(
+                        (await environment.EVIDENCE_EVENT_RESULTS.get(
+                          callsKey
+                        )) ?? "0"
+                      );
+                      await environment.EVIDENCE_EVENT_RESULTS.put(
+                        callsKey,
+                        String(calls + 1)
+                      );
+                      await environment.EVIDENCE_EVENT_RESULTS.put(
+                        stateKey,
                         "active"
-                      ),
+                      );
+                    },
                   }),
           },
         }).settle(command)

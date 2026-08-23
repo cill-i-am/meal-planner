@@ -144,6 +144,33 @@ describe("household foundation structural boundaries", () => {
     expect(getByName).toBeGreaterThan(locate);
   });
 
+  it("authorizes specialized private Worker commands before re-encoding", async () => {
+    const worker = await read(
+      path.join(householdRoot, "household-domain-worker.ts")
+    );
+    const specializedRouters = [
+      ["routeAcquisitionEvidence", "routeEvidenceObservation"],
+      ["routeEvidenceObservation", "routeEvidenceStage"],
+      ["routeEvidenceStage", "routeRecipeRecovery"],
+      ["routeRecipeRecovery", "return {"],
+    ] as const;
+
+    for (const [start, end] of specializedRouters) {
+      const routeSource = worker
+        .split(`const ${start}`)[1]
+        ?.split(`const ${end}`)[0];
+      expect(routeSource, `${start} is present`).toBeDefined();
+      const admission = routeSource?.indexOf(
+        "requireHouseholdCommandAdmission("
+      );
+      const encoding = routeSource?.indexOf("Schema.encodeEffect(");
+      expect(admission, `${start} admits before encoding`).toBeGreaterThan(-1);
+      expect(encoding, `${start} has a closed encoder`).toBeGreaterThan(
+        admission ?? Number.MAX_SAFE_INTEGER
+      );
+    }
+  });
+
   it("keeps external I/O outside the atomic admission/outbox repository", async () => {
     const sources = await readHouseholdAuthoritySources();
     const transactionOwners = sources.filter(({ source }) =>
@@ -229,6 +256,55 @@ describe("household foundation structural boundaries", () => {
       recoveryReadStep?.indexOf("inspectHouseholdEvidenceReferences(")
     ).toBeLessThan(
       recoveryReadStep?.indexOf("observeEvidenceReference(") ?? -1
+    );
+  });
+
+  it("persists ambiguous provider terminal authority after provider I/O", async () => {
+    const [authority, workflow] = await Promise.all([
+      read(
+        path.join(
+          apiFeaturesRoot,
+          "imports/import-provider-terminal-authority.ts"
+        )
+      ),
+      read(path.join(apiFeaturesRoot, "imports/import.workflow.ts")),
+    ]);
+    const terminalTask = workflow
+      .split("const persistTerminal")[1]
+      ?.split("const completeVisualAndRecipe")[0];
+
+    expect(terminalTask).toBeDefined();
+    expect(terminalTask).toContain(
+      "persistHouseholdProviderTerminalAuthority({"
+    );
+    expect(authority).toContain("input.failAmbiguous({");
+    expect(authority).toContain('failureCode: "outcome_unknown"');
+    expect(authority).toContain("dispatchId: stage.dispatchId");
+    expect(authority).toContain("sourceMediaSha256: stage.inputFingerprint");
+    expect(authority.indexOf("input.failAmbiguous({")).toBeLessThan(
+      authority.indexOf("readImportTerminalCheckpoint({")
+    );
+  });
+
+  it("binds provider stage mutation receipts to the dispatch attempt", async () => {
+    const repository = await read(
+      path.join(
+        apiFeaturesRoot,
+        "imports/import-evidence.repository.household.ts"
+      )
+    );
+
+    expect(repository).toContain(
+      `\`speech:claim:\${claim.dispatchId}:\${claim.sourceMediaSha256}\``
+    );
+    expect(repository).toContain(
+      `\`speech:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}\``
+    );
+    expect(repository).toContain(
+      `\`visual:claim:\${claim.dispatchId}:\${claim.sourceMediaSha256}\``
+    );
+    expect(repository).toContain(
+      `\`visual:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}\``
     );
   });
 

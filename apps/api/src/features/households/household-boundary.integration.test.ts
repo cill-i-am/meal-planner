@@ -371,6 +371,51 @@ const terminalSettlementCommand = async (
   });
 };
 
+const providerTerminalAttemptCommand = async (input: object) => {
+  const worker = await getRuntime().getWorker("evidence-consumer");
+  return worker.fetch("https://evidence-consumer.test/provider-terminal", {
+    body: JSON.stringify(input),
+    headers: {
+      "content-type": "application/json",
+      "x-test-provider-terminal-attempt": "1",
+    },
+    method: "POST",
+  });
+};
+
+const settleUnknownProviderBudget = async (input: {
+  readonly dispatchId: string;
+  readonly importId: string;
+  readonly providerStageId: "speech-transcription" | "visual-evidence";
+}) => {
+  const database = await getRuntime().getD1Database(
+    "MealPlannerDatabase",
+    "evidence-consumer"
+  );
+  const budget = makeD1PilotProviderBudgetRepository(
+    database,
+    "pilot-gaia-118"
+  );
+  const reservation = {
+    dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+      input.dispatchId
+    ),
+    maximumCostMicroUsd: 50_000,
+    providerStageId: Schema.decodeUnknownSync(PilotBudgetProviderStageId)(
+      input.providerStageId
+    ),
+    runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
+      `gaia-118:${input.importId}`
+    ),
+    timestamp: Schema.decodeUnknownSync(PilotBudgetTimestamp)(
+      new Date().toISOString()
+    ),
+  };
+  await Effect.runPromise(budget.reserve(reservation));
+  await Effect.runPromise(budget.beginInvocation(reservation));
+  await Effect.runPromise(budget.settleUnknown(reservation));
+};
+
 const evidenceEventResult = async (
   attemptsRemaining = 80
 ): Promise<unknown> => {
@@ -512,36 +557,17 @@ const prepareUnknownSpeechTerminal = async (input: {
   const generation = 1;
   const inputFingerprint = "2".repeat(64);
   const dispatchId = `speech:${admitted.id}:${generation}`;
-  const claim = await systemCommand("mutate-evidence-stage", {
+  const terminal = await providerTerminalAttemptCommand({
     admission,
+    canonicalSourceId: `tiktok:video:${input.videoId}`,
+    correlationId: "00000000-0000-4000-8000-000000000188",
+    dispatchId,
     expectedGeneration: generation,
     inputFingerprint,
     intentId: admitted.id,
-    mutationId: input.mutationIds[1],
-    operation: {
-      _tag: "Claim",
-      dispatchId,
-      stage: "speech",
-      startedAt: new Date().toISOString(),
-    },
+    stage: "speech",
   });
-  expect(claim.status, await claim.clone().text()).toBe(200);
-  const failed = await systemCommand("mutate-evidence-stage", {
-    admission,
-    expectedGeneration: generation,
-    inputFingerprint,
-    intentId: admitted.id,
-    mutationId: input.mutationIds[2],
-    operation: {
-      _tag: "Fail",
-      completedAt: new Date().toISOString(),
-      dispatchId,
-      failureCode: "outcome_unknown",
-      recovery: "operator_review",
-      stage: "speech",
-    },
-  });
-  expect(failed.status, await failed.clone().text()).toBe(200);
+  expect(terminal.status, await terminal.clone().text()).toBe(200);
 
   const database = await getRuntime().getD1Database(
     "MealPlannerDatabase",
@@ -555,26 +581,11 @@ const prepareUnknownSpeechTerminal = async (input: {
     )
     .bind(admitted.id, organization.id)
     .run();
-  const budget = makeD1PilotProviderBudgetRepository(
-    database,
-    "pilot-gaia-118"
-  );
-  const reservation = {
-    dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(dispatchId),
-    maximumCostMicroUsd: 50_000,
-    providerStageId: Schema.decodeUnknownSync(PilotBudgetProviderStageId)(
-      "speech-transcription"
-    ),
-    runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
-      `gaia-118:${admitted.id}`
-    ),
-    timestamp: Schema.decodeUnknownSync(PilotBudgetTimestamp)(
-      new Date().toISOString()
-    ),
-  };
-  await Effect.runPromise(budget.reserve(reservation));
-  await Effect.runPromise(budget.beginInvocation(reservation));
-  await Effect.runPromise(budget.settleUnknown(reservation));
+  await settleUnknownProviderBudget({
+    dispatchId,
+    importId: admitted.id,
+    providerStageId: "speech-transcription",
+  });
   const settled = await terminalSettlementCommand({
     acquisitionGeneration: generation,
     dispatchId,
@@ -584,6 +595,7 @@ const prepareUnknownSpeechTerminal = async (input: {
 
   return {
     admission,
+    canonicalSourceId: `tiktok:video:${input.videoId}`,
     dispatchId,
     generation,
     inputFingerprint,
@@ -2445,7 +2457,29 @@ describe("household public API to private Durable Object boundary", () => {
     await expect(
       restartState.get(`speech-restart:${fixture.intentId}`)
     ).resolves.toBe("active");
+    await expect(
+      restartState.get(`speech-restart-calls:${fixture.intentId}`)
+    ).resolves.toBe("1");
+    const completedRecovery = await providerTerminalAttemptCommand({
+      admission: fixture.admission,
+      canonicalSourceId: fixture.canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000194",
+      dispatchId: fixture.recoveryDispatchId,
+      expectedGeneration: fixture.generation,
+      inputFingerprint: fixture.inputFingerprint,
+      intentId: fixture.intentId,
+      stage: "speech",
+    });
+    expect(
+      completedRecovery.status,
+      await completedRecovery.clone().text()
+    ).toBe(200);
+    await restartState.put(`speech-restart:${fixture.intentId}`, "complete");
     const preparedStage = await readSpeechStage(fixture);
+    expect(preparedStage).toMatchObject({
+      dispatchId: fixture.recoveryDispatchId,
+      outcome: "Failed",
+    });
 
     const replay = await terminalSettlementCommand(fixture.recoveryCommand);
     expect(replay.status, await replay.clone().text()).toBe(200);
@@ -2456,6 +2490,9 @@ describe("household public API to private Durable Object boundary", () => {
       recoveryDispatchId: fixture.recoveryDispatchId,
     });
     expect(await readSpeechStage(fixture)).toEqual(preparedStage);
+    await expect(
+      restartState.get(`speech-restart-calls:${fixture.intentId}`)
+    ).resolves.toBe("1");
   }, 30_000);
 
   it("returns one exact household speech recovery across concurrent replays", async () => {
@@ -2482,6 +2519,314 @@ describe("household public API to private Durable Object boundary", () => {
       dispatchId: fixture.recoveryDispatchId,
       inputFingerprint: fixture.inputFingerprint,
       outcome: "Dispatching",
+    });
+    const restartState = await getRuntime().getKVNamespace(
+      "EVIDENCE_EVENT_RESULTS",
+      "evidence-consumer"
+    );
+    await expect(
+      restartState.get(`speech-restart-calls:${fixture.intentId}`)
+    ).resolves.toBe("1");
+  }, 30_000);
+
+  it("executes household speech recovery one and advances an unknown outcome to recovery two", async () => {
+    const fixture = await prepareUnknownSpeechTerminal({
+      label: "Household Speech Recovery Execution",
+      mutationIds: ["b".repeat(64), "c".repeat(64), "d".repeat(64)],
+      videoId: "7000000000000000110",
+    });
+    const firstRecovery = await terminalSettlementCommand(
+      fixture.recoveryCommand
+    );
+    expect(firstRecovery.status, await firstRecovery.clone().text()).toBe(200);
+
+    const firstAttempt = await providerTerminalAttemptCommand({
+      admission: fixture.admission,
+      canonicalSourceId: fixture.canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000189",
+      dispatchId: fixture.recoveryDispatchId,
+      expectedGeneration: fixture.generation,
+      inputFingerprint: fixture.inputFingerprint,
+      intentId: fixture.intentId,
+      stage: "speech",
+    });
+    expect(firstAttempt.status, await firstAttempt.clone().text()).toBe(200);
+    await expect(firstAttempt.json()).resolves.toMatchObject({
+      failureCode: "outcome_unknown",
+      ownershipId: fixture.recoveryDispatchId,
+      stage: "speech",
+    });
+
+    await settleUnknownProviderBudget({
+      dispatchId: fixture.recoveryDispatchId,
+      importId: fixture.intentId,
+      providerStageId: "speech-transcription",
+    });
+    const settlement = await terminalSettlementCommand({
+      acquisitionGeneration: fixture.generation,
+      dispatchId: fixture.recoveryDispatchId,
+      importId: fixture.intentId,
+    });
+    expect(settlement.status, await settlement.clone().text()).toBe(200);
+    const secondRecovery = await terminalSettlementCommand({
+      acquisitionGeneration: fixture.generation,
+      dispatchId: fixture.recoveryDispatchId,
+      importId: fixture.intentId,
+      operation: "prepare_speech_recovery",
+    });
+    expect(secondRecovery.status, await secondRecovery.clone().text()).toBe(
+      200
+    );
+    const recoveryTwoDispatchId = `${fixture.dispatchId}:recovery:2`;
+    await expect(secondRecovery.json()).resolves.toMatchObject({
+      outcome: "speech_recovery_activated",
+      recoveryDispatchId: recoveryTwoDispatchId,
+    });
+
+    const secondAttempt = await providerTerminalAttemptCommand({
+      admission: fixture.admission,
+      canonicalSourceId: fixture.canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000190",
+      dispatchId: recoveryTwoDispatchId,
+      expectedGeneration: fixture.generation,
+      inputFingerprint: fixture.inputFingerprint,
+      intentId: fixture.intentId,
+      stage: "speech",
+    });
+    expect(secondAttempt.status, await secondAttempt.clone().text()).toBe(200);
+    await expect(secondAttempt.json()).resolves.toMatchObject({
+      failureCode: "outcome_unknown",
+      ownershipId: recoveryTwoDispatchId,
+      stage: "speech",
+    });
+  }, 30_000);
+
+  it("settles and executes two household visual recovery attempts after provider ambiguity", async () => {
+    const videoId = "7000000000000000111";
+    const { admission, admitted, organization } =
+      await admitResolvedEvidenceImport({
+        label: "Household Visual Recovery Execution",
+        mutationId: "e".repeat(64),
+        videoId,
+      });
+    const generation = 1;
+    const canonicalSourceId = `tiktok:video:${videoId}`;
+    const inputFingerprint = "f".repeat(64);
+    const dispatchId = `visual:${admitted.id}:${generation}`;
+    const database = await getRuntime().getD1Database(
+      "MealPlannerDatabase",
+      "evidence-consumer"
+    );
+    await database
+      .prepare(
+        `INSERT INTO import_evidence_routes (
+           import_id, organization_id, route_version
+         ) VALUES (?, ?, 1)`
+      )
+      .bind(admitted.id, organization.id)
+      .run();
+
+    const originalAttempt = await providerTerminalAttemptCommand({
+      admission,
+      canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000191",
+      dispatchId,
+      expectedGeneration: generation,
+      inputFingerprint,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(originalAttempt.status, await originalAttempt.clone().text()).toBe(
+      200
+    );
+    const originalReplay = await providerTerminalAttemptCommand({
+      admission,
+      canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000191",
+      dispatchId,
+      expectedGeneration: generation,
+      inputFingerprint,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(originalReplay.status, await originalReplay.clone().text()).toBe(
+      200
+    );
+    const providerState = await getRuntime().getKVNamespace(
+      "EVIDENCE_EVENT_RESULTS",
+      "evidence-consumer"
+    );
+    await expect(
+      providerState.get(`provider-attempt-calls:${dispatchId}`)
+    ).resolves.toBe("1");
+    await settleUnknownProviderBudget({
+      dispatchId,
+      importId: admitted.id,
+      providerStageId: "visual-evidence",
+    });
+    const originalSettlement = await terminalSettlementCommand({
+      acquisitionGeneration: generation,
+      dispatchId,
+      importId: admitted.id,
+      operation: "settle_visual_unknown",
+    });
+    expect(
+      originalSettlement.status,
+      await originalSettlement.clone().text()
+    ).toBe(200);
+    const firstRecoveryCommand = {
+      acquisitionGeneration: generation,
+      dispatchId,
+      importId: admitted.id,
+      operation: "prepare_visual_recovery",
+    } as const;
+    const [firstRecovery, concurrentRecovery] = await Promise.all([
+      terminalSettlementCommand(firstRecoveryCommand),
+      terminalSettlementCommand(firstRecoveryCommand),
+    ]);
+    expect(firstRecovery.status, await firstRecovery.clone().text()).toBe(200);
+    expect(
+      concurrentRecovery.status,
+      await concurrentRecovery.clone().text()
+    ).toBe(200);
+    const recoveryOneDispatchId = `${dispatchId}:recovery:1`;
+    const firstRecoveryReceipt = await firstRecovery.json();
+    expect(await concurrentRecovery.json()).toEqual(firstRecoveryReceipt);
+    expect(firstRecoveryReceipt).toMatchObject({
+      outcome: "visual_recovery_prepared",
+      recoveryDispatchId: recoveryOneDispatchId,
+    });
+
+    const [staleGeneration, staleDispatch, staleFingerprint] =
+      await Promise.all([
+        providerTerminalAttemptCommand({
+          admission,
+          canonicalSourceId,
+          correlationId: "00000000-0000-4000-8000-000000000192",
+          dispatchId: recoveryOneDispatchId,
+          expectedGeneration: 2,
+          inputFingerprint,
+          intentId: admitted.id,
+          stage: "visual",
+        }),
+        providerTerminalAttemptCommand({
+          admission,
+          canonicalSourceId,
+          correlationId: "00000000-0000-4000-8000-000000000192",
+          dispatchId: `${recoveryOneDispatchId}:stale`,
+          expectedGeneration: generation,
+          inputFingerprint,
+          intentId: admitted.id,
+          stage: "visual",
+        }),
+        providerTerminalAttemptCommand({
+          admission,
+          canonicalSourceId,
+          correlationId: "00000000-0000-4000-8000-000000000192",
+          dispatchId: recoveryOneDispatchId,
+          expectedGeneration: generation,
+          inputFingerprint: "0".repeat(64),
+          intentId: admitted.id,
+          stage: "visual",
+        }),
+      ]);
+    expect(staleGeneration.status).toBe(409);
+    expect(staleDispatch.status).toBe(409);
+    expect(staleFingerprint.status).toBe(409);
+    const unchangedStageResponse = await systemCommand("read-evidence-stage", {
+      admission,
+      expectedGeneration: generation,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(
+      unchangedStageResponse.status,
+      await unchangedStageResponse.clone().text()
+    ).toBe(200);
+    await expect(unchangedStageResponse.json()).resolves.toMatchObject({
+      dispatchId: recoveryOneDispatchId,
+      inputFingerprint,
+      outcome: "Dispatching",
+    });
+
+    const firstAttempt = await providerTerminalAttemptCommand({
+      admission,
+      canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000192",
+      dispatchId: recoveryOneDispatchId,
+      expectedGeneration: generation,
+      inputFingerprint,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(firstAttempt.status, await firstAttempt.clone().text()).toBe(200);
+    await expect(firstAttempt.json()).resolves.toMatchObject({
+      failureCode: "outcome_unknown",
+      ownershipId: recoveryOneDispatchId,
+      stage: "visual",
+    });
+    const firstAttemptReplay = await providerTerminalAttemptCommand({
+      admission,
+      canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000192",
+      dispatchId: recoveryOneDispatchId,
+      expectedGeneration: generation,
+      inputFingerprint,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(
+      firstAttemptReplay.status,
+      await firstAttemptReplay.clone().text()
+    ).toBe(200);
+    await expect(
+      providerState.get(`provider-attempt-calls:${recoveryOneDispatchId}`)
+    ).resolves.toBe("1");
+    await settleUnknownProviderBudget({
+      dispatchId: recoveryOneDispatchId,
+      importId: admitted.id,
+      providerStageId: "visual-evidence",
+    });
+    const recoveryOneSettlement = await terminalSettlementCommand({
+      acquisitionGeneration: generation,
+      dispatchId: recoveryOneDispatchId,
+      importId: admitted.id,
+      operation: "settle_visual_unknown",
+    });
+    expect(
+      recoveryOneSettlement.status,
+      await recoveryOneSettlement.clone().text()
+    ).toBe(200);
+    const secondRecovery = await terminalSettlementCommand({
+      acquisitionGeneration: generation,
+      dispatchId: recoveryOneDispatchId,
+      importId: admitted.id,
+      operation: "prepare_visual_recovery",
+    });
+    expect(secondRecovery.status, await secondRecovery.clone().text()).toBe(
+      200
+    );
+    const recoveryTwoDispatchId = `${dispatchId}:recovery:2`;
+    await expect(secondRecovery.json()).resolves.toMatchObject({
+      outcome: "visual_recovery_prepared",
+      recoveryDispatchId: recoveryTwoDispatchId,
+    });
+
+    const secondAttempt = await providerTerminalAttemptCommand({
+      admission,
+      canonicalSourceId,
+      correlationId: "00000000-0000-4000-8000-000000000193",
+      dispatchId: recoveryTwoDispatchId,
+      expectedGeneration: generation,
+      inputFingerprint,
+      intentId: admitted.id,
+      stage: "visual",
+    });
+    expect(secondAttempt.status, await secondAttempt.clone().text()).toBe(200);
+    await expect(secondAttempt.json()).resolves.toMatchObject({
+      failureCode: "outcome_unknown",
+      ownershipId: recoveryTwoDispatchId,
+      stage: "visual",
     });
   }, 30_000);
 

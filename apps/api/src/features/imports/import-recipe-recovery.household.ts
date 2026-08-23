@@ -65,6 +65,7 @@ export interface HouseholdProviderRecovery {
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly originalDispatchId: string;
   readonly recoveryDispatchId: string;
+  readonly requiresWorkflowActivation: boolean;
 }
 
 export const recipeRecoveryHouseholdMutationId = (semanticKey: string) =>
@@ -439,11 +440,34 @@ export const prepareHouseholdProviderRecovery = (input: {
         })(rawReceipt).pipe(Effect.mapError(() => importTransitionRejected()))
       )
     );
+    const currentStage = yield* input.householdDomain
+      .readEvidenceStage({
+        admission: authority.admission,
+        expectedGeneration: input.generation,
+        intentId: authority.intentId,
+        stage: input.stage,
+      })
+      .pipe(
+        Effect.mapError(mapHouseholdFailure),
+        Effect.flatMap((rawStage) =>
+          Schema.decodeUnknownEffect(HouseholdReadEvidenceStageResult, {
+            onExcessProperty: "error",
+          })(rawStage).pipe(Effect.mapError(() => importTransitionRejected()))
+        )
+      );
+    if (
+      currentStage === null ||
+      currentStage.dispatchId !== recoveryDispatchId ||
+      currentStage.inputFingerprint !== checkpoint.inputFingerprint
+    ) {
+      return yield* Effect.fail(importTransitionRejected());
+    }
     return {
       acquisitionGeneration: input.generation,
       importId: input.importId,
       originalDispatchId: input.originalDispatchId,
       recoveryDispatchId,
+      requiresWorkflowActivation: currentStage.outcome === "Dispatching",
     } satisfies HouseholdProviderRecovery;
   });
 

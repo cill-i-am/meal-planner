@@ -507,7 +507,7 @@ const prepareProviderRecovery = (
       },
       stage,
     }).pipe(Effect.mapError(mapHouseholdError));
-    if (stage === "speech") {
+    if (stage === "speech" && recovery.requiresWorkflowActivation) {
       const restart = service.workflowStarter?.restartFromSpeech;
       if (restart === undefined) {
         return yield* Effect.fail(failure("persistence_unavailable"));
