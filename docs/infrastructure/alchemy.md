@@ -110,17 +110,20 @@ Bank, receipts, and meal planning. Its generated Drizzle migrations live under
 `apps/api/household-migrations` and are applied inside each object by the
 Alchemy Durable Object Drizzle runtime.
 
-`MealPlannerDatabase` remains a shared operational D1 for the settlement and
-terminal-recovery facts scheduled for Slice 3. Its generated migration is
-under `apps/api/migrations`; the stable tracking table is `d1_migrations`.
+`MealPlannerDatabase` remains a shared operational D1 for objectively global
+provider-budget settlement and reconciliation plus the private evidence-event
+route. Terminal checkpoints, recovery attempts, and recovery replay authority
+are household-local. The D1 generated migration is under
+`apps/api/migrations`; the stable tracking table is `d1_migrations`.
 Run `pnpm --filter @meal-planner/api db:generate` or
 `pnpm --dir apps/api db:generate`, then review the generated timestamped
 `migration.sql` and `snapshot.json` together. Regeneration without a schema
 change must create no new migration.
 
-The D1 baseline contains the remaining execution, settlement, and recovery
-records. Production evidence stages do not write their household metadata to
-D1. The schema deliberately omits
+The D1 baseline contains the remaining noncanonical execution bookkeeping and
+global settlement controls. Production evidence stages, terminal checkpoints,
+and recovery attempts do not write household authority to D1. The schema
+deliberately omits
 the former public intent, idempotency, timeline, review, Recipe Bank, batch, and
 moved receipt tables. Those prototype tables are discarded rather than copied
 or backfilled. Structural tests reject both their SQL names and their removed
@@ -163,9 +166,10 @@ the per-object Drizzle migration owns schema evolution. No lookup mapper,
 shared read model, dual write, or public household Worker route is added.
 
 The household object persists submitted-source ownership, public import state,
-idempotency, review, recipes, compact evidence metadata and R2 references, and
-dispatch receipts. D1 persists only the remaining operational settlement and
-recovery facts. Neither database
+idempotency, review, recipes, compact evidence metadata and R2 references,
+terminal checkpoints, recovery attempts, and dispatch/replay receipts.
+D1 persists only noncanonical execution bookkeeping and objectively global
+provider-budget settlement/reconciliation facts. Neither database
 persists credentials, raw provider payloads, or media. TikTok requests are
 limited to the bounded source-resolution and acquisition Workflow.
 
@@ -203,10 +207,11 @@ transaction, and raw organization identifiers are neither logged nor returned.
 Public admission commits a compact household outbox intent before the API host
 starts the deterministic generation-specific Workflow. Host retries reconcile
 the same Workflow identity and record their delivery result through a closed
-system command. No Queue or batch writer participates in Slice 1. The existing
-provider terminal-settlement route remains a private, explicitly authorized
-execution seam for later-slice evidence and recovery behavior; it cannot write
-canonical public import, review, or Recipe Bank state directly.
+system command. No Queue or batch writer participates in Slice 1. The provider
+terminal-settlement route remains a private, explicitly authorized execution
+seam. It proves the household-local terminal identity before globally settling
+provider cost, and routes recovery preparation through the household boundary;
+it cannot author recovery or other household product state in D1.
 
 ## Cleanup and test boundaries
 

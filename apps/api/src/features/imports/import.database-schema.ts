@@ -159,60 +159,6 @@ export const importExecutionRuns = sqliteTable(
   ]
 );
 
-/** Slice 3 operational checkpoint facts keyed by household-owned stage identity. */
-export const pilotProviderTerminalCheckpoints = sqliteTable(
-  "pilot_provider_terminal_checkpoints",
-  {
-    acquisitionGeneration: integer("acquisition_generation").notNull(),
-    completedAt: text("completed_at").notNull(),
-    createdAt: text("created_at").notNull(),
-    failureCode: text("failure_code").notNull(),
-    importId: text("import_id").notNull(),
-    ownershipId: text("ownership_id").notNull(),
-    providerStage: text("provider_stage", {
-      enum: ["recipe", "speech", "visual"],
-    }).notNull(),
-  },
-  (table) => [
-    primaryKey({
-      columns: [
-        table.importId,
-        table.acquisitionGeneration,
-        table.providerStage,
-        table.ownershipId,
-      ],
-    }),
-    foreignKey({
-      columns: [table.importId, table.acquisitionGeneration],
-      foreignColumns: [
-        importExecutionRuns.id,
-        importExecutionRuns.acquisitionGeneration,
-      ],
-      name: "pilot_provider_terminal_checkpoints_import_generation_fk",
-    })
-      .onDelete("restrict")
-      .onUpdate("restrict"),
-    index("pilot_provider_terminal_checkpoints_import_idx").on(
-      table.importId,
-      table.acquisitionGeneration,
-      table.providerStage,
-      table.completedAt
-    ),
-    check(
-      "pilot_provider_terminal_checkpoints_generation_check",
-      sql`typeof(${table.acquisitionGeneration}) = 'integer' AND ${table.acquisitionGeneration} >= 0 AND ${table.acquisitionGeneration} <= 9007199254740991`
-    ),
-    check(
-      "pilot_provider_terminal_checkpoints_ownership_check",
-      sql`length(${table.ownershipId}) BETWEEN 1 AND 128`
-    ),
-    check(
-      "pilot_provider_terminal_checkpoints_failure_check",
-      sql`length(${table.failureCode}) BETWEEN 1 AND 64`
-    ),
-  ]
-);
-
 export const importRecipeExecutorTerminalCheckpoints = sqliteTable(
   "import_recipe_executor_terminal_checkpoints",
   {

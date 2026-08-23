@@ -6,6 +6,7 @@ import {
   VerifiedSourceMetadata,
 } from "../../imports/import-media.model.js";
 import { RecipeDraft } from "../../imports/import-recipe-draft.repository.js";
+import { RecipeExtractorDescriptor } from "../../imports/import-recipe-extractor.js";
 import { ImportTimestamp } from "../../imports/import.contracts.js";
 import { HouseholdImportMutationId } from "../recipe-import/household-recipe-import.contract.js";
 import { HouseholdSystemAdmission } from "../rpc/command-envelope.js";
@@ -293,6 +294,15 @@ export const HouseholdExtractionEvidenceResult = Schema.Struct({
   _tag: Schema.Literal("Extraction"),
   draft: RecipeDraft,
 });
+export const HouseholdExtractionClaimContext = Schema.Struct({
+  descriptor: RecipeExtractorDescriptor,
+  evidenceFingerprint: HouseholdEvidenceSha256,
+  sourceMediaSha256: HouseholdEvidenceSha256,
+  transcriptSha256: HouseholdEvidenceSha256,
+  visualManifestSha256: HouseholdEvidenceSha256,
+});
+export type HouseholdExtractionClaimContext =
+  typeof HouseholdExtractionClaimContext.Type;
 export const HouseholdEvidenceStageResult = Schema.Union([
   HouseholdCarouselEvidenceResult,
   HouseholdExtractionEvidenceResult,
@@ -346,6 +356,7 @@ export const HouseholdMutateEvidenceStageInput = Schema.Struct({
     Schema.Struct({
       _tag: Schema.Literal("Claim"),
       dispatchId: DispatchId,
+      extractionContext: Schema.optionalKey(HouseholdExtractionClaimContext),
       stage: HouseholdEvidenceStage,
       startedAt: ImportTimestamp,
     }),
@@ -378,7 +389,12 @@ export const HouseholdMutateEvidenceStageInput = Schema.Struct({
       dispatchId: DispatchId,
       predecessorDispatchId: DispatchId,
       predecessorInputFingerprint: HouseholdEvidenceSha256,
-      stage: Schema.Literal("extraction"),
+      settlement: Schema.Struct({
+        completedAt: ImportTimestamp,
+        dispatchId: DispatchId,
+        outcome: Schema.Literal("settled_unknown"),
+      }),
+      stage: Schema.Literals(["speech", "visual"]),
       startedAt: ImportTimestamp,
     }),
   ]),
@@ -417,6 +433,7 @@ export const HouseholdReadEvidenceStageResult = Schema.NullOr(
     committedAt: ImportTimestamp,
     dispatchId: DispatchId,
     executionGeneration: PositiveSafeInteger,
+    extractionContext: Schema.NullOr(HouseholdExtractionClaimContext),
     failureCode: Schema.NullOr(HouseholdEvidenceStageFailureCode),
     inputFingerprint: HouseholdEvidenceSha256,
     intentId: RecipeImportIntentId,
@@ -428,3 +445,110 @@ export const HouseholdReadEvidenceStageResult = Schema.NullOr(
 );
 export type HouseholdReadEvidenceStageResult =
   typeof HouseholdReadEvidenceStageResult.Type;
+
+export const HouseholdTerminalCheckpointStage = Schema.Literals([
+  "extraction",
+  "speech",
+  "visual",
+]);
+export type HouseholdTerminalCheckpointStage =
+  typeof HouseholdTerminalCheckpointStage.Type;
+
+export const HouseholdReadImportTerminalCheckpointInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+  ownershipId: DispatchId,
+  stage: HouseholdTerminalCheckpointStage,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdReadImportTerminalCheckpointInput =
+  typeof HouseholdReadImportTerminalCheckpointInput.Type;
+
+/** Closed private result; no organization or R2 identity is projected. */
+export const HouseholdReadImportTerminalCheckpointResult = Schema.NullOr(
+  Schema.Struct({
+    completedAt: ImportTimestamp,
+    executionGeneration: PositiveSafeInteger,
+    failureCode: HouseholdEvidenceStageFailureCode,
+    inputFingerprint: HouseholdEvidenceSha256,
+    intentId: RecipeImportIntentId,
+    ownershipId: DispatchId,
+    stage: HouseholdTerminalCheckpointStage,
+  })
+);
+export type HouseholdReadImportTerminalCheckpointResult =
+  typeof HouseholdReadImportTerminalCheckpointResult.Type;
+
+export const HouseholdRecipeRecoveryOrdinal = Schema.Literals([
+  1, 2, 3, 4, 5, 6, 7, 8,
+]);
+export type HouseholdRecipeRecoveryOrdinal =
+  typeof HouseholdRecipeRecoveryOrdinal.Type;
+
+export const HouseholdRecipeRecoveryAttempt = Schema.Struct({
+  acquisitionGeneration: PositiveSafeInteger,
+  createdAt: ImportTimestamp,
+  currentDispatchId: DispatchId,
+  currentExtractionFingerprint: HouseholdEvidenceSha256,
+  evidenceFingerprint: HouseholdEvidenceSha256,
+  importId: RecipeImportIntentId,
+  ordinal: HouseholdRecipeRecoveryOrdinal,
+  predecessorDispatchId: DispatchId,
+  predecessorExtractionFingerprint: HouseholdEvidenceSha256,
+  rootDispatchId: DispatchId,
+  rootExtractionFingerprint: HouseholdEvidenceSha256,
+  sourceMediaSha256: HouseholdEvidenceSha256,
+  terminalCheckpointCompletedAt: ImportTimestamp,
+  transcriptSha256: HouseholdEvidenceSha256,
+  visualManifestSha256: HouseholdEvidenceSha256,
+});
+export type HouseholdRecipeRecoveryAttempt =
+  typeof HouseholdRecipeRecoveryAttempt.Type;
+
+export const HouseholdPrepareRecipeRecoveryInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+  mutationId: HouseholdImportMutationId,
+  predecessorDispatchId: DispatchId,
+  settlement: Schema.Struct({
+    completedAt: ImportTimestamp,
+    dispatchId: DispatchId,
+    outcome: Schema.Literal("settled_unknown"),
+  }),
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdPrepareRecipeRecoveryInput =
+  typeof HouseholdPrepareRecipeRecoveryInput.Type;
+
+/** Closed private recovery receipt; evidence object keys never cross it. */
+export const HouseholdPrepareRecipeRecoveryResult = Schema.Struct({
+  attempt: HouseholdRecipeRecoveryAttempt,
+  outcome: Schema.Literals(["Prepared", "Replay"]),
+  receiptVersion: Schema.Literal(1),
+});
+export type HouseholdPrepareRecipeRecoveryResult =
+  typeof HouseholdPrepareRecipeRecoveryResult.Type;
+
+export const HouseholdReadRecipeRecoveryAttemptInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+  selector: Schema.Union([
+    Schema.Struct({
+      _tag: Schema.Literal("Ordinal"),
+      ordinal: HouseholdRecipeRecoveryOrdinal,
+    }),
+    Schema.Struct({
+      _tag: Schema.Literal("Latest"),
+      rootDispatchId: DispatchId,
+    }),
+  ]),
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdReadRecipeRecoveryAttemptInput =
+  typeof HouseholdReadRecipeRecoveryAttemptInput.Type;
+
+export const HouseholdReadRecipeRecoveryAttemptResult = Schema.NullOr(
+  HouseholdRecipeRecoveryAttempt
+);
+export type HouseholdReadRecipeRecoveryAttemptResult =
+  typeof HouseholdReadRecipeRecoveryAttemptResult.Type;

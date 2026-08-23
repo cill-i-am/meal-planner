@@ -160,6 +160,7 @@ export const makeImportWorkerRequestLayer = (
         now: () => timestamp(input.now),
         recipeRecoveryStarter: input.recipeRecoveryStarter,
         runtimeStage: input.runtimeStage,
+        trace: input.trace,
         workflowStarter: input.importWorkflowStarter,
       })
     )

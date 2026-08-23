@@ -20,6 +20,7 @@ import { ImportProviderGateway } from "../../infrastructure/import-provider-gate
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
 import {
   HouseholdObserveEvidenceReferenceInput,
+  HouseholdReadImportTerminalCheckpointResult,
   HouseholdReadEvidenceReferencesResult,
 } from "../households/evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
@@ -108,10 +109,6 @@ import {
 } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
-import {
-  makeD1ProviderTerminalCheckpointRepository,
-  makeD1ProviderTerminalRecoveryRepository,
-} from "./import-provider-terminal.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import {
   ProviderTaskCheckpoint,
@@ -131,6 +128,7 @@ import {
   publicIntentFailureForProviderStage,
 } from "./import-public-failure.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
+import { readHouseholdProviderDispatchId } from "./import-recipe-recovery.household.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import {
@@ -741,12 +739,36 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   .setActivity(boundary, attempt, "working")
                   .pipe(Effect.orDie),
             });
-            const terminalCheckpoints =
-              makeD1ProviderTerminalCheckpointRepository(database);
-            const terminalRecovery = makeD1ProviderTerminalRecoveryRepository(
-              database,
-              pilotProviderBudgetRuntime.runtimeStage
-            );
+            const terminalRecovery = {
+              speechDispatchId: ({
+                acquisitionGeneration,
+                importId: requestedImportId,
+              }: {
+                readonly acquisitionGeneration: AcquisitionGeneration;
+                readonly importId: ImportId;
+              }) =>
+                readHouseholdProviderDispatchId({
+                  database,
+                  generation: acquisitionGeneration,
+                  householdDomain,
+                  importId: requestedImportId,
+                  stage: "speech",
+                }),
+              visualDispatchId: ({
+                acquisitionGeneration,
+                importId: requestedImportId,
+              }: {
+                readonly acquisitionGeneration: AcquisitionGeneration;
+                readonly importId: ImportId;
+              }) =>
+                readHouseholdProviderDispatchId({
+                  database,
+                  generation: acquisitionGeneration,
+                  householdDomain,
+                  importId: requestedImportId,
+                  stage: "visual",
+                }),
+            };
             const now = currentPilotBudgetTimestamp;
             const dispatch = makePilotProviderDispatchGate({
               correlationId,
@@ -826,16 +848,35 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                       "Expected household terminal evidence stage authority"
                     );
                   }
-                  return yield* terminalCheckpoints.persist({
-                    acquisitionGeneration: generation,
-                    completedAt: Schema.decodeUnknownSync(ImportTimestamp)(
-                      stage.committedAt
-                    ),
-                    failureCode: failure.code,
-                    importId,
-                    ownershipId: stage.dispatchId,
-                    providerStage: failure.stage,
-                  });
+                  const checkpoint = yield* householdDomain
+                    .readImportTerminalCheckpoint({
+                      admission,
+                      expectedGeneration: generation,
+                      intentId,
+                      ownershipId: stage.dispatchId,
+                      stage:
+                        failure.stage === "recipe"
+                          ? "extraction"
+                          : failure.stage,
+                    })
+                    .pipe(
+                      Effect.flatMap(
+                        Schema.decodeUnknownEffect(
+                          HouseholdReadImportTerminalCheckpointResult,
+                          { onExcessProperty: "error" }
+                        )
+                      )
+                    );
+                  if (
+                    checkpoint === null ||
+                    checkpoint.failureCode !== failure.code ||
+                    checkpoint.inputFingerprint !== stage.inputFingerprint
+                  ) {
+                    return yield* Effect.die(
+                      "Expected matching household terminal checkpoint authority"
+                    );
+                  }
+                  return checkpoint;
                 }).pipe(Effect.orDie)
               );
             const completeVisualAndRecipe = (

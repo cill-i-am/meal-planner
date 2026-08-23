@@ -27,6 +27,23 @@ const readProductionHouseholdSources = async () => {
   );
 };
 
+const readProductionFeatureSources = async () => {
+  const paths = await readdir(apiFeaturesRoot, { recursive: true });
+  return Promise.all(
+    paths
+      .filter(
+        (relativePath) =>
+          relativePath.endsWith(".ts") &&
+          !relativePath.endsWith(".test.ts") &&
+          !relativePath.endsWith(".test-fixture.ts")
+      )
+      .map(async (relativePath) => ({
+        path: relativePath,
+        source: await read(path.join(apiFeaturesRoot, relativePath)),
+      }))
+  );
+};
+
 const readHouseholdAuthoritySources = async () => [
   ...(await readProductionHouseholdSources()),
   {
@@ -218,6 +235,48 @@ describe("household foundation structural boundaries", () => {
     expect(productionRecovery).toContain("householdDomain");
     expect(productionRecovery).not.toContain("makeD1RecipeDraftRepository");
     expect(productionRecovery).not.toContain("makeD1ImportExecutionRepository");
+  });
+
+  it("removes legacy D1 terminal authority and keeps the household evidence transaction I/O-free", async () => {
+    const sources = await readProductionFeatureSources();
+    const forbiddenLegacyAuthority = [
+      "import_provider_terminal_checkpoints",
+      "pilot_provider_terminal_checkpoints",
+      "pilot_provider_speech_recoveries",
+      "pilot_provider_visual_recoveries",
+      "pilot_provider_visual_second_recoveries",
+      "pilot_provider_recipe_recovery_attempts",
+      "makeD1ProviderTerminalCheckpointRepository",
+      "makeD1ProviderTerminalRecoveryRepository",
+    ];
+
+    for (const { path: sourcePath, source } of sources) {
+      for (const token of forbiddenLegacyAuthority) {
+        expect(source, `${sourcePath} retains ${token}`).not.toContain(token);
+      }
+    }
+
+    expect(sources.map(({ path: sourcePath }) => sourcePath)).not.toContain(
+      "imports/import-provider-terminal.ts"
+    );
+
+    const [householdSchema, sharedSchema, evidenceRepository] =
+      await Promise.all([
+        read(path.join(householdRoot, "household.database-schema.ts")),
+        read(path.join(apiFeaturesRoot, "imports/import.database-schema.ts")),
+        read(
+          path.join(householdRoot, "evidence/household-evidence.repository.ts")
+        ),
+      ]);
+    expect(householdSchema).toContain('"import_terminal_checkpoints"');
+    expect(householdSchema).not.toContain("pilot");
+    for (const token of forbiddenLegacyAuthority) {
+      expect(sharedSchema).not.toContain(token);
+    }
+    expect(evidenceRepository).toMatch(/database\s*\.\s*transaction\s*\(/u);
+    expect(evidenceRepository).not.toMatch(
+      /cloudflare:workers|alchemy\/Cloudflare|R2Bucket|Workflow|Queue|\.getByName\(|\bfetch\s*\(|\.head\s*\(|\.send\s*\(/u
+    );
   });
 
   it("wires R2 lifecycle notifications to household evidence observation", async () => {

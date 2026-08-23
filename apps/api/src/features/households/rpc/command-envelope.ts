@@ -66,12 +66,15 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "confirm_recipe_import_action",
   "list_recipe_bank",
   "observe_evidence_reference",
+  "prepare_recipe_recovery",
   "read_recipe",
   "read_recipe_import",
   "read_recipe_import_action",
   "read_recipe_import_execution",
   "read_evidence_references",
   "read_evidence_stage",
+  "read_import_terminal_checkpoint",
+  "read_recipe_recovery_attempt",
   "read_recipe_import_timeline",
   "record_recipe_import_dispatch",
   "read_meal_plan",
@@ -121,9 +124,12 @@ export const requireHouseholdCommandAdmission = (
           (purpose === "commit_acquisition_evidence" ||
             purpose === "commit_recipe_import_draft" ||
             purpose === "observe_evidence_reference" ||
+            purpose === "prepare_recipe_recovery" ||
             purpose === "read_evidence_references" ||
             purpose === "mutate_evidence_stage" ||
             purpose === "read_evidence_stage" ||
+            purpose === "read_import_terminal_checkpoint" ||
+            purpose === "read_recipe_recovery_attempt" ||
             purpose === "read_recipe_import_execution" ||
             purpose === "resolve_recipe_import_source" ||
             purpose === "transition_recipe_import_lifecycle")) ||

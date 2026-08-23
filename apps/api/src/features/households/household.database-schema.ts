@@ -134,6 +134,7 @@ export const householdEvidenceMutationReceipts = sqliteTable(
 export const householdEvidenceStageExecutions = sqliteTable(
   "household_evidence_stage_executions",
   {
+    claimJson: text("claim_json"),
     committedAt: text("committed_at").notNull(),
     dispatchId: text("dispatch_id").notNull(),
     executionGeneration: integer("execution_generation").notNull(),
@@ -148,6 +149,75 @@ export const householdEvidenceStageExecutions = sqliteTable(
     primaryKey({
       columns: [table.intentId, table.executionGeneration, table.stage],
     }),
+  ]
+);
+
+/** Immutable household authority for terminal provider-stage identities. */
+export const importTerminalCheckpoints = sqliteTable(
+  "import_terminal_checkpoints",
+  {
+    completedAt: text("completed_at").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    failureCode: text("failure_code").notNull(),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    intentId: text("intent_id").notNull(),
+    ownershipId: text("ownership_id").notNull(),
+    stage: text("stage", {
+      enum: ["extraction", "speech", "visual"],
+    }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.intentId,
+        table.executionGeneration,
+        table.stage,
+        table.ownershipId,
+      ],
+    }),
+  ]
+);
+
+/** Canonical household recipe-recovery ancestry and restart authority. */
+export const importRecipeRecoveryAttempts = sqliteTable(
+  "import_recipe_recovery_attempts",
+  {
+    createdAt: text("created_at").notNull(),
+    currentDispatchId: text("current_dispatch_id").notNull(),
+    currentExtractionFingerprint: text(
+      "current_extraction_fingerprint"
+    ).notNull(),
+    evidenceFingerprint: text("evidence_fingerprint").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    intentId: text("intent_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    predecessorDispatchId: text("predecessor_dispatch_id").notNull(),
+    predecessorExtractionFingerprint: text(
+      "predecessor_extraction_fingerprint"
+    ).notNull(),
+    rootDispatchId: text("root_dispatch_id").notNull(),
+    rootExtractionFingerprint: text("root_extraction_fingerprint").notNull(),
+    sourceMediaSha256: text("source_media_sha256").notNull(),
+    terminalCheckpointCompletedAt: text(
+      "terminal_checkpoint_completed_at"
+    ).notNull(),
+    transcriptSha256: text("transcript_sha256").notNull(),
+    visualManifestSha256: text("visual_manifest_sha256").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.intentId, table.executionGeneration, table.ordinal],
+    }),
+    uniqueIndex("import_recipe_recovery_current_dispatch_unique").on(
+      table.intentId,
+      table.executionGeneration,
+      table.currentDispatchId
+    ),
+    uniqueIndex("import_recipe_recovery_current_extraction_unique").on(
+      table.intentId,
+      table.executionGeneration,
+      table.currentExtractionFingerprint
+    ),
   ]
 );
 

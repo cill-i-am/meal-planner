@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "8e9b936d-21ed-4e38-9b68-3e20f2ed3385",
+  "id": "e56f80eb-6c6d-415d-ae02-0de6980d20dd",
   "prevIds": ["5723a15a-f6b3-429a-b186-d840ba2e5cb0"],
   "ddl": [
     {
@@ -66,6 +66,14 @@
     },
     {
       "name": "household_recipes",
+      "entityType": "tables"
+    },
+    {
+      "name": "import_recipe_recovery_attempts",
+      "entityType": "tables"
+    },
+    {
+      "name": "import_terminal_checkpoints",
       "entityType": "tables"
     },
     {
@@ -227,6 +235,16 @@
       "name": "sha256",
       "entityType": "columns",
       "table": "household_evidence_references"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claim_json",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
     },
     {
       "type": "text",
@@ -1019,6 +1037,226 @@
       "table": "household_recipes"
     },
     {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "current_dispatch_id",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "current_extraction_fingerprint",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "evidence_fingerprint",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "execution_generation",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "intent_id",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ordinal",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "predecessor_dispatch_id",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "predecessor_extraction_fingerprint",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "root_dispatch_id",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "root_extraction_fingerprint",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_media_sha256",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "terminal_checkpoint_completed_at",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "transcript_sha256",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "visual_manifest_sha256",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "import_terminal_checkpoints"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "execution_generation",
+      "entityType": "columns",
+      "table": "import_terminal_checkpoints"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failure_code",
+      "entityType": "columns",
+      "table": "import_terminal_checkpoints"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_fingerprint",
+      "entityType": "columns",
+      "table": "import_terminal_checkpoints"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "intent_id",
+      "entityType": "columns",
+      "table": "import_terminal_checkpoints"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ownership_id",
+      "entityType": "columns",
+      "table": "import_terminal_checkpoints"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "stage",
+      "entityType": "columns",
+      "table": "import_terminal_checkpoints"
+    },
+    {
       "columns": ["intent_id", "execution_generation", "ordinal"],
       "nameExplicit": false,
       "name": "household_evidence_references_pk",
@@ -1066,6 +1304,20 @@
       "name": "household_recipe_review_transitions_pk",
       "entityType": "pks",
       "table": "household_recipe_review_transitions"
+    },
+    {
+      "columns": ["intent_id", "execution_generation", "ordinal"],
+      "nameExplicit": false,
+      "name": "import_recipe_recovery_attempts_pk",
+      "entityType": "pks",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "columns": ["intent_id", "execution_generation", "stage", "ownership_id"],
+      "nameExplicit": false,
+      "name": "import_terminal_checkpoints_pk",
+      "entityType": "pks",
+      "table": "import_terminal_checkpoints"
     },
     {
       "columns": ["mutation_id"],
@@ -1197,6 +1449,50 @@
       "name": "household_recipe_imports_live_source_unique",
       "entityType": "indexes",
       "table": "household_recipe_imports"
+    },
+    {
+      "columns": [
+        {
+          "value": "intent_id",
+          "isExpression": false
+        },
+        {
+          "value": "execution_generation",
+          "isExpression": false
+        },
+        {
+          "value": "current_dispatch_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "import_recipe_recovery_current_dispatch_unique",
+      "entityType": "indexes",
+      "table": "import_recipe_recovery_attempts"
+    },
+    {
+      "columns": [
+        {
+          "value": "intent_id",
+          "isExpression": false
+        },
+        {
+          "value": "execution_generation",
+          "isExpression": false
+        },
+        {
+          "value": "current_extraction_fingerprint",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "import_recipe_recovery_current_extraction_unique",
+      "entityType": "indexes",
+      "table": "import_recipe_recovery_attempts"
     },
     {
       "columns": ["dispatch_id"],

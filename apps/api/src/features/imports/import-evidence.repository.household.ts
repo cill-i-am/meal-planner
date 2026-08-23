@@ -2,6 +2,7 @@ import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { Effect, Option, Schema } from "effect";
 
 import {
+  HouseholdMutateEvidenceStageInput,
   HouseholdMutateEvidenceStageResult,
   HouseholdReadEvidenceReferencesResult,
   HouseholdReadEvidenceStageResult,
@@ -81,19 +82,19 @@ const makeBoundary = (input: HouseholdEvidenceRepositoryInput) => {
   const mutate = (
     seed: string,
     command: Omit<
-      Parameters<HouseholdDomainWorkerMethods["mutateEvidenceStage"]>[0],
+      HouseholdMutateEvidenceStageInput,
       "admission" | "expectedGeneration" | "intentId" | "mutationId"
     >
   ) =>
     input.mutationId(seed).pipe(
       Effect.flatMap((mutationId) =>
-        input.householdDomain.mutateEvidenceStage({
+        Schema.encodeEffect(HouseholdMutateEvidenceStageInput)({
           admission,
           expectedGeneration: input.generation,
           intentId: input.intentId,
           mutationId,
           ...command,
-        })
+        }).pipe(Effect.flatMap(input.householdDomain.mutateEvidenceStage))
       ),
       Effect.flatMap(
         Schema.decodeUnknownEffect(HouseholdMutateEvidenceStageResult, {
@@ -814,12 +815,15 @@ export const makeHouseholdRecipeDraftRepository = (
         return Effect.fail(importTransitionRejected());
       })
     );
-  const claim = (claimInput: {
-    readonly extractionFingerprint: string;
-    readonly generation: AcquisitionGeneration;
-    readonly importId: ImportId;
-    readonly startedAt: ImportTimestamp;
-  }) =>
+  const claimStage = (
+    claimInput: {
+      readonly extractionFingerprint: string;
+      readonly generation: AcquisitionGeneration;
+      readonly importId: ImportId;
+      readonly startedAt: ImportTimestamp;
+    },
+    extractionContext?: Parameters<RecipeDraftRepository["claim"]>[0]
+  ) =>
     assertIdentity(input, claimInput.importId, claimInput.generation).pipe(
       Effect.andThen(
         boundary.mutate(
@@ -828,12 +832,35 @@ export const makeHouseholdRecipeDraftRepository = (
             inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
               claimInput.extractionFingerprint
             ),
-            operation: {
-              _tag: "Claim",
-              dispatchId: claimInput.extractionFingerprint,
-              stage: "extraction",
-              startedAt: claimInput.startedAt,
-            },
+            operation:
+              extractionContext === undefined
+                ? {
+                    _tag: "Claim",
+                    dispatchId: claimInput.extractionFingerprint,
+                    stage: "extraction",
+                    startedAt: claimInput.startedAt,
+                  }
+                : {
+                    _tag: "Claim",
+                    dispatchId: claimInput.extractionFingerprint,
+                    extractionContext: {
+                      descriptor: extractionContext.descriptor,
+                      evidenceFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+                        extractionContext.evidenceFingerprint
+                      ),
+                      sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                        extractionContext.sourceMediaSha256
+                      ),
+                      transcriptSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                        extractionContext.transcriptSha256
+                      ),
+                      visualManifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                        extractionContext.visualManifestSha256
+                      ),
+                    },
+                    stage: "extraction",
+                    startedAt: claimInput.startedAt,
+                  },
           }
         )
       ),
@@ -852,8 +879,8 @@ export const makeHouseholdRecipeDraftRepository = (
       })
     );
   return {
-    claim,
-    claimCarousel: claim,
+    claim: (claimInput) => claimStage(claimInput, claimInput),
+    claimCarousel: (claimInput) => claimStage(claimInput),
     complete: (draft: RecipeDraft) =>
       assertIdentity(input, draft.importId, draft.generation).pipe(
         Effect.andThen(

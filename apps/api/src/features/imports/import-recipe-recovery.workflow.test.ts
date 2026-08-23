@@ -1,10 +1,7 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import {
-  PilotBudgetDispatchId,
-  PilotProviderBudgetStage,
-} from "../pilots/pilot-provider-budget.js";
+import { PilotBudgetDispatchId } from "../pilots/pilot-provider-budget.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import type {
@@ -37,18 +34,14 @@ const attempt = (ordinal: RecipeRecoveryOrdinal): RecipeRecoveryAttempt => ({
   ),
   currentExtractionFingerprint: sha(String(ordinal).repeat(64)),
   evidenceFingerprint: sha("a".repeat(64)),
-  evidenceReferencesJson: JSON.stringify(["source", "transcript", "visual"]),
   importId,
   ordinal,
   predecessorDispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
     ordinal === 1 ? rootDispatchId : `${rootDispatchId}:recovery:${ordinal - 1}`
   ),
   predecessorExtractionFingerprint: sha("b".repeat(64)),
-  predecessorOutcome: "outcome_unknown",
-  predecessorReconciliationCreatedAt: timestamp,
   rootDispatchId,
   rootExtractionFingerprint: sha("b".repeat(64)),
-  runtimeStage: PilotProviderBudgetStage,
   sourceMediaSha256: sha("e".repeat(64)),
   terminalCheckpointCompletedAt: timestamp,
   transcriptSha256: sha("c".repeat(64)),

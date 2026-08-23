@@ -344,32 +344,6 @@ describe("pilot provider stage budget", () => {
     ).resolves.toEqual({ count: 1 });
   });
 
-  it("rejects an unauthorised recipe recovery identity", async () => {
-    const repository = makeD1PilotProviderBudgetRepository(
-      testEnv.MealPlannerDatabase,
-      "pilot-gaia-118"
-    );
-    const importId = "import-conservative-recovery-9";
-    const command = {
-      ...reservation(
-        `gaia-118:${importId}`,
-        `recipe:${importId}:1:${evidenceFingerprint}:recovery:9`,
-        100_000
-      ),
-      providerStageId: decodeProviderStageId("recipe-extraction"),
-    };
-
-    await expect(
-      Effect.runPromise(repository.reserve(command))
-    ).rejects.toMatchObject({ code: "persistence_unavailable" });
-    await expect(
-      Effect.runPromise(repository.readStage())
-    ).resolves.toMatchObject({
-      reservedMicroUsd: 0,
-      state: "open",
-    });
-  });
-
   it("rejects multibyte conservative replay JSON over the UTF-8 byte cap", async () => {
     const repository = makeD1PilotProviderBudgetRepository(
       testEnv.MealPlannerDatabase,

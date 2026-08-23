@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -115,7 +115,9 @@ const trackedFiles = execFileSync("git", ["ls-files", "-z"], {
   encoding: "utf-8",
 })
   .split("\0")
-  .filter((file) => file.length > 0);
+  .filter(
+    (file) => file.length > 0 && existsSync(new URL(file, repositoryRootUrl))
+  );
 
 const ownedSourceFiles = (): readonly string[] =>
   trackedFiles.filter((file) => {

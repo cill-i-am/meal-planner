@@ -519,9 +519,20 @@ availability observations, and replay receipts. Large bytes remain in R2.
 Missing objects, lifecycle deletion, late events, restart, exact retry,
 conflicting replay, stale generations, physical cross-household isolation, and
 provider-free recipe recovery have runtime proof. Shared D1 retains the
-bounded operational event route plus the existing Slice 3 settlement and
-terminal-recovery boundary; neither can author household evidence or
-extraction. This slice does not redesign or move the Slice 3 capability.
+bounded operational event route plus objectively global provider-budget
+settlement and reconciliation; neither can author household evidence,
+extraction, terminal checkpoints, or recovery attempts.
+
+The approved architectural correction also moves terminal checkpoint and
+recovery authority into this slice. Household SQLite owns the stable
+`import_terminal_checkpoints` and `import_recipe_recovery_attempts` tables,
+generation/dispatch fences, replay identities, and privacy-safe receipts.
+Settlement and recovery read or commit those facts only through the private
+household boundary after provider/R2 work. The superseded
+`pilot_provider_terminal_checkpoints`, legacy
+`import_provider_terminal_checkpoints`, and pilot recovery tables and
+repositories are physically absent; there are no compatibility reads, fixture
+seeds, dual writes, or backfills.
 
 R2 notification reconciliation uses one bounded noncanonical operational
 index: after authenticated admission, the API enqueues an immutable
@@ -537,17 +548,17 @@ same-time action precedence, so delayed deletion cannot replace newer
 availability. The route is not a household registry, product read model,
 object-name source, or Slice 3 recovery ledger.
 
-### Slice 3: settlement and recovery
+### Slice 3: global provider accounting
 
-Move household-owned terminal checkpoints, recovery attempts, generation
-fences, replay guards, and receipts. Workflow owns waits, retries, provider
-calls, and saga execution; the object decides and records household outcomes.
+Workflow continues to own waits, retries, provider calls, and saga execution;
+the household object already decides and records terminal/recovery outcomes.
 Retain only proven cross-household budget or safe operational facts globally.
 If the global provider budget remains required, move its model, repository,
 settlement policy, and operational schema from `features/pilots` into a
 production-owned `provider-accounting` capability during this slice. Otherwise
-delete the pilot ledger and its composition. Production import code must not
-depend on an experiments or pilots namespace.
+delete the pilot ledger and its composition. Shared D1 must not gate household
+recovery, and production import code must not depend on an experiments or
+pilots namespace.
 
 ### Slice 4: batches
 
@@ -698,6 +709,7 @@ minimal noncanonical operational index for an approved concrete use case.
 
 ## Immediate handoff
 
-The next authority delivery is **Slice 3: settlement and recovery**. It must
-start from the merged Slice 2 cutover and must not move batch or final shared-D1
-retirement work from later slices into its scope.
+The next delivery is **Slice 3: global provider accounting**. It must start
+from the merged Slice 2 cutover, preserve household-owned terminal/recovery
+authority, and must not move batch or final shared-D1 retirement work from later
+slices into its scope.

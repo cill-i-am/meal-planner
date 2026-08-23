@@ -31,11 +31,13 @@ import {
   runProviderTaskAttempt,
 } from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
-import { makeRecipeRecoveryHouseholdEvidenceRepositories } from "./import-recipe-recovery.household.js";
+import {
+  makeRecipeRecoveryHouseholdEvidenceRepositories,
+  readHouseholdRecipeRecovery,
+} from "./import-recipe-recovery.household.js";
 import {
   RecipeRecoveryAuthorization,
   RecipeRecoveryOrdinal,
-  makeD1RecipeRecoveryRepository,
   recipeRecoveryAuthorizationEventType,
   recipeRecoveryDurableTaskNames,
   resolveRecipeRecoveryWorkflowInput,
@@ -207,10 +209,6 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
         ).pipe(Effect.orDie);
         const database = yield* queryDatabase.raw;
         const bucket = adaptAcquisitionBucket(evidenceBucket, runtimeContext);
-        const recoveryRepository = makeD1RecipeRecoveryRepository(
-          database,
-          runtimeStage
-        );
         const evidenceRepositories =
           yield* makeRecipeRecoveryHouseholdEvidenceRepositories({
             correlationId: workflowInput.trace.correlationId,
@@ -263,13 +261,19 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                     .pipe(Effect.orDie)
                 ),
               readAttempt: (ordinal) =>
-                recoveryRepository
-                  .readAttempt({
-                    acquisitionGeneration: workflowInput.acquisitionGeneration,
-                    importId: workflowInput.importId,
+                readHouseholdRecipeRecovery({
+                  database,
+                  generation: workflowInput.acquisitionGeneration,
+                  householdDomain,
+                  importId: workflowInput.importId,
+                  selector: {
+                    _tag: "Ordinal",
                     ordinal,
-                  })
-                  .pipe(Effect.map(Option.getOrNull), Effect.orDie),
+                  },
+                }).pipe(
+                  Effect.map((attempt) => attempt as RecipeRecoveryAttempt),
+                  Effect.catch(() => Effect.succeed(null))
+                ),
               runAttempt: (attempt, durableTaskName) =>
                 durable
                   .task(

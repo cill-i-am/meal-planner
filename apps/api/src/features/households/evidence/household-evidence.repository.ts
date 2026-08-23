@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, DateTime, Effect, Option, Schema } from "effect";
 
@@ -10,6 +10,8 @@ import {
   householdEvidenceStageExecutions,
   householdImportEvidenceExecutions,
   householdRecipeImports,
+  importRecipeRecoveryAttempts,
+  importTerminalCheckpoints,
 } from "../household.database-schema.js";
 import { HouseholdRecipeImportFailure } from "../recipe-import/household-recipe-import.contract.js";
 import {
@@ -24,8 +26,13 @@ import {
   HouseholdMutateEvidenceStageInput,
   HouseholdMutateEvidenceStageResult,
   HouseholdEvidenceStageResult,
+  HouseholdExtractionClaimContext,
   HouseholdReadEvidenceStageResult,
   HouseholdReadEvidenceReferencesResult,
+  HouseholdReadImportTerminalCheckpointResult,
+  HouseholdPrepareRecipeRecoveryInput,
+  HouseholdPrepareRecipeRecoveryResult,
+  HouseholdReadRecipeRecoveryAttemptResult,
 } from "./household-evidence.contract.js";
 import type {
   HouseholdCommitAcquisitionEvidenceInput as HouseholdCommitAcquisitionEvidenceInputType,
@@ -33,6 +40,9 @@ import type {
   HouseholdMutateEvidenceStageInput as HouseholdMutateEvidenceStageInputType,
   HouseholdReadEvidenceStageInput as HouseholdReadEvidenceStageInputType,
   HouseholdReadEvidenceReferencesInput as HouseholdReadEvidenceReferencesInputType,
+  HouseholdReadImportTerminalCheckpointInput as HouseholdReadImportTerminalCheckpointInputType,
+  HouseholdPrepareRecipeRecoveryInput as HouseholdPrepareRecipeRecoveryInputType,
+  HouseholdReadRecipeRecoveryAttemptInput as HouseholdReadRecipeRecoveryAttemptInputType,
 } from "./household-evidence.contract.js";
 
 const failure = (reason: HouseholdRecipeImportFailure["reason"]) =>
@@ -53,6 +63,9 @@ const EncodedObservationResult = Schema.fromJsonString(
 );
 const EncodedStageMutationResult = Schema.fromJsonString(
   HouseholdMutateEvidenceStageResult
+);
+const EncodedRecoveryPreparationResult = Schema.fromJsonString(
+  HouseholdPrepareRecipeRecoveryResult
 );
 
 const encode = <S extends Schema.Top>(schema: S, value: S["Type"]) =>
@@ -189,44 +202,47 @@ const validateRecoveryStageMutationStructure = (
   input: HouseholdMutateEvidenceStageInputType
 ) =>
   input.operation._tag !== "PrepareRecovery" ||
-  (input.operation.dispatchId === input.inputFingerprint &&
-    input.operation.predecessorDispatchId ===
-      input.operation.predecessorInputFingerprint &&
+  (input.inputFingerprint === input.operation.predecessorInputFingerprint &&
+    input.operation.settlement.dispatchId ===
+      input.operation.predecessorDispatchId &&
     input.operation.dispatchId !== input.operation.predecessorDispatchId)
     ? Effect.void
     : Effect.fail(failure("invalid_input"));
 
-const validateStageMutationStructure = (
-  input: HouseholdMutateEvidenceStageInputType
+type CompleteStageOperation = Extract<
+  HouseholdMutateEvidenceStageInputType["operation"],
+  { readonly _tag: "Complete" }
+>;
+
+const validateCompleteStageMutationStructure = (
+  input: HouseholdMutateEvidenceStageInputType,
+  operation: CompleteStageOperation
 ) => {
-  if (input.operation._tag !== "Complete") {
-    return Effect.void;
-  }
-  if (resultStage(input.operation.result._tag) !== input.operation.stage) {
+  if (resultStage(operation.result._tag) !== operation.stage) {
     return Effect.fail(failure("invalid_input"));
   }
-  const { result } = input.operation;
+  const { result } = operation;
   const identityValid =
     result._tag === "Extraction"
       ? String(result.draft.importId) === String(input.intentId) &&
         result.draft.generation === input.expectedGeneration &&
         result.draft.extractionFingerprint === input.inputFingerprint
-      : result.dispatchId === input.operation.dispatchId;
+      : result.dispatchId === operation.dispatchId;
   if (!identityValid) {
     return Effect.fail(failure("invalid_input"));
   }
   const expected = expectedStageReference(
-    input.operation.stage,
+    operation.stage,
     input.intentId,
     input.expectedGeneration
   );
   if (expected === null) {
-    if (input.operation.reference === undefined) {
+    if (operation.reference === undefined) {
       return Effect.void;
     }
     return Effect.fail(failure("invalid_input"));
   }
-  const { reference } = input.operation;
+  const { reference } = operation;
   let resultReference: {
     readonly key: string;
     readonly sha256: string;
@@ -251,6 +267,101 @@ const validateStageMutationStructure = (
     reference.sha256 === resultReference.sha256
     ? Effect.void
     : Effect.fail(failure("invalid_input"));
+};
+
+const validateStageMutationStructure = (
+  input: HouseholdMutateEvidenceStageInputType
+) => {
+  if (input.operation._tag === "Claim") {
+    return input.operation.stage === "extraction" ||
+      input.operation.extractionContext === undefined
+      ? Effect.void
+      : Effect.fail(failure("invalid_input"));
+  }
+  return input.operation._tag === "Complete"
+    ? validateCompleteStageMutationStructure(input, input.operation)
+    : Effect.void;
+};
+
+type RecoveryIntentRow = Pick<
+  typeof householdRecipeImports.$inferSelect,
+  "executionGeneration" | "sourceKind" | "status"
+>;
+type RecoveryStageRow = typeof householdEvidenceStageExecutions.$inferSelect;
+type RecoveryAttemptRow = typeof importRecipeRecoveryAttempts.$inferSelect;
+type TerminalCheckpointRow = typeof importTerminalCheckpoints.$inferSelect;
+
+const requireRecoveryIntent = (
+  intent: RecoveryIntentRow | undefined,
+  expectedGeneration: number
+) => {
+  if (intent === undefined) {
+    return Effect.fail(failure("intent_not_found"));
+  }
+  if (intent.executionGeneration !== expectedGeneration) {
+    return Effect.fail(failure("generation_conflict"));
+  }
+  return intent.status === "processing" && intent.sourceKind === "video"
+    ? Effect.succeed(intent)
+    : Effect.fail(failure("illegal_transition"));
+};
+
+const requireRecoveryStage = (stage: RecoveryStageRow | undefined) =>
+  stage !== undefined &&
+  stage.state === "failed" &&
+  stage.failureCode === "provider_error" &&
+  stage.claimJson !== null
+    ? Effect.succeed(stage)
+    : Effect.fail(failure("illegal_transition"));
+
+const validateRecoveryCheckpoint = (
+  checkpoint: TerminalCheckpointRow | undefined,
+  stage: RecoveryStageRow,
+  settlementCompletedAt: HouseholdPrepareRecipeRecoveryInputType["settlement"]["completedAt"]
+) =>
+  checkpoint !== undefined &&
+  checkpoint.failureCode === stage.failureCode &&
+  checkpoint.inputFingerprint === stage.inputFingerprint &&
+  DateTime.toEpochMillis(settlementCompletedAt) >=
+    Date.parse(checkpoint.completedAt)
+    ? Effect.succeed(checkpoint)
+    : Effect.fail(failure("illegal_transition"));
+
+const validateRecoverySequence = (input: {
+  readonly current: RecoveryAttemptRow | undefined;
+  readonly expectedPredecessorFingerprint: string;
+  readonly expectedOrdinal: number;
+  readonly evidenceFingerprint: string;
+  readonly intentId: string;
+  readonly generation: number;
+  readonly predecessorDispatchId: string;
+  readonly stage: RecoveryStageRow;
+}) => {
+  const ordinal = input.current === undefined ? 1 : input.current.ordinal + 1;
+  const predecessorExtractionFingerprint =
+    input.current?.currentExtractionFingerprint ?? input.stage.inputFingerprint;
+  const expectedPredecessorDispatchId =
+    input.current?.currentDispatchId ??
+    `recipe:${input.intentId}:${input.generation}:${input.evidenceFingerprint}`;
+  if (ordinal > 8) {
+    return Effect.fail(failure("illegal_transition"));
+  }
+  const valid =
+    ordinal === input.expectedOrdinal &&
+    input.stage.inputFingerprint === input.expectedPredecessorFingerprint &&
+    input.predecessorDispatchId === expectedPredecessorDispatchId &&
+    input.stage.inputFingerprint === predecessorExtractionFingerprint;
+  return valid
+    ? Effect.succeed({
+        ordinal,
+        predecessorExtractionFingerprint,
+        rootDispatchId:
+          input.current?.rootDispatchId ?? input.predecessorDispatchId,
+        rootExtractionFingerprint:
+          input.current?.rootExtractionFingerprint ??
+          input.stage.inputFingerprint,
+      })
+    : Effect.fail(failure("idempotency_conflict"));
 };
 
 const validateStageMutationFreshness = (
@@ -655,6 +766,14 @@ export const makeHouseholdEvidenceRepository = (
             if (!sourcePermitsStage(intent.sourceKind, input.operation.stage)) {
               return yield* Effect.fail(failure("illegal_transition"));
             }
+            if (
+              input.operation._tag === "Claim" &&
+              input.operation.stage === "extraction" &&
+              (intent.sourceKind === "video") !==
+                (input.operation.extractionContext !== undefined)
+            ) {
+              return yield* Effect.fail(failure("invalid_input"));
+            }
             const replay = yield* readReceipt(
               transaction,
               input.mutationId,
@@ -692,9 +811,14 @@ export const makeHouseholdEvidenceRepository = (
                 return yield* Effect.fail(failure("invalid_input"));
               }
               if (current === undefined) {
+                const claimJson =
+                  input.operation.extractionContext === undefined
+                    ? null
+                    : JSON.stringify(input.operation.extractionContext);
                 yield* transaction
                   .insert(householdEvidenceStageExecutions)
                   .values({
+                    claimJson,
                     committedAt,
                     dispatchId: input.operation.dispatchId,
                     executionGeneration: input.expectedGeneration,
@@ -846,13 +970,24 @@ export const makeHouseholdEvidenceRepository = (
                       eq(householdEvidenceStageExecutions.state, "dispatching")
                     )
                   );
+                if (input.operation.stage !== "carousel") {
+                  yield* transaction.insert(importTerminalCheckpoints).values({
+                    completedAt: committedAt,
+                    executionGeneration: input.expectedGeneration,
+                    failureCode: input.operation.failureCode,
+                    inputFingerprint: input.inputFingerprint,
+                    intentId: input.intentId,
+                    ownershipId: input.operation.dispatchId,
+                    stage: input.operation.stage,
+                  });
+                }
               } else {
                 return yield* Effect.fail(failure("illegal_transition"));
               }
               return "Failed" as const;
             });
             const prepareRecoveryStage = Effect.gen(
-              function* prepareFailedExtractionRecovery() {
+              function* prepareFailedProviderRecovery() {
                 if (input.operation._tag !== "PrepareRecovery") {
                   return yield* Effect.fail(failure("invalid_input"));
                 }
@@ -878,7 +1013,39 @@ export const makeHouseholdEvidenceRepository = (
                 }
                 if (
                   current.state !== "failed" ||
-                  current.failureCode !== "provider_error"
+                  current.failureCode !== "outcome_unknown"
+                ) {
+                  return yield* Effect.fail(failure("illegal_transition"));
+                }
+                const [checkpoint] = yield* transaction
+                  .select()
+                  .from(importTerminalCheckpoints)
+                  .where(
+                    and(
+                      eq(importTerminalCheckpoints.intentId, input.intentId),
+                      eq(
+                        importTerminalCheckpoints.executionGeneration,
+                        input.expectedGeneration
+                      ),
+                      eq(
+                        importTerminalCheckpoints.stage,
+                        input.operation.stage
+                      ),
+                      eq(
+                        importTerminalCheckpoints.ownershipId,
+                        input.operation.predecessorDispatchId
+                      )
+                    )
+                  )
+                  .limit(1)
+                  .pipe(mapPersistence);
+                if (
+                  checkpoint === undefined ||
+                  checkpoint.failureCode !== current.failureCode ||
+                  checkpoint.inputFingerprint !== current.inputFingerprint ||
+                  DateTime.toEpochMillis(
+                    input.operation.settlement.completedAt
+                  ) < Date.parse(checkpoint.completedAt)
                 ) {
                   return yield* Effect.fail(failure("illegal_transition"));
                 }
@@ -902,7 +1069,10 @@ export const makeHouseholdEvidenceRepository = (
                         householdEvidenceStageExecutions.executionGeneration,
                         input.expectedGeneration
                       ),
-                      eq(householdEvidenceStageExecutions.stage, "extraction"),
+                      eq(
+                        householdEvidenceStageExecutions.stage,
+                        input.operation.stage
+                      ),
                       eq(
                         householdEvidenceStageExecutions.dispatchId,
                         input.operation.predecessorDispatchId
@@ -963,6 +1133,406 @@ export const makeHouseholdEvidenceRepository = (
         .pipe(mapTransaction);
     });
 
+  const readTerminalCheckpoint = (
+    input: HouseholdReadImportTerminalCheckpointInputType
+  ) =>
+    Effect.gen(function* readHouseholdImportTerminalCheckpoint() {
+      yield* ensureHouseholdProvenance(
+        database,
+        input.admission.organizationId
+      ).pipe(Effect.mapError(persistenceFailure));
+      const [intent] = yield* database
+        .select({
+          executionGeneration: householdRecipeImports.executionGeneration,
+        })
+        .from(householdRecipeImports)
+        .where(eq(householdRecipeImports.intentId, input.intentId))
+        .limit(1)
+        .pipe(mapPersistence);
+      if (intent === undefined) {
+        return yield* Effect.fail(failure("intent_not_found"));
+      }
+      if (intent.executionGeneration !== input.expectedGeneration) {
+        return yield* Effect.fail(failure("generation_conflict"));
+      }
+      const [checkpoint] = yield* database
+        .select()
+        .from(importTerminalCheckpoints)
+        .where(
+          and(
+            eq(importTerminalCheckpoints.intentId, input.intentId),
+            eq(
+              importTerminalCheckpoints.executionGeneration,
+              input.expectedGeneration
+            ),
+            eq(importTerminalCheckpoints.stage, input.stage),
+            eq(importTerminalCheckpoints.ownershipId, input.ownershipId)
+          )
+        )
+        .limit(1)
+        .pipe(mapPersistence);
+      return yield* decode(
+        HouseholdReadImportTerminalCheckpointResult,
+        checkpoint === undefined
+          ? null
+          : {
+              completedAt: checkpoint.completedAt,
+              executionGeneration: checkpoint.executionGeneration,
+              failureCode: checkpoint.failureCode,
+              inputFingerprint: checkpoint.inputFingerprint,
+              intentId: checkpoint.intentId,
+              ownershipId: checkpoint.ownershipId,
+              stage: checkpoint.stage,
+            }
+      );
+    });
+
+  const prepareRecipeRecovery = (
+    input: HouseholdPrepareRecipeRecoveryInputType
+  ) =>
+    Effect.gen(function* prepareHouseholdRecipeRecovery() {
+      yield* ensureHouseholdProvenance(
+        database,
+        input.admission.organizationId
+      ).pipe(Effect.mapError(persistenceFailure));
+      const encodedInput = yield* Schema.encodeEffect(
+        HouseholdPrepareRecipeRecoveryInput
+      )(input).pipe(Effect.mapError(persistenceFailure));
+      const commandDigest = yield* digestJson({
+        expectedGeneration: encodedInput.expectedGeneration,
+        intentId: encodedInput.intentId,
+        operation: "prepare-recipe-recovery",
+        predecessorDispatchId: encodedInput.predecessorDispatchId,
+        settlement: encodedInput.settlement,
+        version: 1,
+      });
+      const nowEpochMs = yield* Clock.currentTimeMillis;
+      const createdAt = new Date(nowEpochMs).toISOString();
+      const [preflightStage] = yield* database
+        .select({
+          inputFingerprint: householdEvidenceStageExecutions.inputFingerprint,
+        })
+        .from(householdEvidenceStageExecutions)
+        .where(
+          and(
+            eq(householdEvidenceStageExecutions.intentId, input.intentId),
+            eq(
+              householdEvidenceStageExecutions.executionGeneration,
+              input.expectedGeneration
+            ),
+            eq(householdEvidenceStageExecutions.stage, "extraction")
+          )
+        )
+        .limit(1)
+        .pipe(mapPersistence);
+      const [preflightCurrent] = yield* database
+        .select({
+          currentExtractionFingerprint:
+            importRecipeRecoveryAttempts.currentExtractionFingerprint,
+          ordinal: importRecipeRecoveryAttempts.ordinal,
+        })
+        .from(importRecipeRecoveryAttempts)
+        .where(
+          and(
+            eq(importRecipeRecoveryAttempts.intentId, input.intentId),
+            eq(
+              importRecipeRecoveryAttempts.executionGeneration,
+              input.expectedGeneration
+            )
+          )
+        )
+        .orderBy(desc(importRecipeRecoveryAttempts.ordinal))
+        .limit(1)
+        .pipe(mapPersistence);
+      if (preflightStage === undefined) {
+        return yield* Effect.fail(failure("illegal_transition"));
+      }
+      const preflightOrdinal =
+        preflightCurrent === undefined ? 1 : preflightCurrent.ordinal + 1;
+      const preflightPredecessorExtractionFingerprint =
+        preflightCurrent?.currentExtractionFingerprint ??
+        preflightStage.inputFingerprint;
+      const proposedExtractionFingerprint = yield* digestJson({
+        originalExtractionFingerprint:
+          preflightPredecessorExtractionFingerprint,
+        recoveryIdentity: `recovery:${preflightOrdinal}`,
+      });
+
+      return yield* database
+        .transaction((transaction) =>
+          Effect.gen(function* prepareRecipeRecoveryTransaction() {
+            const [intent] = yield* transaction
+              .select({
+                executionGeneration: householdRecipeImports.executionGeneration,
+                sourceKind: householdRecipeImports.sourceKind,
+                status: householdRecipeImports.status,
+              })
+              .from(householdRecipeImports)
+              .where(eq(householdRecipeImports.intentId, input.intentId))
+              .limit(1)
+              .pipe(mapPersistence);
+            yield* requireRecoveryIntent(intent, input.expectedGeneration);
+            const replay = yield* readReceipt(
+              transaction,
+              input.mutationId,
+              commandDigest,
+              (value) => decode(EncodedRecoveryPreparationResult, value)
+            );
+            if (Option.isSome(replay)) {
+              return replay.value;
+            }
+            if (input.settlement.dispatchId !== input.predecessorDispatchId) {
+              return yield* Effect.fail(failure("invalid_input"));
+            }
+
+            const [stage] = yield* transaction
+              .select()
+              .from(householdEvidenceStageExecutions)
+              .where(
+                and(
+                  eq(householdEvidenceStageExecutions.intentId, input.intentId),
+                  eq(
+                    householdEvidenceStageExecutions.executionGeneration,
+                    input.expectedGeneration
+                  ),
+                  eq(householdEvidenceStageExecutions.stage, "extraction")
+                )
+              )
+              .limit(1)
+              .pipe(mapPersistence);
+            const [current] = yield* transaction
+              .select()
+              .from(importRecipeRecoveryAttempts)
+              .where(
+                and(
+                  eq(importRecipeRecoveryAttempts.intentId, input.intentId),
+                  eq(
+                    importRecipeRecoveryAttempts.executionGeneration,
+                    input.expectedGeneration
+                  )
+                )
+              )
+              .orderBy(desc(importRecipeRecoveryAttempts.ordinal))
+              .limit(1)
+              .pipe(mapPersistence);
+            if (
+              current !== undefined &&
+              input.predecessorDispatchId !== current.currentDispatchId
+            ) {
+              return yield* Effect.fail(failure("idempotency_conflict"));
+            }
+            const validStage = yield* requireRecoveryStage(stage);
+            const claimValue = yield* Effect.try({
+              catch: persistenceFailure,
+              try: () => JSON.parse(validStage.claimJson as string) as unknown,
+            });
+            const claim = yield* Schema.decodeUnknownEffect(
+              HouseholdExtractionClaimContext,
+              { onExcessProperty: "error" }
+            )(claimValue).pipe(Effect.mapError(persistenceFailure));
+
+            const [checkpoint] = yield* transaction
+              .select()
+              .from(importTerminalCheckpoints)
+              .where(
+                and(
+                  eq(importTerminalCheckpoints.intentId, input.intentId),
+                  eq(
+                    importTerminalCheckpoints.executionGeneration,
+                    input.expectedGeneration
+                  ),
+                  eq(importTerminalCheckpoints.stage, "extraction"),
+                  eq(
+                    importTerminalCheckpoints.ownershipId,
+                    validStage.dispatchId
+                  )
+                )
+              )
+              .limit(1)
+              .pipe(mapPersistence);
+            const validCheckpoint = yield* validateRecoveryCheckpoint(
+              checkpoint,
+              validStage,
+              input.settlement.completedAt
+            );
+            const {
+              ordinal,
+              predecessorExtractionFingerprint,
+              rootDispatchId,
+              rootExtractionFingerprint,
+            } = yield* validateRecoverySequence({
+              current,
+              evidenceFingerprint: claim.evidenceFingerprint,
+              expectedOrdinal: preflightOrdinal,
+              expectedPredecessorFingerprint:
+                preflightPredecessorExtractionFingerprint,
+              generation: input.expectedGeneration,
+              intentId: input.intentId,
+              predecessorDispatchId: input.predecessorDispatchId,
+              stage: validStage,
+            });
+            const currentDispatchId = `${rootDispatchId}:recovery:${ordinal}`;
+            const currentExtractionFingerprint = proposedExtractionFingerprint;
+            const attempt = yield* Schema.decodeUnknownEffect(
+              HouseholdReadRecipeRecoveryAttemptResult,
+              { onExcessProperty: "error" }
+            )({
+              acquisitionGeneration: input.expectedGeneration,
+              createdAt,
+              currentDispatchId,
+              currentExtractionFingerprint,
+              evidenceFingerprint: claim.evidenceFingerprint,
+              importId: input.intentId,
+              ordinal,
+              predecessorDispatchId: input.predecessorDispatchId,
+              predecessorExtractionFingerprint,
+              rootDispatchId,
+              rootExtractionFingerprint,
+              sourceMediaSha256: claim.sourceMediaSha256,
+              terminalCheckpointCompletedAt: validCheckpoint.completedAt,
+              transcriptSha256: claim.transcriptSha256,
+              visualManifestSha256: claim.visualManifestSha256,
+            }).pipe(Effect.mapError(persistenceFailure));
+            if (attempt === null) {
+              return yield* Effect.fail(persistenceFailure());
+            }
+            const result: HouseholdPrepareRecipeRecoveryResult = {
+              attempt,
+              outcome: "Prepared",
+              receiptVersion: 1,
+            };
+            const resultJson = yield* encode(
+              EncodedRecoveryPreparationResult,
+              result
+            );
+            yield* transaction.insert(importRecipeRecoveryAttempts).values({
+              createdAt,
+              currentDispatchId,
+              currentExtractionFingerprint,
+              evidenceFingerprint: claim.evidenceFingerprint,
+              executionGeneration: input.expectedGeneration,
+              intentId: input.intentId,
+              ordinal,
+              predecessorDispatchId: input.predecessorDispatchId,
+              predecessorExtractionFingerprint,
+              rootDispatchId,
+              rootExtractionFingerprint,
+              sourceMediaSha256: claim.sourceMediaSha256,
+              terminalCheckpointCompletedAt: validCheckpoint.completedAt,
+              transcriptSha256: claim.transcriptSha256,
+              visualManifestSha256: claim.visualManifestSha256,
+            });
+            yield* transaction
+              .update(householdEvidenceStageExecutions)
+              .set({
+                committedAt: createdAt,
+                dispatchId: currentExtractionFingerprint,
+                failureCode: null,
+                inputFingerprint: currentExtractionFingerprint,
+                resultJson: null,
+                state: "dispatching",
+              })
+              .where(
+                and(
+                  eq(householdEvidenceStageExecutions.intentId, input.intentId),
+                  eq(
+                    householdEvidenceStageExecutions.executionGeneration,
+                    input.expectedGeneration
+                  ),
+                  eq(householdEvidenceStageExecutions.stage, "extraction"),
+                  eq(
+                    householdEvidenceStageExecutions.dispatchId,
+                    validStage.dispatchId
+                  ),
+                  eq(householdEvidenceStageExecutions.state, "failed")
+                )
+              );
+            yield* persistReceipt(transaction, {
+              commandDigest,
+              mutationId: input.mutationId,
+              resultJson,
+            });
+            return result;
+          })
+        )
+        .pipe(mapTransaction);
+    });
+
+  const readRecipeRecoveryAttempt = (
+    input: HouseholdReadRecipeRecoveryAttemptInputType
+  ) =>
+    Effect.gen(function* readHouseholdRecipeRecoveryAttempt() {
+      yield* ensureHouseholdProvenance(
+        database,
+        input.admission.organizationId
+      ).pipe(Effect.mapError(persistenceFailure));
+      const [intent] = yield* database
+        .select({
+          executionGeneration: householdRecipeImports.executionGeneration,
+        })
+        .from(householdRecipeImports)
+        .where(eq(householdRecipeImports.intentId, input.intentId))
+        .limit(1)
+        .pipe(mapPersistence);
+      if (intent === undefined) {
+        return yield* Effect.fail(failure("intent_not_found"));
+      }
+      if (intent.executionGeneration !== input.expectedGeneration) {
+        return yield* Effect.fail(failure("generation_conflict"));
+      }
+      const conditions = [
+        eq(importRecipeRecoveryAttempts.intentId, input.intentId),
+        eq(
+          importRecipeRecoveryAttempts.executionGeneration,
+          input.expectedGeneration
+        ),
+      ];
+      if (input.selector._tag === "Ordinal") {
+        conditions.push(
+          eq(importRecipeRecoveryAttempts.ordinal, input.selector.ordinal)
+        );
+      } else {
+        conditions.push(
+          eq(
+            importRecipeRecoveryAttempts.rootDispatchId,
+            input.selector.rootDispatchId
+          )
+        );
+      }
+      const [attempt] = yield* database
+        .select()
+        .from(importRecipeRecoveryAttempts)
+        .where(and(...conditions))
+        .orderBy(desc(importRecipeRecoveryAttempts.ordinal))
+        .limit(1)
+        .pipe(mapPersistence);
+      return yield* decode(
+        HouseholdReadRecipeRecoveryAttemptResult,
+        attempt === undefined
+          ? null
+          : {
+              acquisitionGeneration: attempt.executionGeneration,
+              createdAt: attempt.createdAt,
+              currentDispatchId: attempt.currentDispatchId,
+              currentExtractionFingerprint:
+                attempt.currentExtractionFingerprint,
+              evidenceFingerprint: attempt.evidenceFingerprint,
+              importId: attempt.intentId,
+              ordinal: attempt.ordinal,
+              predecessorDispatchId: attempt.predecessorDispatchId,
+              predecessorExtractionFingerprint:
+                attempt.predecessorExtractionFingerprint,
+              rootDispatchId: attempt.rootDispatchId,
+              rootExtractionFingerprint: attempt.rootExtractionFingerprint,
+              sourceMediaSha256: attempt.sourceMediaSha256,
+              terminalCheckpointCompletedAt:
+                attempt.terminalCheckpointCompletedAt,
+              transcriptSha256: attempt.transcriptSha256,
+              visualManifestSha256: attempt.visualManifestSha256,
+            }
+      );
+    });
+
   const readStage = (input: HouseholdReadEvidenceStageInputType) =>
     Effect.gen(function* readHouseholdEvidenceStage() {
       yield* ensureHouseholdProvenance(
@@ -1008,6 +1578,13 @@ export const makeHouseholdEvidenceRepository = (
               catch: persistenceFailure,
               try: () => JSON.parse(stage.resultJson as string) as unknown,
             });
+      const extractionContext =
+        stage.claimJson === null
+          ? null
+          : yield* Effect.try({
+              catch: persistenceFailure,
+              try: () => JSON.parse(stage.claimJson as string) as unknown,
+            });
       const expectedReference = expectedStageReference(
         input.stage,
         input.intentId,
@@ -1040,6 +1617,7 @@ export const makeHouseholdEvidenceRepository = (
         committedAt: stage.committedAt,
         dispatchId: stage.dispatchId,
         executionGeneration: input.expectedGeneration,
+        extractionContext,
         failureCode: stage.failureCode,
         inputFingerprint: stage.inputFingerprint,
         intentId: input.intentId,
@@ -1165,7 +1743,10 @@ export const makeHouseholdEvidenceRepository = (
     commitAcquisition,
     mutateStage,
     observeReference,
+    prepareRecipeRecovery,
+    readRecipeRecoveryAttempt,
     readReferences,
     readStage,
+    readTerminalCheckpoint,
   } as const;
 };

@@ -148,11 +148,12 @@ same-origin client calls `GET /v1/household` without placing an organization ID,
 bearer token, or household scope in the request.
 
 The delivered product authorities in `HouseholdObject` are meal planning, the
-complete recipe-import/review/Recipe Bank capability, and compact evidence and
-extraction metadata. R2 retains only large private bytes. Shared D1 retains the
-private immutable import-event route, the later Slice 3 settlement and recovery
-ledger, and approved global operational facts; it cannot author household
-evidence, public lifecycle, review, or Recipe Bank state.
+complete recipe-import/review/Recipe Bank capability, compact evidence and
+extraction metadata, terminal checkpoints, and recovery attempts. R2 retains
+only large private bytes. Shared D1 retains the private immutable import-event
+route, global provider-budget settlement/reconciliation, and approved global
+operational facts; it cannot author household evidence, terminal or recovery
+state, public lifecycle, review, or Recipe Bank state.
 Shopping lists and preferences have not moved. Apart from the private,
 noncanonical import-event route above, there is no registry,
 organization-to-object lookup table, shared product read model, dual write,
@@ -181,8 +182,11 @@ deterministic Workflow identity by execution generation, stable replay across
 dispatch outcomes, source ownership, generation/version fences, review and
 terminal races, atomic confirmation/publication, and bounded Recipe Bank use
 beyond 128 recipes. Meal-plan tests retain create/read restart, replay,
-collision, optimistic concurrency, and terminal-state proof. Structural guards
-cover routing privacy, Better Auth placement, authority-service use,
-transaction I/O, the thin host, the acquisition generation fence, and permanent
-removal of superseded D1 authorities. These tests do not prove a cloud
+collision, optimistic concurrency, and terminal-state proof. Evidence tests
+also cover household-only terminal failure through settlement/recovery,
+identical replay, conflicting replay, stale generation, restart persistence,
+and physical absence of legacy D1 authority. Structural guards cover routing
+privacy, Better Auth placement, authority-service use, transaction I/O, the
+thin host, the acquisition generation fence, and permanent removal of
+superseded D1 authorities. These tests do not prove a cloud
 deployment or provider lifecycle.

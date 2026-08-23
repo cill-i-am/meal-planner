@@ -23,20 +23,23 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
-import { AcquisitionGeneration } from "../imports/import-media.model.js";
-import { makeD1ProviderTerminalCheckpointRepository } from "../imports/import-provider-terminal.js";
+import { ImportId } from "../imports/import.contracts.js";
 import {
-  ImportId,
-  ImportTimestamp,
-  SourceCanonicalId,
-} from "../imports/import.contracts.js";
-import { seedResolvedTestImportExecution } from "../imports/import.test-fixtures.js";
+  PilotBudgetDispatchId,
+  PilotBudgetProviderStageId,
+  PilotBudgetRunId,
+  PilotBudgetTimestamp,
+} from "../pilots/pilot-provider-budget.js";
+import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
 import {
   HouseholdCommitAcquisitionEvidenceResult,
   HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceResult,
+  HouseholdPrepareRecipeRecoveryResult,
   HouseholdReadEvidenceReferencesResult,
   HouseholdReadEvidenceStageResult,
+  HouseholdReadImportTerminalCheckpointResult,
+  HouseholdReadRecipeRecoveryAttemptResult,
 } from "./evidence/household-evidence.contract.js";
 import { HouseholdMetadata } from "./household.contract.js";
 
@@ -329,8 +332,11 @@ const systemCommand = (
     | "commit-draft"
     | "mutate-evidence-stage"
     | "observe-evidence-reference"
+    | "prepare-recipe-recovery"
     | "read-evidence-references"
     | "read-evidence-stage"
+    | "read-terminal-checkpoint"
+    | "read-recipe-recovery-attempt"
     | "resolve",
   input: object
 ) =>
@@ -345,6 +351,18 @@ const systemCommand = (
       method: "POST",
     }
   );
+
+const terminalSettlementCommand = async (input: object) => {
+  const worker = await getRuntime().getWorker("evidence-consumer");
+  return worker.fetch("https://evidence-consumer.test/terminal-settlement", {
+    body: JSON.stringify(input),
+    headers: {
+      "content-type": "application/json",
+      "x-test-terminal-settlement": "1",
+    },
+    method: "POST",
+  });
+};
 
 const evidenceEventResult = async (
   attemptsRemaining = 80
@@ -2098,6 +2116,20 @@ describe("household public API to private Durable Object boundary", () => {
           identity.stage === "extraction"
             ? fingerprint
             : `${identity.stage}:${admitted.id}:1`;
+        const extractionContext =
+          identity.stage === "extraction"
+            ? {
+                descriptor: {
+                  model: "fixture-v1",
+                  provider: "deterministic_fake" as const,
+                  version: "schema-1",
+                },
+                evidenceFingerprint: "a".repeat(64),
+                sourceMediaSha256: "b".repeat(64),
+                transcriptSha256: "c".repeat(64),
+                visualManifestSha256: "d".repeat(64),
+              }
+            : undefined;
         const claim = await systemCommand("mutate-evidence-stage", {
           admission,
           expectedGeneration: 1,
@@ -2107,6 +2139,7 @@ describe("household public API to private Durable Object boundary", () => {
           operation: {
             _tag: "Claim",
             dispatchId,
+            extractionContext,
             stage: identity.stage,
             startedAt: new Date(
               acquiredAt.getTime() + ordinal + 1
@@ -2157,51 +2190,53 @@ describe("household public API to private Durable Object boundary", () => {
       })
     );
 
+    expect(stages).toHaveLength(3);
+    await Promise.all(
+      stages.map(async ({ identity, stage }) => {
+        const checkpointResponse = await systemCommand(
+          "read-terminal-checkpoint",
+          {
+            admission,
+            expectedGeneration: 1,
+            intentId: admitted.id,
+            ownershipId: stage.dispatchId,
+            stage: identity.stage,
+          }
+        );
+        expect(
+          checkpointResponse.status,
+          await checkpointResponse.clone().text()
+        ).toBe(200);
+        const checkpoint = await Schema.decodeUnknownPromise(
+          HouseholdReadImportTerminalCheckpointResult
+        )(await checkpointResponse.json());
+        expect(checkpoint).toMatchObject({
+          executionGeneration: 1,
+          failureCode: identity.failureCode,
+          intentId: admitted.id,
+          ownershipId: stage.dispatchId,
+          stage: identity.stage,
+        });
+      })
+    );
     const database = await getRuntime().getD1Database(
       "MealPlannerDatabase",
       "evidence-consumer"
     );
     const importId = Schema.decodeUnknownSync(ImportId)(admitted.id);
-    const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
-    await seedResolvedTestImportExecution({
-      acquisitionGeneration: generation,
-      canonicalId: Schema.decodeUnknownSync(SourceCanonicalId)(
-        "tiktok:video:7000000000000000101"
-      ),
-      database,
-      evidence: [],
-      importId,
-      status: { kind: "queued" },
-      updatedAt: Schema.decodeUnknownSync(ImportTimestamp)(
-        acquiredAt.toISOString()
-      ),
-    });
-    const repository = makeD1ProviderTerminalCheckpointRepository(database);
-    await Promise.all(
-      stages.map(({ identity, stage }) =>
-        Effect.runPromise(
-          repository.persist({
-            acquisitionGeneration: generation,
-            completedAt: stage.committedAt,
-            failureCode: identity.failureCode,
-            importId,
-            ownershipId: stage.dispatchId,
-            providerStage:
-              identity.stage === "extraction" ? "recipe" : identity.stage,
-          })
-        )
+    const sharedCheckpointTables = await database
+      .prepare(
+        `SELECT name
+           FROM sqlite_master
+          WHERE type = 'table'
+            AND name IN (
+              'pilot_provider_terminal_checkpoints',
+              'import_provider_terminal_checkpoints'
+            )
+          ORDER BY name`
       )
-    );
-    await expect(
-      database
-        .prepare(
-          `SELECT COUNT(*) AS count
-             FROM pilot_provider_terminal_checkpoints
-            WHERE import_id = ?`
-        )
-        .bind(importId)
-        .first()
-    ).resolves.toEqual({ count: 3 });
+      .all();
+    expect(sharedCheckpointTables.results).toEqual([]);
     await expect(
       database
         .prepare(
@@ -2216,14 +2251,14 @@ describe("household public API to private Durable Object boundary", () => {
     ).resolves.toEqual({ count: 0 });
   });
 
-  it("prepares a fenced replacement for a failed household extraction stage", async () => {
+  it("atomically prepares and persists a fenced household recipe recovery", async () => {
     const { admission, admitted } = await admitResolvedEvidenceImport({
       label: "Household Recipe Recovery",
       mutationId: "1".repeat(64),
       videoId: "7000000000000000102",
     });
     const predecessorFingerprint = "2".repeat(64);
-    const recoveryFingerprint = "3".repeat(64);
+    const evidenceFingerprint = "a".repeat(64);
     const predecessorClaim = await systemCommand("mutate-evidence-stage", {
       admission,
       expectedGeneration: 1,
@@ -2233,6 +2268,17 @@ describe("household public API to private Durable Object boundary", () => {
       operation: {
         _tag: "Claim",
         dispatchId: predecessorFingerprint,
+        extractionContext: {
+          descriptor: {
+            model: "fixture-v1",
+            provider: "deterministic_fake",
+            version: "schema-1",
+          },
+          evidenceFingerprint,
+          sourceMediaSha256: "b".repeat(64),
+          transcriptSha256: "c".repeat(64),
+          visualManifestSha256: "d".repeat(64),
+        },
         stage: "extraction",
         startedAt: "2026-08-22T10:00:00.000Z",
       },
@@ -2260,43 +2306,39 @@ describe("household public API to private Durable Object boundary", () => {
       await predecessorFailure.clone().text()
     ).toBe(200);
 
+    const predecessorDispatchId = `recipe:${admitted.id}:1:${evidenceFingerprint}`;
     const command = {
       admission,
       expectedGeneration: 1,
-      inputFingerprint: recoveryFingerprint,
       intentId: admitted.id,
       mutationId: "6".repeat(64),
-      operation: {
-        _tag: "PrepareRecovery",
-        dispatchId: recoveryFingerprint,
-        predecessorDispatchId: predecessorFingerprint,
-        predecessorInputFingerprint: predecessorFingerprint,
-        stage: "extraction",
-        startedAt: "2026-08-22T10:02:00.000Z",
+      predecessorDispatchId,
+      settlement: {
+        completedAt: new Date(Date.now() + 60_000).toISOString(),
+        dispatchId: predecessorDispatchId,
+        outcome: "settled_unknown",
       },
     } as const;
-    const stalePredecessor = await systemCommand("mutate-evidence-stage", {
-      ...command,
-      inputFingerprint: "7".repeat(64),
-      mutationId: "8".repeat(64),
-      operation: {
-        ...command.operation,
-        dispatchId: "7".repeat(64),
-        predecessorDispatchId: "9".repeat(64),
-        predecessorInputFingerprint: "9".repeat(64),
-      },
-    });
-    expect(stalePredecessor.status).toBe(409);
-
-    const prepared = await systemCommand("mutate-evidence-stage", command);
+    const prepared = await systemCommand("prepare-recipe-recovery", command);
     expect(prepared.status, await prepared.clone().text()).toBe(200);
-    const preparedReceipt = await prepared.json();
+    const preparedReceipt = await Schema.decodeUnknownPromise(
+      HouseholdPrepareRecipeRecoveryResult
+    )(await prepared.json());
     expect(preparedReceipt).toMatchObject({
-      executionGeneration: 1,
-      intentId: admitted.id,
-      outcome: "RecoveryPrepared",
-      stage: "extraction",
+      attempt: {
+        acquisitionGeneration: 1,
+        importId: admitted.id,
+        ordinal: 1,
+        predecessorDispatchId,
+        predecessorExtractionFingerprint: predecessorFingerprint,
+        rootDispatchId: predecessorDispatchId,
+        rootExtractionFingerprint: predecessorFingerprint,
+      },
+      outcome: "Prepared",
+      receiptVersion: 1,
     });
+    const recoveryFingerprint =
+      preparedReceipt.attempt.currentExtractionFingerprint;
 
     const stageResponse = await systemCommand("read-evidence-stage", {
       admission,
@@ -2313,16 +2355,32 @@ describe("household public API to private Durable Object boundary", () => {
       result: null,
     });
 
-    const replay = await systemCommand("mutate-evidence-stage", command);
+    const replay = await systemCommand("prepare-recipe-recovery", command);
     expect(replay.status, await replay.clone().text()).toBe(200);
-    expect(await replay.json()).toEqual(preparedReceipt);
+    expect(
+      await Schema.decodeUnknownPromise(HouseholdPrepareRecipeRecoveryResult)(
+        await replay.json()
+      )
+    ).toEqual(preparedReceipt);
 
-    const conflictingReplay = await systemCommand("mutate-evidence-stage", {
+    const stalePredecessor = await systemCommand("prepare-recipe-recovery", {
       ...command,
-      inputFingerprint: "a".repeat(64),
-      operation: {
-        ...command.operation,
-        dispatchId: "a".repeat(64),
+      mutationId: "8".repeat(64),
+      predecessorDispatchId: `${predecessorDispatchId}:stale`,
+      settlement: {
+        ...command.settlement,
+        dispatchId: `${predecessorDispatchId}:stale`,
+      },
+    });
+    expect(stalePredecessor.status, await stalePredecessor.clone().text()).toBe(
+      409
+    );
+
+    const conflictingReplay = await systemCommand("prepare-recipe-recovery", {
+      ...command,
+      settlement: {
+        ...command.settlement,
+        completedAt: new Date(Date.now() + 120_000).toISOString(),
       },
     });
     expect(conflictingReplay.status).toBe(409);
@@ -2338,5 +2396,166 @@ describe("household public API to private Durable Object boundary", () => {
       inputFingerprint: recoveryFingerprint,
       outcome: "Dispatching",
     });
+
+    await restartRuntime();
+    const persisted = await systemCommand("read-recipe-recovery-attempt", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      selector: { _tag: "Latest", rootDispatchId: predecessorDispatchId },
+    });
+    expect(persisted.status, await persisted.clone().text()).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(
+        HouseholdReadRecipeRecoveryAttemptResult
+      )(await persisted.json())
+    ).toEqual(preparedReceipt.attempt);
+  });
+
+  it("settles a clean household terminal failure and starts household-only recovery", async () => {
+    const { admission, admitted, organization } =
+      await admitResolvedEvidenceImport({
+        label: "Household Terminal Settlement",
+        mutationId: "a".repeat(64),
+        videoId: "7000000000000000103",
+      });
+    const generation = 1;
+    const extractionFingerprint = "b".repeat(64);
+    const evidenceFingerprint = "c".repeat(64);
+    const dispatchId = `recipe:${admitted.id}:${generation}:${evidenceFingerprint}`;
+    const claim = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: generation,
+      inputFingerprint: extractionFingerprint,
+      intentId: admitted.id,
+      mutationId: "d".repeat(64),
+      operation: {
+        _tag: "Claim",
+        dispatchId: extractionFingerprint,
+        extractionContext: {
+          descriptor: {
+            model: "fixture-v1",
+            provider: "deterministic_fake",
+            version: "schema-1",
+          },
+          evidenceFingerprint,
+          sourceMediaSha256: "e".repeat(64),
+          transcriptSha256: "f".repeat(64),
+          visualManifestSha256: "1".repeat(64),
+        },
+        stage: "extraction",
+        startedAt: "2026-08-23T07:55:00.000Z",
+      },
+    });
+    expect(claim.status, await claim.clone().text()).toBe(200);
+    const failed = await systemCommand("mutate-evidence-stage", {
+      admission,
+      expectedGeneration: generation,
+      inputFingerprint: extractionFingerprint,
+      intentId: admitted.id,
+      mutationId: "2".repeat(64),
+      operation: {
+        _tag: "Fail",
+        completedAt: "2026-08-23T07:56:00.000Z",
+        dispatchId: extractionFingerprint,
+        failureCode: "provider_error",
+        recovery: "operator_review",
+        stage: "extraction",
+      },
+    });
+    expect(failed.status, await failed.clone().text()).toBe(200);
+
+    const database = await getRuntime().getD1Database(
+      "MealPlannerDatabase",
+      "evidence-consumer"
+    );
+    await database
+      .prepare(
+        `INSERT INTO import_evidence_routes (
+           import_id, organization_id, route_version
+         ) VALUES (?, ?, 1)`
+      )
+      .bind(admitted.id, organization.id)
+      .run();
+    const budget = makeD1PilotProviderBudgetRepository(
+      database,
+      "pilot-gaia-118"
+    );
+    const reservation = {
+      dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(dispatchId),
+      maximumCostMicroUsd: 100_000,
+      providerStageId: Schema.decodeUnknownSync(PilotBudgetProviderStageId)(
+        "recipe-extraction"
+      ),
+      runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
+        `gaia-118:${admitted.id}`
+      ),
+      timestamp: Schema.decodeUnknownSync(PilotBudgetTimestamp)(
+        "2026-08-23T07:55:00.000Z"
+      ),
+    };
+    await Effect.runPromise(budget.reserve(reservation));
+    await Effect.runPromise(budget.beginInvocation(reservation));
+    await Effect.runPromise(budget.settleUnknown(reservation));
+
+    const settlement = await terminalSettlementCommand({
+      acquisitionGeneration: generation,
+      dispatchId,
+      importId: admitted.id,
+      operation: "settle_recipe_unknown",
+    });
+    expect(settlement.status, await settlement.clone().text()).toBe(200);
+    await expect(settlement.json()).resolves.toMatchObject({
+      acquisitionGeneration: generation,
+      conservativeChargeMicroUsd: 100_000,
+      dispatchId,
+      importId: admitted.id,
+      outcome: "recipe_terminal_unknown_cost_settled",
+    });
+
+    const preparationCommand = {
+      acquisitionGeneration: generation,
+      dispatchId,
+      importId: admitted.id,
+      operation: "prepare_recipe_recovery",
+    } as const;
+    const prepared = await terminalSettlementCommand(preparationCommand);
+    expect(prepared.status, await prepared.clone().text()).toBe(200);
+    const preparedBody = (await prepared.json()) as {
+      readonly recoveryDispatchId: string;
+      readonly recoveryExtractionFingerprint: string;
+    };
+    expect(preparedBody).toMatchObject({
+      recoveryDispatchId: `${dispatchId}:recovery:1`,
+    });
+
+    const replay = await terminalSettlementCommand(preparationCommand);
+    expect(replay.status, await replay.clone().text()).toBe(200);
+    expect(await replay.json()).toEqual(preparedBody);
+    const attempt = await systemCommand("read-recipe-recovery-attempt", {
+      admission,
+      expectedGeneration: generation,
+      intentId: admitted.id,
+      selector: { _tag: "Latest", rootDispatchId: dispatchId },
+    });
+    expect(attempt.status, await attempt.clone().text()).toBe(200);
+    await expect(attempt.json()).resolves.toMatchObject({
+      currentDispatchId: `${dispatchId}:recovery:1`,
+      currentExtractionFingerprint: preparedBody.recoveryExtractionFingerprint,
+      ordinal: 1,
+      rootDispatchId: dispatchId,
+    });
+    const removedSharedAuthority = await database
+      .prepare(
+        `SELECT name FROM sqlite_master
+          WHERE type = 'table'
+            AND name IN (
+              'pilot_provider_terminal_checkpoints',
+              'import_provider_terminal_checkpoints',
+              'pilot_provider_recipe_recovery_attempts'
+            )`
+      )
+      .all();
+    expect(removedSharedAuthority.results).toEqual([]);
   });
 });

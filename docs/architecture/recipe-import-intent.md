@@ -21,10 +21,11 @@ dual write, legacy read, or compatibility adapter.
 The shared `MealPlannerDatabase` D1 is noncanonical for this moved state. The
 production acquisition Workflow commits acquisition, transcription, visual,
 carousel, and extraction metadata only through the private household boundary.
-Shared D1 retains the Slice 3 settlement and terminal-recovery ledger and
+Terminal checkpoints and recovery attempts are committed and read only through
+that boundary. Shared D1 retains provider-budget settlement/reconciliation and
 approved global operational controls; those records cannot author household
-evidence, publish a recipe, answer a review, change public lifecycle state, or
-serve a public Recipe Bank read.
+evidence or recovery, publish a recipe, answer a review, change public lifecycle
+state, or serve a public Recipe Bank read.
 
 `ImportMediaAcquisitionObject` remains a noncanonical, generation-fenced
 execution coordinator. It transports temporary media and artifacts but is not
@@ -180,9 +181,10 @@ review, Recipe Bank, receipt, admission, and outbox tables. Alchemy owns the
 Durable Object class/namespace lifecycle but does not replace database
 migrations.
 
-The fresh D1 migration under `apps/api/migrations` contains only the remaining
-operational settlement/recovery schema. The former D1 import requests, public
-intent/history, review, Recipe Bank, batch, and moved receipt tables are deleted
+The fresh D1 migration under `apps/api/migrations` contains only remaining
+noncanonical execution bookkeeping and global provider-budget controls. The
+former D1 import requests, public intent/history, review, Recipe Bank, terminal
+checkpoint, recovery-attempt, batch, and moved receipt tables are deleted
 rather than migrated or backfilled. Structural tests reject reintroducing their
 production repositories or SQL tables.
 

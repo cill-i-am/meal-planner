@@ -33,10 +33,16 @@ import {
   HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceInput,
   HouseholdObserveEvidenceReferenceResult,
+  HouseholdPrepareRecipeRecoveryInput,
+  HouseholdPrepareRecipeRecoveryResult,
   HouseholdReadEvidenceReferencesInput,
   HouseholdReadEvidenceReferencesResult,
   HouseholdReadEvidenceStageInput,
   HouseholdReadEvidenceStageResult,
+  HouseholdReadImportTerminalCheckpointInput,
+  HouseholdReadImportTerminalCheckpointResult,
+  HouseholdReadRecipeRecoveryAttemptInput,
+  HouseholdReadRecipeRecoveryAttemptResult,
 } from "./evidence/household-evidence.contract.js";
 import { makeHouseholdEvidenceRepository } from "./evidence/household-evidence.repository.js";
 import { ensureHouseholdProvenance } from "./foundation/household-provenance.js";
@@ -445,6 +451,30 @@ export const HouseholdObjectRuntime = Effect.gen(
             );
           })
         ),
+      prepareRecipeRecovery: (
+        untrustedInput: typeof HouseholdPrepareRecipeRecoveryInput.Encoded
+      ) =>
+        scoped(
+          Effect.gen(function* prepareHouseholdRecipeRecovery() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdPrepareRecipeRecoveryInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "prepare_recipe_recovery"
+            );
+            const connection = yield* database;
+            const prepared =
+              yield* makeHouseholdEvidenceRepository(
+                connection
+              ).prepareRecipeRecovery(command);
+            return yield* encodeRecipeImportResult(
+              HouseholdPrepareRecipeRecoveryResult,
+              prepared
+            );
+          })
+        ),
       confirmRecipeImportAction: (
         untrustedInput: HouseholdConfirmRecipeImportActionInput
       ) =>
@@ -557,6 +587,54 @@ export const HouseholdObjectRuntime = Effect.gen(
             return yield* encodeRecipeImportResult(
               HouseholdReadEvidenceStageResult,
               stage
+            );
+          })
+        ),
+      readImportTerminalCheckpoint: (
+        untrustedInput: typeof HouseholdReadImportTerminalCheckpointInput.Encoded
+      ) =>
+        scoped(
+          Effect.gen(function* readHouseholdImportTerminalCheckpoint() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadImportTerminalCheckpointInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_import_terminal_checkpoint"
+            );
+            const connection = yield* database;
+            const checkpoint =
+              yield* makeHouseholdEvidenceRepository(
+                connection
+              ).readTerminalCheckpoint(command);
+            return yield* encodeRecipeImportResult(
+              HouseholdReadImportTerminalCheckpointResult,
+              checkpoint
+            );
+          })
+        ),
+      readRecipeRecoveryAttempt: (
+        untrustedInput: typeof HouseholdReadRecipeRecoveryAttemptInput.Encoded
+      ) =>
+        scoped(
+          Effect.gen(function* readHouseholdRecipeRecoveryAttempt() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadRecipeRecoveryAttemptInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_recipe_recovery_attempt"
+            );
+            const connection = yield* database;
+            const attempt =
+              yield* makeHouseholdEvidenceRepository(
+                connection
+              ).readRecipeRecoveryAttempt(command);
+            return yield* encodeRecipeImportResult(
+              HouseholdReadRecipeRecoveryAttemptResult,
+              attempt
             );
           })
         ),

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path = require("node:path");
 import { fileURLToPath } from "node:url";
@@ -12,7 +13,10 @@ const trackedFiles = execFileSync("git", ["ls-files", "-z"], {
   encoding: "utf-8",
 })
   .split("\0")
-  .filter((entryPath) => entryPath.length > 0);
+  .filter(
+    (entryPath) =>
+      entryPath.length > 0 && existsSync(path.join(repositoryRoot, entryPath))
+  );
 
 const isProductionSource = (entryPath: string): boolean =>
   [".ts", ".tsx"].includes(path.extname(entryPath)) &&
