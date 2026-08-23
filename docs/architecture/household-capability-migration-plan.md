@@ -547,9 +547,11 @@ cannot overtake route registration. Concurrent registration is serialized by
 the route's unique import ID: the first route is immutable and every
 conflicting organization fails closed. The route can only reconstruct the
 enumerated lifecycle system admission, and the consumer
-re-proves import, authoritative source kind, generation, object key, kind,
-hash, and stored metadata before an idempotent household availability
-observation. Household state fences observations by event time and a fixed
+re-proves import, authoritative source kind, object key, kind, hash, and stored
+metadata before an idempotent household availability observation. The route's
+execution generation fences the household RPC; the R2 key and metadata's
+acquisition-attempt generation validate the artifact. Household state fences
+observations by event time and a fixed
 same-time action precedence, so delayed deletion cannot replace newer
 availability. The route is not a household registry, product read model,
 object-name source, or Slice 3 recovery ledger.

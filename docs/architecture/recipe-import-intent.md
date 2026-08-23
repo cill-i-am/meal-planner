@@ -124,9 +124,11 @@ event route synchronously before starting the Workflow. The unordered Queue
 carries only R2 notifications, so the consumer cannot observe an event before
 the route exists. It resolves that noncanonical route, reads the household's
 committed references through the private service binding, and requires exact
-import, generation, object-key, kind, native R2 checksum, and custom-metadata
-agreement before committing an idempotent availability observation. The route
-is not public and never grants member authority.
+import, object-key, kind, native R2 checksum, and custom-metadata agreement
+before committing an idempotent availability observation. The route carries
+the immutable execution generation for the household RPC fence; the R2 key and
+metadata carry the acquisition-attempt generation used to validate the
+artifact. The route is not public and never grants member authority.
 The consumer has only an R2 read binding. A notification that remains retryable
 after the configured attempts is retained in the dedicated evidence-event DLQ
 rather than silently discarded.

@@ -1,8 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "9a39c42f-2f1a-4e53-8f5e-930b9a34e119",
-  "prevIds": ["e56f80eb-6c6d-415d-ae02-0de6980d20dd"],
+  "id": "be0cd2d0-f251-4515-a3a5-c6b3a4a13ecc",
+  "prevIds": ["5a9b605b-2eba-4971-83b4-111a1138833f"],
   "ddl": [
     {
       "name": "household_evidence_mutation_receipts",
@@ -237,6 +237,16 @@
       "table": "household_evidence_references"
     },
     {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "acquisition_attempt_generation",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
+    },
+    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -253,6 +263,16 @@
       "default": null,
       "generated": null,
       "name": "committed_at",
+      "entityType": "columns",
+      "table": "household_evidence_stage_executions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
       "entityType": "columns",
       "table": "household_evidence_stage_executions"
     },
@@ -1065,6 +1085,16 @@
       "name": "version",
       "entityType": "columns",
       "table": "household_recipes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "acquisition_attempt_generation",
+      "entityType": "columns",
+      "table": "import_recipe_recovery_attempts"
     },
     {
       "type": "text",

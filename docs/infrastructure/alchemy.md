@@ -198,8 +198,9 @@ private D1 table through an atomic insert-and-read batch keyed by import ID,
 then starts the Workflow. The unordered Queue carries only R2 events, so a
 notification cannot overtake route registration. The consumer Schema-decodes
 those events, resolves only that admitted route, validates the authoritative
-source shape, generation-scoped key, and integrity metadata, then records a
-household-local availability observation through the private service binding.
+source shape, acquisition-attempt-scoped key, and integrity metadata, then
+records a household-local availability observation through the private service
+binding using the route's immutable execution generation as the RPC fence.
 Concurrent conflicting routes fail closed. Notifications are transport
 evidence: missing, duplicate, stale, or late events cannot rewrite the
 committed R2 reference or current result. The household compares event time

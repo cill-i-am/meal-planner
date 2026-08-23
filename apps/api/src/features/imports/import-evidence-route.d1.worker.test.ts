@@ -33,6 +33,7 @@ describe("D1 import evidence route authority", () => {
       "019d5aa3-1090-70c1-9ef0-bef8f7452621"
     );
     const routeA = Schema.decodeUnknownSync(ImportEvidenceRoute)({
+      executionGeneration: 1,
       importId,
       organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
         "019d5aa3-1090-70c2-9ef0-bef8f7452621"
@@ -40,6 +41,7 @@ describe("D1 import evidence route authority", () => {
       routeVersion: 1,
     });
     const routeB = Schema.decodeUnknownSync(ImportEvidenceRoute)({
+      executionGeneration: 1,
       importId,
       organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
         "019d5aa3-1090-70c3-9ef0-bef8f7452621"

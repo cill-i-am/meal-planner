@@ -24,10 +24,10 @@ describe("import evidence R2 notifications", () => {
     );
 
     expect(decoded).toEqual({
+      acquisitionGeneration: 3,
       action: "LifecycleDeletion",
       artifact: "speech_transcript",
       eventTime: "2026-08-22T12:00:00.000Z",
-      executionGeneration: 3,
       importId,
       objectKey: `imports/${importId}/transcription/v1/generations/3/transcript.json`,
       referenceKind: "speech_transcript",

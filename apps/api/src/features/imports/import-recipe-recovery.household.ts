@@ -111,6 +111,9 @@ export const resolveHouseholdRecoveryAuthority = (input: {
     if (route === null) {
       return yield* Effect.fail(importTransitionRejected());
     }
+    if (route.executionGeneration !== input.executionGeneration) {
+      return yield* Effect.fail(importTransitionRejected());
+    }
     const intentId = yield* Schema.decodeUnknownEffect(RecipeImportIntentId)(
       input.importId
     ).pipe(Effect.mapError(() => importTransitionRejected()));
@@ -438,6 +441,7 @@ export const prepareHouseholdProviderRecovery = (input: {
     const command = yield* Schema.encodeEffect(
       HouseholdMutateEvidenceStageInput
     )({
+      acquisitionAttemptGeneration: input.acquisitionGeneration,
       admission: authority.admission,
       expectedGeneration: input.executionGeneration,
       inputFingerprint: checkpoint.inputFingerprint,

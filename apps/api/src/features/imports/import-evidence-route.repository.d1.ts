@@ -21,6 +21,7 @@ export const makeD1ImportEvidenceRouteRepository = (
         database
           .prepare(
             `SELECT import_id AS importId,
+                    execution_generation AS executionGeneration,
                     organization_id AS organizationId,
                     route_version AS routeVersion
                FROM import_evidence_routes
@@ -45,14 +46,20 @@ export const makeD1ImportEvidenceRouteRepository = (
           database
             .prepare(
               `INSERT INTO import_evidence_routes (
-                 import_id, organization_id, route_version
-               ) VALUES (?, ?, ?)
+                 import_id, execution_generation, organization_id, route_version
+               ) VALUES (?, ?, ?, ?)
                ON CONFLICT (import_id) DO NOTHING`
             )
-            .bind(route.importId, route.organizationId, route.routeVersion),
+            .bind(
+              route.importId,
+              route.executionGeneration,
+              route.organizationId,
+              route.routeVersion
+            ),
           database
             .prepare(
               `SELECT import_id AS importId,
+                      execution_generation AS executionGeneration,
                       organization_id AS organizationId,
                       route_version AS routeVersion
                  FROM import_evidence_routes
@@ -71,7 +78,8 @@ export const makeD1ImportEvidenceRouteRepository = (
             )
       ),
       Effect.map((winner) =>
-        winner.organizationId === route.organizationId
+        winner.organizationId === route.organizationId &&
+        winner.executionGeneration === route.executionGeneration
           ? ("Registered" as const)
           : ("ConflictRejected" as const)
       )

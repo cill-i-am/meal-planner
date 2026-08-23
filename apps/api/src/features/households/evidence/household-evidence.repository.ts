@@ -236,7 +236,7 @@ const validateCompleteStageMutationStructure = (
   const identityValid =
     result._tag === "Extraction"
       ? String(result.draft.importId) === String(input.intentId) &&
-        result.draft.generation === input.expectedGeneration &&
+        result.draft.generation === input.acquisitionAttemptGeneration &&
         result.draft.extractionFingerprint === input.inputFingerprint
       : result.dispatchId === operation.dispatchId;
   if (!identityValid) {
@@ -245,7 +245,7 @@ const validateCompleteStageMutationStructure = (
   const expected = expectedStageReference(
     operation.stage,
     input.intentId,
-    input.expectedGeneration
+    input.acquisitionAttemptGeneration
   );
   if (expected === null) {
     if (operation.reference === undefined) {
@@ -458,6 +458,7 @@ export const makeHouseholdEvidenceRepository = (
         HouseholdCommitAcquisitionEvidenceInput
       )(input).pipe(Effect.mapError(persistenceFailure));
       const commandDigest = yield* digestJson({
+        acquisitionAttemptGeneration: encodedInput.acquisitionAttemptGeneration,
         expectedGeneration: encodedInput.expectedGeneration,
         intentId: encodedInput.intentId,
         operation: "commit-acquisition-evidence",
@@ -838,6 +839,8 @@ export const makeHouseholdEvidenceRepository = (
                 yield* transaction
                   .insert(householdEvidenceStageExecutions)
                   .values({
+                    acquisitionAttemptGeneration:
+                      input.acquisitionAttemptGeneration,
                     claimJson,
                     committedAt,
                     dispatchId: input.operation.dispatchId,
@@ -851,6 +854,8 @@ export const makeHouseholdEvidenceRepository = (
                 return "DispatchClaimed" as const;
               }
               if (
+                current.acquisitionAttemptGeneration !==
+                  input.acquisitionAttemptGeneration ||
                 current.inputFingerprint !== input.inputFingerprint ||
                 current.dispatchId !== input.operation.dispatchId
               ) {
@@ -870,6 +875,8 @@ export const makeHouseholdEvidenceRepository = (
               }
               if (
                 current === undefined ||
+                current.acquisitionAttemptGeneration !==
+                  input.acquisitionAttemptGeneration ||
                 current.inputFingerprint !== input.inputFingerprint ||
                 current.dispatchId !== input.operation.dispatchId
               ) {
@@ -920,7 +927,7 @@ export const makeHouseholdEvidenceRepository = (
                 const expected = expectedStageReference(
                   input.operation.stage,
                   input.intentId,
-                  input.expectedGeneration
+                  input.acquisitionAttemptGeneration
                 );
                 if (reference !== undefined && expected !== null) {
                   yield* transaction
@@ -947,6 +954,8 @@ export const makeHouseholdEvidenceRepository = (
               }
               if (
                 current === undefined ||
+                current.acquisitionAttemptGeneration !==
+                  input.acquisitionAttemptGeneration ||
                 current.inputFingerprint !== input.inputFingerprint ||
                 current.dispatchId !== input.operation.dispatchId
               ) {
@@ -1016,15 +1025,17 @@ export const makeHouseholdEvidenceRepository = (
               }
               return "Failed" as const;
             });
+            const currentMatchesRecoveryAttempt =
+              current?.acquisitionAttemptGeneration ===
+                input.acquisitionAttemptGeneration &&
+              current?.inputFingerprint === input.inputFingerprint &&
+              current.dispatchId === input.operation.dispatchId;
             const prepareRecoveryStage = Effect.gen(
               function* prepareFailedProviderRecovery() {
                 if (input.operation._tag !== "PrepareRecovery") {
                   return yield* Effect.fail(failure("invalid_input"));
                 }
-                if (
-                  current?.inputFingerprint === input.inputFingerprint &&
-                  current.dispatchId === input.operation.dispatchId
-                ) {
+                if (currentMatchesRecoveryAttempt) {
                   return "RecoveryPrepared" as const;
                 }
                 if (
@@ -1085,6 +1096,8 @@ export const makeHouseholdEvidenceRepository = (
                 yield* transaction
                   .update(householdEvidenceStageExecutions)
                   .set({
+                    acquisitionAttemptGeneration:
+                      input.acquisitionAttemptGeneration,
                     committedAt,
                     completedAt: null,
                     dispatchId: input.operation.dispatchId,
@@ -1218,6 +1231,7 @@ export const makeHouseholdEvidenceRepository = (
               }
             }
             const result = yield* decode(HouseholdMutateEvidenceStageResult, {
+              acquisitionAttemptGeneration: input.acquisitionAttemptGeneration,
               committedAt,
               executionGeneration: input.expectedGeneration,
               intentId: input.intentId,
@@ -1700,7 +1714,7 @@ export const makeHouseholdEvidenceRepository = (
       const expectedReference = expectedStageReference(
         input.stage,
         input.intentId,
-        input.expectedGeneration
+        stage.acquisitionAttemptGeneration
       );
       const [reference] =
         expectedReference === null
@@ -1726,6 +1740,7 @@ export const makeHouseholdEvidenceRepository = (
           onExcessProperty: "error",
         }
       )({
+        acquisitionAttemptGeneration: stage.acquisitionAttemptGeneration,
         committedAt: stage.committedAt,
         completedAt: stage.completedAt,
         dispatchId: stage.dispatchId,

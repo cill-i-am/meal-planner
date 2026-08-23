@@ -49,13 +49,13 @@ export default {
             observeEvidenceReference: (input) =>
               input.admission.organizationId === organizationId &&
               input.intentId === importId &&
-              input.expectedGeneration === 4 &&
+              input.expectedGeneration === 1 &&
               input.reference.key === objectKey &&
               input.reference.sha256 === manifestHash
                 ? Effect.succeed({
                     availability: input.availability,
                     committedAt: "2026-08-22T12:00:01.000Z",
-                    executionGeneration: 4,
+                    executionGeneration: 1,
                     intentId: importId,
                     kind: "acquisition_manifest" as const,
                     observationOrdinal: 1,
@@ -71,10 +71,10 @@ export default {
             readEvidenceReferences: (input) =>
               input.admission.organizationId === organizationId &&
               input.intentId === importId &&
-              input.expectedGeneration === 4
+              input.expectedGeneration === 1
                 ? Effect.succeed({
                     committedAt: "2026-08-22T11:59:00.000Z",
-                    executionGeneration: 4,
+                    executionGeneration: 1,
                     intentId: importId,
                     references: [
                       {

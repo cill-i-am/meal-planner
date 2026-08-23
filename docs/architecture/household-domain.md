@@ -134,8 +134,12 @@ are fenced by household, import, generation, object key, and integrity metadata.
 After authenticated import admission, the API synchronously registers a
 private, noncanonical import-to-organization route before starting the
 Workflow. A private D1 table stores that route with import ID as its unique key
-only so an R2 event consumer can reconstruct an admitted system command. The
-unordered Queue carries R2 notifications only, so a valid lifecycle event
+and the immutable execution generation only so an R2 event consumer can
+reconstruct an admitted system command. The generation encoded in the R2 key
+and custom metadata is the acquisition-attempt generation: it scopes artifact
+identity and integrity checks, while the route's execution generation remains
+the household RPC and ownership fence. The unordered Queue carries R2
+notifications only, so a valid lifecycle event
 cannot overtake registration. Registration atomically inserts and reads the
 immutable winner, so concurrent conflicting organizations fail closed instead
 of overwriting one another. The route is never a public lookup, household

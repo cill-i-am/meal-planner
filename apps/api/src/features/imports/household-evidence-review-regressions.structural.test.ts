@@ -50,11 +50,26 @@ describe("household evidence exact-head review regressions", () => {
   });
 
   it("carries execution and acquisition-attempt generations independently", async () => {
-    const contract = await source(
-      "../households/evidence/household-evidence.contract.ts"
-    );
+    const [contract, event, repository, routeRepository, schema] =
+      await Promise.all([
+        source("../households/evidence/household-evidence.contract.ts"),
+        source("import-evidence-event.ts"),
+        source("../households/evidence/household-evidence.repository.ts"),
+        source("import-evidence-route.repository.d1.ts"),
+        source("../households/household.database-schema.ts"),
+      ]);
 
     expect(contract).toContain("acquisitionAttemptGeneration");
+    expect(schema).toContain('"acquisition_attempt_generation"');
+    expect(repository).toContain("input.acquisitionAttemptGeneration");
+    expect(event).toContain("acquisitionGeneration: Number(match[2])");
+    expect(event).toContain("expectedGeneration: resolved.executionGeneration");
+    expect(event).not.toContain(
+      "expectedGeneration: event.executionGeneration"
+    );
+    expect(routeRepository).toContain(
+      "execution_generation AS executionGeneration"
+    );
   });
 
   it("provisions an R2-event DLQ and keeps the evidence consumer read-only", async () => {

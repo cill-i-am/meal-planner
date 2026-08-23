@@ -55,6 +55,9 @@ export const R2EvidenceEvent = Schema.Union([
 export type R2EvidenceEvent = typeof R2EvidenceEvent.Type;
 
 export const ImportEvidenceRoute = Schema.Struct({
+  executionGeneration: Schema.Int.pipe(
+    Schema.check(Schema.isGreaterThanOrEqualTo(1))
+  ),
   importId: ImportId,
   organizationId: HouseholdOrganizationId,
   routeVersion: Schema.Literal(1),
@@ -62,6 +65,9 @@ export const ImportEvidenceRoute = Schema.Struct({
 export type ImportEvidenceRoute = typeof ImportEvidenceRoute.Type;
 
 const SafeImportEvidenceEvent = Schema.Struct({
+  acquisitionGeneration: Schema.Int.pipe(
+    Schema.check(Schema.isGreaterThanOrEqualTo(1))
+  ),
   action: R2EvidenceEventAction,
   artifact: Schema.Literals([
     "acquisition_manifest",
@@ -75,9 +81,6 @@ const SafeImportEvidenceEvent = Schema.Struct({
     "visual_manifest",
   ]),
   eventTime: ImportTimestampEncoded,
-  executionGeneration: Schema.Int.pipe(
-    Schema.check(Schema.isGreaterThanOrEqualTo(1))
-  ),
   importId: ImportId,
   objectKey: Schema.String,
   referenceKind: Schema.NullOr(HouseholdEvidenceReferenceKind),
@@ -172,10 +175,10 @@ export const decodeSafeImportEvidenceEvent = (untrusted: unknown) =>
         const match = candidate.pattern.exec(event.object.key);
         if (match?.[1] !== undefined && match[2] !== undefined) {
           return Schema.decodeUnknownEffect(SafeImportEvidenceEvent)({
+            acquisitionGeneration: Number(match[2]),
             action: event.action,
             artifact: candidate.artifact,
             eventTime: event.eventTime,
-            executionGeneration: Number(match[2]),
             importId: match[1],
             objectKey: event.object.key,
             referenceKind: candidate.referenceKind,
@@ -297,7 +300,7 @@ const route = (
     ).pipe(Effect.mapError(() => failure("invalid_event", false)));
     const encodedReferences = yield* ports.household.readEvidenceReferences({
       admission,
-      expectedGeneration: event.executionGeneration,
+      expectedGeneration: resolved.executionGeneration,
       intentId,
     });
     const references = yield* Schema.decodeUnknownEffect(
@@ -329,7 +332,7 @@ const route = (
           nativeHash === undefined ||
           bytesToHex(nativeHash) !== reference.sha256 ||
           metadata["importId"] !== event.importId ||
-          metadata["generation"] !== String(event.executionGeneration) ||
+          metadata["generation"] !== String(event.acquisitionGeneration) ||
           metadata["sha256"] !== reference.sha256
         ) {
           return yield* Effect.fail(failure("integrity_mismatch", false));
@@ -354,7 +357,7 @@ const route = (
         action: event.action,
         eventTime,
       },
-      expectedGeneration: event.executionGeneration,
+      expectedGeneration: resolved.executionGeneration,
       intentId,
       mutationId,
       reference: {

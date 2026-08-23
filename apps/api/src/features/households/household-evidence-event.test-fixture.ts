@@ -295,6 +295,7 @@ const ProviderTerminalAttemptCommand = Schema.Struct({
 });
 
 const VisualResumeCommand = Schema.Struct({
+  acquisitionGeneration: AcquisitionGeneration,
   admission: HouseholdSystemAdmission,
   canonicalSourceId: SourceCanonicalId,
   importId: ImportId,
@@ -400,7 +401,7 @@ const runVisualResumeProof = (
   command: typeof VisualResumeCommand.Type
 ) =>
   Effect.gen(function* runInstalledVisualResumeProof() {
-    const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
+    const generation = command.acquisitionGeneration;
     const executionGeneration = Schema.decodeUnknownSync(
       ImportIntentExecutionGeneration
     )(1);
@@ -508,6 +509,7 @@ const runVisualResumeProof = (
       "2026-08-23T12:00:02.000Z"
     );
     yield* terminalHousehold(environment).mutateEvidenceStage({
+      acquisitionAttemptGeneration: generation,
       admission: command.admission,
       expectedGeneration: executionGeneration,
       inputFingerprint: sourceMediaSha256,

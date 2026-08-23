@@ -138,6 +138,9 @@ export const householdEvidenceMutationReceipts = sqliteTable(
 export const householdEvidenceStageExecutions = sqliteTable(
   "household_evidence_stage_executions",
   {
+    acquisitionAttemptGeneration: integer(
+      "acquisition_attempt_generation"
+    ).notNull(),
     claimJson: text("claim_json"),
     committedAt: text("committed_at").notNull(),
     completedAt: text("completed_at"),

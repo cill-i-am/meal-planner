@@ -172,7 +172,12 @@ describe("import evidence Queue runtime", () => {
     const routes = await runtime?.getKVNamespace("ROUTES", "consumer");
     await routes?.put(
       importId,
-      JSON.stringify({ importId, organizationId, routeVersion: 1 })
+      JSON.stringify({
+        executionGeneration: 1,
+        importId,
+        organizationId,
+        routeVersion: 1,
+      })
     );
     await queue?.send({
       account: "must-not-escape",

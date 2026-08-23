@@ -348,6 +348,7 @@ const HouseholdEvidenceStageReference = Schema.Struct({
 });
 
 export const HouseholdMutateEvidenceStageInput = Schema.Struct({
+  acquisitionAttemptGeneration: PositiveSafeInteger,
   admission: HouseholdSystemAdmission,
   expectedGeneration: PositiveSafeInteger,
   inputFingerprint: HouseholdEvidenceSha256,
@@ -404,6 +405,7 @@ export type HouseholdMutateEvidenceStageInput =
   typeof HouseholdMutateEvidenceStageInput.Type;
 
 export const HouseholdMutateEvidenceStageResult = Schema.Struct({
+  acquisitionAttemptGeneration: PositiveSafeInteger,
   committedAt: ImportTimestamp,
   executionGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,
@@ -431,6 +433,7 @@ export type HouseholdReadEvidenceStageInput =
 
 export const HouseholdReadEvidenceStageResult = Schema.NullOr(
   Schema.Struct({
+    acquisitionAttemptGeneration: PositiveSafeInteger,
     committedAt: ImportTimestamp,
     completedAt: Schema.NullOr(ImportTimestamp),
     dispatchId: DispatchId,

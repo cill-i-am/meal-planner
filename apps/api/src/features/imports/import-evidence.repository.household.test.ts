@@ -28,10 +28,13 @@ describe("household evidence execution generation fencing", () => {
       "2026-08-23T15:00:00.000Z"
     );
     const expectedGenerations: number[] = [];
+    const acquisitionGenerations: number[] = [];
     const householdDomain = {
       mutateEvidenceStage: (command) => {
+        acquisitionGenerations.push(command.acquisitionAttemptGeneration);
         expectedGenerations.push(command.expectedGeneration);
         return Effect.succeed({
+          acquisitionAttemptGeneration: command.acquisitionAttemptGeneration,
           committedAt: "2026-08-23T15:00:00.000Z",
           executionGeneration: 1,
           intentId,
@@ -91,6 +94,7 @@ describe("household evidence execution generation fencing", () => {
     );
 
     expect(claim._tag).toBe("DispatchClaimed");
+    expect(acquisitionGenerations).toEqual([2]);
     expect(expectedGenerations).toEqual([1, 1]);
   });
 
@@ -132,6 +136,7 @@ describe("household evidence execution generation fencing", () => {
         readEvidenceReferences: () => Effect.die("unused"),
         readEvidenceStage: () =>
           Effect.succeed({
+            acquisitionAttemptGeneration: 2,
             committedAt: "2026-08-23T16:00:00.000Z",
             completedAt,
             dispatchId,

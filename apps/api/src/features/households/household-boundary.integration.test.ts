@@ -339,11 +339,16 @@ const systemCommand = (
     | "resolve",
   input: object
 ) => {
-  const attemptGeneration =
-    operation === "commit-acquisition-evidence"
-      ? /\/generations\/(?<generation>\d+)\//u.exec(JSON.stringify(input))
-          ?.groups?.["generation"]
-      : undefined;
+  let attemptGeneration: string | undefined;
+  if (operation === "commit-acquisition-evidence") {
+    attemptGeneration = /\/generations\/(?<generation>\d+)\//u.exec(
+      JSON.stringify(input)
+    )?.groups?.["generation"];
+  } else if (operation === "mutate-evidence-stage") {
+    attemptGeneration = /"expectedGeneration":(?<generation>\d+)/u.exec(
+      JSON.stringify(input)
+    )?.groups?.["generation"];
+  }
   const command =
     attemptGeneration === undefined
       ? input
@@ -487,6 +492,7 @@ const sendEvidenceEvent = async (message: object) => {
 };
 
 const registerEvidenceRoute = async (input: {
+  readonly executionGeneration?: number;
   readonly importId: string;
   readonly organizationId: string;
 }) => {
@@ -497,11 +503,11 @@ const registerEvidenceRoute = async (input: {
   await database
     .prepare(
       `INSERT INTO import_evidence_routes (
-         import_id, organization_id, route_version
-       ) VALUES (?, ?, 1)
+         import_id, execution_generation, organization_id, route_version
+       ) VALUES (?, ?, ?, 1)
        ON CONFLICT (import_id) DO NOTHING`
     )
-    .bind(input.importId, input.organizationId)
+    .bind(input.importId, input.executionGeneration ?? 1, input.organizationId)
     .run();
   const winner = await database
     .prepare(
@@ -709,8 +715,8 @@ const prepareUnknownSpeechTerminal = async (input: {
   await database
     .prepare(
       `INSERT INTO import_evidence_routes (
-         import_id, organization_id, route_version
-       ) VALUES (?, ?, 1)`
+         import_id, execution_generation, organization_id, route_version
+       ) VALUES (?, 1, ?, 1)`
     )
     .bind(admitted.id, organization.id)
     .run();
@@ -1820,9 +1826,8 @@ describe("household public API to private Durable Object boundary", () => {
         },
       })
     ).resolves.toEqual({
-      _tag: "Rejected",
-      reason: "stale_event",
-      retryable: false,
+      _tag: "Accepted",
+      value: { _tag: "Ignored", reason: "stale" },
     });
     const beforeDeletion = await readEvidenceReferences(admission, admitted.id);
     expect(beforeDeletion?.references.map(({ kind }) => kind)).toEqual([
@@ -2816,8 +2821,8 @@ describe("household public API to private Durable Object boundary", () => {
     await database
       .prepare(
         `INSERT INTO import_evidence_routes (
-           import_id, organization_id, route_version
-         ) VALUES (?, ?, 1)`
+           import_id, execution_generation, organization_id, route_version
+         ) VALUES (?, 1, ?, 1)`
       )
       .bind(admitted.id, organization.id)
       .run();
@@ -3053,6 +3058,7 @@ describe("household public API to private Durable Object boundary", () => {
         videoId,
       });
       const response = await visualResumeCommand({
+        acquisitionGeneration: 2,
         admission,
         canonicalSourceId: videoId,
         importId: admitted.id,
@@ -3325,8 +3331,8 @@ describe("household public API to private Durable Object boundary", () => {
     await database
       .prepare(
         `INSERT INTO import_evidence_routes (
-           import_id, organization_id, route_version
-         ) VALUES (?, ?, 1)`
+           import_id, execution_generation, organization_id, route_version
+         ) VALUES (?, 1, ?, 1)`
       )
       .bind(admitted.id, organization.id)
       .run();

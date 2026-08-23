@@ -12,6 +12,7 @@ import {
 export const importEvidenceRoutes = sqliteTable(
   "import_evidence_routes",
   {
+    executionGeneration: integer("execution_generation").notNull(),
     importId: text("import_id").primaryKey(),
     organizationId: text("organization_id").notNull(),
     routeVersion: integer("route_version").notNull(),

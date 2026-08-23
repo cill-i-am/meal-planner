@@ -131,6 +131,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260823080018_import_execution/migration.sql",
       "20260823113951_import_execution/migration.sql",
       "20260823135058_import_execution/migration.sql",
+      "20260823164025_import_execution/migration.sql",
     ]);
     const retirementMigration = readRepoFile(
       "./apps/api/migrations/20260823080018_import_execution/migration.sql"
@@ -167,6 +168,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "evidence_references_json"
     );
     expect(executionProjectionRetirementMigration).not.toContain("INSERT INTO");
+    const evidenceRouteGenerationMigration = readRepoFile(
+      "./apps/api/migrations/20260823164025_import_execution/migration.sql"
+    );
+    expect(evidenceRouteGenerationMigration).toContain(
+      "ADD `execution_generation` integer NOT NULL"
+    );
   });
 
   it("provisions Better Auth D1 while Drizzle Kit owns its checked-in migrations", () => {
@@ -280,6 +287,32 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(schemaSource).toContain('sqliteTable("household_meta"');
     expect(drizzleConfigSource).toContain('driver: "durable-sqlite"');
     expect(migration).toContain("CREATE TABLE `household_meta`");
+
+    const householdMigrationsDirectory = fileURLToPath(
+      new URL("apps/api/household-migrations", import.meta.url)
+    );
+    const householdSqlFiles = readdirSync(householdMigrationsDirectory, {
+      recursive: true,
+    })
+      .map(String)
+      .filter((path) => path.endsWith(".sql"))
+      .toSorted();
+    expect(householdSqlFiles).toEqual([
+      "20260819075508_household_domain/migration.sql",
+      "20260819135904_household_meal_plans/migration.sql",
+      "20260821231430_household_domain/migration.sql",
+      "20260822065001_household_domain/migration.sql",
+      "20260823163811_household_domain/migration.sql",
+    ]);
+    const evidenceMigration = readRepoFile(
+      "./apps/api/household-migrations/20260823163811_household_domain/migration.sql"
+    );
+    expect(evidenceMigration).toContain(
+      "CREATE TABLE `household_evidence_stage_executions`"
+    );
+    expect(evidenceMigration).toContain(
+      "`acquisition_attempt_generation` integer NOT NULL"
+    );
   });
 
   it("keeps household host fixtures out of the API production program", () => {
@@ -500,7 +533,10 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       'metadata["importId"] !== event.importId'
     );
     expect(eventDecoderSource).toContain(
-      'metadata["generation"] !== String(event.executionGeneration)'
+      'metadata["generation"] !== String(event.acquisitionGeneration)'
+    );
+    expect(eventDecoderSource).toContain(
+      "expectedGeneration: resolved.executionGeneration"
     );
     expect(eventDecoderSource).toContain(
       'metadata["sha256"] !== reference.sha256'

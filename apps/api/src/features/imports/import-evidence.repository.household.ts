@@ -86,12 +86,17 @@ const makeBoundary = (input: HouseholdEvidenceRepositoryInput) => {
     seed: string,
     command: Omit<
       HouseholdMutateEvidenceStageInput,
-      "admission" | "expectedGeneration" | "intentId" | "mutationId"
+      | "acquisitionAttemptGeneration"
+      | "admission"
+      | "expectedGeneration"
+      | "intentId"
+      | "mutationId"
     >
   ) =>
     input.mutationId(seed).pipe(
       Effect.flatMap((mutationId) =>
         Schema.encodeEffect(HouseholdMutateEvidenceStageInput)({
+          acquisitionAttemptGeneration: input.acquisitionGeneration,
           admission,
           expectedGeneration: input.executionGeneration,
           intentId: input.intentId,
