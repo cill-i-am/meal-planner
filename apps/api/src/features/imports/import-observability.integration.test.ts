@@ -168,7 +168,7 @@ describe("speech recovery workflow restart reconciliation", () => {
           });
 
           await Effect.runPromise(
-            starter.restartFromSpeech?.(importId) ??
+            starter.restartFromSpeech?.(workflowIdentity) ??
               Effect.die("missing speech recovery restart")
           );
 
@@ -200,7 +200,7 @@ describe("speech recovery workflow restart reconciliation", () => {
 
     await expect(
       Effect.runPromise(
-        starter.restartFromSpeech?.(importId) ??
+        starter.restartFromSpeech?.(workflowIdentity) ??
           Effect.die("missing speech recovery restart")
       )
     ).rejects.toMatchObject({ _tag: "WorkflowStartUnavailable" });

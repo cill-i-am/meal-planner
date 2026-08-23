@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import type { Effect } from "effect";
 
 import type { AcquisitionGeneration } from "./import-media.model.js";
@@ -33,20 +34,30 @@ export interface CompletedVisualEvidence {
 
 export type VisualDispatchClaim =
   | { readonly _tag: "Completed"; readonly evidence: CompletedVisualEvidence }
-  | { readonly _tag: "DispatchClaimed"; readonly dispatchId: string }
+  | {
+      readonly _tag: "DispatchClaimed";
+      readonly dispatchId: string;
+      readonly startedAt: ImportTimestamp;
+    }
   | {
       readonly _tag: "Failed";
-      readonly code: string;
+      readonly code: VisualEvidenceFailureCode;
       readonly dispatchId: string;
     }
-  | { readonly _tag: "ResumeDispatch"; readonly dispatchId: string };
-export type VisualEvidenceFailureCode =
-  | "frame_evidence_failed"
-  | "frame_sampling_failed"
-  | "outcome_unknown"
-  | "source_evidence_invalid"
-  | "visual_evidence_failed"
-  | "visual_extraction_failed";
+  | {
+      readonly _tag: "ResumeDispatch";
+      readonly dispatchId: string;
+      readonly startedAt: ImportTimestamp;
+    };
+export const VisualEvidenceFailureCode = Schema.Literals([
+  "frame_evidence_failed",
+  "frame_sampling_failed",
+  "outcome_unknown",
+  "source_evidence_invalid",
+  "visual_evidence_failed",
+  "visual_extraction_failed",
+]);
+export type VisualEvidenceFailureCode = typeof VisualEvidenceFailureCode.Type;
 
 export interface VisualEvidenceRepository {
   readonly claim: (input: {

@@ -2,6 +2,7 @@ import { RecipeImportActionId } from "@meal-planner/recipe-import-api";
 import { Effect, Option, Schema } from "effect";
 
 import type { PilotBudgetDispatchId } from "../pilots/pilot-provider-budget.js";
+import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import type {
@@ -34,10 +35,7 @@ import {
 } from "./import-recipe-extractor.js";
 import { recipeEvidenceContains } from "./import-recipe-grounding.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
-import type {
-  ImportRepository,
-  ImportTransitionError,
-} from "./import.repository.js";
+import type { ImportTransitionError } from "./import.repository.js";
 import {
   TranscriptEvidenceStore,
   TranscriptEvidenceStoreLive,
@@ -722,7 +720,7 @@ export const produceRecipeDraftForImport = Effect.fn(
   readonly bucket: AcquisitionBucketLike;
   readonly extractor: RecipeExtractor;
   readonly importId: ImportId;
-  readonly importRepository: ImportRepository;
+  readonly importRepository: HouseholdImportEvidenceCurrentRepository;
   readonly lifecycle?: ProduceRecipeDraftFromEvidenceInput["lifecycle"];
   readonly now: () => ImportTimestamp;
   readonly recovery?: {
@@ -736,14 +734,16 @@ export const produceRecipeDraftForImport = Effect.fn(
   };
   readonly recipeRepository: RecipeDraftRepository;
 }) {
-  const storedOption = yield* input.importRepository.findById(input.importId);
+  const storedOption = yield* input.importRepository.readCurrent(
+    input.importId
+  );
   const stored = yield* Option.match(storedOption, {
     onNone: () =>
       Effect.fail(pipelineFailure("source_evidence_invalid", "import_missing")),
     onSome: Effect.succeed,
   });
   const allowedStatus = isRecipeEvidenceReadyStatus(
-    stored.view.status,
+    stored.status,
     input.recovery !== undefined
   );
   if (!allowedStatus) {

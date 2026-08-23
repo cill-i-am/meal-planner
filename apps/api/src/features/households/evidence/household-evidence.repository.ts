@@ -1,3 +1,9 @@
+import {
+  FailedRecipeImportIntent,
+  ProcessingRecipeImportIntent,
+  RecipeImportIntent,
+  RecipeImportTimelineEvent,
+} from "@meal-planner/recipe-import-api";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, DateTime, Effect, Option, Schema } from "effect";
@@ -10,6 +16,7 @@ import {
   householdEvidenceStageExecutions,
   householdImportEvidenceExecutions,
   householdRecipeImports,
+  householdRecipeImportTimeline,
   importRecipeRecoveryAttempts,
   importTerminalCheckpoints,
 } from "../household.database-schema.js";
@@ -67,6 +74,10 @@ const EncodedStageMutationResult = Schema.fromJsonString(
 const EncodedRecoveryPreparationResult = Schema.fromJsonString(
   HouseholdPrepareRecipeRecoveryResult
 );
+const EncodedRecipeImportIntent = Schema.fromJsonString(RecipeImportIntent);
+const EncodedRecipeImportTimelineEvent = Schema.fromJsonString(
+  RecipeImportTimelineEvent
+);
 
 const encode = <S extends Schema.Top>(schema: S, value: S["Type"]) =>
   Schema.encodeEffect(schema)(value).pipe(Effect.mapError(persistenceFailure));
@@ -87,7 +98,7 @@ const validateEvidenceStructure = (
   const [media, manifest] = input.result.references;
   const [expectedMediaKey, expectedManifestKey] = expectedReferenceKeys(
     input.intentId,
-    input.expectedGeneration
+    input.acquisitionAttemptGeneration
   );
   const acquiredAtEpochMs = DateTime.toEpochMillis(input.result.acquiredAt);
   const deleteAtEpochMs = DateTime.toEpochMillis(media.deleteAt);
@@ -443,6 +454,7 @@ export const makeHouseholdEvidenceRepository = (
         HouseholdCommitAcquisitionEvidenceInput
       )(input).pipe(Effect.mapError(persistenceFailure));
       const commandDigest = yield* digestJson({
+        acquisitionAttemptGeneration: encodedInput.acquisitionAttemptGeneration,
         expectedGeneration: encodedInput.expectedGeneration,
         intentId: encodedInput.intentId,
         operation: "commit-acquisition-evidence",
@@ -549,6 +561,8 @@ export const makeHouseholdEvidenceRepository = (
             yield* transaction
               .insert(householdImportEvidenceExecutions)
               .values({
+                acquisitionAttemptGeneration:
+                  input.acquisitionAttemptGeneration,
                 acquisitionJson,
                 commandDigest,
                 committedAt,
@@ -784,7 +798,10 @@ export const makeHouseholdEvidenceRepository = (
               return replay.value;
             }
             yield* validateStageMutationFreshness(input, nowEpochMs);
-            if (intent.status !== "processing") {
+            if (
+              intent.status !== "processing" &&
+              input.operation._tag !== "PrepareRecovery"
+            ) {
               return yield* Effect.fail(failure("illegal_transition"));
             }
             const [current] = yield* transaction
@@ -825,6 +842,7 @@ export const makeHouseholdEvidenceRepository = (
                     inputFingerprint: input.inputFingerprint,
                     intentId: input.intentId,
                     stage: input.operation.stage,
+                    startedAt: DateTime.formatIso(input.operation.startedAt),
                     state: "dispatching",
                   });
                 return "DispatchClaimed" as const;
@@ -1049,6 +1067,9 @@ export const makeHouseholdEvidenceRepository = (
                 ) {
                   return yield* Effect.fail(failure("illegal_transition"));
                 }
+                const recoveryStartedAt = DateTime.formatIso(
+                  input.operation.startedAt
+                );
                 yield* transaction
                   .update(householdEvidenceStageExecutions)
                   .set({
@@ -1057,6 +1078,7 @@ export const makeHouseholdEvidenceRepository = (
                     failureCode: null,
                     inputFingerprint: input.inputFingerprint,
                     resultJson: null,
+                    startedAt: recoveryStartedAt,
                     state: "dispatching",
                   })
                   .where(
@@ -1080,6 +1102,78 @@ export const makeHouseholdEvidenceRepository = (
                       eq(householdEvidenceStageExecutions.state, "failed")
                     )
                   );
+                const [failedIntentRow] = yield* transaction
+                  .select({ intentJson: householdRecipeImports.intentJson })
+                  .from(householdRecipeImports)
+                  .where(eq(householdRecipeImports.intentId, input.intentId))
+                  .limit(1)
+                  .pipe(mapPersistence);
+                if (failedIntentRow === undefined) {
+                  return yield* Effect.fail(failure("intent_not_found"));
+                }
+                const failedIntent = yield* decode(
+                  EncodedRecipeImportIntent,
+                  failedIntentRow.intentJson
+                );
+                if (failedIntent.status !== "failed") {
+                  return yield* Effect.fail(failure("illegal_transition"));
+                }
+                const failedWire = yield* encode(
+                  FailedRecipeImportIntent,
+                  failedIntent
+                );
+                const {
+                  error: _error,
+                  failedAt: _failedAt,
+                  ...common
+                } = failedWire;
+                const recoveredIntent = yield* decode(
+                  ProcessingRecipeImportIntent,
+                  {
+                    ...common,
+                    activity: { type: "working" },
+                    intentVersion: failedIntent.intentVersion + 1,
+                    processing: {
+                      speech:
+                        input.operation.stage === "speech"
+                          ? "processing"
+                          : "completed",
+                      startedAt: recoveryStartedAt,
+                      type: "analyzing_evidence",
+                      visuals:
+                        input.operation.stage === "visual"
+                          ? "processing"
+                          : "not_started",
+                    },
+                    status: "processing",
+                    updatedAt: recoveryStartedAt,
+                  }
+                );
+                yield* transaction
+                  .update(householdRecipeImports)
+                  .set({
+                    intentJson: yield* encode(
+                      EncodedRecipeImportIntent,
+                      recoveredIntent
+                    ),
+                    status: "processing",
+                    updatedAt: recoveryStartedAt,
+                  })
+                  .where(eq(householdRecipeImports.intentId, input.intentId));
+                yield* transaction
+                  .insert(householdRecipeImportTimeline)
+                  .values({
+                    eventJson: yield* encode(
+                      EncodedRecipeImportTimelineEvent,
+                      yield* decode(RecipeImportTimelineEvent, {
+                        at: recoveryStartedAt,
+                        intentVersion: recoveredIntent.intentVersion,
+                        type: "recovered",
+                      })
+                    ),
+                    intentId: input.intentId,
+                    intentVersion: recoveredIntent.intentVersion,
+                  });
                 return "RecoveryPrepared" as const;
               }
             );
@@ -1634,6 +1728,7 @@ export const makeHouseholdEvidenceRepository = (
               },
         result,
         stage: input.stage,
+        startedAt: stage.startedAt,
       }).pipe(Effect.mapError(persistenceFailure));
     });
 

@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import type { Effect } from "effect";
 
 import type { AcquisitionGeneration } from "./import-media.model.js";
@@ -29,18 +30,36 @@ export interface CompletedTranscriptEvidence {
   };
 }
 
+export const SpeechTranscriptionFailureCode = Schema.Literals([
+  "audio_extraction_failed",
+  "outcome_unknown",
+  "source_evidence_invalid",
+  "transcription_failed",
+  "transcript_evidence_failed",
+]);
+export type SpeechTranscriptionFailureCode =
+  typeof SpeechTranscriptionFailureCode.Type;
+
 export type SpeechDispatchClaim =
   | {
       readonly _tag: "Completed";
       readonly evidence: CompletedTranscriptEvidence;
     }
-  | { readonly _tag: "DispatchClaimed"; readonly dispatchId: string }
+  | {
+      readonly _tag: "DispatchClaimed";
+      readonly dispatchId: string;
+      readonly startedAt: ImportTimestamp;
+    }
   | {
       readonly _tag: "Failed";
-      readonly code: string;
+      readonly code: SpeechTranscriptionFailureCode;
       readonly dispatchId: string;
     }
-  | { readonly _tag: "ResumeDispatch"; readonly dispatchId: string };
+  | {
+      readonly _tag: "ResumeDispatch";
+      readonly dispatchId: string;
+      readonly startedAt: ImportTimestamp;
+    };
 
 export interface SpeechTranscriptionRepository {
   readonly claim: (input: {
@@ -56,12 +75,7 @@ export interface SpeechTranscriptionRepository {
   readonly fail: (input: {
     readonly completedAt: ImportTimestamp;
     readonly dispatchId: string;
-    readonly failureCode:
-      | "audio_extraction_failed"
-      | "outcome_unknown"
-      | "source_evidence_invalid"
-      | "transcription_failed"
-      | "transcript_evidence_failed";
+    readonly failureCode: SpeechTranscriptionFailureCode;
     readonly generation: AcquisitionGeneration;
     readonly importId: ImportId;
     readonly sourceMediaSha256: string;

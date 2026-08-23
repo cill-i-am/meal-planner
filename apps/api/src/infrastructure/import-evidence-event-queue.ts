@@ -16,6 +16,10 @@ import { MealPlannerDatabase } from "./meal-planner-database.js";
 export const ImportEvidenceEventQueue = Cloudflare.Queues.Queue(
   "ImportEvidenceEventQueue"
 );
+/** R2 evidence notifications that exhaust retries remain inspectable. */
+export const ImportEvidenceEventDeadLetterQueue = Cloudflare.Queues.Queue(
+  "ImportEvidenceEventDeadLetterQueue"
+);
 const dependencyFailure = () =>
   new ImportEvidenceEventFailure({
     reason: "dependency_unavailable",
@@ -39,15 +43,22 @@ export default class ImportEvidenceEventWorker extends Cloudflare.Worker<ImportE
   { main: import.meta.url, workersDev: false },
   Effect.gen(function* ImportEvidenceEventWorkerInit() {
     const queue = yield* ImportEvidenceEventQueue;
+    const deadLetterQueue = yield* ImportEvidenceEventDeadLetterQueue;
     const queryDatabase =
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
-    const bucket = yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
+    const bucket = yield* Cloudflare.R2.ReadBucket(ImportEvidenceBucket);
     const householdDomain = yield* Cloudflare.Workers.bindWorker(
       HouseholdDomainWorker
     );
     yield* Cloudflare.Queues.consumeQueueMessages(
       queue,
-      { batchSize: 10, maxConcurrency: 1, maxRetries: 3 },
+      {
+        batchSize: 10,
+        deadLetterQueue: deadLetterQueue.queueName,
+        deadLetterQueueId: deadLetterQueue.queueId,
+        maxConcurrency: 1,
+        maxRetries: 3,
+      },
       (messages) =>
         Stream.runForEach(messages, (message) =>
           Effect.gen(function* reconcileImportEvidenceMessage() {
@@ -111,7 +122,7 @@ export default class ImportEvidenceEventWorker extends Cloudflare.Worker<ImportE
       Layer.mergeAll(
         Cloudflare.Queues.EventSourceLive,
         Cloudflare.D1.QueryDatabaseBinding,
-        Cloudflare.R2.ReadWriteBucketBinding
+        Cloudflare.R2.ReadBucketBinding
       )
     )
   )

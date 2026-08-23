@@ -113,6 +113,12 @@ integrity metadata, compact R2 references, and replay receipt. Exact retries
 return the same privacy-safe result; a changed command under the same mutation
 identity or a stale generation fails without mutation.
 
+The household also checkpoints one stable start time for every provider
+dispatch and recovery dispatch. Claim, Fail, artifact, and retry commands reuse
+that value, so a lost native Workflow response cannot change the command digest.
+Execution generation fences household state; acquisition-attempt generation is
+tracked separately for retry-scoped R2 objects.
+
 Large media, transcripts, manifests, and other evidence bytes remain private
 R2 objects. Their references carry generation, byte length, SHA-256, and
 retention time. Reference reads preserve the committed source shape: video
@@ -134,7 +140,9 @@ cannot overtake registration. Registration atomically inserts and reads the
 immutable winner, so concurrent conflicting organizations fail closed instead
 of overwriting one another. The route is never a public lookup, household
 authority, product read model, or source of object names, and raw organization
-identifiers are never logged or returned.
+identifiers are never logged or returned. The consumer receives a read-only R2
+binding, and exhausted retryable notifications are retained by a dedicated
+evidence-event DLQ.
 
 ## Current scope
 
@@ -155,6 +163,8 @@ only large private bytes. Shared D1 retains the private immutable import-event
 route, global provider-budget settlement/reconciliation, and approved global
 operational facts; it cannot author household evidence, terminal or recovery
 state, public lifecycle, review, or Recipe Bank state.
+Its acquisition execution row contains no evidence-reference projection or
+provider-stage completion status.
 Shopping lists and preferences have not moved. Apart from the private,
 noncanonical import-event route above, there is no registry,
 organization-to-object lookup table, shared product read model, dual write,

@@ -516,6 +516,11 @@ reads current evidence and claims, completes, or fails extraction only through
 authenticated household authority. Household SQLite owns compact
 current-result metadata, integrity-checked generation-scoped R2 references,
 availability observations, and replay receipts. Large bytes remain in R2.
+One household-owned timestamp makes Claim, Fail, artifact, and replay commands
+byte-stable for each native Workflow dispatch. Execution generation remains the
+domain fence while a separate acquisition-attempt generation scopes retry R2
+objects. Shared D1 acquisition bookkeeping has no household evidence projection
+or provider-stage completion status.
 Missing objects, lifecycle deletion, late events, restart, exact retry,
 conflicting replay, stale generations, physical cross-household isolation, and
 provider-free recipe recovery have runtime proof. Shared D1 retains the
@@ -548,13 +553,16 @@ observation. Household state fences observations by event time and a fixed
 same-time action precedence, so delayed deletion cannot replace newer
 availability. The route is not a household registry, product read model,
 object-name source, or Slice 3 recovery ledger.
+The consumer uses a read-only R2 binding; retryable notifications that exhaust
+the bounded delivery policy are retained by the R2-event-only DLQ.
 
 Speech and visual recovery preparation commit the next fenced recovery
 dispatch before activating the corresponding Workflow step. Exact preparation
 replays return the same receipt. A lost activation response is accepted only
 when the same household generation, recovery dispatch, and input fingerprint
 has already made terminal progress; a still-dispatching attempt remains
-retryable.
+retryable. Recovery reuses the admitted trace and exact persisted
+generation-specific Workflow identity.
 
 ### Slice 3: global provider accounting
 

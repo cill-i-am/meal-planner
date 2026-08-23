@@ -87,7 +87,8 @@ mutation, and cleanup boundary.
 
 The stack returns the safe resource inventory `apiWorkerName`, `databaseName`,
 `authDatabaseName`, `evidenceBucketName`, `evidenceRetentionSeconds`,
-`evidenceEventQueueName`, `evidenceEventWorkerName`,
+`evidenceEventQueueName`, `evidenceEventDeadLetterQueueName`,
+`evidenceEventWorkerName`,
 `importProviderGatewayId`, `websiteWorkerName`, and `websiteUrl`, plus the
 optional `apiUrl`. The household domain and evidence-event Workers are private
 and deliberately have no public URL. Alchemy types Worker and Website URLs as
@@ -120,10 +121,11 @@ Run `pnpm --filter @meal-planner/api db:generate` or
 `migration.sql` and `snapshot.json` together. Regeneration without a schema
 change must create no new migration.
 
-The D1 baseline contains the remaining noncanonical execution bookkeeping and
-global settlement controls. Production evidence stages, terminal checkpoints,
-and recovery attempts do not write household authority to D1. The schema
-deliberately omits
+The D1 baseline contains the remaining acquisition bookkeeping and global
+settlement controls. Its execution row has no evidence-reference projection or
+provider-stage completion status. Production evidence stages, terminal
+checkpoints, and recovery attempts do not write household authority to D1. The
+schema deliberately omits
 the former public intent, idempotency, timeline, review, Recipe Bank, batch, and
 moved receipt tables. Those prototype tables are discarded rather than copied
 or backfilled. Structural tests reject both their SQL names and their removed
@@ -204,6 +206,9 @@ committed R2 reference or current result. The household compares event time
 plus fixed same-time action precedence before applying availability. Queue,
 D1, service-binding, and R2 I/O remain outside every `HouseholdObject`
 transaction, and raw organization identifiers are neither logged nor returned.
+The consumer is bound to R2 read operations only. Retryable events receive one
+initial delivery plus three retries; exhausted messages are retained in
+`ImportEvidenceEventDeadLetterQueue` for operator inspection.
 
 Public admission commits a compact household outbox intent before the API host
 starts the deterministic generation-specific Workflow. Host retries reconcile

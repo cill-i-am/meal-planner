@@ -23,7 +23,7 @@ import {
 import { makeD1ImportEvidenceRouteRepository } from "./import-evidence-route.repository.d1.js";
 import type { HouseholdEvidenceDomain } from "./import-evidence.repository.household.js";
 import {
-  makeHouseholdImportEvidenceViewRepository,
+  makeHouseholdImportEvidenceCurrentRepository,
   makeHouseholdRecipeDraftRepository,
 } from "./import-evidence.repository.household.js";
 import type {
@@ -65,8 +65,10 @@ export interface HouseholdProviderRecovery {
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly inputFingerprint: string;
   readonly originalDispatchId: string;
+  readonly originalTrace: HouseholdRecipeImportExecutionView["originalTrace"];
   readonly recoveryDispatchId: string;
   readonly requiresWorkflowActivation: boolean;
+  readonly workflowIdentity: HouseholdRecipeImportExecutionView["workflowIdentity"];
 }
 
 export const recipeRecoveryHouseholdMutationId = (semanticKey: string) =>
@@ -141,7 +143,14 @@ export const resolveHouseholdRecoveryAuthority = (input: {
     )(execution.canonicalSourceId).pipe(
       Effect.mapError(() => importTransitionRejected())
     );
-    return { admission, canonicalSourceId, intentId, route } as const;
+    return {
+      admission,
+      canonicalSourceId,
+      intentId,
+      originalTrace: execution.originalTrace,
+      route,
+      workflowIdentity: execution.workflowIdentity,
+    } as const;
   });
 
 const decodeWorkflowAttempt = (attempt: HouseholdRecipeRecoveryAttempt) =>
@@ -468,8 +477,10 @@ export const prepareHouseholdProviderRecovery = (input: {
       importId: input.importId,
       inputFingerprint: checkpoint.inputFingerprint,
       originalDispatchId: input.originalDispatchId,
+      originalTrace: authority.originalTrace,
       recoveryDispatchId,
       requiresWorkflowActivation: currentStage.outcome === "Dispatching",
+      workflowIdentity: authority.workflowIdentity,
     } satisfies HouseholdProviderRecovery;
   });
 
@@ -576,7 +587,7 @@ export const makeRecipeRecoveryHouseholdEvidenceRepositories = (input: {
       organizationId: route.organizationId,
     };
     return {
-      current: makeHouseholdImportEvidenceViewRepository(repositoryInput),
+      current: makeHouseholdImportEvidenceCurrentRepository(repositoryInput),
       recipe: makeHouseholdRecipeDraftRepository(repositoryInput),
     } as const;
   });

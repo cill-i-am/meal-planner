@@ -40,9 +40,9 @@ import type {
   DecodedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
 import {
-  continueAcquisitionCheckpoint,
+  continueHouseholdAcquisitionCheckpoint,
   decodeAcquisitionCheckpoint,
-  recoverVerifiedAcquisitionCheckpoint,
+  recoverHouseholdVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
 import {
   runImportCarouselVisualAndRecipeWorkflow,
@@ -61,14 +61,12 @@ import {
 import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
 import {
   makeHouseholdCarouselEvidenceRepository,
-  makeHouseholdImportEvidenceViewRepository,
+  makeHouseholdImportEvidenceCurrentRepository,
   makeHouseholdRecipeDraftRepository,
   makeHouseholdSpeechTranscriptionRepository,
   makeHouseholdVisualEvidenceRepository,
 } from "./import-evidence.repository.household.js";
 import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
-import { ImportWorkflowTerminationUnavailable } from "./import-intent-execution.js";
-import type { ImportIntentWorkflowTerminator } from "./import-intent-execution.js";
 import { projectRecipeDraftReviewActionView } from "./import-intent-review-action.js";
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
@@ -560,8 +558,9 @@ const makeHouseholdIntentTransitions = (input: {
     ) => apply({ _tag: "AdvanceStage", stage }),
     fail: (
       boundary: "acquisition" | "speech" | "visual" | "recipe" | "executor",
-      failure: ReturnType<typeof publicIntentFailureForProviderStage>
-    ) => apply({ _tag: "Fail", boundary, ...failure }),
+      failure: ReturnType<typeof publicIntentFailureForProviderStage>,
+      attemptIdentity: string
+    ) => apply({ _tag: "Fail", attemptIdentity, boundary, ...failure }),
     setActivity: (
       boundary: "acquisition" | "speech" | "visual" | "recipe" | "executor",
       attempt: number,
@@ -694,7 +693,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 carousel:
                   makeHouseholdCarouselEvidenceRepository(evidenceInput),
                 current:
-                  makeHouseholdImportEvidenceViewRepository(evidenceInput),
+                  makeHouseholdImportEvidenceCurrentRepository(evidenceInput),
                 recipe: makeHouseholdRecipeDraftRepository(evidenceInput),
                 speech:
                   makeHouseholdSpeechTranscriptionRepository(evidenceInput),
@@ -867,11 +866,12 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   beforeVisual: intentTransitions
                     .advanceComponent("visuals", "processing")
                     .pipe(Effect.orDie),
-                  failurePersisted: (failure) =>
+                  failurePersisted: (failure, terminal) =>
                     intentTransitions
                       .fail(
                         failure.stage,
-                        publicIntentFailureForProviderStage(failure.stage)
+                        publicIntentFailureForProviderStage(failure.stage),
+                        terminal.ownershipId
                       )
                       .pipe(Effect.orDie),
                   visualCompleted: intentTransitions
@@ -1014,7 +1014,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 yield* intentTransitions
                   .fail(
                     carouselResult.stage,
-                    publicIntentFailureForProviderStage(carouselResult.stage)
+                    publicIntentFailureForProviderStage(carouselResult.stage),
+                    `carousel:${carouselGeneration}`
                   )
                   .pipe(Effect.orDie);
               }
@@ -1028,7 +1029,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     ? ({ _tag: "Finished" } as const)
                     : {
                         _tag: "Acquiring" as const,
-                        canonicalId: claim.import.canonicalSourceId,
+                        canonicalId: claim.canonicalSourceId,
                       }
                 ),
                 Effect.orDie
@@ -1042,13 +1043,13 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             }
             const encodedOutcome = yield* Cloudflare.Workflows.task(
               "resolve-acquire-store-verify-v2",
-              recoverVerifiedAcquisitionCheckpoint({
-                expectedCanonicalId: claim.canonicalId,
-                findStored: evidenceRepositories(
+              recoverHouseholdVerifiedAcquisitionCheckpoint({
+                current: evidenceRepositories(
                   Schema.decodeUnknownSync(AcquisitionGeneration)(
                     executionGeneration
                   )
-                ).current.findById(importId),
+                ).current.readCurrent(importId),
+                expectedCanonicalId: claim.canonicalId,
                 importId,
                 readEvidence: (stored) =>
                   Effect.gen(function* readHouseholdAcquisitionEvidence() {
@@ -1231,6 +1232,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     }
                     const committed = yield* householdDomain
                       .commitAcquisitionEvidence({
+                        acquisitionAttemptGeneration: outcome.generation,
                         admission,
                         expectedGeneration: executionGeneration,
                         intentId,
@@ -1266,7 +1268,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 yield* intentTransitions
                   .fail(
                     "acquisition",
-                    publicIntentFailureForAcquisitionOutcome(outcome)
+                    publicIntentFailureForAcquisitionOutcome(outcome),
+                    `acquisition:${outcome.generation}`
                   )
                   .pipe(Effect.orDie);
               }
@@ -1280,10 +1283,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               .pipe(Effect.orDie);
             const encodedSpeech = yield* Cloudflare.Workflows.task(
               "transcribe-video-v1",
-              continueAcquisitionCheckpoint({
-                findStored: evidenceRepositories(
+              continueHouseholdAcquisitionCheckpoint({
+                current: evidenceRepositories(
                   outcome.generation
-                ).current.findById(importId),
+                ).current.readCurrent(importId),
                 importId,
                 onAccepted: () =>
                   terminalRecovery
@@ -1330,9 +1333,16 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               return speech;
             }
             if (speech._tag === "Failed") {
-              yield* persistTerminal(speech, outcome.generation);
+              const terminal = yield* persistTerminal(
+                speech,
+                outcome.generation
+              );
               yield* intentTransitions
-                .fail("speech", publicIntentFailureForProviderStage("speech"))
+                .fail(
+                  "speech",
+                  publicIntentFailureForProviderStage("speech"),
+                  terminal.ownershipId
+                )
                 .pipe(Effect.orDie);
               return speech;
             }
@@ -1374,10 +1384,6 @@ export const EnsureStartedResult = Schema.Literals([
 ]);
 export type EnsureStartedResult = typeof EnsureStartedResult.Type;
 
-export const importWorkflowInstanceId = (
-  importId: ImportId | RecipeImportIntentId
-) => `import-acquisition-${importId}`;
-
 export interface ImportWorkflowStarter {
   readonly dispatchAdmission: (input: {
     readonly executionGeneration: ImportIntentExecutionGeneration;
@@ -1392,13 +1398,13 @@ export interface ImportWorkflowStarter {
     trace: ImportTraceContext
   ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
   readonly restartFromSpeech?: (
-    importId: ImportId
-  ) => Effect.Effect<void, WorkflowStartUnavailable>;
+    workflowIdentity: ImportWorkflowIdentity
+  ) => Effect.Effect<ProviderRestartResult, WorkflowStartUnavailable>;
   readonly restartFromVisual?: (
-    importId: ImportId
-  ) => Effect.Effect<void, WorkflowStartUnavailable>;
+    workflowIdentity: ImportWorkflowIdentity
+  ) => Effect.Effect<ProviderRestartResult, WorkflowStartUnavailable>;
   readonly restartPostAcquisition?: (
-    importId: ImportId,
+    workflowIdentity: ImportWorkflowIdentity,
     checkpoint: PostAcquisitionJournalCheckpoint
   ) => Effect.Effect<void, WorkflowStartUnavailable>;
 }
@@ -1423,26 +1429,11 @@ interface WorkflowHandleLike {
   readonly get: (id: string) => Effect.Effect<WorkflowInstanceLike>;
 }
 
-interface WorkflowTerminationHandleLike {
-  readonly get: (
-    id: string
-  ) => Effect.Effect<Pick<Cloudflare.Workflows.WorkflowInstance, "terminate">>;
-}
-
-export const makeImportWorkflowTerminator = (
-  workflow: WorkflowTerminationHandleLike
-): ImportIntentWorkflowTerminator => ({
-  terminate: Effect.fn("ImportWorkflow.terminate")(
-    (intentId: RecipeImportIntentId) =>
-      workflow.get(importWorkflowInstanceId(intentId)).pipe(
-        Effect.flatMap((instance) => instance.terminate()),
-        Effect.catchCauseIf(
-          (cause) => !Cause.hasInterrupts(cause),
-          () => Effect.fail(new ImportWorkflowTerminationUnavailable())
-        )
-      )
-  ),
-});
+export const ProviderRestartResult = Schema.Literals([
+  "RestartAmbiguous",
+  "RestartRequested",
+]);
+export type ProviderRestartResult = typeof ProviderRestartResult.Type;
 
 const reconcileExisting = (instance: WorkflowInstanceLike) =>
   Effect.flatMap(
@@ -1483,7 +1474,7 @@ const reconcileProviderRestart = (
         case "running":
         case "waiting":
         case "waitingForPause": {
-          return Effect.void;
+          return Effect.succeed("RestartAmbiguous" as const);
         }
         case "complete":
         case "errored":
@@ -1496,6 +1487,7 @@ const reconcileProviderRestart = (
               },
             })
             .pipe(
+              Effect.as("RestartRequested" as const),
               Effect.catchCauseIf(
                 (cause) => !Cause.hasInterrupts(cause),
                 () =>
@@ -1509,7 +1501,7 @@ const reconcileProviderRestart = (
                           "waiting",
                           "waitingForPause",
                         ].includes(reconciledStatus)
-                          ? Effect.void
+                          ? Effect.succeed("RestartAmbiguous" as const)
                           : Effect.fail(workflowStartUnavailable())
                       )
                     )
@@ -1531,7 +1523,7 @@ export const makeImportWorkflowStarter = (
   workflow: WorkflowHandleLike
 ): ImportWorkflowReconciler => {
   const restartPostAcquisition = (
-    importId: ImportId,
+    workflowIdentity: ImportWorkflowIdentity,
     rawCheckpoint: PostAcquisitionJournalCheckpoint
   ) =>
     Schema.decodeUnknownEffect(PostAcquisitionJournalCheckpoint)(
@@ -1540,7 +1532,7 @@ export const makeImportWorkflowStarter = (
       Effect.mapError(() => workflowStartUnavailable()),
       Effect.flatMap((checkpoint) =>
         workflow
-          .get(importWorkflowInstanceId(importId))
+          .get(workflowIdentity)
           .pipe(
             Effect.flatMap((instance) =>
               instance.restart(postAcquisitionRestartOptions(checkpoint))
@@ -1619,17 +1611,17 @@ export const makeImportWorkflowStarter = (
     dispatchAdmission: (input) =>
       start({ ...input, instanceId: input.workflowIdentity }),
     ensureStarted: () => Effect.fail(workflowStartUnavailable()),
-    restartFromSpeech: (importId) =>
+    restartFromSpeech: (workflowIdentity) =>
       workflow
-        .get(importWorkflowInstanceId(importId))
+        .get(workflowIdentity)
         .pipe(
           Effect.flatMap((instance) =>
             reconcileProviderRestart(instance, "record-acquisition-v2")
           )
         ),
-    restartFromVisual: (importId) =>
+    restartFromVisual: (workflowIdentity) =>
       workflow
-        .get(importWorkflowInstanceId(importId))
+        .get(workflowIdentity)
         .pipe(
           Effect.flatMap((instance) =>
             reconcileProviderRestart(instance, "extract-visual-evidence-v1")

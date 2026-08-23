@@ -46,6 +46,7 @@ export const runImportCarouselVisualAndRecipeWorkflow = Effect.fn(
 export const runImportVisualAndRecipeWorkflow = Effect.fn(
   "ImportRuntime.runVisualAndRecipe"
 )(function* runImportVisualAndRecipeWorkflowEffect<
+  PersistedTerminal extends { readonly ownershipId: string },
   PersistenceFailure,
   Requirements,
 >(input: {
@@ -53,13 +54,14 @@ export const runImportVisualAndRecipeWorkflow = Effect.fn(
     readonly beforeRecipe: Effect.Effect<void, never, Requirements>;
     readonly beforeVisual: Effect.Effect<void, never, Requirements>;
     readonly failurePersisted?: (
-      failure: FailedProviderCheckpoint
+      failure: FailedProviderCheckpoint,
+      terminal: PersistedTerminal
     ) => Effect.Effect<void, never, Requirements>;
     readonly visualCompleted: Effect.Effect<void, never, Requirements>;
   };
   readonly persistTerminal: (
     failure: FailedProviderCheckpoint
-  ) => Effect.Effect<void, PersistenceFailure, Requirements>;
+  ) => Effect.Effect<PersistedTerminal, PersistenceFailure, Requirements>;
   readonly recipe: Effect.Effect<ProviderCheckpoint, never, Requirements>;
   readonly visual: Effect.Effect<ProviderCheckpoint, never, Requirements>;
 }) {
@@ -68,9 +70,9 @@ export const runImportVisualAndRecipeWorkflow = Effect.fn(
   }
   const visual = yield* input.visual;
   if (visual._tag === "Failed") {
-    yield* input.persistTerminal(visual);
+    const terminal = yield* input.persistTerminal(visual);
     if (input.lifecycle?.failurePersisted !== undefined) {
-      yield* input.lifecycle.failurePersisted(visual);
+      yield* input.lifecycle.failurePersisted(visual, terminal);
     }
     return visual;
   }
@@ -80,9 +82,9 @@ export const runImportVisualAndRecipeWorkflow = Effect.fn(
   }
   const recipe = yield* input.recipe;
   if (recipe._tag === "Failed") {
-    yield* input.persistTerminal(recipe);
+    const terminal = yield* input.persistTerminal(recipe);
     if (input.lifecycle?.failurePersisted !== undefined) {
-      yield* input.lifecycle.failurePersisted(recipe);
+      yield* input.lifecycle.failurePersisted(recipe, terminal);
     }
     return recipe;
   }

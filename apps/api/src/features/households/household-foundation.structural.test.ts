@@ -286,7 +286,7 @@ describe("household foundation structural boundaries", () => {
     );
   });
 
-  it("binds provider stage mutation receipts to the dispatch attempt", async () => {
+  it("reuses household-owned provider dispatch time across native retries", async () => {
     const repository = await read(
       path.join(
         apiFeaturesRoot,
@@ -295,16 +295,20 @@ describe("household foundation structural boundaries", () => {
     );
 
     expect(repository).toContain(
-      `\`speech:claim:\${claim.dispatchId}:\${claim.sourceMediaSha256}:\${claim.startedAt}\``
+      `\`speech:claim:\${claim.dispatchId}:\${claim.sourceMediaSha256}\``
     );
     expect(repository).toContain(
-      `\`speech:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}:\${failure.completedAt}\``
+      `\`speech:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}\``
     );
     expect(repository).toContain(
-      `\`visual:claim:\${claim.dispatchId}:\${claim.sourceMediaSha256}:\${claim.startedAt}\``
+      `\`visual:claim:\${claim.dispatchId}:\${claim.sourceMediaSha256}\``
     );
     expect(repository).toContain(
-      `\`visual:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}:\${failure.completedAt}\``
+      `\`visual:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}\``
+    );
+    expect(repository.match(/\? current\.startedAt/gu)).toHaveLength(2);
+    expect(repository.match(/completedAt: current\.startedAt/gu)).toHaveLength(
+      2
     );
   });
 
@@ -324,7 +328,7 @@ describe("household foundation structural boundaries", () => {
 
     expect(productionRecovery).toBeDefined();
     expect(recoveryHousehold).toContain(
-      "makeHouseholdImportEvidenceViewRepository"
+      "makeHouseholdImportEvidenceCurrentRepository"
     );
     expect(recoveryHousehold).toContain("makeHouseholdRecipeDraftRepository");
     expect(productionRecovery).toContain(
@@ -407,17 +411,21 @@ describe("household foundation structural boundaries", () => {
     }
   });
 
-  it("binds provider evidence mutations to every command field that Household hashes", async () => {
+  it("keeps retry-varying time out of stable provider mutation identities", async () => {
     const repository = await read(
       path.join(
         apiFeaturesRoot,
         "imports/import-evidence.repository.household.ts"
       )
     );
-    expect(repository).toMatch(/speech:claim:[^`]*\$\{claim\.startedAt\}/u);
-    expect(repository).toMatch(/visual:claim:[^`]*\$\{claim\.startedAt\}/u);
-    expect(repository).toMatch(/speech:fail:[^`]*\$\{failure\.completedAt\}/u);
-    expect(repository).toMatch(/visual:fail:[^`]*\$\{failure\.completedAt\}/u);
+    expect(repository).not.toMatch(/speech:claim:[^`]*\$\{claim\.startedAt\}/u);
+    expect(repository).not.toMatch(/visual:claim:[^`]*\$\{claim\.startedAt\}/u);
+    expect(repository).not.toMatch(
+      /speech:fail:[^`]*\$\{failure\.completedAt\}/u
+    );
+    expect(repository).not.toMatch(
+      /visual:fail:[^`]*\$\{failure\.completedAt\}/u
+    );
   });
 
   it("activates both speech and visual recovery through the production Workflow seam", async () => {

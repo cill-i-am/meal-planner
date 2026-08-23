@@ -45,6 +45,7 @@ export const HouseholdAcquisitionManifestReference = Schema.Struct({
 });
 
 export const HouseholdCommitAcquisitionEvidenceInput = Schema.Struct({
+  acquisitionAttemptGeneration: PositiveSafeInteger,
   admission: HouseholdSystemAdmission,
   expectedGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,
@@ -441,6 +442,7 @@ export const HouseholdReadEvidenceStageResult = Schema.NullOr(
     reference: Schema.NullOr(HouseholdEvidenceStageReference),
     result: Schema.NullOr(HouseholdEvidenceStageResult),
     stage: HouseholdEvidenceStage,
+    startedAt: ImportTimestamp,
   })
 );
 export type HouseholdReadEvidenceStageResult =

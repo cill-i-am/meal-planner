@@ -100,6 +100,13 @@ current result, and a replay receipt. The private result exposes no storage key
 or provider payload. Exact retries are stable; conflicting replays and stale
 generations leave no mutation.
 
+Each provider dispatch, including a recovery dispatch, checkpoints one
+household-owned start time and reuses it in every Claim, Fail, artifact, and
+replay command. The execution generation remains the household lifecycle
+fence, while a separate acquisition-attempt generation scopes retry-created R2
+keys. Native Workflow response loss therefore reconstructs the same encoded
+command instead of changing the mutation digest.
+
 R2 references include byte length, SHA-256, deletion time, object kind, and
 generation. Reads return the video acquisition's media-and-manifest set or the
 carousel stage's single committed manifest with the same stable import,
@@ -120,10 +127,16 @@ committed references through the private service binding, and requires exact
 import, generation, object-key, kind, native R2 checksum, and custom-metadata
 agreement before committing an idempotent availability observation. The route
 is not public and never grants member authority.
+The consumer has only an R2 read binding. A notification that remains retryable
+after the configured attempts is retained in the dedicated evidence-event DLQ
+rather than silently discarded.
 
 Terminal ambiguity commits an immutable household checkpoint before recovery.
 Speech and visual recovery each prepare a generation-, predecessor-, and
 dispatch-fenced household attempt, then activate the matching Workflow step.
+Preparation reuses the originally admitted correlation trace and exact
+generation-specific Workflow identity stored by the household; an operator
+retry cannot replace either value.
 If activation reports an error after the Workflow has already progressed,
 settlement accepts only matching terminal household authority; Workflow status
 alone cannot turn a still-dispatching recovery into success.
@@ -190,7 +203,8 @@ Durable Object class/namespace lifecycle but does not replace database
 migrations.
 
 The fresh D1 migration under `apps/api/migrations` contains only remaining
-noncanonical execution bookkeeping and global provider-budget controls. The
+acquisition bookkeeping and global provider-budget controls. Its execution row
+does not project household evidence references or provider-stage outcomes. The
 former D1 import requests, public intent/history, review, Recipe Bank, terminal
 checkpoint, recovery-attempt, batch, and moved receipt tables are deleted
 rather than migrated or backfilled. Structural tests reject reintroducing their

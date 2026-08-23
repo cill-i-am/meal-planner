@@ -7,6 +7,7 @@ import TikTokMediaContainerLive from "./apps/api/src/features/imports/import-med
 import { EvidenceRetentionSeconds } from "./apps/api/src/features/imports/import-media.model.js";
 import { ImportEvidenceBucket } from "./apps/api/src/infrastructure/import-evidence-bucket.js";
 import ImportEvidenceEventWorker, {
+  ImportEvidenceEventDeadLetterQueue,
   ImportEvidenceEventQueue,
 } from "./apps/api/src/infrastructure/import-evidence-event-queue.js";
 import { ImportProviderGateway } from "./apps/api/src/infrastructure/import-provider-gateway.js";
@@ -25,6 +26,8 @@ export default Alchemy.Stack(
     const authDatabase = yield* MealPlannerAuthDatabase;
     const evidenceBucket = yield* ImportEvidenceBucket;
     const evidenceEventQueue = yield* ImportEvidenceEventQueue;
+    const evidenceEventDeadLetterQueue =
+      yield* ImportEvidenceEventDeadLetterQueue;
     const evidenceEventWorker = yield* ImportEvidenceEventWorker;
     yield* Cloudflare.R2.BucketEventNotification(
       "ImportEvidenceEventNotification",
@@ -71,6 +74,7 @@ export default Alchemy.Stack(
       authDatabaseName: authDatabase.databaseName,
       databaseName: database.databaseName,
       evidenceBucketName: evidenceBucket.bucketName,
+      evidenceEventDeadLetterQueueName: evidenceEventDeadLetterQueue.queueName,
       evidenceEventQueueName: evidenceEventQueue.queueName,
       evidenceEventWorkerName: evidenceEventWorker.workerName,
       evidenceRetentionSeconds: EvidenceRetentionSeconds,

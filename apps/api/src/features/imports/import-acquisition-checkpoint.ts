@@ -1,14 +1,9 @@
-import { DateTime, Effect, Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
-import {
-  AcquisitionTaskOutcome,
-  EvidenceRetentionSeconds,
-  manifestObjectKey,
-  mediaObjectKey,
-} from "./import-media.model.js";
+import type { HouseholdImportEvidenceCurrent } from "./import-evidence.repository.household.js";
+import { AcquisitionTaskOutcome } from "./import-media.model.js";
 import type { VerifiedAcquisitionEvidence } from "./import-media.model.js";
 import type { ImportId, SourceCanonicalId } from "./import.contracts.js";
-import type { StoredImport } from "./import.repository.js";
 
 export const AcquisitionCheckpointRejected = Schema.Struct({
   _tag: Schema.Literal("AcquisitionCheckpointRejected"),
@@ -64,53 +59,52 @@ export const decodeAcquisitionCheckpoint = (
   });
 };
 
-const ownsSpeechContinuation = (stored: StoredImport) =>
-  stored.view.status.kind === "acquired" ||
-  stored.view.status.kind === "transcribing" ||
-  (stored.view.status.kind === "failed" &&
-    stored.view.status.code === "transcription_failed");
+const ownsHouseholdSpeechContinuation = (
+  current: HouseholdImportEvidenceCurrent
+) =>
+  current.status.kind === "acquired" ||
+  current.status.kind === "transcribing" ||
+  (current.status.kind === "failed" &&
+    current.status.code === "transcription_failed");
 
-/**
- * Reconstructs a missing post-acquisition journal entry only when durable
- * repository state already owns downstream continuation. A normal acquiring
- * import returns `null` so the ordinary acquisition attempt remains unchanged.
- */
-export const recoverVerifiedAcquisitionCheckpoint = <
+/** Reconstructs only from the compact household-native current result. */
+export const recoverHouseholdVerifiedAcquisitionCheckpoint = <
   FindError,
   VerifyError,
 >(input: {
-  readonly findStored: Effect.Effect<Option.Option<StoredImport>, FindError>;
-  readonly importId: ImportId;
+  readonly current: Effect.Effect<
+    Option.Option<HouseholdImportEvidenceCurrent>,
+    FindError
+  >;
   readonly expectedCanonicalId: SourceCanonicalId;
+  readonly importId: ImportId;
   readonly readEvidence: (
-    stored: StoredImport
+    current: HouseholdImportEvidenceCurrent
   ) => Effect.Effect<VerifiedAcquisitionEvidence | null, VerifyError>;
 }) =>
-  input.findStored.pipe(
+  input.current.pipe(
     Effect.flatMap(
       Option.match({
         onNone: () => Effect.succeed<null>(null),
-        onSome: (stored) => {
-          if (!ownsSpeechContinuation(stored)) {
+        onSome: (current) => {
+          if (!ownsHouseholdSpeechContinuation(current)) {
             return Effect.succeed<null>(null);
           }
           if (
-            stored.view.id !== input.importId ||
-            stored.sourceKind !== "tiktok" ||
-            stored.view.source.kind !== "tiktok" ||
-            stored.canonicalSourceId !== input.expectedCanonicalId ||
-            stored.view.source.canonicalId !== stored.canonicalSourceId
+            current.importId !== input.importId ||
+            current.sourceKind !== "tiktok" ||
+            current.canonicalSourceId !== input.expectedCanonicalId
           ) {
             return Effect.succeed(rejected());
           }
-          return input.readEvidence(stored).pipe(
+          return input.readEvidence(current).pipe(
             Effect.map((evidence) =>
               evidence === null
                 ? rejected()
                 : ({
                     _tag: "VerifiedAcquisition" as const,
                     evidence,
-                    generation: stored.acquisitionGeneration,
+                    generation: current.acquisitionGeneration,
                   } satisfies AcquisitionTaskOutcome)
             )
           );
@@ -119,46 +113,33 @@ export const recoverVerifiedAcquisitionCheckpoint = <
     )
   );
 
-export const verifyAcquisitionCheckpointContinuation = (input: {
+const verifyHouseholdAcquisitionCheckpointContinuation = (input: {
+  readonly current: HouseholdImportEvidenceCurrent;
   readonly importId: ImportId;
   readonly outcome: AcquisitionTaskOutcome;
-  readonly stored: StoredImport;
 }): AcquisitionCheckpointContinuation => {
   if (input.outcome._tag !== "VerifiedAcquisition") {
     return { _tag: "Accepted" };
   }
-  const { evidence, generation } = input.outcome;
-  const expectedMediaKey = mediaObjectKey(input.importId, generation);
-  const expectedManifestKey = manifestObjectKey(input.importId, generation);
-  const [mediaReference, manifestReference] = input.stored.view.evidence;
-  const retentionMilliseconds =
-    DateTime.toEpochMillis(evidence.deleteAt) -
-    DateTime.toEpochMillis(evidence.acquiredAt);
-  return input.stored.view.id === input.importId &&
-    input.stored.sourceKind === "tiktok" &&
-    input.stored.view.source.kind === "tiktok" &&
-    input.stored.view.source.canonicalId === input.stored.canonicalSourceId &&
-    input.stored.acquisitionGeneration === generation &&
-    evidence.generation === generation &&
-    evidence.mediaKey === expectedMediaKey &&
-    evidence.manifestKey === expectedManifestKey &&
-    mediaReference?.kind === "original_media" &&
-    mediaReference.referenceId === expectedMediaKey &&
-    manifestReference?.kind === "acquisition_manifest" &&
-    manifestReference.referenceId === expectedManifestKey &&
-    retentionMilliseconds === EvidenceRetentionSeconds * 1000 &&
-    ownsSpeechContinuation(input.stored)
+  return input.current.importId === input.importId &&
+    input.current.sourceKind === "tiktok" &&
+    input.current.acquisitionGeneration === input.outcome.generation &&
+    ownsHouseholdSpeechContinuation(input.current)
     ? { _tag: "Accepted" }
     : rejected();
 };
 
-export const continueAcquisitionCheckpoint = <
+/** Continues only after the household-native current result owns acquisition. */
+export const continueHouseholdAcquisitionCheckpoint = <
   Value,
   FindError,
   AcceptedError,
   AcceptedRequirements,
 >(input: {
-  readonly findStored: Effect.Effect<Option.Option<StoredImport>, FindError>;
+  readonly current: Effect.Effect<
+    Option.Option<HouseholdImportEvidenceCurrent>,
+    FindError
+  >;
   readonly importId: ImportId;
   readonly onAccepted: () => Effect.Effect<
     Value,
@@ -167,27 +148,26 @@ export const continueAcquisitionCheckpoint = <
   >;
   readonly outcome: AcquisitionTaskOutcome;
 }) =>
-  input.findStored.pipe(
-    Effect.map(
-      Option.match({
-        onNone: rejected,
-        onSome: (stored) =>
-          verifyAcquisitionCheckpointContinuation({
-            importId: input.importId,
-            outcome: input.outcome,
-            stored,
-          }),
-      })
-    ),
-    Effect.flatMap((continuation) =>
-      continuation._tag === "AcquisitionCheckpointRejected"
-        ? Effect.succeed<Value | AcquisitionCheckpointRejected>(continuation)
-        : input
-            .onAccepted()
-            .pipe(
-              Effect.map(
-                (value): Value | AcquisitionCheckpointRejected => value
-              )
-            )
+  input.current.pipe(
+    Effect.flatMap(
+      (
+        currentOption
+      ): Effect.Effect<
+        Value | AcquisitionCheckpointRejected,
+        AcceptedError,
+        AcceptedRequirements
+      > => {
+        if (Option.isNone(currentOption)) {
+          return Effect.succeed(rejected());
+        }
+        const continuation = verifyHouseholdAcquisitionCheckpointContinuation({
+          current: currentOption.value,
+          importId: input.importId,
+          outcome: input.outcome,
+        });
+        return continuation._tag === "Accepted"
+          ? input.onAccepted()
+          : Effect.succeed(continuation);
+      }
     )
   );

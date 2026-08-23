@@ -45,6 +45,7 @@ export const householdImportWorkflowAdmissions = sqliteTable(
     executionGeneration: integer("execution_generation").notNull(),
     importId: text("import_id").notNull(),
     mutationId: text("mutation_id").primaryKey(),
+    originalTraceJson: text("original_trace_json"),
     workflowIdentity: text("workflow_identity").notNull().unique(),
   },
   (table) => [
@@ -69,6 +70,9 @@ export const householdOutbox = sqliteTable("household_outbox", {
 export const householdImportEvidenceExecutions = sqliteTable(
   "household_import_evidence_executions",
   {
+    acquisitionAttemptGeneration: integer(
+      "acquisition_attempt_generation"
+    ).notNull(),
     acquisitionJson: text("acquisition_json").notNull(),
     commandDigest: text("command_digest").notNull(),
     committedAt: text("committed_at").notNull(),
@@ -143,6 +147,7 @@ export const householdEvidenceStageExecutions = sqliteTable(
     intentId: text("intent_id").notNull(),
     resultJson: text("result_json"),
     stage: text("stage").notNull(),
+    startedAt: text("started_at").notNull(),
     state: text("state").notNull(),
   },
   (table) => [

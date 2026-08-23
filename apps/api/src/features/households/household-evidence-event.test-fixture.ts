@@ -54,7 +54,10 @@ import {
   HouseholdRecipeImportExecutionView,
   HouseholdRecipeImportFailure,
 } from "./recipe-import/household-recipe-import.contract.js";
-import type { HouseholdReadRecipeImportExecutionInput } from "./recipe-import/household-recipe-import.contract.js";
+import type {
+  HouseholdReadRecipeImportExecutionInput,
+  HouseholdTransitionRecipeImportLifecycleInput,
+} from "./recipe-import/household-recipe-import.contract.js";
 import { HouseholdSystemAdmission } from "./rpc/command-envelope.js";
 
 interface TestKvNamespace {
@@ -106,6 +109,9 @@ interface Environment {
     readonly readRecipeRecoveryAttempt: (
       input: HouseholdReadRecipeRecoveryAttemptInput
     ) => Promise<typeof HouseholdReadRecipeRecoveryAttemptResult.Encoded>;
+    readonly transitionRecipeImportLifecycle: (
+      input: typeof HouseholdTransitionRecipeImportLifecycleInput.Type
+    ) => Promise<unknown>;
   };
 }
 
@@ -208,6 +214,12 @@ const terminalHousehold = (environment: Environment) => ({
     terminalRpc(() =>
       environment.HouseholdDomainWorker.readRecipeRecoveryAttempt(input)
     ),
+  transitionRecipeImportLifecycle: (
+    input: typeof HouseholdTransitionRecipeImportLifecycleInput.Type
+  ) =>
+    terminalRpc(() =>
+      environment.HouseholdDomainWorker.transitionRecipeImportLifecycle(input)
+    ),
 });
 
 const ProviderTerminalAttemptCommand = Schema.Struct({
@@ -287,20 +299,46 @@ const runAmbiguousProviderAttempt = (
   if (command.stage === "speech") {
     const repository =
       makeHouseholdSpeechTranscriptionRepository(repositoryInput);
-    return repository
-      .claim(claim)
-      .pipe(
-        Effect.andThen(invokeProviderOnce),
-        Effect.andThen(persist(repository.fail))
-      );
+    return repository.claim(claim).pipe(
+      Effect.andThen(invokeProviderOnce),
+      Effect.andThen(persist(repository.fail)),
+      Effect.tap(() =>
+        householdDomain.transitionRecipeImportLifecycle({
+          admission: command.admission,
+          expectedGeneration: command.expectedGeneration,
+          intentId: command.intentId,
+          transition: {
+            _tag: "Fail",
+            attemptIdentity: command.dispatchId,
+            boundary: "speech",
+            code: "analysis_failed",
+            message: "The source could not be analyzed.",
+            recovery: "create_new_intent",
+          },
+        })
+      )
+    );
   }
   const repository = makeHouseholdVisualEvidenceRepository(repositoryInput);
-  return repository
-    .claim(claim)
-    .pipe(
-      Effect.andThen(invokeProviderOnce),
-      Effect.andThen(persist(repository.fail))
-    );
+  return repository.claim(claim).pipe(
+    Effect.andThen(invokeProviderOnce),
+    Effect.andThen(persist(repository.fail)),
+    Effect.tap(() =>
+      householdDomain.transitionRecipeImportLifecycle({
+        admission: command.admission,
+        expectedGeneration: command.expectedGeneration,
+        intentId: command.intentId,
+        transition: {
+          _tag: "Fail",
+          attemptIdentity: command.dispatchId,
+          boundary: "visual",
+          code: "analysis_failed",
+          message: "The source could not be analyzed.",
+          recovery: "create_new_intent",
+        },
+      })
+    )
+  );
 };
 
 export default {
@@ -331,6 +369,9 @@ export default {
         ProviderTerminalSettlementRequest,
         { onExcessProperty: "error" }
       )(await request.json());
+      if (!("importId" in command)) {
+        throw new Error("terminal settlement command requires an import id");
+      }
       const restartProviderStage = (
         stage: "speech" | "visual",
         importId: typeof ImportId.Type
@@ -437,7 +478,7 @@ export default {
           );
           return yield* Effect.fail(workflowStartUnavailable());
         }).pipe(Effect.mapError(workflowStartUnavailable));
-      const restartSpeech = (importId: typeof ImportId.Type) => {
+      const restartSpeech = () => {
         const behavior = request.headers.get("x-test-speech-restart");
         if (behavior === "fail") {
           return Effect.fail(workflowStartUnavailable());
@@ -446,12 +487,14 @@ export default {
           return "acquisitionGeneration" in command
             ? completeProviderStageBeforeRestartResponse(
                 "speech",
-                importId,
+                command.importId,
                 command.acquisitionGeneration
               )
             : Effect.fail(workflowStartUnavailable());
         }
-        return restartProviderStage("speech", importId);
+        return restartProviderStage("speech", command.importId).pipe(
+          Effect.as("RestartRequested" as const)
+        );
       };
       const result = await Effect.runPromise(
         makeD1ProviderTerminalSettlementService({
@@ -466,8 +509,10 @@ export default {
           }),
           workflowStarter: {
             restartFromSpeech: restartSpeech,
-            restartFromVisual: (importId) =>
-              restartProviderStage("visual", importId),
+            restartFromVisual: () =>
+              restartProviderStage("visual", command.importId).pipe(
+                Effect.as("RestartRequested" as const)
+              ),
           },
         }).settle(command)
       );

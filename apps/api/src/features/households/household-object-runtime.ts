@@ -772,6 +772,7 @@ export const HouseholdObjectRuntime = Effect.gen(
               .recordDispatch({
                 dispatchId: command.dispatchId,
                 nowEpochMs,
+                originalTrace: command.originalTrace,
                 outcome: command.outcome,
                 workflowIdentity: command.workflowIdentity,
               })

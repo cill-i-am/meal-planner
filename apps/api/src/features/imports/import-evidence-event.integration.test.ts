@@ -57,6 +57,38 @@ const bundleFixture = async (): Promise<
   ];
 };
 
+const bundleDeadLetterFixture = async (): Promise<
+  readonly [ModuleDefinition, ...ModuleDefinition[]]
+> => {
+  const output = await Effect.runPromise(
+    Bundle.build(
+      {
+        external: ["cloudflare:workers"],
+        input: fileURLToPath(
+          new URL("import-evidence-event-dlq.test-fixture.ts", import.meta.url)
+        ),
+        plugins: [cloudflareRolldown({ compatibilityDate })],
+      },
+      { codeSplitting: false, format: "esm", minify: true, sourcemap: false }
+    )
+  );
+  const [entry, ...assets] = output.files;
+  return [
+    {
+      contents: moduleContents(entry.content),
+      path: entry.path,
+      type: "ESModule",
+    },
+    ...assets.map(
+      (asset): ModuleDefinition => ({
+        contents: moduleContents(asset.content),
+        path: asset.path,
+        type: "Text",
+      })
+    ),
+  ];
+};
+
 const readResult = async (
   namespace: Awaited<ReturnType<Miniflare["getKVNamespace"]>> | undefined,
   attemptsRemaining: number
@@ -77,6 +109,14 @@ const result = async () => {
   return readResult(namespace, 39);
 };
 
+const deadLetterResult = async () => {
+  const namespace = await runtime?.getKVNamespace(
+    "DLQ_RESULTS",
+    "dead-letter-consumer"
+  );
+  return readResult(namespace, 199);
+};
+
 describe("import evidence Queue runtime", () => {
   beforeAll(async () => {
     persistenceDirectory = await mkdtemp(
@@ -91,9 +131,29 @@ describe("import evidence Queue runtime", () => {
           kvNamespaces: ["RESULTS", "ROUTES"],
           modules: [...(await bundleFixture())],
           name: "consumer",
-          queueConsumers: ["evidence-events"],
+          queueConsumers: {
+            "evidence-events": {
+              deadLetterQueue: "evidence-events-dead-letter",
+              maxBatchSize: 1,
+              maxBatchTimeout: 0.01,
+              maxRetries: 3,
+              retryDelay: 0,
+            },
+          },
           queueProducers: {
             EVENTS: { queueName: "evidence-events" },
+          },
+        },
+        {
+          compatibilityDate,
+          kvNamespaces: ["DLQ_RESULTS"],
+          modules: [...(await bundleDeadLetterFixture())],
+          name: "dead-letter-consumer",
+          queueConsumers: {
+            "evidence-events-dead-letter": {
+              maxBatchSize: 1,
+              maxBatchTimeout: 0.01,
+            },
           },
         },
       ],
@@ -156,5 +216,25 @@ describe("import evidence Queue runtime", () => {
         })
       )
     ).resolves.toMatchObject({ action: "CopyObject", importId });
+  });
+
+  it("moves an exhausted retryable R2 event to the dedicated dead-letter queue", async () => {
+    const queue = await runtime?.getQueueProducer("EVENTS", "consumer");
+    const results = await runtime?.getKVNamespace("RESULTS", "consumer");
+    const attemptsBefore = Number((await results?.get("attempts")) ?? "0");
+    const event = {
+      account: "must-not-escape",
+      action: "LifecycleDeletion",
+      bucket: "must-not-escape",
+      eventTime: "2026-08-22T12:05:00.000Z",
+      object: {
+        key: "imports/018f7f67-e0c7-7d34-a593-8c20c6f7b869/acquisition/v1/generations/4/manifest.json",
+      },
+    };
+    await queue?.send(event);
+
+    await expect(deadLetterResult()).resolves.toEqual(event);
+    const attemptsAfter = Number((await results?.get("attempts")) ?? "0");
+    expect(attemptsAfter - attemptsBefore).toBe(4);
   });
 });

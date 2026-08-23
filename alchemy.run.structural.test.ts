@@ -130,6 +130,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260823055120_import_execution/migration.sql",
       "20260823080018_import_execution/migration.sql",
       "20260823113951_import_execution/migration.sql",
+      "20260823135058_import_execution/migration.sql",
     ]);
     const retirementMigration = readRepoFile(
       "./apps/api/migrations/20260823080018_import_execution/migration.sql"
@@ -156,6 +157,16 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
         `DROP TABLE \`${authority}\`;`
       );
     }
+    const executionProjectionRetirementMigration = readRepoFile(
+      "./apps/api/migrations/20260823135058_import_execution/migration.sql"
+    );
+    expect(executionProjectionRetirementMigration).toContain(
+      "DROP TABLE `import_execution_runs`;"
+    );
+    expect(executionProjectionRetirementMigration).not.toContain(
+      "evidence_references_json"
+    );
+    expect(executionProjectionRetirementMigration).not.toContain("INSERT INTO");
   });
 
   it("provisions Better Auth D1 while Drizzle Kit owns its checked-in migrations", () => {
@@ -468,7 +479,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(eventWorkerSource).toContain("Cloudflare.D1.QueryDatabase(");
     expect(eventWorkerSource).toContain("Cloudflare.D1.QueryDatabaseBinding");
     expect(eventWorkerSource).toContain("makeD1ImportEvidenceRouteRepository(");
-    expect(eventWorkerSource).toContain("Cloudflare.R2.ReadWriteBucket(");
+    expect(eventWorkerSource).toContain("Cloudflare.R2.ReadBucket(");
+    expect(eventWorkerSource).toContain("Cloudflare.R2.ReadBucketBinding");
+    expect(eventWorkerSource).not.toContain("Cloudflare.R2.ReadWriteBucket(");
     expect(eventWorkerSource).toContain("Cloudflare.Workers.bindWorker(");
     expect(eventWorkerSource).toContain(
       "reconcileImportEvidenceQueueMessage(message.body"
@@ -511,6 +524,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
 
     expect(workflowSource).toContain("commitAcquisitionEvidence");
     expect(workflowSource).toContain(
+      "makeHouseholdImportEvidenceCurrentRepository"
+    );
+    expect(workflowSource).not.toContain(
       "makeHouseholdImportEvidenceViewRepository"
     );
     expect(workflowSource).toContain(

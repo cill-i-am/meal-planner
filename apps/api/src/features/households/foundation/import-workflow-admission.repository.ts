@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Effect, Option, Schema } from "effect";
 
+import type { ImportTraceContext } from "../../imports/import-observability.js";
 import {
   householdImportWorkflowAdmissions,
   householdOutbox,
@@ -73,6 +74,7 @@ export const makeImportWorkflowAdmissionRepository = (
     readonly dispatchId: HouseholdDispatchId;
     readonly nowEpochMs: number;
     readonly outcome: "started" | "unavailable";
+    readonly originalTrace: ImportTraceContext;
     readonly workflowIdentity: ImportWorkflowIdentity;
   }) =>
     database.transaction((transaction) =>
@@ -97,6 +99,22 @@ export const makeImportWorkflowAdmissionRepository = (
           admissionRow.workflowIdentity !== input.workflowIdentity
         ) {
           return yield* Effect.fail(persistenceFailure());
+        }
+        const originalTraceJson = JSON.stringify(input.originalTrace);
+        if (
+          admissionRow.originalTraceJson !== null &&
+          admissionRow.originalTraceJson !== originalTraceJson
+        ) {
+          return yield* Effect.fail(persistenceFailure());
+        }
+        if (admissionRow.originalTraceJson === null) {
+          yield* transaction
+            .update(householdImportWorkflowAdmissions)
+            .set({ originalTraceJson })
+            .where(
+              eq(householdImportWorkflowAdmissions.dispatchId, input.dispatchId)
+            )
+            .pipe(mapQueryFailure);
         }
         if (row.state === "dispatched" || row.state === "exhausted") {
           return yield* Schema.decodeUnknownEffect(

@@ -346,6 +346,9 @@ const recordRecipeImportDispatch = async (input: {
     body: JSON.stringify({
       ...input,
       operation: "recordRecipeImportDispatch",
+      originalTrace: {
+        correlationId: "00000000-0000-4000-8000-000000000188",
+      },
     }),
     method: "POST",
   });
@@ -995,6 +998,7 @@ describe("household Durable Object", () => {
         operation: "transitionRecipeImportLifecycle",
         transition: {
           _tag: "Fail",
+          attemptIdentity: "terminal-source-after-cancel:acquisition:1",
           boundary: "acquisition",
           code: "source_unavailable",
           message: "The source became unavailable.",

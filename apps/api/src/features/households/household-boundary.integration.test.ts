@@ -338,11 +338,23 @@ const systemCommand = (
     | "read-recipe-recovery-attempt"
     | "resolve",
   input: object
-) =>
-  getRuntime().dispatchFetch(
+) => {
+  const attemptGeneration =
+    operation === "commit-acquisition-evidence"
+      ? /\/generations\/(?<generation>\d+)\//u.exec(JSON.stringify(input))
+          ?.groups?.["generation"]
+      : undefined;
+  const command =
+    attemptGeneration === undefined
+      ? input
+      : {
+          acquisitionAttemptGeneration: Number(attemptGeneration),
+          ...input,
+        };
+  return getRuntime().dispatchFetch(
     "https://meal-planner.test/v1/__test/system-import",
     {
-      body: JSON.stringify(input),
+      body: JSON.stringify(command),
       headers: {
         "content-type": "application/json",
         "x-test-household-system-operation": operation,
@@ -350,6 +362,7 @@ const systemCommand = (
       method: "POST",
     }
   );
+};
 
 const terminalSettlementCommand = async (
   input: object,
@@ -574,6 +587,23 @@ const admitResolvedEvidenceImport = async (input: {
   return { admission, admitted, cookie, organization } as const;
 };
 
+const readSpeechStage = async (input: {
+  readonly admission: object;
+  readonly generation: number;
+  readonly intentId: string;
+}) => {
+  const response = await systemCommand("read-evidence-stage", {
+    admission: input.admission,
+    expectedGeneration: input.generation,
+    intentId: input.intentId,
+    stage: "speech",
+  });
+  expect(response.status, await response.clone().text()).toBe(200);
+  return Schema.decodeUnknownPromise(HouseholdReadEvidenceStageResult)(
+    await response.json()
+  );
+};
+
 const prepareUnknownSpeechTerminal = async (input: {
   readonly label: string;
   readonly mutationIds: readonly [resolve: string, claim: string, fail: string];
@@ -586,6 +616,19 @@ const prepareUnknownSpeechTerminal = async (input: {
       videoId: input.videoId,
     });
   const generation = 1;
+  const acquisition = evidenceRetentionResult({
+    acquiredAt: new Date("2026-08-23T12:00:00.000Z"),
+    generation,
+    intentId: admitted.id,
+  });
+  const committed = await systemCommand("commit-acquisition-evidence", {
+    admission,
+    expectedGeneration: generation,
+    intentId: admitted.id,
+    mutationId: input.mutationIds[1],
+    result: acquisition,
+  });
+  expect(committed.status, await committed.clone().text()).toBe(200);
   const inputFingerprint = "2".repeat(64);
   const dispatchId = `speech:${admitted.id}:${generation}`;
   const terminal = await providerTerminalAttemptCommand({
@@ -599,6 +642,36 @@ const prepareUnknownSpeechTerminal = async (input: {
     stage: "speech",
   });
   expect(terminal.status, await terminal.clone().text()).toBe(200);
+  const terminalStage = await readSpeechStage({
+    admission,
+    generation,
+    intentId: admitted.id,
+  });
+  expect(terminalStage).toMatchObject({
+    dispatchId,
+    failureCode: "outcome_unknown",
+    inputFingerprint,
+    outcome: "Failed",
+  });
+  if (terminalStage === null) {
+    throw new Error("Expected household speech terminal authority.");
+  }
+  const terminalCheckpoint = await systemCommand("read-terminal-checkpoint", {
+    admission,
+    expectedGeneration: generation,
+    intentId: admitted.id,
+    ownershipId: terminalStage.dispatchId,
+    stage: "speech",
+  });
+  expect(
+    terminalCheckpoint.status,
+    await terminalCheckpoint.clone().text()
+  ).toBe(200);
+  expect(await terminalCheckpoint.json()).toMatchObject({
+    failureCode: "outcome_unknown",
+    ownershipId: dispatchId,
+    stage: "speech",
+  });
 
   const database = await getRuntime().getD1Database(
     "MealPlannerDatabase",
@@ -639,23 +712,6 @@ const prepareUnknownSpeechTerminal = async (input: {
     } as const,
     recoveryDispatchId: `${dispatchId}:recovery:1`,
   } as const;
-};
-
-const readSpeechStage = async (input: {
-  readonly admission: object;
-  readonly generation: number;
-  readonly intentId: string;
-}) => {
-  const response = await systemCommand("read-evidence-stage", {
-    admission: input.admission,
-    expectedGeneration: input.generation,
-    intentId: input.intentId,
-    stage: "speech",
-  });
-  expect(response.status, await response.clone().text()).toBe(200);
-  return Schema.decodeUnknownPromise(HouseholdReadEvidenceStageResult)(
-    await response.json()
-  );
 };
 
 const commitCarouselManifest = async (input: {
@@ -2399,6 +2455,20 @@ describe("household public API to private Durable Object boundary", () => {
       )
       .all();
     expect(sharedCheckpointTables.results).toEqual([]);
+    const executionColumns = await database
+      .prepare("PRAGMA table_info(import_execution_runs)")
+      .all<{ readonly name: string }>();
+    expect(executionColumns.results.map(({ name }) => name)).not.toContain(
+      "evidence_references_json"
+    );
+    const executionTable = await database
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'import_execution_runs'"
+      )
+      .first<{ readonly sql: string }>();
+    expect(executionTable?.sql).not.toMatch(
+      /(?:acquired|transcribed|transcribing)/u
+    );
   });
 
   it("replays household speech recovery after the external restart fails", async () => {

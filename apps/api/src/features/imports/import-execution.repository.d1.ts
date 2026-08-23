@@ -1,7 +1,7 @@
 import { and, eq, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { DateTime, Effect, Option, Schema } from "effect";
+import { DateTime, Effect, Schema } from "effect";
 
 import type {
   AcquisitionGeneration,
@@ -9,16 +9,8 @@ import type {
 } from "./import-media.model.js";
 import { AcquisitionGeneration as AcquisitionGenerationSchema } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
-import {
-  EvidenceReference,
-  ImportView,
-  SourceCanonicalId,
-} from "./import.contracts.js";
-import type {
-  ImportId,
-  ImportStatus,
-  ImportTimestamp,
-} from "./import.contracts.js";
+import { SourceCanonicalId } from "./import.contracts.js";
+import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import { importExecutionRuns } from "./import.database-schema.js";
 import {
   importNotFound,
@@ -26,12 +18,7 @@ import {
   importPersistenceUnavailable,
   importTransitionRejected,
 } from "./import.errors.js";
-import type {
-  ClaimAcquisitionResult,
-  ImportRepository,
-  ImportTransitionError,
-  StoredImport,
-} from "./import.repository.js";
+import type { ImportTransitionError } from "./import.repository.js";
 
 export interface EnsureImportExecutionRunInput {
   readonly canonicalSourceId: SourceCanonicalId;
@@ -41,7 +28,7 @@ export interface EnsureImportExecutionRunInput {
   readonly startedAt: ImportTimestamp;
 }
 
-export interface D1ImportExecutionRepository extends ImportRepository {
+export interface D1ImportExecutionRepository {
   readonly beginAcquisitionAttempt: (id: ImportId) => Effect.Effect<
     {
       readonly canonicalSourceId: SourceCanonicalId;
@@ -49,9 +36,14 @@ export interface D1ImportExecutionRepository extends ImportRepository {
     },
     ImportTransitionError
   >;
-  readonly claimAcquisition: (
-    id: ImportId
-  ) => Effect.Effect<ClaimAcquisitionResult, ImportTransitionError>;
+  readonly claimAcquisition: (id: ImportId) => Effect.Effect<
+    | {
+        readonly _tag: "Acquiring";
+        readonly canonicalSourceId: SourceCanonicalId;
+      }
+    | { readonly _tag: "Finished" },
+    ImportTransitionError
+  >;
   readonly ensureRun: (
     input: EnsureImportExecutionRunInput
   ) => Effect.Effect<void, ImportTransitionError>;
@@ -131,9 +123,16 @@ const statusColumns = (status: AcquisitionFailureStatus) => ({
   statusCode: status.code,
 });
 
-const persistedStatus = (row: typeof importExecutionRuns.$inferSelect) => {
+const persistedStatus = (row: {
+  readonly recoveryAction: string | null;
+  readonly status: string;
+  readonly statusCode: string | null;
+}) => {
   if (row.statusCode === null && row.recoveryAction === null) {
-    return { kind: row.status } as ImportStatus;
+    if (row.status === "queued" || row.status === "acquiring") {
+      return { kind: row.status } as const;
+    }
+    throw new Error("Invalid import execution status");
   }
   if (row.status === "failed") {
     if (
@@ -147,8 +146,7 @@ const persistedStatus = (row: typeof importExecutionRuns.$inferSelect) => {
       } as const;
     }
     if (
-      (row.statusCode === "acquisition_temporarily_unavailable" ||
-        row.statusCode === "transcription_failed") &&
+      row.statusCode === "acquisition_temporarily_unavailable" &&
       row.recoveryAction === "retry_later"
     ) {
       return {
@@ -188,62 +186,38 @@ export const makeD1ImportExecutionRepository = (
 ): D1ImportExecutionRepository => {
   const database = drizzle(binding);
 
-  const findById: D1ImportExecutionRepository["findById"] = (id) =>
+  const requireRun = (id: ImportId) =>
     Effect.gen(function* findImportExecution() {
       const rows = yield* persistence(() =>
         database
-          .select()
+          .select({
+            acquisitionGeneration: importExecutionRuns.acquisitionGeneration,
+            canonicalSourceId: importExecutionRuns.canonicalSourceId,
+            recoveryAction: importExecutionRuns.recoveryAction,
+            status: importExecutionRuns.status,
+            statusCode: importExecutionRuns.statusCode,
+          })
           .from(importExecutionRuns)
           .where(eq(importExecutionRuns.id, id))
           .limit(1)
       );
       const [row] = rows;
       if (row === undefined) {
-        return Option.none<StoredImport>();
+        return yield* Effect.fail(importNotFound(id));
       }
       return yield* Effect.try({
         catch: importPersistenceCorrupt,
-        try: () => {
-          const canonicalSourceId = Schema.decodeUnknownSync(SourceCanonicalId)(
+        try: () => ({
+          acquisitionGeneration: Schema.decodeUnknownSync(
+            AcquisitionGenerationSchema
+          )(row.acquisitionGeneration),
+          canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)(
             row.canonicalSourceId
-          );
-          const evidence = Schema.decodeUnknownSync(
-            Schema.Array(EvidenceReference)
-          )(JSON.parse(row.evidenceReferencesJson));
-          const view = Schema.decodeUnknownSync(ImportView)({
-            createdAt: row.createdAt,
-            evidence,
-            id,
-            source: { canonicalId: canonicalSourceId, kind: "tiktok" },
-            status: persistedStatus(row),
-            updatedAt: row.updatedAt,
-          });
-          return Option.some<StoredImport>({
-            acquisitionGeneration: Schema.decodeUnknownSync(
-              AcquisitionGenerationSchema
-            )(row.acquisitionGeneration),
-            canonicalSourceId,
-            sourceKind: "tiktok",
-            trace: {
-              correlationId: Schema.decodeUnknownSync(ImportCorrelationId)(
-                row.correlationId
-              ),
-            },
-            view,
-          });
-        },
+          ),
+          status: persistedStatus(row),
+        }),
       });
     });
-
-  const requireRun = (id: ImportId) =>
-    findById(id).pipe(
-      Effect.flatMap(
-        Option.match({
-          onNone: () => Effect.fail(importNotFound(id)),
-          onSome: Effect.succeed,
-        })
-      )
-    );
 
   return {
     beginAcquisitionAttempt: (id) =>
@@ -286,7 +260,6 @@ export const makeD1ImportExecutionRepository = (
           database
             .update(importExecutionRuns)
             .set({
-              evidenceReferencesJson: "[]",
               recoveryAction: null,
               status: "acquiring",
               statusCode: null,
@@ -309,9 +282,12 @@ export const makeD1ImportExecutionRepository = (
             )
         );
         const stored = yield* requireRun(id);
-        return stored.view.status.kind === "acquiring"
-          ? { _tag: "Acquiring", import: stored }
-          : { _tag: "Finished", import: stored };
+        return stored.status.kind === "acquiring"
+          ? {
+              _tag: "Acquiring" as const,
+              canonicalSourceId: stored.canonicalSourceId,
+            }
+          : { _tag: "Finished" as const };
       }),
     ensureRun: (input) =>
       Effect.gen(function* ensureExecutionRun() {
@@ -324,7 +300,6 @@ export const makeD1ImportExecutionRepository = (
                 input.correlationId
               ),
               createdAt: DateTime.formatIso(input.startedAt),
-              evidenceReferencesJson: "[]",
               id: input.importId,
               recoveryAction: null,
               sourceKind: "tiktok",
@@ -356,8 +331,6 @@ export const makeD1ImportExecutionRepository = (
           return yield* Effect.fail(importTransitionRejected());
         }
       }),
-    findById,
-    isAudioExtractionRecoveryEligible: () => Effect.succeed(false),
     recordAcquisitionFailure: (id, generation, failure, failedAt) =>
       Effect.gen(function* recordAcquisitionFailure() {
         if (failure.generation !== generation) {
@@ -369,7 +342,6 @@ export const makeD1ImportExecutionRepository = (
           database
             .update(importExecutionRuns)
             .set({
-              evidenceReferencesJson: "[]",
               recoveryAction: columns.recoveryAction,
               status: status.kind === "unsupported" ? "unsupported" : "failed",
               statusCode: columns.statusCode,
@@ -388,7 +360,7 @@ export const makeD1ImportExecutionRepository = (
           return "Superseded";
         }
         return stored.acquisitionGeneration === generation &&
-          JSON.stringify(stored.view.status) === JSON.stringify(status)
+          JSON.stringify(stored.status) === JSON.stringify(status)
           ? "Recorded"
           : yield* Effect.fail(importTransitionRejected());
       }),

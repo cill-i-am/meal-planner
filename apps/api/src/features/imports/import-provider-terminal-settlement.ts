@@ -13,6 +13,7 @@ import {
   prepareHouseholdRecipeRecovery,
   readHouseholdRecipeRecovery,
   readHouseholdTerminalAuthority,
+  resolveHouseholdRecoveryAuthority,
 } from "./import-recipe-recovery.household.js";
 import type { RecipeRecoveryPreparationHouseholdAuthority } from "./import-recipe-recovery.household.js";
 import { RecipeRecoveryOrdinal } from "./import-recipe-recovery.js";
@@ -520,7 +521,7 @@ const prepareProviderRecovery = (
       if (restart === undefined) {
         return yield* Effect.fail(failure("persistence_unavailable"));
       }
-      yield* restart(request.importId).pipe(
+      const restartOutcome = yield* restart(recovery.workflowIdentity).pipe(
         Effect.catchCause(() =>
           hasHouseholdProviderRecoveryProgress({
             database: service.database,
@@ -534,12 +535,26 @@ const prepareProviderRecovery = (
             Effect.mapError(mapHouseholdError),
             Effect.flatMap((hasProgress) =>
               hasProgress
-                ? Effect.void
+                ? Effect.succeed("RestartAmbiguous" as const)
                 : Effect.fail(failure("persistence_unavailable"))
             )
           )
         )
       );
+      if (restartOutcome === "RestartAmbiguous") {
+        const hasProgress = yield* hasHouseholdProviderRecoveryProgress({
+          database: service.database,
+          generation: request.acquisitionGeneration,
+          householdDomain,
+          importId: request.importId,
+          inputFingerprint: recovery.inputFingerprint,
+          recoveryDispatchId: recovery.recoveryDispatchId,
+          stage,
+        }).pipe(Effect.mapError(mapHouseholdError));
+        if (!hasProgress) {
+          return yield* Effect.fail(failure("persistence_unavailable"));
+        }
+      }
     }
     return yield* Schema.decodeUnknownEffect(
       ProviderTerminalSettlementResponse
@@ -642,7 +657,13 @@ export const makeD1ProviderTerminalSettlementService = (
         if (start === undefined) {
           return yield* Effect.fail(failure("persistence_unavailable"));
         }
-        yield* start(recovery, input.trace).pipe(
+        const authority = yield* resolveHouseholdRecoveryAuthority({
+          database: input.database,
+          generation: request.acquisitionGeneration,
+          householdDomain: input.householdDomain,
+          importId: request.importId,
+        }).pipe(Effect.mapError(mapHouseholdError));
+        yield* start(recovery, authority.originalTrace).pipe(
           Effect.mapError(() => failure("persistence_unavailable"))
         );
         return yield* Schema.decodeUnknownEffect(
@@ -673,7 +694,13 @@ export const makeD1ProviderTerminalSettlementService = (
         if (start === undefined) {
           return yield* Effect.fail(failure("persistence_unavailable"));
         }
-        yield* start(recovery, input.trace).pipe(
+        const authority = yield* resolveHouseholdRecoveryAuthority({
+          database: input.database,
+          generation: request.acquisitionGeneration,
+          householdDomain: input.householdDomain,
+          importId: request.importId,
+        }).pipe(Effect.mapError(mapHouseholdError));
+        yield* start(recovery, authority.originalTrace).pipe(
           Effect.mapError(() => failure("persistence_unavailable"))
         );
         return yield* Schema.decodeUnknownEffect(

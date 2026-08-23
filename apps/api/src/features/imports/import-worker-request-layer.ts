@@ -114,6 +114,7 @@ export const makeRecipeImportWorkflowDispatcher = (input: {
                     organizationId: admission.organizationId,
                   },
                   dispatchId,
+                  originalTrace: input.trace,
                   outcome,
                   workflowIdentity,
                 })

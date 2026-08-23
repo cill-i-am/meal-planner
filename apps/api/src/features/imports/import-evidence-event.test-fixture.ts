@@ -39,6 +39,10 @@ export default {
   async queue(batch: TestMessageBatch, environment: Environment) {
     await Promise.all(
       batch.messages.map(async (message) => {
+        const attempts = Number(
+          (await environment.RESULTS.get("attempts")) ?? "0"
+        );
+        await environment.RESULTS.put("attempts", String(attempts + 1));
         const reconciled = reconcileImportEvidenceQueueMessage(message.body, {
           bucket: { head: () => Effect.succeed(null) },
           household: {

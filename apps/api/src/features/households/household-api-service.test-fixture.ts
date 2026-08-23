@@ -78,8 +78,12 @@ import type {
   HouseholdResolveRecipeImportSourceInput,
   HouseholdActiveRecipeImportActionResult,
   HouseholdAdmitRecipeImportResult,
+  HouseholdRecordRecipeImportDispatchResult,
 } from "./recipe-import/household-recipe-import.contract.js";
-import { HouseholdRecipeImportFailure } from "./recipe-import/household-recipe-import.contract.js";
+import {
+  HouseholdRecipeImportFailure,
+  HouseholdRecordRecipeImportDispatchInput,
+} from "./recipe-import/household-recipe-import.contract.js";
 
 const baseURL = "https://meal-planner.test";
 const recipeImportFailure = () =>
@@ -179,6 +183,9 @@ interface HouseholdApiFixtureEnv {
     readonly readRecipeImportTimeline: (
       input: HouseholdReadRecipeImportInput
     ) => Promise<typeof RecipeImportTimeline.Encoded>;
+    readonly recordRecipeImportDispatch: (
+      input: HouseholdRecordRecipeImportDispatchInput
+    ) => Promise<typeof HouseholdRecordRecipeImportDispatchResult.Encoded>;
     readonly listRecipeBank: (
       input: HouseholdRecipePageInput
     ) => Promise<typeof HouseholdRecipePage.Encoded>;
@@ -396,6 +403,14 @@ export default {
           catch: recipeImportFailure,
           try: () => env.HouseholdDomainWorker.readRecipeImportTimeline(input),
         }),
+      recordRecipeImportDispatch: (
+        input: HouseholdRecordRecipeImportDispatchInput
+      ) =>
+        Effect.tryPromise({
+          catch: recipeImportFailure,
+          try: () =>
+            env.HouseholdDomainWorker.recordRecipeImportDispatch(input),
+        }),
     } as HouseholdDomainWorkerMethods;
     const importServices = Layer.mergeAll(
       Layer.succeed(AuthPrincipalResolver, principalResolver),
@@ -403,7 +418,30 @@ export default {
       Layer.succeed(RecipeImportHouseholdDomain, householdDomain),
       Layer.succeed(
         RecipeImportWorkflowDispatcher,
-        RecipeImportWorkflowDispatcher.of({ dispatch: () => Effect.void })
+        RecipeImportWorkflowDispatcher.of({
+          dispatch: ({ admission, committed }) =>
+            Schema.decodeUnknownEffect(
+              HouseholdRecordRecipeImportDispatchInput
+            )({
+              admission: {
+                actor: {
+                  _tag: "System",
+                  purpose: "import_workflow_dispatch",
+                },
+                organizationId: admission.organizationId,
+              },
+              dispatchId: committed.dispatchId,
+              originalTrace: {
+                correlationId: "00000000-0000-4000-8000-000000000188",
+              },
+              outcome: "started",
+              workflowIdentity: committed.workflowIdentity,
+            }).pipe(
+              Effect.flatMap(householdDomain.recordRecipeImportDispatch),
+              Effect.asVoid,
+              Effect.orDie
+            ),
+        })
       )
     );
     const householdLayer = makeHouseholdRequestLayer({
