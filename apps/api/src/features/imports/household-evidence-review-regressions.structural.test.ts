@@ -114,14 +114,14 @@ describe("household evidence exact-head review regressions", () => {
   });
 
   it("persists the admitted trace and exposes only an ambiguous restart until household progress", async () => {
-    const [contract, settlement, workflow] = await Promise.all([
+    const [contract, recovery, workflow] = await Promise.all([
       source("../households/recipe-import/household-recipe-import.contract.ts"),
-      source("import-provider-terminal-settlement.ts"),
+      source("import-provider-recovery.ts"),
       source("import.workflow.ts"),
     ]);
 
     expect(contract).toContain("originalTrace: ImportTraceContext");
-    expect(settlement).toContain("authority.originalTrace");
+    expect(recovery).toContain("authority.originalTrace");
     expect(workflow).toContain('"RestartAmbiguous",');
   });
 });

@@ -12,6 +12,6 @@ export {
 } from "./import-provider-visual.js";
 export {
   failAfter,
-  makePilotProviderDispatchGate,
+  makeProviderDispatchGate,
 } from "./import-provider-kernel.js";
 export type { ProviderDispatchGate } from "./import-provider-kernel.js";

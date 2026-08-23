@@ -145,9 +145,9 @@ membership through Better Auth's public API before constructing the typed
 household principal. The active organization value alone is not authorization.
 `MEAL_PLANNER_IMPORT_API_TOKEN`, `MEAL_PLANNER_IMPORT_ACTOR_ID`, and
 `MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID` remain the distinct designated system
-principal for the provider terminal-settlement route only. Secrets are
-read through `Config.redacted`; they must never be logged, returned, or
-committed.
+principal for the private provider accounting reconciliation route and
+Household recovery route. Secrets are read through `Config.redacted`; they must
+never be logged, returned, or committed.
 
 The public TanStack Website Worker forwards `/api/auth/*` and `/v1/*` to the
 private API Worker through a Cloudflare service binding. It forwards the
@@ -215,10 +215,12 @@ Public admission commits a compact household outbox intent before the API host
 starts the deterministic generation-specific Workflow. Host retries reconcile
 the same Workflow identity and record their delivery result through a closed
 system command. No Queue or batch writer participates in Slice 1. The provider
-terminal-settlement route remains a private, explicitly authorized execution
-seam. It proves the household-local terminal identity before globally settling
-provider cost, and routes recovery preparation through the household boundary;
-it cannot author recovery or other household product state in D1.
+accounting reconciliation route remains a private, explicitly authorized seam
+that changes global cost facts only. The separate Household recovery route
+carries authenticated organization provenance directly to the household
+boundary, where terminal identity and recovery authority are proved. It does
+not require the noncanonical D1 evidence route and cannot authorize Household
+state from shared D1.
 
 ## Cleanup and test boundaries
 

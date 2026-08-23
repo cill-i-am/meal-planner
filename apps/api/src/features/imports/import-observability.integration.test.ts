@@ -5,11 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
 import {
-  PilotBudgetRunId,
-  PilotBudgetTimestamp,
-  makePilotProviderBudgetRuntime,
-} from "../pilots/pilot-provider-budget.js";
-import type { PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.js";
+  ProviderAccountingRunId,
+  ProviderAccountingTimestamp,
+} from "../provider-accounting/provider-accounting.js";
+import type { ProviderAccountingRepository } from "../provider-accounting/provider-accounting.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
@@ -20,7 +19,7 @@ import {
   observeImportWorkflowStart,
 } from "./import-observability.js";
 import { makeVisualTransport } from "./import-provider-adapters.test-fixture.js";
-import { makePilotProviderDispatchGate } from "./import-provider-kernel.js";
+import { makeProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import { ImportId } from "./import.contracts.js";
 import { makeImportWorkflowStarter } from "./import.workflow.js";
@@ -37,11 +36,11 @@ const importId = Schema.decodeUnknownSync(ImportId)(
 const executionGeneration = Schema.decodeUnknownSync(
   ImportIntentExecutionGeneration
 )(1);
-const now = Schema.decodeUnknownSync(PilotBudgetTimestamp)(
+const now = Schema.decodeUnknownSync(ProviderAccountingTimestamp)(
   "2026-07-27T20:00:00.000Z"
 );
-const runId = Schema.decodeUnknownSync(PilotBudgetRunId)(
-  "gaia-118:correlation-proof"
+const runId = Schema.decodeUnknownSync(ProviderAccountingRunId)(
+  "recipe-import:correlation-proof"
 );
 const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
   "organization-observability-proof"
@@ -50,12 +49,13 @@ const workflowIdentity = Schema.decodeUnknownSync(ImportWorkflowIdentity)(
   `import-acquisition:v1:${"a".repeat(64)}`
 );
 
-const repository: PilotProviderBudgetRepository = {
+const repository: ProviderAccountingRepository = {
   beginInvocation: (input) =>
     Effect.succeed({
       _tag: "Claimed",
       dispatch: {
         actualCostMicroUsd: null,
+        invocationGeneration: 1,
         ...input,
         state: "invoking",
       },
@@ -63,6 +63,7 @@ const repository: PilotProviderBudgetRepository = {
   readDispatch: (input) =>
     Effect.succeed({
       actualCostMicroUsd: 0,
+      invocationGeneration: 1,
       ...input,
       state: "settled_known",
     }),
@@ -76,12 +77,14 @@ const repository: PilotProviderBudgetRepository = {
   releaseBeforeInvocation: (input) =>
     Effect.succeed({
       actualCostMicroUsd: null,
+      invocationGeneration: 0,
       ...input,
       state: "released",
     }),
   reserve: (input) =>
     Effect.succeed({
       actualCostMicroUsd: null,
+      invocationGeneration: 0,
       ...input,
       state: "reserved",
     }),
@@ -238,12 +241,11 @@ describe("opaque import correlation continuity", () => {
         }),
       get: () => Effect.die("created workflow must not reconcile"),
     });
-    const dispatch = makePilotProviderDispatchGate({
+    const dispatch = makeProviderDispatchGate({
       correlationId,
       now: () => now,
       repository,
       runId,
-      runtime: makePilotProviderBudgetRuntime("pilot-gaia-118"),
     });
     let visualProviderCalls = 0;
     const transport = makeVisualTransport(visualProviderResponse, () =>

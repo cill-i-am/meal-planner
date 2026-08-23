@@ -24,12 +24,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
 import {
-  PilotBudgetDispatchId,
-  PilotBudgetProviderStageId,
-  PilotBudgetRunId,
-  PilotBudgetTimestamp,
-} from "../pilots/pilot-provider-budget.js";
-import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+  ProviderAccountingDispatchId,
+  ProviderAccountingProviderStageId,
+  ProviderAccountingRunId,
+  ProviderAccountingTimestamp,
+} from "../provider-accounting/provider-accounting.js";
+import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
 import {
   HouseholdCommitAcquisitionEvidenceResult,
   HouseholdMutateEvidenceStageResult,
@@ -336,7 +336,8 @@ const systemCommand = (
     | "read-evidence-stage"
     | "read-terminal-checkpoint"
     | "read-recipe-recovery-attempt"
-    | "resolve",
+    | "resolve"
+    | "transition-lifecycle",
   input: object
 ) => {
   let attemptGeneration: string | undefined;
@@ -435,28 +436,33 @@ const settleUnknownProviderBudget = async (input: {
     "MealPlannerDatabase",
     "evidence-consumer"
   );
-  const budget = makeD1PilotProviderBudgetRepository(
-    database,
-    "pilot-gaia-118"
-  );
+  const budget = makeD1ProviderAccountingRepository(database);
   const reservation = {
-    dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(
+    dispatchId: Schema.decodeUnknownSync(ProviderAccountingDispatchId)(
       input.dispatchId
     ),
     maximumCostMicroUsd: 50_000,
-    providerStageId: Schema.decodeUnknownSync(PilotBudgetProviderStageId)(
-      input.providerStageId
+    providerStageId: Schema.decodeUnknownSync(
+      ProviderAccountingProviderStageId
+    )(input.providerStageId),
+    runId: Schema.decodeUnknownSync(ProviderAccountingRunId)(
+      `recipe-import:${input.importId}`
     ),
-    runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
-      `gaia-118:${input.importId}`
-    ),
-    timestamp: Schema.decodeUnknownSync(PilotBudgetTimestamp)(
+    timestamp: Schema.decodeUnknownSync(ProviderAccountingTimestamp)(
       new Date().toISOString()
     ),
   };
   await Effect.runPromise(budget.reserve(reservation));
-  await Effect.runPromise(budget.beginInvocation(reservation));
-  await Effect.runPromise(budget.settleUnknown(reservation));
+  const claim = await Effect.runPromise(budget.beginInvocation(reservation));
+  if (claim._tag !== "Claimed") {
+    throw new Error("expected provider invocation claim");
+  }
+  await Effect.runPromise(
+    budget.settleUnknown({
+      ...reservation,
+      invocationGeneration: claim.dispatch.invocationGeneration,
+    })
+  );
 };
 
 const evidenceEventResult = async (
@@ -726,10 +732,9 @@ const prepareUnknownSpeechTerminal = async (input: {
     providerStageId: "speech-transcription",
   });
   const settled = await terminalSettlementCommand({
-    acquisitionGeneration,
     dispatchId,
-    executionGeneration,
     importId: admitted.id,
+    operation: "settle_speech_unknown",
   });
   expect(settled.status, await settled.clone().text()).toBe(200);
 
@@ -742,12 +747,14 @@ const prepareUnknownSpeechTerminal = async (input: {
     generation: executionGeneration,
     inputFingerprint,
     intentId: admitted.id,
+    organizationId: organization.id,
     recoveryCommand: {
       acquisitionGeneration,
       dispatchId,
       executionGeneration,
       importId: admitted.id,
       operation: "prepare_speech_recovery",
+      organizationId: organization.id,
     } as const,
     recoveryDispatchId: `${dispatchId}:recovery:1`,
   } as const;
@@ -2483,7 +2490,7 @@ describe("household public API to private Durable Object boundary", () => {
               'import_recipe_executor_terminal_checkpoints_immutable_update',
               'pilot_provider_terminal_checkpoints',
               'import_provider_terminal_checkpoints',
-              'pilot_provider_recipe_replay_values_guarded_delete',
+              'provider_accounting_recipe_replay_values_guarded_delete',
               'import_transcriptions',
               'import_visual_evidence',
               'import_carousel_evidence',
@@ -2761,10 +2768,9 @@ describe("household public API to private Durable Object boundary", () => {
       providerStageId: "speech-transcription",
     });
     const settlement = await terminalSettlementCommand({
-      acquisitionGeneration: fixture.acquisitionGeneration,
       dispatchId: fixture.recoveryDispatchId,
-      executionGeneration: fixture.executionGeneration,
       importId: fixture.intentId,
+      operation: "settle_speech_unknown",
     });
     expect(settlement.status, await settlement.clone().text()).toBe(200);
     const secondRecovery = await terminalSettlementCommand({
@@ -2773,6 +2779,7 @@ describe("household public API to private Durable Object boundary", () => {
       executionGeneration: fixture.executionGeneration,
       importId: fixture.intentId,
       operation: "prepare_speech_recovery",
+      organizationId: fixture.organizationId,
     });
     expect(secondRecovery.status, await secondRecovery.clone().text()).toBe(
       200
@@ -2868,9 +2875,7 @@ describe("household public API to private Durable Object boundary", () => {
       providerStageId: "visual-evidence",
     });
     const originalSettlement = await terminalSettlementCommand({
-      acquisitionGeneration: generation,
       dispatchId,
-      executionGeneration: 1,
       importId: admitted.id,
       operation: "settle_visual_unknown",
     });
@@ -2884,6 +2889,7 @@ describe("household public API to private Durable Object boundary", () => {
       executionGeneration: 1,
       importId: admitted.id,
       operation: "prepare_visual_recovery",
+      organizationId: organization.id,
     } as const;
     const [firstRecovery, concurrentRecovery] = await Promise.all([
       terminalSettlementCommand(firstRecoveryCommand),
@@ -2998,9 +3004,7 @@ describe("household public API to private Durable Object boundary", () => {
       providerStageId: "visual-evidence",
     });
     const recoveryOneSettlement = await terminalSettlementCommand({
-      acquisitionGeneration: generation,
       dispatchId: recoveryOneDispatchId,
-      executionGeneration: 1,
       importId: admitted.id,
       operation: "settle_visual_unknown",
     });
@@ -3014,6 +3018,7 @@ describe("household public API to private Durable Object boundary", () => {
       executionGeneration: 1,
       importId: admitted.id,
       operation: "prepare_visual_recovery",
+      organizationId: organization.id,
     });
     expect(secondRecovery.status, await secondRecovery.clone().text()).toBe(
       200
@@ -3165,6 +3170,23 @@ describe("household public API to private Durable Object boundary", () => {
     ).toBe(200);
 
     const predecessorDispatchId = `recipe:${admitted.id}:1:${evidenceFingerprint}`;
+    const failedIntent = await systemCommand("transition-lifecycle", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+      transition: {
+        _tag: "Fail",
+        attemptIdentity: predecessorDispatchId,
+        boundary: "recipe",
+        code: "recipe_extraction_failed",
+        message: "The recipe could not be extracted.",
+        recovery: "contact_support",
+      },
+    });
+    expect(failedIntent.status, await failedIntent.clone().text()).toBe(200);
+    await expect(failedIntent.json()).resolves.toMatchObject({
+      status: "failed",
+    });
     const command = {
       acquisitionAttemptGeneration: 1,
       admission,
@@ -3172,11 +3194,6 @@ describe("household public API to private Durable Object boundary", () => {
       intentId: admitted.id,
       mutationId: "6".repeat(64),
       predecessorDispatchId,
-      settlement: {
-        completedAt: new Date(Date.now() + 60_000).toISOString(),
-        dispatchId: predecessorDispatchId,
-        outcome: "settled_unknown",
-      },
     } as const;
     const prepared = await systemCommand("prepare-recipe-recovery", command);
     expect(prepared.status, await prepared.clone().text()).toBe(200);
@@ -3220,16 +3237,12 @@ describe("household public API to private Durable Object boundary", () => {
       await Schema.decodeUnknownPromise(HouseholdPrepareRecipeRecoveryResult)(
         await replay.json()
       )
-    ).toEqual(preparedReceipt);
+    ).toEqual({ ...preparedReceipt, outcome: "Replay" });
 
     const stalePredecessor = await systemCommand("prepare-recipe-recovery", {
       ...command,
       mutationId: "8".repeat(64),
       predecessorDispatchId: `${predecessorDispatchId}:stale`,
-      settlement: {
-        ...command.settlement,
-        dispatchId: `${predecessorDispatchId}:stale`,
-      },
     });
     expect(stalePredecessor.status, await stalePredecessor.clone().text()).toBe(
       409
@@ -3237,10 +3250,7 @@ describe("household public API to private Durable Object boundary", () => {
 
     const conflictingReplay = await systemCommand("prepare-recipe-recovery", {
       ...command,
-      settlement: {
-        ...command.settlement,
-        completedAt: new Date(Date.now() + 120_000).toISOString(),
-      },
+      predecessorDispatchId: `${predecessorDispatchId}:conflict`,
     });
     expect(conflictingReplay.status).toBe(409);
     const afterConflict = await systemCommand("read-evidence-stage", {
@@ -3271,10 +3281,10 @@ describe("household public API to private Durable Object boundary", () => {
     ).toEqual(preparedReceipt.attempt);
   });
 
-  it("settles a clean household terminal failure and starts household-only recovery", async () => {
+  it("accounts for unknown cost and independently starts household-only recovery", async () => {
     const { admission, admitted, organization } =
       await admitResolvedEvidenceImport({
-        label: "Household Terminal Settlement",
+        label: "Household Terminal Recovery",
         mutationId: "a".repeat(64),
         videoId: "7000000000000000103",
       });
@@ -3328,49 +3338,47 @@ describe("household public API to private Durable Object boundary", () => {
       "MealPlannerDatabase",
       "evidence-consumer"
     );
-    await database
-      .prepare(
-        `INSERT INTO import_evidence_routes (
-           import_id, execution_generation, organization_id, route_version
-         ) VALUES (?, 1, ?, 1)`
-      )
-      .bind(admitted.id, organization.id)
-      .run();
-    const budget = makeD1PilotProviderBudgetRepository(
-      database,
-      "pilot-gaia-118"
-    );
+    const budget = makeD1ProviderAccountingRepository(database);
     const reservation = {
-      dispatchId: Schema.decodeUnknownSync(PilotBudgetDispatchId)(dispatchId),
+      dispatchId: Schema.decodeUnknownSync(ProviderAccountingDispatchId)(
+        dispatchId
+      ),
       maximumCostMicroUsd: 100_000,
-      providerStageId: Schema.decodeUnknownSync(PilotBudgetProviderStageId)(
-        "recipe-extraction"
+      providerStageId: Schema.decodeUnknownSync(
+        ProviderAccountingProviderStageId
+      )("recipe-extraction"),
+      runId: Schema.decodeUnknownSync(ProviderAccountingRunId)(
+        `recipe-import:${admitted.id}`
       ),
-      runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
-        `gaia-118:${admitted.id}`
-      ),
-      timestamp: Schema.decodeUnknownSync(PilotBudgetTimestamp)(
+      timestamp: Schema.decodeUnknownSync(ProviderAccountingTimestamp)(
         "2026-08-23T07:55:00.000Z"
       ),
     };
     await Effect.runPromise(budget.reserve(reservation));
-    await Effect.runPromise(budget.beginInvocation(reservation));
-    await Effect.runPromise(budget.settleUnknown(reservation));
+    const providerClaim = await Effect.runPromise(
+      budget.beginInvocation(reservation)
+    );
+    if (providerClaim._tag !== "Claimed") {
+      throw new Error("expected provider invocation claim");
+    }
+    await Effect.runPromise(
+      budget.settleUnknown({
+        ...reservation,
+        invocationGeneration: providerClaim.dispatch.invocationGeneration,
+      })
+    );
 
     const settlement = await terminalSettlementCommand({
-      acquisitionGeneration: generation,
       dispatchId,
-      executionGeneration: generation,
       importId: admitted.id,
       operation: "settle_recipe_unknown",
     });
     expect(settlement.status, await settlement.clone().text()).toBe(200);
     await expect(settlement.json()).resolves.toMatchObject({
-      acquisitionGeneration: generation,
       conservativeChargeMicroUsd: 100_000,
       dispatchId,
       importId: admitted.id,
-      outcome: "recipe_terminal_unknown_cost_settled",
+      outcome: "recipe_unknown_cost_accounted",
     });
 
     const preparationCommand = {
@@ -3379,6 +3387,7 @@ describe("household public API to private Durable Object boundary", () => {
       executionGeneration: generation,
       importId: admitted.id,
       operation: "prepare_recipe_recovery",
+      organizationId: organization.id,
     } as const;
     const prepared = await terminalSettlementCommand(preparationCommand);
     expect(prepared.status, await prepared.clone().text()).toBe(200);

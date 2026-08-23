@@ -578,6 +578,18 @@ delete the pilot ledger and its composition. Shared D1 must not gate household
 recovery, and production import code must not depend on an experiments or
 pilots namespace.
 
+The production call graph requires cross-household accounting: each provider
+dispatch reserves against one fixed `recipe-import` cap before invocation, and
+unknown outcomes must remain conservatively fenced until an authenticated
+accounting reconciliation. The production-owned capability therefore retains
+only cost reservations, dispatch settlement state, privacy-safe conservative
+receipts, and bounded recipe replay values. Household SQLite independently owns
+terminal checkpoints and recovery attempts. Accounting reconciliation neither
+reads nor writes Household authority, while recovery neither reads nor writes
+global accounting. The destructive cutover drops all five `pilot_provider_*`
+tables and creates only the five `provider_accounting_*` tables; there are no
+compatibility reads, dual writes, or backfills.
+
 ### Slice 4: batches
 
 Move canonical batch/item membership, status, replay, completion, failure, and
@@ -727,7 +739,7 @@ minimal noncanonical operational index for an approved concrete use case.
 
 ## Immediate handoff
 
-The next delivery is **Slice 3: global provider accounting**. It must start
-from the merged Slice 2 cutover, preserve household-owned terminal/recovery
-authority, and must not move batch or final shared-D1 retirement work from later
-slices into its scope.
+The next delivery is **Slice 4: batches**. Shared D1 now retains only proven
+global provider accounting, while Household SQLite remains authoritative for
+terminal and recovery outcomes. This delivery must not pull final shared-D1
+retirement or unrelated UI work forward from later slices.

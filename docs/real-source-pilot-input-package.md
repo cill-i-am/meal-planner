@@ -1,13 +1,13 @@
 # Real-Source Pilot Input Package
 
-This is the privacy-safe preparation worksheet for the GAIA-118 pilot. It
+This is the privacy-safe preparation worksheet for the recipe-quality pilot. It
 contains no source locators and is not an executable manifest. The candidate
 set now fills all six required source-class slots, but the run must remain
 closed until every runtime-only gate below is proven.
 
 ## Fixed Contract
 
-- Stage: exactly `pilot-gaia-118`.
+- Provider accounting scope: exactly `recipe-import`.
 - Budget cap: exactly `10_000_000` micro-US dollars ($10).
 - Manifest schema version: `1`.
 - Evidence retention: exactly seven days, with deletion verification required
@@ -52,7 +52,8 @@ Complete these values only inside the explicitly authorized execution window:
 - one `deleteBy` timestamp for every sample, no later than seven days after the
   run;
 - live confirmation that media acquisition, speech transcription, visual
-  evidence, and recipe extraction are configured in the exact pilot stage;
+  evidence, and recipe extraction are configured for the exact deployed
+  revision and production accounting scope;
 - the current preflight time and the approved execution window; and
 - the transient mapping from each opaque sample ID to its approved source
   locator.
@@ -71,11 +72,11 @@ prior authorization.
 - [x] The semantic failure slot expects `not_a_recipe`, not an acquisition
   failure.
 - [x] Opaque sample and manifest IDs are prepared.
-- [x] The exact stage and budget are fixed.
+- [x] The exact accounting scope and budget are fixed.
 - [ ] Every candidate has a current, auditable authorization record.
 - [ ] Every video candidate's source class is confirmed.
-- [ ] All four provider capabilities are confirmed configured in the exact
-  pilot stage.
+- [ ] All four provider capabilities are confirmed configured for the exact
+  deployed revision.
 - [ ] The execution window and current preflight time are approved.
 - [ ] Every deletion deadline fits the seven-day retention boundary.
 - [ ] The transient sample-to-locator mapping is available only to the operator.

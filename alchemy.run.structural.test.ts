@@ -30,7 +30,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workflowSource).toContain("makeInstalledSpeechTranscriber");
     expect(workflowSource).toContain("makeInstalledVisualEvidenceExtractor");
     expect(workflowSource).toContain("makeInstalledRecipeExtractor");
-    expect(workflowSource).toContain("makePilotProviderDispatchGate");
+    expect(workflowSource).toContain("makeProviderDispatchGate");
+    expect(workflowSource).not.toContain("makePilotProviderDispatchGate");
     expect(workflowSource).toContain("Cloudflare.AI.QueryGatewayBinding");
     expect(workflowSource).toContain('"extract-carousel-visual-evidence-v1"');
     expect(workflowSource).toContain('"extract-carousel-recipe-v1"');
@@ -78,7 +79,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workerSource).toContain("makeHouseholdRequestLayer");
     expect(workerSource).not.toContain("OperatorCarouselRouteDefinitions");
     expect(workerSource).not.toContain("ImportBatchRouteDefinitions");
-    expect(workerSource).toContain(
+    expect(workerSource).toContain("ProviderAccountingRouteDefinitions");
+    expect(workerSource).toContain("ProviderRecoveryRouteDefinitions");
+    expect(workerSource).not.toContain(
       "ProviderTerminalSettlementRouteDefinitions"
     );
     expect(stackSource).toContain("apiUrl: api.url");
@@ -132,6 +135,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260823113951_import_execution/migration.sql",
       "20260823135058_import_execution/migration.sql",
       "20260823164025_import_execution/migration.sql",
+      "20260823194331_import_execution/migration.sql",
     ]);
     const retirementMigration = readRepoFile(
       "./apps/api/migrations/20260823080018_import_execution/migration.sql"
@@ -173,6 +177,35 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
     expect(evidenceRouteGenerationMigration).toContain(
       "ADD `execution_generation` integer NOT NULL"
+    );
+    const providerAccountingMigration = readRepoFile(
+      "./apps/api/migrations/20260823194331_import_execution/migration.sql"
+    );
+    for (const table of [
+      "pilot_provider_budget_conservative_settlements",
+      "pilot_provider_budget_dispatches",
+      "pilot_provider_budget_reconciliations",
+      "pilot_provider_recipe_replay_values",
+      "pilot_provider_stage_budget",
+    ]) {
+      expect(providerAccountingMigration).toContain(
+        `DROP TABLE IF EXISTS \`${table}\`;`
+      );
+    }
+    for (const table of [
+      "provider_accounting_budgets",
+      "provider_accounting_conservative_settlements",
+      "provider_accounting_dispatches",
+      "provider_accounting_recipe_replay_values",
+      "provider_accounting_reconciliations",
+    ]) {
+      expect(providerAccountingMigration).toContain(
+        `CREATE TABLE \`${table}\``
+      );
+    }
+    expect(providerAccountingMigration).not.toContain("household_");
+    expect(providerAccountingMigration).not.toContain(
+      "INSERT INTO `pilot_provider_"
     );
   });
 

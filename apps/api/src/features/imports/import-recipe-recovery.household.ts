@@ -1,5 +1,4 @@
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 
 import {
@@ -16,11 +15,11 @@ import type {
   HouseholdDomainWorkerMethods,
   HouseholdRecipeImportDomainFailure,
 } from "../households/household-domain-worker.js";
+import type { HouseholdOrganizationId } from "../households/household.contract.js";
 import {
   HouseholdImportMutationId,
   HouseholdRecipeImportExecutionView,
 } from "../households/recipe-import/household-recipe-import.contract.js";
-import { makeD1ImportEvidenceRouteRepository } from "./import-evidence-route.repository.d1.js";
 import type { HouseholdEvidenceDomain } from "./import-evidence.repository.household.js";
 import {
   makeHouseholdImportEvidenceCurrentRepository,
@@ -96,24 +95,15 @@ const mapHouseholdFailure = (error: HouseholdRecipeImportDomainFailure) =>
 
 export const resolveHouseholdRecoveryAuthority = (input: {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
-  readonly database: AnyD1Database;
   readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: Pick<
     RecipeRecoveryHouseholdAuthority,
     "readRecipeImportExecution"
   >;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
+  readonly organizationId: HouseholdOrganizationId;
 }) =>
   Effect.gen(function* resolveHouseholdRecipeRecoveryAuthority() {
-    const route = yield* makeD1ImportEvidenceRouteRepository(input.database)
-      .get(input.importId)
-      .pipe(Effect.mapError(() => importPersistenceUnavailable()));
-    if (route === null) {
-      return yield* Effect.fail(importTransitionRejected());
-    }
-    if (route.executionGeneration !== input.executionGeneration) {
-      return yield* Effect.fail(importTransitionRejected());
-    }
     const intentId = yield* Schema.decodeUnknownEffect(RecipeImportIntentId)(
       input.importId
     ).pipe(Effect.mapError(() => importTransitionRejected()));
@@ -122,7 +112,7 @@ export const resolveHouseholdRecoveryAuthority = (input: {
         _tag: "System" as const,
         purpose: "recipe_import_lifecycle_commit" as const,
       },
-      organizationId: route.organizationId,
+      organizationId: input.organizationId,
     };
     const execution = yield* input.householdDomain
       .readRecipeImportExecution({
@@ -153,7 +143,6 @@ export const resolveHouseholdRecoveryAuthority = (input: {
       canonicalSourceId,
       intentId,
       originalTrace: execution.originalTrace,
-      route,
       workflowIdentity: execution.workflowIdentity,
     } as const;
   });
@@ -170,24 +159,19 @@ const decodeWorkflowAttempt = (attempt: HouseholdRecipeRecoveryAttempt) =>
 
 export const prepareHouseholdRecipeRecovery = (input: {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
-  readonly database: AnyD1Database;
   readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
+  readonly organizationId: HouseholdOrganizationId;
   readonly predecessorDispatchId: RecipeRecoveryAttempt["predecessorDispatchId"];
-  readonly settlement: {
-    readonly completedAt: RecipeRecoveryAttempt["createdAt"];
-    readonly dispatchId: RecipeRecoveryAttempt["predecessorDispatchId"];
-    readonly outcome: "settled_unknown";
-  };
 }) =>
   Effect.gen(function* prepareHouseholdRecipeRecoveryAttempt() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
       acquisitionGeneration: input.acquisitionGeneration,
-      database: input.database,
       executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
+      organizationId: input.organizationId,
     });
     const mutationId = yield* recipeRecoveryHouseholdMutationId(
       `prepare:${input.importId}:${input.executionGeneration}:${input.acquisitionGeneration}:${input.predecessorDispatchId}`
@@ -201,7 +185,6 @@ export const prepareHouseholdRecipeRecovery = (input: {
       intentId: authority.intentId,
       mutationId,
       predecessorDispatchId: input.predecessorDispatchId,
-      settlement: input.settlement,
     }).pipe(Effect.mapError(() => importTransitionRejected()));
     const receipt = yield* input.householdDomain
       .prepareRecipeRecovery(command)
@@ -213,15 +196,16 @@ export const prepareHouseholdRecipeRecovery = (input: {
           })(rawReceipt).pipe(Effect.mapError(() => importTransitionRejected()))
         )
       );
-    return yield* decodeWorkflowAttempt(receipt.attempt);
+    const attempt = yield* decodeWorkflowAttempt(receipt.attempt);
+    return { attempt, outcome: receipt.outcome } as const;
   });
 
 export const readHouseholdRecipeRecovery = (input: {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
-  readonly database: AnyD1Database;
   readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
+  readonly organizationId: HouseholdOrganizationId;
   readonly selector:
     | {
         readonly _tag: "Ordinal";
@@ -235,10 +219,10 @@ export const readHouseholdRecipeRecovery = (input: {
   Effect.gen(function* readHouseholdRecipeRecoveryAttempt() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
       acquisitionGeneration: input.acquisitionGeneration,
-      database: input.database,
       executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
+      organizationId: input.organizationId,
     });
     const result = yield* input.householdDomain
       .readRecipeRecoveryAttempt({
@@ -256,27 +240,27 @@ export const readHouseholdRecipeRecovery = (input: {
         )
       );
     if (result === null) {
-      return yield* Effect.fail(importTransitionRejected());
+      return null;
     }
     return yield* decodeWorkflowAttempt(result);
   });
 
 export const readHouseholdTerminalAuthority = (input: {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
-  readonly database: AnyD1Database;
   readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
+  readonly organizationId: HouseholdOrganizationId;
   readonly providerDispatchId: string;
   readonly stage: "extraction" | "speech" | "visual";
 }) =>
   Effect.gen(function* readHouseholdTerminalStageAuthority() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
       acquisitionGeneration: input.acquisitionGeneration,
-      database: input.database,
       executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
+      organizationId: input.organizationId,
     });
     const stage = yield* input.householdDomain
       .readEvidenceStage({
@@ -382,32 +366,24 @@ const nextRecoveryDispatchId = (dispatchId: string) => {
 
 export const prepareHouseholdProviderRecovery = (input: {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
-  readonly database: AnyD1Database;
   readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
+  readonly organizationId: HouseholdOrganizationId;
   readonly originalDispatchId: string;
-  readonly settlement: {
-    readonly completedAt: RecipeRecoveryAttempt["createdAt"];
-    readonly dispatchId: string;
-    readonly outcome: "settled_unknown";
-  };
   readonly stage: "speech" | "visual";
 }) =>
   Effect.gen(function* prepareHouseholdEvidenceStageRecovery() {
     const recoveryDispatchId = nextRecoveryDispatchId(input.originalDispatchId);
-    if (
-      recoveryDispatchId === null ||
-      input.settlement.dispatchId !== input.originalDispatchId
-    ) {
+    if (recoveryDispatchId === null) {
       return yield* Effect.fail(importTransitionRejected());
     }
     const authority = yield* resolveHouseholdRecoveryAuthority({
       acquisitionGeneration: input.acquisitionGeneration,
-      database: input.database,
       executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
+      organizationId: input.organizationId,
     });
     const checkpoint = yield* input.householdDomain
       .readImportTerminalCheckpoint({
@@ -452,9 +428,7 @@ export const prepareHouseholdProviderRecovery = (input: {
         dispatchId: recoveryDispatchId,
         predecessorDispatchId: input.originalDispatchId,
         predecessorInputFingerprint: checkpoint.inputFingerprint,
-        settlement: input.settlement,
         stage: input.stage,
-        startedAt: input.settlement.completedAt,
       },
     }).pipe(Effect.mapError(() => importTransitionRejected()));
     yield* input.householdDomain.mutateEvidenceStage(command).pipe(
@@ -501,13 +475,13 @@ export const prepareHouseholdProviderRecovery = (input: {
 
 export const hasHouseholdProviderRecoveryProgress = (input: {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
-  readonly database: AnyD1Database;
   readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: Pick<
     RecipeRecoveryHouseholdAuthority,
     "readEvidenceStage" | "readRecipeImportExecution"
   >;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
+  readonly organizationId: HouseholdOrganizationId;
   readonly inputFingerprint: string;
   readonly recoveryDispatchId: string;
   readonly stage: "speech" | "visual";
@@ -515,10 +489,10 @@ export const hasHouseholdProviderRecoveryProgress = (input: {
   Effect.gen(function* readHouseholdProviderRecoveryProgress() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
       acquisitionGeneration: input.acquisitionGeneration,
-      database: input.database,
       executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
+      organizationId: input.organizationId,
     });
     const stage = yield* input.householdDomain
       .readEvidenceStage({
@@ -545,22 +519,22 @@ export const hasHouseholdProviderRecoveryProgress = (input: {
 
 export const readHouseholdProviderDispatchId = (input: {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
-  readonly database: AnyD1Database;
   readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: Pick<
     RecipeRecoveryHouseholdAuthority,
     "readEvidenceStage" | "readRecipeImportExecution"
   >;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
+  readonly organizationId: HouseholdOrganizationId;
   readonly stage: "speech" | "visual";
 }) =>
   Effect.gen(function* readHouseholdEvidenceStageDispatchId() {
     const authority = yield* resolveHouseholdRecoveryAuthority({
       acquisitionGeneration: input.acquisitionGeneration,
-      database: input.database,
       executionGeneration: input.executionGeneration,
       householdDomain: input.householdDomain,
       importId: input.importId,
+      organizationId: input.organizationId,
     });
     const stage = yield* input.householdDomain
       .readEvidenceStage({
@@ -586,16 +560,16 @@ export const readHouseholdProviderDispatchId = (input: {
 export const makeRecipeRecoveryHouseholdEvidenceRepositories = (input: {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly correlationId: RecipeRecoveryWorkflowInput["trace"]["correlationId"];
-  readonly database: AnyD1Database;
   readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: RecipeRecoveryHouseholdAuthority;
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
+  readonly organizationId: HouseholdOrganizationId;
   readonly mutationId: (
     seed: string
   ) => Effect.Effect<HouseholdImportMutationId>;
 }) =>
   Effect.gen(function* resolveRecipeRecoveryHouseholdAuthority() {
-    const { canonicalSourceId, intentId, route } =
+    const { canonicalSourceId, intentId } =
       yield* resolveHouseholdRecoveryAuthority(input);
     const repositoryInput = {
       acquisitionGeneration: input.acquisitionGeneration,
@@ -605,7 +579,7 @@ export const makeRecipeRecoveryHouseholdEvidenceRepositories = (input: {
       householdDomain: input.householdDomain,
       intentId,
       mutationId: input.mutationId,
-      organizationId: route.organizationId,
+      organizationId: input.organizationId,
     };
     return {
       current: makeHouseholdImportEvidenceCurrentRepository(repositoryInput),

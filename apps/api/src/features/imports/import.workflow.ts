@@ -2,18 +2,9 @@ import {
   CanonicalTikTokUrl,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
-import type { RecipeImportActionId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import {
-  Cause,
-  Config,
-  Context,
-  Effect,
-  Layer,
-  Schedule,
-  Schema,
-} from "effect";
+import { Cause, Context, Effect, Layer, Schedule, Schema } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
@@ -29,12 +20,10 @@ import { HouseholdImportMutationId } from "../households/recipe-import/household
 import type { HouseholdRecipeImportLifecycleTransition } from "../households/recipe-import/household-recipe-import.contract.js";
 import type { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
 import {
-  PilotBudgetRunId,
-  PilotBudgetTimestamp,
-  PilotProviderBudgetRuntime,
-  makePilotProviderBudgetRuntime,
-} from "../pilots/pilot-provider-budget.js";
-import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+  ProviderAccountingRunId,
+  ProviderAccountingTimestamp,
+} from "../provider-accounting/provider-accounting.js";
+import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
 import type {
   AcquisitionCheckpointRejected,
   DecodedAcquisitionCheckpoint,
@@ -67,7 +56,6 @@ import {
   makeHouseholdVisualEvidenceRepository,
 } from "./import-evidence.repository.household.js";
 import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
-import { projectRecipeDraftReviewActionView } from "./import-intent-review-action.js";
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   acquireStoreVerify,
@@ -101,7 +89,7 @@ import {
 } from "./import-observability.js";
 import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
 import {
-  makePilotProviderDispatchGate,
+  makeProviderDispatchGate,
   makeWorkersAiTransport,
 } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
@@ -126,6 +114,7 @@ import {
   publicIntentFailureForProviderStage,
 } from "./import-public-failure.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
+import { makeHouseholdRecipeDraftLifecycle } from "./import-recipe-lifecycle.household.js";
 import { readHouseholdProviderDispatchId } from "./import-recipe-recovery.household.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
@@ -503,8 +492,10 @@ const CarouselEvidenceTaskCheckpoint = Schema.Union([
   }),
 ]);
 
-const currentPilotBudgetTimestamp = () =>
-  Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
+const currentProviderAccountingTimestamp = () =>
+  Schema.decodeUnknownSync(ProviderAccountingTimestamp)(
+    new Date().toISOString()
+  );
 
 const digestText = (value: string) =>
   Effect.promise(() =>
@@ -575,9 +566,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
     const runtimeContext = yield* RuntimeContext;
     const queryDatabase =
       yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
-    const pilotProviderBudgetRuntime = makePilotProviderBudgetRuntime(
-      yield* Config.string("ALCHEMY_STAGE")
-    );
     const providerGateway = yield* Cloudflare.AI.QueryGateway(
       ImportProviderGateway
     );
@@ -701,32 +689,13 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 visual: makeHouseholdVisualEvidenceRepository(evidenceInput),
               } as const;
             };
-            const recipeLifecycle = {
-              grounding: intentTransitions
-                .advanceStage("grounding_recipe")
-                .pipe(Effect.orDie),
-              preparingReview: intentTransitions
-                .advanceStage("preparing_review")
-                .pipe(Effect.orDie),
-              reviewAvailable: (
-                _actionId: RecipeImportActionId,
-                draft: Parameters<typeof projectRecipeDraftReviewActionView>[0]
-              ) =>
-                Effect.gen(function* commitHouseholdRecipeDraft() {
-                  const mutationId = yield* workflowMutationId(
-                    `${intentId}:${executionGeneration}:commit-draft:${draft.extractionFingerprint}`
-                  );
-                  yield* householdDomain.commitRecipeImportDraft({
-                    admission,
-                    evidenceFingerprint: draft.evidenceFingerprint,
-                    expectedGeneration: executionGeneration,
-                    extractionFingerprint: draft.extractionFingerprint,
-                    intentId,
-                    mutationId,
-                    review: projectRecipeDraftReviewActionView(draft),
-                  });
-                }).pipe(Effect.orDie),
-            };
+            const recipeLifecycle = makeHouseholdRecipeDraftLifecycle({
+              executionGeneration,
+              householdDomain,
+              intentId,
+              mutationId: workflowMutationId,
+              organizationId,
+            });
             const retryLifecycle = (
               boundary: "acquisition" | "speech" | "visual" | "recipe"
             ): ProviderTaskRetryLifecycle => ({
@@ -749,10 +718,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               }) =>
                 readHouseholdProviderDispatchId({
                   acquisitionGeneration,
-                  database,
                   executionGeneration,
                   householdDomain,
                   importId: requestedImportId,
+                  organizationId,
                   stage: "speech",
                 }),
               visualDispatchId: ({
@@ -764,25 +733,21 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               }) =>
                 readHouseholdProviderDispatchId({
                   acquisitionGeneration,
-                  database,
                   executionGeneration,
                   householdDomain,
                   importId: requestedImportId,
+                  organizationId,
                   stage: "visual",
                 }),
             };
-            const now = currentPilotBudgetTimestamp;
-            const dispatch = makePilotProviderDispatchGate({
+            const now = currentProviderAccountingTimestamp;
+            const dispatch = makeProviderDispatchGate({
               correlationId,
               now,
-              repository: makeD1PilotProviderBudgetRepository(
-                database,
-                pilotProviderBudgetRuntime.runtimeStage
+              repository: makeD1ProviderAccountingRepository(database),
+              runId: Schema.decodeUnknownSync(ProviderAccountingRunId)(
+                `recipe-import:${importId}`
               ),
-              runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
-                `gaia-118:${importId}`
-              ),
-              runtime: pilotProviderBudgetRuntime,
             });
             const workersAiTransport = yield* makeWorkersAiTransport(
               providerGateway,
@@ -1363,12 +1328,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           Effect.orDie,
           Effect.provideService(ImportObservabilityTraceStore, traceStore)
         );
-      }).pipe(
-        Effect.provideService(
-          PilotProviderBudgetRuntime,
-          pilotProviderBudgetRuntime
-        )
-      );
+      });
   }).pipe(
     Effect.provide(
       Layer.mergeAll(

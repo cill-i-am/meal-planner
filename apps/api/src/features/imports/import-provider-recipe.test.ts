@@ -3,7 +3,7 @@ import { TestClock } from "effect/testing";
 import { Tool } from "effect/unstable/ai";
 import { describe, expect, it } from "vitest";
 
-import type { PilotProviderConservativeReplayValue } from "../pilots/pilot-provider-budget.js";
+import type { ProviderAccountingConservativeReplayValue } from "../provider-accounting/provider-accounting.js";
 import {
   makeRawProviderTransports,
   makeProviderTransports,
@@ -1034,11 +1034,11 @@ describe("installed recipe provider adapter", () => {
       run: <A, E>(input: {
         readonly conservativeReplay?: {
           readonly decode: (
-            replay: PilotProviderConservativeReplayValue
+            replay: ProviderAccountingConservativeReplayValue
           ) => Effect.Effect<A, E>;
           readonly encode: (
             value: A
-          ) => Effect.Effect<PilotProviderConservativeReplayValue, E>;
+          ) => Effect.Effect<ProviderAccountingConservativeReplayValue, E>;
         };
       }) =>
         Effect.gen(function* replayCorruptHash() {
@@ -1105,11 +1105,11 @@ describe("installed recipe provider adapter", () => {
       run: <A, E>(input: {
         readonly conservativeReplay?: {
           readonly decode: (
-            replay: PilotProviderConservativeReplayValue
+            replay: ProviderAccountingConservativeReplayValue
           ) => Effect.Effect<A, E>;
           readonly encode: (
             value: A
-          ) => Effect.Effect<PilotProviderConservativeReplayValue, E>;
+          ) => Effect.Effect<ProviderAccountingConservativeReplayValue, E>;
         };
       }) =>
         Effect.gen(function* replaySchemaInvalidJson() {
@@ -1181,11 +1181,11 @@ describe("installed recipe provider adapter", () => {
       run: <A, E>(input: {
         readonly conservativeReplay?: {
           readonly decode: (
-            replay: PilotProviderConservativeReplayValue
+            replay: ProviderAccountingConservativeReplayValue
           ) => Effect.Effect<A, E>;
           readonly encode: (
             value: A
-          ) => Effect.Effect<PilotProviderConservativeReplayValue, E>;
+          ) => Effect.Effect<ProviderAccountingConservativeReplayValue, E>;
         };
       }) =>
         Effect.gen(function* replayOversizedMultibyteJson() {

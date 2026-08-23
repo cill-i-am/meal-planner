@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect";
 
-import { isPilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
+import { isProviderKnownZeroCostFailure } from "../provider-accounting/provider-accounting.js";
 import type {
   ImportCorrelationId,
   SpeechEnvelopeFailure,
@@ -892,7 +892,7 @@ export const makeInstalledSpeechTranscriber = (input: {
               Effect.gen(function* invokeSpeech() {
                 const response = yield* Effect.tryPromise({
                   catch: (error) =>
-                    isPilotProviderKnownZeroCostFailure(error)
+                    isProviderKnownZeroCostFailure(error)
                       ? error
                       : safeFailureCode(
                           providerFailureFromEvidence(
@@ -987,7 +987,7 @@ export const makeInstalledSpeechTranscriber = (input: {
               }
             ).pipe(
               Effect.mapError((error) => {
-                if (isPilotProviderKnownZeroCostFailure(error)) {
+                if (isProviderKnownZeroCostFailure(error)) {
                   return error;
                 }
                 return Schema.is(Schema.String)(error)

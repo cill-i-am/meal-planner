@@ -1,6 +1,8 @@
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Config, Effect, Option, Schema } from "effect";
+import type { AnyD1Database } from "drizzle-orm/d1";
+import { Effect, Option, Schema } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
@@ -9,21 +11,22 @@ import { HouseholdDomainWorker } from "../households/household-domain-binding.js
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import {
-  PilotBudgetRunId,
-  PilotBudgetTimestamp,
-  makePilotProviderBudgetRuntime,
-} from "../pilots/pilot-provider-budget.js";
-import { makeD1PilotProviderBudgetRepository } from "../pilots/pilot-provider-budget.repository.d1.js";
+  ProviderAccountingRunId,
+  ProviderAccountingTimestamp,
+} from "../provider-accounting/provider-accounting.js";
+import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
 import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import {
   ImportObservabilityTraceStore,
   observeImportWorkflowStart,
 } from "./import-observability.js";
+import type { ImportCorrelationId } from "./import-observability.js";
 import {
-  makePilotProviderDispatchGate,
+  makeProviderDispatchGate,
   makeWorkersAiTransport,
 } from "./import-provider-kernel.js";
+import type { WorkersAiTransport } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import { ProviderTaskCheckpoint } from "./import-provider-workflow-checkpoint.js";
 import {
@@ -31,6 +34,7 @@ import {
   runProviderTaskAttempt,
 } from "./import-provider-workflow-task.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
+import { makeHouseholdRecipeDraftLifecycle } from "./import-recipe-lifecycle.household.js";
 import {
   makeRecipeRecoveryHouseholdEvidenceRepositories,
   readHouseholdRecipeRecovery,
@@ -125,11 +129,16 @@ export const runRecipeRecoveryLoop = Effect.fn(
     if (checkpoint._tag === "Succeeded") {
       return checkpoint;
     }
-    if (checkpoint.code !== "outcome_unknown") {
+    if (
+      checkpoint.code !== "outcome_unknown" &&
+      checkpoint.code !== "provider_error"
+    ) {
       return checkpoint;
     }
 
-    yield* dependencies.persistUnknown(attempt, durableTaskNames.terminal);
+    if (checkpoint.code === "outcome_unknown") {
+      yield* dependencies.persistUnknown(attempt, durableTaskNames.terminal);
+    }
     const next = nextRecoveryOrdinal(ordinal);
     if (Option.isNone(next)) {
       return checkpoint;
@@ -157,8 +166,31 @@ export const runRecipeRecoveryLoop = Effect.fn(
   return failedRecoveryCheckpoint("recovery_attempt_limit_reached");
 });
 
-const currentPilotBudgetTimestamp = () =>
-  Schema.decodeUnknownSync(PilotBudgetTimestamp)(new Date().toISOString());
+const currentProviderAccountingTimestamp = () =>
+  Schema.decodeUnknownSync(ProviderAccountingTimestamp)(
+    new Date().toISOString()
+  );
+
+/** Shared production accounting and extraction composition for recipe Workflows. */
+export const makeRecipeRecoveryProviderRuntime = (input: {
+  readonly correlationId: ImportCorrelationId;
+  readonly database: AnyD1Database;
+  readonly now: () => typeof ProviderAccountingTimestamp.Type;
+  readonly runId: typeof ProviderAccountingRunId.Type;
+  readonly transport: WorkersAiTransport["recipe"];
+}) => {
+  const dispatch = makeProviderDispatchGate({
+    correlationId: input.correlationId,
+    now: input.now,
+    repository: makeD1ProviderAccountingRepository(input.database),
+    runId: input.runId,
+  });
+  return makeInstalledRecipeExtractor({
+    correlationId: input.correlationId,
+    dispatch,
+    transport: input.transport,
+  }).pipe(Effect.map((extractor) => ({ extractor })));
+};
 
 const recoveryMutationId = (semanticKey: string) =>
   Effect.promise(() =>
@@ -201,8 +233,6 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
     const providerGateway = yield* Cloudflare.AI.QueryGateway(
       ImportProviderGateway
     );
-    const runtimeStage = yield* Config.string("ALCHEMY_STAGE");
-    const budgetRuntime = makePilotProviderBudgetRuntime(runtimeStage);
 
     return (rawInput: RecipeRecoveryWorkflowInputEncoded) =>
       Effect.gen(function* runImportRecipeRecoveryWorkflow() {
@@ -215,23 +245,21 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
           yield* makeRecipeRecoveryHouseholdEvidenceRepositories({
             acquisitionGeneration: workflowInput.acquisitionGeneration,
             correlationId: workflowInput.trace.correlationId,
-            database,
             executionGeneration: workflowInput.executionGeneration,
             householdDomain,
             importId: workflowInput.importId,
             mutationId: recoveryMutationId,
+            organizationId: workflowInput.organizationId,
           }).pipe(Effect.orDie);
-        const dispatch = makePilotProviderDispatchGate({
-          correlationId: workflowInput.trace.correlationId,
-          now: currentPilotBudgetTimestamp,
-          repository: makeD1PilotProviderBudgetRepository(
-            database,
-            runtimeStage
-          ),
-          runId: Schema.decodeUnknownSync(PilotBudgetRunId)(
-            `gaia-118:recipe-recovery:${workflowInput.importId}`
-          ),
-          runtime: budgetRuntime,
+        const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
+          workflowInput.importId
+        );
+        const recipeLifecycle = makeHouseholdRecipeDraftLifecycle({
+          executionGeneration: workflowInput.executionGeneration,
+          householdDomain,
+          intentId,
+          mutationId: recoveryMutationId,
+          organizationId: workflowInput.organizationId,
         });
         const traceStore = makeD1ImportObservabilityTraceStore(database, () =>
           new Date().toISOString()
@@ -241,9 +269,13 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
           workflowInput.trace.correlationId,
           traceStore
         ).pipe(Effect.provideService(RuntimeContext, runtimeContext));
-        const extractor = yield* makeInstalledRecipeExtractor({
+        const { extractor } = yield* makeRecipeRecoveryProviderRuntime({
           correlationId: workflowInput.trace.correlationId,
-          dispatch,
+          database,
+          now: currentProviderAccountingTimestamp,
+          runId: Schema.decodeUnknownSync(ProviderAccountingRunId)(
+            `recipe-import:recipe-recovery:${workflowInput.importId}`
+          ),
           transport: transport.recipe,
         });
         const recipeRepository = evidenceRepositories.recipe;
@@ -256,7 +288,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                   durableTaskName,
                   recipeRepository
                     .fail({
-                      completedAt: currentPilotBudgetTimestamp(),
+                      completedAt: currentProviderAccountingTimestamp(),
                       extractionFingerprint:
                         attempt.currentExtractionFingerprint,
                       failureCode: "provider_error",
@@ -266,18 +298,15 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
               readAttempt: (ordinal) =>
                 readHouseholdRecipeRecovery({
                   acquisitionGeneration: workflowInput.acquisitionGeneration,
-                  database,
                   executionGeneration: workflowInput.executionGeneration,
                   householdDomain,
                   importId: workflowInput.importId,
+                  organizationId: workflowInput.organizationId,
                   selector: {
                     _tag: "Ordinal",
                     ordinal,
                   },
-                }).pipe(
-                  Effect.map((attempt) => attempt as RecipeRecoveryAttempt),
-                  Effect.catch(() => Effect.succeed(null))
-                ),
+                }).pipe(Effect.orDie),
               runAttempt: (attempt, durableTaskName) =>
                 durable
                   .task(
@@ -289,7 +318,8 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                         extractor,
                         importId: attempt.importId,
                         importRepository: evidenceRepositories.current,
-                        now: currentPilotBudgetTimestamp,
+                        lifecycle: recipeLifecycle,
+                        now: currentProviderAccountingTimestamp,
                         recipeRepository,
                         recovery: {
                           acquisitionGeneration: attempt.acquisitionGeneration,

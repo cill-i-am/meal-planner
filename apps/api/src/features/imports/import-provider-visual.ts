@@ -1,7 +1,7 @@
 import { Effect, Option, Schema } from "effect";
 import type { Prompt } from "effect/unstable/ai";
 
-import { isPilotProviderKnownZeroCostFailure } from "../pilots/pilot-provider-budget.js";
+import { isProviderKnownZeroCostFailure } from "../provider-accounting/provider-accounting.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import { ImportObservabilityTraceStore } from "./import-observability.js";
 import {
@@ -178,7 +178,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                 }).pipe(
                   // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed error channel.
                   Effect.mapError((error) => {
-                    if (isPilotProviderKnownZeroCostFailure(error)) {
+                    if (isProviderKnownZeroCostFailure(error)) {
                       return error;
                     }
                     return Schema.is(Schema.String)(error)
@@ -201,7 +201,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                   // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
                   (error): VisualEvidenceExtractionFailure => {
                     const providerError =
-                      isPilotProviderKnownZeroCostFailure(error) &&
+                      isProviderKnownZeroCostFailure(error) &&
                       isSafeProviderFailureCode(error.error)
                         ? error.error
                         : undefined;

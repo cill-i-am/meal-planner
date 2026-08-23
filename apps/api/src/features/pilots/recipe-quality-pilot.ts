@@ -2,6 +2,10 @@ import { DateTime, Effect, Schema } from "effect";
 
 import { EvidenceRetentionSeconds } from "../imports/import-media.model.js";
 import { ImportTimestamp } from "../imports/import.contracts.js";
+import {
+  ProviderAccountingCapMicroUsd,
+  ProviderAccountingScope,
+} from "../provider-accounting/provider-accounting.js";
 
 export {
   decodeRecipeQualityPilotWorkflowStatus,
@@ -26,9 +30,10 @@ const SafeInteger = Schema.Number.pipe(
     Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
   )
 );
-/** The one already-isolated non-production stage approved for pilot evidence. */
-export const RecipeQualityPilotStage = "pilot-gaia-118";
-export const RecipeQualityPilotBudgetCapMicroUsd = 10_000_000;
+/** The production accounting boundary used by an explicitly authorized pilot. */
+export const RecipeQualityPilotStage = ProviderAccountingScope;
+export const RecipeQualityProviderAccountingCapMicroUsd =
+  ProviderAccountingCapMicroUsd;
 
 /** Opaque identity that never contains a source locator. */
 export const PilotSampleId = OpaquePilotId.pipe(Schema.brand("PilotSampleId"));
@@ -214,7 +219,9 @@ const validatePreflight = (
   if (request.budgetCapMicroUsd < 1) {
     return Effect.fail(preflightError("budget_missing"));
   }
-  if (request.budgetCapMicroUsd !== RecipeQualityPilotBudgetCapMicroUsd) {
+  if (
+    request.budgetCapMicroUsd !== RecipeQualityProviderAccountingCapMicroUsd
+  ) {
     return Effect.fail(preflightError("budget_exceeded"));
   }
   if (

@@ -35,12 +35,12 @@ import {
   makeVisualTransport,
   testRuntimeContext,
 } from "../imports/import-provider-adapters.test-fixture.js";
-import { persistHouseholdProviderTerminalAuthority } from "../imports/import-provider-terminal-authority.js";
 import {
-  ProviderTerminalSettlementRequest,
-  ProviderTerminalSettlementResponse,
-  makeD1ProviderTerminalSettlementService,
-} from "../imports/import-provider-terminal-settlement.js";
+  ProviderRecoveryRequest,
+  ProviderRecoveryResponse,
+  makeProviderRecoveryService,
+} from "../imports/import-provider-recovery.js";
+import { persistHouseholdProviderTerminalAuthority } from "../imports/import-provider-terminal-authority.js";
 import { makeInstalledVisualEvidenceExtractor } from "../imports/import-provider-visual.js";
 import { extractVisualEvidenceForTranscribedImport } from "../imports/import-visual-evidence.js";
 import { makeRecipeImportWorkflowDispatcher } from "../imports/import-worker-request-layer.js";
@@ -64,6 +64,11 @@ import {
   VisualEvidenceStore,
   VisualEvidenceStoreLive,
 } from "../imports/visual-evidence-store.js";
+import {
+  ProviderAccountingRequest,
+  ProviderAccountingResponse,
+  makeD1ProviderAccountingService,
+} from "../provider-accounting/provider-accounting.service.js";
 import {
   HouseholdObserveEvidenceReferenceInput,
   HouseholdReadEvidenceStageResult,
@@ -948,11 +953,31 @@ export default {
     }
     try {
       const command = await Schema.decodeUnknownPromise(
-        ProviderTerminalSettlementRequest,
+        Schema.Union([ProviderAccountingRequest, ProviderRecoveryRequest]),
         { onExcessProperty: "error" }
       )(await request.json());
+      if (
+        command.operation === "sweep_expired_recipe_replays" ||
+        command.operation === "settle_speech_unknown" ||
+        command.operation === "settle_visual_unknown" ||
+        command.operation === "settle_recipe_unknown" ||
+        command.operation === "settle_recipe_recovery_unknown"
+      ) {
+        const result = await Effect.runPromise(
+          makeD1ProviderAccountingService({
+            database: environment.MealPlannerDatabase,
+            now: () =>
+              Schema.decodeUnknownSync(ImportTimestamp)(
+                new Date().toISOString()
+              ),
+          }).reconcile(command)
+        );
+        return Response.json(
+          Schema.encodeSync(ProviderAccountingResponse)(result)
+        );
+      }
       if (!("importId" in command)) {
-        throw new Error("terminal settlement command requires an import id");
+        throw new Error("provider recovery command requires an import id");
       }
       const restartProviderStage = (
         stage: "speech" | "visual",
@@ -1082,16 +1107,9 @@ export default {
         );
       };
       const result = await Effect.runPromise(
-        makeD1ProviderTerminalSettlementService({
-          database: environment.MealPlannerDatabase,
+        makeProviderRecoveryService({
           householdDomain: terminalHousehold(environment),
-          now: () =>
-            Schema.decodeUnknownSync(ImportTimestamp)(new Date().toISOString()),
           recipeRecoveryStarter: { start: () => Effect.void },
-          runtimeStage: "pilot-gaia-118",
-          trace: Schema.decodeUnknownSync(ImportTraceContext)({
-            correlationId: "00000000-0000-4000-8000-000000000188",
-          }),
           workflowStarter: {
             restartFromSpeech: restartSpeech,
             restartFromVisual: () =>
@@ -1099,14 +1117,12 @@ export default {
                 Effect.as("RestartRequested" as const)
               ),
           },
-        }).settle(command)
+        }).recover(command)
       );
       if (request.headers.get("x-test-speech-restart") === "lose-response") {
         return Response.json({ responseLost: true }, { status: 409 });
       }
-      return Response.json(
-        Schema.encodeSync(ProviderTerminalSettlementResponse)(result)
-      );
+      return Response.json(Schema.encodeSync(ProviderRecoveryResponse)(result));
     } catch (error) {
       return Response.json(
         { error: JSON.stringify(error), rejected: true },

@@ -1,6 +1,6 @@
 # Real-Source Recipe Quality Pilot Runbook
 
-This runbook prepares the GAIA-118 pilot without executing it. The pilot remains
+This runbook prepares the recipe-quality pilot without executing it. The pilot remains
 human-triggered: a final sample set, current provider readiness, a budget cap,
 and an explicit execution window are required before any real source or provider
 is used. Every slot is URL-only: the operator supplies the authorized TikTok URL
@@ -16,7 +16,7 @@ six candidate slots without persisting source locators.
 
 The preflight fails closed unless:
 
-- the stage is exactly `pilot-gaia-118`;
+- the accounting scope is exactly `recipe-import`;
 - every sample has a non-expired authorization record;
 - the sample set covers normal video, sparse description, dense on-screen text,
   speech-heavy video, carousel, and expected-failure cases;
@@ -81,9 +81,9 @@ time.
 
 ## Future Authorized Execution Sequence
 
-When GAIA-118 receives a specific execution authorization:
+When the recipe-quality pilot receives a specific execution authorization:
 
-1. Resolve the exact deployed revision and isolated stage.
+1. Resolve the exact deployed revision and production accounting scope.
 2. Construct the privacy-safe manifest and keep the source mapping transient.
 3. Run `runRecipeQualityPilotPreflight` using the current time.
 4. Stop immediately on any typed preflight error.

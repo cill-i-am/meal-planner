@@ -1,7 +1,7 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 
 /**
- * Dedicated private GAIA-118 provider gateway.
+ * Dedicated private recipe-import provider gateway.
  *
  * The durable D1 ledger is authoritative; this gateway limit is a second,
  * provider-side fence. Gateway logging defaults off so an unwrapped request
@@ -13,7 +13,7 @@ export const ImportProviderGateway = Cloudflare.AI.Gateway(
   {
     cacheTtl: null,
     collectLogs: false,
-    id: "meal-planner-pilot-gaia-118",
+    id: "meal-planner-recipe-import",
     spendLimits: {
       enabled: true,
       rules: [
