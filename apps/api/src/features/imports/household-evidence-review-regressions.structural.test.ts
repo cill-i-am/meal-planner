@@ -46,7 +46,12 @@ describe("household evidence exact-head review regressions", () => {
     const workflow = await source("import.workflow.ts");
 
     expect(workflow).not.toContain("importWorkflowInstanceId");
-    expect(workflow).toContain(".get(workflowIdentity)");
+    expect(workflow).toContain(
+      "cloudflareWorkflowInstanceId(workflowIdentity)"
+    );
+    expect(workflow).toContain(
+      "workflowIdentity: ImportWorkflowIdentity\n) => workflowIdentity.replaceAll"
+    );
   });
 
   it("carries execution and acquisition-attempt generations independently", async () => {

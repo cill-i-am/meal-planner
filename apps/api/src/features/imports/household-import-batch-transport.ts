@@ -12,4 +12,4 @@ export const decodeHouseholdBatchQueueMessage = (input: unknown) =>
 /** One immutable Workflow execution per household batch item generation. */
 export const householdBatchWorkflowInstanceId = (
   message: typeof HouseholdBatchQueueMessage.Type
-) => `household-batch:v1:${message.itemId}:g${message.generation}`;
+) => `household-batch-v1-${message.itemId}-g${message.generation}`;

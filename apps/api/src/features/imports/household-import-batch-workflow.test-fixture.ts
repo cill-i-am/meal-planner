@@ -24,12 +24,16 @@ import {
   HouseholdRecordRecipeImportDispatchResult,
 } from "../households/recipe-import/household-recipe-import.contract.js";
 import { HouseholdMemberAdmission } from "../households/rpc/command-envelope.js";
+import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
 import {
   coordinateHouseholdImportBatchItem,
   makeHouseholdImportBatchWorkflowPorts,
 } from "./household-import-batch-item.workflow.js";
 import { householdBatchWorkflowInstanceId } from "./household-import-batch-transport.js";
-import { makeImportWorkflowStarter } from "./import.workflow.js";
+import {
+  cloudflareWorkflowInstanceId,
+  makeImportWorkflowStarter,
+} from "./import.workflow.js";
 
 const Scenario = Schema.Literals([
   "admission-lost-response",
@@ -93,9 +97,6 @@ const testRuntimeContext = RuntimeContext.of({
 
 const stateKey = (instanceId: string, name: string) => `${instanceId}:${name}`;
 
-// Miniflare's native Workflow engine rejects the colon-delimited domain identity.
-const engineWorkflowId = (identity: string) => identity.replaceAll(":", "-");
-
 const increment = (
   environment: TestEnvironment,
   instanceId: string,
@@ -115,19 +116,8 @@ const makeNativeStarter = (environment: TestEnvironment) =>
   makeImportWorkflowStarter({
     createBatch: (batch) =>
       Effect.promise(async () => {
-        const nativeBatch = batch.map(({ id, params }) => {
-          const nativeId = id === undefined ? undefined : engineWorkflowId(id);
-          if (nativeId === undefined) {
-            return params === undefined ? {} : { params };
-          }
-          return params === undefined
-            ? { id: nativeId }
-            : { id: nativeId, params };
-        });
         const instances =
-          await environment.ImportAcquisitionTestWorkflow.createBatch(
-            nativeBatch
-          );
+          await environment.ImportAcquisitionTestWorkflow.createBatch(batch);
         return instances.map((instance) => ({
           restart: () => Effect.promise(() => instance.restart()),
           status: () => Effect.promise(() => instance.status()),
@@ -135,7 +125,7 @@ const makeNativeStarter = (environment: TestEnvironment) =>
       }),
     get: (id) =>
       Effect.promise(() =>
-        environment.ImportAcquisitionTestWorkflow.get(engineWorkflowId(id))
+        environment.ImportAcquisitionTestWorkflow.get(id)
       ).pipe(
         Effect.map((instance) => ({
           restart: () => Effect.promise(() => instance.restart()),
@@ -403,9 +393,8 @@ export default {
       );
     }
     const workflowId = householdBatchWorkflowInstanceId(message);
-    const nativeWorkflowId = engineWorkflowId(workflowId);
     await environment.BATCH_WORKFLOW_STATE.put(
-      stateKey(nativeWorkflowId, "scenario"),
+      stateKey(workflowId, "scenario"),
       command.scenario
     );
     const sessionId =
@@ -413,23 +402,23 @@ export default {
     let status: { readonly status: string };
     try {
       const created = await environment.BATCH_WORKFLOW_STATE.get(
-        stateKey(nativeWorkflowId, "created")
+        stateKey(workflowId, "created")
       );
       if (created === null) {
         await environment.HouseholdBatchTestWorkflow.create({
-          id: nativeWorkflowId,
+          id: workflowId,
           params: Schema.encodeSync(HouseholdBatchQueueMessage)(message),
         });
         await environment.BATCH_WORKFLOW_STATE.put(
-          stateKey(nativeWorkflowId, "created"),
+          stateKey(workflowId, "created"),
           "true"
         );
       } else {
-        await environment.HouseholdBatchTestWorkflow.get(nativeWorkflowId);
+        await environment.HouseholdBatchTestWorkflow.get(workflowId);
       }
       status = await waitForTerminalStatus(
         environment.HouseholdBatchTestWorkflow,
-        nativeWorkflowId
+        workflowId
       );
     } finally {
       await environment.HouseholdBatchTestWorkflow.unsafeStopIntrospection(
@@ -494,10 +483,17 @@ export default {
       .bind(replay.intent.id)
       .first<{ readonly count: number }>();
     const read = (name: string) =>
-      environment.BATCH_WORKFLOW_STATE.get(stateKey(nativeWorkflowId, name));
+      environment.BATCH_WORKFLOW_STATE.get(stateKey(workflowId, name));
     const acquisitionRuns = await readEventually(
       environment,
-      stateKey(engineWorkflowId(replay.workflowIdentity), "acquisition-runs")
+      stateKey(
+        cloudflareWorkflowInstanceId(
+          Schema.decodeUnknownSync(ImportWorkflowIdentity)(
+            replay.workflowIdentity
+          )
+        ),
+        "acquisition-runs"
+      )
     );
     return Response.json({
       acquisitionRuns: Number(acquisitionRuns ?? "0"),

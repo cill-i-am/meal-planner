@@ -131,7 +131,7 @@ describe("household batch Queue transport", () => {
       readEventually("consumer", "RESULTS", "last")
     ).resolves.toEqual({
       message,
-      workflowId: `household-batch:v1:${message.itemId}:g1`,
+      workflowId: `household-batch-v1-${message.itemId}-g1`,
     });
     expect(
       JSON.stringify(await readEventually("consumer", "RESULTS", "last"))

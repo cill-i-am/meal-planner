@@ -1393,6 +1393,11 @@ interface WorkflowHandleLike {
   readonly get: (id: string) => Effect.Effect<WorkflowInstanceLike>;
 }
 
+/** Map the canonical household identity to Cloudflare's restricted instance-ID alphabet. */
+export const cloudflareWorkflowInstanceId = (
+  workflowIdentity: ImportWorkflowIdentity
+) => workflowIdentity.replaceAll(":", "-");
+
 export const ProviderRestartResult = Schema.Literals([
   "RestartAmbiguous",
   "RestartRequested",
@@ -1496,7 +1501,7 @@ export const makeImportWorkflowStarter = (
       Effect.mapError(() => workflowStartUnavailable()),
       Effect.flatMap((checkpoint) =>
         workflow
-          .get(workflowIdentity)
+          .get(cloudflareWorkflowInstanceId(workflowIdentity))
           .pipe(
             Effect.flatMap((instance) =>
               instance.restart(postAcquisitionRestartOptions(checkpoint))
@@ -1573,11 +1578,14 @@ export const makeImportWorkflowStarter = (
 
   return {
     dispatchAdmission: (input) =>
-      start({ ...input, instanceId: input.workflowIdentity }),
+      start({
+        ...input,
+        instanceId: cloudflareWorkflowInstanceId(input.workflowIdentity),
+      }),
     ensureStarted: () => Effect.fail(workflowStartUnavailable()),
     restartFromSpeech: (workflowIdentity) =>
       workflow
-        .get(workflowIdentity)
+        .get(cloudflareWorkflowInstanceId(workflowIdentity))
         .pipe(
           Effect.flatMap((instance) =>
             reconcileProviderRestart(instance, "record-acquisition-v2")
@@ -1585,7 +1593,7 @@ export const makeImportWorkflowStarter = (
         ),
     restartFromVisual: (workflowIdentity) =>
       workflow
-        .get(workflowIdentity)
+        .get(cloudflareWorkflowInstanceId(workflowIdentity))
         .pipe(
           Effect.flatMap((instance) =>
             reconcileProviderRestart(instance, "extract-visual-evidence-v1")
