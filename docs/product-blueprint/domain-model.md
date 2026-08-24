@@ -2,10 +2,11 @@
 
 ## Purpose
 
-This document defines the stable product language and invariants for household
-food planning. It deliberately avoids prescribing every database table, RPC
-shape, or service boundary. Current technical authority remains documented
-under [`../architecture`](../architecture/).
+This document defines stable product language and invariants for household food
+planning. It deliberately avoids prescribing every table, RPC, service, or
+frontend projection. Current implemented authority remains documented under
+[`../architecture`](../architecture/), and accepted detail is recorded under
+[`../decisions/product`](../decisions/product/).
 
 ## Core Model
 
@@ -13,312 +14,412 @@ under [`../architecture`](../architecture/).
 Household
   ├── Authenticated Members
   ├── Household People
-  │     ├── Person Profiles
-  │     └── Person Routines
-  ├── Household Routines
-  ├── Household Recipe Bank
+  │     ├── Versioned Person Profiles
+  │     ├── Person Routines
+  │     ├── Portion Defaults
+  │     └── Approved Fallbacks
+  ├── Household Routines And Capacity
+  ├── Household Meal Content
+  ├── Prepared Food Stock
   └── Planning Periods
           ├── Meal Requirements
           ├── Coverage Resolutions
+          ├── Meal Options
           ├── Cook Events
-          ├── Portion Allocations
+          ├── Prepared Outputs
+          ├── Allocations
+          ├── Planning Rationale
           ├── Plan Revisions
           └── Approval
 ```
 
-The shared curated recipe catalogue is separate from household product state.
-A household may reference or fork a catalogue recipe, but the catalogue must
-not become a global projection of private household recipes.
+The shared curated recipe catalogue is separate from household product state. A
+household may reference or fork a catalogue recipe, but the catalogue must not
+become a global projection of private household content.
 
 ## Identity And People
 
 ### Authenticated member
 
 Better Auth owns accounts, sessions, organizations, memberships, invitations,
-and roles. An authenticated member represents authority to access or manage the
-household; it is not automatically the complete model of a person who eats.
+and roles. An authenticated member represents authority to operate the
+household; it is not the complete model of a person who eats.
 
 ### Household person
 
-A `HouseholdPerson` represents someone whose food requirements may need to be
-planned. It has a stable household-local identity and may be:
+A `HouseholdPerson` is a stable household-local identity for someone whose food
+requirements may need planning. It may be:
 
 - an adult linked to a Better Auth user;
 - an invited adult not yet linked to an account; or
-- a dependant with no account.
+- a dependant with no MVP account.
 
-A person's lifecycle is independent of account invitation and session
-lifecycle. Linking an account must not create a duplicate eater or lose existing
-profile and planning history.
+Linking an account must not create a duplicate eater or lose profile, routine,
+plan, feedback, or recipe history. The lifecycle of a person is distinct from
+membership and session lifecycle.
 
-### Person profile
+The exact departure, archival, and account-link repair policy remains open.
 
-A `PersonProfile` is the confirmed, household-visible set of planning facts for
-one person. Facts may include:
+## Person Profiles
 
-- hard safety and dietary constraints;
+A `PersonProfile` is a versioned, household-visible set of confirmed planning
+facts for one person. In the MVP, any adult may edit any adult or dependant
+profile; every mutation records actor, time, source, and before/after state.
+
+### Fact categories
+
+Profile facts may include:
+
+- hard dietary or suitability constraints;
 - dietary pattern;
-- strong and weak food preferences;
-- accepted foods and fallback meals;
-- cuisines, ingredients, textures, and spice tolerance;
-- ordinary meal habits and intentional skips;
-- context such as office, school, or packed-lunch needs;
-- portion or life-stage considerations; and
-- user-stated planning goals.
+- ingredient, dish, and cuisine preferences;
+- strong avoids and ordinary dislikes;
+- exact-product preferences and substitution policy;
+- meal habits and intentional skips;
+- location, school, office, travel, and packed-lunch context;
+- preparation windows and household equipment relevance;
+- default serving factors by meal occasion; and
+- approved context-specific fallbacks.
 
-A profile fact should carry enough metadata to distinguish:
+A generic calorie, macro, weight, muscle, or medical-goal model is outside the
+MVP.
 
-```ts
-interface PersonProfileFact {
-  readonly factId: ProfileFactId
-  readonly kind: ProfileFactKind
-  readonly value: ProfileFactValue
-  readonly strength: "hard" | "strong" | "weak"
-  readonly source:
-    | "person_stated"
-    | "guardian_stated"
-    | "household_confirmed"
-    | "feedback_observed"
-  readonly confidence: number
-  readonly confirmedAt: Instant
-  readonly reviewAfter: Instant | null
-}
-```
+### Suitability, preference, and fallback approval
 
-The exact encoded union belongs to the implementing capability. Model-derived
-suggestions do not become confirmed profile facts without an admitted product
-transition.
+These are distinct concepts:
 
-### Interview session
+- **Suitability** records allowed, needs adaptation, or prohibited.
+- **Preference** records favourite, likes, neutral, dislikes, or strongly avoids.
+- **Fallback approval** records a person-specific meal option that may reliably
+  cover a defined context.
+
+Optional applicability tags may scope a preference or fallback to a meal
+occasion, packed lunch, location, or named routine. Absence of tags means the
+fact applies generally. The MVP does not introduce a general preference rules
+language or universal child-specific accepted-food taxonomy.
+
+### Fact state and provenance
+
+A fact distinguishes at least:
+
+- provisional input from another adult;
+- person-confirmed input;
+- household-confirmed input;
+- visible low-weight inference from feedback; and
+- superseded historical state.
+
+Hard constraints, dietary rules, routines, and strong avoids require explicit
+confirmation. An inferred soft preference may influence ranking only at low
+weight and remains visible, reversible, and removable.
+
+Self-confirmed ordinary facts normally replace provisional facts. A hard safety
+or dietary fact is never silently removed or weakened.
+
+## Interview Sessions
 
 An `InterviewSession` is a private interaction owned by the participating adult.
-Its transcript and intermediate reasoning are not household profile state. It
-may propose facts, routines, questions, and conflicts for confirmation.
+Its transcript and intermediate conversation are not household planning
+authority.
 
-Confirmed outputs may enter the visible person profile. The transcript should
-not be required to reconstruct planning authority.
+The session may propose facts, routines, fallbacks, conflicts, and questions.
+Confirmed outputs enter household-visible structured state through admitted
+commands. The transcript is not required to reconstruct that state.
+
+An interview is repeatable. Adults may start a profile review at any time as
+tastes and circumstances change. Transcript retention and deletion policy remain
+an explicit open decision.
 
 ## Routines
 
-A `Routine` is a reusable, versioned rule that contributes requirements or
-coverage suggestions to concrete planning periods. A routine belongs to either
-one person or the household.
+A `Routine` is a reusable, versioned planning rule belonging to one person or the
+household. It expands into concrete input for a planning period.
 
-A routine can express:
+A routine may express:
 
-- applicable weekdays or recurrence;
-- a meal occasion;
+- applicable weekdays, recurrence, or effective dates;
+- one or more meal occasions;
 - people covered;
-- a location or context;
-- a fixed meal, recipe, category, or intentional skip;
-- a leftover-production or leftover-consumption rule;
-- a fallback policy;
-- priority and conflict behavior;
-- effective dates; and
+- location or availability context;
+- an exact food or small approved set;
+- pin, prefer, or rotate behaviour;
+- a meal option, external meal, leftover policy, flexible pattern, or skip;
+- portion expectations;
+- person-specific fallback policy;
+- equipment and preparation windows;
+- cooking-capacity effect;
+- priority and conflict behaviour; and
 - one-off exceptions.
 
-Routines generate a baseline. A planning-period exception changes one week
-without silently mutating the enduring rule.
+Changing a routine affects future periods by default. An approved plan pins the
+routine version and expanded entries it used. A one-off exception changes one
+period without silently mutating the enduring rule.
 
-## Planning Period
+## Household Capacity And Effort
 
-A `PlanningPeriod` is a bounded set of dates and configured meal occasions for
-one household. The first product normally uses a week, but the domain should not
-make seven days an accidental identity rule.
+The household may set a cooking-capacity target, such as a maximum number of
+substantial cook events per week. The agent may propose changing it based on
+repeated behaviour, but cannot change it silently.
 
-The household configures relevant meal occasions, for example:
+Effort is multidimensional and may include:
+
+- hands-on time;
+- elapsed time;
+- sustained attention;
+- cleanup burden;
+- coordination complexity;
+- advance-start requirement; and
+- skill or cognitive load.
+
+Labels such as quick, hands-off, involved, assemble, reheat, packaged, and
+external are derived summaries. Elapsed time alone does not define effort.
+
+## Planning Period And Meal Requirements
+
+A `PlanningPeriod` is normally seven days with a household-configurable start
+day. Partial replanning may cover only the remaining dates.
+
+The household configures managed meal occasions, beginning with breakfast,
+lunch, dinner, and snacks. Additional occasions may be added, renamed, disabled,
+or scoped by person and day.
+
+For a period, the system materializes or can deterministically derive:
 
 ```text
-breakfast
-morning snack
-lunch
-afternoon snack
-dinner
+household person × date × managed meal occasion
 ```
 
-Not every household or person must use every conventional occasion.
+Each required cell is a `MealRequirement`. It records who must be accounted for,
+when, and relevant context and constraints.
 
-## Meal Coverage Matrix
+## Coverage Resolution
 
-For a planning period, the system materializes or can deterministically derive
-the required matrix:
-
-```text
-household person × date × configured meal occasion
-```
-
-Each required cell is represented by a `MealRequirement`. A requirement records
-who needs to be accounted for, when, and any relevant context or hard
-constraints.
-
-Every requirement has exactly one current `CoverageResolution`:
+Every managed requirement has one explicit current resolution. Directionally:
 
 ```ts
 type CoverageResolution =
-  | SharedMealCoverage
-  | IndividualMealCoverage
-  | RoutineItemCoverage
-  | LeftoverCoverage
-  | EatingOutCoverage
-  | IntentionalSkipCoverage
-  | UnresolvedCoverage
+  | { readonly kind: "meal"; readonly option: MealOptionReference }
+  | { readonly kind: "prepared_output"; readonly allocationId: AllocationId }
+  | { readonly kind: "external_meal"; readonly externalMealId: ExternalMealId }
+  | { readonly kind: "intentional_skip" }
+  | { readonly kind: "flexible" }
+  | { readonly kind: "unresolved"; readonly reason: GapReason }
 ```
 
-A shared meal may resolve many requirements. The UI can group those cells into
-one human-readable event, but grouping must not erase person-level exceptions.
+The implementing capability may refine this union. It is a domain direction,
+not a required frontend contract.
 
-### Shared meal coverage
+- A shared meal may resolve many requirements while retaining exact person
+  coverage.
+- A flexible resolution deliberately leaves the choice to the day and creates
+  no shopping assumption.
+- An intentional skip is explicit; missing information is never a skip.
+- An unresolved gap cannot be hidden by invented content and must be resolved
+  before MVP approval.
 
-Several people consume the same meal or compatible portions of one meal event.
-A person-specific variation may still reference shared components.
+## Meal Options
 
-### Individual meal coverage
+A common planning abstraction references distinct content kinds:
 
-One person receives a separate meal because a shared meal does not fit. The
-planner should prefer a low-burden variation or known fallback where possible.
+### Recipe meal
 
-### Routine item coverage
+Has a recipe version, original batch and yield, structured ingredients,
+instructions, scaling rules, effort, and possible prepared output.
 
-A repeated simple food or routine resolves the requirement without requiring a
-new recipe-selection decision each week.
+### Assembled meal
 
-### Leftover coverage
+Has components and quantities but no meaningful full recipe method, such as
+cereal, sandwiches, toast, fruit, or yoghurt. It may consume an earlier prepared
+component.
 
-The requirement consumes portions produced by an earlier cook event. The
-allocation must identify the producing batch and cannot consume more portions
-than remain available.
+### Packaged meal
 
-### Eating out coverage
+References a generic or exact product, optional preparation notes, and
+substitution policy.
 
-The household intentionally excludes the meal from home preparation and the
-shopping demand produced by this product.
+### External meal
 
-### Intentional skip coverage
+Represents takeaway, restaurant, school meal, canteen, or another opaque meal.
+It covers requirements but normally creates no shopping demand.
 
-The person intentionally has no food requirement for that occasion, such as an
-explicit fasting routine. Absence of data is not an intentional skip.
+Meal-option kinds share planning suitability, portion behaviour, effort,
+preferences, fallback use, and rationale, while preserving their own validation,
+scaling, and shopping semantics.
 
-### Unresolved coverage
+## Fallbacks
 
-The planner cannot safely or practically cover the requirement. The gap remains
-visible and cannot be disguised by a generic recipe or invented fact.
+A fallback belongs to one person and points to an approved meal option plus
+applicable context. Several people may independently approve the same option.
 
-## Meal Events And Cook Events
+- A prohibited or incompatible shared meal requires compatible alternative
+  coverage.
+- A strong avoid normally receives an approved fallback, with adult override.
+- An ordinary dislike lowers ranking but does not automatically force separate
+  coverage.
+- A new agent-proposed fallback offers use once, approve for future use, or
+  reject.
+
+Fallback describes selection reason, not preparation type. It may be a recipe,
+assembled meal, packaged product, shared-component variation, takeaway, or
+another external option.
+
+## Cook Events And Prepared Output
 
 A `MealEvent` represents consumption. A `CookEvent` represents preparation.
-They are separate because one preparation may satisfy several consumption
-events and because some meal events require no cooking.
-
-### Cook event
+They are separate because one preparation can satisfy several later meal
+requirements and because many meal options require no cooking.
 
 A cook event records:
 
-- the recipe version or preparation instruction;
-- planned date and time;
-- people or meal events it supports;
-- intended production quantity;
-- expected cooking effort and equipment; and
-- any shared-component variations.
+- recipe version or preparation definition;
+- planned time and preparation window;
+- equipment and effort profile;
+- intended yield;
+- meal events and requirements supported; and
+- planned outputs.
 
-### Cook batch
+One cook event may produce:
 
-A cook event produces one or more `CookBatch` records. A batch has a measurable
-or countable quantity and allocation state. The first product may use normalized
-portion units while preserving the ability to adopt weight or volume where the
-recipe supports it.
+- finished-meal portions;
+- reusable prepared components, such as cooked chicken, sauce, rice, or roast
+  vegetables; and
+- unassigned surplus.
 
-### Portion allocation
+Output uses weight, volume, count, or portions according to what is known and
+useful. Prepared components are explicit; the system does not automatically
+decompose every meal into speculative inventory.
 
-A `PortionAllocation` assigns part of a batch to one or more meal requirements.
-It supports the product statement:
+An allocation assigns output to a requirement, assembled meal, later cook event,
+or carry-over stock. Allocations cannot exceed production or double-consume the
+same quantity.
 
-```text
-Cook six portions on Monday.
-Four cover Monday dinner.
-Two cover Tuesday lunch.
-```
+## Portion Model
 
-The planner must not double-allocate portions or claim leftovers that the cook
-event did not produce.
+Each person has a default serving factor relative to one recipe reference
+serving, optionally different by meal occasion. A meal-specific allocation may
+override it.
 
-## Fallback Meals And Variations
+Labels such as child, small adult, standard adult, and large portion may seed
+factors, but they are not calorie or clinical claims. Future verified nutrition
+may attach to a reference serving or measured quantity without replacing the
+portion model.
 
-A `FallbackMeal` is an accepted, low-friction resolution for a person when the
-shared meal is unsuitable. It may be:
+## Planned Leftovers And Prepared Stock
 
-- a variation using shared ingredients or components;
-- a simple routine food;
-- a known freezer or pantry option; or
-- a separate recipe where the household accepts the extra effort.
+A cook event may deliberately scale output for named future meals or freezer
+portions. Planned same-week leftovers are part of the approved plan and require
+no separate confirmation.
 
-Fallbacks are not permission to ignore nutritional or safety constraints. They
-are also not automatically scheduled whenever a person expresses a weak
-dislike; strength, household policy, and variety goals matter.
+Incidental leftovers use a low-friction record: approximate quantity or
+portions, plus fridge or freezer.
+
+The MVP tracks lightweight prepared stock only. Stock records identity,
+quantity, storage location, origin where known, and state such as available,
+reserved, consumed, discarded, or uncertain.
+
+The ordinary product path does not require users to mark meals cooked or eaten.
+The plan is assumed to happen unless an exception is reported. Cross-week stock
+must be confirmed before a later plan relies on it.
+
+The product does not request ingredient date labels, calculate safe-to-eat
+windows, auto-expire food using guessed rules, or certify food safety.
+
+## Recipe Identity, Versions, And Scaling
+
+A recipe is a stable concept; a `RecipeVersion` is an immutable snapshot. Plans
+pin exact versions.
+
+- Editing shared catalogue content creates a private household fork.
+- Editing a household recipe creates a new version.
+- A genuinely different dish is an explicit separate fork.
+- The original batch and stated yield remain authoritative.
+- A reference-serving projection may be derived where meaningful.
+- Cook-event scaling is plan state, not a recipe edit.
+- Ingredient-specific scaling distinguishes linear, discrete, bounded,
+  package-constrained, to-taste, and non-scalable behaviour.
+- Missing yield or material quantities remain unresolved rather than invented.
+- An incomplete recipe may remain in review but cannot drive reliable scaling or
+  shopping demand.
+
+See [`recipe-strategy.md`](recipe-strategy.md) for the broader content model.
+
+## Planning Rationale
+
+A meaningful plan decision may cite confirmed profile facts, routines,
+fallbacks, locations, equipment, capacity, preferences, or constraints.
+Rationale must not quote private transcript text.
+
+The UI may group shared coverage and nest person exceptions. The domain model
+does not require the frontend to expose raw internal unions or every rationale
+fact by default.
 
 ## Meal Plan Aggregate
 
-A `MealPlan` binds one planning period, its requirements, current coverage,
-cook events, allocations, decisions, and revision history.
+A `MealPlan` binds one planning period, requirements, current coverage, meal
+options, cook events, prepared outputs, allocations, rationale, shopping
+preview, decisions, and revision history.
 
-A plan lifecycle begins as a draft and may be approved or rejected. Any
-post-approval edit that changes food coverage, cooking demand, or shopping
-demand must create an explicit new revision or return the plan to a draft state.
+The planner produces one strong recommended plan. While it is a draft, changes
+may trigger repair across dependent state and must explain consequential
+changes.
 
-The plan should pin immutable recipe versions so that later recipe edits do not
-silently change an approved historical or active week.
+Any adult may edit, approve, reject, reopen, or revise in the MVP. Approval pins
+profile, routine, recipe, portion, and plan versions. A post-approval change
+creates a visible proposed revision rather than rewriting active state.
 
 ## Weekly Review And Feedback
 
-A `WeeklyReview` gathers lightweight feedback about the previous planning
-period. A `FeedbackSignal` belongs to a person, meal event, cook event, recipe,
-routine, or plan and may record signals such as:
+A `WeeklyReview` is an optional checkpoint before the next plan. It may collect
+signals about people, meals, cook events, routines, portions, fallbacks, and
+prepared carry-over.
 
-- liked or disliked;
-- skipped or not made;
-- too much effort;
-- wrong quantity;
-- fallback used;
-- dependant rejection; or
-- make again.
+Signals include liked, disliked, skipped, not made, too much effort, wrong
+quantity, fallback outcome, dependant rejection, and make again.
 
-Feedback does not automatically rewrite hard profile facts or enduring routines.
-The agent proposes an explicit profile, routine, recipe, or policy change when
-the evidence warrants it.
+Review never blocks planning. Feedback does not silently rewrite hard facts or
+enduring routines. The agent may propose explicit changes, and inferred soft
+preferences remain visible and reversible.
+
+Feedback attribution and learning thresholds remain open decisions.
 
 ## Shopping Demand
 
-An approved plan produces retailer-neutral `IngredientDemand` from its cook and
-meal events. Demand is aggregated across recipes and adjusted only by explicit
-product facts, such as confirmed pantry availability.
+A draft plan exposes a shopping preview. An approved plan creates the active
+retailer-neutral shopping list.
 
-A shopping list contains food requirements, quantities, acceptable forms, and
-manual status. It does not contain retailer credentials or imply an external
-basket mutation.
+- Recipe meals contribute structured ingredient demand.
+- Assembled and packaged meals contribute components or exact products.
+- Planned leftovers contribute only through their producing cook event.
+- External meals, intentional skips, and flexible slots contribute no demand.
+- Ingredients aggregate only when identity and unit conversion are reliable.
+- Adults may add, split, merge, and adjust items.
+- An optional one-off "already have this?" check replaces a pretend live pantry.
+- Plan revision presents a shopping delta and preserves manual and purchased
+  state.
 
 ## Non-Negotiable Invariants
 
-1. Every configured person-date-meal requirement has one explicit current
+1. Every managed person-date-meal requirement has one explicit current
    resolution.
 2. Missing information is never interpreted as an intentional skip.
-3. Beta plan approval requires every mandatory requirement to be resolved.
-4. Hard constraints are evaluated by deterministic domain policy and cannot be
-   overridden by a model recommendation.
-5. A shared meal records exactly which people and requirements it covers.
-6. A person-specific fallback must be safe for that person and represented as
-   actual coverage, not a note attached to an incompatible shared meal.
-7. Cook events and meal events are distinct.
-8. Portion allocations cannot exceed batch production or allocate the same
-   portion twice.
-9. Approved plans pin recipe versions and retain an auditable revision.
+3. MVP approval requires every managed requirement to be resolved without a
+   gap.
+4. Hard constraints are deterministic and cannot be overridden by a model.
+5. Shared coverage retains exactly which people and requirements it covers.
+6. A required fallback is actual compatible coverage, not a note on an
+   incompatible shared meal.
+7. Cook events, meal consumption, meal content, and prepared stock are distinct
+   concepts.
+8. Allocations cannot exceed output or double allocate quantity.
+9. Approved plans pin relevant versions and remain stable until a visible
+   revision is accepted.
 10. Raw interview transcripts are not household planning authority.
-11. Confirmed person-profile facts are household-visible by default in the
-    accepted beta direction.
+11. Confirmed profiles are household-visible in the MVP; transcript text is not.
 12. Agent proposals become authoritative only through typed, validated domain
-    commands.
-13. Imported recipe uncertainty and provenance survive into review and approved
-    versions where relevant.
-14. Retailer state and credentials are outside the initial household plan and
-    shopping authority.
+   commands.
+13. Imported recipe uncertainty and provenance survive review and versioning.
+14. The happy path requires no per-meal confirmation.
+15. The MVP does not certify food safety, maintain a complete pantry, or perform
+   retailer mutations.
 
 ## Agent And Domain Responsibility
 
@@ -326,20 +427,22 @@ The agent is responsible for:
 
 - understanding natural language;
 - choosing valuable follow-up questions;
-- proposing profiles and routines;
-- generating and revising candidate plans;
-- explaining conflicts and trade-offs; and
+- proposing and revising profiles, routines, fallbacks, and plans;
+- synthesizing one strong recommendation;
+- repairing candidate plans through admitted operations;
+- explaining rationale, conflicts, and trade-offs; and
 - summarizing feedback into proposed changes.
 
 The deterministic domain is responsible for:
 
 - authorization and visibility;
 - schema decoding;
-- profile and routine transitions;
+- person, profile, and routine transitions;
 - coverage completeness;
 - hard-constraint enforcement;
-- recipe-version authority;
-- portion arithmetic;
+- meal-content and recipe-version authority;
+- portion and quantity arithmetic;
+- prepared-stock reservation and allocation;
 - idempotency and concurrency;
 - plan lifecycle and approval; and
 - shopping-demand derivation.
