@@ -45,6 +45,11 @@ export interface WorkflowStartUnavailable {
   readonly _tag: "WorkflowStartUnavailable";
 }
 
+/** Proof from a start adapter that it refused before invoking the Workflow binding. */
+export interface WorkflowStartRefused {
+  readonly _tag: "WorkflowStartRefused";
+}
+
 export interface ImportTransitionRejected {
   readonly _tag: "ImportTransitionRejected";
 }
@@ -103,6 +108,10 @@ export const importPersistenceCorrupt = (): ImportPersistenceCorrupt => ({
 
 export const workflowStartUnavailable = (): WorkflowStartUnavailable => ({
   _tag: "WorkflowStartUnavailable",
+});
+
+export const workflowStartRefused = (): WorkflowStartRefused => ({
+  _tag: "WorkflowStartRefused",
 });
 
 export const importTransitionRejected = (): ImportTransitionRejected => ({

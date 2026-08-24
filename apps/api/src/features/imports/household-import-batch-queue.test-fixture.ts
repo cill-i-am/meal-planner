@@ -10,10 +10,14 @@ import { Effect, Schema } from "effect";
 import {
   HouseholdAdmitImportBatchInput,
   HouseholdAdmitImportBatchResult,
+  HouseholdReadImportBatchInput,
 } from "../households/batches/household-import-batch.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdMemberAdmission } from "../households/rpc/command-envelope.js";
-import { handleHouseholdImportBatchQueueMessage } from "./household-import-batch-queue.handlers.js";
+import {
+  handleHouseholdImportBatchQueueMessage,
+  makeHouseholdBatchWorkflowLauncher,
+} from "./household-import-batch-queue.handlers.js";
 
 interface TestKvNamespace {
   readonly get: (key: string) => Promise<string | null>;
@@ -44,43 +48,70 @@ interface Environment {
 
 const RefusalParameters = Schema.Struct({ organizationId: Schema.String });
 
-const workflowLauncher = (environment: Environment) => ({
-  create: (input: { readonly id: string; readonly params: unknown }) =>
-    Effect.gen(function* createWorkflow() {
-      const parameters = yield* Schema.decodeUnknownEffect(RefusalParameters)(
-        input.params
-      );
-      if (parameters.organizationId === "organization-batch-dlq-proof") {
-        yield* Effect.promise(() =>
-          environment.RESULTS.put(`refused:${input.id}`, "true")
-        );
-        return yield* Effect.die(
-          new Error("workflow start refused before commit")
-        );
-      }
-      return yield* Effect.promise(() =>
+const nativeWorkflowLauncher = (environment: Environment) =>
+  makeHouseholdBatchWorkflowLauncher({
+    create: (input) =>
+      Effect.promise(() =>
         environment.BATCH_WORKFLOW.create({
           id: input.id,
           params: Schema.decodeUnknownSync(Schema.Json)(input.params),
         })
-      );
-    }),
-  get: (id: string) =>
-    Effect.gen(function* getWorkflow() {
-      const refused = yield* Effect.promise(() =>
-        environment.RESULTS.get(`refused:${id}`)
-      );
-      if (refused === "true") {
-        return yield* Effect.die(new Error("workflow does not exist"));
-      }
-      const instance = yield* Effect.promise(() =>
-        environment.BATCH_WORKFLOW.get(id)
-      );
-      return {
-        status: () => Effect.promise(() => instance.status()),
-      };
-    }),
-});
+      ),
+    get: (id) =>
+      Effect.promise(() => environment.BATCH_WORKFLOW.get(id)).pipe(
+        Effect.map((instance) => ({
+          status: () => Effect.promise(() => instance.status()),
+        }))
+      ),
+  });
+
+const workflowLauncher = (environment: Environment) => {
+  const native = nativeWorkflowLauncher(environment);
+  return {
+    create: (input: { readonly id: string; readonly params: unknown }) =>
+      Effect.gen(function* createWorkflow() {
+        const parameters = yield* Schema.decodeUnknownEffect(RefusalParameters)(
+          input.params
+        );
+        if (parameters.organizationId === "organization-batch-dlq-proof") {
+          yield* Effect.promise(() =>
+            environment.RESULTS.put(`refused:${input.id}`, "true")
+          );
+          return yield* Effect.die(
+            new Error("workflow start refused before commit")
+          );
+        }
+        if (
+          parameters.organizationId === "organization-batch-dlq-ambiguous-proof"
+        ) {
+          yield* Effect.promise(() =>
+            environment.RESULTS.put(`ambiguous:${input.id}`, "true")
+          );
+          yield* native.create(input);
+          return yield* Effect.die(
+            new Error("workflow start response lost after commit")
+          );
+        }
+        return yield* native.create(input);
+      }),
+    reconcile: (id: string) =>
+      Effect.gen(function* reconcileWorkflow() {
+        const refused = yield* Effect.promise(() =>
+          environment.RESULTS.get(`refused:${id}`)
+        );
+        if (refused === "true") {
+          return { _tag: "NotStarted" as const };
+        }
+        const ambiguous = yield* Effect.promise(() =>
+          environment.RESULTS.get(`ambiguous:${id}`)
+        );
+        if (ambiguous === "true") {
+          return yield* Effect.die(new Error("workflow status unavailable"));
+        }
+        return yield* native.reconcile(id);
+      }),
+  };
+};
 
 const workflowExport = {
   kind: "workflow" as const,
@@ -117,6 +148,58 @@ export class HouseholdBatchQueueTestWorkflow extends BatchWorkflowBridge {}
 
 export default {
   async fetch(request: Request, environment: Environment) {
+    const requestUrl = new URL(request.url);
+    if (requestUrl.pathname === "/reconcile") {
+      const workflowId = Schema.decodeUnknownSync(Schema.String)(
+        requestUrl.searchParams.get("workflowId")
+      );
+      const refused = await environment.RESULTS.get(`refused:${workflowId}`);
+      if (refused === "true") {
+        return Response.json({ _tag: "NotStarted" });
+      }
+      const ambiguous = await environment.RESULTS.get(
+        `ambiguous:${workflowId}`
+      );
+      if (ambiguous === "true") {
+        const key = `dlq-probes:${workflowId}`;
+        const probes = Number((await environment.RESULTS.get(key)) ?? "0") + 1;
+        await environment.RESULTS.put(key, String(probes));
+        if (probes < 3) {
+          return new Response(null, { status: 503 });
+        }
+        await environment.RESULTS.put(`ambiguous:${workflowId}`, "false");
+      }
+      return Response.json(
+        await Effect.runPromise(
+          nativeWorkflowLauncher(environment).reconcile(workflowId)
+        )
+      );
+    }
+    if (requestUrl.pathname === "/batch") {
+      const organizationId = Schema.decodeUnknownSync(Schema.String)(
+        requestUrl.searchParams.get("organizationId")
+      );
+      const batchId = Schema.decodeUnknownSync(Schema.String)(
+        requestUrl.searchParams.get("batchId")
+      );
+      const household = Cloudflare.makeRpcStub<HouseholdDomainWorkerMethods>(
+        environment.HouseholdDomainWorker
+      );
+      const admission = Schema.decodeUnknownSync(HouseholdMemberAdmission)({
+        actor: { _tag: "Member", actorId: "a".repeat(64) },
+        organizationId,
+      });
+      return Response.json(
+        await Effect.runPromise(
+          household.readImportBatch(
+            Schema.decodeUnknownSync(HouseholdReadImportBatchInput)({
+              admission,
+              batchId,
+            })
+          )
+        )
+      );
+    }
     const command = Schema.decodeUnknownSync(
       Schema.Struct({ commandId: Schema.String, organizationId: Schema.String })
     )(await request.json());

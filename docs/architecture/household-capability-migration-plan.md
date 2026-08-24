@@ -596,9 +596,12 @@ Delivered: canonical batch/item membership, status, replay, generation,
 completion, failure, and outbox state live in household SQLite. Queue messages
 carry immutable organization, batch, item, and generation IDs; Queue/DLQ
 remains transport evidence. A deterministic native Workflow coordinates
-multi-step items and settles the local aggregate. The shared D1 batch
-repository, routes, services, tables, triggers, and tests are absent, with no
-compatibility path or dual write.
+multi-step items and settles the local aggregate. Queue, DLQ, and inner
+acquisition dispatch all reconcile the same generation-specific Workflow
+identity. Lost start responses and unavailable status probes preserve pending
+household work; `dispatch_exhausted` requires proof that no Workflow started.
+The shared D1 batch repository, routes, services, tables, triggers, and tests
+are absent, with no compatibility path or dual write.
 
 ### Slice 5: shared household D1 retirement
 

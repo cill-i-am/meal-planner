@@ -25,6 +25,7 @@ import HouseholdImportBatchItemWorkflow from "./features/imports/household-impor
 import {
   handleHouseholdImportBatchDeadLetterMessage,
   handleHouseholdImportBatchQueueMessage,
+  makeHouseholdBatchWorkflowLauncher,
 } from "./features/imports/household-import-batch-queue.handlers.js";
 import { makeD1ImportEvidenceRouteRepository } from "./features/imports/import-evidence-route.repository.d1.js";
 import {
@@ -101,6 +102,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const householdDomain = yield* Cloudflare.Workers.bindWorker(
       HouseholdDomainWorker
     );
+    const householdBatchWorkflowLauncher = makeHouseholdBatchWorkflowLauncher(
+      householdBatchItemWorkflow
+    );
     const authSecret = yield* Config.redacted("BETTER_AUTH_SECRET");
     const importSystemApiToken = yield* ImportSystemAuthorizationConfig.pipe(
       Effect.orDie
@@ -128,7 +132,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         Stream.runForEach(messages, ({ body }) =>
           handleHouseholdImportBatchQueueMessage(
             body,
-            householdBatchItemWorkflow
+            householdBatchWorkflowLauncher
           ).pipe(Effect.asVoid)
         )
     );
@@ -139,7 +143,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         Stream.runForEach(messages, ({ body }) =>
           handleHouseholdImportBatchDeadLetterMessage(
             body,
-            householdDomain
+            householdDomain,
+            householdBatchWorkflowLauncher
           ).pipe(Effect.asVoid)
         )
     );

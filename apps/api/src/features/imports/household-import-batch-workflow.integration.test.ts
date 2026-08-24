@@ -120,8 +120,10 @@ const runScenario = async (
   scenario:
     | "admission-lost-response"
     | "dispatch-all-start-responses-lost"
+    | "dispatch-committed-reconcile-unavailable"
     | "dispatch-lost-response"
     | "dispatch-pre-start-refusal"
+    | "dispatch-reconcile-recovered"
 ) => {
   const response = await runtime.dispatchFetch("http://localhost/", {
     body: JSON.stringify({ commandId, organizationId, scenario }),
@@ -270,7 +272,7 @@ describe("household batch native production Workflow composition", () => {
     });
     expect(result.counts.dispatch).toBe(1);
     expect(result.counts.prepared).toBeGreaterThanOrEqual(1);
-    expect(result.counts.unavailable).toBeGreaterThanOrEqual(1);
+    expect(result.counts.unavailable).toBe(0);
     expect(result.batch.items[0]).toMatchObject({
       intentId: result.replay.intentId,
       status: "succeeded",
@@ -326,6 +328,60 @@ describe("household batch native production Workflow composition", () => {
       routeCount: 1,
       status: { status: "complete" },
       workflowId: first.workflowId,
+    });
+  }, 20_000);
+
+  it("preserves a committed Workflow when every bounded reconciliation probe is unavailable", async () => {
+    const result = await runScenario(
+      "7510000000000000305",
+      "organization-batch-dispatch-ambiguous",
+      "dispatch-committed-reconcile-unavailable"
+    );
+
+    expect(result).toMatchObject({
+      acquisitionRuns: 1,
+      batch: {
+        counts: { failed: 0, succeeded: 0, total: 1 },
+        status: "running",
+      },
+      counts: {
+        admit: 1,
+        claim: 1,
+        complete: 0,
+        dispatch: 6,
+        fail: 0,
+        reconcile: 6,
+        started: 0,
+      },
+      error: true,
+      outbox: { attempts: 0, state: "pending" },
+      routeCount: 1,
+      status: { status: "errored" },
+    });
+    expect(result.batch.items[0]).toMatchObject({ status: "running" });
+
+    const recovered = await runScenario(
+      "7510000000000000305",
+      "organization-batch-dispatch-ambiguous",
+      "dispatch-reconcile-recovered"
+    );
+    expect(recovered).toMatchObject({
+      acquisitionRuns: 1,
+      batch: {
+        counts: { failed: 0, succeeded: 1, total: 1 },
+        status: "completed",
+      },
+      counts: { complete: 1, fail: 0, started: 1 },
+      error: true,
+      outbox: { state: "dispatched" },
+      replay: result.replay,
+      routeCount: 1,
+      status: { status: "complete" },
+      workflowId: result.workflowId,
+    });
+    expect(recovered.batch.items[0]).toMatchObject({
+      intentId: result.replay.intentId,
+      status: "succeeded",
     });
   }, 20_000);
 

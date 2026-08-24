@@ -134,7 +134,10 @@ import {
   SourceCanonicalId,
 } from "./import.contracts.js";
 import { workflowStartUnavailable } from "./import.errors.js";
-import type { WorkflowStartUnavailable } from "./import.errors.js";
+import type {
+  WorkflowStartRefused,
+  WorkflowStartUnavailable,
+} from "./import.errors.js";
 import type { AcquisitionFinalizationResult as AcquisitionFinalizationResultType } from "./import.repository.js";
 import { AcquisitionFinalizationResult } from "./import.repository.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
@@ -1355,7 +1358,10 @@ export interface ImportWorkflowStarter {
     readonly organizationId: HouseholdOrganizationId;
     readonly trace: ImportTraceContext;
     readonly workflowIdentity: ImportWorkflowIdentity;
-  }) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
+  }) => Effect.Effect<
+    EnsureStartedResult,
+    WorkflowStartRefused | WorkflowStartUnavailable
+  >;
   readonly ensureStarted: (
     importId: ImportId,
     executionGeneration: ImportIntentExecutionGeneration,

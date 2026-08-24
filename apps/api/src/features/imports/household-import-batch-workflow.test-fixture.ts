@@ -30,6 +30,7 @@ import {
   makeHouseholdImportBatchWorkflowPorts,
 } from "./household-import-batch-item.workflow.js";
 import { householdBatchWorkflowInstanceId } from "./household-import-batch-transport.js";
+import { workflowStartRefused } from "./import.errors.js";
 import {
   cloudflareWorkflowInstanceId,
   makeImportWorkflowStarter,
@@ -38,8 +39,10 @@ import {
 const Scenario = Schema.Literals([
   "admission-lost-response",
   "dispatch-all-start-responses-lost",
+  "dispatch-committed-reconcile-unavailable",
   "dispatch-lost-response",
   "dispatch-pre-start-refusal",
+  "dispatch-reconcile-recovered",
 ]);
 type Scenario = typeof Scenario.Type;
 
@@ -220,14 +223,15 @@ const batchWorkflowExport = {
             increment(environment, event.instanceId, "dispatch").pipe(
               Effect.flatMap((attempt) =>
                 scenario === "dispatch-pre-start-refusal"
-                  ? Effect.die(
-                      new Error("workflow start refused before commit")
-                    )
+                  ? Effect.fail(workflowStartRefused())
                   : starter
                       .dispatchAdmission(input)
                       .pipe(
                         Effect.flatMap((result) =>
                           scenario === "dispatch-all-start-responses-lost" ||
+                          scenario ===
+                            "dispatch-committed-reconcile-unavailable" ||
+                          scenario === "dispatch-reconcile-recovered" ||
                           (scenario === "dispatch-lost-response" &&
                             attempt === 1)
                             ? Effect.die(
@@ -244,7 +248,13 @@ const batchWorkflowExport = {
             workflowIdentity: Parameters<typeof starter.reconcileAdmission>[0]
           ) =>
             increment(environment, event.instanceId, "reconcile").pipe(
-              Effect.andThen(starter.reconcileAdmission(workflowIdentity))
+              Effect.andThen(
+                scenario === "dispatch-committed-reconcile-unavailable"
+                  ? Effect.die(
+                      new Error("workflow status unavailable after commit")
+                    )
+                  : starter.reconcileAdmission(workflowIdentity)
+              )
             ),
         };
         const ports = makeHouseholdImportBatchWorkflowPorts({
@@ -426,7 +436,15 @@ export default {
           "true"
         );
       } else {
-        await environment.HouseholdBatchTestWorkflow.get(workflowId);
+        const instance =
+          await environment.HouseholdBatchTestWorkflow.get(workflowId);
+        const existingStatus = await instance.status();
+        if (
+          command.scenario === "dispatch-reconcile-recovered" &&
+          existingStatus.status === "errored"
+        ) {
+          await instance.restart();
+        }
       }
       status = await waitForTerminalStatus(
         environment.HouseholdBatchTestWorkflow,

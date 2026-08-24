@@ -224,8 +224,11 @@ deterministic `HouseholdImportBatchItemWorkflow` per item generation. The
 Workflow coordinates ordinary import admission, private evidence-route
 registration, acquisition dispatch, and household-local item settlement. One
 initial delivery plus three retries precede
-`HouseholdImportBatchDeadLetterQueue`; its consumer records the closed
-`dispatch_exhausted` failure through the private household boundary. Neither
+`HouseholdImportBatchDeadLetterQueue`; its consumer first reconciles the same
+deterministic Workflow identity. It records the closed `dispatch_exhausted`
+failure through the private household boundary only when the start adapter can
+prove that no Workflow started. An unavailable probe remains retryable and
+cannot contradict a committed Workflow or orphan its household outbox. Neither
 Queue is canonical, and neither carries submitted source, idempotency, actor,
 provider, or raw response material.
 

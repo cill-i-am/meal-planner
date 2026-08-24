@@ -117,9 +117,14 @@ describe("household batch Queue transport", () => {
             "household-import-batches-dead-letter": {
               maxBatchSize: 1,
               maxBatchTimeout: 0.01,
+              maxRetries: 3,
+              retryDelay: 0,
             },
           },
-          serviceBindings: { HouseholdDomainWorker: "household-domain" },
+          serviceBindings: {
+            HouseholdDomainWorker: "household-domain",
+            QueueConsumer: "consumer",
+          },
         },
         {
           compatibilityDate,
@@ -206,13 +211,19 @@ describe("household batch Queue transport", () => {
       })
     )(await admissionResponse.json());
     const { message } = admitted;
+    const workflowId = `household-batch-v1-${message.itemId}-g1`;
 
     const settled = await readEventually(
       "dead-letter-consumer",
       "DLQ_RESULTS",
       "last"
     );
-    expect(settled).toMatchObject({
+    expect(settled).toEqual({ message, workflowId });
+    const batchResponse = await runtime.dispatchFetch(
+      `http://localhost/batch?organizationId=${encodeURIComponent(message.organizationId)}&batchId=${encodeURIComponent(message.batchId)}`
+    );
+    expect(batchResponse.status, await batchResponse.clone().text()).toBe(200);
+    await expect(batchResponse.json()).resolves.toMatchObject({
       counts: { failed: 1, queued: 0, running: 0, succeeded: 0, total: 1 },
       id: message.batchId,
       items: [
@@ -226,8 +237,65 @@ describe("household batch Queue transport", () => {
     });
     const attemptsAfter = Number((await results.get("attempts")) ?? "0");
     expect(attemptsAfter - attemptsBefore).toBe(4);
+    expect(await results.get(`workflow-runs:${workflowId}`)).toBeNull();
+  }, 20_000);
+
+  it("preserves a committed batch Workflow through unavailable Queue and DLQ probes", async () => {
+    const results = await runtime.getKVNamespace("RESULTS", "consumer");
+    const dlqResults = await runtime.getKVNamespace(
+      "DLQ_RESULTS",
+      "dead-letter-consumer"
+    );
+    const attemptsBefore = Number((await results.get("attempts")) ?? "0");
+    const dlqAttemptsBefore = Number((await dlqResults.get("attempts")) ?? "0");
+    const admissionResponse = await runtime.dispatchFetch(
+      "http://localhost/admit",
+      {
+        body: JSON.stringify({
+          commandId: "7510000000000000998",
+          organizationId: "organization-batch-dlq-ambiguous-proof",
+        }),
+        method: "POST",
+      }
+    );
     expect(
-      await results.get(`workflow-runs:household-batch-v1-${message.itemId}-g1`)
-    ).toBeNull();
+      admissionResponse.status,
+      await admissionResponse.clone().text()
+    ).toBe(200);
+    const admitted = Schema.decodeUnknownSync(
+      Schema.Struct({
+        message: Schema.Struct({
+          batchId: Schema.String,
+          generation: Schema.Int,
+          itemId: Schema.String,
+          organizationId: Schema.String,
+        }),
+      })
+    )(await admissionResponse.json());
+    const { message } = admitted;
+    const workflowId = `household-batch-v1-${message.itemId}-g1`;
+
+    await expect
+      .poll(async () => Number((await dlqResults.get("attempts")) ?? "0"))
+      .toBe(dlqAttemptsBefore + 3);
+    await expect(
+      readEventually("dead-letter-consumer", "DLQ_RESULTS", "last")
+    ).resolves.toMatchObject({ message, workflowId });
+    expect(
+      Number((await results.get("attempts")) ?? "0") - attemptsBefore
+    ).toBe(4);
+    expect(await results.get(`workflow-runs:${workflowId}`)).toBe("1");
+    expect(await results.get(`dlq-probes:${workflowId}`)).toBe("3");
+
+    const batchResponse = await runtime.dispatchFetch(
+      `http://localhost/batch?organizationId=${encodeURIComponent(message.organizationId)}&batchId=${encodeURIComponent(message.batchId)}`
+    );
+    expect(batchResponse.status, await batchResponse.clone().text()).toBe(200);
+    await expect(batchResponse.json()).resolves.toMatchObject({
+      counts: { failed: 0, queued: 1, total: 1 },
+      id: message.batchId,
+      items: [{ id: message.itemId, status: "queued" }],
+      status: "queued",
+    });
   }, 20_000);
 });

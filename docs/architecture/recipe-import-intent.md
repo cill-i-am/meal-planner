@@ -69,9 +69,12 @@ identities, canonical encoding, digests, versions, ordinals, and receipts;
 callers cannot supply them.
 
 The host attempts Workflow dispatch only after commit. Each retry reconciles
-the same persisted Workflow identity and records `started` or `unavailable` in
-the household outbox. A dispatch failure never rolls back or rewrites the
-committed domain result. Retrying the outbox cannot duplicate admission.
+the same persisted Workflow identity. A confirmed start records `started`; only
+a proven pre-start refusal advances the bounded `unavailable` attempts toward
+exhaustion. A lost response or unavailable status probe preserves the pending
+outbox and fails the durable task so a later replay can reconcile. A dispatch
+failure never rolls back or rewrites the committed domain result. Retrying the
+outbox cannot duplicate admission.
 
 No D1, R2, `fetch`, Workflow, Queue, service binding, provider, container, or
 other network I/O occurs inside a household transaction.
@@ -93,9 +96,11 @@ batch, item, and generation IDs. A deterministic native Workflow claims the
 generation-fenced item, reuses ordinary household import admission, coordinates
 the noncanonical D1 evidence route and acquisition Workflow outside SQLite,
 then commits completion or a closed failure to the batch aggregate. Queue retry
-and the dedicated DLQ provide transport evidence only. Exhausted transport is
-settled as `dispatch_exhausted` by an admitted system command; it never becomes
-a second writer.
+and the dedicated DLQ provide transport evidence only. Both reconcile the same
+generation-specific Workflow identity before settlement. Only an unambiguous
+pre-start refusal may be settled as `dispatch_exhausted` by an admitted system
+command; lost responses or unavailable status probes remain recoverable and
+cannot contradict a live Workflow or orphan committed household work.
 
 ## Source ownership and execution
 

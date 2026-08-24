@@ -10,7 +10,7 @@ interface HouseholdBatchWorkflowInstance<E, R> {
   readonly status: () => Effect.Effect<{ readonly status: string }, E, R>;
 }
 
-export interface HouseholdBatchWorkflowLauncher<E, R> {
+interface HouseholdBatchWorkflowBinding<E, R> {
   readonly create: (input: {
     readonly id: string;
     readonly params: unknown;
@@ -20,12 +20,28 @@ export interface HouseholdBatchWorkflowLauncher<E, R> {
   ) => Effect.Effect<HouseholdBatchWorkflowInstance<E, R>, E, R>;
 }
 
-const isAcceptedWorkflowStatus = (status: string) =>
-  status === "queued" ||
-  status === "running" ||
-  status === "waiting" ||
-  status === "waitingForPause" ||
-  status === "complete";
+export type HouseholdBatchWorkflowReconciliation =
+  | { readonly _tag: "NotStarted" }
+  | { readonly _tag: "Started" };
+
+export interface HouseholdBatchWorkflowLauncher<E, R> {
+  readonly create: HouseholdBatchWorkflowBinding<E, R>["create"];
+  readonly reconcile: (
+    id: string
+  ) => Effect.Effect<HouseholdBatchWorkflowReconciliation, E, R>;
+}
+
+/** Translate the native binding into a start/reconciliation boundary. */
+export const makeHouseholdBatchWorkflowLauncher = <E, R>(
+  workflow: HouseholdBatchWorkflowBinding<E, R>
+): HouseholdBatchWorkflowLauncher<E, R> => ({
+  create: workflow.create,
+  reconcile: (id) =>
+    workflow.get(id).pipe(
+      Effect.flatMap((instance) => instance.status()),
+      Effect.as({ _tag: "Started" as const })
+    ),
+});
 
 /** Production Queue handler: validate the closed envelope and start or reconcile one stable Workflow. */
 export const handleHouseholdImportBatchQueueMessage = <E, R>(
@@ -40,11 +56,10 @@ export const handleHouseholdImportBatchQueueMessage = <E, R>(
         Effect.catchCauseIf(
           (cause) => !Cause.hasInterrupts(cause),
           () =>
-            workflow.get(workflowId).pipe(
-              Effect.flatMap((instance) => instance.status()),
+            workflow.reconcile(workflowId).pipe(
               Effect.filterOrFail(
-                ({ status }) => isAcceptedWorkflowStatus(status),
-                () => new Error("batch workflow start unavailable")
+                (result) => result._tag === "Started",
+                () => new Error("batch workflow did not start")
               )
             )
         ),
@@ -54,22 +69,33 @@ export const handleHouseholdImportBatchQueueMessage = <E, R>(
   );
 
 /** Production DLQ handler: terminally settle only the immutable household-local item identity. */
-export const handleHouseholdImportBatchDeadLetterMessage = (
+export const handleHouseholdImportBatchDeadLetterMessage = <E, R>(
   // eslint-disable-next-line anti-slop/no-unknown-parameters -- The untrusted DLQ body is immediately parsed by the production closed-envelope decoder.
   body: unknown,
-  household: Pick<HouseholdDomainWorkerMethods, "failImportBatchItem">
+  household: Pick<HouseholdDomainWorkerMethods, "failImportBatchItem">,
+  workflow: HouseholdBatchWorkflowLauncher<E, R>
 ) =>
   decodeHouseholdBatchQueueMessage(body).pipe(
-    Effect.flatMap((message) =>
-      household.failImportBatchItem({
-        admission: {
-          actor: { _tag: "System", purpose: "batch_item_dispatch" },
-          organizationId: message.organizationId,
-        },
-        batchId: message.batchId,
-        expectedGeneration: message.generation,
-        failureCode: "dispatch_exhausted",
-        itemId: message.itemId,
-      })
-    )
+    Effect.flatMap((message) => {
+      const workflowId = householdBatchWorkflowInstanceId(message);
+      return workflow.reconcile(workflowId).pipe(
+        Effect.flatMap((reconciliation) =>
+          reconciliation._tag === "Started"
+            ? Effect.void
+            : household
+                .failImportBatchItem({
+                  admission: {
+                    actor: { _tag: "System", purpose: "batch_item_dispatch" },
+                    organizationId: message.organizationId,
+                  },
+                  batchId: message.batchId,
+                  expectedGeneration: message.generation,
+                  failureCode: "dispatch_exhausted",
+                  itemId: message.itemId,
+                })
+                .pipe(Effect.asVoid)
+        ),
+        Effect.as({ message, workflowId })
+      );
+    })
   );

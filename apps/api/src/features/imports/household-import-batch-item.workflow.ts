@@ -2,7 +2,7 @@ import type { RecipeImportBatch } from "@meal-planner/recipe-import-api";
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Cause, Effect, Schema } from "effect";
+import { Cause, Effect, Option, Schema } from "effect";
 
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
 import type {
@@ -82,6 +82,15 @@ const isAuthoritativeAdmissionRejection = (
 ) =>
   Schema.is(HouseholdRecipeImportFailure)(error) &&
   error.reason !== "persistence_unavailable";
+
+const isProvenPreStartRefusal = <Error extends { readonly _tag: string }>(
+  cause: Cause.Cause<Error>
+) => {
+  const failure = Cause.findErrorOption(cause);
+  return (
+    Option.isSome(failure) && failure.value._tag === "WorkflowStartRefused"
+  );
+};
 
 /** Production runtime ports, exported so native tests exercise the installed composition. */
 export const makeHouseholdImportBatchWorkflowPorts = (input: {
@@ -226,13 +235,15 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
                     (reconciliationCause) =>
                       !Cause.hasInterrupts(reconciliationCause),
                     () =>
-                      record("unavailable").pipe(
-                        Effect.flatMap((view) =>
-                          view.state === "exhausted"
-                            ? Effect.succeed(false)
-                            : Effect.failCause(cause)
-                        )
-                      )
+                      isProvenPreStartRefusal(cause)
+                        ? record("unavailable").pipe(
+                            Effect.flatMap((view) =>
+                              view.state === "exhausted"
+                                ? Effect.succeed(false)
+                                : Effect.failCause(cause)
+                            )
+                          )
+                        : Effect.failCause(cause)
                   )
                 )
             )
