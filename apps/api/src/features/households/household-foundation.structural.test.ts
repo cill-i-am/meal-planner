@@ -180,6 +180,7 @@ describe("household foundation structural boundaries", () => {
       transactionOwners.map(({ path: sourcePath }) => sourcePath).toSorted()
     ).toEqual(
       [
+        "batches/household-import-batch.repository.ts",
         "evidence/household-evidence.repository.ts",
         "foundation/import-workflow-admission.repository.ts",
         "household-meal-plan.repository.ts",
@@ -211,6 +212,42 @@ describe("household foundation structural boundaries", () => {
     );
     expect(recipeImportRepository).toContain(".insert(householdRecipes)");
     expect(recipeImportRepository).toContain(".insert(householdOutbox)");
+
+    const batchRepository =
+      transactionOwners.find(
+        ({ path: sourcePath }) =>
+          sourcePath === "batches/household-import-batch.repository.ts"
+      )?.source ?? "";
+    expect(batchRepository).toContain(".insert(householdImportBatches)");
+    expect(batchRepository).toContain(".insert(householdImportBatchItems)");
+    expect(batchRepository).toContain(".insert(householdImportBatchOutbox)");
+  });
+
+  it("physically removes superseded shared-D1 batch authority", async () => {
+    const featureSources = await readProductionFeatureSources();
+    const sharedImportSchema = await read(
+      path.join(apiFeaturesRoot, "imports/import.database-schema.ts")
+    );
+    const householdSchema = await read(
+      path.join(householdRoot, "household.database-schema.ts")
+    );
+    const retiredPaths = new Set([
+      "imports/import-batch.repository.d1.ts",
+      "imports/import-batch.routes.ts",
+      "imports/import-batch.service.ts",
+    ]);
+
+    expect(
+      featureSources
+        .map(({ path: sourcePath }) => sourcePath)
+        .filter((sourcePath) => retiredPaths.has(sourcePath))
+    ).toEqual([]);
+    expect(sharedImportSchema).not.toMatch(
+      /(?:^|["'`])import_(?:batches|batch_items|batch_idempotency)(?:["'`]|$)/mu
+    );
+    expect(householdSchema).toContain('"household_import_batches"');
+    expect(householdSchema).toContain('"household_import_batch_items"');
+    expect(householdSchema).toContain('"household_import_batch_outbox"');
   });
 
   it("keeps acquisition R2 work outside the household commit and removes its D1 write seam", async () => {
@@ -448,7 +485,6 @@ describe("household foundation structural boundaries", () => {
     const worker = await read(path.join(apiFeaturesRoot, "../worker.ts"));
     expect(worker).toContain("makeD1ImportEvidenceRouteRepository");
     expect(worker).toMatch(/registerEvidenceRoute:[\s\S]*\.register\(/u);
-    expect(worker).not.toContain("Cloudflare.Queues.WriteQueue");
     expect(worker).not.toMatch(
       /registerEvidenceRoute:[\s\S]{0,180}importEvidenceEvents\s*\.send/u
     );
@@ -484,7 +520,7 @@ describe("household foundation structural boundaries", () => {
 
   it("keeps the Alchemy host thin and SQLite evolution migration-owned", async () => {
     const host = await read(path.join(householdRoot, "household-object.ts"));
-    expect(host.split("\n").length).toBeLessThanOrEqual(14);
+    expect(host.split("\n").length).toBeLessThanOrEqual(17);
     expect(host).toContain("Stable Alchemy class host");
     expect(host).toContain("SQLite evolution belongs to Drizzle migrations");
     expect(host).not.toContain("Drizzle.DurableObject");

@@ -11,6 +11,8 @@ the moved recipe-import product state. It owns:
 - public lifecycle, version, timeline, active review action, answers,
   corrections, tags, and transitions;
 - cancellation, approval, publication, recipe identity and history; and
+- batch/item membership, batch replay and lifecycle, and batch dispatch outbox;
+  and
 - mutation and dispatch receipts.
 
 The same household database also owns meal plans and the local Recipe Bank.
@@ -73,6 +75,27 @@ committed domain result. Retrying the outbox cannot duplicate admission.
 
 No D1, R2, `fetch`, Workflow, Queue, service binding, provider, container, or
 other network I/O occurs inside a household transaction.
+
+## Batch admission and item coordination
+
+`POST /v1/recipe-import-batches` admits between one and fifty items after the
+same Better Auth membership proof as an ordinary import. One household-local
+transaction records the canonical batch, ordered item membership, request and
+item idempotency, initial generations, and one outbox row per item. `GET
+/v1/recipe-import-batches/:batchId` reads that local aggregate. Public batch
+projections expose only IDs, counts, status, stable links, versions, safe
+failure codes, and admitted intent IDs; submitted URLs and idempotency keys stay
+private.
+
+The Durable Object alarm delivers each committed outbox row to
+`HouseholdImportBatchQueue`. Its immutable message contains only organization,
+batch, item, and generation IDs. A deterministic native Workflow claims the
+generation-fenced item, reuses ordinary household import admission, coordinates
+the noncanonical D1 evidence route and acquisition Workflow outside SQLite,
+then commits completion or a closed failure to the batch aggregate. Queue retry
+and the dedicated DLQ provide transport evidence only. Exhausted transport is
+settled as `dispatch_exhausted` by an admitted system command; it never becomes
+a second writer.
 
 ## Source ownership and execution
 
@@ -188,8 +211,10 @@ authenticated surface supports:
 - create and read a recipe-import intent;
 - read its timeline;
 - read, answer, and confirm its active action;
-- cancel an active intent; and
-- read the recipe produced by a succeeded intent.
+- cancel an active intent;
+- read the recipe produced by a succeeded intent;
+- create a recipe-import batch; and
+- read a recipe-import batch aggregate.
 
 Public requests never accept an organization ID, actor ID, authoritative time,
 result ID, version, ordinal, receipt, Workflow ID, or object name. Expected
@@ -200,8 +225,8 @@ mapped to stable public errors.
 
 Drizzle Kit owns the checked-in per-object SQLite migration under
 `apps/api/household-migrations`. It contains the household import, timeline,
-review, Recipe Bank, receipt, admission, and outbox tables. Alchemy owns the
-Durable Object class/namespace lifecycle but does not replace database
+review, Recipe Bank, batch, receipt, admission, and outbox tables. Alchemy owns
+the Durable Object class/namespace lifecycle but does not replace database
 migrations.
 
 The fresh D1 migration under `apps/api/migrations` contains only remaining

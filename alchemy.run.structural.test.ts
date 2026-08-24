@@ -336,6 +336,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260821231430_household_domain/migration.sql",
       "20260822065001_household_domain/migration.sql",
       "20260823163811_household_domain/migration.sql",
+      "20260824002531_household_domain/migration.sql",
     ]);
     const evidenceMigration = readRepoFile(
       "./apps/api/household-migrations/20260823163811_household_domain/migration.sql"
@@ -345,6 +346,16 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
     expect(evidenceMigration).toContain(
       "`acquisition_attempt_generation` integer NOT NULL"
+    );
+    const batchMigration = readRepoFile(
+      "./apps/api/household-migrations/20260824002531_household_domain/migration.sql"
+    );
+    expect(batchMigration).toContain("CREATE TABLE `household_import_batches`");
+    expect(batchMigration).toContain(
+      "CREATE TABLE `household_import_batch_items`"
+    );
+    expect(batchMigration).toContain(
+      "CREATE TABLE `household_import_batch_outbox`"
     );
   });
 
@@ -615,13 +626,21 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
   });
 
-  it("keeps the pre-Slice-4 batch Queue prototype physically retired", () => {
+  it("keeps retired batch HTTP authority absent and the household transport bounded", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
+    const transportSource = readRepoFile(
+      "./apps/api/src/infrastructure/household-import-batch-queue.ts"
+    );
 
     expect(stackSource).not.toContain("ImportBatchQueue");
     expect(stackSource).not.toContain("ImportBatchDeadLetterQueue");
-    expect(workerSource).not.toContain("consumeQueueMessages");
+    expect(workerSource).toContain("consumeQueueMessages(");
+    expect(workerSource).toContain("HouseholdImportBatchQueue");
+    expect(workerSource).toContain("HouseholdImportBatchDeadLetterQueue");
+    expect(transportSource).toContain("Cloudflare.Queues.Queue(");
+    expect(transportSource).toContain('"HouseholdImportBatchQueue"');
+    expect(transportSource).toContain('"HouseholdImportBatchDeadLetterQueue"');
     expect(workerSource).not.toContain("ImportBatchRouteDefinitions");
     expect(workerSource).not.toContain("OperatorCarouselRouteDefinitions");
   });

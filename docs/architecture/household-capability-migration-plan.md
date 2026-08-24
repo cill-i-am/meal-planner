@@ -225,7 +225,7 @@ apps/api/src/features/households/
 
     evidence/                         later compact metadata and R2 references
     settlement/                       later checkpoints and recovery receipts
-    batches/                          later household batch state and outbox
+    batches/                          household batch state and outbox
 
   operations/
     confirm-import-review.ts          one cross-capability SQLite transaction
@@ -592,9 +592,13 @@ compatibility reads, dual writes, or backfills.
 
 ### Slice 4: batches
 
-Move canonical batch/item membership, status, replay, completion, failure, and
-outbox state. Queue messages carry immutable organization, batch, and item IDs;
-Queue/DLQ remains transport evidence. Workflow coordinates multi-step items.
+Delivered: canonical batch/item membership, status, replay, generation,
+completion, failure, and outbox state live in household SQLite. Queue messages
+carry immutable organization, batch, item, and generation IDs; Queue/DLQ
+remains transport evidence. A deterministic native Workflow coordinates
+multi-step items and settles the local aggregate. The shared D1 batch
+repository, routes, services, tables, triggers, and tests are absent, with no
+compatibility path or dual write.
 
 ### Slice 5: shared household D1 retirement
 
@@ -733,13 +737,16 @@ minimal noncanonical operational index for an approved concrete use case.
 | Alchemy class lifecycle separate from per-object Drizzle migrations | Accepted | Deployment changes cannot substitute for SQLite schema evolution |
 | Global routing tombstone fences deleted households | Accepted | The locator prevents late callbacks or recovery from recreating cleared object storage |
 | No compatibility, dual write, backfill, or old D1 preservation | Accepted | Superseded greenfield paths are deleted at each cutover |
+| Household-local batch aggregate with identifier-only Queue transport | Accepted | SQLite is the sole writer; alarm, Queue, DLQ, and Workflow coordinate only post-commit delivery |
 | Global operational facts remain noncanonical for household product state | Accepted | Future global product queries require a new explicit decision |
 | More child Durable Objects only after measured boundary criteria | Accepted | Domain nouns remain modules in one household database by default |
 | Direct scheduled Workflows | Deferred | Pinned Alchemy beta.72 lacks schedule configuration; use cron Worker to start Workflow |
 
 ## Immediate handoff
 
-The next delivery is **Slice 4: batches**. Shared D1 now retains only proven
-global provider accounting, while Household SQLite remains authoritative for
-terminal and recovery outcomes. This delivery must not pull final shared-D1
-retirement or unrelated UI work forward from later slices.
+Slice 4 is delivered. The next delivery is **Slice 5: shared household D1
+retirement**. Shared D1 currently retains proven global provider accounting and
+the noncanonical evidence-event route/execution seams described above, while
+Household SQLite remains authoritative for product, terminal, recovery, and
+batch outcomes. Slice 5 requires its own exact-base delivery and must not be
+folded into this batch cutover or unrelated UI work.

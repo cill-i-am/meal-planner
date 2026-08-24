@@ -7,6 +7,7 @@ import {
 import {
   CancelledRecipeImportIntent,
   Recipe,
+  RecipeImportBatch,
   RecipeImportAction,
   RecipeImportIntent,
   RecipeImportTimeline,
@@ -15,7 +16,7 @@ import {
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
-import { Clock, Effect, Option, Schema } from "effect";
+import { Clock, Effect, Exit, Option, Schema } from "effect";
 
 import migrations from "../../../household-migrations/migrations.js";
 import {
@@ -26,6 +27,18 @@ import {
   MealPlanRecipeAuthorityToken,
   selectMealPlanCandidates,
 } from "../meal-planning/meal-plan.js";
+import { HouseholdImportBatchQueueWriter } from "./batches/household-import-batch-queue.port.js";
+import {
+  HouseholdAdmitImportBatchInput,
+  HouseholdAdmitImportBatchResult,
+  HouseholdClaimImportBatchItemInput,
+  HouseholdClaimImportBatchItemResult,
+  HouseholdCompleteImportBatchItemInput,
+  HouseholdFailImportBatchItemInput,
+  HouseholdReadImportBatchInput,
+  HouseholdRecordImportBatchDispatchInput,
+} from "./batches/household-import-batch.contract.js";
+import { makeHouseholdImportBatchRepository } from "./batches/household-import-batch.repository.js";
 import {
   HouseholdCommitAcquisitionEvidenceInput,
   HouseholdCommitAcquisitionEvidenceResult,
@@ -137,6 +150,7 @@ export const HouseholdObjectRuntime = Effect.gen(
     const canonicalEncoding = yield* HouseholdCanonicalEncoding;
     const digest = yield* HouseholdDigest;
     const identityGenerator = yield* HouseholdIdentityGenerator;
+    const batchQueueWriter = yield* HouseholdImportBatchQueueWriter;
     const scoped = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
         Effect.provideService(HouseholdCanonicalEncoding, canonicalEncoding),
@@ -152,6 +166,33 @@ export const HouseholdObjectRuntime = Effect.gen(
 
     // eslint-disable-next-line sort-keys -- RPC methods follow the household capability lifecycle.
     return Effect.succeed({
+      admitImportBatch: (untrustedInput: HouseholdAdmitImportBatchInput) =>
+        scoped(
+          Effect.gen(function* admitHouseholdImportBatch() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdAdmitImportBatchInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "admit_import_batch"
+            );
+            const connection = yield* database;
+            const committed =
+              yield* makeHouseholdImportBatchRepository(connection).admit(
+                command
+              );
+            if (committed.messages.length > 0) {
+              yield* durableObjectState.storage.setAlarm(
+                yield* Clock.currentTimeMillis
+              );
+            }
+            return yield* encodeRecipeImportResult(
+              HouseholdAdmitImportBatchResult,
+              committed
+            );
+          })
+        ),
       admitRecipeImport: (untrustedInput: HouseholdAdmitRecipeImportInput) =>
         scoped(
           Effect.gen(function* admitHouseholdRecipeImport() {
@@ -196,6 +237,126 @@ export const HouseholdObjectRuntime = Effect.gen(
               RecipeImportIntent,
               answered
             );
+          })
+        ),
+      alarm: () =>
+        scoped(
+          Effect.gen(function* dispatchHouseholdBatchOutbox() {
+            const connection = yield* database;
+            const repository = makeHouseholdImportBatchRepository(connection);
+            const due = yield* repository.dueDispatches(
+              yield* Clock.currentTimeMillis
+            );
+            for (const { attempts, message } of due) {
+              const admission = {
+                actor: {
+                  _tag: "System" as const,
+                  purpose: "batch_item_dispatch" as const,
+                },
+                organizationId: message.organizationId,
+              };
+              const sent = yield* batchQueueWriter
+                .send(message)
+                .pipe(Effect.exit);
+              const exhausted = Exit.isFailure(sent) && attempts >= 3;
+              let outcome: (typeof HouseholdRecordImportBatchDispatchInput.Type)["outcome"] =
+                "retry";
+              if (Exit.isSuccess(sent)) {
+                outcome = "delivered";
+              } else if (exhausted) {
+                outcome = "exhausted";
+              }
+              yield* repository.recordDispatch({
+                admission,
+                batchId: message.batchId,
+                expectedGeneration: message.generation,
+                itemId: message.itemId,
+                outcome,
+              });
+              if (exhausted) {
+                yield* repository.fail({
+                  admission,
+                  batchId: message.batchId,
+                  expectedGeneration: message.generation,
+                  failureCode: "dispatch_exhausted",
+                  itemId: message.itemId,
+                });
+              }
+            }
+            const next = yield* repository.nextDispatchAt;
+            yield* next === null
+              ? durableObjectState.storage.deleteAlarm()
+              : durableObjectState.storage.setAlarm(next);
+          })
+        ),
+      claimImportBatchItem: (
+        untrustedInput: HouseholdClaimImportBatchItemInput
+      ) =>
+        scoped(
+          Effect.gen(function* claimHouseholdImportBatchItem() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdClaimImportBatchItemInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "claim_import_batch_item"
+            );
+            const connection = yield* database;
+            const result =
+              yield* makeHouseholdImportBatchRepository(connection).claim(
+                command
+              );
+            return yield* encodeRecipeImportResult(
+              HouseholdClaimImportBatchItemResult,
+              result
+            );
+          })
+        ),
+      completeImportBatchItem: (
+        untrustedInput: HouseholdCompleteImportBatchItemInput
+      ) =>
+        scoped(
+          Effect.gen(function* completeHouseholdImportBatchItem() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdCompleteImportBatchItemInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "complete_import_batch_item"
+            );
+            const connection = yield* database;
+            return yield* makeHouseholdImportBatchRepository(connection)
+              .complete(command)
+              .pipe(
+                Effect.flatMap((batch) =>
+                  encodeRecipeImportResult(RecipeImportBatch, batch)
+                )
+              );
+          })
+        ),
+      failImportBatchItem: (
+        untrustedInput: HouseholdFailImportBatchItemInput
+      ) =>
+        scoped(
+          Effect.gen(function* failHouseholdImportBatchItem() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdFailImportBatchItemInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "fail_import_batch_item"
+            );
+            const connection = yield* database;
+            return yield* makeHouseholdImportBatchRepository(connection)
+              .fail(command)
+              .pipe(
+                Effect.flatMap((batch) =>
+                  encodeRecipeImportResult(RecipeImportBatch, batch)
+                )
+              );
           })
         ),
       approveMealPlan: (untrustedInput: HouseholdDecideMealPlanInput) =>
@@ -787,6 +948,52 @@ export const HouseholdObjectRuntime = Effect.gen(
               HouseholdRecordRecipeImportDispatchResult,
               view
             );
+          })
+        ),
+      readImportBatch: (untrustedInput: HouseholdReadImportBatchInput) =>
+        scoped(
+          Effect.gen(function* readHouseholdImportBatch() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadImportBatchInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_import_batch"
+            );
+            const connection = yield* database;
+            return yield* makeHouseholdImportBatchRepository(connection)
+              .read(command)
+              .pipe(
+                Effect.flatMap((batch) =>
+                  encodeRecipeImportResult(RecipeImportBatch, batch)
+                )
+              );
+          })
+        ),
+      recordImportBatchDispatch: (
+        untrustedInput: HouseholdRecordImportBatchDispatchInput
+      ) =>
+        scoped(
+          Effect.gen(function* recordHouseholdImportBatchDispatch() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdRecordImportBatchDispatchInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "record_import_batch_dispatch"
+            );
+            const connection = yield* database;
+            const repository = makeHouseholdImportBatchRepository(connection);
+            const result = yield* repository.recordDispatch(command);
+            if (command.outcome === "retry") {
+              const next = yield* repository.nextDispatchAt;
+              if (next !== null) {
+                yield* durableObjectState.storage.setAlarm(next);
+              }
+            }
+            return result;
           })
         ),
       listRecipeBank: (untrustedInput: typeof HouseholdRecipePageInput.Type) =>

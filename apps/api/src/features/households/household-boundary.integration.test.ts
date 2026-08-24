@@ -11,6 +11,7 @@ import {
 import {
   Recipe,
   RecipeImportAction,
+  RecipeImportBatch,
   RecipeImportIntent,
   RecipeImportTimeline,
 } from "@meal-planner/recipe-import-api";
@@ -52,6 +53,7 @@ let websiteModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
 let apiModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
 let domainModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
 let evidenceEventModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
+let batchQueueModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
 
 const getRuntime = (): Miniflare => {
   if (runtime === undefined) {
@@ -197,11 +199,22 @@ const makeRuntime = () =>
       {
         compatibilityDate,
         compatibilityFlags,
+        kvNamespaces: ["BATCH_QUEUE_RESULTS"],
+        modules: [...batchQueueModules],
+        name: "batch-consumer",
+        queueConsumers: ["household-import-batches"],
+      },
+      {
+        compatibilityDate,
+        compatibilityFlags,
         durableObjects: {
           HouseholdObject: { className: "HouseholdObject", useSQLite: true },
         },
         modules: [...domainModules],
         name: "household-domain",
+        queueProducers: {
+          HouseholdImportBatchQueue: { queueName: "household-import-batches" },
+        },
       },
       {
         compatibilityDate,
@@ -231,25 +244,31 @@ beforeAll(async () => {
   );
   temporaryDirectories.push(temporaryDirectory);
   persistenceDirectory = `${temporaryDirectory}/runtime-storage`;
-  [websiteModules, apiModules, domainModules, evidenceEventModules] =
-    await Promise.all([
-      bundleFixture(
-        "household-website-service.test-fixture.js",
-        temporaryDirectory
-      ),
-      bundleFixture(
-        "household-api-service.test-fixture.ts",
-        temporaryDirectory
-      ),
-      bundleFixture(
-        "household-domain-service.test-fixture.js",
-        temporaryDirectory
-      ),
-      bundleFixture(
-        "household-evidence-event.test-fixture.ts",
-        temporaryDirectory
-      ),
-    ]);
+  [
+    websiteModules,
+    apiModules,
+    domainModules,
+    evidenceEventModules,
+    batchQueueModules,
+  ] = await Promise.all([
+    bundleFixture(
+      "household-website-service.test-fixture.js",
+      temporaryDirectory
+    ),
+    bundleFixture("household-api-service.test-fixture.ts", temporaryDirectory),
+    bundleFixture(
+      "household-domain-service.test-fixture.js",
+      temporaryDirectory
+    ),
+    bundleFixture(
+      "household-evidence-event.test-fixture.ts",
+      temporaryDirectory
+    ),
+    bundleFixture(
+      "household-import-batch-queue.test-fixture.ts",
+      temporaryDirectory
+    ),
+  ]);
   runtime = makeRuntime();
   await Promise.all([
     applyD1Migrations(
@@ -327,8 +346,11 @@ const createOrganization = async (label: string, cookie: string) => {
 
 const systemCommand = (
   operation:
+    | "claim-batch-item"
     | "commit-acquisition-evidence"
+    | "complete-batch-item"
     | "commit-draft"
+    | "fail-batch-item"
     | "mutate-evidence-stage"
     | "observe-evidence-reference"
     | "prepare-recipe-recovery"
@@ -481,6 +503,33 @@ const evidenceEventResult = async (
   }
   await delay(25);
   return evidenceEventResult(attemptsRemaining - 1);
+};
+
+const batchQueueResult = async (
+  itemId: string,
+  remaining = 80
+): Promise<unknown> => {
+  const results = await getRuntime().getKVNamespace(
+    "BATCH_QUEUE_RESULTS",
+    "batch-consumer"
+  );
+  const value = await results.get(itemId, "json");
+  if (value !== null) {
+    return value;
+  }
+  if (remaining === 0) {
+    throw new Error("Batch outbox alarm was not delivered.");
+  }
+  await delay(25);
+  return batchQueueResult(itemId, remaining - 1);
+};
+
+const batchQueueDeliveries = async (itemId: string) => {
+  const results = await getRuntime().getKVNamespace(
+    "BATCH_QUEUE_RESULTS",
+    "batch-consumer"
+  );
+  return Number((await results.get(`${itemId}:deliveries`)) ?? "0");
 };
 
 const sendEvidenceEvent = async (message: object) => {
@@ -858,6 +907,278 @@ const review = {
 } as const;
 
 describe("household public API to private Durable Object boundary", () => {
+  it("requires household authorization before batch routing", async () => {
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/recipe-import-batches",
+      {
+        body: JSON.stringify({
+          items: [
+            {
+              idempotencyKey: "batch-unauthorized-item",
+              source: {
+                kind: "tiktok",
+                url: "https://www.tiktok.com/@mealplanner/video/7510000000000000000",
+              },
+            },
+          ],
+        }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "batch-unauthorized-request",
+        },
+        method: "POST",
+      }
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  it("replays, isolates, and persists a privacy-safe household-local batch", async () => {
+    const cookie = await signUp("Batch Boundary Member");
+    const organization = await createOrganization(
+      "Batch Boundary Household",
+      cookie
+    );
+    const request = {
+      items: [
+        {
+          idempotencyKey: "batch-boundary-item-1",
+          source: {
+            kind: "tiktok" as const,
+            url: "https://www.tiktok.com/@mealplanner/video/7510000000000000001",
+          },
+        },
+        {
+          idempotencyKey: "batch-boundary-item-2",
+          source: {
+            kind: "tiktok" as const,
+            url: "https://www.tiktok.com/@mealplanner/video/7510000000000000002",
+          },
+        },
+      ],
+    };
+    const create = (payload: object = request) =>
+      getRuntime().dispatchFetch(
+        "https://meal-planner.test/v1/recipe-import-batches",
+        {
+          body: JSON.stringify(payload),
+          headers: {
+            "content-type": "application/json",
+            cookie,
+            "idempotency-key": "batch-boundary-request-1",
+          },
+          method: "POST",
+        }
+      );
+    const response = await create();
+
+    expect(response.status, await response.clone().text()).toBe(201);
+    const batch = await Schema.decodeUnknownPromise(RecipeImportBatch)(
+      await response.json()
+    );
+    expect(batch).toMatchObject({
+      counts: {
+        failed: 0,
+        queued: 2,
+        running: 0,
+        succeeded: 0,
+        total: 2,
+      },
+      object: "recipe_import_batch",
+      status: "queued",
+    });
+    expect(JSON.stringify(batch)).not.toMatch(
+      /batch-boundary-item|tiktok\.com|751000000000000000/iu
+    );
+
+    await Promise.all(
+      batch.items.map(async (item) => {
+        await expect(batchQueueResult(item.id)).resolves.toEqual({
+          batchId: batch.id,
+          generation: 1,
+          itemId: item.id,
+          organizationId: organization.id,
+        });
+        await expect(batchQueueDeliveries(item.id)).resolves.toBe(1);
+      })
+    );
+
+    const replay = await create();
+    expect(replay.status, await replay.clone().text()).toBe(201);
+    await expect(replay.json()).resolves.toEqual(
+      Schema.encodeSync(RecipeImportBatch)(batch)
+    );
+    await delay(50);
+    await Promise.all(
+      batch.items.map((item) =>
+        expect(batchQueueDeliveries(item.id)).resolves.toBe(1)
+      )
+    );
+
+    const collision = await create({
+      items: [
+        {
+          ...request.items[0],
+          source: {
+            kind: "tiktok",
+            url: "https://www.tiktok.com/@mealplanner/video/7510000000000000099",
+          },
+        },
+      ],
+    });
+    expect(collision.status, await collision.clone().text()).toBe(409);
+
+    const otherCookie = await signUp("Other Batch Boundary Member");
+    await createOrganization("Other Batch Boundary Household", otherCookie);
+    const isolated = await getRuntime().dispatchFetch(
+      `https://meal-planner.test${batch.links.self}`,
+      { headers: { cookie: otherCookie } }
+    );
+    expect(isolated.status).toBe(404);
+
+    await restartRuntime();
+    const persisted = await getRuntime().dispatchFetch(
+      `https://meal-planner.test${batch.links.self}`,
+      { headers: { cookie } }
+    );
+    expect(persisted.status, await persisted.clone().text()).toBe(200);
+    await expect(persisted.json()).resolves.toEqual(
+      Schema.encodeSync(RecipeImportBatch)(batch)
+    );
+    expect(organization.id).not.toBe("");
+  });
+
+  it("generation-fences replay, completion, and failure in household SQLite", async () => {
+    const cookie = await signUp("Batch Lifecycle Member");
+    const organization = await createOrganization(
+      "Batch Lifecycle Household",
+      cookie
+    );
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/recipe-import-batches",
+      {
+        body: JSON.stringify({
+          items: [
+            {
+              idempotencyKey: "batch-lifecycle-success",
+              source: {
+                kind: "tiktok",
+                url: "https://www.tiktok.com/@mealplanner/video/7510000000000000101",
+              },
+            },
+            {
+              idempotencyKey: "batch-lifecycle-failure",
+              source: {
+                kind: "tiktok",
+                url: "https://www.tiktok.com/@mealplanner/video/7510000000000000102",
+              },
+            },
+          ],
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "idempotency-key": "batch-lifecycle-request",
+        },
+        method: "POST",
+      }
+    );
+    expect(response.status, await response.clone().text()).toBe(201);
+    const batch = await Schema.decodeUnknownPromise(RecipeImportBatch)(
+      await response.json()
+    );
+    const [successItem, failedItem] = batch.items;
+    if (successItem === undefined || failedItem === undefined) {
+      throw new Error("Expected two admitted batch items.");
+    }
+    const admission = {
+      actor: { _tag: "System", purpose: "batch_item_dispatch" },
+      organizationId: organization.id,
+    } as const;
+    const message = {
+      batchId: batch.id,
+      generation: 1,
+      itemId: successItem.id,
+      organizationId: organization.id,
+    };
+    const claim = await systemCommand("claim-batch-item", {
+      admission,
+      message,
+    });
+    expect(claim.status, await claim.clone().text()).toBe(200);
+    const claimed = await claim.json();
+    expect(claimed).toMatchObject({ _tag: "Claimed" });
+    const claimReplay = await systemCommand("claim-batch-item", {
+      admission,
+      message,
+    });
+    expect(claimReplay.status).toBe(200);
+    await expect(claimReplay.json()).resolves.toEqual(claimed);
+
+    const staleClaim = await systemCommand("claim-batch-item", {
+      admission,
+      message: { ...message, generation: 2 },
+    });
+    expect(staleClaim.status).toBe(409);
+
+    const complete = await systemCommand("complete-batch-item", {
+      admission,
+      batchId: batch.id,
+      expectedGeneration: 1,
+      intentId: "018f47ad-91aa-7c35-b6fe-000000000199",
+      itemId: successItem.id,
+    });
+    expect(complete.status, await complete.clone().text()).toBe(200);
+    const completed = await complete.json();
+    const completeReplay = await systemCommand("complete-batch-item", {
+      admission,
+      batchId: batch.id,
+      expectedGeneration: 1,
+      intentId: "018f47ad-91aa-7c35-b6fe-000000000199",
+      itemId: successItem.id,
+    });
+    expect(completeReplay.status).toBe(200);
+    await expect(completeReplay.json()).resolves.toEqual(completed);
+    const conflictingCompletion = await systemCommand("complete-batch-item", {
+      admission,
+      batchId: batch.id,
+      expectedGeneration: 1,
+      intentId: "018f47ad-91aa-7c35-b6fe-000000000198",
+      itemId: successItem.id,
+    });
+    expect(conflictingCompletion.status).toBe(409);
+
+    const failed = await systemCommand("fail-batch-item", {
+      admission,
+      batchId: batch.id,
+      expectedGeneration: 1,
+      failureCode: "import_admission_failed",
+      itemId: failedItem.id,
+    });
+    expect(failed.status, await failed.clone().text()).toBe(200);
+    await expect(failed.json()).resolves.toMatchObject({
+      counts: { failed: 1, queued: 0, running: 0, succeeded: 1, total: 2 },
+      status: "partial_failure",
+    });
+    const conflictingFailure = await systemCommand("fail-batch-item", {
+      admission,
+      batchId: batch.id,
+      expectedGeneration: 1,
+      failureCode: "dispatch_exhausted",
+      itemId: failedItem.id,
+    });
+    expect(conflictingFailure.status).toBe(409);
+
+    const staleFailure = await systemCommand("fail-batch-item", {
+      admission,
+      batchId: batch.id,
+      expectedGeneration: 2,
+      failureCode: "dispatch_exhausted",
+      itemId: failedItem.id,
+    });
+    expect(staleFailure.status).toBe(409);
+  });
+
   it("re-decodes and rejects a malformed clone at the private Worker boundary", async () => {
     const response = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/household",

@@ -627,6 +627,93 @@ export const Recipe = Schema.Struct({
 });
 export type Recipe = typeof Recipe.Type;
 
+export const RecipeImportBatchId = Schema.String.pipe(
+  Schema.check(Schema.isUUID()),
+  Schema.brand("RecipeImportBatchId")
+);
+export type RecipeImportBatchId = typeof RecipeImportBatchId.Type;
+
+export const RecipeImportBatchItemId = Schema.String.pipe(
+  Schema.check(Schema.isUUID()),
+  Schema.brand("RecipeImportBatchItemId")
+);
+export type RecipeImportBatchItemId = typeof RecipeImportBatchItemId.Type;
+
+export const RecipeImportBatchStatus = Schema.Literals([
+  "queued",
+  "running",
+  "completed",
+  "partial_failure",
+  "failed",
+]);
+export type RecipeImportBatchStatus = typeof RecipeImportBatchStatus.Type;
+
+export const RecipeImportBatchItemStatus = Schema.Literals([
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+]);
+export type RecipeImportBatchItemStatus =
+  typeof RecipeImportBatchItemStatus.Type;
+
+export const CreateRecipeImportBatchItemRequest = Schema.Struct({
+  idempotencyKey: IdempotencyKey,
+  source: Schema.Struct({
+    kind: Schema.Literal("tiktok"),
+    url: SourceUrl,
+  }),
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type CreateRecipeImportBatchItemRequest =
+  typeof CreateRecipeImportBatchItemRequest.Type;
+
+export const CreateRecipeImportBatchRequest = Schema.Struct({
+  items: Schema.Array(CreateRecipeImportBatchItemRequest).pipe(
+    Schema.check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(50),
+      Schema.makeFilter(
+        (items) =>
+          new Set(items.map(({ idempotencyKey }) => idempotencyKey)).size ===
+          items.length,
+        { expected: "unique item idempotency keys" },
+        true
+      )
+    )
+  ),
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type CreateRecipeImportBatchRequest =
+  typeof CreateRecipeImportBatchRequest.Type;
+
+export const RecipeImportBatchItem = Schema.Struct({
+  failureCode: Schema.optionalKey(
+    Schema.Literals(["dispatch_exhausted", "import_admission_failed"])
+  ),
+  id: RecipeImportBatchItemId,
+  intentId: Schema.optionalKey(RecipeImportIntentId),
+  status: RecipeImportBatchItemStatus,
+});
+export type RecipeImportBatchItem = typeof RecipeImportBatchItem.Type;
+
+export const RecipeImportBatch = Schema.Struct({
+  counts: Schema.Struct({
+    failed: SafeInteger,
+    queued: SafeInteger,
+    running: SafeInteger,
+    succeeded: SafeInteger,
+    total: SafeInteger,
+  }),
+  createdAt: Instant,
+  id: RecipeImportBatchId,
+  items: Schema.Array(RecipeImportBatchItem),
+  links: Schema.Struct({ self: PublicRelativeLink }),
+  object: Schema.Literal("recipe_import_batch"),
+  status: RecipeImportBatchStatus,
+  updatedAt: Instant,
+  version: RecipeImportIntentVersion,
+});
+export type RecipeImportBatch = typeof RecipeImportBatch.Type;
+
 const ProblemType = Schema.String.pipe(
   Schema.check(
     Schema.isPattern(/^https:\/\/meal-planner\.local\/problems\/[a-z\d-]+$/u)
@@ -671,6 +758,10 @@ export const RecipeNotFoundProblemDetails = exactProblemDetails(
   404,
   "recipe_not_found"
 );
+export const BatchNotFoundProblemDetails = exactProblemDetails(
+  404,
+  "batch_not_found"
+);
 export const IdempotencyConflictProblemDetails = exactProblemDetails(
   409,
   "idempotency_conflict"
@@ -694,6 +785,7 @@ export const ProblemDetails = Schema.Union([
   IntentNotFoundProblemDetails,
   ActionNotFoundProblemDetails,
   RecipeNotFoundProblemDetails,
+  BatchNotFoundProblemDetails,
   IdempotencyConflictProblemDetails,
   VersionConflictProblemDetails,
   IllegalTransitionProblemDetails,
@@ -730,6 +822,9 @@ const ActionNotFoundProblem = asProblemJson(ActionNotFoundProblemDetails).pipe(
   HttpApiSchema.status(404)
 );
 const RecipeNotFoundProblem = asProblemJson(RecipeNotFoundProblemDetails).pipe(
+  HttpApiSchema.status(404)
+);
+const BatchNotFoundProblem = asProblemJson(BatchNotFoundProblemDetails).pipe(
   HttpApiSchema.status(404)
 );
 const CreateConflictProblem = asProblemJson(
@@ -780,6 +875,27 @@ const IntentReadSuccess = HttpApiSchema.WithHeaders(RecipeImportIntent, {
   "retry-after": Schema.optionalKey(RetryAfterHeader),
 });
 const IdempotencyHeader = { "idempotency-key": IdempotencyKey };
+
+const CreateBatchSuccess = HttpApiSchema.WithHeaders(
+  RecipeImportBatch.pipe(HttpApiSchema.status(201)),
+  { location: PublicRelativeLink }
+);
+const RecipeImportBatchesGroup = HttpApiGroup.make("recipeImportBatches")
+  .add(
+    HttpApiEndpoint.post("create", "/v1/recipe-import-batches", {
+      error: [BadRequestProblem, CreateConflictProblem, InternalProblem],
+      headers: IdempotencyHeader,
+      payload: CreateRecipeImportBatchRequest,
+      success: CreateBatchSuccess,
+    }),
+    HttpApiEndpoint.get("get", "/v1/recipe-import-batches/:batchId", {
+      error: [BatchNotFoundProblem, InternalProblem],
+      params: { batchId: RecipeImportBatchId },
+      success: RecipeImportBatch,
+    })
+  )
+  .middleware(RecipeImportSessionAuth)
+  .annotate(OpenApi.Title, "Recipe import batches");
 
 const RecipeImportIntentsGroup = HttpApiGroup.make("recipeImportIntents")
   .add(
@@ -868,7 +984,7 @@ const RecipesGroup = HttpApiGroup.make("recipes")
   .annotate(OpenApi.Title, "Recipes");
 
 export const RecipeImportApi = HttpApi.make("recipeImportApi")
-  .add(RecipeImportIntentsGroup, RecipesGroup)
+  .add(RecipeImportBatchesGroup, RecipeImportIntentsGroup, RecipesGroup)
   .middleware(RecipeImportSchemaErrors)
   .middleware(RecipeImportDefectBoundary)
   .annotateMerge(

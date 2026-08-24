@@ -550,6 +550,8 @@ describe("RecipeImportApi HttpApi declaration", () => {
       version: "1.0.0",
     });
     expect(Object.keys(document.paths).toSorted()).toEqual([
+      "/v1/recipe-import-batches",
+      "/v1/recipe-import-batches/{batchId}",
       "/v1/recipe-import-intents",
       "/v1/recipe-import-intents/{id}",
       "/v1/recipe-import-intents/{id}/actions/{actionId}",
@@ -562,6 +564,22 @@ describe("RecipeImportApi HttpApi declaration", () => {
     expect(document.components.securitySchemes).toEqual({});
 
     const operations = [
+      {
+        errors: [400, 401, 409, 500],
+        idempotent: true,
+        method: "post",
+        path: "/v1/recipe-import-batches",
+        success: 201,
+        successHeaders: ["location"],
+      },
+      {
+        errors: [400, 401, 404, 500],
+        idempotent: false,
+        method: "get",
+        path: "/v1/recipe-import-batches/{batchId}",
+        success: 200,
+        successHeaders: [],
+      },
       {
         errors: [400, 401, 409, 500],
         idempotent: true,

@@ -31,6 +31,58 @@ export const householdMealPlanMutationReceipts = sqliteTable(
   (table) => [primaryKey({ columns: [table.draftId, table.mutationId] })]
 );
 
+/** Canonical household-local batch aggregate; Queue is transport only. */
+export const householdImportBatches = sqliteTable("household_import_batches", {
+  actorId: text("actor_id").notNull(),
+  batchId: text("batch_id").primaryKey(),
+  createdAt: text("created_at").notNull(),
+  idempotencyKeyDigest: text("idempotency_key_digest").notNull().unique(),
+  organizationId: text("organization_id").notNull(),
+  requestDigest: text("request_digest").notNull(),
+  status: text("status").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  version: integer("version").notNull(),
+});
+
+/** Canonical item membership and lifecycle for one household batch. */
+export const householdImportBatchItems = sqliteTable(
+  "household_import_batch_items",
+  {
+    batchId: text("batch_id").notNull(),
+    failureCode: text("failure_code"),
+    generation: integer("generation").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    intentId: text("intent_id"),
+    itemId: text("item_id").primaryKey(),
+    ordinal: integer("ordinal").notNull(),
+    sourceJson: text("source_json").notNull(),
+    status: text("status").notNull(),
+  },
+  (table) => [
+    uniqueIndex("household_import_batch_item_ordinal_unique").on(
+      table.batchId,
+      table.ordinal
+    ),
+    uniqueIndex("household_import_batch_item_key_unique").on(
+      table.batchId,
+      table.idempotencyKey
+    ),
+  ]
+);
+
+/** Transactional queue-dispatch state; alarms retry only committed rows. */
+export const householdImportBatchOutbox = sqliteTable(
+  "household_import_batch_outbox",
+  {
+    attempts: integer("attempts").notNull(),
+    batchId: text("batch_id").notNull(),
+    generation: integer("generation").notNull(),
+    itemId: text("item_id").primaryKey(),
+    nextAttemptAtEpochMs: integer("next_attempt_at_epoch_ms").notNull(),
+    state: text("state").notNull(),
+  }
+);
+
 /**
  * Canonical admission and dispatch ledger for household-owned recipe imports.
  * Workflow execution is downstream of this committed local authority.

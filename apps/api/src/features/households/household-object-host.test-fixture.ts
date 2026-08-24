@@ -15,6 +15,7 @@ import {
   MealPlanRequest,
 } from "../meal-planning/meal-plan.js";
 import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
+import { HouseholdImportBatchQueueWriter } from "./batches/household-import-batch-queue.port.js";
 import { HouseholdDispatchId } from "./foundation/import-workflow-admission.contract.js";
 import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
 import type { HouseholdCreateMealPlanFromRecipeBankInput } from "./household-meal-plan.contract.js";
@@ -75,7 +76,10 @@ const alchemyRuntimeContractKey = "shape";
 const HouseholdObjectTestRuntime = Effect.gen(
   function* initializeHouseholdObjectTestRuntime() {
     const household = yield* yield* HouseholdObjectRuntime.pipe(
-      Effect.provide(HouseholdAuthorityServicesLive)
+      Effect.provide(HouseholdAuthorityServicesLive),
+      Effect.provideService(HouseholdImportBatchQueueWriter, {
+        send: () => Effect.void,
+      })
     );
     const canonicalEncoding = yield* HouseholdCanonicalEncoding;
     const digest = yield* HouseholdDigest;
