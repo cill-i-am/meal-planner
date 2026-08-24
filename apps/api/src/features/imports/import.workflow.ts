@@ -17,7 +17,7 @@ import {
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
-import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
+import { ProviderAccountingDatabase } from "../../infrastructure/provider-accounting-database.js";
 import {
   HouseholdObserveEvidenceReferenceInput,
   HouseholdReadEvidenceReferencesResult,
@@ -64,7 +64,6 @@ import {
   makeHouseholdSpeechTranscriptionRepository,
   makeHouseholdVisualEvidenceRepository,
 } from "./import-evidence.repository.household.js";
-import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   acquireStoreVerify,
@@ -85,14 +84,12 @@ import type {
   AcquisitionStage,
   RetryableAcquisitionFailure,
 } from "./import-media.model.js";
-import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import type {
   AcquisitionDiagnosticReasonCode,
   ImportCorrelationId,
   ImportTraceContext,
 } from "./import-observability.js";
 import {
-  ImportObservabilityTraceStore,
   emitImportObservabilityEvent,
   observeImportWorkflowStart,
 } from "./import-observability.js";
@@ -579,8 +576,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
   "ImportAcquisitionWorkflow",
   Effect.gen(function* ImportAcquisitionWorkflowInit() {
     const runtimeContext = yield* RuntimeContext;
-    const queryDatabase =
-      yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
+    const providerAccountingQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
+      ProviderAccountingDatabase
+    );
     const providerGateway = yield* Cloudflare.AI.QueryGateway(
       ImportProviderGateway
     );
@@ -595,10 +593,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
         const workflowInput = yield* decodeImportWorkflowInput(rawInput).pipe(
           Effect.orDie
         );
-        const database = yield* queryDatabase.raw;
-        const traceStore = makeD1ImportObservabilityTraceStore(database, () =>
-          new Date().toISOString()
-        );
+        const providerAccountingDatabase =
+          yield* providerAccountingQueryDatabase.raw;
         const { executionGeneration, importId, organizationId, trace } =
           workflowInput;
         const { correlationId } = trace;
@@ -652,21 +648,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
         if (resolvedIntent.status === "redirected") {
           return resolvedIntent;
         }
-        const repository = makeD1ImportExecutionRepository(database);
-        yield* repository
-          .ensureRun({
-            canonicalSourceId: identityResolution.identity.canonicalId,
-            correlationId,
-            importId,
-            sourceType:
-              identityResolution._tag === "VideoIdentity"
-                ? "video"
-                : "carousel",
-            startedAt: Schema.decodeUnknownSync(ImportTimestamp)(
-              new Date().toISOString()
-            ),
-          })
-          .pipe(Effect.orDie);
         return yield* Effect.gen(
           function* runCurrentImportAcquisitionWorkflow() {
             yield* observeImportWorkflowStart(trace);
@@ -759,15 +740,16 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             const dispatch = makeProviderDispatchGate({
               correlationId,
               now,
-              repository: makeD1ProviderAccountingRepository(database),
+              repository: makeD1ProviderAccountingRepository(
+                providerAccountingDatabase
+              ),
               runId: Schema.decodeUnknownSync(ProviderAccountingRunId)(
                 `recipe-import:${importId}`
               ),
             });
             const workersAiTransport = yield* makeWorkersAiTransport(
               providerGateway,
-              correlationId,
-              traceStore
+              correlationId
             ).pipe(Effect.provideService(RuntimeContext, runtimeContext));
             const speechTranscriber = yield* makeInstalledSpeechTranscriber({
               correlationId,
@@ -1007,17 +989,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             }
             const rawClaim = yield* Cloudflare.Workflows.task(
               "claim-acquisition-v1",
-              repository.claimAcquisition(importId).pipe(
-                Effect.map((claim) =>
-                  claim._tag === "Finished"
-                    ? ({ _tag: "Finished" } as const)
-                    : {
-                        _tag: "Acquiring" as const,
-                        canonicalId: claim.canonicalSourceId,
-                      }
-                ),
-                Effect.orDie
-              )
+              Effect.succeed({
+                _tag: "Acquiring" as const,
+                canonicalId: identityResolution.identity.canonicalId,
+              })
             );
             const claim = yield* Schema.decodeUnknownEffect(
               AcquisitionClaimCheckpoint
@@ -1025,6 +1000,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             if (claim._tag === "Finished") {
               return { _tag: "NoAcquisitionRequired" as const };
             }
+            let nextAcquisitionGeneration = 0;
             const encodedOutcome = yield* Cloudflare.Workflows.task(
               "resolve-acquire-store-verify-v2",
               recoverHouseholdVerifiedAcquisitionCheckpoint({
@@ -1119,7 +1095,16 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   > =>
                     recovered === null
                       ? runAcquisitionTask(
-                          () => repository.beginAcquisitionAttempt(importId),
+                          () =>
+                            Effect.sync(() => {
+                              nextAcquisitionGeneration += 1;
+                              return {
+                                canonicalSourceId: claim.canonicalId,
+                                generation: Schema.decodeUnknownSync(
+                                  AcquisitionGeneration
+                                )(nextAcquisitionGeneration),
+                              };
+                            }),
                           (allocation) =>
                             allocation.canonicalSourceId === claim.canonicalId
                               ? acquireStoreVerify(
@@ -1226,14 +1211,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                       .pipe(Effect.orDie);
                     return committed.outcome;
                   })
-                : repository.recordAcquisitionFailure(
-                    importId,
-                    outcome.generation,
-                    outcome,
-                    Schema.decodeUnknownSync(ImportTimestamp)(
-                      new Date().toISOString()
-                    )
-                  )
+                : Effect.succeed("Recorded" as const)
               ).pipe(
                 Effect.map(Schema.encodeSync(AcquisitionFinalizationResult)),
                 Effect.orDie
@@ -1339,10 +1317,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             }
             return encodedOutcome;
           }
-        ).pipe(
-          Effect.orDie,
-          Effect.provideService(ImportObservabilityTraceStore, traceStore)
-        );
+        ).pipe(Effect.orDie);
       });
   }).pipe(
     Effect.provide(

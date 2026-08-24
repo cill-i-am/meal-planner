@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -37,7 +37,6 @@ const ScenarioResult = Schema.Struct({
     intentId: Schema.String,
     workflowIdentity: Schema.String,
   }),
-  routeCount: Schema.Number,
   status: Schema.Struct({ status: Schema.String }),
   workflowId: Schema.String,
 });
@@ -87,33 +86,6 @@ const bundleFixture = async (
   ];
 };
 
-type MiniflareD1Database = Awaited<ReturnType<Miniflare["getD1Database"]>>;
-
-const applyD1Migrations = async (database: MiniflareD1Database) => {
-  const migrationsRoot = fileURLToPath(
-    new URL("../../../migrations", import.meta.url)
-  );
-  const migrationEntries = await readdir(migrationsRoot);
-  const directories = migrationEntries.toSorted();
-  const migrations = await Promise.all(
-    directories.map(async (directory) => {
-      const migrationPath = `${migrationsRoot}/${directory}/migration.sql`;
-      const migrationStats = await stat(migrationPath);
-      if (!migrationStats.isFile()) {
-        return [];
-      }
-      const migrationContents = await readFile(migrationPath, "utf-8");
-      return migrationContents
-        .split("--> statement-breakpoint")
-        .map((statement) => statement.trim())
-        .filter((statement) => statement.length > 0);
-    })
-  );
-  await database.batch(
-    migrations.flat().map((statement) => database.prepare(statement))
-  );
-};
-
 const runScenario = async (
   commandId: string,
   organizationId: string,
@@ -158,9 +130,6 @@ describe("household batch native production Workflow composition", () => {
         {
           compatibilityDate,
           compatibilityFlags,
-          d1Databases: {
-            MealPlannerDatabase: "household-batch-route-test",
-          },
           kvNamespaces: ["BATCH_WORKFLOW_STATE"],
           modules: [...hostModules],
           name: "workflow-host",
@@ -192,9 +161,6 @@ describe("household batch native production Workflow composition", () => {
         },
       ],
     });
-    await applyD1Migrations(
-      await runtime.getD1Database("MealPlannerDatabase", "workflow-host")
-    );
   }, 30_000);
 
   afterAll(async () => {
@@ -218,7 +184,6 @@ describe("household batch native production Workflow composition", () => {
       counts: { admit: 2, claim: 1, complete: 1, fail: 0 },
       error: false,
       outbox: { state: "dispatched" },
-      routeCount: 1,
       status: { status: "complete" },
     });
     expect(first.batch.items[0]).toMatchObject({
@@ -238,7 +203,6 @@ describe("household batch native production Workflow composition", () => {
       error: false,
       outbox: { state: "dispatched" },
       replay: first.replay,
-      routeCount: 1,
       status: { status: "complete" },
       workflowId: first.workflowId,
     });
@@ -267,7 +231,6 @@ describe("household batch native production Workflow composition", () => {
       },
       error: false,
       outbox: { state: "dispatched" },
-      routeCount: 1,
       status: { status: "complete" },
     });
     expect(result.counts.dispatch).toBe(1);
@@ -302,7 +265,6 @@ describe("household batch native production Workflow composition", () => {
       },
       error: false,
       outbox: { state: "dispatched" },
-      routeCount: 1,
       status: { status: "complete" },
     });
     expect(first.counts.dispatch).toBeGreaterThanOrEqual(1);
@@ -325,7 +287,6 @@ describe("household batch native production Workflow composition", () => {
       error: false,
       outbox: { state: "dispatched" },
       replay: first.replay,
-      routeCount: 1,
       status: { status: "complete" },
       workflowId: first.workflowId,
     });
@@ -355,7 +316,6 @@ describe("household batch native production Workflow composition", () => {
       },
       error: true,
       outbox: { attempts: 0, state: "pending" },
-      routeCount: 1,
       status: { status: "errored" },
     });
     expect(result.batch.items[0]).toMatchObject({ status: "running" });
@@ -375,7 +335,6 @@ describe("household batch native production Workflow composition", () => {
       error: true,
       outbox: { state: "dispatched" },
       replay: result.replay,
-      routeCount: 1,
       status: { status: "complete" },
       workflowId: result.workflowId,
     });
@@ -411,7 +370,6 @@ describe("household batch native production Workflow composition", () => {
       },
       error: false,
       outbox: { attempts: 5, state: "exhausted" },
-      routeCount: 1,
       status: { status: "complete" },
     });
     expect(result.batch.items[0]).toMatchObject({

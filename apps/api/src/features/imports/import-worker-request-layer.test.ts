@@ -1,14 +1,12 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import {
   HouseholdAdmitRecipeImportResult,
   HouseholdRecipeImportFailure,
   HouseholdRecordRecipeImportDispatchResult,
 } from "../households/recipe-import/household-recipe-import.contract.js";
 import { HouseholdMemberAdmission } from "../households/rpc/command-envelope.js";
-import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
 import { makeRecipeImportWorkflowDispatcher } from "./import-worker-request-layer.js";
 import { workflowStartUnavailable } from "./import.errors.js";
 import { TestImportTrace } from "./import.test-fixtures.js";
@@ -21,7 +19,6 @@ describe("recipe import Workflow outbox dispatch", () => {
   it("retries the same committed Workflow identity and records each delivery outcome", async () => {
     const outcomes: ("prepared" | "started" | "unavailable")[] = [];
     const dispatchedIdentities: string[] = [];
-    const registeredRoutes: string[] = [];
     const executionOrder: string[] = [];
     let attempts = 0;
     const committed = Schema.decodeUnknownSync(
@@ -47,21 +44,22 @@ describe("recipe import Workflow outbox dispatch", () => {
     });
     const dispatcher = makeRecipeImportWorkflowDispatcher({
       householdDomain: {
-        recordRecipeImportDispatch: (input) => {
-          outcomes.push(input.outcome);
-          return Effect.succeed(
-            Schema.encodeSync(HouseholdRecordRecipeImportDispatchResult)({
-              admission: {
-                committedAtEpochMs: 1,
-                dispatchId: input.dispatchId,
-                workflowIdentity: input.workflowIdentity,
-              },
-              attempts: outcomes.length,
-              exhaustedAtEpochMs: null,
-              state: input.outcome === "started" ? "dispatched" : "pending",
-            })
-          );
-        },
+        recordRecipeImportDispatch: (input) =>
+          Effect.sync(() => {
+            outcomes.push(input.outcome);
+            return Schema.encodeSync(HouseholdRecordRecipeImportDispatchResult)(
+              {
+                admission: {
+                  committedAtEpochMs: 1,
+                  dispatchId: input.dispatchId,
+                  workflowIdentity: input.workflowIdentity,
+                },
+                attempts: outcomes.length,
+                exhaustedAtEpochMs: null,
+                state: input.outcome === "started" ? "dispatched" : "pending",
+              }
+            );
+          }),
       },
       importWorkflowStarter: {
         dispatchAdmission: (input) =>
@@ -74,13 +72,6 @@ describe("recipe import Workflow outbox dispatch", () => {
               : Effect.succeed("already_active" as const);
           }),
       },
-      registerEvidenceRoute: (message) =>
-        Effect.sync(() => {
-          executionOrder.push(`route:${attempts + 1}`);
-          registeredRoutes.push(
-            `${message.organizationId}:${message.importId}:${message.routeVersion}`
-          );
-        }),
       retryDelaysMilliseconds: [0, 0, 0, 0],
       scheduleRetry: (effect) => effect,
       trace: TestImportTrace,
@@ -109,95 +100,7 @@ describe("recipe import Workflow outbox dispatch", () => {
       workflowIdentity,
       workflowIdentity,
     ]);
-    expect(registeredRoutes).toEqual([
-      `organization-retry-proof:${intentId}:1`,
-      `organization-retry-proof:${intentId}:1`,
-      `organization-retry-proof:${intentId}:1`,
-    ]);
-    expect(executionOrder).toEqual([
-      "route:1",
-      "workflow:1",
-      "route:2",
-      "workflow:2",
-      "route:3",
-      "workflow:3",
-    ]);
-  });
-
-  it("never starts a Workflow before the immutable evidence route exists", async () => {
-    let workflowStarts = 0;
-    let routeAttempts = 0;
-    const committedDispatchId = Schema.decodeUnknownSync(HouseholdDispatchId)(
-      "dispatch-route-failure-proof"
-    );
-    const committedWorkflowIdentity = Schema.decodeUnknownSync(
-      ImportWorkflowIdentity
-    )(workflowIdentity);
-    const committed = Schema.decodeUnknownSync(
-      HouseholdAdmitRecipeImportResult
-    )({
-      dispatchId: committedDispatchId,
-      intent: {
-        activity: { type: "working" },
-        createdAt,
-        id: intentId,
-        intentVersion: 1,
-        links: {
-          self: `/v1/recipe-import-intents/${intentId}`,
-          timeline: `/v1/recipe-import-intents/${intentId}/timeline`,
-        },
-        object: "recipe_import_intent",
-        processing: { startedAt: createdAt, type: "resolving_source" },
-        source: { kind: "tiktok", resolution: "pending" },
-        status: "processing",
-        updatedAt: createdAt,
-      },
-      workflowIdentity: committedWorkflowIdentity,
-    });
-    const dispatcher = makeRecipeImportWorkflowDispatcher({
-      householdDomain: {
-        recordRecipeImportDispatch: () =>
-          Effect.succeed(
-            Schema.encodeSync(HouseholdRecordRecipeImportDispatchResult)({
-              admission: {
-                committedAtEpochMs: 1,
-                dispatchId: committedDispatchId,
-                workflowIdentity: committedWorkflowIdentity,
-              },
-              attempts: routeAttempts,
-              exhaustedAtEpochMs: null,
-              state: "pending",
-            })
-          ),
-      },
-      importWorkflowStarter: {
-        dispatchAdmission: () =>
-          Effect.sync(() => {
-            workflowStarts += 1;
-            return "created" as const;
-          }),
-      },
-      registerEvidenceRoute: () =>
-        Effect.sync(() => {
-          routeAttempts += 1;
-        }).pipe(Effect.andThen(Effect.fail({ _tag: "route_unavailable" }))),
-      retryDelaysMilliseconds: [0, 0],
-      scheduleRetry: (effect) => effect,
-      trace: TestImportTrace,
-    });
-
-    await Effect.runPromise(
-      dispatcher.dispatch({
-        admission: Schema.decodeUnknownSync(HouseholdMemberAdmission)({
-          actor: { _tag: "Member", actorId: "b".repeat(64) },
-          organizationId: "organization-route-failure-proof",
-        }),
-        committed,
-      })
-    );
-
-    expect(routeAttempts).toBe(3);
-    expect(workflowStarts).toBe(0);
+    expect(executionOrder).toEqual(["workflow:1", "workflow:2", "workflow:3"]);
   });
 
   it("persists the original trace before starting the Workflow", async () => {
@@ -227,29 +130,30 @@ describe("recipe import Workflow outbox dispatch", () => {
     });
     const dispatcher = makeRecipeImportWorkflowDispatcher({
       householdDomain: {
-        recordRecipeImportDispatch: (input) => {
-          recordAttempts += 1;
-          events.push(`record:${input.outcome}`);
-          if (recordAttempts === 1) {
-            return Effect.fail(
-              HouseholdRecipeImportFailure.make({
-                reason: "persistence_unavailable",
+        recordRecipeImportDispatch: (input) =>
+          Effect.suspend(() => {
+            recordAttempts += 1;
+            events.push(`record:${input.outcome}`);
+            if (recordAttempts === 1) {
+              return Effect.fail(
+                HouseholdRecipeImportFailure.make({
+                  reason: "persistence_unavailable",
+                })
+              );
+            }
+            return Effect.succeed(
+              Schema.encodeSync(HouseholdRecordRecipeImportDispatchResult)({
+                admission: {
+                  committedAtEpochMs: 1,
+                  dispatchId: input.dispatchId,
+                  workflowIdentity: input.workflowIdentity,
+                },
+                attempts: 1,
+                exhaustedAtEpochMs: null,
+                state: input.outcome === "started" ? "dispatched" : "pending",
               })
             );
-          }
-          return Effect.succeed(
-            Schema.encodeSync(HouseholdRecordRecipeImportDispatchResult)({
-              admission: {
-                committedAtEpochMs: 1,
-                dispatchId: input.dispatchId,
-                workflowIdentity: input.workflowIdentity,
-              },
-              attempts: 1,
-              exhaustedAtEpochMs: null,
-              state: input.outcome === "started" ? "dispatched" : "pending",
-            })
-          );
-        },
+          }),
       },
       importWorkflowStarter: {
         dispatchAdmission: () =>
@@ -259,10 +163,6 @@ describe("recipe import Workflow outbox dispatch", () => {
             return "created" as const;
           }),
       },
-      registerEvidenceRoute: () =>
-        Effect.sync(() => {
-          events.push("route");
-        }),
       retryDelaysMilliseconds: [0],
       scheduleRetry: (effect) => effect,
       trace: TestImportTrace,
@@ -279,9 +179,7 @@ describe("recipe import Workflow outbox dispatch", () => {
     );
 
     expect(events).toEqual([
-      "route",
       "record:prepared",
-      "route",
       "record:prepared",
       "workflow",
       "record:started",

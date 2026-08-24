@@ -1,1 +1,0 @@
-ALTER TABLE `import_evidence_routes` ADD `execution_generation` integer NOT NULL;

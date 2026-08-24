@@ -1,9 +1,10 @@
 # Meal Planner Alchemy operations
 
-The repository owns one Alchemy v2 stack named `MealPlanner`. Its first stable
-resource identity is the `MealPlannerApi` Cloudflare Worker. Recipe imports add
-the `MealPlannerDatabase` D1 resource. Changing any of these logical IDs is a
-resource-identity decision and must not be treated as a cosmetic rename.
+The repository owns one Alchemy v2 stack named `MealPlanner`. Its stable
+resource identities include the `MealPlannerApi` Cloudflare Worker,
+`MealPlannerAuthDatabase` Better Auth D1, and `ProviderAccountingDatabase`
+operational D1. Changing any of these logical IDs is a resource-identity
+decision and must not be treated as a cosmetic rename.
 
 The pinned infrastructure toolchain is Alchemy `2.0.0-beta.72`, Effect and
 `@effect/platform-node` `4.0.0-rc.109`, Node `>=22.18.0`, and pnpm `11.7.0`.
@@ -85,13 +86,12 @@ mutation, and cleanup boundary.
 
 ## Outputs and health verification
 
-The stack returns the safe resource inventory `apiWorkerName`, `databaseName`,
+The stack returns the safe resource inventory `apiWorkerName`,
 `authDatabaseName`, `evidenceBucketName`, `evidenceRetentionSeconds`,
-`evidenceEventQueueName`, `evidenceEventDeadLetterQueueName`,
-`evidenceEventWorkerName`,
-`importProviderGatewayId`, `websiteWorkerName`, and `websiteUrl`, plus the
-optional `apiUrl`. The household domain and evidence-event Workers are private
-and deliberately have no public URL. Alchemy types Worker and Website URLs as
+`importProviderGatewayId`, `providerAccountingDatabaseName`,
+`websiteWorkerName`, and `websiteUrl`, plus the optional `apiUrl`. The household
+domain Worker is private and deliberately has no public URL. Alchemy types
+Worker and Website URLs as
 `string | undefined`: a resource can exist without a generated workers.dev
 URL. Operator tooling must not invent a URL or cast it to a required string.
 When `apiUrl` is present, `GET <apiUrl>/health` returns:
@@ -111,25 +111,26 @@ Bank, receipts, and meal planning. Its generated Drizzle migrations live under
 `apps/api/household-migrations` and are applied inside each object by the
 Alchemy Durable Object Drizzle runtime.
 
-`MealPlannerDatabase` remains a shared operational D1 for objectively global
-provider-budget settlement and reconciliation plus the private evidence-event
-route. Terminal checkpoints, recovery attempts, and recovery replay authority
-are household-local. The D1 generated migration is under
-`apps/api/migrations`; the stable tracking table is `d1_migrations`.
+`ProviderAccountingDatabase` is a dedicated global operational D1 for
+production-owned provider budgets, reservations, settlement, reconciliation,
+and receipt facts. It contains no organization or household ownership, import
+route, import execution, lifecycle, evidence, review, recipe, or batch state.
+Terminal checkpoints, recovery attempts, and recovery replay authority are
+household-local. Its generated migration is under
+`apps/api/provider-accounting-migrations`; the stable tracking table is
+`d1_migrations`.
 Run `pnpm --filter @meal-planner/api db:generate` or
 `pnpm --dir apps/api db:generate`, then review the generated timestamped
 `migration.sql` and `snapshot.json` together. Regeneration without a schema
 change must create no new migration.
 
-The D1 baseline contains the remaining acquisition bookkeeping and global
-settlement controls. Its execution row has no evidence-reference projection or
-provider-stage completion status. Production evidence stages, terminal
-checkpoints, and recovery attempts do not write household authority to D1. The
-schema deliberately omits
-the former public intent, idempotency, timeline, review, Recipe Bank, batch, and
-moved receipt tables. Those prototype tables are discarded rather than copied
-or backfilled. Structural tests reject both their SQL names and their removed
-production repository imports.
+The provider accounting baseline contains exactly five tables:
+`provider_cost_budgets`, `provider_cost_budget_reservations`,
+`provider_cost_settlements`, `provider_cost_reconciliation_runs`, and
+`provider_cost_receipts`. The former shared household tables, migration history,
+repositories, and bindings are discarded rather than copied or backfilled.
+Structural tests reject both household product tables and tenant-filtered global
+persistence in production composition.
 
 `MealPlannerAuthDatabase` is a separate D1 database for Better Auth identity,
 cookie sessions, organizations, invitations, and membership. The runtime uses
@@ -171,8 +172,7 @@ The household object persists submitted-source ownership, public import state,
 idempotency, review, recipes, compact evidence metadata and R2 references,
 terminal checkpoints, recovery attempts, canonical batch/item state, batch
 outbox state, and dispatch/replay receipts.
-D1 persists only noncanonical execution bookkeeping and objectively global
-provider-budget settlement/reconciliation facts. Neither database
+The global operational D1 persists only provider accounting facts. Neither D1
 persists credentials, raw provider payloads, or media. TikTok requests are
 limited to the bounded source-resolution and acquisition Workflow.
 
@@ -180,8 +180,8 @@ limited to the bounded source-resolution and acquisition Workflow.
 for per-import media/container coordination and private artifact transport.
 Artifact commands validate an ID containing that import ID and acquisition
 execution generation. It does not use Durable Object storage: canonical
-lifecycle and domain state stay in the household object, remaining operational
-execution facts stay in D1, and short-lived private artifacts stay in R2.
+lifecycle, domain state, and execution checkpoints stay in the household
+object and Workflow, while short-lived private artifacts stay in R2.
 The object is noncanonical and is neither a household partition, import
 lifecycle authority, recovery authority, nor household authorization boundary.
 
@@ -192,25 +192,13 @@ days. The lifecycle policy is the deployable deletion boundary; household
 imports, idempotency records, reviews, timelines, recipes, and meal plans are
 outside the bucket and are not retention targets.
 
-R2 object-create and object-delete notifications for the bounded evidence
-prefix feed `ImportEvidenceEventQueue` and its private consumer Worker. The
-authenticated API first stores the immutable import-to-organization route in a
-private D1 table through an atomic insert-and-read batch keyed by import ID,
-then starts the Workflow. The unordered Queue carries only R2 events, so a
-notification cannot overtake route registration. The consumer Schema-decodes
-those events, resolves only that admitted route, validates the authoritative
-source shape, acquisition-attempt-scoped key, and integrity metadata, then
-records a household-local availability observation through the private service
-binding using the route's immutable execution generation as the RPC fence.
-Concurrent conflicting routes fail closed. Notifications are transport
-evidence: missing, duplicate, stale, or late events cannot rewrite the
-committed R2 reference or current result. The household compares event time
-plus fixed same-time action precedence before applying availability. Queue,
-D1, service-binding, and R2 I/O remain outside every `HouseholdObject`
+The acquisition Workflow validates each R2 object's native checksum, custom
+metadata, authoritative source shape, execution generation, and
+acquisition-attempt-scoped key before it commits the household-local reference.
+Recovery repeats the same check through the admitted household and Workflow
+authority. R2 and service-binding I/O remain outside every `HouseholdObject`
 transaction, and raw organization identifiers are neither logged nor returned.
-The consumer is bound to R2 read operations only. Retryable events receive one
-initial delivery plus three retries; exhausted messages are retained in
-`ImportEvidenceEventDeadLetterQueue` for operator inspection.
+There is no global import route, R2 event Queue, event consumer, or event DLQ.
 
 Public admission commits a compact household outbox intent before the API host
 starts the deterministic generation-specific Workflow. Host retries reconcile
@@ -221,8 +209,8 @@ Batch admission separately commits canonical batch, item, replay, and outbox
 facts in the same household object. Its alarm sends identifier-only messages to
 `HouseholdImportBatchQueue`. `MealPlannerApi` consumes that Queue and starts one
 deterministic `HouseholdImportBatchItemWorkflow` per item generation. The
-Workflow coordinates ordinary import admission, private evidence-route
-registration, acquisition dispatch, and household-local item settlement. One
+Workflow coordinates ordinary import admission, acquisition dispatch, and
+household-local item settlement. One
 initial delivery plus three retries precede
 `HouseholdImportBatchDeadLetterQueue`; its consumer first reconciles the same
 deterministic Workflow identity. It records the closed `dispatch_exhausted`
@@ -240,8 +228,7 @@ The provider accounting reconciliation route remains a private, explicitly
 authorized seam that changes global cost facts only. The separate Household
 recovery route carries authenticated organization provenance directly to the
 household boundary, where terminal identity and recovery authority are proved.
-It does not require the noncanonical D1 evidence route and cannot authorize
-Household state from shared D1.
+It cannot authorize household state from global D1.
 
 ## Cleanup and test boundaries
 

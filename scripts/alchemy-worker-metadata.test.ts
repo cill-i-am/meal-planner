@@ -62,14 +62,14 @@ describe("installed Alchemy Worker metadata hashing", () => {
           bindings: [
             {
               databaseId: "physical-database",
-              name: "MealPlannerDatabase",
+              name: "ProviderAccountingDatabase",
               type: "d1",
             },
           ],
           databaseId: "first-plan-only-output",
-          name: "MealPlannerDatabase",
+          name: "ProviderAccountingDatabase",
         },
-        sid: "MealPlannerDatabase",
+        sid: "ProviderAccountingDatabase",
       },
       {
         data: {
@@ -90,7 +90,7 @@ describe("installed Alchemy Worker metadata hashing", () => {
           bindings: [
             {
               databaseId: "physical-database",
-              name: "MealPlannerDatabase",
+              name: "ProviderAccountingDatabase",
               type: "d1",
             },
           ],
@@ -123,7 +123,7 @@ describe("installed Alchemy Worker metadata hashing", () => {
           bindings: [
             {
               databaseId: "physical-database",
-              name: "MealPlannerDatabase",
+              name: "ProviderAccountingDatabase",
               type: "d1",
             },
           ],
@@ -143,7 +143,7 @@ describe("installed Alchemy Worker metadata hashing", () => {
           bindings: [
             {
               databaseId: "replacement-database",
-              name: "MealPlannerDatabase",
+              name: "ProviderAccountingDatabase",
               type: "d1",
             },
           ],
@@ -163,7 +163,7 @@ describe("installed Alchemy Worker metadata hashing", () => {
           bindings: [
             {
               databaseId: "physical-database",
-              name: "MealPlannerDatabase",
+              name: "ProviderAccountingDatabase",
               type: "d1",
             },
           ],

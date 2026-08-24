@@ -8,7 +8,6 @@ import {
   task,
 } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 
 import {
@@ -86,7 +85,6 @@ interface TestEnvironment {
   readonly HouseholdBatchTestWorkflow: NativeWorkflowBinding;
   readonly HouseholdDomainWorker: object;
   readonly ImportAcquisitionTestWorkflow: NativeWorkflowBinding;
-  readonly MealPlannerDatabase: AnyD1Database;
 }
 
 const testRuntimeContext = RuntimeContext.of({
@@ -264,7 +262,6 @@ const batchWorkflowExport = {
             ),
         };
         const ports = makeHouseholdImportBatchWorkflowPorts({
-          database: Effect.succeed(environment.MealPlannerDatabase),
           household: faultedHousehold,
           message,
           starter: faultedStarter,
@@ -513,11 +510,6 @@ export default {
           Effect.option
         )
     );
-    const route = await environment.MealPlannerDatabase.prepare(
-      "SELECT COUNT(*) AS count FROM import_evidence_routes WHERE import_id = ?"
-    )
-      .bind(replay.intent.id)
-      .first<{ readonly count: number }>();
     const read = (name: string) =>
       environment.BATCH_WORKFLOW_STATE.get(stateKey(workflowId, name));
     const acquisitionRuns = await readEventually(
@@ -551,7 +543,6 @@ export default {
         intentId: replay.intent.id,
         workflowIdentity: replay.workflowIdentity,
       },
-      routeCount: route?.count ?? 0,
       status,
       workflowId,
     });

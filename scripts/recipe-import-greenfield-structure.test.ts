@@ -188,15 +188,21 @@ describe("greenfield recipe-import architecture", () => {
     ).toEqual([]);
   });
 
-  it("installs only the fresh canonical D1 schema", async () => {
+  it("installs only the noncanonical provider-accounting D1 schema", async () => {
     const sources = await loadSources(
-      [`${repositoryRoot}/apps/api/migrations`],
+      [`${repositoryRoot}/apps/api/provider-accounting-migrations`],
       (entryPath) => path.extname(entryPath) === ".sql"
     );
 
     expect(violations(sources, /\bmigration_snapshot\b/u)).toEqual([]);
     expect(
       violations(sources, /\bimport_recipe_terminal_projections\b/u)
+    ).toEqual([]);
+    expect(
+      violations(
+        sources,
+        /\b(?:organization_id|import_evidence_routes|import_execution_runs)\b/iu
+      )
     ).toEqual([]);
   });
 

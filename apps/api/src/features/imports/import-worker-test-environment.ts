@@ -32,7 +32,7 @@ export interface WorkerTestMigration {
 
 /** Decoded D1 bindings supplied to import Worker tests. */
 export interface ImportWorkerTestEnvironment {
-  readonly MealPlannerDatabase: WorkerTestD1Database;
+  readonly ProviderAccountingDatabase: WorkerTestD1Database;
   readonly TEST_MIGRATIONS: readonly WorkerTestMigration[];
 }
 

@@ -1071,8 +1071,7 @@ export const normalizeWorkersAiResponse = (response: Response): Response => {
 export const noLogWorkersAiClient = (
   client: QueryGatewayClient,
   correlationId: ImportCorrelationId,
-  providerStage: "visual",
-  traceStore: ImportObservabilityTraceStore | undefined
+  providerStage: "visual"
 ): QueryGatewayClient => ({
   ...client,
   raw: Effect.all([client.raw, client.id]).pipe(
@@ -1101,15 +1100,12 @@ export const noLogWorkersAiClient = (
               throw new Error(ProviderTransportUnavailableMessage);
             }
             await Effect.runPromise(
-              emitImportObservabilityEvent(
-                {
-                  correlationId,
-                  event: "provider.response",
-                  outcome: "received",
-                  providerStage,
-                },
-                traceStore
-              )
+              emitImportObservabilityEvent({
+                correlationId,
+                event: "provider.response",
+                outcome: "received",
+                providerStage,
+              })
             );
             return normalizeWorkersAiResponse(response);
           },
@@ -1120,8 +1116,7 @@ export const noLogWorkersAiClient = (
 
 export const makeWorkersAiTransport = (
   client: QueryGatewayClient,
-  correlationId: ImportCorrelationId,
-  traceStore: ImportObservabilityTraceStore | undefined
+  correlationId: ImportCorrelationId
 ) =>
   Effect.gen(function* makeProviderTransport() {
     const ai = yield* client.raw;
@@ -1149,23 +1144,19 @@ export const makeWorkersAiTransport = (
         );
       }
       await Effect.runPromise(
-        emitImportObservabilityEvent(
-          {
-            correlationId,
-            event: "provider.response",
-            outcome: "received",
-            providerStage,
-          },
-          traceStore
-        )
+        emitImportObservabilityEvent({
+          correlationId,
+          event: "provider.response",
+          outcome: "received",
+          providerStage,
+        })
       );
       return normalizeWorkersAiResponse(outcome.response);
     };
     const languageModelClient: LanguageModelClient = noLogWorkersAiClient(
       client,
       correlationId,
-      "visual",
-      traceStore
+      "visual"
     );
     return {
       recipe: {

@@ -54,11 +54,16 @@ export default defineConfig({
                   fileURLToPath(new URL("auth-migrations", import.meta.url))
                 ),
                 TEST_MIGRATIONS: await readDrizzleD1Migrations(
-                  fileURLToPath(new URL("migrations", import.meta.url))
+                  fileURLToPath(
+                    new URL("provider-accounting-migrations", import.meta.url)
+                  )
                 ),
               },
               compatibilityDate: "2026-07-14",
-              d1Databases: ["MealPlannerAuthDatabase", "MealPlannerDatabase"],
+              d1Databases: [
+                "MealPlannerAuthDatabase",
+                "ProviderAccountingDatabase",
+              ],
               r2Buckets: ["ImportEvidenceBucket"],
             },
           })),
