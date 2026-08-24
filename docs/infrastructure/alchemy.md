@@ -125,10 +125,12 @@ Run `pnpm --filter @meal-planner/api db:generate` or
 change must create no new migration.
 
 The provider accounting baseline contains exactly five tables:
-`provider_cost_budgets`, `provider_cost_budget_reservations`,
-`provider_cost_settlements`, `provider_cost_reconciliation_runs`, and
-`provider_cost_receipts`. The former shared household tables, migration history,
-repositories, and bindings are discarded rather than copied or backfilled.
+`provider_accounting_budgets`,
+`provider_accounting_conservative_settlements`,
+`provider_accounting_dispatches`, `provider_accounting_recipe_replay_values`,
+and `provider_accounting_reconciliations`. The former shared household tables,
+migration history, repositories, and bindings are discarded rather than copied
+or backfilled.
 Structural tests reject both household product tables and tenant-filtered global
 persistence in production composition.
 

@@ -27,6 +27,12 @@ interface D1QueryBinding {
   readonly resource: string;
 }
 
+interface D1ConsumerCall {
+  readonly arguments: readonly string[];
+  readonly binding: string;
+  readonly path: string;
+}
+
 const expectedD1Resources: readonly D1ResourceDeclaration[] = [
   {
     exportName: "MealPlannerAuthDatabase",
@@ -54,6 +60,14 @@ const expectedD1ConsumerPaths = [
   "apps/api/src/features/provider-accounting/provider-accounting.service.ts",
   "apps/api/src/worker.ts",
 ] as const;
+
+const expectedD1ConsumerCalls: readonly D1ConsumerCall[] = [
+  {
+    arguments: ["yield* authQueryDatabase.raw"],
+    binding: "drizzle",
+    path: "apps/api/src/worker.ts",
+  },
+];
 
 const expectedD1QueryBindings: readonly D1QueryBinding[] = [
   {
@@ -103,51 +117,70 @@ const expectedProviderAccountingTables: readonly ProviderAccountingTable[] = [
   },
 ];
 
-const isProductionTypeScript = (entryPath: string): boolean =>
-  [".ts", ".tsx"].includes(path.extname(entryPath)) &&
-  !entryPath.endsWith(".d.ts") &&
-  !entryPath.includes(".test.") &&
-  !entryPath.includes(".test-fixture.") &&
-  !entryPath.includes(".integration.") &&
-  !entryPath.includes(".support.") &&
-  !entryPath.includes(".fixture.") &&
-  !entryPath.includes(".generated.") &&
-  !entryPath.endsWith("-test-environment.ts") &&
-  !entryPath.endsWith(".config.ts") &&
-  !entryPath.includes("/test/") &&
-  !entryPath.includes("/tests/") &&
-  !entryPath.includes("/__tests__/") &&
-  !entryPath.includes("/fixtures/") &&
-  !entryPath.includes("/fixture/") &&
-  !entryPath.includes("/generated/") &&
-  !entryPath.includes("/support/") &&
-  !entryPath.includes("/vendor/");
-
-const isArchitectureSource = (entryPath: string): boolean =>
-  entryPath === "alchemy.run.ts" ||
-  (entryPath.startsWith("apps/api/src/") &&
-    isProductionTypeScript(entryPath)) ||
-  /^apps\/api\/[^/]*migrations\//u.test(entryPath);
+const apiProductionPaths = (repositoryRoot: string): readonly string[] => {
+  const apiRoot = path.join(repositoryRoot, "apps/api");
+  const configPath = path.join(apiRoot, "tsconfig.build.json");
+  const config = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (config.error) {
+    throw new Error(
+      ts.formatDiagnostic(config.error, {
+        getCanonicalFileName: (fileName) => fileName,
+        getCurrentDirectory: () => repositoryRoot,
+        getNewLine: () => "\n",
+      })
+    );
+  }
+  const parsed = ts.parseJsonConfigFileContent(
+    config.config,
+    ts.sys,
+    apiRoot,
+    undefined,
+    configPath
+  );
+  if (parsed.errors.length > 0) {
+    throw new Error(
+      ts.formatDiagnostics(parsed.errors, {
+        getCanonicalFileName: (fileName) => fileName,
+        getCurrentDirectory: () => repositoryRoot,
+        getNewLine: () => "\n",
+      })
+    );
+  }
+  return parsed.fileNames.map((fileName) =>
+    path.relative(repositoryRoot, fileName).split(path.sep).join("/")
+  );
+};
 
 /** Read the complete tracked production footprint inspected by the D1 guard. */
 export const readTrackedGlobalD1Architecture = (
   repositoryRoot: string
-): readonly TrackedArchitectureSource[] =>
-  execFileSync("git", ["ls-files", "-z"], {
+): readonly TrackedArchitectureSource[] => {
+  const trackedPaths = execFileSync("git", ["ls-files", "-z"], {
     cwd: repositoryRoot,
     encoding: "utf-8",
   })
     .split("\0")
+    .filter((entryPath) => entryPath.length > 0);
+  const trackedPathSet = new Set(trackedPaths);
+  const architecturePaths = [
+    ...apiProductionPaths(repositoryRoot),
+    "alchemy.run.ts",
+    ...trackedPaths.filter((entryPath) =>
+      /^apps\/api\/[^/]*migrations\//u.test(entryPath)
+    ),
+  ];
+  return [...new Set(architecturePaths)]
     .filter(
       (entryPath) =>
-        entryPath.length > 0 &&
-        isArchitectureSource(entryPath) &&
+        trackedPathSet.has(entryPath) &&
         existsSync(path.join(repositoryRoot, entryPath))
     )
+    .toSorted()
     .map((entryPath) => ({
       path: entryPath,
       source: readFileSync(path.join(repositoryRoot, entryPath), "utf-8"),
     }));
+};
 
 const sourceFile = ({ path: sourcePath, source }: TrackedArchitectureSource) =>
   ts.createSourceFile(
@@ -226,6 +259,72 @@ const collectD1Resources = (
     return declarations;
   });
 
+const collectUnsupportedD1ResourceIndirection = (
+  trackedSources: readonly TrackedArchitectureSource[]
+): readonly string[] =>
+  trackedSources.flatMap((trackedSource) => {
+    const violations: string[] = [];
+    const file = sourceFile(trackedSource);
+
+    for (const statement of file.statements) {
+      if (
+        !ts.isImportDeclaration(statement) ||
+        !ts.isStringLiteral(statement.moduleSpecifier) ||
+        statement.moduleSpecifier.text !== "alchemy/Cloudflare" ||
+        statement.importClause?.namedBindings === undefined ||
+        !ts.isNamedImports(statement.importClause.namedBindings)
+      ) {
+        continue;
+      }
+      for (const binding of statement.importClause.namedBindings.elements) {
+        if ((binding.propertyName ?? binding.name).text === "D1") {
+          violations.push(
+            `${trackedSource.path}: named D1 factory imports are forbidden`
+          );
+        }
+      }
+    }
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isPropertyAccessExpression(node)) {
+        const expression = node.getText(file);
+        if (
+          (expression === "D1.Database" ||
+            expression.endsWith(".D1.Database")) &&
+          !(
+            ts.isCallExpression(node.parent) &&
+            node.parent.expression === node &&
+            ts.isVariableDeclaration(node.parent.parent) &&
+            node.parent.parent.initializer === node.parent &&
+            ts.isIdentifier(node.parent.parent.name)
+          )
+        ) {
+          violations.push(
+            `${trackedSource.path}: D1.Database must directly initialize a named resource declaration`
+          );
+        }
+        if (
+          node.name.text === "D1" &&
+          !(
+            ts.isPropertyAccessExpression(node.parent) &&
+            node.parent.expression === node &&
+            ["Database", "QueryDatabase", "QueryDatabaseBinding"].includes(
+              node.parent.name.text
+            )
+          )
+        ) {
+          violations.push(
+            `${trackedSource.path}: D1 namespaces must not be aliased or wrapped`
+          );
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+
+    visit(file);
+    return violations;
+  });
+
 const isD1Consumer = (trackedSource: TrackedArchitectureSource): boolean => {
   const file = sourceFile(trackedSource);
   let consumer = false;
@@ -255,6 +354,124 @@ const isD1Consumer = (trackedSource: TrackedArchitectureSource): boolean => {
   return consumer;
 };
 
+const collectUnsupportedD1ConsumerIndirection = (
+  trackedSources: readonly TrackedArchitectureSource[]
+): readonly string[] =>
+  trackedSources.flatMap((trackedSource) => {
+    const violations: string[] = [];
+    const file = sourceFile(trackedSource);
+    const runtimeConsumerBindings = new Set<string>();
+
+    for (const statement of file.statements) {
+      if (
+        !ts.isImportDeclaration(statement) ||
+        !ts.isStringLiteral(statement.moduleSpecifier) ||
+        statement.moduleSpecifier.text !== "drizzle-orm/d1" ||
+        statement.importClause === undefined
+      ) {
+        continue;
+      }
+      const { importClause } = statement;
+      if (importClause.name !== undefined) {
+        violations.push(
+          `${trackedSource.path}: default D1 consumer imports are forbidden`
+        );
+      }
+      const bindings = importClause.namedBindings;
+      if (bindings !== undefined && ts.isNamespaceImport(bindings)) {
+        violations.push(
+          `${trackedSource.path}: namespace D1 consumer imports are forbidden`
+        );
+      }
+      if (bindings !== undefined && ts.isNamedImports(bindings)) {
+        for (const binding of bindings.elements) {
+          if (binding.propertyName !== undefined) {
+            violations.push(
+              `${trackedSource.path}: aliased D1 consumer imports are forbidden`
+            );
+          }
+          if (!importClause.isTypeOnly && !binding.isTypeOnly) {
+            runtimeConsumerBindings.add(binding.name.text);
+          }
+        }
+      }
+    }
+
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isStringLiteralLike(node) &&
+        node.text === "drizzle-orm/d1" &&
+        !(
+          ts.isImportDeclaration(node.parent) &&
+          node.parent.moduleSpecifier === node
+        )
+      ) {
+        violations.push(
+          `${trackedSource.path}: dynamic D1 consumer imports are forbidden`
+        );
+      }
+      if (
+        ts.isIdentifier(node) &&
+        runtimeConsumerBindings.has(node.text) &&
+        !ts.isImportSpecifier(node.parent) &&
+        !(ts.isCallExpression(node.parent) && node.parent.expression === node)
+      ) {
+        violations.push(
+          `${trackedSource.path}: D1 consumer imports must be called directly`
+        );
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+
+    return violations;
+  });
+
+const collectD1ConsumerCalls = (
+  trackedSources: readonly TrackedArchitectureSource[]
+): readonly D1ConsumerCall[] =>
+  trackedSources.flatMap((trackedSource) => {
+    const file = sourceFile(trackedSource);
+    const runtimeConsumerBindings = new Set<string>();
+    const calls: D1ConsumerCall[] = [];
+
+    for (const statement of file.statements) {
+      if (
+        !ts.isImportDeclaration(statement) ||
+        !ts.isStringLiteral(statement.moduleSpecifier) ||
+        statement.moduleSpecifier.text !== "drizzle-orm/d1" ||
+        statement.importClause === undefined ||
+        statement.importClause.isTypeOnly ||
+        statement.importClause.namedBindings === undefined ||
+        !ts.isNamedImports(statement.importClause.namedBindings)
+      ) {
+        continue;
+      }
+      for (const binding of statement.importClause.namedBindings.elements) {
+        if (!binding.isTypeOnly) {
+          runtimeConsumerBindings.add(binding.name.text);
+        }
+      }
+    }
+
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        runtimeConsumerBindings.has(node.expression.text)
+      ) {
+        calls.push({
+          arguments: node.arguments.map((argument) => argument.getText(file)),
+          binding: node.expression.text,
+          path: trackedSource.path,
+        });
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+    return calls;
+  });
+
 const collectD1QueryBindings = (
   trackedSources: readonly TrackedArchitectureSource[]
 ): readonly D1QueryBinding[] =>
@@ -280,6 +497,45 @@ const collectD1QueryBindings = (
     return bindings;
   });
 
+const collectUnsupportedD1QueryBindingIndirection = (
+  trackedSources: readonly TrackedArchitectureSource[]
+): readonly string[] =>
+  trackedSources.flatMap((trackedSource) => {
+    const violations: string[] = [];
+    const file = sourceFile(trackedSource);
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isPropertyAccessExpression(node)) {
+        const expression = node.getText(file);
+        if (
+          (expression === "D1.QueryDatabase" ||
+            expression.endsWith(".D1.QueryDatabase")) &&
+          !(ts.isCallExpression(node.parent) && node.parent.expression === node)
+        ) {
+          violations.push(
+            `${trackedSource.path}: D1.QueryDatabase aliases are forbidden`
+          );
+        }
+        if (
+          (expression === "D1.QueryDatabaseBinding" ||
+            expression.endsWith(".D1.QueryDatabaseBinding")) &&
+          !(
+            ts.isCallExpression(node.parent) &&
+            node.parent.arguments.some((argument) => argument === node)
+          )
+        ) {
+          violations.push(
+            `${trackedSource.path}: D1.QueryDatabaseBinding must be composed directly`
+          );
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+
+    visit(file);
+    return violations;
+  });
+
 const collectMigrationRoots = (
   trackedSources: readonly TrackedArchitectureSource[]
 ): readonly string[] =>
@@ -301,12 +557,28 @@ const collectProviderAccountingTables = (
 ): {
   readonly allSqliteTableCalls: number;
   readonly exportedTables: readonly ProviderAccountingTable[];
+  readonly unsupportedIndirections: readonly string[];
 } => {
   const file = sourceFile(trackedSource);
   let allSqliteTableCalls = 0;
   const exportedTables: ProviderAccountingTable[] = [];
+  const unsupportedIndirections: string[] = [];
 
   const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && node.text === "sqliteTable") {
+      const { parent } = node;
+      const directCall =
+        ts.isCallExpression(parent) && parent.expression === node;
+      const directImport =
+        ts.isImportSpecifier(parent) &&
+        parent.name.text === "sqliteTable" &&
+        parent.propertyName === undefined;
+      if (!(directCall || directImport)) {
+        unsupportedIndirections.push(
+          `${trackedSource.path}: sqliteTable aliases and wrappers are forbidden`
+        );
+      }
+    }
     if (
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
@@ -353,6 +625,7 @@ const collectProviderAccountingTables = (
     exportedTables: exportedTables.toSorted((left, right) =>
       left.exportName.localeCompare(right.exportName)
     ),
+    unsupportedIndirections,
   };
 };
 
@@ -413,6 +686,14 @@ export const inspectGlobalD1Architecture = (
     .filter(isD1Consumer)
     .map(({ path: sourcePath }) => sourcePath)
     .toSorted();
+  const consumerCalls = collectD1ConsumerCalls(trackedSources).toSorted(
+    (left, right) =>
+      left.path.localeCompare(right.path) ||
+      left.binding.localeCompare(right.binding) ||
+      JSON.stringify(left.arguments).localeCompare(
+        JSON.stringify(right.arguments)
+      )
+  );
   const migrationRoots = collectMigrationRoots(trackedSources);
   const providerSchemaPath =
     "apps/api/src/features/provider-accounting/provider-accounting.database-schema.ts";
@@ -430,6 +711,9 @@ export const inspectGlobalD1Architecture = (
   );
 
   const violations = [
+    ...collectUnsupportedD1ResourceIndirection(trackedSources),
+    ...collectUnsupportedD1QueryBindingIndirection(trackedSources),
+    ...collectUnsupportedD1ConsumerIndirection(trackedSources),
     ...exactValueViolation(
       "global D1 resources",
       resources,
@@ -446,6 +730,11 @@ export const inspectGlobalD1Architecture = (
       expectedD1ConsumerPaths
     ),
     ...exactValueViolation(
+      "global D1 consumer calls",
+      consumerCalls,
+      expectedD1ConsumerCalls
+    ),
+    ...exactValueViolation(
       "persistence migration roots",
       migrationRoots,
       expectedMigrationRoots
@@ -455,6 +744,7 @@ export const inspectGlobalD1Architecture = (
   if (providerSchema) {
     const tables = collectProviderAccountingTables(providerSchema);
     violations.push(
+      ...tables.unsupportedIndirections,
       ...exactValueViolation(
         "provider-accounting sqliteTable call count",
         tables.allSqliteTableCalls,
