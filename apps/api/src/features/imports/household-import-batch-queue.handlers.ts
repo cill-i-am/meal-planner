@@ -1,4 +1,4 @@
-import { Cause, Effect } from "effect";
+import { Cause, Effect, Result } from "effect";
 
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import {
@@ -41,6 +41,15 @@ const activeWorkflowStatuses: ReadonlySet<string> = new Set([
   "waiting",
   "waitingForPause",
 ]);
+const workflowInstanceNotFoundMessage = "instance.not_found";
+
+const isWorkflowInstanceNotFound = <E>(cause: Cause.Cause<E>) => {
+  const defect = Result.getOrUndefined(Cause.findDefect(cause));
+  return (
+    defect instanceof Error &&
+    defect.message === workflowInstanceNotFoundMessage
+  );
+};
 
 /** Translate the native binding into a status-aware start/redrive boundary. */
 export const makeHouseholdBatchWorkflowLauncher = <E, R>(
@@ -64,7 +73,11 @@ export const makeHouseholdBatchWorkflowLauncher = <E, R>(
       return yield* Effect.fail(
         new Error(`batch workflow status is unavailable: ${status}`)
       );
-    }),
+    }).pipe(
+      Effect.catchCauseIf(isWorkflowInstanceNotFound, () =>
+        Effect.succeed({ _tag: "NotStarted" as const })
+      )
+    ),
 });
 
 /** Production Queue handler: start or status-aware redrive one stable Workflow. */

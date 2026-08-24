@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect";
 
 import { HouseholdImportBatchQueue } from "../../../infrastructure/household-import-batch-queue.js";
 import {
-  HouseholdImportBatchQueueSendFailure,
+  HouseholdImportBatchQueueSendAmbiguous,
   HouseholdImportBatchQueueWriter,
 } from "./household-import-batch-queue.port.js";
 
@@ -17,7 +17,7 @@ export const HouseholdImportBatchQueueWriterLive = Layer.effect(
         writer
           .send(message)
           .pipe(
-            Effect.mapError(() => new HouseholdImportBatchQueueSendFailure())
+            Effect.mapError(() => new HouseholdImportBatchQueueSendAmbiguous())
           ),
     };
   })

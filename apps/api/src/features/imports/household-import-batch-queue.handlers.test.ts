@@ -89,4 +89,26 @@ describe("household batch Workflow reconciliation", () => {
     ).rejects.toThrow("batch workflow status is unavailable: unknown");
     expect(restarts).toBe(0);
   });
+
+  it("proves a native missing instance was not started", async () => {
+    const launcher = makeHouseholdBatchWorkflowLauncher({
+      create: () => Effect.void,
+      get: () => Effect.die(new Error("instance.not_found")),
+    });
+
+    await expect(
+      Effect.runPromise(launcher.reconcile("stable-workflow-id"))
+    ).resolves.toEqual({ _tag: "NotStarted" });
+  });
+
+  it("preserves other native status failures as ambiguous", async () => {
+    const launcher = makeHouseholdBatchWorkflowLauncher({
+      create: () => Effect.void,
+      get: () => Effect.die(new Error("instance.status_unavailable")),
+    });
+
+    await expect(
+      Effect.runPromise(launcher.reconcile("stable-workflow-id"))
+    ).rejects.toThrow("instance.status_unavailable");
+  });
 });

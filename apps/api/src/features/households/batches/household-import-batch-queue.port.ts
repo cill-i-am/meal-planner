@@ -4,8 +4,8 @@ import type { Effect } from "effect";
 
 import type { HouseholdBatchQueueMessage } from "./household-import-batch.contract.js";
 
-export class HouseholdImportBatchQueueSendFailure extends Data.TaggedError(
-  "HouseholdImportBatchQueueSendFailure"
+export class HouseholdImportBatchQueueSendAmbiguous extends Data.TaggedError(
+  "HouseholdImportBatchQueueSendAmbiguous"
 ) {}
 
 export interface HouseholdImportBatchQueueWriterService {
@@ -13,7 +13,7 @@ export interface HouseholdImportBatchQueueWriterService {
     message: HouseholdBatchQueueMessage
   ) => Effect.Effect<
     void,
-    HouseholdImportBatchQueueSendFailure,
+    HouseholdImportBatchQueueSendAmbiguous,
     RuntimeContext
   >;
 }

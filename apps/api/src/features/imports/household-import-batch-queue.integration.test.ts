@@ -69,12 +69,17 @@ describe("household batch Queue transport", () => {
     persistenceDirectory = await mkdtemp(
       `${tmpdir()}/meal-planner-household-batch-queue-`
     );
-    const [consumerModules, deadLetterModules, domainModules] =
-      await Promise.all([
-        bundleFixture("household-import-batch-queue.test-fixture.ts"),
-        bundleFixture("household-import-batch-dlq.test-fixture.ts"),
-        bundleFixture("../households/household-domain-service.test-fixture.js"),
-      ]);
+    const [
+      consumerModules,
+      deadLetterModules,
+      domainModules,
+      queueLossModules,
+    ] = await Promise.all([
+      bundleFixture("household-import-batch-queue.test-fixture.ts"),
+      bundleFixture("household-import-batch-dlq.test-fixture.ts"),
+      bundleFixture("../households/household-domain-service.test-fixture.js"),
+      bundleFixture("household-import-batch-queue-loss.test-fixture.js"),
+    ]);
     runtime = new Miniflare({
       compatibilityDate,
       compatibilityFlags,
@@ -134,10 +139,15 @@ describe("household batch Queue transport", () => {
           },
           modules: [...domainModules],
           name: "household-domain",
+          wrappedBindings: {
+            HouseholdImportBatchQueue: "queue-loss-wrapper",
+          },
+        },
+        {
+          modules: [...queueLossModules],
+          name: "queue-loss-wrapper",
           queueProducers: {
-            HouseholdImportBatchQueue: {
-              queueName: "household-import-batches",
-            },
+            ACCEPTED_QUEUE: { queueName: "household-import-batches" },
           },
         },
       ],
@@ -281,6 +291,85 @@ describe("household batch Queue transport", () => {
       status: { status: "complete" },
     });
   }, 25_000);
+
+  it("preserves a live deterministic Workflow when every accepted Queue response is lost", async () => {
+    const results = await runtime.getKVNamespace("RESULTS", "consumer");
+    const attemptsBefore = Number((await results.get("attempts")) ?? "0");
+    const admissionResponse = await runtime.dispatchFetch(
+      "http://localhost/admit",
+      {
+        body: JSON.stringify({
+          commandId: "7510000000000000995",
+          organizationId: "organization-batch-queue-send-ambiguous-proof",
+        }),
+        method: "POST",
+      }
+    );
+    expect(
+      admissionResponse.status,
+      await admissionResponse.clone().text()
+    ).toBe(200);
+    const admitted = Schema.decodeUnknownSync(
+      Schema.Struct({
+        message: Schema.Struct({
+          batchId: Schema.String,
+          generation: Schema.Int,
+          itemId: Schema.String,
+          organizationId: Schema.String,
+        }),
+      })
+    )(await admissionResponse.json());
+    const { message } = admitted;
+    const workflowId = `household-batch-v1-${message.itemId}-g1`;
+
+    await expect
+      .poll(async () => Number((await results.get("attempts")) ?? "0"), {
+        timeout: 20_000,
+      })
+      .toBeGreaterThanOrEqual(attemptsBefore + 4);
+    const ambiguousBatch = await runtime.dispatchFetch(
+      `http://localhost/batch?organizationId=${encodeURIComponent(message.organizationId)}&batchId=${encodeURIComponent(message.batchId)}`
+    );
+    await expect(ambiguousBatch.json()).resolves.not.toMatchObject({
+      items: [
+        {
+          failureCode: "dispatch_exhausted",
+          id: message.itemId,
+          status: "failed",
+        },
+      ],
+      status: "failed",
+    });
+
+    await expect
+      .poll(
+        async () => {
+          const response = await runtime.dispatchFetch(
+            `http://localhost/workflow?workflowId=${encodeURIComponent(workflowId)}`
+          );
+          return response.json();
+        },
+        { timeout: 25_000 }
+      )
+      .toMatchObject({
+        attempts: 1,
+        runs: 1,
+        status: { status: "complete" },
+      });
+    const completedBatch = await runtime.dispatchFetch(
+      `http://localhost/batch?organizationId=${encodeURIComponent(message.organizationId)}&batchId=${encodeURIComponent(message.batchId)}`
+    );
+    await expect(completedBatch.json()).resolves.toMatchObject({
+      counts: { failed: 0, queued: 0, running: 0, succeeded: 1, total: 1 },
+      items: [{ id: message.itemId, status: "succeeded" }],
+      status: "completed",
+    });
+    const attemptsAtSettlement = Number((await results.get("attempts")) ?? "0");
+    await delay(5500);
+    expect(Number((await results.get("attempts")) ?? "0")).toBe(
+      attemptsAtSettlement
+    );
+  }, 35_000);
 
   it("retries three times and moves the unchanged closed envelope to DLQ", async () => {
     const results = await runtime.getKVNamespace("RESULTS", "consumer");

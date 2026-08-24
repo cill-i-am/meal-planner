@@ -16,7 +16,7 @@ import {
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
-import { Clock, Effect, Exit, Option, Schema } from "effect";
+import { Clock, Effect, Option, Schema } from "effect";
 
 import migrations from "../../../household-migrations/migrations.js";
 import {
@@ -247,7 +247,7 @@ export const HouseholdObjectRuntime = Effect.gen(
             const due = yield* repository.dueDispatches(
               yield* Clock.currentTimeMillis
             );
-            for (const { attempts, message, transportState } of due) {
+            for (const { message } of due) {
               const admission = {
                 actor: {
                   _tag: "System" as const,
@@ -255,20 +255,12 @@ export const HouseholdObjectRuntime = Effect.gen(
                 },
                 organizationId: message.organizationId,
               };
-              const sent = yield* batchQueueWriter
-                .send(message)
-                .pipe(Effect.exit);
-              const exhausted =
-                Exit.isFailure(sent) &&
-                transportState === "pending" &&
-                attempts >= 3;
-              let outcome: (typeof HouseholdRecordImportBatchDispatchInput.Type)["outcome"] =
-                "retry";
-              if (Exit.isSuccess(sent)) {
-                outcome = "delivered";
-              } else if (exhausted) {
-                outcome = "exhausted";
-              }
+              const outcome = yield* batchQueueWriter.send(message).pipe(
+                Effect.match({
+                  onFailure: () => "retry" as const,
+                  onSuccess: () => "delivered" as const,
+                })
+              );
               yield* repository.recordDispatch({
                 admission,
                 batchId: message.batchId,
@@ -276,15 +268,6 @@ export const HouseholdObjectRuntime = Effect.gen(
                 itemId: message.itemId,
                 outcome,
               });
-              if (exhausted) {
-                yield* repository.fail({
-                  admission,
-                  batchId: message.batchId,
-                  expectedGeneration: message.generation,
-                  failureCode: "dispatch_exhausted",
-                  itemId: message.itemId,
-                });
-              }
             }
             const next = yield* repository.nextDispatchAt;
             yield* next === null

@@ -3,6 +3,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import {
   WorkflowEvent,
   makeWorkflowBridge,
+  sleep,
   task,
 } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
@@ -101,12 +102,6 @@ const workflowLauncher = (environment: Environment) => {
       }),
     reconcile: (id: string) =>
       Effect.gen(function* reconcileWorkflow() {
-        const refused = yield* Effect.promise(() =>
-          environment.RESULTS.get(`refused:${id}`)
-        );
-        if (refused === "true") {
-          return { _tag: "NotStarted" as const };
-        }
         const ambiguous = yield* Effect.promise(() =>
           environment.RESULTS.get(`ambiguous:${id}`)
         );
@@ -149,6 +144,12 @@ const workflowExport = {
         yield* Effect.promise(() =>
           environment.RESULTS.put(attemptsKey, String(attempts))
         );
+        if (
+          message.organizationId ===
+          "organization-batch-queue-send-ambiguous-proof"
+        ) {
+          yield* sleep("hold-household-batch-claim", "16 seconds");
+        }
         const claim = yield* task(
           "claim-household-batch-item",
           household
@@ -221,10 +222,6 @@ export default {
       const workflowId = Schema.decodeUnknownSync(Schema.String)(
         requestUrl.searchParams.get("workflowId")
       );
-      const refused = await environment.RESULTS.get(`refused:${workflowId}`);
-      if (refused === "true") {
-        return Response.json({ _tag: "NotStarted" });
-      }
       const ambiguous = await environment.RESULTS.get(
         `ambiguous:${workflowId}`
       );
