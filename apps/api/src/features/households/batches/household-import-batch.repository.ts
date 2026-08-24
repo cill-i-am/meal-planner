@@ -4,7 +4,7 @@ import {
   RecipeImportBatchId,
   RecipeImportBatchItemId,
 } from "@meal-planner/recipe-import-api";
-import { and, asc, eq, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, lte } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, Effect, Schema } from "effect";
 
@@ -88,14 +88,31 @@ const projectBatchItem = ({
   return projected;
 };
 
+const isTerminalItemStatus = (status: ItemRow["status"] | undefined) =>
+  status === "succeeded" || status === "failed";
 const dispatchState = (
-  outcome: HouseholdRecordImportBatchDispatchInput["outcome"]
+  outcome: HouseholdRecordImportBatchDispatchInput["outcome"],
+  item: Pick<ItemRow, "failureCode" | "status"> | undefined,
+  previousState: string
 ) => {
-  if (outcome === "delivered") {
+  if (isTerminalItemStatus(item?.status)) {
+    return item?.failureCode === "dispatch_exhausted"
+      ? "exhausted"
+      : "delivered";
+  }
+  if (outcome === "delivered" || previousState === "delivered") {
     return "delivered";
   }
   return outcome === "exhausted" ? "exhausted" : "pending";
 };
+const settledDispatchState = (
+  input:
+    | HouseholdCompleteImportBatchItemInput
+    | HouseholdFailImportBatchItemInput
+) =>
+  "failureCode" in input && input.failureCode === "dispatch_exhausted"
+    ? "exhausted"
+    : "delivered";
 
 const projectBatch = (row: BatchRow, items: readonly ItemRow[]) =>
   Schema.decodeUnknownEffect(RecipeImportBatch)({
@@ -381,6 +398,13 @@ export const makeHouseholdImportBatchRepository = (
               })
               .where(eq(householdImportBatchItems.itemId, input.itemId))
               .pipe(mapPersistence);
+            yield* transaction
+              .update(householdImportBatchOutbox)
+              .set({
+                state: settledDispatchState(input),
+              })
+              .where(eq(householdImportBatchOutbox.itemId, input.itemId))
+              .pipe(mapPersistence);
             const { items, row } = yield* readRows(transaction, input.batchId);
             const status = aggregateStatus(items);
             const updatedAt = new Date(
@@ -481,15 +505,25 @@ export const makeHouseholdImportBatchRepository = (
             if (entry.generation !== input.expectedGeneration) {
               return yield* Effect.fail(failure("generation_conflict"));
             }
+            const [item] = yield* transaction
+              .select({
+                failureCode: householdImportBatchItems.failureCode,
+                status: householdImportBatchItems.status,
+              })
+              .from(householdImportBatchItems)
+              .where(eq(householdImportBatchItems.itemId, input.itemId))
+              .limit(1)
+              .pipe(mapPersistence);
+            const state = dispatchState(input.outcome, item, entry.state);
             yield* transaction
               .update(householdImportBatchOutbox)
               .set({
-                attempts: entry.attempts + 1,
+                attempts: state === "delivered" ? 0 : entry.attempts + 1,
                 nextAttemptAtEpochMs:
-                  input.outcome === "retry"
-                    ? (yield* Clock.currentTimeMillis) + 5000
-                    : entry.nextAttemptAtEpochMs,
-                state: dispatchState(input.outcome),
+                  state === "exhausted"
+                    ? entry.nextAttemptAtEpochMs
+                    : (yield* Clock.currentTimeMillis) + 5000,
+                state,
               })
               .where(eq(householdImportBatchOutbox.itemId, input.itemId))
               .pipe(mapPersistence);
@@ -507,15 +541,21 @@ export const makeHouseholdImportBatchRepository = (
         generation: householdImportBatchOutbox.generation,
         itemId: householdImportBatchOutbox.itemId,
         organizationId: householdImportBatches.organizationId,
+        transportState: householdImportBatchOutbox.state,
       })
       .from(householdImportBatchOutbox)
       .innerJoin(
         householdImportBatches,
         eq(householdImportBatches.batchId, householdImportBatchOutbox.batchId)
       )
+      .innerJoin(
+        householdImportBatchItems,
+        eq(householdImportBatchItems.itemId, householdImportBatchOutbox.itemId)
+      )
       .where(
         and(
-          eq(householdImportBatchOutbox.state, "pending"),
+          inArray(householdImportBatchOutbox.state, ["pending", "delivered"]),
+          inArray(householdImportBatchItems.status, ["queued", "running"]),
           lte(householdImportBatchOutbox.nextAttemptAtEpochMs, nowEpochMs)
         )
       )
@@ -523,12 +563,16 @@ export const makeHouseholdImportBatchRepository = (
         mapPersistence,
         Effect.flatMap((rows) =>
           Effect.all(
-            rows.map(({ attempts, ...message }) =>
+            rows.map(({ attempts, transportState, ...message }) =>
               Schema.decodeUnknownEffect(HouseholdBatchQueueMessage)(
                 message
               ).pipe(
                 Effect.mapError(persistenceFailure),
-                Effect.map((decoded) => ({ attempts, message: decoded }))
+                Effect.map((decoded) => ({
+                  attempts,
+                  message: decoded,
+                  transportState,
+                }))
               )
             )
           )
@@ -540,7 +584,16 @@ export const makeHouseholdImportBatchRepository = (
       nextAttemptAtEpochMs: householdImportBatchOutbox.nextAttemptAtEpochMs,
     })
     .from(householdImportBatchOutbox)
-    .where(eq(householdImportBatchOutbox.state, "pending"))
+    .innerJoin(
+      householdImportBatchItems,
+      eq(householdImportBatchItems.itemId, householdImportBatchOutbox.itemId)
+    )
+    .where(
+      and(
+        inArray(householdImportBatchOutbox.state, ["pending", "delivered"]),
+        inArray(householdImportBatchItems.status, ["queued", "running"])
+      )
+    )
     .orderBy(asc(householdImportBatchOutbox.nextAttemptAtEpochMs))
     .limit(1)
     .pipe(

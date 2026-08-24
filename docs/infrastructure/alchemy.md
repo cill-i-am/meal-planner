@@ -228,9 +228,13 @@ initial delivery plus three retries precede
 deterministic Workflow identity. It records the closed `dispatch_exhausted`
 failure through the private household boundary only when the start adapter can
 prove that no Workflow started. An unavailable probe remains retryable and
-cannot contradict a committed Workflow or orphan its household outbox. Neither
-Queue is canonical, and neither carries submitted source, idempotency, actor,
-provider, or raw response material.
+cannot contradict a committed Workflow or orphan its household outbox. A Queue
+send remains recorded while that outbox stays alarm-eligible until household
+item settlement, so alarms keep reconciling the stable identity; errored or
+terminated instances restart by that identity, while active or unknown
+instances are never terminally settled.
+Neither Queue is canonical, and neither carries submitted source, idempotency,
+actor, provider, or raw response material.
 
 The provider accounting reconciliation route remains a private, explicitly
 authorized seam that changes global cost facts only. The separate Household

@@ -599,7 +599,11 @@ remains transport evidence. A deterministic native Workflow coordinates
 multi-step items and settles the local aggregate. Queue, DLQ, and inner
 acquisition dispatch all reconcile the same generation-specific Workflow
 identity. Lost start responses and unavailable status probes preserve pending
-household work; `dispatch_exhausted` requires proof that no Workflow started.
+household work. The household outbox remains alarm-eligible after Queue
+transport delivery until item settlement, retaining delivered transport
+evidence and a durable reconciliation signal; errored or terminated outer
+Workflows restart through the same stable identity. `dispatch_exhausted`
+requires proof that no Workflow started.
 The shared D1 batch repository, routes, services, tables, triggers, and tests
 are absent, with no compatibility path or dual write.
 
@@ -740,7 +744,7 @@ minimal noncanonical operational index for an approved concrete use case.
 | Alchemy class lifecycle separate from per-object Drizzle migrations | Accepted | Deployment changes cannot substitute for SQLite schema evolution |
 | Global routing tombstone fences deleted households | Accepted | The locator prevents late callbacks or recovery from recreating cleared object storage |
 | No compatibility, dual write, backfill, or old D1 preservation | Accepted | Superseded greenfield paths are deleted at each cutover |
-| Household-local batch aggregate with identifier-only Queue transport | Accepted | SQLite is the sole writer; alarm, Queue, DLQ, and Workflow coordinate only post-commit delivery |
+| Household-local batch aggregate with identifier-only Queue transport | Accepted | SQLite is the sole writer; delivered transport evidence remains alarm-eligible until item settlement so alarms can reconcile or redrive the stable Workflow identity |
 | Global operational facts remain noncanonical for household product state | Accepted | Future global product queries require a new explicit decision |
 | More child Durable Objects only after measured boundary criteria | Accepted | Domain nouns remain modules in one household database by default |
 | Direct scheduled Workflows | Deferred | Pinned Alchemy beta.72 lacks schedule configuration; use cron Worker to start Workflow |

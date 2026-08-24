@@ -247,7 +247,7 @@ export const HouseholdObjectRuntime = Effect.gen(
             const due = yield* repository.dueDispatches(
               yield* Clock.currentTimeMillis
             );
-            for (const { attempts, message } of due) {
+            for (const { attempts, message, transportState } of due) {
               const admission = {
                 actor: {
                   _tag: "System" as const,
@@ -258,7 +258,10 @@ export const HouseholdObjectRuntime = Effect.gen(
               const sent = yield* batchQueueWriter
                 .send(message)
                 .pipe(Effect.exit);
-              const exhausted = Exit.isFailure(sent) && attempts >= 3;
+              const exhausted =
+                Exit.isFailure(sent) &&
+                transportState === "pending" &&
+                attempts >= 3;
               let outcome: (typeof HouseholdRecordImportBatchDispatchInput.Type)["outcome"] =
                 "retry";
               if (Exit.isSuccess(sent)) {

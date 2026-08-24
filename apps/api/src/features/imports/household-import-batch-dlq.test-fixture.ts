@@ -27,8 +27,10 @@ interface Environment {
 }
 
 const Reconciliation = Schema.Union([
+  Schema.Struct({ _tag: Schema.Literal("Active") }),
+  Schema.Struct({ _tag: Schema.Literal("Complete") }),
   Schema.Struct({ _tag: Schema.Literal("NotStarted") }),
-  Schema.Struct({ _tag: Schema.Literal("Started") }),
+  Schema.Struct({ _tag: Schema.Literal("Redriven") }),
 ]);
 
 const workflowLauncher = (environment: Environment) => ({

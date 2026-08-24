@@ -119,9 +119,14 @@ The object alarm reads only committed outbox rows and sends a closed Queue
 message containing immutable organization, batch, item, and generation IDs.
 Queue and its DLQ are transport evidence, not product state. The Queue consumer
 starts one deterministic Workflow per item generation. Queue and DLQ retries
-reconcile that identity; unavailable reconciliation preserves the nonterminal
-item and outbox, while only proof that no Workflow started permits
-`dispatch_exhausted`. That Workflow claims the local item, admits the ordinary
+reconcile that identity. Transport delivery remains recorded while the
+household outbox stays alarm-eligible until its item settles, so the object
+alarm remains a durable production reconciliation signal. Queued, running,
+paused, and waiting instances remain active; errored or terminated instances
+restart through the same identity.
+Unavailable or unknown status preserves the nonterminal item and outbox, while
+only proof that no Workflow started permits `dispatch_exhausted`. That Workflow
+claims the local item, admits the ordinary
 recipe import, coordinates its external dispatch after commit, and settles
 success or failure back in household SQLite. Queue, Workflow, D1 route
 registration, provider, network, and other external I/O never run inside a

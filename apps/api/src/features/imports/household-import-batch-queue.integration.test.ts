@@ -150,14 +150,31 @@ describe("household batch Queue transport", () => {
   });
 
   it("delivers only immutable identifiers to one deterministic Workflow execution", async () => {
-    const message = {
-      batchId: "018f47ad-91aa-7c35-b6fe-000000000201",
-      generation: 1,
-      itemId: "018f47ad-91aa-7c35-b6fe-000000000202",
-      organizationId: "organization-batch-queue-proof",
-    };
-    const queue = await runtime.getQueueProducer("BATCHES", "consumer");
-    await queue.send(message);
+    const admissionResponse = await runtime.dispatchFetch(
+      "http://localhost/admit",
+      {
+        body: JSON.stringify({
+          commandId: "7510000000000000996",
+          organizationId: "organization-batch-queue-proof",
+        }),
+        method: "POST",
+      }
+    );
+    expect(
+      admissionResponse.status,
+      await admissionResponse.clone().text()
+    ).toBe(200);
+    const admitted = Schema.decodeUnknownSync(
+      Schema.Struct({
+        message: Schema.Struct({
+          batchId: Schema.String,
+          generation: Schema.Int,
+          itemId: Schema.String,
+          organizationId: Schema.String,
+        }),
+      })
+    )(await admissionResponse.json());
+    const { message } = admitted;
     const workflowId = `household-batch-v1-${message.itemId}-g1`;
 
     await expect(
@@ -175,12 +192,95 @@ describe("household batch Queue transport", () => {
       readEventually("consumer", "RESULTS", `workflow-runs:${workflowId}`)
     ).resolves.toBe(1);
     const attemptsBeforeReplay = Number((await results.get("attempts")) ?? "0");
+    const queue = await runtime.getQueueProducer("BATCHES", "consumer");
     await queue.send(message);
     await expect
       .poll(async () => Number((await results.get("attempts")) ?? "0"))
       .toBe(attemptsBeforeReplay + 1);
     expect(await results.get(`workflow-runs:${workflowId}`)).toBe("1");
   });
+
+  it("redrives an errored outer Workflow through production Queue composition", async () => {
+    const admissionResponse = await runtime.dispatchFetch(
+      "http://localhost/admit",
+      {
+        body: JSON.stringify({
+          commandId: "7510000000000000997",
+          organizationId: "organization-batch-workflow-redrive-proof",
+        }),
+        method: "POST",
+      }
+    );
+    expect(
+      admissionResponse.status,
+      await admissionResponse.clone().text()
+    ).toBe(200);
+    const admitted = Schema.decodeUnknownSync(
+      Schema.Struct({
+        message: Schema.Struct({
+          batchId: Schema.String,
+          generation: Schema.Int,
+          itemId: Schema.String,
+          organizationId: Schema.String,
+        }),
+      })
+    )(await admissionResponse.json());
+    const { message } = admitted;
+    const workflowId = `household-batch-v1-${message.itemId}-g1`;
+
+    await expect
+      .poll(async () => {
+        const response = await runtime.dispatchFetch(
+          `http://localhost/workflow?workflowId=${encodeURIComponent(workflowId)}`
+        );
+        return response.ok
+          ? ((await response.json()) as { status: { status: string } }).status
+              .status
+          : "missing";
+      })
+      .toBe("errored");
+    const erroredBatch = await runtime.dispatchFetch(
+      `http://localhost/batch?organizationId=${encodeURIComponent(message.organizationId)}&batchId=${encodeURIComponent(message.batchId)}`
+    );
+    await expect(erroredBatch.json()).resolves.toMatchObject({
+      counts: { failed: 0, queued: 0, running: 1, succeeded: 0, total: 1 },
+      items: [{ id: message.itemId, status: "running" }],
+      status: "running",
+    });
+
+    await expect
+      .poll(
+        async () => {
+          const response = await runtime.dispatchFetch(
+            `http://localhost/workflow?workflowId=${encodeURIComponent(workflowId)}`
+          );
+          return response.json();
+        },
+        { timeout: 7000 }
+      )
+      .toMatchObject({
+        attempts: 2,
+        runs: 2,
+        status: { status: "complete" },
+      });
+    const recoveredBatch = await runtime.dispatchFetch(
+      `http://localhost/batch?organizationId=${encodeURIComponent(message.organizationId)}&batchId=${encodeURIComponent(message.batchId)}`
+    );
+    await expect(recoveredBatch.json()).resolves.toMatchObject({
+      counts: { failed: 0, queued: 0, running: 0, succeeded: 1, total: 1 },
+      items: [{ id: message.itemId, status: "succeeded" }],
+      status: "completed",
+    });
+    await delay(5500);
+    const settledWorkflow = await runtime.dispatchFetch(
+      `http://localhost/workflow?workflowId=${encodeURIComponent(workflowId)}`
+    );
+    await expect(settledWorkflow.json()).resolves.toMatchObject({
+      attempts: 2,
+      runs: 2,
+      status: { status: "complete" },
+    });
+  }, 25_000);
 
   it("retries three times and moves the unchanged closed envelope to DLQ", async () => {
     const results = await runtime.getKVNamespace("RESULTS", "consumer");
@@ -292,10 +392,10 @@ describe("household batch Queue transport", () => {
     );
     expect(batchResponse.status, await batchResponse.clone().text()).toBe(200);
     await expect(batchResponse.json()).resolves.toMatchObject({
-      counts: { failed: 0, queued: 1, total: 1 },
+      counts: { failed: 0, queued: 0, succeeded: 1, total: 1 },
       id: message.batchId,
-      items: [{ id: message.itemId, status: "queued" }],
-      status: "queued",
+      items: [{ id: message.itemId, status: "succeeded" }],
+      status: "completed",
     });
   }, 20_000);
 });

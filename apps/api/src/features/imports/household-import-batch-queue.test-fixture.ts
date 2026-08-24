@@ -1,3 +1,4 @@
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {
   WorkflowEvent,
@@ -10,6 +11,8 @@ import { Effect, Schema } from "effect";
 import {
   HouseholdAdmitImportBatchInput,
   HouseholdAdmitImportBatchResult,
+  HouseholdBatchQueueMessage,
+  HouseholdClaimImportBatchItemResult,
   HouseholdReadImportBatchInput,
 } from "../households/batches/household-import-batch.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
@@ -25,6 +28,7 @@ interface TestKvNamespace {
 }
 
 interface NativeWorkflowInstance {
+  readonly restart: () => Promise<void>;
   readonly status: () => Promise<{ readonly status: string }>;
 }
 
@@ -60,6 +64,7 @@ const nativeWorkflowLauncher = (environment: Environment) =>
     get: (id) =>
       Effect.promise(() => environment.BATCH_WORKFLOW.get(id)).pipe(
         Effect.map((instance) => ({
+          restart: () => Effect.promise(() => instance.restart()),
           status: () => Effect.promise(() => instance.status()),
         }))
       ),
@@ -116,9 +121,16 @@ const workflowLauncher = (environment: Environment) => {
 const workflowExport = {
   kind: "workflow" as const,
   make: (environment: Environment) =>
-    Effect.succeed(() =>
-      Effect.gen(function* recordWorkflowStart() {
+    Effect.succeed((rawInput: Schema.Json) =>
+      Effect.gen(function* runHouseholdBatchWorkflow() {
         const event = yield* WorkflowEvent;
+        const message = yield* Schema.decodeUnknownEffect(
+          HouseholdBatchQueueMessage,
+          { onExcessProperty: "error" }
+        )(rawInput);
+        const household = Cloudflare.makeRpcStub<HouseholdDomainWorkerMethods>(
+          environment.HouseholdDomainWorker
+        );
         yield* task(
           "record-household-batch-workflow-start",
           Effect.promise(async () => {
@@ -126,6 +138,62 @@ const workflowExport = {
             const runs = Number((await environment.RESULTS.get(key)) ?? "0");
             await environment.RESULTS.put(key, String(runs + 1));
           })
+        );
+        const attemptsKey = `workflow-attempts:${event.instanceId}`;
+        const attempts =
+          Number(
+            (yield* Effect.promise(() =>
+              environment.RESULTS.get(attemptsKey)
+            )) ?? "0"
+          ) + 1;
+        yield* Effect.promise(() =>
+          environment.RESULTS.put(attemptsKey, String(attempts))
+        );
+        const claim = yield* task(
+          "claim-household-batch-item",
+          household
+            .claimImportBatchItem({
+              admission: {
+                actor: { _tag: "System", purpose: "batch_item_dispatch" },
+                organizationId: message.organizationId,
+              },
+              message,
+            })
+            .pipe(
+              Effect.flatMap(
+                Schema.decodeUnknownEffect(HouseholdClaimImportBatchItemResult)
+              ),
+              Effect.orDie
+            )
+        );
+        if (claim._tag === "Terminal") {
+          return;
+        }
+        if (
+          message.organizationId ===
+            "organization-batch-workflow-redrive-proof" &&
+          attempts === 1
+        ) {
+          return yield* Effect.die(
+            new Error("outer batch Workflow failed after claiming its item")
+          );
+        }
+        yield* task(
+          "complete-household-batch-item",
+          household
+            .completeImportBatchItem({
+              admission: {
+                actor: { _tag: "System", purpose: "batch_item_dispatch" },
+                organizationId: message.organizationId,
+              },
+              batchId: message.batchId,
+              expectedGeneration: message.generation,
+              intentId: Schema.decodeUnknownSync(RecipeImportIntentId)(
+                message.itemId
+              ),
+              itemId: message.itemId,
+            })
+            .pipe(Effect.orDie)
         );
       })
     ),
@@ -199,6 +267,22 @@ export default {
           )
         )
       );
+    }
+    if (requestUrl.pathname === "/workflow") {
+      const workflowId = Schema.decodeUnknownSync(Schema.String)(
+        requestUrl.searchParams.get("workflowId")
+      );
+      const instance = await environment.BATCH_WORKFLOW.get(workflowId);
+      return Response.json({
+        attempts: Number(
+          (await environment.RESULTS.get(`workflow-attempts:${workflowId}`)) ??
+            "0"
+        ),
+        runs: Number(
+          (await environment.RESULTS.get(`workflow-runs:${workflowId}`)) ?? "0"
+        ),
+        status: await instance.status(),
+      });
     }
     const command = Schema.decodeUnknownSync(
       Schema.Struct({ commandId: Schema.String, organizationId: Schema.String })
