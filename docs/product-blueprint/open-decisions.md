@@ -2,259 +2,241 @@
 
 ## Purpose
 
-This document separates accepted product direction from questions that still
-need explicit resolution. An implementation issue should not silently answer an
-open product decision merely because one technical shape is convenient.
+This document contains only material product questions that still need explicit
+resolution. Accepted answers live in
+[`../decisions/product`](../decisions/product/), and technical consequences live
+in [`../architecture/decisions`](../architecture/decisions/).
 
-## Accepted Decisions
+An implementation work item must not silently answer one of these questions
+merely because a code shape is convenient.
 
-| Area | Accepted direction |
-| --- | --- |
-| Primary promise | Save households time and mental effort when planning food. |
-| Meal scope | Cover all configured meal occasions, not dinners alone. |
-| Planning model | Account for every required `person × date × meal occasion` cell, while presenting a compressed week. |
-| Routines | Person and household routines, repeated meals, leftovers, eating out, and intentional skips are first-class. |
-| Individualization | Shared meals may have person-level variations or low-burden fallback meals. |
-| Preparation model | Cooking events are separate from meal-consumption events and may produce portions for later meals. |
-| AI experience | The conversation must be unusually perceptive and impressive, while remaining efficient and accountable through visible artifacts. |
-| Beta | Validate with a small invite-only external cohort. |
-| Recipe supply | Use both a shared curated catalogue and private household imports/adaptations. |
-| Interview privacy | Raw adult interview transcripts are private to the participant. |
-| Profile visibility | Confirmed person-profile facts are visible within the household by default. |
-| Feedback | Weekly recap is the primary learning loop; per-meal feedback is optional. |
-| Retail | Retailer integration is deferred; beta ends at a retailer-neutral shopping list. |
-| MCP and embedding | Design commands to be channel-neutral, but do not make MCP or embedded distribution a beta dependency. |
-| Domain scope | Build a household product first; do not generalize to sports teams or generic organizations yet. |
+## Accepted Decision Summary
 
-## Decisions Required Before Stage 1 Completion
+The workshop has accepted five product decision records:
 
-### Person and account permissions
+- [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
+- [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
+- [Weekly planning, repair, approval, and review](../decisions/product/0003-weekly-planning-repair-approval-and-review.md)
+- [Meal content, portions, recipes, prepared food, and shopping](../decisions/product/0004-meal-content-portions-recipes-and-shopping.md)
+- [MVP scope and deferrals](../decisions/product/0005-mvp-scope-and-deferrals.md)
 
-- Can another household adult directly edit an adult's confirmed profile, or
-  only suggest a change?
-- Which adults may create, edit, archive, or link dependant profiles?
-- What happens to a person's profile and planning history when they leave the
-  household?
-- Can one authenticated user represent more than one household person in any
-  legitimate case?
+Do not re-open those choices in implementation without proposing a superseding
+record.
 
-Recommended starting point: adults edit their own profiles, household owners or
-explicit guardians manage dependants, and other adults may suggest but not
-silently overwrite an adult's profile.
+## Before Stage 1 — People And Profiles
 
-### Household roles and approval
+### Person departure and archival
 
-- Can any adult member approve the weekly plan?
-- Is one owner approval sufficient, or may a household require consensus?
-- Can dependants with future accounts rate meals or suggest preferences without
-  approving plans?
+- What happens to a person's profile, routines, feedback, and historical plan
+  references when they leave a household?
+- Can an adult archive a dependant temporarily and later restore them?
+- Is former-person data visible to remaining adults, the departing adult, both,
+  or neither?
+- Which deletion request owns the difference between removing account access and
+  deleting household product history?
 
-Recommended starting point: any authorized adult may revise and approve, with
-visible audit history; configurable consensus is deferred.
+### Account-to-person edge cases
 
-### Profile fact lifecycle
+- Can one authenticated member ever represent more than one household person in
+  the same household?
+- Can one user link to person records in several households?
+- How is an accidental or duplicate account link repaired without losing
+  history?
 
-- Which facts expire or require periodic reconfirmation?
-- How are contradictory guardian and person statements handled?
-- Which feedback patterns are sufficient to propose a persistent profile
-  change?
-- Does the beta need any private confirmed profile fact, or are private
-  transcripts plus household-visible facts sufficient?
+Recommended MVP direction: one user maps to at most one person per household;
+keep multi-household membership possible; require an explicit administrative
+repair for duplicate links.
 
-Recommended starting point: no hidden private profile-fact system in beta;
-introduce one only for a concrete safety, legal, or high-value use case.
+## Before Stage 2 — AI Discovery
 
-## Decisions Required Before Stage 2 Completion
+### Minimum first-plan profile
 
-### Interview depth and duration
+- Which facts must be confirmed before the first plan can be generated?
+- Which facts may remain provisional or be learned in later reviews?
+- When should the agent stop asking and create a first routine or plan artifact?
+- What active-time and abandonment baselines define an acceptable interview?
 
-- What is the target active time for an initial adult interview?
-- Which facts are required before the first plan, and which can be learned
-  later?
-- When should the agent defer a question rather than continue onboarding?
+The answer should be measured against first-plan quality and time saved rather
+than chosen as an arbitrary questionnaire length.
 
-The answer should be tested against planning quality and abandonment rather
-than chosen as an arbitrary number.
+### Transcript retention and deletion
 
-### Nutrition and health boundary
+- Is a private transcript retained after confirmed facts are extracted?
+- If retained, for how long and for which user-visible purpose?
+- Can the participant delete the transcript without deleting confirmed profile
+  state?
+- Is explicit consent required for any operator or product-quality review?
 
-- Which user-stated goals are supported in beta: balanced variety, protein
-  preference, calorie target, weight change, energy, or others?
-- Which inputs count as sensitive health data and require additional consent,
-  retention, or visibility treatment?
-- What claims may the agent make without reviewed nutritional data?
-- When must the product advise the user to seek a qualified professional?
+Recommended MVP direction: retain as little transcript material as the product
+needs, give the participant deletion control, and make confirmed structured
+state independent of the transcript.
 
-Recommended starting point: support ordinary nutrition-aware preferences and
-user-stated goals, but do not offer diagnosis, treatment, or prescribed
-therapeutic diets.
+### Agent evaluation and provider strategy
 
-### Agent quality model
-
-- Which representative household scenarios form the initial evaluation set?
-- Who reviews conversation quality and against what rubric?
-- What model or provider strategy meets quality, cost, privacy, and latency
+- Which synthetic household scenarios form the initial evaluation set?
+- What rubric measures perceptiveness, unnecessary questions, profile accuracy,
+  routine quality, first-plan practicality, and explanation quality?
+- Who reviews failures and accepts prompt/tool/policy changes?
+- What model and provider strategy meets quality, cost, privacy, and latency
   requirements?
-- How are prompt, tool, and policy versions tied to evaluation evidence?
+- How are model, prompt, tool, and policy versions tied to evaluation evidence?
 
-Provider choice should follow product evaluation rather than define the domain.
+Provider choice follows product evaluation and does not define the domain.
 
-## Decisions Required Before Stage 3 Completion
+## Before Stage 3 — Routines And Fallbacks
 
-### Default meal occasions
+### Routine conflict precedence
 
-- Which occasions are offered by default?
-- Can occasions vary by person, weekday, or life stage?
-- How are overnight shifts, brunch, or multiple snacks represented without
-  creating confusing configuration?
+- What exact precedence applies among hard constraints, one-off exceptions,
+  person routines, household routines, approved fallbacks, and model proposals?
+- Which low-impact conflicts may the draft-repair operation resolve without a
+  separate question?
+- How are conflicting adult edits serialized and explained?
 
-Recommended starting point: household-configured named occasions with sensible
-defaults and person-level intentional skips.
+### Temporary household context
 
-### Routine conflict policy
+- How are visitors, temporary absences, school holidays, split custody, and
+  overnight shifts represented in the MVP?
+- Which are one-off planning exceptions versus enduring routine state?
+- Is manual entry sufficient before external calendar integration?
 
-- How are overlapping person and household routines prioritized?
-- When does a one-off exception supersede a routine?
-- Should the agent auto-resolve low-impact conflicts or require confirmation?
-- How are routine changes versioned and explained?
+### Fallback repertoire limits
 
-### Fallback policy
+- Does the MVP need a recommended maximum or merely good UI for person-specific
+  fallbacks?
+- How are temporarily unavailable exact products handled before retailer
+  integration?
+- When should the agent suggest adding a new fallback rather than leaving a
+  flexible slot?
 
-- When is a disliked shared meal strong enough to schedule a fallback?
-- How many fallback meals should one person maintain?
-- How does the planner balance accepted safe foods with variety goals?
-- Which fallbacks may rely on pantry or freezer assumptions?
-
-Recommended starting point: explicit accepted fallbacks, no assumed stock, and
-preference for shared-component variations before unrelated second cooks.
-
-## Decisions Required Before Stage 4 Completion
+## Before Stage 4 — Meal Content And Recipe Supply
 
 ### Curated catalogue source and size
 
-- Who authors or licenses the initial recipes?
+- Who authors or licenses the initial catalogue?
 - What rights and attribution are required?
 - What is the minimum useful catalogue for the beta cohort?
-- Who reviews recipe quality, scaling, and dietary metadata?
-- How are catalogue corrections rolled out to households that forked older
-  versions?
+- Who reviews recipe quality, scaling, effort, dietary metadata, and shopping
+  completeness?
+- How do catalogue corrections affect households that forked older versions?
 
-### Normalized food concepts and units
+### Food concepts, units, and product identity
 
-- Which unit system and conversion model are supported first?
+- Which unit systems and conversions are supported first?
 - How are ambiguous household measures represented?
-- Which food taxonomy or concept authority is used?
-- What confidence is required before an ingredient contributes normalized
-  shopping demand?
+- Which food taxonomy or household-owned concept model is used?
+- What confidence is required before ingredient lines aggregate into shopping
+  demand?
+- How is an exact packaged product identified before a retailer catalogue exists?
 
 ### General web-page import
 
 - Which public sites and markup are supported initially?
 - What acquisition, robots, terms, rights, size, redirect, and SSRF policies
   apply?
-- Is visible-page extraction required when structured data is complete?
-- How does the product handle recipes split across pages or interactive cards?
+- Is visible-page evidence required when structured data appears complete?
+- How are multi-page or interactive recipe cards handled?
 
-## Decisions Required Before Stage 5 Completion
+## Before Stage 5 — Planning
 
-### Planning priorities and scoring
+### Baseline ranking policy
 
-- How are time, household preference, variety, cost, nutrition, waste, and
-  repetition weighted?
-- Which are hard constraints, household-configurable objectives, or product
-  defaults?
-- How much repeated food is desirable for different households?
-- When should the planner return a gap instead of a lower-quality fallback?
+Hard constraints, routines, cooking capacity, and approved fallbacks are already
+settled. Remaining ranking questions include:
 
-The deterministic hard filter must be settled before any model-assisted ranking
-can be trusted.
+- How are ordinary preference, effort, repetition, ingredient reuse, and gentle
+  qualitative variety weighted?
+- Which values are product defaults versus household configuration?
+- When does the planner prefer a flexible slot over a low-confidence meal?
+- How are ties kept deterministic before optional model assistance?
 
-### Portion representation
+### Portion defaults and complex serving
 
-- What is the beta's canonical portion unit?
-- How are adult, dependant, and recipe yields compared without pretending to
-  offer clinical precision?
-- How are partial portions, shared sides, and buffet-style meals represented?
-- How does the product record actual quantity feedback?
+- Which initial numeric factors seed child, small-adult, standard-adult, and
+  large-portion labels?
+- How are shared sides, buffet meals, fractional packaged units, and dishes with
+  several independently portioned components represented?
+- Which weekly feedback is enough to propose a changed serving factor?
 
-### Plan completeness and approval
+### Plan projection and rationale
 
-- Does every configured snack require explicit resolution, or can households
-  declare an occasion unmanaged?
-- Can a user explicitly approve an incomplete plan, and if so under what
-  visible policy?
-- Which revisions return an approved plan to draft?
+- What visual grouping best presents shared meals, personal alternatives,
+  routines, cook events, and prepared outputs?
+- Which rationale is visible by default and which is expanded on demand?
+- How does the UI show a draft repair or approved-plan revision without
+  overwhelming the household?
 
-Recommended starting point: households configure managed occasions; every
-managed requirement must resolve before beta approval.
+The frontend projection must remain free to differ from internal domain unions.
 
-### Calendar and weekly context
-
-- Is manual exception entry sufficient for beta?
-- Which external calendar or schedule integrations would later be valuable?
-- How are visitors, temporary absences, and changing custody patterns modeled?
-
-External calendar integration is not required for the first vertical.
-
-## Decisions Required Before Stage 6 Completion
+## Before Stage 6 — Feedback And Learning
 
 ### Feedback attribution
 
-- Who may rate a shared meal for whom?
-- Can a guardian record a dependant's reaction?
-- How are conflicting ratings represented?
-- Which feedback remains personal versus household-visible?
+- May any adult record feedback for any adult or dependant in the MVP?
+- Can adults disagree about a shared meal without collapsing their ratings?
+- Which feedback is person-specific, household-level, or cook-event-level?
+- Is any feedback private, given that confirmed profiles are household-visible?
 
-### Learning policy
+### Learning threshold
 
-- How many repeated signals justify a proposed profile or routine change?
-- How does recency interact with long-standing preferences?
-- How are seasonal or temporary dislikes represented?
-- Can users inspect and reverse learned changes?
+- How many signals justify proposing a profile, routine, cadence, portion, or
+  cooking-capacity change?
+- How do recency and repeated long-standing preferences interact?
+- How are temporary or seasonal patterns prevented from becoming permanent?
+- How are inferred changes inspected and reversed?
 
-## Decisions Required Before Stage 7 Completion
+## Before Stage 7 — Shopping List
 
-### Pantry scope
+### Collaboration and offline behaviour
 
-- Is pantry state a durable inventory, a weekly confirmation, or both?
-- How are uncertain quantities represented?
-- Which staples may be suggested but never assumed?
-- How does manual shopping-list state survive regeneration?
+- Can several adults edit and check the list concurrently?
+- What conflict behaviour is acceptable for quantity edits and check-off state?
+- Is offline shopping-list use required for the beta?
+- What sharing or export behaviour is needed beyond authenticated household
+  access?
 
-Recommended starting point: explicit weekly confirmation and a small editable
-staples list, not continuous inferred inventory.
+### Manual-state lifecycle
 
-### Shopping list ownership
+- When an item is no longer required after a plan revision, how long is it kept
+  in the visible list history?
+- How are manual non-food items grouped and carried between weeks?
+- Should households maintain an optional staples checklist after the one-off
+  "already have this?" flow proves useful?
 
-- Can multiple adults check and edit concurrently?
-- Does plan revision regenerate the whole list or apply a traced demand delta?
-- How are manual non-food items separated from plan-derived demand?
-- What sharing and offline behavior is required for the beta?
+## Beta Operating Decisions
 
-## Deferred Decisions
+- Exact beta cohort size and recruitment criteria.
+- Internal readiness thresholds for time to approved plan and correction burden.
+- Support and incident-handling process for the invite-only cohort.
+- Which transcript or screen-review evidence may be inspected with participant
+  consent.
+- The minimum curated recipe set needed before invitations begin.
 
-These questions are real but should not distract the beta critical path:
+## Deliberately Deferred
 
+These questions are real but are not prerequisites for the MVP decision
+workshop:
+
+- generic calorie, macro, weight, muscle, or medical goals;
+- continuous ingredient pantry inventory;
+- food-safety expiry calculation or certification;
 - retailer partnerships and official authorization;
-- product, price, availability, and offer matching;
-- own-brand versus quality ranking;
-- basket creation and checkout;
-- MCP tool, resource, elicitation, and task design;
-- embedded and white-label channel configuration;
+- product, price, availability, offer, and basket integration;
+- MCP tools, resources, elicitation, and tasks;
+- embedded and white-label channels;
 - public recipe contribution and marketplace policy;
 - semantic recipe search infrastructure;
-- sports-team or other organization products; and
-- fleet-wide product read models or cross-household analytics beyond approved
-  privacy-safe evidence.
+- non-household organization products; and
+- fleet-wide product read models without an accepted use case.
 
 ## Decision Process
 
 When resolving an item:
 
-1. state the household problem and the user affected;
-2. identify whether it changes privacy, authority, safety, or plan semantics;
+1. state the household problem and affected users;
+2. identify privacy, authority, safety, and plan-semantics effects;
 3. compare the smallest viable alternatives;
-4. record the accepted answer in the owning blueprint document;
-5. update or create the corresponding Linear product work; and
-6. avoid preserving superseded greenfield behavior unless a real compatibility
-   contract has been explicitly approved.
+4. add or update the owning product decision record;
+5. add or update an ADR when a durable technical boundary changes;
+6. update affected blueprint documents; and
+7. create repository delivery work only after the decision is accepted.
