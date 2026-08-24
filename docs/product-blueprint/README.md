@@ -4,19 +4,22 @@
 
 This directory records the accepted long-horizon product direction for Meal
 Planner. It defines the product promise, experience bar, domain language, beta
-proof, staged capability sequence, and unresolved decisions that should survive
-individual implementation issues and pull requests.
+proof, staged capability sequence, and unresolved questions that should survive
+individual implementation work and pull requests.
 
-It does **not** replace Linear as the live source for current Project/PRD scope,
-issue readiness, blockers, delivery status, or implementation ownership. It also
-does not replace the current-state architecture documents under
-[`../architecture`](../architecture/).
+The blueprint does not replace:
 
-When the three sources answer different questions:
+- accepted product decisions under [`../decisions/product`](../decisions/product/);
+- ADRs and current architecture under [`../architecture`](../architecture/); or
+- active delivery state under [`../delivery`](../delivery/).
+
+When sources answer different questions:
 
 - this blueprint owns the intended household product and experience;
-- architecture documents own current and accepted technical boundaries; and
-- Linear owns what is being delivered now.
+- product decision records own accepted behavioural choices;
+- ADRs own durable technical boundaries;
+- current architecture docs own implemented authority; and
+- delivery records own what is being built now.
 
 ## Product North Star
 
@@ -40,21 +43,26 @@ clinical, judgmental, or difficult to use.
 - An adult's raw interview transcript is private to that participant.
   Confirmed person-profile facts and shared planning artifacts are visible
   within the household.
+- Interviews are repeatable profile reviews, not one-time onboarding forms.
+- In the MVP, any adult may edit adult and dependant profiles and shared plans;
+  changes remain audited.
 - The agent progressively builds editable profiles, routines, and plans rather
   than running a hidden questionnaire and revealing a result only at the end.
-- Person routines, household routines, exceptions, intentional leftovers, and
-  low-burden fallback meals are first-class planning inputs.
+- Person routines, household routines, exceptions, intentional leftovers,
+  packaged or external meals, and person-specific fallbacks are first-class.
 - The planner accounts for every configured `person × date × meal occasion`
-  requirement, while presenting a compressed human-readable plan rather than a
-  giant matrix.
-- Cooking events are distinct from eating events. One cook can produce portions
-  for several people and later meals.
-- Weekly review is the primary feedback loop; meal-by-meal feedback remains
-  optional.
-- Retailer authentication, product matching, basket mutation, checkout, and
-  partnerships are deliberately deferred.
-- MCP and embedded distribution may expose the same product capabilities later,
-  but neither is a beta launch dependency.
+  requirement, while presenting one compressed, fully personalised week.
+- Cooking events are distinct from eating events. One cook can produce finished
+  meals and prepared components for several people and later occasions.
+- The ordinary during-week path requires no per-meal logging.
+- Weekly review is optional and is the primary feedback and carry-over
+  checkpoint.
+- The beta creates a retailer-neutral shopping list only after plan approval.
+- Retailer fulfilment, complete pantry inventory, calories/macros, generic goals,
+  food-safety expiry calculation, MCP, and embedded distribution are deferred.
+
+The accepted detail is recorded in
+[`../decisions/product`](../decisions/product/).
 
 ## Document Map
 
@@ -63,7 +71,7 @@ clinical, judgmental, or difficult to use.
 2. [Experience blueprint](experience-blueprint.md) defines the AI conversation,
    routine builder, plan review, privacy experience, and weekly learning loop.
 3. [Domain model](domain-model.md) defines the core concepts, relationships,
-   coverage matrix, cooking/portion model, and non-negotiable invariants.
+   coverage model, cooking/portion model, and non-negotiable invariants.
 4. [Recipe strategy](recipe-strategy.md) separates the curated catalogue from
    household recipes and defines import, versioning, forking, scaling, and
    provenance direction.
@@ -72,16 +80,21 @@ clinical, judgmental, or difficult to use.
    the product thesis.
 6. [Delivery roadmap](delivery-roadmap.md) sequences capabilities into stages
    without pretending they are calendar commitments.
-7. [Open decisions](open-decisions.md) records accepted answers and the product
-   questions that still require explicit resolution.
+7. [Open decisions](open-decisions.md) contains only questions that still need
+   explicit resolution; accepted answers move into decision records.
 
 ## Reading Order For Product Work
 
-Before changing durable product behavior, read this index, the relevant
-blueprint document, the current architecture document for the affected
-capability, and the live Linear Project or issue. An implementation issue may
-narrow a blueprint stage, but it should not silently reverse an accepted product
-invariant.
+Before changing durable product behaviour, read:
+
+1. this index and the relevant blueprint document;
+2. the accepted product decision records;
+3. the current architecture document and ADRs for the capability;
+4. `../delivery/current.md`; and
+5. the owning delivery work item.
+
+An implementation work item may narrow a stage, but it may not silently reverse
+an accepted product invariant.
 
 ## Change Discipline
 
@@ -89,9 +102,10 @@ invariant.
   across the directory.
 - Add unresolved questions to `open-decisions.md`; do not disguise assumptions
   as accepted requirements.
+- Move resolved product behaviour into a product decision record.
 - Keep product outcomes and domain invariants separate from provisional storage,
-  provider, and UI implementation choices.
-- When a decision changes, update dependent documents and explain the
-  superseded alternative in the pull request.
+  provider, schema, and UI implementation choices.
+- When a decision changes, mark the old record Superseded, name the replacement,
+  and update affected blueprint, architecture, and delivery documents.
 - Do not infer medical needs, dietary restrictions, or private facts from data
   outside an explicit product interaction.
