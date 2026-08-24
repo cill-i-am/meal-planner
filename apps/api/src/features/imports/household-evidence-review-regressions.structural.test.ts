@@ -87,6 +87,23 @@ describe("household evidence exact-head review regressions", () => {
     expect(consumer).not.toContain("ReadWriteBucket");
   });
 
+  it("drives native Queue and DLQ proof through production handlers", async () => {
+    const [consumerFixture, deadLetterFixture, worker] = await Promise.all([
+      source("household-import-batch-queue.test-fixture.ts"),
+      source("household-import-batch-dlq.test-fixture.ts"),
+      source("../../worker.ts"),
+    ]);
+
+    expect(worker).toContain("handleHouseholdImportBatchQueueMessage");
+    expect(worker).toContain("handleHouseholdImportBatchDeadLetterMessage");
+    expect(consumerFixture).toContain("handleHouseholdImportBatchQueueMessage");
+    expect(deadLetterFixture).toContain(
+      "handleHouseholdImportBatchDeadLetterMessage"
+    );
+    expect(consumerFixture).not.toContain("decodeHouseholdBatchQueueMessage");
+    expect(deadLetterFixture).not.toContain("decodeHouseholdBatchQueueMessage");
+  });
+
   it("has no legacy ImportRepository or StoredImport production projection", async () => {
     const [
       checkpoint,

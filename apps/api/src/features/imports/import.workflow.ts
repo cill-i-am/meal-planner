@@ -1374,6 +1374,9 @@ export interface ImportWorkflowStarter {
 }
 
 export interface ImportWorkflowReconciler extends ImportWorkflowStarter {
+  readonly reconcileAdmission: (
+    workflowIdentity: ImportWorkflowIdentity
+  ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
   readonly ensureStarted: (
     importId: ImportId,
     executionGeneration: ImportIntentExecutionGeneration,
@@ -1583,6 +1586,14 @@ export const makeImportWorkflowStarter = (
         instanceId: cloudflareWorkflowInstanceId(input.workflowIdentity),
       }),
     ensureStarted: () => Effect.fail(workflowStartUnavailable()),
+    reconcileAdmission: (workflowIdentity) =>
+      workflow.get(cloudflareWorkflowInstanceId(workflowIdentity)).pipe(
+        Effect.flatMap(reconcileExisting),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterrupts(cause),
+          () => Effect.fail(workflowStartUnavailable())
+        )
+      ),
     restartFromSpeech: (workflowIdentity) =>
       workflow
         .get(cloudflareWorkflowInstanceId(workflowIdentity))

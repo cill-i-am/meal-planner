@@ -27,6 +27,7 @@ const ScenarioResult = Schema.Struct({
     dispatch: Schema.Number,
     fail: Schema.Number,
     prepared: Schema.Number,
+    reconcile: Schema.Number,
     started: Schema.Number,
     unavailable: Schema.Number,
   }),
@@ -118,8 +119,9 @@ const runScenario = async (
   organizationId: string,
   scenario:
     | "admission-lost-response"
+    | "dispatch-all-start-responses-lost"
     | "dispatch-lost-response"
-    | "dispatch-retry-exhaustion"
+    | "dispatch-pre-start-refusal"
 ) => {
   const response = await runtime.dispatchFetch("http://localhost/", {
     body: JSON.stringify({ commandId, organizationId, scenario }),
@@ -258,6 +260,7 @@ describe("household batch native production Workflow composition", () => {
         claim: 1,
         complete: 1,
         fail: 0,
+        reconcile: 1,
         started: 1,
       },
       error: false,
@@ -265,8 +268,8 @@ describe("household batch native production Workflow composition", () => {
       routeCount: 1,
       status: { status: "complete" },
     });
-    expect(result.counts.dispatch).toBeGreaterThanOrEqual(2);
-    expect(result.counts.prepared).toBeGreaterThanOrEqual(2);
+    expect(result.counts.dispatch).toBe(1);
+    expect(result.counts.prepared).toBeGreaterThanOrEqual(1);
     expect(result.counts.unavailable).toBeGreaterThanOrEqual(1);
     expect(result.batch.items[0]).toMatchObject({
       intentId: result.replay.intentId,
@@ -274,15 +277,67 @@ describe("household batch native production Workflow composition", () => {
     });
   }, 20_000);
 
-  it("exhausts the durable dispatch outbox before authoritative batch failure", async () => {
-    const result = await runScenario(
+  it("reconciles one committed Workflow when every successful start response is lost", async () => {
+    const first = await runScenario(
       "7510000000000000303",
-      "organization-batch-dispatch-retry-exhaustion",
-      "dispatch-retry-exhaustion"
+      "organization-batch-dispatch-all-start-responses-lost",
+      "dispatch-all-start-responses-lost"
+    );
+
+    expect(first).toMatchObject({
+      acquisitionRuns: 1,
+      batch: {
+        counts: { failed: 0, succeeded: 1, total: 1 },
+        status: "completed",
+      },
+      counts: {
+        admit: 1,
+        claim: 1,
+        complete: 1,
+        fail: 0,
+        reconcile: 1,
+        started: 1,
+      },
+      error: false,
+      outbox: { state: "dispatched" },
+      routeCount: 1,
+      status: { status: "complete" },
+    });
+    expect(first.counts.dispatch).toBeGreaterThanOrEqual(1);
+    expect(first.counts.prepared).toBeGreaterThanOrEqual(1);
+    expect(first.counts.unavailable).toBe(0);
+    expect(first.batch.items[0]).toMatchObject({
+      intentId: first.replay.intentId,
+      status: "succeeded",
+    });
+
+    const replay = await runScenario(
+      "7510000000000000303",
+      "organization-batch-dispatch-all-start-responses-lost",
+      "dispatch-all-start-responses-lost"
+    );
+    expect(replay).toMatchObject({
+      acquisitionRuns: 1,
+      batch: first.batch,
+      counts: first.counts,
+      error: false,
+      outbox: { state: "dispatched" },
+      replay: first.replay,
+      routeCount: 1,
+      status: { status: "complete" },
+      workflowId: first.workflowId,
+    });
+  }, 20_000);
+
+  it("fails only after bounded unambiguous pre-start refusals", async () => {
+    const result = await runScenario(
+      "7510000000000000304",
+      "organization-batch-dispatch-pre-start-refusal",
+      "dispatch-pre-start-refusal"
     );
 
     expect(result).toMatchObject({
-      acquisitionRuns: 1,
+      acquisitionRuns: 0,
       batch: {
         counts: { failed: 1, succeeded: 0, total: 1 },
         status: "failed",
@@ -294,6 +349,7 @@ describe("household batch native production Workflow composition", () => {
         dispatch: 5,
         fail: 1,
         prepared: 5,
+        reconcile: 5,
         started: 0,
         unavailable: 5,
       },

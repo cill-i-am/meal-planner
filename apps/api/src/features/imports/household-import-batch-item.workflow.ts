@@ -2,7 +2,7 @@ import type { RecipeImportBatch } from "@meal-planner/recipe-import-api";
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Schema } from "effect";
 
 import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
 import type {
@@ -95,7 +95,10 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
     | "recordRecipeImportDispatch"
   >;
   readonly message: typeof HouseholdBatchQueueMessage.Type;
-  readonly starter: Pick<ImportWorkflowReconciler, "dispatchAdmission">;
+  readonly starter: Pick<
+    ImportWorkflowReconciler,
+    "dispatchAdmission" | "reconcileAdmission"
+  >;
 }): HouseholdImportBatchWorkflowPorts => {
   const { household, message, starter } = input;
   const systemAdmission = {
@@ -213,14 +216,25 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
           .pipe(
             Effect.andThen(record("started")),
             Effect.as(true),
-            Effect.catchCause((cause) =>
-              record("unavailable").pipe(
-                Effect.flatMap((view) =>
-                  view.state === "exhausted"
-                    ? Effect.succeed(false)
-                    : Effect.failCause(cause)
+            Effect.catchCauseIf(
+              (cause) => !Cause.hasInterrupts(cause),
+              (cause) =>
+                starter.reconcileAdmission(workflowIdentity).pipe(
+                  Effect.andThen(record("started")),
+                  Effect.as(true),
+                  Effect.catchCauseIf(
+                    (reconciliationCause) =>
+                      !Cause.hasInterrupts(reconciliationCause),
+                    () =>
+                      record("unavailable").pipe(
+                        Effect.flatMap((view) =>
+                          view.state === "exhausted"
+                            ? Effect.succeed(false)
+                            : Effect.failCause(cause)
+                        )
+                      )
+                  )
                 )
-              )
             )
           );
       }).pipe(Effect.orDie),

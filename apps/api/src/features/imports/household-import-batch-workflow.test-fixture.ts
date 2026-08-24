@@ -37,8 +37,9 @@ import {
 
 const Scenario = Schema.Literals([
   "admission-lost-response",
+  "dispatch-all-start-responses-lost",
   "dispatch-lost-response",
-  "dispatch-retry-exhaustion",
+  "dispatch-pre-start-refusal",
 ]);
 type Scenario = typeof Scenario.Type;
 
@@ -218,21 +219,32 @@ const batchWorkflowExport = {
           ) =>
             increment(environment, event.instanceId, "dispatch").pipe(
               Effect.flatMap((attempt) =>
-                starter
-                  .dispatchAdmission(input)
-                  .pipe(
-                    Effect.flatMap((result) =>
-                      scenario === "dispatch-retry-exhaustion" ||
-                      (scenario === "dispatch-lost-response" && attempt === 1)
-                        ? Effect.die(
-                            new Error(
-                              "workflow start response lost after commit"
-                            )
-                          )
-                        : Effect.succeed(result)
+                scenario === "dispatch-pre-start-refusal"
+                  ? Effect.die(
+                      new Error("workflow start refused before commit")
                     )
-                  )
+                  : starter
+                      .dispatchAdmission(input)
+                      .pipe(
+                        Effect.flatMap((result) =>
+                          scenario === "dispatch-all-start-responses-lost" ||
+                          (scenario === "dispatch-lost-response" &&
+                            attempt === 1)
+                            ? Effect.die(
+                                new Error(
+                                  "workflow start response lost after commit"
+                                )
+                              )
+                            : Effect.succeed(result)
+                        )
+                      )
               )
+            ),
+          reconcileAdmission: (
+            workflowIdentity: Parameters<typeof starter.reconcileAdmission>[0]
+          ) =>
+            increment(environment, event.instanceId, "reconcile").pipe(
+              Effect.andThen(starter.reconcileAdmission(workflowIdentity))
             ),
         };
         const ports = makeHouseholdImportBatchWorkflowPorts({
@@ -505,6 +517,7 @@ export default {
         dispatch: Number((await read("dispatch")) ?? "0"),
         fail: Number((await read("fail")) ?? "0"),
         prepared: Number((await read("record-prepared")) ?? "0"),
+        reconcile: Number((await read("reconcile")) ?? "0"),
         started: Number((await read("record-started")) ?? "0"),
         unavailable: Number((await read("record-unavailable")) ?? "0"),
       },

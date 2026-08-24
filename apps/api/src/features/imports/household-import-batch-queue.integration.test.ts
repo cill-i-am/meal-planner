@@ -11,6 +11,7 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const compatibilityDate = "2026-07-14";
+const compatibilityFlags = ["nodejs_compat"];
 let persistenceDirectory = "";
 let runtime: Miniflare;
 
@@ -25,7 +26,9 @@ const bundleFixture = async (
       {
         external: ["cloudflare:workers"],
         input: fileURLToPath(new URL(fileName, import.meta.url)),
-        plugins: [cloudflareRolldown({ compatibilityDate })],
+        plugins: [
+          cloudflareRolldown({ compatibilityDate, compatibilityFlags }),
+        ],
       },
       { codeSplitting: false, format: "esm", minify: true, sourcemap: false }
     )
@@ -66,18 +69,23 @@ describe("household batch Queue transport", () => {
     persistenceDirectory = await mkdtemp(
       `${tmpdir()}/meal-planner-household-batch-queue-`
     );
+    const [consumerModules, deadLetterModules, domainModules] =
+      await Promise.all([
+        bundleFixture("household-import-batch-queue.test-fixture.ts"),
+        bundleFixture("household-import-batch-dlq.test-fixture.ts"),
+        bundleFixture("../households/household-domain-service.test-fixture.js"),
+      ]);
     runtime = new Miniflare({
       compatibilityDate,
+      compatibilityFlags,
+      durableObjectsPersist: persistenceDirectory,
       kvPersist: persistenceDirectory,
       workers: [
         {
           compatibilityDate,
+          compatibilityFlags,
           kvNamespaces: ["RESULTS"],
-          modules: [
-            ...(await bundleFixture(
-              "household-import-batch-queue.test-fixture.ts"
-            )),
-          ],
+          modules: [...consumerModules],
           name: "consumer",
           queueConsumers: {
             "household-import-batches": {
@@ -91,20 +99,39 @@ describe("household batch Queue transport", () => {
           queueProducers: {
             BATCHES: { queueName: "household-import-batches" },
           },
+          serviceBindings: { HouseholdDomainWorker: "household-domain" },
+          workflows: {
+            BATCH_WORKFLOW: {
+              className: "HouseholdBatchQueueTestWorkflow",
+              name: "household-batch-queue-test-workflow",
+            },
+          },
         },
         {
           compatibilityDate,
+          compatibilityFlags,
           kvNamespaces: ["DLQ_RESULTS"],
-          modules: [
-            ...(await bundleFixture(
-              "household-import-batch-dlq.test-fixture.ts"
-            )),
-          ],
+          modules: [...deadLetterModules],
           name: "dead-letter-consumer",
           queueConsumers: {
             "household-import-batches-dead-letter": {
               maxBatchSize: 1,
               maxBatchTimeout: 0.01,
+            },
+          },
+          serviceBindings: { HouseholdDomainWorker: "household-domain" },
+        },
+        {
+          compatibilityDate,
+          compatibilityFlags,
+          durableObjects: {
+            HouseholdObject: { className: "HouseholdObject", useSQLite: true },
+          },
+          modules: [...domainModules],
+          name: "household-domain",
+          queueProducers: {
+            HouseholdImportBatchQueue: {
+              queueName: "household-import-batches",
             },
           },
         },
@@ -126,34 +153,81 @@ describe("household batch Queue transport", () => {
     };
     const queue = await runtime.getQueueProducer("BATCHES", "consumer");
     await queue.send(message);
+    const workflowId = `household-batch-v1-${message.itemId}-g1`;
 
     await expect(
       readEventually("consumer", "RESULTS", "last")
     ).resolves.toEqual({
       message,
-      workflowId: `household-batch-v1-${message.itemId}-g1`,
+      workflowId,
     });
     expect(
       JSON.stringify(await readEventually("consumer", "RESULTS", "last"))
     ).not.toMatch(/idempotency|source|url/iu);
+
+    const results = await runtime.getKVNamespace("RESULTS", "consumer");
+    await expect(
+      readEventually("consumer", "RESULTS", `workflow-runs:${workflowId}`)
+    ).resolves.toBe(1);
+    const attemptsBeforeReplay = Number((await results.get("attempts")) ?? "0");
+    await queue.send(message);
+    await expect
+      .poll(async () => Number((await results.get("attempts")) ?? "0"))
+      .toBe(attemptsBeforeReplay + 1);
+    expect(await results.get(`workflow-runs:${workflowId}`)).toBe("1");
   });
 
   it("retries three times and moves the unchanged closed envelope to DLQ", async () => {
-    const message = {
-      batchId: "018f47ad-91aa-7c35-b6fe-000000000203",
-      generation: 2,
-      itemId: "018f47ad-91aa-7c35-b6fe-000000009999",
-      organizationId: "organization-batch-dlq-proof",
-    };
     const results = await runtime.getKVNamespace("RESULTS", "consumer");
     const attemptsBefore = Number((await results.get("attempts")) ?? "0");
-    const queue = await runtime.getQueueProducer("BATCHES", "consumer");
-    await queue.send(message);
+    const admissionResponse = await runtime.dispatchFetch(
+      "http://localhost/admit",
+      {
+        body: JSON.stringify({
+          commandId: "7510000000000000999",
+          organizationId: "organization-batch-dlq-proof",
+        }),
+        method: "POST",
+      }
+    );
+    expect(
+      admissionResponse.status,
+      await admissionResponse.clone().text()
+    ).toBe(200);
+    const admitted = Schema.decodeUnknownSync(
+      Schema.Struct({
+        batch: Schema.Unknown,
+        message: Schema.Struct({
+          batchId: Schema.String,
+          generation: Schema.Int,
+          itemId: Schema.String,
+          organizationId: Schema.String,
+        }),
+      })
+    )(await admissionResponse.json());
+    const { message } = admitted;
 
-    await expect(
-      readEventually("dead-letter-consumer", "DLQ_RESULTS", "last")
-    ).resolves.toEqual(message);
+    const settled = await readEventually(
+      "dead-letter-consumer",
+      "DLQ_RESULTS",
+      "last"
+    );
+    expect(settled).toMatchObject({
+      counts: { failed: 1, queued: 0, running: 0, succeeded: 0, total: 1 },
+      id: message.batchId,
+      items: [
+        {
+          failureCode: "dispatch_exhausted",
+          id: message.itemId,
+          status: "failed",
+        },
+      ],
+      status: "failed",
+    });
     const attemptsAfter = Number((await results.get("attempts")) ?? "0");
     expect(attemptsAfter - attemptsBefore).toBe(4);
-  });
+    expect(
+      await results.get(`workflow-runs:household-batch-v1-${message.itemId}-g1`)
+    ).toBeNull();
+  }, 20_000);
 });

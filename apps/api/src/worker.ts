@@ -23,9 +23,9 @@ import {
 } from "./features/households/household-request-composition.js";
 import HouseholdImportBatchItemWorkflow from "./features/imports/household-import-batch-item.workflow.js";
 import {
-  decodeHouseholdBatchQueueMessage,
-  householdBatchWorkflowInstanceId,
-} from "./features/imports/household-import-batch-transport.js";
+  handleHouseholdImportBatchDeadLetterMessage,
+  handleHouseholdImportBatchQueueMessage,
+} from "./features/imports/household-import-batch-queue.handlers.js";
 import { makeD1ImportEvidenceRouteRepository } from "./features/imports/import-evidence-route.repository.d1.js";
 import {
   makeRecipeImportHttpApiLayer,
@@ -126,30 +126,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       },
       (messages) =>
         Stream.runForEach(messages, ({ body }) =>
-          decodeHouseholdBatchQueueMessage(body).pipe(
-            Effect.flatMap((message) => {
-              const instanceId = householdBatchWorkflowInstanceId(message);
-              return householdBatchItemWorkflow
-                .create({ id: instanceId, params: message })
-                .pipe(
-                  Effect.catchCause(() =>
-                    householdBatchItemWorkflow.get(instanceId).pipe(
-                      Effect.flatMap((instance) => instance.status()),
-                      Effect.filterOrFail(
-                        ({ status }) =>
-                          status === "queued" ||
-                          status === "running" ||
-                          status === "waiting" ||
-                          status === "waitingForPause" ||
-                          status === "complete",
-                        () => new Error("batch workflow start unavailable")
-                      )
-                    )
-                  )
-                );
-            }),
-            Effect.asVoid
-          )
+          handleHouseholdImportBatchQueueMessage(
+            body,
+            householdBatchItemWorkflow
+          ).pipe(Effect.asVoid)
         )
     );
     yield* Cloudflare.Queues.consumeQueueMessages(
@@ -157,21 +137,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       { batchSize: 1, maxConcurrency: 1 },
       (messages) =>
         Stream.runForEach(messages, ({ body }) =>
-          decodeHouseholdBatchQueueMessage(body).pipe(
-            Effect.flatMap((message) =>
-              householdDomain.failImportBatchItem({
-                admission: {
-                  actor: { _tag: "System", purpose: "batch_item_dispatch" },
-                  organizationId: message.organizationId,
-                },
-                batchId: message.batchId,
-                expectedGeneration: message.generation,
-                failureCode: "dispatch_exhausted",
-                itemId: message.itemId,
-              })
-            ),
-            Effect.asVoid
-          )
+          handleHouseholdImportBatchDeadLetterMessage(
+            body,
+            householdDomain
+          ).pipe(Effect.asVoid)
         )
     );
     return {
