@@ -7,6 +7,7 @@ import type {
   RecipeImportTimeline,
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
+import * as Cloudflare from "alchemy/Cloudflare";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Option, Schema } from "effect";
@@ -25,6 +26,14 @@ import {
   makeRecipeImportHttpApiLayer,
 } from "../imports/import-intent-api.http.js";
 import { RecipeImportWorkflowDispatcher } from "../imports/import-workflow-dispatcher.js";
+import type {
+  HouseholdAdmitImportBatchInput,
+  HouseholdClaimImportBatchItemInput,
+  HouseholdCompleteImportBatchItemInput,
+  HouseholdFailImportBatchItemInput,
+  HouseholdReadImportBatchInput,
+  HouseholdRecordImportBatchDispatchInput,
+} from "./batches/household-import-batch.contract.js";
 import {
   HouseholdCommitAcquisitionEvidenceInput,
   HouseholdMutateEvidenceStageInput,
@@ -81,14 +90,9 @@ import type {
   HouseholdAdmitRecipeImportResult,
   HouseholdRecordRecipeImportDispatchResult,
 } from "./recipe-import/household-recipe-import.contract.js";
-import {
-  HouseholdRecipeImportFailure,
-  HouseholdRecordRecipeImportDispatchInput,
-} from "./recipe-import/household-recipe-import.contract.js";
+import { HouseholdRecordRecipeImportDispatchInput } from "./recipe-import/household-recipe-import.contract.js";
 
 const baseURL = "https://meal-planner.test";
-const recipeImportFailure = () =>
-  HouseholdRecipeImportFailure.make({ reason: "persistence_unavailable" });
 
 const RpcErrorEnvelope = Schema.Struct({
   _tag: Schema.Literal("~alchemy/rpc/error"),
@@ -121,6 +125,9 @@ const rpcResponse = (value: Schema.Json) => {
 interface HouseholdApiFixtureEnv {
   readonly BETTER_AUTH_SECRET: string;
   readonly HouseholdDomainWorker: {
+    readonly admitImportBatch: (
+      input: HouseholdAdmitImportBatchInput
+    ) => Promise<Schema.Json>;
     readonly admitRecipeImport: (
       input: HouseholdAdmitRecipeImportInput
     ) => Promise<typeof HouseholdAdmitRecipeImportResult.Encoded>;
@@ -136,6 +143,12 @@ interface HouseholdApiFixtureEnv {
     readonly cancelRecipeImport: (
       input: HouseholdCancelRecipeImportInput
     ) => Promise<typeof CancelledRecipeImportIntent.Encoded>;
+    readonly claimImportBatchItem: (
+      input: HouseholdClaimImportBatchItemInput
+    ) => Promise<Schema.Json>;
+    readonly completeImportBatchItem: (
+      input: HouseholdCompleteImportBatchItemInput
+    ) => Promise<Schema.Json>;
     readonly commitAcquisitionEvidence: (
       input: typeof HouseholdCommitAcquisitionEvidenceInput.Encoded
     ) => Promise<typeof HouseholdCommitAcquisitionEvidenceResult.Encoded>;
@@ -169,9 +182,15 @@ interface HouseholdApiFixtureEnv {
     readonly ensureHousehold: (
       input: HouseholdEnsureInput
     ) => Promise<HouseholdMetadata>;
+    readonly failImportBatchItem: (
+      input: HouseholdFailImportBatchItemInput
+    ) => Promise<Schema.Json>;
     readonly readMealPlan: (
       input: HouseholdReadMealPlanInput
     ) => Promise<HouseholdMealPlanWire | null>;
+    readonly readImportBatch: (
+      input: HouseholdReadImportBatchInput
+    ) => Promise<Schema.Json>;
     readonly readRecipe: (
       input: HouseholdReadRecipeInput
     ) => Promise<typeof Recipe.Encoded>;
@@ -187,6 +206,9 @@ interface HouseholdApiFixtureEnv {
     readonly recordRecipeImportDispatch: (
       input: HouseholdRecordRecipeImportDispatchInput
     ) => Promise<typeof HouseholdRecordRecipeImportDispatchResult.Encoded>;
+    readonly recordImportBatchDispatch: (
+      input: HouseholdRecordImportBatchDispatchInput
+    ) => Promise<void>;
     readonly listRecipeBank: (
       input: HouseholdRecipePageInput
     ) => Promise<typeof HouseholdRecipePage.Encoded>;
@@ -207,8 +229,11 @@ interface HouseholdApiFixtureEnv {
 }
 
 const testSystemOperations = [
+  "claim-batch-item",
   "commit-acquisition-evidence",
+  "complete-batch-item",
   "commit-draft",
+  "fail-batch-item",
   "mutate-evidence-stage",
   "observe-evidence-reference",
   "prepare-recipe-recovery",
@@ -258,6 +283,24 @@ const handleTestSystemOperation = async (
       case "commit-draft": {
         result = await env.HouseholdDomainWorker.commitRecipeImportDraft(
           input as HouseholdCommitRecipeImportDraftInput
+        );
+        break;
+      }
+      case "claim-batch-item": {
+        result = await env.HouseholdDomainWorker.claimImportBatchItem(
+          input as HouseholdClaimImportBatchItemInput
+        );
+        break;
+      }
+      case "complete-batch-item": {
+        result = await env.HouseholdDomainWorker.completeImportBatchItem(
+          input as HouseholdCompleteImportBatchItemInput
+        );
+        break;
+      }
+      case "fail-batch-item": {
+        result = await env.HouseholdDomainWorker.failImportBatchItem(
+          input as HouseholdFailImportBatchItemInput
         );
         break;
       }
@@ -370,60 +413,10 @@ export default {
     }
     const resolver = makeAuthenticatedOrganizationResolver({ auth });
     const principalResolver = makeAuthPrincipalResolver({ auth });
-    const householdDomain = {
-      admitRecipeImport: (input: HouseholdAdmitRecipeImportInput) =>
-        Effect.tryPromise({
-          catch: recipeImportFailure,
-          try: () => env.HouseholdDomainWorker.admitRecipeImport(input),
-        }),
-      answerRecipeImportAction: (
-        input: HouseholdAnswerRecipeImportActionInput
-      ) =>
-        Effect.tryPromise({
-          catch: recipeImportFailure,
-          try: () => env.HouseholdDomainWorker.answerRecipeImportAction(input),
-        }),
-      cancelRecipeImport: (input: HouseholdCancelRecipeImportInput) =>
-        Effect.tryPromise({
-          catch: recipeImportFailure,
-          try: () => env.HouseholdDomainWorker.cancelRecipeImport(input),
-        }),
-      confirmRecipeImportAction: (
-        input: HouseholdConfirmRecipeImportActionInput
-      ) =>
-        Effect.tryPromise({
-          catch: recipeImportFailure,
-          try: () => env.HouseholdDomainWorker.confirmRecipeImportAction(input),
-        }),
-      readRecipe: (input: HouseholdReadRecipeInput) =>
-        Effect.tryPromise({
-          catch: recipeImportFailure,
-          try: () => env.HouseholdDomainWorker.readRecipe(input),
-        }),
-      readRecipeImport: (input: HouseholdReadRecipeImportInput) =>
-        Effect.tryPromise({
-          catch: recipeImportFailure,
-          try: () => env.HouseholdDomainWorker.readRecipeImport(input),
-        }),
-      readRecipeImportAction: (input: HouseholdReadRecipeImportActionInput) =>
-        Effect.tryPromise({
-          catch: recipeImportFailure,
-          try: () => env.HouseholdDomainWorker.readRecipeImportAction(input),
-        }),
-      readRecipeImportTimeline: (input: HouseholdReadRecipeImportInput) =>
-        Effect.tryPromise({
-          catch: recipeImportFailure,
-          try: () => env.HouseholdDomainWorker.readRecipeImportTimeline(input),
-        }),
-      recordRecipeImportDispatch: (
-        input: HouseholdRecordRecipeImportDispatchInput
-      ) =>
-        Effect.tryPromise({
-          catch: recipeImportFailure,
-          try: () =>
-            env.HouseholdDomainWorker.recordRecipeImportDispatch(input),
-        }),
-    } as HouseholdDomainWorkerMethods;
+    const householdDomain =
+      Cloudflare.makeRpcStub<HouseholdDomainWorkerMethods>(
+        env.HouseholdDomainWorker
+      );
     const importServices = Layer.mergeAll(
       Layer.succeed(AuthPrincipalResolver, principalResolver),
       Layer.succeed(AuthenticatedOrganizationResolver, resolver),

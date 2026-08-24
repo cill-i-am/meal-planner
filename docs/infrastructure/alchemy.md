@@ -169,7 +169,8 @@ shared read model, dual write, or public household Worker route is added.
 
 The household object persists submitted-source ownership, public import state,
 idempotency, review, recipes, compact evidence metadata and R2 references,
-terminal checkpoints, recovery attempts, and dispatch/replay receipts.
+terminal checkpoints, recovery attempts, canonical batch/item state, batch
+outbox state, and dispatch/replay receipts.
 D1 persists only noncanonical execution bookkeeping and objectively global
 provider-budget settlement/reconciliation facts. Neither database
 persists credentials, raw provider payloads, or media. TikTok requests are
@@ -214,13 +215,33 @@ initial delivery plus three retries; exhausted messages are retained in
 Public admission commits a compact household outbox intent before the API host
 starts the deterministic generation-specific Workflow. Host retries reconcile
 the same Workflow identity and record their delivery result through a closed
-system command. No Queue or batch writer participates in Slice 1. The provider
-accounting reconciliation route remains a private, explicitly authorized seam
-that changes global cost facts only. The separate Household recovery route
-carries authenticated organization provenance directly to the household
-boundary, where terminal identity and recovery authority are proved. It does
-not require the noncanonical D1 evidence route and cannot authorize Household
-state from shared D1.
+system command.
+
+Batch admission separately commits canonical batch, item, replay, and outbox
+facts in the same household object. Its alarm sends identifier-only messages to
+`HouseholdImportBatchQueue`. `MealPlannerApi` consumes that Queue and starts one
+deterministic `HouseholdImportBatchItemWorkflow` per item generation. The
+Workflow coordinates ordinary import admission, private evidence-route
+registration, acquisition dispatch, and household-local item settlement. One
+initial delivery plus three retries precede
+`HouseholdImportBatchDeadLetterQueue`; its consumer first reconciles the same
+deterministic Workflow identity. It records the closed `dispatch_exhausted`
+failure through the private household boundary only when the start adapter can
+prove that no Workflow started. An unavailable probe remains retryable and
+cannot contradict a committed Workflow or orphan its household outbox. A Queue
+send remains recorded while that outbox stays alarm-eligible until household
+item settlement, so alarms keep reconciling the stable identity; errored or
+terminated instances restart by that identity, while active or unknown
+instances are never terminally settled.
+Neither Queue is canonical, and neither carries submitted source, idempotency,
+actor, provider, or raw response material.
+
+The provider accounting reconciliation route remains a private, explicitly
+authorized seam that changes global cost facts only. The separate Household
+recovery route carries authenticated organization provenance directly to the
+household boundary, where terminal identity and recovery authority are proved.
+It does not require the noncanonical D1 evidence route and cannot authorize
+Household state from shared D1.
 
 ## Cleanup and test boundaries
 

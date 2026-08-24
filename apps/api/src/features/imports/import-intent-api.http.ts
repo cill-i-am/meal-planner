@@ -1,11 +1,13 @@
 import {
   ActionNotFoundProblemDetails,
+  BatchNotFoundProblemDetails,
   IdempotencyConflictProblemDetails,
   IllegalTransitionProblemDetails,
   IntentNotFoundProblemDetails,
   InternalErrorProblemDetails,
   InvalidRequestProblemDetails,
   Recipe,
+  RecipeImportBatch,
   RecipeImportApi,
   RecipeImportAction,
   RecipeImportCurrentPrincipal,
@@ -49,7 +51,9 @@ import {
   AuthenticatedOrganizationResolver,
   AuthPrincipalResolver,
 } from "../auth/auth.principal.js";
+import { HouseholdAdmitImportBatchResult } from "../households/batches/household-import-batch.contract.js";
 import type {
+  HouseholdBatchDomainFailure,
   HouseholdDomainWorkerMethods,
   HouseholdRecipeImportDomainFailure,
 } from "../households/household-domain-worker.js";
@@ -99,6 +103,15 @@ const actionNotFoundProblem = Schema.decodeUnknownSync(
   status: 404,
   title: "Action not found",
   type: "https://meal-planner.local/problems/action-not-found",
+});
+const batchNotFoundProblem = Schema.decodeUnknownSync(
+  BatchNotFoundProblemDetails
+)({
+  code: "batch_not_found",
+  detail: "The recipe import batch was not found.",
+  status: 404,
+  title: "Batch not found",
+  type: "https://meal-planner.local/problems/batch-not-found",
 });
 const recipeNotFoundProblem = Schema.decodeUnknownSync(
   RecipeNotFoundProblemDetails
@@ -162,6 +175,32 @@ const mapAdmitFailure = (error: HouseholdRecipeImportDomainFailure) => {
   }
   if (error.reason === "idempotency_conflict") {
     return idempotencyConflictProblem;
+  }
+  return error.reason === "invalid_input"
+    ? invalidRequestProblem
+    : internalErrorProblem;
+};
+
+const mapBatchAdmitFailure = (error: HouseholdBatchDomainFailure) => {
+  if (error._tag !== "HouseholdBatchFailure") {
+    return error._tag === "HouseholdInvalidInput"
+      ? invalidRequestProblem
+      : internalErrorProblem;
+  }
+  if (error.reason === "idempotency_conflict") {
+    return idempotencyConflictProblem;
+  }
+  return error.reason === "invalid_input"
+    ? invalidRequestProblem
+    : internalErrorProblem;
+};
+
+const mapBatchReadFailure = (error: HouseholdBatchDomainFailure) => {
+  if (error._tag !== "HouseholdBatchFailure") {
+    return internalErrorProblem;
+  }
+  if (error.reason === "batch_not_found") {
+    return batchNotFoundProblem;
   }
   return error.reason === "invalid_input"
     ? invalidRequestProblem
@@ -439,6 +478,45 @@ const RecipeImportIntentHandlers = HttpApiBuilder.group(
       )
 );
 
+const RecipeImportBatchHandlers = HttpApiBuilder.group(
+  RecipeImportApi,
+  "recipeImportBatches",
+  (handlers) =>
+    handlers
+      .handle("create", ({ headers, payload }) =>
+        Effect.gen(function* createRecipeImportBatch() {
+          const admission = yield* currentHouseholdAdmission;
+          const household = yield* RecipeImportHouseholdDomain;
+          const admitted = yield* household
+            .admitImportBatch({
+              admission,
+              idempotencyKey: headers["idempotency-key"],
+              request: payload,
+            })
+            .pipe(
+              Effect.mapError(mapBatchAdmitFailure),
+              decodeHouseholdResult(HouseholdAdmitImportBatchResult)
+            );
+          return HttpApiSchema.withHeaders({
+            body: admitted.batch,
+            headers: { location: admitted.batch.links.self },
+          });
+        })
+      )
+      .handle("get", ({ params }) =>
+        Effect.gen(function* getRecipeImportBatch() {
+          const admission = yield* currentHouseholdAdmission;
+          const household = yield* RecipeImportHouseholdDomain;
+          return yield* household
+            .readImportBatch({ admission, batchId: params.batchId })
+            .pipe(
+              Effect.mapError(mapBatchReadFailure),
+              decodeHouseholdResult(RecipeImportBatch)
+            );
+        })
+      )
+);
+
 const RecipeHandlers = HttpApiBuilder.group(
   RecipeImportApi,
   "recipes",
@@ -544,7 +622,13 @@ export const makeRecipeImportHttpApiLayer = () =>
   HttpApiBuilder.layer(RecipeImportApi, {
     openapiPath: "/openapi.json",
   }).pipe(
-    Layer.provide(Layer.mergeAll(RecipeImportIntentHandlers, RecipeHandlers)),
+    Layer.provide(
+      Layer.mergeAll(
+        RecipeImportBatchHandlers,
+        RecipeImportIntentHandlers,
+        RecipeHandlers
+      )
+    ),
     Layer.provide(RecipeImportHttpMiddlewareLive),
     Layer.provide(RecipeImportHttpPlatformServices)
   );

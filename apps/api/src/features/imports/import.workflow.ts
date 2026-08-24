@@ -4,7 +4,16 @@ import {
 } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Cause, Context, Effect, Layer, Schedule, Schema } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Layer,
+  Option,
+  Result,
+  Schedule,
+  Schema,
+} from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
@@ -133,8 +142,14 @@ import {
   SourceDescriptor,
   SourceCanonicalId,
 } from "./import.contracts.js";
-import { workflowStartUnavailable } from "./import.errors.js";
-import type { WorkflowStartUnavailable } from "./import.errors.js";
+import {
+  workflowStartRefused,
+  workflowStartUnavailable,
+} from "./import.errors.js";
+import type {
+  WorkflowStartRefused,
+  WorkflowStartUnavailable,
+} from "./import.errors.js";
 import type { AcquisitionFinalizationResult as AcquisitionFinalizationResultType } from "./import.repository.js";
 import { AcquisitionFinalizationResult } from "./import.repository.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
@@ -1355,7 +1370,10 @@ export interface ImportWorkflowStarter {
     readonly organizationId: HouseholdOrganizationId;
     readonly trace: ImportTraceContext;
     readonly workflowIdentity: ImportWorkflowIdentity;
-  }) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
+  }) => Effect.Effect<
+    EnsureStartedResult,
+    WorkflowStartRefused | WorkflowStartUnavailable
+  >;
   readonly ensureStarted: (
     importId: ImportId,
     executionGeneration: ImportIntentExecutionGeneration,
@@ -1374,6 +1392,9 @@ export interface ImportWorkflowStarter {
 }
 
 export interface ImportWorkflowReconciler extends ImportWorkflowStarter {
+  readonly reconcileAdmission: (
+    workflowIdentity: ImportWorkflowIdentity
+  ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
   readonly ensureStarted: (
     importId: ImportId,
     executionGeneration: ImportIntentExecutionGeneration,
@@ -1392,6 +1413,29 @@ interface WorkflowHandleLike {
   ) => Effect.Effect<readonly WorkflowInstanceLike[]>;
   readonly get: (id: string) => Effect.Effect<WorkflowInstanceLike>;
 }
+
+/** Map the canonical household identity to Cloudflare's restricted instance-ID alphabet. */
+export const cloudflareWorkflowInstanceId = (
+  workflowIdentity: ImportWorkflowIdentity
+) => workflowIdentity.replaceAll(":", "-");
+
+const nativeWorkflowPreStartRefusalMessage = "Workflow instance has invalid id";
+const WorkflowStartRefusedCauseError = Schema.Struct({
+  _tag: Schema.Literal("WorkflowStartRefused"),
+});
+
+const isNativeWorkflowPreStartRefusal = (cause: Cause.Cause<unknown>) => {
+  const defect = Result.getOrUndefined(Cause.findDefect(cause));
+  return (
+    defect instanceof Error &&
+    defect.message === nativeWorkflowPreStartRefusalMessage
+  );
+};
+
+const isWorkflowStartRefusedCause = (cause: Cause.Cause<unknown>) => {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause));
+  return Schema.is(WorkflowStartRefusedCauseError)(error);
+};
 
 export const ProviderRestartResult = Schema.Literals([
   "RestartAmbiguous",
@@ -1496,7 +1540,7 @@ export const makeImportWorkflowStarter = (
       Effect.mapError(() => workflowStartUnavailable()),
       Effect.flatMap((checkpoint) =>
         workflow
-          .get(workflowIdentity)
+          .get(cloudflareWorkflowInstanceId(workflowIdentity))
           .pipe(
             Effect.flatMap((instance) =>
               instance.restart(postAcquisitionRestartOptions(checkpoint))
@@ -1515,7 +1559,10 @@ export const makeImportWorkflowStarter = (
     readonly instanceId: string;
     readonly organizationId: HouseholdOrganizationId;
     readonly trace: ImportTraceContext;
-  }) =>
+  }): Effect.Effect<
+    EnsureStartedResult,
+    WorkflowStartRefused | WorkflowStartUnavailable
+  > =>
     Effect.gen(function* startImportWorkflow() {
       const decodedInput = yield* Schema.decodeUnknownEffect(
         ImportWorkflowInput,
@@ -1529,6 +1576,21 @@ export const makeImportWorkflowStarter = (
       const params = yield* Schema.encodeEffect(ImportWorkflowInput)(
         decodedInput
       ).pipe(Effect.mapError(() => workflowStartUnavailable()));
+      const reconcileCreateFailure = (
+        cause: Cause.Cause<unknown>
+      ): Effect.Effect<
+        { readonly _tag: "Reconciled"; readonly result: EnsureStartedResult },
+        WorkflowStartRefused | WorkflowStartUnavailable
+      > =>
+        isNativeWorkflowPreStartRefusal(cause)
+          ? Effect.fail(workflowStartRefused())
+          : workflow.get(input.instanceId).pipe(
+              Effect.flatMap(reconcileExisting),
+              Effect.map((result) => ({
+                _tag: "Reconciled" as const,
+                result,
+              }))
+            );
       const createOutcome = yield* workflow
         .createBatch([{ id: input.instanceId, params }])
         .pipe(
@@ -1536,16 +1598,10 @@ export const makeImportWorkflowStarter = (
             _tag: "Created" as const,
             created,
           })),
-          Effect.catchCauseIf(
-            (cause) => !Cause.hasInterrupts(cause),
-            () =>
-              workflow.get(input.instanceId).pipe(
-                Effect.flatMap(reconcileExisting),
-                Effect.map((result) => ({
-                  _tag: "Reconciled" as const,
-                  result,
-                }))
-              )
+          Effect.catchCause((cause) =>
+            Cause.hasInterrupts(cause)
+              ? Effect.interrupt
+              : reconcileCreateFailure(cause)
           )
         );
       if (createOutcome._tag === "Reconciled") {
@@ -1565,19 +1621,35 @@ export const makeImportWorkflowStarter = (
       }
       return yield* reconcileExisting(yield* workflow.get(input.instanceId));
     }).pipe(
-      Effect.catchCauseIf(
-        (cause) => !Cause.hasInterrupts(cause),
-        () => Effect.fail(workflowStartUnavailable())
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause)
+          ? Effect.interrupt
+          : Effect.fail(
+              isWorkflowStartRefusedCause(cause)
+                ? workflowStartRefused()
+                : workflowStartUnavailable()
+            )
       )
     );
 
   return {
     dispatchAdmission: (input) =>
-      start({ ...input, instanceId: input.workflowIdentity }),
+      start({
+        ...input,
+        instanceId: cloudflareWorkflowInstanceId(input.workflowIdentity),
+      }),
     ensureStarted: () => Effect.fail(workflowStartUnavailable()),
+    reconcileAdmission: (workflowIdentity) =>
+      workflow.get(cloudflareWorkflowInstanceId(workflowIdentity)).pipe(
+        Effect.flatMap(reconcileExisting),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterrupts(cause),
+          () => Effect.fail(workflowStartUnavailable())
+        )
+      ),
     restartFromSpeech: (workflowIdentity) =>
       workflow
-        .get(workflowIdentity)
+        .get(cloudflareWorkflowInstanceId(workflowIdentity))
         .pipe(
           Effect.flatMap((instance) =>
             reconcileProviderRestart(instance, "record-acquisition-v2")
@@ -1585,7 +1657,7 @@ export const makeImportWorkflowStarter = (
         ),
     restartFromVisual: (workflowIdentity) =>
       workflow
-        .get(workflowIdentity)
+        .get(cloudflareWorkflowInstanceId(workflowIdentity))
         .pipe(
           Effect.flatMap((instance) =>
             reconcileProviderRestart(instance, "extract-visual-evidence-v1")

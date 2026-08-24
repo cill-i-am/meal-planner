@@ -58,8 +58,10 @@ result, deterministic privacy-safe Workflow identity, and compact outbox
 intent. External I/O is forbidden in that transaction. The host starts or
 reconciles the Workflow only after commit, records every delivery outcome, and
 retries the same persisted Workflow identity. Dispatch status can move from
-`pending` to `dispatched` or `exhausted`, but replay always returns the original
-committed domain result.
+`pending` to `dispatched` or `exhausted`, but only a proven pre-start refusal
+can exhaust it. A lost response or unavailable reconciliation remains pending
+under the same identity until a later retry converges. Replay always returns
+the original committed domain result.
 
 ## Meal-plan authority
 
@@ -103,6 +105,36 @@ encoded recipe above the planning page's safe per-item budget. Planning can
 therefore consume more than 128 approved recipes without an unbounded snapshot
 or one oversized row blocking iteration. The removed shared-D1 recipe-source
 gateway and transfer-size workaround have no compatibility path.
+
+## Recipe-import batch authority
+
+`HouseholdObject` SQLite is also the only authority for recipe-import batch and
+item membership, idempotency replay, status, generation, completion, failure,
+and queue-dispatch outbox state. Admission commits the aggregate, all items,
+and one outbox row per item in a single local Drizzle transaction. Exact replay
+returns the original public aggregate; conflicting replay and stale item
+generations fail without mutation.
+
+The object alarm reads only committed outbox rows and sends a closed Queue
+message containing immutable organization, batch, item, and generation IDs.
+Queue and its DLQ are transport evidence, not product state. The Queue consumer
+starts one deterministic Workflow per item generation. Queue and DLQ retries
+reconcile that identity. Transport delivery remains recorded while the
+household outbox stays alarm-eligible until its item settles, so the object
+alarm remains a durable production reconciliation signal. Queued, running,
+paused, and waiting instances remain active; errored or terminated instances
+restart through the same identity.
+Unavailable or unknown status preserves the nonterminal item and outbox, while
+only proof that no Workflow started permits `dispatch_exhausted`. That Workflow
+claims the local item, admits the ordinary
+recipe import, coordinates its external dispatch after commit, and settles
+success or failure back in household SQLite. Queue, Workflow, D1 route
+registration, provider, network, and other external I/O never run inside a
+household transaction.
+
+The shared D1 schema has no batch tables, idempotency ledger, route, repository,
+service, or writer. There is no compatibility read, dual write, backfill, or
+fallback to the retired prototype authority.
 
 ## Evidence metadata and R2 references
 

@@ -1,7 +1,7 @@
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { drizzle } from "drizzle-orm/d1";
-import { Config, Layer, Redacted, Schema } from "effect";
+import { Config, Layer, Redacted, Schema, Stream } from "effect";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
@@ -21,6 +21,12 @@ import {
   makeHouseholdMealPlanRequestLayer,
   makeHouseholdRequestLayer,
 } from "./features/households/household-request-composition.js";
+import HouseholdImportBatchItemWorkflow from "./features/imports/household-import-batch-item.workflow.js";
+import {
+  handleHouseholdImportBatchDeadLetterMessage,
+  handleHouseholdImportBatchQueueMessage,
+  makeHouseholdBatchWorkflowLauncher,
+} from "./features/imports/household-import-batch-queue.handlers.js";
 import { makeD1ImportEvidenceRouteRepository } from "./features/imports/import-evidence-route.repository.d1.js";
 import {
   makeRecipeImportHttpApiLayer,
@@ -41,6 +47,10 @@ import ImportAcquisitionWorkflow, {
   makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
 import { ProviderAccountingRouteDefinitions } from "./features/provider-accounting/provider-accounting.routes.js";
+import {
+  HouseholdImportBatchDeadLetterQueue,
+  HouseholdImportBatchQueue,
+} from "./infrastructure/household-import-batch-queue.js";
 import { MealPlannerAuthDatabase } from "./infrastructure/meal-planner-auth-database.js";
 import { MealPlannerDatabase } from "./infrastructure/meal-planner-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
@@ -85,8 +95,15 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     );
     const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
     const importRecipeRecoveryWorkflow = yield* ImportRecipeRecoveryWorkflow;
+    const householdBatchItemWorkflow = yield* HouseholdImportBatchItemWorkflow;
+    const householdBatchQueue = yield* HouseholdImportBatchQueue;
+    const householdBatchDeadLetterQueue =
+      yield* HouseholdImportBatchDeadLetterQueue;
     const householdDomain = yield* Cloudflare.Workers.bindWorker(
       HouseholdDomainWorker
+    );
+    const householdBatchWorkflowLauncher = makeHouseholdBatchWorkflowLauncher(
+      householdBatchItemWorkflow
     );
     const authSecret = yield* Config.redacted("BETTER_AUTH_SECRET");
     const importSystemApiToken = yield* ImportSystemAuthorizationConfig.pipe(
@@ -102,6 +119,35 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       actorId: importSystemActorId,
       householdScopeId: importSystemHouseholdScopeId,
     });
+    yield* Cloudflare.Queues.consumeQueueMessages(
+      householdBatchQueue,
+      {
+        batchSize: 1,
+        deadLetterQueue: householdBatchDeadLetterQueue.queueName,
+        deadLetterQueueId: householdBatchDeadLetterQueue.queueId,
+        maxConcurrency: 4,
+        maxRetries: 3,
+      },
+      (messages) =>
+        Stream.runForEach(messages, ({ body }) =>
+          handleHouseholdImportBatchQueueMessage(
+            body,
+            householdBatchWorkflowLauncher
+          ).pipe(Effect.asVoid)
+        )
+    );
+    yield* Cloudflare.Queues.consumeQueueMessages(
+      householdBatchDeadLetterQueue,
+      { batchSize: 1, maxConcurrency: 1 },
+      (messages) =>
+        Stream.runForEach(messages, ({ body }) =>
+          handleHouseholdImportBatchDeadLetterMessage(
+            body,
+            householdDomain,
+            householdBatchWorkflowLauncher
+          ).pipe(Effect.asVoid)
+        )
+    );
     return {
       fetch: Effect.gen(function* handleMealPlannerRequest() {
         const runtimeContext = yield* RuntimeContext;
@@ -155,6 +201,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           systemPrincipal: importSystemPrincipal,
           trace,
         });
+        const requestServices = requestLayer;
         const householdRequestLayer = makeHouseholdRequestLayer({
           gateway: makeHouseholdDomainGateway(householdDomain),
           resolver: authenticatedOrganizationResolver,
@@ -175,8 +222,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             householdMealPlanRequestLayer,
             makeRecipeImportNotFoundHttpLayer()
           ).pipe(
-            Layer.provide(requestLayer),
-            HttpRouter.provideRequest(requestLayer)
+            Layer.provide(requestServices),
+            HttpRouter.provideRequest(requestServices)
           )
         );
         return yield* withCurrentRequestCancellation(routeHandler);
@@ -186,7 +233,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     Effect.provide(
       Layer.mergeAll(
         Cloudflare.D1.QueryDatabaseBinding,
-        Cloudflare.R2.ReadWriteBucketBinding
+        Cloudflare.R2.ReadWriteBucketBinding,
+        Cloudflare.Queues.EventSourceLive,
+        Cloudflare.Queues.WriteQueueBinding
       )
     )
   )
