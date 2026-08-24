@@ -385,7 +385,7 @@ describe("household batch native production Workflow composition", () => {
     });
   }, 20_000);
 
-  it("fails only after bounded unambiguous pre-start refusals", async () => {
+  it("settles only after bounded exact native pre-start refusals", async () => {
     const result = await runScenario(
       "7510000000000000304",
       "organization-batch-dispatch-pre-start-refusal",
@@ -417,6 +417,21 @@ describe("household batch native production Workflow composition", () => {
     expect(result.batch.items[0]).toMatchObject({
       failureCode: "dispatch_exhausted",
       status: "failed",
+    });
+
+    const replay = await runScenario(
+      "7510000000000000304",
+      "organization-batch-dispatch-pre-start-refusal",
+      "dispatch-pre-start-refusal"
+    );
+    expect(replay).toMatchObject({
+      batch: result.batch,
+      counts: result.counts,
+      error: false,
+      outbox: { attempts: 5, state: "exhausted" },
+      replay: result.replay,
+      status: { status: "complete" },
+      workflowId: result.workflowId,
     });
   }, 20_000);
 });

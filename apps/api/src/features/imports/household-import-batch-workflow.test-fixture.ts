@@ -30,7 +30,6 @@ import {
   makeHouseholdImportBatchWorkflowPorts,
 } from "./household-import-batch-item.workflow.js";
 import { householdBatchWorkflowInstanceId } from "./household-import-batch-transport.js";
-import { workflowStartRefused } from "./import.errors.js";
 import {
   cloudflareWorkflowInstanceId,
   makeImportWorkflowStarter,
@@ -116,12 +115,20 @@ const increment = (
     return next;
   });
 
-const makeNativeStarter = (environment: TestEnvironment) =>
+const makeNativeStarter = (
+  environment: TestEnvironment,
+  injectNativePreStartRefusal: boolean
+) =>
   makeImportWorkflowStarter({
     createBatch: (batch) =>
       Effect.promise(async () => {
+        // Workerd rejects this invalid ID before engine initialization; the production starter retains the canonical ID for reconciliation.
         const instances =
-          await environment.ImportAcquisitionTestWorkflow.createBatch(batch);
+          await environment.ImportAcquisitionTestWorkflow.createBatch(
+            injectNativePreStartRefusal
+              ? batch.map((input) => ({ ...input, id: `?${input.id}` }))
+              : batch
+          );
         return instances.map((instance) => ({
           restart: () => Effect.promise(() => instance.restart()),
           status: () => Effect.promise(() => instance.status()),
@@ -156,7 +163,10 @@ const batchWorkflowExport = {
         const household = Cloudflare.makeRpcStub<HouseholdDomainWorkerMethods>(
           environment.HouseholdDomainWorker
         );
-        const starter = makeNativeStarter(environment);
+        const starter = makeNativeStarter(
+          environment,
+          scenario === "dispatch-pre-start-refusal"
+        );
         const faultedHousehold = {
           admitRecipeImport: (input) =>
             household
@@ -222,26 +232,22 @@ const batchWorkflowExport = {
           ) =>
             increment(environment, event.instanceId, "dispatch").pipe(
               Effect.flatMap((attempt) =>
-                scenario === "dispatch-pre-start-refusal"
-                  ? Effect.fail(workflowStartRefused())
-                  : starter
-                      .dispatchAdmission(input)
-                      .pipe(
-                        Effect.flatMap((result) =>
-                          scenario === "dispatch-all-start-responses-lost" ||
-                          scenario ===
-                            "dispatch-committed-reconcile-unavailable" ||
-                          scenario === "dispatch-reconcile-recovered" ||
-                          (scenario === "dispatch-lost-response" &&
-                            attempt === 1)
-                            ? Effect.die(
-                                new Error(
-                                  "workflow start response lost after commit"
-                                )
-                              )
-                            : Effect.succeed(result)
-                        )
-                      )
+                starter
+                  .dispatchAdmission(input)
+                  .pipe(
+                    Effect.flatMap((result) =>
+                      scenario === "dispatch-all-start-responses-lost" ||
+                      scenario === "dispatch-committed-reconcile-unavailable" ||
+                      scenario === "dispatch-reconcile-recovered" ||
+                      (scenario === "dispatch-lost-response" && attempt === 1)
+                        ? Effect.die(
+                            new Error(
+                              "workflow start response lost after commit"
+                            )
+                          )
+                        : Effect.succeed(result)
+                    )
+                  )
               )
             ),
           reconcileAdmission: (

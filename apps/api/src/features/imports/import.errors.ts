@@ -45,7 +45,7 @@ export interface WorkflowStartUnavailable {
   readonly _tag: "WorkflowStartUnavailable";
 }
 
-/** Proof from a start adapter that it refused before invoking the Workflow binding. */
+/** Exact native proof that the Workflow binding rejected before committing a start. */
 export interface WorkflowStartRefused {
   readonly _tag: "WorkflowStartRefused";
 }
