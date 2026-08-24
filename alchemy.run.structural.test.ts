@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
+import {
+  inspectGlobalD1Architecture,
+  readTrackedGlobalD1Architecture,
+} from "./scripts/global-d1-architecture.js";
+
 const readRepoFile = (path: string): string =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf-8");
 
@@ -62,6 +67,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
 
   it("retains only Better Auth and provider accounting in global D1", () => {
     const apiRoot = fileURLToPath(new URL("apps/api", import.meta.url));
+    const repositoryRoot = import.meta.dirname;
     const stackSource = readRepoFile("./alchemy.run.ts");
     const providerAccountingSchemaPath = `${apiRoot}/src/features/provider-accounting/provider-accounting.database-schema.ts`;
     const providerAccountingDatabasePath = `${apiRoot}/src/infrastructure/provider-accounting-database.ts`;
@@ -111,6 +117,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(stackSource).not.toContain("MealPlannerDatabase");
     expect(stackSource).not.toContain("ImportEvidenceEventQueue");
     expect(stackSource).not.toContain("BucketEventNotification");
+
+    expect(
+      inspectGlobalD1Architecture(
+        readTrackedGlobalD1Architecture(repositoryRoot)
+      )
+    ).toEqual([]);
   });
 
   it("keeps the Worker identity stable, private, and preserves its optional URL output", () => {

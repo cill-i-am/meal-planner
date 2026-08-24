@@ -580,10 +580,7 @@ describe("provider accounting", () => {
   it("physically replaces pilot storage without acquiring household authority", async () => {
     const schemas = await testEnv.ProviderAccountingDatabase.prepare(
       `SELECT name, sql FROM sqlite_master
-        WHERE type = 'table' AND (
-          name LIKE 'provider_accounting_%'
-          OR name LIKE 'pilot_provider_%'
-        )
+        WHERE type = 'table'
         ORDER BY name`
     ).all<{ name: string; sql: string }>();
 
@@ -592,6 +589,25 @@ describe("provider accounting", () => {
       readonly sql: string;
     }[];
     expect(schemaRows.map(({ name }) => name)).toEqual([
+      "_cf_METADATA",
+      "d1_migrations",
+      "provider_accounting_budgets",
+      "provider_accounting_conservative_settlements",
+      "provider_accounting_dispatches",
+      "provider_accounting_recipe_replay_values",
+      "provider_accounting_reconciliations",
+      "sqlite_sequence",
+    ]);
+    const runtimeBookkeepingTables = new Set([
+      "_cf_METADATA",
+      "d1_migrations",
+      "sqlite_sequence",
+    ]);
+    expect(
+      schemaRows
+        .map(({ name }) => name)
+        .filter((name) => !runtimeBookkeepingTables.has(name))
+    ).toEqual([
       "provider_accounting_budgets",
       "provider_accounting_conservative_settlements",
       "provider_accounting_dispatches",

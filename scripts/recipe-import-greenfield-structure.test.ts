@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import {
+  inspectGlobalD1Architecture,
+  readTrackedGlobalD1Architecture,
+} from "./global-d1-architecture.js";
+
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 
 const trackedFiles = execFileSync("git", ["ls-files", "-z"], {
@@ -188,20 +193,10 @@ describe("greenfield recipe-import architecture", () => {
     ).toEqual([]);
   });
 
-  it("installs only the noncanonical provider-accounting D1 schema", async () => {
-    const sources = await loadSources(
-      [`${repositoryRoot}/apps/api/provider-accounting-migrations`],
-      (entryPath) => path.extname(entryPath) === ".sql"
-    );
-
-    expect(violations(sources, /\bmigration_snapshot\b/u)).toEqual([]);
+  it("permits only Better Auth and provider accounting in tracked global D1 production paths", () => {
     expect(
-      violations(sources, /\bimport_recipe_terminal_projections\b/u)
-    ).toEqual([]);
-    expect(
-      violations(
-        sources,
-        /\b(?:organization_id|import_evidence_routes|import_execution_runs)\b/iu
+      inspectGlobalD1Architecture(
+        readTrackedGlobalD1Architecture(repositoryRoot)
       )
     ).toEqual([]);
   });
@@ -211,6 +206,7 @@ describe("greenfield recipe-import architecture", () => {
       [
         `${repositoryRoot}/apps/web/PRODUCT.md`,
         `${repositoryRoot}/apps/web/README.md`,
+        `${repositoryRoot}/docs/architecture/household-capability-migration-plan.md`,
         `${repositoryRoot}/docs/architecture/recipe-import-intent.md`,
         `${repositoryRoot}/docs/infrastructure/alchemy.md`,
       ],
@@ -225,11 +221,22 @@ describe("greenfield recipe-import architecture", () => {
       /\bmigration_snapshot\b/u,
       /\btemporary transport adapter\b/iu,
       /\blegacy-route removal\b/iu,
+      /\bR2 Queue event notifications\b/u,
+      /events pass through a reconciliation Queue/iu,
     ] as const;
 
     expect(
       forbidden.flatMap((pattern) => violations(sources, pattern))
     ).toEqual([]);
+    const migrationPlan = sources.find(
+      ({ path: sourcePath }) =>
+        sourcePath ===
+        "docs/architecture/household-capability-migration-plan.md"
+    )?.source;
+    expect(migrationPlan).toContain("Direct Workflow/R2 integrity probes");
+    expect(migrationPlan).toContain(
+      "There is no R2 event Queue, consumer, or DLQ."
+    );
   });
 
   it("configures only the canonical authenticated recipe-import surface", async () => {

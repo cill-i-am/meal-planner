@@ -366,10 +366,10 @@ extra binding is another invocation and another principal-propagation boundary.
 | Timing | Capability | Decision and boundary |
 | --- | --- | --- |
 | Now | Existing R2 lifecycle | Keep the seven-day `imports/` deletion rule. Treat asynchronous lifecycle deletion as defense-in-depth, not a correctness or authorization clock. |
-| Now | Workflow, Queue, R2, private service binding | Keep orchestration, delivery, bytes, and private routing outside household transactions. Pass and re-prove the application principal across the binding. |
+| Now | Workflow, batch Queue, R2, private service binding | Keep orchestration, batch-item delivery, bytes, and private routing outside household transactions. Pass and re-prove the application principal across the binding. |
 | Next | SQLite DO PITR and recovery runbook | Add operator tooling for per-object bookmarks and 30-day restore, destructive-command/migration procedures, authorization, audit, and a production drill. PITR is per-object recovery, not fleet backup or inventory, and is unavailable locally. |
 | Next | Durable Object alarms | Multiplex a local schedule/outbox table onto the single alarm. Handlers are idempotent and limited to local wake-up, pruning, deletion, or dispatch retry; provider work remains in Workflows. |
-| Now | R2 Queue event notifications | Relevant create/delete/lifecycle-deletion events pass through a reconciliation Queue with strict key, integrity, household, and generation validation. Notifications are delivery evidence, not household truth. |
+| Now | Direct Workflow/R2 integrity probes | Acquisition and recovery Workflows validate the R2 checksum, metadata, source shape, household, and execution generation directly before committing a household-local reference. There is no R2 event Queue, consumer, or DLQ. Bucket lifecycle deletion remains asynchronous defense-in-depth, not household truth or delivery evidence. |
 | Next | Scheduled maintenance | On Alchemy beta.72, use an Alchemy-managed cron Worker that starts a bound Workflow. Direct Workflow schedules exist in Cloudflare but are not exposed by the pinned Alchemy resource API; revisit after support lands. |
 | Next | Rate Limiting binding | Protect expensive admission/provider routes with privacy-safe household/actor/capability keys. Location-local permissive counters are abuse and load protection, never authorization, quota, budget, billing, or idempotency. |
 | Next | Secrets Store evaluation | Prefer reusable account-level provider/system credentials if the open-beta, async binding and local-development constraints pass an exact-version spike. Do not store household product data or retail grants there. |
@@ -541,25 +541,16 @@ household boundary after provider/R2 work. The superseded
 repositories are physically absent; there are no compatibility reads, fixture
 seeds, dual writes, or backfills.
 
-At the Slice 2 checkpoint, R2 notification reconciliation used one bounded
-noncanonical operational
-index: after authenticated admission, the API synchronously inserts and reads
-an immutable import-to-organization route in a private D1 table before
-Workflow start. The unordered Queue carries only R2 notifications, so an event
-cannot overtake route registration. Concurrent registration is serialized by
-the route's unique import ID: the first route is immutable and every
-conflicting organization fails closed. The route can only reconstruct the
-enumerated lifecycle system admission, and the consumer
-re-proves import, authoritative source kind, object key, kind, hash, and stored
-metadata before an idempotent household availability observation. The route's
-execution generation fences the household RPC; the R2 key and metadata's
-acquisition-attempt generation validate the artifact. Household state fences
-observations by event time and a fixed
-same-time action precedence, so delayed deletion cannot replace newer
-availability. The route is not a household registry, product read model,
-object-name source, or Slice 3 recovery ledger.
-The consumer uses a read-only R2 binding; retryable notifications that exhaust
-the bounded delivery policy are retained by the R2-event-only DLQ.
+Historical, non-operative Slice 2 context: R2 notification reconciliation used
+one bounded noncanonical import-to-organization route plus a Queue consumer and
+DLQ. That temporary transport proved route ordering, generation fencing,
+integrity metadata, and idempotent household observations while shared D1 was
+still present.
+
+Slice 5 deletes that route, Queue, consumer, and DLQ. R2 integrity is
+reconciled directly through Workflow and R2 probes. No R2 notification
+transport or global household route remains deployed, and no delayed event can
+author household state.
 
 Speech and visual recovery preparation commit the next fenced recovery
 dispatch before activating the corresponding Workflow step. Exact preparation
