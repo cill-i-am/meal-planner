@@ -8,9 +8,12 @@ box and the UI is not a questionnaire disguised as a conversation.
 
 The best experience combines:
 
-- a natural, high-quality conversation for discovery and revision;
-- visible editable artifacts for trust and speed; and
-- deterministic validation for coverage, constraints, portions, and approval.
+- an unusually perceptive natural conversation for discovery and revision;
+- visible editable artifacts for trust and speed;
+- one complete personalised recommendation rather than several competing
+  weeks; and
+- deterministic validation for permissions, coverage, constraints, portions,
+  preparation, and approval.
 
 ## End-To-End Household Journey
 
@@ -20,236 +23,297 @@ The first adult creates an account and household, names it, and adds the people
 who regularly need to be considered. Other adults may be invited. Dependants
 exist as household people without requiring accounts.
 
-The product should distinguish the authenticated member from the person who
-eats. One user may manage their own person profile and one or more dependant
-profiles.
+One adult may provide provisional information for everyone and create a first
+plan before invited adults complete their own reviews. Account linking later
+must preserve the existing person, profile, routine, and planning history.
 
-### 2. Run private adult discovery sessions
+### 2. Run private, repeatable adult reviews
 
-Each adult completes a private interview. The raw transcript and intermediate
-conversation remain private to that participant. The session progressively
-proposes household-visible person-profile facts for confirmation.
+An adult completes a private AI-led interview. The raw transcript and
+intermediate conversation remain private to that participant. The session
+progressively proposes household-visible person-profile facts for confirmation.
+
+The interview is not one and done. An adult may start a new review whenever
+tastes, routines, work patterns, or circumstances change.
 
 The conversation should demonstrate synthesis as it proceeds. For example:
 
-> You are in the office Tuesday through Thursday and prefer not to prepare
+> You are in the office Tuesday through Thursday and do not want to prepare
 > lunch in the morning. Should Monday and Wednesday dinner normally produce a
 > portable leftover portion for the following day?
 
-The agent should not ask every possible question. It should ask enough to build
-an accurate first plan, identify uncertainty, and leave lower-value details for
-later refinement.
+The agent should ask enough to create a useful first plan, expose uncertainty,
+and leave lower-value detail for later refinement. It should not collect facts
+without a defined planning use.
 
 ### 3. Build dependant profiles
 
 An adult records information for dependants through a shorter guided flow. The
-flow should distinguish:
+flow distinguishes:
 
-- hard safety or dietary constraints;
-- accepted foods and reliable fallback meals;
-- ordinary dislikes that can be challenged gently over time;
-- portion and life-stage considerations; and
-- school, childcare, packed-lunch, and activity routines.
+- hard suitability and dietary constraints;
+- simple ingredient, dish, and cuisine preferences;
+- strong avoids versus ordinary dislikes;
+- approved person-specific fallback repertoires;
+- exact-product preferences and substitution policy;
+- portion expectations by meal occasion; and
+- school, childcare, packed-lunch, location, and activity routines.
 
 The planner must not turn every exception into a second elaborate meal. It
-should seek low-effort variations, shared components, or a small repertoire of
-accepted fallback meals.
+should seek an approved packaged option, assembled meal, shared-component
+variation, external meal, or other low-effort fallback.
 
 ### 4. Synthesize visible profiles
 
-The household can view the confirmed profile for each person. A profile may
-show, in ordinary product language:
+All adults can view confirmed profiles. In the MVP, any adult may edit any adult
+or dependant profile. Every change is attributed and audited.
+
+A profile may show, in ordinary product language:
 
 - dietary pattern and hard constraints;
 - loved dishes and cuisines;
-- disliked ingredients, textures, or heat levels;
+- disliked or strongly avoided ingredients and meals;
 - meal habits and intentional skips;
-- preferred fallback meals;
-- cooking or portion considerations; and
-- current planning goals.
+- approved fallbacks and exact-product rules;
+- location and preparation context;
+- default portion factors by occasion; and
+- low-weight inferred preferences, clearly labelled.
 
-Adults edit their own profiles by default. Household adults may manage dependant
-profiles. The exact permission model remains an explicit product decision.
+Self-confirmed facts normally replace provisional facts. Hard safety or dietary
+constraints are never silently removed.
 
 ### 5. Build routines conversationally
 
-The agent proposes routines from the interviews and asks the household to
-confirm or adjust them. The user can describe repeated patterns naturally:
+The agent proposes routines from interviews and asks the household to confirm or
+adjust them. Users can describe repeated patterns naturally:
 
 - the same breakfast every weekday;
+- one of three approved breakfasts, pinned, preferred, or rotated;
 - leftovers for office lunches Monday to Thursday;
 - no leftover lunch on Friday because the person eats out;
 - takeaway on Friday evening;
 - a cooked family breakfast on Sunday;
-- a child fallback whenever a shared tomato-based pasta is unsuitable; or
-- fasting until a configured meal occasion.
+- a packaged fallback for one person when the shared dinner is unsuitable;
+- fasting until a configured occasion;
+- a maximum number of substantial cook events; or
+- a hands-off meal that somebody must start in the morning.
+
+An agent-proposed routine offers **apply this period**, **save as recurring**, or
+**reject**. A proposed fallback offers **use once**, **approve for future use**,
+or **reject**. The agent never quietly creates enduring state.
 
 The routine builder creates visible rules rather than hiding repeated
-instructions in prompts. Users can edit those rules in a visual routine editor
-or through conversation.
+instructions in prompts. Adults can edit those rules visually or through
+conversation.
 
 ### 6. Plan the week
 
-At the start of a planning session, the agent asks only about exceptions to the
-established baseline:
+At the start of planning, the agent asks only about exceptions to the established
+baseline:
 
-- unusual work or school days;
+- unusual work, school, or travel days;
 - visitors or absences;
 - eating out;
-- food that should be used;
-- desired variety or recurring favourites;
+- confirmed prepared food carried from the previous week;
+- foods or recipes the household particularly wants;
 - unusually busy evenings; and
-- one-off goals or constraints.
+- one-off changes to cooking capacity.
 
-It then proposes a complete week using routines, shared meals, individual
-exceptions, intentional leftovers, eating out, and skips.
+It then produces one complete recommended week with routines, shared meals,
+personal alternatives, planned leftovers, packaged or external meals, flexible
+slots, and skips already applied.
 
-### 7. Review through conversation and UI
+The household should not need to discover that someone does not eat fish and
+manually repair the plan. Confirmed hard substitutions and approved fallbacks
+must already be present.
 
-The household sees a compressed weekly plan rather than a raw coverage matrix.
-Shared meals are shown once with the people covered. Exceptions appear only
-where relevant. Cook events make batch and leftover intent visible.
+### 7. Explain the recommendation
 
-Users should be able to say:
+The weekly plan makes person-level effects visible without exposing private
+transcript text.
+
+A shared dinner may render as:
+
+> **Wednesday dinner — Fish pie**  
+> Louise and Child B: fish pie  
+> Child A: chicken burger and seedless bun  
+> Cillian: fish pie
+
+Its rationale may explain:
+
+- Child A fallback applied;
+- approved dinner fallback;
+- fish strongly avoided;
+- uses the same oven window; and
+- adds the exact burger and bun products to shopping.
+
+A weekly summary may say:
+
+> This plan applied 14 person routines, 3 fallback meals, 4 leftover
+> allocations, 1 takeaway night, and stayed within your five-cook-event target.
+
+Rationale should help adults trust the plan and spot incorrect assumptions.
+
+### 8. Revise through conversation and UI
+
+Adults can say:
 
 - make Tuesday easier;
 - cook enough on Monday for two lunches;
-- replace the fish meal for one person only;
+- replace fish this week;
+- use pizza instead of the usual fallback;
 - repeat the same breakfast all week;
-- use the imported curry this weekend; or
-- remove one cooking event without leaving uncovered meals.
+- move the roast to Saturday; or
+- remove one cook event without leaving uncovered meals.
 
-Every conversational change maps to a typed domain command and returns a visible
-revision. The agent explains meaningful trade-offs and cannot bypass hard
-constraints.
+While the plan is a draft, the system repairs affected portions, leftovers,
+prepared components, person alternatives, cook events, and shopping preview. It
+shows consequential changes.
 
-### 8. Approve and shop
+After approval, the same request creates a proposed revision with a visible
+diff. It never silently rewrites the active week.
 
-A plan remains a draft until explicitly approved. Approval requires complete
-coverage for the beta unless a later policy deliberately introduces accepted
-incomplete plans.
+### 9. Approve and shop
 
-The approved plan produces a consolidated retailer-neutral shopping list. It
-does not authenticate with a retailer or mutate an external basket.
+Any adult may edit, approve, reject, reopen, or revise the plan in the MVP. All
+actions are audited.
 
-### 9. Review the week
+The draft includes a shopping preview. Approval creates the active
+retailer-neutral shopping list. External meals, flexible slots, and intentional
+skips add no shopping demand. Planned leftovers contribute through the original
+cook event only.
 
-The main feedback loop occurs before generating the next plan:
+### 10. Live the week without tracking chores
+
+No one is required to mark meals cooked or eaten. The system assumes the
+approved plan happened unless an adult reports an exception.
+
+Planned same-week leftovers need no separate confirmation. Incidental leftovers
+can be added through a quick approximate-quantity and fridge-or-freezer action.
+Ad hoc updates are available but never required.
+
+### 11. Optionally review the week
+
+Before the next plan, the agent may ask:
 
 > Before we plan next week, how did this week go?
 
-Each planned meal or routine can be marked with lightweight signals such as:
+The review is optional and never blocks planning. Lightweight signals include:
 
-- liked;
-- disliked;
-- skipped;
-- not made;
+- liked or disliked;
+- skipped or not made;
 - too much effort;
 - wrong quantity;
-- child would not eat it; or
+- fallback worked or failed;
+- dependant would not eat it; or
 - make again.
 
-The agent asks one focused follow-up only when it would materially improve the
-profile, routine, recipe, or planning policy. Meal-by-meal feedback remains
-available but optional.
+The review also confirms any expected cross-week fridge or freezer portions
+before the next plan relies on them. The agent asks a focused follow-up only
+when it would materially improve future planning.
 
 ## Conversation Design Requirements
 
 ### Progressive artifact creation
 
-The conversation should create and update visible artifacts throughout:
+The conversation creates and updates visible artifacts throughout:
 
 - person profile cards;
 - a household summary;
 - routine rules;
+- proposed fallbacks;
 - conflicts or uncertainty requiring a decision;
-- fallback-meal options;
+- cooking capacity and preparation windows;
 - the proposed week;
-- cook and leftover allocations; and
+- cook, prepared-component, and leftover allocations;
+- planning rationale; and
 - a change summary before approval.
 
 A user should never need to trust that the transcript alone contains the truth.
 
 ### Demonstrate understanding
 
-The agent should connect facts across people and time. It should notice, for
-example, that a late workday, a dislike, and a leftover preference jointly
-suggest a larger cook event on the preceding evening.
+The agent connects facts across people and time. It should notice, for example,
+that a late workday, a strong avoid, a slow cooker, and a leftover preference
+jointly suggest a larger hands-off cook on the preceding morning.
 
 ### Ask fewer, better questions
 
-Questions should be chosen for expected planning value. The agent should avoid
-exhaustive interrogation, repeated questions, and collecting information that
-has no defined product use.
+Questions are chosen for expected planning value. The agent avoids exhaustive
+interrogation, repeated questions, and collection without a product use.
 
 ### Make assumptions explicit
 
-A proposed assumption must be inspectable and correctable. High-impact or hard
-constraints require confirmation. Lower-impact defaults may be proposed with a
-clear opportunity to change them.
+High-impact constraints and enduring routines require confirmation. Soft
+inferred preferences remain visible and low-weight. New routines and fallbacks
+always offer a clear accept-once, save, or reject transition.
 
 ### Stay nutrition-aware without becoming clinical
 
-The agent may discuss balanced variety, protein preferences, energy-related
-meal habits, or user-stated goals. It must not diagnose, prescribe treatment, or
-present uncertain nutritional claims as facts. Sensitive health-related inputs
-need an explicit purpose and careful handling.
+The agent may provide transparent qualitative observations, such as a repetitive
+or unusually high-effort week. It does not implement calorie, macro, weight,
+muscle, medical, or therapeutic-goal optimization in the MVP.
 
 ## Routine Builder Requirements
 
-A routine is a reusable, versioned planning rule rather than a copied set of
-calendar cells. It may apply to one person or the household and may define:
+A routine is a reusable, versioned planning rule rather than copied calendar
+cells. It may define:
 
 - applicable days and meal occasions;
-- location or context, such as home, office, school, or activity;
-- a fixed food, recipe, routine category, or leftover policy;
+- location or context;
+- an exact food or small approved set;
+- pin, prefer, or rotate behaviour;
+- a meal option, leftover policy, external meal, flexible pattern, or skip;
 - people covered;
 - portion expectations;
 - a fallback rule;
-- priority and conflict behavior; and
+- equipment and preparation window;
+- cooking-capacity effect;
+- priority and conflict behaviour; and
 - effective dates and one-off exceptions.
 
-Routine evaluation should produce meal requirements and suggested coverage for
-a concrete planning period. One-off weekly exceptions override the baseline
-without silently rewriting the enduring routine.
+Routine evaluation produces concrete plan input for one period. One-off
+exceptions override the baseline without silently rewriting the enduring rule.
 
 ## Compressed Visual Model
 
-Internally, the plan accounts for every required `person × date × meal
-occasion` cell. The UI should compress that model by:
+Internally, the plan accounts for every managed `person × date × meal occasion`
+requirement. The default UI should compress that model by:
 
 - grouping shared meals;
 - collapsing repeated routines;
-- showing exceptions rather than duplicating ordinary coverage;
-- linking leftovers back to their cook event; and
-- highlighting only unresolved or conflicting cells.
+- nesting person exceptions;
+- linking leftovers and prepared components to cook events;
+- showing applied rationale; and
+- highlighting only unresolved or conflicting coverage.
 
-An expert user may open the complete matrix for diagnosis, but the default
-experience should feel like a household week, not a spreadsheet.
+The internal domain union is not automatically the frontend contract. Build the
+projection that best communicates the household week.
 
 ## Privacy Experience
 
 - Raw adult interview transcripts are private to the participant.
 - Confirmed person-profile facts are household-visible by default.
+- Any adult may edit profiles and shared plans in the MVP; changes are audited.
 - Shared routines, plans, approvals, shopping lists, and weekly reviews are
-  visible to authorized household members.
-- The product should clearly distinguish a proposed fact from a confirmed fact
-  and show who may edit it.
-- The system cannot promise that a shared plan reveals nothing about visible
-  preferences; it should promise appropriate handling of the private transcript
-  and accurate attribution of confirmed state.
+  visible to authorized adults.
+- Proposed, inferred, provisional, and confirmed facts remain distinguishable.
+- Planning rationale references confirmed product facts and does not quote the
+  private transcript.
 
 ## Experience Evaluation
 
-The AI experience should be evaluated with representative household scenarios,
-not only schema and prompt tests. Evaluation should measure:
+Evaluate the AI experience with representative household scenarios, not only
+schema and prompt tests. Measure:
 
 - important facts discovered;
 - unnecessary questions asked;
 - correctness of synthesized profiles and routines;
 - assumptions accepted or corrected;
 - hard constraints respected;
-- quality and practicality of the first proposed week;
+- quality and practicality of the first recommended week;
+- correctness and clarity of fallbacks and rationale;
+- repair quality after a requested change;
 - user-rated sense of being understood; and
 - time to reach approval.
 
