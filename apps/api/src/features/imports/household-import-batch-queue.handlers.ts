@@ -29,7 +29,7 @@ const isAcceptedWorkflowStatus = (status: string) =>
 
 /** Production Queue handler: validate the closed envelope and start or reconcile one stable Workflow. */
 export const handleHouseholdImportBatchQueueMessage = <E, R>(
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- The untrusted Queue body is immediately parsed by the production closed-envelope decoder.
+  // eslint-disable-next-line anti-slop/no-unknown-parameters -- The untrusted Queue body is immediately parsed by the production closed-envelope decoder.
   body: unknown,
   workflow: HouseholdBatchWorkflowLauncher<E, R>
 ) =>
@@ -55,7 +55,7 @@ export const handleHouseholdImportBatchQueueMessage = <E, R>(
 
 /** Production DLQ handler: terminally settle only the immutable household-local item identity. */
 export const handleHouseholdImportBatchDeadLetterMessage = (
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- The untrusted DLQ body is immediately parsed by the production closed-envelope decoder.
+  // eslint-disable-next-line anti-slop/no-unknown-parameters -- The untrusted DLQ body is immediately parsed by the production closed-envelope decoder.
   body: unknown,
   household: Pick<HouseholdDomainWorkerMethods, "failImportBatchItem">
 ) =>
