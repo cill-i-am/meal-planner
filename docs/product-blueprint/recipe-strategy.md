@@ -1,18 +1,60 @@
-# Recipe Strategy
+# Meal Content And Recipe Strategy
 
 ## Purpose
 
-Meal Planner needs enough trustworthy recipe supply to produce practical plans,
-while preserving the difference between shared product content and private
-household knowledge.
+Meal Planner needs enough trustworthy food options to produce practical plans,
+while preserving the difference between shared product content, private
+household knowledge, exact packaged products, simple assembled meals, and
+external meals.
 
-The product therefore has two recipe domains:
+The planner uses a common meal-option concept, but does not force every option
+into a recipe shape.
+
+## Meal-Option Kinds
+
+### Recipe meal
+
+A recipe meal has an immutable recipe version, original batch and yield,
+structured ingredients, usable instructions, scaling behaviour, effort and
+equipment metadata, and possible prepared output.
+
+### Assembled meal
+
+An assembled meal has named components and useful quantities but no meaningful
+full recipe method. Examples include cereal and milk, sandwiches, toast, fruit
+and yoghurt, or a burger assembled from packaged components.
+
+An assembled meal may consume a prepared component from an earlier cook event,
+such as roast chicken in a sandwich.
+
+### Packaged meal
+
+A packaged meal references a generic product concept or an exact household
+product preference. It may include preparation notes and one of:
+
+- exact product only;
+- ask before substituting; or
+- similar products acceptable.
+
+A particular frozen pizza may be an ordinary routine meal, a person-specific
+fallback, or both.
+
+### External meal
+
+An external meal represents takeaway, restaurant, school meal, work canteen, or
+another opaque food event. It covers one or more meal requirements without
+pretending the product knows ingredients, quantities, or nutrition. It normally
+contributes no shopping demand.
+
+## Two Recipe Authorities
+
+The product has two recipe domains:
 
 1. a shared curated catalogue; and
 2. a private household recipe bank.
 
-They may share normalization contracts and planning concepts, but they do not
-share authority or visibility by accident.
+They may share normalization and planning contracts, but they do not share
+visibility or authority by accident.
 
 ## Shared Curated Catalogue
 
@@ -22,40 +64,44 @@ quality over raw volume.
 
 A catalogue recipe should have:
 
-- stable recipe and version identity;
-- clear source and rights provenance;
+- stable recipe and immutable version identity;
+- clear source, rights, and attribution provenance;
 - reviewed ingredients and instructions;
-- yield and scaling information where supported;
-- planning tags and constraint metadata;
-- enough structured quantity data to derive shopping demand;
+- confirmed base yield;
+- enough structured quantity data to support shopping;
+- reviewed scaling behaviour where applicable;
+- planning metadata for occasion, effort, equipment, portability, and leftover
+  use;
+- suitability metadata without unsupported health claims;
 - lifecycle state for draft, reviewed, active, or retired content; and
-- audit history for material corrections.
+- audit history for material correction.
 
-The initial catalogue may be manually curated. The exact size, content source,
-and curation workflow remain open decisions. A large weakly normalized bank is
-not automatically more valuable than a smaller bank that plans and scales
-reliably.
+The exact initial source, licence, size, and curation workflow remain open
+product decisions. A smaller reliable catalogue is more useful than a large
+weakly normalized bank.
 
-The shared catalogue requires its own explicit product and architecture
-authority. It must not be built by copying or projecting private household
-recipes into a global read model.
+The shared catalogue requires an explicit authority separate from private
+household objects. It must not be built by copying or projecting private
+household recipes into a global product store.
 
-## Private Household Recipe Bank
+## Private Household Content
 
 A household recipe may originate from:
 
 - an intentional user-supplied import;
-- a manual recipe;
-- a saved catalogue recipe;
-- a household adaptation or fork; or
+- manual entry;
+- a saved or adapted catalogue recipe;
+- a household-created fork; or
 - a future supported capture source.
 
-Household recipes are private by default. Importing or adapting a recipe does
-not automatically contribute it to the shared catalogue.
+A household may also create assembled meals and packaged meal options without
+inventing recipe instructions.
 
-A future contribution flow would require an explicit submission, provenance and
-rights checks, content review, and a new catalogue identity. It is outside the
-initial beta.
+Household content is private by default. Importing or adapting content does not
+automatically contribute it to the shared catalogue.
+
+A future contribution flow would require explicit submission, provenance and
+rights checks, review, and a new catalogue identity. It is outside the beta.
 
 ## Recipe And Version Identity
 
@@ -66,10 +112,10 @@ A new version is created when a material change affects:
 
 - ingredients or quantities;
 - instructions;
-- yield or scaling behavior;
-- safety or dietary suitability;
-- expected effort or time;
-- planning tags; or
+- original yield or reviewed scaling behaviour;
+- suitability;
+- expected effort, equipment, or time;
+- planning metadata; or
 - shopping demand.
 
 An approved plan pins the exact version it used. Editing a household recipe must
@@ -77,35 +123,98 @@ not rewrite an active or historical plan.
 
 ## Forks And Household Adaptations
 
-When a household changes a catalogue or imported recipe, the result becomes a
-household-owned fork or version with recorded ancestry:
+Changing a shared catalogue recipe creates a private household fork with
+recorded ancestry. The catalogue entry remains unchanged.
 
-```ts
-interface RecipeForkProvenance {
-  readonly forkedFromRecipeId: RecipeId
-  readonly forkedFromVersionId: RecipeVersionId
-}
-```
+Ordinary changes to an existing household recipe create a new version of that
+recipe. An adult explicitly chooses **save as a separate recipe** for a
+materially different dish.
 
 Examples include:
 
 - reducing spice;
 - substituting turkey mince;
-- changing an ingredient for one household constraint;
+- changing an ingredient for a household constraint;
 - doubling sauce;
 - altering the method for available equipment; or
-- introducing a child-compatible variation.
+- creating a person-compatible variation.
 
 Ancestry supports attribution and explanation without forcing later catalogue
-changes into the household version.
+changes into household versions.
 
-## Normalized Ingredient Model
+## Original Batch And Reference Serving
+
+The original recipe batch and stated yield remain authoritative. Where scaling
+is meaningful, the system derives a reference-serving projection for planning.
+The derived projection does not replace the original recipe.
+
+For example:
+
+```text
+Original batch: serves 4
+500 g mince
+1 onion
+2 eggs
+1 tin tomatoes
+salt to taste
+```
+
+may derive planning values such as:
+
+```text
+mince: 125 g per reference serving — linear
+onion: 0.25 per serving — discrete
+Eggs: 0.5 per serving — discrete
+tomatoes: 0.25 tin per serving — package constrained
+salt: unresolved numeric scaling — to taste
+```
+
+A lasagne tray, loaf, cake, slow-cooker batch, or recipe with equipment geometry
+may have a supported yield range or minimum practical batch. The planner may
+recommend producing eight portions rather than forcing exactly seven.
+
+## Plan-Specific Scaling
+
+Scaling from four to seven serving-equivalents for one week is cook-event state,
+not a new recipe version.
+
+The plan pins the recipe version, records intended yield, and derives proposed
+quantities using ingredient-specific scaling rules:
+
+- linear;
+- discrete;
+- bounded;
+- package constrained;
+- to taste; or
+- non-scalable.
+
+Ambiguous whole items, tins, package sizes, tray geometry, and cooking-time
+changes are surfaced rather than blindly multiplied. Missing quantities or
+yield are never invented.
+
+An adult may explicitly save a confirmed scaling adaptation back into the
+household recipe as a new version.
+
+## Recipe Completeness
+
+A recipe may remain saved as a draft or review item while incomplete. To drive
+reliable planning, scaling, and shopping it needs:
+
+- a confirmed base yield;
+- usable instructions; and
+- confirmed quantities for ingredients that materially affect shopping.
+
+Values such as salt to taste, optional garnish, or an unresolved exact brand may
+remain open when they do not prevent truthful planning. A missing primary
+ingredient quantity cannot.
+
+## Normalized Ingredients
 
 Free-text ingredient lines remain valuable evidence and display content, but
-they are not sufficient for scaling, leftovers, or shopping demand.
+they are not sufficient for scaling or shopping demand.
 
-A normalized ingredient should preserve both the source line and structured
-interpretation:
+A normalized ingredient should preserve both source text and structured
+interpretation, for example:
 
 ```ts
 interface RecipeIngredient {
@@ -115,64 +224,40 @@ interface RecipeIngredient {
   readonly unit: Unit | null
   readonly preparation: string | null
   readonly optional: boolean
-  readonly scalingRule:
-    | "linear"
-    | "discrete"
-    | "bounded"
-    | "package_constrained"
-    | "to_taste"
-    | "non_scalable"
+  readonly scalingRule: ScalingRule
   readonly evidence: readonly EvidenceReference[]
   readonly confidence: number
 }
 ```
 
-The internal model should preserve unresolved quantity, unit, or food-concept
-mapping rather than manufacture precision.
+The internal model preserves unresolved quantity, unit, food-concept mapping,
+and scaling uncertainty rather than manufacturing precision.
 
-## Scaling
+Food taxonomy, unit systems, and exact-product identity before retailer
+integration remain open decisions.
 
-Recipe scaling is a reviewed domain operation, not a blanket multiplication of
-all numbers.
+## Effort And Planning Metadata
 
-Examples of different behavior include:
-
-- liquids and many bulk ingredients scaling linearly;
-- eggs and tins requiring discrete counts;
-- salt, chilli, and seasoning scaling within bounds or to taste;
-- whole poultry or package sizes constraining available quantities;
-- baking-tin geometry affecting yield and cooking time; and
-- cooking time remaining unchanged, changing nonlinearly, or requiring review.
-
-The system may propose an inferred scaling rule or quantity, but inferred values
-must remain distinguishable and reviewable. Missing yield, quantity, timing, or
-nutrition is not silently promoted to fact.
-
-## Recipe Planning Metadata
-
-The current coarse planning tags are a useful baseline, but the full planner may
-need reviewed metadata for:
+Useful reviewed metadata includes:
 
 - meal occasions;
-- cuisine;
-- difficulty and active effort;
-- total time and unattended time;
+- hands-on and elapsed time;
+- attention, cleanup, coordination, and advance-start requirements;
 - equipment;
-- batch and leftover suitability;
-- freezer and reheating suitability;
+- batch, prepared-component, and leftover suitability;
 - portability;
-- child variation options;
-- dietary and allergen compatibility;
-- portion type and yield; and
+- relevant substitution or fallback use;
+- suitability and allergen facts;
+- portion type and original yield; and
 - ingredient overlap or use-up opportunities.
 
-These values should be derived from reviewed recipe facts or explicit curator
-judgment. Provider-generated labels do not bypass review.
+Friendly labels such as quick or hands-off are derived summaries. Provider or
+model labels do not bypass review.
 
 ## Import Source Adapters
 
 The existing TikTok pipeline is the first acquisition adapter, not the complete
-recipe domain. The public source contract should remain extensible, for example:
+content domain. Source descriptors remain extensible, for example:
 
 ```ts
 type RecipeSourceDescriptor =
@@ -181,32 +266,34 @@ type RecipeSourceDescriptor =
   | { readonly kind: "manual" }
 ```
 
-Source-specific work occurs before a common evidence-grounded draft and review
-flow.
+Source-specific acquisition occurs before one evidence-grounded draft and
+review flow.
 
 ### TikTok
 
 The adapter may acquire public video or carousel evidence, transcribe speech,
 extract visible information, and produce a reviewable draft. Unsupported,
-private, or unavailable media must fail truthfully.
+private, or unavailable media fails truthfully.
 
 ### Recipe web page
 
-A web-page adapter should:
+A future adapter should:
 
 1. fetch through a restricted acquisition boundary with redirect, size, MIME,
    and SSRF protections;
 2. prefer structured recipe markup when present;
-3. preserve visible-page and structured evidence;
+3. preserve structured and relevant visible-page evidence;
 4. use model extraction only against captured evidence;
 5. expose unresolved or conflicting fields; and
-6. enter the same review and version-publication flow as other sources.
+6. enter the same review and version-publication flow.
 
-### Manual recipe
+Supported sites, rights, robots, and acquisition policy remain open decisions.
 
-A manual flow should create an explicit user-authored draft without pretending
-that source evidence exists. It should still support review, versioning,
-structured ingredients, and planning metadata.
+### Manual content
+
+Manual entry creates explicit user-authored content without pretending source
+evidence exists. It may create a full recipe, assembled meal, or packaged meal
+option.
 
 ## Evidence, Review, And Publication
 
@@ -214,44 +301,40 @@ Every imported recipe begins as a draft. Evidence-grounded fields retain
 citations, confidence, origin, and unresolved state. A reviewer may correct
 facts while preserving the distinction between extracted and corrected values.
 
-Only an admitted reviewed recipe version may enter:
-
-- the household recipe bank;
-- the shared catalogue; or
-- meal-plan generation.
-
-Shared-catalogue publication is a separate future capability from household
-approval.
+Only admitted reviewed recipe versions may enter meal-plan generation. Shared
+catalogue publication is a separate future capability from household approval.
 
 ## Search And Discovery
 
-Beta discovery should support practical filtering and selection before advanced
-semantic recommendation. Useful dimensions include:
+Beta discovery should support practical filtering before advanced semantic
+recommendation. Useful dimensions include:
 
 - meal occasion;
-- hard dietary fit;
-- active and total time;
-- difficulty;
-- cuisine;
+- hard suitability;
+- effort and preparation window;
+- equipment;
+- cuisine and ordinary preference;
 - batch and leftover suitability;
 - portability;
-- equipment; and
-- household history.
+- meal-option kind; and
+- household history and cadence.
 
-Semantic search or embeddings may later provide a rebuildable derived index.
-They must not become recipe authority or replace structured hard-constraint
-filtering.
+Semantic search may later provide a rebuildable derived index. It must not
+become recipe authority or replace structured hard-constraint filtering.
 
 ## Initial Beta Boundary
 
-The beta recipe system should prove:
+The beta content system should prove:
 
 - curated catalogue recipes can be planned and scaled reliably;
 - household imports pass through truthful review;
-- a household can fork and adapt a recipe;
-- plans pin immutable versions;
-- the planner can select between catalogue and household recipes; and
-- approved plans derive consolidated ingredient demand.
+- a household can create assembled and packaged options;
+- a household can fork and version a recipe;
+- plans pin immutable content versions;
+- one cook event can create finished portions and explicit prepared components;
+- the planner can select across catalogue and household content; and
+- approved plans derive consolidated shopping demand.
 
 A public marketplace, retailer product mapping, autonomous catalogue
-publication, and arbitrary logged-in source acquisition are out of scope.
+publication, logged-in arbitrary source acquisition, and continuous pantry are
+out of scope.
