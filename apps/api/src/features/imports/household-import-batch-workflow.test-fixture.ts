@@ -132,10 +132,8 @@ const completedBatch = (message: typeof HouseholdBatchQueueMessage.Type) =>
 
 const workflowExport = {
   kind: "workflow" as const,
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Alchemy's Workflow export erases the native binding type.
-  make: (rawEnvironment: unknown) => {
-    const environment = rawEnvironment as TestEnvironment;
-    return Effect.succeed((rawInput: Schema.Json) =>
+  make: (environment: TestEnvironment) =>
+    Effect.succeed((rawInput: Schema.Json) =>
       Effect.gen(function* runBatchWorkflowProof() {
         const event = yield* WorkflowEvent;
         const message = yield* Schema.decodeUnknownEffect(
@@ -194,8 +192,7 @@ const workflowExport = {
           )
         );
       })
-    );
-  },
+    ),
 };
 
 const AlchemyRuntimeContractKey = "shape";
