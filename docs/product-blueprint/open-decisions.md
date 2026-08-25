@@ -26,16 +26,15 @@ record.
 
 ## Before Stage 2 — AI Discovery
 
-### Evaluation governance and provider strategy
+### Evaluation implementation and provider strategy
 
 The three-layer evidence model, versioned synthetic household evals, rubric
-dimensions, and release-gating principle are accepted in PDR-0006. Remaining
-choices are:
+dimensions, hard release blockers, repository review requirements, and final MVP
+product-owner acceptance are settled in PDR-0006. Remaining choices are:
 
 - Which exact synthetic scenarios form the initial release suite?
-- What numeric or qualitative thresholds block a release?
-- Who reviews failures and approves material scenario, rubric, prompt, tool, or
-  policy changes?
+- What numeric or qualitative bands trigger review or block release for non-hard
+  quality dimensions?
 - Which rubric dimensions use deterministic scoring, model judging, human
   review, or a combination?
 - What model and provider strategy meets quality, cost, privacy, and latency
