@@ -58,7 +58,16 @@ Linking an account must not create a duplicate eater or lose profile, routine,
 plan, feedback, or recipe history. The lifecycle of a person is distinct from
 membership and session lifecycle.
 
-The exact departure, archival, and account-link repair policy remains open.
+Removing an adult's household membership revokes account access immediately but
+does not delete the household person. Leaving or removing someone archives the
+person by default. An archived person no longer generates future meal
+requirements and their routines no longer apply, while historical plans,
+feedback, recipe changes, profiles, and audits retain stable references.
+
+Remaining authorized adults may continue to understand household history. The
+departed adult cannot read that history after membership removal. Restoring a
+person reuses the same household-local identity. Permanent deletion is a
+separate explicit lifecycle rather than the default leave-household operation.
 
 ## Person Profiles
 
