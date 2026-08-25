@@ -58,6 +58,23 @@ must remain useful and editable by the people planning food together.
 - Profile facts and profile snapshots are versioned so history and plan
   provenance remain auditable.
 
+### Completed interview lifecycle
+
+- An active interview may be continued until the participant completes it.
+- Completing an interview closes and disables that conversation.
+- A completed conversation is retained as a private historical transcript and
+  becomes read-only. It cannot accept further messages, resume questioning, or
+  mutate product state.
+- A later profile review starts a new interview session rather than reopening or
+  appending to the completed conversation.
+- The participant may view their own completed transcripts. Other household
+  adults cannot view them.
+- Confirmed profile facts, routines, and audit records remain structurally
+  independent of the transcript.
+- The MVP does not automatically delete completed transcripts. Permanent
+  deletion or erasure remains a separate explicit lifecycle rather than an
+  expiry timer attached to normal interview completion.
+
 ### Minimum profile for the first plan
 
 The first plan should be available as soon as the product can avoid an unsafe or
@@ -148,6 +165,10 @@ not part of this decision.
   completion of an exhaustive preference questionnaire.
 - Profile and routine artifacts must support provisional state because the first
   plan may precede every adult's self-review.
+- Completed interviews require a closed, read-only lifecycle and participant-only
+  transcript access rather than automatic expiry or conversational reuse.
+- Retained transcripts remain private records and cannot become a hidden source
+  of current planning authority.
 - MVP permissions are intentionally broad to reduce implementation and household
   coordination friction.
 - Private transcript handling cannot be conflated with private profile facts;
@@ -164,5 +185,6 @@ not part of this decision.
 - guardian-specific permissions;
 - consensus approval of profile changes;
 - hidden private confirmed profile facts;
-- cross-household person identity or profile portability; and
-- the permanent person-data deletion and erasure workflow.
+- cross-household person identity or profile portability;
+- support or operator access to private transcripts; and
+- the permanent person or transcript deletion and erasure workflow.
