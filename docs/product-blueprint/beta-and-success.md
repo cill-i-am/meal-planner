@@ -130,13 +130,50 @@ A fluent but generic conversation should score poorly. A shorter conversation
 that identifies the right household structure and produces an excellent routine
 may score highly.
 
+## Evaluation Evidence Stack
+
+[PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md)
+defines three distinct forms of evidence.
+
+### Deterministic domain and software tests
+
+Exact pass-or-fail tests prove authorization, privacy, hard constraints, coverage,
+portion and allocation arithmetic, routine and fallback expansion, repair,
+versioning, and approval invariants. These tests do not judge whether the
+conversation was perceptive or useful.
+
+### Synthetic household agent evals
+
+A fixed, versioned repository suite exercises discovery, profile and routine
+synthesis, planning, rationale, and repair against privacy-safe synthetic
+households. Each scenario includes required discoveries, prohibited assumptions,
+hard invariants, expected artifacts, representative user changes, and a scored
+quality rubric.
+
+A scenario need not prescribe one exact golden week where several plans could be
+valid. It must reject hard-invariant violations and score the complete
+interaction trajectory, including unnecessary questions, missed facts, first-plan
+practicality, automatic application of known routines and fallbacks, explanation
+quality, and repair behaviour.
+
+### Live beta product evidence
+
+Real household measures determine whether the offline evidence translates into
+time saved, fewer corrections, returning use, and a genuine sense that the
+product understands the household.
+
+Meaningful model, prompt, tool, orchestration-policy, or agent-behaviour changes
+must run the relevant deterministic tests and synthetic evals. Results record the
+exact model, prompt, tool, policy, scenario, and rubric versions. Offline evals
+are a release gate, not a substitute for beta evidence.
+
 ## Representative Evaluation Households
 
 Before and during beta, maintain privacy-safe synthetic scenarios covering at
 least:
 
 - two adults with different work and breakfast routines;
-- a dependant with a narrow accepted-food repertoire;
+- a dependant with a narrow fallback repertoire;
 - a shared dinner with a low-effort individual variation;
 - vegetarian and omnivore coexistence;
 - leftovers used for office or school lunches;
@@ -148,7 +185,9 @@ least:
 - conflicting preferences where no person can be ignored.
 
 These scenarios should exercise conversation, structured artifacts, domain
-validation, and the final plan rather than prompt output in isolation.
+validation, the final plan, and at least one meaningful repair request rather
+than prompt output in isolation. New reusable classes of production failure
+should become privacy-safe regression scenarios where practical.
 
 ## Privacy-Safe Instrumentation
 
@@ -172,7 +211,8 @@ URLs, recipe evidence, or credentials in analytics events.
 
 For a small cohort, the team should regularly review:
 
-- recordings or transcripts only where the participant explicitly consents;
+- completed transcripts only where the participant grants explicit,
+  purpose-specific, time-limited access;
 - the visible artifact history rather than private transcript by default;
 - where the agent appeared generic or failed to synthesize;
 - why households overrode routines or plans;
@@ -193,9 +233,12 @@ Before inviting external households, the product should demonstrate:
 - deterministic hard-constraint and coverage validation;
 - versioned recipe and plan behavior;
 - restart and replay safety for meaningful mutations;
+- green deterministic tests and accepted synthetic agent-eval evidence for the
+  beta scenario set;
 - complete representative vertical tests;
 - a privacy-safe operator view for support;
-- explicit deletion and retention behavior for interview material;
+- closed read-only completed interviews and audited participant-consented
+  transcript access;
 - no retailer credentials, basket effects, or accidental provider effects in
   the beta path; and
 - a clear mechanism to pause or remove a household from the beta.
