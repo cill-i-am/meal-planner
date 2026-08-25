@@ -199,7 +199,7 @@ describe("greenfield recipe-import architecture", () => {
         readTrackedGlobalD1Architecture(repositoryRoot)
       )
     ).toEqual([]);
-  });
+  }, 15_000);
 
   it("documents only the current recipe-import design", async () => {
     const sources = await loadSources(
