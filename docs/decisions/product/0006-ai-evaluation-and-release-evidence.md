@@ -169,6 +169,31 @@ Material changes to scenarios, prohibited outcomes, rubrics, or scoring policy
 must be reviewed as repository changes. The suite must not be weakened merely to
 allow a candidate model, prompt, or tool change to pass.
 
+### Hybrid judging and calibration
+
+Eval dimensions use the least subjective reliable judge available:
+
+- **Deterministic scoring** owns objectively checkable outcomes, including
+  required facts discovered, prohibited assumptions, hard constraints, expected
+  artifacts, accepted routines and fallbacks applied, coverage completeness,
+  allocation validity, and repair integrity.
+- **Programmatic measures** own question count, repeated questions, latency,
+  tool and schema failures, token usage, and estimated cost.
+- **A fixed model judge** scores softer quality dimensions such as
+  perceptiveness, household specificity, value of follow-up questions, clarity
+  of rationale, and usefulness of a valid plan or repair.
+- **Human review** calibrates the initial rubric and judge, investigates all hard
+  failures, resolves close release decisions, and reviews every proposed
+  acceptance of a known quality regression.
+
+The model judge runs only after deterministic hard checks pass and cannot waive,
+downgrade, or compensate for a hard failure. Its model, prompt, rubric, and
+version are recorded with the result.
+
+Model-judge scores are periodically compared with human review on a stable
+calibration sample. Material disagreement, drift, or systematic leniency blocks
+reliance on the judge until the scoring policy is corrected and revalidated.
+
 ### Scenario maintenance
 
 - Synthetic scenarios live in the repository as product-quality assets.
@@ -187,6 +212,8 @@ allow a candidate model, prompt, or tool change to pass.
   recording, and release evidence before Stage 2 is complete.
 - The first harness must cover all eight accepted scenario families and the full
   discovery-to-repair trajectory.
+- The harness needs deterministic checks, programmatic telemetry, a versioned
+  fixed model-judge path, and a human-calibration workflow.
 - Domain correctness and agent quality remain separable: an agent cannot obtain
   credit for violating deterministic rules, and a valid but generic interaction
   can still score poorly.
@@ -202,7 +229,6 @@ allow a candidate model, prompt, or tool change to pass.
 - exact fixture data and secondary variations inside each accepted scenario
   family;
 - numeric thresholds for non-hard quality dimensions;
-- the first model and provider selection;
-- automated model-based judging versus human review for each rubric dimension;
-  and
+- the first agent model, model judge, and provider selections;
+- the size and cadence of the human calibration sample; and
 - production experimentation or multi-armed model routing.
