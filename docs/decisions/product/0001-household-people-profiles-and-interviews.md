@@ -76,6 +76,27 @@ must remain useful and editable by the people planning food together.
 - Safety constraints, dietary rules, routines, goals, and strong dislikes
   require explicit confirmation before becoming authoritative.
 
+### Departure, archival, and restoration
+
+- Removing an adult's household membership revokes their account access to that
+  household immediately.
+- A membership removal does not delete the corresponding household person.
+  Leaving or removing someone archives their `HouseholdPerson` by default.
+- An adult may archive or restore a dependant profile through the same product
+  lifecycle.
+- An archived person stops generating future meal requirements and their
+  routines no longer apply to new plans.
+- Historical approved plans, profile versions, feedback, recipe changes, and
+  audit records retain stable references to the archived person.
+- Remaining authorized adults may continue to understand household history that
+  involved the archived person.
+- A departed adult cannot read household history after their membership access
+  is removed.
+- If the person returns, an adult restores the same household-person identity
+  rather than creating a duplicate profile and losing history.
+- Permanent deletion or erasure is a separate explicit lifecycle. It is not the
+  default consequence of leaving a household.
+
 ## Consequences
 
 - Better Auth remains the identity and membership control plane rather than the
@@ -86,6 +107,10 @@ must remain useful and editable by the people planning food together.
   coordination friction.
 - Private transcript handling cannot be conflated with private profile facts;
   ordinary confirmed profile facts are shared household state.
+- Account offboarding and household-person archival are distinct transitions,
+  even where one user action coordinates both.
+- Historical projections must render archived people without reactivating their
+  routines or future meal requirements.
 
 ## Deferred
 
@@ -93,5 +118,6 @@ must remain useful and editable by the people planning food together.
 - granular adult permissions;
 - guardian-specific permissions;
 - consensus approval of profile changes;
-- hidden private confirmed profile facts; and
-- cross-household person identity or profile portability.
+- hidden private confirmed profile facts;
+- cross-household person identity or profile portability; and
+- the permanent person-data deletion and erasure workflow.
