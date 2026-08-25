@@ -26,19 +26,18 @@ record.
 
 ## Before Stage 2 — AI Discovery
 
-### Evaluation implementation and provider strategy
+### Evaluation thresholds and provider strategy
 
 The three-layer evidence model, eight initial synthetic scenario families,
-versioned household evals, rubric dimensions, hard release blockers, repository
-review requirements, and final MVP product-owner acceptance are settled in
-PDR-0006. Remaining choices are:
+versioned household evals, hybrid deterministic/programmatic/model/human judging,
+hard release blockers, repository review requirements, and final MVP
+product-owner acceptance are settled in PDR-0006. Remaining choices are:
 
 - What numeric or qualitative bands trigger review or block release for non-hard
   quality dimensions?
-- Which rubric dimensions use deterministic scoring, model judging, human
-  review, or a combination?
-- What model and provider strategy meets quality, cost, privacy, and latency
-  requirements against the accepted suite?
+- What first agent model, model judge, and provider strategy meet quality, cost,
+  privacy, and latency requirements against the accepted suite?
+- How large is the human calibration sample and how often is it rerun?
 - Is production model experimentation needed during the invite-only beta?
 
 Provider choice follows product evaluation and does not define the domain.
