@@ -12,7 +12,7 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted six product decision records:
+The workshop has accepted seven product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
@@ -20,26 +20,30 @@ The workshop has accepted six product decision records:
 - [Meal content, portions, recipes, prepared food, and shopping](../decisions/product/0004-meal-content-portions-recipes-and-shopping.md)
 - [MVP scope and deferrals](../decisions/product/0005-mvp-scope-and-deferrals.md)
 - [AI evaluation and release evidence](../decisions/product/0006-ai-evaluation-and-release-evidence.md)
+- [Household agent conversations and visibility](../decisions/product/0007-household-agent-conversations-and-visibility.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
 
 ## Before Stage 2 — AI Discovery
 
-### Provider and calibration strategy
+### Evaluation thresholds and provider strategy
 
 The three-layer evidence model, eight initial synthetic scenario families,
 versioned household evals, hybrid deterministic/programmatic/model/human judging,
-`1–5` non-hard quality bands, hard release blockers, repository review
-requirements, and final MVP product-owner acceptance are settled in PDR-0006.
-Remaining choices are:
+hard release blockers, repository review requirements, and final MVP
+product-owner acceptance are settled in PDR-0006. Remaining choices are:
 
+- What numeric or qualitative bands trigger review or block release for non-hard
+  quality dimensions?
 - What first agent model, model judge, and provider strategy meet quality, cost,
   privacy, and latency requirements against the accepted suite?
 - How large is the human calibration sample and how often is it rerun?
 - Is production model experimentation needed during the invite-only beta?
 
-Provider choice follows product evaluation and does not define the domain.
+The household-agent runtime, shared and private conversation model, authority
+split, and thin model-adapter boundary are settled in PDR-0007 and ADR-0004.
+Provider choice still follows product evaluation and does not define the domain.
 
 ## Before Stage 3 — Routines And Fallbacks
 
