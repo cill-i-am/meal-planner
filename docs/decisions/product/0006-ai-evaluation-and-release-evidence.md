@@ -87,6 +87,40 @@ The invite-only beta measures whether real households receive value through:
 Offline eval success is required but cannot substitute for this product
 evidence.
 
+### Initial synthetic scenario suite
+
+The first release suite contains eight scenario families. Each family exercises
+the interview, visible artifacts, recommended plan, rationale, and at least one
+follow-up revision rather than judging only a final JSON document.
+
+1. **Simple household baseline.** Straightforward preferences and routines prove
+   that the agent can reach a useful plan quickly without exhaustive or repeated
+   questioning.
+2. **Conflicting adult routines.** Adults have different breakfasts, office
+   days, work-from-home availability, packed-lunch needs, and shared dinners.
+3. **Dependants and fallbacks.** A dependant strongly avoids a meal category,
+   has an approved exact packaged fallback, and must not create unnecessary
+   additional cooking work.
+4. **Mixed dietary household.** Vegetarian and omnivore household members share
+   components and meals where practical while retaining compatible individual
+   coverage.
+5. **Hard-constraint household.** An allergen or prohibited ingredient must
+   never appear through a shared meal, fallback, ingredient substitution, or
+   repair operation.
+6. **Routine-heavy household.** Repeated breakfasts and lunches, an intentional
+   skip, eating out, and a fixed takeaway night test whether routines compress
+   planning work rather than creating repeated entry.
+7. **Capacity-constrained week.** Limited substantial cook events, one hands-off
+   slow-cooker opportunity, available equipment, and several busy evenings test
+   realistic effort and preparation-window reasoning.
+8. **Dependency and repair.** A planned batch cook supplies later lunches, then
+   the user changes the producing meal and the system must repair portions,
+   person alternatives, prepared outputs, and shopping demand coherently.
+
+Concrete fixtures may vary within a family, but the family purpose, required
+discoveries, hard invariants, prohibited outcomes, and rubric expectations are
+versioned repository assets.
+
 ### Release gating
 
 - Meaningful changes to the model, prompt, tools, orchestration policy, or agent
@@ -151,6 +185,8 @@ allow a candidate model, prompt, or tool change to pass.
   than a one-off prompt demonstration.
 - The repository needs an eval harness, scenario format, rubric format, result
   recording, and release evidence before Stage 2 is complete.
+- The first harness must cover all eight accepted scenario families and the full
+  discovery-to-repair trajectory.
 - Domain correctness and agent quality remain separable: an agent cannot obtain
   credit for violating deterministic rules, and a valid but generic interaction
   can still score poorly.
@@ -163,7 +199,8 @@ allow a candidate model, prompt, or tool change to pass.
 
 ## Deferred
 
-- the exact initial scenario inventory;
+- exact fixture data and secondary variations inside each accepted scenario
+  family;
 - numeric thresholds for non-hard quality dimensions;
 - the first model and provider selection;
 - automated model-based judging versus human review for each rubric dimension;
