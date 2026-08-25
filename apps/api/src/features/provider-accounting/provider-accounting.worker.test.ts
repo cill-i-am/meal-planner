@@ -20,7 +20,7 @@ import { makeD1ProviderAccountingRepository } from "./provider-accounting.reposi
 import { makeD1ProviderAccountingService } from "./provider-accounting.service.js";
 
 const testEnv = env as unknown as {
-  readonly MealPlannerDatabase: AnyD1Database;
+  readonly ProviderAccountingDatabase: AnyD1Database;
   readonly TEST_MIGRATIONS: {
     readonly name: string;
     readonly queries: string[];
@@ -83,36 +83,36 @@ const claimInvocation = async (
 
 beforeAll(async () => {
   await applyD1Migrations(
-    testEnv.MealPlannerDatabase,
+    testEnv.ProviderAccountingDatabase,
     [...testEnv.TEST_MIGRATIONS],
     "d1_migrations"
   );
 });
 
 beforeEach(async () => {
-  await testEnv.MealPlannerDatabase.prepare(
+  await testEnv.ProviderAccountingDatabase.prepare(
     "DROP TRIGGER IF EXISTS provider_accounting_recipe_replay_values_guarded_delete"
   ).run();
-  await testEnv.MealPlannerDatabase.prepare(
+  await testEnv.ProviderAccountingDatabase.prepare(
     "DROP TRIGGER IF EXISTS provider_accounting_conservative_settlements_immutable_delete"
   ).run();
-  await testEnv.MealPlannerDatabase.prepare(
+  await testEnv.ProviderAccountingDatabase.prepare(
     "DROP TRIGGER IF EXISTS provider_accounting_reconciliations_immutable_delete"
   ).run();
-  await testEnv.MealPlannerDatabase.batch([
-    testEnv.MealPlannerDatabase.prepare(
+  await testEnv.ProviderAccountingDatabase.batch([
+    testEnv.ProviderAccountingDatabase.prepare(
       "DELETE FROM provider_accounting_recipe_replay_values"
     ),
-    testEnv.MealPlannerDatabase.prepare(
+    testEnv.ProviderAccountingDatabase.prepare(
       "DELETE FROM provider_accounting_conservative_settlements"
     ),
-    testEnv.MealPlannerDatabase.prepare(
+    testEnv.ProviderAccountingDatabase.prepare(
       "DELETE FROM provider_accounting_reconciliations"
     ),
-    testEnv.MealPlannerDatabase.prepare(
+    testEnv.ProviderAccountingDatabase.prepare(
       "DELETE FROM provider_accounting_dispatches"
     ),
-    testEnv.MealPlannerDatabase.prepare(
+    testEnv.ProviderAccountingDatabase.prepare(
       `UPDATE provider_accounting_budgets
           SET settled_micro_usd = 0, reserved_micro_usd = 0,
               state = 'open', invoking_dispatch_id = NULL,
@@ -121,7 +121,7 @@ beforeEach(async () => {
         WHERE accounting_scope = 'recipe-import'`
     ),
   ]);
-  await testEnv.MealPlannerDatabase.prepare(
+  await testEnv.ProviderAccountingDatabase.prepare(
     `CREATE TRIGGER provider_accounting_conservative_settlements_immutable_delete
      BEFORE DELETE ON provider_accounting_conservative_settlements
      BEGIN
@@ -131,7 +131,7 @@ beforeEach(async () => {
        );
      END`
   ).run();
-  await testEnv.MealPlannerDatabase.prepare(
+  await testEnv.ProviderAccountingDatabase.prepare(
     `CREATE TRIGGER provider_accounting_reconciliations_immutable_delete
      BEFORE DELETE ON provider_accounting_reconciliations
      BEGIN
@@ -143,7 +143,7 @@ beforeEach(async () => {
 describe("provider accounting", () => {
   it("observes settlement outcomes only after durable settlement", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const outcomes: string[] = [];
 
@@ -171,7 +171,7 @@ describe("provider accounting", () => {
 
   it("charges one schema-valid recipe response conservatively without claiming known actual spend", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const command = {
       ...reservation(
@@ -234,7 +234,7 @@ describe("provider accounting", () => {
       state: "open",
     });
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `SELECT actual_cost_micro_usd, state
            FROM provider_accounting_dispatches
           WHERE dispatch_id = ?`
@@ -246,7 +246,7 @@ describe("provider accounting", () => {
       state: "settled_unknown",
     });
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `SELECT actual_cost_was_unknown, authority,
                 conservative_charge_micro_usd
            FROM provider_accounting_conservative_settlements
@@ -261,7 +261,7 @@ describe("provider accounting", () => {
       conservative_charge_micro_usd: 100_000,
     });
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `SELECT evidence_fingerprint, expires_at, generation, import_id,
                 value_json, value_sha256
            FROM provider_accounting_recipe_replay_values
@@ -279,7 +279,7 @@ describe("provider accounting", () => {
       value_sha256: "a".repeat(64),
     });
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `UPDATE provider_accounting_recipe_replay_values
             SET value_json = value_json
           WHERE dispatch_id = ?`
@@ -288,7 +288,7 @@ describe("provider accounting", () => {
         .run()
     ).rejects.toThrow("provider recipe replay value is immutable");
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `DELETE FROM provider_accounting_recipe_replay_values
           WHERE dispatch_id = ?`
       )
@@ -296,7 +296,7 @@ describe("provider accounting", () => {
         .run()
     ).resolves.toMatchObject({ success: true });
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `UPDATE provider_accounting_conservative_settlements
             SET authority = authority
           WHERE dispatch_id = ?`
@@ -305,7 +305,7 @@ describe("provider accounting", () => {
         .run()
     ).rejects.toThrow("provider conservative settlement audit is immutable");
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `DELETE FROM provider_accounting_conservative_settlements
           WHERE dispatch_id = ?`
       )
@@ -316,7 +316,7 @@ describe("provider accounting", () => {
 
   it("converges concurrent conservative settlements on one immutable charge", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const command = {
       ...reservation(
@@ -348,7 +348,7 @@ describe("provider accounting", () => {
       state: "open",
     });
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `SELECT COUNT(*) AS count
            FROM provider_accounting_conservative_settlements
           WHERE dispatch_id = ?`
@@ -360,7 +360,7 @@ describe("provider accounting", () => {
 
   it("rejects multibyte conservative replay JSON over the UTF-8 byte cap", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const importId = "import-multibyte-replay";
     const command = {
@@ -396,7 +396,7 @@ describe("provider accounting", () => {
     await Effect.runPromise(
       repository.settleUnknown({ ...command, invocationGeneration })
     );
-    await testEnv.MealPlannerDatabase.prepare(
+    await testEnv.ProviderAccountingDatabase.prepare(
       `INSERT INTO provider_accounting_conservative_settlements (
          actual_cost_was_unknown, authority, conservative_charge_micro_usd,
          created_at, dispatch_id, accounting_scope
@@ -408,7 +408,7 @@ describe("provider accounting", () => {
       .bind("2026-07-29T18:00:00.000Z", command.dispatchId)
       .run();
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `INSERT INTO provider_accounting_recipe_replay_values (
            created_at, dispatch_id, evidence_fingerprint, expires_at,
            generation, import_id, accounting_scope, value_json, value_sha256
@@ -426,7 +426,7 @@ describe("provider accounting", () => {
         .run()
     ).rejects.toThrow();
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `SELECT COUNT(*) AS count
            FROM provider_accounting_recipe_replay_values
           WHERE dispatch_id = ?`
@@ -438,7 +438,7 @@ describe("provider accounting", () => {
 
   it("fails closed without redispatch when a conservative replay value is absent", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const command = {
       ...reservation(
@@ -477,7 +477,7 @@ describe("provider accounting", () => {
     await expect(Effect.runPromise(execute())).resolves.toMatchObject({
       _tag: "CompletedConservativeCost",
     });
-    await testEnv.MealPlannerDatabase.prepare(
+    await testEnv.ProviderAccountingDatabase.prepare(
       `DELETE FROM provider_accounting_recipe_replay_values
         WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
     )
@@ -492,7 +492,7 @@ describe("provider accounting", () => {
 
   it("fails closed on an expired replay and sweeps it during ordinary budget activity", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const command = {
       ...reservation(
@@ -531,11 +531,11 @@ describe("provider accounting", () => {
     await expect(Effect.runPromise(execute())).resolves.toMatchObject({
       _tag: "CompletedConservativeCost",
     });
-    await testEnv.MealPlannerDatabase.prepare(
+    await testEnv.ProviderAccountingDatabase.prepare(
       "DROP TRIGGER provider_accounting_recipe_replay_values_immutable_update"
     ).run();
     try {
-      await testEnv.MealPlannerDatabase.prepare(
+      await testEnv.ProviderAccountingDatabase.prepare(
         `UPDATE provider_accounting_recipe_replay_values
             SET created_at = '2026-07-20T18:00:00.000Z',
                 expires_at = '2026-07-27T18:00:00.000Z'
@@ -544,7 +544,7 @@ describe("provider accounting", () => {
         .bind(command.dispatchId)
         .run();
     } finally {
-      await testEnv.MealPlannerDatabase.prepare(
+      await testEnv.ProviderAccountingDatabase.prepare(
         `CREATE TRIGGER provider_accounting_recipe_replay_values_immutable_update
          BEFORE UPDATE ON provider_accounting_recipe_replay_values
          BEGIN
@@ -567,7 +567,7 @@ describe("provider accounting", () => {
       )
     );
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `SELECT dispatch_id
            FROM provider_accounting_recipe_replay_values
           WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
@@ -578,12 +578,9 @@ describe("provider accounting", () => {
   });
 
   it("physically replaces pilot storage without acquiring household authority", async () => {
-    const schemas = await testEnv.MealPlannerDatabase.prepare(
+    const schemas = await testEnv.ProviderAccountingDatabase.prepare(
       `SELECT name, sql FROM sqlite_master
-        WHERE type = 'table' AND (
-          name LIKE 'provider_accounting_%'
-          OR name LIKE 'pilot_provider_%'
-        )
+        WHERE type = 'table'
         ORDER BY name`
     ).all<{ name: string; sql: string }>();
 
@@ -592,6 +589,25 @@ describe("provider accounting", () => {
       readonly sql: string;
     }[];
     expect(schemaRows.map(({ name }) => name)).toEqual([
+      "_cf_METADATA",
+      "d1_migrations",
+      "provider_accounting_budgets",
+      "provider_accounting_conservative_settlements",
+      "provider_accounting_dispatches",
+      "provider_accounting_recipe_replay_values",
+      "provider_accounting_reconciliations",
+      "sqlite_sequence",
+    ]);
+    const runtimeBookkeepingTables = new Set([
+      "_cf_METADATA",
+      "d1_migrations",
+      "sqlite_sequence",
+    ]);
+    expect(
+      schemaRows
+        .map(({ name }) => name)
+        .filter((name) => !runtimeBookkeepingTables.has(name))
+    ).toEqual([
       "provider_accounting_budgets",
       "provider_accounting_conservative_settlements",
       "provider_accounting_dispatches",
@@ -607,14 +623,14 @@ describe("provider accounting", () => {
     expect(byName.get("provider_accounting_budgets")).toContain(
       `"budget_cap_micro_usd" = 10000000`
     );
-    const authorityRows = await testEnv.MealPlannerDatabase.prepare(
+    const authorityRows = await testEnv.ProviderAccountingDatabase.prepare(
       "SELECT accounting_scope FROM provider_accounting_budgets"
     ).all<{ readonly accounting_scope: string }>();
     expect(authorityRows.results).toEqual([
       { accounting_scope: "recipe-import" },
     ]);
 
-    const triggers = await testEnv.MealPlannerDatabase.prepare(
+    const triggers = await testEnv.ProviderAccountingDatabase.prepare(
       `SELECT name, sql FROM sqlite_master
         WHERE type = 'trigger' AND name LIKE 'provider_accounting_%'
         ORDER BY name`
@@ -651,7 +667,7 @@ describe("provider accounting", () => {
 
   it("atomically fences concurrent reservations across different run IDs", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const first = reservation("run_a", "dispatch_a", 6_000_000);
     const second = reservation("run_b", "dispatch_b", 6_000_000);
@@ -692,7 +708,7 @@ describe("provider accounting", () => {
 
   it("settles known cost idempotently and releases only pre-invocation reservations", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const known = reservation("run_known", "dispatch_known", 6_000_000);
     await Effect.runPromise(repository.reserve(known));
@@ -729,7 +745,7 @@ describe("provider accounting", () => {
 
   it("settles a dispatch once when concurrent callers report different known costs", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const command = reservation("run_settle", "dispatch_settle", 10);
     await Effect.runPromise(repository.reserve(command));
@@ -768,7 +784,7 @@ describe("provider accounting", () => {
 
   it("poisons the one stage across run IDs without erasing possible spend", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const unknown = reservation("run_unknown", "dispatch_unknown", 4_000_000);
     await Effect.runPromise(repository.reserve(unknown));
@@ -794,7 +810,7 @@ describe("provider accounting", () => {
 
   it("serializes invocation across runs while keeping both reservations", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const first = reservation("run_first", "dispatch_first", 4_000_000);
     const second = reservation("run_second", "dispatch_second", 4_000_000);
@@ -819,7 +835,7 @@ describe("provider accounting", () => {
 
   it("poisons a stale durable invocation claim after restart without reinvoking", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const claimed = reservationAt(
       "run_stale_claim",
@@ -831,7 +847,7 @@ describe("provider accounting", () => {
     await Effect.runPromise(repository.beginInvocation(claimed));
 
     const restartedRepository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     let providerCalls = 0;
     await expect(
@@ -870,7 +886,7 @@ describe("provider accounting", () => {
 
   it("keeps an active generation-fenced invocation claim live", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const claimed = reservationAt(
       "run_active_claim",
@@ -918,7 +934,7 @@ describe("provider accounting", () => {
 
   it("reconciles one poisoned reservation while preserving another", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const importId = Schema.decodeUnknownSync(ImportId)(
       "00000000-0000-4000-8000-000000000190"
@@ -955,7 +971,7 @@ describe("provider accounting", () => {
     );
 
     const accounting = makeD1ProviderAccountingService({
-      database: testEnv.MealPlannerDatabase,
+      database: testEnv.ProviderAccountingDatabase,
       now: () => now,
     });
     await expect(
@@ -1000,7 +1016,7 @@ describe("provider accounting", () => {
 
   it("replays an immutable reconciliation while an unrelated dispatch is invoking", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const importId = Schema.decodeUnknownSync(ImportId)(
       "00000000-0000-4000-8000-000000000291"
@@ -1030,7 +1046,7 @@ describe("provider accounting", () => {
       })
     );
     const accounting = makeD1ProviderAccountingService({
-      database: testEnv.MealPlannerDatabase,
+      database: testEnv.ProviderAccountingDatabase,
       now: () => now,
     });
     const request = {
@@ -1047,7 +1063,7 @@ describe("provider accounting", () => {
       Effect.runPromise(accounting.reconcile(request))
     ).resolves.toEqual(first);
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `SELECT COUNT(*) AS count
            FROM provider_accounting_reconciliations
           WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
@@ -1067,7 +1083,7 @@ describe("provider accounting", () => {
 
   it("grants one provider invocation to concurrent same-dispatch runners", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const command = reservation("run_replay", "dispatch_replay", 10);
     const preparationsReleased = await Effect.runPromise(Deferred.make<null>());
@@ -1122,7 +1138,7 @@ describe("provider accounting", () => {
 
   it("releases preparation failures before invocation without poisoning", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const command = reservation("run_prepare", "dispatch_prepare", 10);
     let providerCalls = 0;
@@ -1151,7 +1167,7 @@ describe("provider accounting", () => {
 
   it("poisons provider failures and explicit unknown costs without releasing reservations", async () => {
     const providerFailureRepository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const failed = reservation("run_failed", "dispatch_failed", 10);
     const providerFailure = runAccountedProviderDispatch({
@@ -1171,11 +1187,11 @@ describe("provider accounting", () => {
       state: "poisoned",
     });
 
-    await testEnv.MealPlannerDatabase.batch([
-      testEnv.MealPlannerDatabase.prepare(
+    await testEnv.ProviderAccountingDatabase.batch([
+      testEnv.ProviderAccountingDatabase.prepare(
         "DELETE FROM provider_accounting_dispatches"
       ),
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `UPDATE provider_accounting_budgets
             SET settled_micro_usd = 0, reserved_micro_usd = 0,
                 state = 'open', invoking_dispatch_id = NULL,
@@ -1184,7 +1200,7 @@ describe("provider accounting", () => {
       ),
     ]);
     const unknownRepository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const unknown = reservation(
       "run_unknown_result",
@@ -1217,7 +1233,7 @@ describe("provider accounting", () => {
 
   it("admits a new attempt only after the previous attempt durably settles at exact zero cost", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const first = reservation(
       "run_known_zero_retry",
@@ -1250,7 +1266,7 @@ describe("provider accounting", () => {
 
     expect(providerCalls).toBe(1);
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `SELECT actual_cost_micro_usd, state
            FROM provider_accounting_dispatches
           WHERE dispatch_id = ?`
@@ -1308,7 +1324,7 @@ describe("provider accounting", () => {
 
   it("poisons a known-zero marker combined with a defect", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const first = reservation(
       "run_ambiguous_known_zero",
@@ -1339,7 +1355,7 @@ describe("provider accounting", () => {
       state: "poisoned",
     });
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `SELECT actual_cost_micro_usd, state
            FROM provider_accounting_dispatches
           WHERE dispatch_id = ?`
@@ -1354,7 +1370,7 @@ describe("provider accounting", () => {
 
   it("does not grant zero-cost authority to a structurally similar provider error", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const first = reservation(
       "run_forged_known_zero",
@@ -1385,7 +1401,7 @@ describe("provider accounting", () => {
 
   it("converges concurrent ambiguous retry fences on one unknown settlement without reinvoking", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const previous = reservation(
       "run_ambiguous_retry",
@@ -1437,7 +1453,7 @@ describe("provider accounting", () => {
       state: "poisoned",
     });
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         "SELECT COUNT(*) AS count FROM provider_accounting_dispatches"
       ).first()
     ).resolves.toEqual({ count: 1 });
@@ -1445,7 +1461,7 @@ describe("provider accounting", () => {
 
   it("poisons a typed timeout and rejects its retry before a second invocation", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const first = reservation(
       "run_timeout_retry",
@@ -1496,7 +1512,7 @@ describe("provider accounting", () => {
       state: "poisoned",
     });
     await expect(
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         "SELECT COUNT(*) AS count FROM provider_accounting_dispatches"
       ).first()
     ).resolves.toEqual({ count: 1 });
@@ -1504,7 +1520,7 @@ describe("provider accounting", () => {
 
   it("settles defects and interruption unknown before any retry can invoke", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const defect = reservation("run_defect_retry", "dispatch_defect_retry", 10);
     let providerCalls = 0;
@@ -1524,11 +1540,11 @@ describe("provider accounting", () => {
       state: "poisoned",
     });
 
-    await testEnv.MealPlannerDatabase.batch([
-      testEnv.MealPlannerDatabase.prepare(
+    await testEnv.ProviderAccountingDatabase.batch([
+      testEnv.ProviderAccountingDatabase.prepare(
         "DELETE FROM provider_accounting_dispatches"
       ),
-      testEnv.MealPlannerDatabase.prepare(
+      testEnv.ProviderAccountingDatabase.prepare(
         `UPDATE provider_accounting_budgets
             SET settled_micro_usd = 0, reserved_micro_usd = 0,
                 state = 'open', invoking_dispatch_id = NULL,
@@ -1567,14 +1583,14 @@ describe("provider accounting", () => {
 
   it("poisons after a known settlement failure and rejects replay without reinvoking", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.MealPlannerDatabase
+      testEnv.ProviderAccountingDatabase
     );
     const command = reservation(
       "run_settlement_failure",
       "dispatch_settlement_failure",
       10
     );
-    await testEnv.MealPlannerDatabase.prepare(
+    await testEnv.ProviderAccountingDatabase.prepare(
       `CREATE TRIGGER fail_known_settlement
        BEFORE UPDATE ON provider_accounting_dispatches
        WHEN NEW.state = 'settled_known'
@@ -1606,7 +1622,7 @@ describe("provider accounting", () => {
       state: "poisoned",
     });
 
-    await testEnv.MealPlannerDatabase.prepare(
+    await testEnv.ProviderAccountingDatabase.prepare(
       "DROP TRIGGER fail_known_settlement"
     ).run();
     await expect(Effect.runPromise(execute())).rejects.toMatchObject({

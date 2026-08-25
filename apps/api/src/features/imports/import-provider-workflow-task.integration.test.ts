@@ -120,9 +120,11 @@ const buildFixture = async (inputPath: string, outputDirectory: string) => {
 };
 
 const applyMigrations = async () => {
-  const database = await runtime.getD1Database("MealPlannerDatabase");
+  const database = await runtime.getD1Database("ProviderAccountingDatabase");
   const migrations = await readDrizzleD1Migrations(
-    fileURLToPath(new URL("../../../migrations", import.meta.url))
+    fileURLToPath(
+      new URL("../../../provider-accounting-migrations", import.meta.url)
+    )
   );
   await database
     .prepare(
@@ -167,7 +169,7 @@ beforeAll(async () => {
       {
         compatibilityDate,
         compatibilityFlags,
-        d1Databases: { MealPlannerDatabase: "gaia-163-test" },
+        d1Databases: { ProviderAccountingDatabase: "gaia-163-test" },
         kvNamespaces: ["PROVIDER_WORKFLOW_STATE"],
         modules: [...fixtureModules],
         name: "provider-workflow",
@@ -285,7 +287,7 @@ const resetGlobalProviderAccounting = (database: AnyD1Database) =>
 
 describe("provider workflow task retry exhaustion", () => {
   it("settles missing visual usage at the bounded maximum and permits the next recipe dispatch", async () => {
-    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const database = await runtime.getD1Database("ProviderAccountingDatabase");
     const stageBefore = await database
       .prepare(
         `SELECT settled_micro_usd
@@ -363,7 +365,7 @@ describe("provider workflow task retry exhaustion", () => {
 
   it("uses native retries, checkpoints final exhaustion, and replays with zero provider calls", async () => {
     const instanceId = "gaia-163-native-retry-exhausted";
-    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const database = await runtime.getD1Database("ProviderAccountingDatabase");
 
     await expect(
       runWorkflow(instanceId, { scenario: "retry_exhausted" })
@@ -440,7 +442,7 @@ describe("provider workflow task retry exhaustion", () => {
 
   it("uses the installed speech adapter and real ledger to fence an ambiguous retry and replay", async () => {
     const instanceId = "gaia-163-native-unknown-poison";
-    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const database = await runtime.getD1Database("ProviderAccountingDatabase");
     const stageBefore = await database
       .prepare(
         `SELECT settled_micro_usd
@@ -525,7 +527,7 @@ describe("provider workflow task retry exhaustion", () => {
 
   it("replays an ambiguous installed visual adapter checkpoint without a second provider call", async () => {
     const instanceId = "slice-2-native-visual-unknown-replay";
-    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const database = await runtime.getD1Database("ProviderAccountingDatabase");
     await resetGlobalProviderAccounting(database);
 
     await expect(
@@ -716,7 +718,7 @@ describe("provider workflow task retry exhaustion", () => {
     const instanceId = `recipe-recovery-accounted-${randomUUID()}`;
     const importId = randomUUID();
     const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:1`;
-    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const database = await runtime.getD1Database("ProviderAccountingDatabase");
     await resetGlobalProviderAccounting(database);
 
     await expect(
@@ -765,7 +767,7 @@ describe("provider workflow task retry exhaustion", () => {
     const instanceId = `import-recipe-recovery-${importId}-1`;
     const firstDispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:1`;
     const secondDispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:2`;
-    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const database = await runtime.getD1Database("ProviderAccountingDatabase");
     await resetGlobalProviderAccounting(database);
 
     await expect(
@@ -877,7 +879,7 @@ describe("provider workflow task retry exhaustion", () => {
     const instanceId = `gaia-205-recipe-conservative-${randomUUID()}`;
     const importId = randomUUID();
     const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}`;
-    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const database = await runtime.getD1Database("ProviderAccountingDatabase");
     await resetGlobalProviderAccounting(database);
     const stageBefore = await database
       .prepare(
@@ -999,7 +1001,7 @@ describe("provider workflow task retry exhaustion", () => {
     const instanceId = `gaia-205-recipe-conservative-crash-${randomUUID()}`;
     const importId = randomUUID();
     const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}`;
-    const database = await runtime.getD1Database("MealPlannerDatabase");
+    const database = await runtime.getD1Database("ProviderAccountingDatabase");
     await resetGlobalProviderAccounting(database);
     const stageBefore = await database
       .prepare(

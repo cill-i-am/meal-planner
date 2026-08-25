@@ -35,20 +35,24 @@ import type {
   HouseholdRecordImportBatchDispatchInput,
 } from "./batches/household-import-batch.contract.js";
 import {
+  HouseholdClaimAcquisitionAttemptInput,
   HouseholdCommitAcquisitionEvidenceInput,
   HouseholdMutateEvidenceStageInput,
   HouseholdObserveEvidenceReferenceInput,
   HouseholdPrepareRecipeRecoveryInput,
+  HouseholdReadAcquisitionAttemptsInput,
   HouseholdReadEvidenceReferencesInput,
   HouseholdReadEvidenceStageInput,
   HouseholdReadImportTerminalCheckpointInput,
   HouseholdReadRecipeRecoveryAttemptInput,
 } from "./evidence/household-evidence.contract.js";
 import type {
+  HouseholdClaimAcquisitionAttemptResult,
   HouseholdCommitAcquisitionEvidenceResult,
   HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceResult,
   HouseholdPrepareRecipeRecoveryResult,
+  HouseholdReadAcquisitionAttemptsResult,
   HouseholdReadEvidenceReferencesResult,
   HouseholdReadEvidenceStageResult,
   HouseholdReadImportTerminalCheckpointResult,
@@ -146,6 +150,9 @@ interface HouseholdApiFixtureEnv {
     readonly claimImportBatchItem: (
       input: HouseholdClaimImportBatchItemInput
     ) => Promise<Schema.Json>;
+    readonly claimAcquisitionAttempt: (
+      input: typeof HouseholdClaimAcquisitionAttemptInput.Encoded
+    ) => Promise<typeof HouseholdClaimAcquisitionAttemptResult.Encoded>;
     readonly completeImportBatchItem: (
       input: HouseholdCompleteImportBatchItemInput
     ) => Promise<Schema.Json>;
@@ -167,6 +174,9 @@ interface HouseholdApiFixtureEnv {
     readonly readEvidenceReferences: (
       input: typeof HouseholdReadEvidenceReferencesInput.Encoded
     ) => Promise<typeof HouseholdReadEvidenceReferencesResult.Encoded>;
+    readonly readAcquisitionAttempts: (
+      input: typeof HouseholdReadAcquisitionAttemptsInput.Encoded
+    ) => Promise<typeof HouseholdReadAcquisitionAttemptsResult.Encoded>;
     readonly readEvidenceStage: (
       input: typeof HouseholdReadEvidenceStageInput.Encoded
     ) => Promise<typeof HouseholdReadEvidenceStageResult.Encoded>;
@@ -229,6 +239,7 @@ interface HouseholdApiFixtureEnv {
 }
 
 const testSystemOperations = [
+  "claim-acquisition-attempt",
   "claim-batch-item",
   "commit-acquisition-evidence",
   "complete-batch-item",
@@ -237,6 +248,7 @@ const testSystemOperations = [
   "mutate-evidence-stage",
   "observe-evidence-reference",
   "prepare-recipe-recovery",
+  "read-acquisition-attempts",
   "read-evidence-references",
   "read-evidence-stage",
   "read-recipe-recovery-attempt",
@@ -280,6 +292,14 @@ const handleTestSystemOperation = async (
     const input = Schema.decodeUnknownSync(Schema.Json)(await request.json());
     let result: Schema.Json;
     switch (operation) {
+      case "claim-acquisition-attempt": {
+        result = await env.HouseholdDomainWorker.claimAcquisitionAttempt(
+          Schema.decodeUnknownSync(
+            Schema.toEncoded(HouseholdClaimAcquisitionAttemptInput)
+          )(input)
+        );
+        break;
+      }
       case "commit-draft": {
         result = await env.HouseholdDomainWorker.commitRecipeImportDraft(
           input as HouseholdCommitRecipeImportDraftInput
@@ -332,6 +352,14 @@ const handleTestSystemOperation = async (
         result = await env.HouseholdDomainWorker.readEvidenceStage(
           Schema.decodeUnknownSync(
             Schema.toEncoded(HouseholdReadEvidenceStageInput)
+          )(input)
+        );
+        break;
+      }
+      case "read-acquisition-attempts": {
+        result = await env.HouseholdDomainWorker.readAcquisitionAttempts(
+          Schema.decodeUnknownSync(
+            Schema.toEncoded(HouseholdReadAcquisitionAttemptsInput)
           )(input)
         );
         break;

@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 // eslint-disable-next-line unicorn/import-style -- This package does not enable synthetic default imports for Node built-ins.
 import * as path from "node:path";
 
@@ -225,9 +225,6 @@ describe("household foundation structural boundaries", () => {
 
   it("physically removes superseded shared-D1 batch authority", async () => {
     const featureSources = await readProductionFeatureSources();
-    const sharedImportSchema = await read(
-      path.join(apiFeaturesRoot, "imports/import.database-schema.ts")
-    );
     const householdSchema = await read(
       path.join(householdRoot, "household.database-schema.ts")
     );
@@ -242,28 +239,23 @@ describe("household foundation structural boundaries", () => {
         .map(({ path: sourcePath }) => sourcePath)
         .filter((sourcePath) => retiredPaths.has(sourcePath))
     ).toEqual([]);
-    expect(sharedImportSchema).not.toMatch(
-      /(?:^|["'`])import_(?:batches|batch_items|batch_idempotency)(?:["'`]|$)/mu
-    );
     expect(householdSchema).toContain('"household_import_batches"');
     expect(householdSchema).toContain('"household_import_batch_items"');
     expect(householdSchema).toContain('"household_import_batch_outbox"');
   });
 
   it("keeps acquisition R2 work outside the household commit and removes its D1 write seam", async () => {
-    const [evidenceRepository, executionRepository, workflow] =
-      await Promise.all([
-        read(
-          path.join(householdRoot, "evidence/household-evidence.repository.ts")
-        ),
-        read(
-          path.join(
-            apiFeaturesRoot,
-            "imports/import-execution.repository.d1.ts"
-          )
-        ),
-        read(path.join(apiFeaturesRoot, "imports/import.workflow.ts")),
-      ]);
+    const [evidenceRepository, workflow] = await Promise.all([
+      read(
+        path.join(householdRoot, "evidence/household-evidence.repository.ts")
+      ),
+      read(path.join(apiFeaturesRoot, "imports/import.workflow.ts")),
+    ]);
+    await expect(
+      access(
+        path.join(apiFeaturesRoot, "imports/import-execution.repository.d1.ts")
+      )
+    ).rejects.toThrow();
     expect(evidenceRepository).toMatch(/database\s*\.\s*transaction\s*\(/u);
     expect(evidenceRepository).not.toMatch(
       /cloudflare:workers|alchemy\/Cloudflare|ImportEvidenceBucket|\.getByName\(|\bfetch\s*\(|\.head\s*\(|\.put\s*\(|\.send\s*\(/u
@@ -278,10 +270,7 @@ describe("household foundation structural boundaries", () => {
     expect(recordStep).not.toMatch(
       /makeD1(?:CarouselEvidence|RecipeDraft|SpeechTranscription|VisualEvidence)Repository/u
     );
-    expect(executionRepository).not.toContain("recordAcquired:");
-    expect(executionRepository).not.toMatch(
-      /\.(?:delete|insert|update)\(\s*import(?:CarouselEvidence|RecipeExtractions|Transcriptions|VisualEvidence)/u
-    );
+    expect(workflow).not.toContain("makeD1ImportExecutionRepository");
 
     const recoveryReadStep = workflow
       .split("readHouseholdAcquisitionEvidence")[1]
@@ -403,10 +392,15 @@ describe("household foundation structural boundaries", () => {
       "imports/import-provider-terminal.ts"
     );
 
-    const [householdSchema, sharedSchema, evidenceRepository] =
+    const [householdSchema, providerAccountingSchema, evidenceRepository] =
       await Promise.all([
         read(path.join(householdRoot, "household.database-schema.ts")),
-        read(path.join(apiFeaturesRoot, "imports/import.database-schema.ts")),
+        read(
+          path.join(
+            apiFeaturesRoot,
+            "provider-accounting/provider-accounting.database-schema.ts"
+          )
+        ),
         read(
           path.join(householdRoot, "evidence/household-evidence.repository.ts")
         ),
@@ -414,7 +408,7 @@ describe("household foundation structural boundaries", () => {
     expect(householdSchema).toContain('"import_terminal_checkpoints"');
     expect(householdSchema).not.toContain("pilot");
     for (const token of forbiddenLegacyAuthority) {
-      expect(sharedSchema).not.toContain(token);
+      expect(providerAccountingSchema).not.toContain(token);
     }
     expect(evidenceRepository).toMatch(/database\s*\.\s*transaction\s*\(/u);
     expect(evidenceRepository).not.toMatch(
@@ -479,43 +473,6 @@ describe("household foundation structural boundaries", () => {
     );
     expect(workflow).toContain("restartFromVisual");
     expect(workflow).toContain('name: "extract-visual-evidence-v1"');
-  });
-
-  it("registers the immutable evidence route synchronously before Workflow dispatch", async () => {
-    const worker = await read(path.join(apiFeaturesRoot, "../worker.ts"));
-    expect(worker).toContain("makeD1ImportEvidenceRouteRepository");
-    expect(worker).toMatch(/registerEvidenceRoute:[\s\S]*\.register\(/u);
-    expect(worker).not.toMatch(
-      /registerEvidenceRoute:[\s\S]{0,180}importEvidenceEvents\s*\.send/u
-    );
-  });
-
-  it("models CopyObject as its closed Cloudflare notification variant", async () => {
-    const reconciler = await read(
-      path.join(apiFeaturesRoot, "imports/import-evidence-event.ts")
-    );
-    expect(reconciler).toContain("copySource");
-    expect(reconciler).toContain('action: Schema.Literal("CopyObject")');
-  });
-
-  it("wires R2 lifecycle notifications to household evidence observation", async () => {
-    const [consumer, reconciler] = await Promise.all([
-      read(
-        path.join(
-          apiFeaturesRoot,
-          "../infrastructure/import-evidence-event-queue.ts"
-        )
-      ),
-      read(path.join(apiFeaturesRoot, "imports/import-evidence-event.ts")),
-    ]);
-    expect(consumer).toContain("reconcileImportEvidenceQueueMessage(");
-    expect(consumer).toContain("householdDomain.observeEvidenceReference(");
-    expect(consumer).toContain("householdDomain.readEvidenceReferences(");
-    expect(consumer).toContain("MealPlannerDatabase");
-    expect(consumer).toContain("makeD1ImportEvidenceRouteRepository");
-    expect(consumer).not.toContain("Cloudflare.KV");
-    expect(reconciler).toContain("ports.bucket.head(event.objectKey)");
-    expect(reconciler).toContain("ports.household.observeEvidenceReference({");
   });
 
   it("keeps the Alchemy host thin and SQLite evolution migration-owned", async () => {

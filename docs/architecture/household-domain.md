@@ -128,13 +128,13 @@ Unavailable or unknown status preserves the nonterminal item and outbox, while
 only proof that no Workflow started permits `dispatch_exhausted`. That Workflow
 claims the local item, admits the ordinary
 recipe import, coordinates its external dispatch after commit, and settles
-success or failure back in household SQLite. Queue, Workflow, D1 route
-registration, provider, network, and other external I/O never run inside a
+success or failure back in household SQLite. Queue, Workflow, provider,
+network, and other external I/O never run inside a
 household transaction.
 
-The shared D1 schema has no batch tables, idempotency ledger, route, repository,
-service, or writer. There is no compatibility read, dual write, backfill, or
-fallback to the retired prototype authority.
+Global D1 has no batch tables, idempotency ledger, route, repository, service,
+or writer. There is no compatibility read, dual write, backfill, or fallback to
+the retired prototype authority.
 
 ## Evidence metadata and R2 references
 
@@ -149,36 +149,30 @@ The household also checkpoints one stable start time for every provider
 dispatch and recovery dispatch. Claim, Fail, artifact, and retry commands reuse
 that value, so a lost native Workflow response cannot change the command digest.
 Execution generation fences household state; acquisition-attempt generation is
-tracked separately for retry-scoped R2 objects.
+tracked separately for retry-scoped R2 objects. Before acquisition, the
+Workflow claims a deterministic `(intent, execution generation, attempt
+ordinal)` identity in household SQLite. A restarted Workflow reads those
+claims and verifies the corresponding create-only R2 media and manifest pair
+before allocating another generation. Valid evidence is reused and committed;
+only absent, incomplete, or invalid evidence advances to a new attempt. If a
+claim response is lost, retrying the same identity returns the same generation.
 
 Large media, transcripts, manifests, and other evidence bytes remain private
 R2 objects. Their references carry generation, byte length, SHA-256, and
 retention time. Reference reads preserve the committed source shape: video
 acquisition starts with media and manifest references, while a carousel starts
 with its single manifest and the carousel stage's stable commit identity and
-time. Workflows and Queue consumers inspect R2 before or after a household
+time. Workflows inspect R2 before or after a household
 command, never during the local transaction. Missing or deleted objects change
 only the household-local availability observation; they do not rewrite the
 committed reference or corrupt the current result. R2 lifecycle deletion
-remains asynchronous defense in depth, and late or replayed event notifications
-are fenced by household, import, generation, object key, and integrity metadata.
-
-After authenticated import admission, the API synchronously registers a
-private, noncanonical import-to-organization route before starting the
-Workflow. A private D1 table stores that route with import ID as its unique key
-and the immutable execution generation only so an R2 event consumer can
-reconstruct an admitted system command. The generation encoded in the R2 key
-and custom metadata is the acquisition-attempt generation: it scopes artifact
-identity and integrity checks, while the route's execution generation remains
-the household RPC and ownership fence. The unordered Queue carries R2
-notifications only, so a valid lifecycle event
-cannot overtake registration. Registration atomically inserts and reads the
-immutable winner, so concurrent conflicting organizations fail closed instead
-of overwriting one another. The route is never a public lookup, household
-authority, product read model, or source of object names, and raw organization
-identifiers are never logged or returned. The consumer receives a read-only R2
-binding, and exhausted retryable notifications are retained by a dedicated
-evidence-event DLQ.
+remains asynchronous defense in depth. The acquisition and recovery Workflows
+carry admitted organization provenance to the household boundary, read the
+household's committed references, and validate generation, object key, native
+checksum, and custom metadata before recording an availability observation.
+No import-to-organization route, R2 event Queue, event consumer, or event DLQ
+exists. The application does not treat an asynchronous R2 lifecycle
+notification as product truth.
 
 ## Current scope
 
@@ -192,19 +186,16 @@ organization using an organization-keyed TanStack Query. Its generated
 same-origin client calls `GET /v1/household` without placing an organization ID,
 bearer token, or household scope in the request.
 
-The delivered product authorities in `HouseholdObject` are meal planning, the
+The product authorities in `HouseholdObject` are meal planning, the
 complete recipe-import/review/Recipe Bank capability, compact evidence and
 extraction metadata, terminal checkpoints, and recovery attempts. R2 retains
-only large private bytes. Shared D1 retains the private immutable import-event
-route, global provider-budget settlement/reconciliation, and approved global
-operational facts; it cannot author household evidence, terminal or recovery
-state, public lifecycle, review, or Recipe Bank state.
-Its acquisition execution row contains no evidence-reference projection or
-provider-stage completion status.
-Shopping lists and preferences have not moved. Apart from the private,
-noncanonical import-event route above, there is no registry,
+only large private bytes. `ProviderAccountingDatabase` retains the five global
+provider cost-accounting tables. It has no organization column, household
+table, import route, execution projection, or household product writer.
+`MealPlannerAuthDatabase` remains the separate Better Auth control plane.
+Shopping lists and preferences have not moved. There is no registry,
 organization-to-object lookup table, shared product read model, dual write,
-legacy adapter, or compatibility path.
+legacy adapter, fallback, or compatibility path.
 
 ## Proof boundary
 

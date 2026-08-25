@@ -32,10 +32,12 @@ import {
 } from "../provider-accounting/provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
 import {
+  HouseholdClaimAcquisitionAttemptResult,
   HouseholdCommitAcquisitionEvidenceResult,
   HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceResult,
   HouseholdPrepareRecipeRecoveryResult,
+  HouseholdReadAcquisitionAttemptsResult,
   HouseholdReadEvidenceReferencesResult,
   HouseholdReadEvidenceStageResult,
   HouseholdReadImportTerminalCheckpointResult,
@@ -52,7 +54,7 @@ let persistenceDirectory = "";
 let websiteModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
 let apiModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
 let domainModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
-let evidenceEventModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
+let providerRecoveryModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
 let batchQueueModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
 
 const getRuntime = (): Miniflare => {
@@ -145,7 +147,7 @@ type MiniflareD1Database = Awaited<ReturnType<Miniflare["getD1Database"]>>;
 
 const applyD1Migrations = async (
   database: MiniflareD1Database,
-  migrationsDirectory: "auth-migrations" | "migrations"
+  migrationsDirectory: "auth-migrations" | "provider-accounting-migrations"
 ) => {
   const migrationsRoot = fileURLToPath(
     new URL(`../../../${migrationsDirectory}`, import.meta.url)
@@ -191,7 +193,10 @@ const makeRuntime = () =>
         bindings: { BETTER_AUTH_SECRET: secret },
         compatibilityDate,
         compatibilityFlags,
-        d1Databases: { MealPlannerAuthDatabase: "household-auth-test" },
+        d1Databases: {
+          MealPlannerAuthDatabase: "household-auth-test",
+          ProviderAccountingDatabase: "provider-accounting-test",
+        },
         modules: [...apiModules],
         name: "api",
         serviceBindings: { HouseholdDomainWorker: "household-domain" },
@@ -219,14 +224,12 @@ const makeRuntime = () =>
       {
         compatibilityDate,
         compatibilityFlags,
-        d1Databases: { MealPlannerDatabase: "household-route-test" },
-        kvNamespaces: ["EVIDENCE_EVENT_RESULTS"],
-        modules: [...evidenceEventModules],
-        name: "evidence-consumer",
-        queueConsumers: ["evidence-events"],
-        queueProducers: {
-          EVENTS: { queueName: "evidence-events" },
+        d1Databases: {
+          ProviderAccountingDatabase: "provider-accounting-test",
         },
+        kvNamespaces: ["PROVIDER_RECOVERY_RESULTS"],
+        modules: [...providerRecoveryModules],
+        name: "provider-recovery",
         r2Buckets: ["ImportEvidenceBucket"],
         serviceBindings: { HouseholdDomainWorker: "household-domain" },
       },
@@ -248,7 +251,7 @@ beforeAll(async () => {
     websiteModules,
     apiModules,
     domainModules,
-    evidenceEventModules,
+    providerRecoveryModules,
     batchQueueModules,
   ] = await Promise.all([
     bundleFixture(
@@ -261,7 +264,7 @@ beforeAll(async () => {
       temporaryDirectory
     ),
     bundleFixture(
-      "household-evidence-event.test-fixture.ts",
+      "household-provider-recovery.test-fixture.ts",
       temporaryDirectory
     ),
     bundleFixture(
@@ -277,10 +280,10 @@ beforeAll(async () => {
     ),
     applyD1Migrations(
       await getRuntime().getD1Database(
-        "MealPlannerDatabase",
-        "evidence-consumer"
+        "ProviderAccountingDatabase",
+        "provider-recovery"
       ),
-      "migrations"
+      "provider-accounting-migrations"
     ),
   ]);
 }, 30_000);
@@ -346,6 +349,7 @@ const createOrganization = async (label: string, cookie: string) => {
 
 const systemCommand = (
   operation:
+    | "claim-acquisition-attempt"
     | "claim-batch-item"
     | "commit-acquisition-evidence"
     | "complete-batch-item"
@@ -354,6 +358,7 @@ const systemCommand = (
     | "mutate-evidence-stage"
     | "observe-evidence-reference"
     | "prepare-recipe-recovery"
+    | "read-acquisition-attempts"
     | "read-evidence-references"
     | "read-evidence-stage"
     | "read-terminal-checkpoint"
@@ -398,7 +403,7 @@ const terminalSettlementCommand = async (
     readonly speechRestart?: "fail" | "lose-response" | "terminal-then-fail";
   }
 ) => {
-  const worker = await getRuntime().getWorker("evidence-consumer");
+  const worker = await getRuntime().getWorker("provider-recovery");
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "x-test-terminal-settlement": "1",
@@ -406,7 +411,7 @@ const terminalSettlementCommand = async (
   if (options?.speechRestart !== undefined) {
     headers["x-test-speech-restart"] = options.speechRestart;
   }
-  return worker.fetch("https://evidence-consumer.test/terminal-settlement", {
+  return worker.fetch("https://provider-recovery.test/terminal-settlement", {
     body: JSON.stringify(input),
     headers,
     method: "POST",
@@ -414,8 +419,8 @@ const terminalSettlementCommand = async (
 };
 
 const providerTerminalAttemptCommand = async (input: object) => {
-  const worker = await getRuntime().getWorker("evidence-consumer");
-  return worker.fetch("https://evidence-consumer.test/provider-terminal", {
+  const worker = await getRuntime().getWorker("provider-recovery");
+  return worker.fetch("https://provider-recovery.test/provider-terminal", {
     body: JSON.stringify(input),
     headers: {
       "content-type": "application/json",
@@ -426,8 +431,8 @@ const providerTerminalAttemptCommand = async (input: object) => {
 };
 
 const visualResumeCommand = async (input: object) => {
-  const worker = await getRuntime().getWorker("evidence-consumer");
-  return worker.fetch("https://evidence-consumer.test/visual-resume", {
+  const worker = await getRuntime().getWorker("provider-recovery");
+  return worker.fetch("https://provider-recovery.test/visual-resume", {
     body: JSON.stringify(input),
     headers: {
       "content-type": "application/json",
@@ -438,8 +443,8 @@ const visualResumeCommand = async (input: object) => {
 };
 
 const dispatchTraceDurabilityCommand = async (input: object) => {
-  const worker = await getRuntime().getWorker("evidence-consumer");
-  return worker.fetch("https://evidence-consumer.test/dispatch-trace", {
+  const worker = await getRuntime().getWorker("provider-recovery");
+  return worker.fetch("https://provider-recovery.test/dispatch-trace", {
     body: JSON.stringify(input),
     headers: {
       "content-type": "application/json",
@@ -455,8 +460,8 @@ const settleUnknownProviderBudget = async (input: {
   readonly providerStageId: "speech-transcription" | "visual-evidence";
 }) => {
   const database = await getRuntime().getD1Database(
-    "MealPlannerDatabase",
-    "evidence-consumer"
+    "ProviderAccountingDatabase",
+    "provider-recovery"
   );
   const budget = makeD1ProviderAccountingRepository(database);
   const reservation = {
@@ -487,24 +492,6 @@ const settleUnknownProviderBudget = async (input: {
   );
 };
 
-const evidenceEventResult = async (
-  attemptsRemaining = 80
-): Promise<unknown> => {
-  const results = await getRuntime().getKVNamespace(
-    "EVIDENCE_EVENT_RESULTS",
-    "evidence-consumer"
-  );
-  const value = await results.get("last", "json");
-  if (value !== null) {
-    return value;
-  }
-  if (attemptsRemaining === 0) {
-    throw new Error("Evidence event was not processed.");
-  }
-  await delay(25);
-  return evidenceEventResult(attemptsRemaining - 1);
-};
-
 const batchQueueResult = async (
   itemId: string,
   remaining = 80
@@ -530,51 +517,6 @@ const batchQueueDeliveries = async (itemId: string) => {
     "batch-consumer"
   );
   return Number((await results.get(`${itemId}:deliveries`)) ?? "0");
-};
-
-const sendEvidenceEvent = async (message: object) => {
-  const results = await getRuntime().getKVNamespace(
-    "EVIDENCE_EVENT_RESULTS",
-    "evidence-consumer"
-  );
-  await results.delete("last");
-  const queue = await getRuntime().getQueueProducer(
-    "EVENTS",
-    "evidence-consumer"
-  );
-  await queue.send(message);
-  return evidenceEventResult();
-};
-
-const registerEvidenceRoute = async (input: {
-  readonly executionGeneration?: number;
-  readonly importId: string;
-  readonly organizationId: string;
-}) => {
-  const database = await getRuntime().getD1Database(
-    "MealPlannerDatabase",
-    "evidence-consumer"
-  );
-  await database
-    .prepare(
-      `INSERT INTO import_evidence_routes (
-         import_id, execution_generation, organization_id, route_version
-       ) VALUES (?, ?, ?, 1)
-       ON CONFLICT (import_id) DO NOTHING`
-    )
-    .bind(input.importId, input.executionGeneration ?? 1, input.organizationId)
-    .run();
-  const winner = await database
-    .prepare(
-      `SELECT organization_id AS organizationId
-         FROM import_evidence_routes
-        WHERE import_id = ?`
-    )
-    .bind(input.importId)
-    .first<{ readonly organizationId: string }>();
-  return winner?.organizationId === input.organizationId
-    ? "Registered"
-    : "ConflictRejected";
 };
 
 const readEvidenceReferences = async (
@@ -624,6 +566,7 @@ const evidenceRetentionResult = (input: {
 };
 
 const admitResolvedEvidenceImport = async (input: {
+  readonly acquisitionAttempts?: number;
   readonly canonicalSourceId?: string;
   readonly label: string;
   readonly mutationId: string;
@@ -671,6 +614,26 @@ const admitResolvedEvidenceImport = async (input: {
     sourceKind: input.sourceKind ?? "video",
   });
   expect(resolvedResponse.status, await resolvedResponse.text()).toBe(200);
+  const acquisitionAttempts =
+    input.sourceKind === "carousel" ? 0 : (input.acquisitionAttempts ?? 1);
+  for (
+    let attemptOrdinal = 1;
+    attemptOrdinal <= acquisitionAttempts;
+    attemptOrdinal += 1
+  ) {
+    // eslint-disable-next-line no-await-in-loop -- The household ledger requires each ordinal to commit before the next claim.
+    const claimed = await systemCommand("claim-acquisition-attempt", {
+      admission,
+      attemptIdentity: attemptOrdinal.toString(16).repeat(64),
+      attemptOrdinal,
+      canonicalSourceId:
+        input.canonicalSourceId ?? `tiktok:video:${input.videoId}`,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    // eslint-disable-next-line no-await-in-loop -- Read the response before advancing the sequential claim ledger.
+    expect(claimed.status, await claimed.clone().text()).toBe(200);
+  }
   return { admission, admitted, cookie, organization } as const;
 };
 
@@ -699,6 +662,7 @@ const prepareUnknownSpeechTerminal = async (input: {
 }) => {
   const { admission, admitted, organization } =
     await admitResolvedEvidenceImport({
+      acquisitionAttempts: input.acquisitionGeneration ?? 1,
       label: input.label,
       mutationId: input.mutationIds[0],
       videoId: input.videoId,
@@ -763,18 +727,6 @@ const prepareUnknownSpeechTerminal = async (input: {
     stage: "speech",
   });
 
-  const database = await getRuntime().getD1Database(
-    "MealPlannerDatabase",
-    "evidence-consumer"
-  );
-  await database
-    .prepare(
-      `INSERT INTO import_evidence_routes (
-         import_id, execution_generation, organization_id, route_version
-       ) VALUES (?, 1, ?, 1)`
-    )
-    .bind(admitted.id, organization.id)
-    .run();
   await settleUnknownProviderBudget({
     dispatchId,
     importId: admitted.id,
@@ -806,71 +758,6 @@ const prepareUnknownSpeechTerminal = async (input: {
       organizationId: organization.id,
     } as const,
     recoveryDispatchId: `${dispatchId}:recovery:1`,
-  } as const;
-};
-
-const commitCarouselManifest = async (input: {
-  readonly admission: object;
-  readonly inputFingerprint: string;
-  readonly intentId: string;
-  readonly manifestSha256: string;
-  readonly mutationIds: readonly [claim: string, complete: string];
-}) => {
-  const dispatchId = `carousel:${input.intentId}:1`;
-  const manifestKey = `imports/${input.intentId}/carousel/v1/generations/1/manifest.json`;
-  const startedAt = new Date(Date.now() + 60_000);
-  const completedAt = new Date(startedAt.getTime() + 1000);
-  const deleteAt = new Date(startedAt.getTime() + 604_800_000);
-  const claim = await systemCommand("mutate-evidence-stage", {
-    admission: input.admission,
-    expectedGeneration: 1,
-    inputFingerprint: input.inputFingerprint,
-    intentId: input.intentId,
-    mutationId: input.mutationIds[0],
-    operation: {
-      _tag: "Claim",
-      dispatchId,
-      stage: "carousel",
-      startedAt: startedAt.toISOString(),
-    },
-  });
-  expect(claim.status, await claim.text()).toBe(200);
-  const completion = await systemCommand("mutate-evidence-stage", {
-    admission: input.admission,
-    expectedGeneration: 1,
-    inputFingerprint: input.inputFingerprint,
-    intentId: input.intentId,
-    mutationId: input.mutationIds[1],
-    operation: {
-      _tag: "Complete",
-      dispatchId,
-      reference: {
-        byteLength: 512,
-        deleteAt: deleteAt.toISOString(),
-        key: manifestKey,
-        kind: "carousel_manifest",
-        sha256: input.manifestSha256,
-      },
-      result: {
-        _tag: "Carousel",
-        completedAt: completedAt.toISOString(),
-        descriptorFingerprint: input.inputFingerprint,
-        dispatchId,
-        imageCount: 3,
-        manifestKey,
-        manifestSha256: input.manifestSha256,
-      },
-      stage: "carousel",
-    },
-  });
-  expect(completion.status, await completion.clone().text()).toBe(200);
-  return {
-    completedAt,
-    completionReceipt: await Schema.decodeUnknownPromise(
-      HouseholdMutateEvidenceStageResult
-    )(await completion.json()),
-    deleteAt,
-    manifestKey,
   } as const;
 };
 
@@ -1399,6 +1286,15 @@ describe("household public API to private Durable Object boundary", () => {
       sourceKind: "video",
     });
     expect(resolvedResponse.status).toBe(200);
+    const claimed = await systemCommand("claim-acquisition-attempt", {
+      admission,
+      attemptIdentity: "4".repeat(64),
+      attemptOrdinal: 1,
+      canonicalSourceId: "tiktok:video:7000000000000000100",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(claimed.status, await claimed.text()).toBe(200);
 
     const mediaKey = `imports/${admitted.id}/acquisition/v1/generations/1/original.mp4`;
     const manifestKey = `imports/${admitted.id}/acquisition/v1/generations/1/manifest.json`;
@@ -1431,6 +1327,80 @@ describe("household public API to private Durable Object boundary", () => {
       },
     });
     expect(commitResponse.status, await commitResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("replays durable acquisition identities and advances generations exactly once", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Acquisition Allocation Member",
+      mutationId: "a".repeat(64),
+      videoId: "7000000000000000199",
+    });
+    const firstReplay = await systemCommand("claim-acquisition-attempt", {
+      admission,
+      attemptIdentity: "1".repeat(64),
+      attemptOrdinal: 1,
+      canonicalSourceId: "tiktok:video:7000000000000000199",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(firstReplay.status, await firstReplay.clone().text()).toBe(200);
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdClaimAcquisitionAttemptResult)(
+        await firstReplay.json()
+      )
+    ).resolves.toMatchObject({
+      attempt: {
+        acquisitionAttemptGeneration: 1,
+        attemptOrdinal: 1,
+      },
+      outcome: "Replay",
+    });
+
+    const secondClaim = await systemCommand("claim-acquisition-attempt", {
+      admission,
+      attemptIdentity: "2".repeat(64),
+      attemptOrdinal: 2,
+      canonicalSourceId: "tiktok:video:7000000000000000199",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(secondClaim.status, await secondClaim.clone().text()).toBe(200);
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdClaimAcquisitionAttemptResult)(
+        await secondClaim.json()
+      )
+    ).resolves.toMatchObject({
+      attempt: {
+        acquisitionAttemptGeneration: 2,
+        attemptOrdinal: 2,
+      },
+      outcome: "Claimed",
+    });
+
+    const conflict = await systemCommand("claim-acquisition-attempt", {
+      admission,
+      attemptIdentity: "1".repeat(64),
+      attemptOrdinal: 2,
+      canonicalSourceId: "tiktok:video:7000000000000000199",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(conflict.status).toBe(409);
+
+    const read = await systemCommand("read-acquisition-attempts", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(read.status, await read.clone().text()).toBe(200);
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdReadAcquisitionAttemptsResult)(
+        await read.json()
+      )
+    ).resolves.toMatchObject([
+      { acquisitionAttemptGeneration: 1, attemptOrdinal: 1 },
+      { acquisitionAttemptGeneration: 2, attemptOrdinal: 2 },
+    ]);
   }, 30_000);
 
   it("rejects stale evidence without mutation and accepts the corrected generation", async () => {
@@ -2081,360 +2051,6 @@ describe("household public API to private Durable Object boundary", () => {
     });
   }, 30_000);
 
-  it("reconciles authorized R2 lifecycle events into household availability across terminal state and restart", async () => {
-    const { admission, admitted, cookie, organization } =
-      await admitResolvedEvidenceImport({
-        label: "Lifecycle Event Member",
-        mutationId: "1".repeat(64),
-        videoId: "7000000000000000132",
-      });
-    const manifestBytes = new TextEncoder().encode(
-      JSON.stringify({ proof: "household-r2-event" })
-    );
-    const manifestShaBuffer = await crypto.subtle.digest(
-      "SHA-256",
-      manifestBytes
-    );
-    const manifestSha = Array.from(new Uint8Array(manifestShaBuffer), (byte) =>
-      byte.toString(16).padStart(2, "0")
-    ).join("");
-    const baseline = evidenceRetentionResult({
-      acquiredAt: new Date(Date.now() + 60_000),
-      generation: 1,
-      intentId: admitted.id,
-    });
-    const evidence = {
-      ...baseline,
-      references: [
-        baseline.references[0],
-        {
-          ...baseline.references[1],
-          byteLength: manifestBytes.byteLength,
-          sha256: manifestSha,
-        },
-      ],
-    } as const;
-    const committed = await systemCommand("commit-acquisition-evidence", {
-      admission,
-      expectedGeneration: 1,
-      intentId: admitted.id,
-      mutationId: "2".repeat(64),
-      result: evidence,
-    });
-    expect(committed.status, await committed.text()).toBe(200);
-    const [, manifest] = evidence.references;
-
-    await expect(
-      registerEvidenceRoute({
-        importId: admitted.id,
-        organizationId: organization.id,
-      })
-    ).resolves.toBe("Registered");
-
-    const otherCookie = await signUp("Lifecycle Event Other Member");
-    const otherOrganization = await createOrganization(
-      "Lifecycle Event Other Household",
-      otherCookie
-    );
-    await expect(
-      registerEvidenceRoute({
-        importId: admitted.id,
-        organizationId: otherOrganization.id,
-      })
-    ).resolves.toBe("ConflictRejected");
-
-    await expect(
-      sendEvidenceEvent({
-        account: "must-not-escape",
-        action: "LifecycleDeletion",
-        bucket: "must-not-escape",
-        eventTime: "2026-08-22T12:00:00.000Z",
-        object: {
-          key: `imports/${admitted.id}/acquisition/v1/generations/2/manifest.json`,
-        },
-      })
-    ).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Ignored", reason: "stale" },
-    });
-    const beforeDeletion = await readEvidenceReferences(admission, admitted.id);
-    expect(beforeDeletion?.references.map(({ kind }) => kind)).toEqual([
-      "original_media",
-      "acquisition_manifest",
-    ]);
-    expect(
-      beforeDeletion?.references.find(
-        ({ kind }) => kind === "acquisition_manifest"
-      )
-    ).toMatchObject({ availability: "available", observationOrdinal: 0 });
-
-    const cancelled = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}/cancel`,
-      {
-        body: JSON.stringify({ expectedIntentVersion: 2 }),
-        headers: {
-          "content-type": "application/json",
-          cookie,
-          "idempotency-key": "lifecycle-event-terminal-proof",
-        },
-        method: "POST",
-      }
-    );
-    expect(cancelled.status, await cancelled.text()).toBe(200);
-
-    const deletionEvent = {
-      account: "must-not-escape",
-      action: "LifecycleDeletion",
-      bucket: "must-not-escape",
-      eventTime: "2026-08-22T12:01:00.000Z",
-      object: { key: manifest.key },
-    } as const;
-    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Observed", availability: "deleted" },
-    });
-    let references = await readEvidenceReferences(admission, admitted.id);
-    expect(
-      references?.references.find(({ kind }) => kind === "acquisition_manifest")
-    ).toMatchObject({ availability: "deleted", observationOrdinal: 1 });
-
-    const publicRead = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}`,
-      { headers: { cookie } }
-    );
-    expect(publicRead.status, await publicRead.clone().text()).toBe(200);
-    const publicIntent = await Schema.decodeUnknownPromise(RecipeImportIntent)(
-      await publicRead.json()
-    );
-    expect(publicIntent.status).toBe("cancelled");
-    expect(JSON.stringify(publicIntent)).not.toMatch(
-      /availability|sha256|imports\/|organization/u
-    );
-
-    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Observed", availability: "deleted" },
-    });
-    references = await readEvidenceReferences(admission, admitted.id);
-    expect(
-      references?.references.find(({ kind }) => kind === "acquisition_manifest")
-    ).toMatchObject({ availability: "deleted", observationOrdinal: 1 });
-
-    await restartRuntime();
-    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Observed", availability: "deleted" },
-    });
-    references = await readEvidenceReferences(admission, admitted.id);
-    expect(
-      references?.references.find(({ kind }) => kind === "acquisition_manifest")
-    ).toMatchObject({ availability: "deleted", observationOrdinal: 1 });
-
-    let bucket = await getRuntime().getR2Bucket(
-      "ImportEvidenceBucket",
-      "evidence-consumer"
-    );
-    await bucket.put(manifest.key, manifestBytes, {
-      customMetadata: {
-        generation: "1",
-        importId: admitted.id,
-        sha256: "0".repeat(64),
-      },
-      sha256: manifestShaBuffer,
-    });
-    await expect(
-      sendEvidenceEvent({
-        ...deletionEvent,
-        action: "PutObject",
-        eventTime: "2026-08-22T12:01:30.000Z",
-      })
-    ).resolves.toEqual({
-      _tag: "Rejected",
-      reason: "integrity_mismatch",
-      retryable: false,
-    });
-    references = await readEvidenceReferences(admission, admitted.id);
-    expect(
-      references?.references.find(({ kind }) => kind === "acquisition_manifest")
-    ).toMatchObject({ availability: "deleted", observationOrdinal: 1 });
-
-    await bucket.put(manifest.key, manifestBytes, {
-      customMetadata: {
-        generation: "1",
-        importId: admitted.id,
-        sha256: manifest.sha256,
-      },
-      sha256: manifestShaBuffer,
-    });
-    await expect(
-      sendEvidenceEvent({
-        ...deletionEvent,
-        action: "PutObject",
-        eventTime: "2026-08-22T12:02:00.000Z",
-      })
-    ).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Observed", availability: "available" },
-    });
-    references = await readEvidenceReferences(admission, admitted.id);
-    expect(
-      references?.references.find(({ kind }) => kind === "acquisition_manifest")
-    ).toMatchObject({ availability: "available", observationOrdinal: 2 });
-
-    await expect(
-      sendEvidenceEvent({
-        ...deletionEvent,
-        eventTime: "2026-08-22T12:01:30.000Z",
-      })
-    ).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Ignored", reason: "stale" },
-    });
-    references = await readEvidenceReferences(admission, admitted.id);
-    expect(
-      references?.references.find(({ kind }) => kind === "acquisition_manifest")
-    ).toMatchObject({ availability: "available", observationOrdinal: 2 });
-
-    await expect(
-      sendEvidenceEvent({
-        ...deletionEvent,
-        action: "DeleteObject",
-        eventTime: "2026-08-22T12:02:00.000Z",
-      })
-    ).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Observed", availability: "deleted" },
-    });
-    const sameTimeLowerPrecedenceEvent = {
-      ...deletionEvent,
-      action: "CopyObject",
-      copySource: {
-        bucket: "ImportEvidenceBucket",
-        object: "imports/source/manifest.json",
-      },
-      eventTime: "2026-08-22T12:02:00.000Z",
-    } as const;
-    await expect(
-      sendEvidenceEvent(sameTimeLowerPrecedenceEvent)
-    ).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Ignored", reason: "stale" },
-    });
-    references = await readEvidenceReferences(admission, admitted.id);
-    expect(
-      references?.references.find(({ kind }) => kind === "acquisition_manifest")
-    ).toMatchObject({ availability: "deleted", observationOrdinal: 3 });
-
-    await restartRuntime();
-    await expect(
-      sendEvidenceEvent(sameTimeLowerPrecedenceEvent)
-    ).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Ignored", reason: "stale" },
-    });
-    references = await readEvidenceReferences(admission, admitted.id);
-    expect(
-      references?.references.find(({ kind }) => kind === "acquisition_manifest")
-    ).toMatchObject({ availability: "deleted", observationOrdinal: 3 });
-
-    bucket = await getRuntime().getR2Bucket(
-      "ImportEvidenceBucket",
-      "evidence-consumer"
-    );
-    await bucket.delete(manifest.key);
-    await expect(
-      sendEvidenceEvent({
-        ...deletionEvent,
-        action: "PutObject",
-        eventTime: "2026-08-22T12:03:00.000Z",
-      })
-    ).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Observed", availability: "missing" },
-    });
-    references = await readEvidenceReferences(admission, admitted.id);
-    expect(
-      references?.references.find(({ kind }) => kind === "acquisition_manifest")
-    ).toMatchObject({ availability: "missing", observationOrdinal: 4 });
-  }, 30_000);
-
-  it("reconciles a carousel manifest lifecycle deletion without acquisition evidence", async () => {
-    const { admission, admitted, cookie, organization } =
-      await admitResolvedEvidenceImport({
-        label: "Carousel Lifecycle Event Member",
-        mutationId: "a".repeat(64),
-        sourceKind: "carousel",
-        videoId: "7000000000000000133",
-      });
-    const inputFingerprint = "b".repeat(64);
-    const manifestSha256 = "c".repeat(64);
-    const { completionReceipt, manifestKey } = await commitCarouselManifest({
-      admission,
-      inputFingerprint,
-      intentId: admitted.id,
-      manifestSha256,
-      mutationIds: ["d".repeat(64), "e".repeat(64)],
-    });
-
-    await expect(
-      registerEvidenceRoute({
-        importId: admitted.id,
-        organizationId: organization.id,
-      })
-    ).resolves.toBe("Registered");
-    const cancelled = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}/cancel`,
-      {
-        body: JSON.stringify({ expectedIntentVersion: 2 }),
-        headers: {
-          "content-type": "application/json",
-          cookie,
-          "idempotency-key": "carousel-lifecycle-terminal-proof",
-        },
-        method: "POST",
-      }
-    );
-    expect(cancelled.status, await cancelled.text()).toBe(200);
-
-    const deletionEvent = {
-      account: "must-not-escape",
-      action: "LifecycleDeletion",
-      bucket: "must-not-escape",
-      eventTime: "2026-08-22T12:11:00.000Z",
-      object: { key: manifestKey },
-    } as const;
-    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Observed", availability: "deleted" },
-    });
-    const references = await readEvidenceReferences(admission, admitted.id);
-    expect(references?.references).toHaveLength(1);
-    expect(references).toMatchObject({
-      committedAt: completionReceipt.committedAt,
-      executionGeneration: 1,
-      intentId: admitted.id,
-      references: [
-        {
-          availability: "deleted",
-          byteLength: 512,
-          key: manifestKey,
-          kind: "carousel_manifest",
-          observationOrdinal: 1,
-          sha256: manifestSha256,
-        },
-      ],
-    });
-
-    await restartRuntime();
-    await expect(sendEvidenceEvent(deletionEvent)).resolves.toEqual({
-      _tag: "Accepted",
-      value: { _tag: "Observed", availability: "deleted" },
-    });
-    await expect(
-      readEvidenceReferences(admission, admitted.id)
-    ).resolves.toEqual(references);
-  }, 30_000);
-
   it("rejects source-mixed evidence reference wire shapes", async () => {
     const intentId = "00000000-0000-4000-8000-000000000134";
     const manifestSha256 = "7".repeat(64);
@@ -2798,43 +2414,26 @@ describe("household public API to private Durable Object boundary", () => {
       })
     );
     const database = await getRuntime().getD1Database(
-      "MealPlannerDatabase",
-      "evidence-consumer"
+      "ProviderAccountingDatabase",
+      "provider-recovery"
     );
-    const sharedCheckpointTables = await database
+    const providerAccountingTables = await database
       .prepare(
         `SELECT name
            FROM sqlite_master
-          WHERE name IN (
-              'import_recipe_executor_terminal_checkpoints',
-              'import_recipe_executor_terminal_checkpoints_immutable_delete',
-              'import_recipe_executor_terminal_checkpoints_immutable_update',
-              'pilot_provider_terminal_checkpoints',
-              'import_provider_terminal_checkpoints',
-              'provider_accounting_recipe_replay_values_guarded_delete',
-              'import_transcriptions',
-              'import_visual_evidence',
-              'import_carousel_evidence',
-              'import_recipe_extractions'
-            )
+          WHERE type = 'table'
+            AND name NOT LIKE '_cf_%'
+            AND name NOT LIKE 'sqlite_%'
           ORDER BY name`
       )
       .all();
-    expect(sharedCheckpointTables.results).toEqual([]);
-    const executionColumns = await database
-      .prepare("PRAGMA table_info(import_execution_runs)")
-      .all<{ readonly name: string }>();
-    expect(executionColumns.results.map(({ name }) => name)).not.toContain(
-      "evidence_references_json"
-    );
-    const executionTable = await database
-      .prepare(
-        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'import_execution_runs'"
-      )
-      .first<{ readonly sql: string }>();
-    expect(executionTable?.sql).not.toMatch(
-      /(?:acquired|transcribed|transcribing)/u
-    );
+    expect(providerAccountingTables.results).toEqual([
+      { name: "provider_accounting_budgets" },
+      { name: "provider_accounting_conservative_settlements" },
+      { name: "provider_accounting_dispatches" },
+      { name: "provider_accounting_recipe_replay_values" },
+      { name: "provider_accounting_reconciliations" },
+    ]);
   });
 
   it.each([
@@ -2895,8 +2494,8 @@ describe("household public API to private Durable Object boundary", () => {
       expect(await replay.json()).toEqual(firstReceipt);
 
       const providerState = await getRuntime().getKVNamespace(
-        "EVIDENCE_EVENT_RESULTS",
-        "evidence-consumer"
+        "PROVIDER_RECOVERY_RESULTS",
+        "provider-recovery"
       );
       await expect(
         providerState.get(`provider-attempt-calls:${dispatchId}`)
@@ -2933,8 +2532,8 @@ describe("household public API to private Durable Object boundary", () => {
     );
     expect(failedRestart.status).toBe(409);
     const restartState = await getRuntime().getKVNamespace(
-      "EVIDENCE_EVENT_RESULTS",
-      "evidence-consumer"
+      "PROVIDER_RECOVERY_RESULTS",
+      "provider-recovery"
     );
     await expect(
       restartState.get(`speech-restart:${fixture.intentId}`)
@@ -2990,8 +2589,8 @@ describe("household public API to private Durable Object boundary", () => {
       recoveryDispatchId: fixture.recoveryDispatchId,
     });
     const restartState = await getRuntime().getKVNamespace(
-      "EVIDENCE_EVENT_RESULTS",
-      "evidence-consumer"
+      "PROVIDER_RECOVERY_RESULTS",
+      "provider-recovery"
     );
     await expect(
       restartState.get(`speech-restart:${fixture.intentId}`)
@@ -3045,8 +2644,8 @@ describe("household public API to private Durable Object boundary", () => {
       outcome: "Dispatching",
     });
     const restartState = await getRuntime().getKVNamespace(
-      "EVIDENCE_EVENT_RESULTS",
-      "evidence-consumer"
+      "PROVIDER_RECOVERY_RESULTS",
+      "provider-recovery"
     );
     await expect(
       restartState.get(`speech-restart-calls:${fixture.intentId}`)
@@ -3142,19 +2741,6 @@ describe("household public API to private Durable Object boundary", () => {
     const canonicalSourceId = `tiktok:video:${videoId}`;
     const inputFingerprint = "f".repeat(64);
     const dispatchId = `visual:${admitted.id}:${generation}`;
-    const database = await getRuntime().getD1Database(
-      "MealPlannerDatabase",
-      "evidence-consumer"
-    );
-    await database
-      .prepare(
-        `INSERT INTO import_evidence_routes (
-           import_id, execution_generation, organization_id, route_version
-         ) VALUES (?, 1, ?, 1)`
-      )
-      .bind(admitted.id, organization.id)
-      .run();
-
     const originalAttempt = await providerTerminalAttemptCommand({
       acquisitionGeneration: generation,
       admission,
@@ -3184,8 +2770,8 @@ describe("household public API to private Durable Object boundary", () => {
       200
     );
     const providerState = await getRuntime().getKVNamespace(
-      "EVIDENCE_EVENT_RESULTS",
-      "evidence-consumer"
+      "PROVIDER_RECOVERY_RESULTS",
+      "provider-recovery"
     );
     await expect(
       providerState.get(`provider-attempt-calls:${dispatchId}`)
@@ -3656,8 +3242,8 @@ describe("household public API to private Durable Object boundary", () => {
     expect(failed.status, await failed.clone().text()).toBe(200);
 
     const database = await getRuntime().getD1Database(
-      "MealPlannerDatabase",
-      "evidence-consumer"
+      "ProviderAccountingDatabase",
+      "provider-recovery"
     );
     const budget = makeD1ProviderAccountingRepository(database);
     const reservation = {

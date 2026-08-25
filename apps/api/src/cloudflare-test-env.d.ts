@@ -8,7 +8,7 @@ declare global {
   namespace Cloudflare {
     interface Env {
       readonly ImportEvidenceBucket: WorkerTestR2Bucket;
-      readonly MealPlannerDatabase: WorkerTestD1Database;
+      readonly ProviderAccountingDatabase: WorkerTestD1Database;
       readonly TEST_MIGRATIONS: readonly WorkerTestMigration[];
     }
   }

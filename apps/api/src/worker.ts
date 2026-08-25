@@ -27,7 +27,6 @@ import {
   handleHouseholdImportBatchQueueMessage,
   makeHouseholdBatchWorkflowLauncher,
 } from "./features/imports/household-import-batch-queue.handlers.js";
-import { makeD1ImportEvidenceRouteRepository } from "./features/imports/import-evidence-route.repository.d1.js";
 import {
   makeRecipeImportHttpApiLayer,
   makeRecipeImportNotFoundHttpLayer,
@@ -52,7 +51,7 @@ import {
   HouseholdImportBatchQueue,
 } from "./infrastructure/household-import-batch-queue.js";
 import { MealPlannerAuthDatabase } from "./infrastructure/meal-planner-auth-database.js";
-import { MealPlannerDatabase } from "./infrastructure/meal-planner-database.js";
+import { ProviderAccountingDatabase } from "./infrastructure/provider-accounting-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
 
 const MealPlannerOperationalRoutes = [
@@ -75,21 +74,22 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         enabled: true,
         headSamplingRate: 1,
         // Invocation logs include request/response metadata and fetch URLs.
-        // Persist only the application's closed, allowlisted event contract.
+        // Emit only the application's closed, allowlisted event contract.
         invocationLogs: false,
         persist: true,
       },
       traces: {
         // Automatic Worker tracing records url.full/url.path/url.query.
-        // Closed Effect events are instead persisted in the private D1 trace.
+        // Closed Effect events remain in application logs.
         enabled: false,
       },
     },
     workersDev: false,
   },
   Effect.gen(function* MealPlannerApiWorker() {
-    const queryDatabase =
-      yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
+    const providerAccountingQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
+      ProviderAccountingDatabase
+    );
     const authQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
       MealPlannerAuthDatabase
     );
@@ -156,8 +156,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         if (!(webRequest instanceof Request)) {
           return yield* Effect.die("Expected a Web Request source.");
         }
-        const database = yield* queryDatabase.raw;
-        const evidenceRoutes = makeD1ImportEvidenceRouteRepository(database);
+        const providerAccountingDatabase =
+          yield* providerAccountingQueryDatabase.raw;
         const authDatabase = drizzle(yield* authQueryDatabase.raw);
         const requestOrigin = new URL(webRequest.url).origin;
         const auth = makeMealPlannerAuth({
@@ -175,7 +175,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const authenticatedOrganizationResolver =
           makeAuthenticatedOrganizationResolver({ auth });
         const requestLayer = makeImportWorkerRequestLayer({
-          database,
           householdDomain,
           importWorkflowStarter: makeImportWorkflowStarter(
             importAcquisitionWorkflow
@@ -185,17 +184,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           principalResolver: makeAuthPrincipalResolver({
             auth,
           }),
+          providerAccountingDatabase,
           recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
             importRecipeRecoveryWorkflow
           ),
-          registerEvidenceRoute: (route) =>
-            evidenceRoutes.register(route).pipe(
-              Effect.filterOrFail(
-                (outcome) => outcome === "Registered",
-                () => ({ reason: "route_conflict" })
-              ),
-              Effect.asVoid
-            ),
           runtimeContext,
           systemApiToken: importSystemApiToken,
           systemPrincipal: importSystemPrincipal,

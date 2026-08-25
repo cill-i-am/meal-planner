@@ -16,12 +16,9 @@ import {
   ProviderAccountingService,
   makeD1ProviderAccountingService,
 } from "../provider-accounting/provider-accounting.service.js";
-import type { ImportEvidenceRoute } from "./import-evidence-event.js";
 import { RecipeImportHouseholdDomain } from "./import-intent-api.http.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
-import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import type { ImportTraceContext } from "./import-observability.js";
-import { ImportObservabilityTraceStore } from "./import-observability.js";
 import {
   ProviderRecoveryService,
   makeProviderRecoveryService,
@@ -38,15 +35,12 @@ import type { ImportWorkflowReconciler } from "./import.workflow.js";
 
 /** Inputs required to construct the import HTTP route services once. */
 export interface ImportWorkerRequestLayerInput {
-  readonly database: AnyD1Database;
   readonly importWorkflowStarter: ImportWorkflowReconciler;
   readonly now: () => string;
   readonly organizationResolver: AuthenticatedOrganizationResolver;
   readonly principalResolver: AuthPrincipalResolver;
+  readonly providerAccountingDatabase: AnyD1Database;
   readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarter;
-  readonly registerEvidenceRoute: (
-    route: ImportEvidenceRoute
-  ) => Effect.Effect<void, object>;
   readonly runtimeContext: Effect.Success<typeof RuntimeContext>;
   readonly systemApiToken: Redacted.Redacted<string>;
   readonly systemPrincipal: ImportPrincipal;
@@ -67,9 +61,6 @@ export const makeRecipeImportWorkflowDispatcher = (input: {
     "dispatchAdmission"
   >;
   readonly retryDelaysMilliseconds: readonly number[];
-  readonly registerEvidenceRoute: (
-    route: ImportEvidenceRoute
-  ) => Effect.Effect<void, object>;
   readonly scheduleRetry: (effect: Effect.Effect<void>) => Effect.Effect<void>;
   readonly trace: ImportTraceContext;
 }) =>
@@ -104,14 +95,7 @@ export const makeRecipeImportWorkflowDispatcher = (input: {
             outcome,
             workflowIdentity,
           });
-        const prepareDispatch = input
-          .registerEvidenceRoute({
-            executionGeneration,
-            importId,
-            organizationId: admission.organizationId,
-            routeVersion: 1,
-          })
-          .pipe(Effect.flatMap(() => recordDispatch("prepared")));
+        const prepareDispatch = recordDispatch("prepared");
         const dispatchOnce = prepareDispatch.pipe(
           Effect.flatMap(() =>
             input.importWorkflowStarter
@@ -159,7 +143,7 @@ export const makeImportWorkerRequestLayer = (
     ProviderAccountingService,
     ProviderAccountingService.of(
       makeD1ProviderAccountingService({
-        database: input.database,
+        database: input.providerAccountingDatabase,
         now: () => timestamp(input.now),
       })
     )
@@ -177,7 +161,6 @@ export const makeImportWorkerRequestLayer = (
   const workflowDispatcher = makeRecipeImportWorkflowDispatcher({
     householdDomain: input.householdDomain,
     importWorkflowStarter: input.importWorkflowStarter,
-    registerEvidenceRoute: input.registerEvidenceRoute,
     retryDelaysMilliseconds: [2000, 4000, 8000, 16_000],
     scheduleRetry: (effect) =>
       Effect.gen(function* scheduleImportDispatchRetry() {
@@ -216,10 +199,6 @@ export const makeImportWorkerRequestLayer = (
         }),
         ImportSystemAuthorizer.of
       )
-    ),
-    Layer.succeed(
-      ImportObservabilityTraceStore,
-      makeD1ImportObservabilityTraceStore(input.database, input.now)
     ),
     accounting,
     recovery

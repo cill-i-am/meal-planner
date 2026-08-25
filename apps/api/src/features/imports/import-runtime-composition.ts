@@ -6,7 +6,7 @@ import { Effect, Option, Schema } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
-import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
+import { ProviderAccountingDatabase } from "../../infrastructure/provider-accounting-database.js";
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
@@ -16,11 +16,7 @@ import {
 } from "../provider-accounting/provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
 import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
-import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
-import {
-  ImportObservabilityTraceStore,
-  observeImportWorkflowStart,
-} from "./import-observability.js";
+import { observeImportWorkflowStart } from "./import-observability.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import {
   makeProviderDispatchGate,
@@ -224,8 +220,9 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
 ) =>
   Effect.gen(function* makeImportRecipeRecoveryWorkflowHandlerEffect() {
     const runtimeContext = yield* RuntimeContext;
-    const queryDatabase =
-      yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
+    const providerAccountingQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
+      ProviderAccountingDatabase
+    );
     const evidenceBucket =
       yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
     const householdDomain: HouseholdDomainWorkerMethods =
@@ -239,7 +236,8 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
         const workflowInput = yield* resolveRecipeRecoveryWorkflowInput(
           rawInput
         ).pipe(Effect.orDie);
-        const database = yield* queryDatabase.raw;
+        const providerAccountingDatabase =
+          yield* providerAccountingQueryDatabase.raw;
         const bucket = adaptAcquisitionBucket(evidenceBucket, runtimeContext);
         const evidenceRepositories =
           yield* makeRecipeRecoveryHouseholdEvidenceRepositories({
@@ -261,17 +259,13 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
           mutationId: recoveryMutationId,
           organizationId: workflowInput.organizationId,
         });
-        const traceStore = makeD1ImportObservabilityTraceStore(database, () =>
-          new Date().toISOString()
-        );
         const transport = yield* makeWorkersAiTransport(
           providerGateway,
-          workflowInput.trace.correlationId,
-          traceStore
+          workflowInput.trace.correlationId
         ).pipe(Effect.provideService(RuntimeContext, runtimeContext));
         const { extractor } = yield* makeRecipeRecoveryProviderRuntime({
           correlationId: workflowInput.trace.correlationId,
-          database,
+          database: providerAccountingDatabase,
           now: currentProviderAccountingTimestamp,
           runId: Schema.decodeUnknownSync(ProviderAccountingRunId)(
             `recipe-import:recipe-recovery:${workflowInput.importId}`
@@ -358,8 +352,7 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
                   )
                   .pipe(Effect.map(({ payload }) => payload)),
             })
-          ),
-          Effect.provideService(ImportObservabilityTraceStore, traceStore)
+          )
         );
       });
   });

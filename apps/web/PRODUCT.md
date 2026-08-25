@@ -33,7 +33,7 @@ The user pastes a link, sees the admitted intent immediately, watches its plain-
 
 ## Evidence on Hand
 
-This is a provider-free proof at the real Worker/D1 seams. It proves local account, cookie session, household organization and membership authorization plus canonical intent/action/recipe handling; it does not prove live media acquisition, transcription, extraction quality, or deployed production access.
+This is provider-free proof through the real Website/API/private Worker, Better Auth D1, and household Durable Object seams. It proves local account, cookie session, household organization and membership authorization, plus canonical intent/action/recipe handling. Household product state never passes through global D1. This proof does not cover live media acquisition, transcription, extraction quality, or deployed production access.
 
 ## Product Principles
 

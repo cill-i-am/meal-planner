@@ -14,6 +14,7 @@ import {
   householdEvidenceMutationReceipts,
   householdEvidenceReferences,
   householdEvidenceStageExecutions,
+  householdImportAcquisitionAttempts,
   householdImportEvidenceExecutions,
   householdRecipeImports,
   householdRecipeImportTimeline,
@@ -28,6 +29,7 @@ import {
 import {
   HouseholdCommitAcquisitionEvidenceInput,
   HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdClaimAcquisitionAttemptResult,
   HouseholdObserveEvidenceReferenceInput,
   HouseholdObserveEvidenceReferenceResult,
   HouseholdMutateEvidenceStageInput,
@@ -36,6 +38,7 @@ import {
   HouseholdExtractionClaimContext,
   HouseholdReadEvidenceStageResult,
   HouseholdReadEvidenceReferencesResult,
+  HouseholdReadAcquisitionAttemptsResult,
   HouseholdReadImportTerminalCheckpointResult,
   HouseholdPrepareRecipeRecoveryInput,
   HouseholdPrepareRecipeRecoveryResult,
@@ -43,10 +46,12 @@ import {
 } from "./household-evidence.contract.js";
 import type {
   HouseholdCommitAcquisitionEvidenceInput as HouseholdCommitAcquisitionEvidenceInputType,
+  HouseholdClaimAcquisitionAttemptInput as HouseholdClaimAcquisitionAttemptInputType,
   HouseholdObserveEvidenceReferenceInput as HouseholdObserveEvidenceReferenceInputType,
   HouseholdMutateEvidenceStageInput as HouseholdMutateEvidenceStageInputType,
   HouseholdReadEvidenceStageInput as HouseholdReadEvidenceStageInputType,
   HouseholdReadEvidenceReferencesInput as HouseholdReadEvidenceReferencesInputType,
+  HouseholdReadAcquisitionAttemptsInput as HouseholdReadAcquisitionAttemptsInputType,
   HouseholdReadImportTerminalCheckpointInput as HouseholdReadImportTerminalCheckpointInputType,
   HouseholdPrepareRecipeRecoveryInput as HouseholdPrepareRecipeRecoveryInputType,
   HouseholdReadRecipeRecoveryAttemptInput as HouseholdReadRecipeRecoveryAttemptInputType,
@@ -440,6 +445,198 @@ export const makeHouseholdEvidenceRepository = (
       })
       .pipe(mapPersistence, Effect.asVoid);
 
+  const claimAcquisitionAttempt = (
+    input: HouseholdClaimAcquisitionAttemptInputType
+  ) =>
+    Effect.gen(function* claimHouseholdAcquisitionAttempt() {
+      yield* ensureHouseholdProvenance(
+        database,
+        input.admission.organizationId
+      ).pipe(Effect.mapError(persistenceFailure));
+      const claimedAt = new Date(yield* Clock.currentTimeMillis).toISOString();
+      return yield* database
+        .transaction((transaction) =>
+          Effect.gen(function* claimAcquisitionAttemptTransaction() {
+            const [intent] = yield* transaction
+              .select({
+                canonicalSourceId: householdRecipeImports.canonicalSourceId,
+                executionGeneration: householdRecipeImports.executionGeneration,
+                sourceKind: householdRecipeImports.sourceKind,
+                status: householdRecipeImports.status,
+              })
+              .from(householdRecipeImports)
+              .where(eq(householdRecipeImports.intentId, input.intentId))
+              .limit(1)
+              .pipe(mapPersistence);
+            if (intent === undefined) {
+              return yield* Effect.fail(failure("intent_not_found"));
+            }
+            if (intent.executionGeneration !== input.expectedGeneration) {
+              return yield* Effect.fail(failure("generation_conflict"));
+            }
+            if (
+              intent.sourceKind !== "video" ||
+              intent.canonicalSourceId !== input.canonicalSourceId
+            ) {
+              return yield* Effect.fail(failure("illegal_transition"));
+            }
+            const [existing] = yield* transaction
+              .select()
+              .from(householdImportAcquisitionAttempts)
+              .where(
+                eq(
+                  householdImportAcquisitionAttempts.attemptIdentity,
+                  input.attemptIdentity
+                )
+              )
+              .limit(1)
+              .pipe(mapPersistence);
+            if (existing !== undefined) {
+              if (
+                existing.intentId !== input.intentId ||
+                existing.executionGeneration !== input.expectedGeneration ||
+                existing.attemptOrdinal !== input.attemptOrdinal ||
+                existing.canonicalSourceId !== input.canonicalSourceId
+              ) {
+                return yield* Effect.fail(failure("idempotency_conflict"));
+              }
+              return yield* decode(HouseholdClaimAcquisitionAttemptResult, {
+                attempt: existing,
+                outcome: "Replay",
+              });
+            }
+            if (intent.status !== "processing") {
+              return yield* Effect.fail(failure("illegal_transition"));
+            }
+            const [latestExecutionAttempt] = yield* transaction
+              .select({
+                attemptOrdinal:
+                  householdImportAcquisitionAttempts.attemptOrdinal,
+              })
+              .from(householdImportAcquisitionAttempts)
+              .where(
+                and(
+                  eq(
+                    householdImportAcquisitionAttempts.intentId,
+                    input.intentId
+                  ),
+                  eq(
+                    householdImportAcquisitionAttempts.executionGeneration,
+                    input.expectedGeneration
+                  )
+                )
+              )
+              .orderBy(desc(householdImportAcquisitionAttempts.attemptOrdinal))
+              .limit(1)
+              .pipe(mapPersistence);
+            if (
+              input.attemptOrdinal !==
+              (latestExecutionAttempt?.attemptOrdinal ?? 0) + 1
+            ) {
+              return yield* Effect.fail(failure("idempotency_conflict"));
+            }
+            const [latestAttempt] = yield* transaction
+              .select({
+                acquisitionAttemptGeneration:
+                  householdImportAcquisitionAttempts.acquisitionAttemptGeneration,
+              })
+              .from(householdImportAcquisitionAttempts)
+              .where(
+                eq(householdImportAcquisitionAttempts.intentId, input.intentId)
+              )
+              .orderBy(
+                desc(
+                  householdImportAcquisitionAttempts.acquisitionAttemptGeneration
+                )
+              )
+              .limit(1)
+              .pipe(mapPersistence);
+            const [committedEvidence] = yield* transaction
+              .select({
+                acquisitionAttemptGeneration:
+                  householdImportEvidenceExecutions.acquisitionAttemptGeneration,
+              })
+              .from(householdImportEvidenceExecutions)
+              .where(
+                eq(householdImportEvidenceExecutions.intentId, input.intentId)
+              )
+              .orderBy(
+                desc(
+                  householdImportEvidenceExecutions.acquisitionAttemptGeneration
+                )
+              )
+              .limit(1)
+              .pipe(mapPersistence);
+            const acquisitionAttemptGeneration =
+              Math.max(
+                latestAttempt?.acquisitionAttemptGeneration ?? 0,
+                committedEvidence?.acquisitionAttemptGeneration ?? 0
+              ) + 1;
+            const attempt = {
+              acquisitionAttemptGeneration,
+              attemptIdentity: input.attemptIdentity,
+              attemptOrdinal: input.attemptOrdinal,
+              canonicalSourceId: input.canonicalSourceId,
+              claimedAt,
+              executionGeneration: input.expectedGeneration,
+              intentId: input.intentId,
+            };
+            yield* transaction
+              .insert(householdImportAcquisitionAttempts)
+              .values(attempt)
+              .pipe(mapPersistence);
+            return yield* decode(HouseholdClaimAcquisitionAttemptResult, {
+              attempt,
+              outcome: "Claimed",
+            });
+          })
+        )
+        .pipe(mapTransaction);
+    });
+
+  const readAcquisitionAttempts = (
+    input: HouseholdReadAcquisitionAttemptsInputType
+  ) =>
+    Effect.gen(function* readHouseholdAcquisitionAttempts() {
+      yield* ensureHouseholdProvenance(
+        database,
+        input.admission.organizationId
+      ).pipe(Effect.mapError(persistenceFailure));
+      const [intent] = yield* database
+        .select({
+          executionGeneration: householdRecipeImports.executionGeneration,
+          sourceKind: householdRecipeImports.sourceKind,
+        })
+        .from(householdRecipeImports)
+        .where(eq(householdRecipeImports.intentId, input.intentId))
+        .limit(1)
+        .pipe(mapPersistence);
+      if (intent === undefined) {
+        return yield* Effect.fail(failure("intent_not_found"));
+      }
+      if (intent.executionGeneration !== input.expectedGeneration) {
+        return yield* Effect.fail(failure("generation_conflict"));
+      }
+      if (intent.sourceKind !== "video") {
+        return yield* Effect.fail(failure("illegal_transition"));
+      }
+      const attempts = yield* database
+        .select()
+        .from(householdImportAcquisitionAttempts)
+        .where(
+          and(
+            eq(householdImportAcquisitionAttempts.intentId, input.intentId),
+            eq(
+              householdImportAcquisitionAttempts.executionGeneration,
+              input.expectedGeneration
+            )
+          )
+        )
+        .orderBy(asc(householdImportAcquisitionAttempts.attemptOrdinal))
+        .pipe(mapPersistence);
+      return yield* decode(HouseholdReadAcquisitionAttemptsResult, attempts);
+    });
+
   const commitAcquisition = (
     input: HouseholdCommitAcquisitionEvidenceInputType
   ) =>
@@ -523,6 +720,35 @@ export const makeHouseholdEvidenceRepository = (
             if (
               intent.status !== "processing" ||
               intent.canonicalSourceId === null
+            ) {
+              return yield* Effect.fail(failure("illegal_transition"));
+            }
+            const [claimedAttempt] = yield* transaction
+              .select({
+                canonicalSourceId:
+                  householdImportAcquisitionAttempts.canonicalSourceId,
+                executionGeneration:
+                  householdImportAcquisitionAttempts.executionGeneration,
+              })
+              .from(householdImportAcquisitionAttempts)
+              .where(
+                and(
+                  eq(
+                    householdImportAcquisitionAttempts.intentId,
+                    input.intentId
+                  ),
+                  eq(
+                    householdImportAcquisitionAttempts.acquisitionAttemptGeneration,
+                    input.acquisitionAttemptGeneration
+                  )
+                )
+              )
+              .limit(1)
+              .pipe(mapPersistence);
+            if (
+              claimedAttempt === undefined ||
+              claimedAttempt.executionGeneration !== input.expectedGeneration ||
+              claimedAttempt.canonicalSourceId !== intent.canonicalSourceId
             ) {
               return yield* Effect.fail(failure("illegal_transition"));
             }
@@ -1921,10 +2147,12 @@ export const makeHouseholdEvidenceRepository = (
     });
 
   return {
+    claimAcquisitionAttempt,
     commitAcquisition,
     mutateStage,
     observeReference,
     prepareRecipeRecovery,
+    readAcquisitionAttempts,
     readRecipeRecoveryAttempt,
     readReferences,
     readStage,

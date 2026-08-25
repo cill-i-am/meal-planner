@@ -65,6 +65,7 @@ describe("provider accounting production boundary", () => {
         relativePath.endsWith(".ts") && !relativePath.endsWith(".test.ts")
     );
     expect(productionPaths.toSorted()).toEqual([
+      "provider-accounting.database-schema.ts",
       "provider-accounting.repository.d1.ts",
       "provider-accounting.routes.ts",
       "provider-accounting.service.ts",
@@ -84,7 +85,10 @@ describe("provider accounting production boundary", () => {
     }
 
     const schema = await read(
-      path.join(featuresRoot, "imports/import.database-schema.ts")
+      path.join(
+        providerAccountingRoot,
+        "provider-accounting.database-schema.ts"
+      )
     );
     for (const table of [
       "provider_accounting_budgets",
@@ -194,7 +198,7 @@ describe("provider accounting production boundary", () => {
     expect(alchemy).not.toContain("provider terminal-settlement route");
     expect(alchemy).toContain("provider accounting reconciliation route");
     expect(alchemy).toContain("Household recovery route");
-    expect(handoff).toContain("Slice 4");
-    expect(handoff).not.toContain("Slice 3");
+    expect(handoff).toContain("Slice 5");
+    expect(handoff).not.toContain("Slice 4 is delivered");
   });
 });

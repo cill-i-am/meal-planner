@@ -39,6 +39,7 @@ export default defineConfig({
         test: {
           exclude: [
             "src/**/*.worker.test.ts",
+            "src/features/imports/import-acquisition-restart.integration.test.ts",
             "src/features/imports/import-provider-workflow-task.integration.test.ts",
           ],
           include: ["src/**/*.test.ts"],
@@ -54,11 +55,16 @@ export default defineConfig({
                   fileURLToPath(new URL("auth-migrations", import.meta.url))
                 ),
                 TEST_MIGRATIONS: await readDrizzleD1Migrations(
-                  fileURLToPath(new URL("migrations", import.meta.url))
+                  fileURLToPath(
+                    new URL("provider-accounting-migrations", import.meta.url)
+                  )
                 ),
               },
               compatibilityDate: "2026-07-14",
-              d1Databases: ["MealPlannerAuthDatabase", "MealPlannerDatabase"],
+              d1Databases: [
+                "MealPlannerAuthDatabase",
+                "ProviderAccountingDatabase",
+              ],
               r2Buckets: ["ImportEvidenceBucket"],
             },
           })),
@@ -76,6 +82,7 @@ export default defineConfig({
       {
         test: {
           include: [
+            "src/features/imports/import-acquisition-restart.integration.test.ts",
             "src/features/imports/import-provider-workflow-task.integration.test.ts",
           ],
           name: "node-workflows",

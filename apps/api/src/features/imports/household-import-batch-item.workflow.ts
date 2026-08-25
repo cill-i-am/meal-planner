@@ -1,10 +1,8 @@
 import type { RecipeImportBatch } from "@meal-planner/recipe-import-api";
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Cause, Effect, Option, Schema } from "effect";
 
-import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
 import type {
   HouseholdClaimImportBatchItemResult,
   HouseholdFailImportBatchItemInput,
@@ -25,7 +23,6 @@ import {
   HouseholdRecordRecipeImportDispatchResult,
 } from "../households/recipe-import/household-recipe-import.contract.js";
 import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
-import { makeD1ImportEvidenceRouteRepository } from "./import-evidence-route.repository.d1.js";
 import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { ImportTraceContext } from "./import-observability.js";
 import { ImportId } from "./import.contracts.js";
@@ -94,7 +91,6 @@ const isProvenPreStartRefusal = <Error extends { readonly _tag: string }>(
 
 /** Production runtime ports, exported so native tests exercise the installed composition. */
 export const makeHouseholdImportBatchWorkflowPorts = (input: {
-  readonly database: Effect.Effect<AnyD1Database, never, RuntimeContext>;
   readonly household: Pick<
     HouseholdDomainWorkerMethods,
     | "admitRecipeImport"
@@ -156,7 +152,6 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
         .pipe(Effect.orDie),
     dispatch: (admitted, queueMessage) =>
       Effect.gen(function* dispatchRecipeImportWorkflow() {
-        const database = yield* input.database;
         const importId = yield* Schema.decodeUnknownEffect(ImportId)(
           admitted.intent.id
         );
@@ -194,19 +189,6 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
                 )
               )
             );
-        const registered = yield* makeD1ImportEvidenceRouteRepository(
-          database
-        ).register({
-          executionGeneration,
-          importId,
-          organizationId: queueMessage.organizationId,
-          routeVersion: 1,
-        });
-        if (registered !== "Registered") {
-          return yield* Effect.die(
-            new Error("Import evidence route conflicts with batch authority.")
-          );
-        }
         const prepared = yield* record("prepared");
         if (prepared.state === "dispatched") {
           return true;
@@ -318,8 +300,6 @@ export default class HouseholdImportBatchItemWorkflow extends Cloudflare.Workflo
       HouseholdDomainWorker
     );
     const acquisitionWorkflow = yield* ImportAcquisitionWorkflow;
-    const queryDatabase =
-      yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
     const starter = makeImportWorkflowStarter(acquisitionWorkflow);
     return Effect.fn(function* runHouseholdBatchItem(untrustedInput) {
       const message = yield* Schema.decodeUnknownEffect(
@@ -327,12 +307,11 @@ export default class HouseholdImportBatchItemWorkflow extends Cloudflare.Workflo
         { onExcessProperty: "error" }
       )(untrustedInput).pipe(Effect.orDie);
       const ports = makeHouseholdImportBatchWorkflowPorts({
-        database: queryDatabase.raw,
         household,
         message,
         starter,
       });
       return yield* coordinateHouseholdImportBatchItem(message, ports);
     });
-  }).pipe(Effect.provide(Cloudflare.D1.QueryDatabaseBinding))
+  })
 ) {}

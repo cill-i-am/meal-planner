@@ -20,14 +20,15 @@ Meal planning reads bounded pages of approved recipes directly from that local
 capability. There is no shared-D1 recipe projection, recipe-source gateway,
 dual write, legacy read, or compatibility adapter.
 
-The shared `MealPlannerDatabase` D1 is noncanonical for this moved state. The
-production acquisition Workflow commits acquisition, transcription, visual,
-carousel, and extraction metadata only through the private household boundary.
-Terminal checkpoints and recovery attempts are committed and read only through
-that boundary. Shared D1 retains provider-budget settlement/reconciliation and
-approved global operational controls; those records cannot author household
+The production acquisition Workflow commits acquisition, transcription,
+visual, carousel, and extraction metadata only through the private household
+boundary. Terminal checkpoints and recovery attempts are committed and read
+only through that boundary. The dedicated `ProviderAccountingDatabase` D1
+retains only production-owned provider budgets, reservations, settlement,
+reconciliation, and receipt facts. Those global operational records have no
+organization or household ownership column and cannot author household
 evidence or recovery, publish a recipe, answer a review, change public lifecycle
-state, or serve a public Recipe Bank read.
+state, or serve a public Recipe Bank read. Better Auth uses its own separate D1.
 
 `ImportMediaAcquisitionObject` remains a noncanonical, generation-fenced
 execution coordinator. It transports temporary media and artifacts but is not
@@ -94,8 +95,8 @@ The Durable Object alarm delivers each committed outbox row to
 `HouseholdImportBatchQueue`. Its immutable message contains only organization,
 batch, item, and generation IDs. A deterministic native Workflow claims the
 generation-fenced item, reuses ordinary household import admission, coordinates
-the noncanonical D1 evidence route and acquisition Workflow outside SQLite,
-then commits completion or a closed failure to the batch aggregate. Queue retry
+the acquisition Workflow outside SQLite, then commits completion or a closed
+failure to the batch aggregate. Queue retry
 and the dedicated DLQ provide transport evidence only. Both reconcile the same
 generation-specific Workflow identity before settlement. A successful Queue
 send remains recorded while its household outbox stays alarm-eligible until
@@ -136,34 +137,26 @@ Each provider dispatch, including a recovery dispatch, checkpoints one
 household-owned start time and reuses it in every Claim, Fail, artifact, and
 replay command. The execution generation remains the household lifecycle
 fence, while a separate acquisition-attempt generation scopes retry-created R2
-keys. Native Workflow response loss therefore reconstructs the same encoded
-command instead of changing the mutation digest.
+keys. Each attempt generation is claimed through a deterministic intent,
+execution-generation, and attempt-ordinal identity in household SQLite. After
+a Worker restart, the Workflow verifies the previously claimed generation's
+create-only R2 media and manifest before allocating another attempt. A valid
+pair is recovered and committed, while absent, incomplete, or invalid evidence
+permits the next claim. Claim-response loss replays the same identity and
+generation. Native Workflow response loss therefore reconstructs the same
+encoded command instead of changing the mutation digest.
 
 R2 references include byte length, SHA-256, deletion time, object kind, and
 generation. Reads return the video acquisition's media-and-manifest set or the
 carousel stage's single committed manifest with the same stable import,
 generation, and commit time across restart. The authoritative admitted source
 kind selects that exact closed shape; mixed kinds and out-of-order stage
-references fail closed. Missing objects and lifecycle deletion are recorded as
-availability observations without altering the committed reference. Each
-reference persists the last R2 event time and fixed same-time action
-precedence, so duplicate, delayed, and restart-replayed Queue notifications
-cannot overwrite a newer observation. Routing and object lookup occur only
-after the admitted household and import identity are proved.
-
-The authenticated API registers an immutable private import-to-organization
-event route synchronously before starting the Workflow. The unordered Queue
-carries only R2 notifications, so the consumer cannot observe an event before
-the route exists. It resolves that noncanonical route, reads the household's
-committed references through the private service binding, and requires exact
-import, object-key, kind, native R2 checksum, and custom-metadata agreement
-before committing an idempotent availability observation. The route carries
-the immutable execution generation for the household RPC fence; the R2 key and
-metadata carry the acquisition-attempt generation used to validate the
-artifact. The route is not public and never grants member authority.
-The consumer has only an R2 read binding. A notification that remains retryable
-after the configured attempts is retained in the dedicated evidence-event DLQ
-rather than silently discarded.
+references fail closed. The acquisition Workflow verifies the native R2
+checksum and custom metadata against the admitted household identity,
+execution generation, acquisition-attempt generation, and closed object shape
+before committing the reference. Recovery repeats that verification through
+the same household and Workflow authority. No global import route, R2 event
+Queue, event consumer, or event DLQ exists.
 
 Terminal ambiguity commits an immutable household checkpoint before recovery.
 Speech and visual recovery each prepare a generation-, predecessor-, and
@@ -238,20 +231,20 @@ review, Recipe Bank, batch, receipt, admission, and outbox tables. Alchemy owns
 the Durable Object class/namespace lifecycle but does not replace database
 migrations.
 
-The fresh D1 migration under `apps/api/migrations` contains only remaining
-acquisition bookkeeping and global provider-budget controls. Its execution row
-does not project household evidence references or provider-stage outcomes. The
-former D1 import requests, public intent/history, review, Recipe Bank, terminal
-checkpoint, recovery-attempt, batch, and moved receipt tables are deleted
-rather than migrated or backfilled. Structural tests reject reintroducing their
-production repositories or SQL tables.
+The fresh D1 migration under `apps/api/provider-accounting-migrations` contains
+only the five production-owned provider accounting tables. It contains no
+organization, household, import route, import execution, evidence, lifecycle,
+review, Recipe Bank, batch, checkpoint, recovery, or receipt authority. The
+former shared household migration history and production repositories are
+deleted rather than migrated, preserved, or backfilled. Structural tests reject
+reintroducing household product state or tenant-filtered global persistence.
 
 Provider-free Workerd tests exercise the actual Website/API/private-Worker/
 `HouseholdObject` composition with Better Auth membership, first activation,
 restart, repeated migrations, cross-household isolation, admission through
 confirmation and planning, replay/collision behavior, source and terminal
 races, post-commit dispatch failure, and pagination beyond 128 recipes. These
-tests also prove evidence replay, stale-generation rejection, restart
-persistence, retention, missing and deleted R2 objects, and late event
-handling. They do not claim provider, deployment, cloud migration, or
+tests also prove direct R2 integrity checks, evidence replay,
+stale-generation rejection, restart persistence, retention, and missing or
+deleted R2 objects. They do not claim provider, deployment, cloud migration, or
 production proof.

@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
+import {
+  inspectGlobalD1Architecture,
+  readTrackedGlobalD1Architecture,
+} from "./scripts/global-d1-architecture.js";
+
 const readRepoFile = (path: string): string =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf-8");
 
@@ -60,6 +65,66 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(source).toContain("state: Cloudflare.state()");
   });
 
+  it("retains only Better Auth and provider accounting in global D1", () => {
+    const apiRoot = fileURLToPath(new URL("apps/api", import.meta.url));
+    const repositoryRoot = import.meta.dirname;
+    const stackSource = readRepoFile("./alchemy.run.ts");
+    const providerAccountingSchemaPath = `${apiRoot}/src/features/provider-accounting/provider-accounting.database-schema.ts`;
+    const providerAccountingDatabasePath = `${apiRoot}/src/infrastructure/provider-accounting-database.ts`;
+    const removedPaths = [
+      `${apiRoot}/src/features/imports/import-evidence-event.ts`,
+      `${apiRoot}/src/features/imports/import-evidence-route.repository.d1.ts`,
+      `${apiRoot}/src/features/imports/import-execution.repository.d1.ts`,
+      `${apiRoot}/src/features/imports/import-observability.d1.ts`,
+      `${apiRoot}/src/features/imports/import.database-schema.ts`,
+      `${apiRoot}/src/infrastructure/import-evidence-event-queue.ts`,
+      `${apiRoot}/src/infrastructure/meal-planner-database.ts`,
+    ] as const;
+
+    expect(existsSync(providerAccountingDatabasePath)).toBe(true);
+    expect(existsSync(providerAccountingSchemaPath)).toBe(true);
+    for (const removedPath of removedPaths) {
+      expect(existsSync(removedPath), removedPath).toBe(false);
+    }
+    const retiredMigrationsPath = `${apiRoot}/migrations`;
+    const retiredMigrationFiles = existsSync(retiredMigrationsPath)
+      ? readdirSync(retiredMigrationsPath, { recursive: true }).filter((path) =>
+          String(path).endsWith(".sql")
+        )
+      : [];
+    expect(retiredMigrationFiles).toEqual([]);
+
+    const providerAccountingDatabase = readFileSync(
+      providerAccountingDatabasePath,
+      "utf-8"
+    );
+    const providerAccountingSchema = readFileSync(
+      providerAccountingSchemaPath,
+      "utf-8"
+    );
+    expect(providerAccountingDatabase).toMatch(
+      /Cloudflare\.D1\.Database\(\s*"ProviderAccountingDatabase"/u
+    );
+    expect(providerAccountingDatabase).toContain(
+      'migrationsDir: "./apps/api/provider-accounting-migrations"'
+    );
+    expect(providerAccountingSchema).not.toMatch(
+      /organizationId|organization_id|import_evidence_routes|import_execution_runs/iu
+    );
+    expect(stackSource).toMatch(
+      /providerAccountingDatabaseName:\s*providerAccountingDatabase\.databaseName/u
+    );
+    expect(stackSource).not.toContain("MealPlannerDatabase");
+    expect(stackSource).not.toContain("ImportEvidenceEventQueue");
+    expect(stackSource).not.toContain("BucketEventNotification");
+
+    expect(
+      inspectGlobalD1Architecture(
+        readTrackedGlobalD1Architecture(repositoryRoot)
+      )
+    ).toEqual([]);
+  }, 60_000);
+
   it("keeps the Worker identity stable, private, and preserves its optional URL output", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
@@ -86,112 +151,28 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
     expect(stackSource).toContain("apiUrl: api.url");
     expect(stackSource).toContain("apiWorkerName: api.workerName");
-    expect(stackSource).toContain("databaseName: database.databaseName");
+    expect(stackSource).toContain(
+      "authDatabaseName: authDatabase.databaseName"
+    );
+    expect(stackSource).toContain("providerAccountingDatabaseName:");
     expect(stackSource).not.toContain("api.url.as<string>()");
   });
 
-  it("declares the domain D1 resource with its reviewed migration", () => {
-    const databaseSource = readRepoFile(
-      "./apps/api/src/infrastructure/meal-planner-database.ts"
-    );
-    const migration = readRepoFile(
-      "./apps/api/migrations/20260822083458_import_execution/migration.sql"
-    );
-
-    expect(databaseSource).toContain('"MealPlannerDatabase"');
-    expect(databaseSource).toContain('migrationsDir: "./apps/api/migrations"');
-    expect(databaseSource).toContain('migrationsTable: "d1_migrations"');
-    expect(databaseSource.match(/Cloudflare\.D1\.Database\(/gu)).toHaveLength(
-      1
-    );
-    expect(migration).toContain("CREATE TABLE `import_execution_runs`");
-    expect(migration).toContain("`correlation_id` text NOT NULL");
-    expect(migration).toContain("`acquisition_generation` integer");
-    expect(migration).toContain("`canonical_source_id` text NOT NULL");
-    expect(migration).not.toContain("recipe_imports");
-    expect(migration).not.toContain("import_requests");
-    expect(migration).not.toContain("recipe_reviews");
-    expect(migration).not.toContain("recipe_import_intent_history");
-    expect(migration).not.toContain("__new_");
-    expect(migration).not.toContain("migration_snapshot");
-    expect(migration).not.toContain("import_recipe_terminal_projections");
-  });
-
-  it("keeps exactly the reviewed domain SQL migrations", () => {
+  it("keeps one generated provider-accounting baseline with no household authority", () => {
     const migrationsDirectory = fileURLToPath(
-      new URL("apps/api/migrations", import.meta.url)
+      new URL("apps/api/provider-accounting-migrations", import.meta.url)
     );
-    const sqlFiles = readdirSync(migrationsDirectory, {
-      recursive: true,
-    })
+    const sqlFiles = readdirSync(migrationsDirectory, { recursive: true })
       .map(String)
       .filter((path) => path.endsWith(".sql"))
       .toSorted();
 
     expect(sqlFiles).toEqual([
-      "20260822083458_import_execution/migration.sql",
-      "20260823055120_import_execution/migration.sql",
-      "20260823080018_import_execution/migration.sql",
-      "20260823113951_import_execution/migration.sql",
-      "20260823135058_import_execution/migration.sql",
-      "20260823164025_import_execution/migration.sql",
-      "20260823194331_import_execution/migration.sql",
+      "20260824183013_provider_accounting/migration.sql",
     ]);
-    const retirementMigration = readRepoFile(
-      "./apps/api/migrations/20260823080018_import_execution/migration.sql"
+    const migration = readRepoFile(
+      "./apps/api/provider-accounting-migrations/20260824183013_provider_accounting/migration.sql"
     );
-    expect(retirementMigration).toContain(
-      "DROP TRIGGER IF EXISTS `import_recipe_executor_terminal_checkpoints_immutable_update`;"
-    );
-    expect(retirementMigration).toContain(
-      "DROP TRIGGER IF EXISTS `import_recipe_executor_terminal_checkpoints_immutable_delete`;"
-    );
-    expect(retirementMigration).toContain(
-      "DROP TABLE `import_recipe_executor_terminal_checkpoints`;"
-    );
-    const evidenceRetirementMigration = readRepoFile(
-      "./apps/api/migrations/20260823113951_import_execution/migration.sql"
-    );
-    for (const authority of [
-      "import_carousel_evidence",
-      "import_recipe_extractions",
-      "import_transcriptions",
-      "import_visual_evidence",
-    ]) {
-      expect(evidenceRetirementMigration).toContain(
-        `DROP TABLE \`${authority}\`;`
-      );
-    }
-    const executionProjectionRetirementMigration = readRepoFile(
-      "./apps/api/migrations/20260823135058_import_execution/migration.sql"
-    );
-    expect(executionProjectionRetirementMigration).toContain(
-      "DROP TABLE `import_execution_runs`;"
-    );
-    expect(executionProjectionRetirementMigration).not.toContain(
-      "evidence_references_json"
-    );
-    expect(executionProjectionRetirementMigration).not.toContain("INSERT INTO");
-    const evidenceRouteGenerationMigration = readRepoFile(
-      "./apps/api/migrations/20260823164025_import_execution/migration.sql"
-    );
-    expect(evidenceRouteGenerationMigration).toContain(
-      "ADD `execution_generation` integer NOT NULL"
-    );
-    const providerAccountingMigration = readRepoFile(
-      "./apps/api/migrations/20260823194331_import_execution/migration.sql"
-    );
-    for (const table of [
-      "pilot_provider_budget_conservative_settlements",
-      "pilot_provider_budget_dispatches",
-      "pilot_provider_budget_reconciliations",
-      "pilot_provider_recipe_replay_values",
-      "pilot_provider_stage_budget",
-    ]) {
-      expect(providerAccountingMigration).toContain(
-        `DROP TABLE IF EXISTS \`${table}\`;`
-      );
-    }
     for (const table of [
       "provider_accounting_budgets",
       "provider_accounting_conservative_settlements",
@@ -199,13 +180,10 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "provider_accounting_recipe_replay_values",
       "provider_accounting_reconciliations",
     ]) {
-      expect(providerAccountingMigration).toContain(
-        `CREATE TABLE \`${table}\``
-      );
+      expect(migration).toContain(`CREATE TABLE \`${table}\``);
     }
-    expect(providerAccountingMigration).not.toContain("household_");
-    expect(providerAccountingMigration).not.toContain(
-      "INSERT INTO `pilot_provider_"
+    expect(migration).not.toMatch(
+      /organization_id|import_evidence_routes|import_execution_runs/iu
     );
   });
 
@@ -337,6 +315,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260822065001_household_domain/migration.sql",
       "20260823163811_household_domain/migration.sql",
       "20260824002531_household_domain/migration.sql",
+      "20260825015310_household_domain/migration.sql",
     ]);
     const evidenceMigration = readRepoFile(
       "./apps/api/household-migrations/20260823163811_household_domain/migration.sql"
@@ -353,6 +332,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(batchMigration).toContain("CREATE TABLE `household_import_batches`");
     expect(batchMigration).toContain(
       "CREATE TABLE `household_import_batch_items`"
+    );
+    const acquisitionAttemptMigration = readRepoFile(
+      "./apps/api/household-migrations/20260825015310_household_domain/migration.sql"
+    );
+    expect(acquisitionAttemptMigration).toContain(
+      "CREATE TABLE `household_import_acquisition_attempts`"
     );
     expect(batchMigration).toContain(
       "CREATE TABLE `household_import_batch_outbox`"
@@ -480,7 +465,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
   it("binds the least-privilege acquisition resources without Images or Sharp", () => {
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
     const databaseSource = readRepoFile(
-      "./apps/api/src/infrastructure/meal-planner-database.ts"
+      "./apps/api/src/infrastructure/provider-accounting-database.ts"
     );
     const workflowSource = readRepoFile(
       "./apps/api/src/features/imports/import.workflow.ts"
@@ -529,69 +514,6 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       'Config.string("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID")'
     );
     expect(allSource).not.toMatch(/Cloudflare\.Images|Images\.|sharp/iu);
-  });
-
-  it("wires R2 lifecycle events to a privacy-safe evidence Queue consumer", () => {
-    const stackSource = readRepoFile("./alchemy.run.ts");
-    const eventWorkerSource = readRepoFile(
-      "./apps/api/src/infrastructure/import-evidence-event-queue.ts"
-    );
-    const eventDecoderSource = readRepoFile(
-      "./apps/api/src/features/imports/import-evidence-event.ts"
-    );
-    const requestLayerSource = readRepoFile(
-      "./apps/api/src/features/imports/import-worker-request-layer.ts"
-    );
-    const apiWorkerSource = readRepoFile("./apps/api/src/worker.ts");
-
-    expect(stackSource).toContain("ImportEvidenceEventQueue");
-    expect(stackSource).toContain("Cloudflare.R2.BucketEventNotification(");
-    expect(stackSource).toContain('prefix: "imports/"');
-    expect(stackSource).toContain('"LifecycleDeletion"');
-    expect(eventWorkerSource).toContain(
-      "Cloudflare.Queues.consumeQueueMessages("
-    );
-    expect(eventWorkerSource).toContain("Cloudflare.Queues.EventSourceLive");
-    expect(eventWorkerSource).toContain("MealPlannerDatabase");
-    expect(eventWorkerSource).toContain("Cloudflare.D1.QueryDatabase(");
-    expect(eventWorkerSource).toContain("Cloudflare.D1.QueryDatabaseBinding");
-    expect(eventWorkerSource).toContain("makeD1ImportEvidenceRouteRepository(");
-    expect(eventWorkerSource).toContain("Cloudflare.R2.ReadBucket(");
-    expect(eventWorkerSource).toContain("Cloudflare.R2.ReadBucketBinding");
-    expect(eventWorkerSource).not.toContain("Cloudflare.R2.ReadWriteBucket(");
-    expect(eventWorkerSource).toContain("Cloudflare.Workers.bindWorker(");
-    expect(eventWorkerSource).toContain(
-      "reconcileImportEvidenceQueueMessage(message.body"
-    );
-    expect(eventWorkerSource).toContain(
-      "householdDomain.observeEvidenceReference(encoded)"
-    );
-    expect(eventWorkerSource).toContain(
-      "householdDomain.readEvidenceReferences(input)"
-    );
-    expect(eventDecoderSource).not.toContain("RegisterImportEvidenceRoute");
-    expect(eventDecoderSource).toContain(
-      "ports.household.observeEvidenceReference({"
-    );
-    expect(eventDecoderSource).toContain(
-      'metadata["importId"] !== event.importId'
-    );
-    expect(eventDecoderSource).toContain(
-      'metadata["generation"] !== String(event.acquisitionGeneration)'
-    );
-    expect(eventDecoderSource).toContain(
-      "expectedGeneration: resolved.executionGeneration"
-    );
-    expect(eventDecoderSource).toContain(
-      'metadata["sha256"] !== reference.sha256'
-    );
-    expect(apiWorkerSource).toContain("makeD1ImportEvidenceRouteRepository(");
-    expect(apiWorkerSource).not.toContain(
-      "registerEvidenceRoute: (message) =>"
-    );
-    expect(requestLayerSource.indexOf(".registerEvidenceRoute({")).toBeLessThan(
-      requestLayerSource.indexOf(".dispatchAdmission({")
-    );
   });
 
   it("commits acquisition and provider evidence only through the household authority", () => {
@@ -662,7 +584,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workflowSource).toContain('"claim-acquisition-v1"');
     expect(workflowSource).toContain('"resolve-acquire-store-verify-v2"');
     expect(workflowSource).toContain('"record-acquisition-v2"');
-    expect(workflowSource).toContain("beginAcquisitionAttempt(importId)");
+    expect(workflowSource).toContain("readAcquisitionAttempts");
+    expect(workflowSource).toContain("claimAcquisitionAttempt");
+    expect(workflowSource).toContain("readVerifiedAcquisitionEvidence");
+    expect(workflowSource).not.toContain("let nextAcquisitionGeneration = 0");
+    expect(workflowSource).not.toContain("nextAcquisitionGeneration += 1");
+    expect(workflowSource).not.toContain("beginAcquisitionAttempt(importId)");
     expect(workflowSource).toMatch(
       /adaptAcquisitionBucket\(\s*evidenceBucket,\s*runtimeContext\s*\)/u
     );

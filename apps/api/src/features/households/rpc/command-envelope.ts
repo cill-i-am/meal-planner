@@ -60,6 +60,7 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "approve_meal_plan",
   "cancel_recipe_import",
   "claim_import_batch_item",
+  "claim_acquisition_attempt",
   "commit_acquisition_evidence",
   "mutate_evidence_stage",
   "commit_recipe_import_draft",
@@ -77,6 +78,7 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "read_recipe_import_action",
   "read_recipe_import_execution",
   "read_evidence_references",
+  "read_acquisition_attempts",
   "read_evidence_stage",
   "read_import_terminal_checkpoint",
   "read_recipe_recovery_attempt",
@@ -123,12 +125,14 @@ const memberPurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
 ]);
 
 const lifecycleCommitPurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
+  "claim_acquisition_attempt",
   "commit_acquisition_evidence",
   "commit_recipe_import_draft",
   "mutate_evidence_stage",
   "observe_evidence_reference",
   "prepare_recipe_recovery",
   "read_evidence_references",
+  "read_acquisition_attempts",
   "read_evidence_stage",
   "read_import_terminal_checkpoint",
   "read_recipe_import_execution",

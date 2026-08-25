@@ -17,9 +17,12 @@ import {
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
-import { MealPlannerDatabase } from "../../infrastructure/meal-planner-database.js";
+import { ProviderAccountingDatabase } from "../../infrastructure/provider-accounting-database.js";
 import {
+  HouseholdClaimAcquisitionAttemptResult,
+  HouseholdCommitAcquisitionEvidenceInput,
   HouseholdObserveEvidenceReferenceInput,
+  HouseholdReadAcquisitionAttemptsResult,
   HouseholdReadEvidenceReferencesResult,
 } from "../households/evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
@@ -64,7 +67,6 @@ import {
   makeHouseholdSpeechTranscriptionRepository,
   makeHouseholdVisualEvidenceRepository,
 } from "./import-evidence.repository.household.js";
-import { makeD1ImportExecutionRepository } from "./import-execution.repository.d1.js";
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   acquireStoreVerify,
@@ -85,14 +87,12 @@ import type {
   AcquisitionStage,
   RetryableAcquisitionFailure,
 } from "./import-media.model.js";
-import { makeD1ImportObservabilityTraceStore } from "./import-observability.d1.js";
 import type {
   AcquisitionDiagnosticReasonCode,
   ImportCorrelationId,
   ImportTraceContext,
 } from "./import-observability.js";
 import {
-  ImportObservabilityTraceStore,
   emitImportObservabilityEvent,
   observeImportWorkflowStart,
 } from "./import-observability.js";
@@ -528,6 +528,113 @@ const workflowMutationId = (semanticKey: string) =>
     Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId))
   );
 
+export const runHouseholdAcquisitionTask = (input: {
+  readonly admission: {
+    readonly actor: {
+      readonly _tag: "System";
+      readonly purpose: "recipe_import_lifecycle_commit";
+    };
+    readonly organizationId: HouseholdOrganizationId;
+  };
+  readonly attempt: (allocation: {
+    readonly canonicalSourceId: SourceCanonicalId;
+    readonly generation: AcquisitionGeneration;
+  }) => Effect.Effect<AcquisitionTaskOutcome, RetryableAcquisitionFailure>;
+  readonly bucket: Parameters<typeof readVerifiedAcquisitionEvidence>[0];
+  readonly canonicalId: SourceCanonicalId;
+  readonly correlationId?: ImportCorrelationId;
+  readonly executionGeneration: ImportIntentExecutionGeneration;
+  readonly householdDomain: Pick<
+    HouseholdDomainWorkerMethods,
+    "claimAcquisitionAttempt" | "readAcquisitionAttempts"
+  >;
+  readonly importId: ImportId;
+  readonly intentId: RecipeImportIntentId;
+  readonly lifecycle?: ProviderTaskRetryLifecycle;
+}) =>
+  Effect.gen(function* runDurablyAllocatedHouseholdAcquisition() {
+    const encodedAttempts =
+      yield* input.householdDomain.readAcquisitionAttempts({
+        admission: input.admission,
+        expectedGeneration: input.executionGeneration,
+        intentId: input.intentId,
+      });
+    const attempts = yield* Schema.decodeUnknownEffect(
+      HouseholdReadAcquisitionAttemptsResult
+    )(encodedAttempts);
+    for (const attempt of attempts.toReversed()) {
+      if (attempt.canonicalSourceId !== input.canonicalId) {
+        return yield* Effect.fail({
+          _tag: "UnconfirmedAcquisitionRetry" as const,
+          stage: "reconcile" as const,
+        });
+      }
+      const evidence = yield* readVerifiedAcquisitionEvidence(input.bucket, {
+        canonicalId: attempt.canonicalSourceId,
+        generation: Schema.decodeUnknownSync(AcquisitionGeneration)(
+          attempt.acquisitionAttemptGeneration
+        ),
+        importId: input.importId,
+      });
+      if (evidence !== null) {
+        return {
+          _tag: "VerifiedAcquisition" as const,
+          evidence,
+          generation: Schema.decodeUnknownSync(AcquisitionGeneration)(
+            attempt.acquisitionAttemptGeneration
+          ),
+        };
+      }
+    }
+    let nextAttemptOrdinal = attempts.length;
+    const retryOptions: {
+      correlationId?: ImportCorrelationId;
+      lifecycle?: ProviderTaskRetryLifecycle;
+    } = {};
+    if (input.correlationId !== undefined) {
+      retryOptions.correlationId = input.correlationId;
+    }
+    if (input.lifecycle !== undefined) {
+      retryOptions.lifecycle = input.lifecycle;
+    }
+    return yield* runAcquisitionTask(
+      () =>
+        Effect.gen(function* claimHouseholdAcquisitionAttempt() {
+          const attemptOrdinal = nextAttemptOrdinal + 1;
+          const attemptIdentity = yield* workflowMutationId(
+            `${input.intentId}:${input.executionGeneration}:acquisition-attempt:${attemptOrdinal}`
+          );
+          const encoded = yield* input.householdDomain.claimAcquisitionAttempt({
+            admission: input.admission,
+            attemptIdentity,
+            attemptOrdinal,
+            canonicalSourceId: input.canonicalId,
+            expectedGeneration: input.executionGeneration,
+            intentId: input.intentId,
+          });
+          const claimed = yield* Schema.decodeUnknownEffect(
+            HouseholdClaimAcquisitionAttemptResult
+          )(encoded);
+          nextAttemptOrdinal = attemptOrdinal;
+          return {
+            canonicalSourceId: claimed.attempt.canonicalSourceId,
+            generation: Schema.decodeUnknownSync(AcquisitionGeneration)(
+              claimed.attempt.acquisitionAttemptGeneration
+            ),
+          };
+        }),
+      input.attempt,
+      retryOptions
+    );
+  }).pipe(
+    Effect.mapError(
+      (): UnconfirmedAcquisitionRetry => ({
+        _tag: "UnconfirmedAcquisitionRetry",
+        stage: "reconcile",
+      })
+    )
+  );
+
 const makeHouseholdIntentTransitions = (input: {
   readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: HouseholdDomainWorkerMethods;
@@ -579,8 +686,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
   "ImportAcquisitionWorkflow",
   Effect.gen(function* ImportAcquisitionWorkflowInit() {
     const runtimeContext = yield* RuntimeContext;
-    const queryDatabase =
-      yield* Cloudflare.D1.QueryDatabase(MealPlannerDatabase);
+    const providerAccountingQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
+      ProviderAccountingDatabase
+    );
     const providerGateway = yield* Cloudflare.AI.QueryGateway(
       ImportProviderGateway
     );
@@ -595,10 +703,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
         const workflowInput = yield* decodeImportWorkflowInput(rawInput).pipe(
           Effect.orDie
         );
-        const database = yield* queryDatabase.raw;
-        const traceStore = makeD1ImportObservabilityTraceStore(database, () =>
-          new Date().toISOString()
-        );
+        const providerAccountingDatabase =
+          yield* providerAccountingQueryDatabase.raw;
         const { executionGeneration, importId, organizationId, trace } =
           workflowInput;
         const { correlationId } = trace;
@@ -652,21 +758,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
         if (resolvedIntent.status === "redirected") {
           return resolvedIntent;
         }
-        const repository = makeD1ImportExecutionRepository(database);
-        yield* repository
-          .ensureRun({
-            canonicalSourceId: identityResolution.identity.canonicalId,
-            correlationId,
-            importId,
-            sourceType:
-              identityResolution._tag === "VideoIdentity"
-                ? "video"
-                : "carousel",
-            startedAt: Schema.decodeUnknownSync(ImportTimestamp)(
-              new Date().toISOString()
-            ),
-          })
-          .pipe(Effect.orDie);
         return yield* Effect.gen(
           function* runCurrentImportAcquisitionWorkflow() {
             yield* observeImportWorkflowStart(trace);
@@ -759,15 +850,16 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             const dispatch = makeProviderDispatchGate({
               correlationId,
               now,
-              repository: makeD1ProviderAccountingRepository(database),
+              repository: makeD1ProviderAccountingRepository(
+                providerAccountingDatabase
+              ),
               runId: Schema.decodeUnknownSync(ProviderAccountingRunId)(
                 `recipe-import:${importId}`
               ),
             });
             const workersAiTransport = yield* makeWorkersAiTransport(
               providerGateway,
-              correlationId,
-              traceStore
+              correlationId
             ).pipe(Effect.provideService(RuntimeContext, runtimeContext));
             const speechTranscriber = yield* makeInstalledSpeechTranscriber({
               correlationId,
@@ -1007,17 +1099,10 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             }
             const rawClaim = yield* Cloudflare.Workflows.task(
               "claim-acquisition-v1",
-              repository.claimAcquisition(importId).pipe(
-                Effect.map((claim) =>
-                  claim._tag === "Finished"
-                    ? ({ _tag: "Finished" } as const)
-                    : {
-                        _tag: "Acquiring" as const,
-                        canonicalId: claim.canonicalSourceId,
-                      }
-                ),
-                Effect.orDie
-              )
+              Effect.succeed({
+                _tag: "Acquiring" as const,
+                canonicalId: identityResolution.identity.canonicalId,
+              })
             );
             const claim = yield* Schema.decodeUnknownEffect(
               AcquisitionClaimCheckpoint
@@ -1118,9 +1203,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     UnconfirmedAcquisitionRetry
                   > =>
                     recovered === null
-                      ? runAcquisitionTask(
-                          () => repository.beginAcquisitionAttempt(importId),
-                          (allocation) =>
+                      ? runHouseholdAcquisitionTask({
+                          admission,
+                          attempt: (allocation) =>
                             allocation.canonicalSourceId === claim.canonicalId
                               ? acquireStoreVerify(
                                   bucket,
@@ -1154,11 +1239,15 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                               : Effect.die(
                                   "Persisted canonical identity changed"
                                 ),
-                          {
-                            correlationId,
-                            lifecycle: retryLifecycle("acquisition"),
-                          }
-                        )
+                          bucket,
+                          canonicalId: claim.canonicalId,
+                          correlationId,
+                          executionGeneration,
+                          householdDomain,
+                          importId,
+                          intentId,
+                          lifecycle: retryLifecycle("acquisition"),
+                        })
                       : Effect.succeed(recovered)
                 ),
                 Effect.map((outcome) =>
@@ -1187,53 +1276,48 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     const mutationId = yield* workflowMutationId(
                       `${intentId}:${executionGeneration}:commit-acquisition-evidence:${outcome.evidence.manifestSha256}`
                     );
-                    let result: Parameters<
-                      HouseholdDomainWorkerMethods["commitAcquisitionEvidence"]
-                    >[0]["result"] = {
-                      acquiredAt: outcome.evidence.acquiredAt,
-                      audioStreams: outcome.evidence.audioStreams,
-                      durationSeconds: outcome.evidence.durationSeconds,
-                      references: [
-                        {
-                          byteLength: outcome.evidence.bytes,
-                          deleteAt: outcome.evidence.deleteAt,
-                          key: outcome.evidence.mediaKey,
-                          kind: "original_media",
-                          sha256: outcome.evidence.sha256,
-                        },
-                        {
-                          byteLength: outcome.evidence.manifestByteLength,
-                          deleteAt: outcome.evidence.deleteAt,
-                          key: outcome.evidence.manifestKey,
-                          kind: "acquisition_manifest",
-                          sha256: outcome.evidence.manifestSha256,
-                        },
-                      ],
-                      videoStreams: outcome.evidence.videoStreams,
-                    };
+                    let result: (typeof HouseholdCommitAcquisitionEvidenceInput.Type)["result"] =
+                      {
+                        acquiredAt: outcome.evidence.acquiredAt,
+                        audioStreams: outcome.evidence.audioStreams,
+                        durationSeconds: outcome.evidence.durationSeconds,
+                        references: [
+                          {
+                            byteLength: outcome.evidence.bytes,
+                            deleteAt: outcome.evidence.deleteAt,
+                            key: outcome.evidence.mediaKey,
+                            kind: "original_media",
+                            sha256: outcome.evidence.sha256,
+                          },
+                          {
+                            byteLength: outcome.evidence.manifestByteLength,
+                            deleteAt: outcome.evidence.deleteAt,
+                            key: outcome.evidence.manifestKey,
+                            kind: "acquisition_manifest",
+                            sha256: outcome.evidence.manifestSha256,
+                          },
+                        ],
+                        videoStreams: outcome.evidence.videoStreams,
+                      };
                     if (outcome.evidence.source !== undefined) {
                       result = { ...result, source: outcome.evidence.source };
                     }
+                    const command = yield* Schema.encodeEffect(
+                      HouseholdCommitAcquisitionEvidenceInput
+                    )({
+                      acquisitionAttemptGeneration: outcome.generation,
+                      admission,
+                      expectedGeneration: executionGeneration,
+                      intentId,
+                      mutationId,
+                      result,
+                    }).pipe(Effect.orDie);
                     const committed = yield* householdDomain
-                      .commitAcquisitionEvidence({
-                        acquisitionAttemptGeneration: outcome.generation,
-                        admission,
-                        expectedGeneration: executionGeneration,
-                        intentId,
-                        mutationId,
-                        result,
-                      })
+                      .commitAcquisitionEvidence(command)
                       .pipe(Effect.orDie);
                     return committed.outcome;
                   })
-                : repository.recordAcquisitionFailure(
-                    importId,
-                    outcome.generation,
-                    outcome,
-                    Schema.decodeUnknownSync(ImportTimestamp)(
-                      new Date().toISOString()
-                    )
-                  )
+                : Effect.succeed("Recorded" as const)
               ).pipe(
                 Effect.map(Schema.encodeSync(AcquisitionFinalizationResult)),
                 Effect.orDie
@@ -1339,10 +1423,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             }
             return encodedOutcome;
           }
-        ).pipe(
-          Effect.orDie,
-          Effect.provideService(ImportObservabilityTraceStore, traceStore)
-        );
+        ).pipe(Effect.orDie);
       });
   }).pipe(
     Effect.provide(

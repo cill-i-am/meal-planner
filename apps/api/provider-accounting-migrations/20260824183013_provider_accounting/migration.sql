@@ -1,13 +1,3 @@
-DROP TABLE IF EXISTS `pilot_provider_recipe_replay_values`;
---> statement-breakpoint
-DROP TABLE IF EXISTS `pilot_provider_budget_conservative_settlements`;
---> statement-breakpoint
-DROP TABLE IF EXISTS `pilot_provider_budget_reconciliations`;
---> statement-breakpoint
-DROP TABLE IF EXISTS `pilot_provider_budget_dispatches`;
---> statement-breakpoint
-DROP TABLE IF EXISTS `pilot_provider_stage_budget`;
---> statement-breakpoint
 CREATE TABLE `provider_accounting_budgets` (
 	`accounting_scope` text PRIMARY KEY,
 	`budget_cap_micro_usd` integer DEFAULT 10000000 NOT NULL,

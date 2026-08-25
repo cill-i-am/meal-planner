@@ -118,6 +118,33 @@ export const householdOutbox = sqliteTable("household_outbox", {
   state: text("state").notNull(),
 });
 
+/** Durable allocation ledger for create-only R2 acquisition identities. */
+export const householdImportAcquisitionAttempts = sqliteTable(
+  "household_import_acquisition_attempts",
+  {
+    acquisitionAttemptGeneration: integer(
+      "acquisition_attempt_generation"
+    ).notNull(),
+    attemptIdentity: text("attempt_identity").primaryKey(),
+    attemptOrdinal: integer("attempt_ordinal").notNull(),
+    canonicalSourceId: text("canonical_source_id").notNull(),
+    claimedAt: text("claimed_at").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    intentId: text("intent_id").notNull(),
+  },
+  (table) => [
+    uniqueIndex("household_import_acquisition_attempt_ordinal_unique").on(
+      table.intentId,
+      table.executionGeneration,
+      table.attemptOrdinal
+    ),
+    uniqueIndex("household_import_acquisition_generation_unique").on(
+      table.intentId,
+      table.acquisitionAttemptGeneration
+    ),
+  ]
+);
+
 /** Compact current acquisition result; immutable media and manifests stay in R2. */
 export const householdImportEvidenceExecutions = sqliteTable(
   "household_import_evidence_executions",

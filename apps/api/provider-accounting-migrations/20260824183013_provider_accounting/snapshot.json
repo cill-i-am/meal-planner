@@ -1,17 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "47920ab1-9185-4ac8-b614-f2d8f252498e",
-  "prevIds": ["de1dff97-4cd0-4b47-b43d-74c2e480b058"],
+  "id": "76dc08d8-ad8e-4be0-9465-d587c812032c",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
-    {
-      "name": "import_evidence_routes",
-      "entityType": "tables"
-    },
-    {
-      "name": "import_execution_runs",
-      "entityType": "tables"
-    },
     {
       "name": "provider_accounting_budgets",
       "entityType": "tables"
@@ -31,156 +23,6 @@
     {
       "name": "provider_accounting_reconciliations",
       "entityType": "tables"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "execution_generation",
-      "entityType": "columns",
-      "table": "import_evidence_routes"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "import_id",
-      "entityType": "columns",
-      "table": "import_evidence_routes"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "organization_id",
-      "entityType": "columns",
-      "table": "import_evidence_routes"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "route_version",
-      "entityType": "columns",
-      "table": "import_evidence_routes"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "0",
-      "generated": null,
-      "name": "acquisition_generation",
-      "entityType": "columns",
-      "table": "import_execution_runs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "canonical_source_id",
-      "entityType": "columns",
-      "table": "import_execution_runs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "correlation_id",
-      "entityType": "columns",
-      "table": "import_execution_runs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "table": "import_execution_runs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "import_execution_runs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "recovery_action",
-      "entityType": "columns",
-      "table": "import_execution_runs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "source_kind",
-      "entityType": "columns",
-      "table": "import_execution_runs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "source_type",
-      "entityType": "columns",
-      "table": "import_execution_runs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "status",
-      "entityType": "columns",
-      "table": "import_execution_runs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "status_code",
-      "entityType": "columns",
-      "table": "import_execution_runs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "table": "import_execution_runs"
     },
     {
       "type": "text",
@@ -657,13 +499,6 @@
       "table": "provider_accounting_reconciliations"
     },
     {
-      "columns": ["id"],
-      "nameExplicit": false,
-      "name": "import_execution_runs_pk",
-      "entityType": "pks",
-      "table": "import_execution_runs"
-    },
-    {
       "columns": ["accounting_scope", "dispatch_id"],
       "nameExplicit": false,
       "name": "provider_accounting_conservative_settlements_pk",
@@ -692,36 +527,11 @@
       "table": "provider_accounting_reconciliations"
     },
     {
-      "columns": ["import_id"],
-      "nameExplicit": false,
-      "name": "import_evidence_routes_pk",
-      "table": "import_evidence_routes",
-      "entityType": "pks"
-    },
-    {
       "columns": ["accounting_scope"],
       "nameExplicit": false,
       "name": "provider_accounting_budgets_pk",
       "table": "provider_accounting_budgets",
       "entityType": "pks"
-    },
-    {
-      "columns": [
-        {
-          "value": "id",
-          "isExpression": false
-        },
-        {
-          "value": "acquisition_generation",
-          "isExpression": false
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "origin": "manual",
-      "name": "import_execution_runs_id_generation_unique",
-      "entityType": "indexes",
-      "table": "import_execution_runs"
     },
     {
       "columns": [
@@ -744,24 +554,6 @@
       "name": "provider_accounting_dispatches_run_idx",
       "entityType": "indexes",
       "table": "provider_accounting_dispatches"
-    },
-    {
-      "value": "\"route_version\" = 1",
-      "name": "import_evidence_routes_version_check",
-      "entityType": "checks",
-      "table": "import_evidence_routes"
-    },
-    {
-      "value": "typeof(\"acquisition_generation\") = 'integer' AND \"acquisition_generation\" >= 0 AND \"acquisition_generation\" <= 9007199254740991",
-      "name": "import_execution_runs_acquisition_generation_check",
-      "entityType": "checks",
-      "table": "import_execution_runs"
-    },
-    {
-      "value": "(\n        \"status\" = 'queued'\n        AND \"status_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n      ) OR (\n        \"status\" = 'acquiring'\n        AND \"status_code\" IS NULL\n        AND \"recovery_action\" IS NULL\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'private_or_unavailable'\n        AND \"recovery_action\" = 'check_source_visibility'\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'acquisition_temporarily_unavailable'\n        AND \"recovery_action\" = 'retry_later'\n      ) OR (\n        \"status\" = 'failed'\n        AND \"status_code\" = 'invalid_or_unsupported_media'\n        AND \"recovery_action\" = 'submit_supported_public_video'\n      ) OR (\n        \"status\" = 'unsupported'\n        AND \"status_code\" = 'unsupported_post_type'\n        AND \"recovery_action\" = 'submit_supported_public_video'\n      )",
-      "name": "import_execution_runs_status_details_check",
-      "entityType": "checks",
-      "table": "import_execution_runs"
     },
     {
       "value": "\"accounting_scope\" = 'recipe-import'",

@@ -83,7 +83,7 @@ const ProviderWorkflowInput = Schema.Struct({
 type ProviderWorkflowInput = typeof ProviderWorkflowInput.Type;
 
 interface ProviderWorkflowTestEnv {
-  readonly MealPlannerDatabase: AnyD1Database;
+  readonly ProviderAccountingDatabase: AnyD1Database;
   readonly PROVIDER_WORKFLOW_STATE: {
     readonly get: (key: string) => Promise<string | null>;
     readonly put: (key: string, value: string) => Promise<void>;
@@ -344,7 +344,7 @@ const installedRecipeConservativeDispatch = (
     };
     const { extractor } = yield* makeRecipeRecoveryProviderRuntime({
       correlationId,
-      database: env.MealPlannerDatabase,
+      database: env.ProviderAccountingDatabase,
       now: () => dispatchTimestamp,
       runId: decodeRunId(
         recoveryOrdinal === null
@@ -487,7 +487,7 @@ const installedSpeechDispatch = (
         : "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b87"
     );
     const repository = makeD1ProviderAccountingRepository(
-      env.MealPlannerDatabase
+      env.ProviderAccountingDatabase
     );
     const dispatch = makeProviderDispatchGate({
       correlationId,
@@ -547,7 +547,9 @@ const installedVisualDispatch = (
     const dispatch = makeProviderDispatchGate({
       correlationId,
       now: () => decodeTimestamp("2026-07-28T08:00:00.000Z"),
-      repository: makeD1ProviderAccountingRepository(env.MealPlannerDatabase),
+      repository: makeD1ProviderAccountingRepository(
+        env.ProviderAccountingDatabase
+      ),
       runId: decodeRunId("run_gaia_188_visual_ambiguous"),
     });
     const transport = makeVisualTransport(
@@ -622,7 +624,7 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
         )
     );
     const repository = makeD1ProviderAccountingRepository(
-      env.MealPlannerDatabase
+      env.ProviderAccountingDatabase
     );
     const correlationId = decodeCorrelationId(
       "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2199"

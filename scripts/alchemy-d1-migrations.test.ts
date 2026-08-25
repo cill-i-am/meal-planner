@@ -138,10 +138,12 @@ const loadAlchemyD1Modules = async (): Promise<LoadedAlchemyD1Modules> => {
 
 const loadCheckedInMigrations = async (): Promise<readonly MigrationFile[]> => {
   const migrationsDirectory = new URL(
-    "../apps/api/migrations/",
+    "../apps/api/provider-accounting-migrations/",
     import.meta.url
   );
-  const directoryEntries = await readdir(migrationsDirectory);
+  const directoryEntries = await readdir(migrationsDirectory, {
+    recursive: true,
+  });
   const names = directoryEntries
     .filter((name) => name.endsWith(".sql"))
     .toSorted();

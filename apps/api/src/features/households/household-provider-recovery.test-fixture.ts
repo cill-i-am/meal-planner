@@ -4,11 +4,6 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Option, Schema, Stream } from "effect";
 
 import {
-  ImportEvidenceEventFailure,
-  reconcileImportEvidenceQueueMessage,
-} from "../imports/import-evidence-event.js";
-import { makeD1ImportEvidenceRouteRepository } from "../imports/import-evidence-route.repository.d1.js";
-import {
   makeHouseholdSpeechTranscriptionRepository,
   makeHouseholdVisualEvidenceRepository,
 } from "../imports/import-evidence.repository.household.js";
@@ -69,14 +64,10 @@ import {
   ProviderAccountingResponse,
   makeD1ProviderAccountingService,
 } from "../provider-accounting/provider-accounting.service.js";
-import {
-  HouseholdObserveEvidenceReferenceInput,
-  HouseholdReadEvidenceStageResult,
-} from "./evidence/household-evidence.contract.js";
+import { HouseholdReadEvidenceStageResult } from "./evidence/household-evidence.contract.js";
 import type {
   HouseholdMutateEvidenceStageInput,
   HouseholdMutateEvidenceStageResult,
-  HouseholdObserveEvidenceReferenceResult,
   HouseholdPrepareRecipeRecoveryInput,
   HouseholdPrepareRecipeRecoveryResult,
   HouseholdReadEvidenceReferencesInput,
@@ -111,18 +102,10 @@ interface TestKvNamespace {
   readonly put: (key: string, value: string) => Promise<void>;
 }
 
-interface TestMessageBatch {
-  readonly messages: readonly {
-    readonly ack: () => void;
-    readonly body: unknown;
-    readonly retry: () => void;
-  }[];
-}
-
 interface Environment {
-  readonly EVIDENCE_EVENT_RESULTS: TestKvNamespace;
+  readonly PROVIDER_RECOVERY_RESULTS: TestKvNamespace;
   readonly ImportEvidenceBucket: WorkerTestR2Bucket;
-  readonly MealPlannerDatabase: AnyD1Database;
+  readonly ProviderAccountingDatabase: AnyD1Database;
   readonly HouseholdDomainWorker: {
     readonly admitRecipeImport: (
       input: typeof HouseholdAdmitRecipeImportInput.Type
@@ -130,9 +113,6 @@ interface Environment {
     readonly mutateEvidenceStage: (
       input: typeof HouseholdMutateEvidenceStageInput.Encoded
     ) => Promise<typeof HouseholdMutateEvidenceStageResult.Encoded>;
-    readonly observeEvidenceReference: (
-      input: typeof HouseholdObserveEvidenceReferenceInput.Encoded
-    ) => Promise<typeof HouseholdObserveEvidenceReferenceResult.Encoded>;
     readonly readEvidenceReferences: (
       input: HouseholdReadEvidenceReferencesInput
     ) => Promise<typeof HouseholdReadEvidenceReferencesResult.Encoded>;
@@ -167,35 +147,6 @@ const RpcErrorEnvelope = Schema.Struct({
   _tag: Schema.Literal("~alchemy/rpc/error"),
   error: Schema.Struct({ reason: Schema.optionalKey(Schema.String) }),
 });
-
-const dependencyFailure = () =>
-  new ImportEvidenceEventFailure({
-    reason: "dependency_unavailable",
-    retryable: true,
-  });
-
-const rpc = <A>(run: () => Promise<A>) =>
-  Effect.tryPromise({ catch: dependencyFailure, try: run }).pipe(
-    Effect.flatMap((value) => {
-      const rejected = Schema.decodeUnknownOption(RpcErrorEnvelope)(value);
-      if (rejected._tag === "None") {
-        // Raw Workerd service bindings retain hidden RPC metadata. Normalize to
-        // the plain structured clone returned by the Alchemy binding adapter.
-        return Effect.try({
-          catch: dependencyFailure,
-          try: () => structuredClone(value),
-        });
-      }
-      return Effect.fail(
-        rejected.value.error.reason === "persistence_unavailable"
-          ? dependencyFailure()
-          : new ImportEvidenceEventFailure({
-              reason: "stale_event",
-              retryable: false,
-            })
-      );
-    })
-  );
 
 const terminalRpc = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({
@@ -597,9 +548,9 @@ const runVisualResumeProof = (
         }),
       async () => {
         const calls = Number(
-          (await environment.EVIDENCE_EVENT_RESULTS.get(callsKey)) ?? "0"
+          (await environment.PROVIDER_RECOVERY_RESULTS.get(callsKey)) ?? "0"
         );
-        await environment.EVIDENCE_EVENT_RESULTS.put(
+        await environment.PROVIDER_RECOVERY_RESULTS.put(
           callsKey,
           String(calls + 1)
         );
@@ -647,7 +598,7 @@ const runVisualResumeProof = (
       first,
       providerCalls: Number(
         (yield* Effect.promise(() =>
-          environment.EVIDENCE_EVENT_RESULTS.get(callsKey)
+          environment.PROVIDER_RECOVERY_RESULTS.get(callsKey)
         )) ?? "0"
       ),
       replay,
@@ -737,7 +688,6 @@ const runDispatchTraceDurabilityProof = (
             return "created" as const;
           }).pipe(Effect.mapError(() => workflowStartUnavailable())),
       },
-      registerEvidenceRoute: () => Effect.void,
       retryDelaysMilliseconds: [0],
       scheduleRetry: (effect) => effect,
       trace: command.trace,
@@ -823,9 +773,9 @@ const runAmbiguousProviderAttempt = (
   const invokeProviderOnce = Effect.promise(async () => {
     const key = `provider-attempt-calls:${command.dispatchId}`;
     const calls = Number(
-      (await environment.EVIDENCE_EVENT_RESULTS.get(key)) ?? "0"
+      (await environment.PROVIDER_RECOVERY_RESULTS.get(key)) ?? "0"
     );
-    await environment.EVIDENCE_EVENT_RESULTS.put(key, String(calls + 1));
+    await environment.PROVIDER_RECOVERY_RESULTS.put(key, String(calls + 1));
   });
   if (command.stage === "speech") {
     const repository =
@@ -965,7 +915,7 @@ export default {
       ) {
         const result = await Effect.runPromise(
           makeD1ProviderAccountingService({
-            database: environment.MealPlannerDatabase,
+            database: environment.ProviderAccountingDatabase,
             now: () =>
               Schema.decodeUnknownSync(ImportTimestamp)(
                 new Date().toISOString()
@@ -988,19 +938,19 @@ export default {
           try: async () => {
             const stateKey = `${stage}-restart:${importId}`;
             const state =
-              await environment.EVIDENCE_EVENT_RESULTS.get(stateKey);
+              await environment.PROVIDER_RECOVERY_RESULTS.get(stateKey);
             if (state === "active" || state === "complete") {
               return;
             }
             const callsKey = `${stage}-restart-calls:${importId}`;
             const calls = Number(
-              (await environment.EVIDENCE_EVENT_RESULTS.get(callsKey)) ?? "0"
+              (await environment.PROVIDER_RECOVERY_RESULTS.get(callsKey)) ?? "0"
             );
-            await environment.EVIDENCE_EVENT_RESULTS.put(
+            await environment.PROVIDER_RECOVERY_RESULTS.put(
               callsKey,
               String(calls + 1)
             );
-            await environment.EVIDENCE_EVENT_RESULTS.put(stateKey, "active");
+            await environment.PROVIDER_RECOVERY_RESULTS.put(stateKey, "active");
           },
         });
       const completeProviderStageBeforeRestartResponse = (
@@ -1011,21 +961,12 @@ export default {
       ) =>
         Effect.gen(function* completeProviderRecoveryBeforeResponseLoss() {
           yield* restartProviderStage(stage, importId);
-          const routes = makeD1ImportEvidenceRouteRepository(
-            environment.MealPlannerDatabase
-          );
-          const route = yield* routes
-            .get(importId)
-            .pipe(Effect.mapError(workflowStartUnavailable));
-          if (route === null) {
-            return yield* Effect.fail(workflowStartUnavailable());
-          }
           const admission = Schema.decodeUnknownSync(HouseholdSystemAdmission)({
             actor: {
               _tag: "System",
               purpose: "recipe_import_lifecycle_commit",
             },
-            organizationId: route.organizationId,
+            organizationId: command.organizationId,
           });
           const intentId =
             Schema.decodeUnknownSync(RecipeImportIntentId)(importId);
@@ -1080,7 +1021,7 @@ export default {
             stage,
           });
           yield* Effect.promise(() =>
-            environment.EVIDENCE_EVENT_RESULTS.put(
+            environment.PROVIDER_RECOVERY_RESULTS.put(
               `${stage}-restart:${importId}`,
               "complete"
             )
@@ -1129,67 +1070,5 @@ export default {
         { status: 409 }
       );
     }
-  },
-  async queue(batch: TestMessageBatch, environment: Environment) {
-    const routes = makeD1ImportEvidenceRouteRepository(
-      environment.MealPlannerDatabase
-    );
-    await Promise.all(
-      batch.messages.map(async (message) => {
-        const safeResult = await Effect.runPromise(
-          reconcileImportEvidenceQueueMessage(message.body, {
-            bucket: {
-              head: (key) =>
-                Effect.promise(() =>
-                  environment.ImportEvidenceBucket.head(key)
-                ).pipe(Effect.mapError(dependencyFailure)),
-            },
-            household: {
-              observeEvidenceReference: (input) =>
-                Schema.encodeEffect(HouseholdObserveEvidenceReferenceInput)(
-                  input
-                ).pipe(
-                  Effect.mapError(dependencyFailure),
-                  Effect.flatMap((encoded) =>
-                    rpc(() =>
-                      environment.HouseholdDomainWorker.observeEvidenceReference(
-                        encoded
-                      )
-                    )
-                  )
-                ),
-              readEvidenceReferences: (input) =>
-                rpc(() =>
-                  environment.HouseholdDomainWorker.readEvidenceReferences(
-                    input
-                  )
-                ),
-            },
-            routes: {
-              get: (importId) =>
-                routes.get(importId).pipe(Effect.mapError(dependencyFailure)),
-            },
-          }).pipe(
-            Effect.match({
-              onFailure: (error) => ({
-                _tag: "Rejected" as const,
-                reason: error.reason,
-                retryable: error.retryable,
-              }),
-              onSuccess: (value) => ({ _tag: "Accepted" as const, value }),
-            })
-          )
-        );
-        await environment.EVIDENCE_EVENT_RESULTS.put(
-          "last",
-          JSON.stringify(safeResult)
-        );
-        if (safeResult._tag === "Rejected" && safeResult.retryable) {
-          message.retry();
-        } else {
-          message.ack();
-        }
-      })
-    );
   },
 };
