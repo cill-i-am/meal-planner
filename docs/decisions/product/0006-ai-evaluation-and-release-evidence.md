@@ -194,6 +194,39 @@ Model-judge scores are periodically compared with human review on a stable
 calibration sample. Material disagreement, drift, or systematic leniency blocks
 reliance on the judge until the scoring policy is corrected and revalidated.
 
+### Non-hard quality bands
+
+The first eval implementation uses a five-point rubric for each soft quality
+dimension. Thresholds are deliberately simple until real baseline evidence
+exists.
+
+The critical soft dimensions are:
+
+- household specificity;
+- first-plan practicality;
+- profile and routine synthesis quality;
+- planning-rationale quality; and
+- repair quality.
+
+Candidate results are classified as follows:
+
+- **Green:** every critical dimension is at least `4/5`, and the candidate has no
+  meaningful regression from the currently accepted baseline.
+- **Review required:** any critical dimension is `3/5`, any critical dimension
+  drops by at least `0.5` from the accepted baseline, or question count,
+  latency, tool reliability, token usage, or estimated cost worsens materially.
+- **Do not release by default:** any critical dimension is below `3/5`, or
+  several scenarios are technically valid but clearly generic, impractical, or
+  burdensome for the household.
+
+The first accepted baseline is established through human review of the complete
+initial scenario suite. Later candidates are judged against both the absolute
+bands and that versioned baseline.
+
+A non-hard red result remains eligible only for the documented product-owner
+override process. Such an override should be rare, explicit, and cannot affect a
+hard blocker.
+
 ### Scenario maintenance
 
 - Synthetic scenarios live in the repository as product-quality assets.
@@ -214,6 +247,8 @@ reliance on the judge until the scoring policy is corrected and revalidated.
   discovery-to-repair trajectory.
 - The harness needs deterministic checks, programmatic telemetry, a versioned
   fixed model-judge path, and a human-calibration workflow.
+- The initial baseline needs a human-reviewed `1–5` score for every critical
+  soft dimension and scenario.
 - Domain correctness and agent quality remain separable: an agent cannot obtain
   credit for violating deterministic rules, and a valid but generic interaction
   can still score poorly.
@@ -228,7 +263,6 @@ reliance on the judge until the scoring policy is corrected and revalidated.
 
 - exact fixture data and secondary variations inside each accepted scenario
   family;
-- numeric thresholds for non-hard quality dimensions;
 - the first agent model, model judge, and provider selections;
 - the size and cadence of the human calibration sample; and
 - production experimentation or multi-armed model routing.
