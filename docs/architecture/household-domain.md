@@ -149,7 +149,13 @@ The household also checkpoints one stable start time for every provider
 dispatch and recovery dispatch. Claim, Fail, artifact, and retry commands reuse
 that value, so a lost native Workflow response cannot change the command digest.
 Execution generation fences household state; acquisition-attempt generation is
-tracked separately for retry-scoped R2 objects.
+tracked separately for retry-scoped R2 objects. Before acquisition, the
+Workflow claims a deterministic `(intent, execution generation, attempt
+ordinal)` identity in household SQLite. A restarted Workflow reads those
+claims and verifies the corresponding create-only R2 media and manifest pair
+before allocating another generation. Valid evidence is reused and committed;
+only absent, incomplete, or invalid evidence advances to a new attempt. If a
+claim response is lost, retrying the same identity returns the same generation.
 
 Large media, transcripts, manifests, and other evidence bytes remain private
 R2 objects. Their references carry generation, byte length, SHA-256, and

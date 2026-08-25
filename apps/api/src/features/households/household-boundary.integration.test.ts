@@ -32,10 +32,12 @@ import {
 } from "../provider-accounting/provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
 import {
+  HouseholdClaimAcquisitionAttemptResult,
   HouseholdCommitAcquisitionEvidenceResult,
   HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceResult,
   HouseholdPrepareRecipeRecoveryResult,
+  HouseholdReadAcquisitionAttemptsResult,
   HouseholdReadEvidenceReferencesResult,
   HouseholdReadEvidenceStageResult,
   HouseholdReadImportTerminalCheckpointResult,
@@ -347,6 +349,7 @@ const createOrganization = async (label: string, cookie: string) => {
 
 const systemCommand = (
   operation:
+    | "claim-acquisition-attempt"
     | "claim-batch-item"
     | "commit-acquisition-evidence"
     | "complete-batch-item"
@@ -355,6 +358,7 @@ const systemCommand = (
     | "mutate-evidence-stage"
     | "observe-evidence-reference"
     | "prepare-recipe-recovery"
+    | "read-acquisition-attempts"
     | "read-evidence-references"
     | "read-evidence-stage"
     | "read-terminal-checkpoint"
@@ -562,6 +566,7 @@ const evidenceRetentionResult = (input: {
 };
 
 const admitResolvedEvidenceImport = async (input: {
+  readonly acquisitionAttempts?: number;
   readonly canonicalSourceId?: string;
   readonly label: string;
   readonly mutationId: string;
@@ -609,6 +614,26 @@ const admitResolvedEvidenceImport = async (input: {
     sourceKind: input.sourceKind ?? "video",
   });
   expect(resolvedResponse.status, await resolvedResponse.text()).toBe(200);
+  const acquisitionAttempts =
+    input.sourceKind === "carousel" ? 0 : (input.acquisitionAttempts ?? 1);
+  for (
+    let attemptOrdinal = 1;
+    attemptOrdinal <= acquisitionAttempts;
+    attemptOrdinal += 1
+  ) {
+    // eslint-disable-next-line no-await-in-loop -- The household ledger requires each ordinal to commit before the next claim.
+    const claimed = await systemCommand("claim-acquisition-attempt", {
+      admission,
+      attemptIdentity: attemptOrdinal.toString(16).repeat(64),
+      attemptOrdinal,
+      canonicalSourceId:
+        input.canonicalSourceId ?? `tiktok:video:${input.videoId}`,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    // eslint-disable-next-line no-await-in-loop -- Read the response before advancing the sequential claim ledger.
+    expect(claimed.status, await claimed.clone().text()).toBe(200);
+  }
   return { admission, admitted, cookie, organization } as const;
 };
 
@@ -637,6 +662,7 @@ const prepareUnknownSpeechTerminal = async (input: {
 }) => {
   const { admission, admitted, organization } =
     await admitResolvedEvidenceImport({
+      acquisitionAttempts: input.acquisitionGeneration ?? 1,
       label: input.label,
       mutationId: input.mutationIds[0],
       videoId: input.videoId,
@@ -1260,6 +1286,15 @@ describe("household public API to private Durable Object boundary", () => {
       sourceKind: "video",
     });
     expect(resolvedResponse.status).toBe(200);
+    const claimed = await systemCommand("claim-acquisition-attempt", {
+      admission,
+      attemptIdentity: "4".repeat(64),
+      attemptOrdinal: 1,
+      canonicalSourceId: "tiktok:video:7000000000000000100",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(claimed.status, await claimed.text()).toBe(200);
 
     const mediaKey = `imports/${admitted.id}/acquisition/v1/generations/1/original.mp4`;
     const manifestKey = `imports/${admitted.id}/acquisition/v1/generations/1/manifest.json`;
@@ -1292,6 +1327,80 @@ describe("household public API to private Durable Object boundary", () => {
       },
     });
     expect(commitResponse.status, await commitResponse.text()).toBe(200);
+  }, 30_000);
+
+  it("replays durable acquisition identities and advances generations exactly once", async () => {
+    const { admission, admitted } = await admitResolvedEvidenceImport({
+      label: "Acquisition Allocation Member",
+      mutationId: "a".repeat(64),
+      videoId: "7000000000000000199",
+    });
+    const firstReplay = await systemCommand("claim-acquisition-attempt", {
+      admission,
+      attemptIdentity: "1".repeat(64),
+      attemptOrdinal: 1,
+      canonicalSourceId: "tiktok:video:7000000000000000199",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(firstReplay.status, await firstReplay.clone().text()).toBe(200);
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdClaimAcquisitionAttemptResult)(
+        await firstReplay.json()
+      )
+    ).resolves.toMatchObject({
+      attempt: {
+        acquisitionAttemptGeneration: 1,
+        attemptOrdinal: 1,
+      },
+      outcome: "Replay",
+    });
+
+    const secondClaim = await systemCommand("claim-acquisition-attempt", {
+      admission,
+      attemptIdentity: "2".repeat(64),
+      attemptOrdinal: 2,
+      canonicalSourceId: "tiktok:video:7000000000000000199",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(secondClaim.status, await secondClaim.clone().text()).toBe(200);
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdClaimAcquisitionAttemptResult)(
+        await secondClaim.json()
+      )
+    ).resolves.toMatchObject({
+      attempt: {
+        acquisitionAttemptGeneration: 2,
+        attemptOrdinal: 2,
+      },
+      outcome: "Claimed",
+    });
+
+    const conflict = await systemCommand("claim-acquisition-attempt", {
+      admission,
+      attemptIdentity: "1".repeat(64),
+      attemptOrdinal: 2,
+      canonicalSourceId: "tiktok:video:7000000000000000199",
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(conflict.status).toBe(409);
+
+    const read = await systemCommand("read-acquisition-attempts", {
+      admission,
+      expectedGeneration: 1,
+      intentId: admitted.id,
+    });
+    expect(read.status, await read.clone().text()).toBe(200);
+    await expect(
+      Schema.decodeUnknownPromise(HouseholdReadAcquisitionAttemptsResult)(
+        await read.json()
+      )
+    ).resolves.toMatchObject([
+      { acquisitionAttemptGeneration: 1, attemptOrdinal: 1 },
+      { acquisitionAttemptGeneration: 2, attemptOrdinal: 2 },
+    ]);
   }, 30_000);
 
   it("rejects stale evidence without mutation and accepts the corrected generation", async () => {

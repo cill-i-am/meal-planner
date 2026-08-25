@@ -197,9 +197,14 @@ outside the bucket and are not retention targets.
 The acquisition Workflow validates each R2 object's native checksum, custom
 metadata, authoritative source shape, execution generation, and
 acquisition-attempt-scoped key before it commits the household-local reference.
-Recovery repeats the same check through the admitted household and Workflow
-authority. R2 and service-binding I/O remain outside every `HouseholdObject`
-transaction, and raw organization identifiers are neither logged nor returned.
+Household SQLite claims each attempt through a deterministic intent,
+execution-generation, and attempt-ordinal identity. On restart, the Workflow
+reads that ledger and verifies an already-written create-only media and manifest
+pair before allocating a later generation; claim-response loss replays the same
+identity. Recovery repeats the same R2 integrity check through the admitted
+household and Workflow authority. R2 and service-binding I/O remain outside
+every `HouseholdObject` transaction, and raw organization identifiers are
+neither logged nor returned.
 There is no global import route, R2 event Queue, event consumer, or event DLQ.
 
 Public admission commits a compact household outbox intent before the API host

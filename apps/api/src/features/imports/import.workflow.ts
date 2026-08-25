@@ -19,7 +19,10 @@ import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucke
 import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
 import { ProviderAccountingDatabase } from "../../infrastructure/provider-accounting-database.js";
 import {
+  HouseholdClaimAcquisitionAttemptResult,
+  HouseholdCommitAcquisitionEvidenceInput,
   HouseholdObserveEvidenceReferenceInput,
+  HouseholdReadAcquisitionAttemptsResult,
   HouseholdReadEvidenceReferencesResult,
 } from "../households/evidence/household-evidence.contract.js";
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
@@ -525,6 +528,113 @@ const workflowMutationId = (semanticKey: string) =>
     Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId))
   );
 
+export const runHouseholdAcquisitionTask = (input: {
+  readonly admission: {
+    readonly actor: {
+      readonly _tag: "System";
+      readonly purpose: "recipe_import_lifecycle_commit";
+    };
+    readonly organizationId: HouseholdOrganizationId;
+  };
+  readonly attempt: (allocation: {
+    readonly canonicalSourceId: SourceCanonicalId;
+    readonly generation: AcquisitionGeneration;
+  }) => Effect.Effect<AcquisitionTaskOutcome, RetryableAcquisitionFailure>;
+  readonly bucket: Parameters<typeof readVerifiedAcquisitionEvidence>[0];
+  readonly canonicalId: SourceCanonicalId;
+  readonly correlationId?: ImportCorrelationId;
+  readonly executionGeneration: ImportIntentExecutionGeneration;
+  readonly householdDomain: Pick<
+    HouseholdDomainWorkerMethods,
+    "claimAcquisitionAttempt" | "readAcquisitionAttempts"
+  >;
+  readonly importId: ImportId;
+  readonly intentId: RecipeImportIntentId;
+  readonly lifecycle?: ProviderTaskRetryLifecycle;
+}) =>
+  Effect.gen(function* runDurablyAllocatedHouseholdAcquisition() {
+    const encodedAttempts =
+      yield* input.householdDomain.readAcquisitionAttempts({
+        admission: input.admission,
+        expectedGeneration: input.executionGeneration,
+        intentId: input.intentId,
+      });
+    const attempts = yield* Schema.decodeUnknownEffect(
+      HouseholdReadAcquisitionAttemptsResult
+    )(encodedAttempts);
+    for (const attempt of attempts.toReversed()) {
+      if (attempt.canonicalSourceId !== input.canonicalId) {
+        return yield* Effect.fail({
+          _tag: "UnconfirmedAcquisitionRetry" as const,
+          stage: "reconcile" as const,
+        });
+      }
+      const evidence = yield* readVerifiedAcquisitionEvidence(input.bucket, {
+        canonicalId: attempt.canonicalSourceId,
+        generation: Schema.decodeUnknownSync(AcquisitionGeneration)(
+          attempt.acquisitionAttemptGeneration
+        ),
+        importId: input.importId,
+      });
+      if (evidence !== null) {
+        return {
+          _tag: "VerifiedAcquisition" as const,
+          evidence,
+          generation: Schema.decodeUnknownSync(AcquisitionGeneration)(
+            attempt.acquisitionAttemptGeneration
+          ),
+        };
+      }
+    }
+    let nextAttemptOrdinal = attempts.length;
+    const retryOptions: {
+      correlationId?: ImportCorrelationId;
+      lifecycle?: ProviderTaskRetryLifecycle;
+    } = {};
+    if (input.correlationId !== undefined) {
+      retryOptions.correlationId = input.correlationId;
+    }
+    if (input.lifecycle !== undefined) {
+      retryOptions.lifecycle = input.lifecycle;
+    }
+    return yield* runAcquisitionTask(
+      () =>
+        Effect.gen(function* claimHouseholdAcquisitionAttempt() {
+          const attemptOrdinal = nextAttemptOrdinal + 1;
+          const attemptIdentity = yield* workflowMutationId(
+            `${input.intentId}:${input.executionGeneration}:acquisition-attempt:${attemptOrdinal}`
+          );
+          const encoded = yield* input.householdDomain.claimAcquisitionAttempt({
+            admission: input.admission,
+            attemptIdentity,
+            attemptOrdinal,
+            canonicalSourceId: input.canonicalId,
+            expectedGeneration: input.executionGeneration,
+            intentId: input.intentId,
+          });
+          const claimed = yield* Schema.decodeUnknownEffect(
+            HouseholdClaimAcquisitionAttemptResult
+          )(encoded);
+          nextAttemptOrdinal = attemptOrdinal;
+          return {
+            canonicalSourceId: claimed.attempt.canonicalSourceId,
+            generation: Schema.decodeUnknownSync(AcquisitionGeneration)(
+              claimed.attempt.acquisitionAttemptGeneration
+            ),
+          };
+        }),
+      input.attempt,
+      retryOptions
+    );
+  }).pipe(
+    Effect.mapError(
+      (): UnconfirmedAcquisitionRetry => ({
+        _tag: "UnconfirmedAcquisitionRetry",
+        stage: "reconcile",
+      })
+    )
+  );
+
 const makeHouseholdIntentTransitions = (input: {
   readonly executionGeneration: ImportIntentExecutionGeneration;
   readonly householdDomain: HouseholdDomainWorkerMethods;
@@ -1000,7 +1110,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             if (claim._tag === "Finished") {
               return { _tag: "NoAcquisitionRequired" as const };
             }
-            let nextAcquisitionGeneration = 0;
             const encodedOutcome = yield* Cloudflare.Workflows.task(
               "resolve-acquire-store-verify-v2",
               recoverHouseholdVerifiedAcquisitionCheckpoint({
@@ -1094,18 +1203,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     UnconfirmedAcquisitionRetry
                   > =>
                     recovered === null
-                      ? runAcquisitionTask(
-                          () =>
-                            Effect.sync(() => {
-                              nextAcquisitionGeneration += 1;
-                              return {
-                                canonicalSourceId: claim.canonicalId,
-                                generation: Schema.decodeUnknownSync(
-                                  AcquisitionGeneration
-                                )(nextAcquisitionGeneration),
-                              };
-                            }),
-                          (allocation) =>
+                      ? runHouseholdAcquisitionTask({
+                          admission,
+                          attempt: (allocation) =>
                             allocation.canonicalSourceId === claim.canonicalId
                               ? acquireStoreVerify(
                                   bucket,
@@ -1139,11 +1239,15 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                               : Effect.die(
                                   "Persisted canonical identity changed"
                                 ),
-                          {
-                            correlationId,
-                            lifecycle: retryLifecycle("acquisition"),
-                          }
-                        )
+                          bucket,
+                          canonicalId: claim.canonicalId,
+                          correlationId,
+                          executionGeneration,
+                          householdDomain,
+                          importId,
+                          intentId,
+                          lifecycle: retryLifecycle("acquisition"),
+                        })
                       : Effect.succeed(recovered)
                 ),
                 Effect.map((outcome) =>
@@ -1172,42 +1276,44 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     const mutationId = yield* workflowMutationId(
                       `${intentId}:${executionGeneration}:commit-acquisition-evidence:${outcome.evidence.manifestSha256}`
                     );
-                    let result: Parameters<
-                      HouseholdDomainWorkerMethods["commitAcquisitionEvidence"]
-                    >[0]["result"] = {
-                      acquiredAt: outcome.evidence.acquiredAt,
-                      audioStreams: outcome.evidence.audioStreams,
-                      durationSeconds: outcome.evidence.durationSeconds,
-                      references: [
-                        {
-                          byteLength: outcome.evidence.bytes,
-                          deleteAt: outcome.evidence.deleteAt,
-                          key: outcome.evidence.mediaKey,
-                          kind: "original_media",
-                          sha256: outcome.evidence.sha256,
-                        },
-                        {
-                          byteLength: outcome.evidence.manifestByteLength,
-                          deleteAt: outcome.evidence.deleteAt,
-                          key: outcome.evidence.manifestKey,
-                          kind: "acquisition_manifest",
-                          sha256: outcome.evidence.manifestSha256,
-                        },
-                      ],
-                      videoStreams: outcome.evidence.videoStreams,
-                    };
+                    let result: (typeof HouseholdCommitAcquisitionEvidenceInput.Type)["result"] =
+                      {
+                        acquiredAt: outcome.evidence.acquiredAt,
+                        audioStreams: outcome.evidence.audioStreams,
+                        durationSeconds: outcome.evidence.durationSeconds,
+                        references: [
+                          {
+                            byteLength: outcome.evidence.bytes,
+                            deleteAt: outcome.evidence.deleteAt,
+                            key: outcome.evidence.mediaKey,
+                            kind: "original_media",
+                            sha256: outcome.evidence.sha256,
+                          },
+                          {
+                            byteLength: outcome.evidence.manifestByteLength,
+                            deleteAt: outcome.evidence.deleteAt,
+                            key: outcome.evidence.manifestKey,
+                            kind: "acquisition_manifest",
+                            sha256: outcome.evidence.manifestSha256,
+                          },
+                        ],
+                        videoStreams: outcome.evidence.videoStreams,
+                      };
                     if (outcome.evidence.source !== undefined) {
                       result = { ...result, source: outcome.evidence.source };
                     }
+                    const command = yield* Schema.encodeEffect(
+                      HouseholdCommitAcquisitionEvidenceInput
+                    )({
+                      acquisitionAttemptGeneration: outcome.generation,
+                      admission,
+                      expectedGeneration: executionGeneration,
+                      intentId,
+                      mutationId,
+                      result,
+                    }).pipe(Effect.orDie);
                     const committed = yield* householdDomain
-                      .commitAcquisitionEvidence({
-                        acquisitionAttemptGeneration: outcome.generation,
-                        admission,
-                        expectedGeneration: executionGeneration,
-                        intentId,
-                        mutationId,
-                        result,
-                      })
+                      .commitAcquisitionEvidence(command)
                       .pipe(Effect.orDie);
                     return committed.outcome;
                   })

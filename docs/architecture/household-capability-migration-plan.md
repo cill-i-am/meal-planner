@@ -519,8 +519,14 @@ availability observations, and replay receipts. Large bytes remain in R2.
 One household-owned timestamp makes Claim, Fail, artifact, and replay commands
 byte-stable for each native Workflow dispatch. Execution generation remains the
 domain fence while a separate acquisition-attempt generation scopes retry R2
-objects. At the Slice 2 checkpoint, shared D1 acquisition bookkeeping had no
-household evidence projection or provider-stage completion status.
+objects. Slice 5 makes that attempt generation durable: household SQLite claims
+each deterministic intent, execution-generation, and attempt-ordinal identity,
+and a restarted Workflow verifies the claimed generation's create-only R2 media
+and manifest before allocating another. Valid evidence is recovered and
+committed; only absent, incomplete, or invalid evidence advances. A lost claim
+response replays the same identity and generation. At the Slice 2 checkpoint,
+shared D1 acquisition bookkeeping had no household evidence projection or
+provider-stage completion status.
 Missing objects, lifecycle deletion, late events, restart, exact retry,
 conflicting replay, stale generations, physical cross-household isolation, and
 provider-free recipe recovery have runtime proof. Slice 2 temporarily retained

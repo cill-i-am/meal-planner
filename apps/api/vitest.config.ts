@@ -39,6 +39,7 @@ export default defineConfig({
         test: {
           exclude: [
             "src/**/*.worker.test.ts",
+            "src/features/imports/import-acquisition-restart.integration.test.ts",
             "src/features/imports/import-provider-workflow-task.integration.test.ts",
           ],
           include: ["src/**/*.test.ts"],
@@ -81,6 +82,7 @@ export default defineConfig({
       {
         test: {
           include: [
+            "src/features/imports/import-acquisition-restart.integration.test.ts",
             "src/features/imports/import-provider-workflow-task.integration.test.ts",
           ],
           name: "node-workflows",

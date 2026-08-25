@@ -4,6 +4,7 @@ import m0002 from "./20260821231430_household_domain/migration.sql";
 import m0003 from "./20260822065001_household_domain/migration.sql";
 import m0004 from "./20260823163811_household_domain/migration.sql";
 import m0005 from "./20260824002531_household_domain/migration.sql";
+import m0006 from "./20260825015310_household_domain/migration.sql";
 
 export default {
   migrations: {
@@ -13,5 +14,6 @@ export default {
     "20260822065001_household_domain": m0003,
     "20260823163811_household_domain": m0004,
     "20260824002531_household_domain": m0005,
+    "20260825015310_household_domain": m0006,
   },
 };

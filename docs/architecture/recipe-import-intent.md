@@ -137,8 +137,14 @@ Each provider dispatch, including a recovery dispatch, checkpoints one
 household-owned start time and reuses it in every Claim, Fail, artifact, and
 replay command. The execution generation remains the household lifecycle
 fence, while a separate acquisition-attempt generation scopes retry-created R2
-keys. Native Workflow response loss therefore reconstructs the same encoded
-command instead of changing the mutation digest.
+keys. Each attempt generation is claimed through a deterministic intent,
+execution-generation, and attempt-ordinal identity in household SQLite. After
+a Worker restart, the Workflow verifies the previously claimed generation's
+create-only R2 media and manifest before allocating another attempt. A valid
+pair is recovered and committed, while absent, incomplete, or invalid evidence
+permits the next claim. Claim-response loss replays the same identity and
+generation. Native Workflow response loss therefore reconstructs the same
+encoded command instead of changing the mutation digest.
 
 R2 references include byte length, SHA-256, deletion time, object kind, and
 generation. Reads return the video acquisition's media-and-manifest set or the

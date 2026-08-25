@@ -315,6 +315,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260822065001_household_domain/migration.sql",
       "20260823163811_household_domain/migration.sql",
       "20260824002531_household_domain/migration.sql",
+      "20260825015310_household_domain/migration.sql",
     ]);
     const evidenceMigration = readRepoFile(
       "./apps/api/household-migrations/20260823163811_household_domain/migration.sql"
@@ -331,6 +332,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(batchMigration).toContain("CREATE TABLE `household_import_batches`");
     expect(batchMigration).toContain(
       "CREATE TABLE `household_import_batch_items`"
+    );
+    const acquisitionAttemptMigration = readRepoFile(
+      "./apps/api/household-migrations/20260825015310_household_domain/migration.sql"
+    );
+    expect(acquisitionAttemptMigration).toContain(
+      "CREATE TABLE `household_import_acquisition_attempts`"
     );
     expect(batchMigration).toContain(
       "CREATE TABLE `household_import_batch_outbox`"
@@ -577,8 +584,11 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(workflowSource).toContain('"claim-acquisition-v1"');
     expect(workflowSource).toContain('"resolve-acquire-store-verify-v2"');
     expect(workflowSource).toContain('"record-acquisition-v2"');
-    expect(workflowSource).toContain("let nextAcquisitionGeneration = 0");
-    expect(workflowSource).toContain("nextAcquisitionGeneration += 1");
+    expect(workflowSource).toContain("readAcquisitionAttempts");
+    expect(workflowSource).toContain("claimAcquisitionAttempt");
+    expect(workflowSource).toContain("readVerifiedAcquisitionEvidence");
+    expect(workflowSource).not.toContain("let nextAcquisitionGeneration = 0");
+    expect(workflowSource).not.toContain("nextAcquisitionGeneration += 1");
     expect(workflowSource).not.toContain("beginAcquisitionAttempt(importId)");
     expect(workflowSource).toMatch(
       /adaptAcquisitionBucket\(\s*evidenceBucket,\s*runtimeContext\s*\)/u

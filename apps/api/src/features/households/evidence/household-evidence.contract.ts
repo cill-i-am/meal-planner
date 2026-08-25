@@ -7,7 +7,10 @@ import {
 } from "../../imports/import-media.model.js";
 import { RecipeDraft } from "../../imports/import-recipe-draft.repository.js";
 import { RecipeExtractorDescriptor } from "../../imports/import-recipe-extractor.js";
-import { ImportTimestamp } from "../../imports/import.contracts.js";
+import {
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "../../imports/import.contracts.js";
 import { HouseholdImportMutationId } from "../recipe-import/household-recipe-import.contract.js";
 import { HouseholdSystemAdmission } from "../rpc/command-envelope.js";
 
@@ -27,6 +30,54 @@ const R2ObjectKey = Schema.String.pipe(
     Schema.isMaxLength(1024)
   )
 );
+
+const AcquisitionAttemptOrdinal = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(9))
+);
+
+export const HouseholdClaimAcquisitionAttemptInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  attemptIdentity: HouseholdImportMutationId,
+  attemptOrdinal: AcquisitionAttemptOrdinal,
+  canonicalSourceId: SourceCanonicalId,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdClaimAcquisitionAttemptInput =
+  typeof HouseholdClaimAcquisitionAttemptInput.Type;
+
+export const HouseholdAcquisitionAttempt = Schema.Struct({
+  acquisitionAttemptGeneration: PositiveSafeInteger,
+  attemptIdentity: HouseholdImportMutationId,
+  attemptOrdinal: AcquisitionAttemptOrdinal,
+  canonicalSourceId: SourceCanonicalId,
+  claimedAt: ImportTimestamp,
+  executionGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+});
+export type HouseholdAcquisitionAttempt =
+  typeof HouseholdAcquisitionAttempt.Type;
+
+export const HouseholdClaimAcquisitionAttemptResult = Schema.Struct({
+  attempt: HouseholdAcquisitionAttempt,
+  outcome: Schema.Literals(["Claimed", "Replay"]),
+});
+export type HouseholdClaimAcquisitionAttemptResult =
+  typeof HouseholdClaimAcquisitionAttemptResult.Type;
+
+export const HouseholdReadAcquisitionAttemptsInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdReadAcquisitionAttemptsInput =
+  typeof HouseholdReadAcquisitionAttemptsInput.Type;
+
+export const HouseholdReadAcquisitionAttemptsResult = Schema.Array(
+  HouseholdAcquisitionAttempt
+);
+export type HouseholdReadAcquisitionAttemptsResult =
+  typeof HouseholdReadAcquisitionAttemptsResult.Type;
 
 export const HouseholdOriginalMediaReference = Schema.Struct({
   byteLength: PositiveSafeInteger,

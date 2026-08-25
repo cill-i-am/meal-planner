@@ -32,11 +32,14 @@ import {
   HouseholdRecordImportBatchDispatchInput as HouseholdRecordImportBatchDispatchInputSchema,
 } from "./batches/household-import-batch.contract.js";
 import type {
-  HouseholdCommitAcquisitionEvidenceInput,
+  HouseholdClaimAcquisitionAttemptInput,
+  HouseholdReadAcquisitionAttemptsInput,
   HouseholdReadEvidenceStageInput,
   HouseholdReadEvidenceReferencesInput,
   HouseholdReadImportTerminalCheckpointInput,
   HouseholdCommitAcquisitionEvidenceResult,
+  HouseholdClaimAcquisitionAttemptResult,
+  HouseholdReadAcquisitionAttemptsResult,
   HouseholdMutateEvidenceStageResult,
   HouseholdObserveEvidenceReferenceResult,
   HouseholdReadEvidenceReferencesResult,
@@ -48,9 +51,11 @@ import type {
 } from "./evidence/household-evidence.contract.js";
 import {
   HouseholdCommitAcquisitionEvidenceInput as HouseholdCommitAcquisitionEvidenceInputSchema,
+  HouseholdClaimAcquisitionAttemptInput as HouseholdClaimAcquisitionAttemptInputSchema,
   HouseholdMutateEvidenceStageInput as HouseholdMutateEvidenceStageInputSchema,
   HouseholdObserveEvidenceReferenceInput as HouseholdObserveEvidenceReferenceInputSchema,
   HouseholdReadEvidenceReferencesInput as HouseholdReadEvidenceReferencesInputSchema,
+  HouseholdReadAcquisitionAttemptsInput as HouseholdReadAcquisitionAttemptsInputSchema,
   HouseholdReadEvidenceStageInput as HouseholdReadEvidenceStageInputSchema,
   HouseholdReadImportTerminalCheckpointInput as HouseholdReadImportTerminalCheckpointInputSchema,
   HouseholdPrepareRecipeRecoveryInput as HouseholdPrepareRecipeRecoveryInputSchema,
@@ -183,9 +188,15 @@ export interface HouseholdDomainWorkerMethods {
     HouseholdRecipeImportDomainFailure
   >;
   readonly commitAcquisitionEvidence: (
-    input: HouseholdCommitAcquisitionEvidenceInput
+    input: typeof HouseholdCommitAcquisitionEvidenceInputSchema.Encoded
   ) => Effect.Effect<
     typeof HouseholdCommitAcquisitionEvidenceResult.Encoded,
+    HouseholdRecipeImportDomainFailure
+  >;
+  readonly claimAcquisitionAttempt: (
+    input: HouseholdClaimAcquisitionAttemptInput
+  ) => Effect.Effect<
+    typeof HouseholdClaimAcquisitionAttemptResult.Encoded,
     HouseholdRecipeImportDomainFailure
   >;
   readonly mutateEvidenceStage: (
@@ -240,6 +251,12 @@ export interface HouseholdDomainWorkerMethods {
     input: HouseholdReadEvidenceReferencesInput
   ) => Effect.Effect<
     typeof HouseholdReadEvidenceReferencesResult.Encoded,
+    HouseholdRecipeImportDomainFailure
+  >;
+  readonly readAcquisitionAttempts: (
+    input: HouseholdReadAcquisitionAttemptsInput
+  ) => Effect.Effect<
+    typeof HouseholdReadAcquisitionAttemptsResult.Encoded,
     HouseholdRecipeImportDomainFailure
   >;
   readonly readEvidenceStage: (
@@ -375,7 +392,7 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
       )
     );
   const routeAcquisitionEvidence = (
-    input: HouseholdCommitAcquisitionEvidenceInput
+    input: typeof HouseholdCommitAcquisitionEvidenceInputSchema.Encoded
   ) =>
     Schema.decodeUnknownEffect(HouseholdCommitAcquisitionEvidenceInputSchema, {
       onExcessProperty: "error",
@@ -538,6 +555,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "cancel_recipe_import",
         (household, command) => household.cancelRecipeImport(command)
       ),
+    claimAcquisitionAttempt: (input: HouseholdClaimAcquisitionAttemptInput) =>
+      route(
+        HouseholdClaimAcquisitionAttemptInputSchema,
+        input,
+        "claim_acquisition_attempt",
+        (household, command) => household.claimAcquisitionAttempt(command)
+      ),
     claimImportBatchItem: (input: HouseholdClaimImportBatchItemInput) =>
       route(
         HouseholdClaimImportBatchItemInputSchema,
@@ -546,7 +570,7 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         (household, command) => household.claimImportBatchItem(command)
       ),
     commitAcquisitionEvidence: (
-      input: HouseholdCommitAcquisitionEvidenceInput
+      input: typeof HouseholdCommitAcquisitionEvidenceInputSchema.Encoded
     ) => routeAcquisitionEvidence(input),
     commitRecipeImportDraft: (input: HouseholdCommitRecipeImportDraftInput) =>
       route(
@@ -617,6 +641,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
     prepareRecipeRecovery: (
       input: typeof HouseholdPrepareRecipeRecoveryInputSchema.Encoded
     ) => routeRecipeRecovery(input),
+    readAcquisitionAttempts: (input: HouseholdReadAcquisitionAttemptsInput) =>
+      route(
+        HouseholdReadAcquisitionAttemptsInputSchema,
+        input,
+        "read_acquisition_attempts",
+        (household, command) => household.readAcquisitionAttempts(command)
+      ),
     readEvidenceReferences: (input: HouseholdReadEvidenceReferencesInput) =>
       route(
         HouseholdReadEvidenceReferencesInputSchema,
