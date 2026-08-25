@@ -23,20 +23,6 @@ The workshop has accepted five product decision records:
 Do not re-open those choices in implementation without proposing a superseding
 record.
 
-## Before Stage 1 — People And Profiles
-
-### Account-to-person edge cases
-
-- Can one authenticated member ever represent more than one household person in
-  the same household?
-- Can one user link to person records in several households?
-- How is an accidental or duplicate account link repaired without losing
-  history?
-
-Recommended MVP direction: one user maps to at most one person per household;
-keep multi-household membership possible; require an explicit administrative
-repair for duplicate links.
-
 ## Before Stage 2 — AI Discovery
 
 ### Minimum first-plan profile
