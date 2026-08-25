@@ -89,6 +89,43 @@ coherent repair model.
   but enduring changes require the admitted confirmation policy in the owning
   capability.
 
+### Feedback attribution and conflict
+
+- Any adult may record feedback for any household person, including another
+  adult or a dependant.
+- Each signal records both the subject of the feedback and the adult who
+  reported it.
+- A signal may instead concern the household, a meal event, a cook event, a
+  recipe, a routine, or a plan where person attribution would be misleading.
+- Self-reported preference evidence normally carries more weight for that
+  person's profile than another adult's observation.
+- Adult-reported observations remain valid evidence, especially for dependants
+  who do not have accounts in the MVP.
+- Conflicting signals are retained with their provenance. They are not collapsed
+  into one synthetic household opinion.
+- Ordinary feedback is household-visible in the MVP, consistent with confirmed
+  person profiles and shared planning state.
+
+### Learning proposal policy
+
+- The product does not use a crude universal threshold such as a fixed number of
+  thumbs-down signals to mutate a profile.
+- One explicit high-confidence statement, such as "I never want this again",
+  may justify an immediate proposed enduring change.
+- Weaker signals require a repeated pattern across planning periods before the
+  agent proposes a persistent change.
+- Signal meaning is contextual. "Too much effort" informs effort, routine,
+  capacity, recipe, or cook-event policy; it does not automatically become a
+  food dislike.
+- "Not made" or "skipped" is not treated as dislike without supporting reason.
+- Recency, repetition, reporter, subject, context, and existing confirmed facts
+  all contribute to proposal confidence.
+- The agent may propose a change to a profile, routine, fallback, cadence,
+  portion factor, recipe, or cooking-capacity assumption.
+- No enduring state is changed solely because an inference crossed an internal
+  threshold. An adult must confirm the proposed change.
+- Inferred evidence and accepted changes remain inspectable and reversible.
+
 ### Carry-over stock
 
 - Prepared portions intended for a future planning period are shown as expected
@@ -104,6 +141,10 @@ coherent repair model.
   operation, not independent mutation of calendar cells.
 - Product metrics must distinguish first-proposal gaps, adult-requested changes,
   automatic draft repairs, and approved-plan revisions.
+- Feedback storage must preserve subject, reporter, target type, context, and
+  provenance rather than reducing every signal to a recipe score.
+- Learning is proposal-driven and reversible; it is not an autonomous profile
+  mutation system.
 - The happy path during the week requires no application interaction.
 - Inventory accuracy deliberately follows an exception-based model rather than
   demanding perfect event logging.
@@ -113,6 +154,8 @@ coherent repair model.
 - mandatory meal tracking;
 - automatic rewrite of approved plans;
 - household consensus approval;
+- dependant self-reporting through accounts;
+- private ordinary feedback;
 - external calendar integration;
 - full custody or visitor scheduling; and
 - autonomous learning that changes enduring state without confirmation.
