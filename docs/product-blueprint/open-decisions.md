@@ -168,23 +168,6 @@ settled. Remaining ranking questions include:
 
 The frontend projection must remain free to differ from internal domain unions.
 
-## Before Stage 6 — Feedback And Learning
-
-### Feedback attribution
-
-- May any adult record feedback for any adult or dependant in the MVP?
-- Can adults disagree about a shared meal without collapsing their ratings?
-- Which feedback is person-specific, household-level, or cook-event-level?
-- Is any feedback private, given that confirmed profiles are household-visible?
-
-### Learning threshold
-
-- How many signals justify proposing a profile, routine, cadence, portion, or
-  cooking-capacity change?
-- How do recency and repeated long-standing preferences interact?
-- How are temporary or seasonal patterns prevented from becoming permanent?
-- How are inferred changes inspected and reversed?
-
 ## Before Stage 7 — Shopping List
 
 ### Collaboration and offline behaviour
