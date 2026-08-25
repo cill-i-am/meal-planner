@@ -25,18 +25,6 @@ record.
 
 ## Before Stage 2 — AI Discovery
 
-### Transcript retention and deletion
-
-- Is a private transcript retained after confirmed facts are extracted?
-- If retained, for how long and for which user-visible purpose?
-- Can the participant delete the transcript without deleting confirmed profile
-  state?
-- Is explicit consent required for any operator or product-quality review?
-
-Recommended MVP direction: retain as little transcript material as the product
-needs, give the participant deletion control, and make confirmed structured
-state independent of the transcript.
-
 ### Agent evaluation and provider strategy
 
 - Which synthetic household scenarios form the initial evaluation set?
@@ -157,8 +145,8 @@ The frontend projection must remain free to differ from internal domain unions.
 - Exact beta cohort size and recruitment criteria.
 - Internal readiness thresholds for time to approved plan and correction burden.
 - Support and incident-handling process for the invite-only cohort.
-- Which transcript or screen-review evidence may be inspected with participant
-  consent.
+- Whether any private transcript or screen-review evidence may be inspected by
+  support or product staff under explicit participant consent.
 - The minimum curated recipe set needed before invitations begin.
 
 ## Deliberately Deferred
