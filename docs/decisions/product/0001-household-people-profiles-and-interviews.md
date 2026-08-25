@@ -75,6 +75,20 @@ must remain useful and editable by the people planning food together.
   deletion or erasure remains a separate explicit lifecycle rather than an
   expiry timer attached to normal interview completion.
 
+### Support and product-quality access
+
+- Support and product staff have no access to private interview transcripts by
+  default.
+- The participant may explicitly grant access to one named completed transcript
+  for a stated support or product-quality purpose.
+- A grant is purpose-specific, time-limited, revocable, and fully audited.
+- Granted access is read-only. It cannot reopen the conversation, send messages,
+  or mutate profile, routine, fallback, or planning state.
+- Granting access does not make the transcript visible to other household
+  adults and does not create broad access to the participant's other sessions.
+- Any enduring product-state change suggested after review of a transcript must
+  still be confirmed through the ordinary admitted household flow.
+
 ### Minimum profile for the first plan
 
 The first plan should be available as soon as the product can avoid an unsafe or
@@ -169,6 +183,8 @@ not part of this decision.
   transcript access rather than automatic expiry or conversational reuse.
 - Retained transcripts remain private records and cannot become a hidden source
   of current planning authority.
+- Operator surfaces exclude transcript content by default and require a scoped,
+  expiring, revocable grant before access is possible.
 - MVP permissions are intentionally broad to reduce implementation and household
   coordination friction.
 - Private transcript handling cannot be conflated with private profile facts;
@@ -185,6 +201,5 @@ not part of this decision.
 - guardian-specific permissions;
 - consensus approval of profile changes;
 - hidden private confirmed profile facts;
-- cross-household person identity or profile portability;
-- support or operator access to private transcripts; and
+- cross-household person identity or profile portability; and
 - the permanent person or transcript deletion and erasure workflow.
