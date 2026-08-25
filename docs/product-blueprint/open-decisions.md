@@ -25,16 +25,6 @@ record.
 
 ## Before Stage 2 — AI Discovery
 
-### Minimum first-plan profile
-
-- Which facts must be confirmed before the first plan can be generated?
-- Which facts may remain provisional or be learned in later reviews?
-- When should the agent stop asking and create a first routine or plan artifact?
-- What active-time and abandonment baselines define an acceptable interview?
-
-The answer should be measured against first-plan quality and time saved rather
-than chosen as an arbitrary questionnaire length.
-
 ### Transcript retention and deletion
 
 - Is a private transcript retained after confirmed facts are extracted?
