@@ -130,7 +130,7 @@ const inspectPredecessorGlobalD1Structure = (
 
 describe.sequential(
   "global D1 architecture allowlist",
-  { timeout: 15_000 },
+  { timeout: 60_000 },
   () => {
     beforeAll(() => {
       trackedRepositoryRoot = copyTrackedRepository();

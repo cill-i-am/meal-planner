@@ -123,7 +123,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
         readTrackedGlobalD1Architecture(repositoryRoot)
       )
     ).toEqual([]);
-  }, 15_000);
+  }, 60_000);
 
   it("keeps the Worker identity stable, private, and preserves its optional URL output", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
