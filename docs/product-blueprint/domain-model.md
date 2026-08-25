@@ -58,6 +58,12 @@ Linking an account must not create a duplicate eater or lose profile, routine,
 plan, feedback, or recipe history. The lifecycle of a person is distinct from
 membership and session lifecycle.
 
+Within one household, one authenticated user links to at most one household
+person. The same user may belong to several households and link to one person in
+each. An incorrect or duplicate link requires an explicit authorized repair
+that preserves the retained person's product history; people are not
+heuristically merged or deleted.
+
 Removing an adult's household membership revokes account access immediately but
 does not delete the household person. Leaving or removing someone archives the
 person by default. An archived person no longer generates future meal
@@ -384,11 +390,18 @@ prepared carry-over.
 Signals include liked, disliked, skipped, not made, too much effort, wrong
 quantity, fallback outcome, dependant rejection, and make again.
 
-Review never blocks planning. Feedback does not silently rewrite hard facts or
-enduring routines. The agent may propose explicit changes, and inferred soft
-preferences remain visible and reversible.
+Any adult may record feedback for any adult or dependant in the MVP. Each signal
+retains both its subject and reporter. Self-reported preference carries more
+weight than another adult's observation, while conflicting reports coexist
+rather than being collapsed. Dependant feedback is adult-reported in the MVP.
 
-Feedback attribution and learning thresholds remain open decisions.
+Review never blocks planning. Feedback does not silently rewrite hard facts or
+enduring routines. One explicit strong statement may justify an immediate
+proposed change; weaker signals require a repeated pattern across planning
+periods. The signal reason determines whether the proposal concerns preference,
+effort, quantity, routine, fallback, recipe, or cooking capacity. An enduring
+change always requires adult confirmation and remains inspectable and
+reversible.
 
 ## Shopping Demand
 
@@ -429,6 +442,8 @@ retailer-neutral shopping list.
 14. The happy path requires no per-meal confirmation.
 15. The MVP does not certify food safety, maintain a complete pantry, or perform
    retailer mutations.
+16. One authenticated user links to at most one household person within a given
+   household, and link repair never silently merges product history.
 
 ## Agent And Domain Responsibility
 
