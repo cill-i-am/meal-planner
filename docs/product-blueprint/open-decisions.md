@@ -145,8 +145,6 @@ The frontend projection must remain free to differ from internal domain unions.
 - Exact beta cohort size and recruitment criteria.
 - Internal readiness thresholds for time to approved plan and correction burden.
 - Support and incident-handling process for the invite-only cohort.
-- Whether any private transcript or screen-review evidence may be inspected by
-  support or product staff under explicit participant consent.
 - The minimum curated recipe set needed before invitations begin.
 
 ## Deliberately Deferred
