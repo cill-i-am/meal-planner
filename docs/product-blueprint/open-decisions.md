@@ -26,15 +26,14 @@ record.
 
 ## Before Stage 2 — AI Discovery
 
-### Evaluation thresholds and provider strategy
+### Provider and calibration strategy
 
 The three-layer evidence model, eight initial synthetic scenario families,
 versioned household evals, hybrid deterministic/programmatic/model/human judging,
-hard release blockers, repository review requirements, and final MVP
-product-owner acceptance are settled in PDR-0006. Remaining choices are:
+`1–5` non-hard quality bands, hard release blockers, repository review
+requirements, and final MVP product-owner acceptance are settled in PDR-0006.
+Remaining choices are:
 
-- What numeric or qualitative bands trigger review or block release for non-hard
-  quality dimensions?
 - What first agent model, model judge, and provider strategy meet quality, cost,
   privacy, and latency requirements against the accepted suite?
 - How large is the human calibration sample and how often is it rerun?
