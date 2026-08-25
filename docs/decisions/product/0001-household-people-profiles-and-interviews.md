@@ -29,6 +29,14 @@ must remain useful and editable by the people planning food together.
 - One adult can create the household, add all people, enter provisional
   information, and generate the first plan before invited adults complete their
   own discovery sessions.
+- One authenticated user may link to at most one household person within a given
+  household.
+- The same authenticated user may belong to several households and link to one
+  household person in each.
+- An incorrect or duplicate account link is repaired through an explicit
+  authorized operation. The product does not automatically merge or delete
+  household people, and repair must preserve the chosen person's profile,
+  routine, plan, feedback, recipe, and audit history.
 
 ### Profile visibility and editing
 
@@ -103,6 +111,10 @@ must remain useful and editable by the people planning food together.
   complete eater model.
 - Household planning state needs stable person identity, account-link state,
   profile versions, mutation audit, and private interview-session boundaries.
+- The account-link capability enforces at most one linked person per user and
+  household while allowing the user to participate in several households.
+- Link repair is an explicit audited identity operation rather than a heuristic
+  merge of product records.
 - MVP permissions are intentionally broad to reduce implementation and household
   coordination friction.
 - Private transcript handling cannot be conflated with private profile facts;
