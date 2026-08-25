@@ -58,6 +58,35 @@ must remain useful and editable by the people planning food together.
 - Profile facts and profile snapshots are versioned so history and plan
   provenance remain auditable.
 
+### Minimum profile for the first plan
+
+The first plan should be available as soon as the product can avoid an unsafe or
+obviously impractical recommendation. It does not require an exhaustive profile
+or a completed interview from every adult.
+
+Before generating the first plan, the household confirms:
+
+- every active household person who needs food coverage;
+- the managed meal occasions for those people;
+- a hard-constraint status for each person, including an explicit `none known`
+  where appropriate;
+- basic weekday location or availability needed to distinguish home, office,
+  school, travel, or packed-meal requirements;
+- the household's available cooking equipment and realistic cooking-capacity
+  boundary; and
+- at least one approved fallback for any person who cannot reliably share
+  ordinary household meals.
+
+Likes, cuisines, routine detail, exact products, portion refinements, and softer
+preferences may remain provisional or be learned in later reviews. The agent
+should create visible profile and routine artifacts early and stop asking once
+the minimum planning boundary is met, rather than withholding value until a long
+questionnaire is complete.
+
+The product will tune interview depth against measured first-plan quality,
+correction burden, active time, and abandonment. A fixed questionnaire length is
+not part of this decision.
+
 ### Provisional and contradictory facts
 
 - Self-confirmed facts normally replace provisional facts entered by another
@@ -115,6 +144,10 @@ must remain useful and editable by the people planning food together.
   household while allowing the user to participate in several households.
 - Link repair is an explicit audited identity operation rather than a heuristic
   merge of product records.
+- The first-plan gate is a small explicit safety-and-practicality boundary, not
+  completion of an exhaustive preference questionnaire.
+- Profile and routine artifacts must support provisional state because the first
+  plan may precede every adult's self-review.
 - MVP permissions are intentionally broad to reduce implementation and household
   coordination friction.
 - Private transcript handling cannot be conflated with private profile facts;
