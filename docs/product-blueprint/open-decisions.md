@@ -25,16 +25,6 @@ record.
 
 ## Before Stage 1 — People And Profiles
 
-### Person departure and archival
-
-- What happens to a person's profile, routines, feedback, and historical plan
-  references when they leave a household?
-- Can an adult archive a dependant temporarily and later restore them?
-- Is former-person data visible to remaining adults, the departing adult, both,
-  or neither?
-- Which deletion request owns the difference between removing account access and
-  deleting household product history?
-
 ### Account-to-person edge cases
 
 - Can one authenticated member ever represent more than one household person in
