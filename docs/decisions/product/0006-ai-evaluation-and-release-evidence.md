@@ -101,6 +101,40 @@ evidence.
 - Evals should be small enough to run repeatedly while broad enough to include
   representative household complexity and repair behaviour.
 
+### Blocking and acceptance policy
+
+The following always block release:
+
+- a deterministic hard-invariant failure;
+- a safety, privacy, authorization, or cross-household-isolation failure;
+- a required meal left without an explicit valid resolution;
+- an invented material fact presented as confirmed;
+- an incompatible meal assigned despite a hard constraint;
+- a required fallback omitted or applied incorrectly;
+- an invalid, duplicate, or overdrawn portion or prepared-output allocation;
+- a silent rewrite of approved state; or
+- any scenario outcome explicitly marked as prohibited.
+
+Quality regressions such as excessive questioning, weaker synthesis, less useful
+rationale, or a poorer-but-still-valid plan do not automatically receive the
+same binary treatment. They require explicit product review against the scenario
+rubric, affected user journey, and aggregate results.
+
+The Meal Planner product owner is the final MVP release-acceptance authority. A
+known quality regression may be accepted only when the pull request records:
+
+- the exact regression and affected scenarios;
+- why shipping is still preferable;
+- why no hard invariant is involved;
+- the follow-up work or monitoring required; and
+- the evidence used for the decision.
+
+An override cannot waive a hard blocker.
+
+Material changes to scenarios, prohibited outcomes, rubrics, or scoring policy
+must be reviewed as repository changes. The suite must not be weakened merely to
+allow a candidate model, prompt, or tool change to pass.
+
 ### Scenario maintenance
 
 - Synthetic scenarios live in the repository as product-quality assets.
@@ -120,14 +154,17 @@ evidence.
 - Domain correctness and agent quality remain separable: an agent cannot obtain
   credit for violating deterministic rules, and a valid but generic interaction
   can still score poorly.
+- Hard blockers cannot be traded against an aggregate score or waived by product
+  judgment.
+- Non-hard quality regressions remain product decisions and must be documented
+  rather than hidden in an average.
 - Real beta metrics remain the final evidence for the time-saving product
   promise.
 
 ## Deferred
 
 - the exact initial scenario inventory;
-- numeric thresholds for release;
-- the individual or role that approves eval-suite changes;
+- numeric thresholds for non-hard quality dimensions;
 - the first model and provider selection;
 - automated model-based judging versus human review for each rubric dimension;
   and
