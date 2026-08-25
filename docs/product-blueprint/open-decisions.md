@@ -28,11 +28,11 @@ record.
 
 ### Evaluation implementation and provider strategy
 
-The three-layer evidence model, versioned synthetic household evals, rubric
-dimensions, hard release blockers, repository review requirements, and final MVP
-product-owner acceptance are settled in PDR-0006. Remaining choices are:
+The three-layer evidence model, eight initial synthetic scenario families,
+versioned household evals, rubric dimensions, hard release blockers, repository
+review requirements, and final MVP product-owner acceptance are settled in
+PDR-0006. Remaining choices are:
 
-- Which exact synthetic scenarios form the initial release suite?
 - What numeric or qualitative bands trigger review or block release for non-hard
   quality dimensions?
 - Which rubric dimensions use deterministic scoring, model judging, human
