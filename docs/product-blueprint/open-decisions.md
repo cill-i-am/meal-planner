@@ -12,28 +12,35 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted five product decision records:
+The workshop has accepted six product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
 - [Weekly planning, repair, approval, and review](../decisions/product/0003-weekly-planning-repair-approval-and-review.md)
 - [Meal content, portions, recipes, prepared food, and shopping](../decisions/product/0004-meal-content-portions-recipes-and-shopping.md)
 - [MVP scope and deferrals](../decisions/product/0005-mvp-scope-and-deferrals.md)
+- [AI evaluation and release evidence](../decisions/product/0006-ai-evaluation-and-release-evidence.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
 
 ## Before Stage 2 — AI Discovery
 
-### Agent evaluation and provider strategy
+### Evaluation governance and provider strategy
 
-- Which synthetic household scenarios form the initial evaluation set?
-- What rubric measures perceptiveness, unnecessary questions, profile accuracy,
-  routine quality, first-plan practicality, and explanation quality?
-- Who reviews failures and accepts prompt/tool/policy changes?
+The three-layer evidence model, versioned synthetic household evals, rubric
+dimensions, and release-gating principle are accepted in PDR-0006. Remaining
+choices are:
+
+- Which exact synthetic scenarios form the initial release suite?
+- What numeric or qualitative thresholds block a release?
+- Who reviews failures and approves material scenario, rubric, prompt, tool, or
+  policy changes?
+- Which rubric dimensions use deterministic scoring, model judging, human
+  review, or a combination?
 - What model and provider strategy meets quality, cost, privacy, and latency
-  requirements?
-- How are model, prompt, tool, and policy versions tied to evaluation evidence?
+  requirements against the accepted suite?
+- Is production model experimentation needed during the invite-only beta?
 
 Provider choice follows product evaluation and does not define the domain.
 
