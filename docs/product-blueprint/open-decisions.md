@@ -12,7 +12,7 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted twelve product decision records:
+The workshop has accepted thirteen product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
@@ -26,6 +26,7 @@ The workshop has accepted twelve product decision records:
 - [Food concepts, exact products, and retailer preferences](../decisions/product/0010-food-concepts-exact-products-and-retailer-preferences.md)
 - [Recipe URL import and source routing](../decisions/product/0011-recipe-url-import-and-source-routing.md)
 - [Planner feasibility, ranking, and deterministic selection](../decisions/product/0012-planner-feasibility-ranking-and-deterministic-selection.md)
+- [Plan projection, rationale, and experience experimentation](../decisions/product/0013-plan-projection-rationale-and-experience-experimentation.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
@@ -112,15 +113,13 @@ meal-specific overrides, serving-equivalent summation, explicit item or
 component quantities for packaged, buffet, shared-side, and component meals, and
 confirmation-only learning from quantity feedback are settled in PDR-0004.
 
-### Plan projection and rationale
-
-- What visual grouping best presents shared meals, personal alternatives,
-  routines, cook events, and prepared outputs?
-- Which rationale is visible by default and which is expanded on demand?
-- How does the UI show a draft repair or approved-plan revision without
-  overwhelming the household?
-
-The frontend projection must remain free to differ from internal domain unions.
+The default household-week information hierarchy, separate eating and cooking
+perspectives, progressive rationale, repair and revision communication, derived
+frontend projections, and the explicit prototype, usability, iteration, and A/B
+testing boundary are settled in PDR-0013. Exact component trees, layouts,
+navigation, density, and interaction details remain implementation experiments
+unless they change accepted plan semantics, privacy, authority, or coverage
+truth.
 
 ## Before Stage 7 — Shopping List
 
