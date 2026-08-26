@@ -52,6 +52,7 @@ identifies a real contract that must be preserved.
 - [PDR-0005 — MVP scope and deliberately deferred capabilities](product/0005-mvp-scope-and-deferrals.md)
 - [PDR-0006 — AI evaluation and release evidence](product/0006-ai-evaluation-and-release-evidence.md)
 - [PDR-0007 — Household agent conversations and visibility](product/0007-household-agent-conversations-and-visibility.md)
+- [PDR-0008 — Temporary context, visitors, and planning suspensions](product/0008-temporary-context-visitors-and-planning-suspensions.md)
 
 ## Decision Process
 
