@@ -47,14 +47,6 @@ Provider choice still follows product evaluation and does not define the domain.
 
 ## Before Stage 3 — Routines And Fallbacks
 
-### Routine conflict precedence
-
-- What exact precedence applies among hard constraints, one-off exceptions,
-  person routines, household routines, approved fallbacks, and model proposals?
-- Which low-impact conflicts may the draft-repair operation resolve without a
-  separate question?
-- How are conflicting adult edits serialized and explained?
-
 ### Temporary household context
 
 - How are visitors, temporary absences, school holidays, split custody, and
