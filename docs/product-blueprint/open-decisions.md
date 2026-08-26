@@ -12,7 +12,7 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted fifteen product decision records:
+The workshop has accepted sixteen product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
@@ -29,6 +29,7 @@ The workshop has accepted fifteen product decision records:
 - [Plan projection, rationale, and experience experimentation](../decisions/product/0013-plan-projection-rationale-and-experience-experimentation.md)
 - [Shared shopping-list collaboration and offline use](../decisions/product/0014-shared-shopping-list-collaboration-and-offline-use.md)
 - [Invite-only beta cohort and learning cadence](../decisions/product/0015-invite-only-beta-cohort-and-learning-cadence.md)
+- [Beta support, incidents, and operator repair](../decisions/product/0016-beta-support-incidents-and-operator-repair.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
@@ -121,7 +122,8 @@ frontend projections, and the explicit prototype, usability, iteration, and A/B
 testing boundary are settled in PDR-0013. Exact component trees, layouts,
 navigation, density, and interaction details remain implementation experiments
 unless they change accepted plan semantics, privacy, authority, or coverage
-truth.
+truth. Beautiful UI is retained there as a non-authoritative agent-interface
+reference rather than a selected dependency or frozen design system.
 
 ## Before Stage 7 — Shopping List
 
@@ -148,9 +150,13 @@ expansion gates, correction-severity definitions, `30-minute` first-setup target
 `10-minute` returning-week gate, and later-pilot correction threshold are settled
 in PDR-0015.
 
-The remaining operating decision is:
-
-- Support and incident-handling process for the invite-only cohort.
+Contextual problem reporting, critical/blocking/quality incident levels, critical
+containment and participant communication, read-only support access, transcript-
+specific consent, audited operator repair commands, sanitized repository
+records, and regression-evidence requirements are settled in PDR-0016. No
+additional beta operating decision is currently required before MVP
+implementation; the implementing stage still needs the concrete support runbook
+and operator tooling described by that record.
 
 ## Deliberately Deferred
 
@@ -169,6 +175,8 @@ workshop:
 - semantic recipe search infrastructure;
 - a dedicated recurring-staples checklist or recurrence engine;
 - public self-service beta signup or growth acquisition;
+- large-scale support operations, contractual service levels, and public status
+  infrastructure;
 - non-household organization products; and
 - fleet-wide product read models without an accepted use case.
 
