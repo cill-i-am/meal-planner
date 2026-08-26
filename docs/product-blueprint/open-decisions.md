@@ -81,8 +81,9 @@ the future separation of retailer listings are settled in PDR-0010 and ADR-0006.
 One-URL submission, deterministic source routing, dedicated TikTok acquisition,
 a generic public recipe-web-page adapter, structured-markup-first evidence,
 visible-card comparison where available, field-level conflict provenance, the
-shared downstream import lifecycle, private household admission, and honest
-unsupported-source behaviour are settled in PDR-0011 and ADR-0007.
+shared downstream import lifecycle, private household admission, honest
+unsupported-source behaviour, and the no-browser-automation MVP boundary are
+settled in PDR-0011 and ADR-0007.
 
 ### Web-page acquisition policy
 
@@ -92,8 +93,11 @@ The remaining implementation decisions for the generic web-page adapter are:
   submitted public recipe URL?
 - Which MIME types, response-size bounds, redirect limits, timeouts, and
   extraction limits form the initial restricted-fetch policy?
-- Is any multi-page or highly interactive recipe experience worth supporting in
-  the MVP, or should those sources remain explicitly unsupported?
+
+Multi-page, slideshow, highly interactive, and browser-dependent recipe
+experiences remain unsupported in the MVP. A later Cloudflare Browser Rendering
+path may be considered only when observed failed-import coverage justifies its
+cost and complexity.
 
 ## Before Stage 5 — Planning
 
@@ -163,6 +167,7 @@ workshop:
 - MCP tools, resources, elicitation, and tasks;
 - embedded and white-label channels;
 - public recipe contribution and marketplace policy;
+- browser-rendered recipe acquisition until observed failures justify it;
 - semantic recipe search infrastructure;
 - non-household organization products; and
 - fleet-wide product read models without an accepted use case.
