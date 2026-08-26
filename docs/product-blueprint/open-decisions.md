@@ -12,7 +12,7 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted eleven product decision records:
+The workshop has accepted twelve product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
@@ -25,6 +25,7 @@ The workshop has accepted eleven product decision records:
 - [Shared catalogue acquisition, curation, and publication](../decisions/product/0009-shared-catalogue-acquisition-curation-and-publication.md)
 - [Food concepts, exact products, and retailer preferences](../decisions/product/0010-food-concepts-exact-products-and-retailer-preferences.md)
 - [Recipe URL import and source routing](../decisions/product/0011-recipe-url-import-and-source-routing.md)
+- [Planner feasibility, ranking, and deterministic selection](../decisions/product/0012-planner-feasibility-ranking-and-deterministic-selection.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
@@ -101,16 +102,10 @@ and complexity.
 
 ## Before Stage 5 — Planning
 
-### Baseline ranking policy
-
-Hard constraints, routines, cooking capacity, and approved fallbacks are already
-settled. Remaining ranking questions include:
-
-- How are ordinary preference, effort, repetition, ingredient reuse, and gentle
-  qualitative variety weighted?
-- Which values are product defaults versus household configuration?
-- When does the planner prefer a flexible slot over a low-confidence meal?
-- How are ties kept deterministic before optional model assistance?
+The feasibility gate, ordered ranking layers, plan-level dependency evaluation,
+flexible-slot preference over a poor recommendation, product-default priorities,
+traceable rationale, and stable deterministic tie-breaking are settled in
+PDR-0012 and ADR-0008.
 
 ### Portion defaults and complex serving
 
