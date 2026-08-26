@@ -57,6 +57,7 @@ identifies a real contract that must be preserved.
 - [PDR-0010 — Food concepts, exact products, and retailer preferences](product/0010-food-concepts-exact-products-and-retailer-preferences.md)
 - [PDR-0011 — Recipe URL import and source routing](product/0011-recipe-url-import-and-source-routing.md)
 - [PDR-0012 — Planner feasibility, ranking, and deterministic selection](product/0012-planner-feasibility-ranking-and-deterministic-selection.md)
+- [PDR-0013 — Plan projection, rationale, and experience experimentation](product/0013-plan-projection-rationale-and-experience-experimentation.md)
 
 ## Decision Process
 
