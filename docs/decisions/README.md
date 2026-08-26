@@ -55,6 +55,7 @@ identifies a real contract that must be preserved.
 - [PDR-0008 — Temporary context, visitors, and planning suspensions](product/0008-temporary-context-visitors-and-planning-suspensions.md)
 - [PDR-0009 — Shared catalogue acquisition, curation, and publication](product/0009-shared-catalogue-acquisition-curation-and-publication.md)
 - [PDR-0010 — Food concepts, exact products, and retailer preferences](product/0010-food-concepts-exact-products-and-retailer-preferences.md)
+- [PDR-0011 — Recipe URL import and source routing](product/0011-recipe-url-import-and-source-routing.md)
 
 ## Decision Process
 
