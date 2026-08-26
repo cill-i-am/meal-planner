@@ -79,20 +79,19 @@ attributes, household and retailer-scoped preferences, substitution rules, and
 the future separation of retailer listings are settled in PDR-0010 and ADR-0006.
 
 One-URL submission, deterministic source routing, dedicated TikTok acquisition,
-a generic public recipe-web-page adapter, the shared downstream import lifecycle,
-private household admission, and honest unsupported-source behaviour are settled
-in PDR-0011 and ADR-0007.
+a generic public recipe-web-page adapter, structured-markup-first evidence,
+visible-card comparison where available, field-level conflict provenance, the
+shared downstream import lifecycle, private household admission, and honest
+unsupported-source behaviour are settled in PDR-0011 and ADR-0007.
 
-### Web-page evidence and publisher policy
+### Web-page acquisition policy
 
 The remaining implementation decisions for the generic web-page adapter are:
 
-- When is structured recipe markup sufficient by itself, and when must visible
-  page evidence also be captured and compared?
 - What exact robots and publisher-policy behaviour applies to an intentionally
   submitted public recipe URL?
-- Which MIME types, response-size bounds, redirect limits, and extraction limits
-  form the initial restricted-fetch policy?
+- Which MIME types, response-size bounds, redirect limits, timeouts, and
+  extraction limits form the initial restricted-fetch policy?
 - Is any multi-page or highly interactive recipe experience worth supporting in
   the MVP, or should those sources remain explicitly unsupported?
 
