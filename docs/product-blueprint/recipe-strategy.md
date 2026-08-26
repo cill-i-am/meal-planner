@@ -54,7 +54,8 @@ The product has two recipe domains:
 2. a private household recipe bank.
 
 They may share normalization and planning contracts, but they do not share
-visibility or authority by accident.
+visibility or authority by accident. The durable authority split is accepted in
+[ADR-0005](../architecture/decisions/0005-separate-shared-catalogue-from-household-recipe-authority.md).
 
 ## Shared Curated Catalogue
 
@@ -76,13 +77,62 @@ A catalogue recipe should have:
 - lifecycle state for draft, reviewed, active, or retired content; and
 - audit history for material correction.
 
-The exact initial source, licence, size, and curation workflow remain open
-product decisions. A smaller reliable catalogue is more useful than a large
-weakly normalized bank.
+The initial target is roughly `100–200` active, high-quality recipes and meal
+options. It is a directional starting point rather than a permanent maximum or
+an invented hard beta gate. A smaller reliable catalogue is more useful than a
+large weakly normalized bank.
 
-The shared catalogue requires an explicit authority separate from private
-household objects. It must not be built by copying or projecting private
-household recipes into a global product store.
+The shared catalogue has an explicit authority separate from private household
+objects. It is never built by copying or projecting private household recipes
+into a global product store.
+
+### Bulk candidate acquisition
+
+The initial catalogue may be bootstrapped through operator-managed bulk recipe
+ingestion. The expected first flow is:
+
+1. collect a larger batch of promising TikTok links;
+2. submit them through the existing import pipeline;
+3. retain the successful extractions as private catalogue candidates;
+4. reject duplicates, incomplete recipes, unreliable extractions, and content
+   that adds little planning value;
+5. review and normalize the useful candidates; and
+6. explicitly publish the accepted immutable versions.
+
+Processing several hundred candidate links to obtain roughly `100–200`
+publishable recipes is acceptable. Bulk extraction success never implies shared
+publication.
+
+The candidate model is source-neutral so later web-page or manual operator input
+can use the same curation and publication boundary.
+
+### Curation and publication
+
+Before publication, the curator reviews the facts that make a recipe useful for
+planning, including where applicable:
+
+- source and attribution provenance;
+- the rights or permission basis required by the accepted publication policy;
+- ingredients, quantities, instructions, and base yield;
+- scaling behaviour and unresolved quantities;
+- effort, equipment, preparation windows, portability, and leftover use;
+- suitability and dietary metadata without unsupported health claims;
+- shopping-demand completeness; and
+- whether the recipe adds useful coverage rather than duplicating the active
+  catalogue.
+
+Cillian is the sole shared-catalogue curator and publication authority for the
+MVP. Only that operator authority may publish, correct, activate, retire, or
+restore shared catalogue versions.
+
+A small authenticated admin UI may support candidate review and publication.
+The UI is a client of typed, audited catalogue commands; it is not itself the
+authority.
+
+See
+[PDR-0009](../decisions/product/0009-shared-catalogue-acquisition-curation-and-publication.md)
+for the accepted governance policy. The exact rights and attribution policy for
+each source class remains a separate decision before external beta publication.
 
 ## Private Household Content
 
@@ -97,11 +147,12 @@ A household recipe may originate from:
 A household may also create assembled meals and packaged meal options without
 inventing recipe instructions.
 
-Household content is private by default. Importing or adapting content does not
-automatically contribute it to the shared catalogue.
+Household content is private by default. Importing, reviewing, approving, or
+adapting content does not contribute it to the shared catalogue.
 
-A future contribution flow would require explicit submission, provenance and
-rights checks, review, and a new catalogue identity. It is outside the beta.
+Ordinary household adults cannot publish globally in the MVP. A future
+contribution flow would require explicit submission, provenance and rights
+checks, curation, and a new catalogue identity. It is outside the beta.
 
 ## Recipe And Version Identity
 
@@ -140,7 +191,8 @@ Examples include:
 - creating a person-compatible variation.
 
 Ancestry supports attribution and explanation without forcing later catalogue
-changes into household versions.
+changes into household versions. How a household is notified of or adopts a
+later catalogue correction remains a separate product decision.
 
 ## Original Batch And Reference Serving
 
@@ -164,7 +216,7 @@ may derive planning values such as:
 ```text
 mince: 125 g per reference serving — linear
 onion: 0.25 per serving — discrete
-Eggs: 0.5 per serving — discrete
+eggs: 0.5 per serving — discrete
 tomatoes: 0.25 tin per serving — package constrained
 salt: unresolved numeric scaling — to taste
 ```
@@ -301,8 +353,10 @@ Every imported recipe begins as a draft. Evidence-grounded fields retain
 citations, confidence, origin, and unresolved state. A reviewer may correct
 facts while preserving the distinction between extracted and corrected values.
 
-Only admitted reviewed recipe versions may enter meal-plan generation. Shared
-catalogue publication is a separate future capability from household approval.
+Only admitted reviewed recipe versions may enter meal-plan generation.
+Household approval publishes only to that household's private bank. Shared
+catalogue publication is a separate operator-only command with its own audit,
+rights, curation, and lifecycle policy.
 
 ## Search And Discovery
 
@@ -326,8 +380,11 @@ become recipe authority or replace structured hard-constraint filtering.
 
 The beta content system should prove:
 
-- curated catalogue recipes can be planned and scaled reliably;
-- household imports pass through truthful review;
+- an operator can bulk-ingest source links into private catalogue candidates;
+- only explicitly reviewed and published candidates become shared catalogue
+  versions;
+- roughly `100–200` reliable shared options provide useful planning coverage;
+- household imports remain private and pass through truthful review;
 - a household can create assembled and packaged options;
 - a household can fork and version a recipe;
 - plans pin immutable content versions;
@@ -335,6 +392,6 @@ The beta content system should prove:
 - the planner can select across catalogue and household content; and
 - approved plans derive consolidated shopping demand.
 
-A public marketplace, retailer product mapping, autonomous catalogue
-publication, logged-in arbitrary source acquisition, and continuous pantry are
-out of scope.
+A public marketplace, ordinary-household catalogue publication, retailer product
+mapping, autonomous catalogue publication, logged-in arbitrary source
+acquisition, and continuous pantry are out of scope.
