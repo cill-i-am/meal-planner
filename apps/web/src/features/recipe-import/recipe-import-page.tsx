@@ -4,8 +4,11 @@ import {
   SourceUrl,
 } from "@meal-planner/recipe-import-api";
 import type {
+  Recipe,
   RecipeImportAction,
+  RecipeImportIntent,
   RecipeImportIntentId,
+  SourceUrl as RecipeSourceUrl,
 } from "@meal-planner/recipe-import-api";
 import { useForm } from "@tanstack/react-form";
 import {
@@ -359,6 +362,366 @@ const TagsAnswerForm = ({
   );
 };
 
+const ImportRecipeForm = ({
+  isPending,
+  submit,
+}: {
+  readonly isPending: boolean;
+  readonly submit: (sourceUrl: RecipeSourceUrl) => void;
+}) => {
+  const form = useForm({
+    defaultValues: { sourceUrl: "" },
+    onSubmit: ({ value }) => {
+      submit(Schema.decodeUnknownSync(SourceUrl)(value.sourceUrl));
+    },
+  });
+
+  return (
+    <form
+      className="import-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void form.handleSubmit();
+      }}
+    >
+      <form.Field
+        name="sourceUrl"
+        validators={{ onBlur: ({ value }) => sourceUrlMessage(value) }}
+      >
+        {(field) => (
+          <div className="field-stack">
+            <Label htmlFor={field.name}>Recipe link</Label>
+            <div className="input-row">
+              <Input
+                aria-describedby={`${field.name}-help ${field.name}-error`}
+                aria-invalid={field.state.meta.errors.length > 0}
+                autoComplete="url"
+                id={field.name}
+                name={field.name}
+                onBlur={field.handleBlur}
+                onChange={(event) => field.handleChange(event.target.value)}
+                placeholder="https://www.tiktok.com/@cook/video/…"
+                type="url"
+                value={field.state.value}
+              />
+              <form.Subscribe
+                selector={(state) => ({
+                  canSubmit: state.canSubmit,
+                  isSubmitting: state.isSubmitting,
+                })}
+              >
+                {({ canSubmit, isSubmitting }) => (
+                  <Button
+                    disabled={!canSubmit || isSubmitting || isPending}
+                    type="submit"
+                  >
+                    Import recipe
+                  </Button>
+                )}
+              </form.Subscribe>
+            </div>
+            <p className="helper" id={`${field.name}-help`}>
+              One link at a time.
+            </p>
+            <p className="field-error" id={`${field.name}-error`}>
+              {field.state.meta.errors.filter(Boolean).join(" ")}
+            </p>
+          </div>
+        )}
+      </form.Field>
+    </form>
+  );
+};
+
+const ProcessingStatus = ({
+  cancel,
+  isCancelling,
+  isCreating,
+  intent,
+  makeRequestId,
+}: {
+  readonly cancel: (
+    input: Parameters<RecipeImportOperations["cancel"]>[0]
+  ) => void;
+  readonly isCancelling: boolean;
+  readonly isCreating: boolean;
+  readonly intent: RecipeImportIntent | undefined;
+  readonly makeRequestId: () => string;
+}) => {
+  if (!isCreating && intent?.status !== "processing") {
+    return null;
+  }
+
+  return (
+    <section aria-labelledby="working-title" className="processing-document">
+      <p className="eyebrow">In progress</p>
+      <h2 id="working-title">Working on your recipe</h2>
+      <p className="status-line">
+        {intent?.status === "processing"
+          ? stageLabels[intent.processing.type]
+          : "Creating your import"}
+      </p>
+      {intent?.status === "processing" ? (
+        <Button
+          disabled={isCancelling}
+          onClick={() =>
+            cancel({
+              idempotencyKey: idempotencyKey(makeRequestId),
+              intentId: intent.id,
+              request: { expectedIntentVersion: intent.intentVersion },
+            })
+          }
+        >
+          Cancel import
+        </Button>
+      ) : null}
+      <Skeleton className="skeleton-line" />
+      <Skeleton className="skeleton-line short" />
+    </section>
+  );
+};
+
+const IntentOutcome = ({
+  intent,
+}: {
+  readonly intent: RecipeImportIntent | undefined;
+}) => {
+  if (intent?.status === "failed") {
+    return (
+      <Alert>
+        <h2>This link couldn’t be imported</h2>
+        <p>{intent.error.message}</p>
+      </Alert>
+    );
+  }
+  if (intent?.status === "cancelled") {
+    return (
+      <Alert>
+        <h2>Import cancelled</h2>
+        <p>This import was cancelled before a recipe was saved.</p>
+      </Alert>
+    );
+  }
+  if (intent?.status === "redirected") {
+    return (
+      <Alert>
+        <h2>An existing import is already in progress</h2>
+        <p>This request was redirected to the canonical import.</p>
+        <Link
+          from="/"
+          search={(previous) =>
+            recipeImportIntentRedirectSearch(previous, intent.redirect.intentId)
+          }
+          to="/"
+        >
+          View existing import
+        </Link>
+      </Alert>
+    );
+  }
+  return null;
+};
+
+const RecipeReview = ({
+  action,
+  answer,
+  confirm,
+  isAnswering,
+  isConfirming,
+  makeRequestId,
+}: {
+  readonly action: ActiveReviewAction;
+  readonly answer: (
+    input: Parameters<RecipeImportOperations["answerAction"]>[0]
+  ) => void;
+  readonly confirm: (
+    input: Parameters<RecipeImportOperations["confirmAction"]>[0]
+  ) => void;
+  readonly isAnswering: boolean;
+  readonly isConfirming: boolean;
+  readonly makeRequestId: () => string;
+}) => (
+  <article className="review-document" aria-labelledby="review-title">
+    <div className="review-heading">
+      <div>
+        <p className="eyebrow">Ready for your confirmation</p>
+        <h2 id="review-title">Review recipe</h2>
+      </div>
+      <Badge>Version {action.actionVersion}</Badge>
+    </div>
+    <h3 className="recipe-name">
+      {action.review.recipe.name ?? "Recipe ready to confirm"}
+    </h3>
+    {action.review.recipe.ingredientLines === null ? null : (
+      <section aria-labelledby="ingredients-title">
+        <h3 id="ingredients-title">Ingredients</h3>
+        <ul>
+          {action.review.recipe.ingredientLines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      </section>
+    )}
+    {action.review.recipe.instructions === null ? null : (
+      <section aria-labelledby="method-title">
+        <h3 id="method-title">Method</h3>
+        <ol>
+          {action.review.recipe.instructions.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      </section>
+    )}
+    {action.review.editableFields.includes("name") ? (
+      <NameAnswerForm
+        action={action}
+        isPending={isAnswering}
+        key={`${action.id}:${action.actionVersion}`}
+        makeRequestId={makeRequestId}
+        submit={answer}
+      />
+    ) : null}
+    {action.review.editableFields.includes("tags") ? (
+      <TagsAnswerForm
+        action={action}
+        isPending={isAnswering}
+        key={`${action.id}:${action.actionVersion}:tags`}
+        makeRequestId={makeRequestId}
+        submit={answer}
+      />
+    ) : null}
+    <div className="approve-bar">
+      <p>Confirm this recipe to save it.</p>
+      <Button
+        disabled={isConfirming}
+        onClick={() =>
+          confirm({
+            actionId: action.id,
+            idempotencyKey: idempotencyKey(makeRequestId),
+            intentId: action.intentId,
+            request: { expectedActionVersion: action.actionVersion },
+          })
+        }
+      >
+        Confirm recipe
+      </Button>
+    </div>
+  </article>
+);
+
+const SavedRecipeStatus = ({
+  hasRecipeError,
+  intent,
+  recipe,
+}: {
+  readonly hasRecipeError: boolean;
+  readonly intent: RecipeImportIntent | undefined;
+  readonly recipe: Recipe | undefined;
+}) => {
+  if (intent?.status === "succeeded" && recipe === undefined) {
+    return hasRecipeError ? null : (
+      <section aria-label="Loading saved recipe">
+        <Skeleton className="skeleton-title" />
+        <Skeleton className="skeleton-line" />
+      </section>
+    );
+  }
+  if (recipe === undefined) {
+    return null;
+  }
+  return (
+    <section className="success-document" aria-labelledby="success-title">
+      <p className="eyebrow success">Complete</p>
+      <h2 id="success-title">Recipe saved</h2>
+      <p>Added to your recipe collection.</p>
+      <div className="saved-entry">
+        <span>{recipe.recipe.name ?? "Recipe"}</span>
+        <Badge>Saved</Badge>
+      </div>
+    </section>
+  );
+};
+
+const RecipeImportFlow = ({
+  action,
+  answer,
+  cancel,
+  confirm,
+  hasActionError,
+  hasRecipeError,
+  hasRequestFailure,
+  intent,
+  isAnswering,
+  isCancelling,
+  isConfirming,
+  isCreating,
+  makeRequestId,
+  recipe,
+}: {
+  readonly action: RecipeImportAction | undefined;
+  readonly answer: (
+    input: Parameters<RecipeImportOperations["answerAction"]>[0]
+  ) => void;
+  readonly cancel: (
+    input: Parameters<RecipeImportOperations["cancel"]>[0]
+  ) => void;
+  readonly confirm: (
+    input: Parameters<RecipeImportOperations["confirmAction"]>[0]
+  ) => void;
+  readonly hasActionError: boolean;
+  readonly hasRecipeError: boolean;
+  readonly hasRequestFailure: boolean;
+  readonly intent: RecipeImportIntent | undefined;
+  readonly isAnswering: boolean;
+  readonly isCancelling: boolean;
+  readonly isConfirming: boolean;
+  readonly isCreating: boolean;
+  readonly makeRequestId: () => string;
+  readonly recipe: Recipe | undefined;
+}) => {
+  const awaitsAction = intent?.status === "requires_action";
+  return (
+    <div aria-live="polite" className="flow-region">
+      <ProcessingStatus
+        cancel={cancel}
+        intent={intent}
+        isCancelling={isCancelling}
+        isCreating={isCreating}
+        makeRequestId={makeRequestId}
+      />
+      {hasRequestFailure ? (
+        <Alert>
+          <h2>This import couldn’t be completed</h2>
+          <p>Please try again later.</p>
+        </Alert>
+      ) : null}
+      <IntentOutcome intent={intent} />
+      {awaitsAction && action === undefined && !hasActionError ? (
+        <section aria-label="Loading recipe review">
+          <Skeleton className="skeleton-title" />
+          <Skeleton className="skeleton-line" />
+        </section>
+      ) : null}
+      {action?.status === "active" ? (
+        <RecipeReview
+          action={action}
+          answer={answer}
+          confirm={confirm}
+          isAnswering={isAnswering}
+          isConfirming={isConfirming}
+          makeRequestId={makeRequestId}
+        />
+      ) : null}
+      <SavedRecipeStatus
+        hasRecipeError={hasRecipeError}
+        intent={intent}
+        recipe={recipe}
+      />
+    </div>
+  );
+};
+
 export const RecipeImportPage = ({
   householdDomainStatus,
   householdId,
@@ -487,17 +850,6 @@ export const RecipeImportPage = ({
     retry: false,
   });
 
-  const form = useForm({
-    defaultValues: { sourceUrl: "" },
-    onSubmit: ({ value }) => {
-      const sourceUrl = Schema.decodeUnknownSync(SourceUrl)(value.sourceUrl);
-      createMutation.mutate({
-        idempotencyKey: idempotencyKey(makeRequestId),
-        request: { source: { kind: "tiktok", url: sourceUrl } },
-      });
-    },
-  });
-
   const hasRequestFailure =
     session.active &&
     (createMutation.isError ||
@@ -507,10 +859,6 @@ export const RecipeImportPage = ({
       confirmMutation.isError ||
       cancelMutation.isError ||
       recipeQuery.isError);
-  const isProcessing = intent?.status === "processing";
-  const isCancelled = intent?.status === "cancelled";
-  const isFailed = intent?.status === "failed";
-  const isRedirected = intent?.status === "redirected";
   const action = actionQuery.data;
   const recipe = recipeQuery.data;
 
@@ -538,250 +886,34 @@ export const RecipeImportPage = ({
             </p>
           </div>
 
-          <form
-            className="import-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void form.handleSubmit();
-            }}
-          >
-            <form.Field
-              name="sourceUrl"
-              validators={{ onBlur: ({ value }) => sourceUrlMessage(value) }}
-            >
-              {(field) => (
-                <div className="field-stack">
-                  <Label htmlFor={field.name}>Recipe link</Label>
-                  <div className="input-row">
-                    <Input
-                      aria-describedby={`${field.name}-help ${field.name}-error`}
-                      aria-invalid={field.state.meta.errors.length > 0}
-                      autoComplete="url"
-                      id={field.name}
-                      name={field.name}
-                      onBlur={field.handleBlur}
-                      onChange={(event) =>
-                        field.handleChange(event.target.value)
-                      }
-                      placeholder="https://www.tiktok.com/@cook/video/…"
-                      type="url"
-                      value={field.state.value}
-                    />
-                    <form.Subscribe
-                      selector={(state) => ({
-                        canSubmit: state.canSubmit,
-                        isSubmitting: state.isSubmitting,
-                      })}
-                    >
-                      {({ canSubmit, isSubmitting }) => (
-                        <Button
-                          disabled={
-                            !canSubmit ||
-                            isSubmitting ||
-                            createMutation.isPending
-                          }
-                          type="submit"
-                        >
-                          Import recipe
-                        </Button>
-                      )}
-                    </form.Subscribe>
-                  </div>
-                  <p className="helper" id={`${field.name}-help`}>
-                    One link at a time.
-                  </p>
-                  <p className="field-error" id={`${field.name}-error`}>
-                    {field.state.meta.errors.filter(Boolean).join(" ")}
-                  </p>
-                </div>
-              )}
-            </form.Field>
-          </form>
+          <ImportRecipeForm
+            isPending={createMutation.isPending}
+            submit={(sourceUrl) =>
+              createMutation.mutate({
+                idempotencyKey: idempotencyKey(makeRequestId),
+                request: { source: { kind: "tiktok", url: sourceUrl } },
+              })
+            }
+          />
 
           <Separator />
 
-          <div aria-live="polite" className="flow-region">
-            {(createMutation.isPending || isProcessing) && (
-              <section
-                aria-labelledby="working-title"
-                className="processing-document"
-              >
-                <p className="eyebrow">In progress</p>
-                <h2 id="working-title">Working on your recipe</h2>
-                <p className="status-line">
-                  {intent?.status === "processing"
-                    ? stageLabels[intent.processing.type]
-                    : "Creating your import"}
-                </p>
-                {intent?.status === "processing" && (
-                  <Button
-                    disabled={cancelMutation.isPending}
-                    onClick={() =>
-                      cancelMutation.mutate({
-                        idempotencyKey: idempotencyKey(makeRequestId),
-                        intentId: intent.id,
-                        request: {
-                          expectedIntentVersion: intent.intentVersion,
-                        },
-                      })
-                    }
-                  >
-                    Cancel import
-                  </Button>
-                )}
-                <Skeleton className="skeleton-line" />
-                <Skeleton className="skeleton-line short" />
-              </section>
-            )}
-
-            {hasRequestFailure && (
-              <Alert>
-                <h2>This import couldn’t be completed</h2>
-                <p>Please try again later.</p>
-              </Alert>
-            )}
-
-            {isFailed && (
-              <Alert>
-                <h2>This link couldn’t be imported</h2>
-                <p>{intent.error.message}</p>
-              </Alert>
-            )}
-
-            {isCancelled && (
-              <Alert>
-                <h2>Import cancelled</h2>
-                <p>This import was cancelled before a recipe was saved.</p>
-              </Alert>
-            )}
-
-            {isRedirected && (
-              <Alert>
-                <h2>An existing import is already in progress</h2>
-                <p>This request was redirected to the canonical import.</p>
-                <Link
-                  from="/"
-                  search={(previous) =>
-                    recipeImportIntentRedirectSearch(
-                      previous,
-                      intent.redirect.intentId
-                    )
-                  }
-                  to="/"
-                >
-                  View existing import
-                </Link>
-              </Alert>
-            )}
-
-            {actionReference !== undefined &&
-              action === undefined &&
-              !actionQuery.isError && (
-                <section aria-label="Loading recipe review">
-                  <Skeleton className="skeleton-title" />
-                  <Skeleton className="skeleton-line" />
-                </section>
-              )}
-
-            {action?.status === "active" && (
-              <article
-                className="review-document"
-                aria-labelledby="review-title"
-              >
-                <div className="review-heading">
-                  <div>
-                    <p className="eyebrow">Ready for your confirmation</p>
-                    <h2 id="review-title">Review recipe</h2>
-                  </div>
-                  <Badge>Version {action.actionVersion}</Badge>
-                </div>
-                <h3 className="recipe-name">
-                  {action.review.recipe.name ?? "Recipe ready to confirm"}
-                </h3>
-                {action.review.recipe.ingredientLines !== null && (
-                  <section aria-labelledby="ingredients-title">
-                    <h3 id="ingredients-title">Ingredients</h3>
-                    <ul>
-                      {action.review.recipe.ingredientLines.map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
-                {action.review.recipe.instructions !== null && (
-                  <section aria-labelledby="method-title">
-                    <h3 id="method-title">Method</h3>
-                    <ol>
-                      {action.review.recipe.instructions.map((step) => (
-                        <li key={step}>{step}</li>
-                      ))}
-                    </ol>
-                  </section>
-                )}
-                {action.review.editableFields.includes("name") && (
-                  <NameAnswerForm
-                    action={action}
-                    isPending={answerMutation.isPending}
-                    key={`${action.id}:${action.actionVersion}`}
-                    makeRequestId={makeRequestId}
-                    submit={answerMutation.mutate}
-                  />
-                )}
-                {action.review.editableFields.includes("tags") && (
-                  <TagsAnswerForm
-                    action={action}
-                    isPending={answerMutation.isPending}
-                    key={`${action.id}:${action.actionVersion}:tags`}
-                    makeRequestId={makeRequestId}
-                    submit={answerMutation.mutate}
-                  />
-                )}
-                <div className="approve-bar">
-                  <p>Confirm this recipe to save it.</p>
-                  <Button
-                    disabled={confirmMutation.isPending}
-                    onClick={() =>
-                      confirmMutation.mutate({
-                        actionId: action.id,
-                        idempotencyKey: idempotencyKey(makeRequestId),
-                        intentId: action.intentId,
-                        request: {
-                          expectedActionVersion: action.actionVersion,
-                        },
-                      })
-                    }
-                  >
-                    Confirm recipe
-                  </Button>
-                </div>
-              </article>
-            )}
-
-            {intent?.status === "succeeded" &&
-              recipe === undefined &&
-              !recipeQuery.isError && (
-                <section aria-label="Loading saved recipe">
-                  <Skeleton className="skeleton-title" />
-                  <Skeleton className="skeleton-line" />
-                </section>
-              )}
-
-            {recipe !== undefined && (
-              <section
-                className="success-document"
-                aria-labelledby="success-title"
-              >
-                <p className="eyebrow success">Complete</p>
-                <h2 id="success-title">Recipe saved</h2>
-                <p>Added to your recipe collection.</p>
-                <div className="saved-entry">
-                  <span>{recipe.recipe.name ?? "Recipe"}</span>
-                  <Badge>Saved</Badge>
-                </div>
-              </section>
-            )}
-          </div>
+          <RecipeImportFlow
+            action={action}
+            answer={answerMutation.mutate}
+            cancel={cancelMutation.mutate}
+            confirm={confirmMutation.mutate}
+            hasActionError={actionQuery.isError}
+            hasRecipeError={recipeQuery.isError}
+            hasRequestFailure={hasRequestFailure}
+            intent={intent}
+            isAnswering={answerMutation.isPending}
+            isCancelling={cancelMutation.isPending}
+            isConfirming={confirmMutation.isPending}
+            isCreating={createMutation.isPending}
+            makeRequestId={makeRequestId}
+            recipe={recipe}
+          />
         </section>
       </div>
     </main>
