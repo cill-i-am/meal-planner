@@ -34,8 +34,12 @@ record.
 The three-layer evidence model, eight initial synthetic scenario families,
 versioned household evals, hybrid deterministic/programmatic/model/human judging,
 non-hard quality bands, hard release blockers, repository review requirements,
-and final MVP product-owner acceptance are settled in PDR-0006. Remaining
-choices are:
+and final MVP product-owner acceptance are settled in PDR-0006. The same record
+also requires a bounded `@vercel/agent-eval` custom-agent spike before either
+adopting that package or building a bespoke harness. Vercel Run SDK is not part
+of the current eval design.
+
+Remaining choices are:
 
 - What first agent model, model judge, and provider strategy meet quality, cost,
   privacy, and latency requirements against the accepted suite?
@@ -56,19 +60,20 @@ the quick compatible-fallback swap interaction are settled in PDR-0002.
 
 ## Before Stage 4 — Meal Content And Recipe Supply
 
-### Catalogue rights and beta coverage
+### Catalogue beta coverage
 
 Bulk candidate acquisition, the roughly `100–200` active-recipe starting target,
 operator-only publication, optional admin UI, private household banks, separate
-catalogue authority, immutable catalogue corrections, latest-active future use,
+catalogue authority, source URL and creator attribution retention, lightweight
+publication policy, immutable catalogue corrections, latest-active future use,
 and non-rebasing household forks are settled in PDR-0009 and ADR-0005.
+
 Remaining choices are:
 
-- What exact rights and attribution policy makes each source class publishable?
-- Which source evidence and attribution remain visible to households using a
-  catalogue recipe?
 - What exact minimum content coverage, rather than raw recipe count, is required
   before external invitations begin?
+- Which meal occasions, effort bands, dietary patterns, batch uses, and fallback
+  needs must be represented in that initial coverage matrix?
 
 ### Food concepts, units, and product identity
 
@@ -82,8 +87,7 @@ Remaining choices are:
 ### General web-page import
 
 - Which public sites and markup are supported initially?
-- What acquisition, robots, terms, rights, size, redirect, and SSRF policies
-  apply?
+- What acquisition, robots, size, redirect, and SSRF policies apply?
 - Is visible-page evidence required when structured data appears complete?
 - How are multi-page or interactive recipe cards handled?
 
