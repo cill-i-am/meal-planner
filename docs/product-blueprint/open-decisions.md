@@ -76,21 +76,16 @@ Remaining choices are:
 - Which meal occasions, effort bands, dietary patterns, batch uses, and fallback
   needs must be represented in that initial coverage matrix?
 
-### Food concept mapping and aggregation confidence
+### Food concepts, products, and aggregation
 
 Metric-first units, source-measure preservation, conservative conversion, and
 retention of ambiguous household measures are settled in PDR-0004.
 
-The application-owned food-concept registry, exact product classification,
-product attributes, household and retailer-scoped preferences, substitution
-rules, and the future separation of retailer listings are settled in PDR-0010
-and ADR-0006.
-
-The remaining choice is:
-
-- What evidence and confidence are required before an imported ingredient,
-  household-entered product, or retailer listing maps automatically to a food
-  concept and aggregates into shopping demand?
+The application-owned food-concept registry, reviewed global aliases,
+household-local mapping corrections, provenance-based mapping authority,
+fail-closed shopping aggregation, exact product classification, product
+attributes, household and retailer-scoped preferences, substitution rules, and
+the future separation of retailer listings are settled in PDR-0010 and ADR-0006.
 
 ### General web-page import
 
