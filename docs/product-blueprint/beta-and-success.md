@@ -51,6 +51,29 @@ scenario exercises shared meals, account linking, private interviews, dependant
 management, and exceptions. The domain must not require exactly that household
 shape.
 
+## Catalogue Readiness Evidence
+
+The shared catalogue is not ready merely because it reaches a recipe count. The
+roughly `100–200` active-item target is operating guidance; the beta gate is
+coverage and planning usefulness.
+
+Before external invitations, catalogue evidence should show a practical spread
+across:
+
+- breakfast, lunch, dinner, and snacks;
+- quick, hands-off, assemble-only, and involved meals;
+- portable school and office food;
+- batch cooking and planned leftovers;
+- omnivore, vegetarian, and fish-based options;
+- different main proteins, cuisines, equipment needs, and preparation windows;
+- low-burden options that can support person-specific fallbacks; and
+- enough variety to avoid accidental dependence on the same small set of meals.
+
+The accepted synthetic household suite must be able to receive complete,
+realistic weeks without catalogue shortage creating unresolved requirements or
+absurd repetition. Specialized needs may still use private household imports;
+the shared catalogue does not need to support every possible diet before beta.
+
 ## Primary Measures
 
 ### Time to approved plan
@@ -235,6 +258,7 @@ Before inviting external households, the product should demonstrate:
 - restart and replay safety for meaningful mutations;
 - green deterministic tests and accepted synthetic agent-eval evidence for the
   beta scenario set;
+- catalogue coverage evidence meeting the gate above, not merely a raw count;
 - complete representative vertical tests;
 - a privacy-safe operator view for support;
 - closed read-only completed interviews and audited participant-consented
