@@ -59,6 +59,7 @@ identifies a real contract that must be preserved.
 - [PDR-0012 — Planner feasibility, ranking, and deterministic selection](product/0012-planner-feasibility-ranking-and-deterministic-selection.md)
 - [PDR-0013 — Plan projection, rationale, and experience experimentation](product/0013-plan-projection-rationale-and-experience-experimentation.md)
 - [PDR-0014 — Shared shopping-list collaboration and offline use](product/0014-shared-shopping-list-collaboration-and-offline-use.md)
+- [PDR-0015 — Invite-only beta cohort and learning cadence](product/0015-invite-only-beta-cohort-and-learning-cadence.md)
 
 ## Decision Process
 
