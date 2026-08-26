@@ -172,10 +172,31 @@ A new version is created when a material change affects:
 An approved plan pins the exact version it used. Editing a household recipe must
 not rewrite an active or historical plan.
 
+### Catalogue corrections and household adoption
+
+A catalogue correction creates a new immutable version under the same stable
+catalogue recipe identity.
+
+- Existing approved and historical plans remain pinned to their original
+  versions.
+- A household that references or favourites an unforked catalogue recipe uses
+  the latest active version for future plan generation by default.
+- A household may preserve an older catalogue version by forking it into its
+  private bank.
+- Existing household forks never change automatically when the catalogue source
+  is corrected.
+- The product may notify a household that a source recipe has changed and show a
+  readable difference.
+- Selectively adopting a catalogue change is an explicit household edit that
+  creates a new immutable household version.
+- Retiring a catalogue version affects future selection policy, not historical
+  plans or household forks that already reference it.
+
 ## Forks And Household Adaptations
 
 Changing a shared catalogue recipe creates a private household fork with
-recorded ancestry. The catalogue entry remains unchanged.
+recorded ancestry to the exact source version. The catalogue entry remains
+unchanged.
 
 Ordinary changes to an existing household recipe create a new version of that
 recipe. An adult explicitly chooses **save as a separate recipe** for a
@@ -190,9 +211,8 @@ Examples include:
 - altering the method for available equipment; or
 - creating a person-compatible variation.
 
-Ancestry supports attribution and explanation without forcing later catalogue
-changes into household versions. How a household is notified of or adopts a
-later catalogue correction remains a separate product decision.
+Ancestry supports attribution, update notification, and selective adoption
+without forcing later catalogue changes into household versions.
 
 ## Original Batch And Reference Serving
 
@@ -388,6 +408,8 @@ The beta content system should prove:
 - a household can create assembled and packaged options;
 - a household can fork and version a recipe;
 - plans pin immutable content versions;
+- catalogue corrections affect future unforked use without rewriting plans or
+  household forks;
 - one cook event can create finished portions and explicit prepared components;
 - the planner can select across catalogue and household content; and
 - approved plans derive consolidated shopping demand.
