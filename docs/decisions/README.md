@@ -54,6 +54,7 @@ identifies a real contract that must be preserved.
 - [PDR-0007 — Household agent conversations and visibility](product/0007-household-agent-conversations-and-visibility.md)
 - [PDR-0008 — Temporary context, visitors, and planning suspensions](product/0008-temporary-context-visitors-and-planning-suspensions.md)
 - [PDR-0009 — Shared catalogue acquisition, curation, and publication](product/0009-shared-catalogue-acquisition-curation-and-publication.md)
+- [PDR-0010 — Food concepts, exact products, and retailer preferences](product/0010-food-concepts-exact-products-and-retailer-preferences.md)
 
 ## Decision Process
 
