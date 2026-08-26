@@ -120,6 +120,31 @@ because it differs from an early mock-up. A new or superseding product decision
 is required when a change alters plan semantics, privacy, authority, approval,
 coverage truth, or another accepted invariant.
 
+### Non-authoritative agent-interface references
+
+[Beautiful UI](https://www.beautifului.dev/) is a useful visual and interaction
+reference for AI-native interface primitives. Patterns worth testing against Meal
+Planner's flows include:
+
+- approval cards for confirming routines, fallbacks, profile changes, and plan
+  revisions;
+- recommendation cards for agent-proposed meals, routines, or repairs;
+- context cards for concise source facts and planning rationale;
+- task rows, loading states, and streaming states for imports and longer-running
+  agent work;
+- diff tables for plan, recipe, profile, and shopping changes; and
+- chat, prompt-bar, and navigation patterns for shared and private threads.
+
+This reference does not select a component dependency, visual system, licence
+strategy, or frontend contract. Patterns are adapted to Meal Planner's
+accessibility, responsive, privacy, and household-comprehension requirements and
+must earn their place through testing.
+
+A visible `thinking` or task-progress treatment may show bounded status, source
+retrieval, tool activity, decisions awaiting approval, and user-relevant action
+summaries. It must not expose private model chain-of-thought or imply that an
+animated trace is product authority.
+
 ### Experience evidence
 
 Projection experiments should be judged primarily by whether adults can:
@@ -145,6 +170,8 @@ counts are not success by themselves.
 - Shared meals, person alternatives, cook events, prepared outputs, rationale,
   and revision effects need stable identifiers even when their visual grouping
   changes.
+- External pattern libraries may accelerate prototyping without becoming product
+  authority or forcing a design-system dependency.
 - The beta should expect meaningful UI iteration rather than treating the first
   projection as finished.
 - Domain unions and aggregate shapes remain free to optimize correctness and
