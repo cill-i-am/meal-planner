@@ -20,6 +20,7 @@ compatibility or migration obligation unless the record explicitly names one.
 - [ADR-0004 — Household agent coordinator and isolated chat agents](0004-household-agent-coordinator-and-isolated-chat-agents.md)
 - [ADR-0005 — Separate shared catalogue from household recipe authority](0005-separate-shared-catalogue-from-household-recipe-authority.md)
 - [ADR-0006 — Separate food concepts, products, and retailer listings](0006-separate-food-concepts-products-and-retailer-listings.md)
+- [ADR-0007 — Route recipe sources through specialized adapters](0007-route-recipe-sources-through-specialized-adapters.md)
 
 Current-state architecture remains documented by the capability documents in
 the parent directory. An ADR may describe accepted future direction that is not
