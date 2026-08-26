@@ -129,6 +129,29 @@ better group shared meals, person exceptions, and rationale.
   reliable scaling or shopping until base yield, usable instructions, and
   material shopping quantities are confirmed.
 
+### Units and conversion
+
+- The MVP is metric-first wherever a measured value can be represented
+  truthfully.
+- Preferred normalized units include grams, kilograms, millilitres, litres,
+  Celsius, teaspoons, tablespoons, and item or package counts.
+- An imported or manually entered source value and unit are preserved alongside
+  any normalized representation.
+- The product converts a source measurement only when the conversion is
+  reliable for that ingredient and form.
+- A safe metric conversion may be displayed alongside an imperial or household
+  measure, but the source value is not discarded.
+- Ambiguous measures such as cups of chopped ingredients, handfuls, bunches,
+  large items, or loosely packed volumes remain explicit when conversion would
+  manufacture false precision.
+- A failed or uncertain conversion never blocks saving a draft, but it may block
+  normalized aggregation, scaling, or shopping arithmetic that depends on that
+  conversion.
+- Packaged and discrete products use item or pack counts where appropriate
+  rather than pretending the contents are freely divisible.
+- The system may add new reviewed conversion knowledge over time, but it never
+  silently rewrites the source evidence or historical recipe version.
+
 ### Shopping list
 
 - A draft plan shows a shopping preview.
@@ -156,6 +179,8 @@ better group shared meals, person exceptions, and rationale.
 - Planning can unify real-life meal coverage without forcing fake recipe data.
 - Cook-event output and prepared-stock state need stable identity and quantity
   semantics.
+- Quantity records need both source-preserving and normalized representations
+  rather than one destructive canonical conversion.
 - Shopping demand must be derived from the accepted plan model rather than a
   retailer product representation.
 - The MVP remains compatible with later pantry, nutrition, and retailer work
@@ -167,5 +192,6 @@ better group shared meals, person exceptions, and rationale.
 - food-safety certification and expiry automation;
 - calories, macros, and clinical portion targets;
 - retailer product matching and live availability;
-- basket mutation and checkout; and
+- basket mutation and checkout;
+- comprehensive conversion coverage for every informal household measure; and
 - automatic decomposition of recipes into reusable components.
