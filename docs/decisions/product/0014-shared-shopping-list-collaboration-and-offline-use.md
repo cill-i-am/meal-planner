@@ -87,6 +87,29 @@ an online connection:
 - Accepted plan-revision behaviour continues to preserve manual items and
   purchased or checked state according to PDR-0004.
 
+### Manual items and plan-revision lifecycle
+
+- An accepted plan revision recalculates which plan-derived items are still
+  required by the active plan.
+- A plan-derived item that is no longer required and is neither checked nor
+  marked purchased leaves the outstanding active list. Its lineage and removal
+  remain available in the plan-revision and shopping-list history.
+- A checked or purchased plan-derived item that is no longer required remains
+  visible for the lifetime of the current list in a completed or retained state
+  labelled, directionally, **bought, but no longer required**. It does not count
+  as outstanding demand and is not silently deleted merely because the plan
+  changed after shopping began.
+- A plan revision never removes a manually added household item.
+- When a new active shopping list is created, unchecked manual items carry
+  forward automatically so an unfinished household need is not lost.
+- Checked manual items are completed with the archived list and do not carry
+  into the next active list by default.
+- Manual food and non-food items remain distinguishable from plan-derived demand
+  and retain their manual provenance after carry-forward.
+- The MVP does not introduce a separate recurring-staples checklist. Repeated
+  carry-forward or repeated manual additions may justify that capability later,
+  but the first product keeps one simple manual-item lifecycle.
+
 ### Sharing boundary
 
 - The MVP shopping list is available only to authenticated authorized household
@@ -102,6 +125,11 @@ an online connection:
 - The household authority needs stable shopping-list and item identities,
   item-level mutation commands, idempotency, authoritative ordering, and
   optimistic concurrency for structural edits.
+- Items need explicit origin, requirement, completion, retention, and lineage
+  state so a plan revision can remove outstanding demand without erasing
+  something already bought or manually requested.
+- List archival needs deterministic carry-forward rules for unfinished manual
+  items.
 - Clients need a rebuildable local cache, a small durable pending-operation
   queue, synchronization status, and explicit failure handling.
 - Check and uncheck commands should express desired state rather than toggle
@@ -109,7 +137,7 @@ an online connection:
 - Real-time transport improves collaboration but does not become shopping-list
   authority.
 - The MVP delivers a dependable supermarket experience without implementing a
-  general CRDT or full offline-first plan editor.
+  general CRDT, full offline-first plan editor, or recurring-staples subsystem.
 
 ## Deferred
 
@@ -118,5 +146,6 @@ an online connection:
 - offline plan revisions or shopping-demand regeneration;
 - offline merge, split, quantity, and identity-resolution operations;
 - arbitrary multi-device collaborative document semantics;
-- household-configurable conflict policies; and
+- household-configurable conflict policies;
+- a dedicated recurring-staples checklist or recurrence engine; and
 - retailer basket synchronization or checkout.
