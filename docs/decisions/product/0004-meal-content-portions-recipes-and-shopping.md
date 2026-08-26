@@ -56,15 +56,42 @@ better group shared meals, person exceptions, and rationale.
 
 ### Portion model
 
-- Each person has a default serving factor relative to one recipe reference
+Portion defaults are relative to one recipe reference serving. They express
+ordinary household quantity expectations, not age, calorie, nutrition, or
+clinical categories.
+
+The initial MVP labels and seed factors are:
+
+- **half portion** — `0.5` reference serving;
+- **small portion** — `0.75` reference serving;
+- **standard portion** — `1.0` reference serving; and
+- **large portion** — `1.25` reference servings.
+
+- Ordinary users choose or discuss the human label rather than entering raw
+  factors in the normal flow.
+- Labels may describe any adult or dependant. The model does not assume that a
+  child always eats less than an adult or that every adult eats a standard
+  portion.
+- The agent asks natural comparative questions, such as whether somebody usually
+  eats about half, a smaller amount, roughly the same, or more than one reference
   serving.
-- The factor may differ by meal occasion.
-- A specific meal allocation may override the profile default.
-- Friendly labels such as child, small adult, standard adult, and large portion
-  may seed values, but the stored factor is not a calorie or clinical claim.
+- Each person has a default serving factor, optionally different by meal
+  occasion. A person may therefore have a small breakfast default and a large
+  dinner default.
+- A particular meal allocation may override the person's occasion default.
+- For a recipe or cook event, the planner adds the relevant factors to derive the
+  required serving-equivalents. Two standard portions, one small portion, and one
+  half portion therefore require `3.25` reference servings before practical
+  batch and scaling rules are applied.
+- The serving-factor model is not forced onto meal kinds with better native
+  quantity semantics. Packaged meals may use item or pack counts; buffet meals,
+  shared sides, and independently portioned components may use explicit
+  component quantities or allocations.
+- Feedback such as too much or not enough may cause the agent to propose a
+  changed label or factor, but no enduring person default changes without adult
+  confirmation.
 - Future verified nutrition may attach per reference serving or measured
   quantity without replacing the portion model.
-- Feedback such as too much or not enough may propose factor changes.
 
 ### Planned batch cooking and incidental surplus
 
@@ -179,6 +206,9 @@ better group shared meals, person exceptions, and rationale.
 - Planning can unify real-life meal coverage without forcing fake recipe data.
 - Cook-event output and prepared-stock state need stable identity and quantity
   semantics.
+- Portion profiles need numeric serving factors behind simple human labels,
+  per-occasion defaults, meal-level overrides, and quantity-specific allocation
+  paths for meals that are not naturally expressed as recipe servings.
 - Quantity records need both source-preserving and normalized representations
   rather than one destructive canonical conversion.
 - Shopping demand must be derived from the accepted plan model rather than a
