@@ -60,9 +60,6 @@ at a time.
   used by other sources.
 - It does not crawl the surrounding site merely because one recipe URL was
   submitted.
-- Multi-page, highly interactive, inaccessible, or unsupported sources either
-  produce a truthful partial draft where captured evidence supports one, or fail
-  with an explicit unsupported or unavailable result.
 - Missing quantities, yield, timings, or instructions are never invented to make
   an unsupported page appear successful.
 
@@ -84,9 +81,29 @@ at a time.
 - Model extraction operates only over captured admitted evidence and cannot turn
   absent source facts into confirmed recipe facts.
 
-The exact robots and publisher-policy behaviour, restricted-fetch limits, and
-support for unusual multi-page recipe experiences remain implementation
-questions to resolve before the web adapter ships.
+### MVP rendering boundary and future escalation
+
+- The MVP supports a self-contained recipe page that can be acquired and parsed
+  without driving a real browser through a site-specific interaction flow.
+- A recipe split across several pages, hidden behind a slideshow, dependent on
+  repeated client interaction, embedded in an inaccessible application, or
+  obscured by interstitials that prevent reliable capture remains unsupported or
+  produces only the truthful partial draft supported by acquired evidence.
+- The MVP does not run browser automation merely to close cookie banners, ads,
+  pop-ups, or other overlays.
+- This boundary is deliberate for implementation simplicity, predictable cost,
+  acquisition reliability, and security.
+- A later browser-rendered acquisition path, including a Cloudflare
+  Browser Rendering based adapter or adapter mode, may be introduced when real
+  failed-import evidence shows that the additional coverage justifies its
+  runtime cost and operational complexity.
+- Browser rendering would remain behind the recipe-web-page adapter boundary and
+  converge on the same evidence, review, and admission lifecycle. It would not
+  weaken the separate rule against logins, copied cookies, paywall bypass, or
+  third-party credential custody without a superseding decision.
+
+The exact robots and publisher-policy behaviour and restricted-fetch limits
+remain implementation questions to resolve before the web adapter ships.
 
 ### Common import lifecycle
 
@@ -132,6 +149,10 @@ submit URL
 - Structured markup is the primary web evidence without becoming an
   unquestioned authority when the visible recipe disagrees.
 - Field-level provenance and conflict state must survive into recipe review.
+- The MVP does not need a browser-automation dependency or browser-runtime cost
+  to support the ordinary recipe-page path.
+- A future browser-rendered implementation can improve acquisition coverage
+  without changing household import, review, or recipe authority semantics.
 - Import orchestration, review, recipe admission, and household privacy remain
   shared rather than duplicated per source.
 - Batch catalogue acquisition and single household imports exercise the same
@@ -145,5 +166,7 @@ submit URL
 - automatic import from named social-media saved collections;
 - support for every video, social, PDF, image, or document source;
 - the exact robots and publisher-policy implementation for generic web pages;
+- browser-rendered acquisition, pop-up dismissal, and site interaction until
+  observed failed-import coverage justifies them;
 - multi-page recipe navigation beyond a proven need; and
 - autonomous publication of any imported source into the shared catalogue.
