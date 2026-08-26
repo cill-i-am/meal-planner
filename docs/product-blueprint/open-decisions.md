@@ -12,7 +12,7 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted eight product decision records:
+The workshop has accepted nine product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
@@ -22,6 +22,7 @@ The workshop has accepted eight product decision records:
 - [AI evaluation and release evidence](../decisions/product/0006-ai-evaluation-and-release-evidence.md)
 - [Household agent conversations and visibility](../decisions/product/0007-household-agent-conversations-and-visibility.md)
 - [Temporary context, visitors, and planning suspensions](../decisions/product/0008-temporary-context-visitors-and-planning-suspensions.md)
+- [Shared catalogue acquisition, curation, and publication](../decisions/product/0009-shared-catalogue-acquisition-curation-and-publication.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
@@ -55,14 +56,22 @@ the quick compatible-fallback swap interaction are settled in PDR-0002.
 
 ## Before Stage 4 — Meal Content And Recipe Supply
 
-### Curated catalogue source and size
+### Catalogue rights and version adoption
 
-- Who authors or licenses the initial catalogue?
-- What rights and attribution are required?
-- What is the minimum useful catalogue for the beta cohort?
-- Who reviews recipe quality, scaling, effort, dietary metadata, and shopping
-  completeness?
-- How do catalogue corrections affect households that forked older versions?
+Bulk candidate acquisition, the roughly `100–200` active-recipe starting target,
+operator-only publication, optional admin UI, private household banks, and the
+separate catalogue authority are settled in PDR-0009 and ADR-0005. Remaining
+choices are:
+
+- What exact rights and attribution policy makes each source class publishable?
+- Which source evidence remains visible to households using a catalogue recipe?
+- How are material catalogue corrections communicated to households?
+- Do households that reference but have not forked a recipe use the latest
+  active version for future plans by default?
+- How may a household fork inspect and selectively adopt later catalogue
+  corrections without being rewritten automatically?
+- What exact minimum content coverage, rather than raw recipe count, is required
+  before external invitations begin?
 
 ### Food concepts, units, and product identity
 
@@ -135,7 +144,7 @@ The frontend projection must remain free to differ from internal domain unions.
 - Exact beta cohort size and recruitment criteria.
 - Internal readiness thresholds for time to approved plan and correction burden.
 - Support and incident-handling process for the invite-only cohort.
-- The minimum curated recipe set needed before invitations begin.
+- The exact catalogue coverage matrix required before invitations begin.
 
 ## Deliberately Deferred
 
