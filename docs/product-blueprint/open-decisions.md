@@ -12,7 +12,7 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted seven product decision records:
+The workshop has accepted eight product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
@@ -21,21 +21,21 @@ The workshop has accepted seven product decision records:
 - [MVP scope and deferrals](../decisions/product/0005-mvp-scope-and-deferrals.md)
 - [AI evaluation and release evidence](../decisions/product/0006-ai-evaluation-and-release-evidence.md)
 - [Household agent conversations and visibility](../decisions/product/0007-household-agent-conversations-and-visibility.md)
+- [Temporary context, visitors, and planning suspensions](../decisions/product/0008-temporary-context-visitors-and-planning-suspensions.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
 
 ## Before Stage 2 — AI Discovery
 
-### Evaluation thresholds and provider strategy
+### Model, judge, and calibration strategy
 
 The three-layer evidence model, eight initial synthetic scenario families,
 versioned household evals, hybrid deterministic/programmatic/model/human judging,
-hard release blockers, repository review requirements, and final MVP
-product-owner acceptance are settled in PDR-0006. Remaining choices are:
+non-hard quality bands, hard release blockers, repository review requirements,
+and final MVP product-owner acceptance are settled in PDR-0006. Remaining
+choices are:
 
-- What numeric or qualitative bands trigger review or block release for non-hard
-  quality dimensions?
 - What first agent model, model judge, and provider strategy meet quality, cost,
   privacy, and latency requirements against the accepted suite?
 - How large is the human calibration sample and how often is it rerun?
@@ -43,16 +43,9 @@ product-owner acceptance are settled in PDR-0006. Remaining choices are:
 
 The household-agent runtime, shared and private conversation model, authority
 split, and thin model-adapter boundary are settled in PDR-0007 and ADR-0004.
-Provider choice still follows product evaluation and does not define the domain.
+Provider choice follows product evaluation and does not define the domain.
 
 ## Before Stage 3 — Routines And Fallbacks
-
-### Temporary household context
-
-- How are visitors, temporary absences, school holidays, split custody, and
-  overnight shifts represented in the MVP?
-- Which are one-off planning exceptions versus enduring routine state?
-- Is manual entry sufficient before external calendar integration?
 
 ### Fallback repertoire limits
 
@@ -62,6 +55,10 @@ Provider choice still follows product evaluation and does not define the domain.
   integration?
 - When should the agent suggest adding a new fallback rather than leaving a
   flexible slot?
+
+Temporary absences, visitors, one-off weekly context, stable recurring patterns,
+and whole- or partial-household planning suspension are settled in PDR-0008.
+Routine-conflict precedence and optimistic concurrency are settled in PDR-0002.
 
 ## Before Stage 4 — Meal Content And Recipe Supply
 
