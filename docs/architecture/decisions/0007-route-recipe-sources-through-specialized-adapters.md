@@ -147,12 +147,11 @@ at minimum:
   recipe experiences return a truthful partial result or an unsupported result.
 - This restraint keeps the first adapter cheaper, more deterministic, easier to
   secure, and easier to operate.
-- Browser rendering is a possible later acquisition strategy behind the same
-  adapter boundary. A Cloudflare Browser Rendering implementation may be added
-  when measured failed-import coverage justifies its cost and complexity.
-- Introducing browser rendering does not create a new recipe lifecycle and does
-  not by itself authorize logins, copied cookies, paywall bypass, or credential
-  custody.
+- Browser automation is a possible later acquisition strategy behind the same
+  adapter boundary. A Cloudflare Browser Run implementation may be added when
+  measured failed-import coverage justifies its cost and complexity.
+- Introducing Browser Run does not create a new recipe lifecycle and does not by
+  itself authorize logins, copied cookies, paywall bypass, or credential custody.
 
 The exact robots and publisher-policy behaviour remains a delivery decision
 before this adapter ships.
@@ -206,8 +205,8 @@ concrete source demonstrates the need for a specialized boundary.
 - Review contracts need field-level provenance and conflict representation.
 - The MVP avoids browser-runtime cost, nondeterministic site interaction, and a
   broader browser security surface.
-- Browser rendering can later improve coverage without changing the router,
-  common import lifecycle, or household recipe authority.
+- Browser Run can later improve coverage without changing the router, common
+  import lifecycle, or household recipe authority.
 - Common workflow, review, and household admission semantics remain shared.
 - The source router stays thin and deterministic; model behaviour begins only
   after the system has captured admitted evidence.
