@@ -136,6 +136,24 @@ at minimum:
 - detected evidence conflicts; and
 - acquisition and parsing limitations.
 
+### MVP fetch and rendering mode
+
+- The initial web-page adapter uses bounded HTTP acquisition and parsing rather
+  than a general browser-automation runtime.
+- It does not execute site-specific interaction sequences to close pop-ups,
+  dismiss ads, traverse slideshows, reveal content, or navigate a multi-page
+  recipe.
+- Client-rendered, embedded-app, highly interactive, or otherwise inaccessible
+  recipe experiences return a truthful partial result or an unsupported result.
+- This restraint keeps the first adapter cheaper, more deterministic, easier to
+  secure, and easier to operate.
+- Browser rendering is a possible later acquisition strategy behind the same
+  adapter boundary. A Cloudflare Browser Rendering implementation may be added
+  when measured failed-import coverage justifies its cost and complexity.
+- Introducing browser rendering does not create a new recipe lifecycle and does
+  not by itself authorize logins, copied cookies, paywall bypass, or credential
+  custody.
+
 The exact robots and publisher-policy behaviour remains a delivery decision
 before this adapter ships.
 
@@ -186,6 +204,10 @@ concrete source demonstrates the need for a specialized boundary.
 - Structured markup is primary evidence, while visible-card evidence provides
   corroboration and conflict detection where available.
 - Review contracts need field-level provenance and conflict representation.
+- The MVP avoids browser-runtime cost, nondeterministic site interaction, and a
+  broader browser security surface.
+- Browser rendering can later improve coverage without changing the router,
+  common import lifecycle, or household recipe authority.
 - Common workflow, review, and household admission semantics remain shared.
 - The source router stays thin and deterministic; model behaviour begins only
   after the system has captured admitted evidence.
@@ -226,6 +248,12 @@ visible and reviewable.
 Rejected because complete structured recipe evidence can remain useful even when
 client-rendered or otherwise difficult visible content cannot be captured
 reliably.
+
+### Add browser automation to the MVP web adapter
+
+Rejected because it adds cost, operational complexity, nondeterministic
+site-specific behaviour, and a broader security surface before ordinary HTTP and
+structured recipe acquisition have been proven insufficient.
 
 ### Build a separate workflow and review model per source
 
