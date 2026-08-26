@@ -663,7 +663,6 @@ export const makeD1ProviderAccountingRepository = (
       return dispatch;
     }),
   settleConservative: (input: ProviderAccountingConservativeSettlement) =>
-    // eslint-disable-next-line complexity -- This generator validates one atomic multi-table D1 transition.
     Effect.gen(function* settleConservative() {
       if (
         input.providerStageId !== "recipe-extraction" ||

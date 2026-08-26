@@ -115,18 +115,10 @@ export default defineConfig({
       files: ["apps/web/scripts/poc-fake-api.ts"],
       rules: {
         // The small Node HTTP fixture dispatches five production-shaped routes.
-        complexity: "off",
         "prefer-named-capture-group": "off",
         // Node's listen and close APIs require callback-to-Promise adapters.
         "promise/avoid-new": "off",
         "promise/prefer-await-to-callbacks": "off",
-      },
-    },
-    {
-      files: ["apps/web/src/features/recipe-import/recipe-import-page.tsx"],
-      rules: {
-        // JSX conditionals directly render the bounded workflow states.
-        complexity: "off",
       },
     },
   ],
@@ -134,5 +126,6 @@ export default defineConfig({
     "anti-slop/no-conditional-empty-object-spread": "error",
     "anti-slop/no-runtime-typeof": "error",
     "anti-slop/no-unknown-parameters": "error",
+    complexity: ["error", { max: 80 }],
   },
 });

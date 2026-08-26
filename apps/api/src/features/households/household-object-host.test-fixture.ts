@@ -655,7 +655,6 @@ const respond = <A, E>(effect: Effect.Effect<A, E>) =>
   );
 
 export default {
-  // eslint-disable-next-line complexity -- Closed test routing enumerates the complete object RPC surface.
   fetch: async (request: Request, env: HouseholdTestEnv) => {
     const command = await Schema.decodeUnknownPromise(HouseholdTestCommand)(
       await request.json()
