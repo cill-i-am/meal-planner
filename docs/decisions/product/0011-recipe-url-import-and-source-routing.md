@@ -93,11 +93,11 @@ at a time.
   pop-ups, or other overlays.
 - This boundary is deliberate for implementation simplicity, predictable cost,
   acquisition reliability, and security.
-- A later browser-rendered acquisition path, including a Cloudflare
-  Browser Rendering based adapter or adapter mode, may be introduced when real
-  failed-import evidence shows that the additional coverage justifies its
-  runtime cost and operational complexity.
-- Browser rendering would remain behind the recipe-web-page adapter boundary and
+- A later browser-backed acquisition path, including a Cloudflare Browser Run
+  adapter or adapter mode, may be introduced when real failed-import evidence
+  shows that the additional coverage justifies its runtime cost and operational
+  complexity.
+- Browser Run would remain behind the recipe-web-page adapter boundary and
   converge on the same evidence, review, and admission lifecycle. It would not
   weaken the separate rule against logins, copied cookies, paywall bypass, or
   third-party credential custody without a superseding decision.
@@ -151,8 +151,8 @@ submit URL
 - Field-level provenance and conflict state must survive into recipe review.
 - The MVP does not need a browser-automation dependency or browser-runtime cost
   to support the ordinary recipe-page path.
-- A future browser-rendered implementation can improve acquisition coverage
-  without changing household import, review, or recipe authority semantics.
+- A future Browser Run implementation can improve acquisition coverage without
+  changing household import, review, or recipe authority semantics.
 - Import orchestration, review, recipe admission, and household privacy remain
   shared rather than duplicated per source.
 - Batch catalogue acquisition and single household imports exercise the same
@@ -166,7 +166,7 @@ submit URL
 - automatic import from named social-media saved collections;
 - support for every video, social, PDF, image, or document source;
 - the exact robots and publisher-policy implementation for generic web pages;
-- browser-rendered acquisition, pop-up dismissal, and site interaction until
-  observed failed-import coverage justifies them;
+- Browser Run acquisition, pop-up dismissal, and site interaction until observed
+  failed-import coverage justifies them;
 - multi-page recipe navigation beyond a proven need; and
 - autonomous publication of any imported source into the shared catalogue.
