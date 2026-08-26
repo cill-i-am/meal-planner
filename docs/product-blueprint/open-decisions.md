@@ -107,13 +107,10 @@ flexible-slot preference over a poor recommendation, product-default priorities,
 traceable rationale, and stable deterministic tie-breaking are settled in
 PDR-0012 and ADR-0008.
 
-### Portion defaults and complex serving
-
-- Which initial numeric factors seed child, small-adult, standard-adult, and
-  large-portion labels?
-- How are shared sides, buffet meals, fractional packaged units, and dishes with
-  several independently portioned components represented?
-- Which weekly feedback is enough to propose a changed serving factor?
+MVP portion labels and factors, per-person and per-occasion defaults,
+meal-specific overrides, serving-equivalent summation, explicit item or
+component quantities for packaged, buffet, shared-side, and component meals, and
+confirmation-only learning from quantity feedback are settled in PDR-0004.
 
 ### Plan projection and rationale
 
