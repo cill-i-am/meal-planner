@@ -56,20 +56,17 @@ the quick compatible-fallback swap interaction are settled in PDR-0002.
 
 ## Before Stage 4 — Meal Content And Recipe Supply
 
-### Catalogue rights and version adoption
+### Catalogue rights and beta coverage
 
 Bulk candidate acquisition, the roughly `100–200` active-recipe starting target,
-operator-only publication, optional admin UI, private household banks, and the
-separate catalogue authority are settled in PDR-0009 and ADR-0005. Remaining
-choices are:
+operator-only publication, optional admin UI, private household banks, separate
+catalogue authority, immutable catalogue corrections, latest-active future use,
+and non-rebasing household forks are settled in PDR-0009 and ADR-0005.
+Remaining choices are:
 
 - What exact rights and attribution policy makes each source class publishable?
-- Which source evidence remains visible to households using a catalogue recipe?
-- How are material catalogue corrections communicated to households?
-- Do households that reference but have not forked a recipe use the latest
-  active version for future plans by default?
-- How may a household fork inspect and selectively adopt later catalogue
-  corrections without being rewritten automatically?
+- Which source evidence and attribution remain visible to households using a
+  catalogue recipe?
 - What exact minimum content coverage, rather than raw recipe count, is required
   before external invitations begin?
 
