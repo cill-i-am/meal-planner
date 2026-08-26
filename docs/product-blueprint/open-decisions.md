@@ -36,7 +36,7 @@ record.
 
 ## Before Stage 2 — AI Discovery
 
-### Model, judge, and calibration strategy
+### Model and production experimentation strategy
 
 The three-layer evidence model, eight initial synthetic scenario families,
 versioned household evals, hybrid deterministic/programmatic/model/human judging,
@@ -46,11 +46,18 @@ also requires a bounded `@vercel/agent-eval` custom-agent spike before either
 adopting that package or building a bespoke harness. Vercel Run SDK is not part
 of the current eval design.
 
+Human calibration is also settled: the product owner scores the complete initial
+eight-scenario baseline; a second human independently scores one straightforward
+and one complex scenario before external beta use; ordinary releases include all
+failures, low scores, regressions, and two rotating green scenarios; judge or
+rubric changes trigger a complete human re-review; and the full suite is reviewed
+before cohort expansion. Material human-versus-judge disagreement blocks reliance
+on the judge until recalibrated.
+
 Remaining choices are:
 
 - What first agent model, model judge, and provider strategy meet quality, cost,
   privacy, and latency requirements against the accepted suite?
-- How large is the human calibration sample and how often is it rerun?
 - Is production model experimentation needed during the invite-only beta?
 
 The household-agent runtime, shared and private conversation model, authority
