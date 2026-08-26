@@ -66,7 +66,7 @@ quality over raw volume.
 A catalogue recipe should have:
 
 - stable recipe and immutable version identity;
-- clear source, rights, and attribution provenance;
+- retained source URL and available creator or publisher attribution;
 - reviewed ingredients and instructions;
 - confirmed base yield;
 - enough structured quantity data to support shopping;
@@ -111,13 +111,13 @@ can use the same curation and publication boundary.
 Before publication, the curator reviews the facts that make a recipe useful for
 planning, including where applicable:
 
-- source and attribution provenance;
-- the rights or permission basis required by the accepted publication policy;
+- source URL and available creator or publisher attribution;
 - ingredients, quantities, instructions, and base yield;
 - scaling behaviour and unresolved quantities;
 - effort, equipment, preparation windows, portability, and leftover use;
 - suitability and dietary metadata without unsupported health claims;
-- shopping-demand completeness; and
+- shopping-demand completeness;
+- compliance with the current documented publication policy; and
 - whether the recipe adds useful coverage rather than duplicating the active
   catalogue.
 
@@ -129,10 +129,20 @@ A small authenticated admin UI may support candidate review and publication.
 The UI is a client of typed, audited catalogue commands; it is not itself the
 authority.
 
+The shared catalogue publishes Meal Planner's normalized, curator-reviewed
+recipe record. It does not republish the creator's original video, audio,
+screenshots, photographs, transcript, caption, or copied prose as catalogue
+content. The MVP retains source and attribution metadata but does not introduce
+per-recipe licence workflows, creator-outreach queues, or a detailed rights
+taxonomy.
+
+Before the shared catalogue opens to the external beta, the overall publication
+policy receives one focused review. The catalogue also supports explicit
+retirement or takedown without rewriting historical plans.
+
 See
 [PDR-0009](../decisions/product/0009-shared-catalogue-acquisition-curation-and-publication.md)
-for the accepted governance policy. The exact rights and attribution policy for
-each source class remains a separate decision before external beta publication.
+for the accepted governance policy.
 
 ## Private Household Content
 
@@ -151,8 +161,8 @@ Household content is private by default. Importing, reviewing, approving, or
 adapting content does not contribute it to the shared catalogue.
 
 Ordinary household adults cannot publish globally in the MVP. A future
-contribution flow would require explicit submission, provenance and rights
-checks, curation, and a new catalogue identity. It is outside the beta.
+contribution flow would require explicit submission, provenance, curation, and a
+new catalogue identity. It is outside the beta.
 
 ## Recipe And Version Identity
 
@@ -345,7 +355,8 @@ review flow.
 
 The adapter may acquire public video or carousel evidence, transcribe speech,
 extract visible information, and produce a reviewable draft. Unsupported,
-private, or unavailable media fails truthfully.
+private, or unavailable media fails truthfully. Source URL and reliably
+available creator attribution remain attached to the resulting candidate.
 
 ### Recipe web page
 
@@ -359,7 +370,7 @@ A future adapter should:
 5. expose unresolved or conflicting fields; and
 6. enter the same review and version-publication flow.
 
-Supported sites, rights, robots, and acquisition policy remain open decisions.
+Supported sites, robots, and acquisition policy remain open decisions.
 
 ### Manual content
 
@@ -376,7 +387,7 @@ facts while preserving the distinction between extracted and corrected values.
 Only admitted reviewed recipe versions may enter meal-plan generation.
 Household approval publishes only to that household's private bank. Shared
 catalogue publication is a separate operator-only command with its own audit,
-rights, curation, and lifecycle policy.
+curation, attribution, and lifecycle policy.
 
 ## Search And Discovery
 
@@ -401,6 +412,7 @@ become recipe authority or replace structured hard-constraint filtering.
 The beta content system should prove:
 
 - an operator can bulk-ingest source links into private catalogue candidates;
+- source URL and available creator attribution survive candidate processing;
 - only explicitly reviewed and published candidates become shared catalogue
   versions;
 - roughly `100–200` reliable shared options provide useful planning coverage;
@@ -415,5 +427,6 @@ The beta content system should prove:
 - approved plans derive consolidated shopping demand.
 
 A public marketplace, ordinary-household catalogue publication, retailer product
-mapping, autonomous catalogue publication, logged-in arbitrary source
-acquisition, and continuous pantry are out of scope.
+mapping, autonomous catalogue publication, original third-party media
+republication, logged-in arbitrary source acquisition, and continuous pantry are
+out of scope.
