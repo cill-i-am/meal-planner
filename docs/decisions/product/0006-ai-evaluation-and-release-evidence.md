@@ -194,6 +194,38 @@ Model-judge scores are periodically compared with human review on a stable
 calibration sample. Material disagreement, drift, or systematic leniency blocks
 reliance on the judge until the scoring policy is corrected and revalidated.
 
+### Human calibration cadence
+
+Human review is deliberately bounded but remains a release-control mechanism,
+not a one-time setup exercise.
+
+- The first accepted baseline is created by the Meal Planner product owner
+  manually scoring the canonical fixture from all eight scenario families across
+  every critical soft dimension. The scored result and brief rationale are
+  versioned with the scenario and rubric set.
+- Before the first external beta household is invited, a second human
+  independently scores at least two representative scenarios: one relatively
+  straightforward scenario and one complex scenario involving dependencies,
+  exceptions, or repair. Material differences are reviewed and the rubric,
+  baseline, or judge policy is clarified before external use.
+- For an ordinary candidate model, prompt, tool, or orchestration change, human
+  review covers every hard failure, every critical soft score of `3/5` or lower,
+  every meaningful regression or requested override, and two rotating green
+  scenarios as a calibration sample.
+- A change to the judge model, judge prompt, rubric, prohibited-outcome policy,
+  or scoring rules triggers a new human review of the complete eight-scenario
+  suite before the changed judge becomes release evidence.
+- The complete suite is also human-reviewed before expansion to a new beta
+  cohort stage.
+- Human and model-judge scores, reviewer identity or role, calibration-set
+  version, disagreements, and resolutions are recorded with the release
+  evidence without including private household data.
+- Material human-versus-judge disagreement, unexplained judge drift, or
+  systematic leniency blocks reliance on the model judge for that release until
+  it is recalibrated and revalidated.
+- Human review cannot waive a deterministic hard blocker or prohibited scenario
+  outcome.
+
 ### Non-hard quality bands
 
 The first eval implementation uses a five-point rubric for each soft quality
@@ -284,6 +316,11 @@ need.
   fixed model-judge path, and a human-calibration workflow.
 - The initial baseline needs a human-reviewed `1–5` score for every critical
   soft dimension and scenario.
+- Human calibration remains bounded for ordinary green releases but expands to
+  the complete suite when the judge, rubric, scoring policy, or beta cohort stage
+  changes.
+- A second reviewer provides an independent calibration check before external
+  beta use.
 - `@vercel/agent-eval` is evaluated through one bounded representative spike
   before a custom harness is built or the package is adopted.
 - Domain correctness and agent quality remain separable: an agent cannot obtain
@@ -301,6 +338,5 @@ need.
 - exact fixture data and secondary variations inside each accepted scenario
   family;
 - the first agent model, model judge, and provider selections;
-- the size and cadence of the human calibration sample;
 - final eval-harness adoption until the bounded spike is complete; and
 - production experimentation or multi-armed model routing.
