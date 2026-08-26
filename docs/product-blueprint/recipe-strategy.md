@@ -315,8 +315,45 @@ interface RecipeIngredient {
 The internal model preserves unresolved quantity, unit, food-concept mapping,
 and scaling uncertainty rather than manufacturing precision.
 
-Food taxonomy, unit systems, and exact-product identity before retailer
-integration remain open decisions.
+## Units And Measurement
+
+Meal Planner is metric-first wherever a quantity can be represented truthfully.
+Preferred normalized units include:
+
+- grams and kilograms;
+- millilitres and litres;
+- Celsius;
+- teaspoons and tablespoons; and
+- item, discrete-unit, or package counts.
+
+Every imported or manually entered measurement preserves its original value and
+unit. A normalized metric value may be stored and displayed alongside it when a
+reviewed conversion is reliable for the ingredient and its form.
+
+The product does not force conversion merely to make the database look tidy.
+Measures such as cups of a chopped ingredient, handfuls, bunches, large onions,
+loosely packed volume, and other context-sensitive household measures remain in
+their source form when converting them would invent precision.
+
+For example, `2 cups flour` may safely expose an approximate metric equivalent
+when the conversion is supported, while `1 cup chopped spinach` may remain
+unconverted until the ingredient form and conversion are reliable.
+
+Uncertain conversion has explicit product consequences:
+
+- the recipe may remain saved and reviewed;
+- the source line remains usable for display and cooking;
+- normalized scaling or aggregation that depends on the conversion remains
+  unresolved; and
+- the shopping list keeps uncertain demand separate rather than guessing.
+
+Packaged and discrete products use item or pack counts where appropriate rather
+than pretending their contents are freely divisible. New reviewed conversion
+knowledge may support future recipe versions without rewriting historical source
+values.
+
+Food taxonomy, shopping-aggregation confidence, and exact-product identity
+before retailer integration remain open decisions.
 
 ## Effort And Planning Metadata
 
@@ -417,6 +454,8 @@ The beta content system should prove:
   versions;
 - roughly `100–200` reliable shared options provide useful planning coverage;
 - household imports remain private and pass through truthful review;
+- source measurements survive normalization and reliable metric conversions
+  support scaling and shopping without fabricated precision;
 - a household can create assembled and packaged options;
 - a household can fork and version a recipe;
 - plans pin immutable content versions;
