@@ -47,18 +47,11 @@ Provider choice follows product evaluation and does not define the domain.
 
 ## Before Stage 3 — Routines And Fallbacks
 
-### Fallback repertoire limits
-
-- Does the MVP need a recommended maximum or merely good UI for person-specific
-  fallbacks?
-- How are temporarily unavailable exact products handled before retailer
-  integration?
-- When should the agent suggest adding a new fallback rather than leaving a
-  flexible slot?
-
 Temporary absences, visitors, one-off weekly context, stable recurring patterns,
 and whole- or partial-household planning suspension are settled in PDR-0008.
-Routine-conflict precedence and optimistic concurrency are settled in PDR-0002.
+Routine-conflict precedence, optimistic concurrency, fallback repertoire size,
+manual availability, exact-product substitution, agent-proposed fallbacks, and
+the quick compatible-fallback swap interaction are settled in PDR-0002.
 
 ## Before Stage 4 — Meal Content And Recipe Supply
 
