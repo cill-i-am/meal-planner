@@ -18,6 +18,7 @@ compatibility or migration obligation unless the record explicitly names one.
 - [ADR-0002 — Model plans through meal requirements and explicit coverage](0002-model-plans-through-requirements-and-coverage.md)
 - [ADR-0003 — Separate meal content, preparation, and prepared stock](0003-separate-meal-content-preparation-and-stock.md)
 - [ADR-0004 — Household agent coordinator and isolated chat agents](0004-household-agent-coordinator-and-isolated-chat-agents.md)
+- [ADR-0005 — Separate shared catalogue from household recipe authority](0005-separate-shared-catalogue-from-household-recipe-authority.md)
 
 Current-state architecture remains documented by the capability documents in
 the parent directory. An ADR may describe accepted future direction that is not
