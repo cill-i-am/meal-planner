@@ -58,6 +58,7 @@ identifies a real contract that must be preserved.
 - [PDR-0011 — Recipe URL import and source routing](product/0011-recipe-url-import-and-source-routing.md)
 - [PDR-0012 — Planner feasibility, ranking, and deterministic selection](product/0012-planner-feasibility-ranking-and-deterministic-selection.md)
 - [PDR-0013 — Plan projection, rationale, and experience experimentation](product/0013-plan-projection-rationale-and-experience-experimentation.md)
+- [PDR-0014 — Shared shopping-list collaboration and offline use](product/0014-shared-shopping-list-collaboration-and-offline-use.md)
 
 ## Decision Process
 
