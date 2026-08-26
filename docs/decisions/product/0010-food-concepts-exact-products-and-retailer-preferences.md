@@ -33,6 +33,37 @@ pack, quality, retailer, and substitution preferences.
 - External taxonomies may enrich or cross-reference the registry later, but do
   not become Meal Planner's domain authority.
 
+### Mapping, aliases, and aggregation confidence
+
+- A source ingredient maps automatically when its normalized wording matches a
+  reviewed alias or another deterministic mapping already admitted into the
+  relevant concept registry.
+- The original source wording remains attached to the recipe or shopping demand
+  even after a concept mapping is available.
+- A new model-inferred or similarity-based mapping is a visible proposal, not
+  authoritative identity. Model confidence alone cannot make it global or cause
+  shopping lines to merge.
+- Ambiguous ingredients remain unmapped and separate. The product prefers two
+  honest shopping lines over one confidently wrong aggregation.
+- Form and preparation matter. A mapping must not collapse materially different
+  concepts such as fresh tomatoes, chopped tomatoes, passata, and tomato purée.
+- A household adult may confirm or correct a mapping for that household. The
+  correction takes effect immediately for household recipes, planning, and
+  shopping demand and records actor, source, and audit history.
+- A household correction does not automatically become a global alias.
+- In the MVP, only Cillian may promote a reviewed correction or new alias into
+  the shared application registry used by all households.
+- Shopping demand aggregates automatically only when the concept mapping is
+  authoritative through a reviewed global alias, an explicitly curated mapping,
+  a household-confirmed mapping within that household, or a reviewed exact
+  product-to-concept classification.
+- Numeric confidence may be retained as evidence or telemetry, but authority is
+  determined by mapping provenance and confirmation state rather than an
+  arbitrary probability threshold.
+- Changes to the shared alias registry affect future normalization. They do not
+  silently rewrite pinned historical recipe versions, approved plans, or their
+  recorded source wording.
+
 ### Exact products remain distinct but classified
 
 - An exact branded or packaged product is a distinct `ProductIdentity`, not a
@@ -122,8 +153,9 @@ Substitution: ask before choosing another product
   availability.
 - Household-entered exact products may remain household-local references until a
   later product-normalization capability has a concrete need to reconcile them.
-- Food-concept mapping confidence and the rule for automatic shopping
-  aggregation remain separate decisions.
+- The MVP needs a simple curator path for reviewed aliases and a household path
+  for local mapping correction; it does not need a general ontology-management
+  product.
 
 ## Consequences
 
@@ -137,6 +169,10 @@ Substitution: ask before choosing another product
   external taxonomy project.
 - Exact product references cannot be flattened into free text if they influence
   substitutions or later retailer selection.
+- Mapping authority and confidence are provenance-based: reviewed and confirmed
+  mappings may aggregate; model-only guesses may not.
+- Household corrections can improve one household immediately without silently
+  changing every other household.
 
 ## Deferred
 
@@ -144,6 +180,7 @@ Substitution: ask before choosing another product
 - price, promotion, availability, delivery, and basket state;
 - cross-retailer product matching and automatic substitutions;
 - globally reconciling every household-created product reference;
-- nutrition databases attached to food concepts or products; and
+- nutrition databases attached to food concepts or products;
 - retailer-specific preference UI beyond what is needed for the eventual
-  fulfilment capability.
+  fulfilment capability; and
+- a comprehensive ontology editor or automated global alias promotion.
