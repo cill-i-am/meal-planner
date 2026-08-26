@@ -12,7 +12,7 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted ten product decision records:
+The workshop has accepted eleven product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
@@ -24,6 +24,7 @@ The workshop has accepted ten product decision records:
 - [Temporary context, visitors, and planning suspensions](../decisions/product/0008-temporary-context-visitors-and-planning-suspensions.md)
 - [Shared catalogue acquisition, curation, and publication](../decisions/product/0009-shared-catalogue-acquisition-curation-and-publication.md)
 - [Food concepts, exact products, and retailer preferences](../decisions/product/0010-food-concepts-exact-products-and-retailer-preferences.md)
+- [Recipe URL import and source routing](../decisions/product/0011-recipe-url-import-and-source-routing.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
@@ -77,12 +78,23 @@ fail-closed shopping aggregation, exact product classification, product
 attributes, household and retailer-scoped preferences, substitution rules, and
 the future separation of retailer listings are settled in PDR-0010 and ADR-0006.
 
-### General web-page import
+One-URL submission, deterministic source routing, dedicated TikTok acquisition,
+a generic public recipe-web-page adapter, the shared downstream import lifecycle,
+private household admission, and honest unsupported-source behaviour are settled
+in PDR-0011 and ADR-0007.
 
-- Which public sites and markup are supported initially?
-- What acquisition, robots, size, redirect, and SSRF policies apply?
-- Is visible-page evidence required when structured data appears complete?
-- How are multi-page or interactive recipe cards handled?
+### Web-page evidence and publisher policy
+
+The remaining implementation decisions for the generic web-page adapter are:
+
+- When is structured recipe markup sufficient by itself, and when must visible
+  page evidence also be captured and compared?
+- What exact robots and publisher-policy behaviour applies to an intentionally
+  submitted public recipe URL?
+- Which MIME types, response-size bounds, redirect limits, and extraction limits
+  form the initial restricted-fetch policy?
+- Is any multi-page or highly interactive recipe experience worth supporting in
+  the MVP, or should those sources remain explicitly unsupported?
 
 ## Before Stage 5 — Planning
 
