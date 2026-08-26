@@ -130,13 +130,13 @@ online-only structural edits, optimistic concurrency, replay-safe desired-state
 commands, and the absence of public or anonymous editable links are settled in
 PDR-0014 and ADR-0009.
 
-### Manual-state lifecycle
-
-- When an item is no longer required after a plan revision, how long is it kept
-  in the visible list history?
-- How are manual non-food items grouped and carried between weeks?
-- Should households maintain an optional staples checklist after the one-off
-  "already have this?" flow proves useful?
+The same records now settle manual and removed-item lifecycle: unchecked
+plan-derived demand removed by a revision leaves the active list but remains in
+history; purchased or checked items remain visible as no longer required until
+list archival; plan revisions never remove manual items; unfinished manual items
+carry into the next list; completed manual items archive; and a dedicated
+recurring-staples system is deferred. No additional Stage 7 product decision is
+currently required before MVP implementation.
 
 ## Beta Operating Decisions
 
@@ -159,6 +159,7 @@ workshop:
 - public recipe contribution and marketplace policy;
 - Browser Run recipe acquisition until observed failures justify it;
 - semantic recipe search infrastructure;
+- a dedicated recurring-staples checklist or recurrence engine;
 - non-household organization products; and
 - fleet-wide product read models without an accepted use case.
 
