@@ -143,12 +143,13 @@ currently required before MVP implementation.
 
 The dogfood, closely supported pilot, approximately six-to-eight-household first
 cohort, four genuine weekly planning cycles, recruitment mix, Ireland-first
-operating boundary, beta expectation limits, optional transcript consent, and
-expansion evidence are settled in PDR-0015.
+operating boundary, beta expectation limits, optional transcript consent, hard
+expansion gates, correction-severity definitions, `30-minute` first-setup target,
+`10-minute` returning-week gate, and later-pilot correction threshold are settled
+in PDR-0015.
 
-Remaining choices are:
+The remaining operating decision is:
 
-- Internal readiness thresholds for time to approved plan and correction burden.
 - Support and incident-handling process for the invite-only cohort.
 
 ## Deliberately Deferred
