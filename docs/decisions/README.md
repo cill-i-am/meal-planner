@@ -60,6 +60,7 @@ identifies a real contract that must be preserved.
 - [PDR-0013 — Plan projection, rationale, and experience experimentation](product/0013-plan-projection-rationale-and-experience-experimentation.md)
 - [PDR-0014 — Shared shopping-list collaboration and offline use](product/0014-shared-shopping-list-collaboration-and-offline-use.md)
 - [PDR-0015 — Invite-only beta cohort and learning cadence](product/0015-invite-only-beta-cohort-and-learning-cadence.md)
+- [PDR-0016 — Beta support, incidents, and operator repair](product/0016-beta-support-incidents-and-operator-repair.md)
 
 ## Decision Process
 
