@@ -113,10 +113,28 @@ The web-page adapter owns restricted public-page acquisition.
   accepted.
 - Structured recipe markup is parsed before optional evidence-grounded model
   extraction.
-- Relevant visible-page content may be captured to resolve or expose conflicts.
+- Relevant visible-page content is captured and compared when readily and safely
+  available.
+- Complete, internally consistent structured markup may produce a draft when the
+  visible card cannot be acquired reliably.
+- Material structured-versus-visible conflicts are represented explicitly with
+  field-level provenance and remain reviewable; neither source silently wins.
+- Visible content may corroborate or fill supported omissions but cannot invent
+  fields absent from the acquired evidence.
 - A page without reliable recipe evidence returns unsupported or a truthful
   partial result; it never asks a model to manufacture a recipe from an arbitrary
   webpage.
+
+The resolved web source and evidence manifest need enough structure to preserve,
+at minimum:
+
+- submitted and canonical URL;
+- author or publisher attribution where available;
+- structured recipe evidence;
+- relevant visible-card evidence where captured;
+- field-level provenance or evidence references;
+- detected evidence conflicts; and
+- acquisition and parsing limitations.
 
 The exact robots and publisher-policy behaviour remains a delivery decision
 before this adapter ships.
@@ -165,6 +183,9 @@ concrete source demonstrates the need for a specialized boundary.
 - TikTok-specific code remains strongly typed rather than being diluted into a
   nullable universal resolver.
 - Generic web acquisition gains an explicit high-risk network boundary.
+- Structured markup is primary evidence, while visible-card evidence provides
+  corroboration and conflict detection where available.
+- Review contracts need field-level provenance and conflict representation.
 - Common workflow, review, and household admission semantics remain shared.
 - The source router stays thin and deterministic; model behaviour begins only
   after the system has captured admitted evidence.
@@ -193,6 +214,18 @@ different canonicalization, evidence, provider, and failure semantics.
 
 Rejected because routing is security- and acquisition-sensitive, can be decided
 from deterministic source evidence, and should remain reproducible and cheap.
+
+### Trust structured markup without comparison or provenance
+
+Rejected because published markup can be stale, incomplete, or inconsistent
+with the visible recipe. Structured data remains primary, but conflicts must be
+visible and reviewable.
+
+### Require visible-card extraction for every successful import
+
+Rejected because complete structured recipe evidence can remain useful even when
+client-rendered or otherwise difficult visible content cannot be captured
+reliably.
 
 ### Build a separate workflow and review model per source
 
