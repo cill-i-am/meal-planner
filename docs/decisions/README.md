@@ -53,6 +53,7 @@ identifies a real contract that must be preserved.
 - [PDR-0006 — AI evaluation and release evidence](product/0006-ai-evaluation-and-release-evidence.md)
 - [PDR-0007 — Household agent conversations and visibility](product/0007-household-agent-conversations-and-visibility.md)
 - [PDR-0008 — Temporary context, visitors, and planning suspensions](product/0008-temporary-context-visitors-and-planning-suspensions.md)
+- [PDR-0009 — Shared catalogue acquisition, curation, and publication](product/0009-shared-catalogue-acquisition-curation-and-publication.md)
 
 ## Decision Process
 
