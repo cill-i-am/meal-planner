@@ -61,22 +61,12 @@ the quick compatible-fallback swap interaction are settled in PDR-0002.
 
 ## Before Stage 4 — Meal Content And Recipe Supply
 
-### Catalogue beta coverage
-
-Bulk candidate acquisition, the roughly `100–200` active-recipe starting target,
-operator-only publication, optional admin UI, private household banks, separate
-catalogue authority, source URL and creator attribution retention, lightweight
-publication policy, immutable catalogue corrections, latest-active future use,
-and non-rebasing household forks are settled in PDR-0009 and ADR-0005.
-
-Remaining choices are:
-
-- What exact minimum content coverage, rather than raw recipe count, is required
-  before external invitations begin?
-- Which meal occasions, effort bands, dietary patterns, batch uses, and fallback
-  needs must be represented in that initial coverage matrix?
-
-### Food concepts, products, and aggregation
+Bulk candidate acquisition, the roughly `100–200` operating target,
+coverage-based beta readiness, operator-only publication, optional admin UI,
+private household banks, separate catalogue authority, source URL and creator
+attribution retention, lightweight publication policy, immutable catalogue
+corrections, latest-active future use, and non-rebasing household forks are
+settled in PDR-0009 and ADR-0005.
 
 Metric-first units, source-measure preservation, conservative conversion, and
 retention of ambiguous household measures are settled in PDR-0004.
@@ -148,7 +138,6 @@ The frontend projection must remain free to differ from internal domain unions.
 - Exact beta cohort size and recruitment criteria.
 - Internal readiness thresholds for time to approved plan and correction burden.
 - Support and incident-handling process for the invite-only cohort.
-- The exact catalogue coverage matrix required before invitations begin.
 
 ## Deliberately Deferred
 
