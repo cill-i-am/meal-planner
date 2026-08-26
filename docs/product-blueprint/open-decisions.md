@@ -95,9 +95,9 @@ The remaining implementation decisions for the generic web-page adapter are:
   extraction limits form the initial restricted-fetch policy?
 
 Multi-page, slideshow, highly interactive, and browser-dependent recipe
-experiences remain unsupported in the MVP. A later Cloudflare Browser Rendering
-path may be considered only when observed failed-import coverage justifies its
-cost and complexity.
+experiences remain unsupported in the MVP. A later Cloudflare Browser Run path
+may be considered only when observed failed-import coverage justifies its cost
+and complexity.
 
 ## Before Stage 5 — Planning
 
@@ -167,7 +167,7 @@ workshop:
 - MCP tools, resources, elicitation, and tasks;
 - embedded and white-label channels;
 - public recipe contribution and marketplace policy;
-- browser-rendered recipe acquisition until observed failures justify it;
+- Browser Run recipe acquisition until observed failures justify it;
 - semantic recipe search infrastructure;
 - non-household organization products; and
 - fleet-wide product read models without an accepted use case.
