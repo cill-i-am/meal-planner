@@ -74,6 +74,46 @@ realistic weeks without catalogue shortage creating unresolved requirements or
 absurd repetition. Specialized needs may still use private household imports;
 the shared catalogue does not need to support every possible diet before beta.
 
+## Cohort And Learning Cadence
+
+[PDR-0015](../decisions/product/0015-invite-only-beta-cohort-and-learning-cadence.md)
+defines the first beta as a staged longitudinal exercise:
+
+1. dogfood with Cillian's household;
+2. add two or three closely supported friendly households; and
+3. expand to approximately six to eight participating households in total once
+   the complete flow is reliable enough that new failures are informative.
+
+Each household is recruited for at least four genuine weekly planning cycles.
+A holiday, planning suspension, illness, or week without a real planning need is
+not treated as a failed return merely because no plan was generated. Week-one
+success is necessary but insufficient; the evidence must show whether weeks two
+through four require less active planning work and fewer meaningful corrections.
+
+Recruitment prioritizes variation in planning problems rather than participant
+volume. Across the cohort, include where practical:
+
+- relatively straightforward households;
+- dependants with narrow or person-specific fallback needs;
+- mixed adult work, school, packed-lunch, and location routines;
+- vegetarian and omnivore coexistence or other ordinary mixed preferences;
+- planned leftovers, batch cooking, and varied cooking capacity;
+- eating out, takeaway, intentional skips, or temporary schedule changes; and
+- households that already experience meal planning as recurring work.
+
+The cohort is Ireland-first so the initial catalogue, terminology, measurement,
+and support context are credible. That is an operating choice, not a domain
+constraint.
+
+The beta is not recruited as a clinical nutrition programme, a sole severe-
+allergen or food-safety safeguard, or a preview of retailer fulfilment that the
+MVP does not provide. Participants may pause or withdraw at any time. Transcript
+or screen access is optional and separately consented to; willingness to expose
+private conversations is not a condition of participation.
+
+Expansion between cohort stages is explicit and evidence-based. Dates, available
+invites, or delivery milestones do not open the next stage automatically.
+
 ## Primary Measures
 
 ### Time to approved plan
