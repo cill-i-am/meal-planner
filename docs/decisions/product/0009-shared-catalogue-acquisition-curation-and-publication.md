@@ -52,19 +52,42 @@ normalization and planning contracts.
 Before a candidate becomes shared catalogue content, the curator reviews the
 facts that make it usable for planning, including where applicable:
 
-- source and attribution provenance;
-- the rights or permission basis required by the accepted publication policy;
+- source URL and available creator or source attribution;
 - ingredients, quantities, instructions, and base yield;
 - scaling behaviour and unresolved quantities;
 - effort, equipment, preparation windows, portability, and leftover use;
 - suitability and dietary metadata without unsupported health claims;
-- shopping-demand completeness; and
+- shopping-demand completeness;
+- compliance with the current documented catalogue-publication policy; and
 - whether the candidate adds useful coverage rather than duplicating existing
   content.
 
 Publication is an explicit, audited transition that creates or activates an
 immutable catalogue recipe version. Model output, extraction success, household
 approval, or operator review preparation cannot publish implicitly.
+
+### Lightweight source and attribution policy
+
+- Every catalogue candidate retains its original source URL.
+- Where the source adapter can reliably extract creator or publisher identity,
+  such as a TikTok creator name or handle, that attribution is retained with the
+  candidate and published catalogue metadata.
+- Attribution may be exposed in the household recipe experience where useful,
+  but it is not required to dominate the planning UI.
+- The shared catalogue publishes Meal Planner's normalized, curator-reviewed
+  recipe record. It does not republish the creator's original video, audio,
+  screenshots, photographs, transcript, caption, or copied prose as catalogue
+  content.
+- The MVP does not implement per-recipe licence workflows, creator-outreach
+  state, legal-approval queues, or a detailed rights taxonomy.
+- Cillian applies one documented publication policy as sole curator and may
+  retire or remove catalogue content through an audited command.
+- Before opening the shared catalogue to the external beta, the overall
+  publication policy receives one focused review. That review is a launch
+  checkpoint, not a legal ceremony attached to every bolognese.
+
+This record defines the intended product workflow and does not claim that source
+attribution alone resolves every possible legal question.
 
 ### MVP publication authority
 
@@ -134,8 +157,9 @@ approval, or operator review preparation cannot publish implicitly.
 - An admin UI is useful but optional; the durable authority is the catalogue
   command boundary and audit history.
 - Candidate volume may exceed active catalogue size by design.
-- Rights and attribution review cannot be bypassed by technical extraction
-  success.
+- Source URL and available attribution survive acquisition and publication.
+- Catalogue publication does not require a per-item licence-workflow product in
+  the MVP.
 - Catalogue reads must distinguish stable recipe identity, latest active
   version, and an exact historical version.
 - Household forks need source-version ancestry and an explicit selective-adoption
@@ -148,6 +172,7 @@ approval, or operator review preparation cannot publish implicitly.
 - automated catalogue publication;
 - a public recipe marketplace;
 - retailer-funded or branded catalogue content;
-- the exact licensing and attribution policy for each source class; and
+- per-recipe licence and creator-outreach workflow machinery;
 - automatic rebasing or forced migration of household forks onto later catalogue
-  versions.
+  versions; and
+- publication of original third-party media or copied source expression.
