@@ -752,7 +752,6 @@ export const makeHouseholdRecipeImportRepository = (
       const now = instantFromEpoch(nowEpochMs);
       return yield* database
         .transaction((transaction) =>
-          // eslint-disable-next-line complexity -- The exhaustive domain transition switch stays co-located with its atomic receipt and timeline commit.
           Effect.gen(function* commitLifecycleTransition() {
             const transactionReplay = yield* readReceipt(
               transaction,

@@ -287,7 +287,6 @@ export const runAccountedProviderDispatch = <A, E>(input: {
   AccountedProviderDispatchResult<A>,
   E | ProviderAccountingError
 > =>
-  // eslint-disable-next-line complexity -- The durable dispatch state machine keeps every settlement branch explicit.
   Effect.gen(function* runBudgetedProviderDispatch() {
     const replayConservative = (
       conservativeChargeMicroUsd: number,

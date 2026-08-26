@@ -542,7 +542,6 @@ describe("RecipeImportIntent protocol", () => {
 });
 
 describe("RecipeImportApi HttpApi declaration", () => {
-  // eslint-disable-next-line complexity -- One compact table-driven check keeps every operation's semantic OpenAPI contract together.
   it("declares the approved complete unmounted surface and safe metadata", () => {
     const document = OpenApi.fromApi(RecipeImportApi);
     expect(document.info).toMatchObject({
