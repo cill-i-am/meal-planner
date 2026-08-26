@@ -673,7 +673,10 @@ describe("RecipeImportApi HttpApi declaration", () => {
         ) ?? false
       ).toBe(operation.idempotent);
     }
+  });
 
+  it("omits private provider and household fields", () => {
+    const document = OpenApi.fromApi(RecipeImportApi);
     const serializedDocument = JSON.stringify(document);
     for (const privateField of [
       "actorId",
@@ -687,7 +690,10 @@ describe("RecipeImportApi HttpApi declaration", () => {
     ]) {
       expect(serializedDocument).not.toContain(`"${privateField}"`);
     }
+  });
 
+  it("declares the answer-review response contract", () => {
+    const document = OpenApi.fromApi(RecipeImportApi);
     expect(
       document.paths[
         "/v1/recipe-import-intents/{id}/actions/{actionId}/answers"

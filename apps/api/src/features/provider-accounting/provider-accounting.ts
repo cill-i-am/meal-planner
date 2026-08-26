@@ -260,6 +260,37 @@ const previousAttemptMatches = (
   previous.providerStageId === current.providerStageId &&
   previous.runId === current.runId;
 
+const reconcilePreviousAttempt = (
+  repository: ProviderAccountingRepository,
+  previousAttempt: ProviderAccountingReservation | undefined,
+  reservation: ProviderAccountingReservation,
+  observeUnknownSettlement: Effect.Effect<void>
+) =>
+  Effect.gen(function* reconcilePreviousProviderAttempt() {
+    if (previousAttempt === undefined) {
+      return;
+    }
+    if (!previousAttemptMatches(previousAttempt, reservation)) {
+      return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
+    }
+    const previous = yield* repository.readDispatch(previousAttempt);
+    if (
+      previous.state === "settled_known" &&
+      previous.actualCostMicroUsd === 0
+    ) {
+      return;
+    }
+    if (previous.state === "invoking") {
+      yield* settleUnknown(
+        repository,
+        previousAttempt,
+        previous.invocationGeneration,
+        observeUnknownSettlement
+      );
+    }
+    return yield* Effect.fail(providerAccountingError("outcome_unknown"));
+  });
+
 export const runAccountedProviderDispatch = <A, E>(input: {
   readonly conservativeReplay?: {
     readonly decode: (
@@ -306,30 +337,12 @@ export const runAccountedProviderDispatch = <A, E>(input: {
     const observeUnknownSettlement = observeSettlement("unknown").pipe(
       Effect.andThen(input.onPoison ?? Effect.void)
     );
-    if (input.previousAttempt !== undefined) {
-      if (!previousAttemptMatches(input.previousAttempt, input.reservation)) {
-        return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
-      }
-      const previous = yield* input.repository.readDispatch(
-        input.previousAttempt
-      );
-      if (
-        previous.state === "settled_known" &&
-        previous.actualCostMicroUsd === 0
-      ) {
-        // Exact durable zero-cost proof is the only safe retry authority.
-      } else if (previous.state === "invoking") {
-        yield* settleUnknown(
-          input.repository,
-          input.previousAttempt,
-          previous.invocationGeneration,
-          observeUnknownSettlement
-        );
-        return yield* Effect.fail(providerAccountingError("outcome_unknown"));
-      } else {
-        return yield* Effect.fail(providerAccountingError("outcome_unknown"));
-      }
-    }
+    yield* reconcilePreviousAttempt(
+      input.repository,
+      input.previousAttempt,
+      input.reservation,
+      observeUnknownSettlement
+    );
 
     const reserved = yield* input.repository.reserve(input.reservation);
     if (reserved.state === "settled_known") {
