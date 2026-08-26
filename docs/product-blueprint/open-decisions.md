@@ -75,10 +75,13 @@ Remaining choices are:
 - Which meal occasions, effort bands, dietary patterns, batch uses, and fallback
   needs must be represented in that initial coverage matrix?
 
-### Food concepts, units, and product identity
+### Food concepts, aggregation confidence, and product identity
 
-- Which unit systems and conversions are supported first?
-- How are ambiguous household measures represented?
+Metric-first units, source-measure preservation, conservative conversion, and
+retention of ambiguous household measures are settled in PDR-0004.
+
+Remaining choices are:
+
 - Which food taxonomy or household-owned concept model is used?
 - What confidence is required before ingredient lines aggregate into shopping
   demand?
