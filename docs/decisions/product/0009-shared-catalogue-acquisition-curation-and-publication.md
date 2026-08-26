@@ -90,15 +90,38 @@ approval, or operator review preparation cannot publish implicitly.
   to PDR-0004; it does not mutate the global recipe.
 - Ordinary households cannot publish globally in the MVP.
 
+### Catalogue updates and household adoption
+
+- A catalogue correction creates a new immutable version under the same stable
+  catalogue recipe identity.
+- Existing approved or historical plans remain pinned to the exact version they
+  used. A catalogue update never rewrites an active or historical household
+  plan.
+- Where a household merely references, favourites, or routinely selects a
+  catalogue recipe without forking it, future plan generation uses the latest
+  active catalogue version by default.
+- A household may explicitly preserve an older catalogue version by forking that
+  version into its private household bank.
+- Existing household forks remain unchanged when the source catalogue recipe is
+  corrected. They are household-owned versions and are never automatically
+  rebased or overwritten.
+- The product may notify a household that the source catalogue recipe has a newer
+  version and show a human-readable difference.
+- A household may selectively adopt useful changes into its fork through an
+  explicit household recipe edit that creates a new immutable household version.
+- Retiring a catalogue version prevents new default selection where policy
+  requires it, but does not invalidate plans or household forks that already pin
+  that version.
+
 ### Versioning and history
 
 - Shared catalogue recipes use stable recipe identity and immutable versions.
 - Plans pin the exact catalogue or household recipe version used.
-- Publication, correction, retirement, and restoration are audited.
-- A later catalogue correction creates a new version rather than rewriting
-  active or historical plans.
-- The exact adoption policy for households using or forking an older catalogue
-  version remains a separate decision.
+- Publication, correction, activation, retirement, restoration, and household
+  adoption are auditable.
+- Version selection for future planning is explicit and reproducible: latest
+  active catalogue version for an unforked catalogue reference, or the pinned
+  household version for a fork.
 
 ## Consequences
 
@@ -113,6 +136,10 @@ approval, or operator review preparation cannot publish implicitly.
 - Candidate volume may exceed active catalogue size by design.
 - Rights and attribution review cannot be bypassed by technical extraction
   success.
+- Catalogue reads must distinguish stable recipe identity, latest active
+  version, and an exact historical version.
+- Household forks need source-version ancestry and an explicit selective-adoption
+  flow rather than automatic rebasing.
 
 ## Deferred
 
@@ -122,4 +149,5 @@ approval, or operator review preparation cannot publish implicitly.
 - a public recipe marketplace;
 - retailer-funded or branded catalogue content;
 - the exact licensing and attribution policy for each source class; and
-- automatic rebasing of household forks onto later catalogue versions.
+- automatic rebasing or forced migration of household forks onto later catalogue
+  versions.
