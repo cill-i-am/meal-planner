@@ -12,7 +12,7 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted thirteen product decision records:
+The workshop has accepted fourteen product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
@@ -27,6 +27,7 @@ The workshop has accepted thirteen product decision records:
 - [Recipe URL import and source routing](../decisions/product/0011-recipe-url-import-and-source-routing.md)
 - [Planner feasibility, ranking, and deterministic selection](../decisions/product/0012-planner-feasibility-ranking-and-deterministic-selection.md)
 - [Plan projection, rationale, and experience experimentation](../decisions/product/0013-plan-projection-rationale-and-experience-experimentation.md)
+- [Shared shopping-list collaboration and offline use](../decisions/product/0014-shared-shopping-list-collaboration-and-offline-use.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
@@ -123,13 +124,11 @@ truth.
 
 ## Before Stage 7 — Shopping List
 
-### Collaboration and offline behaviour
-
-- Can several adults edit and check the list concurrently?
-- What conflict behaviour is acceptable for quantity edits and check-off state?
-- Is offline shopping-list use required for the beta?
-- What sharing or export behaviour is needed beyond authenticated household
-  access?
+Shared authenticated-adult access, live item-level collaboration, a narrow
+offline cache and operation queue for check state and simple manual additions,
+online-only structural edits, optimistic concurrency, replay-safe desired-state
+commands, and the absence of public or anonymous editable links are settled in
+PDR-0014 and ADR-0009.
 
 ### Manual-state lifecycle
 
