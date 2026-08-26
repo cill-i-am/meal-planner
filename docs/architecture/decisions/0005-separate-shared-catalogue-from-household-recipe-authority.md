@@ -38,8 +38,8 @@ and lifecycle requirements.
   household recipe identities and versions, household forks, household meal
   options, plans, feedback, and shopping demand.
 - Household approval publishes only into that household's private bank.
-- A household fork records ancestry to the catalogue recipe and version but
-  becomes household-owned state.
+- A household fork records ancestry to the catalogue recipe and exact source
+  version but becomes household-owned state.
 - No fleet-wide projection, crawler, or read model may discover private
   household recipes and turn them into catalogue candidates without a separate
   explicitly accepted contribution capability.
@@ -54,17 +54,38 @@ and lifecycle requirements.
   does not imply catalogue publication.
 - Provider and source I/O occur outside catalogue publication transactions.
 
-### Household reads and plan pinning
+### Household reads and version selection
 
 - Household planning may query active catalogue versions through a closed,
   read-only catalogue boundary.
+- The read contract distinguishes stable catalogue recipe identity, the latest
+  active version, and an exact immutable version.
+- An unforked household reference or favourite resolves to the latest active
+  catalogue version for future planning by default.
 - Selecting a catalogue recipe for a plan records the immutable recipe version
   or a safe planning snapshot sufficient to preserve the approved plan.
 - A later catalogue update cannot silently rewrite an active or historical
   household plan.
+- A household may preserve an older version by forking that exact version into
+  its private recipe bank.
+- A household fork never follows later catalogue versions automatically. Any
+  selective adoption creates a new immutable household version through the
+  household recipe command boundary.
 - There is no distributed transaction between catalogue publication and a
   household plan. The household command validates and pins the catalogue version
   it actually consumed.
+
+### Notifications and selective adoption
+
+- Catalogue authority may expose version metadata and a safe change summary for
+  a household that references or forked an older version.
+- Notification is advisory. It does not mutate household state or invalidate a
+  plan.
+- Selective adoption is a household-owned edit based on explicit adult action,
+  not an automatic rebase or global migration.
+- Retiring a catalogue version affects future catalogue selection policy but
+  does not erase immutable version reads required by historical plans and fork
+  ancestry.
 
 ### Admin surface
 
@@ -81,13 +102,15 @@ and lifecycle requirements.
   product authority.
 - Catalogue publication, candidate review, and household recipe admission are
   separate workflows even where they reuse schemas or extraction services.
-- Catalogue reads need bounded, versioned contracts suitable for planning and
-  discovery.
+- Catalogue reads need bounded, versioned contracts suitable for planning,
+  discovery, exact historical reads, and safe change summaries.
 - Household isolation remains physical and conceptual: private recipe banks are
   not the source of a global catalogue projection.
 - Cross-authority failure is handled through immutable version references and
   ordinary retries, not dual writes or an atomic transaction spanning catalogue
   and household state.
+- Household forks preserve source ancestry but own their later lifecycle and
+  versions independently.
 
 ## Alternatives Rejected
 
@@ -110,6 +133,12 @@ accident, and household approval is not publication consent or curation.
 
 Rejected because extraction success does not establish recipe completeness,
 planning quality, source rights, attribution, or curator approval.
+
+### Automatically rebase household forks
+
+Rejected because household adaptations are private authoritative versions. A
+global correction may be useful input, but cannot overwrite household choices,
+active plans, or historical provenance.
 
 ### Let the admin UI write catalogue tables directly
 
