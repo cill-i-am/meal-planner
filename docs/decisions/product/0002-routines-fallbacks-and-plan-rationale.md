@@ -31,6 +31,35 @@ plan after generation.
 - An exact or set-valued routine declares whether options are pinned, preferred,
   or rotated.
 
+### Routine conflict precedence
+
+Routine evaluation follows this precedence:
+
+1. Hard suitability, dietary, and safety constraints always win. No routine,
+   exception, fallback, preference, or model proposal can override them.
+2. An explicit one-off change for the current planning period overrides a
+   recurring routine where the resulting coverage remains compatible with hard
+   constraints.
+3. A person routine overrides a household routine for that person only. It does
+   not rewrite the household baseline for anyone else.
+4. A household routine supplies the baseline where no more-specific person rule
+   applies.
+5. An approved person-specific fallback repairs an incompatible or strongly
+   avoided shared meal according to the accepted fallback policy.
+6. Ordinary preferences influence ranking but do not override a confirmed
+   routine by themselves.
+7. An agent proposal has no authority until an adult accepts it through the
+   admitted product transition.
+
+Where this precedence yields one compatible answer, the draft planner may apply
+it automatically and must expose the applied rationale. Where two equally
+specific rules conflict or the intended answer remains ambiguous, the planner
+keeps the conflict visible and asks an adult rather than guessing.
+
+Concurrent adult routine edits use optimistic concurrency against the routine
+version. A stale edit fails with a visible conflict and current state; routine
+state never uses silent last-write-wins behaviour.
+
 ### Context, availability, and equipment
 
 - Person routines may include normal location and availability by meal
@@ -121,6 +150,10 @@ plan after generation.
   recipe calendar.
 - Plan generation needs deterministic routine expansion and conflict handling
   before model-assisted recommendation can be trusted.
+- Routine authority needs versioned mutation and optimistic concurrency; stale
+  adult edits cannot silently replace current state.
+- Automatically resolved routine conflicts need inspectable rationale, while
+  equally specific ambiguity remains visible for adult resolution.
 - The UI needs a compressed shared-week projection with nested person-level
   exceptions and inspectable rationale.
 - No decision here requires the frontend to render the raw domain union
