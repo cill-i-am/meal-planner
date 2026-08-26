@@ -227,6 +227,41 @@ A non-hard red result remains eligible only for the documented product-owner
 override process. Such an override should be rare, explicit, and cannot affect a
 hard blocker.
 
+### Eval harness implementation spike
+
+Before committing the repository to a bespoke eval framework, Stage 2 includes a
+bounded spike using `@vercel/agent-eval` as a candidate harness.
+
+The spike must register the Meal Planner household agent through the package's
+custom-agent boundary and run at least one representative multi-turn scenario
+from discovery through artifact creation, recommendation, rationale, and repair.
+It should test whether the package usefully supplies:
+
+- repeatable experiment configuration and result fingerprinting;
+- deterministic assertions over structured artifacts, tool calls, and
+  transcripts;
+- programmatic telemetry for turns, tools, failures, latency, and cost;
+- a separately pinned model judge rather than self-grading;
+- readable result inspection; and
+- local or hosted isolation suitable for repository release evidence.
+
+Adoption is not automatic. The spike should reject the package if its coding-agent
+and filesystem-sandbox assumptions force an unnatural wrapper around the
+Cloudflare-hosted household agent, cannot represent private and shared thread
+semantics, cannot exercise the complete discovery-to-repair trajectory, or
+creates duplicate scenario and result authorities.
+
+Meal Planner's repository-owned scenario, rubric, and release-evidence formats
+remain independent of the package so the harness can be replaced without
+rewriting product-quality assets. Useful design ideas may be retained even if the
+package itself is not adopted.
+
+Vercel's Run SDK is not selected as the eval harness. It executes untrusted
+model-generated JavaScript or TypeScript in a restricted runtime, which is not a
+current requirement for our typed household-agent tool loop. It may be
+reconsidered only if a future accepted code-mode agent capability creates that
+need.
+
 ### Scenario maintenance
 
 - Synthetic scenarios live in the repository as product-quality assets.
@@ -249,6 +284,8 @@ hard blocker.
   fixed model-judge path, and a human-calibration workflow.
 - The initial baseline needs a human-reviewed `1–5` score for every critical
   soft dimension and scenario.
+- `@vercel/agent-eval` is evaluated through one bounded representative spike
+  before a custom harness is built or the package is adopted.
 - Domain correctness and agent quality remain separable: an agent cannot obtain
   credit for violating deterministic rules, and a valid but generic interaction
   can still score poorly.
@@ -264,5 +301,6 @@ hard blocker.
 - exact fixture data and secondary variations inside each accepted scenario
   family;
 - the first agent model, model judge, and provider selections;
-- the size and cadence of the human calibration sample; and
+- the size and cadence of the human calibration sample;
+- final eval-harness adoption until the bounded spike is complete; and
 - production experimentation or multi-armed model routing.
