@@ -12,7 +12,7 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted fourteen product decision records:
+The workshop has accepted fifteen product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
@@ -28,6 +28,7 @@ The workshop has accepted fourteen product decision records:
 - [Planner feasibility, ranking, and deterministic selection](../decisions/product/0012-planner-feasibility-ranking-and-deterministic-selection.md)
 - [Plan projection, rationale, and experience experimentation](../decisions/product/0013-plan-projection-rationale-and-experience-experimentation.md)
 - [Shared shopping-list collaboration and offline use](../decisions/product/0014-shared-shopping-list-collaboration-and-offline-use.md)
+- [Invite-only beta cohort and learning cadence](../decisions/product/0015-invite-only-beta-cohort-and-learning-cadence.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
@@ -140,7 +141,13 @@ currently required before MVP implementation.
 
 ## Beta Operating Decisions
 
-- Exact beta cohort size and recruitment criteria.
+The dogfood, closely supported pilot, approximately six-to-eight-household first
+cohort, four genuine weekly planning cycles, recruitment mix, Ireland-first
+operating boundary, beta expectation limits, optional transcript consent, and
+expansion evidence are settled in PDR-0015.
+
+Remaining choices are:
+
 - Internal readiness thresholds for time to approved plan and correction burden.
 - Support and incident-handling process for the invite-only cohort.
 
@@ -160,6 +167,7 @@ workshop:
 - Browser Run recipe acquisition until observed failures justify it;
 - semantic recipe search infrastructure;
 - a dedicated recurring-staples checklist or recurrence engine;
+- public self-service beta signup or growth acquisition;
 - non-household organization products; and
 - fleet-wide product read models without an accepted use case.
 
