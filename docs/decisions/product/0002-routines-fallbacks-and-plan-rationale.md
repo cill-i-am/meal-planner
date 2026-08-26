@@ -98,8 +98,25 @@ state never uses silent last-write-wins behaviour.
 - An ordinary dislike lowers ranking but does not automatically exclude the
   shared meal.
 - Approved personal fallbacks may be applied automatically in a draft.
-- A newly agent-proposed fallback offers three choices: use once, approve for
-  future use, or reject.
+- There is no hard maximum number of fallbacks per person in the MVP.
+- Each fallback may carry applicable context, priority, substitution policy,
+  and active or paused state.
+- Product views should emphasize the few fallbacks relevant to the current meal
+  rather than present the complete repertoire by default.
+- A quick **swap backup meal** action may cycle through the person's currently
+  active, compatible, and context-appropriate fallbacks.
+- The swap action must exclude paused, prohibited, incompatible, or inapplicable
+  options and must repair affected portions, effort, cook events, and shopping
+  preview in the draft.
+- An adult may temporarily pause a fallback or exact product that is unavailable.
+- If an exact-only fallback is unavailable, the planner must not silently replace
+  it with a similar product. It uses another approved compatible fallback,
+  proposes a new fallback, or leaves the problem visible.
+- When no approved fallback fits the person, context, and available effort, the
+  agent may propose a new one with three choices: use once, approve for future
+  use, or reject.
+- If the agent has no credible compatible option, it must not invent one. It
+  leaves an explicit gap or proposes a flexible slot for adult confirmation.
 - Agent-proposed routines use the equivalent choices: apply this period, save
   as recurring, or reject.
 
@@ -154,6 +171,10 @@ state never uses silent last-write-wins behaviour.
   adult edits cannot silently replace current state.
 - Automatically resolved routine conflicts need inspectable rationale, while
   equally specific ambiguity remains visible for adult resolution.
+- Fallback selection needs a queryable applicability and availability model,
+  while the UI remains simple through context filtering and quick swapping.
+- Swapping a fallback is a plan mutation with dependency repair, not a purely
+  visual carousel that can leave quantities or shopping demand stale.
 - The UI needs a compressed shared-week projection with nested person-level
   exceptions and inspectable rationale.
 - No decision here requires the frontend to render the raw domain union
@@ -161,7 +182,7 @@ state never uses silent last-write-wins behaviour.
 
 ## Deferred
 
-- retailer-backed substitutions;
+- retailer-backed availability and substitutions;
 - a universal child-specific accepted-food taxonomy;
 - a general preference rules language;
 - automatic permanent routines or fallbacks without confirmation; and
