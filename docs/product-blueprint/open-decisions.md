@@ -12,7 +12,7 @@ merely because a code shape is convenient.
 
 ## Accepted Decision Summary
 
-The workshop has accepted nine product decision records:
+The workshop has accepted ten product decision records:
 
 - [Household people, profiles, and interviews](../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [Routines, fallbacks, and plan rationale](../decisions/product/0002-routines-fallbacks-and-plan-rationale.md)
@@ -23,6 +23,7 @@ The workshop has accepted nine product decision records:
 - [Household agent conversations and visibility](../decisions/product/0007-household-agent-conversations-and-visibility.md)
 - [Temporary context, visitors, and planning suspensions](../decisions/product/0008-temporary-context-visitors-and-planning-suspensions.md)
 - [Shared catalogue acquisition, curation, and publication](../decisions/product/0009-shared-catalogue-acquisition-curation-and-publication.md)
+- [Food concepts, exact products, and retailer preferences](../decisions/product/0010-food-concepts-exact-products-and-retailer-preferences.md)
 
 Do not re-open those choices in implementation without proposing a superseding
 record.
@@ -75,17 +76,21 @@ Remaining choices are:
 - Which meal occasions, effort bands, dietary patterns, batch uses, and fallback
   needs must be represented in that initial coverage matrix?
 
-### Food concepts, aggregation confidence, and product identity
+### Food concept mapping and aggregation confidence
 
 Metric-first units, source-measure preservation, conservative conversion, and
 retention of ambiguous household measures are settled in PDR-0004.
 
-Remaining choices are:
+The application-owned food-concept registry, exact product classification,
+product attributes, household and retailer-scoped preferences, substitution
+rules, and the future separation of retailer listings are settled in PDR-0010
+and ADR-0006.
 
-- Which food taxonomy or household-owned concept model is used?
-- What confidence is required before ingredient lines aggregate into shopping
-  demand?
-- How is an exact packaged product identified before a retailer catalogue exists?
+The remaining choice is:
+
+- What evidence and confidence are required before an imported ingredient,
+  household-entered product, or retailer listing maps automatically to a food
+  concept and aggregates into shopping demand?
 
 ### General web-page import
 
@@ -159,7 +164,7 @@ workshop:
 - continuous ingredient pantry inventory;
 - food-safety expiry calculation or certification;
 - retailer partnerships and official authorization;
-- product, price, availability, offer, and basket integration;
+- product price, availability, offer, listing, and basket integration;
 - MCP tools, resources, elicitation, and tasks;
 - embedded and white-label channels;
 - public recipe contribution and marketplace policy;
