@@ -114,6 +114,81 @@ private conversations is not a condition of participation.
 Expansion between cohort stages is explicit and evidence-based. Dates, available
 invites, or delivery milestones do not open the next stage automatically.
 
+## Stage Readiness Gates
+
+### Hard gates
+
+The following block external invitations or cohort expansion regardless of
+planning speed or positive qualitative feedback:
+
+- unresolved privacy, authorization, cross-household-isolation, or hard-
+  constraint failures;
+- approved plans with unresolved managed coverage, invalid required fallbacks,
+  impossible cook or leftover dependencies, or invalid portion and prepared-
+  output allocations;
+- silent rewriting of approved plan or shopping state;
+- failing required deterministic tests or hard-blocking synthetic agent evals;
+- a normal end-to-end journey that requires out-of-band developer or database
+  mutation of canonical product state; or
+- a known critical incident whose cause and required corrective action remain
+  unresolved.
+
+Hands-on support and explanation are acceptable. Quietly fixing canonical data
+behind the product so a household appears successful is not.
+
+### Dogfood to closely supported pilot
+
+Before adding the first external households:
+
+- Cillian's household completes at least two consecutive genuine weekly cycles;
+- both cycles reach an approved plan and shopping list, with the second cycle
+  exercising the following-week review or equivalent feedback path;
+- the second cycle requires no critical planner correction;
+- the normal path requires no developer or database intervention; and
+- a representative initial setup through first approved plan is achievable in
+  approximately `30 minutes` of active household interaction.
+
+The `30-minute` value is an operating target and review trigger. A longer complex
+case may still be acceptable when its cause and correction burden are understood;
+it must not be hidden by rushing high-impact confirmation.
+
+### Closely supported pilot to first full cohort
+
+Before expanding to approximately six to eight households in total:
+
+- every pilot household completes at least two genuine weekly cycles;
+- no pilot household's latest two completed cycles contain a critical planner
+  correction;
+- median returning-week active planning time is `10 minutes` or less;
+- median burden in later pilot cycles is no more than `2` major corrections per
+  plan;
+- a majority of pilot households improve from their first usable week in active
+  time, correction burden, or both;
+- support is not required every week to manufacture a complete usable plan; and
+- a majority of participants say they would use the product even if they were
+  not helping test it.
+
+The longer-term ambition for a mature returning household is closer to a
+`5-minute` planning interaction. That is not the gate for entering the first full
+cohort.
+
+### Correction categories
+
+A **critical planner correction** repairs a failure that should have prevented or
+invalidated the recommendation, such as a missed known hard constraint, invalid
+or absent managed coverage, a required fallback that is omitted or incompatible,
+or an impossible cook, leftover, prepared-component, or portion dependency.
+
+A **major correction** repairs a substantive misunderstanding while the plan
+remains recoverable, such as correcting a routine, adding a missing person-level
+alternative, replacing an unsuitable shared meal, or materially restructuring
+cook events, portions, prepared outputs, or leftovers.
+
+A preference-only edit—such as swapping one otherwise valid dinner because the
+household wants something different—is not counted as a major planner failure.
+Metrics retain correction reason and target rather than relying on raw edit
+count.
+
 ## Primary Measures
 
 ### Time to approved plan
@@ -130,7 +205,8 @@ supply, unresolved constraints, or a household choosing not to plan that week.
 
 ### Correction burden
 
-Measure meaningful changes before approval, including:
+Measure meaningful changes before approval, classified as critical, major, or
+ordinary preference edits. Relevant changes include:
 
 - meal replacements;
 - person-level exceptions added;
@@ -262,6 +338,7 @@ record only the data required for product learning. Useful events include:
 - routine proposed, accepted, changed, or disabled by category;
 - plan proposal created;
 - unresolved coverage count and closed reason categories;
+- critical, major, and preference-only correction categories;
 - plan revision command category;
 - plan approved or abandoned;
 - shopping list generated; and
@@ -290,6 +367,7 @@ feels wrong without having to identify the underlying technical failure.
 
 Before inviting external households, the product should demonstrate:
 
+- every hard gate above is clear;
 - authorization and cross-household isolation for profiles, interviews,
   routines, plans, recipes, feedback, and shopping lists;
 - private transcript handling and household-visible confirmed-profile handling;
@@ -309,9 +387,11 @@ Before inviting external households, the product should demonstrate:
 
 ## Exit Criteria
 
-Exact numeric targets should be set after internal baselines rather than
-invented in this blueprint. The beta may be considered directionally successful
-when:
+The stage thresholds above are the initial operating gates for the invite-only
+beta. Broader product thresholds should be refined from evidence rather than
+invented in advance.
+
+The beta may be considered directionally successful when:
 
 - households repeatedly reach complete approved plans;
 - median active planning time and correction burden decline over successive
