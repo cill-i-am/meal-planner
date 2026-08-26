@@ -54,8 +54,6 @@ at a time.
   paywall bypass, or custody of third-party credentials.
 - The adapter follows only admitted safe redirects and applies the platform's
   restricted outbound-fetch policy.
-- It prefers structured recipe data where present and may use relevant visible
-  page content as evidence.
 - It retains the submitted and canonical URL plus reliably available author or
   publisher attribution.
 - It produces the same evidence-grounded recipe draft and unresolved-field model
@@ -68,7 +66,25 @@ at a time.
 - Missing quantities, yield, timings, or instructions are never invented to make
   an unsupported page appear successful.
 
-The exact robots policy, structured-versus-visible evidence requirements, and
+### Structured and visible evidence
+
+- Structured recipe data, normally JSON-LD or equivalent recipe-card markup, is
+  the primary extraction source when present.
+- The adapter captures and compares the relevant visible recipe card when that
+  content is readily and safely available.
+- Complete, internally consistent structured data may still produce a draft when
+  the visible card cannot be extracted reliably.
+- Visible page content may fill supported omissions or provide corroborating
+  evidence, but it does not silently overwrite conflicting structured data.
+- A material conflict between structured and visible evidence is preserved and
+  surfaced for review with field-level provenance.
+- Where neither source provides reliable recipe evidence, the adapter returns an
+  unsupported result or a truthful partial draft rather than asking a model to
+  construct a plausible recipe.
+- Model extraction operates only over captured admitted evidence and cannot turn
+  absent source facts into confirmed recipe facts.
+
+The exact robots and publisher-policy behaviour, restricted-fetch limits, and
 support for unusual multi-page recipe experiences remain implementation
 questions to resolve before the web adapter ships.
 
@@ -113,6 +129,9 @@ submit URL
   resolved-source union.
 - TikTok acquisition remains specialized, while generic recipe-page acquisition
   gets its own security and parsing boundary.
+- Structured markup is the primary web evidence without becoming an
+  unquestioned authority when the visible recipe disagrees.
+- Field-level provenance and conflict state must survive into recipe review.
 - Import orchestration, review, recipe admission, and household privacy remain
   shared rather than duplicated per source.
 - Batch catalogue acquisition and single household imports exercise the same
