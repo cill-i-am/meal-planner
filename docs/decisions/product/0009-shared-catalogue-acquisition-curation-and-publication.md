@@ -34,6 +34,38 @@ normalization and planning contracts.
 - A smaller trustworthy catalogue is preferable to a larger bank with weak
   quantities, scaling, effort, or suitability data.
 
+### Beta readiness is a coverage gate
+
+Raw recipe count is not the beta-readiness criterion. Before external invitations
+begin, the active shared catalogue and the household-import path together must
+support complete, realistic weeks for the accepted synthetic household suite
+without catalogue shortages causing unresolved requirements or obviously
+ridiculous repetition.
+
+The curator reviews a catalogue coverage matrix spanning at least:
+
+- breakfast, lunch, dinner, and snack options;
+- recipes, assembled meals, and useful simple or packaged options where
+  appropriate;
+- quick, hands-off, assemble-only, and more involved effort profiles;
+- portable school and office food;
+- meals suitable for deliberate batch cooking and planned leftovers;
+- ordinary omnivore and vegetarian planning;
+- fish-based meals and a practical spread of main proteins and cuisines;
+- dependable low-burden options that can serve as person-specific fallbacks;
+- equipment and preparation-window variety; and
+- enough choice that representative weeks do not repeatedly depend on the same
+  small set of dishes unless a household routine asks for that repetition.
+
+These dimensions may overlap; this decision does not impose artificial quotas
+for every combination. Specialized or uncommon requirements may be filled by a
+household's private imports rather than forcing the shared catalogue to support
+every possible diet before beta.
+
+The roughly `100–200` target remains useful operating guidance. Catalogue
+readiness is accepted explicitly from coverage evidence, not inferred from
+reaching a number.
+
 ### Operator-managed bulk acquisition
 
 - The catalogue may be bootstrapped by collecting a larger batch of promising
@@ -157,6 +189,8 @@ attribution alone resolves every possible legal question.
 - An admin UI is useful but optional; the durable authority is the catalogue
   command boundary and audit history.
 - Candidate volume may exceed active catalogue size by design.
+- Catalogue curation needs a queryable coverage report across meal occasion,
+  effort, portability, diet, protein, batch use, and fallback suitability.
 - Source URL and available attribution survive acquisition and publication.
 - Catalogue publication does not require a per-item licence-workflow product in
   the MVP.
