@@ -1,24 +1,36 @@
 # Agent Workflow Docs
 
-These docs define the repo-local operating loop for Linear-backed Meal Planner
-work.
+These docs define the repository-owned operating loop for Meal Planner work.
 
-Use them with the bundled agent skills:
+## Current Workflow
 
-- `linear-workflow.md`: durable source-of-truth rules for Linear Projects, Issues, blockers, PRs, and Codex threads.
-- `triage-states.md`: issue intake and routing states.
-- `domain.md`: Meal Planner product and household domain-document conventions.
-- `execution-policy.md`: canonical Dispatch, Build, Verify, Decide phases; role
-  authority; risk tiers; finding disposition; physical proof; and watcher
-  ownership.
-- `prd-template.md`: template for Linear Project or PRD documents.
-- `issue-template.md`: template for vertical-slice Linear Issues.
-- `worker-thread-template.md`: template for Codex worker handoffs.
-- `reviewer-thread-template.md`: template for read-only reviewer/spec threads.
+- [`repository-workflow.md`](repository-workflow.md): authority order and the
+  Decide, Plan, Build, Verify, Review, and Complete loop.
+- [`domain.md`](domain.md): product, household-domain, decision-record, and ADR
+  conventions.
+- [`execution-policy.md`](execution-policy.md): dispatch, implementation,
+  verification, review authority, finding disposition, and physical proof.
+- [`../delivery/work-item-template.md`](../delivery/work-item-template.md):
+  template for independently reviewable vertical delivery work.
+- [`worker-thread-template.md`](worker-thread-template.md): template for bounded
+  implementation handoffs.
+- [`reviewer-thread-template.md`](reviewer-thread-template.md): template for
+  read-only exact-head review.
 
-Read `../source-of-truth.md`, `../preferences-and-constraints.md`, and
-`../current-week.md` when work touches household meal planning. Keep Linear team
-names, statuses, labels, and Initiatives in Linear as the source of truth.
+## Product And Delivery Sources
 
-Role skills and these templates consume `execution-policy.md`; capability skills
-provide techniques inside a phase and must not invent authority transitions.
+Read:
+
+- [`../product-blueprint/`](../product-blueprint/) for the product direction;
+- [`../decisions/`](../decisions/) for accepted product choices;
+- [`../architecture/decisions/`](../architecture/decisions/) for ADRs;
+- [`../delivery/current.md`](../delivery/current.md) for current work; and
+- the owning stage/work-item record for exact scope and evidence.
+
+Linear-oriented workflow and templates in this directory are legacy material and
+are not authoritative for new work. Do not use them unless the user explicitly
+records a decision to restore that workflow.
+
+Role and capability skills provide techniques inside the repository workflow;
+they must not invent product decisions, authority transitions, delivery status,
+or compatibility requirements.
