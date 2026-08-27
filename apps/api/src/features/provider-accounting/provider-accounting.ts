@@ -170,6 +170,9 @@ export interface ProviderInvocationResult<A> {
   readonly value: A;
 }
 
+const canBeginProviderInvocation = (state: ProviderAccountingDispatchState) =>
+  state === "reserved" || state === "invoking";
+
 /**
  * The provider boundary may use this marker only when it has authoritative
  * evidence that a failed dispatch incurred exactly zero cost.
@@ -373,7 +376,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
     if (reserved.state === "settled_unknown") {
       return yield* Effect.fail(providerAccountingError("outcome_unknown"));
     }
-    if (reserved.state !== "reserved" && reserved.state !== "invoking") {
+    if (!canBeginProviderInvocation(reserved.state)) {
       return yield* Effect.fail(providerAccountingError("transition_rejected"));
     }
     if (reserved.state === "reserved") {

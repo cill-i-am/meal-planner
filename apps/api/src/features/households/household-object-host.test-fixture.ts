@@ -654,6 +654,243 @@ const respond = <A, E>(effect: Effect.Effect<A, E>) =>
     )
   );
 
+const routeRecipeImportTestCommand = (
+  household: HouseholdObjectClient,
+  command: typeof HouseholdTestCommand.Type
+) => {
+  if (command.operation === "admitRecipeImport") {
+    return respond(
+      household.admitRecipeImport({
+        admission: memberAdmission(command.organizationId),
+        idempotencyKey: command.idempotencyKey,
+        source: command.source,
+      })
+    );
+  }
+  if (command.operation === "answerRecipeImportAction") {
+    return respond(
+      household.answerRecipeImportAction({
+        actionId: command.actionId,
+        admission: memberAdmission(command.organizationId),
+        idempotencyKey: command.idempotencyKey,
+        intentId: command.intentId,
+        request: {
+          answers: command.answers,
+          expectedActionVersion: command.expectedActionVersion,
+        },
+      })
+    );
+  }
+  if (command.operation === "commitRecipeImportDraft") {
+    return respond(
+      household.commitRecipeImportDraft({
+        admission: systemAdmission(
+          command.organizationId,
+          "recipe_import_lifecycle_commit"
+        ),
+        evidenceFingerprint: command.evidenceFingerprint,
+        expectedGeneration: command.expectedGeneration,
+        extractionFingerprint: command.extractionFingerprint,
+        intentId: command.intentId,
+        mutationId: command.mutationId,
+        review: command.review,
+      })
+    );
+  }
+  if (command.operation === "cancelRecipeImport") {
+    return respond(
+      household.cancelRecipeImport({
+        admission: memberAdmission(command.organizationId),
+        idempotencyKey: command.idempotencyKey,
+        intentId: command.intentId,
+        request: { expectedIntentVersion: command.expectedIntentVersion },
+      })
+    );
+  }
+  if (command.operation === "confirmRecipeImportAction") {
+    return respond(
+      household.confirmRecipeImportAction({
+        actionId: command.actionId,
+        admission: memberAdmission(command.organizationId),
+        idempotencyKey: command.idempotencyKey,
+        intentId: command.intentId,
+        request: { expectedActionVersion: command.expectedActionVersion },
+      })
+    );
+  }
+  if (command.operation === "confirmRecipeImportActionWithRecipeId") {
+    return respond(
+      household.confirmRecipeImportActionWithRecipeId(
+        {
+          actionId: command.actionId,
+          admission: memberAdmission(command.organizationId),
+          idempotencyKey: command.idempotencyKey,
+          intentId: command.intentId,
+          request: { expectedActionVersion: command.expectedActionVersion },
+        },
+        command.recipeId
+      )
+    );
+  }
+  if (command.operation === "recordRecipeImportDispatch") {
+    return respond(
+      household.recordRecipeImportDispatch({
+        admission: systemAdmission(command.organizationId),
+        dispatchId: command.dispatchId,
+        originalTrace: command.originalTrace,
+        outcome: command.outcome,
+        workflowIdentity: command.workflowIdentity,
+      })
+    );
+  }
+  if (command.operation === "readRecipeImport") {
+    return respond(
+      household.readRecipeImport({
+        admission: memberAdmission(command.organizationId),
+        intentId: command.intentId,
+      })
+    );
+  }
+  if (command.operation === "resolveRecipeImportSource") {
+    return respond(
+      household.resolveRecipeImportSource({
+        admission: systemAdmission(
+          command.organizationId,
+          "recipe_import_lifecycle_commit"
+        ),
+        canonicalSourceId: command.canonicalSourceId,
+        canonicalUrl: command.canonicalUrl,
+        expectedGeneration: command.expectedGeneration,
+        intentId: command.intentId,
+        mutationId: command.mutationId,
+        sourceKind: command.sourceKind,
+      })
+    );
+  }
+  if (command.operation === "transitionRecipeImportLifecycle") {
+    return respond(
+      household.transitionRecipeImportLifecycle({
+        admission: systemAdmission(
+          command.organizationId,
+          "recipe_import_lifecycle_commit"
+        ),
+        expectedGeneration: command.expectedGeneration,
+        intentId: command.intentId,
+        transition: command.transition,
+      })
+    );
+  }
+  return null;
+};
+
+const routeHouseholdAdministrationTestCommand = (
+  household: HouseholdObjectClient,
+  command: typeof HouseholdTestCommand.Type
+) => {
+  if (command.operation === "corruptImportWorkflowDispatchState") {
+    return respond(
+      household.corruptImportWorkflowDispatchState(
+        command.dispatchId,
+        command.state
+      )
+    );
+  }
+  if (command.operation === "corruptHouseholdProvenanceCreatedAt") {
+    return respond(
+      household.corruptHouseholdProvenanceCreatedAt(command.createdAtEpochMs)
+    );
+  }
+  if (command.operation === "ensure") {
+    return respond(
+      household.ensureHousehold({
+        admission: memberAdmission(command.organizationId),
+      })
+    );
+  }
+  if (command.operation === "inspectImportWorkflowDispatch") {
+    return respond(household.inspectImportWorkflowDispatch(command.dispatchId));
+  }
+  if (command.operation === "invokeMalformedEnsure") {
+    return respond(household.invokeMalformedEnsure(command.payload));
+  }
+  if (command.operation === "listRecipeBank") {
+    return respond(
+      household.listRecipeBank({
+        admission: memberAdmission(command.organizationId),
+        byteLimit: command.byteLimit,
+        cursor: command.cursor,
+        limit: command.limit,
+      })
+    );
+  }
+  if (command.operation === "seedApprovedRecipes") {
+    return respond(household.seedApprovedRecipes(command.count));
+  }
+  return null;
+};
+
+const routeMealPlanTestCommand = (
+  household: HouseholdObjectClient,
+  command: typeof HouseholdTestCommand.Type
+) => {
+  if (command.operation === "approveMealPlan") {
+    return respond(
+      household.approveMealPlan({
+        admission: memberAdmission(command.organizationId),
+        request: command.request,
+      })
+    );
+  }
+  if (command.operation === "createMealPlan") {
+    return respond(
+      household.createMealPlan({
+        admission: memberAdmission(command.organizationId),
+        approvedRecipes: command.approvedRecipes,
+        policy: command.policy,
+        request: command.request,
+      })
+    );
+  }
+  if (command.operation === "createMealPlanFromRecipeBank") {
+    return respond(
+      household.createMealPlanFromRecipeBank({
+        admission: memberAdmission(command.organizationId),
+        policy: command.policy,
+        request: command.request,
+      })
+    );
+  }
+  if (command.operation === "inspectMealPlanStorage") {
+    return respond(household.inspectMealPlanStorage(command.draftId));
+  }
+  if (command.operation === "readMealPlan") {
+    return respond(
+      household.readMealPlan({
+        admission: memberAdmission(command.organizationId),
+        draftId: command.draftId,
+      })
+    );
+  }
+  if (command.operation === "rejectMealPlan") {
+    return respond(
+      household.rejectMealPlan({
+        admission: memberAdmission(command.organizationId),
+        request: command.request,
+      })
+    );
+  }
+  if (command.operation === "swapMealPlan") {
+    return respond(
+      household.swapMealPlan({
+        admission: memberAdmission(command.organizationId),
+        approvedRecipes: command.approvedRecipes,
+        request: command.request,
+      })
+    );
+  }
+  return null;
+};
+
 export default {
   fetch: async (request: Request, env: HouseholdTestEnv) => {
     const command = await Schema.decodeUnknownPromise(HouseholdTestCommand)(
@@ -668,221 +905,21 @@ export default {
     const household = Cloudflare.makeRpcStub<HouseholdObjectClient>(
       env.HouseholdObject.getByName(command.objectName)
     );
-    if (command.operation === "admitRecipeImport") {
-      return respond(
-        household.admitRecipeImport({
-          admission: memberAdmission(command.organizationId),
-          idempotencyKey: command.idempotencyKey,
-          source: command.source,
-        })
-      );
-    }
-    if (command.operation === "approveMealPlan") {
-      return respond(
-        household.approveMealPlan({
-          admission: memberAdmission(command.organizationId),
-          request: command.request,
-        })
-      );
-    }
-    if (command.operation === "answerRecipeImportAction") {
-      return respond(
-        household.answerRecipeImportAction({
-          actionId: command.actionId,
-          admission: memberAdmission(command.organizationId),
-          idempotencyKey: command.idempotencyKey,
-          intentId: command.intentId,
-          request: {
-            answers: command.answers,
-            expectedActionVersion: command.expectedActionVersion,
-          },
-        })
-      );
-    }
-    if (command.operation === "createMealPlan") {
-      return respond(
-        household.createMealPlan({
-          admission: memberAdmission(command.organizationId),
-          approvedRecipes: command.approvedRecipes,
-          policy: command.policy,
-          request: command.request,
-        })
-      );
-    }
-    if (command.operation === "createMealPlanFromRecipeBank") {
-      return respond(
-        household.createMealPlanFromRecipeBank({
-          admission: memberAdmission(command.organizationId),
-          policy: command.policy,
-          request: command.request,
-        })
-      );
-    }
-    if (command.operation === "commitRecipeImportDraft") {
-      return respond(
-        household.commitRecipeImportDraft({
-          admission: systemAdmission(
-            command.organizationId,
-            "recipe_import_lifecycle_commit"
-          ),
-          evidenceFingerprint: command.evidenceFingerprint,
-          expectedGeneration: command.expectedGeneration,
-          extractionFingerprint: command.extractionFingerprint,
-          intentId: command.intentId,
-          mutationId: command.mutationId,
-          review: command.review,
-        })
-      );
-    }
-    if (command.operation === "cancelRecipeImport") {
-      return respond(
-        household.cancelRecipeImport({
-          admission: memberAdmission(command.organizationId),
-          idempotencyKey: command.idempotencyKey,
-          intentId: command.intentId,
-          request: { expectedIntentVersion: command.expectedIntentVersion },
-        })
-      );
-    }
-    if (command.operation === "confirmRecipeImportAction") {
-      return respond(
-        household.confirmRecipeImportAction({
-          actionId: command.actionId,
-          admission: memberAdmission(command.organizationId),
-          idempotencyKey: command.idempotencyKey,
-          intentId: command.intentId,
-          request: { expectedActionVersion: command.expectedActionVersion },
-        })
-      );
-    }
-    if (command.operation === "confirmRecipeImportActionWithRecipeId") {
-      return respond(
-        household.confirmRecipeImportActionWithRecipeId(
-          {
-            actionId: command.actionId,
-            admission: memberAdmission(command.organizationId),
-            idempotencyKey: command.idempotencyKey,
-            intentId: command.intentId,
-            request: { expectedActionVersion: command.expectedActionVersion },
-          },
-          command.recipeId
-        )
-      );
-    }
-    if (command.operation === "corruptImportWorkflowDispatchState") {
-      return respond(
-        household.corruptImportWorkflowDispatchState(
-          command.dispatchId,
-          command.state
-        )
-      );
-    }
-    if (command.operation === "corruptHouseholdProvenanceCreatedAt") {
-      return respond(
-        household.corruptHouseholdProvenanceCreatedAt(command.createdAtEpochMs)
-      );
-    }
-    if (command.operation === "ensure") {
-      return respond(
-        household.ensureHousehold({
-          admission: memberAdmission(command.organizationId),
-        })
-      );
-    }
-    if (command.operation === "inspectMealPlanStorage") {
-      return respond(household.inspectMealPlanStorage(command.draftId));
-    }
-    if (command.operation === "inspectImportWorkflowDispatch") {
-      return respond(
-        household.inspectImportWorkflowDispatch(command.dispatchId)
-      );
-    }
-    if (command.operation === "invokeMalformedEnsure") {
-      return respond(household.invokeMalformedEnsure(command.payload));
-    }
-    if (command.operation === "recordRecipeImportDispatch") {
-      return respond(
-        household.recordRecipeImportDispatch({
-          admission: systemAdmission(command.organizationId),
-          dispatchId: command.dispatchId,
-          originalTrace: command.originalTrace,
-          outcome: command.outcome,
-          workflowIdentity: command.workflowIdentity,
-        })
-      );
-    }
-    if (command.operation === "listRecipeBank") {
-      return respond(
-        household.listRecipeBank({
-          admission: memberAdmission(command.organizationId),
-          byteLimit: command.byteLimit,
-          cursor: command.cursor,
-          limit: command.limit,
-        })
-      );
-    }
-    if (command.operation === "seedApprovedRecipes") {
-      return respond(household.seedApprovedRecipes(command.count));
-    }
-    if (command.operation === "readMealPlan") {
-      return respond(
-        household.readMealPlan({
-          admission: memberAdmission(command.organizationId),
-          draftId: command.draftId,
-        })
-      );
-    }
-    if (command.operation === "readRecipeImport") {
-      return respond(
-        household.readRecipeImport({
-          admission: memberAdmission(command.organizationId),
-          intentId: command.intentId,
-        })
-      );
-    }
-    if (command.operation === "rejectMealPlan") {
-      return respond(
-        household.rejectMealPlan({
-          admission: memberAdmission(command.organizationId),
-          request: command.request,
-        })
-      );
-    }
-    if (command.operation === "resolveRecipeImportSource") {
-      return respond(
-        household.resolveRecipeImportSource({
-          admission: systemAdmission(
-            command.organizationId,
-            "recipe_import_lifecycle_commit"
-          ),
-          canonicalSourceId: command.canonicalSourceId,
-          canonicalUrl: command.canonicalUrl,
-          expectedGeneration: command.expectedGeneration,
-          intentId: command.intentId,
-          mutationId: command.mutationId,
-          sourceKind: command.sourceKind,
-        })
-      );
-    }
-    if (command.operation === "transitionRecipeImportLifecycle") {
-      return respond(
-        household.transitionRecipeImportLifecycle({
-          admission: systemAdmission(
-            command.organizationId,
-            "recipe_import_lifecycle_commit"
-          ),
-          expectedGeneration: command.expectedGeneration,
-          intentId: command.intentId,
-          transition: command.transition,
-        })
-      );
-    }
-    return respond(
-      household.swapMealPlan({
-        admission: memberAdmission(command.organizationId),
-        approvedRecipes: command.approvedRecipes,
-        request: command.request,
-      })
+    const recipeImportResponse = routeRecipeImportTestCommand(
+      household,
+      command
     );
+    if (recipeImportResponse !== null) {
+      return recipeImportResponse;
+    }
+    const administrationResponse = routeHouseholdAdministrationTestCommand(
+      household,
+      command
+    );
+    if (administrationResponse !== null) {
+      return administrationResponse;
+    }
+    const mealPlanResponse = routeMealPlanTestCommand(household, command);
+    return mealPlanResponse ?? new Response(null, { status: 404 });
   },
 };

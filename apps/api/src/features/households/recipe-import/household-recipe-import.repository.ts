@@ -249,6 +249,25 @@ export const makeHouseholdRecipeImportRepository = (
   const readIntentFromRow = (row: { readonly intentJson: string }) =>
     decode(EncodedIntent, row.intentJson);
 
+  const persistLifecycleTimeline = (
+    transaction: EffectSQLiteDoDatabase,
+    input: {
+      readonly intentId: string;
+      readonly intentVersion: number;
+      readonly timeline: Schema.Json | null;
+    }
+  ) =>
+    input.timeline === null
+      ? Effect.void
+      : Effect.gen(function* persistRecipeImportLifecycleTimeline() {
+          const eventJson = yield* encodeTimelineEvent(input.timeline);
+          yield* transaction.insert(householdRecipeImportTimeline).values({
+            eventJson,
+            intentId: input.intentId,
+            intentVersion: input.intentVersion,
+          });
+        });
+
   const readReceipt = <S extends Schema.Top>(
     connection: EffectSQLiteDoDatabase,
     mutationId: string,
@@ -274,6 +293,33 @@ export const makeHouseholdRecipeImportRepository = (
           );
         })
       );
+
+  const prepareLifecycleTransition = (
+    transaction: EffectSQLiteDoDatabase,
+    input: HouseholdTransitionRecipeImportLifecycleInput,
+    mutationId: string,
+    commandDigest: string
+  ) =>
+    Effect.gen(function* prepareRecipeImportLifecycleTransition() {
+      const replay = yield* readReceipt(
+        transaction,
+        mutationId,
+        commandDigest,
+        RecipeImportIntent
+      );
+      if (Option.isSome(replay)) {
+        return { _tag: "Replay" as const, intent: replay.value };
+      }
+      const row = yield* requireIntentRow(transaction, input.intentId);
+      if (row.executionGeneration !== input.expectedGeneration) {
+        return yield* Effect.fail(failure("generation_conflict"));
+      }
+      const intent = yield* readIntentFromRow(row);
+      if (intent.status !== "processing") {
+        return yield* Effect.fail(failure("illegal_transition"));
+      }
+      return { _tag: "Prepared" as const, intent };
+    });
 
   const persistReceipt = <S extends Schema.Top>(
     transaction: EffectSQLiteDoDatabase,
@@ -753,23 +799,16 @@ export const makeHouseholdRecipeImportRepository = (
       return yield* database
         .transaction((transaction) =>
           Effect.gen(function* commitLifecycleTransition() {
-            const transactionReplay = yield* readReceipt(
+            const preparation = yield* prepareLifecycleTransition(
               transaction,
+              input,
               mutationId,
-              commandDigest,
-              RecipeImportIntent
+              commandDigest
             );
-            if (Option.isSome(transactionReplay)) {
-              return transactionReplay.value;
+            if (preparation._tag === "Replay") {
+              return preparation.intent;
             }
-            const row = yield* requireIntentRow(transaction, input.intentId);
-            if (row.executionGeneration !== input.expectedGeneration) {
-              return yield* Effect.fail(failure("generation_conflict"));
-            }
-            const current = yield* readIntentFromRow(row);
-            if (current.status !== "processing") {
-              return yield* Effect.fail(failure("illegal_transition"));
-            }
+            const current = preparation.intent;
             const currentWire = yield* encode(RecipeImportIntent, current);
             const currentActivityWire = yield* encode(
               ProcessingActivity,
@@ -952,13 +991,11 @@ export const makeHouseholdRecipeImportRepository = (
                 updatedAt: now,
               })
               .where(eq(householdRecipeImports.intentId, input.intentId));
-            if (timeline !== null) {
-              yield* transaction.insert(householdRecipeImportTimeline).values({
-                eventJson: yield* encodeTimelineEvent(timeline),
-                intentId: input.intentId,
-                intentVersion: next.intentVersion,
-              });
-            }
+            yield* persistLifecycleTimeline(transaction, {
+              intentId: input.intentId,
+              intentVersion: next.intentVersion,
+              timeline,
+            });
             yield* persistReceipt(transaction, {
               commandDigest,
               mutationId,
