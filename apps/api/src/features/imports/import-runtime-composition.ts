@@ -1,7 +1,6 @@
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Option, Schema } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
@@ -10,6 +9,8 @@ import { ProviderAccountingDatabase } from "../../infrastructure/provider-accoun
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
+import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
+import type { ProviderAccountingDatabase as ProviderAccountingDrizzleDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingRunId,
   ProviderAccountingTimestamp,
@@ -170,7 +171,7 @@ const currentProviderAccountingTimestamp = () =>
 /** Shared production accounting and extraction composition for recipe Workflows. */
 export const makeRecipeRecoveryProviderRuntime = (input: {
   readonly correlationId: ImportCorrelationId;
-  readonly database: AnyD1Database;
+  readonly database: ProviderAccountingDrizzleDatabase;
   readonly now: () => typeof ProviderAccountingTimestamp.Type;
   readonly runId: typeof ProviderAccountingRunId.Type;
   readonly transport: WorkersAiTransport["recipe"];
@@ -236,8 +237,9 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
         const workflowInput = yield* resolveRecipeRecoveryWorkflowInput(
           rawInput
         ).pipe(Effect.orDie);
-        const providerAccountingDatabase =
-          yield* providerAccountingQueryDatabase.raw;
+        const providerAccountingDatabase = makeProviderAccountingDatabase(
+          yield* providerAccountingQueryDatabase.raw
+        );
         const bucket = adaptAcquisitionBucket(evidenceBucket, runtimeContext);
         const evidenceRepositories =
           yield* makeRecipeRecoveryHouseholdEvidenceRepositories({

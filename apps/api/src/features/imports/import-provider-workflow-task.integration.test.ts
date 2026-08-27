@@ -9,11 +9,21 @@ import { fileURLToPath } from "node:url";
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
 import * as Bundle from "alchemy/Bundle";
-import type { AnyD1Database } from "drizzle-orm/d1";
+import { and, count, eq } from "drizzle-orm";
 import { Effect, Schema } from "effect";
 import type { ModuleDefinition } from "miniflare";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import {
+  providerAccountingBudgets,
+  providerAccountingConservativeSettlements,
+  providerAccountingDispatches,
+  providerAccountingRecipeReplayValues,
+} from "../provider-accounting/provider-accounting.database-schema.js";
+import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
+import type { ProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
+import { ProviderAccountingScope } from "../provider-accounting/provider-accounting.js";
 
 interface ProviderWorkflowInput {
   readonly failureCode?: string;
@@ -273,28 +283,94 @@ const runVisualRecipeBudget = (id: string) =>
 const restartFromAfterProviderCheckpoint = (id: string) =>
   commandWorkflow({ action: "restart", id });
 
-const resetGlobalProviderAccounting = (database: AnyD1Database) =>
-  database
-    .prepare(
-      `UPDATE provider_accounting_budgets
-          SET invoking_dispatch_id = NULL,
-              poison_dispatch_id = NULL,
-              reserved_micro_usd = 0,
-              state = 'open'
-        WHERE accounting_scope = 'recipe-import'`
+const getProviderAccountingDatabase = async () =>
+  makeProviderAccountingDatabase(
+    await runtime.getD1Database("ProviderAccountingDatabase")
+  );
+
+const readProviderAccountingBudget = async (
+  database: ProviderAccountingDatabase
+) => {
+  const [budget] = await database
+    .select({
+      invoking_dispatch_id: providerAccountingBudgets.invokingDispatchId,
+      poison_dispatch_id: providerAccountingBudgets.poisonDispatchId,
+      reserved_micro_usd: providerAccountingBudgets.reservedMicroUsd,
+      settled_micro_usd: providerAccountingBudgets.settledMicroUsd,
+      state: providerAccountingBudgets.state,
+    })
+    .from(providerAccountingBudgets)
+    .where(
+      eq(providerAccountingBudgets.accountingScope, ProviderAccountingScope)
     )
-    .run();
+    .limit(1);
+  return budget ?? null;
+};
+
+const countProviderAccountingDispatches = async (
+  database: ProviderAccountingDatabase
+) => {
+  const [result] = await database
+    .select({ count: count() })
+    .from(providerAccountingDispatches);
+  return result?.count ?? 0;
+};
+
+const countConservativeSettlements = async (
+  database: ProviderAccountingDatabase,
+  dispatchId: string
+) => {
+  const [result] = await database
+    .select({ count: count() })
+    .from(providerAccountingConservativeSettlements)
+    .where(
+      and(
+        eq(
+          providerAccountingConservativeSettlements.accountingScope,
+          ProviderAccountingScope
+        ),
+        eq(providerAccountingConservativeSettlements.dispatchId, dispatchId)
+      )
+    );
+  return result?.count ?? 0;
+};
+
+const countRecipeReplayValues = async (
+  database: ProviderAccountingDatabase,
+  dispatchId: string
+) => {
+  const [result] = await database
+    .select({ count: count() })
+    .from(providerAccountingRecipeReplayValues)
+    .where(
+      and(
+        eq(
+          providerAccountingRecipeReplayValues.accountingScope,
+          ProviderAccountingScope
+        ),
+        eq(providerAccountingRecipeReplayValues.dispatchId, dispatchId)
+      )
+    );
+  return result?.count ?? 0;
+};
+
+const resetGlobalProviderAccounting = (database: ProviderAccountingDatabase) =>
+  database
+    .update(providerAccountingBudgets)
+    .set({
+      invokingDispatchId: null,
+      poisonDispatchId: null,
+      reservedMicroUsd: 0,
+      state: "open",
+    })
+    .where(
+      eq(providerAccountingBudgets.accountingScope, ProviderAccountingScope)
+    );
 
 describe("provider workflow task retry exhaustion", () => {
   it("settles missing visual usage at the bounded maximum and permits the next recipe dispatch", async () => {
-    const database = await runtime.getD1Database("ProviderAccountingDatabase");
-    const stageBefore = await database
-      .prepare(
-        `SELECT settled_micro_usd
-           FROM provider_accounting_budgets
-          WHERE accounting_scope = 'recipe-import'`
-      )
-      .first<{ readonly settled_micro_usd: number }>();
+    const database = await getProviderAccountingDatabase();
+    const stageBefore = await readProviderAccountingBudget(database);
     if (stageBefore === null) {
       throw new Error("Provider accounting baseline is missing");
     }
@@ -319,53 +395,60 @@ describe("provider workflow task retry exhaustion", () => {
       });
       await expect(
         database
-          .prepare(
-            `SELECT actual_cost_micro_usd, dispatch_id, state
-               FROM provider_accounting_dispatches
-              WHERE run_id = 'gaia-199:missing-visual-usage'
-              ORDER BY dispatch_id`
+          .select({
+            actual_cost_micro_usd:
+              providerAccountingDispatches.actualCostMicroUsd,
+            dispatch_id: providerAccountingDispatches.dispatchId,
+            state: providerAccountingDispatches.state,
+          })
+          .from(providerAccountingDispatches)
+          .where(
+            eq(
+              providerAccountingDispatches.runId,
+              "gaia-199:missing-visual-usage"
+            )
           )
-          .all()
-      ).resolves.toMatchObject({
-        results: [
-          {
-            actual_cost_micro_usd: 29,
-            dispatch_id:
-              "recipe:00000000-0000-4000-8000-000000000199:1:gaia-199-evidence",
-            state: "settled_known",
-          },
-          {
-            actual_cost_micro_usd: 100_000,
-            dispatch_id: "visual:gaia-199:1",
-            state: "settled_known",
-          },
-        ],
-      });
+          .orderBy(providerAccountingDispatches.dispatchId)
+      ).resolves.toMatchObject([
+        {
+          actual_cost_micro_usd: 29,
+          dispatch_id:
+            "recipe:00000000-0000-4000-8000-000000000199:1:gaia-199-evidence",
+          state: "settled_known",
+        },
+        {
+          actual_cost_micro_usd: 100_000,
+          dispatch_id: "visual:gaia-199:1",
+          state: "settled_known",
+        },
+      ]);
     } finally {
       await database
-        .prepare(
-          `DELETE FROM provider_accounting_dispatches
-            WHERE run_id = 'gaia-199:missing-visual-usage'`
-        )
-        .run();
+        .delete(providerAccountingDispatches)
+        .where(
+          eq(
+            providerAccountingDispatches.runId,
+            "gaia-199:missing-visual-usage"
+          )
+        );
       await database
-        .prepare(
-          `UPDATE provider_accounting_budgets
-              SET settled_micro_usd = ?,
-                  reserved_micro_usd = 0,
-                  state = 'open',
-                  invoking_dispatch_id = NULL,
-                  poison_dispatch_id = NULL
-            WHERE accounting_scope = 'recipe-import'`
-        )
-        .bind(stageBefore.settled_micro_usd)
-        .run();
+        .update(providerAccountingBudgets)
+        .set({
+          invokingDispatchId: null,
+          poisonDispatchId: null,
+          reservedMicroUsd: 0,
+          settledMicroUsd: stageBefore.settled_micro_usd,
+          state: "open",
+        })
+        .where(
+          eq(providerAccountingBudgets.accountingScope, ProviderAccountingScope)
+        );
     }
   });
 
   it("uses native retries, checkpoints final exhaustion, and replays with zero provider calls", async () => {
     const instanceId = "gaia-163-native-retry-exhausted";
-    const database = await runtime.getD1Database("ProviderAccountingDatabase");
+    const database = await getProviderAccountingDatabase();
 
     await expect(
       runWorkflow(instanceId, { scenario: "retry_exhausted" })
@@ -382,42 +465,35 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "workflow-runs")).toBe(1);
     await expect(
       database
-        .prepare(
-          `SELECT actual_cost_micro_usd, dispatch_id, state
-             FROM provider_accounting_dispatches
-            WHERE run_id = 'run_gaia_186_known_zero'
-            ORDER BY dispatch_id`
+        .select({
+          actual_cost_micro_usd:
+            providerAccountingDispatches.actualCostMicroUsd,
+          dispatch_id: providerAccountingDispatches.dispatchId,
+          state: providerAccountingDispatches.state,
+        })
+        .from(providerAccountingDispatches)
+        .where(
+          eq(providerAccountingDispatches.runId, "run_gaia_186_known_zero")
         )
-        .all()
-    ).resolves.toMatchObject({
-      results: [
-        {
-          actual_cost_micro_usd: 0,
-          dispatch_id: "speech:gaia-186-known-zero:1",
-          state: "settled_known",
-        },
-        {
-          actual_cost_micro_usd: 0,
-          dispatch_id: "speech:gaia-186-known-zero:1:attempt:2",
-          state: "settled_known",
-        },
-        {
-          actual_cost_micro_usd: 0,
-          dispatch_id: "speech:gaia-186-known-zero:1:attempt:3",
-          state: "settled_known",
-        },
-      ],
-    });
-    await expect(
-      database
-        .prepare(
-          `SELECT invoking_dispatch_id, poison_dispatch_id,
-                  reserved_micro_usd, settled_micro_usd, state
-             FROM provider_accounting_budgets
-            WHERE accounting_scope = 'recipe-import'`
-        )
-        .first()
-    ).resolves.toEqual({
+        .orderBy(providerAccountingDispatches.dispatchId)
+    ).resolves.toMatchObject([
+      {
+        actual_cost_micro_usd: 0,
+        dispatch_id: "speech:gaia-186-known-zero:1",
+        state: "settled_known",
+      },
+      {
+        actual_cost_micro_usd: 0,
+        dispatch_id: "speech:gaia-186-known-zero:1:attempt:2",
+        state: "settled_known",
+      },
+      {
+        actual_cost_micro_usd: 0,
+        dispatch_id: "speech:gaia-186-known-zero:1:attempt:3",
+        state: "settled_known",
+      },
+    ]);
+    await expect(readProviderAccountingBudget(database)).resolves.toEqual({
       invoking_dispatch_id: null,
       poison_dispatch_id: null,
       reserved_micro_usd: 0,
@@ -442,18 +518,10 @@ describe("provider workflow task retry exhaustion", () => {
 
   it("uses the installed speech adapter and real ledger to fence an ambiguous retry and replay", async () => {
     const instanceId = "gaia-163-native-unknown-poison";
-    const database = await runtime.getD1Database("ProviderAccountingDatabase");
-    const stageBefore = await database
-      .prepare(
-        `SELECT settled_micro_usd
-           FROM provider_accounting_budgets
-          WHERE accounting_scope = 'recipe-import'`
-      )
-      .first<{ readonly settled_micro_usd: number }>();
-    const dispatchesBefore = await database
-      .prepare("SELECT COUNT(*) AS count FROM provider_accounting_dispatches")
-      .first<{ readonly count: number }>();
-    if (stageBefore === null || dispatchesBefore === null) {
+    const database = await getProviderAccountingDatabase();
+    const stageBefore = await readProviderAccountingBudget(database);
+    const dispatchesBefore = await countProviderAccountingDispatches(database);
+    if (stageBefore === null) {
       throw new Error("Provider accounting baseline is missing");
     }
 
@@ -470,14 +538,7 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "task-attempts")).toBe(2);
     expect(await readNumber(instanceId, "provider-calls")).toBe(1);
 
-    const stage = await database
-      .prepare(
-        `SELECT invoking_dispatch_id, poison_dispatch_id, reserved_micro_usd,
-                settled_micro_usd, state
-           FROM provider_accounting_budgets
-          WHERE accounting_scope = 'recipe-import'`
-      )
-      .first();
+    const stage = await readProviderAccountingBudget(database);
     expect(stage).toEqual({
       invoking_dispatch_id: null,
       poison_dispatch_id: "speech:gaia-186-ambiguous:1",
@@ -486,15 +547,24 @@ describe("provider workflow task retry exhaustion", () => {
       state: "poisoned",
     });
     const dispatches = await database
-      .prepare(
-        `SELECT actual_cost_micro_usd, dispatch_id, maximum_cost_micro_usd,
-                provider_stage_id, run_id, state
-          FROM provider_accounting_dispatches
-          WHERE dispatch_id = 'speech:gaia-186-ambiguous:1'
-          ORDER BY dispatch_id`
+      .select({
+        actual_cost_micro_usd: providerAccountingDispatches.actualCostMicroUsd,
+        dispatch_id: providerAccountingDispatches.dispatchId,
+        maximum_cost_micro_usd:
+          providerAccountingDispatches.maximumCostMicroUsd,
+        provider_stage_id: providerAccountingDispatches.providerStageId,
+        run_id: providerAccountingDispatches.runId,
+        state: providerAccountingDispatches.state,
+      })
+      .from(providerAccountingDispatches)
+      .where(
+        eq(
+          providerAccountingDispatches.dispatchId,
+          "speech:gaia-186-ambiguous:1"
+        )
       )
-      .all();
-    expect(dispatches.results).toEqual([
+      .orderBy(providerAccountingDispatches.dispatchId);
+    expect(dispatches).toEqual([
       {
         actual_cost_micro_usd: null,
         dispatch_id: "speech:gaia-186-ambiguous:1",
@@ -518,16 +588,14 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
     expect(await readNumber(instanceId, "task-attempts")).toBe(2);
     expect(await readNumber(instanceId, "provider-calls")).toBe(1);
-    await expect(
-      database
-        .prepare("SELECT COUNT(*) AS count FROM provider_accounting_dispatches")
-        .first()
-    ).resolves.toEqual({ count: dispatchesBefore.count + 1 });
+    await expect(countProviderAccountingDispatches(database)).resolves.toBe(
+      dispatchesBefore + 1
+    );
   });
 
   it("replays an ambiguous installed visual adapter checkpoint without a second provider call", async () => {
     const instanceId = "slice-2-native-visual-unknown-replay";
-    const database = await runtime.getD1Database("ProviderAccountingDatabase");
+    const database = await getProviderAccountingDatabase();
     await resetGlobalProviderAccounting(database);
 
     await expect(
@@ -543,12 +611,20 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "provider-calls")).toBe(1);
     await expect(
       database
-        .prepare(
-          `SELECT dispatch_id, provider_stage_id, state
-             FROM provider_accounting_dispatches
-            WHERE dispatch_id = 'visual:gaia-188-ambiguous:1'`
+        .select({
+          dispatch_id: providerAccountingDispatches.dispatchId,
+          provider_stage_id: providerAccountingDispatches.providerStageId,
+          state: providerAccountingDispatches.state,
+        })
+        .from(providerAccountingDispatches)
+        .where(
+          eq(
+            providerAccountingDispatches.dispatchId,
+            "visual:gaia-188-ambiguous:1"
+          )
         )
-        .first()
+        .limit(1)
+        .then(([row]) => row ?? null)
     ).resolves.toEqual({
       dispatch_id: "visual:gaia-188-ambiguous:1",
       provider_stage_id: "visual-evidence",
@@ -718,7 +794,7 @@ describe("provider workflow task retry exhaustion", () => {
     const instanceId = `recipe-recovery-accounted-${randomUUID()}`;
     const importId = randomUUID();
     const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:1`;
-    const database = await runtime.getD1Database("ProviderAccountingDatabase");
+    const database = await getProviderAccountingDatabase();
     await resetGlobalProviderAccounting(database);
 
     await expect(
@@ -735,14 +811,27 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "post-settlement-crashes")).toBe(1);
     await expect(
       database
-        .prepare(
-          `SELECT actual_cost_micro_usd, maximum_cost_micro_usd,
-                  provider_stage_id, run_id, state
-             FROM provider_accounting_dispatches
-            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+        .select({
+          actual_cost_micro_usd:
+            providerAccountingDispatches.actualCostMicroUsd,
+          maximum_cost_micro_usd:
+            providerAccountingDispatches.maximumCostMicroUsd,
+          provider_stage_id: providerAccountingDispatches.providerStageId,
+          run_id: providerAccountingDispatches.runId,
+          state: providerAccountingDispatches.state,
+        })
+        .from(providerAccountingDispatches)
+        .where(
+          and(
+            eq(
+              providerAccountingDispatches.accountingScope,
+              ProviderAccountingScope
+            ),
+            eq(providerAccountingDispatches.dispatchId, dispatchId)
+          )
         )
-        .bind(dispatchId)
-        .first()
+        .limit(1)
+        .then(([row]) => row ?? null)
     ).resolves.toEqual({
       actual_cost_micro_usd: null,
       maximum_cost_micro_usd: 100_000,
@@ -751,15 +840,8 @@ describe("provider workflow task retry exhaustion", () => {
       state: "settled_unknown",
     });
     await expect(
-      database
-        .prepare(
-          `SELECT COUNT(*) AS count
-             FROM provider_accounting_conservative_settlements
-            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
-        )
-        .bind(dispatchId)
-        .first()
-    ).resolves.toEqual({ count: 1 });
+      countConservativeSettlements(database, dispatchId)
+    ).resolves.toBe(1);
   });
 
   it("restarts a completed provider-error recovery for a newly prepared higher ordinal and commits its review draft once", async () => {
@@ -767,7 +849,7 @@ describe("provider workflow task retry exhaustion", () => {
     const instanceId = `import-recipe-recovery-${importId}-1`;
     const firstDispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:1`;
     const secondDispatchId = `recipe:${importId}:1:${"e".repeat(64)}:recovery:2`;
-    const database = await runtime.getD1Database("ProviderAccountingDatabase");
+    const database = await getProviderAccountingDatabase();
     await resetGlobalProviderAccounting(database);
 
     await expect(
@@ -804,13 +886,23 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "recovery-review-commits")).toBe(1);
     await expect(
       database
-        .prepare(
-          `SELECT provider_stage_id, run_id, state
-             FROM provider_accounting_dispatches
-            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+        .select({
+          provider_stage_id: providerAccountingDispatches.providerStageId,
+          run_id: providerAccountingDispatches.runId,
+          state: providerAccountingDispatches.state,
+        })
+        .from(providerAccountingDispatches)
+        .where(
+          and(
+            eq(
+              providerAccountingDispatches.accountingScope,
+              ProviderAccountingScope
+            ),
+            eq(providerAccountingDispatches.dispatchId, secondDispatchId)
+          )
         )
-        .bind(secondDispatchId)
-        .first()
+        .limit(1)
+        .then(([row]) => row ?? null)
     ).resolves.toEqual({
       provider_stage_id: "recipe-extraction",
       run_id: `recipe-import:recipe-recovery:${importId}`,
@@ -818,13 +910,24 @@ describe("provider workflow task retry exhaustion", () => {
     });
     await expect(
       database
-        .prepare(
-          `SELECT dispatch_id, provider_stage_id, run_id, state
-             FROM provider_accounting_dispatches
-            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+        .select({
+          dispatch_id: providerAccountingDispatches.dispatchId,
+          provider_stage_id: providerAccountingDispatches.providerStageId,
+          run_id: providerAccountingDispatches.runId,
+          state: providerAccountingDispatches.state,
+        })
+        .from(providerAccountingDispatches)
+        .where(
+          and(
+            eq(
+              providerAccountingDispatches.accountingScope,
+              ProviderAccountingScope
+            ),
+            eq(providerAccountingDispatches.dispatchId, firstDispatchId)
+          )
         )
-        .bind(firstDispatchId)
-        .first()
+        .limit(1)
+        .then(([row]) => row ?? null)
     ).resolves.toEqual({
       dispatch_id: firstDispatchId,
       provider_stage_id: "recipe-extraction",
@@ -879,15 +982,9 @@ describe("provider workflow task retry exhaustion", () => {
     const instanceId = `gaia-205-recipe-conservative-${randomUUID()}`;
     const importId = randomUUID();
     const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}`;
-    const database = await runtime.getD1Database("ProviderAccountingDatabase");
+    const database = await getProviderAccountingDatabase();
     await resetGlobalProviderAccounting(database);
-    const stageBefore = await database
-      .prepare(
-        `SELECT settled_micro_usd
-           FROM provider_accounting_budgets
-          WHERE accounting_scope = 'recipe-import'`
-      )
-      .first<{ readonly settled_micro_usd: number }>();
+    const stageBefore = await readProviderAccountingBudget(database);
     if (stageBefore === null) {
       throw new Error("Provider accounting baseline is missing");
     }
@@ -911,14 +1008,28 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "recipe-dispatch-completions")).toBe(1);
     await expect(
       database
-        .prepare(
-          `SELECT actual_cost_micro_usd, dispatch_id,
-                  maximum_cost_micro_usd, provider_stage_id, run_id, state
-             FROM provider_accounting_dispatches
-            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+        .select({
+          actual_cost_micro_usd:
+            providerAccountingDispatches.actualCostMicroUsd,
+          dispatch_id: providerAccountingDispatches.dispatchId,
+          maximum_cost_micro_usd:
+            providerAccountingDispatches.maximumCostMicroUsd,
+          provider_stage_id: providerAccountingDispatches.providerStageId,
+          run_id: providerAccountingDispatches.runId,
+          state: providerAccountingDispatches.state,
+        })
+        .from(providerAccountingDispatches)
+        .where(
+          and(
+            eq(
+              providerAccountingDispatches.accountingScope,
+              ProviderAccountingScope
+            ),
+            eq(providerAccountingDispatches.dispatchId, dispatchId)
+          )
         )
-        .bind(dispatchId)
-        .first()
+        .limit(1)
+        .then(([row]) => row ?? null)
     ).resolves.toEqual({
       actual_cost_micro_usd: null,
       dispatch_id: dispatchId,
@@ -929,27 +1040,28 @@ describe("provider workflow task retry exhaustion", () => {
     });
     await expect(
       database
-        .prepare(
-          `SELECT authority, conservative_charge_micro_usd
-             FROM provider_accounting_conservative_settlements
-            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+        .select({
+          authority: providerAccountingConservativeSettlements.authority,
+          conservative_charge_micro_usd:
+            providerAccountingConservativeSettlements.conservativeChargeMicroUsd,
+        })
+        .from(providerAccountingConservativeSettlements)
+        .where(
+          and(
+            eq(
+              providerAccountingConservativeSettlements.accountingScope,
+              ProviderAccountingScope
+            ),
+            eq(providerAccountingConservativeSettlements.dispatchId, dispatchId)
+          )
         )
-        .bind(dispatchId)
-        .first()
+        .limit(1)
+        .then(([row]) => row ?? null)
     ).resolves.toEqual({
       authority: "schema_valid_provider_response",
       conservative_charge_micro_usd: 100_000,
     });
-    await expect(
-      database
-        .prepare(
-          `SELECT invoking_dispatch_id, poison_dispatch_id,
-                  reserved_micro_usd, settled_micro_usd, state
-             FROM provider_accounting_budgets
-            WHERE accounting_scope = 'recipe-import'`
-        )
-        .first()
-    ).resolves.toEqual({
+    await expect(readProviderAccountingBudget(database)).resolves.toEqual({
       invoking_dispatch_id: null,
       poison_dispatch_id: null,
       reserved_micro_usd: 0,
@@ -973,43 +1085,24 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "recipe-adapter-completions")).toBe(1);
     expect(await readNumber(instanceId, "recipe-dispatch-completions")).toBe(1);
     await expect(
-      database
-        .prepare(
-          `SELECT COUNT(*) AS count
-             FROM provider_accounting_conservative_settlements
-            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
-        )
-        .bind(dispatchId)
-        .first()
-    ).resolves.toEqual({ count: 1 });
-    await expect(
-      database
-        .prepare(
-          `SELECT reserved_micro_usd, settled_micro_usd, state
-             FROM provider_accounting_budgets
-            WHERE accounting_scope = 'recipe-import'`
-        )
-        .first()
-    ).resolves.toEqual({
-      reserved_micro_usd: 0,
-      settled_micro_usd: stageBefore.settled_micro_usd + 100_000,
-      state: "open",
-    });
+      countConservativeSettlements(database, dispatchId)
+    ).resolves.toBe(1);
+    await expect(readProviderAccountingBudget(database)).resolves.toMatchObject(
+      {
+        reserved_micro_usd: 0,
+        settled_micro_usd: stageBefore.settled_micro_usd + 100_000,
+        state: "open",
+      }
+    );
   });
 
   it("replays a conservatively settled recipe after a native post-settlement crash without a second provider call or charge", async () => {
     const instanceId = `gaia-205-recipe-conservative-crash-${randomUUID()}`;
     const importId = randomUUID();
     const dispatchId = `recipe:${importId}:1:${"e".repeat(64)}`;
-    const database = await runtime.getD1Database("ProviderAccountingDatabase");
+    const database = await getProviderAccountingDatabase();
     await resetGlobalProviderAccounting(database);
-    const stageBefore = await database
-      .prepare(
-        `SELECT settled_micro_usd
-           FROM provider_accounting_budgets
-          WHERE accounting_scope = 'recipe-import'`
-      )
-      .first<{ readonly settled_micro_usd: number }>();
+    const stageBefore = await readProviderAccountingBudget(database);
     if (stageBefore === null) {
       throw new Error("Provider accounting baseline is missing");
     }
@@ -1034,35 +1127,12 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "recipe-dispatch-completions")).toBe(1);
     expect(await readNumber(instanceId, "post-settlement-crashes")).toBe(1);
     await expect(
-      database
-        .prepare(
-          `SELECT COUNT(*) AS count
-             FROM provider_accounting_conservative_settlements
-            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
-        )
-        .bind(dispatchId)
-        .first()
-    ).resolves.toEqual({ count: 1 });
-    await expect(
-      database
-        .prepare(
-          `SELECT COUNT(*) AS count
-             FROM provider_accounting_recipe_replay_values
-            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
-        )
-        .bind(dispatchId)
-        .first()
-    ).resolves.toEqual({ count: 1 });
-    await expect(
-      database
-        .prepare(
-          `SELECT invoking_dispatch_id, poison_dispatch_id,
-                  reserved_micro_usd, settled_micro_usd, state
-             FROM provider_accounting_budgets
-            WHERE accounting_scope = 'recipe-import'`
-        )
-        .first()
-    ).resolves.toEqual({
+      countConservativeSettlements(database, dispatchId)
+    ).resolves.toBe(1);
+    await expect(countRecipeReplayValues(database, dispatchId)).resolves.toBe(
+      1
+    );
+    await expect(readProviderAccountingBudget(database)).resolves.toEqual({
       invoking_dispatch_id: null,
       poison_dispatch_id: null,
       reserved_micro_usd: 0,

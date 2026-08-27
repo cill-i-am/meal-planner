@@ -31,6 +31,7 @@ import type { HouseholdOrganizationId } from "../households/household.contract.j
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import type { HouseholdRecipeImportLifecycleTransition } from "../households/recipe-import/household-recipe-import.contract.js";
 import type { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
+import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingRunId,
   ProviderAccountingTimestamp,
@@ -703,8 +704,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
         const workflowInput = yield* decodeImportWorkflowInput(rawInput).pipe(
           Effect.orDie
         );
-        const providerAccountingDatabase =
-          yield* providerAccountingQueryDatabase.raw;
+        const providerAccountingDatabase = makeProviderAccountingDatabase(
+          yield* providerAccountingQueryDatabase.raw
+        );
         const { executionGeneration, importId, organizationId, trace } =
           workflowInput;
         const { correlationId } = trace;

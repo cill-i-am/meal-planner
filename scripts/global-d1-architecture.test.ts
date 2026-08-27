@@ -611,19 +611,19 @@ export const makeD1 = TenantD1.Database;`,
     });
 
     it("rejects an aliased D1 consumer import in an allowed call path", () => {
-      const servicePath =
-        "apps/api/src/features/provider-accounting/provider-accounting.service.ts";
-      const service = readFileSync(
-        path.join(repositoryRoot, servicePath),
+      const databasePath =
+        "apps/api/src/features/provider-accounting/provider-accounting.database.ts";
+      const database = readFileSync(
+        path.join(repositoryRoot, databasePath),
         "utf-8"
       )
         .replaceAll("AnyD1Database", "TenantGlobalDatabase")
         .replace(
-          'import type { TenantGlobalDatabase } from "drizzle-orm/d1";',
-          'import type { AnyD1Database as TenantGlobalDatabase } from "drizzle-orm/d1";'
+          'import type { TenantGlobalDatabase, DrizzleD1Database } from "drizzle-orm/d1";',
+          'import type { AnyD1Database as TenantGlobalDatabase, DrizzleD1Database } from "drizzle-orm/d1";'
         );
 
-      withTrackedSource(servicePath, service, () => {
+      withTrackedSource(databasePath, database, () => {
         expect(
           inspectGlobalD1Architecture(
             readTrackedGlobalD1Architecture(trackedRepositoryRoot)

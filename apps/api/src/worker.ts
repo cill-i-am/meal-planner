@@ -45,6 +45,7 @@ import { ImportSystemAuthorizationConfig } from "./features/imports/import.auth.
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
+import { makeProviderAccountingDatabase } from "./features/provider-accounting/provider-accounting.database.js";
 import { ProviderAccountingRouteDefinitions } from "./features/provider-accounting/provider-accounting.routes.js";
 import {
   HouseholdImportBatchDeadLetterQueue,
@@ -156,8 +157,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         if (!(webRequest instanceof Request)) {
           return yield* Effect.die("Expected a Web Request source.");
         }
-        const providerAccountingDatabase =
-          yield* providerAccountingQueryDatabase.raw;
+        const providerAccountingDatabase = makeProviderAccountingDatabase(
+          yield* providerAccountingQueryDatabase.raw
+        );
         const authDatabase = drizzle(yield* authQueryDatabase.raw);
         const requestOrigin = new URL(webRequest.url).origin;
         const auth = makeMealPlannerAuth({

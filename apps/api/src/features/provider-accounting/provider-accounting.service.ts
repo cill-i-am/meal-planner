@@ -1,7 +1,14 @@
-import type { AnyD1Database } from "drizzle-orm/d1";
+import { and, eq, exists, gte, isNull, lte, sql } from "drizzle-orm";
 import { Context, DateTime, Effect, Schema } from "effect";
 
 import { ImportId, ImportTimestamp } from "../imports/import.contracts.js";
+import {
+  providerAccountingBudgets,
+  providerAccountingDispatches,
+  providerAccountingRecipeReplayValues,
+  providerAccountingReconciliations,
+} from "./provider-accounting.database-schema.js";
+import type { ProviderAccountingDatabase } from "./provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingScope,
@@ -107,41 +114,69 @@ interface GlobalSettlementIdentity {
 }
 
 const readGlobalSettlement = (
-  database: AnyD1Database,
+  database: ProviderAccountingDatabase,
   input: GlobalSettlementInput,
   identity: GlobalSettlementIdentity
 ) =>
-  persistenceEffect<unknown | null>(() =>
+  persistenceEffect(() =>
     database
-      .prepare(
-        `SELECT audit.accounting_scope, audit.dispatch_id,
-                audit.conservative_charge_micro_usd, audit.authority,
-                audit.created_at
-           FROM provider_accounting_reconciliations AS audit
-           JOIN provider_accounting_dispatches AS dispatch
-             ON dispatch.accounting_scope = audit.accounting_scope
-            AND dispatch.dispatch_id = audit.dispatch_id
-          WHERE audit.accounting_scope = ? AND audit.dispatch_id = ?
-            AND audit.actual_cost_was_unknown = 1
-            AND audit.authority = 'authenticated_operator'
-            AND dispatch.state = 'settled_unknown'
-            AND dispatch.provider_stage_id = ? AND dispatch.run_id = ?
-            AND dispatch.actual_cost_micro_usd IS NULL
-            AND dispatch.maximum_cost_micro_usd = audit.conservative_charge_micro_usd
-            AND (? IS NULL OR audit.conservative_charge_micro_usd = ?)`
+      .select({
+        accounting_scope: providerAccountingReconciliations.accountingScope,
+        authority: providerAccountingReconciliations.authority,
+        conservative_charge_micro_usd:
+          providerAccountingReconciliations.conservativeChargeMicroUsd,
+        created_at: providerAccountingReconciliations.createdAt,
+        dispatch_id: providerAccountingReconciliations.dispatchId,
+      })
+      .from(providerAccountingReconciliations)
+      .innerJoin(
+        providerAccountingDispatches,
+        and(
+          eq(
+            providerAccountingDispatches.accountingScope,
+            providerAccountingReconciliations.accountingScope
+          ),
+          eq(
+            providerAccountingDispatches.dispatchId,
+            providerAccountingReconciliations.dispatchId
+          )
+        )
       )
-      .bind(
-        ProviderAccountingScope,
-        input.dispatchId,
-        identity.providerStageId,
-        identity.runId,
-        identity.chargeMicroUsd ?? null,
-        identity.chargeMicroUsd ?? null
+      .where(
+        and(
+          eq(
+            providerAccountingReconciliations.accountingScope,
+            ProviderAccountingScope
+          ),
+          eq(providerAccountingReconciliations.dispatchId, input.dispatchId),
+          eq(providerAccountingReconciliations.actualCostWasUnknown, 1),
+          eq(
+            providerAccountingReconciliations.authority,
+            "authenticated_operator"
+          ),
+          eq(providerAccountingDispatches.state, "settled_unknown"),
+          eq(
+            providerAccountingDispatches.providerStageId,
+            identity.providerStageId
+          ),
+          eq(providerAccountingDispatches.runId, identity.runId),
+          isNull(providerAccountingDispatches.actualCostMicroUsd),
+          eq(
+            providerAccountingDispatches.maximumCostMicroUsd,
+            providerAccountingReconciliations.conservativeChargeMicroUsd
+          ),
+          identity.chargeMicroUsd === undefined
+            ? undefined
+            : eq(
+                providerAccountingReconciliations.conservativeChargeMicroUsd,
+                identity.chargeMicroUsd
+              )
+        )
       )
-      .first()
+      .limit(1)
   ).pipe(
-    Effect.flatMap((row) =>
-      row === null
+    Effect.flatMap(([row]) =>
+      row === undefined
         ? Effect.fail(failure("not_allowed"))
         : Schema.decodeUnknownEffect(GlobalSettlementRow, {
             onExcessProperty: "ignore",
@@ -150,131 +185,249 @@ const readGlobalSettlement = (
   );
 
 const settleGlobalUnknown = (
-  database: AnyD1Database,
+  database: ProviderAccountingDatabase,
   input: GlobalSettlementInput,
   identity: GlobalSettlementIdentity,
   settledAt: typeof ImportTimestamp.Type
 ) => {
   const timestamp = DateTime.formatIso(settledAt);
-  return persistenceEffect(() =>
-    database.batch([
-      database
-        .prepare(
-          `INSERT INTO provider_accounting_reconciliations (
-             accounting_scope, dispatch_id, conservative_charge_micro_usd,
-             actual_cost_was_unknown, authority, created_at
-           )
-           SELECT budget.accounting_scope, dispatch.dispatch_id,
-                  dispatch.maximum_cost_micro_usd, 1,
-                  'authenticated_operator', ?
-             FROM provider_accounting_budgets AS budget
-             JOIN provider_accounting_dispatches AS dispatch
-               ON dispatch.accounting_scope = budget.accounting_scope
-              AND dispatch.dispatch_id = budget.poison_dispatch_id
-            WHERE budget.accounting_scope = ? AND budget.state = 'poisoned'
-              AND budget.poison_dispatch_id = ?
-              AND budget.invoking_dispatch_id IS NULL
-              AND budget.reserved_micro_usd >= dispatch.maximum_cost_micro_usd
-              AND budget.settled_micro_usd + budget.reserved_micro_usd <= budget.budget_cap_micro_usd
-              AND dispatch.state = 'settled_unknown'
-              AND dispatch.provider_stage_id = ? AND dispatch.run_id = ?
-              AND dispatch.actual_cost_micro_usd IS NULL
-              AND (? IS NULL OR dispatch.maximum_cost_micro_usd = ?)
-           ON CONFLICT(accounting_scope, dispatch_id) DO NOTHING`
-        )
-        .bind(
-          timestamp,
-          ProviderAccountingScope,
-          input.dispatchId,
-          identity.providerStageId,
-          identity.runId,
-          identity.chargeMicroUsd ?? null,
-          identity.chargeMicroUsd ?? null
-        ),
-      database
-        .prepare(
-          `UPDATE provider_accounting_budgets
-              SET settled_micro_usd = settled_micro_usd + (
-                    SELECT conservative_charge_micro_usd
-                      FROM provider_accounting_reconciliations
-                     WHERE accounting_scope = ? AND dispatch_id = ?
+  const recoverMissingSettlement = (error: ProviderAccountingServiceError) =>
+    error.code === "not_allowed"
+      ? Effect.gen(function* settleNewGlobalUnknown() {
+          const [dispatch] = yield* persistenceEffect(() =>
+            database
+              .select({
+                maximumCostMicroUsd:
+                  providerAccountingDispatches.maximumCostMicroUsd,
+                providerStageId: providerAccountingDispatches.providerStageId,
+                runId: providerAccountingDispatches.runId,
+                state: providerAccountingDispatches.state,
+              })
+              .from(providerAccountingDispatches)
+              .where(
+                and(
+                  eq(
+                    providerAccountingDispatches.accountingScope,
+                    ProviderAccountingScope
                   ),
-                  reserved_micro_usd = reserved_micro_usd - (
-                    SELECT conservative_charge_micro_usd
-                      FROM provider_accounting_reconciliations
-                     WHERE accounting_scope = ? AND dispatch_id = ?
-                  ),
-                  state = 'open', invoking_dispatch_id = NULL,
-                  poison_dispatch_id = NULL, updated_at = ?
-            WHERE accounting_scope = ? AND state = 'poisoned'
-              AND poison_dispatch_id = ? AND invoking_dispatch_id IS NULL
-              AND reserved_micro_usd >= (
-                SELECT conservative_charge_micro_usd
-                  FROM provider_accounting_reconciliations
-                 WHERE accounting_scope = ? AND dispatch_id = ?
+                  eq(providerAccountingDispatches.dispatchId, input.dispatchId)
+                )
               )
-              AND EXISTS (
-                SELECT 1
-                  FROM provider_accounting_dispatches AS dispatch
-                  JOIN provider_accounting_reconciliations AS audit
-                    ON audit.accounting_scope = dispatch.accounting_scope
-                   AND audit.dispatch_id = dispatch.dispatch_id
-                 WHERE dispatch.accounting_scope = ? AND dispatch.dispatch_id = ?
-                   AND dispatch.state = 'settled_unknown'
-                   AND dispatch.provider_stage_id = ? AND dispatch.run_id = ?
-                   AND dispatch.actual_cost_micro_usd IS NULL
-                   AND dispatch.maximum_cost_micro_usd = audit.conservative_charge_micro_usd
-                   AND audit.actual_cost_was_unknown = 1
-                   AND audit.authority = 'authenticated_operator'
-                   AND (? IS NULL OR audit.conservative_charge_micro_usd = ?)
-              )`
-        )
-        .bind(
-          ProviderAccountingScope,
-          input.dispatchId,
-          ProviderAccountingScope,
-          input.dispatchId,
-          timestamp,
-          ProviderAccountingScope,
-          input.dispatchId,
-          ProviderAccountingScope,
-          input.dispatchId,
-          ProviderAccountingScope,
-          input.dispatchId,
-          identity.providerStageId,
-          identity.runId,
-          identity.chargeMicroUsd ?? null,
-          identity.chargeMicroUsd ?? null
-        ),
-    ])
-  ).pipe(Effect.flatMap(() => readGlobalSettlement(database, input, identity)));
+              .limit(1)
+          );
+          const [budget] = yield* persistenceEffect(() =>
+            database
+              .select()
+              .from(providerAccountingBudgets)
+              .where(
+                eq(
+                  providerAccountingBudgets.accountingScope,
+                  ProviderAccountingScope
+                )
+              )
+              .limit(1)
+          );
+          if (
+            dispatch === undefined ||
+            budget === undefined ||
+            dispatch.state !== "settled_unknown" ||
+            dispatch.providerStageId !== identity.providerStageId ||
+            dispatch.runId !== identity.runId ||
+            (identity.chargeMicroUsd !== undefined &&
+              dispatch.maximumCostMicroUsd !== identity.chargeMicroUsd) ||
+            budget.state !== "poisoned" ||
+            budget.poisonDispatchId !== input.dispatchId ||
+            budget.invokingDispatchId !== null ||
+            budget.reservedMicroUsd < dispatch.maximumCostMicroUsd
+          ) {
+            return yield* Effect.fail(failure("not_allowed"));
+          }
+          const authorizedReconciliation = database
+            .select({
+              accountingScope: providerAccountingBudgets.accountingScope,
+              actualCostWasUnknown: sql<number>`${1}`.as(
+                "actual_cost_was_unknown"
+              ),
+              authority: sql<string>`${"authenticated_operator"}`.as(
+                "authority"
+              ),
+              conservativeChargeMicroUsd:
+                providerAccountingDispatches.maximumCostMicroUsd,
+              createdAt: sql<string>`${timestamp}`.as("created_at"),
+              dispatchId: providerAccountingDispatches.dispatchId,
+            })
+            .from(providerAccountingBudgets)
+            .innerJoin(
+              providerAccountingDispatches,
+              and(
+                eq(
+                  providerAccountingDispatches.accountingScope,
+                  providerAccountingBudgets.accountingScope
+                ),
+                eq(
+                  providerAccountingDispatches.dispatchId,
+                  providerAccountingBudgets.poisonDispatchId
+                )
+              )
+            )
+            .where(
+              and(
+                eq(
+                  providerAccountingBudgets.accountingScope,
+                  ProviderAccountingScope
+                ),
+                eq(providerAccountingBudgets.state, "poisoned"),
+                isNull(providerAccountingBudgets.invokingDispatchId),
+                eq(
+                  providerAccountingBudgets.poisonDispatchId,
+                  input.dispatchId
+                ),
+                gte(
+                  providerAccountingBudgets.reservedMicroUsd,
+                  providerAccountingDispatches.maximumCostMicroUsd
+                ),
+                eq(
+                  providerAccountingDispatches.accountingScope,
+                  ProviderAccountingScope
+                ),
+                eq(providerAccountingDispatches.dispatchId, input.dispatchId),
+                eq(providerAccountingDispatches.state, "settled_unknown"),
+                eq(
+                  providerAccountingDispatches.providerStageId,
+                  identity.providerStageId
+                ),
+                eq(providerAccountingDispatches.runId, identity.runId),
+                isNull(providerAccountingDispatches.actualCostMicroUsd),
+                identity.chargeMicroUsd === undefined
+                  ? undefined
+                  : eq(
+                      providerAccountingDispatches.maximumCostMicroUsd,
+                      identity.chargeMicroUsd
+                    )
+              )
+            );
+          const persistedAuthorization = database
+            .select({ authorized: sql<number>`${1}`.as("authorized") })
+            .from(providerAccountingDispatches)
+            .innerJoin(
+              providerAccountingReconciliations,
+              and(
+                eq(
+                  providerAccountingReconciliations.accountingScope,
+                  providerAccountingDispatches.accountingScope
+                ),
+                eq(
+                  providerAccountingReconciliations.dispatchId,
+                  providerAccountingDispatches.dispatchId
+                )
+              )
+            )
+            .where(
+              and(
+                eq(
+                  providerAccountingDispatches.accountingScope,
+                  ProviderAccountingScope
+                ),
+                eq(providerAccountingDispatches.dispatchId, input.dispatchId),
+                eq(providerAccountingDispatches.state, "settled_unknown"),
+                eq(
+                  providerAccountingDispatches.providerStageId,
+                  identity.providerStageId
+                ),
+                eq(providerAccountingDispatches.runId, identity.runId),
+                isNull(providerAccountingDispatches.actualCostMicroUsd),
+                eq(
+                  providerAccountingDispatches.maximumCostMicroUsd,
+                  providerAccountingReconciliations.conservativeChargeMicroUsd
+                ),
+                eq(providerAccountingReconciliations.actualCostWasUnknown, 1),
+                eq(
+                  providerAccountingReconciliations.authority,
+                  "authenticated_operator"
+                ),
+                identity.chargeMicroUsd === undefined
+                  ? undefined
+                  : eq(
+                      providerAccountingReconciliations.conservativeChargeMicroUsd,
+                      identity.chargeMicroUsd
+                    )
+              )
+            );
+          yield* persistenceEffect(() =>
+            database.batch([
+              database
+                .insert(providerAccountingReconciliations)
+                .select(authorizedReconciliation)
+                .onConflictDoNothing(),
+              database
+                .update(providerAccountingBudgets)
+                .set({
+                  invokingDispatchId: null,
+                  poisonDispatchId: null,
+                  reservedMicroUsd:
+                    budget.reservedMicroUsd - dispatch.maximumCostMicroUsd,
+                  settledMicroUsd:
+                    budget.settledMicroUsd + dispatch.maximumCostMicroUsd,
+                  state: "open",
+                  updatedAt: timestamp,
+                })
+                .where(
+                  and(
+                    eq(
+                      providerAccountingBudgets.accountingScope,
+                      ProviderAccountingScope
+                    ),
+                    eq(providerAccountingBudgets.state, "poisoned"),
+                    isNull(providerAccountingBudgets.invokingDispatchId),
+                    eq(
+                      providerAccountingBudgets.poisonDispatchId,
+                      input.dispatchId
+                    ),
+                    eq(
+                      providerAccountingBudgets.reservedMicroUsd,
+                      budget.reservedMicroUsd
+                    ),
+                    eq(
+                      providerAccountingBudgets.settledMicroUsd,
+                      budget.settledMicroUsd
+                    ),
+                    exists(persistedAuthorization)
+                  )
+                ),
+            ])
+          );
+          return yield* readGlobalSettlement(database, input, identity);
+        })
+      : Effect.fail(error);
+  return readGlobalSettlement(database, input, identity).pipe(
+    Effect.catchTag("ProviderAccountingServiceError", recoverMissingSettlement)
+  );
 };
 
-const D1MutationResult = Schema.Struct({
-  meta: Schema.Struct({
-    changes: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
-  }),
-});
-const sweepExpiredRecipeReplays = (database: AnyD1Database) =>
-  persistenceEffect<unknown>(() =>
+const sweepExpiredRecipeReplays = (database: ProviderAccountingDatabase) =>
+  persistenceEffect(() =>
     database
-      .prepare(
-        `DELETE FROM provider_accounting_recipe_replay_values
-          WHERE accounting_scope = ?
-            AND expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`
+      .delete(providerAccountingRecipeReplayValues)
+      .where(
+        and(
+          eq(
+            providerAccountingRecipeReplayValues.accountingScope,
+            ProviderAccountingScope
+          ),
+          lte(
+            providerAccountingRecipeReplayValues.expiresAt,
+            new Date().toISOString()
+          )
+        )
       )
-      .bind(ProviderAccountingScope)
-      .run()
+      .returning({
+        dispatchId: providerAccountingRecipeReplayValues.dispatchId,
+      })
   ).pipe(
-    Effect.flatMap((result) =>
-      Schema.decodeUnknownEffect(D1MutationResult, {
-        onExcessProperty: "ignore",
-      })(result).pipe(Effect.mapError(() => failure("persistence_corrupt")))
-    ),
     Effect.map(
-      (result): ProviderAccountingResponse => ({
+      (deleted): ProviderAccountingResponse => ({
         accountingScope: ProviderAccountingScope,
-        deletedCount: result.meta.changes,
+        deletedCount: deleted.length,
         outcome: "expired_recipe_replays_swept",
       })
     )
@@ -360,7 +513,7 @@ const accountedOutcome = (operation: SettlementRequest["operation"]) => {
 };
 
 export const makeD1ProviderAccountingService = (input: {
-  readonly database: AnyD1Database;
+  readonly database: ProviderAccountingDatabase;
   readonly now: () => typeof ImportTimestamp.Type;
 }): ProviderAccountingService => ({
   reconcile: Effect.fn("ProviderAccountingService.reconcile")(

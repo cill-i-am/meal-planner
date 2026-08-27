@@ -66,6 +66,7 @@ describe("provider accounting production boundary", () => {
     );
     expect(productionPaths.toSorted()).toEqual([
       "provider-accounting.database-schema.ts",
+      "provider-accounting.database.ts",
       "provider-accounting.repository.d1.ts",
       "provider-accounting.routes.ts",
       "provider-accounting.service.ts",
@@ -100,6 +101,32 @@ describe("provider accounting production boundary", () => {
       expect(schema).toContain(`"${table}"`);
     }
     expect(schema).not.toContain("pilot_provider_");
+  });
+
+  it("uses Drizzle rather than raw D1 SQL for application persistence", async () => {
+    const applicationPaths = [
+      "features/provider-accounting/provider-accounting.repository.d1.ts",
+      "features/provider-accounting/provider-accounting.service.ts",
+      "features/imports/import-runtime-composition.ts",
+      "features/imports/import-worker-request-layer.ts",
+      "worker.ts",
+    ];
+    const sources = await Promise.all(
+      applicationPaths.map(async (relativePath) => ({
+        path: relativePath,
+        source: await read(path.join(apiSourceRoot, relativePath)),
+      }))
+    );
+
+    for (const { path: sourcePath, source } of sources) {
+      expect(source, `${sourcePath} retains a raw D1 database`).not.toContain(
+        "AnyD1Database"
+      );
+      expect(source, `${sourcePath} prepares raw SQL`).not.toContain(
+        ".prepare("
+      );
+      expect(source, `${sourcePath} executes raw SQL`).not.toContain(".exec(");
+    }
   });
 
   it("keeps Household recovery authority independent of global settlement", async () => {

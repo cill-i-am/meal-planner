@@ -1,6 +1,5 @@
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Schema } from "effect";
 import type { Redacted } from "effect";
 
@@ -12,6 +11,7 @@ import {
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
+import type { ProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingService,
   makeD1ProviderAccountingService,
@@ -39,7 +39,7 @@ export interface ImportWorkerRequestLayerInput {
   readonly now: () => string;
   readonly organizationResolver: AuthenticatedOrganizationResolver;
   readonly principalResolver: AuthPrincipalResolver;
-  readonly providerAccountingDatabase: AnyD1Database;
+  readonly providerAccountingDatabase: ProviderAccountingDatabase;
   readonly recipeRecoveryStarter: RecipeRecoveryWorkflowStarter;
   readonly runtimeContext: Effect.Success<typeof RuntimeContext>;
   readonly systemApiToken: Redacted.Redacted<string>;

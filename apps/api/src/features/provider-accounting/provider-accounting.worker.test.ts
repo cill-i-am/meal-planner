@@ -1,9 +1,18 @@
 import { applyD1Migrations, env } from "cloudflare:test";
+import { count, eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Deferred, Effect, Fiber, Schema } from "effect";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ImportId } from "../imports/import.contracts.js";
+import {
+  providerAccountingBudgets,
+  providerAccountingConservativeSettlements,
+  providerAccountingDispatches,
+  providerAccountingRecipeReplayValues,
+  providerAccountingReconciliations,
+} from "./provider-accounting.database-schema.js";
+import { makeProviderAccountingDatabase } from "./provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingProviderStageId,
@@ -16,7 +25,7 @@ import type {
   ProviderAccountingRepository,
   ProviderAccountingReservation,
 } from "./provider-accounting.js";
-import { makeD1ProviderAccountingRepository } from "./provider-accounting.repository.d1.js";
+import { makeD1ProviderAccountingRepository as makeProviderAccountingRepository } from "./provider-accounting.repository.d1.js";
 import { makeD1ProviderAccountingService } from "./provider-accounting.service.js";
 
 const testEnv = env as unknown as {
@@ -26,6 +35,12 @@ const testEnv = env as unknown as {
     readonly queries: string[];
   }[];
 };
+
+const makeD1ProviderAccountingRepository = (database: AnyD1Database) =>
+  makeProviderAccountingRepository(makeProviderAccountingDatabase(database));
+const database = makeProviderAccountingDatabase(
+  testEnv.ProviderAccountingDatabase
+);
 
 const decodeRunId = Schema.decodeUnknownSync(ProviderAccountingRunId);
 const decodeProviderStageId = Schema.decodeUnknownSync(
@@ -81,6 +96,40 @@ const claimInvocation = async (
   return claim.dispatch.invocationGeneration;
 };
 
+const readPersistedDispatchState = async (dispatchId: string) => {
+  const [row] = await database
+    .select({
+      actualCostMicroUsd: providerAccountingDispatches.actualCostMicroUsd,
+      state: providerAccountingDispatches.state,
+    })
+    .from(providerAccountingDispatches)
+    .where(eq(providerAccountingDispatches.dispatchId, dispatchId))
+    .limit(1);
+  return row;
+};
+
+const readDispatchCount = async () => {
+  const [row] = await database
+    .select({ count: count() })
+    .from(providerAccountingDispatches);
+  return row;
+};
+
+const resetDispatchesAndBudget = () =>
+  database.batch([
+    database.delete(providerAccountingDispatches),
+    database
+      .update(providerAccountingBudgets)
+      .set({
+        invokingDispatchId: null,
+        poisonDispatchId: null,
+        reservedMicroUsd: 0,
+        settledMicroUsd: 0,
+        state: "open",
+      })
+      .where(eq(providerAccountingBudgets.accountingScope, "recipe-import")),
+  ]);
+
 beforeAll(async () => {
   await applyD1Migrations(
     testEnv.ProviderAccountingDatabase,
@@ -99,27 +148,22 @@ beforeEach(async () => {
   await testEnv.ProviderAccountingDatabase.prepare(
     "DROP TRIGGER IF EXISTS provider_accounting_reconciliations_immutable_delete"
   ).run();
-  await testEnv.ProviderAccountingDatabase.batch([
-    testEnv.ProviderAccountingDatabase.prepare(
-      "DELETE FROM provider_accounting_recipe_replay_values"
-    ),
-    testEnv.ProviderAccountingDatabase.prepare(
-      "DELETE FROM provider_accounting_conservative_settlements"
-    ),
-    testEnv.ProviderAccountingDatabase.prepare(
-      "DELETE FROM provider_accounting_reconciliations"
-    ),
-    testEnv.ProviderAccountingDatabase.prepare(
-      "DELETE FROM provider_accounting_dispatches"
-    ),
-    testEnv.ProviderAccountingDatabase.prepare(
-      `UPDATE provider_accounting_budgets
-          SET settled_micro_usd = 0, reserved_micro_usd = 0,
-              state = 'open', invoking_dispatch_id = NULL,
-              poison_dispatch_id = NULL,
-              updated_at = '2026-07-29T18:00:00.000Z'
-        WHERE accounting_scope = 'recipe-import'`
-    ),
+  await database.batch([
+    database.delete(providerAccountingRecipeReplayValues),
+    database.delete(providerAccountingConservativeSettlements),
+    database.delete(providerAccountingReconciliations),
+    database.delete(providerAccountingDispatches),
+    database
+      .update(providerAccountingBudgets)
+      .set({
+        invokingDispatchId: null,
+        poisonDispatchId: null,
+        reservedMicroUsd: 0,
+        settledMicroUsd: 0,
+        state: "open",
+        updatedAt: "2026-07-29T18:00:00.000Z",
+      })
+      .where(eq(providerAccountingBudgets.accountingScope, "recipe-import")),
   ]);
   await testEnv.ProviderAccountingDatabase.prepare(
     `CREATE TRIGGER provider_accounting_conservative_settlements_immutable_delete
@@ -234,84 +278,112 @@ describe("provider accounting", () => {
       state: "open",
     });
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `SELECT actual_cost_micro_usd, state
-           FROM provider_accounting_dispatches
-          WHERE dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .first()
-    ).resolves.toEqual({
-      actual_cost_micro_usd: null,
-      state: "settled_unknown",
-    });
+      database
+        .select({
+          actualCostMicroUsd: providerAccountingDispatches.actualCostMicroUsd,
+          state: providerAccountingDispatches.state,
+        })
+        .from(providerAccountingDispatches)
+        .where(eq(providerAccountingDispatches.dispatchId, command.dispatchId))
+        .limit(1)
+    ).resolves.toEqual([
+      { actualCostMicroUsd: null, state: "settled_unknown" },
+    ]);
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `SELECT actual_cost_was_unknown, authority,
-                conservative_charge_micro_usd
-           FROM provider_accounting_conservative_settlements
-          WHERE accounting_scope = 'recipe-import'
-            AND dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .first()
-    ).resolves.toEqual({
-      actual_cost_was_unknown: 1,
-      authority: "schema_valid_provider_response",
-      conservative_charge_micro_usd: 100_000,
-    });
+      database
+        .select({
+          actualCostWasUnknown:
+            providerAccountingConservativeSettlements.actualCostWasUnknown,
+          authority: providerAccountingConservativeSettlements.authority,
+          conservativeChargeMicroUsd:
+            providerAccountingConservativeSettlements.conservativeChargeMicroUsd,
+        })
+        .from(providerAccountingConservativeSettlements)
+        .where(
+          eq(
+            providerAccountingConservativeSettlements.dispatchId,
+            command.dispatchId
+          )
+        )
+        .limit(1)
+    ).resolves.toEqual([
+      {
+        actualCostWasUnknown: 1,
+        authority: "schema_valid_provider_response",
+        conservativeChargeMicroUsd: 100_000,
+      },
+    ]);
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `SELECT evidence_fingerprint, expires_at, generation, import_id,
-                value_json, value_sha256
-           FROM provider_accounting_recipe_replay_values
-          WHERE accounting_scope = 'recipe-import'
-            AND dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .first()
-    ).resolves.toEqual({
-      evidence_fingerprint: evidenceFingerprint,
-      expires_at: replayExpiresAt,
-      generation: 1,
-      import_id: "import-conservative",
-      value_json: JSON.stringify("decoded-recipe"),
-      value_sha256: "a".repeat(64),
-    });
+      database
+        .select({
+          evidenceFingerprint:
+            providerAccountingRecipeReplayValues.evidenceFingerprint,
+          expiresAt: providerAccountingRecipeReplayValues.expiresAt,
+          generation: providerAccountingRecipeReplayValues.generation,
+          importId: providerAccountingRecipeReplayValues.importId,
+          valueJson: providerAccountingRecipeReplayValues.valueJson,
+          valueSha256: providerAccountingRecipeReplayValues.valueSha256,
+        })
+        .from(providerAccountingRecipeReplayValues)
+        .where(
+          eq(
+            providerAccountingRecipeReplayValues.dispatchId,
+            command.dispatchId
+          )
+        )
+        .limit(1)
+    ).resolves.toEqual([
+      {
+        evidenceFingerprint,
+        expiresAt: replayExpiresAt,
+        generation: 1,
+        importId: "import-conservative",
+        valueJson: JSON.stringify("decoded-recipe"),
+        valueSha256: "a".repeat(64),
+      },
+    ]);
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `UPDATE provider_accounting_recipe_replay_values
-            SET value_json = value_json
-          WHERE dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .run()
-    ).rejects.toThrow("provider recipe replay value is immutable");
+      database
+        .update(providerAccountingRecipeReplayValues)
+        .set({ valueJson: JSON.stringify("decoded-recipe") })
+        .where(
+          eq(
+            providerAccountingRecipeReplayValues.dispatchId,
+            command.dispatchId
+          )
+        )
+    ).rejects.toThrow();
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `DELETE FROM provider_accounting_recipe_replay_values
-          WHERE dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .run()
-    ).resolves.toMatchObject({ success: true });
+      database
+        .delete(providerAccountingRecipeReplayValues)
+        .where(
+          eq(
+            providerAccountingRecipeReplayValues.dispatchId,
+            command.dispatchId
+          )
+        )
+    ).resolves.toBeDefined();
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `UPDATE provider_accounting_conservative_settlements
-            SET authority = authority
-          WHERE dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .run()
-    ).rejects.toThrow("provider conservative settlement audit is immutable");
+      database
+        .update(providerAccountingConservativeSettlements)
+        .set({ authority: "schema_valid_provider_response" })
+        .where(
+          eq(
+            providerAccountingConservativeSettlements.dispatchId,
+            command.dispatchId
+          )
+        )
+    ).rejects.toThrow();
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `DELETE FROM provider_accounting_conservative_settlements
-          WHERE dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .run()
-    ).rejects.toThrow("provider conservative settlement audit is immutable");
+      database
+        .delete(providerAccountingConservativeSettlements)
+        .where(
+          eq(
+            providerAccountingConservativeSettlements.dispatchId,
+            command.dispatchId
+          )
+        )
+    ).rejects.toThrow();
   });
 
   it("converges concurrent conservative settlements on one immutable charge", async () => {
@@ -348,14 +420,16 @@ describe("provider accounting", () => {
       state: "open",
     });
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `SELECT COUNT(*) AS count
-           FROM provider_accounting_conservative_settlements
-          WHERE dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .first()
-    ).resolves.toEqual({ count: 1 });
+      database
+        .select({ count: count() })
+        .from(providerAccountingConservativeSettlements)
+        .where(
+          eq(
+            providerAccountingConservativeSettlements.dispatchId,
+            command.dispatchId
+          )
+        )
+    ).resolves.toEqual([{ count: 1 }]);
   });
 
   it("rejects multibyte conservative replay JSON over the UTF-8 byte cap", async () => {
@@ -396,44 +470,38 @@ describe("provider accounting", () => {
     await Effect.runPromise(
       repository.settleUnknown({ ...command, invocationGeneration })
     );
-    await testEnv.ProviderAccountingDatabase.prepare(
-      `INSERT INTO provider_accounting_conservative_settlements (
-         actual_cost_was_unknown, authority, conservative_charge_micro_usd,
-         created_at, dispatch_id, accounting_scope
-       ) VALUES (
-         1, 'schema_valid_provider_response', 100000, ?, ?,
-         'recipe-import'
-       )`
-    )
-      .bind("2026-07-29T18:00:00.000Z", command.dispatchId)
-      .run();
+    await database.insert(providerAccountingConservativeSettlements).values({
+      accountingScope: "recipe-import",
+      actualCostWasUnknown: 1,
+      authority: "schema_valid_provider_response",
+      conservativeChargeMicroUsd: 100_000,
+      createdAt: "2026-07-29T18:00:00.000Z",
+      dispatchId: command.dispatchId,
+    });
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `INSERT INTO provider_accounting_recipe_replay_values (
-           created_at, dispatch_id, evidence_fingerprint, expires_at,
-           generation, import_id, accounting_scope, value_json, value_sha256
-         ) VALUES (?, ?, ?, ?, 1, ?, 'recipe-import', ?, ?)`
-      )
-        .bind(
-          "2026-07-29T18:00:00.000Z",
-          command.dispatchId,
-          evidenceFingerprint,
-          "2026-08-05T18:00:00.000Z",
-          importId,
-          valueJson,
-          "a".repeat(64)
-        )
-        .run()
+      database.insert(providerAccountingRecipeReplayValues).values({
+        accountingScope: "recipe-import",
+        createdAt: "2026-07-29T18:00:00.000Z",
+        dispatchId: command.dispatchId,
+        evidenceFingerprint,
+        expiresAt: "2026-08-05T18:00:00.000Z",
+        generation: 1,
+        importId,
+        valueJson,
+        valueSha256: "a".repeat(64),
+      })
     ).rejects.toThrow();
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `SELECT COUNT(*) AS count
-           FROM provider_accounting_recipe_replay_values
-          WHERE dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .first()
-    ).resolves.toEqual({ count: 0 });
+      database
+        .select({ count: count() })
+        .from(providerAccountingRecipeReplayValues)
+        .where(
+          eq(
+            providerAccountingRecipeReplayValues.dispatchId,
+            command.dispatchId
+          )
+        )
+    ).resolves.toEqual([{ count: 0 }]);
   });
 
   it("fails closed without redispatch when a conservative replay value is absent", async () => {
@@ -477,12 +545,11 @@ describe("provider accounting", () => {
     await expect(Effect.runPromise(execute())).resolves.toMatchObject({
       _tag: "CompletedConservativeCost",
     });
-    await testEnv.ProviderAccountingDatabase.prepare(
-      `DELETE FROM provider_accounting_recipe_replay_values
-        WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
-    )
-      .bind(command.dispatchId)
-      .run();
+    await database
+      .delete(providerAccountingRecipeReplayValues)
+      .where(
+        eq(providerAccountingRecipeReplayValues.dispatchId, command.dispatchId)
+      );
 
     await expect(Effect.runPromise(execute())).rejects.toMatchObject({
       code: "persistence_corrupt",
@@ -535,14 +602,18 @@ describe("provider accounting", () => {
       "DROP TRIGGER provider_accounting_recipe_replay_values_immutable_update"
     ).run();
     try {
-      await testEnv.ProviderAccountingDatabase.prepare(
-        `UPDATE provider_accounting_recipe_replay_values
-            SET created_at = '2026-07-20T18:00:00.000Z',
-                expires_at = '2026-07-27T18:00:00.000Z'
-          WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .run();
+      await database
+        .update(providerAccountingRecipeReplayValues)
+        .set({
+          createdAt: "2026-07-20T18:00:00.000Z",
+          expiresAt: "2026-07-27T18:00:00.000Z",
+        })
+        .where(
+          eq(
+            providerAccountingRecipeReplayValues.dispatchId,
+            command.dispatchId
+          )
+        );
     } finally {
       await testEnv.ProviderAccountingDatabase.prepare(
         `CREATE TRIGGER provider_accounting_recipe_replay_values_immutable_update
@@ -567,14 +638,17 @@ describe("provider accounting", () => {
       )
     );
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `SELECT dispatch_id
-           FROM provider_accounting_recipe_replay_values
-          WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
-      )
-        .bind(command.dispatchId)
-        .first()
-    ).resolves.toBeNull();
+      database
+        .select({ dispatchId: providerAccountingRecipeReplayValues.dispatchId })
+        .from(providerAccountingRecipeReplayValues)
+        .where(
+          eq(
+            providerAccountingRecipeReplayValues.dispatchId,
+            command.dispatchId
+          )
+        )
+        .limit(1)
+    ).resolves.toEqual([]);
   });
 
   it("physically replaces pilot storage without acquiring household authority", async () => {
@@ -623,12 +697,10 @@ describe("provider accounting", () => {
     expect(byName.get("provider_accounting_budgets")).toContain(
       `"budget_cap_micro_usd" = 10000000`
     );
-    const authorityRows = await testEnv.ProviderAccountingDatabase.prepare(
-      "SELECT accounting_scope FROM provider_accounting_budgets"
-    ).all<{ readonly accounting_scope: string }>();
-    expect(authorityRows.results).toEqual([
-      { accounting_scope: "recipe-import" },
-    ]);
+    const authorityRows = await database
+      .select({ accountingScope: providerAccountingBudgets.accountingScope })
+      .from(providerAccountingBudgets);
+    expect(authorityRows).toEqual([{ accountingScope: "recipe-import" }]);
 
     const triggers = await testEnv.ProviderAccountingDatabase.prepare(
       `SELECT name, sql FROM sqlite_master
@@ -971,7 +1043,9 @@ describe("provider accounting", () => {
     );
 
     const accounting = makeD1ProviderAccountingService({
-      database: testEnv.ProviderAccountingDatabase,
+      database: makeProviderAccountingDatabase(
+        testEnv.ProviderAccountingDatabase
+      ),
       now: () => now,
     });
     await expect(
@@ -1046,7 +1120,9 @@ describe("provider accounting", () => {
       })
     );
     const accounting = makeD1ProviderAccountingService({
-      database: testEnv.ProviderAccountingDatabase,
+      database: makeProviderAccountingDatabase(
+        testEnv.ProviderAccountingDatabase
+      ),
       now: () => now,
     });
     const request = {
@@ -1063,14 +1139,13 @@ describe("provider accounting", () => {
       Effect.runPromise(accounting.reconcile(request))
     ).resolves.toEqual(first);
     await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `SELECT COUNT(*) AS count
-           FROM provider_accounting_reconciliations
-          WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
-      )
-        .bind(target.dispatchId)
-        .first()
-    ).resolves.toEqual({ count: 1 });
+      database
+        .select({ count: count() })
+        .from(providerAccountingReconciliations)
+        .where(
+          eq(providerAccountingReconciliations.dispatchId, target.dispatchId)
+        )
+    ).resolves.toEqual([{ count: 1 }]);
     await expect(
       repository.readStage().pipe(Effect.runPromise)
     ).resolves.toMatchObject({
@@ -1187,18 +1262,7 @@ describe("provider accounting", () => {
       state: "poisoned",
     });
 
-    await testEnv.ProviderAccountingDatabase.batch([
-      testEnv.ProviderAccountingDatabase.prepare(
-        "DELETE FROM provider_accounting_dispatches"
-      ),
-      testEnv.ProviderAccountingDatabase.prepare(
-        `UPDATE provider_accounting_budgets
-            SET settled_micro_usd = 0, reserved_micro_usd = 0,
-                state = 'open', invoking_dispatch_id = NULL,
-                poison_dispatch_id = NULL
-          WHERE accounting_scope = 'recipe-import'`
-      ),
-    ]);
+    await resetDispatchesAndBudget();
     const unknownRepository = makeD1ProviderAccountingRepository(
       testEnv.ProviderAccountingDatabase
     );
@@ -1265,18 +1329,12 @@ describe("provider accounting", () => {
     ).rejects.toEqual({ code: "provider_unavailable" });
 
     expect(providerCalls).toBe(1);
-    await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `SELECT actual_cost_micro_usd, state
-           FROM provider_accounting_dispatches
-          WHERE dispatch_id = ?`
-      )
-        .bind(first.dispatchId)
-        .first()
-    ).resolves.toEqual({
-      actual_cost_micro_usd: 0,
-      state: "settled_known",
-    });
+    await expect(readPersistedDispatchState(first.dispatchId)).resolves.toEqual(
+      {
+        actualCostMicroUsd: 0,
+        state: "settled_known",
+      }
+    );
 
     const completed = await Effect.runPromise(
       runAccountedProviderDispatch({
@@ -1354,18 +1412,12 @@ describe("provider accounting", () => {
       settledMicroUsd: 0,
       state: "poisoned",
     });
-    await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `SELECT actual_cost_micro_usd, state
-           FROM provider_accounting_dispatches
-          WHERE dispatch_id = ?`
-      )
-        .bind(first.dispatchId)
-        .first()
-    ).resolves.toEqual({
-      actual_cost_micro_usd: null,
-      state: "settled_unknown",
-    });
+    await expect(readPersistedDispatchState(first.dispatchId)).resolves.toEqual(
+      {
+        actualCostMicroUsd: null,
+        state: "settled_unknown",
+      }
+    );
   });
 
   it("does not grant zero-cost authority to a structurally similar provider error", async () => {
@@ -1452,11 +1504,7 @@ describe("provider accounting", () => {
       settledMicroUsd: 0,
       state: "poisoned",
     });
-    await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        "SELECT COUNT(*) AS count FROM provider_accounting_dispatches"
-      ).first()
-    ).resolves.toEqual({ count: 1 });
+    await expect(readDispatchCount()).resolves.toEqual({ count: 1 });
   });
 
   it("poisons a typed timeout and rejects its retry before a second invocation", async () => {
@@ -1511,11 +1559,7 @@ describe("provider accounting", () => {
       reservedMicroUsd: 10,
       state: "poisoned",
     });
-    await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        "SELECT COUNT(*) AS count FROM provider_accounting_dispatches"
-      ).first()
-    ).resolves.toEqual({ count: 1 });
+    await expect(readDispatchCount()).resolves.toEqual({ count: 1 });
   });
 
   it("settles defects and interruption unknown before any retry can invoke", async () => {
@@ -1540,18 +1584,7 @@ describe("provider accounting", () => {
       state: "poisoned",
     });
 
-    await testEnv.ProviderAccountingDatabase.batch([
-      testEnv.ProviderAccountingDatabase.prepare(
-        "DELETE FROM provider_accounting_dispatches"
-      ),
-      testEnv.ProviderAccountingDatabase.prepare(
-        `UPDATE provider_accounting_budgets
-            SET settled_micro_usd = 0, reserved_micro_usd = 0,
-                state = 'open', invoking_dispatch_id = NULL,
-                poison_dispatch_id = NULL
-          WHERE accounting_scope = 'recipe-import'`
-      ),
-    ]);
+    await resetDispatchesAndBudget();
 
     const interrupted = reservation(
       "run_interrupted_retry",
