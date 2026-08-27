@@ -145,6 +145,20 @@ const isRecipeReplayDispatchId = (
   return allowed.includes(dispatchId);
 };
 
+const isValidConservativeSettlement = (
+  input: ProviderAccountingConservativeSettlement
+) =>
+  input.providerStageId === "recipe-extraction" &&
+  input.maximumCostMicroUsd === 100_000 &&
+  input.conservativeChargeMicroUsd === input.maximumCostMicroUsd &&
+  Sha256Pattern.test(input.replay.evidenceFingerprint) &&
+  Number.isSafeInteger(input.replay.generation) &&
+  input.replay.generation >= 1 &&
+  input.replay.importId.length > 0 &&
+  validReplayValueJson(input.replay.valueJson) &&
+  Sha256Pattern.test(input.replay.valueSha256) &&
+  isRecipeReplayDispatchId(input.dispatchId, input.replay);
+
 const replayFromRow = (
   row: DispatchRow
 ): ProviderAccountingDispatch["conservativeReplay"] | undefined => {
@@ -664,18 +678,7 @@ export const makeD1ProviderAccountingRepository = (
     }),
   settleConservative: (input: ProviderAccountingConservativeSettlement) =>
     Effect.gen(function* settleConservative() {
-      if (
-        input.providerStageId !== "recipe-extraction" ||
-        input.maximumCostMicroUsd !== 100_000 ||
-        input.conservativeChargeMicroUsd !== input.maximumCostMicroUsd ||
-        !Sha256Pattern.test(input.replay.evidenceFingerprint) ||
-        !Number.isSafeInteger(input.replay.generation) ||
-        input.replay.generation < 1 ||
-        input.replay.importId.length === 0 ||
-        !validReplayValueJson(input.replay.valueJson) ||
-        !Sha256Pattern.test(input.replay.valueSha256) ||
-        !isRecipeReplayDispatchId(input.dispatchId, input.replay)
-      ) {
+      if (!isValidConservativeSettlement(input)) {
         return yield* Effect.fail(
           providerAccountingError("cost_exceeds_reservation")
         );

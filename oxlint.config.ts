@@ -126,6 +126,6 @@ export default defineConfig({
     "anti-slop/no-conditional-empty-object-spread": "error",
     "anti-slop/no-runtime-typeof": "error",
     "anti-slop/no-unknown-parameters": "error",
-    complexity: ["error", { max: 25 }],
+    complexity: ["error", { max: 20 }],
   },
 });

@@ -61,6 +61,23 @@ const sourceUrlMessage = (value: string) => {
 const idempotencyKey = (makeRequestId: () => string) =>
   Schema.decodeUnknownSync(IdempotencyKey)(makeRequestId());
 
+const hasRecipeImportRequestFailure = (input: {
+  readonly action: boolean;
+  readonly answer: boolean;
+  readonly cancel: boolean;
+  readonly confirm: boolean;
+  readonly create: boolean;
+  readonly intent: boolean;
+  readonly recipe: boolean;
+}) =>
+  input.action ||
+  input.answer ||
+  input.cancel ||
+  input.confirm ||
+  input.create ||
+  input.intent ||
+  input.recipe;
+
 const nameAnswerMessage = (
   value: string,
   actionVersion: ActiveReviewAction["actionVersion"]
@@ -852,13 +869,15 @@ export const RecipeImportPage = ({
 
   const hasRequestFailure =
     session.active &&
-    (createMutation.isError ||
-      intentQuery.isError ||
-      actionQuery.isError ||
-      answerMutation.isError ||
-      confirmMutation.isError ||
-      cancelMutation.isError ||
-      recipeQuery.isError);
+    hasRecipeImportRequestFailure({
+      action: actionQuery.isError,
+      answer: answerMutation.isError,
+      cancel: cancelMutation.isError,
+      confirm: confirmMutation.isError,
+      create: createMutation.isError,
+      intent: intentQuery.isError,
+      recipe: recipeQuery.isError,
+    });
   const action = actionQuery.data;
   const recipe = recipeQuery.data;
 
