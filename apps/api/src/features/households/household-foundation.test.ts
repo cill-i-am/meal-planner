@@ -75,6 +75,14 @@ describe("household foundation contracts", () => {
         requireHouseholdCommandAdmission(systemAdmission, "ensure_household")
       )
     ).toThrow();
+    expect(
+      Effect.runSync(
+        requireHouseholdCommandAdmission(
+          Schema.decodeUnknownSync(HouseholdMemberAdmission)(memberAdmission),
+          "bootstrap_creator_person"
+        )
+      )
+    ).toEqual(memberAdmission);
   });
 
   it("rejects the wrong command purpose before any household routing step", async () => {
@@ -105,7 +113,7 @@ describe("household foundation contracts", () => {
         calls.locate += 1;
         return Effect.succeed("household-object-name");
       },
-      purpose: "ensure_household",
+      purpose: "bootstrap_creator_person",
     });
 
     await expect(Effect.runPromise(routed)).rejects.toBeDefined();

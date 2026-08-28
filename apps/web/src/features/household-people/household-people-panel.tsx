@@ -1,0 +1,296 @@
+import {
+  BootstrapHouseholdCreatorPayload,
+  CreateHouseholdPersonPayload,
+  HouseholdPersonMutationId,
+  TransitionHouseholdPersonPayload,
+} from "@meal-planner/household-api";
+import { useForm } from "@tanstack/react-form";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Schema } from "effect";
+
+import { Alert } from "../../components/ui/alert.js";
+import { Button } from "../../components/ui/button.js";
+import { Input } from "../../components/ui/input.js";
+import { Label } from "../../components/ui/label.js";
+import type { HouseholdPeopleOperations } from "./operations.js";
+
+const mutationId = () =>
+  Schema.decodeUnknownSync(HouseholdPersonMutationId)(crypto.randomUUID());
+
+const failureMessage = (error: Error) => {
+  const detail = JSON.stringify(error);
+  if (detail.includes("stale_version")) {
+    return "This person changed. Refresh the roster and try again.";
+  }
+  if (detail.includes("unauthorized")) {
+    return "Your household session is no longer authorized. Sign in again.";
+  }
+  if (detail.includes("mutation_collision")) {
+    return "That retry no longer matches this change. Submit it again.";
+  }
+  if (detail.includes("lifecycle_conflict")) {
+    return "That person has already changed lifecycle. Refresh the roster.";
+  }
+  return "The household roster is temporarily unavailable. You can retry safely.";
+};
+
+/** Minimal explicit household roster and lifecycle surface. */
+export const HouseholdPeoplePanel = ({
+  operations,
+  organizationId,
+}: {
+  readonly operations: HouseholdPeopleOperations;
+  readonly organizationId: string;
+}) => {
+  const queryClient = useQueryClient();
+  const queryKey = ["household-people", organizationId] as const;
+  const roster = useQuery({ queryFn: () => operations.list(true), queryKey });
+  const refresh = () => queryClient.invalidateQueries({ queryKey });
+  const bootstrap = useMutation({
+    mutationFn: (payload: BootstrapHouseholdCreatorPayload) =>
+      operations.bootstrapCreator(payload),
+    onSuccess: refresh,
+    retry: 1,
+  });
+  const create = useMutation({
+    mutationFn: (payload: CreateHouseholdPersonPayload) =>
+      operations.create(payload),
+    onSuccess: refresh,
+    retry: 1,
+  });
+  const transition = useMutation({
+    mutationFn: ({
+      action,
+      personId,
+      payload,
+    }: {
+      readonly action: "archive" | "restore";
+      readonly personId: Parameters<HouseholdPeopleOperations["archive"]>[0];
+      readonly payload: TransitionHouseholdPersonPayload;
+    }) =>
+      action === "archive"
+        ? operations.archive(personId, payload)
+        : operations.restore(personId, payload),
+    onSuccess: refresh,
+    retry: 1,
+  });
+  const bootstrapForm = useForm({
+    defaultValues: { displayName: "" },
+    onSubmit: ({ value }) =>
+      bootstrap.mutate(
+        Schema.decodeUnknownSync(BootstrapHouseholdCreatorPayload)({
+          ...value,
+          mutationId: mutationId(),
+        })
+      ),
+  });
+  const createForm = useForm({
+    defaultValues: {
+      displayName: "",
+      kind: "dependant" as "adult" | "dependant",
+    },
+    onSubmit: ({ value }) =>
+      create.mutate(
+        Schema.decodeUnknownSync(CreateHouseholdPersonPayload)({
+          ...value,
+          mutationId: mutationId(),
+        })
+      ),
+  });
+  const archiveConfirmation = useForm({
+    defaultValues: { personId: null as null | string },
+  });
+  const error =
+    roster.error ?? bootstrap.error ?? create.error ?? transition.error;
+
+  return (
+    <section
+      aria-labelledby="household-people-heading"
+      className="people-panel"
+    >
+      <div className="people-heading-row">
+        <div>
+          <p className="eyebrow">Household</p>
+          <h2 id="household-people-heading">People</h2>
+        </div>
+        <Button
+          className="button-secondary"
+          disabled={roster.isFetching}
+          onClick={() => void roster.refetch()}
+          type="button"
+        >
+          {roster.isFetching ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
+      {roster.isPending ? (
+        <p role="status">Loading the household roster…</p>
+      ) : null}
+      {error === null ? null : (
+        <Alert role="alert" title="Roster not updated">
+          {failureMessage(error)}
+        </Alert>
+      )}
+      {roster.data?.currentPersonId === null ? (
+        <form
+          className="people-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void bootstrapForm.handleSubmit();
+          }}
+        >
+          <h3>Set up your adult person</h3>
+          <bootstrapForm.Field name="displayName">
+            {(field) => (
+              <>
+                <Label htmlFor="creator-name">Your name</Label>
+                <Input
+                  id="creator-name"
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  value={field.state.value}
+                />
+              </>
+            )}
+          </bootstrapForm.Field>
+          <Button disabled={bootstrap.isPending} type="submit">
+            {bootstrap.isPending ? "Setting up…" : "Set up my person"}
+          </Button>
+        </form>
+      ) : null}
+      {roster.data === undefined ? null : (
+        <ul className="people-list">
+          {roster.data.people.map((person) => (
+            <li
+              className={
+                person.lifecycle === "archived"
+                  ? "person-row person-row-archived"
+                  : "person-row"
+              }
+              key={person.id}
+            >
+              <span>
+                <strong>{person.displayName}</strong>
+                <small>
+                  {person.kind}
+                  {person.isCurrentAdult ? " · you" : ""}
+                  {person.lifecycle === "archived" ? " · archived" : ""}
+                </small>
+              </span>
+              <archiveConfirmation.Subscribe
+                selector={(state) => state.values.personId}
+              >
+                {(pendingArchiveId) => {
+                  const transitionPerson = (action: "archive" | "restore") =>
+                    transition.mutate({
+                      action,
+                      payload: Schema.decodeUnknownSync(
+                        TransitionHouseholdPersonPayload
+                      )({
+                        expectedVersion: person.version,
+                        mutationId: mutationId(),
+                      }),
+                      personId: person.id,
+                    });
+                  if (person.lifecycle === "archived") {
+                    return (
+                      <Button
+                        className="button-secondary"
+                        disabled={transition.isPending}
+                        onClick={() => transitionPerson("restore")}
+                        type="button"
+                      >
+                        Restore
+                      </Button>
+                    );
+                  }
+                  if (pendingArchiveId === person.id) {
+                    return (
+                      <span className="people-confirmation">
+                        <Button
+                          disabled={transition.isPending}
+                          onClick={() => {
+                            transitionPerson("archive");
+                            archiveConfirmation.setFieldValue("personId", null);
+                          }}
+                          type="button"
+                        >
+                          Confirm archive
+                        </Button>
+                        <Button
+                          className="button-secondary"
+                          onClick={() =>
+                            archiveConfirmation.setFieldValue("personId", null)
+                          }
+                          type="button"
+                        >
+                          Cancel
+                        </Button>
+                      </span>
+                    );
+                  }
+                  return (
+                    <Button
+                      className="button-secondary"
+                      disabled={transition.isPending}
+                      onClick={() =>
+                        archiveConfirmation.setFieldValue("personId", person.id)
+                      }
+                      type="button"
+                    >
+                      Archive
+                    </Button>
+                  );
+                }}
+              </archiveConfirmation.Subscribe>
+            </li>
+          ))}
+        </ul>
+      )}
+      {roster.data === undefined ? null : (
+        <form
+          className="people-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createForm.handleSubmit();
+          }}
+        >
+          <h3>Add a person</h3>
+          <createForm.Field name="displayName">
+            {(field) => (
+              <>
+                <Label htmlFor="new-person-name">Name</Label>
+                <Input
+                  id="new-person-name"
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  value={field.state.value}
+                />
+              </>
+            )}
+          </createForm.Field>
+          <createForm.Field name="kind">
+            {(field) => (
+              <>
+                <Label htmlFor="new-person-kind">Kind</Label>
+                <select
+                  className="field-select"
+                  id="new-person-kind"
+                  onChange={(event) =>
+                    field.handleChange(
+                      event.target.value as "adult" | "dependant"
+                    )
+                  }
+                  value={field.state.value}
+                >
+                  <option value="dependant">Dependant</option>
+                  <option value="adult">Adult</option>
+                </select>
+              </>
+            )}
+          </createForm.Field>
+          <Button disabled={create.isPending} type="submit">
+            {create.isPending ? "Adding…" : "Add person"}
+          </Button>
+        </form>
+      )}
+    </section>
+  );
+};

@@ -1,4 +1,7 @@
 import {
+  HouseholdPeopleRoster,
+  HouseholdPeopleUnavailable,
+  HouseholdPerson,
   MealPlan,
   MealPlanNotFound,
   MealPlanPersistenceFailure,
@@ -6,6 +9,7 @@ import {
   MealPlanRequest,
 } from "@meal-planner/household-api";
 import type {
+  HouseholdPeopleFailure,
   MealPlanMutationConflict,
   MealPlanRequestConflict,
   MealPlanSwapRejected,
@@ -38,6 +42,7 @@ import { HouseholdInvalidInput } from "./household.contract.js";
 import type {
   HouseholdDomainGateway,
   HouseholdMealPlanGateway,
+  HouseholdPeopleGateway,
   MealPlanCreateFailure,
   MealPlanDecisionFailure,
   MealPlanReadFailure,
@@ -46,11 +51,20 @@ import type {
 import {
   HouseholdDomainGateway as HouseholdDomainGatewayService,
   HouseholdMealPlanGateway as HouseholdMealPlanGatewayService,
+  HouseholdPeopleGateway as HouseholdPeopleGatewayService,
 } from "./household.gateway.js";
 import {
   makeHouseholdHttpApiLayer,
   makeHouseholdMealPlanHttpApiLayer,
+  makeHouseholdPeopleHttpApiLayer,
 } from "./household.http.js";
+import type {
+  HouseholdBootstrapCreatorPersonInput,
+  HouseholdCreatePersonInput,
+  HouseholdGetPersonInput,
+  HouseholdListPeopleInput,
+  HouseholdTransitionPersonInput,
+} from "./people/household-people.contract.js";
 import type { HouseholdRecipeImportFailure } from "./recipe-import/household-recipe-import.contract.js";
 import { makeHouseholdMemberAdmission } from "./rpc/command-envelope.js";
 
@@ -87,6 +101,27 @@ interface HouseholdMealPlanDomainPort {
   readonly swapMealPlanFromRecipeBank: (
     input: HouseholdSwapMealPlanFromRecipeBankInput
   ) => Effect.Effect<HouseholdMealPlanWire, MealPlanDomainFailure>;
+}
+
+interface HouseholdPeopleDomainPort {
+  readonly archiveHouseholdPerson: (
+    input: HouseholdTransitionPersonInput
+  ) => Effect.Effect<unknown, HouseholdDomainFailure | HouseholdPeopleFailure>;
+  readonly bootstrapCreatorPerson: (
+    input: HouseholdBootstrapCreatorPersonInput
+  ) => Effect.Effect<unknown, HouseholdDomainFailure | HouseholdPeopleFailure>;
+  readonly createHouseholdPerson: (
+    input: HouseholdCreatePersonInput
+  ) => Effect.Effect<unknown, HouseholdDomainFailure | HouseholdPeopleFailure>;
+  readonly getHouseholdPerson: (
+    input: HouseholdGetPersonInput
+  ) => Effect.Effect<unknown, HouseholdDomainFailure | HouseholdPeopleFailure>;
+  readonly listHouseholdPeople: (
+    input: HouseholdListPeopleInput
+  ) => Effect.Effect<unknown, HouseholdDomainFailure | HouseholdPeopleFailure>;
+  readonly restoreHouseholdPerson: (
+    input: HouseholdTransitionPersonInput
+  ) => Effect.Effect<unknown, HouseholdDomainFailure | HouseholdPeopleFailure>;
 }
 
 const persistenceFailure = (operation: "create" | "read" | "save") =>
@@ -130,6 +165,107 @@ const decodeMealPlan = (wire: HouseholdMealPlanWire) =>
   Schema.decodeUnknownEffect(MealPlan)(wire).pipe(
     Effect.mapError(() => persistenceFailure("read"))
   );
+
+const mapPeopleFailure = (
+  error: HouseholdDomainFailure | HouseholdPeopleFailure
+): HouseholdPeopleFailure => {
+  if (Schema.is(HouseholdPeopleUnavailable)(error)) {
+    return error;
+  }
+  switch (error._tag) {
+    case "HouseholdCreatorBootstrapConflict":
+    case "HouseholdPersonLifecycleConflict":
+    case "HouseholdPersonMutationCollision":
+    case "HouseholdPersonNotFound":
+    case "HouseholdPersonStaleVersion": {
+      return error;
+    }
+    default: {
+      return HouseholdPeopleUnavailable.make({});
+    }
+  }
+};
+
+/** Adapt admitted people operations to the private household Worker. */
+export const makeHouseholdPeopleGateway = (options: {
+  readonly domain: HouseholdPeopleDomainPort;
+}): HouseholdPeopleGateway => {
+  const call = <A>(
+    principal: Parameters<typeof makeHouseholdMemberAdmission>[0],
+    invoke: (
+      admission: HouseholdTransitionPersonInput["admission"]
+    ) => Effect.Effect<
+      unknown,
+      HouseholdDomainFailure | HouseholdPeopleFailure
+    >,
+    schema: Schema.Codec<A, unknown, never>
+  ) =>
+    makeHouseholdMemberAdmission(principal).pipe(
+      Effect.mapError(() => HouseholdPeopleUnavailable.make({})),
+      Effect.flatMap(invoke),
+      Effect.mapError(mapPeopleFailure),
+      Effect.flatMap((wire) =>
+        Schema.decodeUnknownEffect(schema)(wire).pipe(
+          Effect.mapError(() => HouseholdPeopleUnavailable.make({}))
+        )
+      )
+    );
+  return {
+    archive: ({ payload, personId, principal }) =>
+      call(
+        principal,
+        (admission) =>
+          options.domain.archiveHouseholdPerson({
+            admission,
+            payload,
+            personId,
+          }),
+        HouseholdPerson
+      ),
+    bootstrapCreator: ({ payload, principal }) =>
+      call(
+        principal,
+        (admission) =>
+          options.domain.bootstrapCreatorPerson({ admission, payload }),
+        HouseholdPerson
+      ),
+    create: ({ payload, principal }) =>
+      call(
+        principal,
+        (admission) =>
+          options.domain.createHouseholdPerson({ admission, payload }),
+        HouseholdPerson
+      ),
+    get: ({ personId, principal }) =>
+      call(
+        principal,
+        (admission) =>
+          options.domain.getHouseholdPerson({ admission, personId }),
+        HouseholdPerson
+      ),
+    list: ({ includeArchived, principal }) =>
+      call(
+        principal,
+        (admission) =>
+          options.domain.listHouseholdPeople({
+            admission,
+            query: { includeArchived: includeArchived ? "true" : "false" },
+          }),
+        HouseholdPeopleRoster
+      ),
+    restore: ({ payload, personId, principal }) =>
+      call(
+        principal,
+        (admission) =>
+          options.domain.restoreHouseholdPerson({
+            admission,
+            payload,
+            personId,
+          }),
+        HouseholdPerson
+      ),
+  };
+};
 
 /**
  * Adapt admitted household operations to the private household worker.
@@ -279,6 +415,22 @@ export const makeHouseholdMealPlanRequestLayer = (options: {
     Layer.succeed(HouseholdMealPlanGatewayService, options.gateway)
   );
   return makeHouseholdMealPlanHttpApiLayer().pipe(
+    Layer.provide(RecipeImportHttpPlatformServices),
+    Layer.provide(requestServices),
+    HttpRouter.provideRequest(requestServices)
+  );
+};
+
+/** Mount the authenticated household people surface over its admitted gateway. */
+export const makeHouseholdPeopleRequestLayer = (options: {
+  readonly gateway: HouseholdPeopleGateway;
+  readonly resolver: AuthenticatedOrganizationResolver;
+}) => {
+  const requestServices = Layer.mergeAll(
+    Layer.succeed(AuthenticatedOrganizationResolverService, options.resolver),
+    Layer.succeed(HouseholdPeopleGatewayService, options.gateway)
+  );
+  return makeHouseholdPeopleHttpApiLayer().pipe(
     Layer.provide(RecipeImportHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)

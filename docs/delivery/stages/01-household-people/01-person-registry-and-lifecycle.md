@@ -1,9 +1,9 @@
 # Work Item 01 — Person Registry And Lifecycle
 
-- Status: Ready
+- Status: In review
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
-- Owner: Unassigned implementation lane
-- Pull request: Not opened
+- Owner: `codex/stage1-person-registry-lifecycle`
+- Pull request: Draft pending exact-head publication
 - Completed by: Not completed
 
 ## Household Outcome
@@ -206,40 +206,40 @@ Using the production auth/API/object composition:
 
 ### Focused domain and contract tests
 
-- [ ] Closed schemas reject excess keys, malformed IDs, invalid versions,
+- [x] Closed schemas reject excess keys, malformed IDs, invalid versions,
   unsupported kinds/lifecycles, and unbounded display names.
-- [ ] Bootstrap, create, list, archive, and restore transitions satisfy every
+- [x] Bootstrap, create, list, archive, and restore transitions satisfy every
   invariant above.
-- [ ] Audit entries record actor, command, person, before/after lifecycle,
+- [x] Audit entries record actor, command, person, before/after lifecycle,
   versions, and time without raw auth or request secrets.
-- [ ] Identical replay, mutation collision, stale version, wrong lifecycle,
+- [x] Identical replay, mutation collision, stale version, wrong lifecycle,
   and concurrent bootstrap/archive/restore races are deterministic.
-- [ ] Public API and generated client contracts preserve closed error and result
+- [x] Public API and generated client contracts preserve closed error and result
   types.
-- [ ] UI tests cover empty-household bootstrap, roster operations, pending,
+- [x] UI tests cover empty-household bootstrap, roster operations, pending,
   retry, stale, unauthorized, and unavailable states.
 
 ### Real runtime and persistence proof
 
-- [ ] A real Workerd or Miniflare test runs Better Auth session/membership,
+- [x] A real Workerd or Miniflare test runs Better Auth session/membership,
   public API, private Worker routing, `HouseholdObject`, and actual SQLite
   migrations.
-- [ ] The cumulative tracer for this work item survives object/runtime restart
+- [x] The cumulative tracer for this work item survives object/runtime restart
   and reads the committed SQLite state rather than a fixture-only cache.
-- [ ] Wrong-purpose and unauthenticated commands do not locate or invoke a
+- [x] Wrong-purpose and unauthenticated commands do not locate or invoke a
   household object.
-- [ ] A non-member is rejected before routing; a member of another household
+- [x] A non-member is rejected before routing; a member of another household
   cannot read or mutate state and cannot infer whether a person or receipt
   exists.
-- [ ] Fresh migration composition and regeneration prove one household-local
+- [x] Fresh migration composition and regeneration prove one household-local
   people authority and no shared household D1 table or fallback.
 
 ### Repository and review gates
 
-- [ ] Root formatting, lint with warnings denied, type checks, full tests, and
+- [x] Root formatting, lint with warnings denied, type checks, full tests, and
   all production builds pass.
 - [ ] Applicable container and hosted CI gates pass on the frozen head.
-- [ ] Public API documentation, household-domain architecture,
+- [x] Public API documentation, household-domain architecture,
   [`current.md`](../../current.md), and this delivery record reflect the shipped
   composition.
 - [ ] A completely fresh independent exact-head review proves authority,
@@ -267,5 +267,18 @@ Auth/HouseholdObject boundary. Independent exact-head review is required.
 
 ## Delivery Log
 
+- 2026-08-28 — Implemented the Work Item 01 vertical on
+  `codex/stage1-person-registry-lifecycle`: closed public and private contracts,
+  Better Auth admission, transactional household-local person authority,
+  generated SQLite migration, generated same-origin client, and the minimal
+  roster UI. Focused real-runtime proof passed for exact replay, mutation
+  collision, bootstrap and lifecycle races, audit/receipt uniqueness, restart,
+  authorization ordering, and cross-household isolation. Root format, lint,
+  type, full test, production build, and unchanged-tree container gates passed;
+  the full test run included 138 root tests, 18 household-contract tests, 31
+  recipe-import contract tests, 35 web tests, and 798 API tests. The physical
+  container test passed in 1,092.84 seconds after starting the local Docker
+  daemon. Hosted CI and independent review remain open until the head is frozen
+  and published.
 - 2026-08-27 — Marked `Ready` after repository, decision, authority, API, UI,
   migration, and runtime-boundary reconciliation.

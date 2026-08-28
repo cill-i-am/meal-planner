@@ -19,6 +19,8 @@ import {
   makeHouseholdDomainGateway,
   makeHouseholdMealPlanGateway,
   makeHouseholdMealPlanRequestLayer,
+  makeHouseholdPeopleGateway,
+  makeHouseholdPeopleRequestLayer,
   makeHouseholdRequestLayer,
 } from "./features/households/household-request-composition.js";
 import HouseholdImportBatchItemWorkflow from "./features/imports/household-import-batch-item.workflow.js";
@@ -206,12 +208,17 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             resolver: authenticatedOrganizationResolver,
           }
         );
+        const householdPeopleRequestLayer = makeHouseholdPeopleRequestLayer({
+          gateway: makeHouseholdPeopleGateway({ domain: householdDomain }),
+          resolver: authenticatedOrganizationResolver,
+        });
         const routeHandler = yield* HttpRouter.toHttpEffect(
           Layer.mergeAll(
             HttpRouter.addAll(MealPlannerOperationalRoutes),
             makeRecipeImportHttpApiLayer(),
             householdRequestLayer,
             householdMealPlanRequestLayer,
+            householdPeopleRequestLayer,
             makeRecipeImportNotFoundHttpLayer()
           ).pipe(
             Layer.provide(requestServices),

@@ -225,8 +225,59 @@ h3 {
   min-height: 48px;
   padding: 10px 18px;
 }
+.button-secondary {
+  background: transparent;
+  color: #1f6b50;
+}
+.people-panel {
+  border-top: 1px solid #d8d2c6;
+  margin-top: 28px;
+  padding-top: 28px;
+}
+.people-heading-row,
+.person-row {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+.people-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 24px 0;
+  padding: 0;
+}
+.person-row {
+  border-bottom: 1px solid #d8d2c6;
+  padding: 12px 0;
+}
+.person-row span {
+  display: grid;
+  gap: 3px;
+}
+.person-row small {
+  color: #59645d;
+}
+.person-row-archived {
+  opacity: 0.72;
+}
+.people-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+.person-row .people-confirmation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: end;
+}
 .button:hover:not(:disabled) {
   background: #18573f;
+}
+.button-secondary:hover:not(:disabled) {
+  color: white;
 }
 .button:disabled {
   cursor: not-allowed;

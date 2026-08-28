@@ -1,4 +1,7 @@
-import type { MealPlan } from "@meal-planner/household-api";
+import type {
+  HouseholdPeopleFailure,
+  MealPlan,
+} from "@meal-planner/household-api";
 import {
   HouseholdApi,
   HouseholdCurrentPrincipal,
@@ -10,6 +13,17 @@ import {
   HouseholdMealPlanNotFoundProblem,
   HouseholdMealPlanPrincipal,
   HouseholdMealPlanSchemaErrors,
+  HouseholdPeopleCurrentPrincipal,
+  HouseholdPeopleApi,
+  HouseholdPeopleBootstrapConflictProblem,
+  HouseholdPeopleLifecycleConflictProblem,
+  HouseholdPeopleInvalidRequestProblem,
+  HouseholdPeopleMutationCollisionProblem,
+  HouseholdPeopleNotFoundProblem,
+  HouseholdPeoplePrincipal,
+  HouseholdPeopleSchemaErrors,
+  HouseholdPeopleStaleVersionProblem,
+  HouseholdPeopleUnavailableProblem,
   HouseholdSessionAuth,
   toHouseholdMealPlanResponse,
 } from "@meal-planner/household-api";
@@ -29,6 +43,7 @@ import type {
 import {
   HouseholdDomainGateway,
   HouseholdMealPlanGateway,
+  HouseholdPeopleGateway,
 } from "./household.gateway.js";
 import { HouseholdDigest } from "./shared-kernel/authority-services.js";
 import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-services.live.js";
@@ -50,6 +65,14 @@ const invalidMealPlanRequestProblem = Schema.decodeUnknownSync(
 )({
   code: "invalid_request",
   message: "The meal-plan request is invalid.",
+  status: 400,
+});
+
+const invalidPeopleRequestProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleInvalidRequestProblem
+)({
+  code: "invalid_request",
+  message: "The household people request is invalid.",
   status: 400,
 });
 
@@ -76,6 +99,81 @@ const mealPlanInternalProblem = Schema.decodeUnknownSync(
   message: "Household storage is temporarily unavailable.",
   status: 500,
 });
+
+const peopleNotFoundProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleNotFoundProblem
+)({ code: "person_not_found", message: "Person not found.", status: 404 });
+const peopleMutationCollisionProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleMutationCollisionProblem
+)({
+  code: "mutation_collision",
+  message: "That retry identifier was already used for a different change.",
+  status: 409,
+});
+const peopleBootstrapConflictProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleBootstrapConflictProblem
+)({
+  code: "bootstrap_conflict",
+  message: "This account is already linked to a household person.",
+  status: 409,
+});
+const peopleStaleVersionProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleStaleVersionProblem
+)({
+  code: "stale_version",
+  message: "This person changed. Refresh the roster and try again.",
+  status: 409,
+});
+const peopleLifecycleConflictProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleLifecycleConflictProblem
+)({
+  code: "lifecycle_conflict",
+  message: "This lifecycle change is no longer valid.",
+  status: 409,
+});
+const peopleUnavailableProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleUnavailableProblem
+)({
+  code: "people_unavailable",
+  message: "The household roster is temporarily unavailable.",
+  status: 503,
+});
+
+const mapPeopleBootstrapError = (error: HouseholdPeopleFailure) => {
+  if (error._tag === "HouseholdCreatorBootstrapConflict") {
+    return peopleBootstrapConflictProblem;
+  }
+  return error._tag === "HouseholdPersonMutationCollision"
+    ? peopleMutationCollisionProblem
+    : peopleUnavailableProblem;
+};
+const mapPeopleCreateError = (error: HouseholdPeopleFailure) =>
+  error._tag === "HouseholdPersonMutationCollision"
+    ? peopleMutationCollisionProblem
+    : peopleUnavailableProblem;
+const mapPeopleGetError = (error: HouseholdPeopleFailure) =>
+  error._tag === "HouseholdPersonNotFound"
+    ? peopleNotFoundProblem
+    : peopleUnavailableProblem;
+const mapPeopleTransitionError = (error: HouseholdPeopleFailure) => {
+  switch (error._tag) {
+    case "HouseholdPersonLifecycleConflict": {
+      return peopleLifecycleConflictProblem;
+    }
+    case "HouseholdPersonMutationCollision": {
+      return peopleMutationCollisionProblem;
+    }
+    case "HouseholdPersonNotFound": {
+      return peopleNotFoundProblem;
+    }
+    case "HouseholdPersonStaleVersion": {
+      return peopleStaleVersionProblem;
+    }
+    default: {
+      return peopleUnavailableProblem;
+    }
+  }
+};
 
 const mapCreateMealPlanError = (error: MealPlanCreateFailure) =>
   error._tag === "MealPlanRequestConflict"
@@ -139,6 +237,12 @@ const HouseholdSessionAuthLive = Layer.effect(
           actorId,
           organizationId: principal.organizationId,
         }).pipe(Effect.mapError(() => unauthorizedProblem));
+        const peoplePrincipal = yield* Schema.decodeUnknownEffect(
+          HouseholdPeoplePrincipal
+        )({
+          actorId,
+          organizationId: principal.organizationId,
+        }).pipe(Effect.mapError(() => unauthorizedProblem));
         return yield* httpEffect.pipe(
           Effect.provideService(HouseholdCurrentPrincipal, {
             organizationId: principal.organizationId,
@@ -146,6 +250,10 @@ const HouseholdSessionAuthLive = Layer.effect(
           Effect.provideService(
             HouseholdMealPlanCurrentPrincipal,
             mealPlanPrincipal
+          ),
+          Effect.provideService(
+            HouseholdPeopleCurrentPrincipal,
+            peoplePrincipal
           )
         );
       })
@@ -240,6 +348,24 @@ const HouseholdMealPlanSchemaErrorsLive =
     transformMealPlanSchemaError
   );
 
+const transformPeopleSchemaError = (error: HttpApiSchemaError) =>
+  error.kind === "Body" || error.kind === "ResponseHeaders"
+    ? Effect.logError("household.people.response_schema_error").pipe(
+        Effect.andThen(
+          HttpServerResponse.json(peopleUnavailableProblem, {
+            headers: { "content-type": "application/problem+json" },
+            status: 503,
+          }).pipe(Effect.orDie)
+        )
+      )
+    : Effect.fail(invalidPeopleRequestProblem);
+
+const HouseholdPeopleSchemaErrorsLive =
+  HttpApiMiddleware.layerSchemaErrorTransform(
+    HouseholdPeopleSchemaErrors,
+    transformPeopleSchemaError
+  );
+
 const HouseholdHandlers = HttpApiBuilder.group(
   HouseholdApi,
   "households",
@@ -259,6 +385,70 @@ const HouseholdHandlers = HttpApiBuilder.group(
     )
 );
 
+const HouseholdPeopleHandlers = HttpApiBuilder.group(
+  HouseholdPeopleApi,
+  "people",
+  (handlers) =>
+    handlers
+      .handle("bootstrapCreator", ({ payload }) =>
+        Effect.gen(function* bootstrapCreatorPerson() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .bootstrapCreator({ payload, principal })
+            .pipe(Effect.mapError(mapPeopleBootstrapError));
+        })
+      )
+      .handle("list", ({ query }) =>
+        Effect.gen(function* listPeople() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .list({
+              includeArchived: query.includeArchived === "true",
+              principal,
+            })
+            .pipe(Effect.mapError(() => peopleUnavailableProblem));
+        })
+      )
+      .handle("get", ({ params }) =>
+        Effect.gen(function* getPerson() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .get({ personId: params.personId, principal })
+            .pipe(Effect.mapError(mapPeopleGetError));
+        })
+      )
+      .handle("create", ({ payload }) =>
+        Effect.gen(function* createPerson() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .create({ payload, principal })
+            .pipe(Effect.mapError(mapPeopleCreateError));
+        })
+      )
+      .handle("archive", ({ params, payload }) =>
+        Effect.gen(function* archivePerson() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .archive({ payload, personId: params.personId, principal })
+            .pipe(Effect.mapError(mapPeopleTransitionError));
+        })
+      )
+      .handle("restore", ({ params, payload }) =>
+        Effect.gen(function* restorePerson() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .restore({ payload, personId: params.personId, principal })
+            .pipe(Effect.mapError(mapPeopleTransitionError));
+        })
+      )
+);
+
 /** Mount the authenticated household tracer API. */
 export const makeHouseholdHttpApiLayer = () =>
   HttpApiBuilder.layer(HouseholdApi).pipe(
@@ -272,4 +462,12 @@ export const makeHouseholdMealPlanHttpApiLayer = () =>
     Layer.provide(HouseholdMealPlanHandlers),
     Layer.provide(HouseholdSessionAuthLive),
     Layer.provide(HouseholdMealPlanSchemaErrorsLive)
+  );
+
+/** Mount the authenticated household people API. */
+export const makeHouseholdPeopleHttpApiLayer = () =>
+  HttpApiBuilder.layer(HouseholdPeopleApi).pipe(
+    Layer.provide(HouseholdPeopleHandlers),
+    Layer.provide(HouseholdSessionAuthLive),
+    Layer.provide(HouseholdPeopleSchemaErrorsLive)
   );

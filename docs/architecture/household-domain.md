@@ -85,6 +85,36 @@ digest and an Effect-provided Clock instant only after those checks pass.
 Better Auth D1 remains the global identity and organization control plane. It
 does not store meal-plan aggregate state.
 
+## Household person registry authority
+
+`HouseholdObject` SQLite is the sole canonical writer for household people,
+their active/archived lifecycle, the creator's purpose-bound association,
+per-person optimistic versions, immutable lifecycle audits, and mutation
+receipts. Person IDs are opaque UUID-backed values generated inside household
+authority; archive and restore preserve the same ID and advance its version.
+There is no shared household D1 mirror, compatibility path, hard delete, merge,
+or link inferred from a name or email.
+
+The authenticated API resolves the Better Auth session, active organization,
+and membership before constructing a one-way actor digest. Closed member
+commands are admitted for their exact people purpose before the private Worker
+locates the object, and the object repeats exact-purpose admission and persisted
+organization provenance checks before opening the repository. Raw user,
+membership, session, invitation, role, and email values never enter household
+commands or storage.
+
+Creator bootstrap, unlinked person creation, archive, and restore each commit
+the person row, version, audit, creator association where applicable, and
+privacy-safe replay receipt in one Drizzle SQLite transaction. The mutation ID
+is unique across people commands in one household. Exact intent replay returns
+the recorded projection without another write; changed intent collides, stale
+versions and invalid lifecycle transitions fail closed, and another household's
+object has an independent identity and receipt namespace. No external I/O is
+performed by a person transaction.
+
+The public contract and generated same-origin client are documented in
+[household-people-api.md](household-people-api.md).
+
 ## Recipe-import and Recipe Bank authority
 
 `HouseholdObject` SQLite is the canonical store for import admission, source
@@ -186,14 +216,14 @@ organization using an organization-keyed TanStack Query. Its generated
 same-origin client calls `GET /v1/household` without placing an organization ID,
 bearer token, or household scope in the request.
 
-The product authorities in `HouseholdObject` are meal planning, the
+The product authorities in `HouseholdObject` are household people, meal planning, the
 complete recipe-import/review/Recipe Bank capability, compact evidence and
 extraction metadata, terminal checkpoints, and recovery attempts. R2 retains
 only large private bytes. `ProviderAccountingDatabase` retains the five global
 provider cost-accounting tables. It has no organization column, household
 table, import route, execution projection, or household product writer.
 `MealPlannerAuthDatabase` remains the separate Better Auth control plane.
-Shopping lists and preferences have not moved. There is no registry,
+Shopping lists and preferences have not moved. There is no shared registry,
 organization-to-object lookup table, shared product read model, dual write,
 legacy adapter, fallback, or compatibility path.
 

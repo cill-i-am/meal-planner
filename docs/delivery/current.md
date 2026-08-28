@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-08-27
+- Last updated: 2026-08-28
 - Delivery source of truth: this repository
 
 ## Active Stage
@@ -12,11 +12,13 @@
 - Status: Active
 - Immediate delivery target:
   [`01-person-registry-and-lifecycle.md`](stages/01-household-people/01-person-registry-and-lifecycle.md)
-  (`Ready`)
+  (`In review`)
 
-Only the first independently implementable work item is ready. Account linking
-and departure, profile authority, and the private interview-session boundary
-remain proposed until their recorded dependencies are resolved.
+The first independently implementable work item has a working implementation
+and real-runtime evidence. It remains in review until the frozen head passes all
+repository, container, hosted CI, and independent exact-head gates. Account
+linking and departure, profile authority, and the private interview-session
+boundary remain proposed until their recorded dependencies are resolved.
 
 ## Completed Foundation
 
@@ -39,12 +41,12 @@ remain proposed until their recorded dependencies are resolved.
 
 ## Immediate Next Steps
 
-1. Assign one implementation lane to Work Item 01 from freshly fetched `main`.
-2. Deliver its authenticated roster vertical through `HouseholdObject`, public
-   API, minimal web UI, and real restart/isolation proof.
-3. Review the exact immutable head before merge, then update the work item and
-   this current-state record with delivery evidence.
-4. Resolve and accept the departure-coordination ADR before promoting Work Item
+1. Publish the locally green Work Item 01 implementation as one draft pull
+   request and freeze the review head.
+2. Run hosted CI and a fresh independent exact-head review; resolve only proven
+   in-scope findings before merge authority is considered.
+3. After Work Item 01 is accepted, resolve and accept the
+   departure-coordination ADR before promoting Work Item
    02 to `Ready`.
 
 ## Deliberate Non-Work

@@ -70,6 +70,8 @@ import {
   makeHouseholdDomainGateway,
   makeHouseholdMealPlanGateway,
   makeHouseholdMealPlanRequestLayer,
+  makeHouseholdPeopleGateway,
+  makeHouseholdPeopleRequestLayer,
   makeHouseholdRequestLayer,
 } from "./household-request-composition.js";
 import type {
@@ -523,10 +525,15 @@ export default {
       gateway: makeHouseholdMealPlanGateway({ domain: mealPlanDomain }),
       resolver,
     });
+    const peopleLayer = makeHouseholdPeopleRequestLayer({
+      gateway: makeHouseholdPeopleGateway({ domain: householdDomain }),
+      resolver,
+    });
     const mounted = HttpRouter.toWebHandler(
       Layer.mergeAll(
         householdLayer,
         mealPlanLayer,
+        peopleLayer,
         makeRecipeImportHttpApiLayer().pipe(
           Layer.provide(importServices),
           HttpRouter.provideRequest(importServices)

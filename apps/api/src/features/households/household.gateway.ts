@@ -1,4 +1,11 @@
 import type {
+  BootstrapHouseholdCreatorPayload,
+  CreateHouseholdPersonPayload,
+  HouseholdPeopleFailure,
+  HouseholdPeoplePrincipal,
+  HouseholdPeopleRoster,
+  HouseholdPerson,
+  HouseholdPersonId,
   CreateMealPlanPayload,
   DecideMealPlanPayload,
   HouseholdMealPlanPrincipal,
@@ -13,6 +20,7 @@ import type {
   MealPlanTransitionRejected,
   MealPlanVersionConflict,
   SwapMealPlanPayload,
+  TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
 import type { Effect } from "effect";
 import { Context } from "effect";
@@ -82,3 +90,38 @@ export const HouseholdMealPlanGateway =
   Context.Service<HouseholdMealPlanGateway>(
     "meal-planner/HouseholdMealPlanGateway"
   );
+
+/** Admitted application boundary for household people. */
+export interface HouseholdPeopleGateway {
+  readonly archive: (input: {
+    readonly payload: TransitionHouseholdPersonPayload;
+    readonly personId: HouseholdPersonId;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<HouseholdPerson, HouseholdPeopleFailure>;
+  readonly bootstrapCreator: (input: {
+    readonly payload: BootstrapHouseholdCreatorPayload;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<HouseholdPerson, HouseholdPeopleFailure>;
+  readonly create: (input: {
+    readonly payload: CreateHouseholdPersonPayload;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<HouseholdPerson, HouseholdPeopleFailure>;
+  readonly get: (input: {
+    readonly personId: HouseholdPersonId;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<HouseholdPerson, HouseholdPeopleFailure>;
+  readonly list: (input: {
+    readonly includeArchived: boolean;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<HouseholdPeopleRoster, HouseholdPeopleFailure>;
+  readonly restore: (input: {
+    readonly payload: TransitionHouseholdPersonPayload;
+    readonly personId: HouseholdPersonId;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<HouseholdPerson, HouseholdPeopleFailure>;
+}
+
+/** Injectable admitted household people boundary. */
+export const HouseholdPeopleGateway = Context.Service<HouseholdPeopleGateway>(
+  "meal-planner/HouseholdPeopleGateway"
+);
