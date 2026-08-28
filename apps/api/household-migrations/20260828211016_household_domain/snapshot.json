@@ -1214,7 +1214,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "actor_id",
+      "name": "linkage_subject",
       "entityType": "columns",
       "table": "household_person_creator_associations"
     },
@@ -2009,7 +2009,7 @@
       "entityType": "pks"
     },
     {
-      "columns": ["actor_id"],
+      "columns": ["linkage_subject"],
       "nameExplicit": false,
       "name": "household_person_creator_associations_pk",
       "table": "household_person_creator_associations",

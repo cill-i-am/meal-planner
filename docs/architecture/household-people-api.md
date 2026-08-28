@@ -3,7 +3,9 @@
 The household people API is same-origin and session-authenticated. Clients do
 not send an organization, actor, role, email, membership, or bearer token. The
 API resolves the Better Auth session, active organization, and membership before
-private household routing.
+private household routing. Creator bootstrap additionally requires the active
+membership's exact Better Auth `owner` role; another member receives
+`creator_required` before the private Worker or household object is invoked.
 
 ## Operations
 
@@ -25,10 +27,20 @@ direct lookup remains household-authorized.
 
 Malformed or excess input returns `invalid_request`. Privacy-safe domain
 failures are `person_not_found`, `mutation_collision`, `bootstrap_conflict`,
-`stale_version`, `lifecycle_conflict`, and `people_unavailable`, with HTTP status
-400, 404, 409, or 503 as declared by the generated contract. Session or
-membership failure returns the shared `unauthorized` response before household
-routing.
+`creator_required`, `stale_version`, `lifecycle_conflict`, and
+`people_unavailable`, with HTTP status 400, 403, 404, 409, or 503 as declared by
+the generated contract. Session or membership failure returns the shared
+`unauthorized` response before household routing.
+
+The server derives two closed, one-way identities from the immutable Better
+Auth user ID and admitted organization ID. Both use a versioned
+`meal-planner/household-people` domain plus a distinct purpose:
+`audit-actor` records authorization-safe audit correlation, while
+`linkage-subject` is the account-to-person association key. The linkage subject
+is byte-stable across sessions, membership-row replacement, and Worker/object
+restart, but differs for the same user in another organization and for another
+user. The private boundary and `HouseholdObject` receive neither the raw inputs
+nor session, member, role, or email values.
 
 A mutation ID identifies one admitted intent within one household. Retrying the
 same intent returns the byte-identical recorded projection. Reusing it for a

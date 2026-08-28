@@ -14,8 +14,10 @@ import {
   HouseholdMealPlanPrincipal,
   HouseholdMealPlanSchemaErrors,
   HouseholdPeopleCurrentPrincipal,
+  HouseholdPeopleAuditActorId,
   HouseholdPeopleApi,
   HouseholdPeopleBootstrapConflictProblem,
+  HouseholdPeopleCreatorRequiredProblem,
   HouseholdPeopleLifecycleConflictProblem,
   HouseholdPeopleInvalidRequestProblem,
   HouseholdPeopleMutationCollisionProblem,
@@ -24,6 +26,7 @@ import {
   HouseholdPeopleSchemaErrors,
   HouseholdPeopleStaleVersionProblem,
   HouseholdPeopleUnavailableProblem,
+  HouseholdPersonLinkageSubject,
   HouseholdSessionAuth,
   toHouseholdMealPlanResponse,
 } from "@meal-planner/household-api";
@@ -116,6 +119,14 @@ const peopleBootstrapConflictProblem = Schema.decodeUnknownSync(
   code: "bootstrap_conflict",
   message: "This account is already linked to a household person.",
   status: 409,
+});
+const peopleCreatorRequiredProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleCreatorRequiredProblem
+)({
+  code: "creator_required",
+  message:
+    "Only the Better Auth household owner can set up the creator person.",
+  status: 403,
 });
 const peopleStaleVersionProblem = Schema.decodeUnknownSync(
   HouseholdPeopleStaleVersionProblem
@@ -217,6 +228,19 @@ const exposeMealPlanResult = <E extends { readonly _tag: string }, P>(
     Effect.map(toHouseholdMealPlanResponse)
   );
 
+const peopleSubjectMaterial = (
+  purpose: "audit-actor" | "linkage-subject",
+  organizationId: string,
+  userId: string
+) =>
+  JSON.stringify([
+    "meal-planner/household-people",
+    purpose,
+    "v1",
+    organizationId,
+    userId,
+  ]);
+
 const HouseholdSessionAuthLive = Layer.effect(
   HouseholdSessionAuth,
   Effect.gen(function* makeHouseholdSessionAuth() {
@@ -231,6 +255,34 @@ const HouseholdSessionAuthLive = Layer.effect(
         const actorId = yield* digest
           .sha256(principal.userId)
           .pipe(Effect.mapError(() => unauthorizedProblem));
+        const peopleActorId = yield* digest
+          .sha256(
+            peopleSubjectMaterial(
+              "audit-actor",
+              principal.organizationId,
+              principal.userId
+            )
+          )
+          .pipe(
+            Effect.flatMap(
+              Schema.decodeUnknownEffect(HouseholdPeopleAuditActorId)
+            ),
+            Effect.mapError(() => unauthorizedProblem)
+          );
+        const linkageSubject = yield* digest
+          .sha256(
+            peopleSubjectMaterial(
+              "linkage-subject",
+              principal.organizationId,
+              principal.userId
+            )
+          )
+          .pipe(
+            Effect.flatMap(
+              Schema.decodeUnknownEffect(HouseholdPersonLinkageSubject)
+            ),
+            Effect.mapError(() => unauthorizedProblem)
+          );
         const mealPlanPrincipal = yield* Schema.decodeUnknownEffect(
           HouseholdMealPlanPrincipal
         )({
@@ -240,7 +292,10 @@ const HouseholdSessionAuthLive = Layer.effect(
         const peoplePrincipal = yield* Schema.decodeUnknownEffect(
           HouseholdPeoplePrincipal
         )({
-          actorId,
+          actorId: peopleActorId,
+          creatorAuthority:
+            principal.membershipRole === "owner" ? "better_auth_owner" : null,
+          linkageSubject,
           organizationId: principal.organizationId,
         }).pipe(Effect.mapError(() => unauthorizedProblem));
         return yield* httpEffect.pipe(
@@ -393,6 +448,9 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
       .handle("bootstrapCreator", ({ payload }) =>
         Effect.gen(function* bootstrapCreatorPerson() {
           const principal = yield* HouseholdPeopleCurrentPrincipal;
+          if (principal.creatorAuthority === null) {
+            return yield* Effect.fail(peopleCreatorRequiredProblem);
+          }
           const gateway = yield* HouseholdPeopleGateway;
           return yield* gateway
             .bootstrapCreator({ payload, principal })

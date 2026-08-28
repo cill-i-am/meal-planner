@@ -209,6 +209,7 @@ export const HouseholdObjectRuntime = Effect.gen(
               identity: identityGenerator,
             }).archive({
               actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
               now: yield* Clock.currentTimeMillis,
               payload: command.payload,
               personId: command.personId,
@@ -289,6 +290,7 @@ export const HouseholdObjectRuntime = Effect.gen(
               identity: identityGenerator,
             }).bootstrapCreator({
               actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
               now: yield* Clock.currentTimeMillis,
               payload: command.payload,
             });
@@ -509,6 +511,7 @@ export const HouseholdObjectRuntime = Effect.gen(
               identity: identityGenerator,
             }).create({
               actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
               now: yield* Clock.currentTimeMillis,
               payload: command.payload,
             });
@@ -818,6 +821,7 @@ export const HouseholdObjectRuntime = Effect.gen(
               identity: identityGenerator,
             }).get({
               actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
               personId: command.personId,
             });
             return yield* encodePeopleResult(HouseholdPerson, person);
@@ -846,6 +850,7 @@ export const HouseholdObjectRuntime = Effect.gen(
             }).list({
               actorId: command.admission.actor.actorId,
               includeArchived: command.query.includeArchived === "true",
+              linkageSubject: command.admission.actor.linkageSubject,
             });
             return yield* encodePeopleResult(HouseholdPeopleRoster, roster);
           })
@@ -1310,6 +1315,7 @@ export const HouseholdObjectRuntime = Effect.gen(
               identity: identityGenerator,
             }).restore({
               actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
               now: yield* Clock.currentTimeMillis,
               payload: command.payload,
               personId: command.personId,

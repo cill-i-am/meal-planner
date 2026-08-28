@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-08-28
+- Last updated: 2026-08-29
 - Delivery source of truth: this repository
 
 ## Active Stage
@@ -21,6 +21,15 @@ in review until the frozen head passes hosted CI and independent exact-head
 review. Account linking and departure, profile authority, and the private
 interview-session boundary remain proposed until their recorded dependencies
 are resolved.
+
+The Work Item 01 identity boundary derives a stable household-scoped linkage
+subject from immutable Better Auth user plus organization identity, separately
+from its audit actor. Better Auth's actual `owner` membership role is the only
+creator-bootstrap authority; other admitted members are denied before private
+household routing. Replacement local runtime, repository, build, and
+Docker-backed physical gates are green after this acceptance strengthening. The
+earlier head remains superseded; replacement hosted CI and a fresh independent
+exact-head review are still required before merge authority.
 
 ## Completed Foundation
 

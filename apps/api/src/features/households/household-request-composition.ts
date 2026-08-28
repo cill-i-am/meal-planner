@@ -66,7 +66,11 @@ import type {
   HouseholdTransitionPersonInput,
 } from "./people/household-people.contract.js";
 import type { HouseholdRecipeImportFailure } from "./recipe-import/household-recipe-import.contract.js";
-import { makeHouseholdMemberAdmission } from "./rpc/command-envelope.js";
+import {
+  makeHouseholdMemberAdmission,
+  makeHouseholdPeopleAdmission,
+  makeHouseholdPeopleCreatorAdmission,
+} from "./rpc/command-envelope.js";
 
 interface HouseholdDomainPort {
   readonly ensureHousehold: (
@@ -190,17 +194,17 @@ const mapPeopleFailure = (
 export const makeHouseholdPeopleGateway = (options: {
   readonly domain: HouseholdPeopleDomainPort;
 }): HouseholdPeopleGateway => {
-  const call = <A>(
-    principal: Parameters<typeof makeHouseholdMemberAdmission>[0],
+  const call = <A, R>(
+    admission: Effect.Effect<R, unknown>,
     invoke: (
-      admission: HouseholdTransitionPersonInput["admission"]
+      admission: R
     ) => Effect.Effect<
       unknown,
       HouseholdDomainFailure | HouseholdPeopleFailure
     >,
     schema: Schema.Codec<A, unknown, never>
   ) =>
-    makeHouseholdMemberAdmission(principal).pipe(
+    admission.pipe(
       Effect.mapError(() => HouseholdPeopleUnavailable.make({})),
       Effect.flatMap(invoke),
       Effect.mapError(mapPeopleFailure),
@@ -213,7 +217,7 @@ export const makeHouseholdPeopleGateway = (options: {
   return {
     archive: ({ payload, personId, principal }) =>
       call(
-        principal,
+        makeHouseholdPeopleAdmission(principal),
         (admission) =>
           options.domain.archiveHouseholdPerson({
             admission,
@@ -223,29 +227,34 @@ export const makeHouseholdPeopleGateway = (options: {
         HouseholdPerson
       ),
     bootstrapCreator: ({ payload, principal }) =>
-      call(
-        principal,
-        (admission) =>
-          options.domain.bootstrapCreatorPerson({ admission, payload }),
-        HouseholdPerson
-      ),
+      principal.creatorAuthority === null
+        ? Effect.fail(HouseholdPeopleUnavailable.make({}))
+        : call(
+            makeHouseholdPeopleCreatorAdmission({
+              ...principal,
+              creatorAuthority: principal.creatorAuthority,
+            }),
+            (admission) =>
+              options.domain.bootstrapCreatorPerson({ admission, payload }),
+            HouseholdPerson
+          ),
     create: ({ payload, principal }) =>
       call(
-        principal,
+        makeHouseholdPeopleAdmission(principal),
         (admission) =>
           options.domain.createHouseholdPerson({ admission, payload }),
         HouseholdPerson
       ),
     get: ({ personId, principal }) =>
       call(
-        principal,
+        makeHouseholdPeopleAdmission(principal),
         (admission) =>
           options.domain.getHouseholdPerson({ admission, personId }),
         HouseholdPerson
       ),
     list: ({ includeArchived, principal }) =>
       call(
-        principal,
+        makeHouseholdPeopleAdmission(principal),
         (admission) =>
           options.domain.listHouseholdPeople({
             admission,
@@ -255,7 +264,7 @@ export const makeHouseholdPeopleGateway = (options: {
       ),
     restore: ({ payload, personId, principal }) =>
       call(
-        principal,
+        makeHouseholdPeopleAdmission(principal),
         (admission) =>
           options.domain.restoreHouseholdPerson({
             admission,

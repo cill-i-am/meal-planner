@@ -243,6 +243,7 @@ const makeApp = async (options: MakeAppOptions = {}) => {
       AuthenticatedOrganizationResolver.of({
         resolve: () =>
           Effect.succeed({
+            membershipRole: "member",
             organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
               "test-household"
             ),

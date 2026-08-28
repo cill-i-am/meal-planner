@@ -12,6 +12,8 @@ import {
 import { HouseholdOrganizationId } from "./household.contract.js";
 import {
   HouseholdMemberAdmission,
+  HouseholdPeopleCreatorAdmission,
+  HouseholdPeopleMemberAdmission,
   HouseholdSystemAdmission,
   requireHouseholdCommandAdmission,
 } from "./rpc/command-envelope.js";
@@ -75,14 +77,62 @@ describe("household foundation contracts", () => {
         requireHouseholdCommandAdmission(systemAdmission, "ensure_household")
       )
     ).toThrow();
-    expect(
+    expect(() =>
       Effect.runSync(
         requireHouseholdCommandAdmission(
           Schema.decodeUnknownSync(HouseholdMemberAdmission)(memberAdmission),
           "bootstrap_creator_person"
         )
       )
-    ).toEqual(memberAdmission);
+    ).toThrow();
+    const linkageSubject = "b".repeat(64);
+    const auditActorId = "c".repeat(64);
+    const peopleMember = Schema.decodeUnknownSync(
+      HouseholdPeopleMemberAdmission
+    )({
+      actor: {
+        _tag: "PeopleMember",
+        actorId: auditActorId,
+        linkageSubject,
+      },
+      organizationId,
+    });
+    expect(() =>
+      Effect.runSync(
+        requireHouseholdCommandAdmission(
+          peopleMember,
+          "bootstrap_creator_person"
+        )
+      )
+    ).toThrow();
+    const peopleCreator = Schema.decodeUnknownSync(
+      HouseholdPeopleCreatorAdmission,
+      { onExcessProperty: "error" }
+    )({
+      actor: {
+        _tag: "PeopleCreator",
+        actorId: auditActorId,
+        authority: "better_auth_owner",
+        linkageSubject,
+      },
+      organizationId,
+    });
+    expect(
+      Effect.runSync(
+        requireHouseholdCommandAdmission(
+          peopleCreator,
+          "bootstrap_creator_person"
+        )
+      )
+    ).toEqual(peopleCreator);
+    expect(() =>
+      Schema.decodeUnknownSync(HouseholdPeopleCreatorAdmission, {
+        onExcessProperty: "error",
+      })({
+        ...peopleCreator,
+        actor: { ...peopleCreator.actor, userId: "raw-better-auth-user" },
+      })
+    ).toThrow();
   });
 
   it("rejects the wrong command purpose before any household routing step", async () => {

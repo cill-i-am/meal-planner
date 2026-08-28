@@ -130,6 +130,9 @@ const rpcResponse = (value: Schema.Json) => {
 
 interface HouseholdApiFixtureEnv {
   readonly BETTER_AUTH_SECRET: string;
+  readonly HOUSEHOLD_TEST_OBSERVATIONS: {
+    readonly put: (key: string, value: string) => Promise<void>;
+  };
   readonly HouseholdDomainWorker: {
     readonly admitImportBatch: (
       input: HouseholdAdmitImportBatchInput
@@ -526,7 +529,31 @@ export default {
       resolver,
     });
     const peopleLayer = makeHouseholdPeopleRequestLayer({
-      gateway: makeHouseholdPeopleGateway({ domain: householdDomain }),
+      gateway: makeHouseholdPeopleGateway({
+        domain: {
+          archiveHouseholdPerson: (input) =>
+            householdDomain.archiveHouseholdPerson(input),
+          bootstrapCreatorPerson: (input) =>
+            Effect.promise(() =>
+              env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                "people-bootstrap-private-invoked",
+                "true"
+              )
+            ).pipe(
+              Effect.flatMap(() =>
+                householdDomain.bootstrapCreatorPerson(input)
+              )
+            ),
+          createHouseholdPerson: (input) =>
+            householdDomain.createHouseholdPerson(input),
+          getHouseholdPerson: (input) =>
+            householdDomain.getHouseholdPerson(input),
+          listHouseholdPeople: (input) =>
+            householdDomain.listHouseholdPeople(input),
+          restoreHouseholdPerson: (input) =>
+            householdDomain.restoreHouseholdPerson(input),
+        },
+      }),
       resolver,
     });
     const mounted = HttpRouter.toWebHandler(

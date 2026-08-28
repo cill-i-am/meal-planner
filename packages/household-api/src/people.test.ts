@@ -5,6 +5,7 @@ import {
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
   HouseholdPeopleRoster,
+  HouseholdPeoplePrincipal,
   HouseholdPerson,
   HouseholdPersonId,
   HouseholdPersonMutationId,
@@ -77,6 +78,31 @@ describe("household people public contract", () => {
         lifecycle: "deleted",
         updatedAtEpochMs: 1,
         version: 1,
+      })
+    ).toThrow();
+  });
+
+  it("keeps audit, linkage, and creator authority in one closed branded principal", () => {
+    const principal = {
+      actorId: "a".repeat(64),
+      creatorAuthority: "better_auth_owner",
+      linkageSubject: "b".repeat(64),
+      organizationId: "organization-a",
+    };
+    expect(
+      Schema.decodeUnknownSync(HouseholdPeoplePrincipal, {
+        onExcessProperty: "error",
+      })(principal)
+    ).toEqual(principal);
+    expect(() =>
+      Schema.decodeUnknownSync(HouseholdPeoplePrincipal, {
+        onExcessProperty: "error",
+      })({ ...principal, userId: "raw-better-auth-user" })
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(HouseholdPeoplePrincipal)({
+        ...principal,
+        creatorAuthority: "first_member",
       })
     ).toThrow();
   });

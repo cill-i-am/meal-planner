@@ -96,12 +96,23 @@ There is no shared household D1 mirror, compatibility path, hard delete, merge,
 or link inferred from a name or email.
 
 The authenticated API resolves the Better Auth session, active organization,
-and membership before constructing a one-way actor digest. Closed member
-commands are admitted for their exact people purpose before the private Worker
-locates the object, and the object repeats exact-purpose admission and persisted
-organization provenance checks before opening the repository. Raw user,
-membership, session, invitation, role, and email values never enter household
-commands or storage.
+and membership before constructing two separately branded SHA-256 identities
+from a versioned, domain-separated encoding of the immutable Better Auth user
+ID and organization ID. `audit-actor` is used only for household audit
+correlation. `linkage-subject` is the durable creator association key. It is
+stable across sessions, membership-row changes, and Worker/object restart,
+while remaining household-scoped and user-specific. Raw user, membership,
+session, invitation, role, and email values never enter household commands or
+storage.
+
+Ordinary people commands receive a closed people-member admission. Creator
+bootstrap is different: only Better Auth's actual active membership
+`role === "owner"` produces the closed `better_auth_owner` creator authority.
+A non-owner is rejected by the public API before gateway invocation, private
+Worker routing, or object location. The private Worker and object independently
+require the creator admission for the bootstrap purpose. The object repeats
+exact-purpose admission and persisted organization provenance checks before
+opening the repository.
 
 Creator bootstrap, unlinked person creation, archive, and restore each commit
 the person row, version, audit, creator association where applicable, and

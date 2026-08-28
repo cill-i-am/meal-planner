@@ -1,6 +1,8 @@
 import {
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
+  HouseholdPeopleAuditActorId,
+  HouseholdPersonLinkageSubject,
   HouseholdPersonId,
   HouseholdPersonMutationId,
   HouseholdPersonVersion,
@@ -69,6 +71,8 @@ import {
 import { makeHouseholdRecipeImportRepository } from "./recipe-import/household-recipe-import.repository.js";
 import {
   HouseholdMemberAdmission,
+  HouseholdPeopleCreatorAdmission,
+  HouseholdPeopleMemberAdmission,
   HouseholdSystemAdmission,
 } from "./rpc/command-envelope.js";
 import type { HouseholdSystemPurpose } from "./rpc/command-envelope.js";
@@ -490,15 +494,20 @@ const HouseholdTestCommand = Schema.Union([
   Schema.Struct({
     actorId: Schema.String,
     displayName: BootstrapHouseholdCreatorPayload.fields.displayName,
+    linkageSubject: Schema.String,
     mutationId: HouseholdPersonMutationId,
     objectName: Schema.String,
-    operation: Schema.Literal("bootstrapCreatorPerson"),
+    operation: Schema.Literals([
+      "bootstrapCreatorPerson",
+      "bootstrapCreatorPersonAsMember",
+    ]),
     organizationId: HouseholdOrganizationId,
   }),
   Schema.Struct({
     actorId: Schema.String,
     displayName: CreateHouseholdPersonPayload.fields.displayName,
     kind: CreateHouseholdPersonPayload.fields.kind,
+    linkageSubject: Schema.String,
     mutationId: HouseholdPersonMutationId,
     objectName: Schema.String,
     operation: Schema.Literal("createHouseholdPerson"),
@@ -507,12 +516,14 @@ const HouseholdTestCommand = Schema.Union([
   Schema.Struct({
     actorId: Schema.String,
     includeArchived: Schema.Boolean,
+    linkageSubject: Schema.String,
     objectName: Schema.String,
     operation: Schema.Literal("listHouseholdPeople"),
     organizationId: HouseholdOrganizationId,
   }),
   Schema.Struct({
     actorId: Schema.String,
+    linkageSubject: Schema.String,
     objectName: Schema.String,
     operation: Schema.Literal("getHouseholdPerson"),
     organizationId: HouseholdOrganizationId,
@@ -521,6 +532,7 @@ const HouseholdTestCommand = Schema.Union([
   Schema.Struct({
     actorId: Schema.String,
     expectedVersion: HouseholdPersonVersion,
+    linkageSubject: Schema.String,
     mutationId: HouseholdPersonMutationId,
     objectName: Schema.String,
     operation: Schema.Literals([
@@ -747,6 +759,39 @@ const memberAdmission = (
     organizationId,
   });
 
+const peopleMemberAdmission = (
+  organizationId: typeof HouseholdOrganizationId.Type,
+  actorId: string,
+  linkageSubject: string
+) =>
+  Schema.decodeUnknownSync(HouseholdPeopleMemberAdmission)({
+    actor: {
+      _tag: "PeopleMember",
+      actorId: Schema.decodeUnknownSync(HouseholdPeopleAuditActorId)(actorId),
+      linkageSubject: Schema.decodeUnknownSync(HouseholdPersonLinkageSubject)(
+        linkageSubject
+      ),
+    },
+    organizationId,
+  });
+
+const peopleCreatorAdmission = (
+  organizationId: typeof HouseholdOrganizationId.Type,
+  actorId: string,
+  linkageSubject: string
+) =>
+  Schema.decodeUnknownSync(HouseholdPeopleCreatorAdmission)({
+    actor: {
+      _tag: "PeopleCreator",
+      actorId: Schema.decodeUnknownSync(HouseholdPeopleAuditActorId)(actorId),
+      authority: "better_auth_owner",
+      linkageSubject: Schema.decodeUnknownSync(HouseholdPersonLinkageSubject)(
+        linkageSubject
+      ),
+    },
+    organizationId,
+  });
+
 const systemAdmission = (
   organizationId: typeof HouseholdOrganizationId.Type,
   purpose: typeof HouseholdSystemPurpose.Type = "import_workflow_dispatch"
@@ -951,7 +996,11 @@ const routeHouseholdPeopleTestCommand = (
   if (command.operation === "bootstrapCreatorPerson") {
     return respond(
       household.bootstrapCreatorPerson({
-        admission: memberAdmission(command.organizationId, command.actorId),
+        admission: peopleCreatorAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
         payload: {
           displayName: command.displayName,
           mutationId: command.mutationId,
@@ -959,10 +1008,29 @@ const routeHouseholdPeopleTestCommand = (
       })
     );
   }
+  if (command.operation === "bootstrapCreatorPersonAsMember") {
+    return respond(
+      household.bootstrapCreatorPerson({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: {
+          displayName: command.displayName,
+          mutationId: command.mutationId,
+        },
+      } as never)
+    );
+  }
   if (command.operation === "createHouseholdPerson") {
     return respond(
       household.createHouseholdPerson({
-        admission: memberAdmission(command.organizationId, command.actorId),
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
         payload: {
           displayName: command.displayName,
           kind: command.kind,
@@ -974,7 +1042,11 @@ const routeHouseholdPeopleTestCommand = (
   if (command.operation === "listHouseholdPeople") {
     return respond(
       household.listHouseholdPeople({
-        admission: memberAdmission(command.organizationId, command.actorId),
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
         query: { includeArchived: command.includeArchived ? "true" : "false" },
       })
     );
@@ -982,7 +1054,11 @@ const routeHouseholdPeopleTestCommand = (
   if (command.operation === "getHouseholdPerson") {
     return respond(
       household.getHouseholdPerson({
-        admission: memberAdmission(command.organizationId, command.actorId),
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
         personId: command.personId,
       })
     );
@@ -992,7 +1068,11 @@ const routeHouseholdPeopleTestCommand = (
     command.operation === "restoreHouseholdPerson"
   ) {
     const input = {
-      admission: memberAdmission(command.organizationId, command.actorId),
+      admission: peopleMemberAdmission(
+        command.organizationId,
+        command.actorId,
+        command.linkageSubject
+      ),
       payload: {
         expectedVersion: command.expectedVersion,
         mutationId: command.mutationId,

@@ -107,6 +107,7 @@ describe("Better Auth D1 control plane", () => {
       })
     );
     expect(authenticatedOrganization).toEqual({
+      membershipRole: "owner",
       organizationId: organization.id,
       userId: session?.user.id,
     });

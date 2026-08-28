@@ -28,6 +28,7 @@ import {
 import type { HouseholdPeopleCurrentPrincipal } from "./people-http.js";
 import {
   HouseholdPeopleBootstrapConflictProblem,
+  HouseholdPeopleCreatorRequiredProblem,
   HouseholdPeopleLifecycleConflictProblem,
   HouseholdPeopleMutationCollisionProblem,
   HouseholdPeopleStaleVersionProblem,
@@ -68,12 +69,16 @@ export {
 export type { HouseholdPeopleFailure } from "./people.js";
 export {
   HouseholdPeopleBootstrapConflictProblem,
+  HouseholdPeopleCreatorRequiredProblem,
   HouseholdPeopleCurrentPrincipal,
   HouseholdPeopleInvalidRequestProblem,
   HouseholdPeopleLifecycleConflictProblem,
   HouseholdPeopleMutationCollisionProblem,
   HouseholdPeopleNotFoundProblem,
   HouseholdPeoplePrincipal,
+  HouseholdPeopleAuditActorId,
+  HouseholdPersonLinkageSubject,
+  HouseholdCreatorAuthority,
   HouseholdPeopleStaleVersionProblem,
   HouseholdPeopleUnavailableProblem,
 } from "./people-http.js";
@@ -247,6 +252,7 @@ const PeopleGroup = HttpApiGroup.make("people")
       {
         error: [
           HouseholdPeopleBootstrapConflictProblem,
+          HouseholdPeopleCreatorRequiredProblem,
           HouseholdPeopleMutationCollisionProblem,
           HouseholdPeopleUnavailableProblem,
         ],

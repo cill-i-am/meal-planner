@@ -153,6 +153,28 @@ describe("HouseholdPeoplePanel", () => {
     );
   });
 
+  it("explains when an admitted non-owner cannot bootstrap the creator", async () => {
+    const bootstrapCreator = vi
+      .fn()
+      .mockRejectedValue({ code: "creator_required" });
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator,
+      create: vi.fn(),
+      list: vi.fn().mockResolvedValue(emptyRoster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+    await userEvent.type(await screen.findByLabelText("Your name"), "Maeve");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Set up my person" })
+    );
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(2));
+    expect(
+      await screen.findByText(/only the household owner/iu)
+    ).toBeInTheDocument();
+  });
+
   it.each([
     [{ code: "unauthorized" }, /no longer authorized/u],
     [{ code: "people_unavailable" }, /temporarily unavailable/u],

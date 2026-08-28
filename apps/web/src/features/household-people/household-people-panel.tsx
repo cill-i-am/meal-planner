@@ -25,6 +25,9 @@ const failureMessage = (error: Error) => {
   if (detail.includes("unauthorized")) {
     return "Your household session is no longer authorized. Sign in again.";
   }
+  if (detail.includes("creator_required")) {
+    return "Only the household owner can set up the first adult person.";
+  }
   if (detail.includes("mutation_collision")) {
     return "That retry no longer matches this change. Submit it again.";
   }

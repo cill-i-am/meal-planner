@@ -1,4 +1,9 @@
-import { HouseholdOrganizationId } from "@meal-planner/household-api";
+import {
+  HouseholdCreatorAuthority,
+  HouseholdOrganizationId,
+  HouseholdPeopleAuditActorId,
+  HouseholdPersonLinkageSubject,
+} from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
 export const HouseholdActorId = Schema.String.pipe(
@@ -32,6 +37,36 @@ export const HouseholdMemberAdmission = Schema.Struct({
 });
 export type HouseholdMemberAdmission = typeof HouseholdMemberAdmission.Type;
 
+export const HouseholdPeopleMemberActor = Schema.Struct({
+  _tag: Schema.Literal("PeopleMember"),
+  actorId: HouseholdPeopleAuditActorId,
+  linkageSubject: HouseholdPersonLinkageSubject,
+});
+export type HouseholdPeopleMemberActor = typeof HouseholdPeopleMemberActor.Type;
+
+export const HouseholdPeopleCreatorActor = Schema.Struct({
+  _tag: Schema.Literal("PeopleCreator"),
+  actorId: HouseholdPeopleAuditActorId,
+  authority: HouseholdCreatorAuthority,
+  linkageSubject: HouseholdPersonLinkageSubject,
+});
+export type HouseholdPeopleCreatorActor =
+  typeof HouseholdPeopleCreatorActor.Type;
+
+export const HouseholdPeopleMemberAdmission = Schema.Struct({
+  actor: HouseholdPeopleMemberActor,
+  organizationId: HouseholdOrganizationId,
+});
+export type HouseholdPeopleMemberAdmission =
+  typeof HouseholdPeopleMemberAdmission.Type;
+
+export const HouseholdPeopleCreatorAdmission = Schema.Struct({
+  actor: HouseholdPeopleCreatorActor,
+  organizationId: HouseholdOrganizationId,
+});
+export type HouseholdPeopleCreatorAdmission =
+  typeof HouseholdPeopleCreatorAdmission.Type;
+
 export const HouseholdSystemAdmission = Schema.Struct({
   actor: HouseholdSystemActor,
   organizationId: HouseholdOrganizationId,
@@ -40,6 +75,8 @@ export type HouseholdSystemAdmission = typeof HouseholdSystemAdmission.Type;
 
 export const HouseholdCommandAdmission = Schema.Union([
   HouseholdMemberAdmission,
+  HouseholdPeopleMemberAdmission,
+  HouseholdPeopleCreatorAdmission,
   HouseholdSystemAdmission,
 ]);
 export type HouseholdCommandAdmission = typeof HouseholdCommandAdmission.Type;
@@ -50,6 +87,36 @@ export const makeHouseholdMemberAdmission = (input: {
 }) =>
   Schema.decodeUnknownEffect(HouseholdMemberAdmission)({
     actor: { _tag: "Member", actorId: input.actorId },
+    organizationId: input.organizationId,
+  });
+
+export const makeHouseholdPeopleAdmission = (input: {
+  readonly actorId: typeof HouseholdPeopleAuditActorId.Type;
+  readonly linkageSubject: typeof HouseholdPersonLinkageSubject.Type;
+  readonly organizationId: HouseholdOrganizationId;
+}) =>
+  Schema.decodeUnknownEffect(HouseholdPeopleMemberAdmission)({
+    actor: {
+      _tag: "PeopleMember",
+      actorId: input.actorId,
+      linkageSubject: input.linkageSubject,
+    },
+    organizationId: input.organizationId,
+  });
+
+export const makeHouseholdPeopleCreatorAdmission = (input: {
+  readonly actorId: typeof HouseholdPeopleAuditActorId.Type;
+  readonly creatorAuthority: typeof HouseholdCreatorAuthority.Type;
+  readonly linkageSubject: typeof HouseholdPersonLinkageSubject.Type;
+  readonly organizationId: HouseholdOrganizationId;
+}) =>
+  Schema.decodeUnknownEffect(HouseholdPeopleCreatorAdmission)({
+    actor: {
+      _tag: "PeopleCreator",
+      actorId: input.actorId,
+      authority: input.creatorAuthority,
+      linkageSubject: input.linkageSubject,
+    },
     organizationId: input.organizationId,
   });
 
@@ -99,6 +166,14 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "swap_meal_plan_from_recipe_bank",
   "transition_recipe_import_lifecycle",
 ]);
+
+const householdPeoplePurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
+  "archive_household_person",
+  "create_household_person",
+  "get_household_person",
+  "list_household_people",
+  "restore_household_person",
+]);
 export type HouseholdCommandPurpose = typeof HouseholdCommandPurpose.Type;
 
 export const HouseholdAuthorizationFailure = Schema.TaggedStruct(
@@ -113,25 +188,19 @@ const memberPurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
   "admit_recipe_import",
   "answer_recipe_import_action",
   "approve_meal_plan",
-  "archive_household_person",
-  "bootstrap_creator_person",
   "cancel_recipe_import",
   "create_meal_plan",
-  "create_household_person",
   "create_meal_plan_from_recipe_bank",
   "ensure_household",
   "confirm_recipe_import_action",
   "list_recipe_bank",
-  "list_household_people",
   "read_recipe",
-  "get_household_person",
   "read_recipe_import",
   "read_recipe_import_action",
   "read_recipe_import_timeline",
   "read_import_batch",
   "read_meal_plan",
   "reject_meal_plan",
-  "restore_household_person",
   "swap_meal_plan",
   "swap_meal_plan_from_recipe_bank",
 ]);
@@ -164,15 +233,32 @@ export const requireHouseholdCommandAdmission = (
   admission: HouseholdCommandAdmission,
   purpose: HouseholdCommandPurpose
 ): Effect.Effect<HouseholdCommandAdmission, HouseholdAuthorizationFailure> => {
-  const permitted =
-    admission.actor._tag === "Member"
-      ? memberPurposes.has(purpose)
-      : (admission.actor.purpose === "recipe_import_lifecycle_commit" &&
-          lifecycleCommitPurposes.has(purpose)) ||
-        (admission.actor.purpose === "import_workflow_dispatch" &&
-          purpose === "record_recipe_import_dispatch") ||
-        (admission.actor.purpose === "batch_item_dispatch" &&
-          batchDispatchPurposes.has(purpose));
+  const permitted = (() => {
+    switch (admission.actor._tag) {
+      case "Member": {
+        return memberPurposes.has(purpose);
+      }
+      case "PeopleMember": {
+        return householdPeoplePurposes.has(purpose);
+      }
+      case "PeopleCreator": {
+        return purpose === "bootstrap_creator_person";
+      }
+      case "System": {
+        return (
+          (admission.actor.purpose === "recipe_import_lifecycle_commit" &&
+            lifecycleCommitPurposes.has(purpose)) ||
+          (admission.actor.purpose === "import_workflow_dispatch" &&
+            purpose === "record_recipe_import_dispatch") ||
+          (admission.actor.purpose === "batch_item_dispatch" &&
+            batchDispatchPurposes.has(purpose))
+        );
+      }
+      default: {
+        return false;
+      }
+    }
+  })();
   return permitted
     ? Effect.succeed(admission)
     : Effect.fail(HouseholdAuthorizationFailure.make({}));

@@ -42,12 +42,12 @@ export const householdPeople = sqliteTable("household_people", {
   version: integer("version").notNull(),
 });
 
-/** Purpose-bound creator association; actor ids are one-way digests. */
+/** Purpose-bound creator association keyed only by a household-scoped linkage digest. */
 export const householdPersonCreatorAssociations = sqliteTable(
   "household_person_creator_associations",
   {
-    actorId: text("actor_id").primaryKey(),
     createdAtEpochMs: integer("created_at_epoch_ms").notNull(),
+    linkageSubject: text("linkage_subject").primaryKey(),
     personId: text("person_id").notNull().unique(),
   }
 );

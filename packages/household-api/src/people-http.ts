@@ -16,9 +16,31 @@ const PeopleProblem = <const Status extends number, const Code extends string>(
     HttpApiSchema.asJson({ contentType: "application/problem+json" })
   );
 
+/** Domain-separated household-scoped digest used only for people audit attribution. */
+export const HouseholdPeopleAuditActorId = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u)),
+  Schema.brand("HouseholdPeopleAuditActorId")
+);
+export type HouseholdPeopleAuditActorId =
+  typeof HouseholdPeopleAuditActorId.Type;
+
+/** Domain-separated household-scoped digest used only for account-to-person linkage. */
+export const HouseholdPersonLinkageSubject = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u)),
+  Schema.brand("HouseholdPersonLinkageSubject")
+);
+export type HouseholdPersonLinkageSubject =
+  typeof HouseholdPersonLinkageSubject.Type;
+
+/** Better Auth authority admitted to perform the one creator bootstrap. */
+export const HouseholdCreatorAuthority = Schema.Literal("better_auth_owner");
+export type HouseholdCreatorAuthority = typeof HouseholdCreatorAuthority.Type;
+
 /** Purpose-bound principal passed to household people commands. */
 export const HouseholdPeoplePrincipal = Schema.Struct({
-  actorId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))),
+  actorId: HouseholdPeopleAuditActorId,
+  creatorAuthority: Schema.NullOr(HouseholdCreatorAuthority),
+  linkageSubject: HouseholdPersonLinkageSubject,
   organizationId: HouseholdOrganizationId,
 }).pipe(Schema.brand("HouseholdPeoplePrincipal"));
 export type HouseholdPeoplePrincipal = typeof HouseholdPeoplePrincipal.Type;
@@ -38,6 +60,11 @@ export const HouseholdPeopleInvalidRequestProblem = PeopleProblem(
 export const HouseholdPeopleNotFoundProblem = PeopleProblem(
   404,
   "person_not_found"
+);
+/** Creator bootstrap requires Better Auth organization owner authority. */
+export const HouseholdPeopleCreatorRequiredProblem = PeopleProblem(
+  403,
+  "creator_required"
 );
 /** Mutation conflicts with current state or a prior mutation intent. */
 export const HouseholdPeopleMutationCollisionProblem = PeopleProblem(

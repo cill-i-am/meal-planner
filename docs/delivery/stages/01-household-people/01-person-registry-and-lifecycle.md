@@ -23,12 +23,13 @@ becoming readable or mutable from another household.
 
 ## User-Visible Vertical
 
-After creating or entering an empty Better Auth organization, an adult completes
-one explicit setup action that creates and links their adult person. They can
-then list the roster, add another adult or dependant, archive a person, include
-archived people in the roster, and restore the same person. The UI keeps the
-same person identity and shows an actionable stale/conflict error rather than
-silently overwriting concurrent changes.
+After creating an organization, its Better Auth owner completes one explicit
+setup action that creates and links their adult person. Other admitted adults
+can use the roster but cannot win creator bootstrap merely by racing while it is
+empty. The household can then list the roster, add another adult or dependant,
+archive a person, include archived people in the roster, and restore the same
+person. The UI keeps the same person identity and shows an actionable
+stale/conflict error rather than silently overwriting concurrent changes.
 
 ## Scope
 
@@ -65,8 +66,9 @@ silently overwriting concurrent changes.
 ### Commands
 
 - `BootstrapCreatorPerson(mutationId, displayName)` creates one adult person and
-  one active association for the admitted creator. The association uses the
-  already-derived private actor identity, not raw Better Auth user/member/email.
+  one active association only for the admitted Better Auth organization owner.
+  The association uses the separately derived linkage subject, not the audit
+  actor or a raw Better Auth user/member/email value.
 - `CreateHouseholdPerson(mutationId, kind, displayName)` creates an unlinked
   adult or a dependant.
 - `ArchiveHouseholdPerson(mutationId, personId, expectedVersion)` changes an
@@ -99,8 +101,9 @@ Creator link: absent -> active
 - An archived person remains queryable only when explicitly requested or by ID.
 - Bootstrap creates exactly one creator link and one adult person. Once a
   creator link exists, a different bootstrap intent conflicts.
-- One admitted actor identity has at most one active person association in the
-  household. General account-link lifecycle is deferred to Work Item 02.
+- One immutable Better Auth user has at most one creator association in a
+  household, keyed by its household-scoped linkage subject. General account-link
+  lifecycle is deferred to Work Item 02.
 - There is no `invited-adult` person kind. Until Work Item 02, another adult is
   simply an unlinked adult person.
 - Hard deletion and person merge do not exist.
@@ -128,12 +131,17 @@ choice; it may not replace per-person optimistic concurrency.
   account-association update where applicable, and mutation receipt commit
   atomically in one local SQLite transaction.
 - **Authorization:** Better Auth resolves the session and explicit organization
-  membership before private Worker routing. The private Worker admits the exact
-  member command purpose before locating the object; the object repeats exact
-  admission before mutation.
+  membership before private Worker routing. Bootstrap additionally requires the
+  active membership's actual `owner` role before gateway invocation. The
+  private Worker admits the exact people-member or owner-only creator purpose
+  before locating the object; the object repeats exact admission before
+  mutation.
 - **Privacy:** the roster is household-visible to admitted members. The object
-  receives a purpose-bound, one-way actor identity and never imports Better Auth
-  or stores raw user, member, session, invitation, or email values.
+  receives separate purpose-bound one-way audit and linkage identities and never
+  imports Better Auth or stores raw user, member, session, invitation, role, or
+  email values. `linkage-subject` is derived from immutable user plus household,
+  remains byte-stable across auth-session, membership-row, and runtime changes,
+  and differs across users or households.
 - **External effects:** none occur inside or after these mutations.
 
 ## Failure, Replay, And Concurrency
@@ -201,6 +209,10 @@ Using the production auth/API/object composition:
 5. A stale concurrent archive is rejected without mutation.
 6. An admitted member of organization B cannot read, infer, archive, restore,
    or collide with any organization-A person or mutation receipt.
+7. A non-owner racing the owner cannot route or win bootstrap. Owner retries
+   converge, and the same user's linkage remains stable across session,
+   membership-row, Worker, and object restart changes while differing in a
+   second household.
 
 ## Acceptance Evidence
 
@@ -216,6 +228,9 @@ Using the production auth/API/object composition:
   and concurrent bootstrap/archive/restore races are deterministic.
 - [x] Public API and generated client contracts preserve closed error and result
   types.
+- [x] The audit actor and person linkage subject are separately branded,
+  purpose/domain-separated digests of immutable Better Auth user plus household;
+  stability and cross-user/cross-household separation are executable.
 - [x] UI tests cover empty-household bootstrap, roster operations, pending,
   retry, stale, unauthorized, and unavailable states.
 
@@ -228,6 +243,9 @@ Using the production auth/API/object composition:
   and reads the committed SQLite state rather than a fixture-only cache.
 - [x] Wrong-purpose and unauthenticated commands do not locate or invoke a
   household object.
+- [x] A real Better Auth owner-versus-member race proves non-owner bootstrap is
+  denied before private invocation, concurrent owner retries converge, and the
+  object independently rejects a people-member bootstrap admission.
 - [x] A non-member is rejected before routing; a member of another household
   cannot read or mutate state and cannot infer whether a person or receipt
   exists.
@@ -238,7 +256,8 @@ Using the production auth/API/object composition:
 
 - [x] Root formatting, lint with warnings denied, type checks, full tests, and
   all production builds pass.
-- [ ] Applicable container and hosted CI gates pass on the frozen head.
+- [x] The full local container/runtime gate passes on the replacement tree.
+- [ ] Hosted CI passes on the replacement frozen head.
 - [x] Public API documentation, household-domain architecture,
   [`current.md`](../../current.md), and this delivery record reflect the shipped
   composition.
@@ -258,14 +277,33 @@ Auth/HouseholdObject boundary. Independent exact-head review is required.
   a user, member, email, display name, or invitation.
 - Reuse the existing Effect service/layer, closed Schema, private routing,
   Drizzle transaction, migration registry, and real-runtime fixture patterns.
-- Store the creator association under the admitted one-way actor identity. Work
-  Item 02 may extend the association lifecycle, but Work Item 01 must not
+- Store the creator association under the separately branded, household-scoped
+  linkage subject. Use the distinct audit actor only for audit attribution.
+  Work Item 02 may extend the association lifecycle, but Work Item 01 must not
   pre-implement invitation or departure policy.
 - Preserve greenfield discipline: update development fixtures or reset local
   experimental data. Do not add compatibility reads, legacy adapters, or a
   generic backfill framework.
 
 ## Delivery Log
+
+- 2026-08-29 — Superseded the initial PR head and strengthened the identity and
+  bootstrap boundary test-first. The API now derives separate versioned,
+  purpose/domain-separated audit and linkage digests from immutable Better Auth
+  user plus household identity. The linkage subject remains stable across a new
+  session, membership-row identifier rotation, and Workerd/object restart, and
+  differs for the same user in another household and for another user. Better
+  Auth's durable `owner` membership role is the sole creator authority. A real
+  owner-versus-member race proved non-owner denial before private invocation,
+  concurrent owner replay convergence, object-side closed admission, and no
+  denied mutation or roster disclosure. This evidence deliberately adds no
+  invitation, link-repair, departure, profile, interview, Agent, routine,
+  planning, or other Work Item 02+ behavior. Replacement repository gates are
+  green: 138 root architecture tests, 19 household-contract tests, 31 recipe
+  contract tests, 36 web tests, and 801 API tests; formatting checked 383 files,
+  and lint, type checks, and production builds passed. The unchanged
+  Docker-backed physical gate passed 1/1 in 1,035.24 seconds. Replacement
+  immutable head, hosted CI, and independent exact-head review remain pending.
 
 - 2026-08-28 — Implemented the Work Item 01 vertical on
   `codex/stage1-person-registry-lifecycle`: closed public and private contracts,

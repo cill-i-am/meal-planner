@@ -47,6 +47,9 @@ const sha256 = async (value: string): Promise<string> => {
 };
 
 const AuthenticatedOrganization = Schema.Struct({
+  membershipRole: Schema.String.pipe(
+    Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
+  ),
   organizationId: HouseholdOrganizationId,
   userId: Schema.String.pipe(
     Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
@@ -103,6 +106,7 @@ export const resolveAuthenticatedOrganization = (options: {
         });
       }
       return Schema.decodeUnknownSync(AuthenticatedOrganization)({
+        membershipRole: membership.role,
         organizationId,
         userId: authSession.user.id,
       });

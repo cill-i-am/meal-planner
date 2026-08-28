@@ -12,7 +12,9 @@ import {
 import type {
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
+  HouseholdPeopleAuditActorId,
   HouseholdPeopleFailure,
+  HouseholdPersonLinkageSubject,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
 import { and, asc, eq } from "drizzle-orm";
@@ -25,7 +27,6 @@ import {
   householdPersonCreatorAssociations,
   householdPersonMutationReceipts,
 } from "../household.database-schema.js";
-import type { HouseholdActorId } from "../rpc/command-envelope.js";
 import type {
   HouseholdCanonicalEncodingService,
   HouseholdDigestService,
@@ -65,31 +66,37 @@ const projectPerson = (
 
 export interface HouseholdPeopleRepository {
   readonly archive: (input: {
-    readonly actorId: HouseholdActorId;
+    readonly actorId: HouseholdPeopleAuditActorId;
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
     readonly now: number;
     readonly payload: TransitionHouseholdPersonPayload;
     readonly personId: typeof HouseholdPersonId.Type;
   }) => Effect.Effect<Person, Failure>;
   readonly bootstrapCreator: (input: {
-    readonly actorId: HouseholdActorId;
+    readonly actorId: HouseholdPeopleAuditActorId;
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
     readonly now: number;
     readonly payload: BootstrapHouseholdCreatorPayload;
   }) => Effect.Effect<Person, Failure>;
   readonly create: (input: {
-    readonly actorId: HouseholdActorId;
+    readonly actorId: HouseholdPeopleAuditActorId;
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
     readonly now: number;
     readonly payload: CreateHouseholdPersonPayload;
   }) => Effect.Effect<Person, Failure>;
   readonly get: (input: {
-    readonly actorId: HouseholdActorId;
+    readonly actorId: HouseholdPeopleAuditActorId;
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
     readonly personId: typeof HouseholdPersonId.Type;
   }) => Effect.Effect<Person, Failure>;
   readonly list: (input: {
-    readonly actorId: HouseholdActorId;
+    readonly actorId: HouseholdPeopleAuditActorId;
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
     readonly includeArchived: boolean;
   }) => Effect.Effect<typeof HouseholdPeopleRoster.Type, Failure>;
   readonly restore: (input: {
-    readonly actorId: HouseholdActorId;
+    readonly actorId: HouseholdPeopleAuditActorId;
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
     readonly now: number;
     readonly payload: TransitionHouseholdPersonPayload;
     readonly personId: typeof HouseholdPersonId.Type;
@@ -112,11 +119,13 @@ export const makeHouseholdPeopleRepository = (
         Effect.mapError(unavailable)
       );
 
-  const currentPersonId = (actorId: HouseholdActorId) =>
+  const currentPersonId = (linkageSubject: HouseholdPersonLinkageSubject) =>
     database
       .select({ personId: householdPersonCreatorAssociations.personId })
       .from(householdPersonCreatorAssociations)
-      .where(eq(householdPersonCreatorAssociations.actorId, actorId))
+      .where(
+        eq(householdPersonCreatorAssociations.linkageSubject, linkageSubject)
+      )
       .limit(1)
       .pipe(
         queryFailure,
@@ -124,10 +133,11 @@ export const makeHouseholdPeopleRepository = (
       );
 
   const createPerson = (input: {
-    readonly actorId: HouseholdActorId;
+    readonly actorId: HouseholdPeopleAuditActorId;
     readonly command: "bootstrap_creator" | "create";
     readonly displayName: string;
     readonly kind: "adult" | "dependant";
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
     readonly mutationId: string;
     readonly now: number;
   }) =>
@@ -137,6 +147,7 @@ export const makeHouseholdPeopleRepository = (
         command: input.command,
         displayName: input.displayName,
         kind: input.kind,
+        linkageSubject: input.linkageSubject,
       });
       const uuid = yield* services.identity
         .generate()
@@ -164,7 +175,10 @@ export const makeHouseholdPeopleRepository = (
               .select()
               .from(householdPersonCreatorAssociations)
               .where(
-                eq(householdPersonCreatorAssociations.actorId, input.actorId)
+                eq(
+                  householdPersonCreatorAssociations.linkageSubject,
+                  input.linkageSubject
+                )
               )
               .limit(1)
               .pipe(queryFailure);
@@ -201,8 +215,8 @@ export const makeHouseholdPeopleRepository = (
             yield* transaction
               .insert(householdPersonCreatorAssociations)
               .values({
-                actorId: input.actorId,
                 createdAtEpochMs: input.now,
+                linkageSubject: input.linkageSubject,
                 personId,
               })
               .pipe(queryFailure);
@@ -233,8 +247,9 @@ export const makeHouseholdPeopleRepository = (
     }).pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
 
   const transition = (input: {
-    readonly actorId: HouseholdActorId;
+    readonly actorId: HouseholdPeopleAuditActorId;
     readonly command: "archive" | "restore";
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
     readonly nextLifecycle: "active" | "archived";
     readonly now: number;
     readonly payload: TransitionHouseholdPersonPayload;
@@ -287,7 +302,10 @@ export const makeHouseholdPeopleRepository = (
             .select({ personId: householdPersonCreatorAssociations.personId })
             .from(householdPersonCreatorAssociations)
             .where(
-              eq(householdPersonCreatorAssociations.actorId, input.actorId)
+              eq(
+                householdPersonCreatorAssociations.linkageSubject,
+                input.linkageSubject
+              )
             )
             .limit(1)
             .pipe(queryFailure);
@@ -371,7 +389,7 @@ export const makeHouseholdPeopleRepository = (
       }),
     get: (input) =>
       Effect.gen(function* getPerson() {
-        const linked = yield* currentPersonId(input.actorId);
+        const linked = yield* currentPersonId(input.linkageSubject);
         const [row] = yield* database
           .select()
           .from(householdPeople)
@@ -384,7 +402,7 @@ export const makeHouseholdPeopleRepository = (
       }),
     list: (input) =>
       Effect.gen(function* listPeople() {
-        const linked = yield* currentPersonId(input.actorId);
+        const linked = yield* currentPersonId(input.linkageSubject);
         const rows = yield* (
           input.includeArchived
             ? database

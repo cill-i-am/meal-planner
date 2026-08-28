@@ -1,8 +1,11 @@
 import {
+  BootstrapHouseholdCreatorPayload,
   CreateMealPlanPayload,
   DecideMealPlanPayload,
   HouseholdMealPlanPrincipal,
   HouseholdOrganizationId,
+  HouseholdPeopleRoster,
+  HouseholdPerson,
   HouseholdStatus,
   MealPlan,
   MealPlanActorId,
@@ -30,8 +33,12 @@ import type { HouseholdDomainGateway } from "./household.gateway.js";
 import {
   HouseholdDomainGateway as HouseholdDomainGatewayService,
   HouseholdMealPlanGateway,
+  HouseholdPeopleGateway,
 } from "./household.gateway.js";
-import { makeHouseholdMealPlanHttpApiLayer } from "./household.http.js";
+import {
+  makeHouseholdMealPlanHttpApiLayer,
+  makeHouseholdPeopleHttpApiLayer,
+} from "./household.http.js";
 
 const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
   "organization-a"
@@ -129,6 +136,18 @@ const makeApp = (options: {
     disableLogger: true,
   });
 
+const gatewayWithList = (
+  list: HouseholdPeopleGateway["list"]
+): HouseholdPeopleGateway =>
+  HouseholdPeopleGateway.of({
+    archive: () => Effect.die("Unexpected archive"),
+    bootstrapCreator: () => Effect.die("Unexpected bootstrap"),
+    create: () => Effect.die("Unexpected create"),
+    get: () => Effect.die("Unexpected get"),
+    list,
+    restore: () => Effect.die("Unexpected restore"),
+  });
+
 describe("household HttpApi boundary", () => {
   const apps: ReturnType<typeof makeApp>[] = [];
 
@@ -148,7 +167,11 @@ describe("household HttpApi boundary", () => {
       }),
       resolver: AuthenticatedOrganizationResolver.of({
         resolve: () =>
-          Effect.succeed({ organizationId, userId: "authenticated-user" }),
+          Effect.succeed({
+            membershipRole: "owner",
+            organizationId,
+            userId: "authenticated-user",
+          }),
       }),
     });
     apps.push(app);
@@ -198,11 +221,180 @@ describe("household HttpApi boundary", () => {
   });
 });
 
+describe("household people identity and owner boundary", () => {
+  const apps: { readonly dispose: () => Promise<void> }[] = [];
+  const creator = Schema.decodeUnknownSync(HouseholdPerson)({
+    createdAtEpochMs: 1,
+    displayName: "Owner",
+    id: "person_00000000-0000-4000-8000-000000000001",
+    isCurrentAdult: true,
+    kind: "adult",
+    lifecycle: "active",
+    updatedAtEpochMs: 1,
+    version: 1,
+  });
+  const roster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+    currentPersonId: creator.id,
+    people: [creator],
+  });
+  const bootstrapPayload = Schema.decodeUnknownSync(
+    BootstrapHouseholdCreatorPayload
+  )({ displayName: "Owner", mutationId: "bootstrap-owner" });
+
+  afterAll(async () => {
+    await Promise.all(apps.map(({ dispose }) => dispose()));
+  });
+
+  const makePeopleApp = (options: {
+    readonly gateway: HouseholdPeopleGateway;
+    readonly membershipRole: string;
+    readonly admittedOrganizationId?: typeof organizationId;
+    readonly userId?: string;
+  }) => {
+    const requestServices = Layer.mergeAll(
+      Layer.succeed(
+        AuthenticatedOrganizationResolver,
+        AuthenticatedOrganizationResolver.of({
+          resolve: () =>
+            Effect.succeed({
+              membershipRole: options.membershipRole,
+              organizationId: options.admittedOrganizationId ?? organizationId,
+              userId: options.userId ?? "better-auth-user-a",
+            }),
+        })
+      ),
+      Layer.succeed(HouseholdPeopleGateway, options.gateway)
+    );
+    const app = HttpRouter.toWebHandler(
+      makeHouseholdPeopleHttpApiLayer().pipe(
+        Layer.provide(RecipeImportHttpPlatformServices),
+        Layer.provide(requestServices),
+        HttpRouter.provideRequest(requestServices)
+      ),
+      { disableLogger: true }
+    );
+    apps.push(app);
+    return app;
+  };
+
+  it("keeps linkage identity stable across sessions and membership changes while scoping it by household and user", async () => {
+    const admitted: unknown[] = [];
+    const captureGateway = gatewayWithList((input) =>
+      Effect.sync(() => {
+        admitted.push(input.principal);
+        return roster;
+      })
+    );
+    const otherOrganizationId = Schema.decodeUnknownSync(
+      HouseholdOrganizationId
+    )("organization-b");
+    const cases = [
+      {
+        admittedOrganizationId: organizationId,
+        membershipRole: "owner",
+        userId: "better-auth-user-a",
+      },
+      {
+        admittedOrganizationId: organizationId,
+        membershipRole: "member",
+        userId: "better-auth-user-a",
+      },
+      {
+        admittedOrganizationId: otherOrganizationId,
+        membershipRole: "owner",
+        userId: "better-auth-user-a",
+      },
+      {
+        admittedOrganizationId: organizationId,
+        membershipRole: "owner",
+        userId: "better-auth-user-b",
+      },
+    ];
+
+    const responses = await Promise.all(
+      cases.map(({ admittedOrganizationId, membershipRole, userId }, index) =>
+        makePeopleApp({
+          admittedOrganizationId,
+          gateway: captureGateway,
+          membershipRole,
+          userId,
+        }).handler(
+          new Request("https://meal-planner.test/v1/household/people", {
+            headers: {
+              cookie: `better-auth.session_token=session-${String(index)}`,
+            },
+          })
+        )
+      )
+    );
+    expect(responses.map(({ status }) => status)).toEqual([200, 200, 200, 200]);
+
+    const principals = admitted as readonly {
+      readonly actorId: string;
+      readonly linkageSubject: string;
+    }[];
+    expect(principals).toHaveLength(4);
+    expect(principals[1]?.linkageSubject).toBe(principals[0]?.linkageSubject);
+    expect(principals[1]?.actorId).toBe(principals[0]?.actorId);
+    expect(principals[2]?.linkageSubject).not.toBe(
+      principals[0]?.linkageSubject
+    );
+    expect(principals[3]?.linkageSubject).not.toBe(
+      principals[0]?.linkageSubject
+    );
+    expect(principals[0]?.linkageSubject).not.toBe(principals[0]?.actorId);
+    expect(JSON.stringify(principals)).not.toContain("better-auth-user");
+    expect(JSON.stringify(principals)).not.toContain("session-");
+  });
+
+  it("rejects a non-owner bootstrap before invoking the household gateway", async () => {
+    let invoked = false;
+    const gateway = HouseholdPeopleGateway.of({
+      ...gatewayWithList(() => Effect.succeed(roster)),
+      bootstrapCreator: () => {
+        invoked = true;
+        return Effect.succeed(creator);
+      },
+    });
+    const app = makePeopleApp({ gateway, membershipRole: "member" });
+    const response = await app.handler(
+      new Request(
+        "https://meal-planner.test/v1/household/people/bootstrap-creator",
+        {
+          body: JSON.stringify(
+            Schema.encodeSync(BootstrapHouseholdCreatorPayload)(
+              bootstrapPayload
+            )
+          ),
+          headers: {
+            "content-type": "application/json",
+            cookie: "better-auth.session_token=member-session",
+          },
+          method: "POST",
+        }
+      )
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      code: "creator_required",
+      message:
+        "Only the Better Auth household owner can set up the creator person.",
+      status: 403,
+    });
+    expect(invoked).toBe(false);
+  });
+});
+
 describe("household meal-plan HttpApi boundary", () => {
   const apps: { readonly dispose: () => Promise<void> }[] = [];
   const admittedResolver = AuthenticatedOrganizationResolver.of({
     resolve: () =>
-      Effect.succeed({ organizationId, userId: "authenticated-user" }),
+      Effect.succeed({
+        membershipRole: "member",
+        organizationId,
+        userId: "authenticated-user",
+      }),
   });
 
   afterAll(async () => {

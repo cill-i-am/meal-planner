@@ -199,6 +199,7 @@ const makeRuntime = () =>
           MealPlannerAuthDatabase: "household-auth-test",
           ProviderAccountingDatabase: "provider-accounting-test",
         },
+        kvNamespaces: ["HOUSEHOLD_TEST_OBSERVATIONS"],
         modules: [...apiModules],
         name: "api",
         serviceBindings: { HouseholdDomainWorker: "household-domain" },
@@ -331,6 +332,24 @@ const signUp = async (label: string) => {
   const response = await authRequest("/sign-up/email", {
     email: `${label.toLowerCase().replaceAll(" ", "-")}@example.test`,
     name: label,
+    password: "correct horse battery staple",
+  });
+  expect(response.status).toBe(200);
+  return cookieHeader(response);
+};
+
+const getSession = async (cookie: string) => {
+  const response = await getRuntime().dispatchFetch(
+    "https://meal-planner.test/api/auth/get-session",
+    { headers: { cookie } }
+  );
+  expect(response.status).toBe(200);
+  return Schema.decodeUnknownPromise(SessionResponse)(await response.json());
+};
+
+const signIn = async (label: string) => {
+  const response = await authRequest("/sign-in/email", {
+    email: `${label.toLowerCase().replaceAll(" ", "-")}@example.test`,
     password: "correct horse battery staple",
   });
   expect(response.status).toBe(200);
@@ -1096,6 +1115,145 @@ describe("household public API to private Durable Object boundary", () => {
       status: "ready",
     });
   });
+
+  it("admits only the Better Auth owner to bootstrap and preserves the household-scoped user linkage across auth churn and restart", async () => {
+    const ownerLabel = "People Owner Authority";
+    const ownerCookie = await signUp(ownerLabel);
+    const organization = await createOrganization(
+      "People Owner Authority Household",
+      ownerCookie
+    );
+    const ownerSession = await getSession(ownerCookie);
+    const memberCookie = await signUp("People Bootstrap Racer");
+    const memberSession = await getSession(memberCookie);
+    const authDatabase = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    await authDatabase.insert(authSchema.member).values({
+      createdAt: new Date(),
+      id: "people-bootstrap-racer-membership",
+      organizationId: organization.id,
+      role: "member",
+      userId: memberSession.user.id,
+    });
+    await authDatabase
+      .update(authSchema.session)
+      .set({ activeOrganizationId: organization.id })
+      .where(eq(authSchema.session.id, memberSession.session.id));
+
+    const bootstrapURL =
+      "https://meal-planner.test/v1/household/people/bootstrap-creator";
+    const memberBootstrap = {
+      body: JSON.stringify({
+        displayName: "Racing member",
+        mutationId: "owner-authority-bootstrap",
+      }),
+      headers: { "content-type": "application/json", cookie: memberCookie },
+      method: "POST",
+    } as const;
+    const denied = await Promise.all([
+      getRuntime().dispatchFetch(bootstrapURL, memberBootstrap),
+      getRuntime().dispatchFetch(bootstrapURL, memberBootstrap),
+    ]);
+    expect(denied.map(({ status }) => status)).toEqual([403, 403]);
+    await expect(
+      Promise.all(denied.map((response) => response.json()))
+    ).resolves.toEqual([
+      {
+        code: "creator_required",
+        message:
+          "Only the Better Auth household owner can set up the creator person.",
+        status: 403,
+      },
+      {
+        code: "creator_required",
+        message:
+          "Only the Better Auth household owner can set up the creator person.",
+        status: 403,
+      },
+    ]);
+    const observations = await getRuntime().getKVNamespace(
+      "HOUSEHOLD_TEST_OBSERVATIONS",
+      "api"
+    );
+    expect(
+      await observations.get("people-bootstrap-private-invoked")
+    ).toBeNull();
+
+    const ownerBootstrap = {
+      body: JSON.stringify({
+        displayName: "Household owner",
+        mutationId: "owner-authority-bootstrap",
+      }),
+      headers: { "content-type": "application/json", cookie: ownerCookie },
+      method: "POST",
+    } as const;
+    const ownerAttempts = await Promise.all([
+      getRuntime().dispatchFetch(bootstrapURL, ownerBootstrap),
+      getRuntime().dispatchFetch(bootstrapURL, ownerBootstrap),
+    ]);
+    expect(ownerAttempts.map(({ status }) => status)).toEqual([200, 200]);
+    const ownerPeople = await Promise.all(
+      ownerAttempts.map(async (response) =>
+        Schema.decodeUnknownPromise(HouseholdPerson)(await response.json())
+      )
+    );
+    expect(ownerPeople[1]).toEqual(ownerPeople[0]);
+    const [ownerPerson] = ownerPeople;
+    if (ownerPerson === undefined) {
+      throw new Error("Expected owner bootstrap result.");
+    }
+
+    await authDatabase
+      .update(authSchema.member)
+      .set({ id: "people-owner-membership-rotated" })
+      .where(eq(authSchema.member.userId, ownerSession.user.id));
+    const replacementOwnerCookie = await signIn(ownerLabel);
+    const replacementOwnerSession = await getSession(replacementOwnerCookie);
+    await authDatabase
+      .update(authSchema.session)
+      .set({ activeOrganizationId: organization.id })
+      .where(eq(authSchema.session.id, replacementOwnerSession.session.id));
+    await restartRuntime();
+
+    const rosterResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      { headers: { cookie: replacementOwnerCookie } }
+    );
+    expect(rosterResponse.status).toBe(200);
+    await expect(rosterResponse.json()).resolves.toMatchObject({
+      currentPersonId: ownerPerson.id,
+      people: [{ id: ownerPerson.id, isCurrentAdult: true }],
+    });
+
+    const otherOrganization = await createOrganization(
+      "People Owner Second Household",
+      replacementOwnerCookie
+    );
+    expect(otherOrganization.id).not.toBe(organization.id);
+    const setActiveResponse = await authRequest(
+      "/organization/set-active",
+      { organizationId: otherOrganization.id },
+      replacementOwnerCookie
+    );
+    expect(setActiveResponse.status).toBe(200);
+    const otherOrganizationCookie =
+      setActiveResponse.headers.get("set-cookie") === null
+        ? replacementOwnerCookie
+        : cookieHeader(setActiveResponse);
+    const otherBootstrap = await getRuntime().dispatchFetch(bootstrapURL, {
+      ...ownerBootstrap,
+      headers: {
+        ...ownerBootstrap.headers,
+        cookie: otherOrganizationCookie,
+      },
+    });
+    expect(otherBootstrap.status).toBe(200);
+    const otherPerson = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await otherBootstrap.json()
+    );
+    expect(otherPerson.id).not.toBe(ownerPerson.id);
+  }, 30_000);
 
   it("runs the public people lifecycle through Better Auth, private Worker, and household SQLite", async () => {
     const cookie = await signUp("People Boundary Member");

@@ -84,14 +84,32 @@ describe("household person registry on real Durable Object SQLite", () => {
     const organizationId = "org-person-registry-a";
     const objectName = await objectNameFor(organizationId);
     const actorId = "b".repeat(64);
+    const linkageSubject = "c".repeat(64);
     const bootstrapCommand = {
       actorId,
       displayName: "Cillian",
+      linkageSubject,
       mutationId: "person-bootstrap-a",
       objectName,
       operation: "bootstrapCreatorPerson",
       organizationId,
     };
+    const objectSideDenial = await commandPeople({
+      ...bootstrapCommand,
+      operation: "bootstrapCreatorPersonAsMember",
+    });
+    expect(objectSideDenial).toMatchObject({
+      error: { _tag: "HouseholdInvalidInput" },
+      ok: false,
+    });
+    const stateAfterDeniedBootstrap = await commandPeople({
+      objectName,
+      operation: "inspectHouseholdPeopleState",
+    });
+    expect(stateAfterDeniedBootstrap).toMatchObject({
+      ok: true,
+      value: { associations: [], audits: [], people: [], receipts: [] },
+    });
     const [bootstrap, concurrentReplay] = await Promise.all([
       commandPeople(bootstrapCommand),
       commandPeople(bootstrapCommand),
@@ -132,6 +150,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       actorId,
       displayName: "Household child",
       kind: "dependant",
+      linkageSubject,
       mutationId: "person-create-child",
       objectName,
       operation: "createHouseholdPerson",
@@ -146,6 +165,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     const archiveCommand = {
       actorId,
       expectedVersion: 1,
+      linkageSubject,
       mutationId: "person-archive-a",
       objectName,
       operation: "archiveHouseholdPerson",
@@ -191,6 +211,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     const rosterAfterRestart = await commandPeople({
       actorId,
       includeArchived: true,
+      linkageSubject,
       objectName,
       operation: "listHouseholdPeople",
       organizationId,
@@ -212,7 +233,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     expect(persistedPeopleState).toMatchObject({
       ok: true,
       value: {
-        associations: [{ actorId, personId: creator.id }],
+        associations: [{ linkageSubject, personId: creator.id }],
         audits: [
           {
             command: "bootstrap_creator",
@@ -264,6 +285,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     const otherObjectName = await objectNameFor(otherOrganizationId);
     const isolatedRead = await commandPeople({
       actorId,
+      linkageSubject,
       objectName: otherObjectName,
       operation: "getHouseholdPerson",
       organizationId: otherOrganizationId,
