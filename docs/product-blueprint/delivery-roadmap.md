@@ -42,8 +42,13 @@ state and truthful current-state documentation.
 - reconcile stale product documentation with the accepted blueprint; and
 - pause infrastructure-led refactoring that does not unlock a product stage.
 
-Slice 2 evidence metadata merged in PR #188. The current migration plan names
-Slice 3 settlement and recovery as the next authority cutover.
+Stage 0 is complete. PRs #182, #183, and #186 established and hardened the
+household authority; PRs #187, #188, #190, #191, and #192 moved recipes and
+imports, evidence and recovery, global provider accounting, batch authority,
+and the final shared-household D1 paths to their accepted owners. Household
+product state now has one canonical writer in `HouseholdObject`; Better Auth D1
+remains the identity control plane, and the only remaining product D1 is the
+explicitly global provider-accounting store.
 
 ### Exit evidence
 
@@ -62,7 +67,8 @@ members.
 ### Scope
 
 - stable `HouseholdPerson` identity separate from Better Auth membership;
-- adult, invited-adult, and dependant person types;
+- adult and dependant person types, with an adult able to exist before an
+  invitation or account link;
 - account-to-person linking without duplication;
 - dependants as managed profiles without MVP accounts;
 - household-visible confirmed person profiles and versions;

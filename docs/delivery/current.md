@@ -1,48 +1,51 @@
 # Current Delivery State
 
-- Last updated: 2026-08-24
+- Last updated: 2026-08-27
 - Delivery source of truth: this repository
 
-## Active Product Work
+## Active Stage
 
-### Household product blueprint
+### Stage 1 — Household people, profiles, and permissions
 
-- Pull request: [#189 — docs(product): add household product blueprint](https://github.com/cill-i-am/meal-planner/pull/189)
-- Status: Draft, active workshop
-- Outcome: accept the product blueprint, product decision records, ADRs, and
-  repository-owned delivery workflow before Stage 1 implementation planning.
+- Stage record:
+  [`stages/01-household-people/README.md`](stages/01-household-people/README.md)
+- Status: Active
+- Immediate delivery target:
+  [`01-person-registry-and-lifecycle.md`](stages/01-household-people/01-person-registry-and-lifecycle.md)
+  (`Ready`)
 
-The blueprint workshop is resolving product semantics in the repository branch.
-Accepted decisions are recorded under [`../decisions`](../decisions/) and
-architecture consequences under
-[`../architecture/decisions`](../architecture/decisions/).
+Only the first independently implementable work item is ready. Account linking
+and departure, profile authority, and the private interview-session boundary
+remain proposed until their recorded dependencies are resolved.
 
-## Current Architecture Dependency
+## Completed Foundation
 
-The existing household authority migration remains Stage 0 of the product
-roadmap.
-
-- Slice 2 evidence metadata merged in
-  [#188](https://github.com/cill-i-am/meal-planner/pull/188) on 2026-08-23.
-- The accepted migration plan identifies Slice 3 settlement and recovery as the
-  next authority cutover, followed by batches and final shared household D1
-  retirement.
-- New household product capabilities should not introduce another shared-D1
-  product authority while that cutover is incomplete.
+- [PR #189 — household product blueprint](https://github.com/cill-i-am/meal-planner/pull/189)
+  merged on 2026-08-27. Its product decisions, ADRs, and repository-owned
+  delivery model are accepted direction.
+- Stage 0 is complete. The household-authority foundation and cutover landed
+  through [PR #182](https://github.com/cill-i-am/meal-planner/pull/182),
+  [PR #183](https://github.com/cill-i-am/meal-planner/pull/183),
+  [PR #186](https://github.com/cill-i-am/meal-planner/pull/186),
+  [PR #187](https://github.com/cill-i-am/meal-planner/pull/187),
+  [PR #188](https://github.com/cill-i-am/meal-planner/pull/188),
+  [PR #190](https://github.com/cill-i-am/meal-planner/pull/190),
+  [PR #191](https://github.com/cill-i-am/meal-planner/pull/191), and
+  [PR #192](https://github.com/cill-i-am/meal-planner/pull/192).
+- One `HouseholdObject` per Better Auth organization is the canonical writer for
+  household product state. Better Auth D1 remains the identity, organization,
+  membership, invitation, and role control plane. The remaining shared D1 owns
+  only global provider accounting.
 
 ## Immediate Next Steps
 
-1. Finish the product decision workshop and update PR #189 until the blueprint
-   has no material unresolved MVP ambiguity.
-2. Review the blueprint and decision records for internal contradictions and
-   stale Linear references.
-3. Rebase or merge current `main` into the documentation branch before final
-   review because Slice 2 landed after the branch was created.
-4. Accept and merge the documentation PR.
-5. Write the Stage 1 repository record for household people, profiles, and
-   account linking.
-6. Split Stage 1 into independently reviewable vertical work items with explicit
-   runtime and product evidence.
+1. Assign one implementation lane to Work Item 01 from freshly fetched `main`.
+2. Deliver its authenticated roster vertical through `HouseholdObject`, public
+   API, minimal web UI, and real restart/isolation proof.
+3. Review the exact immutable head before merge, then update the work item and
+   this current-state record with delivery evidence.
+4. Resolve and accept the departure-coordination ADR before promoting Work Item
+   02 to `Ready`.
 
 ## Deliberate Non-Work
 
