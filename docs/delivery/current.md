@@ -15,10 +15,12 @@
   (`In review`)
 
 The first independently implementable work item has a working implementation
-and real-runtime evidence. It remains in review until the frozen head passes all
-repository, container, hosted CI, and independent exact-head gates. Account
-linking and departure, profile authority, and the private interview-session
-boundary remain proposed until their recorded dependencies are resolved.
+and real-runtime evidence in
+[draft PR #198](https://github.com/cill-i-am/meal-planner/pull/198). It remains
+in review until the frozen head passes hosted CI and independent exact-head
+review. Account linking and departure, profile authority, and the private
+interview-session boundary remain proposed until their recorded dependencies
+are resolved.
 
 ## Completed Foundation
 
@@ -41,9 +43,8 @@ boundary remain proposed until their recorded dependencies are resolved.
 
 ## Immediate Next Steps
 
-1. Publish the locally green Work Item 01 implementation as one draft pull
-   request and freeze the review head.
-2. Run hosted CI and a fresh independent exact-head review; resolve only proven
+1. Run hosted CI on the frozen Work Item 01 draft PR head.
+2. Run a fresh independent exact-head review; resolve only proven
    in-scope findings before merge authority is considered.
 3. After Work Item 01 is accepted, resolve and accept the
    departure-coordination ADR before promoting Work Item

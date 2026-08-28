@@ -3,7 +3,7 @@
 - Status: In review
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
 - Owner: `codex/stage1-person-registry-lifecycle`
-- Pull request: Draft pending exact-head publication
+- Pull request: [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 - Completed by: Not completed
 
 ## Household Outcome
@@ -278,7 +278,7 @@ Auth/HouseholdObject boundary. Independent exact-head review is required.
   the full test run included 138 root tests, 18 household-contract tests, 31
   recipe-import contract tests, 35 web tests, and 798 API tests. The physical
   container test passed in 1,092.84 seconds after starting the local Docker
-  daemon. Hosted CI and independent review remain open until the head is frozen
-  and published.
+  daemon. The implementation was published as draft PR #198. Hosted CI and
+  independent exact-head review remain open.
 - 2026-08-27 — Marked `Ready` after repository, decision, authority, API, UI,
   migration, and runtime-boundary reconciliation.
