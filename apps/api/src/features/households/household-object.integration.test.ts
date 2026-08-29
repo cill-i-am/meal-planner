@@ -138,7 +138,9 @@ describe("household person registry on real Durable Object SQLite", () => {
 
     const conflictingBootstrap = await commandPeople({
       ...bootstrapCommand,
+      actorId: "d".repeat(64),
       displayName: "Another creator",
+      linkageSubject: "e".repeat(64),
       mutationId: "person-bootstrap-b",
     });
     expect(conflictingBootstrap).toMatchObject({
@@ -233,7 +235,13 @@ describe("household person registry on real Durable Object SQLite", () => {
     expect(persistedPeopleState).toMatchObject({
       ok: true,
       value: {
-        associations: [{ linkageSubject, personId: creator.id }],
+        associations: [
+          {
+            linkageSubject,
+            personId: creator.id,
+            singletonKey: "creator",
+          },
+        ],
         audits: [
           {
             command: "bootstrap_creator",
@@ -305,6 +313,28 @@ describe("household person registry on real Durable Object SQLite", () => {
       value: { displayName: "Cillian" },
     });
   }, 30_000);
+
+  it("physically rejects a second creator association in one household database", async () => {
+    const organizationId = "org-person-creator-singleton-constraint";
+    const objectName = await objectNameFor(organizationId);
+    const result = await commandPeople({
+      objectName,
+      operation: "proveCreatorAssociationSingletonConstraint",
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        associations: [
+          {
+            linkageSubject: "a".repeat(64),
+            personId: "person_00000000-0000-4000-8000-000000000001",
+            singletonKey: "creator",
+          },
+        ],
+        rejectedSecond: true,
+      },
+    });
+  });
 });
 /* eslint-enable no-use-before-define */
 const MealPlanWire = Schema.toEncoded(MealPlan);

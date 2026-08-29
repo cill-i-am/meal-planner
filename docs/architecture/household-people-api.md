@@ -48,3 +48,9 @@ different command or payload returns `mutation_collision` without changing
 person state, audit history, association, or receipt state. Archive and restore
 also require the exact current person version; failures do not reveal another
 household's current version or existence.
+
+The first admitted owner bootstrap occupies the household database's single
+creator slot. A distinct owner racing or retrying afterward receives
+`bootstrap_conflict` and remains unlinked; owner role alone cannot create a
+second creator person. The losing attempt commits no person, association, audit,
+or replay receipt.

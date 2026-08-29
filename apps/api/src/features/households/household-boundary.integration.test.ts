@@ -1116,7 +1116,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
   });
 
-  it("admits only the Better Auth owner to bootstrap and preserves the household-scoped user linkage across auth churn and restart", async () => {
+  it("admits only a Better Auth owner and resolves a two-owner creator race to one durable winner", async () => {
     const ownerLabel = "People Owner Authority";
     const ownerCookie = await signUp(ownerLabel);
     const organization = await createOrganization(
@@ -1180,6 +1180,11 @@ describe("household public API to private Durable Object boundary", () => {
       await observations.get("people-bootstrap-private-invoked")
     ).toBeNull();
 
+    await authDatabase
+      .update(authSchema.member)
+      .set({ role: "owner" })
+      .where(eq(authSchema.member.id, "people-bootstrap-racer-membership"));
+
     const ownerBootstrap = {
       body: JSON.stringify({
         displayName: "Household owner",
@@ -1188,27 +1193,80 @@ describe("household public API to private Durable Object boundary", () => {
       headers: { "content-type": "application/json", cookie: ownerCookie },
       method: "POST",
     } as const;
-    const ownerAttempts = await Promise.all([
+    const promotedOwnerBootstrap = {
+      body: JSON.stringify({
+        displayName: "Promoted household owner",
+        mutationId: "promoted-owner-authority-bootstrap",
+      }),
+      headers: { "content-type": "application/json", cookie: memberCookie },
+      method: "POST",
+    } as const;
+    const competingAttempts = await Promise.all([
       getRuntime().dispatchFetch(bootstrapURL, ownerBootstrap),
-      getRuntime().dispatchFetch(bootstrapURL, ownerBootstrap),
+      getRuntime().dispatchFetch(bootstrapURL, promotedOwnerBootstrap),
     ]);
-    expect(ownerAttempts.map(({ status }) => status)).toEqual([200, 200]);
-    const ownerPeople = await Promise.all(
-      ownerAttempts.map(async (response) =>
-        Schema.decodeUnknownPromise(HouseholdPerson)(await response.json())
-      )
+    expect(competingAttempts.map(({ status }) => status).toSorted()).toEqual([
+      200, 409,
+    ]);
+    const winnerIndex = competingAttempts.findIndex(
+      (response) => response.status === 200
     );
-    expect(ownerPeople[1]).toEqual(ownerPeople[0]);
-    const [ownerPerson] = ownerPeople;
-    if (ownerPerson === undefined) {
-      throw new Error("Expected owner bootstrap result.");
+    const loserIndex = winnerIndex === 0 ? 1 : 0;
+    const winnerResponse = competingAttempts[winnerIndex];
+    const loserResponse = competingAttempts[loserIndex];
+    if (winnerResponse === undefined || loserResponse === undefined) {
+      throw new Error("Expected one winner and one loser response.");
     }
+    const ownerPerson = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await winnerResponse.json()
+    );
+    await expect(loserResponse.json()).resolves.toMatchObject({
+      code: "bootstrap_conflict",
+    });
+
+    const bootstrapRequests = [ownerBootstrap, promotedOwnerBootstrap] as const;
+    const winnerRequest = bootstrapRequests[winnerIndex];
+    const loserRequest = bootstrapRequests[loserIndex];
+    if (winnerRequest === undefined || loserRequest === undefined) {
+      throw new Error("Expected matching winner and loser requests.");
+    }
+    const winnerReplay = await getRuntime().dispatchFetch(
+      bootstrapURL,
+      winnerRequest
+    );
+    expect(winnerReplay.status).toBe(200);
+    await expect(winnerReplay.json()).resolves.toEqual(
+      Schema.encodeSync(HouseholdPerson)(ownerPerson)
+    );
+    const loserRetry = await getRuntime().dispatchFetch(
+      bootstrapURL,
+      loserRequest
+    );
+    expect(loserRetry.status).toBe(409);
+    await expect(loserRetry.json()).resolves.toMatchObject({
+      code: "bootstrap_conflict",
+    });
+
+    const loserCookie = loserIndex === 0 ? ownerCookie : memberCookie;
+    const loserRoster = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      { headers: { cookie: loserCookie } }
+    );
+    expect(loserRoster.status).toBe(200);
+    await expect(loserRoster.json()).resolves.toMatchObject({
+      currentPersonId: null,
+      people: [{ id: ownerPerson.id, isCurrentAdult: false }],
+    });
+
+    const winnerLabel =
+      winnerIndex === 0 ? ownerLabel : "People Bootstrap Racer";
+    const winnerSession = winnerIndex === 0 ? ownerSession : memberSession;
 
     await authDatabase
       .update(authSchema.member)
       .set({ id: "people-owner-membership-rotated" })
-      .where(eq(authSchema.member.userId, ownerSession.user.id));
-    const replacementOwnerCookie = await signIn(ownerLabel);
+      .where(eq(authSchema.member.userId, winnerSession.user.id));
+    const replacementOwnerCookie = await signIn(winnerLabel);
     const replacementOwnerSession = await getSession(replacementOwnerCookie);
     await authDatabase
       .update(authSchema.session)

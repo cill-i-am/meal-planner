@@ -68,7 +68,9 @@ stale/conflict error rather than silently overwriting concurrent changes.
 - `BootstrapCreatorPerson(mutationId, displayName)` creates one adult person and
   one active association only for the admitted Better Auth organization owner.
   The association uses the separately derived linkage subject, not the audit
-  actor or a raw Better Auth user/member/email value.
+  actor or a raw Better Auth user/member/email value. The creator association is
+  a household-singleton database fact, so a second owner cannot create another
+  creator person.
 - `CreateHouseholdPerson(mutationId, kind, displayName)` creates an unlinked
   adult or a dependant.
 - `ArchiveHouseholdPerson(mutationId, personId, expectedVersion)` changes an
@@ -101,9 +103,10 @@ Creator link: absent -> active
 - An archived person remains queryable only when explicitly requested or by ID.
 - Bootstrap creates exactly one creator link and one adult person. Once a
   creator link exists, a different bootstrap intent conflicts.
-- One immutable Better Auth user has at most one creator association in a
-  household, keyed by its household-scoped linkage subject. General account-link
-  lifecycle is deferred to Work Item 02.
+- Each household has one durable creator-association slot. Its linkage subject
+  and person remain unique, so neither a second owner nor the original owner
+  under another bootstrap intent can create another creator person. General
+  account-link lifecycle is deferred to Work Item 02.
 - There is no `invited-adult` person kind. Until Work Item 02, another adult is
   simply an unlinked adult person.
 - Hard deletion and person merge do not exist.
@@ -154,7 +157,8 @@ choice; it may not replace per-person optimistic concurrency.
 - A wrong `expectedVersion` returns `stale_version` with no write. It must not
   disclose another household's current version.
 - Concurrent identical bootstrap requests converge on one person and link.
-  Conflicting bootstrap requests produce one winner and one explicit conflict.
+  Conflicting requests from distinct admitted owners produce one winner and one
+  explicit conflict; remaining an owner does not make the loser eligible later.
 - Concurrent archive/restore or two different edits at one version produce one
   winner; the loser receives `stale_version` or an equivalent closed conflict.
 - Repeating archive on already archived or restore on active is not silently
@@ -209,10 +213,12 @@ Using the production auth/API/object composition:
 5. A stale concurrent archive is rejected without mutation.
 6. An admitted member of organization B cannot read, infer, archive, restore,
    or collide with any organization-A person or mutation receipt.
-7. A non-owner racing the owner cannot route or win bootstrap. Owner retries
-   converge, and the same user's linkage remains stable across session,
-   membership-row, Worker, and object restart changes while differing in a
-   second household.
+7. A non-owner racing the owner cannot route or win bootstrap. If that member
+   becomes an owner and races another owner, exactly one household creator wins;
+   the loser remains unlinked and conflicts on later bootstrap. Exact winner
+   retries converge, and the winning user's linkage remains stable across
+   session, membership-row, Worker, and object restart changes while differing
+   in a second household.
 
 ## Acceptance Evidence
 
@@ -244,13 +250,16 @@ Using the production auth/API/object composition:
 - [x] Wrong-purpose and unauthenticated commands do not locate or invoke a
   household object.
 - [x] A real Better Auth owner-versus-member race proves non-owner bootstrap is
-  denied before private invocation, concurrent owner retries converge, and the
-  object independently rejects a people-member bootstrap admission.
+  denied before private invocation and the object independently rejects a
+  people-member bootstrap admission. After role transfer, a real two-owner race
+  proves one winner, one durable creator association and person, exact winner
+  replay, and closed conflict for the still-owner loser.
 - [x] A non-member is rejected before routing; a member of another household
   cannot read or mutate state and cannot infer whether a person or receipt
   exists.
 - [x] Fresh migration composition and regeneration prove one household-local
-  people authority and no shared household D1 table or fallback.
+  people authority, a physical creator-slot primary key that rejects a second
+  distinct linkage/person association, and no shared household D1 fallback.
 
 ### Repository and review gates
 
@@ -277,15 +286,37 @@ Auth/HouseholdObject boundary. Independent exact-head review is required.
   a user, member, email, display name, or invitation.
 - Reuse the existing Effect service/layer, closed Schema, private routing,
   Drizzle transaction, migration registry, and real-runtime fixture patterns.
-- Store the creator association under the separately branded, household-scoped
-  linkage subject. Use the distinct audit actor only for audit attribution.
-  Work Item 02 may extend the association lifecycle, but Work Item 01 must not
-  pre-implement invitation or departure policy.
+- Store the creator association in the household-singleton creator slot with
+  the separately branded, household-scoped linkage subject. Use the distinct
+  audit actor only for audit attribution. Work Item 02 may extend the
+  association lifecycle, but Work Item 01 must not pre-implement invitation or
+  departure policy.
 - Preserve greenfield discipline: update development fixtures or reset local
   experimental data. Do not add compatibility reads, legacy adapters, or a
   generic backfill framework.
 
 ## Delivery Log
+
+- 2026-08-29 — Corrected the exact-head creator-singleton review finding
+  test-first. The executable RED raced two distinct Better Auth owners through
+  the public API and received two successful creator people. The replacement
+  schema gives every household database one fixed creator slot while preserving
+  unique linkage subjects and person IDs. Bootstrap now checks exact receipt
+  replay first, returns the existing closed conflict before identity allocation,
+  and atomically reserves the slot before any person, audit, or receipt write.
+  Real Better Auth/public API/private Worker/HouseholdObject/SQLite proof now
+  yields one winner and one conflict, keeps the losing owner unlinked on retry,
+  and persists exactly one creator person and association. A separate real
+  SQLite probe inserts distinct linkage subjects/person IDs directly and proves
+  the generated migration physically rejects the second association. The
+  PR-added people migration was regenerated as a greenfield replacement with a
+  clean second-generation no-diff result. Local gates are green: 138 root
+  architecture tests, 19 household-contract tests, 31 recipe contract tests, 36
+  web tests, and 802 API tests; formatting checked 383 files, and lint, type
+  checks, and production builds passed. The unchanged Docker-backed physical
+  gate passed 1/1 in 1,030.06 seconds. Hosted CI and independent exact-head
+  review remain separate acceptance gates; this correction adds no Work Item
+  02+ behavior.
 
 - 2026-08-29 — Superseded the initial PR head and strengthened the identity and
   bootstrap boundary test-first. The API now derives separate versioned,

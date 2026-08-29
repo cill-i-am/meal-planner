@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "aea02269-f9a1-4d9b-9a09-8b018ffe4eff",
+  "id": "19cd7f0a-1033-40ea-a013-96745ac806e3",
   "prevIds": ["36fbd4e9-f261-4403-8c4c-ab3673de846a"],
   "ddl": [
     {
@@ -1209,16 +1209,6 @@
       "table": "household_person_audits"
     },
     {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "linkage_subject",
-      "entityType": "columns",
-      "table": "household_person_creator_associations"
-    },
-    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -1234,7 +1224,27 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "linkage_subject",
+      "entityType": "columns",
+      "table": "household_person_creator_associations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "person_id",
+      "entityType": "columns",
+      "table": "household_person_creator_associations"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "singleton_key",
       "entityType": "columns",
       "table": "household_person_creator_associations"
     },
@@ -2009,7 +2019,7 @@
       "entityType": "pks"
     },
     {
-      "columns": ["linkage_subject"],
+      "columns": ["singleton_key"],
       "nameExplicit": false,
       "name": "household_person_creator_associations_pk",
       "table": "household_person_creator_associations",
@@ -2265,6 +2275,13 @@
       "name": "household_meta_organization_id_unique",
       "entityType": "uniques",
       "table": "household_meta"
+    },
+    {
+      "columns": ["linkage_subject"],
+      "nameExplicit": false,
+      "name": "household_person_creator_associations_linkage_subject_unique",
+      "entityType": "uniques",
+      "table": "household_person_creator_associations"
     },
     {
       "columns": ["person_id"],

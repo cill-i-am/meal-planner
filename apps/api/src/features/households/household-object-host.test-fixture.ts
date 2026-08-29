@@ -40,6 +40,7 @@ import type {
 } from "./household.contract.js";
 import { HouseholdOrganizationId } from "./household.contract.js";
 import {
+  householdCreatorAssociationSingletonKey,
   householdMeta,
   householdMealPlans,
   householdOutbox,
@@ -199,6 +200,38 @@ const HouseholdObjectTestRuntime = Effect.gen(
               })
               .from(householdPersonMutationReceipts);
             return { associations, audits, people, receipts };
+          })
+        ),
+      proveCreatorAssociationSingletonConstraint: () =>
+        scoped(
+          Effect.gen(function* proveCreatorAssociationSingletonConstraint() {
+            const connection = yield* database;
+            yield* connection
+              .insert(householdPersonCreatorAssociations)
+              .values({
+                createdAtEpochMs: 1,
+                linkageSubject: "a".repeat(64),
+                personId: "person_00000000-0000-4000-8000-000000000001",
+                singletonKey: householdCreatorAssociationSingletonKey,
+              });
+            const rejectedSecond = yield* connection
+              .insert(householdPersonCreatorAssociations)
+              .values({
+                createdAtEpochMs: 2,
+                linkageSubject: "b".repeat(64),
+                personId: "person_00000000-0000-4000-8000-000000000002",
+                singletonKey: householdCreatorAssociationSingletonKey,
+              })
+              .pipe(
+                Effect.matchEffect({
+                  onFailure: () => Effect.succeed(true),
+                  onSuccess: () => Effect.succeed(false),
+                })
+              );
+            const associations = yield* connection
+              .select()
+              .from(householdPersonCreatorAssociations);
+            return { associations, rejectedSecond };
           })
         ),
       invokeMalformedEnsure: (payload: Schema.Json) =>
@@ -436,6 +469,7 @@ interface HouseholdObjectClient {
     dispatchId: typeof HouseholdDispatchId.Type
   ) => Effect.Effect<unknown>;
   readonly inspectHouseholdPeopleState: () => Effect.Effect<unknown>;
+  readonly proveCreatorAssociationSingletonConstraint: () => Effect.Effect<unknown>;
   readonly inspectMealPlanStorage: (draftId: MealPlanDraftId) => Effect.Effect<{
     readonly planJsonBytes: number;
     readonly replayKeyBytes: number;
@@ -490,6 +524,10 @@ const HouseholdTestCommand = Schema.Union([
   Schema.Struct({
     objectName: Schema.String,
     operation: Schema.Literal("inspectHouseholdPeopleState"),
+  }),
+  Schema.Struct({
+    objectName: Schema.String,
+    operation: Schema.Literal("proveCreatorAssociationSingletonConstraint"),
   }),
   Schema.Struct({
     actorId: Schema.String,
@@ -969,6 +1007,9 @@ const routeHouseholdAdministrationTestCommand = (
   }
   if (command.operation === "inspectHouseholdPeopleState") {
     return respond(household.inspectHouseholdPeopleState());
+  }
+  if (command.operation === "proveCreatorAssociationSingletonConstraint") {
+    return respond(household.proveCreatorAssociationSingletonConstraint());
   }
   if (command.operation === "invokeMalformedEnsure") {
     return respond(household.invokeMalformedEnsure(command.payload));

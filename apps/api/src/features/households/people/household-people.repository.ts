@@ -22,6 +22,7 @@ import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Effect, Schema } from "effect";
 
 import {
+  householdCreatorAssociationSingletonKey,
   householdPeople,
   householdPersonAudits,
   householdPersonCreatorAssociations,
@@ -149,12 +150,6 @@ export const makeHouseholdPeopleRepository = (
         kind: input.kind,
         linkageSubject: input.linkageSubject,
       });
-      const uuid = yield* services.identity
-        .generate()
-        .pipe(Effect.mapError(unavailable));
-      const personId = yield* Schema.decodeUnknownEffect(HouseholdPersonId)(
-        `person_${uuid}`
-      ).pipe(Effect.mapError(unavailable));
       return yield* database.transaction((transaction) =>
         Effect.gen(function* persistPerson() {
           const [receipt] = yield* transaction
@@ -172,14 +167,10 @@ export const makeHouseholdPeopleRepository = (
           }
           if (input.command === "bootstrap_creator") {
             const [association] = yield* transaction
-              .select()
+              .select({
+                singletonKey: householdPersonCreatorAssociations.singletonKey,
+              })
               .from(householdPersonCreatorAssociations)
-              .where(
-                eq(
-                  householdPersonCreatorAssociations.linkageSubject,
-                  input.linkageSubject
-                )
-              )
               .limit(1)
               .pipe(queryFailure);
             if (association !== undefined) {
@@ -188,6 +179,12 @@ export const makeHouseholdPeopleRepository = (
               );
             }
           }
+          const uuid = yield* services.identity
+            .generate()
+            .pipe(Effect.mapError(unavailable));
+          const personId = yield* Schema.decodeUnknownEffect(HouseholdPersonId)(
+            `person_${uuid}`
+          ).pipe(Effect.mapError(unavailable));
           const person = yield* Schema.decodeUnknownEffect(HouseholdPerson)({
             createdAtEpochMs: input.now,
             displayName: input.displayName,
@@ -199,6 +196,26 @@ export const makeHouseholdPeopleRepository = (
             version: 1,
           }).pipe(Effect.mapError(unavailable));
           const resultJson = encodePerson(person);
+          if (input.command === "bootstrap_creator") {
+            const [association] = yield* transaction
+              .insert(householdPersonCreatorAssociations)
+              .values({
+                createdAtEpochMs: input.now,
+                linkageSubject: input.linkageSubject,
+                personId,
+                singletonKey: householdCreatorAssociationSingletonKey,
+              })
+              .onConflictDoNothing()
+              .returning({
+                singletonKey: householdPersonCreatorAssociations.singletonKey,
+              })
+              .pipe(queryFailure);
+            if (association === undefined) {
+              return yield* Effect.fail(
+                HouseholdCreatorBootstrapConflict.make({})
+              );
+            }
+          }
           yield* transaction
             .insert(householdPeople)
             .values({
@@ -211,16 +228,6 @@ export const makeHouseholdPeopleRepository = (
               version: 1,
             })
             .pipe(queryFailure);
-          if (input.command === "bootstrap_creator") {
-            yield* transaction
-              .insert(householdPersonCreatorAssociations)
-              .values({
-                createdAtEpochMs: input.now,
-                linkageSubject: input.linkageSubject,
-                personId,
-              })
-              .pipe(queryFailure);
-          }
           yield* transaction
             .insert(householdPersonAudits)
             .values({

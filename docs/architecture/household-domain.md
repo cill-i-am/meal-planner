@@ -99,11 +99,13 @@ The authenticated API resolves the Better Auth session, active organization,
 and membership before constructing two separately branded SHA-256 identities
 from a versioned, domain-separated encoding of the immutable Better Auth user
 ID and organization ID. `audit-actor` is used only for household audit
-correlation. `linkage-subject` is the durable creator association key. It is
-stable across sessions, membership-row changes, and Worker/object restart,
-while remaining household-scoped and user-specific. Raw user, membership,
-session, invitation, role, and email values never enter household commands or
-storage.
+correlation. `linkage-subject` identifies the user-specific side of the durable
+creator association. The association itself occupies one fixed creator slot in
+each household database, with linkage subject and person also unique. The
+linkage is stable across sessions, membership-row changes, and Worker/object
+restart, while remaining household-scoped and user-specific. Raw user,
+membership, session, invitation, role, and email values never enter household
+commands or storage.
 
 Ordinary people commands receive a closed people-member admission. Creator
 bootstrap is different: only Better Auth's actual active membership
@@ -116,12 +118,15 @@ opening the repository.
 
 Creator bootstrap, unlinked person creation, archive, and restore each commit
 the person row, version, audit, creator association where applicable, and
-privacy-safe replay receipt in one Drizzle SQLite transaction. The mutation ID
-is unique across people commands in one household. Exact intent replay returns
-the recorded projection without another write; changed intent collides, stale
-versions and invalid lifecycle transitions fail closed, and another household's
-object has an independent identity and receipt namespace. No external I/O is
-performed by a person transaction.
+privacy-safe replay receipt in one Drizzle SQLite transaction. Bootstrap checks
+an exact receipt first, then atomically reserves the household's fixed creator
+slot before inserting the person; another admitted owner receives the closed
+bootstrap conflict without a person, audit, association, or receipt. The
+mutation ID is unique across people commands in one household. Exact intent
+replay returns the recorded projection without another write; changed intent
+collides, stale versions and invalid lifecycle transitions fail closed, and
+another household's object has an independent identity and receipt namespace.
+No external I/O is performed by a person transaction.
 
 The public contract and generated same-origin client are documented in
 [household-people-api.md](household-people-api.md).

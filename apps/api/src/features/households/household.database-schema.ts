@@ -42,13 +42,16 @@ export const householdPeople = sqliteTable("household_people", {
   version: integer("version").notNull(),
 });
 
-/** Purpose-bound creator association keyed only by a household-scoped linkage digest. */
+export const householdCreatorAssociationSingletonKey = "creator" as const;
+
+/** Household-singleton creator association with purpose-bound identity linkage. */
 export const householdPersonCreatorAssociations = sqliteTable(
   "household_person_creator_associations",
   {
     createdAtEpochMs: integer("created_at_epoch_ms").notNull(),
-    linkageSubject: text("linkage_subject").primaryKey(),
+    linkageSubject: text("linkage_subject").notNull().unique(),
     personId: text("person_id").notNull().unique(),
+    singletonKey: text("singleton_key").primaryKey(),
   }
 );
 

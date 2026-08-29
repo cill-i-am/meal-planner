@@ -20,9 +20,10 @@ CREATE TABLE `household_person_audits` (
 );
 --> statement-breakpoint
 CREATE TABLE `household_person_creator_associations` (
-	`linkage_subject` text PRIMARY KEY,
 	`created_at_epoch_ms` integer NOT NULL,
-	`person_id` text NOT NULL UNIQUE
+	`linkage_subject` text NOT NULL UNIQUE,
+	`person_id` text NOT NULL UNIQUE,
+	`singleton_key` text PRIMARY KEY
 );
 --> statement-breakpoint
 CREATE TABLE `household_person_mutation_receipts` (
