@@ -17,8 +17,17 @@ import type { HouseholdPeopleOperations } from "./operations.js";
 const mutationId = () =>
   Schema.decodeUnknownSync(HouseholdPersonMutationId)(crypto.randomUUID());
 
+const hasFailureCode = (error: Error | null, code: string) =>
+  (JSON.stringify(error) ?? "").includes(code);
+
+const creatorSlotOccupiedMessage =
+  "This household already has a creator person. Your account remains unlinked. You can continue using the shared roster; account linking is not available here.";
+
 const failureMessage = (error: Error) => {
-  const detail = JSON.stringify(error);
+  const detail = JSON.stringify(error) ?? "";
+  if (detail.includes("bootstrap_conflict")) {
+    return creatorSlotOccupiedMessage;
+  }
   if (detail.includes("stale_version")) {
     return "This person changed. Refresh the roster and try again.";
   }
@@ -37,6 +46,22 @@ const failureMessage = (error: Error) => {
   return "The household roster is temporarily unavailable. You can retry safely.";
 };
 
+const failureTitle = (error: Error) =>
+  hasFailureCode(error, "bootstrap_conflict")
+    ? "Account not linked"
+    : "Roster not updated";
+
+const CreatorSlotOccupiedNotice = ({
+  visible,
+}: {
+  readonly visible: boolean;
+}) =>
+  visible ? (
+    <Alert role="status" title="Account not linked">
+      {creatorSlotOccupiedMessage}
+    </Alert>
+  ) : null;
+
 /** Minimal explicit household roster and lifecycle surface. */
 export const HouseholdPeoplePanel = ({
   operations,
@@ -53,7 +78,8 @@ export const HouseholdPeoplePanel = ({
     mutationFn: (payload: BootstrapHouseholdCreatorPayload) =>
       operations.bootstrapCreator(payload),
     onSuccess: refresh,
-    retry: 1,
+    retry: (failureCount, error) =>
+      failureCount < 1 && !hasFailureCode(error, "bootstrap_conflict"),
   });
   const create = useMutation({
     mutationFn: (payload: CreateHouseholdPersonPayload) =>
@@ -105,6 +131,13 @@ export const HouseholdPeoplePanel = ({
   });
   const error =
     roster.error ?? bootstrap.error ?? create.error ?? transition.error;
+  const bootstrapConflict = hasFailureCode(
+    bootstrap.error,
+    "bootstrap_conflict"
+  );
+  const creatorSlotOccupied =
+    bootstrapConflict ||
+    (roster.data?.currentPersonId === null && roster.data.people.length > 0);
 
   return (
     <section
@@ -129,11 +162,14 @@ export const HouseholdPeoplePanel = ({
         <p role="status">Loading the household roster…</p>
       ) : null}
       {error === null ? null : (
-        <Alert role="alert" title="Roster not updated">
+        <Alert role="alert" title={failureTitle(error)}>
           {failureMessage(error)}
         </Alert>
       )}
-      {roster.data?.currentPersonId === null ? (
+      <CreatorSlotOccupiedNotice
+        visible={!bootstrapConflict && creatorSlotOccupied}
+      />
+      {roster.data?.currentPersonId === null && !creatorSlotOccupied ? (
         <form
           className="people-form"
           onSubmit={(event) => {

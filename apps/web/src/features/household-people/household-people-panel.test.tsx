@@ -33,6 +33,10 @@ const emptyRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
   currentPersonId: null,
   people: [],
 });
+const unlinkedRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+  currentPersonId: null,
+  people: [{ ...roster.people[0], isCurrentAdult: false }],
+});
 const archivedRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
   currentPersonId: personId,
   people: [{ ...roster.people[0], lifecycle: "archived", version: 2 }],
@@ -173,6 +177,49 @@ describe("HouseholdPeoplePanel", () => {
     expect(
       await screen.findByText(/only the household owner/iu)
     ).toBeInTheDocument();
+  });
+
+  it("reports an occupied creator slot as durable and does not retry it", async () => {
+    const bootstrapCreator = vi
+      .fn()
+      .mockRejectedValue({ code: "bootstrap_conflict" });
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator,
+      create: vi.fn(),
+      list: vi.fn().mockResolvedValue(emptyRoster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+    await userEvent.type(await screen.findByLabelText("Your name"), "Maeve");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Set up my person" })
+    );
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(1));
+    expect(
+      await screen.findByText(/already has a creator person/iu)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/temporarily unavailable/iu)).toBeNull();
+    expect(screen.queryByText(/retry safely/iu)).toBeNull();
+  });
+
+  it("keeps an unlinked owner in a safe non-bootstrap state after another owner wins", async () => {
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create: vi.fn(),
+      list: vi.fn().mockResolvedValue(unlinkedRoster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    expect(await screen.findByText("Cillian")).toBeInTheDocument();
+    expect(screen.getByText(/account remains unlinked/iu)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Set up my person" })
+    ).toBeNull();
+    expect(screen.queryByText(/temporarily unavailable/iu)).toBeNull();
+    expect(screen.queryByText(/retry safely/iu)).toBeNull();
   });
 
   it.each([

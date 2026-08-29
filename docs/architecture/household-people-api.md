@@ -51,6 +51,11 @@ household's current version or existence.
 
 The first admitted owner bootstrap occupies the household database's single
 creator slot. A distinct owner racing or retrying afterward receives
-`bootstrap_conflict` and remains unlinked; owner role alone cannot create a
-second creator person. The losing attempt commits no person, association, audit,
-or replay receipt.
+`bootstrap_conflict`: the household already has a creator person and the
+requesting account remains unlinked. The response reveals neither identity and
+is a durable conflict, not a temporary outage; owner role alone cannot create a
+second creator person. The losing attempt commits no person, association,
+audit, or replay receipt. The roster UI does not retry that conflict or offer
+creator setup again once the occupied slot is visible. It keeps the admitted
+account on the shared roster while account linking remains outside this work
+item.

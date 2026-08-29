@@ -1220,8 +1220,11 @@ describe("household public API to private Durable Object boundary", () => {
     const ownerPerson = await Schema.decodeUnknownPromise(HouseholdPerson)(
       await winnerResponse.json()
     );
-    await expect(loserResponse.json()).resolves.toMatchObject({
+    await expect(loserResponse.json()).resolves.toEqual({
       code: "bootstrap_conflict",
+      message:
+        "This household already has a creator person. This account remains unlinked.",
+      status: 409,
     });
 
     const bootstrapRequests = [ownerBootstrap, promotedOwnerBootstrap] as const;
@@ -1243,8 +1246,11 @@ describe("household public API to private Durable Object boundary", () => {
       loserRequest
     );
     expect(loserRetry.status).toBe(409);
-    await expect(loserRetry.json()).resolves.toMatchObject({
+    await expect(loserRetry.json()).resolves.toEqual({
       code: "bootstrap_conflict",
+      message:
+        "This household already has a creator person. This account remains unlinked.",
+      status: 409,
     });
 
     const loserCookie = loserIndex === 0 ? ownerCookie : memberCookie;

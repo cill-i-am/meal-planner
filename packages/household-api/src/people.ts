@@ -120,12 +120,12 @@ export const HouseholdPersonMutationCollision = Schema.TaggedStruct(
 export type HouseholdPersonMutationCollision =
   typeof HouseholdPersonMutationCollision.Type;
 
-/** The admitted creator is already linked to a different bootstrap intent. */
+/** The household creator slot is occupied and this admitted account remains unlinked. */
 export const HouseholdCreatorBootstrapConflict = Schema.TaggedStruct(
   "HouseholdCreatorBootstrapConflict",
   {}
 );
-/** The admitted creator is already linked to a different bootstrap intent. */
+/** The household creator slot is occupied and this admitted account remains unlinked. */
 export type HouseholdCreatorBootstrapConflict =
   typeof HouseholdCreatorBootstrapConflict.Type;
 

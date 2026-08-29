@@ -2,6 +2,7 @@ import {
   BootstrapHouseholdCreatorPayload,
   CreateMealPlanPayload,
   DecideMealPlanPayload,
+  HouseholdCreatorBootstrapConflict,
   HouseholdMealPlanPrincipal,
   HouseholdOrganizationId,
   HouseholdPeopleRoster,
@@ -383,6 +384,40 @@ describe("household people identity and owner boundary", () => {
       status: 403,
     });
     expect(invoked).toBe(false);
+  });
+
+  it("describes an occupied creator slot without claiming the losing owner is linked", async () => {
+    const gateway = HouseholdPeopleGateway.of({
+      ...gatewayWithList(() => Effect.succeed(roster)),
+      bootstrapCreator: () =>
+        Effect.fail(HouseholdCreatorBootstrapConflict.make({})),
+    });
+    const app = makePeopleApp({ gateway, membershipRole: "owner" });
+    const response = await app.handler(
+      new Request(
+        "https://meal-planner.test/v1/household/people/bootstrap-creator",
+        {
+          body: JSON.stringify(
+            Schema.encodeSync(BootstrapHouseholdCreatorPayload)(
+              bootstrapPayload
+            )
+          ),
+          headers: {
+            "content-type": "application/json",
+            cookie: "better-auth.session_token=owner-session",
+          },
+          method: "POST",
+        }
+      )
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      code: "bootstrap_conflict",
+      message:
+        "This household already has a creator person. This account remains unlinked.",
+      status: 409,
+    });
   });
 });
 

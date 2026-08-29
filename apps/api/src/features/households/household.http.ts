@@ -117,7 +117,8 @@ const peopleBootstrapConflictProblem = Schema.decodeUnknownSync(
   HouseholdPeopleBootstrapConflictProblem
 )({
   code: "bootstrap_conflict",
-  message: "This account is already linked to a household person.",
+  message:
+    "This household already has a creator person. This account remains unlinked.",
   status: 409,
 });
 const peopleCreatorRequiredProblem = Schema.decodeUnknownSync(

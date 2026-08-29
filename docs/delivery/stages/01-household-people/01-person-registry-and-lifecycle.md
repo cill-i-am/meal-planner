@@ -158,7 +158,10 @@ choice; it may not replace per-person optimistic concurrency.
   disclose another household's current version.
 - Concurrent identical bootstrap requests converge on one person and link.
   Conflicting requests from distinct admitted owners produce one winner and one
-  explicit conflict; remaining an owner does not make the loser eligible later.
+  explicit conflict. That conflict says the household creator slot is occupied
+  and the requesting account remains unlinked without identifying the winner;
+  it is durable rather than a retryable outage. Remaining an owner does not
+  make the loser eligible later.
 - Concurrent archive/restore or two different edits at one version produce one
   winner; the loser receives `stale_version` or an equivalent closed conflict.
 - Repeating archive on already archived or restore on active is not silently
@@ -195,7 +198,9 @@ but the public contract must retain the closed semantic distinctions above.
   and restore the same person.
 - Pending, conflict, retry, stale-version, unauthorized, and unavailable states
   are explicit. The UI must not manufacture optimistic person IDs or hide a
-  rejected transition.
+  rejected transition. An unlinked account presented with an occupied creator
+  slot stays on the shared roster without another creator-setup action; the UI
+  does not automatically retry or describe that durable conflict as an outage.
 
 No invitation, profile editor, or interview surface belongs in this PR.
 
@@ -238,7 +243,8 @@ Using the production auth/API/object composition:
   purpose/domain-separated digests of immutable Better Auth user plus household;
   stability and cross-user/cross-household separation are executable.
 - [x] UI tests cover empty-household bootstrap, roster operations, pending,
-  retry, stale, unauthorized, and unavailable states.
+  durable non-retryable bootstrap conflict, retryable failures, stale,
+  unauthorized, unavailable, and the unlinked roster state.
 
 ### Real runtime and persistence proof
 
@@ -296,6 +302,23 @@ Auth/HouseholdObject boundary. Independent exact-head review is required.
   generic backfill framework.
 
 ## Delivery Log
+
+- 2026-08-29 — Corrected the replacement-head public meaning of
+  `bootstrap_conflict` test-first. The executable RED proved the two-owner loser
+  was falsely described as already linked while the panel automatically retried
+  the conflict and labeled it a temporary outage. The public contract and HTTP
+  response now state only that the household creator slot is occupied and the
+  requesting account remains unlinked, without identifying either person or
+  account. The roster UI treats the result as durable, does not retry it, removes
+  creator setup once the occupied slot is known, and keeps the admitted account
+  on the shared roster without implementing linking or repair. Public-contract,
+  HTTP-boundary, panel, and real Better Auth two-owner race tests cover the
+  corrected behavior. Replacement local gates are green: 138 root architecture
+  tests, 20 household-contract tests, 31 recipe-contract tests, 38 web tests,
+  and 803 API tests; formatting checked 383 files, and lint, type checks,
+  production builds, and clean migration regeneration passed. The unchanged
+  Docker-backed physical gate passed 1/1 in 1,046.83 seconds. Hosted CI remains
+  a separate gate; this correction adds no Work Item 02+ behavior.
 
 - 2026-08-29 — Corrected the exact-head creator-singleton review finding
   test-first. The executable RED raced two distinct Better Auth owners through

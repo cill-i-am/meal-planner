@@ -121,8 +121,11 @@ the person row, version, audit, creator association where applicable, and
 privacy-safe replay receipt in one Drizzle SQLite transaction. Bootstrap checks
 an exact receipt first, then atomically reserves the household's fixed creator
 slot before inserting the person; another admitted owner receives the closed
-bootstrap conflict without a person, audit, association, or receipt. The
-mutation ID is unique across people commands in one household. Exact intent
+bootstrap conflict without a person, audit, association, or receipt. That
+conflict means the household creator slot is occupied while the requesting
+account remains unlinked; it neither identifies the winner nor represents a
+retryable storage failure. The mutation ID is unique across people commands in
+one household. Exact intent
 replay returns the recorded projection without another write; changed intent
 collides, stale versions and invalid lifecycle transitions fail closed, and
 another household's object has an independent identity and receipt namespace.

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
+  HouseholdPeopleBootstrapConflictProblem,
   HouseholdPeopleRoster,
   HouseholdPeoplePrincipal,
   HouseholdPerson,
@@ -104,6 +105,25 @@ describe("household people public contract", () => {
         ...principal,
         creatorAuthority: "first_member",
       })
+    ).toThrow();
+  });
+
+  it("keeps an occupied creator slot privacy-safe and explicitly unlinked", () => {
+    const problem = {
+      code: "bootstrap_conflict",
+      message:
+        "This household already has a creator person. This account remains unlinked.",
+      status: 409,
+    };
+    expect(
+      Schema.decodeUnknownSync(HouseholdPeopleBootstrapConflictProblem, {
+        onExcessProperty: "error",
+      })(problem)
+    ).toEqual(problem);
+    expect(() =>
+      Schema.decodeUnknownSync(HouseholdPeopleBootstrapConflictProblem, {
+        onExcessProperty: "error",
+      })({ ...problem, linkedPersonId: "person-private" })
     ).toThrow();
   });
 });

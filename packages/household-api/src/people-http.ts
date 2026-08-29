@@ -71,7 +71,7 @@ export const HouseholdPeopleMutationCollisionProblem = PeopleProblem(
   409,
   "mutation_collision"
 );
-/** Creator is already linked through a different bootstrap intent. */
+/** Household creator slot is occupied; the requesting account remains unlinked. */
 export const HouseholdPeopleBootstrapConflictProblem = PeopleProblem(
   409,
   "bootstrap_conflict"
