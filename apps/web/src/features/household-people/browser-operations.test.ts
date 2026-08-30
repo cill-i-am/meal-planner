@@ -5,7 +5,7 @@ import {
   HouseholdPersonMutationId,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
-import { Schema } from "effect";
+import { Cause, Schema } from "effect";
 import {
   afterAll,
   afterEach,
@@ -16,7 +16,10 @@ import {
   vi,
 } from "vitest";
 
-import { makeBrowserHouseholdPeopleOperations } from "./browser-operations.js";
+import {
+  classifyHouseholdPeopleOperationCause,
+  makeBrowserHouseholdPeopleOperations,
+} from "./browser-operations.js";
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -25,6 +28,63 @@ afterEach(() => fetchMock.mockReset());
 afterAll(() => vi.unstubAllGlobals());
 
 describe("browser household people operations", () => {
+  it.each([
+    {
+      cause: Cause.combine(
+        Cause.fail({ code: "stale_version" }),
+        Cause.fail({
+          _tag: "HttpClientError",
+          reason: { _tag: "DecodeError" },
+        })
+      ),
+      label: "typed failure before malformed response",
+    },
+    {
+      cause: Cause.combine(
+        Cause.fail({
+          _tag: "HttpClientError",
+          reason: { _tag: "DecodeError" },
+        }),
+        Cause.fail({ code: "stale_version" })
+      ),
+      label: "malformed response before typed failure",
+    },
+    {
+      cause: Cause.fail(
+        new Error("generated client wrapper", {
+          cause: {
+            _tag: "HttpClientError",
+            reason: { _tag: "EmptyBodyError" },
+          },
+        })
+      ),
+      label: "malformed response nested under a wrapper",
+    },
+  ])("prioritizes ambiguity for $label", ({ cause }) => {
+    expect(classifyHouseholdPeopleOperationCause(cause)).toMatchObject({
+      code: "transport_unavailable",
+    });
+  });
+
+  it("keeps an unaccompanied valid domain failure deterministic", () => {
+    expect(
+      classifyHouseholdPeopleOperationCause(
+        Cause.fail({ code: "stale_version" })
+      )
+    ).toMatchObject({ code: "stale_version" });
+  });
+
+  it("does not treat an isolated status-code failure as decode ambiguity", () => {
+    expect(
+      classifyHouseholdPeopleOperationCause(
+        Cause.fail({
+          _tag: "HttpClientError",
+          reason: { _tag: "StatusCodeError" },
+        })
+      )
+    ).toMatchObject({ code: "unexpected_failure" });
+  });
+
   it("preserves a typed deterministic household people failure", async () => {
     fetchMock.mockImplementation(async () =>
       Response.json(

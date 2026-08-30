@@ -24,6 +24,21 @@ const isAmbiguousHttpFailure = (error: HttpClientError.HttpClientError) => {
   return reason._tag === "StatusCodeError" && reason.response.status >= 500;
 };
 
+const HttpClientFailureReason = Schema.Struct({
+  _tag: Schema.Literals([
+    "DecodeError",
+    "EmptyBodyError",
+    "StatusCodeError",
+    "TransportError",
+  ]),
+});
+
+const HttpClientFailure = Schema.Struct({
+  _tag: Schema.Literal("HttpClientError"),
+  reason: HttpClientFailureReason,
+});
+const decodeHttpClientFailure = Schema.decodeUnknownOption(HttpClientFailure);
+
 const errorCause = Schema.Struct({ cause: Schema.Unknown });
 
 const completeErrors = (cause: Cause.Cause<unknown>) => {
@@ -45,6 +60,43 @@ const completeErrors = (cause: Cause.Cause<unknown>) => {
   return errors;
 };
 
+export const classifyHouseholdPeopleOperationCause = (
+  cause: Cause.Cause<unknown>
+) => {
+  const errors = completeErrors(cause);
+  const [error] = errors;
+  const ambiguous = errors.some((candidate) => {
+    if (
+      HttpClientError.isHttpClientError(candidate) &&
+      isAmbiguousHttpFailure(candidate)
+    ) {
+      return true;
+    }
+    const decoded = decodeHttpClientFailure(candidate);
+    return (
+      (Option.isSome(decoded) &&
+        decoded.value.reason._tag !== "StatusCodeError") ||
+      Schema.isSchemaError(candidate)
+    );
+  });
+  if (ambiguous) {
+    return new HouseholdPeopleOperationError("transport_unavailable", {
+      cause: error,
+    });
+  }
+  const code = errors
+    .map((candidate) =>
+      Option.getOrUndefined(decodeHouseholdPeopleOperationFailure(candidate))
+    )
+    .find((candidate) => candidate !== undefined)?.code;
+  if (code !== undefined) {
+    return new HouseholdPeopleOperationError(code, { cause: error });
+  }
+  return new HouseholdPeopleOperationError("unexpected_failure", {
+    cause: error,
+  });
+};
+
 const makeClientRunner = (baseUrl: string | URL) => {
   const layer = makeHouseholdPeopleApiClientLayer({ baseUrl }).pipe(
     Layer.provide(FetchHttpClient.layer)
@@ -61,30 +113,7 @@ const makeClientRunner = (baseUrl: string | URL) => {
     if (Exit.isSuccess(exit)) {
       return exit.value;
     }
-    const errors = completeErrors(exit.cause);
-    const [error] = errors;
-    const ambiguous = errors.some(
-      (candidate) =>
-        (HttpClientError.isHttpClientError(candidate) &&
-          isAmbiguousHttpFailure(candidate)) ||
-        Schema.isSchemaError(candidate)
-    );
-    if (ambiguous) {
-      throw new HouseholdPeopleOperationError("transport_unavailable", {
-        cause: error,
-      });
-    }
-    const code = errors
-      .map((candidate) =>
-        Option.getOrUndefined(decodeHouseholdPeopleOperationFailure(candidate))
-      )
-      .find((candidate) => candidate !== undefined)?.code;
-    if (code !== undefined) {
-      throw new HouseholdPeopleOperationError(code, { cause: error });
-    }
-    throw new HouseholdPeopleOperationError("unexpected_failure", {
-      cause: error,
-    });
+    throw classifyHouseholdPeopleOperationCause(exit.cause);
   };
 };
 

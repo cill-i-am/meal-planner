@@ -281,12 +281,6 @@ describe("household people identity and owner boundary", () => {
 
   it("keeps linkage identity stable across sessions and membership changes while scoping it by household and user", async () => {
     const admitted: unknown[] = [];
-    const captureGateway = gatewayWithList((input) =>
-      Effect.sync(() => {
-        admitted.push(input.principal);
-        return roster;
-      })
-    );
     const otherOrganizationId = Schema.decodeUnknownSync(
       HouseholdOrganizationId
     )("organization-b");
@@ -317,7 +311,12 @@ describe("household people identity and owner boundary", () => {
       cases.map(({ admittedOrganizationId, membershipRole, userId }, index) =>
         makePeopleApp({
           admittedOrganizationId,
-          gateway: captureGateway,
+          gateway: gatewayWithList((input) =>
+            Effect.sync(() => {
+              admitted[index] = input.principal;
+              return roster;
+            })
+          ),
           membershipRole,
           userId,
         }).handler(
