@@ -139,6 +139,29 @@ describe("browser household people operations", () => {
     ).toMatchObject({ code: "transport_unavailable" });
   });
 
+  it("classifies a prototype-branded schema failure from the generated client", () => {
+    const error = Object.create({
+      _tag: "SchemaError",
+      "~effect/SchemaError/SchemaError": "~effect/SchemaError/SchemaError",
+    }) as unknown;
+
+    expect(
+      classifyHouseholdPeopleOperationCause(Cause.fail(error))
+    ).toMatchObject({ code: "transport_unavailable" });
+  });
+
+  it("classifies a prototype-branded HTTP failure from the generated client", () => {
+    const error = Object.create({
+      _tag: "HttpClientError",
+      reason: { _tag: "TransportError" },
+      "~effect/http/HttpClientError": "~effect/http/HttpClientError",
+    }) as unknown;
+
+    expect(
+      classifyHouseholdPeopleOperationCause(Cause.fail(error))
+    ).toMatchObject({ code: "transport_unavailable" });
+  });
+
   it("traverses a structurally branded cross-instance cause", () => {
     const cause = {
       reasons: [
