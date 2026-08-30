@@ -12,7 +12,7 @@ membership's exact Better Auth `owner` role; another member receives
 | Method and path | Request | Success |
 | --- | --- | --- |
 | `POST /v1/household/people/bootstrap-creator` | `displayName`, client-stable `mutationId` | Linked adult person |
-| `GET /v1/household/people?includeArchived=true\|false` | Optional query flag | Roster and current linked person ID |
+| `GET /v1/household/people?includeArchived=true\|false` | Optional query flag | Roster, creator-slot state, and current linked person ID |
 | `GET /v1/household/people/:personId` | Opaque household-local person ID | One person projection |
 | `POST /v1/household/people` | `displayName`, `adult\|dependant`, client-stable `mutationId` | New unlinked person, status 201 |
 | `POST /v1/household/people/:personId/archive` | `expectedVersion`, client-stable `mutationId` | Same archived person at next version |
@@ -22,6 +22,11 @@ Person projections contain only opaque ID, bounded display name, kind,
 lifecycle, version, timestamps, and whether the person is the current linked
 adult. Archived people are omitted from the roster unless explicitly included;
 direct lookup remains household-authorized.
+
+The list projection includes only whether the household creator slot is
+`available` or `occupied`. That state comes from the canonical creator
+association, not from roster non-emptiness or the requesting account's link,
+and reveals no person or account identity.
 
 ## Closed failures and replay
 

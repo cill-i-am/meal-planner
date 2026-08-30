@@ -15,6 +15,7 @@ const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
   "person_00000000-0000-4000-8000-000000000101"
 );
 const roster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+  creatorSlot: "occupied",
   currentPersonId: personId,
   people: [
     {
@@ -30,14 +31,31 @@ const roster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
   ],
 });
 const emptyRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+  creatorSlot: "available",
   currentPersonId: null,
   people: [],
 });
 const unlinkedRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+  creatorSlot: "occupied",
   currentPersonId: null,
   people: [{ ...roster.people[0], isCurrentAdult: false }],
 });
+const unlinkedRosterBeforeCreatorBootstrap = Schema.decodeUnknownSync(
+  HouseholdPeopleRoster
+)({
+  creatorSlot: "available",
+  currentPersonId: null,
+  people: [
+    {
+      ...roster.people[0],
+      displayName: "Household dependant",
+      isCurrentAdult: false,
+      kind: "dependant",
+    },
+  ],
+});
 const archivedRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+  creatorSlot: "occupied",
   currentPersonId: personId,
   people: [{ ...roster.people[0], lifecycle: "archived", version: 2 }],
 });
@@ -220,6 +238,24 @@ describe("HouseholdPeoplePanel", () => {
     ).toBeNull();
     expect(screen.queryByText(/temporarily unavailable/iu)).toBeNull();
     expect(screen.queryByText(/retry safely/iu)).toBeNull();
+  });
+
+  it("offers creator bootstrap when only non-creator roster entries exist", async () => {
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create: vi.fn(),
+      list: vi.fn().mockResolvedValue(unlinkedRosterBeforeCreatorBootstrap),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    expect(await screen.findByText("Household dependant")).toBeInTheDocument();
+    expect(screen.getByLabelText("Your name")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Set up my person" })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/account remains unlinked/iu)).toBeNull();
   });
 
   it.each([

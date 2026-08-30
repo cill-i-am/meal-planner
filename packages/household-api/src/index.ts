@@ -50,6 +50,7 @@ export {
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
   HouseholdCreatorBootstrapConflict,
+  HouseholdCreatorSlot,
   HouseholdPeopleRoster,
   HouseholdPeopleUnavailable,
   HouseholdPerson,

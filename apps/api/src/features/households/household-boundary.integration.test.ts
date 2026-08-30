@@ -691,7 +691,7 @@ const prepareUnknownSpeechTerminal = async (input: {
   const executionGeneration = 1;
   const acquisitionGeneration = input.acquisitionGeneration ?? 1;
   const acquisition = evidenceRetentionResult({
-    acquiredAt: new Date("2026-08-23T12:00:00.000Z"),
+    acquiredAt: new Date(Date.now() + 60_000),
     generation: acquisitionGeneration,
     intentId: admitted.id,
   });
@@ -1260,6 +1260,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
     expect(loserRoster.status).toBe(200);
     await expect(loserRoster.json()).resolves.toMatchObject({
+      creatorSlot: "occupied",
       currentPersonId: null,
       people: [{ id: ownerPerson.id, isCurrentAdult: false }],
     });
@@ -1286,6 +1287,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
     expect(rosterResponse.status).toBe(200);
     await expect(rosterResponse.json()).resolves.toMatchObject({
+      creatorSlot: "occupied",
       currentPersonId: ownerPerson.id,
       people: [{ id: ownerPerson.id, isCurrentAdult: true }],
     });
@@ -1317,6 +1319,102 @@ describe("household public API to private Durable Object boundary", () => {
       await otherBootstrap.json()
     );
     expect(otherPerson.id).not.toBe(ownerPerson.id);
+  }, 30_000);
+
+  it("projects creator-slot authority independently from non-creator roster entries", async () => {
+    const cookie = await signUp("People Projection Owner");
+    const organization = await createOrganization(
+      "People Projection Household",
+      cookie
+    );
+    const peopleURL = "https://meal-planner.test/v1/household/people";
+    const createResponse = await getRuntime().dispatchFetch(peopleURL, {
+      body: JSON.stringify({
+        displayName: "Projection dependant",
+        kind: "dependant",
+        mutationId: "projection-create-dependant",
+      }),
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    });
+    expect(createResponse.status, await createResponse.clone().text()).toBe(
+      201
+    );
+    const dependant = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await createResponse.json()
+    );
+
+    const listRoster = async (activeCookie: string) => {
+      const response = await getRuntime().dispatchFetch(
+        `${peopleURL}?includeArchived=true`,
+        { headers: { cookie: activeCookie } }
+      );
+      expect(response.status, await response.clone().text()).toBe(200);
+      return Schema.decodeUnknownPromise(HouseholdPeopleRoster)(
+        await response.json()
+      );
+    };
+
+    await expect(listRoster(cookie)).resolves.toMatchObject({
+      creatorSlot: "available",
+      currentPersonId: null,
+      people: [{ id: dependant.id, isCurrentAdult: false }],
+    });
+
+    await restartRuntime();
+    await expect(listRoster(cookie)).resolves.toMatchObject({
+      creatorSlot: "available",
+      currentPersonId: null,
+      people: [{ id: dependant.id, isCurrentAdult: false }],
+    });
+
+    const bootstrapResponse = await getRuntime().dispatchFetch(
+      `${peopleURL}/bootstrap-creator`,
+      {
+        body: JSON.stringify({
+          displayName: "People Projection Owner",
+          mutationId: "projection-bootstrap-owner",
+        }),
+        headers: { "content-type": "application/json", cookie },
+        method: "POST",
+      }
+    );
+    expect(
+      bootstrapResponse.status,
+      await bootstrapResponse.clone().text()
+    ).toBe(200);
+    const creator = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await bootstrapResponse.json()
+    );
+    await expect(listRoster(cookie)).resolves.toMatchObject({
+      creatorSlot: "occupied",
+      currentPersonId: creator.id,
+      people: expect.arrayContaining([
+        expect.objectContaining({ id: dependant.id, isCurrentAdult: false }),
+        expect.objectContaining({ id: creator.id, isCurrentAdult: true }),
+      ]),
+    });
+
+    const otherOrganization = await createOrganization(
+      "People Projection Other Household",
+      cookie
+    );
+    expect(otherOrganization.id).not.toBe(organization.id);
+    const setActiveResponse = await authRequest(
+      "/organization/set-active",
+      { organizationId: otherOrganization.id },
+      cookie
+    );
+    expect(setActiveResponse.status).toBe(200);
+    const otherOrganizationCookie =
+      setActiveResponse.headers.get("set-cookie") === null
+        ? cookie
+        : cookieHeader(setActiveResponse);
+    await expect(listRoster(otherOrganizationCookie)).resolves.toEqual({
+      creatorSlot: "available",
+      currentPersonId: null,
+      people: [],
+    });
   }, 30_000);
 
   it("runs the public people lifecycle through Better Auth, private Worker, and household SQLite", async () => {
@@ -1432,6 +1530,7 @@ describe("household public API to private Durable Object boundary", () => {
       await rosterResponse.json()
     );
     expect(roster).toMatchObject({
+      creatorSlot: "occupied",
       currentPersonId: creator.id,
       people: [
         { id: creator.id, isCurrentAdult: true },
@@ -1654,26 +1753,28 @@ describe("household public API to private Durable Object boundary", () => {
 
     const mediaKey = `imports/${admitted.id}/acquisition/v1/generations/1/original.mp4`;
     const manifestKey = `imports/${admitted.id}/acquisition/v1/generations/1/manifest.json`;
+    const acquiredAt = new Date(Date.now() + 60_000);
+    const deleteAt = new Date(acquiredAt.getTime() + 604_800_000).toISOString();
     const commitResponse = await systemCommand("commit-acquisition-evidence", {
       admission,
       expectedGeneration: 1,
       intentId: admitted.id,
       mutationId: "6".repeat(64),
       result: {
-        acquiredAt: "2026-08-22T10:00:00.000Z",
+        acquiredAt: acquiredAt.toISOString(),
         audioStreams: [{ codec: "aac", index: 0 }],
         durationSeconds: 20,
         references: [
           {
             byteLength: 4096,
-            deleteAt: "2026-08-29T10:00:00.000Z",
+            deleteAt,
             key: mediaKey,
             kind: "original_media",
             sha256: "7".repeat(64),
           },
           {
             byteLength: 512,
-            deleteAt: "2026-08-29T10:00:00.000Z",
+            deleteAt,
             key: manifestKey,
             kind: "acquisition_manifest",
             sha256: "8".repeat(64),

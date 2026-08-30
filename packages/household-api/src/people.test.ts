@@ -39,10 +39,30 @@ describe("household people public contract", () => {
 
     expect(
       Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+        creatorSlot: "available",
         currentPersonId: null,
         people: [],
       })
-    ).toEqual({ currentPersonId: null, people: [] });
+    ).toEqual({ creatorSlot: "available", currentPersonId: null, people: [] });
+    expect(
+      Schema.decodeUnknownSync(HouseholdPeopleRoster, {
+        onExcessProperty: "error",
+      })({
+        creatorSlot: "occupied",
+        currentPersonId: null,
+        people: [],
+      })
+    ).toEqual({ creatorSlot: "occupied", currentPersonId: null, people: [] });
+    expect(() =>
+      Schema.decodeUnknownSync(HouseholdPeopleRoster, {
+        onExcessProperty: "error",
+      })({
+        creatorPersonId: "person_00000000-0000-4000-8000-000000000101",
+        creatorSlot: "occupied",
+        currentPersonId: null,
+        people: [],
+      })
+    ).toThrow();
   });
 
   it("rejects malformed ids, versions, kinds, lifecycle values, and names", () => {

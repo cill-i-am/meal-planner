@@ -131,6 +131,11 @@ collides, stale versions and invalid lifecycle transitions fail closed, and
 another household's object has an independent identity and receipt namespace.
 No external I/O is performed by a person transaction.
 
+Roster queries project the creator slot only as `available` or `occupied`,
+derived from that same canonical association row. The projection does not infer
+slot state from roster membership or the requesting account's link and does not
+expose the associated person or account identity.
+
 The public contract and generated same-origin client are documented in
 [household-people-api.md](household-people-api.md).
 

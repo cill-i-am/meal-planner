@@ -67,12 +67,18 @@ export const HouseholdPerson = Schema.Struct({
 /** Privacy-safe household roster projection. */
 export type HouseholdPerson = typeof HouseholdPerson.Type;
 
-/** Household roster plus the admitted member's linked person, when present. */
+/** Privacy-safe occupancy state of the household-singleton creator slot. */
+export const HouseholdCreatorSlot = Schema.Literals(["available", "occupied"]);
+/** Privacy-safe occupancy state of the household-singleton creator slot. */
+export type HouseholdCreatorSlot = typeof HouseholdCreatorSlot.Type;
+
+/** Household roster, creator-slot state, and admitted member's linked person. */
 export const HouseholdPeopleRoster = Schema.Struct({
+  creatorSlot: HouseholdCreatorSlot,
   currentPersonId: Schema.NullOr(HouseholdPersonId),
   people: Schema.Array(HouseholdPerson),
 });
-/** Household roster plus the admitted member's linked person, when present. */
+/** Household roster, creator-slot state, and admitted member's linked person. */
 export type HouseholdPeopleRoster = typeof HouseholdPeopleRoster.Type;
 
 /** Explicit creator-person bootstrap command. */

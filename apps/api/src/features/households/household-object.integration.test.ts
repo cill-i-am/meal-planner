@@ -221,6 +221,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     expect(rosterAfterRestart).toMatchObject({
       ok: true,
       value: {
+        creatorSlot: "occupied",
         currentPersonId: creator.id,
         people: [
           { id: creator.id, version: 1 },

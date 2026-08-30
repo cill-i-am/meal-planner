@@ -120,18 +120,33 @@ export const makeHouseholdPeopleRepository = (
         Effect.mapError(unavailable)
       );
 
-  const currentPersonId = (linkageSubject: HouseholdPersonLinkageSubject) =>
+  const creatorAssociation = () =>
     database
-      .select({ personId: householdPersonCreatorAssociations.personId })
+      .select({
+        linkageSubject: householdPersonCreatorAssociations.linkageSubject,
+        personId: householdPersonCreatorAssociations.personId,
+      })
       .from(householdPersonCreatorAssociations)
       .where(
-        eq(householdPersonCreatorAssociations.linkageSubject, linkageSubject)
+        eq(
+          householdPersonCreatorAssociations.singletonKey,
+          householdCreatorAssociationSingletonKey
+        )
       )
       .limit(1)
       .pipe(
         queryFailure,
-        Effect.map(([row]) => row?.personId ?? null)
+        Effect.map(([row]) => row)
       );
+
+  const currentPersonId = (linkageSubject: HouseholdPersonLinkageSubject) =>
+    creatorAssociation().pipe(
+      Effect.map((association) =>
+        association?.linkageSubject === linkageSubject
+          ? association.personId
+          : null
+      )
+    );
 
   const createPerson = (input: {
     readonly actorId: HouseholdPeopleAuditActorId;
@@ -409,7 +424,11 @@ export const makeHouseholdPeopleRepository = (
       }),
     list: (input) =>
       Effect.gen(function* listPeople() {
-        const linked = yield* currentPersonId(input.linkageSubject);
+        const association = yield* creatorAssociation();
+        const linked =
+          association?.linkageSubject === input.linkageSubject
+            ? association.personId
+            : null;
         const rows = yield* (
           input.includeArchived
             ? database
@@ -432,6 +451,7 @@ export const makeHouseholdPeopleRepository = (
           rows.map((row) => projectPerson(row, linked))
         );
         return yield* Schema.decodeUnknownEffect(HouseholdPeopleRoster)({
+          creatorSlot: association === undefined ? "available" : "occupied",
           currentPersonId: linked,
           people,
         }).pipe(Effect.mapError(unavailable));

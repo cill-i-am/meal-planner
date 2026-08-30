@@ -235,6 +235,7 @@ describe("household people identity and owner boundary", () => {
     version: 1,
   });
   const roster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+    creatorSlot: "occupied",
     currentPersonId: creator.id,
     people: [creator],
   });

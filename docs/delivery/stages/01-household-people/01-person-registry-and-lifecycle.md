@@ -83,8 +83,9 @@ kind, link, or identity from it.
 
 ### Queries
 
-- `ListHouseholdPeople(includeArchived)` returns the household roster and the
-  current member's linked person, if any.
+- `ListHouseholdPeople(includeArchived)` returns the household roster, the
+  privacy-safe creator-slot state, and the current member's linked person, if
+  any.
 - `GetHouseholdPerson(personId)` returns one privacy-safe person projection or a
   typed not-found result.
 
@@ -120,8 +121,11 @@ version.
 
 The minimum roster projection contains person ID, kind, lifecycle, display
 name, version, and whether the person is the current authenticated adult. It
-must not expose actor digests, mutation IDs, receipt digests, raw Better Auth
-identifiers, sessions, roles, emails, or invitation data.
+also carries an `available | occupied` creator-slot state derived from the
+canonical creator association. Roster non-emptiness and a missing current link
+do not imply that the creator slot is occupied. The projection must not expose
+the associated creator identity, actor digests, mutation IDs, receipt digests,
+raw Better Auth identifiers, sessions, roles, emails, or invitation data.
 
 Whether the list also carries a roster-wide revision is a local implementation
 choice; it may not replace per-person optimistic concurrency.
@@ -190,8 +194,9 @@ but the public contract must retain the closed semantic distinctions above.
 
 - Organization creation continues through Better Auth, followed immediately by
   the explicit creator bootstrap command.
-- An existing admitted organization with no creator link shows a one-time
-  “Set up this household” action backed by the same command.
+- An existing admitted organization with an available creator slot shows a
+  one-time “Set up this household” action backed by the same command, even when
+  unlinked non-creator people already exist.
 - A roster view lists active adults and dependants, can reveal archived people,
   and identifies the current adult.
 - An adult can add an adult or dependant, archive a person with confirmation,
@@ -244,7 +249,8 @@ Using the production auth/API/object composition:
   stability and cross-user/cross-household separation are executable.
 - [x] UI tests cover empty-household bootstrap, roster operations, pending,
   durable non-retryable bootstrap conflict, retryable failures, stale,
-  unauthorized, unavailable, and the unlinked roster state.
+  unauthorized, unavailable, an unlinked account with an occupied creator slot,
+  and an unlinked owner with non-creator people but an available creator slot.
 
 ### Real runtime and persistence proof
 
@@ -253,6 +259,8 @@ Using the production auth/API/object composition:
   migrations.
 - [x] The cumulative tracer for this work item survives object/runtime restart
   and reads the committed SQLite state rather than a fixture-only cache.
+- [x] Real runtime projection derives creator-slot state independently from
+  roster membership, survives restart, and remains isolated across households.
 - [x] Wrong-purpose and unauthenticated commands do not locate or invoke a
   household object.
 - [x] A real Better Auth owner-versus-member race proves non-owner bootstrap is
@@ -302,6 +310,19 @@ Auth/HouseholdObject boundary. Independent exact-head review is required.
   generic backfill framework.
 
 ## Delivery Log
+
+- 2026-08-30 — Corrected creator-slot presentation at the final replacement
+  head test-first. The executable RED proved that an unlinked owner with only a
+  dependant was falsely shown an occupied creator slot because the panel
+  inferred authority from roster non-emptiness. The closed roster projection
+  now carries only `available | occupied`, derived from the canonical singleton
+  association without exposing its person or account identity. The UI trusts
+  that authority instead of roster shape. Contract, panel, two-owner race, and
+  real Better Auth/public API/private Worker/HouseholdObject/SQLite tests cover
+  both an unlinked loser with an occupied slot and an unlinked owner with
+  non-creator people but an available slot, including restart and
+  cross-household isolation. Replacement local and hosted evidence follows on
+  the immutable correction head; this correction adds no Work Item 02+ behavior.
 
 - 2026-08-29 — Corrected the replacement-head public meaning of
   `bootstrap_conflict` test-first. The executable RED proved the two-owner loser

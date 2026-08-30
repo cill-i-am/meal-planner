@@ -136,8 +136,7 @@ export const HouseholdPeoplePanel = ({
     "bootstrap_conflict"
   );
   const creatorSlotOccupied =
-    bootstrapConflict ||
-    (roster.data?.currentPersonId === null && roster.data.people.length > 0);
+    bootstrapConflict || roster.data?.creatorSlot === "occupied";
 
   return (
     <section
@@ -169,7 +168,9 @@ export const HouseholdPeoplePanel = ({
       <CreatorSlotOccupiedNotice
         visible={!bootstrapConflict && creatorSlotOccupied}
       />
-      {roster.data?.currentPersonId === null && !creatorSlotOccupied ? (
+      {roster.data?.currentPersonId === null &&
+      roster.data.creatorSlot === "available" &&
+      !bootstrapConflict ? (
         <form
           className="people-form"
           onSubmit={(event) => {
