@@ -156,6 +156,15 @@ choice; it may not replace per-person optimistic concurrency.
 - An identical `mutationId` with byte-identical admitted intent returns the
   committed privacy-safe result without another person, version, audit entry,
   or link.
+- Automatic retries are limited to ambiguous transport, availability, or
+  response-decoding failures and reuse the byte-identical submitted command.
+  If the automatic attempts exhaust, the UI offers an explicit retry that
+  preserves that exact command and mutation ID. Editing or discarding the
+  intent, completing it successfully, or starting a genuinely new action
+  clears the retry intent and mints a new mutation ID.
+- Deterministic domain failures, including stale version, lifecycle conflict,
+  mutation collision, creator-required, unauthorized, and bootstrap conflict,
+  are single-attempt and are never described as safely retryable.
 - Reusing a `mutationId` with a different intent returns
   `mutation_collision` and makes no change.
 - A wrong `expectedVersion` returns `stale_version` with no write. It must not
@@ -197,6 +206,9 @@ but the public contract must retain the closed semantic distinctions above.
 - An existing admitted organization with an available creator slot shows a
   one-time “Set up this household” action backed by the same command, even when
   unlinked non-creator people already exist.
+- The occupied-slot notice is shown only to an unlinked account. A linked
+  creator sees their current-person roster state rather than an instruction
+  about somebody else already occupying the creator slot.
 - A roster view lists active adults and dependants, can reveal archived people,
   and identifies the current adult.
 - An adult can add an adult or dependant, archive a person with confirmation,
@@ -248,9 +260,11 @@ Using the production auth/API/object composition:
   purpose/domain-separated digests of immutable Better Auth user plus household;
   stability and cross-user/cross-household separation are executable.
 - [x] UI tests cover empty-household bootstrap, roster operations, pending,
-  durable non-retryable bootstrap conflict, retryable failures, stale,
-  unauthorized, unavailable, an unlinked account with an occupied creator slot,
-  and an unlinked owner with non-creator people but an available creator slot.
+  durable non-retryable bootstrap conflict, deterministic single-attempt
+  failures, byte-identical automatic and explicit ambiguous retries, intent
+  abandonment, stale, unauthorized, unavailable, a linked creator, an unlinked
+  account with an occupied creator slot, and an unlinked owner with non-creator
+  people but an available creator slot.
 
 ### Real runtime and persistence proof
 
@@ -310,6 +324,19 @@ Auth/HouseholdObject boundary. Independent exact-head review is required.
   generic backfill framework.
 
 ## Delivery Log
+
+- 2026-08-30 — Tightened the final roster and retry experience test-first. A
+  linked creator no longer sees the privacy-safe notice intended for an
+  unlinked account whose creator slot is occupied. Generated-client failures
+  are normalized from closed domain codes and concrete transport/response
+  failures. Deterministic domain failures run once. Automatic and explicit
+  retries of an ambiguous create, bootstrap, archive, or restore preserve the
+  byte-identical submitted command and mutation ID; editing or discarding the
+  intent starts a new command. A real Better Auth/public API/private
+  Worker/HouseholdObject/SQLite test repeats one create command and receives the
+  same person identity from the stored receipt. The PR remains draft and
+  unmerged while final exact-head CI and user review are pending; no Work Item
+  02+ behavior is included.
 
 - 2026-08-30 — Corrected creator-slot presentation at the final replacement
   head test-first. The executable RED proved that an unlinked owner with only a

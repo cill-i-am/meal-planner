@@ -1,5 +1,6 @@
 import {
   HouseholdPeopleRoster,
+  HouseholdPerson,
   HouseholdPersonId,
 } from "@meal-planner/household-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,7 +10,14 @@ import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HouseholdPeoplePanel } from "./household-people-panel.js";
-import type { HouseholdPeopleOperations } from "./operations.js";
+import { HouseholdPeopleOperationError } from "./operations.js";
+import type {
+  HouseholdPeopleOperationFailureCode,
+  HouseholdPeopleOperations,
+} from "./operations.js";
+
+const failure = (code: HouseholdPeopleOperationFailureCode) =>
+  new HouseholdPeopleOperationError(code);
 
 const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
   "person_00000000-0000-4000-8000-000000000101"
@@ -78,7 +86,7 @@ afterEach(cleanup);
 
 describe("HouseholdPeoplePanel", () => {
   it("shows persisted identities and reports stale transitions without optimistic state", async () => {
-    const archive = vi.fn().mockRejectedValue({ code: "stale_version" });
+    const archive = vi.fn().mockRejectedValue(failure("stale_version"));
     const operations: HouseholdPeopleOperations = {
       archive,
       bootstrapCreator: vi.fn(),
@@ -92,11 +100,26 @@ describe("HouseholdPeoplePanel", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Confirm archive" })
     );
-    await waitFor(() => expect(archive).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(archive).toHaveBeenCalledTimes(1));
     expect(
       await screen.findByText(/changed\. Refresh the roster/u)
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Archive" })).toBeInTheDocument();
+  });
+
+  it("does not describe a linked creator as an unlinked account", async () => {
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create: vi.fn(),
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    expect(await screen.findByText("Cillian")).toBeInTheDocument();
+    expect(screen.getByText(/you/u)).toBeInTheDocument();
+    expect(screen.queryByText(/account remains unlinked/iu)).toBeNull();
   });
 
   it("requires confirmation before archiving", async () => {
@@ -178,7 +201,7 @@ describe("HouseholdPeoplePanel", () => {
   it("explains when an admitted non-owner cannot bootstrap the creator", async () => {
     const bootstrapCreator = vi
       .fn()
-      .mockRejectedValue({ code: "creator_required" });
+      .mockRejectedValue(failure("creator_required"));
     const operations: HouseholdPeopleOperations = {
       archive: vi.fn(),
       bootstrapCreator,
@@ -191,16 +214,200 @@ describe("HouseholdPeoplePanel", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Set up my person" })
     );
-    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(1));
     expect(
       await screen.findByText(/only the household owner/iu)
     ).toBeInTheDocument();
   });
 
+  it("retries a transient create with byte-identical variables", async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(failure("people_unavailable"))
+      .mockResolvedValueOnce(roster.people[0]);
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Aoife");
+    await userEvent.selectOptions(screen.getByLabelText("Kind"), "adult");
+    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    expect(create.mock.calls[1]?.[0]).toEqual(create.mock.calls[0]?.[0]);
+  });
+
+  it("retries an ambiguous committed create as the same user intent", async () => {
+    const peopleByMutation = new Map<string, (typeof roster.people)[number]>();
+    const attemptsByMutation = new Map<string, number>();
+    const create = vi.fn(
+      async (payload: Parameters<HouseholdPeopleOperations["create"]>[0]) => {
+        const key = payload.mutationId;
+        const person =
+          peopleByMutation.get(key) ??
+          Schema.decodeUnknownSync(HouseholdPerson)({
+            createdAtEpochMs: 1,
+            displayName: payload.displayName,
+            id: personId,
+            isCurrentAdult: false,
+            kind: payload.kind,
+            lifecycle: "active",
+            updatedAtEpochMs: 1,
+            version: 1,
+          });
+        peopleByMutation.set(key, person);
+        const attempt = (attemptsByMutation.get(key) ?? 0) + 1;
+        attemptsByMutation.set(key, attempt);
+        if (attempt < 3) {
+          throw failure("people_unavailable");
+        }
+        return person;
+      }
+    );
+    const list = vi.fn(async () =>
+      Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+        ...roster,
+        people: [...peopleByMutation.values()],
+      })
+    );
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create,
+      list,
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Aoife");
+    await userEvent.selectOptions(screen.getByLabelText("Kind"), "adult");
+    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retry adding this person" })
+    );
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(3));
+    expect(create.mock.calls[2]?.[0]).toEqual(create.mock.calls[0]?.[0]);
+    expect(peopleByMutation.size).toBe(1);
+    expect(await screen.findByText("Aoife")).toBeInTheDocument();
+  });
+
+  it("abandons an ambiguous create intent when the user edits it", async () => {
+    const create = vi.fn().mockRejectedValue(failure("people_unavailable"));
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    const name = await screen.findByLabelText("Name");
+    await userEvent.type(name, "Aoife");
+    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    const firstIntent = create.mock.calls[0]?.[0];
+
+    await userEvent.type(name, " Murphy");
+    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(4));
+    expect(create.mock.calls[2]?.[0].mutationId).not.toBe(
+      firstIntent?.mutationId
+    );
+    expect(create.mock.calls[2]?.[0].displayName).toBe("Aoife Murphy");
+  });
+
+  it("retries ambiguous creator bootstrap with its exact command", async () => {
+    const bootstrapCreator = vi
+      .fn()
+      .mockRejectedValueOnce(failure("people_unavailable"))
+      .mockRejectedValueOnce(failure("people_unavailable"))
+      .mockResolvedValueOnce(roster.people[0]);
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator,
+      create: vi.fn(),
+      list: vi.fn().mockResolvedValue(emptyRoster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    await userEvent.type(await screen.findByLabelText("Your name"), "Maeve");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Set up my person" })
+    );
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(2));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retry setting up my person" })
+    );
+
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(3));
+    expect(bootstrapCreator.mock.calls[2]?.[0]).toEqual(
+      bootstrapCreator.mock.calls[0]?.[0]
+    );
+  });
+
+  it.each([
+    {
+      action: "archive" as const,
+      button: "Archive",
+      confirm: true,
+      operationsRoster: roster,
+      retry: "Retry archiving Cillian",
+    },
+    {
+      action: "restore" as const,
+      button: "Restore",
+      confirm: false,
+      operationsRoster: archivedRoster,
+      retry: "Retry restoring Cillian",
+    },
+  ])(
+    "retries an ambiguous $action with its exact command",
+    async ({ action, button, confirm, operationsRoster, retry }) => {
+      const transition = vi
+        .fn()
+        .mockRejectedValueOnce(failure("people_unavailable"))
+        .mockRejectedValueOnce(failure("people_unavailable"))
+        .mockResolvedValueOnce(operationsRoster.people[0]);
+      const operations: HouseholdPeopleOperations = {
+        archive: action === "archive" ? transition : vi.fn(),
+        bootstrapCreator: vi.fn(),
+        create: vi.fn(),
+        list: vi.fn().mockResolvedValue(operationsRoster),
+        restore: action === "restore" ? transition : vi.fn(),
+      };
+      renderPanel(operations);
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: button })
+      );
+      if (confirm) {
+        await userEvent.click(
+          screen.getByRole("button", { name: "Confirm archive" })
+        );
+      }
+      await waitFor(() => expect(transition).toHaveBeenCalledTimes(2));
+      await userEvent.click(screen.getByRole("button", { name: retry }));
+
+      await waitFor(() => expect(transition).toHaveBeenCalledTimes(3));
+      expect(transition.mock.calls[2]).toEqual(transition.mock.calls[0]);
+    }
+  );
+
   it("reports an occupied creator slot as durable and does not retry it", async () => {
     const bootstrapCreator = vi
       .fn()
-      .mockRejectedValue({ code: "bootstrap_conflict" });
+      .mockRejectedValue(failure("bootstrap_conflict"));
     const operations: HouseholdPeopleOperations = {
       archive: vi.fn(),
       bootstrapCreator,
@@ -259,18 +466,21 @@ describe("HouseholdPeoplePanel", () => {
   });
 
   it.each([
-    [{ code: "unauthorized" }, /no longer authorized/u],
-    [{ code: "people_unavailable" }, /temporarily unavailable/u],
-  ])("reports public roster failures honestly", async (failure, message) => {
-    const operations: HouseholdPeopleOperations = {
-      archive: vi.fn(),
-      bootstrapCreator: vi.fn(),
-      create: vi.fn(),
-      list: vi.fn().mockRejectedValue(failure),
-      restore: vi.fn(),
-    };
-    renderPanel(operations);
-    expect(await screen.findByText(message)).toBeInTheDocument();
-  });
+    [failure("unauthorized"), /no longer authorized/u],
+    [failure("people_unavailable"), /temporarily unavailable/u],
+  ])(
+    "reports public roster failures honestly",
+    async (operationError, message) => {
+      const operations: HouseholdPeopleOperations = {
+        archive: vi.fn(),
+        bootstrapCreator: vi.fn(),
+        create: vi.fn(),
+        list: vi.fn().mockRejectedValue(operationError),
+        restore: vi.fn(),
+      };
+      renderPanel(operations);
+      expect(await screen.findByText(message)).toBeInTheDocument();
+    }
+  );
 });
 // @vitest-environment jsdom

@@ -1485,23 +1485,32 @@ describe("household public API to private Durable Object boundary", () => {
       code: "mutation_collision",
     });
 
+    const createRequest = {
+      body: JSON.stringify({
+        displayName: "Boundary dependant",
+        kind: "dependant",
+        mutationId: "public-create-person",
+      }),
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    } as const;
     const createResponse = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/household/people",
-      {
-        body: JSON.stringify({
-          displayName: "Boundary dependant",
-          kind: "dependant",
-          mutationId: "public-create-person",
-        }),
-        headers: { "content-type": "application/json", cookie },
-        method: "POST",
-      }
+      createRequest
     );
     expect(createResponse.status, await createResponse.clone().text()).toBe(
       201
     );
     const dependant = await Schema.decodeUnknownPromise(HouseholdPerson)(
       await createResponse.json()
+    );
+    const createReplay = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people",
+      createRequest
+    );
+    expect(createReplay.status).toBe(201);
+    await expect(createReplay.json()).resolves.toEqual(
+      Schema.encodeSync(HouseholdPerson)(dependant)
     );
 
     const archiveResponse = await getRuntime().dispatchFetch(

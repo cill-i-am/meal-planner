@@ -17,8 +17,9 @@
 The first independently implementable work item has a working implementation
 and real-runtime evidence in
 [draft PR #198](https://github.com/cill-i-am/meal-planner/pull/198). It remains
-in review until the frozen head passes hosted CI and independent exact-head
-review. Account linking and departure, profile authority, and the private
+in review until its final frozen head passes hosted CI and the user's exact-head
+review. Volatile commit and CI identifiers belong to the live PR, not this
+record. Account linking and departure, profile authority, and the private
 interview-session boundary remain proposed until their recorded dependencies
 are resolved.
 
@@ -26,10 +27,12 @@ The Work Item 01 identity boundary derives a stable household-scoped linkage
 subject from immutable Better Auth user plus organization identity, separately
 from its audit actor. Better Auth's actual `owner` membership role is the only
 creator-bootstrap authority; other admitted members are denied before private
-household routing. Replacement local runtime, repository, build, and
-Docker-backed physical gates are green after this acceptance strengthening. The
-earlier head remains superseded; replacement hosted CI and a fresh independent
-exact-head review are still required before merge authority.
+household routing. The roster carries canonical creator-slot availability
+independently from both roster size and the requesting account link.
+Deterministic domain failures are single-attempt, while an explicitly retried
+ambiguous mutation preserves the exact submitted intent and mutation ID. The
+draft remains unmerged until its current exact-head gates and user review are
+complete.
 
 ## Completed Foundation
 
@@ -52,9 +55,9 @@ exact-head review are still required before merge authority.
 
 ## Immediate Next Steps
 
-1. Run hosted CI on the frozen Work Item 01 draft PR head.
-2. Run a fresh independent exact-head review; resolve only proven
-   in-scope findings before merge authority is considered.
+1. Complete hosted CI on the final frozen Work Item 01 draft PR head.
+2. Complete the user's exact-head review; resolve only proven in-scope findings
+   before merge authority is considered.
 3. After Work Item 01 is accepted, resolve and accept the
    departure-coordination ADR before promoting Work Item
    02 to `Ready`.

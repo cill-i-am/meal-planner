@@ -2,24 +2,64 @@ import {
   HouseholdPeopleApiClient,
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
-import { Effect, Layer } from "effect";
+import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as HttpClientError from "effect/unstable/http/HttpClientError";
 
+import {
+  decodeHouseholdPeopleOperationFailure,
+  HouseholdPeopleOperationError,
+} from "./operations.js";
 import type { HouseholdPeopleOperations } from "./operations.js";
+
+const isAmbiguousHttpFailure = (error: HttpClientError.HttpClientError) => {
+  const { reason } = error;
+  if (
+    reason._tag === "TransportError" ||
+    reason._tag === "DecodeError" ||
+    reason._tag === "EmptyBodyError"
+  ) {
+    return true;
+  }
+  return reason._tag === "StatusCodeError" && reason.response.status >= 500;
+};
 
 const makeClientRunner = (baseUrl: string | URL) => {
   const layer = makeHouseholdPeopleApiClientLayer({ baseUrl }).pipe(
     Layer.provide(FetchHttpClient.layer)
   );
-  return <A, E>(
+  return async <A, E>(
     operation: (client: HouseholdPeopleApiClient) => Effect.Effect<A, E>
-  ): Promise<A> =>
-    Effect.runPromise(
+  ): Promise<A> => {
+    const exit = await Effect.runPromiseExit(
       HouseholdPeopleApiClient.pipe(
         Effect.flatMap(operation),
         Effect.provide(layer)
       )
     );
+    if (Exit.isSuccess(exit)) {
+      return exit.value;
+    }
+    const error = Option.getOrUndefined(Cause.findErrorOption(exit.cause));
+    const code = Option.getOrUndefined(
+      decodeHouseholdPeopleOperationFailure(error)
+    )?.code;
+    if (code !== undefined) {
+      throw new HouseholdPeopleOperationError(code, { cause: error });
+    }
+    if (
+      (HttpClientError.isHttpClientError(error) &&
+        isAmbiguousHttpFailure(error)) ||
+      Schema.isSchemaError(error)
+    ) {
+      throw new HouseholdPeopleOperationError("transport_unavailable", {
+        cause: error,
+      });
+    }
+    throw new HouseholdPeopleOperationError("unexpected_failure", {
+      cause: error,
+    });
+  };
 };
 
 /** Same-origin generated client; membership authority remains server-side. */
