@@ -4,7 +4,6 @@ import {
 } from "@meal-planner/household-api";
 import { Cause, Effect, Exit, Layer, Option, Predicate, Schema } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import * as HttpClientError from "effect/unstable/http/HttpClientError";
 
 import {
   decodeHouseholdPeopleOperationFailure,
@@ -12,32 +11,33 @@ import {
 } from "./operations.js";
 import type { HouseholdPeopleOperations } from "./operations.js";
 
-const isAmbiguousHttpFailure = (error: HttpClientError.HttpClientError) => {
-  const { reason } = error;
-  if (
-    reason._tag === "TransportError" ||
-    reason._tag === "DecodeError" ||
-    reason._tag === "EmptyBodyError"
-  ) {
-    return true;
-  }
-  return reason._tag === "StatusCodeError" && reason.response.status >= 500;
-};
-
-const HttpClientFailureReason = Schema.Struct({
-  _tag: Schema.Literals([
-    "DecodeError",
-    "EmptyBodyError",
-    "StatusCodeError",
-    "TransportError",
-  ]),
+const AmbiguousHttpClientFailureReason = Schema.Struct({
+  _tag: Schema.Literals(["DecodeError", "EmptyBodyError", "TransportError"]),
 });
 
-const HttpClientFailure = Schema.Struct({
+const AmbiguousHttpClientFailure = Schema.Struct({
   _tag: Schema.Literal("HttpClientError"),
-  reason: HttpClientFailureReason,
+  reason: AmbiguousHttpClientFailureReason,
 });
-const decodeHttpClientFailure = Schema.decodeUnknownOption(HttpClientFailure);
+const decodeAmbiguousHttpClientFailure = Schema.decodeUnknownOption(
+  AmbiguousHttpClientFailure
+);
+
+const HttpStatusFailure = Schema.Struct({
+  _tag: Schema.Literal("HttpClientError"),
+  reason: Schema.Struct({
+    _tag: Schema.Literal("StatusCodeError"),
+    response: Schema.Struct({ status: Schema.Number }),
+  }),
+});
+const decodeHttpStatusFailure = Schema.decodeUnknownOption(HttpStatusFailure);
+
+const StructuralSchemaFailure = Schema.Struct({
+  _tag: Schema.Literal("SchemaError"),
+});
+const decodeStructuralSchemaFailure = Schema.decodeUnknownOption(
+  StructuralSchemaFailure
+);
 
 const errorCause = Schema.Struct({ cause: Schema.Unknown });
 
@@ -78,18 +78,13 @@ export const classifyHouseholdPeopleOperationCause = (
   const errors = completeErrors(cause);
   const [error] = errors;
   const ambiguous = errors.some((candidate) => {
-    if (
-      HttpClientError.isHttpClientError(candidate) &&
-      isAmbiguousHttpFailure(candidate)
-    ) {
+    if (Option.isSome(decodeAmbiguousHttpClientFailure(candidate))) {
       return true;
     }
-    const decoded = decodeHttpClientFailure(candidate);
-    return (
-      (Option.isSome(decoded) &&
-        decoded.value.reason._tag !== "StatusCodeError") ||
-      Schema.isSchemaError(candidate)
-    );
+    const status = decodeHttpStatusFailure(candidate);
+    return Option.isSome(status)
+      ? status.value.reason.response.status >= 500
+      : Option.isSome(decodeStructuralSchemaFailure(candidate));
   });
   if (ambiguous) {
     return new HouseholdPeopleOperationError("transport_unavailable", {

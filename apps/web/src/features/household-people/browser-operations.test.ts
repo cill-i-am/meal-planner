@@ -117,6 +117,28 @@ describe("browser household people operations", () => {
     ).toMatchObject({ code: "unexpected_failure" });
   });
 
+  it("classifies a structurally valid cross-instance server failure", () => {
+    expect(
+      classifyHouseholdPeopleOperationCause(
+        Cause.fail({
+          _tag: "HttpClientError",
+          reason: {
+            _tag: "StatusCodeError",
+            response: { status: 503 },
+          },
+        })
+      )
+    ).toMatchObject({ code: "transport_unavailable" });
+  });
+
+  it("classifies a cross-instance schema failure without nominal identity", () => {
+    expect(
+      classifyHouseholdPeopleOperationCause(
+        Cause.fail({ _tag: "SchemaError", issue: {} })
+      )
+    ).toMatchObject({ code: "transport_unavailable" });
+  });
+
   it("preserves a typed deterministic household people failure", async () => {
     fetchMock.mockImplementation(async () =>
       Response.json(

@@ -470,6 +470,22 @@ export const HouseholdPeoplePanel = ({
     onSuccess: refresh,
     retry: retryAmbiguousFailure,
   });
+  const beginBootstrap = (payload: BootstrapHouseholdCreatorPayload) => {
+    create.reset();
+    transition.reset();
+    bootstrap.mutate(payload);
+  };
+  const beginCreate = (payload: CreateHouseholdPersonPayload) => {
+    bootstrap.reset();
+    transition.reset();
+    create.mutate(payload);
+  };
+  const beginTransition = (value: Parameters<typeof transition.mutate>[0]) => {
+    bootstrap.reset();
+    create.reset();
+    transition.reset();
+    transition.mutate(value);
+  };
   const error = firstError([
     roster.error,
     bootstrap.error,
@@ -527,7 +543,7 @@ export const HouseholdPeoplePanel = ({
         error={bootstrap.error}
         isPending={bootstrap.isPending}
         onDiscard={() => bootstrap.reset()}
-        onMutate={(payload) => bootstrap.mutate(payload)}
+        onMutate={beginBootstrap}
         variables={bootstrap.variables}
         visible={
           roster.data?.currentPersonId === null &&
@@ -538,7 +554,7 @@ export const HouseholdPeoplePanel = ({
       {roster.data === undefined ? null : (
         <PeopleList
           isPending={transition.isPending}
-          onTransition={(value) => transition.mutate(value)}
+          onTransition={beginTransition}
           people={roster.data.people}
           retryIntent={transitionRetryIntent}
         />
@@ -560,7 +576,7 @@ export const HouseholdPeoplePanel = ({
         error={create.error}
         isPending={create.isPending}
         onDiscard={() => create.reset()}
-        onMutate={(payload) => create.mutate(payload)}
+        onMutate={beginCreate}
         variables={create.variables}
         visible={roster.data !== undefined}
       />

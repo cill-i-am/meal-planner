@@ -375,6 +375,68 @@ describe("HouseholdPeoplePanel", () => {
     expect(create.mock.calls[2]?.[0].displayName).toBe("Aoife Murphy");
   });
 
+  it("abandons an ambiguous create intent when an archive succeeds", async () => {
+    const create = vi.fn().mockRejectedValue(failure("people_unavailable"));
+    const archive = vi.fn().mockResolvedValue(roster.people[0]);
+    const operations: HouseholdPeopleOperations = {
+      archive,
+      bootstrapCreator: vi.fn(),
+      create,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Aoife");
+    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    expect(
+      screen.getByRole("button", { name: "Retry adding this person" })
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm archive" })
+    );
+    await waitFor(() => expect(archive).toHaveBeenCalledOnce());
+
+    expect(
+      screen.queryByRole("button", { name: "Retry adding this person" })
+    ).toBeNull();
+  });
+
+  it("abandons an ambiguous archive intent when a create succeeds", async () => {
+    const archive = vi.fn().mockRejectedValue(failure("people_unavailable"));
+    const create = vi.fn().mockResolvedValue(roster.people[0]);
+    const operations: HouseholdPeopleOperations = {
+      archive,
+      bootstrapCreator: vi.fn(),
+      create,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Archive" })
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm archive" })
+    );
+    await waitFor(() => expect(archive).toHaveBeenCalledTimes(2));
+    expect(
+      screen.getByRole("button", { name: "Retry archiving Cillian" })
+    ).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Name"), "Aoife");
+    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+
+    expect(
+      screen.queryByRole("button", { name: "Retry archiving Cillian" })
+    ).toBeNull();
+  });
+
   it("retries ambiguous creator bootstrap with its exact command", async () => {
     const bootstrapCreator = vi
       .fn()
