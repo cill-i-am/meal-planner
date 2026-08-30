@@ -19,6 +19,14 @@ import type {
 const failure = (code: HouseholdPeopleOperationFailureCode) =>
   new HouseholdPeopleOperationError(code);
 
+const deferred = <Value,>() => {
+  let resolve!: (value: Value) => void;
+  const promise = new Promise<Value>((_resolve) => {
+    resolve = _resolve;
+  });
+  return { promise, resolve };
+};
+
 const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
   "person_00000000-0000-4000-8000-000000000101"
 );
@@ -221,6 +229,89 @@ describe("HouseholdPeoplePanel", () => {
     expect(screen.getByLabelText("Kind")).toBeDisabled();
     expect(name).toHaveValue("Aoife");
     expect(submittedDisplayName).toBe("Aoife");
+  });
+
+  it("does not start a lifecycle transition while create remains pending", async () => {
+    const pendingCreate = deferred<typeof HouseholdPerson.Type>();
+    const archive = vi.fn().mockResolvedValue(roster.people[0]);
+    const create = vi.fn(() => pendingCreate.promise);
+    const operations: HouseholdPeopleOperations = {
+      archive,
+      bootstrapCreator: vi.fn(),
+      create,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Aoife");
+    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+
+    expect(screen.getByRole("button", { name: "Archive" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+    expect(archive).not.toHaveBeenCalled();
+  });
+
+  it("does not start create while a lifecycle transition remains pending", async () => {
+    const pendingArchive = deferred<typeof HouseholdPerson.Type>();
+    const archive = vi.fn(() => pendingArchive.promise);
+    const create = vi.fn().mockResolvedValue(roster.people[0]);
+    const operations: HouseholdPeopleOperations = {
+      archive,
+      bootstrapCreator: vi.fn(),
+      create,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Aoife");
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm archive" })
+    );
+    await waitFor(() => expect(archive).toHaveBeenCalledOnce());
+
+    expect(screen.getByRole("button", { name: "Add person" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("gates creator bootstrap and create while either intent remains pending", async () => {
+    const pendingBootstrap = deferred<typeof HouseholdPerson.Type>();
+    const bootstrapCreator = vi.fn(() => pendingBootstrap.promise);
+    const create = vi.fn(
+      () => new Promise<typeof HouseholdPerson.Type>(() => {})
+    );
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator,
+      create,
+      list: vi.fn().mockResolvedValue(emptyRoster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    await userEvent.type(await screen.findByLabelText("Your name"), "Maeve");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Set up my person" })
+    );
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledOnce());
+    expect(screen.getByRole("button", { name: "Add person" })).toBeDisabled();
+
+    pendingBootstrap.resolve(
+      Schema.decodeUnknownSync(HouseholdPerson)(roster.people[0])
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Add person" })).toBeEnabled()
+    );
+    await userEvent.type(screen.getByLabelText("Name"), "Aoife");
+    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    expect(
+      screen.getByRole("button", { name: "Set up my person" })
+    ).toBeDisabled();
   });
 
   it.each(["", "   ", "x".repeat(81)])(

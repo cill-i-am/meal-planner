@@ -100,6 +100,46 @@ const completeErrors = (cause: Cause.Cause<unknown>) => {
   return errors;
 };
 
+const describeCauseTopology = (root: Cause.Cause<unknown>) => {
+  const nodes: Record<string, unknown>[] = [];
+  const pending: unknown[] = [root];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0 && nodes.length < 32) {
+    const current = pending.pop();
+    if (!Predicate.isObjectKeyword(current)) {
+      nodes.push({ object: false });
+      continue;
+    }
+    if (visited.has(current)) {
+      nodes.push({ cycle: true });
+      continue;
+    }
+    visited.add(current);
+    const stringKeys = Object.keys(current).toSorted();
+    const symbolKeys = Object.getOwnPropertySymbols(current)
+      .map((key) => key.description ?? "")
+      .toSorted();
+    const record = current as Record<string, unknown>;
+    nodes.push({
+      brand: stringKeys
+        .filter((key) => key.startsWith("~effect/"))
+        .map((key) => key),
+      keys: stringKeys,
+      symbolKeys,
+      tag: Predicate.isString(record["_tag"]) ? record["_tag"] : undefined,
+    });
+    for (const key of ["cause", "defect", "error", "reason", "reasons"]) {
+      const value = record[key];
+      if (Array.isArray(value)) {
+        pending.push(...value);
+      } else if (value !== undefined) {
+        pending.push(value);
+      }
+    }
+  }
+  return nodes;
+};
+
 export const classifyHouseholdPeopleOperationCause = (
   cause: Cause.Cause<unknown>
 ) => {
@@ -127,6 +167,10 @@ export const classifyHouseholdPeopleOperationCause = (
   if (code !== undefined) {
     return new HouseholdPeopleOperationError(code, { cause: error });
   }
+  console.error(
+    "[DEBUG-HP-CAUSE-1]",
+    JSON.stringify(describeCauseTopology(cause))
+  );
   return new HouseholdPeopleOperationError("unexpected_failure", {
     cause: error,
   });

@@ -39,6 +39,15 @@ const hasFailureCode = (
 const retryAmbiguousFailure = (failureCount: number, error: Error) =>
   failureCount < 1 && isAmbiguousHouseholdPeopleFailure(error);
 
+const resetMutationIfSettled = (mutation: {
+  readonly isPending: boolean;
+  readonly reset: () => void;
+}) => {
+  if (!mutation.isPending) {
+    mutation.reset();
+  }
+};
+
 const creatorSlotOccupiedMessage =
   "This household already has a creator person. Your account remains unlinked. You can continue using the shared roster; account linking is not available here.";
 
@@ -120,6 +129,7 @@ const RetryIntentActions = ({
 
 const CreatorBootstrapForm = ({
   error,
+  isDisabled,
   isPending,
   onDiscard,
   onMutate,
@@ -127,6 +137,7 @@ const CreatorBootstrapForm = ({
   visible,
 }: {
   readonly error: Error | null;
+  readonly isDisabled: boolean;
   readonly isPending: boolean;
   readonly onDiscard: () => void;
   readonly onMutate: (payload: BootstrapHouseholdCreatorPayload) => void;
@@ -169,7 +180,7 @@ const CreatorBootstrapForm = ({
             <Input
               aria-describedby="creator-name-error"
               aria-invalid={field.state.meta.errors.length > 0}
-              disabled={isPending}
+              disabled={isDisabled}
               id="creator-name"
               onBlur={field.handleBlur}
               onChange={(event) => {
@@ -186,13 +197,13 @@ const CreatorBootstrapForm = ({
           </>
         )}
       </form.Field>
-      <Button disabled={isPending || retryIntent} type="submit">
+      <Button disabled={isDisabled || retryIntent} type="submit">
         {isPending ? "Setting up…" : "Set up my person"}
       </Button>
       {retryIntent ? (
         <RetryIntentActions
           abandonLabel="Discard setup retry"
-          disabled={isPending}
+          disabled={isDisabled}
           onAbandon={onDiscard}
           onRetry={() => onMutate(variables)}
           retryLabel="Retry setting up my person"
@@ -204,6 +215,7 @@ const CreatorBootstrapForm = ({
 
 const CreatePersonForm = ({
   error,
+  isDisabled,
   isPending,
   onDiscard,
   onMutate,
@@ -211,6 +223,7 @@ const CreatePersonForm = ({
   visible,
 }: {
   readonly error: Error | null;
+  readonly isDisabled: boolean;
   readonly isPending: boolean;
   readonly onDiscard: () => void;
   readonly onMutate: (payload: CreateHouseholdPersonPayload) => void;
@@ -256,7 +269,7 @@ const CreatePersonForm = ({
             <Input
               aria-describedby="new-person-name-error"
               aria-invalid={field.state.meta.errors.length > 0}
-              disabled={isPending}
+              disabled={isDisabled}
               id="new-person-name"
               onBlur={field.handleBlur}
               onChange={(event) => {
@@ -279,7 +292,7 @@ const CreatePersonForm = ({
             <Label htmlFor="new-person-kind">Kind</Label>
             <select
               className="field-select"
-              disabled={isPending}
+              disabled={isDisabled}
               id="new-person-kind"
               onChange={(event) => {
                 if (retryIntent) {
@@ -295,13 +308,13 @@ const CreatePersonForm = ({
           </>
         )}
       </form.Field>
-      <Button disabled={isPending || retryIntent} type="submit">
+      <Button disabled={isDisabled || retryIntent} type="submit">
         {isPending ? "Adding…" : "Add person"}
       </Button>
       {retryIntent ? (
         <RetryIntentActions
           abandonLabel="Discard add-person retry"
-          disabled={isPending}
+          disabled={isDisabled}
           onAbandon={onDiscard}
           onRetry={() => onMutate(variables)}
           retryLabel="Retry adding this person"
@@ -470,21 +483,31 @@ export const HouseholdPeoplePanel = ({
     onSuccess: refresh,
     retry: retryAmbiguousFailure,
   });
+  const isPersonMutationPending = [
+    bootstrap.isPending,
+    create.isPending,
+    transition.isPending,
+  ].some(Boolean);
+  const resetSettledMutations = () => {
+    resetMutationIfSettled(bootstrap);
+    resetMutationIfSettled(create);
+    resetMutationIfSettled(transition);
+  };
+  const runIfIdle = (action: () => void) => {
+    if (isPersonMutationPending) {
+      return;
+    }
+    resetSettledMutations();
+    action();
+  };
   const beginBootstrap = (payload: BootstrapHouseholdCreatorPayload) => {
-    create.reset();
-    transition.reset();
-    bootstrap.mutate(payload);
+    runIfIdle(() => bootstrap.mutate(payload));
   };
   const beginCreate = (payload: CreateHouseholdPersonPayload) => {
-    bootstrap.reset();
-    transition.reset();
-    create.mutate(payload);
+    runIfIdle(() => create.mutate(payload));
   };
   const beginTransition = (value: Parameters<typeof transition.mutate>[0]) => {
-    bootstrap.reset();
-    create.reset();
-    transition.reset();
-    transition.mutate(value);
+    runIfIdle(() => transition.mutate(value));
   };
   const error = firstError([
     roster.error,
@@ -541,6 +564,7 @@ export const HouseholdPeoplePanel = ({
       />
       <CreatorBootstrapForm
         error={bootstrap.error}
+        isDisabled={isPersonMutationPending}
         isPending={bootstrap.isPending}
         onDiscard={() => bootstrap.reset()}
         onMutate={beginBootstrap}
@@ -553,7 +577,7 @@ export const HouseholdPeoplePanel = ({
       />
       {roster.data === undefined ? null : (
         <PeopleList
-          isPending={transition.isPending}
+          isPending={isPersonMutationPending}
           onTransition={beginTransition}
           people={roster.data.people}
           retryIntent={transitionRetryIntent}
@@ -562,7 +586,7 @@ export const HouseholdPeoplePanel = ({
       {transitionRetryIntent ? (
         <RetryIntentActions
           abandonLabel={`Discard ${transition.variables.action} retry`}
-          disabled={transition.isPending}
+          disabled={isPersonMutationPending}
           onAbandon={() => transition.reset()}
           onRetry={() => transition.mutate(transition.variables)}
           retryLabel={`Retry ${
@@ -574,6 +598,7 @@ export const HouseholdPeoplePanel = ({
       ) : null}
       <CreatePersonForm
         error={create.error}
+        isDisabled={isPersonMutationPending}
         isPending={create.isPending}
         onDiscard={() => create.reset()}
         onMutate={beginCreate}
