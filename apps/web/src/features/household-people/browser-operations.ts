@@ -65,6 +65,7 @@ const decodeStructuralDieReason =
 
 const completeErrors = (cause: Cause.Cause<unknown>) => {
   const errors: unknown[] = [];
+  let hasDie = false;
   const pending: unknown[] = [cause];
   const visited = new WeakSet<object>();
   while (pending.length > 0) {
@@ -85,6 +86,7 @@ const completeErrors = (cause: Cause.Cause<unknown>) => {
         }
         const dieReason = decodeStructuralDieReason(reason);
         if (Option.isSome(dieReason)) {
+          hasDie = true;
           pending.push(dieReason.value.defect);
         }
       }
@@ -95,13 +97,13 @@ const completeErrors = (cause: Cause.Cause<unknown>) => {
       pending.push(current.cause);
     }
   }
-  return errors;
+  return { errors, hasDie };
 };
 
 export const classifyHouseholdPeopleOperationCause = (
   cause: Cause.Cause<unknown>
 ) => {
-  const errors = completeErrors(cause);
+  const { errors, hasDie } = completeErrors(cause);
   const [error] = errors;
   const ambiguous = errors.some((candidate) => {
     if (Schema.isSchemaError(candidate)) {
@@ -124,7 +126,7 @@ export const classifyHouseholdPeopleOperationCause = (
       ? status.value.reason.response.status >= 500
       : Option.isSome(decodeStructuralSchemaFailure(candidate));
   });
-  if (ambiguous) {
+  if (ambiguous || hasDie) {
     return new HouseholdPeopleOperationError("transport_unavailable", {
       cause: error,
     });

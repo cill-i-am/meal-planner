@@ -98,6 +98,29 @@ describe("browser household people operations", () => {
     ).toMatchObject({ code: "unexpected_failure" });
   });
 
+  it("treats an opaque generated-client defect as ambiguous", () => {
+    expect(
+      classifyHouseholdPeopleOperationCause(Cause.die(Object.create(null)))
+    ).toMatchObject({ code: "transport_unavailable" });
+  });
+
+  it("prioritizes an opaque defect over a typed deterministic failure", () => {
+    expect(
+      classifyHouseholdPeopleOperationCause(
+        Cause.combine(
+          Cause.fail({ code: "stale_version" }),
+          Cause.die(Object.create(null))
+        )
+      )
+    ).toMatchObject({ code: "transport_unavailable" });
+  });
+
+  it("keeps an ordinary unknown typed failure unexpected", () => {
+    expect(
+      classifyHouseholdPeopleOperationCause(Cause.fail(Object.create(null)))
+    ).toMatchObject({ code: "unexpected_failure" });
+  });
+
   it("keeps an unaccompanied valid domain failure deterministic", () => {
     expect(
       classifyHouseholdPeopleOperationCause(
