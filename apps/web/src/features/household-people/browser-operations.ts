@@ -2,7 +2,7 @@ import {
   HouseholdPeopleApiClient,
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
-import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
+import { Cause, Effect, Exit, Layer, Option, Predicate, Schema } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
 
@@ -43,18 +43,30 @@ const errorCause = Schema.Struct({ cause: Schema.Unknown });
 
 const completeErrors = (cause: Cause.Cause<unknown>) => {
   const errors: unknown[] = [];
-  for (const reason of cause.reasons) {
-    if (!Cause.isFailReason(reason)) {
+  const pending: unknown[] = [cause];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (Predicate.isObjectKeyword(current)) {
+      if (visited.has(current)) {
+        continue;
+      }
+      visited.add(current);
+    }
+    if (Cause.isCause(current)) {
+      for (const reason of current.reasons) {
+        if (Cause.isFailReason(reason)) {
+          pending.push(reason.error);
+        } else if (Cause.isDieReason(reason)) {
+          pending.push(reason.defect);
+        }
+      }
       continue;
     }
-    let current: unknown = reason.error;
-    for (let depth = 0; depth < 8; depth += 1) {
-      errors.push(current);
-      const decoded = Schema.decodeUnknownOption(errorCause)(current);
-      if (Option.isNone(decoded) || decoded.value.cause === current) {
-        break;
-      }
-      current = decoded.value.cause;
+    errors.push(current);
+    const decoded = Schema.decodeUnknownOption(errorCause)(current);
+    if (Option.isSome(decoded)) {
+      pending.push(decoded.value.cause);
     }
   }
   return errors;

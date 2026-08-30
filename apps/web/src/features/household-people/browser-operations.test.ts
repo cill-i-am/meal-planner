@@ -23,6 +23,14 @@ import {
 
 const fetchMock = vi.fn<typeof fetch>();
 
+const wrapErrorCause = (cause: unknown, depth: number) => {
+  let current = new Error("generated client decoder", { cause });
+  for (let index = 0; index < depth; index += 1) {
+    current = new Error("generated client wrapper", { cause: current });
+  }
+  return current;
+};
+
 beforeAll(() => vi.stubGlobal("fetch", fetchMock));
 afterEach(() => fetchMock.mockReset());
 afterAll(() => vi.unstubAllGlobals());
@@ -50,20 +58,44 @@ describe("browser household people operations", () => {
       label: "malformed response before typed failure",
     },
     {
+      cause: Cause.combine(
+        Cause.fail({
+          _tag: "HttpClientError",
+          reason: { _tag: "StatusCodeError" },
+        }),
+        Cause.die({
+          _tag: "HttpClientError",
+          reason: { _tag: "DecodeError" },
+        })
+      ),
+      label: "malformed declared response represented as a defect",
+    },
+    {
       cause: Cause.fail(
-        new Error("generated client wrapper", {
-          cause: {
+        wrapErrorCause(
+          {
             _tag: "HttpClientError",
             reason: { _tag: "EmptyBodyError" },
           },
-        })
+          12
+        )
       ),
-      label: "malformed response nested under a wrapper",
+      label: "malformed response below more than eight wrappers",
     },
   ])("prioritizes ambiguity for $label", ({ cause }) => {
     expect(classifyHouseholdPeopleOperationCause(cause)).toMatchObject({
       code: "transport_unavailable",
     });
+  });
+
+  it("terminates safely when wrapper causes contain a cycle", () => {
+    const first = new Error("first");
+    const second = new Error("second", { cause: first });
+    Object.defineProperty(first, "cause", { value: second });
+
+    expect(
+      classifyHouseholdPeopleOperationCause(Cause.fail(first))
+    ).toMatchObject({ code: "unexpected_failure" });
   });
 
   it("keeps an unaccompanied valid domain failure deterministic", () => {
@@ -120,6 +152,16 @@ describe("browser household people operations", () => {
     fetchMock.mockImplementation(async () => {
       throw new TypeError("connection lost");
     });
+
+    await expect(
+      makeBrowserHouseholdPeopleOperations().list(true)
+    ).rejects.toMatchObject({ code: "transport_unavailable" });
+  });
+
+  it("classifies an isolated server response as transient", async () => {
+    fetchMock.mockImplementation(async () =>
+      Response.json({ message: "temporarily unavailable" }, { status: 503 })
+    );
 
     await expect(
       makeBrowserHouseholdPeopleOperations().list(true)
