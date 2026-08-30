@@ -41,8 +41,6 @@ const decodeStructuralSchemaFailure = Schema.decodeUnknownOption(
   StructuralSchemaFailure
 );
 
-const errorCause = Schema.Struct({ cause: Schema.Unknown });
-
 const StructuralCause = Schema.Struct({
   reasons: Schema.Array(Schema.Unknown),
   "~effect/Cause": Schema.Literal("~effect/Cause"),
@@ -93,9 +91,8 @@ const completeErrors = (cause: Cause.Cause<unknown>) => {
       continue;
     }
     errors.push(current);
-    const decoded = Schema.decodeUnknownOption(errorCause)(current);
-    if (Option.isSome(decoded)) {
-      pending.push(decoded.value.cause);
+    if (Predicate.hasProperty(current, "cause")) {
+      pending.push(current.cause);
     }
   }
   return errors;

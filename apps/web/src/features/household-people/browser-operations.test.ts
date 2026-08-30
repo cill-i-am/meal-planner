@@ -162,6 +162,20 @@ describe("browser household people operations", () => {
     ).toMatchObject({ code: "transport_unavailable" });
   });
 
+  it("traverses a prototype-inherited generated-client cause", () => {
+    const error = Object.create({
+      cause: Object.create({
+        _tag: "HttpClientError",
+        reason: { _tag: "TransportError" },
+        "~effect/http/HttpClientError": "~effect/http/HttpClientError",
+      }),
+    }) as unknown;
+
+    expect(
+      classifyHouseholdPeopleOperationCause(Cause.die(error))
+    ).toMatchObject({ code: "transport_unavailable" });
+  });
+
   it("traverses a structurally branded cross-instance cause", () => {
     const cause = {
       reasons: [
