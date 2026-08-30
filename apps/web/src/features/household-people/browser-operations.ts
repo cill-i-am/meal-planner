@@ -24,6 +24,27 @@ const isAmbiguousHttpFailure = (error: HttpClientError.HttpClientError) => {
   return reason._tag === "StatusCodeError" && reason.response.status >= 500;
 };
 
+const errorCause = Schema.Struct({ cause: Schema.Unknown });
+
+const completeErrors = (cause: Cause.Cause<unknown>) => {
+  const errors: unknown[] = [];
+  for (const reason of cause.reasons) {
+    if (!Cause.isFailReason(reason)) {
+      continue;
+    }
+    let current: unknown = reason.error;
+    for (let depth = 0; depth < 8; depth += 1) {
+      errors.push(current);
+      const decoded = Schema.decodeUnknownOption(errorCause)(current);
+      if (Option.isNone(decoded) || decoded.value.cause === current) {
+        break;
+      }
+      current = decoded.value.cause;
+    }
+  }
+  return errors;
+};
+
 const makeClientRunner = (baseUrl: string | URL) => {
   const layer = makeHouseholdPeopleApiClientLayer({ baseUrl }).pipe(
     Layer.provide(FetchHttpClient.layer)
@@ -40,21 +61,26 @@ const makeClientRunner = (baseUrl: string | URL) => {
     if (Exit.isSuccess(exit)) {
       return exit.value;
     }
-    const error = Option.getOrUndefined(Cause.findErrorOption(exit.cause));
-    const code = Option.getOrUndefined(
-      decodeHouseholdPeopleOperationFailure(error)
-    )?.code;
-    if (code !== undefined) {
-      throw new HouseholdPeopleOperationError(code, { cause: error });
-    }
-    if (
-      (HttpClientError.isHttpClientError(error) &&
-        isAmbiguousHttpFailure(error)) ||
-      Schema.isSchemaError(error)
-    ) {
+    const errors = completeErrors(exit.cause);
+    const [error] = errors;
+    const ambiguous = errors.some(
+      (candidate) =>
+        (HttpClientError.isHttpClientError(candidate) &&
+          isAmbiguousHttpFailure(candidate)) ||
+        Schema.isSchemaError(candidate)
+    );
+    if (ambiguous) {
       throw new HouseholdPeopleOperationError("transport_unavailable", {
         cause: error,
       });
+    }
+    const code = errors
+      .map((candidate) =>
+        Option.getOrUndefined(decodeHouseholdPeopleOperationFailure(candidate))
+      )
+      .find((candidate) => candidate !== undefined)?.code;
+    if (code !== undefined) {
+      throw new HouseholdPeopleOperationError(code, { cause: error });
     }
     throw new HouseholdPeopleOperationError("unexpected_failure", {
       cause: error,

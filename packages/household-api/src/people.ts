@@ -112,7 +112,7 @@ export type TransitionHouseholdPersonPayload =
 /** Query option controlling whether archived people are returned. */
 export const ListHouseholdPeopleUrlParams = Schema.Struct({
   includeArchived: Schema.optionalKey(Schema.Literals(["true", "false"])),
-});
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 /** Query option controlling whether archived people are returned. */
 export type ListHouseholdPeopleUrlParams =
   typeof ListHouseholdPeopleUrlParams.Type;

@@ -196,7 +196,56 @@ describe("HouseholdPeoplePanel", () => {
     expect(bootstrapCreator).toHaveBeenCalledWith(
       expect.objectContaining({ displayName: "Maeve" })
     );
+    expect(screen.getByLabelText("Your name")).toBeDisabled();
   });
+
+  it("freezes a pending create intent so visible fields cannot diverge from its command", async () => {
+    let submittedDisplayName: string | undefined;
+    const create: HouseholdPeopleOperations["create"] = vi.fn((payload) => {
+      submittedDisplayName = payload.displayName;
+      return new Promise<typeof HouseholdPerson.Type>(() => {});
+    });
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+    const name = await screen.findByLabelText("Name");
+    await userEvent.type(name, "Aoife");
+    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(name).toBeDisabled();
+    expect(screen.getByLabelText("Kind")).toBeDisabled();
+    expect(name).toHaveValue("Aoife");
+    expect(submittedDisplayName).toBe("Aoife");
+  });
+
+  it.each(["", "   ", "x".repeat(81)])(
+    "shows schema-backed name validation and does not submit %j",
+    async (displayName) => {
+      const create = vi.fn();
+      const operations: HouseholdPeopleOperations = {
+        archive: vi.fn(),
+        bootstrapCreator: vi.fn(),
+        create,
+        list: vi.fn().mockResolvedValue(roster),
+        restore: vi.fn(),
+      };
+      renderPanel(operations);
+      const name = await screen.findByLabelText("Name");
+      if (displayName !== "") {
+        await userEvent.type(name, displayName);
+      }
+      await userEvent.tab();
+      await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+      expect(create).not.toHaveBeenCalled();
+      expect(name).toHaveAttribute("aria-invalid", "true");
+      expect(await screen.findByText(/name must/iu)).toBeInTheDocument();
+    }
+  );
 
   it("explains when an admitted non-owner cannot bootstrap the creator", async () => {
     const bootstrapCreator = vi

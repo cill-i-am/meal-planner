@@ -1,6 +1,7 @@
 import {
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
+  HouseholdPersonDisplayName,
   HouseholdPersonMutationId,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
@@ -24,6 +25,11 @@ import type {
 
 const mutationId = () =>
   Schema.decodeUnknownSync(HouseholdPersonMutationId)(crypto.randomUUID());
+
+const displayNameMessage = (value: string) =>
+  Schema.is(HouseholdPersonDisplayName)(value)
+    ? undefined
+    : "Name must be between 1 and 80 characters with no leading or trailing spaces.";
 
 const hasFailureCode = (
   error: Error | null,
@@ -153,12 +159,19 @@ const CreatorBootstrapForm = ({
       }}
     >
       <h3>Set up your adult person</h3>
-      <form.Field name="displayName">
+      <form.Field
+        name="displayName"
+        validators={{ onBlur: ({ value }) => displayNameMessage(value) }}
+      >
         {(field) => (
           <>
             <Label htmlFor="creator-name">Your name</Label>
             <Input
+              aria-describedby="creator-name-error"
+              aria-invalid={field.state.meta.errors.length > 0}
+              disabled={isPending}
               id="creator-name"
+              onBlur={field.handleBlur}
               onChange={(event) => {
                 if (retryIntent) {
                   onDiscard();
@@ -167,6 +180,9 @@ const CreatorBootstrapForm = ({
               }}
               value={field.state.value}
             />
+            <p className="field-error" id="creator-name-error">
+              {field.state.meta.errors.filter(Boolean).join(" ")}
+            </p>
           </>
         )}
       </form.Field>
@@ -230,12 +246,19 @@ const CreatePersonForm = ({
       }}
     >
       <h3>Add a person</h3>
-      <form.Field name="displayName">
+      <form.Field
+        name="displayName"
+        validators={{ onBlur: ({ value }) => displayNameMessage(value) }}
+      >
         {(field) => (
           <>
             <Label htmlFor="new-person-name">Name</Label>
             <Input
+              aria-describedby="new-person-name-error"
+              aria-invalid={field.state.meta.errors.length > 0}
+              disabled={isPending}
               id="new-person-name"
+              onBlur={field.handleBlur}
               onChange={(event) => {
                 if (retryIntent) {
                   onDiscard();
@@ -244,6 +267,9 @@ const CreatePersonForm = ({
               }}
               value={field.state.value}
             />
+            <p className="field-error" id="new-person-name-error">
+              {field.state.meta.errors.filter(Boolean).join(" ")}
+            </p>
           </>
         )}
       </form.Field>
@@ -253,6 +279,7 @@ const CreatePersonForm = ({
             <Label htmlFor="new-person-kind">Kind</Label>
             <select
               className="field-select"
+              disabled={isPending}
               id="new-person-kind"
               onChange={(event) => {
                 if (retryIntent) {

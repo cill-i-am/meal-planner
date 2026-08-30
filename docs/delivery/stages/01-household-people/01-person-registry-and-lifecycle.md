@@ -325,6 +325,17 @@ Auth/HouseholdObject boundary. Independent exact-head review is required.
 
 ## Delivery Log
 
+- 2026-08-30 — Closed the latest review findings without broadening Work Item
+  01. Pending creator and person commands now freeze their visible fields;
+  schema-backed accessible validation rejects blank, whitespace-only, and long
+  names before HTTP. Complete generated-client cause inspection distinguishes
+  malformed responses from valid closed domain failures, and public roster
+  queries reject unknown keys. Real production-composition tests now cover a
+  concurrent owner/member bootstrap with zero private member invocation and a
+  cumulative creator, unlinked adult, dependant, archive, restart, restore, and
+  cross-household isolation flow. The PR remains draft pending replacement CI
+  and the user's exact-head review.
+
 - 2026-08-30 — Tightened the final roster and retry experience test-first. A
   linked creator no longer sees the privacy-safe notice intended for an
   unlinked account whose creator slot is occupied. Generated-client failures

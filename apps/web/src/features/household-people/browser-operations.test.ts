@@ -89,4 +89,23 @@ describe("browser household people operations", () => {
       makeBrowserHouseholdPeopleOperations().archive(personId, payload)
     ).rejects.toMatchObject({ code: "transport_unavailable" });
   });
+
+  it("classifies an undecodable declared 409 response as ambiguous", async () => {
+    fetchMock.mockImplementation(async () =>
+      Response.json(
+        { code: "stale_version", malformed: true },
+        { headers: { "content-type": "application/problem+json" }, status: 409 }
+      )
+    );
+    const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
+      "person_00000000-0000-4000-8000-000000000105"
+    );
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+      expectedVersion: 1,
+      mutationId: "00000000-0000-4000-8000-000000000106",
+    });
+    await expect(
+      makeBrowserHouseholdPeopleOperations().archive(personId, payload)
+    ).rejects.toMatchObject({ code: "transport_unavailable" });
+  });
 });

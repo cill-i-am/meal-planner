@@ -534,12 +534,18 @@ export default {
           archiveHouseholdPerson: (input) =>
             householdDomain.archiveHouseholdPerson(input),
           bootstrapCreatorPerson: (input) =>
-            Effect.promise(() =>
-              env.HOUSEHOLD_TEST_OBSERVATIONS.put(
-                "people-bootstrap-private-invoked",
-                "true"
-              )
-            ).pipe(
+            Effect.promise(async () => {
+              await Promise.all([
+                env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                  "people-bootstrap-private-invoked",
+                  "true"
+                ),
+                env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                  `people-bootstrap-private-invoked:${input.payload.mutationId}`,
+                  "true"
+                ),
+              ]);
+            }).pipe(
               Effect.flatMap(() =>
                 householdDomain.bootstrapCreatorPerson(input)
               )

@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-08-29
+- Last updated: 2026-08-30
 - Delivery source of truth: this repository
 
 ## Active Stage
@@ -31,6 +31,12 @@ household routing. The roster carries canonical creator-slot availability
 independently from both roster size and the requesting account link.
 Deterministic domain failures are single-attempt, while an explicitly retried
 ambiguous mutation preserves the exact submitted intent and mutation ID. The
+forms freeze the visible command while a request is pending, validate names
+before submission, and treat malformed generated-client responses as ambiguous
+rather than deterministic domain failures. The public roster query rejects
+unknown options. The cumulative runtime proof now covers the full Work Item 01
+roster, restart/restore history, owner/member bootstrap concurrency, and denied
+cross-household mutation collisions. The
 draft remains unmerged until its current exact-head gates and user review are
 complete.
 

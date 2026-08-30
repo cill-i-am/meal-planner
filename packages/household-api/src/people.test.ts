@@ -7,6 +7,7 @@ import {
   HouseholdPeopleBootstrapConflictProblem,
   HouseholdPeopleRoster,
   HouseholdPeoplePrincipal,
+  ListHouseholdPeopleUrlParams,
   HouseholdPerson,
   HouseholdPersonId,
   HouseholdPersonMutationId,
@@ -99,6 +100,15 @@ describe("household people public contract", () => {
         lifecycle: "deleted",
         updatedAtEpochMs: 1,
         version: 1,
+      })
+    ).toThrow();
+  });
+
+  it("rejects excess public roster query keys with the schema default decoder", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(ListHouseholdPeopleUrlParams)({
+        includeArchived: "true",
+        unexpected: "x",
       })
     ).toThrow();
   });
