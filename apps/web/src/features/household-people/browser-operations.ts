@@ -2,7 +2,8 @@ import {
   HouseholdPeopleApiClient,
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
-import { Cause, Effect, Exit, Layer, Option, Predicate, Schema } from "effect";
+import { Effect, Exit, Layer, Option, Predicate, Schema } from "effect";
+import type { Cause } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
 import {
@@ -41,6 +42,28 @@ const decodeStructuralSchemaFailure = Schema.decodeUnknownOption(
 
 const errorCause = Schema.Struct({ cause: Schema.Unknown });
 
+const StructuralCause = Schema.Struct({
+  reasons: Schema.Array(Schema.Unknown),
+  "~effect/Cause": Schema.Literal("~effect/Cause"),
+});
+const decodeStructuralCause = Schema.decodeUnknownOption(StructuralCause);
+
+const StructuralFailReason = Schema.Struct({
+  _tag: Schema.Literal("Fail"),
+  error: Schema.Unknown,
+  "~effect/Cause/Reason": Schema.Literal("~effect/Cause/Reason"),
+});
+const decodeStructuralFailReason =
+  Schema.decodeUnknownOption(StructuralFailReason);
+
+const StructuralDieReason = Schema.Struct({
+  _tag: Schema.Literal("Die"),
+  defect: Schema.Unknown,
+  "~effect/Cause/Reason": Schema.Literal("~effect/Cause/Reason"),
+});
+const decodeStructuralDieReason =
+  Schema.decodeUnknownOption(StructuralDieReason);
+
 const completeErrors = (cause: Cause.Cause<unknown>) => {
   const errors: unknown[] = [];
   const pending: unknown[] = [cause];
@@ -53,12 +76,17 @@ const completeErrors = (cause: Cause.Cause<unknown>) => {
       }
       visited.add(current);
     }
-    if (Cause.isCause(current)) {
-      for (const reason of current.reasons) {
-        if (Cause.isFailReason(reason)) {
-          pending.push(reason.error);
-        } else if (Cause.isDieReason(reason)) {
-          pending.push(reason.defect);
+    const structuralCause = decodeStructuralCause(current);
+    if (Option.isSome(structuralCause)) {
+      for (const reason of structuralCause.value.reasons) {
+        const failReason = decodeStructuralFailReason(reason);
+        if (Option.isSome(failReason)) {
+          pending.push(failReason.value.error);
+          continue;
+        }
+        const dieReason = decodeStructuralDieReason(reason);
+        if (Option.isSome(dieReason)) {
+          pending.push(dieReason.value.defect);
         }
       }
       continue;

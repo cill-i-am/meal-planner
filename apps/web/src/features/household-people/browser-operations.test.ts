@@ -139,6 +139,23 @@ describe("browser household people operations", () => {
     ).toMatchObject({ code: "transport_unavailable" });
   });
 
+  it("traverses a structurally branded cross-instance cause", () => {
+    const cause = {
+      reasons: [
+        {
+          _tag: "Fail",
+          error: { _tag: "SchemaError", issue: {} },
+          "~effect/Cause/Reason": "~effect/Cause/Reason",
+        },
+      ],
+      "~effect/Cause": "~effect/Cause",
+    } as unknown as Cause.Cause<unknown>;
+
+    expect(classifyHouseholdPeopleOperationCause(cause)).toMatchObject({
+      code: "transport_unavailable",
+    });
+  });
+
   it("preserves a typed deterministic household people failure", async () => {
     fetchMock.mockImplementation(async () =>
       Response.json(
