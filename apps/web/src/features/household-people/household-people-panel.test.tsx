@@ -4,7 +4,13 @@ import {
   HouseholdPersonId,
 } from "@meal-planner/household-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -276,6 +282,33 @@ describe("HouseholdPeoplePanel", () => {
     expect(screen.getByRole("button", { name: "Add person" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "Add person" }));
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("admits only one person action before pending state rerenders", async () => {
+    const archive = vi.fn(
+      () => new Promise<typeof HouseholdPerson.Type>(() => {})
+    );
+    const create = vi.fn(
+      () => new Promise<typeof HouseholdPerson.Type>(() => {})
+    );
+    const operations: HouseholdPeopleOperations = {
+      archive,
+      bootstrapCreator: vi.fn(),
+      create,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Aoife");
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add person" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm archive" }));
+
+    await waitFor(() =>
+      expect(create.mock.calls.length + archive.mock.calls.length).toBe(1)
+    );
   });
 
   it("gates creator bootstrap and create while either intent remains pending", async () => {

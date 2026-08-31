@@ -9,6 +9,7 @@ import type { HouseholdPerson } from "@meal-planner/household-api";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
+import { useRef } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
@@ -452,18 +453,25 @@ export const HouseholdPeoplePanel = ({
   readonly organizationId: string;
 }) => {
   const queryClient = useQueryClient();
+  const personActionLock = useRef(false);
   const queryKey = ["household-people", organizationId] as const;
   const roster = useQuery({ queryFn: () => operations.list(true), queryKey });
   const refresh = () => queryClient.invalidateQueries({ queryKey });
   const bootstrap = useMutation({
     mutationFn: (payload: BootstrapHouseholdCreatorPayload) =>
       operations.bootstrapCreator(payload),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
     onSuccess: refresh,
     retry: retryAmbiguousFailure,
   });
   const create = useMutation({
     mutationFn: (payload: CreateHouseholdPersonPayload) =>
       operations.create(payload),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
     onSuccess: refresh,
     retry: retryAmbiguousFailure,
   });
@@ -480,6 +488,9 @@ export const HouseholdPeoplePanel = ({
       action === "archive"
         ? operations.archive(personId, payload)
         : operations.restore(personId, payload),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
     onSuccess: refresh,
     retry: retryAmbiguousFailure,
   });
@@ -494,9 +505,10 @@ export const HouseholdPeoplePanel = ({
     resetMutationIfSettled(transition);
   };
   const runIfIdle = (action: () => void) => {
-    if (isPersonMutationPending) {
+    if (personActionLock.current || isPersonMutationPending) {
       return;
     }
+    personActionLock.current = true;
     resetSettledMutations();
     action();
   };
@@ -588,7 +600,7 @@ export const HouseholdPeoplePanel = ({
           abandonLabel={`Discard ${transition.variables.action} retry`}
           disabled={isPersonMutationPending}
           onAbandon={() => transition.reset()}
-          onRetry={() => transition.mutate(transition.variables)}
+          onRetry={() => beginTransition(transition.variables)}
           retryLabel={`Retry ${
             transition.variables.action === "archive"
               ? "archiving"
