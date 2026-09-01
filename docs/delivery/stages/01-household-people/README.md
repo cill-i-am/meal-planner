@@ -2,8 +2,8 @@
 
 - Status: Active
 - Immediate work item:
-  [`01-person-registry-and-lifecycle.md`](01-person-registry-and-lifecycle.md)
-  (`In review`)
+  [`02-account-linking-invitations-and-departure.md`](02-account-linking-invitations-and-departure.md)
+  (`Ready`)
 - Started: 2026-08-27
 
 ## Household Outcome
@@ -40,6 +40,12 @@ Stage 1 extends those seams. It does not introduce a shared household D1,
 another canonical writer, or a direct Better Auth dependency inside
 `HouseholdObject`.
 
+Work Item 01 is complete through
+[PR #198](https://github.com/cill-i-am/meal-planner/pull/198), merged as
+`9666a8bdae97bd9d6bf4efd98e30d03d617ccb31`. Its stable person registry,
+creator association, lifecycle, audit, receipt, public API/UI, and real-runtime
+evidence are the implemented base for Work Item 02.
+
 ## Accepted Direction
 
 ### Product decisions
@@ -54,6 +60,7 @@ another canonical writer, or a direct Better Auth dependency inside
 
 - [ADR 0001 — Separate household people from auth members](../../../architecture/decisions/0001-separate-household-people-from-auth-members.md)
 - [ADR 0004 — Household agent coordinator and isolated chat agents](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md)
+- [ADR 0010 — Coordinate membership departure before person archival](../../../architecture/decisions/0010-coordinate-membership-departure-before-person-archival.md)
 - [Household domain](../../../architecture/household-domain.md)
 - [Completed household capability migration](../../../architecture/household-capability-migration-plan.md)
 
@@ -61,8 +68,8 @@ another canonical writer, or a direct Better Auth dependency inside
 
 | Order | Work item | Status | Dependency |
 | --- | --- | --- | --- |
-| 01 | [Person registry and lifecycle](01-person-registry-and-lifecycle.md) | In review | Stage 0 and accepted people/auth separation |
-| 02 | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | Proposed | Work Item 01 evidence and a departure-coordination ADR |
+| 01 | [Person registry and lifecycle](01-person-registry-and-lifecycle.md) | Done | Stage 0 and accepted people/auth separation |
+| 02 | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | Ready | Work Item 01 merged; ADR-0010 accepted |
 | 03 | [Profile authority, versioning, and audit](03-profile-authority-versioning-and-audit.md) | Proposed | Stable person/link semantics from Work Items 01–02 |
 | 04 | [Private interview-session boundary](04-private-interview-session-boundary.md) | Proposed | Work Item 03 and the accepted exact-version Agents SDK spike |
 
@@ -73,8 +80,8 @@ caused three refinements:
    `adult` and `dependant`; an invited adult is an adult person with a pending
    invitation association and no active account link.
 2. Membership departure crosses Better Auth and household authority and cannot
-   be made atomic. Work Item 02 therefore remains proposed until a small ADR
-   accepts its durable coordination protocol.
+   be made atomic. ADR-0010 now accepts the access-first durable coordination
+   protocol, so Work Item 02 is ready for one bounded implementation owner.
 3. Work Item 04 defines only the prerequisite boundary. Agent Durable Object
    conversation storage and runtime implementation remain Stage 2 unless the
    exact-version spike proves that a minimal prerequisite must land sooner.
@@ -129,21 +136,34 @@ merges, or silently deletes a person.
 
 ### Departure coordination
 
-Access is revoked before product-state archival:
+ADR-0010 fixes an access-first, visible, repairable protocol:
 
 1. `HouseholdObject` records an idempotent departure operation for the exact
-   account link and person, without archiving the person.
-2. A post-commit coordinator removes the Better Auth membership.
-3. It confirms membership absence, then sends a system-purpose household
-   command that detaches the link, archives the same person, and records audit
-   and receipt in one transaction.
-4. Unknown removal outcomes are reconciled by reading Better Auth before
-   retrying. If final household mutation fails, access is already revoked and
-   the durable pending operation is retried until the object records it.
+   account link and person, marks the association `departure_pending`, and
+   closes cancellation through a versioned start transition before external
+   mutation.
+2. `MealPlannerApi` durably creates or reconciles a deterministic dedicated
+   native `Cloudflare.Workflow` after those commits and before any Better Auth
+   mutation. The Workflow initially waits for a privacy-safe outcome signal.
+3. The authenticated API performs one typed Better Auth membership removal
+   with live caller credentials, then signals the Workflow. A missing signal
+   or removal result is reconciled by reading canonical membership.
+4. The coordinator confirms membership absence, then uses the exact
+   `member_departure_finalize` system purpose to record access revocation and
+   atomically detach the link, archive the same person, audit, receipt, and
+   complete.
+5. Unknown removal outcomes are read from Better Auth before any new removal.
+   Bounded exhaustion and finalization failure remain durable household-visible
+   repair states; neither authority is silently described as complete.
 
-This protocol must be accepted in a small ADR before Work Item 02 becomes
-`Ready`. It makes the temporary state visible and repairable rather than relying
-on silent eventual consistency.
+The complete closed states, authorization, replay, collision, timeout, restart,
+privacy, race, and repair rules are owned by
+[ADR-0010](../../../architecture/decisions/0010-coordinate-membership-departure-before-person-archival.md).
+The same decision also closes the destructive control-plane bypass: Work Item
+02 must retain the exact public remove-member/leave route fence and configure
+`organization({ disableOrganizationDeletion: true })`, disabling both HTTP and
+typed organization deletion until the separate household deletion lifecycle
+exists. Organization-deletion behavior is not part of this stage slice.
 
 ### Initial profile representation
 
@@ -238,31 +258,15 @@ infer, link, archive, restore, or mutate any of that state.
 - weakening explicit confirmation for safety constraints;
 - a new canonical or shared store, dual writes, compatibility behaviour, or
   transcripts inside `HouseholdObject`;
-- the departure coordination protocol before Work Item 02 becomes ready; and
+- changing ADR-0010's departure coordinator, ordering, authority, durable
+  states, or repair semantics;
+- implementing organization/household deletion, cleanup, tombstones, retention,
+  or any partial deletion lifecycle; and
 - any Agent SDK topology that materially changes ADR 0004, participant privacy,
   or the separation between conversation and product authority.
 
-## First Implementation-Agent Assignment
+## Next Implementation Assignment
 
-> Start from freshly fetched `main`; do not inherit a stale worktree. Implement
-> only [Work Item 01](01-person-registry-and-lifecycle.md): an authenticated adult
-> can bootstrap themselves after organization creation, list the household
-> roster, add an adult or dependant, and archive or restore the same stable
-> person through a minimal web UI. Store people, the creator account link,
-> versions, audit entries, and mutation receipts only in the routed
-> `HouseholdObject` SQLite database through Drizzle. Better Auth remains
-> membership authority and must authorize before routing; do not store raw user,
-> member, session, invitation, or email values in household state. Add only the
-> minimum closed public/private contracts and Drizzle migration required for
-> this vertical. Exclude invitations beyond the creator link, departure,
-> profile facts, interviews, AI, routines, planning, recipes, shopping,
-> dependant accounts, granular permissions, compatibility, shared household D1,
-> provider calls, deployment, and cloud mutation. Prove focused domain
-> transitions; identical replay and mutation collision; stale versions; archive
-> and restore races; restart persistence; wrong-purpose, non-member, and
-> cross-household rejection; a real Workerd or Miniflare API-to-object tracer;
-> and the minimal UI flow. Run root formatting, lint, checks, full tests, builds,
-> and applicable container/hosted CI gates. Update the public contract docs,
-> household-domain architecture, this work item, and `docs/delivery/current.md`
-> in the same PR. Freeze the exact head for an independent read-only review;
-> green CI alone is not merge authority.
+Use the one exact bounded assignment in
+[Work Item 02](02-account-linking-invitations-and-departure.md#first-implementation-agent-assignment).
+Work Items 03 and 04 remain `Proposed` and must not be combined with it.

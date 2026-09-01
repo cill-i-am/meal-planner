@@ -53,6 +53,9 @@ not a particular persistence layout.
   authorities.
 - Account deletion, membership removal, and person departure are related but
   distinct lifecycle events.
+- Membership departure follows the access-first durable coordination protocol
+  accepted in
+  [ADR-0010](0010-coordinate-membership-departure-before-person-archival.md).
 - Link repair must identify the retained stable person and preserve all
   authoritative references and audit history.
 - Public requests must not accept arbitrary person authority merely because a

@@ -1,10 +1,11 @@
 # Work Item 01 — Person Registry And Lifecycle
 
-- Status: In review
+- Status: Done
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
 - Owner: `codex/stage1-person-registry-lifecycle`
 - Pull request: [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
-- Completed by: Not completed
+- Completed by: [PR #198](https://github.com/cill-i-am/meal-planner/pull/198),
+  merge commit `9666a8bdae97bd9d6bf4efd98e30d03d617ccb31`
 
 ## Household Outcome
 
@@ -297,11 +298,11 @@ Using the production auth/API/object composition:
 - [x] Root formatting, lint with warnings denied, type checks, full tests, and
   all production builds pass.
 - [x] The full local container/runtime gate passes on the replacement tree.
-- [ ] Hosted CI passes on the replacement frozen head.
+- [x] Hosted CI passes on the replacement frozen head.
 - [x] Public API documentation, household-domain architecture,
   [`current.md`](../../current.md), and this delivery record reflect the shipped
   composition.
-- [ ] A completely fresh independent exact-head review proves authority,
+- [x] A completely fresh independent exact-head review proves authority,
   privacy, authorization ordering, replay, restart, isolation, and test
   integrity. Green CI alone is not merge authority.
 
@@ -328,6 +329,11 @@ Auth/HouseholdObject boundary. Independent exact-head review is required.
 
 ## Delivery Log
 
+- 2026-09-01 — Completed by PR #198. The accepted implementation head was
+  `75494d48ca7abbbeb0ae7bce66067924dd4777fa`; live PR evidence recorded
+  successful Quality and synthetic-media container checks before merge to
+  `9666a8bdae97bd9d6bf4efd98e30d03d617ccb31`. The merge closes Work Item 01's
+  implementation and review gates without adding Work Item 02 behavior.
 - 2026-08-30 — Closed the latest review findings without broadening Work Item
   01. Pending creator and person commands now freeze their visible fields;
   schema-backed accessible validation rejects blank, whitespace-only, and long

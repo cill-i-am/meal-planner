@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-08-30
+- Last updated: 2026-09-01
 - Delivery source of truth: this repository
 
 ## Active Stage
@@ -11,17 +11,15 @@
   [`stages/01-household-people/README.md`](stages/01-household-people/README.md)
 - Status: Active
 - Immediate delivery target:
-  [`01-person-registry-and-lifecycle.md`](stages/01-household-people/01-person-registry-and-lifecycle.md)
-  (`In review`)
+  [`02-account-linking-invitations-and-departure.md`](stages/01-household-people/02-account-linking-invitations-and-departure.md)
+  (`Ready`)
 
-The first independently implementable work item has a working implementation
-and real-runtime evidence in
-[draft PR #198](https://github.com/cill-i-am/meal-planner/pull/198). It remains
-in review until its final frozen head passes hosted CI and the user's exact-head
-review. Volatile commit and CI identifiers belong to the live PR, not this
-record. Account linking and departure, profile authority, and the private
-interview-session boundary remain proposed until their recorded dependencies
-are resolved.
+Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
+merged its accepted person-registry implementation as
+`9666a8bdae97bd9d6bf4efd98e30d03d617ccb31` on 2026-09-01 after its recorded
+runtime, hosted-CI, and exact-head review gates. The merged stable person,
+creator link, audit, receipt, API/UI, and isolation evidence is now the base for
+Work Item 02.
 
 The Work Item 01 identity boundary derives a stable household-scoped linkage
 subject from immutable Better Auth user plus organization identity, separately
@@ -37,11 +35,29 @@ submission and treat malformed generated-client responses as ambiguous rather
 than deterministic domain failures. The public roster query rejects unknown
 options. The cumulative runtime proof now covers the full Work Item 01 roster,
 restart/restore history, owner/member bootstrap concurrency, and denied
-cross-household mutation collisions. The draft remains unmerged until its
-current exact-head gates and user review are complete.
+cross-household mutation collisions.
+
+[ADR-0010](../architecture/decisions/0010-coordinate-membership-departure-before-person-archival.md)
+now fixes the missing cross-authority departure contract: `MealPlannerApi`
+durably creates one deterministic native Cloudflare Workflow before the
+authenticated Better Auth removal, the Workflow waits for an outcome signal
+and reconciles a missing removal or lost signal by canonical membership read,
+and only proven membership absence permits exact-purpose household
+finalization. Every partial state remains durable, visible, bounded, and
+repairable. Work Item 02 must also configure
+`organization({ disableOrganizationDeletion: true })` so neither the public nor
+typed Better Auth deletion operation can erase the organization and its
+memberships before the separate household deletion lifecycle exists. That
+accepted prerequisite promotes Work Item 02 to `Ready`; invitation association,
+accepted linking, link repair, departure, and return are still implementation
+work. Organization-deletion behavior remains out of scope, and Work Items 03
+and 04 remain `Proposed`.
 
 ## Completed Foundation
 
+- [PR #198 — person registry and lifecycle](https://github.com/cill-i-am/meal-planner/pull/198)
+  merged on 2026-09-01 as
+  `9666a8bdae97bd9d6bf4efd98e30d03d617ccb31`. Work Item 01 is `Done`.
 - [PR #189 — household product blueprint](https://github.com/cill-i-am/meal-planner/pull/189)
   merged on 2026-08-27. Its product decisions, ADRs, and repository-owned
   delivery model are accepted direction.
@@ -61,15 +77,18 @@ current exact-head gates and user review are complete.
 
 ## Immediate Next Steps
 
-1. Complete hosted CI on the final frozen Work Item 01 draft PR head.
-2. Complete the user's exact-head review; resolve only proven in-scope findings
-   before merge authority is considered.
-3. After Work Item 01 is accepted, resolve and accept the
-   departure-coordination ADR before promoting Work Item
-   02 to `Ready`.
+1. After this readiness record merges, assign one delivery owner using Work
+   Item 02's exact bounded implementation-agent assignment.
+2. Implement invitation association/linking, explicit repair, the accepted
+   departure Workflow, and same-person return as one Work Item 02 vertical.
+3. Freeze that implementation head for hosted CI, real Better Auth D1 and
+   routed-object runtime proof, and fresh independent exact-head review before
+   any merge decision.
 
 ## Deliberate Non-Work
 
-Do not start retailer integration, full pantry inventory, calories/macros,
-medical goal systems, MCP delivery, embedded channels, or generic organization
-support while the first household vertical remains unproven.
+Do not start Work Items 03 or 04, retailer integration, full pantry inventory,
+calories/macros, medical goal systems, MCP delivery, embedded channels, or
+generic organization support while Work Item 02 remains the immediate target.
+Do not implement organization deletion; keep it disabled until its accepted
+household cleanup and tombstone lifecycle is separately authorized and ready.
