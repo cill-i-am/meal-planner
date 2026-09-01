@@ -44,9 +44,14 @@ authenticated Better Auth removal, the Workflow waits for an outcome signal
 and reconciles a missing removal or lost signal by canonical membership read,
 and only proven membership absence permits exact-purpose household
 finalization. Every partial state remains durable, visible, bounded, and
-repairable. That accepted prerequisite promotes Work Item 02 to `Ready`;
-invitation association, accepted linking, link repair, departure, and return
-are still implementation work. Work Items 03 and 04 remain `Proposed`.
+repairable. Work Item 02 must also configure
+`organization({ disableOrganizationDeletion: true })` so neither the public nor
+typed Better Auth deletion operation can erase the organization and its
+memberships before the separate household deletion lifecycle exists. That
+accepted prerequisite promotes Work Item 02 to `Ready`; invitation association,
+accepted linking, link repair, departure, and return are still implementation
+work. Organization-deletion behavior remains out of scope, and Work Items 03
+and 04 remain `Proposed`.
 
 ## Completed Foundation
 
@@ -85,3 +90,5 @@ are still implementation work. Work Items 03 and 04 remain `Proposed`.
 Do not start Work Items 03 or 04, retailer integration, full pantry inventory,
 calories/macros, medical goal systems, MCP delivery, embedded channels, or
 generic organization support while Work Item 02 remains the immediate target.
+Do not implement organization deletion; keep it disabled until its accepted
+household cleanup and tombstone lifecycle is separately authorized and ready.

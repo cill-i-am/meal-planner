@@ -159,6 +159,11 @@ ADR-0010 fixes an access-first, visible, repairable protocol:
 The complete closed states, authorization, replay, collision, timeout, restart,
 privacy, race, and repair rules are owned by
 [ADR-0010](../../../architecture/decisions/0010-coordinate-membership-departure-before-person-archival.md).
+The same decision also closes the destructive control-plane bypass: Work Item
+02 must retain the exact public remove-member/leave route fence and configure
+`organization({ disableOrganizationDeletion: true })`, disabling both HTTP and
+typed organization deletion until the separate household deletion lifecycle
+exists. Organization-deletion behavior is not part of this stage slice.
 
 ### Initial profile representation
 
@@ -254,7 +259,9 @@ infer, link, archive, restore, or mutate any of that state.
 - a new canonical or shared store, dual writes, compatibility behaviour, or
   transcripts inside `HouseholdObject`;
 - changing ADR-0010's departure coordinator, ordering, authority, durable
-  states, or repair semantics; and
+  states, or repair semantics;
+- implementing organization/household deletion, cleanup, tombstones, retention,
+  or any partial deletion lifecycle; and
 - any Agent SDK topology that materially changes ADR 0004, participant privacy,
   or the separation between conversation and product authority.
 

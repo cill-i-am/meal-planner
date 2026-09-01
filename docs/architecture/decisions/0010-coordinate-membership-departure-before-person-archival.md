@@ -68,6 +68,15 @@ direct external I/O from the household object.
   corresponding typed Better Auth server operation with the live caller
   authorization. No session header or token is persisted in a Workflow or
   household record.
+- Organization deletion is a separate, destructive authority path that could
+  otherwise remove every membership outside this departure protocol. Work Item
+  02 must configure the pinned organization plugin exactly as
+  `organization({ disableOrganizationDeletion: true })`. This plugin-level
+  fence rejects both `POST /organization/delete` through `auth.fetch` and the
+  typed `auth.api.deleteOrganization` operation; merely adding another public
+  disabled path is insufficient. Organization deletion stays disabled until
+  the accepted household deletion lifecycle exists and is not implemented by
+  Work Item 02.
 
 This route fence uses public seams rather than a Better Auth fork. At the
 accepted base, [`makeMealPlannerAuth`](../../../apps/api/src/features/auth/auth.ts)
@@ -78,6 +87,16 @@ request to `auth.fetch`. The pinned Better Auth version exposes top-level
 exact organization paths. Adding both paths at the constructor prevents the
 public bypass; the coordinator can still call the typed server operations
 directly without changing Better Auth internals.
+
+The accepted base pins Better Auth `1.7.0-rc.6`, where
+`disableOrganizationDeletion` defaults to `false` and the delete endpoint is
+otherwise registered. The current constructor uses bare `organization()`, and
+the API Worker forwards every `/api/auth/*` request to `auth.fetch`. The
+explicit plugin option therefore closes a live HTTP and typed-server bypass and
+aligns with the accepted
+[household deletion lifecycle](../household-capability-migration-plan.md#household-deletion-lifecycle),
+which requires organization deletion to remain disabled until coordinated
+product-state cleanup can finish first.
 
 The Workflow is a dedicated coordinator for this operation, not a new workflow
 framework. It binds only the auth reconciliation reader and the private
@@ -383,6 +402,9 @@ authorized next action.
   exact-purpose system admission, the dedicated Workflow, a narrow Better Auth
   membership adapter, and public/UI repair states.
 - Raw Better Auth leave/removal routes must not remain an uncoordinated bypass.
+- Better Auth organization deletion must remain disabled at the organization
+  plugin for both HTTP and typed server calls; this departure slice does not
+  implement or approximate the future household deletion lifecycle.
 - Real-runtime evidence must cover failure before and after each canonical
   commit, lost responses, restart, retry exhaustion, last-owner behavior,
   replacement membership, same-target races, and cross-household isolation.
@@ -391,6 +413,11 @@ authorized next action.
   Workflow with no committed removal reaches visible repair after reading
   `present`, while a committed removal with its outcome signal lost reads
   `absent` and finalizes exactly once without the departed session.
+- Exact-version runtime evidence must also prove that Better Auth
+  `1.7.0-rc.6` rejects an owner-authenticated `POST /organization/delete`
+  through `auth.fetch` and rejects the typed `auth.api.deleteOrganization`
+  call, while the organization, memberships, and routed household remain
+  intact.
 - Invitation association, accepted linking, explicit link repair, and return
   remain implementation scope for Stage 1 Work Item 02. This ADR decides only
   the departure coordination and does not claim that any Work Item 02 behavior

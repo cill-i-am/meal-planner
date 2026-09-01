@@ -46,6 +46,8 @@ after a later re-invitation reuses the same person.
 - explicit, audited link repair with no heuristic matching;
 - membership-removal coordination, durable retry/reconciliation, link detach,
   person archive, and same-person restoration on return;
+- production Better Auth configuration that disables organization deletion at
+  the organization plugin while this departure lifecycle is implemented;
 - household-visible pending, linked, departure-pending, and detached
   projections that do not disclose email or auth secrets; and
 - real Better Auth D1 plus HouseholdObject failure and restart proof.
@@ -59,6 +61,8 @@ after a later re-invitation reuses the same person.
   authority;
 - dependant accounts, multiple account links per user in one household,
   granular permissions, or generic organization administration;
+- organization-deletion implementation, household cleanup, tombstones,
+  retention, or any partial implementation of that future lifecycle;
 - profile facts, interviews, routines, planning, recipes, and shopping; and
 - cross-database transactions, compatibility storage, shared household D1,
   dual writes, or silent eventual consistency.
@@ -70,6 +74,8 @@ after a later re-invitation reuses the same person.
 - Create and accept invitations through Better Auth's public organization API.
 - Remove membership through Better Auth during the accepted departure protocol.
 - Read invitation/membership outcome only to reconcile an explicit operation.
+- Configure `organization({ disableOrganizationDeletion: true })`; no public or
+  typed organization-deletion operation is admitted by this work item.
 
 ### Household commands
 
@@ -201,6 +207,14 @@ generation prevent parallel coordinators. The complete state, authorization,
 privacy, collision, concurrency, failure, and operator-repair contract is owned
 by ADR-0010 and must be implemented without weakening it.
 
+The centralized Better Auth construction must retain the exact disabled public
+paths `/organization/remove-member` and `/organization/leave` while internal
+typed membership calls remain available to the coordinator. It must separately
+configure `organization({ disableOrganizationDeletion: true })`, which fences
+both `POST /organization/delete` and the typed deletion operation. Work Item 02
+does not implement organization deletion; that operation remains disabled until
+the accepted household deletion lifecycle exists.
+
 ## Failure, Replay, And Concurrency
 
 - Identical command replay returns the stored result; mutation-ID reuse with a
@@ -319,6 +333,10 @@ visible conflicts; the API must not choose by email or name.
 - [ ] In that same real boundary, commit membership removal and kill the API
   before its outcome event is delivered; the waiting Workflow times out, reads
   `absent`, and confirms/finalizes exactly once without the departed session.
+- [ ] Against pinned Better Auth `1.7.0-rc.6` in the real API runtime, an
+  owner-authenticated `POST /organization/delete` and a typed
+  `auth.api.deleteOrganization` call are both rejected as disabled; Better Auth
+  D1 organization/memberships and the routed `HouseholdObject` remain intact.
 - [ ] Other lost responses before and after each authority commit reconcile
   without duplicate people, links, membership mutation, audit, or archive.
 - [ ] Restart during pending departure completes from durable state.
@@ -370,13 +388,19 @@ exact-head review is required, and green CI is not merge authority.
 > removal and a committed removal whose signal is lost. Preserve the exact
 > authorization-before-routing, privacy, replay/version, cancellation,
 > timeout, restart, collision, race, and repair rules. Extend the merged Work
-> Item 01 link and people seams without replacing them. Prove the full focused,
+> Item 01 link and people seams without replacing them. Keep the exact public
+> remove-member/leave route fence, configure
+> `organization({ disableOrganizationDeletion: true })`, and prove against
+> pinned Better Auth `1.7.0-rc.6` that both owner-authenticated HTTP and typed
+> API organization deletion are rejected while auth and household state stay
+> intact. Prove the full focused,
 > UI, real Workerd Better Auth D1-to-routed-`HouseholdObject` crash-window,
 > lost-response, restart, replacement-membership, and cross-household evidence
 > listed here. Exclude profiles, interviews, Agents SDK, routines, planning,
 > recipes, shopping, provider or cloud mutation, deployment, compatibility,
 > backfills, dual writes, shared household D1, and any generic organization or
-> saga framework. Run every repository, runtime, build, hosted-CI, and fresh
+> saga framework, including any organization-deletion lifecycle or behavior.
+> Run every repository, runtime, build, hosted-CI, and fresh
 > exact-head review gate recorded in this work item; freeze the reviewed head
 > and do not treat green CI as merge authority.
 
@@ -393,3 +417,7 @@ exact-head review is required, and green CI is not merge authority.
   authenticated removal call, and canonical membership reads close both lost-
   removal and lost-signal crash windows. Status remains `Ready`; no Work Item
   02 application behavior is implemented by this correction.
+- 2026-09-01 — Closed the remaining Better Auth authority bypass identified by
+  fresh exact-head review: Work Item 02 must disable organization deletion at
+  the organization plugin and prove both HTTP and typed API rejection against
+  the pinned version. Organization-deletion behavior remains out of scope.
