@@ -81,6 +81,18 @@ const archivedRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
   currentPersonId: personId,
   people: [{ ...roster.people[0], lifecycle: "archived", version: 2 }],
 });
+const unlinkedArchivedRosterBeforeCreatorBootstrap = Schema.decodeUnknownSync(
+  HouseholdPeopleRoster
+)({
+  ...unlinkedRosterBeforeCreatorBootstrap,
+  people: [
+    {
+      ...unlinkedRosterBeforeCreatorBootstrap.people[0],
+      lifecycle: "archived",
+      version: 2,
+    },
+  ],
+});
 
 const renderPanel = (operations: HouseholdPeopleOperations) => {
   const queryClient = new QueryClient({
@@ -472,94 +484,178 @@ describe("HouseholdPeoplePanel", () => {
     expect(await screen.findByText("Aoife")).toBeInTheDocument();
   });
 
-  it("abandons an ambiguous create intent when the user edits it", async () => {
-    const create = vi.fn().mockRejectedValue(failure("people_unavailable"));
-    const operations: HouseholdPeopleOperations = {
-      archive: vi.fn(),
-      bootstrapCreator: vi.fn(),
-      create,
-      list: vi.fn().mockResolvedValue(roster),
-      restore: vi.fn(),
-    };
-    renderPanel(operations);
+  it.each([
+    {
+      action: "archive" as const,
+      button: "Archive",
+      operationsRoster: roster,
+      retry: "Retry adding this person",
+    },
+    {
+      action: "restore" as const,
+      button: "Restore",
+      operationsRoster: archivedRoster,
+      retry: "Retry adding this person",
+    },
+  ])(
+    "keeps an ambiguous create as the sole intent until it resolves before $action",
+    async ({ action, button, operationsRoster, retry }) => {
+      const create = vi
+        .fn()
+        .mockRejectedValueOnce(failure("people_unavailable"))
+        .mockRejectedValueOnce(failure("people_unavailable"))
+        .mockResolvedValueOnce(operationsRoster.people[0]);
+      const transition = vi.fn().mockResolvedValue(operationsRoster.people[0]);
+      const operations: HouseholdPeopleOperations = {
+        archive: action === "archive" ? transition : vi.fn(),
+        bootstrapCreator: vi.fn(),
+        create,
+        list: vi.fn().mockResolvedValue(operationsRoster),
+        restore: action === "restore" ? transition : vi.fn(),
+      };
+      renderPanel(operations);
 
-    const name = await screen.findByLabelText("Name");
-    await userEvent.type(name, "Aoife");
-    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
-    const firstIntent = create.mock.calls[0]?.[0];
+      const name = await screen.findByLabelText("Name");
+      await userEvent.type(name, "Aoife");
+      await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+      const exactIntent = create.mock.calls[0]?.[0];
 
-    await userEvent.type(name, " Murphy");
-    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+      expect(name).toBeDisabled();
+      expect(screen.getByRole("button", { name: button })).toBeDisabled();
+      expect(
+        screen.queryByRole("button", { name: /Discard add-person retry/u })
+      ).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+      expect(screen.getByRole("button", { name: retry })).toBeInTheDocument();
+      expect(create.mock.calls).toHaveLength(2);
+      expect(transition).not.toHaveBeenCalled();
 
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(4));
-    expect(create.mock.calls[2]?.[0].mutationId).not.toBe(
-      firstIntent?.mutationId
-    );
-    expect(create.mock.calls[2]?.[0].displayName).toBe("Aoife Murphy");
-  });
+      await userEvent.click(screen.getByRole("button", { name: retry }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(3));
+      expect(create.mock.calls[2]?.[0]).toEqual(exactIntent);
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: button })).toBeEnabled()
+      );
+      await userEvent.click(screen.getByRole("button", { name: button }));
+      if (action === "archive") {
+        await userEvent.click(
+          screen.getByRole("button", { name: "Confirm archive" })
+        );
+      }
+      await waitFor(() => expect(transition).toHaveBeenCalledOnce());
+    }
+  );
 
-  it("abandons an ambiguous create intent when an archive succeeds", async () => {
-    const create = vi.fn().mockRejectedValue(failure("people_unavailable"));
-    const archive = vi.fn().mockResolvedValue(roster.people[0]);
-    const operations: HouseholdPeopleOperations = {
-      archive,
-      bootstrapCreator: vi.fn(),
-      create,
-      list: vi.fn().mockResolvedValue(roster),
-      restore: vi.fn(),
-    };
-    renderPanel(operations);
-
-    await userEvent.type(await screen.findByLabelText("Name"), "Aoife");
-    await userEvent.click(screen.getByRole("button", { name: "Add person" }));
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
-    expect(
-      screen.getByRole("button", { name: "Retry adding this person" })
-    ).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Confirm archive" })
-    );
-    await waitFor(() => expect(archive).toHaveBeenCalledOnce());
-
-    expect(
-      screen.queryByRole("button", { name: "Retry adding this person" })
-    ).toBeNull();
-  });
-
-  it("abandons an ambiguous archive intent when a create succeeds", async () => {
-    const archive = vi.fn().mockRejectedValue(failure("people_unavailable"));
+  it("keeps an ambiguous bootstrap as the sole intent until its exact retry resolves", async () => {
+    const bootstrapCreator = vi
+      .fn()
+      .mockRejectedValueOnce(failure("people_unavailable"))
+      .mockRejectedValueOnce(failure("people_unavailable"))
+      .mockResolvedValueOnce(roster.people[0]);
     const create = vi.fn().mockResolvedValue(roster.people[0]);
+    const archive = vi.fn();
     const operations: HouseholdPeopleOperations = {
       archive,
-      bootstrapCreator: vi.fn(),
+      bootstrapCreator,
       create,
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockResolvedValue(unlinkedRosterBeforeCreatorBootstrap),
       restore: vi.fn(),
     };
     renderPanel(operations);
 
+    await userEvent.type(await screen.findByLabelText("Your name"), "Maeve");
     await userEvent.click(
-      await screen.findByRole("button", { name: "Archive" })
+      screen.getByRole("button", { name: "Set up my person" })
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Confirm archive" })
-    );
-    await waitFor(() => expect(archive).toHaveBeenCalledTimes(2));
-    expect(
-      screen.getByRole("button", { name: "Retry archiving Cillian" })
-    ).toBeInTheDocument();
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(2));
+    const exactIntent = bootstrapCreator.mock.calls[0]?.[0];
 
+    expect(screen.getByLabelText("Your name")).toBeDisabled();
+    expect(screen.getByLabelText("Name")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: /Discard setup retry/u })
+    ).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+    expect(archive).not.toHaveBeenCalled();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retry setting up my person" })
+    );
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(3));
+    expect(bootstrapCreator.mock.calls[2]?.[0]).toEqual(exactIntent);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Add person" })).toBeEnabled()
+    );
     await userEvent.type(screen.getByLabelText("Name"), "Aoife");
     await userEvent.click(screen.getByRole("button", { name: "Add person" }));
     await waitFor(() => expect(create).toHaveBeenCalledOnce());
-
-    expect(
-      screen.queryByRole("button", { name: "Retry archiving Cillian" })
-    ).toBeNull();
   });
+
+  it.each([
+    {
+      action: "archive" as const,
+      button: "Archive",
+      operationsRoster: unlinkedRosterBeforeCreatorBootstrap,
+      retry: "Retry archiving Household dependant",
+    },
+    {
+      action: "restore" as const,
+      button: "Restore",
+      operationsRoster: unlinkedArchivedRosterBeforeCreatorBootstrap,
+      retry: "Retry restoring Household dependant",
+    },
+  ])(
+    "keeps an ambiguous $action as the sole intent and blocks create and bootstrap",
+    async ({ action, button, operationsRoster, retry }) => {
+      const transition = vi
+        .fn()
+        .mockRejectedValueOnce(failure("people_unavailable"))
+        .mockRejectedValueOnce(failure("people_unavailable"))
+        .mockResolvedValueOnce(operationsRoster.people[0]);
+      const create = vi.fn();
+      const bootstrapCreator = vi.fn();
+      const operations: HouseholdPeopleOperations = {
+        archive: action === "archive" ? transition : vi.fn(),
+        bootstrapCreator,
+        create,
+        list: vi.fn().mockResolvedValue(operationsRoster),
+        restore: action === "restore" ? transition : vi.fn(),
+      };
+      renderPanel(operations);
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: button })
+      );
+      if (action === "archive") {
+        await userEvent.click(
+          screen.getByRole("button", { name: "Confirm archive" })
+        );
+      }
+      await waitFor(() => expect(transition).toHaveBeenCalledTimes(2));
+      const [exactIntent] = transition.mock.calls;
+
+      expect(screen.getByLabelText("Name")).toBeDisabled();
+      expect(screen.getByLabelText("Your name")).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Add person" })).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Set up my person" })
+      ).toBeDisabled();
+      expect(
+        screen.queryByRole("button", { name: /Discard .* retry/u })
+      ).toBeNull();
+      expect(create).not.toHaveBeenCalled();
+      expect(bootstrapCreator).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole("button", { name: retry }));
+      await waitFor(() => expect(transition).toHaveBeenCalledTimes(3));
+      expect(transition.mock.calls[2]).toEqual(exactIntent);
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Add person" })).toBeEnabled()
+      );
+    }
+  );
 
   it("retries ambiguous creator bootstrap with its exact command", async () => {
     const bootstrapCreator = vi

@@ -159,9 +159,12 @@ choice; it may not replace per-person optimistic concurrency.
 - Automatic retries are limited to ambiguous transport, availability, or
   response-decoding failures and reuse the byte-identical submitted command.
   If the automatic attempts exhaust, the UI offers an explicit retry that
-  preserves that exact command and mutation ID. Editing or discarding the
-  intent, completing it successfully, or starting a genuinely new action
-  clears the retry intent and mints a new mutation ID.
+  preserves that exact command and mutation ID. Until it obtains a definitive
+  result, that unresolved command is the only admissible person mutation:
+  sibling bootstrap, create, archive, and restore actions remain disabled, and
+  form editing, observer reset, refresh, or local UI controls cannot discard or
+  replace it. Once the command resolves, a later intentional action receives a
+  new mutation ID.
 - Deterministic domain failures, including stale version, lifecycle conflict,
   mutation collision, creator-required, unauthorized, and bootstrap conflict,
   are single-attempt and are never described as safely retryable.
@@ -342,12 +345,14 @@ Auth/HouseholdObject boundary. Independent exact-head review is required.
   are normalized from closed domain codes and concrete transport/response
   failures. Deterministic domain failures run once. Automatic and explicit
   retries of an ambiguous create, bootstrap, archive, or restore preserve the
-  byte-identical submitted command and mutation ID; editing or discarding the
-  intent starts a new command. A real Better Auth/public API/private
-  Worker/HouseholdObject/SQLite test repeats one create command and receives the
-  same person identity from the stored receipt. The PR remains draft and
-  unmerged while final exact-head CI and user review are pending; no Work Item
-  02+ behavior is included.
+  byte-identical submitted command and mutation ID. An unresolved ambiguous
+  command now excludes every sibling person mutation and cannot be discarded by
+  editing or resetting local UI state; a new command becomes available only
+  after the original receives a definitive result. A real Better
+  Auth/public API/private Worker/HouseholdObject/SQLite test repeats one create
+  command and receives the same person identity from the stored receipt. The PR
+  remains draft and unmerged while final exact-head CI and user review are
+  pending; no Work Item 02+ behavior is included.
 
 - 2026-08-30 — Corrected creator-slot presentation at the final replacement
   head test-first. The executable RED proved that an unlinked owner with only a

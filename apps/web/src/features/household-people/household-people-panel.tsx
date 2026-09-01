@@ -101,29 +101,17 @@ const CreatorSlotOccupiedNotice = ({
   ) : null;
 
 const RetryIntentActions = ({
-  abandonLabel,
   disabled,
-  onAbandon,
   onRetry,
   retryLabel,
 }: {
-  readonly abandonLabel: string;
   readonly disabled: boolean;
-  readonly onAbandon: () => void;
   readonly onRetry: () => void;
   readonly retryLabel: string;
 }) => (
   <div className="people-confirmation">
     <Button disabled={disabled} onClick={onRetry} type="button">
       {retryLabel}
-    </Button>
-    <Button
-      className="button-secondary"
-      disabled={disabled}
-      onClick={onAbandon}
-      type="button"
-    >
-      {abandonLabel}
     </Button>
   </div>
 );
@@ -132,16 +120,16 @@ const CreatorBootstrapForm = ({
   error,
   isDisabled,
   isPending,
-  onDiscard,
   onMutate,
+  onRetry,
   variables,
   visible,
 }: {
   readonly error: Error | null;
   readonly isDisabled: boolean;
   readonly isPending: boolean;
-  readonly onDiscard: () => void;
   readonly onMutate: (payload: BootstrapHouseholdCreatorPayload) => void;
+  readonly onRetry: (payload: BootstrapHouseholdCreatorPayload) => void;
   readonly variables: BootstrapHouseholdCreatorPayload | undefined;
   readonly visible: boolean;
 }) => {
@@ -184,12 +172,7 @@ const CreatorBootstrapForm = ({
               disabled={isDisabled}
               id="creator-name"
               onBlur={field.handleBlur}
-              onChange={(event) => {
-                if (retryIntent) {
-                  onDiscard();
-                }
-                field.handleChange(event.target.value);
-              }}
+              onChange={(event) => field.handleChange(event.target.value)}
               value={field.state.value}
             />
             <p className="field-error" id="creator-name-error">
@@ -203,10 +186,8 @@ const CreatorBootstrapForm = ({
       </Button>
       {retryIntent ? (
         <RetryIntentActions
-          abandonLabel="Discard setup retry"
-          disabled={isDisabled}
-          onAbandon={onDiscard}
-          onRetry={() => onMutate(variables)}
+          disabled={isPending}
+          onRetry={() => onRetry(variables)}
           retryLabel="Retry setting up my person"
         />
       ) : null}
@@ -218,16 +199,16 @@ const CreatePersonForm = ({
   error,
   isDisabled,
   isPending,
-  onDiscard,
   onMutate,
+  onRetry,
   variables,
   visible,
 }: {
   readonly error: Error | null;
   readonly isDisabled: boolean;
   readonly isPending: boolean;
-  readonly onDiscard: () => void;
   readonly onMutate: (payload: CreateHouseholdPersonPayload) => void;
+  readonly onRetry: (payload: CreateHouseholdPersonPayload) => void;
   readonly variables: CreateHouseholdPersonPayload | undefined;
   readonly visible: boolean;
 }) => {
@@ -273,12 +254,7 @@ const CreatePersonForm = ({
               disabled={isDisabled}
               id="new-person-name"
               onBlur={field.handleBlur}
-              onChange={(event) => {
-                if (retryIntent) {
-                  onDiscard();
-                }
-                field.handleChange(event.target.value);
-              }}
+              onChange={(event) => field.handleChange(event.target.value)}
               value={field.state.value}
             />
             <p className="field-error" id="new-person-name-error">
@@ -295,12 +271,9 @@ const CreatePersonForm = ({
               className="field-select"
               disabled={isDisabled}
               id="new-person-kind"
-              onChange={(event) => {
-                if (retryIntent) {
-                  onDiscard();
-                }
-                field.handleChange(event.target.value as "adult" | "dependant");
-              }}
+              onChange={(event) =>
+                field.handleChange(event.target.value as "adult" | "dependant")
+              }
               value={field.state.value}
             >
               <option value="dependant">Dependant</option>
@@ -314,10 +287,8 @@ const CreatePersonForm = ({
       </Button>
       {retryIntent ? (
         <RetryIntentActions
-          abandonLabel="Discard add-person retry"
-          disabled={isDisabled}
-          onAbandon={onDiscard}
-          onRetry={() => onMutate(variables)}
+          disabled={isPending}
+          onRetry={() => onRetry(variables)}
           retryLabel="Retry adding this person"
         />
       ) : null}
@@ -444,6 +415,40 @@ const PeopleList = ({
 const firstError = (errors: readonly (Error | null)[]) =>
   errors.find((error) => error !== null) ?? null;
 
+const hasAmbiguousRetryIntent = (mutation: {
+  readonly error: Error | null;
+  readonly variables: unknown;
+}) =>
+  mutation.variables !== undefined &&
+  isAmbiguousHouseholdPeopleFailure(mutation.error);
+
+interface TransitionMutationVariables {
+  readonly action: "archive" | "restore";
+  readonly personId: Parameters<HouseholdPeopleOperations["archive"]>[0];
+  readonly payload: TransitionHouseholdPersonPayload;
+}
+
+const TransitionRetryIntentActions = ({
+  disabled,
+  onRetry,
+  personName,
+  variables,
+}: {
+  readonly disabled: boolean;
+  readonly onRetry: (variables: TransitionMutationVariables) => void;
+  readonly personName: string | undefined;
+  readonly variables: TransitionMutationVariables | undefined;
+}) =>
+  variables === undefined ? null : (
+    <RetryIntentActions
+      disabled={disabled}
+      onRetry={() => onRetry(variables)}
+      retryLabel={`Retry ${
+        variables.action === "archive" ? "archiving" : "restoring"
+      } ${personName ?? "this person"}`}
+    />
+  );
+
 /** Minimal explicit household roster and lifecycle surface. */
 export const HouseholdPeoplePanel = ({
   operations,
@@ -499,17 +504,26 @@ export const HouseholdPeoplePanel = ({
     create.isPending,
     transition.isPending,
   ].some(Boolean);
+  const hasUnresolvedAmbiguousIntent = [bootstrap, create, transition].some(
+    hasAmbiguousRetryIntent
+  );
   const resetSettledMutations = () => {
     resetMutationIfSettled(bootstrap);
     resetMutationIfSettled(create);
     resetMutationIfSettled(transition);
   };
-  const runIfIdle = (action: () => void) => {
-    if (personActionLock.current || isPersonMutationPending) {
+  const runIfIdle = (action: () => void, allowAmbiguousRetry = false) => {
+    if (
+      personActionLock.current ||
+      isPersonMutationPending ||
+      (hasUnresolvedAmbiguousIntent && !allowAmbiguousRetry)
+    ) {
       return;
     }
     personActionLock.current = true;
-    resetSettledMutations();
+    if (!allowAmbiguousRetry) {
+      resetSettledMutations();
+    }
     action();
   };
   const beginBootstrap = (payload: BootstrapHouseholdCreatorPayload) => {
@@ -520,6 +534,15 @@ export const HouseholdPeoplePanel = ({
   };
   const beginTransition = (value: Parameters<typeof transition.mutate>[0]) => {
     runIfIdle(() => transition.mutate(value));
+  };
+  const retryBootstrap = (payload: BootstrapHouseholdCreatorPayload) => {
+    runIfIdle(() => bootstrap.mutate(payload), true);
+  };
+  const retryCreate = (payload: CreateHouseholdPersonPayload) => {
+    runIfIdle(() => create.mutate(payload), true);
+  };
+  const retryTransition = (value: Parameters<typeof transition.mutate>[0]) => {
+    runIfIdle(() => transition.mutate(value), true);
   };
   const error = firstError([
     roster.error,
@@ -533,9 +556,6 @@ export const HouseholdPeoplePanel = ({
   );
   const creatorSlotOccupied =
     bootstrapConflict || roster.data?.creatorSlot === "occupied";
-  const transitionRetryIntent =
-    transition.variables !== undefined &&
-    isAmbiguousHouseholdPeopleFailure(transition.error);
   const transitionPersonName = roster.data?.people.find(
     (person) => person.id === transition.variables?.personId
   )?.displayName;
@@ -576,10 +596,10 @@ export const HouseholdPeoplePanel = ({
       />
       <CreatorBootstrapForm
         error={bootstrap.error}
-        isDisabled={isPersonMutationPending}
+        isDisabled={isPersonMutationPending || hasUnresolvedAmbiguousIntent}
         isPending={bootstrap.isPending}
-        onDiscard={() => bootstrap.reset()}
         onMutate={beginBootstrap}
+        onRetry={retryBootstrap}
         variables={bootstrap.variables}
         visible={
           roster.data?.currentPersonId === null &&
@@ -592,28 +612,23 @@ export const HouseholdPeoplePanel = ({
           isPending={isPersonMutationPending}
           onTransition={beginTransition}
           people={roster.data.people}
-          retryIntent={transitionRetryIntent}
+          retryIntent={hasUnresolvedAmbiguousIntent}
         />
       )}
-      {transitionRetryIntent ? (
-        <RetryIntentActions
-          abandonLabel={`Discard ${transition.variables.action} retry`}
-          disabled={isPersonMutationPending}
-          onAbandon={() => transition.reset()}
-          onRetry={() => beginTransition(transition.variables)}
-          retryLabel={`Retry ${
-            transition.variables.action === "archive"
-              ? "archiving"
-              : "restoring"
-          } ${transitionPersonName ?? "this person"}`}
-        />
-      ) : null}
+      <TransitionRetryIntentActions
+        disabled={isPersonMutationPending}
+        onRetry={retryTransition}
+        personName={transitionPersonName}
+        variables={
+          hasAmbiguousRetryIntent(transition) ? transition.variables : undefined
+        }
+      />
       <CreatePersonForm
         error={create.error}
-        isDisabled={isPersonMutationPending}
+        isDisabled={isPersonMutationPending || hasUnresolvedAmbiguousIntent}
         isPending={create.isPending}
-        onDiscard={() => create.reset()}
         onMutate={beginCreate}
+        onRetry={retryCreate}
         variables={create.variables}
         visible={roster.data !== undefined}
       />
