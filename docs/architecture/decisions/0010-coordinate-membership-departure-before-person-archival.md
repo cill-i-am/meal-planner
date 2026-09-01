@@ -152,30 +152,48 @@ audit, records the receipt, and completes the operation atomically.
    `revoking_access`. This is the cancellation boundary: either cancellation
    wins while the operation is `prepared`, or start wins and cancellation is
    rejected. No external call occurs before start wins.
-4. After that commit, the API calls the typed Better Auth removal operation.
-   Owner-initiated removal uses the admitted owner's current authorization;
-   self-departure uses the target member's current authorization. Better Auth's
-   own permissions and last-owner rule remain authoritative.
-5. The API starts or reconciles `MemberDepartureWorkflow` for the operation's
-   current generation regardless of whether the removal returned success,
-   failure, or an unknown outcome. A lost Workflow-start response is not
-   treated as a successful start.
-6. The Workflow reads Better Auth for any current membership of the target user
-   in the exact organization. A response timeout or transport failure is
+4. Before any Better Auth mutation, that same request durably creates or
+   reconciles the deterministic `MemberDepartureWorkflow` instance for the
+   operation's current generation. Creation is confirmed only by a successful
+   create or by reading the same deterministic instance after an ambiguous or
+   duplicate create response. If neither can be confirmed, the API does not
+   call Better Auth; an exact authorized replay reconciles the same instance.
+5. The Workflow initially calls `waitForEvent` for one closed
+   `membership-removal-outcome` event, with a one-minute timeout. Cloudflare's
+   [Workflow event contract](https://developers.cloudflare.com/workflows/build/events-and-parameters/)
+   buffers an event sent after instance creation but before the matching wait,
+   so confirmed durable creation is the ordering fence; the API does not poll
+   for an in-memory "waiting" observation.
+6. Only the request that won a fresh start or authorized repair transition may
+   now make one typed Better Auth removal call. Owner-initiated removal uses the
+   admitted owner's current authorization; self-departure uses the target
+   member's current authorization. Better Auth's permissions and last-owner
+   rule remain authoritative. A stored receipt replay never repeats the call,
+   and no caller credentials enter Workflow or household state.
+7. If the request remains alive, it signals the deterministic Workflow with a
+   deterministic attempt ID and one privacy-safe tag:
+   `returned_success`, `returned_rejected`, or `unknown`. The event contains no
+   raw user, member, session, invitation, email, credential, or Better Auth
+   error detail. It is only a wake-up hint: duplicate or early delivery cannot
+   prove the membership result or repeat either canonical mutation.
+8. On that signal, or when the one-minute wait expires without one, the
+   Workflow reads Better Auth for any current membership of the target user in
+   the exact organization. A response timeout or transport failure is
    `unavailable`, not absence. If membership is present, removal has not been
-   proven and household finalization is forbidden. A new removal attempt is
-   allowed only after that fresh `present` observation and a newly authorized
-   retry. If membership is absent, the Workflow sends the exact-purpose system
-   command `ConfirmMemberAccessRevoked`.
-7. `ConfirmMemberAccessRevoked` may transition only `revoking_access` to
+   proven and household finalization is forbidden; the Workflow records
+   `revocation_repair_required` after bounded handling. A new removal attempt
+   is allowed only after that fresh `present` observation and a newly
+   authorized repair. If membership is absent, the Workflow sends the
+   exact-purpose system command `ConfirmMemberAccessRevoked`.
+9. `ConfirmMemberAccessRevoked` may transition only `revoking_access` to
    `access_revoked`. It records the safe observation time and operation
    version; it receives no Better Auth user, member, session, or error data.
-8. The Workflow then sends the exact-purpose system command
+10. The Workflow then sends the exact-purpose system command
    `FinalizeMemberDeparture` after one final Better Auth absence read. The
    object accepts it only from `access_revoked`, detaches the link, archives the
    same person, appends audit, stores a receipt, and transitions to `completed`
    in one transaction.
-9. If bounded reconciliation or finalization attempts exhaust, the Workflow
+11. If bounded reconciliation or finalization attempts exhaust, the Workflow
    records the corresponding repair-required state. The operation remains
    visible and may be retried through the authorized repair command. It is
    never silently dropped or described as complete.
@@ -205,6 +223,16 @@ read-after-mutation confirmation is required.
   one generation reconcile that same instance; they do not create parallel
   coordinators. A different input under the same instance identity is an
   explicit collision and repair condition.
+- The start or repair transition also derives one attempt ID from the
+  operation ID, generation, and claimed operation version. Only its fresh
+  transition winner may call Better Auth once. An exact command replay, lost
+  transition response, or concurrent loser can create/reconcile the Workflow
+  but may not issue the external mutation; the waiting Workflow resolves the
+  unknown outcome by canonical read.
+- The outcome event uses that attempt ID. Duplicate delivery and delivery
+  before the Workflow reaches `waitForEvent` converge on the same canonical
+  membership read. A changed attempt ID or event tag for the same claimed
+  attempt is a collision and repair condition, not another removal.
 - Generation advances only through an authorized repair after platform status
   proves the earlier instance terminal. An unavailable or unknown status never
   advances generation. This prevents two generations from mutating the same
@@ -222,6 +250,9 @@ read-after-mutation confirmation is required.
 
 - The Better Auth removal call has one 30-second attempt. Workflow task retries
   must not blindly repeat it; a timeout enters reconciliation.
+- The Workflow's initial outcome wait is one minute, longer than the permitted
+  30-second removal attempt. Expiry is a reconciliation trigger, never evidence
+  that removal failed or that membership is absent.
 - Better Auth reconciliation and idempotent household system steps use a
   30-second per-attempt timeout and at most five attempts with exponential
   backoff beginning at two seconds. This matches the exact `StepOptions`
@@ -328,10 +359,12 @@ membership, receipt, or repair state exists elsewhere.
 | Failure point | Canonical truth | Visible result and recovery |
 | --- | --- | --- |
 | Authorization or prepare fails before commit | Membership and household link/person are unchanged | Closed unauthorized, stale, conflict, or unavailable result; no operation exists |
-| Prepare commits; response or Workflow start is lost | Membership remains authoritative; household is `prepared` and `departure_pending` | Show prepared/pending, not completed; exact retry reconciles the receipt and deterministic Workflow identity; cancellation is still possible only if start has not won |
-| Start commits; process stops before removal | Household is `revoking_access`; membership may still be present | Show access-revocation pending; cancellation is closed; authorized retry first reads Better Auth |
+| Prepare commits; its response is lost | Membership remains authoritative; household is `prepared` and `departure_pending` | Show prepared/pending, not completed; exact retry reconciles the receipt; cancellation is still possible only if start has not won |
+| Start commits; Workflow creation is absent or cannot be confirmed | Household is `revoking_access`; no Better Auth call is permitted | Show access-revocation pending; exact authorized replay creates or reconciles the deterministic instance, while a replayed start receipt cannot issue removal |
+| Workflow is durable, but the request stops before removal is attempted or before it commits | Membership remains present; the Workflow has no trusted outcome signal | After the one-minute wait, the Workflow reads `present`, records visible `revocation_repair_required`, and permits a new removal only through fresh authorization and generation |
 | Removal is definitely rejected before commit | Membership remains present; household remains nonterminal | Record safe revocation repair state after bounded handling; expose owner retry and no archival |
-| Removal response is lost or times out | Membership outcome is unknown | Read Better Auth; never infer absence and never blindly remove again |
+| Removal commits, but the request stops before its result signal; or the signal is lost | Membership is absent; the durable Workflow is still waiting | After the one-minute wait, the Workflow reads `absent`, confirms access revocation, and finalizes exactly once without the departed caller's session |
+| Removal response is lost or times out but a signal is delivered | Membership outcome is unknown | The signal only wakes reconciliation; read Better Auth, never infer absence, and never blindly remove again |
 | Reconciliation is unavailable | Membership outcome remains unknown | Keep revocation pending or record revocation repair required; no finalize command is admitted |
 | Membership absence is confirmed; household confirmation fails | Better Auth has revoked access; household may still say revoking | Departed user is denied before routing; retry the idempotent confirmation and expose pending repair to remaining owners |
 | `access_revoked` commits; finalization fails or its response is lost | Access is revoked; link/person may still be pending | Show finalization pending/repair required; retry exact system finalization; never restore access or report completion early |
@@ -353,6 +386,11 @@ authorized next action.
 - Real-runtime evidence must cover failure before and after each canonical
   commit, lost responses, restart, retry exhaustion, last-owner behavior,
   replacement membership, same-target races, and cross-household isolation.
+  In particular, real Workerd execution with Better Auth D1 and a routed
+  `HouseholdObject` must prove both coordinator crash windows: a durable waiting
+  Workflow with no committed removal reaches visible repair after reading
+  `present`, while a committed removal with its outcome signal lost reads
+  `absent` and finalizes exactly once without the departed session.
 - Invitation association, accepted linking, explicit link repair, and return
   remain implementation scope for Stage 1 Work Item 02. This ADR decides only
   the departure coordination and does not claim that any Work Item 02 behavior

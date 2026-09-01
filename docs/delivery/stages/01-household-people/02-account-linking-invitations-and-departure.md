@@ -83,7 +83,8 @@ after a later re-invitation reuses the same person.
   expectedPersonVersion, expectedLinkVersion)` records the durable operation
   and the visible departure fence before the external membership mutation.
 - `StartMemberDeparture(operationId, expectedOperationVersion)` atomically
-  closes cancellation and moves the operation to access revocation.
+  closes cancellation, moves the operation to access revocation, and claims
+  the one removal attempt for the fresh transition winner.
 - `CancelMemberDeparture(mutationId, operationId, expectedOperationVersion)`
   cancels only a still-`prepared` operation.
 - `ConfirmMemberAccessRevoked(operationId, expectedOperationVersion)` is an
@@ -181,10 +182,15 @@ user/member identity, session information, or private Better Auth errors.
 [ADR-0010](../../../architecture/decisions/0010-coordinate-membership-departure-before-person-archival.md)
 closes the prerequisite. `MealPlannerApi` owns one dedicated native
 `MemberDepartureWorkflow`; `HouseholdObject` owns the closed durable operation.
-Prepare and start commit before the typed Better Auth removal. A timeout or lost
-response is reconciled by reading canonical membership, never by a blind remove
-retry. Only confirmed absence admits exact-purpose system confirmation and
-finalization. Bounded exhaustion produces a visible, versioned repair state.
+Prepare and start commit, then the API durably creates or reconciles the
+deterministic Workflow before the typed Better Auth removal. The Workflow
+initially waits one minute for a privacy-safe outcome signal. The authenticated
+API performs one typed removal with the live caller credentials and signals its
+closed outcome tag; no credentials or provider details enter durable state. A
+missing signal, timeout, or lost response is reconciled by reading canonical
+membership, never by a blind remove retry. Only confirmed absence admits
+exact-purpose system confirmation and finalization. Bounded exhaustion produces
+a visible, versioned repair state.
 
 Cancellation exists only before the local start transition wins. Removal has
 one 30-second attempt; reconciliation and idempotent household steps have a
@@ -210,6 +216,14 @@ by ADR-0010 and must be implemented without weakening it.
   organizer must use explicit repair.
 - Departure retry reconciles Better Auth before repeating an unknown external
   mutation and then replays household finalization safely.
+- A start/repair receipt replay or concurrent loser cannot repeat membership
+  removal. Only a fresh transition winner may make one attempt after the
+  deterministic Workflow instance is confirmed durable.
+- If the Workflow is durable but removal was not attempted or committed, its
+  missing-signal timeout reads membership as present and records visible
+  revocation repair. If removal committed but the result signal was lost, the
+  same timeout reads absence and completes system-purpose finalization without
+  the departed caller's session.
 - A removal attempt is repeated only after a fresh Better Auth read proves the
   target user still has membership in the exact organization.
 - A concurrent profile/person mutation during departure follows the accepted
@@ -265,11 +279,15 @@ visible conflicts; the API must not choose by email or name.
 3. Adult B accepts and links to person B. No new person is created.
 4. B is also admitted to a second household and links to one different local
    person without violating either household's cardinality.
-5. A departure response is lost after Better Auth removed B. Reconciliation
-   confirms revoked access and completes detach/archive once.
-6. B cannot access the household during pending finalization. A later accepted
+5. The deterministic departure Workflow is durably waiting before removal. If
+   the API stops before removal commits, its timeout proves membership is still
+   present and exposes repair without archival.
+6. On a separate attempt, Better Auth removes B and the API stops before
+   signaling the result. The same durable Workflow proves membership absence
+   and completes detach/archive once without B's session.
+7. B cannot access the household during pending finalization. A later accepted
    return restores and links the same person B and preserves history.
-7. A different household cannot read association, invitation, operation, or
+8. A different household cannot read association, invitation, operation, or
    archived-person state.
 
 ## Acceptance Evidence
@@ -294,8 +312,15 @@ visible conflicts; the API must not choose by email or name.
 
 - [ ] Real Better Auth D1 invitation acceptance and membership removal run
   against a real routed `HouseholdObject` in Workerd or Miniflare.
-- [ ] Lost responses before and after each authority commit reconcile without
-  duplicate people, links, membership mutation, audit, or archive.
+- [ ] In real Workerd with Better Auth D1 and a routed `HouseholdObject`, kill
+  the API after deterministic Workflow creation but before membership removal
+  commits; the waiting Workflow times out, reads `present`, records visible
+  repair, and a fresh authorized retry does not duplicate the operation.
+- [ ] In that same real boundary, commit membership removal and kill the API
+  before its outcome event is delivered; the waiting Workflow times out, reads
+  `absent`, and confirms/finalizes exactly once without the departed session.
+- [ ] Other lost responses before and after each authority commit reconcile
+  without duplicate people, links, membership mutation, audit, or archive.
 - [ ] Restart during pending departure completes from durable state.
 - [ ] Membership removal revokes API/object routing before person archive is
   finalized.
@@ -338,10 +363,15 @@ exact-head review is required, and green CI is not merge authority.
 > Better Auth invitation through a purpose-bound digest; complete, explicitly
 > repair, depart, detach/archive, return, and relink that same stable person;
 > and implement ADR-0010's exact API-owned native Workflow plus
-> HouseholdObject state machine, authorization-before-routing, privacy,
-> replay/version, cancellation, timeout, restart, collision, race, and repair
-> rules. Extend the merged Work Item 01 link and people seams without replacing
-> them. Prove the full focused, UI, real Better Auth D1-to-routed-object,
+> HouseholdObject state machine. Deterministically create and confirm the
+> Workflow before any membership removal; make it initially wait for the
+> privacy-safe outcome signal; perform the one typed Better Auth removal in the
+> authenticated API with live caller credentials; and reconcile both a missing
+> removal and a committed removal whose signal is lost. Preserve the exact
+> authorization-before-routing, privacy, replay/version, cancellation,
+> timeout, restart, collision, race, and repair rules. Extend the merged Work
+> Item 01 link and people seams without replacing them. Prove the full focused,
+> UI, real Workerd Better Auth D1-to-routed-`HouseholdObject` crash-window,
 > lost-response, restart, replacement-membership, and cross-household evidence
 > listed here. Exclude profiles, interviews, Agents SDK, routines, planning,
 > recipes, shopping, provider or cloud mutation, deployment, compatibility,
@@ -358,3 +388,8 @@ exact-head review is required, and green CI is not merge authority.
   ADR-0010 accepted the exact access-first departure coordinator, durable
   states, failure visibility, and repair protocol. No Work Item 02 application
   behavior is implemented by this readiness change.
+- 2026-09-01 — Corrected the readiness contract after exact-head review: the
+  deterministic Workflow is now durably created and waiting before the
+  authenticated removal call, and canonical membership reads close both lost-
+  removal and lost-signal crash windows. Status remains `Ready`; no Work Item
+  02 application behavior is implemented by this correction.

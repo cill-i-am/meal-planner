@@ -142,13 +142,17 @@ ADR-0010 fixes an access-first, visible, repairable protocol:
    account link and person, marks the association `departure_pending`, and
    closes cancellation through a versioned start transition before external
    mutation.
-2. `MealPlannerApi` owns a dedicated native `Cloudflare.Workflow` and performs
-   the typed Better Auth membership removal only after those commits.
-3. The coordinator confirms membership absence, then uses the exact
+2. `MealPlannerApi` durably creates or reconciles a deterministic dedicated
+   native `Cloudflare.Workflow` after those commits and before any Better Auth
+   mutation. The Workflow initially waits for a privacy-safe outcome signal.
+3. The authenticated API performs one typed Better Auth membership removal
+   with live caller credentials, then signals the Workflow. A missing signal
+   or removal result is reconciled by reading canonical membership.
+4. The coordinator confirms membership absence, then uses the exact
    `member_departure_finalize` system purpose to record access revocation and
    atomically detach the link, archive the same person, audit, receipt, and
    complete.
-4. Unknown removal outcomes are read from Better Auth before any new removal.
+5. Unknown removal outcomes are read from Better Auth before any new removal.
    Bounded exhaustion and finalization failure remain durable household-visible
    repair states; neither authority is silently described as complete.
 

@@ -39,12 +39,14 @@ cross-household mutation collisions.
 
 [ADR-0010](../architecture/decisions/0010-coordinate-membership-departure-before-person-archival.md)
 now fixes the missing cross-authority departure contract: `MealPlannerApi`
-owns one native Cloudflare Workflow, Better Auth membership absence is proved
-before exact-purpose household finalization, and every partial state remains
-durable, visible, bounded, and repairable. That accepted prerequisite promotes
-Work Item 02 to `Ready`; invitation association, accepted linking, link repair,
-departure, and return are still implementation work. Work Items 03 and 04
-remain `Proposed`.
+durably creates one deterministic native Cloudflare Workflow before the
+authenticated Better Auth removal, the Workflow waits for an outcome signal
+and reconciles a missing removal or lost signal by canonical membership read,
+and only proven membership absence permits exact-purpose household
+finalization. Every partial state remains durable, visible, bounded, and
+repairable. That accepted prerequisite promotes Work Item 02 to `Ready`;
+invitation association, accepted linking, link repair, departure, and return
+are still implementation work. Work Items 03 and 04 remain `Proposed`.
 
 ## Completed Foundation
 
