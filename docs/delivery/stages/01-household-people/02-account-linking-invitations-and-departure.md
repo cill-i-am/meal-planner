@@ -1,12 +1,12 @@
 # Work Item 02 — Account Linking, Invitations, And Departure
 
-- Status: Proposed
+- Status: Ready
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
 - Owner: Unassigned
 - Pull request: Not opened
 - Completed by: Not completed
-- Promotion condition: Work Item 01 evidence is merged and a small
-  departure-coordination ADR is accepted
+- Promotion condition: Satisfied on 2026-09-01 by merged Work Item 01 evidence
+  and accepted ADR-0010
 
 ## Household Outcome
 
@@ -20,8 +20,9 @@ their person and history are retained, and a return restores that same identity.
 - [PDR 0001 — Household people, profiles, and interviews](../../../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [PDR 0016 — Beta support, incidents, and operator repair](../../../decisions/product/0016-beta-support-incidents-and-operator-repair.md)
 - [ADR 0001 — Separate household people from auth members](../../../architecture/decisions/0001-separate-household-people-from-auth-members.md)
+- [ADR 0010 — Coordinate membership departure before person archival](../../../architecture/decisions/0010-coordinate-membership-departure-before-person-archival.md)
 - [Stage 1 invitation and departure recommendations](README.md)
-- Work Item 01's merged person, link, audit, receipt, and runtime evidence
+- [Work Item 01's merged person, link, audit, receipt, and runtime evidence](01-person-registry-and-lifecycle.md)
 
 ## User-Visible Vertical
 
@@ -78,16 +79,28 @@ after a later re-invitation reuses the same person.
   actor to the associated adult after Better Auth membership is proven.
 - `RepairAdultAccountLink(mutationId, personId, expectedPersonVersion, reason)`
   explicitly links or relinks the admitted member under organizer authority.
-- `PrepareMemberDeparture(mutationId, personId, expectedPersonVersion)` records
-  a durable departure operation before the external membership mutation.
-- `FinalizeMemberDeparture(operationId, observedMembershipState)` detaches the
-  account link, archives the same person, and closes the operation.
+- `PrepareMemberDeparture(mutationId, personId, linkId,
+  expectedPersonVersion, expectedLinkVersion)` records the durable operation
+  and the visible departure fence before the external membership mutation.
+- `StartMemberDeparture(operationId, expectedOperationVersion)` atomically
+  closes cancellation and moves the operation to access revocation.
+- `CancelMemberDeparture(mutationId, operationId, expectedOperationVersion)`
+  cancels only a still-`prepared` operation.
+- `ConfirmMemberAccessRevoked(operationId, expectedOperationVersion)` is an
+  exact-purpose system command admitted only after Better Auth confirms
+  membership absence.
+- `FinalizeMemberDeparture(operationId, expectedOperationVersion)` is an
+  exact-purpose system command that detaches the link, archives the same
+  person, and completes an `access_revoked` operation.
+- `RetryMemberDeparture(mutationId, operationId, expectedOperationVersion,
+  reason)` resumes one visible repair-required phase under owner authority.
 - `RestoreReturningAdultLink(mutationId, personId, invitationDigest,
   expectedPersonVersion)` restores and links the same archived person after a
   later accepted invitation.
 
-Exact command decomposition may be adjusted by the departure ADR, but its
-observable ordering and failure states may not be hidden.
+These departure commands and their ordering are fixed by ADR-0010. Equivalent
+contract names may be chosen locally, but no implementation may combine or
+skip the canonical transitions.
 
 ### Queries
 
@@ -106,6 +119,12 @@ unlinked -> invitation_pending -> linked
 linked -> departure_pending -> detached
 detached + accepted return -> linked
 
+Departure operation:
+prepared -> revoking_access -> access_revoked -> completed
+prepared -> cancelled
+revoking_access -> revocation_repair_required -> revoking_access
+access_revoked -> finalization_repair_required -> access_revoked
+
 Person lifecycle on completed departure:
 active -> archived
 archived + accepted return -> active
@@ -122,14 +141,19 @@ archived + accepted return -> active
   person-specific operations do not guess a person.
 - Access is controlled only by current Better Auth membership. An archived or
   detached person does not preserve access.
+- `completed` and `cancelled` are terminal. Membership absence is the only
+  valid predecessor to `access_revoked`, and `access_revoked` is the only valid
+  predecessor to household finalization.
 
 ## Versioning And Household Projection
 
-Person versions advance when invitation association, link, detach, archive, or
-restore changes household-visible person state. Account-link and departure
-records have stable IDs and their own monotonic versions or closed state
-ordinals. Audit entries preserve actor, time, operation, reason/source, and
-before/after association and lifecycle states.
+Person versions advance when invitation association, link, departure prepare,
+cancel, detach/archive, or restore changes household-visible person state.
+Account-link and departure records have stable IDs and monotonic versions.
+Every departure transition requires the exact operation version; prepare and
+finalize also fence exact person/link versions. Audit entries preserve actor,
+time, operation, reason/source, and before/after association and lifecycle
+states.
 
 Household projections may show that an invitation is pending, accepted, or
 requires repair. They must not include email, invitation token/ID/digest, raw
@@ -145,30 +169,31 @@ user/member identity, session information, or private Better Auth errors.
 - The household transaction atomically updates link/person/operation versions,
   appends audit, and records a receipt. Better Auth calls occur outside that
   transaction.
-- Membership and role are verified before routing. Organizer authority is
-  required to associate, repair, or initiate departure. An accepted member may
-  complete only their own admitted link.
+- Membership and role are verified before routing. In this MVP, organizer means
+  the active membership's exact Better Auth `owner` role. Owner authority is
+  required to associate an invitation, repair a link, initiate another adult's
+  departure, or repair departure. An admitted member may complete only their
+  own link and may initiate or retry only their own departure while that
+  membership still exists.
 
-## Departure Coordination Recommendation
+## Accepted Departure Coordination
 
-Accept a small ADR with this protocol before implementation:
+[ADR-0010](../../../architecture/decisions/0010-coordinate-membership-departure-before-person-archival.md)
+closes the prerequisite. `MealPlannerApi` owns one dedicated native
+`MemberDepartureWorkflow`; `HouseholdObject` owns the closed durable operation.
+Prepare and start commit before the typed Better Auth removal. A timeout or lost
+response is reconciled by reading canonical membership, never by a blind remove
+retry. Only confirmed absence admits exact-purpose system confirmation and
+finalization. Bounded exhaustion produces a visible, versioned repair state.
 
-1. The organizer prepares an exact durable departure operation in
-   `HouseholdObject`. Identical replay returns the same operation.
-2. A post-commit Workflow or equivalent coordinator removes the Better Auth
-   membership. No household lock is held during the call.
-3. On a response failure, the coordinator queries Better Auth. It retries remove
-   only when membership is still present and treats confirmed absence as
-   success.
-4. After confirmed absence, a system-purpose household command atomically
-   detaches the link, archives the same person, appends audit, and completes the
-   operation.
-5. If finalization fails, access is already revoked; the visible pending
-   operation is retried and can be repaired by an authorized operator. It is
-   never silently abandoned.
-
-The ADR must settle coordinator ownership, retry/timeout policy, observable
-pending states, cancellation before membership removal, and operator repair.
+Cancellation exists only before the local start transition wins. Removal has
+one 30-second attempt; reconciliation and idempotent household steps have a
+30-second timeout and at most five exponential-backoff attempts beginning at
+two seconds. Cloudflare Workflow restart state and the household operation
+survive runtime restart, while deterministic instance identity and execution
+generation prevent parallel coordinators. The complete state, authorization,
+privacy, collision, concurrency, failure, and operator-repair contract is owned
+by ADR-0010 and must be implemented without weakening it.
 
 ## Failure, Replay, And Concurrency
 
@@ -185,12 +210,16 @@ pending states, cancellation before membership removal, and operator repair.
   organizer must use explicit repair.
 - Departure retry reconciles Better Auth before repeating an unknown external
   mutation and then replays household finalization safely.
+- A removal attempt is repeated only after a fresh Better Auth read proves the
+  target user still has membership in the exact organization.
 - A concurrent profile/person mutation during departure follows the accepted
   ADR's version fence; it cannot silently escape archive or overwrite history.
 - Return and departure racing on the same person/op version produce one winner
   and one stale/conflict result.
 - Restart preserves every operation, receipt, link, invitation association, and
   person identity.
+- A replacement membership for the same user remains present even if its member
+  row ID changed and blocks archival until explicit owner repair.
 
 ## Minimum API Surface
 
@@ -199,6 +228,8 @@ pending states, cancellation before membership removal, and operator repair.
   failure explicitly.
 - An admitted member endpoint to complete an accepted invitation link.
 - Organizer endpoints for explicit link repair and departure initiation.
+- Member/owner cancellation and owner repair endpoints for the exact durable
+  departure operation.
 - A returning-member endpoint to restore/link a selected archived adult after
   acceptance.
 - Roster/current-link/departure-operation queries with the privacy-safe
@@ -245,6 +276,9 @@ visible conflicts; the API must not choose by email or name.
 
 ### Focused tests
 
+- [x] ADR-0010 fixes coordinator ownership, closed states, ordering, replay,
+  timeout, restart, cancellation, authorization, privacy, race, and repair
+  semantics before implementation starts.
 - [ ] Invitation association, accepted linking, explicit repair, departure,
   reconciliation, return, and cardinality invariants have domain tests.
 - [ ] Raw invitation/email/auth identity cannot enter household schemas or
@@ -291,10 +325,36 @@ exact-head review is required, and green CI is not merge authority.
 - A digest is not permission to expose or compare invitation email. Domain
   matching uses explicit person selection and exact admitted invitation
   identity only.
-- If the departure ADR cannot define observable, repairable partial states,
-  keep this work item `Proposed` rather than implementing an informal saga.
+- Implement ADR-0010's named operation states and system purpose directly; do
+  not introduce a generic saga abstraction or weaken a partial state into an
+  unobservable background retry.
+
+## First Implementation-Agent Assignment
+
+> After this readiness PR merges, fetch and prune the dynamic remote default,
+> create one clean isolated worktree from its exact commit, and use branch
+> `codex/stage1-account-linking-invitations-departure`. Implement only this Work
+> Item 02 in one draft PR: associate a selected existing unlinked adult with a
+> Better Auth invitation through a purpose-bound digest; complete, explicitly
+> repair, depart, detach/archive, return, and relink that same stable person;
+> and implement ADR-0010's exact API-owned native Workflow plus
+> HouseholdObject state machine, authorization-before-routing, privacy,
+> replay/version, cancellation, timeout, restart, collision, race, and repair
+> rules. Extend the merged Work Item 01 link and people seams without replacing
+> them. Prove the full focused, UI, real Better Auth D1-to-routed-object,
+> lost-response, restart, replacement-membership, and cross-household evidence
+> listed here. Exclude profiles, interviews, Agents SDK, routines, planning,
+> recipes, shopping, provider or cloud mutation, deployment, compatibility,
+> backfills, dual writes, shared household D1, and any generic organization or
+> saga framework. Run every repository, runtime, build, hosted-CI, and fresh
+> exact-head review gate recorded in this work item; freeze the reviewed head
+> and do not treat green CI as merge authority.
 
 ## Delivery Log
 
 - 2026-08-27 — Created as `Proposed`; blocked on Work Item 01 evidence and a
   departure-coordination ADR.
+- 2026-09-01 — Promoted to `Ready` after PR #198 merged Work Item 01 and
+  ADR-0010 accepted the exact access-first departure coordinator, durable
+  states, failure visibility, and repair protocol. No Work Item 02 application
+  behavior is implemented by this readiness change.

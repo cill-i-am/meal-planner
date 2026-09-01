@@ -23,6 +23,7 @@ compatibility or migration obligation unless the record explicitly names one.
 - [ADR-0007 — Route recipe sources through specialized adapters](0007-route-recipe-sources-through-specialized-adapters.md)
 - [ADR-0008 — Separate plan feasibility from ranked selection](0008-separate-plan-feasibility-from-ranked-selection.md)
 - [ADR-0009 — Synchronize shopping lists through idempotent item operations](0009-synchronize-shopping-lists-through-idempotent-item-operations.md)
+- [ADR-0010 — Coordinate membership departure before person archival](0010-coordinate-membership-departure-before-person-archival.md)
 
 Current-state architecture remains documented by the capability documents in
 the parent directory. An ADR may describe accepted future direction that is not

@@ -139,6 +139,17 @@ expose the associated person or account identity.
 The public contract and generated same-origin client are documented in
 [household-people-api.md](household-people-api.md).
 
+General invitation association, account linking, link repair, and departure are
+not part of the current Work Item 01 runtime. The accepted next composition is
+owned by
+[ADR-0010](decisions/0010-coordinate-membership-departure-before-person-archival.md):
+`MealPlannerApi` coordinates Better Auth access revocation through one dedicated
+native Workflow, while `HouseholdObject` owns the visible versioned departure
+operation and permits system-purpose detach/archive only after confirmed
+membership absence. Stage 1 Work Item 02 is `Ready`; this architecture record
+must be updated from accepted direction to shipped composition in its
+implementation PR.
+
 ## Recipe-import and Recipe Bank authority
 
 `HouseholdObject` SQLite is the canonical store for import admission, source

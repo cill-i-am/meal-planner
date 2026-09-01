@@ -64,3 +64,10 @@ audit, or replay receipt. The roster UI does not retry that conflict or offer
 creator setup again once the occupied slot is visible. It keeps the admitted
 account on the shared roster while account linking remains outside this work
 item.
+
+Invitation association, accepted account linking, explicit repair, departure,
+and return remain unimplemented Work Item 02 API scope. Their readiness and
+access-first cross-authority protocol are recorded in
+[Stage 1 Work Item 02](../delivery/stages/01-household-people/02-account-linking-invitations-and-departure.md)
+and
+[ADR-0010](decisions/0010-coordinate-membership-departure-before-person-archival.md).
