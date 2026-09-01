@@ -85,6 +85,60 @@ digest and an Effect-provided Clock instant only after those checks pass.
 Better Auth D1 remains the global identity and organization control plane. It
 does not store meal-plan aggregate state.
 
+## Household person registry authority
+
+`HouseholdObject` SQLite is the sole canonical writer for household people,
+their active/archived lifecycle, the creator's purpose-bound association,
+per-person optimistic versions, immutable lifecycle audits, and mutation
+receipts. Person IDs are opaque UUID-backed values generated inside household
+authority; archive and restore preserve the same ID and advance its version.
+There is no shared household D1 mirror, compatibility path, hard delete, merge,
+or link inferred from a name or email.
+
+The authenticated API resolves the Better Auth session, active organization,
+and membership before constructing two separately branded SHA-256 identities
+from a versioned, domain-separated encoding of the immutable Better Auth user
+ID and organization ID. `audit-actor` is used only for household audit
+correlation. `linkage-subject` identifies the user-specific side of the durable
+creator association. The association itself occupies one fixed creator slot in
+each household database, with linkage subject and person also unique. The
+linkage is stable across sessions, membership-row changes, and Worker/object
+restart, while remaining household-scoped and user-specific. Raw user,
+membership, session, invitation, role, and email values never enter household
+commands or storage.
+
+Ordinary people commands receive a closed people-member admission. Creator
+bootstrap is different: only Better Auth's actual active membership
+`role === "owner"` produces the closed `better_auth_owner` creator authority.
+A non-owner is rejected by the public API before gateway invocation, private
+Worker routing, or object location. The private Worker and object independently
+require the creator admission for the bootstrap purpose. The object repeats
+exact-purpose admission and persisted organization provenance checks before
+opening the repository.
+
+Creator bootstrap, unlinked person creation, archive, and restore each commit
+the person row, version, audit, creator association where applicable, and
+privacy-safe replay receipt in one Drizzle SQLite transaction. Bootstrap checks
+an exact receipt first, then atomically reserves the household's fixed creator
+slot before inserting the person; another admitted owner receives the closed
+bootstrap conflict without a person, audit, association, or receipt. That
+conflict means the household creator slot is occupied while the requesting
+account remains unlinked; it neither identifies the winner nor represents a
+retryable storage failure. The mutation ID is unique across people commands in
+one household. Exact intent
+replay returns the recorded projection without another write; changed intent
+collides, stale versions and invalid lifecycle transitions fail closed, and
+another household's object has an independent identity and receipt namespace.
+No external I/O is performed by a person transaction.
+
+Roster queries project the creator slot only as `available` or `occupied`,
+derived from that same canonical association row. The projection does not infer
+slot state from roster membership or the requesting account's link and does not
+expose the associated person or account identity.
+
+The public contract and generated same-origin client are documented in
+[household-people-api.md](household-people-api.md).
+
 ## Recipe-import and Recipe Bank authority
 
 `HouseholdObject` SQLite is the canonical store for import admission, source
@@ -186,14 +240,14 @@ organization using an organization-keyed TanStack Query. Its generated
 same-origin client calls `GET /v1/household` without placing an organization ID,
 bearer token, or household scope in the request.
 
-The product authorities in `HouseholdObject` are meal planning, the
+The product authorities in `HouseholdObject` are household people, meal planning, the
 complete recipe-import/review/Recipe Bank capability, compact evidence and
 extraction metadata, terminal checkpoints, and recovery attempts. R2 retains
 only large private bytes. `ProviderAccountingDatabase` retains the five global
 provider cost-accounting tables. It has no organization column, household
 table, import route, execution projection, or household product writer.
 `MealPlannerAuthDatabase` remains the separate Better Auth control plane.
-Shopping lists and preferences have not moved. There is no registry,
+Shopping lists and preferences have not moved. There is no shared registry,
 organization-to-object lookup table, shared product read model, dual write,
 legacy adapter, fallback, or compatibility path.
 

@@ -1,4 +1,9 @@
 import type {
+  HouseholdPeopleRoster,
+  HouseholdPerson,
+  HouseholdPeopleFailure,
+} from "@meal-planner/household-api";
+import type {
   CancelledRecipeImportIntent,
   Recipe,
   RecipeImportBatch,
@@ -92,6 +97,20 @@ import {
   HouseholdEnsureInput as HouseholdEnsureInputSchema,
 } from "./household.contract.js";
 import type {
+  HouseholdBootstrapCreatorPersonInput,
+  HouseholdCreatePersonInput,
+  HouseholdGetPersonInput,
+  HouseholdListPeopleInput,
+  HouseholdTransitionPersonInput,
+} from "./people/household-people.contract.js";
+import {
+  HouseholdBootstrapCreatorPersonInput as HouseholdBootstrapCreatorPersonInputSchema,
+  HouseholdCreatePersonInput as HouseholdCreatePersonInputSchema,
+  HouseholdGetPersonInput as HouseholdGetPersonInputSchema,
+  HouseholdListPeopleInput as HouseholdListPeopleInputSchema,
+  HouseholdTransitionPersonInput as HouseholdTransitionPersonInputSchema,
+} from "./people/household-people.contract.js";
+import type {
   HouseholdAdmitRecipeImportInput,
   HouseholdAnswerRecipeImportActionInput,
   HouseholdCancelRecipeImportInput,
@@ -133,6 +152,12 @@ import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-servic
 export { HouseholdDomainWorker } from "./household-domain-binding.js";
 
 export interface HouseholdDomainWorkerMethods {
+  readonly archiveHouseholdPerson: (
+    input: HouseholdTransitionPersonInput
+  ) => Effect.Effect<
+    typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
   readonly admitImportBatch: (
     input: HouseholdAdmitImportBatchInput
   ) => Effect.Effect<
@@ -150,6 +175,12 @@ export interface HouseholdDomainWorkerMethods {
   ) => Effect.Effect<
     typeof RecipeImportIntent.Encoded,
     HouseholdRecipeImportDomainFailure
+  >;
+  readonly bootstrapCreatorPerson: (
+    input: HouseholdBootstrapCreatorPersonInput
+  ) => Effect.Effect<
+    typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
   >;
   readonly claimImportBatchItem: (
     input: HouseholdClaimImportBatchItemInput
@@ -175,6 +206,12 @@ export interface HouseholdDomainWorkerMethods {
   readonly createMealPlan: (
     input: HouseholdCreateMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
+  readonly createHouseholdPerson: (
+    input: HouseholdCreatePersonInput
+  ) => Effect.Effect<
+    typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
   readonly createMealPlanFromRecipeBank: (
     input: HouseholdCreateMealPlanFromRecipeBankInput
   ) => Effect.Effect<
@@ -232,6 +269,18 @@ export interface HouseholdDomainWorkerMethods {
   readonly ensureHousehold: (
     input: HouseholdEnsureInput
   ) => Effect.Effect<HouseholdMetadata, HouseholdDomainFailure>;
+  readonly getHouseholdPerson: (
+    input: HouseholdGetPersonInput
+  ) => Effect.Effect<
+    typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly listHouseholdPeople: (
+    input: HouseholdListPeopleInput
+  ) => Effect.Effect<
+    typeof HouseholdPeopleRoster.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
   readonly readMealPlan: (
     input: HouseholdReadMealPlanInput
   ) => Effect.Effect<
@@ -319,6 +368,12 @@ export interface HouseholdDomainWorkerMethods {
   readonly rejectMealPlan: (
     input: HouseholdDecideMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
+  readonly restoreHouseholdPerson: (
+    input: HouseholdTransitionPersonInput
+  ) => Effect.Effect<
+    typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
   readonly swapMealPlan: (
     input: HouseholdSwapMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
@@ -345,6 +400,9 @@ export interface HouseholdDomainWorkerMethods {
 export type HouseholdMealPlanDomainFailure =
   | HouseholdDomainFailure
   | MealPlanServiceError;
+export type HouseholdPeopleDomainFailure =
+  | HouseholdDomainFailure
+  | HouseholdPeopleFailure;
 export type HouseholdRecipeImportDomainFailure =
   | HouseholdDomainFailure
   | HouseholdRecipeImportFailure;
@@ -548,6 +606,20 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "approve_meal_plan",
         (household, command) => household.approveMealPlan(command)
       ),
+    archiveHouseholdPerson: (input: HouseholdTransitionPersonInput) =>
+      route(
+        HouseholdTransitionPersonInputSchema,
+        input,
+        "archive_household_person",
+        (household, command) => household.archiveHouseholdPerson(command)
+      ),
+    bootstrapCreatorPerson: (input: HouseholdBootstrapCreatorPersonInput) =>
+      route(
+        HouseholdBootstrapCreatorPersonInputSchema,
+        input,
+        "bootstrap_creator_person",
+        (household, command) => household.bootstrapCreatorPerson(command)
+      ),
     cancelRecipeImport: (input: HouseholdCancelRecipeImportInput) =>
       route(
         HouseholdCancelRecipeImportInputSchema,
@@ -595,6 +667,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "confirm_recipe_import_action",
         (household, command) => household.confirmRecipeImportAction(command)
       ),
+    createHouseholdPerson: (input: HouseholdCreatePersonInput) =>
+      route(
+        HouseholdCreatePersonInputSchema,
+        input,
+        "create_household_person",
+        (household, command) => household.createHouseholdPerson(command)
+      ),
     createMealPlan: (input: HouseholdCreateMealPlanInput) =>
       route(
         HouseholdCreateMealPlanInputSchema,
@@ -624,6 +703,20 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "fail_import_batch_item",
         (household, command) => household.failImportBatchItem(command)
+      ),
+    getHouseholdPerson: (input: HouseholdGetPersonInput) =>
+      route(
+        HouseholdGetPersonInputSchema,
+        input,
+        "get_household_person",
+        (household, command) => household.getHouseholdPerson(command)
+      ),
+    listHouseholdPeople: (input: HouseholdListPeopleInput) =>
+      route(
+        HouseholdListPeopleInputSchema,
+        input,
+        "list_household_people",
+        (household, command) => household.listHouseholdPeople(command)
       ),
     listRecipeBank: (input: typeof HouseholdRecipePageInputSchema.Type) =>
       route(
@@ -770,6 +863,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "resolve_recipe_import_source",
         (household, command) => household.resolveRecipeImportSource(command)
+      ),
+    restoreHouseholdPerson: (input: HouseholdTransitionPersonInput) =>
+      route(
+        HouseholdTransitionPersonInputSchema,
+        input,
+        "restore_household_person",
+        (household, command) => household.restoreHouseholdPerson(command)
       ),
     swapMealPlan: (input: HouseholdSwapMealPlanInput) =>
       route(

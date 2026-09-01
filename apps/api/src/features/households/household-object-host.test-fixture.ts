@@ -1,9 +1,18 @@
-import { MealPlanRecipeSnapshot } from "@meal-planner/household-api";
+import {
+  BootstrapHouseholdCreatorPayload,
+  CreateHouseholdPersonPayload,
+  HouseholdPeopleAuditActorId,
+  HouseholdPersonLinkageSubject,
+  HouseholdPersonId,
+  HouseholdPersonMutationId,
+  HouseholdPersonVersion,
+  MealPlanRecipeSnapshot,
+} from "@meal-planner/household-api";
 import { Recipe } from "@meal-planner/recipe-import-api";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import { DurableObject } from "cloudflare:workers";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Option, Schema } from "effect";
 
 import migrations from "../../../household-migrations/migrations.js";
@@ -31,11 +40,23 @@ import type {
 } from "./household.contract.js";
 import { HouseholdOrganizationId } from "./household.contract.js";
 import {
+  householdCreatorAssociationSingletonKey,
   householdMeta,
   householdMealPlans,
   householdOutbox,
+  householdPeople,
+  householdPersonAudits,
+  householdPersonCreatorAssociations,
+  householdPersonMutationReceipts,
   householdRecipes,
 } from "./household.database-schema.js";
+import type {
+  HouseholdBootstrapCreatorPersonInput,
+  HouseholdCreatePersonInput,
+  HouseholdGetPersonInput,
+  HouseholdListPeopleInput,
+  HouseholdTransitionPersonInput,
+} from "./people/household-people.contract.js";
 import {
   HouseholdAdmitRecipeImportInput,
   HouseholdAnswerRecipeImportActionInput,
@@ -51,6 +72,8 @@ import {
 import { makeHouseholdRecipeImportRepository } from "./recipe-import/household-recipe-import.repository.js";
 import {
   HouseholdMemberAdmission,
+  HouseholdPeopleCreatorAdmission,
+  HouseholdPeopleMemberAdmission,
   HouseholdSystemAdmission,
 } from "./rpc/command-envelope.js";
 import type { HouseholdSystemPurpose } from "./rpc/command-envelope.js";
@@ -152,6 +175,63 @@ const HouseholdObjectTestRuntime = Effect.gen(
                 dispatchId
               );
             return Option.getOrNull(result);
+          })
+        ),
+      inspectHouseholdPeopleState: () =>
+        scoped(
+          Effect.gen(function* inspectHouseholdPeopleState() {
+            const connection = yield* database;
+            const audits = yield* connection
+              .select({
+                command: householdPersonAudits.command,
+                nextVersion: householdPersonAudits.nextVersion,
+                personId: householdPersonAudits.personId,
+                sequence: householdPersonAudits.sequence,
+              })
+              .from(householdPersonAudits)
+              .orderBy(asc(householdPersonAudits.sequence));
+            const associations = yield* connection
+              .select()
+              .from(householdPersonCreatorAssociations);
+            const people = yield* connection.select().from(householdPeople);
+            const receipts = yield* connection
+              .select({
+                mutationId: householdPersonMutationReceipts.mutationId,
+              })
+              .from(householdPersonMutationReceipts);
+            return { associations, audits, people, receipts };
+          })
+        ),
+      proveCreatorAssociationSingletonConstraint: () =>
+        scoped(
+          Effect.gen(function* proveCreatorAssociationSingletonConstraint() {
+            const connection = yield* database;
+            yield* connection
+              .insert(householdPersonCreatorAssociations)
+              .values({
+                createdAtEpochMs: 1,
+                linkageSubject: "a".repeat(64),
+                personId: "person_00000000-0000-4000-8000-000000000001",
+                singletonKey: householdCreatorAssociationSingletonKey,
+              });
+            const rejectedSecond = yield* connection
+              .insert(householdPersonCreatorAssociations)
+              .values({
+                createdAtEpochMs: 2,
+                linkageSubject: "b".repeat(64),
+                personId: "person_00000000-0000-4000-8000-000000000002",
+                singletonKey: householdCreatorAssociationSingletonKey,
+              })
+              .pipe(
+                Effect.matchEffect({
+                  onFailure: () => Effect.succeed(true),
+                  onSuccess: () => Effect.succeed(false),
+                })
+              );
+            const associations = yield* connection
+              .select()
+              .from(householdPersonCreatorAssociations);
+            return { associations, rejectedSecond };
           })
         ),
       invokeMalformedEnsure: (payload: Schema.Json) =>
@@ -322,11 +402,17 @@ const BrokenMigrationObjectBridge = Cloudflare.makeDurableObjectBridge(
 export class BrokenMigrationObject extends BrokenMigrationObjectBridge {}
 
 interface HouseholdObjectClient {
+  readonly archiveHouseholdPerson: (
+    input: HouseholdTransitionPersonInput
+  ) => Effect.Effect<unknown, unknown>;
   readonly admitRecipeImport: (
     input: typeof HouseholdAdmitRecipeImportInput.Type
   ) => Effect.Effect<unknown, unknown>;
   readonly answerRecipeImportAction: (
     input: typeof HouseholdAnswerRecipeImportActionInput.Type
+  ) => Effect.Effect<unknown, unknown>;
+  readonly bootstrapCreatorPerson: (
+    input: HouseholdBootstrapCreatorPersonInput
   ) => Effect.Effect<unknown, unknown>;
   readonly approveMealPlan: (input: {
     readonly admission: HouseholdMemberAdmission;
@@ -347,6 +433,9 @@ interface HouseholdObjectClient {
   readonly createMealPlanFromRecipeBank: (
     input: typeof HouseholdCreateMealPlanFromRecipeBankInput.Type
   ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
+  readonly createHouseholdPerson: (
+    input: HouseholdCreatePersonInput
+  ) => Effect.Effect<unknown, unknown>;
   readonly commitRecipeImportDraft: (
     input: typeof HouseholdCommitRecipeImportDraftInput.Type
   ) => Effect.Effect<unknown, unknown>;
@@ -370,9 +459,17 @@ interface HouseholdObjectClient {
   readonly ensureHousehold: (
     input: HouseholdEnsureInput
   ) => Effect.Effect<HouseholdMetadata, HouseholdDomainFailure>;
+  readonly getHouseholdPerson: (
+    input: HouseholdGetPersonInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly listHouseholdPeople: (
+    input: HouseholdListPeopleInput
+  ) => Effect.Effect<unknown, unknown>;
   readonly inspectImportWorkflowDispatch: (
     dispatchId: typeof HouseholdDispatchId.Type
   ) => Effect.Effect<unknown>;
+  readonly inspectHouseholdPeopleState: () => Effect.Effect<unknown>;
+  readonly proveCreatorAssociationSingletonConstraint: () => Effect.Effect<unknown>;
   readonly inspectMealPlanStorage: (draftId: MealPlanDraftId) => Effect.Effect<{
     readonly planJsonBytes: number;
     readonly replayKeyBytes: number;
@@ -400,6 +497,9 @@ interface HouseholdObjectClient {
     typeof MealPlanWire.Type,
     HouseholdDomainFailure | MealPlanServiceError
   >;
+  readonly restoreHouseholdPerson: (
+    input: HouseholdTransitionPersonInput
+  ) => Effect.Effect<unknown, unknown>;
   readonly resolveRecipeImportSource: (
     input: typeof HouseholdResolveRecipeImportSourceInput.Type
   ) => Effect.Effect<unknown, unknown>;
@@ -421,6 +521,65 @@ interface HouseholdObjectClient {
 }
 
 const HouseholdTestCommand = Schema.Union([
+  Schema.Struct({
+    objectName: Schema.String,
+    operation: Schema.Literal("inspectHouseholdPeopleState"),
+  }),
+  Schema.Struct({
+    objectName: Schema.String,
+    operation: Schema.Literal("proveCreatorAssociationSingletonConstraint"),
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    displayName: BootstrapHouseholdCreatorPayload.fields.displayName,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literals([
+      "bootstrapCreatorPerson",
+      "bootstrapCreatorPersonAsMember",
+    ]),
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    displayName: CreateHouseholdPersonPayload.fields.displayName,
+    kind: CreateHouseholdPersonPayload.fields.kind,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("createHouseholdPerson"),
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    includeArchived: Schema.Boolean,
+    linkageSubject: Schema.String,
+    objectName: Schema.String,
+    operation: Schema.Literal("listHouseholdPeople"),
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    linkageSubject: Schema.String,
+    objectName: Schema.String,
+    operation: Schema.Literal("getHouseholdPerson"),
+    organizationId: HouseholdOrganizationId,
+    personId: HouseholdPersonId,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    expectedVersion: HouseholdPersonVersion,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literals([
+      "archiveHouseholdPerson",
+      "restoreHouseholdPerson",
+    ]),
+    organizationId: HouseholdOrganizationId,
+    personId: HouseholdPersonId,
+  }),
   Schema.Struct({
     actionId: HouseholdAnswerRecipeImportActionInput.fields.actionId,
     answers:
@@ -629,9 +788,45 @@ interface HouseholdTestEnv {
   };
 }
 
-const memberAdmission = (organizationId: typeof HouseholdOrganizationId.Type) =>
+const memberAdmission = (
+  organizationId: typeof HouseholdOrganizationId.Type,
+  actorId = "a".repeat(64)
+) =>
   Schema.decodeUnknownSync(HouseholdMemberAdmission)({
-    actor: { _tag: "Member", actorId: "a".repeat(64) },
+    actor: { _tag: "Member", actorId },
+    organizationId,
+  });
+
+const peopleMemberAdmission = (
+  organizationId: typeof HouseholdOrganizationId.Type,
+  actorId: string,
+  linkageSubject: string
+) =>
+  Schema.decodeUnknownSync(HouseholdPeopleMemberAdmission)({
+    actor: {
+      _tag: "PeopleMember",
+      actorId: Schema.decodeUnknownSync(HouseholdPeopleAuditActorId)(actorId),
+      linkageSubject: Schema.decodeUnknownSync(HouseholdPersonLinkageSubject)(
+        linkageSubject
+      ),
+    },
+    organizationId,
+  });
+
+const peopleCreatorAdmission = (
+  organizationId: typeof HouseholdOrganizationId.Type,
+  actorId: string,
+  linkageSubject: string
+) =>
+  Schema.decodeUnknownSync(HouseholdPeopleCreatorAdmission)({
+    actor: {
+      _tag: "PeopleCreator",
+      actorId: Schema.decodeUnknownSync(HouseholdPeopleAuditActorId)(actorId),
+      authority: "better_auth_owner",
+      linkageSubject: Schema.decodeUnknownSync(HouseholdPersonLinkageSubject)(
+        linkageSubject
+      ),
+    },
     organizationId,
   });
 
@@ -810,6 +1005,12 @@ const routeHouseholdAdministrationTestCommand = (
   if (command.operation === "inspectImportWorkflowDispatch") {
     return respond(household.inspectImportWorkflowDispatch(command.dispatchId));
   }
+  if (command.operation === "inspectHouseholdPeopleState") {
+    return respond(household.inspectHouseholdPeopleState());
+  }
+  if (command.operation === "proveCreatorAssociationSingletonConstraint") {
+    return respond(household.proveCreatorAssociationSingletonConstraint());
+  }
   if (command.operation === "invokeMalformedEnsure") {
     return respond(household.invokeMalformedEnsure(command.payload));
   }
@@ -825,6 +1026,105 @@ const routeHouseholdAdministrationTestCommand = (
   }
   if (command.operation === "seedApprovedRecipes") {
     return respond(household.seedApprovedRecipes(command.count));
+  }
+  return null;
+};
+
+const routeHouseholdPeopleTestCommand = (
+  household: HouseholdObjectClient,
+  command: typeof HouseholdTestCommand.Type
+) => {
+  if (command.operation === "bootstrapCreatorPerson") {
+    return respond(
+      household.bootstrapCreatorPerson({
+        admission: peopleCreatorAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: {
+          displayName: command.displayName,
+          mutationId: command.mutationId,
+        },
+      })
+    );
+  }
+  if (command.operation === "bootstrapCreatorPersonAsMember") {
+    return respond(
+      household.bootstrapCreatorPerson({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: {
+          displayName: command.displayName,
+          mutationId: command.mutationId,
+        },
+      } as never)
+    );
+  }
+  if (command.operation === "createHouseholdPerson") {
+    return respond(
+      household.createHouseholdPerson({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: {
+          displayName: command.displayName,
+          kind: command.kind,
+          mutationId: command.mutationId,
+        },
+      })
+    );
+  }
+  if (command.operation === "listHouseholdPeople") {
+    return respond(
+      household.listHouseholdPeople({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        query: { includeArchived: command.includeArchived ? "true" : "false" },
+      })
+    );
+  }
+  if (command.operation === "getHouseholdPerson") {
+    return respond(
+      household.getHouseholdPerson({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        personId: command.personId,
+      })
+    );
+  }
+  if (
+    command.operation === "archiveHouseholdPerson" ||
+    command.operation === "restoreHouseholdPerson"
+  ) {
+    const input = {
+      admission: peopleMemberAdmission(
+        command.organizationId,
+        command.actorId,
+        command.linkageSubject
+      ),
+      payload: {
+        expectedVersion: command.expectedVersion,
+        mutationId: command.mutationId,
+      },
+      personId: command.personId,
+    };
+    return respond(
+      command.operation === "archiveHouseholdPerson"
+        ? household.archiveHouseholdPerson(input)
+        : household.restoreHouseholdPerson(input)
+    );
   }
   return null;
 };
@@ -918,6 +1218,10 @@ export default {
     );
     if (administrationResponse !== null) {
       return administrationResponse;
+    }
+    const peopleResponse = routeHouseholdPeopleTestCommand(household, command);
+    if (peopleResponse !== null) {
+      return peopleResponse;
     }
     const mealPlanResponse = routeMealPlanTestCommand(household, command);
     return mealPlanResponse ?? new Response(null, { status: 404 });

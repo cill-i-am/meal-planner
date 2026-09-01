@@ -3,7 +3,7 @@
 - Status: Active
 - Immediate work item:
   [`01-person-registry-and-lifecycle.md`](01-person-registry-and-lifecycle.md)
-  (`Ready`)
+  (`In review`)
 - Started: 2026-08-27
 
 ## Household Outcome
@@ -26,10 +26,12 @@ The live repository establishes these boundaries:
 - Private household commands use closed Effect Schemas, exact-purpose admission,
   opaque object routing, object-side authorization, local transactions, and
   mutation receipts.
-- Public household contracts currently expose status and meal-plan operations.
-  There is no people, profile, account-link, or interview-session API.
-- The web application can create and select Better Auth organizations, but has
-  no roster or profile surface. Organization creation does not create a person.
+- Public household contracts expose status, meal-plan, and the closed person
+  registry lifecycle operations. Profile, general account-link, and interview
+  session APIs remain absent.
+- The web application can create and select Better Auth organizations and now
+  presents explicit creator bootstrap plus roster create/archive/restore. It
+  never creates a person as an implicit read side effect.
 - Real Workerd and Miniflare fixtures already prove Better Auth membership,
   private Worker-to-object routing, restart durability, and physical
   cross-household isolation.
@@ -59,7 +61,7 @@ another canonical writer, or a direct Better Auth dependency inside
 
 | Order | Work item | Status | Dependency |
 | --- | --- | --- | --- |
-| 01 | [Person registry and lifecycle](01-person-registry-and-lifecycle.md) | Ready | Stage 0 and accepted people/auth separation |
+| 01 | [Person registry and lifecycle](01-person-registry-and-lifecycle.md) | In review | Stage 0 and accepted people/auth separation |
 | 02 | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | Proposed | Work Item 01 evidence and a departure-coordination ADR |
 | 03 | [Profile authority, versioning, and audit](03-profile-authority-versioning-and-audit.md) | Proposed | Stable person/link semantics from Work Items 01–02 |
 | 04 | [Private interview-session boundary](04-private-interview-session-boundary.md) | Proposed | Work Item 03 and the accepted exact-version Agents SDK spike |

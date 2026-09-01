@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-08-27
+- Last updated: 2026-08-30
 - Delivery source of truth: this repository
 
 ## Active Stage
@@ -12,11 +12,33 @@
 - Status: Active
 - Immediate delivery target:
   [`01-person-registry-and-lifecycle.md`](stages/01-household-people/01-person-registry-and-lifecycle.md)
-  (`Ready`)
+  (`In review`)
 
-Only the first independently implementable work item is ready. Account linking
-and departure, profile authority, and the private interview-session boundary
-remain proposed until their recorded dependencies are resolved.
+The first independently implementable work item has a working implementation
+and real-runtime evidence in
+[draft PR #198](https://github.com/cill-i-am/meal-planner/pull/198). It remains
+in review until its final frozen head passes hosted CI and the user's exact-head
+review. Volatile commit and CI identifiers belong to the live PR, not this
+record. Account linking and departure, profile authority, and the private
+interview-session boundary remain proposed until their recorded dependencies
+are resolved.
+
+The Work Item 01 identity boundary derives a stable household-scoped linkage
+subject from immutable Better Auth user plus organization identity, separately
+from its audit actor. Better Auth's actual `owner` membership role is the only
+creator-bootstrap authority; other admitted members are denied before private
+household routing. The roster carries canonical creator-slot availability
+independently from both roster size and the requesting account link.
+Deterministic domain failures are single-attempt. A pending or outcome-ambiguous
+person mutation is the sole admitted roster command: the UI freezes sibling
+actions and preserves the exact submitted payload and mutation ID until the
+same command obtains a definitive result. The forms validate names before
+submission and treat malformed generated-client responses as ambiguous rather
+than deterministic domain failures. The public roster query rejects unknown
+options. The cumulative runtime proof now covers the full Work Item 01 roster,
+restart/restore history, owner/member bootstrap concurrency, and denied
+cross-household mutation collisions. The draft remains unmerged until its
+current exact-head gates and user review are complete.
 
 ## Completed Foundation
 
@@ -39,12 +61,11 @@ remain proposed until their recorded dependencies are resolved.
 
 ## Immediate Next Steps
 
-1. Assign one implementation lane to Work Item 01 from freshly fetched `main`.
-2. Deliver its authenticated roster vertical through `HouseholdObject`, public
-   API, minimal web UI, and real restart/isolation proof.
-3. Review the exact immutable head before merge, then update the work item and
-   this current-state record with delivery evidence.
-4. Resolve and accept the departure-coordination ADR before promoting Work Item
+1. Complete hosted CI on the final frozen Work Item 01 draft PR head.
+2. Complete the user's exact-head review; resolve only proven in-scope findings
+   before merge authority is considered.
+3. After Work Item 01 is accepted, resolve and accept the
+   departure-coordination ADR before promoting Work Item
    02 to `Ready`.
 
 ## Deliberate Non-Work

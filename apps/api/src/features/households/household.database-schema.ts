@@ -31,6 +31,56 @@ export const householdMealPlanMutationReceipts = sqliteTable(
   (table) => [primaryKey({ columns: [table.draftId, table.mutationId] })]
 );
 
+/** Canonical household-local people registry. */
+export const householdPeople = sqliteTable("household_people", {
+  createdAtEpochMs: integer("created_at_epoch_ms").notNull(),
+  displayName: text("display_name").notNull(),
+  kind: text("kind", { enum: ["adult", "dependant"] }).notNull(),
+  lifecycle: text("lifecycle", { enum: ["active", "archived"] }).notNull(),
+  personId: text("person_id").primaryKey(),
+  updatedAtEpochMs: integer("updated_at_epoch_ms").notNull(),
+  version: integer("version").notNull(),
+});
+
+export const householdCreatorAssociationSingletonKey = "creator" as const;
+
+/** Household-singleton creator association with purpose-bound identity linkage. */
+export const householdPersonCreatorAssociations = sqliteTable(
+  "household_person_creator_associations",
+  {
+    createdAtEpochMs: integer("created_at_epoch_ms").notNull(),
+    linkageSubject: text("linkage_subject").notNull().unique(),
+    personId: text("person_id").notNull().unique(),
+    singletonKey: text("singleton_key").primaryKey(),
+  }
+);
+
+/** Immutable ordered people lifecycle audit. */
+export const householdPersonAudits = sqliteTable("household_person_audits", {
+  actorId: text("actor_id").notNull(),
+  atEpochMs: integer("at_epoch_ms").notNull(),
+  command: text("command", {
+    enum: ["bootstrap_creator", "create", "archive", "restore"],
+  }).notNull(),
+  nextLifecycle: text("next_lifecycle", { enum: ["active", "archived"] }),
+  nextVersion: integer("next_version").notNull(),
+  personId: text("person_id").notNull(),
+  previousLifecycle: text("previous_lifecycle", {
+    enum: ["active", "archived"],
+  }),
+  sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+});
+
+/** Cross-command mutation receipt ledger for exact idempotent replay. */
+export const householdPersonMutationReceipts = sqliteTable(
+  "household_person_mutation_receipts",
+  {
+    intentDigest: text("intent_digest").notNull(),
+    mutationId: text("mutation_id").primaryKey(),
+    resultJson: text("result_json").notNull(),
+  }
+);
+
 /** Canonical household-local batch aggregate; Queue is transport only. */
 export const householdImportBatches = sqliteTable("household_import_batches", {
   actorId: text("actor_id").notNull(),

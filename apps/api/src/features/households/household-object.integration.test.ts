@@ -77,6 +77,267 @@ const recipeImportReview = (
     totalTimeBand: "under_30_minutes",
   },
 });
+
+/* eslint-disable no-use-before-define -- The cumulative tracer is grouped with its person fixture; runtime helpers are initialized before tests execute. */
+describe("household person registry on real Durable Object SQLite", () => {
+  it("preserves replay, lifecycle, races, restart, and household isolation", async () => {
+    const organizationId = "org-person-registry-a";
+    const objectName = await objectNameFor(organizationId);
+    const actorId = "b".repeat(64);
+    const linkageSubject = "c".repeat(64);
+    const bootstrapCommand = {
+      actorId,
+      displayName: "Cillian",
+      linkageSubject,
+      mutationId: "person-bootstrap-a",
+      objectName,
+      operation: "bootstrapCreatorPerson",
+      organizationId,
+    };
+    const objectSideDenial = await commandPeople({
+      ...bootstrapCommand,
+      operation: "bootstrapCreatorPersonAsMember",
+    });
+    expect(objectSideDenial).toMatchObject({
+      error: { _tag: "HouseholdInvalidInput" },
+      ok: false,
+    });
+    const stateAfterDeniedBootstrap = await commandPeople({
+      objectName,
+      operation: "inspectHouseholdPeopleState",
+    });
+    expect(stateAfterDeniedBootstrap).toMatchObject({
+      ok: true,
+      value: { associations: [], audits: [], people: [], receipts: [] },
+    });
+    const [bootstrap, concurrentReplay] = await Promise.all([
+      commandPeople(bootstrapCommand),
+      commandPeople(bootstrapCommand),
+    ]);
+    expect(concurrentReplay).toEqual(bootstrap);
+    expect(bootstrap.ok).toBe(true);
+    const creator = bootstrap.value as {
+      readonly id: string;
+      readonly version: number;
+    };
+    expect(creator).toMatchObject({
+      isCurrentAdult: true,
+      kind: "adult",
+      lifecycle: "active",
+      version: 1,
+    });
+
+    const collision = await commandPeople({
+      ...bootstrapCommand,
+      displayName: "Different intent",
+    });
+    expect(collision).toMatchObject({
+      error: { _tag: "HouseholdPersonMutationCollision" },
+      ok: false,
+    });
+
+    const conflictingBootstrap = await commandPeople({
+      ...bootstrapCommand,
+      actorId: "d".repeat(64),
+      displayName: "Another creator",
+      linkageSubject: "e".repeat(64),
+      mutationId: "person-bootstrap-b",
+    });
+    expect(conflictingBootstrap).toMatchObject({
+      error: { _tag: "HouseholdCreatorBootstrapConflict" },
+      ok: false,
+    });
+
+    const dependant = await commandPeople({
+      actorId,
+      displayName: "Household child",
+      kind: "dependant",
+      linkageSubject,
+      mutationId: "person-create-child",
+      objectName,
+      operation: "createHouseholdPerson",
+      organizationId,
+    });
+    expect(dependant).toMatchObject({
+      ok: true,
+      value: { isCurrentAdult: false, kind: "dependant", version: 1 },
+    });
+    const dependantId = (dependant.value as { readonly id: string }).id;
+
+    const archiveCommand = {
+      actorId,
+      expectedVersion: 1,
+      linkageSubject,
+      mutationId: "person-archive-a",
+      objectName,
+      operation: "archiveHouseholdPerson",
+      organizationId,
+      personId: dependantId,
+    };
+    const [archiveFirst, archiveRace] = await Promise.all([
+      commandPeople(archiveCommand),
+      commandPeople({ ...archiveCommand, mutationId: "person-archive-race" }),
+    ]);
+    const outcomes = [archiveFirst, archiveRace];
+    expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1);
+    expect(outcomes.find((outcome) => !outcome.ok)).toMatchObject({
+      error: { _tag: "HouseholdPersonStaleVersion" },
+    });
+    const archived = outcomes.find((outcome) => outcome.ok);
+    if (archived === undefined) {
+      throw new Error("Expected one archive winner.");
+    }
+    expect(archived.value).toMatchObject({ lifecycle: "archived", version: 2 });
+    const successfulArchiveMutation = archiveFirst.ok
+      ? "person-archive-a"
+      : "person-archive-race";
+    const archiveReplay = await commandPeople({
+      ...archiveCommand,
+      mutationId: successfulArchiveMutation,
+    });
+    expect(archiveReplay).toEqual(archived);
+
+    const restore = await commandPeople({
+      ...archiveCommand,
+      expectedVersion: 2,
+      mutationId: "person-restore-a",
+      operation: "restoreHouseholdPerson",
+    });
+    expect(restore).toMatchObject({
+      ok: true,
+      value: { id: dependantId, lifecycle: "active", version: 3 },
+    });
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const rosterAfterRestart = await commandPeople({
+      actorId,
+      includeArchived: true,
+      linkageSubject,
+      objectName,
+      operation: "listHouseholdPeople",
+      organizationId,
+    });
+    expect(rosterAfterRestart).toMatchObject({
+      ok: true,
+      value: {
+        creatorSlot: "occupied",
+        currentPersonId: creator.id,
+        people: [
+          { id: creator.id, version: 1 },
+          { id: dependantId, lifecycle: "active", version: 3 },
+        ],
+      },
+    });
+    const persistedPeopleState = await commandPeople({
+      objectName,
+      operation: "inspectHouseholdPeopleState",
+    });
+    expect(persistedPeopleState).toMatchObject({
+      ok: true,
+      value: {
+        associations: [
+          {
+            linkageSubject,
+            personId: creator.id,
+            singletonKey: "creator",
+          },
+        ],
+        audits: [
+          {
+            command: "bootstrap_creator",
+            nextVersion: 1,
+            personId: creator.id,
+            sequence: 1,
+          },
+          {
+            command: "create",
+            nextVersion: 1,
+            personId: dependantId,
+            sequence: 2,
+          },
+          {
+            command: "archive",
+            nextVersion: 2,
+            personId: dependantId,
+            sequence: 3,
+          },
+          {
+            command: "restore",
+            nextVersion: 3,
+            personId: dependantId,
+            sequence: 4,
+          },
+        ],
+        people: expect.arrayContaining([
+          expect.objectContaining({ personId: creator.id, version: 1 }),
+          expect.objectContaining({
+            lifecycle: "active",
+            personId: dependantId,
+            version: 3,
+          }),
+        ]),
+        receipts: expect.arrayContaining([
+          { mutationId: "person-bootstrap-a" },
+          { mutationId: "person-create-child" },
+          { mutationId: successfulArchiveMutation },
+          { mutationId: "person-restore-a" },
+        ]),
+      },
+    });
+    expect(
+      (persistedPeopleState.value as { readonly receipts: readonly unknown[] })
+        .receipts
+    ).toHaveLength(4);
+
+    const otherOrganizationId = "org-person-registry-b";
+    const otherObjectName = await objectNameFor(otherOrganizationId);
+    const isolatedRead = await commandPeople({
+      actorId,
+      linkageSubject,
+      objectName: otherObjectName,
+      operation: "getHouseholdPerson",
+      organizationId: otherOrganizationId,
+      personId: dependantId,
+    });
+    expect(isolatedRead).toMatchObject({
+      error: { _tag: "HouseholdPersonNotFound" },
+      ok: false,
+    });
+    const isolatedMutationId = await commandPeople({
+      ...bootstrapCommand,
+      objectName: otherObjectName,
+      organizationId: otherOrganizationId,
+    });
+    expect(isolatedMutationId).toMatchObject({
+      ok: true,
+      value: { displayName: "Cillian" },
+    });
+  }, 30_000);
+
+  it("physically rejects a second creator association in one household database", async () => {
+    const organizationId = "org-person-creator-singleton-constraint";
+    const objectName = await objectNameFor(organizationId);
+    const result = await commandPeople({
+      objectName,
+      operation: "proveCreatorAssociationSingletonConstraint",
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        associations: [
+          {
+            linkageSubject: "a".repeat(64),
+            personId: "person_00000000-0000-4000-8000-000000000001",
+            singletonKey: "creator",
+          },
+        ],
+        rejectedSecond: true,
+      },
+    });
+  });
+});
+/* eslint-enable no-use-before-define */
 const MealPlanWire = Schema.toEncoded(MealPlan);
 const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
 const ManualMealSwapRequestWire = Schema.toEncoded(
@@ -375,6 +636,19 @@ const commandHousehold = async (objectName: string, organizationId: string) => {
 
 const ensureHousehold = (objectName: string, organizationId: string) =>
   commandHousehold(objectName, organizationId);
+
+const commandPeople = async (command: Record<string, unknown>) => {
+  const response = await runtime.dispatchFetch("http://localhost/", {
+    body: JSON.stringify(command),
+    method: "POST",
+  });
+  expect(response.status).toBe(200);
+  return (await response.json()) as {
+    readonly error?: { readonly _tag?: string };
+    readonly ok: boolean;
+    readonly value?: unknown;
+  };
+};
 
 const approvedRecipes = syntheticRecipeReviews
   .filter(({ lifecycle }) => lifecycle === "approved")

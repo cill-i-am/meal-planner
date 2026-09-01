@@ -316,6 +316,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260823163811_household_domain/migration.sql",
       "20260824002531_household_domain/migration.sql",
       "20260825015310_household_domain/migration.sql",
+      "20260829061116_household_domain/migration.sql",
     ]);
     const evidenceMigration = readRepoFile(
       "./apps/api/household-migrations/20260823163811_household_domain/migration.sql"
@@ -342,6 +343,20 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(batchMigration).toContain(
       "CREATE TABLE `household_import_batch_outbox`"
     );
+    const peopleMigration = readRepoFile(
+      "./apps/api/household-migrations/20260829061116_household_domain/migration.sql"
+    );
+    expect(peopleMigration).toContain("CREATE TABLE `household_people`");
+    expect(peopleMigration).toContain(
+      "CREATE TABLE `household_person_creator_associations`"
+    );
+    expect(peopleMigration).toContain("CREATE TABLE `household_person_audits`");
+    expect(peopleMigration).toContain(
+      "CREATE TABLE `household_person_mutation_receipts`"
+    );
+    expect(peopleMigration).toContain("`linkage_subject` text NOT NULL UNIQUE");
+    expect(peopleMigration).toContain("`person_id` text NOT NULL UNIQUE");
+    expect(peopleMigration).toContain("`singleton_key` text PRIMARY KEY");
   });
 
   it("keeps household host fixtures out of the API production program", () => {

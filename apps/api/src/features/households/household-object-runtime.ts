@@ -1,4 +1,6 @@
 import {
+  HouseholdPeopleRoster,
+  HouseholdPerson,
   MealPlan,
   MealPlanPolicy,
   MealPlanRecipeSnapshot,
@@ -84,6 +86,14 @@ import {
   HouseholdInvalidInput,
 } from "./household.contract.js";
 import {
+  HouseholdBootstrapCreatorPersonInput,
+  HouseholdCreatePersonInput,
+  HouseholdGetPersonInput,
+  HouseholdListPeopleInput,
+  HouseholdTransitionPersonInput,
+} from "./people/household-people.contract.js";
+import { makeHouseholdPeopleRepository } from "./people/household-people.repository.js";
+import {
   HouseholdAdmitRecipeImportInput,
   HouseholdAdmitRecipeImportResult,
   HouseholdActiveRecipeImportActionResult,
@@ -120,6 +130,11 @@ const encodeMealPlan = (plan: typeof MealPlan.Type) =>
   Schema.encodeEffect(MealPlan)(plan).pipe(Effect.mapError(invalidInput));
 
 const encodeRecipeImportResult = <S extends Schema.Top>(
+  schema: S,
+  value: S["Type"]
+) => Schema.encodeEffect(schema)(value).pipe(Effect.mapError(invalidInput));
+
+const encodePeopleResult = <S extends Schema.Top>(
   schema: S,
   value: S["Type"]
 ) => Schema.encodeEffect(schema)(value).pipe(Effect.mapError(invalidInput));
@@ -170,6 +185,38 @@ export const HouseholdObjectRuntime = Effect.gen(
 
     // eslint-disable-next-line sort-keys -- RPC methods follow the household capability lifecycle.
     return Effect.succeed({
+      archiveHouseholdPerson: (
+        untrustedInput: HouseholdTransitionPersonInput
+      ) =>
+        scoped(
+          Effect.gen(function* archiveHouseholdPerson() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdTransitionPersonInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "archive_household_person"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const person = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).archive({
+              actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+              personId: command.personId,
+            });
+            return yield* encodePeopleResult(HouseholdPerson, person);
+          })
+        ),
       admitImportBatch: (untrustedInput: HouseholdAdmitImportBatchInput) =>
         scoped(
           Effect.gen(function* admitHouseholdImportBatch() {
@@ -217,6 +264,37 @@ export const HouseholdObjectRuntime = Effect.gen(
               HouseholdAdmitRecipeImportResult,
               committed
             );
+          })
+        ),
+      bootstrapCreatorPerson: (
+        untrustedInput: HouseholdBootstrapCreatorPersonInput
+      ) =>
+        scoped(
+          Effect.gen(function* bootstrapCreatorPerson() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdBootstrapCreatorPersonInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "bootstrap_creator_person"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const person = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).bootstrapCreator({
+              actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+            });
+            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       answerRecipeImportAction: (
@@ -409,6 +487,35 @@ export const HouseholdObjectRuntime = Effect.gen(
               approvedRecipes
             ).create(request, policy);
             return yield* encodeMealPlan(plan);
+          })
+        ),
+      createHouseholdPerson: (untrustedInput: HouseholdCreatePersonInput) =>
+        scoped(
+          Effect.gen(function* createHouseholdPerson() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdCreatePersonInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "create_household_person"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const person = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).create({
+              actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+            });
+            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       createMealPlanFromRecipeBank: (
@@ -690,6 +797,62 @@ export const HouseholdObjectRuntime = Effect.gen(
               connection,
               input.admission.organizationId
             );
+          })
+        ),
+      getHouseholdPerson: (untrustedInput: HouseholdGetPersonInput) =>
+        scoped(
+          Effect.gen(function* getHouseholdPerson() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdGetPersonInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "get_household_person"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const person = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).get({
+              actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
+              personId: command.personId,
+            });
+            return yield* encodePeopleResult(HouseholdPerson, person);
+          })
+        ),
+      listHouseholdPeople: (untrustedInput: HouseholdListPeopleInput) =>
+        scoped(
+          Effect.gen(function* listHouseholdPeople() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdListPeopleInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "list_household_people"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const roster = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).list({
+              actorId: command.admission.actor.actorId,
+              includeArchived: command.query.includeArchived === "true",
+              linkageSubject: command.admission.actor.linkageSubject,
+            });
+            return yield* encodePeopleResult(HouseholdPeopleRoster, roster);
           })
         ),
       readMealPlan: (untrustedInput: HouseholdReadMealPlanInput) =>
@@ -1126,6 +1289,38 @@ export const HouseholdObjectRuntime = Effect.gen(
               RecipeImportIntent,
               transitioned
             );
+          })
+        ),
+      restoreHouseholdPerson: (
+        untrustedInput: HouseholdTransitionPersonInput
+      ) =>
+        scoped(
+          Effect.gen(function* restoreHouseholdPerson() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdTransitionPersonInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "restore_household_person"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const person = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).restore({
+              actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+              personId: command.personId,
+            });
+            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       swapMealPlan: (untrustedInput: HouseholdSwapMealPlanInput) =>

@@ -25,6 +25,65 @@ import {
   MealPlanDraftId,
   SwapMealPlanPayload,
 } from "./meal-plan.js";
+import type { HouseholdPeopleCurrentPrincipal } from "./people-http.js";
+import {
+  HouseholdPeopleBootstrapConflictProblem,
+  HouseholdPeopleCreatorRequiredProblem,
+  HouseholdPeopleLifecycleConflictProblem,
+  HouseholdPeopleMutationCollisionProblem,
+  HouseholdPeopleStaleVersionProblem,
+  HouseholdPeopleNotFoundProblem,
+  HouseholdPeopleUnavailableProblem,
+} from "./people-http.js";
+import { HouseholdPeopleSchemaErrors } from "./people-schema-errors.js";
+import {
+  BootstrapHouseholdCreatorPayload,
+  CreateHouseholdPersonPayload,
+  HouseholdPeopleRoster,
+  HouseholdPerson,
+  HouseholdPersonId,
+  ListHouseholdPeopleUrlParams,
+  TransitionHouseholdPersonPayload,
+} from "./people.js";
+
+export {
+  BootstrapHouseholdCreatorPayload,
+  CreateHouseholdPersonPayload,
+  HouseholdCreatorBootstrapConflict,
+  HouseholdCreatorSlot,
+  HouseholdPeopleRoster,
+  HouseholdPeopleUnavailable,
+  HouseholdPerson,
+  HouseholdPersonDisplayName,
+  HouseholdPersonId,
+  HouseholdPersonKind,
+  HouseholdPersonLifecycle,
+  HouseholdPersonLifecycleConflict,
+  HouseholdPersonMutationCollision,
+  HouseholdPersonMutationId,
+  HouseholdPersonNotFound,
+  HouseholdPersonStaleVersion,
+  HouseholdPersonVersion,
+  ListHouseholdPeopleUrlParams,
+  TransitionHouseholdPersonPayload,
+} from "./people.js";
+export type { HouseholdPeopleFailure } from "./people.js";
+export {
+  HouseholdPeopleBootstrapConflictProblem,
+  HouseholdPeopleCreatorRequiredProblem,
+  HouseholdPeopleCurrentPrincipal,
+  HouseholdPeopleInvalidRequestProblem,
+  HouseholdPeopleLifecycleConflictProblem,
+  HouseholdPeopleMutationCollisionProblem,
+  HouseholdPeopleNotFoundProblem,
+  HouseholdPeoplePrincipal,
+  HouseholdPeopleAuditActorId,
+  HouseholdPersonLinkageSubject,
+  HouseholdCreatorAuthority,
+  HouseholdPeopleStaleVersionProblem,
+  HouseholdPeopleUnavailableProblem,
+} from "./people-http.js";
+export { HouseholdPeopleSchemaErrors } from "./people-schema-errors.js";
 
 export {
   HouseholdCurrentPrincipal,
@@ -112,7 +171,10 @@ export const HouseholdInternalProblem = ProblemDetails(500, "internal_error");
 export class HouseholdSessionAuth extends HttpApiMiddleware.Service<
   HouseholdSessionAuth,
   {
-    provides: HouseholdCurrentPrincipal | HouseholdMealPlanCurrentPrincipal;
+    provides:
+      | HouseholdCurrentPrincipal
+      | HouseholdMealPlanCurrentPrincipal
+      | HouseholdPeopleCurrentPrincipal;
   }
 >()("HouseholdSessionAuth", { error: HouseholdUnauthorizedProblem }) {}
 
@@ -183,6 +245,75 @@ export const HouseholdMealPlanApi = HttpApi.make("householdMealPlanApi")
   .add(MealPlansGroup)
   .middleware(HouseholdMealPlanSchemaErrors);
 
+const PeopleGroup = HttpApiGroup.make("people")
+  .add(
+    HttpApiEndpoint.post(
+      "bootstrapCreator",
+      "/v1/household/people/bootstrap-creator",
+      {
+        error: [
+          HouseholdPeopleBootstrapConflictProblem,
+          HouseholdPeopleCreatorRequiredProblem,
+          HouseholdPeopleMutationCollisionProblem,
+          HouseholdPeopleUnavailableProblem,
+        ],
+        payload: BootstrapHouseholdCreatorPayload,
+        success: HouseholdPerson,
+      }
+    ),
+    HttpApiEndpoint.get("list", "/v1/household/people", {
+      error: HouseholdPeopleUnavailableProblem,
+      query: ListHouseholdPeopleUrlParams,
+      success: HouseholdPeopleRoster,
+    }),
+    HttpApiEndpoint.get("get", "/v1/household/people/:personId", {
+      error: [
+        HouseholdPeopleNotFoundProblem,
+        HouseholdPeopleUnavailableProblem,
+      ],
+      params: { personId: HouseholdPersonId },
+      success: HouseholdPerson,
+    }),
+    HttpApiEndpoint.post("create", "/v1/household/people", {
+      error: [
+        HouseholdPeopleMutationCollisionProblem,
+        HouseholdPeopleUnavailableProblem,
+      ],
+      payload: CreateHouseholdPersonPayload,
+      success: HouseholdPerson.pipe(HttpApiSchema.status(201)),
+    }),
+    HttpApiEndpoint.post("archive", "/v1/household/people/:personId/archive", {
+      error: [
+        HouseholdPeopleNotFoundProblem,
+        HouseholdPeopleLifecycleConflictProblem,
+        HouseholdPeopleMutationCollisionProblem,
+        HouseholdPeopleStaleVersionProblem,
+        HouseholdPeopleUnavailableProblem,
+      ],
+      params: { personId: HouseholdPersonId },
+      payload: TransitionHouseholdPersonPayload,
+      success: HouseholdPerson,
+    }),
+    HttpApiEndpoint.post("restore", "/v1/household/people/:personId/restore", {
+      error: [
+        HouseholdPeopleNotFoundProblem,
+        HouseholdPeopleLifecycleConflictProblem,
+        HouseholdPeopleMutationCollisionProblem,
+        HouseholdPeopleStaleVersionProblem,
+        HouseholdPeopleUnavailableProblem,
+      ],
+      params: { personId: HouseholdPersonId },
+      payload: TransitionHouseholdPersonPayload,
+      success: HouseholdPerson,
+    })
+  )
+  .middleware(HouseholdSessionAuth);
+
+/** Authenticated public household people API. */
+export const HouseholdPeopleApi = HttpApi.make("householdPeopleApi")
+  .add(PeopleGroup)
+  .middleware(HouseholdPeopleSchemaErrors);
+
 export type HouseholdApiClient = HttpApiClient.ForApi<typeof HouseholdApi>;
 
 export const HouseholdApiClient = Context.Service<HouseholdApiClient>(
@@ -195,4 +326,24 @@ export const makeHouseholdApiClientLayer = (options: {
   Layer.effect(
     HouseholdApiClient,
     HttpApiClient.make(HouseholdApi, { baseUrl: options.baseUrl })
+  );
+
+/** Generated client for the authenticated household people API. */
+export type HouseholdPeopleApiClient = HttpApiClient.ForApi<
+  typeof HouseholdPeopleApi
+>;
+
+/** Injectable generated household people client. */
+export const HouseholdPeopleApiClient =
+  Context.Service<HouseholdPeopleApiClient>(
+    "meal-planner/HouseholdPeopleApiClient"
+  );
+
+/** Construct a generated household people client layer. */
+export const makeHouseholdPeopleApiClientLayer = (options: {
+  readonly baseUrl: string | URL;
+}) =>
+  Layer.effect(
+    HouseholdPeopleApiClient,
+    HttpApiClient.make(HouseholdPeopleApi, { baseUrl: options.baseUrl })
   );

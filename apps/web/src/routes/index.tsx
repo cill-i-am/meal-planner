@@ -9,6 +9,8 @@ import {
   requireAuthSuccess,
 } from "../features/auth/auth-client.js";
 import { deriveAuthBoundaryState } from "../features/auth/auth-state.js";
+import { makeBrowserHouseholdPeopleOperations } from "../features/household-people/browser-operations.js";
+import { HouseholdPeoplePanel } from "../features/household-people/household-people-panel.js";
 import { makeBrowserHouseholdOperations } from "../features/households/browser-operations.js";
 import { HouseholdDomainStatus } from "../features/households/household-domain-status.js";
 import { makeBrowserRecipeImportOperations } from "../features/recipe-import/browser-operations.js";
@@ -25,6 +27,7 @@ const MealPlannerRoute = () => {
   const organizations = authClient.useListOrganizations();
   const activeOrganization = authClient.useActiveOrganization();
   const householdOperations = useMemo(makeBrowserHouseholdOperations, []);
+  const peopleOperations = useMemo(makeBrowserHouseholdPeopleOperations, []);
   const operations = useMemo(() => makeBrowserRecipeImportOperations(), []);
 
   const signOut = async () => {
@@ -70,10 +73,16 @@ const MealPlannerRoute = () => {
           householdId={household.id}
           householdName={household.name}
           householdDomainStatus={
-            <HouseholdDomainStatus
-              operations={householdOperations}
-              organizationId={household.id}
-            />
+            <>
+              <HouseholdDomainStatus
+                operations={householdOperations}
+                organizationId={household.id}
+              />
+              <HouseholdPeoplePanel
+                operations={peopleOperations}
+                organizationId={household.id}
+              />
+            </>
           }
           key={recipeImportPageSessionKey(household.id, intentId)}
           onSignOut={logout}
