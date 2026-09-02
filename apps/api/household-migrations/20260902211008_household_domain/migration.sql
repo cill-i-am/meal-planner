@@ -27,6 +27,7 @@ CREATE TABLE `household_person_invitation_associations` (
 	`consumed_at_epoch_ms` integer,
 	`invitation_digest` text PRIMARY KEY,
 	`person_id` text NOT NULL,
+	`recipient_linkage_subject` text,
 	`state` text NOT NULL,
 	`version` integer NOT NULL
 );

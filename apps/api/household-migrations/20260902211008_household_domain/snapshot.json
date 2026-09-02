@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "0cc89ce0-ba47-4b60-b995-9cdec3f674de",
+  "id": "1c07eddb-bd04-495e-9b78-a02eb1f2a5bf",
   "prevIds": ["19cd7f0a-1033-40ea-a013-96745ac806e3"],
   "ddl": [
     {
@@ -1507,6 +1507,16 @@
       "default": null,
       "generated": null,
       "name": "person_id",
+      "entityType": "columns",
+      "table": "household_person_invitation_associations"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recipient_linkage_subject",
       "entityType": "columns",
       "table": "household_person_invitation_associations"
     },

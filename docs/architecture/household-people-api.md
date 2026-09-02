@@ -75,8 +75,13 @@ account on the shared roster while account linking remains outside this work
 item.
 
 Invitation association stores only the purpose-bound invitation digest in the
-household object. Link, repair, departure, and return never infer identity from
-email or display name. The API-owned native departure Workflow is durable
+household object. After Better Auth authenticates the accepting user and
+verifies that user is the invitation recipient, its `beforeAcceptInvitation`
+hook commits the corresponding household-scoped linkage subject to that
+association. Link and return require that exact recorded subject; another
+admitted member cannot consume the accepted invitation. Link, repair,
+departure, and return never infer identity from email or display name. The
+API-owned native departure Workflow is durable
 before the live typed Better Auth membership mutation; it reconciles canonical
 membership after either a missing removal or a lost outcome signal, and only
 confirmed absence permits exact-purpose detach/archive finalization. Public

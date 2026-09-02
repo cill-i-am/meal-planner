@@ -73,6 +73,7 @@ import type {
 } from "./household-meal-plan.contract.js";
 import {
   makeHouseholdDomainGateway,
+  makeHouseholdInvitationRecipientVerifier,
   makeHouseholdMealPlanGateway,
   makeHouseholdMealPlanRequestLayer,
   makeHouseholdPeopleGateway,
@@ -626,21 +627,23 @@ export default {
     if (isTestSystemOperation(testSystemOperation)) {
       return handleTestSystemOperation(request, env, testSystemOperation);
     }
+    const householdDomain =
+      Cloudflare.makeRpcStub<HouseholdDomainWorkerMethods>(
+        env.HouseholdDomainWorker
+      );
     const auth = makeMealPlannerAuth({
       baseURL,
       database: drizzle(env.MealPlannerAuthDatabase),
       schema: authSchema,
       secret: env.BETTER_AUTH_SECRET,
+      verifyInvitationRecipient:
+        makeHouseholdInvitationRecipientVerifier(householdDomain),
     });
     if (new URL(request.url).pathname.startsWith("/api/auth/")) {
       return auth.fetch(request);
     }
     const resolver = makeAuthenticatedOrganizationResolver({ auth });
     const principalResolver = makeAuthPrincipalResolver({ auth });
-    const householdDomain =
-      Cloudflare.makeRpcStub<HouseholdDomainWorkerMethods>(
-        env.HouseholdDomainWorker
-      );
     const importServices = Layer.mergeAll(
       Layer.succeed(AuthPrincipalResolver, principalResolver),
       Layer.succeed(AuthenticatedOrganizationResolver, resolver),

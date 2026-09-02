@@ -92,6 +92,7 @@ import {
   HouseholdBootstrapCreatorPersonInput,
   HouseholdCancelMemberDepartureInput,
   HouseholdCompleteAcceptedAdultLinkInput,
+  HouseholdConfirmAdultInvitationRecipientInput,
   HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
   HouseholdFinalizeMemberDepartureInput,
@@ -857,6 +858,34 @@ export const HouseholdObjectRuntime = Effect.gen(
               payload: command.payload,
             });
             return yield* encodePeopleResult(HouseholdPerson, person);
+          })
+        ),
+      confirmAdultInvitationRecipient: (
+        untrustedInput: HouseholdConfirmAdultInvitationRecipientInput
+      ) =>
+        scoped(
+          Effect.gen(function* confirmAdultInvitationRecipient() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdConfirmAdultInvitationRecipientInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "confirm_adult_invitation_recipient"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).confirmAdultInvitationRecipient({
+              invitationDigest: command.invitationDigest,
+              linkageSubject: command.linkageSubject,
+            });
           })
         ),
       cancelMemberDeparture: (

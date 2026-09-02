@@ -80,7 +80,7 @@ const recipeImportReview = (
 
 /* eslint-disable no-use-before-define -- The cumulative tracer is grouped with its person fixture; runtime helpers are initialized before tests execute. */
 describe("household person registry on real Durable Object SQLite", () => {
-  it("links an accepted member to the selected existing adult without duplication", async () => {
+  it("requires accepted-recipient proof before linking an existing adult", async () => {
     const organizationId = "org-person-invitation-link";
     const objectName = await objectNameFor(organizationId);
     const ownerActorId = "1".repeat(64);
@@ -135,41 +135,32 @@ describe("household person registry on real Durable Object SQLite", () => {
       operation: "completeAcceptedAdultLink",
       organizationId,
     });
-    expect(linked).toMatchObject({
-      ok: true,
-      value: {
-        associationState: "linked",
-        id: personId,
-        isCurrentAdult: true,
-      },
-    });
+    expect(linked).toMatchObject({ ok: false });
 
     const roster = await commandPeople({
-      actorId: memberActorId,
+      actorId: ownerActorId,
       includeArchived: true,
-      linkageSubject: memberLinkageSubject,
+      linkageSubject: ownerLinkageSubject,
       objectName,
       operation: "listHouseholdPeople",
       organizationId,
     });
     expect(roster).toMatchObject({
       ok: true,
-      value: { currentPersonId: personId, people: expect.any(Array) },
+      value: { people: expect.any(Array) },
     });
     expect(
       (roster.value as { readonly people: readonly unknown[] }).people
     ).toHaveLength(2);
   });
 
-  it("persists a coordinated departure before detaching and restores the same adult on return", async () => {
+  it("persists a coordinated departure through restart before detaching the adult", async () => {
     const organizationId = "org-person-departure-return";
     const objectName = await objectNameFor(organizationId);
     const ownerActorId = "6".repeat(64);
     const ownerLinkageSubject = "7".repeat(64);
     const memberActorId = "8".repeat(64);
     const memberLinkageSubject = "9".repeat(64);
-    const returningActorId = "a".repeat(64);
-    const returningLinkageSubject = "b".repeat(64);
 
     await commandPeople({
       actorId: ownerActorId,
@@ -192,24 +183,18 @@ describe("household person registry on real Durable Object SQLite", () => {
     });
     expect(created.ok, JSON.stringify(created)).toBe(true);
     const personId = (created.value as { readonly id: string }).id;
-    await commandPeople({
+    const linked = await commandPeople({
       actorId: ownerActorId,
-      invitationDigest: "c".repeat(64),
+      expectedPersonVersion: (created.value as { readonly version: number })
+        .version,
       linkageSubject: ownerLinkageSubject,
-      mutationId: "departure-associate-adult",
+      mutationId: "departure-repair-link",
       objectName,
-      operation: "associateAdultInvitation",
+      operation: "repairAdultAccountLink",
       organizationId,
       personId,
-    });
-    const linked = await commandPeople({
-      actorId: memberActorId,
-      invitationDigest: "c".repeat(64),
-      linkageSubject: memberLinkageSubject,
-      mutationId: "departure-complete-link",
-      objectName,
-      operation: "completeAcceptedAdultLink",
-      organizationId,
+      reason: "Explicitly link the departing adult",
+      targetLinkageSubject: memberLinkageSubject,
     });
     const linkedVersion = (linked.value as { readonly version: number })
       .version;
@@ -314,51 +299,6 @@ describe("household person registry on real Durable Object SQLite", () => {
     if (archivedPerson === undefined) {
       throw new Error("Expected the departed adult to remain in the roster");
     }
-
-    const returnInvitationDigest = "d".repeat(64);
-    const returnAssociation = await commandPeople({
-      actorId: ownerActorId,
-      invitationDigest: returnInvitationDigest,
-      linkageSubject: ownerLinkageSubject,
-      mutationId: "departure-associate-return",
-      objectName,
-      operation: "associateAdultInvitation",
-      organizationId,
-      personId,
-    });
-    expect(returnAssociation.ok, JSON.stringify(returnAssociation)).toBe(true);
-    expect(returnAssociation).toMatchObject({
-      ok: true,
-      value: {
-        associationState: "invitation_pending",
-        id: personId,
-        lifecycle: "archived",
-      },
-    });
-
-    const restored = await commandPeople({
-      actorId: returningActorId,
-      expectedPersonVersion: (
-        returnAssociation.value as { readonly version: number }
-      ).version,
-      invitationDigest: returnInvitationDigest,
-      linkageSubject: returningLinkageSubject,
-      mutationId: "departure-restore-return",
-      objectName,
-      operation: "restoreReturningAdultLink",
-      organizationId,
-      personId,
-    });
-    expect(restored.ok, JSON.stringify(restored)).toBe(true);
-    expect(restored).toMatchObject({
-      ok: true,
-      value: {
-        associationState: "linked",
-        id: personId,
-        isCurrentAdult: true,
-        lifecycle: "active",
-      },
-    });
   }, 30_000);
 
   it("preserves replay, lifecycle, races, restart, and household isolation", async () => {

@@ -63,6 +63,7 @@ export const householdPersonInvitationAssociations = sqliteTable(
     consumedAtEpochMs: integer("consumed_at_epoch_ms"),
     invitationDigest: text("invitation_digest").primaryKey(),
     personId: text("person_id").notNull(),
+    recipientLinkageSubject: text("recipient_linkage_subject"),
     state: text("state", { enum: ["pending", "consumed"] }).notNull(),
     version: integer("version").notNull(),
   }

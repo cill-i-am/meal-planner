@@ -59,6 +59,8 @@ const expectedD1Resources: readonly D1ResourceDeclaration[] = [
 
 const expectedD1ConsumerPaths = [
   "alchemy.run.ts",
+  "apps/api/src/features/households/people/household-people.control-plane.ts",
+  "apps/api/src/features/households/people/member-departure.workflow.ts",
   "apps/api/src/features/imports/import-recipe-recovery.workflow.ts",
   "apps/api/src/features/imports/import-runtime-composition.ts",
   "apps/api/src/features/imports/import-worker-request-layer.ts",
@@ -70,6 +72,11 @@ const expectedD1ConsumerPaths = [
 
 const expectedD1ConsumerCalls: readonly D1ConsumerCall[] = [
   {
+    arguments: ["yield* options.authDatabase"],
+    binding: "drizzle",
+    path: "apps/api/src/features/households/people/member-departure.workflow.ts",
+  },
+  {
     arguments: ["yield* authQueryDatabase.raw"],
     binding: "drizzle",
     path: "apps/api/src/worker.ts",
@@ -77,6 +84,10 @@ const expectedD1ConsumerCalls: readonly D1ConsumerCall[] = [
 ];
 
 const expectedD1QueryBindings: readonly D1QueryBinding[] = [
+  {
+    path: "apps/api/src/features/households/people/member-departure.workflow.ts",
+    resource: "MealPlannerAuthDatabase",
+  },
   {
     path: "apps/api/src/features/imports/import-runtime-composition.ts",
     resource: "ProviderAccountingDatabase",

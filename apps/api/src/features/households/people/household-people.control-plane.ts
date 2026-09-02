@@ -12,7 +12,6 @@ export { HouseholdPeopleControlPlaneNotFound } from "./household-people.control-
 export { HouseholdPeopleControlPlaneUnavailable } from "./household-people.control-plane-unavailable.js";
 
 export interface HouseholdControlPlaneInvitation {
-  readonly email: string;
   readonly id: string;
   readonly status: string;
 }
@@ -46,13 +45,6 @@ export interface HouseholdPeopleControlPlane {
     HouseholdControlPlaneMember,
     HouseholdPeopleControlPlaneNotFound | HouseholdPeopleControlPlaneUnavailable
   >;
-  readonly getAcceptedInvitationMember: (input: {
-    readonly invitationId: string;
-    readonly organizationId: HouseholdOrganizationId;
-  }) => Effect.Effect<
-    HouseholdControlPlaneMember & { readonly invitationId: string },
-    HouseholdPeopleControlPlaneNotFound | HouseholdPeopleControlPlaneUnavailable
-  >;
   readonly listMemberUserIds: (
     organizationId: HouseholdOrganizationId
   ) => Effect.Effect<readonly string[], HouseholdPeopleControlPlaneUnavailable>;
@@ -80,7 +72,6 @@ export const makeHouseholdPeopleControlPlane = (options: {
       try: () =>
         options.database
           .select({
-            email: authSchema.invitation.email,
             id: authSchema.invitation.id,
             status: authSchema.invitation.status,
           })
@@ -143,49 +134,11 @@ export const makeHouseholdPeopleControlPlane = (options: {
             headers: input.headers,
           });
           return {
-            email: invitation.email,
             id: invitation.id,
             status: invitation.status,
           };
         },
       }),
-    getAcceptedInvitationMember: (input) =>
-      findInvitation(input).pipe(
-        Effect.filterOrFail(
-          (invitation) => invitation.status === "accepted",
-          () => new HouseholdPeopleControlPlaneNotFound()
-        ),
-        Effect.flatMap((invitation) =>
-          Effect.tryPromise({
-            catch: unavailable,
-            try: () =>
-              options.database
-                .select({
-                  id: authSchema.member.id,
-                  role: authSchema.member.role,
-                  userId: authSchema.member.userId,
-                })
-                .from(authSchema.user)
-                .innerJoin(
-                  authSchema.member,
-                  eq(authSchema.member.userId, authSchema.user.id)
-                )
-                .where(
-                  and(
-                    eq(authSchema.user.email, invitation.email),
-                    eq(authSchema.member.organizationId, input.organizationId)
-                  )
-                )
-                .limit(1),
-          }).pipe(
-            Effect.flatMap(([member]) =>
-              member === undefined
-                ? Effect.fail(new HouseholdPeopleControlPlaneNotFound())
-                : Effect.succeed({ ...member, invitationId: invitation.id })
-            )
-          )
-        )
-      ),
     getInvitation: findInvitation,
     getMember: findMember,
     listMemberUserIds: (organizationId) =>

@@ -51,6 +51,15 @@ export const HouseholdCompleteAcceptedAdultLinkInput = Schema.Struct({
 export type HouseholdCompleteAcceptedAdultLinkInput =
   typeof HouseholdCompleteAcceptedAdultLinkInput.Type;
 
+/** Exact-recipient proof captured after Better Auth authenticates invitation acceptance. */
+export const HouseholdConfirmAdultInvitationRecipientInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  invitationDigest: CompleteAcceptedAdultLinkPayload.fields.invitationDigest,
+  linkageSubject: HouseholdPersonLinkageSubject,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdConfirmAdultInvitationRecipientInput =
+  typeof HouseholdConfirmAdultInvitationRecipientInput.Type;
+
 const HouseholdPeopleCallerAdmission = Schema.Union([
   HouseholdPeopleCreatorAdmission,
   HouseholdPeopleMemberAdmission,

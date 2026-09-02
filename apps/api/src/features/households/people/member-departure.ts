@@ -6,6 +6,9 @@ import {
 import type * as Cloudflare from "alchemy/Cloudflare";
 import { Cause, Data, Effect, Schema } from "effect";
 
+import { HouseholdDigest } from "../shared-kernel/authority-services.js";
+import { HouseholdDigestLive } from "../shared-kernel/authority-services.live.js";
+
 export const MemberDepartureWorkflowInput = Schema.Struct({
   claimedOperationVersion: HouseholdAssociationVersion,
   executionGeneration: Schema.Int.pipe(
@@ -64,18 +67,11 @@ export interface MemberDepartureWorkflowStarter {
 }
 
 const sha256 = (value: string) =>
-  Effect.tryPromise({
-    catch: () => new MemberDepartureWorkflowUnavailable(),
-    try: async () => {
-      const digest = await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(value)
-      );
-      return Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("");
-    },
-  });
+  HouseholdDigest.pipe(
+    Effect.flatMap((digest) => digest.sha256(value)),
+    Effect.mapError(() => new MemberDepartureWorkflowUnavailable()),
+    Effect.provide(HouseholdDigestLive)
+  );
 
 export const memberDepartureWorkflowInstanceId = (
   input: MemberDepartureWorkflowInput

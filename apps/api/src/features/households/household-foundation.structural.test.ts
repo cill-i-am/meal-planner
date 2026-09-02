@@ -171,6 +171,26 @@ describe("household foundation structural boundaries", () => {
     }
   });
 
+  it("binds invitation acceptance to the authenticated Better Auth subject without email inference", async () => {
+    const [auth, composition, controlPlane, repository] = await Promise.all([
+      read(path.join(apiFeaturesRoot, "auth/auth.ts")),
+      read(path.join(householdRoot, "household-request-composition.ts")),
+      read(
+        path.join(householdRoot, "people/household-people.control-plane.ts")
+      ),
+      read(path.join(householdRoot, "people/household-people.repository.ts")),
+    ]);
+
+    expect(auth).toContain("beforeAcceptInvitation");
+    expect(auth).toContain("verifyInvitationRecipient");
+    expect(composition).toContain("makeHouseholdInvitationRecipientVerifier");
+    expect(repository).toContain("recipientLinkageSubject");
+    expect(`${composition}\n${controlPlane}`).not.toContain(
+      "getAcceptedInvitationMember"
+    );
+    expect(`${composition}\n${controlPlane}`).not.toContain("invitation.email");
+  });
+
   it("keeps external I/O outside the atomic admission/outbox repository", async () => {
     const sources = await readHouseholdAuthoritySources();
     const transactionOwners = sources.filter(({ source }) =>

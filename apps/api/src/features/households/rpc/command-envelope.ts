@@ -16,6 +16,7 @@ export const HouseholdSystemPurpose = Schema.Literals([
   "batch_item_dispatch",
   "import_workflow_dispatch",
   "member_departure_finalize",
+  "person_invitation_acceptance",
   "recipe_import_lifecycle_commit",
 ]);
 export type HouseholdSystemPurpose = typeof HouseholdSystemPurpose.Type;
@@ -137,6 +138,7 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "mutate_evidence_stage",
   "commit_recipe_import_draft",
   "complete_accepted_adult_link",
+  "confirm_adult_invitation_recipient",
   "confirm_member_access_revoked",
   "create_meal_plan",
   "create_household_person",
@@ -283,6 +285,8 @@ export const requireHouseholdCommandAdmission = (
               purpose === "finalize_member_departure" ||
               purpose === "get_member_departure" ||
               purpose === "mark_member_departure_repair_required")) ||
+          (admission.actor.purpose === "person_invitation_acceptance" &&
+            purpose === "confirm_adult_invitation_recipient") ||
           (admission.actor.purpose === "batch_item_dispatch" &&
             batchDispatchPurposes.has(purpose))
         );

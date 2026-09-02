@@ -6,6 +6,9 @@ import {
 import type { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
+import { HouseholdDigest } from "../shared-kernel/authority-services.js";
+import { HouseholdDigestLive } from "../shared-kernel/authority-services.live.js";
+
 export class HouseholdPeopleIdentityFailure {
   readonly _tag = "HouseholdPeopleIdentityFailure";
 }
@@ -23,29 +26,21 @@ const peopleIdentityMaterial = (
     subject,
   ]);
 
-const sha256 = (value: string) =>
-  Effect.tryPromise({
-    catch: () => new HouseholdPeopleIdentityFailure(),
-    try: async () => {
-      const digest = await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(value)
-      );
-      return Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("");
-    },
-  });
-
 const derive = <A>(
   schema: Schema.Codec<A, string, never>,
   purpose: "audit-actor" | "invitation" | "linkage-subject",
   organizationId: HouseholdOrganizationId,
   subject: string
 ) =>
-  sha256(peopleIdentityMaterial(purpose, organizationId, subject)).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(schema)),
-    Effect.mapError(() => new HouseholdPeopleIdentityFailure())
+  Effect.gen(function* deriveHouseholdPeopleIdentity() {
+    const digest = yield* HouseholdDigest;
+    const value = yield* digest.sha256(
+      peopleIdentityMaterial(purpose, organizationId, subject)
+    );
+    return yield* Schema.decodeUnknownEffect(schema)(value);
+  }).pipe(
+    Effect.mapError(() => new HouseholdPeopleIdentityFailure()),
+    Effect.provide(HouseholdDigestLive)
   );
 
 /** Household-scoped account subject derived only from immutable Better Auth user id. */

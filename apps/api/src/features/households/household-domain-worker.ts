@@ -103,6 +103,7 @@ import type {
   HouseholdBootstrapCreatorPersonInput,
   HouseholdCancelMemberDepartureInput,
   HouseholdCompleteAcceptedAdultLinkInput,
+  HouseholdConfirmAdultInvitationRecipientInput,
   HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
   HouseholdFinalizeMemberDepartureInput,
@@ -124,6 +125,7 @@ import {
   HouseholdBootstrapCreatorPersonInput as HouseholdBootstrapCreatorPersonInputSchema,
   HouseholdCancelMemberDepartureInput as HouseholdCancelMemberDepartureInputSchema,
   HouseholdCompleteAcceptedAdultLinkInput as HouseholdCompleteAcceptedAdultLinkInputSchema,
+  HouseholdConfirmAdultInvitationRecipientInput as HouseholdConfirmAdultInvitationRecipientInputSchema,
   HouseholdConfirmMemberAccessRevokedInput as HouseholdConfirmMemberAccessRevokedInputSchema,
   HouseholdCreatePersonInput as HouseholdCreatePersonInputSchema,
   HouseholdFinalizeMemberDepartureInput as HouseholdFinalizeMemberDepartureInputSchema,
@@ -259,6 +261,9 @@ export interface HouseholdDomainWorkerMethods {
     typeof HouseholdPerson.Encoded,
     HouseholdPeopleDomainFailure
   >;
+  readonly confirmAdultInvitationRecipient: (
+    input: HouseholdConfirmAdultInvitationRecipientInput
+  ) => Effect.Effect<void, HouseholdPeopleDomainFailure>;
   readonly confirmMemberAccessRevoked: (
     input: HouseholdConfirmMemberAccessRevokedInput
   ) => Effect.Effect<
@@ -784,6 +789,16 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "complete_import_batch_item",
         (household, command) => household.completeImportBatchItem(command)
+      ),
+    confirmAdultInvitationRecipient: (
+      input: HouseholdConfirmAdultInvitationRecipientInput
+    ) =>
+      route(
+        HouseholdConfirmAdultInvitationRecipientInputSchema,
+        input,
+        "confirm_adult_invitation_recipient",
+        (household, command) =>
+          household.confirmAdultInvitationRecipient(command)
       ),
     confirmMemberAccessRevoked: (
       input: HouseholdConfirmMemberAccessRevokedInput

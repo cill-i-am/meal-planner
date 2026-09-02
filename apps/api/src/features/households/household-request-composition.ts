@@ -1,5 +1,6 @@
 import {
   HouseholdAdultInvitationResult,
+  HouseholdOrganizationId,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
   HouseholdPeopleRoster,
@@ -26,6 +27,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import type { AuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
 import { AuthenticatedOrganizationResolver as AuthenticatedOrganizationResolverService } from "../auth/auth.principal.js";
 import { RecipeImportHttpPlatformServices } from "../imports/import-intent-api.http.js";
+import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 import type {
   HouseholdCreateMealPlanFromRecipeBankInput,
   HouseholdDecideMealPlanInput,
@@ -226,6 +228,47 @@ const linkageSubject = (
   deriveHouseholdPersonLinkageSubject(organizationId, userId).pipe(
     Effect.mapError(() => HouseholdPeopleUnavailable.make({}))
   );
+
+/** Capture the authenticated Better Auth invitation recipient at acceptance time. */
+export const makeHouseholdInvitationRecipientVerifier =
+  (
+    domain: Pick<
+      HouseholdDomainWorkerMethods,
+      "confirmAdultInvitationRecipient"
+    >
+  ) =>
+  (input: {
+    readonly invitationId: string;
+    readonly organizationId: string;
+    readonly userId: string;
+  }): Promise<void> =>
+    Effect.runPromise(
+      Effect.gen(function* verifyInvitationRecipient() {
+        const organizationId = yield* Schema.decodeUnknownEffect(
+          HouseholdOrganizationId
+        )(input.organizationId);
+        const acceptedInvitationDigest = yield* deriveHouseholdInvitationDigest(
+          organizationId,
+          input.invitationId
+        );
+        const recipientLinkageSubject =
+          yield* deriveHouseholdPersonLinkageSubject(
+            organizationId,
+            input.userId
+          );
+        yield* domain.confirmAdultInvitationRecipient({
+          admission: {
+            actor: {
+              _tag: "System",
+              purpose: "person_invitation_acceptance",
+            },
+            organizationId,
+          },
+          invitationDigest: acceptedInvitationDigest,
+          linkageSubject: recipientLinkageSubject,
+        });
+      })
+    );
 
 const persistenceFailure = (operation: "create" | "read" | "save") =>
   MealPlanPersistenceFailure.make({ operation });
@@ -443,22 +486,18 @@ export const makeHouseholdPeopleGateway = (options: {
       }),
     completeAdultLink: ({ payload, principal }) =>
       Effect.gen(function* completeAcceptedAdultLink() {
-        const member = yield* options.controlPlane.getAcceptedInvitationMember({
+        const invitation = yield* options.controlPlane.getInvitation({
           invitationId: payload.invitationId,
           organizationId: principal.organizationId,
         });
-        const targetLinkageSubject = yield* linkageSubject(
-          principal.organizationId,
-          member.userId
-        );
-        if (targetLinkageSubject !== principal.linkageSubject) {
+        if (invitation.status !== "accepted") {
           return yield* Effect.fail(
             HouseholdPersonAssociationConflict.make({})
           );
         }
         const digest = yield* invitationDigest(
           principal.organizationId,
-          member.invitationId
+          invitation.id
         );
         const admission = yield* memberAdmission(principal);
         const wire = yield* options.domain
@@ -690,22 +729,18 @@ export const makeHouseholdPeopleGateway = (options: {
       }),
     returnAdult: ({ payload, principal }) =>
       Effect.gen(function* restoreReturningAdultLink() {
-        const member = yield* options.controlPlane.getAcceptedInvitationMember({
+        const invitation = yield* options.controlPlane.getInvitation({
           invitationId: payload.invitationId,
           organizationId: principal.organizationId,
         });
-        const targetLinkageSubject = yield* linkageSubject(
-          principal.organizationId,
-          member.userId
-        );
-        if (targetLinkageSubject !== principal.linkageSubject) {
+        if (invitation.status !== "accepted") {
           return yield* Effect.fail(
             HouseholdPersonAssociationConflict.make({})
           );
         }
         const digest = yield* invitationDigest(
           principal.organizationId,
-          member.invitationId
+          invitation.id
         );
         const admission = yield* memberAdmission(principal);
         const wire = yield* options.domain

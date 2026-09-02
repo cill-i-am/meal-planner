@@ -5,7 +5,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Exit, Layer, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 
 import { MealPlannerAuthDatabase } from "../../../infrastructure/meal-planner-auth-database.js";
 import * as authSchema from "../../auth/auth.database-schema.js";
@@ -298,5 +298,5 @@ export default class MemberDepartureWorkflow extends Cloudflare.Workflow<MemberD
         });
         return yield* coordinateMemberDeparture(input, ports);
       });
-  }).pipe(Effect.provide(Layer.mergeAll(Cloudflare.D1.QueryDatabaseBinding)))
+  }).pipe(Effect.provide(Cloudflare.D1.QueryDatabaseBinding))
 ) {}

@@ -429,3 +429,11 @@ exact-head review is required, and green CI is not merge authority.
   cover both crash windows, restart repair, last-owner rejection, replacement
   membership, replay, and privacy-safe projections. Final repository and
   exact-head review gates remain pending.
+- 2026-09-02 — Replaced accepted-invitation email inference with an explicit
+  acceptance-boundary proof. Better Auth first authenticates and verifies the
+  invitation recipient, then its `beforeAcceptInvitation` hook records only
+  the invitation digest and household-scoped linkage subject in
+  `HouseholdObject`. Complete and return require that exact subject. Real
+  routed-object tests reject another admitted member for both operations and
+  prove one winner under concurrent link commands, with no email comparison or
+  household email storage.

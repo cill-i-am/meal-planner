@@ -20,6 +20,7 @@ import {
   makeHouseholdMealPlanGateway,
   makeHouseholdMealPlanRequestLayer,
   makeHouseholdPeopleGateway,
+  makeHouseholdInvitationRecipientVerifier,
   makeHouseholdPeopleRequestLayer,
   makeHouseholdRequestLayer,
 } from "./features/households/household-request-composition.js";
@@ -171,6 +172,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           database: authDatabase,
           schema: authSchema,
           secret: Redacted.value(authSecret),
+          verifyInvitationRecipient:
+            makeHouseholdInvitationRecipientVerifier(householdDomain),
         });
         if (new URL(webRequest.url).pathname.startsWith("/api/auth/")) {
           return HttpServerResponse.fromWeb(

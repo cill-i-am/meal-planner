@@ -26,6 +26,7 @@ import type {
   CreateHouseholdPersonPayload,
   HouseholdPeopleAuditActorId,
   HouseholdPeopleFailure,
+  HouseholdInvitationDigest,
   HouseholdPersonAssociationState,
   PrepareMemberDeparturePayload,
   RepairAdultAccountLinkPayload,
@@ -160,6 +161,10 @@ export interface HouseholdPeopleRepository {
     readonly now: number;
     readonly payload: CompleteAcceptedAdultLinkPayload;
   }) => Effect.Effect<Person, Failure>;
+  readonly confirmAdultInvitationRecipient: (input: {
+    readonly invitationDigest: HouseholdInvitationDigest;
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
+  }) => Effect.Effect<void, Failure>;
   readonly cancelMemberDeparture: (input: {
     readonly actorId: HouseholdPeopleAuditActorId;
     readonly callerIsOwner: boolean;
@@ -1037,6 +1042,11 @@ export const makeHouseholdPeopleRepository = (
             .limit(1)
             .pipe(queryFailure);
           if (association === undefined) {
+            return yield* Effect.fail(
+              HouseholdPersonAssociationConflict.make({})
+            );
+          }
+          if (association.recipientLinkageSubject !== input.linkageSubject) {
             return yield* Effect.fail(
               HouseholdPersonAssociationConflict.make({})
             );
@@ -2187,6 +2197,7 @@ export const makeHouseholdPeopleRepository = (
           }
           if (
             association === undefined ||
+            association.recipientLinkageSubject !== input.linkageSubject ||
             person.kind !== "adult" ||
             person.lifecycle !== "archived" ||
             (yield* activeLinkForPerson(transaction, person.personId)) !==
@@ -2325,6 +2336,70 @@ export const makeHouseholdPeopleRepository = (
       }),
     cancelMemberDeparture,
     completeAcceptedAdultLink,
+    confirmAdultInvitationRecipient: (input) =>
+      database
+        .transaction((transaction) =>
+          Effect.gen(function* confirmInvitationRecipient() {
+            const [association] = yield* transaction
+              .select({
+                recipientLinkageSubject:
+                  householdPersonInvitationAssociations.recipientLinkageSubject,
+                state: householdPersonInvitationAssociations.state,
+                version: householdPersonInvitationAssociations.version,
+              })
+              .from(householdPersonInvitationAssociations)
+              .where(
+                eq(
+                  householdPersonInvitationAssociations.invitationDigest,
+                  input.invitationDigest
+                )
+              )
+              .limit(1)
+              .pipe(queryFailure);
+            if (association === undefined || association.state !== "pending") {
+              return yield* Effect.fail(
+                HouseholdPersonAssociationConflict.make({})
+              );
+            }
+            if (association.recipientLinkageSubject !== null) {
+              return association.recipientLinkageSubject ===
+                input.linkageSubject
+                ? undefined
+                : yield* Effect.fail(
+                    HouseholdPersonAssociationConflict.make({})
+                  );
+            }
+            const updated = yield* transaction
+              .update(householdPersonInvitationAssociations)
+              .set({
+                recipientLinkageSubject: input.linkageSubject,
+                version: association.version + 1,
+              })
+              .where(
+                and(
+                  eq(
+                    householdPersonInvitationAssociations.invitationDigest,
+                    input.invitationDigest
+                  ),
+                  eq(
+                    householdPersonInvitationAssociations.version,
+                    association.version
+                  )
+                )
+              )
+              .returning({
+                invitationDigest:
+                  householdPersonInvitationAssociations.invitationDigest,
+              })
+              .pipe(queryFailure);
+            if (updated.length !== 1) {
+              return yield* Effect.fail(
+                HouseholdPersonAssociationConflict.make({})
+              );
+            }
+          })
+        )
+        .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable()))),
     confirmMemberAccessRevoked,
     create: (input) =>
       createPerson({

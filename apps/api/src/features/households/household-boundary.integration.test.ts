@@ -377,10 +377,13 @@ const createOrganization = async (label: string, cookie: string) => {
   );
 };
 
-const prepareLinkedAdult = async (label: string) => {
+const prepareLinkedAdult = async (
+  label: string,
+  existingInvitee?: { readonly cookie: string; readonly label: string }
+) => {
   const key = label.toLowerCase().replaceAll(" ", "-");
   const ownerLabel = `${label} Owner`;
-  const invitedLabel = `${label} Adult`;
+  const invitedLabel = existingInvitee?.label ?? `${label} Adult`;
   const initialOwnerCookie = await signUp(ownerLabel);
   const organization = await createOrganization(
     `${label} Household`,
@@ -424,7 +427,7 @@ const prepareLinkedAdult = async (label: string) => {
   const adult = await Schema.decodeUnknownPromise(HouseholdPerson)(
     await adultResponse.json()
   );
-  const invitedCookie = await signUp(invitedLabel);
+  const invitedCookie = existingInvitee?.cookie ?? (await signUp(invitedLabel));
   const invitationResponse = await getRuntime().dispatchFetch(
     "https://meal-planner.test/v1/household/people/invitations",
     {
@@ -1999,6 +2002,23 @@ describe("household public API to private Durable Object boundary", () => {
       inviteeCookie
     );
     expect(acceptance.status, await acceptance.clone().text()).toBe(200);
+    const wrongMemberLink = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/links/complete",
+      {
+        body: JSON.stringify({
+          invitationId: invitation.invitationId,
+          mutationId: "invite-wrong-member-link",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(wrongMemberLink.status, await wrongMemberLink.clone().text()).toBe(
+      409
+    );
     const activeOrganization = await authRequest(
       "/organization/set-active",
       { organizationId: organization.id },
@@ -2013,22 +2033,49 @@ describe("household public API to private Durable Object boundary", () => {
         ? inviteeCookie
         : cookieHeader(activeOrganization);
 
-    const linkRequest = {
-      body: JSON.stringify({
-        invitationId: invitation.invitationId,
-        mutationId: "invite-complete-adult-link",
-      }),
-      headers: {
-        "content-type": "application/json",
-        cookie: admittedInviteeCookie,
+    const linkRequests = [
+      {
+        body: JSON.stringify({
+          invitationId: invitation.invitationId,
+          mutationId: "invite-complete-adult-link-a",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: admittedInviteeCookie,
+        },
+        method: "POST",
       },
-      method: "POST",
-    } as const;
-    const linkResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/links/complete",
-      linkRequest
+      {
+        body: JSON.stringify({
+          invitationId: invitation.invitationId,
+          mutationId: "invite-complete-adult-link-b",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: admittedInviteeCookie,
+        },
+        method: "POST",
+      },
+    ] as const;
+    const linkResponses = await Promise.all(
+      linkRequests.map((request) =>
+        getRuntime().dispatchFetch(
+          "https://meal-planner.test/v1/household/people/links/complete",
+          request
+        )
+      )
     );
-    expect(linkResponse.status, await linkResponse.clone().text()).toBe(200);
+    expect(linkResponses.map(({ status }) => status).toSorted()).toEqual([
+      200, 409,
+    ]);
+    const successfulLinkIndex = linkResponses.findIndex(
+      ({ status }) => status === 200
+    );
+    const linkResponse = linkResponses[successfulLinkIndex];
+    const linkRequest = linkRequests[successfulLinkIndex];
+    if (linkResponse === undefined || linkRequest === undefined) {
+      throw new Error("Expected exactly one successful account link");
+    }
     const linked = await Schema.decodeUnknownPromise(HouseholdPerson)(
       await linkResponse.json()
     );
@@ -2063,6 +2110,134 @@ describe("household public API to private Durable Object boundary", () => {
       roster.people.filter((person) => person.id === adult.id)
     ).toHaveLength(1);
     expect(roster.people).toHaveLength(2);
+  }, 30_000);
+
+  it("repairs an accepted member link only to the explicitly selected adult", async () => {
+    const setup = await prepareLinkedAdult("Explicit Link Repair");
+    const replacementResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people",
+      {
+        body: JSON.stringify({
+          displayName: "Explicit replacement adult",
+          kind: "adult",
+          mutationId: "explicit-link-repair-create",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(
+      replacementResponse.status,
+      await replacementResponse.clone().text()
+    ).toBe(201);
+    const replacement = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await replacementResponse.json()
+    );
+
+    const repairRequest = {
+      body: JSON.stringify({
+        expectedPersonVersion: replacement.version,
+        memberId: setup.memberId,
+        mutationId: "explicit-link-repair",
+        personId: replacement.id,
+        reason: "Correct the selected household person",
+      }),
+      headers: {
+        "content-type": "application/json",
+        cookie: setup.ownerCookie,
+      },
+      method: "POST",
+    } as const;
+    const repair = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/links/repair",
+      repairRequest
+    );
+    expect(repair.status, await repair.clone().text()).toBe(200);
+    const repaired = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await repair.json()
+    );
+    expect(repaired).toMatchObject({
+      associationState: "linked",
+      id: replacement.id,
+      version: replacement.version + 1,
+    });
+
+    const replay = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/links/repair",
+      repairRequest
+    );
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toEqual(
+      Schema.encodeSync(HouseholdPerson)(repaired)
+    );
+
+    const rosterResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      { headers: { cookie: setup.memberCookie } }
+    );
+    expect(rosterResponse.status).toBe(200);
+    const roster = await Schema.decodeUnknownPromise(HouseholdPeopleRoster)(
+      await rosterResponse.json()
+    );
+    expect(roster.currentPersonId).toBe(replacement.id);
+    expect(roster.people).toHaveLength(3);
+    expect(
+      roster.people.find((person) => person.id === setup.adult.id)
+    ).toMatchObject({ associationState: "detached", lifecycle: "active" });
+  }, 30_000);
+
+  it("links the same Better Auth user independently in two households", async () => {
+    const sharedAdult = {
+      cookie: await signUp("Shared Multi Household Adult"),
+      label: "Shared Multi Household Adult",
+    };
+    const first = await prepareLinkedAdult(
+      "First Multi Household",
+      sharedAdult
+    );
+    const second = await prepareLinkedAdult(
+      "Second Multi Household",
+      sharedAdult
+    );
+
+    const firstActive = await authRequest(
+      "/organization/set-active",
+      { organizationId: first.organization.id },
+      second.memberCookie
+    );
+    expect(firstActive.status, await firstActive.clone().text()).toBe(200);
+    const firstCookie = cookieHeader(firstActive);
+    const firstRosterResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people",
+      { headers: { cookie: firstCookie } }
+    );
+    expect(firstRosterResponse.status).toBe(200);
+    const firstRoster = await Schema.decodeUnknownPromise(
+      HouseholdPeopleRoster
+    )(await firstRosterResponse.json());
+
+    const secondActive = await authRequest(
+      "/organization/set-active",
+      { organizationId: second.organization.id },
+      firstCookie
+    );
+    expect(secondActive.status, await secondActive.clone().text()).toBe(200);
+    const secondCookie = cookieHeader(secondActive);
+    const secondRosterResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people",
+      { headers: { cookie: secondCookie } }
+    );
+    expect(secondRosterResponse.status).toBe(200);
+    const secondRoster = await Schema.decodeUnknownPromise(
+      HouseholdPeopleRoster
+    )(await secondRosterResponse.json());
+
+    expect(firstRoster.currentPersonId).toBe(first.adult.id);
+    expect(secondRoster.currentPersonId).toBe(second.adult.id);
+    expect(first.adult.id).not.toBe(second.adult.id);
   }, 30_000);
 
   it("recovers a departure that crashes before Better Auth removes access", async () => {
@@ -2294,6 +2469,154 @@ describe("household public API to private Durable Object boundary", () => {
     expect(
       roster.people.find((person) => person.id === setup.adult.id)
     ).toMatchObject({ associationState: "detached", lifecycle: "archived" });
+  }, 30_000);
+
+  it("returns an invited former member to the same historical person", async () => {
+    const setup = await prepareLinkedAdult("Returning Historical Adult");
+    const departure = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/departures",
+      {
+        body: JSON.stringify({
+          expectedLinkVersion: 1,
+          expectedPersonVersion: setup.adult.version,
+          memberId: setup.memberId,
+          mutationId: "returning-adult-depart",
+          personId: setup.adult.id,
+          reason: "Adult left the household",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(departure.status, await departure.clone().text()).toBe(202);
+    const workflow = await readDepartureWorkflowInput(setup.organization.id);
+    await readDepartureEventually(
+      setup.ownerCookie,
+      workflow.operationId,
+      "completed"
+    );
+
+    const archivedRosterResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      { headers: { cookie: setup.ownerCookie } }
+    );
+    expect(archivedRosterResponse.status).toBe(200);
+    const archivedRoster = await Schema.decodeUnknownPromise(
+      HouseholdPeopleRoster
+    )(await archivedRosterResponse.json());
+    const archived = archivedRoster.people.find(
+      (person) => person.id === setup.adult.id
+    );
+    expect(archived).toMatchObject({
+      associationState: "detached",
+      lifecycle: "archived",
+    });
+    if (archived === undefined) {
+      throw new Error("Expected the departed adult to remain archived");
+    }
+
+    const invitationResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/invitations",
+      {
+        body: JSON.stringify({
+          email: "returning-historical-adult-adult@example.test",
+          mutationId: "returning-adult-invite",
+          personId: archived.id,
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(
+      invitationResponse.status,
+      await invitationResponse.clone().text()
+    ).toBe(201);
+    const invitation = await Schema.decodeUnknownPromise(
+      HouseholdAdultInvitationResult
+    )(await invitationResponse.json());
+    expect(invitation.person).toMatchObject({
+      id: archived.id,
+      lifecycle: "archived",
+    });
+
+    const returningCookie = await signIn("Returning Historical Adult Adult");
+    const acceptance = await authRequest(
+      "/organization/accept-invitation",
+      { invitationId: invitation.invitationId },
+      returningCookie
+    );
+    expect(acceptance.status, await acceptance.clone().text()).toBe(200);
+    const wrongMemberRestore = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/return",
+      {
+        body: JSON.stringify({
+          expectedPersonVersion: invitation.person?.version,
+          invitationId: invitation.invitationId,
+          mutationId: "returning-adult-wrong-member",
+          personId: archived.id,
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(
+      wrongMemberRestore.status,
+      await wrongMemberRestore.clone().text()
+    ).toBe(409);
+    const active = await authRequest(
+      "/organization/set-active",
+      { organizationId: setup.organization.id },
+      returningCookie
+    );
+    expect(active.status, await active.clone().text()).toBe(200);
+    const admittedCookie = cookieHeader(active);
+    const returnRequest = {
+      body: JSON.stringify({
+        expectedPersonVersion: invitation.person?.version,
+        invitationId: invitation.invitationId,
+        mutationId: "returning-adult-restore",
+        personId: archived.id,
+      }),
+      headers: {
+        "content-type": "application/json",
+        cookie: admittedCookie,
+      },
+      method: "POST",
+    } as const;
+    const restoredResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/return",
+      returnRequest
+    );
+    expect(restoredResponse.status, await restoredResponse.clone().text()).toBe(
+      200
+    );
+    const restored = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await restoredResponse.json()
+    );
+    expect(restored).toMatchObject({
+      associationState: "linked",
+      id: archived.id,
+      isCurrentAdult: true,
+      lifecycle: "active",
+    });
+
+    const replay = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/return",
+      returnRequest
+    );
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toEqual(
+      Schema.encodeSync(HouseholdPerson)(restored)
+    );
   }, 30_000);
 
   it("preserves the last owner and requires an explicit repair outcome", async () => {
