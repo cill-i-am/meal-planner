@@ -55,16 +55,108 @@ export const householdPersonCreatorAssociations = sqliteTable(
   }
 );
 
+/** Purpose-bound invitation association; raw invitations and email never enter Household storage. */
+export const householdPersonInvitationAssociations = sqliteTable(
+  "household_person_invitation_associations",
+  {
+    associatedAtEpochMs: integer("associated_at_epoch_ms").notNull(),
+    consumedAtEpochMs: integer("consumed_at_epoch_ms"),
+    invitationDigest: text("invitation_digest").primaryKey(),
+    personId: text("person_id").notNull(),
+    state: text("state", { enum: ["pending", "consumed"] }).notNull(),
+    version: integer("version").notNull(),
+  }
+);
+
+/** Household-scoped account link keyed only by a purpose-bound immutable user subject. */
+export const householdPersonAccountLinks = sqliteTable(
+  "household_person_account_links",
+  {
+    createdAtEpochMs: integer("created_at_epoch_ms").notNull(),
+    linkId: text("link_id").primaryKey(),
+    linkageSubject: text("linkage_subject").notNull(),
+    personId: text("person_id").notNull(),
+    state: text("state", {
+      enum: ["linked", "departure_pending", "detached"],
+    }).notNull(),
+    updatedAtEpochMs: integer("updated_at_epoch_ms").notNull(),
+    version: integer("version").notNull(),
+  }
+);
+
+/** Durable coordinator state for one access-first member departure. */
+export const householdMemberDepartureOperations = sqliteTable(
+  "household_member_departure_operations",
+  {
+    actorId: text("actor_id").notNull(),
+    createdAtEpochMs: integer("created_at_epoch_ms").notNull(),
+    executionGeneration: integer("execution_generation").notNull(),
+    lastAttemptAtEpochMs: integer("last_attempt_at_epoch_ms"),
+    linkId: text("link_id").notNull(),
+    operationId: text("operation_id").primaryKey(),
+    personId: text("person_id").notNull(),
+    reason: text("reason").notNull(),
+    state: text("state", {
+      enum: [
+        "prepared",
+        "revoking_access",
+        "revocation_repair_required",
+        "access_revoked",
+        "finalization_repair_required",
+        "completed",
+        "cancelled",
+      ],
+    }).notNull(),
+    updatedAtEpochMs: integer("updated_at_epoch_ms").notNull(),
+    version: integer("version").notNull(),
+  }
+);
+
 /** Immutable ordered people lifecycle audit. */
 export const householdPersonAudits = sqliteTable("household_person_audits", {
   actorId: text("actor_id").notNull(),
   atEpochMs: integer("at_epoch_ms").notNull(),
   command: text("command", {
-    enum: ["bootstrap_creator", "create", "archive", "restore"],
+    enum: [
+      "associate_invitation",
+      "bootstrap_creator",
+      "cancel_departure",
+      "confirm_access_revoked",
+      "complete_link",
+      "create",
+      "archive",
+      "finalize_departure",
+      "prepare_departure",
+      "repair_departure",
+      "repair_link",
+      "restore",
+      "restore_returning_link",
+      "retry_departure",
+      "start_departure",
+    ],
   }).notNull(),
+  nextAssociationState: text("next_association_state", {
+    enum: [
+      "unlinked",
+      "invitation_pending",
+      "linked",
+      "departure_pending",
+      "detached",
+    ],
+  }),
   nextLifecycle: text("next_lifecycle", { enum: ["active", "archived"] }),
   nextVersion: integer("next_version").notNull(),
+  operationId: text("operation_id"),
   personId: text("person_id").notNull(),
+  previousAssociationState: text("previous_association_state", {
+    enum: [
+      "unlinked",
+      "invitation_pending",
+      "linked",
+      "departure_pending",
+      "detached",
+    ],
+  }),
   previousLifecycle: text("previous_lifecycle", {
     enum: ["active", "archived"],
   }),

@@ -79,6 +79,14 @@ const MealPlannerRoute = () => {
                 organizationId={household.id}
               />
               <HouseholdPeoplePanel
+                {...(() => {
+                  const currentMemberId = activeOrganization.data?.members.find(
+                    (member) => member.userId === session.data?.user.id
+                  )?.id;
+                  return currentMemberId === undefined
+                    ? {}
+                    : { currentMemberId };
+                })()}
                 operations={peopleOperations}
                 organizationId={household.id}
               />

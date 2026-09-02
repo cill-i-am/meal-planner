@@ -1,9 +1,16 @@
 import type {
+  CompleteHouseholdAdultLinkPayload,
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
+  DepartHouseholdAdultPayload,
+  HouseholdAdultInvitationResult,
+  HouseholdMemberDepartureOperation,
   HouseholdPeopleRoster,
   HouseholdPerson,
   HouseholdPersonId,
+  InviteHouseholdAdultPayload,
+  RepairHouseholdAdultLinkPayload,
+  ReturnHouseholdAdultPayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
 import { Option, Schema } from "effect";
@@ -11,6 +18,12 @@ import { Option, Schema } from "effect";
 export const HouseholdPeopleOperationFailureCode = Schema.Literals([
   "bootstrap_conflict",
   "creator_required",
+  "organizer_required",
+  "association_conflict",
+  "association_stale",
+  "control_plane_resource_not_found",
+  "control_plane_unavailable",
+  "departure_conflict",
   "internal_error",
   "invalid_request",
   "lifecycle_conflict",
@@ -74,7 +87,22 @@ export interface HouseholdPeopleOperations {
   readonly create: (
     payload: CreateHouseholdPersonPayload
   ) => Promise<HouseholdPerson>;
+  readonly completeAdultLink?: (
+    payload: CompleteHouseholdAdultLinkPayload
+  ) => Promise<HouseholdPerson>;
+  readonly departAdult?: (
+    payload: DepartHouseholdAdultPayload
+  ) => Promise<HouseholdMemberDepartureOperation>;
+  readonly inviteAdult?: (
+    payload: InviteHouseholdAdultPayload
+  ) => Promise<HouseholdAdultInvitationResult>;
   readonly list: (includeArchived: boolean) => Promise<HouseholdPeopleRoster>;
+  readonly repairAdultLink?: (
+    payload: RepairHouseholdAdultLinkPayload
+  ) => Promise<HouseholdPerson>;
+  readonly returnAdult?: (
+    payload: ReturnHouseholdAdultPayload
+  ) => Promise<HouseholdPerson>;
   readonly restore: (
     personId: HouseholdPersonId,
     payload: TransitionHouseholdPersonPayload

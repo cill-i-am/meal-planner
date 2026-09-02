@@ -1,4 +1,6 @@
 import type {
+  HouseholdMemberDepartureOperation,
+  HouseholdMemberDepartureStart,
   HouseholdPeopleRoster,
   HouseholdPerson,
   HouseholdPeopleFailure,
@@ -97,17 +99,44 @@ import {
   HouseholdEnsureInput as HouseholdEnsureInputSchema,
 } from "./household.contract.js";
 import type {
+  HouseholdAssociateAdultInvitationInput,
   HouseholdBootstrapCreatorPersonInput,
+  HouseholdCancelMemberDepartureInput,
+  HouseholdCompleteAcceptedAdultLinkInput,
+  HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
+  HouseholdFinalizeMemberDepartureInput,
+  HouseholdGetMemberDepartureInput,
+  HouseholdMemberDepartureSystemState,
   HouseholdGetPersonInput,
   HouseholdListPeopleInput,
+  HouseholdMarkMemberDepartureRepairRequiredInput,
+  HouseholdPrepareMemberDepartureInput,
+  HouseholdReadMemberDepartureSystemInput,
+  HouseholdRepairAdultAccountLinkInput,
+  HouseholdRestoreReturningAdultLinkInput,
+  HouseholdRetryMemberDepartureInput,
+  HouseholdStartMemberDepartureInput,
   HouseholdTransitionPersonInput,
 } from "./people/household-people.contract.js";
 import {
+  HouseholdAssociateAdultInvitationInput as HouseholdAssociateAdultInvitationInputSchema,
   HouseholdBootstrapCreatorPersonInput as HouseholdBootstrapCreatorPersonInputSchema,
+  HouseholdCancelMemberDepartureInput as HouseholdCancelMemberDepartureInputSchema,
+  HouseholdCompleteAcceptedAdultLinkInput as HouseholdCompleteAcceptedAdultLinkInputSchema,
+  HouseholdConfirmMemberAccessRevokedInput as HouseholdConfirmMemberAccessRevokedInputSchema,
   HouseholdCreatePersonInput as HouseholdCreatePersonInputSchema,
+  HouseholdFinalizeMemberDepartureInput as HouseholdFinalizeMemberDepartureInputSchema,
+  HouseholdGetMemberDepartureInput as HouseholdGetMemberDepartureInputSchema,
   HouseholdGetPersonInput as HouseholdGetPersonInputSchema,
   HouseholdListPeopleInput as HouseholdListPeopleInputSchema,
+  HouseholdMarkMemberDepartureRepairRequiredInput as HouseholdMarkMemberDepartureRepairRequiredInputSchema,
+  HouseholdPrepareMemberDepartureInput as HouseholdPrepareMemberDepartureInputSchema,
+  HouseholdReadMemberDepartureSystemInput as HouseholdReadMemberDepartureSystemInputSchema,
+  HouseholdRepairAdultAccountLinkInput as HouseholdRepairAdultAccountLinkInputSchema,
+  HouseholdRestoreReturningAdultLinkInput as HouseholdRestoreReturningAdultLinkInputSchema,
+  HouseholdRetryMemberDepartureInput as HouseholdRetryMemberDepartureInputSchema,
+  HouseholdStartMemberDepartureInput as HouseholdStartMemberDepartureInputSchema,
   HouseholdTransitionPersonInput as HouseholdTransitionPersonInputSchema,
 } from "./people/household-people.contract.js";
 import type {
@@ -152,6 +181,12 @@ import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-servic
 export { HouseholdDomainWorker } from "./household-domain-binding.js";
 
 export interface HouseholdDomainWorkerMethods {
+  readonly associateAdultInvitation: (
+    input: HouseholdAssociateAdultInvitationInput
+  ) => Effect.Effect<
+    typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
   readonly archiveHouseholdPerson: (
     input: HouseholdTransitionPersonInput
   ) => Effect.Effect<
@@ -182,6 +217,12 @@ export interface HouseholdDomainWorkerMethods {
     typeof HouseholdPerson.Encoded,
     HouseholdPeopleDomainFailure
   >;
+  readonly cancelMemberDeparture: (
+    input: HouseholdCancelMemberDepartureInput
+  ) => Effect.Effect<
+    typeof HouseholdMemberDepartureOperation.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
   readonly claimImportBatchItem: (
     input: HouseholdClaimImportBatchItemInput
   ) => Effect.Effect<
@@ -210,6 +251,24 @@ export interface HouseholdDomainWorkerMethods {
     input: HouseholdCreatePersonInput
   ) => Effect.Effect<
     typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly completeAcceptedAdultLink: (
+    input: HouseholdCompleteAcceptedAdultLinkInput
+  ) => Effect.Effect<
+    typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly confirmMemberAccessRevoked: (
+    input: HouseholdConfirmMemberAccessRevokedInput
+  ) => Effect.Effect<
+    typeof HouseholdMemberDepartureOperation.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly finalizeMemberDeparture: (
+    input: HouseholdFinalizeMemberDepartureInput
+  ) => Effect.Effect<
+    typeof HouseholdMemberDepartureOperation.Encoded,
     HouseholdPeopleDomainFailure
   >;
   readonly createMealPlanFromRecipeBank: (
@@ -275,10 +334,37 @@ export interface HouseholdDomainWorkerMethods {
     typeof HouseholdPerson.Encoded,
     HouseholdPeopleDomainFailure
   >;
+  readonly getMemberDeparture: (
+    input:
+      | HouseholdGetMemberDepartureInput
+      | HouseholdReadMemberDepartureSystemInput
+  ) => Effect.Effect<
+    | typeof HouseholdMemberDepartureOperation.Encoded
+    | typeof HouseholdMemberDepartureSystemState.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
   readonly listHouseholdPeople: (
     input: HouseholdListPeopleInput
   ) => Effect.Effect<
     typeof HouseholdPeopleRoster.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly markMemberDepartureRepairRequired: (
+    input: HouseholdMarkMemberDepartureRepairRequiredInput
+  ) => Effect.Effect<
+    typeof HouseholdMemberDepartureOperation.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly prepareMemberDeparture: (
+    input: HouseholdPrepareMemberDepartureInput
+  ) => Effect.Effect<
+    typeof HouseholdMemberDepartureOperation.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly repairAdultAccountLink: (
+    input: HouseholdRepairAdultAccountLinkInput
+  ) => Effect.Effect<
+    typeof HouseholdPerson.Encoded,
     HouseholdPeopleDomainFailure
   >;
   readonly readMealPlan: (
@@ -372,6 +458,24 @@ export interface HouseholdDomainWorkerMethods {
     input: HouseholdTransitionPersonInput
   ) => Effect.Effect<
     typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly restoreReturningAdultLink: (
+    input: HouseholdRestoreReturningAdultLinkInput
+  ) => Effect.Effect<
+    typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly retryMemberDeparture: (
+    input: HouseholdRetryMemberDepartureInput
+  ) => Effect.Effect<
+    typeof HouseholdMemberDepartureStart.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly startMemberDeparture: (
+    input: HouseholdStartMemberDepartureInput
+  ) => Effect.Effect<
+    typeof HouseholdMemberDepartureStart.Encoded,
     HouseholdPeopleDomainFailure
   >;
   readonly swapMealPlan: (
@@ -613,12 +717,26 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "archive_household_person",
         (household, command) => household.archiveHouseholdPerson(command)
       ),
+    associateAdultInvitation: (input: HouseholdAssociateAdultInvitationInput) =>
+      route(
+        HouseholdAssociateAdultInvitationInputSchema,
+        input,
+        "associate_adult_invitation",
+        (household, command) => household.associateAdultInvitation(command)
+      ),
     bootstrapCreatorPerson: (input: HouseholdBootstrapCreatorPersonInput) =>
       route(
         HouseholdBootstrapCreatorPersonInputSchema,
         input,
         "bootstrap_creator_person",
         (household, command) => household.bootstrapCreatorPerson(command)
+      ),
+    cancelMemberDeparture: (input: HouseholdCancelMemberDepartureInput) =>
+      route(
+        HouseholdCancelMemberDepartureInputSchema,
+        input,
+        "cancel_member_departure",
+        (household, command) => household.cancelMemberDeparture(command)
       ),
     cancelRecipeImport: (input: HouseholdCancelRecipeImportInput) =>
       route(
@@ -651,12 +769,30 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "commit_recipe_import_draft",
         (household, command) => household.commitRecipeImportDraft(command)
       ),
+    completeAcceptedAdultLink: (
+      input: HouseholdCompleteAcceptedAdultLinkInput
+    ) =>
+      route(
+        HouseholdCompleteAcceptedAdultLinkInputSchema,
+        input,
+        "complete_accepted_adult_link",
+        (household, command) => household.completeAcceptedAdultLink(command)
+      ),
     completeImportBatchItem: (input: HouseholdCompleteImportBatchItemInput) =>
       route(
         HouseholdCompleteImportBatchItemInputSchema,
         input,
         "complete_import_batch_item",
         (household, command) => household.completeImportBatchItem(command)
+      ),
+    confirmMemberAccessRevoked: (
+      input: HouseholdConfirmMemberAccessRevokedInput
+    ) =>
+      route(
+        HouseholdConfirmMemberAccessRevokedInputSchema,
+        input,
+        "confirm_member_access_revoked",
+        (household, command) => household.confirmMemberAccessRevoked(command)
       ),
     confirmRecipeImportAction: (
       input: HouseholdConfirmRecipeImportActionInput
@@ -704,6 +840,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "fail_import_batch_item",
         (household, command) => household.failImportBatchItem(command)
       ),
+    finalizeMemberDeparture: (input: HouseholdFinalizeMemberDepartureInput) =>
+      route(
+        HouseholdFinalizeMemberDepartureInputSchema,
+        input,
+        "finalize_member_departure",
+        (household, command) => household.finalizeMemberDeparture(command)
+      ),
     getHouseholdPerson: (input: HouseholdGetPersonInput) =>
       route(
         HouseholdGetPersonInputSchema,
@@ -711,6 +854,24 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "get_household_person",
         (household, command) => household.getHouseholdPerson(command)
       ),
+    getMemberDeparture: (
+      input:
+        | HouseholdGetMemberDepartureInput
+        | HouseholdReadMemberDepartureSystemInput
+    ) =>
+      input.admission.actor._tag === "System"
+        ? route(
+            HouseholdReadMemberDepartureSystemInputSchema,
+            input,
+            "get_member_departure",
+            (household, command) => household.getMemberDeparture(command)
+          )
+        : route(
+            HouseholdGetMemberDepartureInputSchema,
+            input,
+            "get_member_departure",
+            (household, command) => household.getMemberDeparture(command)
+          ),
     listHouseholdPeople: (input: HouseholdListPeopleInput) =>
       route(
         HouseholdListPeopleInputSchema,
@@ -725,12 +886,29 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "list_recipe_bank",
         (household, command) => household.listRecipeBank(command)
       ),
+    markMemberDepartureRepairRequired: (
+      input: HouseholdMarkMemberDepartureRepairRequiredInput
+    ) =>
+      route(
+        HouseholdMarkMemberDepartureRepairRequiredInputSchema,
+        input,
+        "mark_member_departure_repair_required",
+        (household, command) =>
+          household.markMemberDepartureRepairRequired(command)
+      ),
     mutateEvidenceStage: (
       input: typeof HouseholdMutateEvidenceStageInputSchema.Encoded
     ) => routeEvidenceStage(input),
     observeEvidenceReference: (
       input: typeof HouseholdObserveEvidenceReferenceInputSchema.Encoded
     ) => routeEvidenceObservation(input),
+    prepareMemberDeparture: (input: HouseholdPrepareMemberDepartureInput) =>
+      route(
+        HouseholdPrepareMemberDepartureInputSchema,
+        input,
+        "prepare_member_departure",
+        (household, command) => household.prepareMemberDeparture(command)
+      ),
     prepareRecipeRecovery: (
       input: typeof HouseholdPrepareRecipeRecoveryInputSchema.Encoded
     ) => routeRecipeRecovery(input),
@@ -855,6 +1033,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "reject_meal_plan",
         (household, command) => household.rejectMealPlan(command)
       ),
+    repairAdultAccountLink: (input: HouseholdRepairAdultAccountLinkInput) =>
+      route(
+        HouseholdRepairAdultAccountLinkInputSchema,
+        input,
+        "repair_adult_account_link",
+        (household, command) => household.repairAdultAccountLink(command)
+      ),
     resolveRecipeImportSource: (
       input: HouseholdResolveRecipeImportSourceInput
     ) =>
@@ -870,6 +1055,29 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "restore_household_person",
         (household, command) => household.restoreHouseholdPerson(command)
+      ),
+    restoreReturningAdultLink: (
+      input: HouseholdRestoreReturningAdultLinkInput
+    ) =>
+      route(
+        HouseholdRestoreReturningAdultLinkInputSchema,
+        input,
+        "restore_returning_adult_link",
+        (household, command) => household.restoreReturningAdultLink(command)
+      ),
+    retryMemberDeparture: (input: HouseholdRetryMemberDepartureInput) =>
+      route(
+        HouseholdRetryMemberDepartureInputSchema,
+        input,
+        "retry_member_departure",
+        (household, command) => household.retryMemberDeparture(command)
+      ),
+    startMemberDeparture: (input: HouseholdStartMemberDepartureInput) =>
+      route(
+        HouseholdStartMemberDepartureInputSchema,
+        input,
+        "start_member_departure",
+        (household, command) => household.startMemberDeparture(command)
       ),
     swapMealPlan: (input: HouseholdSwapMealPlanInput) =>
       route(

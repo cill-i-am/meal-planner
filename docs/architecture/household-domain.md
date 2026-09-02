@@ -139,16 +139,25 @@ expose the associated person or account identity.
 The public contract and generated same-origin client are documented in
 [household-people-api.md](household-people-api.md).
 
-General invitation association, account linking, link repair, and departure are
-not part of the current Work Item 01 runtime. The accepted next composition is
-owned by
+Work Item 02 extends this authority with explicit invitation association,
+accepted-member account linking, reasoned link repair, and same-person return.
+Household SQLite stores only a purpose-bound invitation digest and a stable
+household-scoped linkage subject derived from immutable Better Auth user and
+organization identity; raw email, invitation identity, member identity, and
+session material never enter household state or projections. Better Auth
+remains the sole membership, role, and invitation authority.
+
+Departure composition is owned by
 [ADR-0010](decisions/0010-coordinate-membership-departure-before-person-archival.md):
 `MealPlannerApi` coordinates Better Auth access revocation through one dedicated
 native Workflow, while `HouseholdObject` owns the visible versioned departure
 operation and permits system-purpose detach/archive only after confirmed
-membership absence. Stage 1 Work Item 02 is `Ready`; this architecture record
-must be updated from accepted direction to shipped composition in its
-implementation PR.
+membership absence. The Household prepare/start transition and deterministic
+Workflow existence are durable before the authenticated typed Better Auth
+removal. Missing removal and lost outcome signals reconcile by canonical
+membership read; a last owner stays linked and enters explicit repair state.
+No credential crosses into Workflow or Household persistence, and no external
+I/O occurs inside the Household transaction.
 
 ## Recipe-import and Recipe Bank authority
 

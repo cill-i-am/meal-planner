@@ -179,16 +179,26 @@ export const makeBrowserHouseholdPeopleOperations =
         ),
       bootstrapCreator: (payload) =>
         run((client) => client.people.bootstrapCreator({ payload })),
+      completeAdultLink: (payload) =>
+        run((client) => client.people.completeAdultLink({ payload })),
       create: (payload) => run((client) => client.people.create({ payload })),
+      departAdult: (payload) =>
+        run((client) => client.people.departAdult({ payload })),
+      inviteAdult: (payload) =>
+        run((client) => client.people.inviteAdult({ payload })),
       list: (includeArchived) =>
         run((client) =>
           client.people.list({
             query: { includeArchived: includeArchived ? "true" : "false" },
           })
         ),
+      repairAdultLink: (payload) =>
+        run((client) => client.people.repairAdultLink({ payload })),
       restore: (personId, payload) =>
         run((client) =>
           client.people.restore({ params: { personId }, payload })
         ),
+      returnAdult: (payload) =>
+        run((client) => client.people.returnAdult({ payload })),
     };
   };

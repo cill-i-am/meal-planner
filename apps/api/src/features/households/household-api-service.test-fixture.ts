@@ -1,4 +1,7 @@
-import { MealPlanPersistenceFailure } from "@meal-planner/household-api";
+import {
+  HouseholdMemberDepartureOperation,
+  MealPlanPersistenceFailure,
+} from "@meal-planner/household-api";
 import type {
   CancelledRecipeImportIntent,
   Recipe,
@@ -8,6 +11,8 @@ import type {
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
 import * as Cloudflare from "alchemy/Cloudflare";
+import { makeWorkflowBridge } from "alchemy/Cloudflare/Workflows";
+import { WorkflowEntrypoint } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Option, Schema } from "effect";
@@ -79,6 +84,18 @@ import type {
   HouseholdMetadata,
 } from "./household.contract.js";
 import { HouseholdPersistenceFailure } from "./household.contract.js";
+import { HouseholdMemberDepartureSystemState } from "./people/household-people.contract.js";
+import { makeHouseholdPeopleControlPlane } from "./people/household-people.control-plane.js";
+import {
+  makeMemberDepartureWorkflowStarter,
+  MemberDepartureWorkflowInput,
+} from "./people/member-departure.js";
+import type { MemberDepartureWorkflowStarter } from "./people/member-departure.js";
+import {
+  coordinateMemberDeparture,
+  makeMemberDepartureWorkflowPorts,
+} from "./people/member-departure.workflow.js";
+import type { MemberDepartureHouseholdPort } from "./people/member-departure.workflow.js";
 import type {
   HouseholdAdmitRecipeImportInput,
   HouseholdAnswerRecipeImportActionInput,
@@ -131,6 +148,7 @@ const rpcResponse = (value: Schema.Json) => {
 interface HouseholdApiFixtureEnv {
   readonly BETTER_AUTH_SECRET: string;
   readonly HOUSEHOLD_TEST_OBSERVATIONS: {
+    readonly get: (key: string) => Promise<string | null>;
     readonly put: (key: string, value: string) => Promise<void>;
   };
   readonly HouseholdDomainWorker: {
@@ -170,6 +188,11 @@ interface HouseholdApiFixtureEnv {
     readonly commitRecipeImportDraft: (
       input: HouseholdCommitRecipeImportDraftInput
     ) => Promise<typeof HouseholdActiveRecipeImportActionResult.Encoded>;
+    readonly confirmMemberAccessRevoked: (
+      input: Parameters<
+        HouseholdDomainWorkerMethods["confirmMemberAccessRevoked"]
+      >[0]
+    ) => Promise<Schema.Json>;
     readonly observeEvidenceReference: (
       input: typeof HouseholdObserveEvidenceReferenceInput.Encoded
     ) => Promise<typeof HouseholdObserveEvidenceReferenceResult.Encoded>;
@@ -197,12 +220,25 @@ interface HouseholdApiFixtureEnv {
     readonly ensureHousehold: (
       input: HouseholdEnsureInput
     ) => Promise<HouseholdMetadata>;
+    readonly finalizeMemberDeparture: (
+      input: Parameters<
+        HouseholdDomainWorkerMethods["finalizeMemberDeparture"]
+      >[0]
+    ) => Promise<Schema.Json>;
     readonly failImportBatchItem: (
       input: HouseholdFailImportBatchItemInput
     ) => Promise<Schema.Json>;
     readonly readMealPlan: (
       input: HouseholdReadMealPlanInput
     ) => Promise<HouseholdMealPlanWire | null>;
+    readonly getMemberDeparture: (
+      input: Parameters<HouseholdDomainWorkerMethods["getMemberDeparture"]>[0]
+    ) => Promise<Schema.Json>;
+    readonly markMemberDepartureRepairRequired: (
+      input: Parameters<
+        HouseholdDomainWorkerMethods["markMemberDepartureRepairRequired"]
+      >[0]
+    ) => Promise<Schema.Json>;
     readonly readImportBatch: (
       input: HouseholdReadImportBatchInput
     ) => Promise<Schema.Json>;
@@ -240,7 +276,36 @@ interface HouseholdApiFixtureEnv {
       input: HouseholdTransitionRecipeImportLifecycleInput
     ) => Promise<typeof RecipeImportIntent.Encoded>;
   };
+  readonly MemberDepartureTestWorkflow: RawMemberDepartureWorkflowBinding;
   readonly MealPlannerAuthDatabase: AnyD1Database;
+}
+
+const NativeWorkflowStatus = Schema.Struct({
+  status: Schema.Literals([
+    "complete",
+    "errored",
+    "paused",
+    "queued",
+    "running",
+    "terminated",
+    "waiting",
+    "waitingForPause",
+  ]),
+});
+
+interface RawMemberDepartureWorkflowInstance {
+  readonly sendEvent: (event: {
+    readonly payload?: Schema.Json;
+    readonly type: string;
+  }) => Promise<void>;
+  readonly status: () => Promise<Schema.Json>;
+}
+
+interface RawMemberDepartureWorkflowBinding {
+  readonly createBatch: (
+    batch: readonly { readonly id?: string; readonly params?: Schema.Json }[]
+  ) => Promise<readonly RawMemberDepartureWorkflowInstance[]>;
+  readonly get: (id: string) => Promise<RawMemberDepartureWorkflowInstance>;
 }
 
 const testSystemOperations = [
@@ -420,6 +485,132 @@ const handleTestSystemOperation = async (
   }
 };
 
+const adaptMemberDepartureWorkflowInstance = (
+  instance: RawMemberDepartureWorkflowInstance
+) => ({
+  sendEvent: (event: {
+    readonly payload?: Schema.Json;
+    readonly type: string;
+  }) => Effect.promise(() => instance.sendEvent(event)).pipe(Effect.orDie),
+  status: () =>
+    Effect.promise(() => instance.status()).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(NativeWorkflowStatus)),
+      Effect.orDie
+    ),
+});
+
+const makeNativeMemberDepartureStarter = (env: HouseholdApiFixtureEnv) =>
+  makeMemberDepartureWorkflowStarter({
+    createBatch: (batch) =>
+      Effect.promise(() =>
+        env.MemberDepartureTestWorkflow.createBatch(batch)
+      ).pipe(
+        Effect.map((instances) =>
+          instances.map(adaptMemberDepartureWorkflowInstance)
+        ),
+        Effect.orDie
+      ),
+    get: (id) =>
+      Effect.promise(() => env.MemberDepartureTestWorkflow.get(id)).pipe(
+        Effect.map(adaptMemberDepartureWorkflowInstance),
+        Effect.orDie
+      ),
+  });
+
+const memberDepartureWorkflowExport = {
+  kind: "workflow" as const,
+  make: (env: HouseholdApiFixtureEnv) =>
+    Effect.succeed((rawInput: Schema.Json) =>
+      Effect.gen(function* runMemberDepartureFixtureWorkflow() {
+        const input = yield* Schema.decodeUnknownEffect(
+          MemberDepartureWorkflowInput,
+          { onExcessProperty: "error" }
+        )(rawInput).pipe(Effect.orDie);
+        yield* Effect.promise(() =>
+          env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+            `member-departure-workflow:${input.organizationId}`,
+            JSON.stringify(input)
+          )
+        );
+        const household: MemberDepartureHouseholdPort = {
+          confirmMemberAccessRevoked: (command) =>
+            Effect.promise(() =>
+              env.HouseholdDomainWorker.confirmMemberAccessRevoked(command)
+            ).pipe(
+              Effect.flatMap(
+                Schema.decodeUnknownEffect(
+                  Schema.toEncoded(HouseholdMemberDepartureOperation)
+                )
+              ),
+              Effect.orDie
+            ),
+          finalizeMemberDeparture: (command) =>
+            Effect.promise(() =>
+              env.HouseholdDomainWorker.finalizeMemberDeparture(command)
+            ).pipe(
+              Effect.flatMap(
+                Schema.decodeUnknownEffect(
+                  Schema.toEncoded(HouseholdMemberDepartureOperation)
+                )
+              ),
+              Effect.orDie
+            ),
+          getMemberDeparture: (command) =>
+            Effect.promise(() =>
+              env.HouseholdDomainWorker.getMemberDeparture(command)
+            ).pipe(
+              Effect.flatMap(
+                Schema.decodeUnknownEffect(
+                  Schema.toEncoded(HouseholdMemberDepartureSystemState)
+                )
+              ),
+              Effect.orDie
+            ),
+          markMemberDepartureRepairRequired: (command) =>
+            Effect.promise(() =>
+              env.HouseholdDomainWorker.markMemberDepartureRepairRequired(
+                command
+              )
+            ).pipe(
+              Effect.flatMap(
+                Schema.decodeUnknownEffect(
+                  Schema.toEncoded(HouseholdMemberDepartureOperation)
+                )
+              ),
+              Effect.orDie
+            ),
+        };
+        const ports = makeMemberDepartureWorkflowPorts({
+          authDatabase: Effect.succeed(env.MealPlannerAuthDatabase),
+          household,
+          input,
+        });
+        return yield* coordinateMemberDeparture(
+          input,
+          ports,
+          undefined,
+          "2 seconds"
+        );
+      })
+    ),
+};
+
+const AlchemyRuntimeContractKey = "shape";
+const memberDepartureEntrypoint = Effect.succeed({
+  RuntimeContext: {
+    exports: Effect.succeed({
+      MemberDepartureTestWorkflow: memberDepartureWorkflowExport,
+    }),
+    [AlchemyRuntimeContractKey]: () => ({}),
+  },
+});
+const MemberDepartureWorkflowBridge = makeWorkflowBridge(WorkflowEntrypoint, {
+  entrypoint: memberDepartureEntrypoint,
+  stack: { name: "meal-planner", stage: "test" },
+})("MemberDepartureTestWorkflow");
+
+export class MemberDepartureTestWorkflow extends MemberDepartureWorkflowBridge {}
+
 /**
  * Provider-free host shell. Authentication, membership resolution, private
  * routing, recipe selection, and meal-plan mutation all use production code.
@@ -528,11 +719,37 @@ export default {
       gateway: makeHouseholdMealPlanGateway({ domain: mealPlanDomain }),
       resolver,
     });
+    const nativeDepartureWorkflow = makeNativeMemberDepartureStarter(env);
+    const departureCrash = request.headers.get("x-test-member-departure-crash");
+    const departureWorkflow: MemberDepartureWorkflowStarter = {
+      confirmTerminal: nativeDepartureWorkflow.confirmTerminal,
+      ensureStarted: (input) =>
+        nativeDepartureWorkflow
+          .ensureStarted(input)
+          .pipe(
+            Effect.andThen(
+              departureCrash === "before-removal"
+                ? Effect.die("Injected crash before membership removal")
+                : Effect.void
+            )
+          ),
+      signalRemovalOutcome: (input, outcome) =>
+        departureCrash === "after-removal-before-signal"
+          ? Effect.die("Injected crash after membership removal")
+          : nativeDepartureWorkflow.signalRemovalOutcome(input, outcome),
+    };
     const peopleLayer = makeHouseholdPeopleRequestLayer({
       gateway: makeHouseholdPeopleGateway({
+        controlPlane: makeHouseholdPeopleControlPlane({
+          auth,
+          database: drizzle(env.MealPlannerAuthDatabase),
+        }),
+        departureWorkflow,
         domain: {
           archiveHouseholdPerson: (input) =>
             householdDomain.archiveHouseholdPerson(input),
+          associateAdultInvitation: (input) =>
+            householdDomain.associateAdultInvitation(input),
           bootstrapCreatorPerson: (input) =>
             Effect.promise(async () => {
               await Promise.all([
@@ -550,14 +767,30 @@ export default {
                 householdDomain.bootstrapCreatorPerson(input)
               )
             ),
+          cancelMemberDeparture: (input) =>
+            householdDomain.cancelMemberDeparture(input),
+          completeAcceptedAdultLink: (input) =>
+            householdDomain.completeAcceptedAdultLink(input),
           createHouseholdPerson: (input) =>
             householdDomain.createHouseholdPerson(input),
           getHouseholdPerson: (input) =>
             householdDomain.getHouseholdPerson(input),
+          getMemberDeparture: (input) =>
+            householdDomain.getMemberDeparture(input),
           listHouseholdPeople: (input) =>
             householdDomain.listHouseholdPeople(input),
+          prepareMemberDeparture: (input) =>
+            householdDomain.prepareMemberDeparture(input),
+          repairAdultAccountLink: (input) =>
+            householdDomain.repairAdultAccountLink(input),
           restoreHouseholdPerson: (input) =>
             householdDomain.restoreHouseholdPerson(input),
+          restoreReturningAdultLink: (input) =>
+            householdDomain.restoreReturningAdultLink(input),
+          retryMemberDeparture: (input) =>
+            householdDomain.retryMemberDeparture(input),
+          startMemberDeparture: (input) =>
+            householdDomain.startMemberDeparture(input),
         },
       }),
       resolver,

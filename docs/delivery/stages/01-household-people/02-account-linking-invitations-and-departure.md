@@ -1,8 +1,8 @@
 # Work Item 02 — Account Linking, Invitations, And Departure
 
-- Status: Ready
+- Status: In progress
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
-- Owner: Unassigned
+- Owner: `codex/stage1-account-linking-invitations-departure`
 - Pull request: Not opened
 - Completed by: Not completed
 - Promotion condition: Satisfied on 2026-09-01 by merged Work Item 01 evidence
@@ -421,3 +421,11 @@ exact-head review is required, and green CI is not merge authority.
   fresh exact-head review: Work Item 02 must disable organization deletion at
   the organization plugin and prove both HTTP and typed API rejection against
   the pinned version. Organization-deletion behavior remains out of scope.
+- 2026-09-02 — Implemented the working vertical on the dedicated delivery
+  branch: explicit invitation association and accepted-member linking reuse the
+  existing person; link repair and return are admitted explicit operations; a
+  native departure Workflow coordinates access-first removal and durable
+  Household finalization. Real Better Auth D1 plus routed HouseholdObject tests
+  cover both crash windows, restart repair, last-owner rejection, replacement
+  membership, replay, and privacy-safe projections. Final repository and
+  exact-head review gates remain pending.

@@ -24,8 +24,9 @@ export const makeMealPlannerAuth = ({
     appName: "Meal Planner",
     baseURL,
     database: drizzleAdapter(database, adapterOptions),
+    disabledPaths: ["/organization/leave", "/organization/remove-member"],
     emailAndPassword: { enabled: true },
-    plugins: [organization()],
+    plugins: [organization({ disableOrganizationDeletion: true })],
     secret,
     trustedOrigins: [baseURL],
   });

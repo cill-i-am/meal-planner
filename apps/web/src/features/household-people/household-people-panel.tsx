@@ -15,6 +15,7 @@ import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
+import { HouseholdAssociationControls } from "./household-association-controls.js";
 import {
   householdPeopleFailureCode,
   isAmbiguousHouseholdPeopleFailure,
@@ -317,7 +318,7 @@ const PeopleList = ({
     defaultValues: { personId: null as null | string },
   });
 
-  return (
+  const renderPanel = () => (
     <ul className="people-list">
       {people.map((person) => (
         <li
@@ -410,6 +411,7 @@ const PeopleList = ({
       ))}
     </ul>
   );
+  return renderPanel();
 };
 
 const firstError = (errors: readonly (Error | null)[]) =>
@@ -449,11 +451,37 @@ const TransitionRetryIntentActions = ({
     />
   );
 
+const AssociationRetryIntent = <Payload,>({
+  disabled,
+  label,
+  mutation,
+  onRetry,
+}: {
+  readonly disabled: boolean;
+  readonly label: string;
+  readonly mutation: {
+    readonly error: Error | null;
+    readonly variables: Payload | undefined;
+  };
+  readonly onRetry: (payload: Payload) => void;
+}) => {
+  const { variables } = mutation;
+  return hasAmbiguousRetryIntent(mutation) && variables !== undefined ? (
+    <RetryIntentActions
+      disabled={disabled}
+      onRetry={() => onRetry(variables)}
+      retryLabel={label}
+    />
+  ) : null;
+};
+
 /** Minimal explicit household roster and lifecycle surface. */
 export const HouseholdPeoplePanel = ({
+  currentMemberId,
   operations,
   organizationId,
 }: {
+  readonly currentMemberId?: string;
   readonly operations: HouseholdPeopleOperations;
   readonly organizationId: string;
 }) => {
@@ -499,17 +527,84 @@ export const HouseholdPeoplePanel = ({
     onSuccess: refresh,
     retry: retryAmbiguousFailure,
   });
+  const inviteAdult = useMutation({
+    mutationFn:
+      operations.inviteAdult ??
+      (() => Promise.reject(new Error("unsupported"))),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: refresh,
+    retry: retryAmbiguousFailure,
+  });
+  const completeAdultLink = useMutation({
+    mutationFn:
+      operations.completeAdultLink ??
+      (() => Promise.reject(new Error("unsupported"))),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: refresh,
+    retry: retryAmbiguousFailure,
+  });
+  const departAdult = useMutation({
+    mutationFn:
+      operations.departAdult ??
+      (() => Promise.reject(new Error("unsupported"))),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: refresh,
+    retry: retryAmbiguousFailure,
+  });
+  const repairAdultLink = useMutation({
+    mutationFn:
+      operations.repairAdultLink ??
+      (() => Promise.reject(new Error("unsupported"))),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: refresh,
+    retry: retryAmbiguousFailure,
+  });
+  const returnAdult = useMutation({
+    mutationFn:
+      operations.returnAdult ??
+      (() => Promise.reject(new Error("unsupported"))),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: refresh,
+    retry: retryAmbiguousFailure,
+  });
   const isPersonMutationPending = [
     bootstrap.isPending,
+    completeAdultLink.isPending,
     create.isPending,
+    departAdult.isPending,
+    inviteAdult.isPending,
+    repairAdultLink.isPending,
+    returnAdult.isPending,
     transition.isPending,
   ].some(Boolean);
-  const hasUnresolvedAmbiguousIntent = [bootstrap, create, transition].some(
-    hasAmbiguousRetryIntent
-  );
+  const hasUnresolvedAmbiguousIntent = [
+    bootstrap,
+    completeAdultLink,
+    create,
+    departAdult,
+    inviteAdult,
+    repairAdultLink,
+    returnAdult,
+    transition,
+  ].some(hasAmbiguousRetryIntent);
   const resetSettledMutations = () => {
     resetMutationIfSettled(bootstrap);
     resetMutationIfSettled(create);
+    resetMutationIfSettled(inviteAdult);
+    resetMutationIfSettled(completeAdultLink);
+    resetMutationIfSettled(departAdult);
+    resetMutationIfSettled(repairAdultLink);
+    resetMutationIfSettled(returnAdult);
     resetMutationIfSettled(transition);
   };
   const runIfIdle = (action: () => void, allowAmbiguousRetry = false) => {
@@ -549,6 +644,11 @@ export const HouseholdPeoplePanel = ({
     bootstrap.error,
     create.error,
     transition.error,
+    inviteAdult.error,
+    completeAdultLink.error,
+    departAdult.error,
+    repairAdultLink.error,
+    returnAdult.error,
   ]);
   const bootstrapConflict = hasFailureCode(
     bootstrap.error,
@@ -559,8 +659,88 @@ export const HouseholdPeoplePanel = ({
   const transitionPersonName = roster.data?.people.find(
     (person) => person.id === transition.variables?.personId
   )?.displayName;
+  const renderAssociationControls = () =>
+    roster.data === undefined ? null : (
+      <>
+        <HouseholdAssociationControls
+          {...(currentMemberId === undefined ? {} : { currentMemberId })}
+          disabled={isPersonMutationPending || hasUnresolvedAmbiguousIntent}
+          {...(operations.completeAdultLink === undefined
+            ? {}
+            : {
+                onCompleteLink: (payload) =>
+                  runIfIdle(() => completeAdultLink.mutate(payload)),
+              })}
+          {...(operations.departAdult === undefined
+            ? {}
+            : {
+                onDepart: (payload) =>
+                  runIfIdle(() => departAdult.mutate(payload)),
+              })}
+          {...(operations.inviteAdult === undefined
+            ? {}
+            : {
+                onInvite: (payload) =>
+                  runIfIdle(() => inviteAdult.mutate(payload)),
+              })}
+          {...(operations.repairAdultLink === undefined
+            ? {}
+            : {
+                onRepair: (payload) =>
+                  runIfIdle(() => repairAdultLink.mutate(payload)),
+              })}
+          {...(operations.returnAdult === undefined
+            ? {}
+            : {
+                onReturn: (payload) =>
+                  runIfIdle(() => returnAdult.mutate(payload)),
+              })}
+          roster={roster.data}
+        />
+        <AssociationRetryIntent
+          disabled={isPersonMutationPending}
+          label="Retry sending this invitation"
+          mutation={inviteAdult}
+          onRetry={(payload) =>
+            runIfIdle(() => inviteAdult.mutate(payload), true)
+          }
+        />
+        <AssociationRetryIntent
+          disabled={isPersonMutationPending}
+          label="Retry linking my account"
+          mutation={completeAdultLink}
+          onRetry={(payload) =>
+            runIfIdle(() => completeAdultLink.mutate(payload), true)
+          }
+        />
+        <AssociationRetryIntent
+          disabled={isPersonMutationPending}
+          label="Retry repairing this link"
+          mutation={repairAdultLink}
+          onRetry={(payload) =>
+            runIfIdle(() => repairAdultLink.mutate(payload), true)
+          }
+        />
+        <AssociationRetryIntent
+          disabled={isPersonMutationPending}
+          label="Retry this departure"
+          mutation={departAdult}
+          onRetry={(payload) =>
+            runIfIdle(() => departAdult.mutate(payload), true)
+          }
+        />
+        <AssociationRetryIntent
+          disabled={isPersonMutationPending}
+          label="Retry restoring this person"
+          mutation={returnAdult}
+          onRetry={(payload) =>
+            runIfIdle(() => returnAdult.mutate(payload), true)
+          }
+        />
+      </>
+    );
 
-  return (
+  const renderHouseholdPeople = () => (
     <section
       aria-labelledby="household-people-heading"
       className="people-panel"
@@ -608,12 +788,15 @@ export const HouseholdPeoplePanel = ({
         }
       />
       {roster.data === undefined ? null : (
-        <PeopleList
-          isPending={isPersonMutationPending}
-          onTransition={beginTransition}
-          people={roster.data.people}
-          retryIntent={hasUnresolvedAmbiguousIntent}
-        />
+        <>
+          <PeopleList
+            isPending={isPersonMutationPending}
+            onTransition={beginTransition}
+            people={roster.data.people}
+            retryIntent={hasUnresolvedAmbiguousIntent}
+          />
+          {renderAssociationControls()}
+        </>
       )}
       <TransitionRetryIntentActions
         disabled={isPersonMutationPending}
@@ -634,4 +817,5 @@ export const HouseholdPeoplePanel = ({
       />
     </section>
   );
+  return renderHouseholdPeople();
 };

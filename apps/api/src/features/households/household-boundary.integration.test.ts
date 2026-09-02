@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
 import {
   CreateMealPlanPayload,
+  HouseholdAdultInvitationResult,
+  HouseholdMemberDepartureOperation,
   HouseholdMealPlanResponse,
   HouseholdPeopleRoster,
   HouseholdPerson,
@@ -18,7 +20,7 @@ import {
   RecipeImportTimeline,
 } from "@meal-planner/recipe-import-api";
 import * as Bundle from "alchemy/Bundle";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 import type { ModuleDefinition } from "miniflare";
@@ -46,6 +48,7 @@ import {
   HouseholdReadRecipeRecoveryAttemptResult,
 } from "./evidence/household-evidence.contract.js";
 import { HouseholdMetadata } from "./household.contract.js";
+import { MemberDepartureWorkflowInput } from "./people/member-departure.js";
 
 const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
@@ -203,6 +206,12 @@ const makeRuntime = () =>
         modules: [...apiModules],
         name: "api",
         serviceBindings: { HouseholdDomainWorker: "household-domain" },
+        workflows: {
+          MemberDepartureTestWorkflow: {
+            className: "MemberDepartureTestWorkflow",
+            name: "member-departure-test-workflow",
+          },
+        },
       },
       {
         compatibilityDate,
@@ -365,6 +374,194 @@ const createOrganization = async (label: string, cookie: string) => {
   expect(response.status).toBe(200);
   return Schema.decodeUnknownPromise(OrganizationResponse)(
     await response.json()
+  );
+};
+
+const prepareLinkedAdult = async (label: string) => {
+  const key = label.toLowerCase().replaceAll(" ", "-");
+  const ownerLabel = `${label} Owner`;
+  const invitedLabel = `${label} Adult`;
+  const initialOwnerCookie = await signUp(ownerLabel);
+  const organization = await createOrganization(
+    `${label} Household`,
+    initialOwnerCookie
+  );
+  const activeOwner = await authRequest(
+    "/organization/set-active",
+    { organizationId: organization.id },
+    initialOwnerCookie
+  );
+  expect(activeOwner.status, await activeOwner.clone().text()).toBe(200);
+  const ownerCookie =
+    activeOwner.headers.get("set-cookie") === null
+      ? initialOwnerCookie
+      : cookieHeader(activeOwner);
+  const bootstrap = await getRuntime().dispatchFetch(
+    "https://meal-planner.test/v1/household/people/bootstrap-creator",
+    {
+      body: JSON.stringify({
+        displayName: ownerLabel,
+        mutationId: `${key}-bootstrap`,
+      }),
+      headers: { "content-type": "application/json", cookie: ownerCookie },
+      method: "POST",
+    }
+  );
+  expect(bootstrap.status, await bootstrap.clone().text()).toBe(200);
+  const adultResponse = await getRuntime().dispatchFetch(
+    "https://meal-planner.test/v1/household/people",
+    {
+      body: JSON.stringify({
+        displayName: invitedLabel,
+        kind: "adult",
+        mutationId: `${key}-create-adult`,
+      }),
+      headers: { "content-type": "application/json", cookie: ownerCookie },
+      method: "POST",
+    }
+  );
+  expect(adultResponse.status, await adultResponse.clone().text()).toBe(201);
+  const adult = await Schema.decodeUnknownPromise(HouseholdPerson)(
+    await adultResponse.json()
+  );
+  const invitedCookie = await signUp(invitedLabel);
+  const invitationResponse = await getRuntime().dispatchFetch(
+    "https://meal-planner.test/v1/household/people/invitations",
+    {
+      body: JSON.stringify({
+        email: `${invitedLabel.toLowerCase().replaceAll(" ", "-")}@example.test`,
+        mutationId: `${key}-invite`,
+        personId: adult.id,
+      }),
+      headers: { "content-type": "application/json", cookie: ownerCookie },
+      method: "POST",
+    }
+  );
+  expect(
+    invitationResponse.status,
+    await invitationResponse.clone().text()
+  ).toBe(201);
+  const invitation = await Schema.decodeUnknownPromise(
+    HouseholdAdultInvitationResult
+  )(await invitationResponse.json());
+  const acceptance = await authRequest(
+    "/organization/accept-invitation",
+    { invitationId: invitation.invitationId },
+    invitedCookie
+  );
+  expect(acceptance.status, await acceptance.clone().text()).toBe(200);
+  const active = await authRequest(
+    "/organization/set-active",
+    { organizationId: organization.id },
+    invitedCookie
+  );
+  expect(active.status, await active.clone().text()).toBe(200);
+  const memberCookie =
+    active.headers.get("set-cookie") === null
+      ? invitedCookie
+      : cookieHeader(active);
+  const link = await getRuntime().dispatchFetch(
+    "https://meal-planner.test/v1/household/people/links/complete",
+    {
+      body: JSON.stringify({
+        invitationId: invitation.invitationId,
+        mutationId: `${key}-link`,
+      }),
+      headers: { "content-type": "application/json", cookie: memberCookie },
+      method: "POST",
+    }
+  );
+  expect(link.status, await link.clone().text()).toBe(200);
+  const linked = await Schema.decodeUnknownPromise(HouseholdPerson)(
+    await link.json()
+  );
+  const session = await getSession(memberCookie);
+  const database = drizzle(
+    await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+  );
+  const [membership] = await database
+    .select({ id: authSchema.member.id })
+    .from(authSchema.member)
+    .where(
+      and(
+        eq(authSchema.member.organizationId, organization.id),
+        eq(authSchema.member.userId, session.user.id)
+      )
+    )
+    .limit(1);
+  if (membership === undefined) {
+    throw new Error("Expected accepted adult membership");
+  }
+  return {
+    adult: linked,
+    invitationId: invitation.invitationId,
+    memberCookie,
+    memberId: membership.id,
+    organization,
+    ownerCookie,
+  } as const;
+};
+
+const readDepartureWorkflowInput = async (
+  organizationId: string,
+  remaining = 40
+): Promise<typeof MemberDepartureWorkflowInput.Type> => {
+  const bindings = await getRuntime().getBindings<{
+    readonly HOUSEHOLD_TEST_OBSERVATIONS: {
+      readonly get: (key: string) => Promise<string | null>;
+    };
+  }>("api");
+  const value = await bindings.HOUSEHOLD_TEST_OBSERVATIONS.get(
+    `member-departure-workflow:${organizationId}`
+  );
+  if (value !== null) {
+    return Schema.decodeUnknownPromise(MemberDepartureWorkflowInput)(
+      JSON.parse(value)
+    );
+  }
+  if (remaining === 0) {
+    throw new Error("Expected the member departure Workflow to start");
+  }
+  await delay(50);
+  return readDepartureWorkflowInput(organizationId, remaining - 1);
+};
+
+const readDepartureEventually = async (
+  cookie: string,
+  operationId: string,
+  expectedState: (typeof HouseholdMemberDepartureOperation.Type)["state"],
+  remaining = 60
+): Promise<typeof HouseholdMemberDepartureOperation.Type> => {
+  let observedState = "unreadable";
+  const response = await getRuntime().dispatchFetch(
+    `https://meal-planner.test/v1/household/people/departures/${operationId}`,
+    { headers: { cookie } }
+  );
+  if (response.status !== 200) {
+    throw new Error(
+      `Departure read returned ${response.status}: ${await response.text()}`
+    );
+  }
+  if (response.status === 200) {
+    const operation = await Schema.decodeUnknownPromise(
+      HouseholdMemberDepartureOperation
+    )(await response.json());
+    observedState = operation.state;
+    if (operation.state === expectedState) {
+      return operation;
+    }
+  }
+  if (remaining === 0) {
+    throw new Error(
+      `Expected departure state ${expectedState}; last observed ${observedState}`
+    );
+  }
+  await delay(100);
+  return readDepartureEventually(
+    cookie,
+    operationId,
+    expectedState,
+    remaining - 1
   );
 };
 
@@ -1722,6 +1919,466 @@ describe("household public API to private Durable Object boundary", () => {
       id: dependant.id,
       lifecycle: "active",
       version: 3,
+    });
+  }, 30_000);
+
+  it("links an invited Better Auth member to the existing adult without duplicating the person", async () => {
+    const ownerCookie = await signUp("People Invitation Owner");
+    const organization = await createOrganization(
+      "People Invitation Household",
+      ownerCookie
+    );
+    const bootstrapResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/bootstrap-creator",
+      {
+        body: JSON.stringify({
+          displayName: "People Invitation Owner",
+          mutationId: "invite-owner-bootstrap",
+        }),
+        headers: { "content-type": "application/json", cookie: ownerCookie },
+        method: "POST",
+      }
+    );
+    expect(
+      bootstrapResponse.status,
+      await bootstrapResponse.clone().text()
+    ).toBe(200);
+
+    const adultResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people",
+      {
+        body: JSON.stringify({
+          displayName: "Invited household adult",
+          kind: "adult",
+          mutationId: "invite-create-adult",
+        }),
+        headers: { "content-type": "application/json", cookie: ownerCookie },
+        method: "POST",
+      }
+    );
+    expect(adultResponse.status, await adultResponse.clone().text()).toBe(201);
+    const adult = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await adultResponse.json()
+    );
+
+    const inviteeLabel = "People Invited Adult";
+    const inviteeCookie = await signUp(inviteeLabel);
+    const invitationResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/invitations",
+      {
+        body: JSON.stringify({
+          email: "people-invited-adult@example.test",
+          mutationId: "invite-associate-adult",
+          personId: adult.id,
+        }),
+        headers: { "content-type": "application/json", cookie: ownerCookie },
+        method: "POST",
+      }
+    );
+    expect(
+      invitationResponse.status,
+      await invitationResponse.clone().text()
+    ).toBe(201);
+    const invitation = await Schema.decodeUnknownPromise(
+      HouseholdAdultInvitationResult
+    )(await invitationResponse.json());
+    expect(invitation).toMatchObject({
+      association: "associated",
+      person: {
+        associationState: "invitation_pending",
+        id: adult.id,
+      },
+    });
+    expect(JSON.stringify(invitation)).not.toContain(
+      "people-invited-adult@example.test"
+    );
+
+    const acceptance = await authRequest(
+      "/organization/accept-invitation",
+      { invitationId: invitation.invitationId },
+      inviteeCookie
+    );
+    expect(acceptance.status, await acceptance.clone().text()).toBe(200);
+    const activeOrganization = await authRequest(
+      "/organization/set-active",
+      { organizationId: organization.id },
+      inviteeCookie
+    );
+    expect(
+      activeOrganization.status,
+      await activeOrganization.clone().text()
+    ).toBe(200);
+    const admittedInviteeCookie =
+      activeOrganization.headers.get("set-cookie") === null
+        ? inviteeCookie
+        : cookieHeader(activeOrganization);
+
+    const linkRequest = {
+      body: JSON.stringify({
+        invitationId: invitation.invitationId,
+        mutationId: "invite-complete-adult-link",
+      }),
+      headers: {
+        "content-type": "application/json",
+        cookie: admittedInviteeCookie,
+      },
+      method: "POST",
+    } as const;
+    const linkResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/links/complete",
+      linkRequest
+    );
+    expect(linkResponse.status, await linkResponse.clone().text()).toBe(200);
+    const linked = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await linkResponse.json()
+    );
+    expect(linked).toMatchObject({
+      associationState: "linked",
+      id: adult.id,
+      isCurrentAdult: true,
+    });
+
+    const linkReplay = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/links/complete",
+      linkRequest
+    );
+    expect(linkReplay.status).toBe(200);
+    await expect(linkReplay.json()).resolves.toEqual(
+      Schema.encodeSync(HouseholdPerson)(linked)
+    );
+
+    await restartRuntime();
+    const rosterResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      { headers: { cookie: admittedInviteeCookie } }
+    );
+    expect(rosterResponse.status, await rosterResponse.clone().text()).toBe(
+      200
+    );
+    const roster = await Schema.decodeUnknownPromise(HouseholdPeopleRoster)(
+      await rosterResponse.json()
+    );
+    expect(roster.currentPersonId).toBe(adult.id);
+    expect(
+      roster.people.filter((person) => person.id === adult.id)
+    ).toHaveLength(1);
+    expect(roster.people).toHaveLength(2);
+  }, 30_000);
+
+  it("recovers a departure that crashes before Better Auth removes access", async () => {
+    const setup = await prepareLinkedAdult("Departure Before Removal");
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/departures",
+      {
+        body: JSON.stringify({
+          expectedLinkVersion: 1,
+          expectedPersonVersion: setup.adult.version,
+          memberId: setup.memberId,
+          mutationId: "departure-before-removal",
+          personId: setup.adult.id,
+          reason: "Adult requested departure",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.memberCookie,
+          "x-test-member-departure-crash": "before-removal",
+        },
+        method: "POST",
+      }
+    );
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    const workflow = await readDepartureWorkflowInput(setup.organization.id);
+    const operation = await readDepartureEventually(
+      setup.ownerCookie,
+      workflow.operationId,
+      "revocation_repair_required"
+    );
+    expect(operation).toMatchObject({
+      personId: setup.adult.id,
+      state: "revocation_repair_required",
+    });
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    await expect(
+      database
+        .select({ id: authSchema.member.id })
+        .from(authSchema.member)
+        .where(eq(authSchema.member.id, setup.memberId))
+    ).resolves.toHaveLength(1);
+
+    const repair = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/household/people/departures/${workflow.operationId}/retry`,
+      {
+        body: JSON.stringify({
+          expectedOperationVersion: operation.version,
+          memberId: setup.memberId,
+          mutationId: "departure-before-removal-repair",
+          reason: "Retry my departure",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.memberCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(repair.status, await repair.clone().text()).toBe(202);
+    const completed = await readDepartureEventually(
+      setup.ownerCookie,
+      workflow.operationId,
+      "completed"
+    );
+    expect(completed).toMatchObject({
+      executionGeneration: 2,
+      personId: setup.adult.id,
+      state: "completed",
+    });
+    await expect(
+      database
+        .select({ id: authSchema.member.id })
+        .from(authSchema.member)
+        .where(eq(authSchema.member.id, setup.memberId))
+    ).resolves.toHaveLength(0);
+  }, 30_000);
+
+  it("preserves a replacement membership until an explicit departure repair targets it", async () => {
+    const setup = await prepareLinkedAdult("Departure Replacement Member");
+    const initial = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/departures",
+      {
+        body: JSON.stringify({
+          expectedLinkVersion: 1,
+          expectedPersonVersion: setup.adult.version,
+          memberId: setup.memberId,
+          mutationId: "departure-replacement-start",
+          personId: setup.adult.id,
+          reason: "Adult requested departure",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.memberCookie,
+          "x-test-member-departure-crash": "before-removal",
+        },
+        method: "POST",
+      }
+    );
+    expect(initial.status).toBeGreaterThanOrEqual(500);
+    const workflow = await readDepartureWorkflowInput(setup.organization.id);
+    const firstRepair = await readDepartureEventually(
+      setup.ownerCookie,
+      workflow.operationId,
+      "revocation_repair_required"
+    );
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    const replacementMemberId = `${setup.memberId}-replacement`;
+    await database
+      .update(authSchema.member)
+      .set({ id: replacementMemberId })
+      .where(eq(authSchema.member.id, setup.memberId));
+
+    const staleMemberRepair = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/household/people/departures/${workflow.operationId}/retry`,
+      {
+        body: JSON.stringify({
+          expectedOperationVersion: firstRepair.version,
+          memberId: setup.memberId,
+          mutationId: "departure-replacement-stale-member",
+          reason: "Retry after membership changed",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.memberCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(staleMemberRepair.status).toBe(202);
+    const replacementProtected = await readDepartureEventually(
+      setup.ownerCookie,
+      workflow.operationId,
+      "revocation_repair_required"
+    );
+    await expect(
+      database
+        .select({ id: authSchema.member.id })
+        .from(authSchema.member)
+        .where(eq(authSchema.member.id, replacementMemberId))
+    ).resolves.toHaveLength(1);
+
+    const exactMemberRepair = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/household/people/departures/${workflow.operationId}/retry`,
+      {
+        body: JSON.stringify({
+          expectedOperationVersion: replacementProtected.version,
+          memberId: replacementMemberId,
+          mutationId: "departure-replacement-exact-member",
+          reason: "Confirm the replacement membership departure",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.memberCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(
+      exactMemberRepair.status,
+      await exactMemberRepair.clone().text()
+    ).toBe(202);
+    await readDepartureEventually(
+      setup.ownerCookie,
+      workflow.operationId,
+      "completed"
+    );
+    await expect(
+      database
+        .select({ id: authSchema.member.id })
+        .from(authSchema.member)
+        .where(eq(authSchema.member.id, replacementMemberId))
+    ).resolves.toHaveLength(0);
+  }, 30_000);
+
+  it("finishes a departure after access removal commits but its signal is lost", async () => {
+    const setup = await prepareLinkedAdult("Departure After Removal");
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/departures",
+      {
+        body: JSON.stringify({
+          expectedLinkVersion: 1,
+          expectedPersonVersion: setup.adult.version,
+          memberId: setup.memberId,
+          mutationId: "departure-after-removal",
+          personId: setup.adult.id,
+          reason: "Adult requested departure",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+          "x-test-member-departure-crash": "after-removal-before-signal",
+        },
+        method: "POST",
+      }
+    );
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    const workflow = await readDepartureWorkflowInput(setup.organization.id);
+
+    const operation = await readDepartureEventually(
+      setup.ownerCookie,
+      workflow.operationId,
+      "completed"
+    );
+    expect(operation).toMatchObject({
+      personId: setup.adult.id,
+      state: "completed",
+    });
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    await expect(
+      database
+        .select({ id: authSchema.member.id })
+        .from(authSchema.member)
+        .where(eq(authSchema.member.id, setup.memberId))
+    ).resolves.toHaveLength(0);
+    const rosterResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      { headers: { cookie: setup.ownerCookie } }
+    );
+    expect(rosterResponse.status).toBe(200);
+    const roster = await Schema.decodeUnknownPromise(HouseholdPeopleRoster)(
+      await rosterResponse.json()
+    );
+    expect(
+      roster.people.find((person) => person.id === setup.adult.id)
+    ).toMatchObject({ associationState: "detached", lifecycle: "archived" });
+  }, 30_000);
+
+  it("preserves the last owner and requires an explicit repair outcome", async () => {
+    const ownerLabel = "Departure Last Owner";
+    const ownerCookie = await signUp(ownerLabel);
+    const organization = await createOrganization(
+      "Departure Last Owner Household",
+      ownerCookie
+    );
+    const bootstrap = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/bootstrap-creator",
+      {
+        body: JSON.stringify({
+          displayName: ownerLabel,
+          mutationId: "departure-last-owner-bootstrap",
+        }),
+        headers: { "content-type": "application/json", cookie: ownerCookie },
+        method: "POST",
+      }
+    );
+    expect(bootstrap.status, await bootstrap.clone().text()).toBe(200);
+    const person = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await bootstrap.json()
+    );
+    const session = await getSession(ownerCookie);
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    const [membership] = await database
+      .select({ id: authSchema.member.id })
+      .from(authSchema.member)
+      .where(
+        and(
+          eq(authSchema.member.organizationId, organization.id),
+          eq(authSchema.member.userId, session.user.id)
+        )
+      )
+      .limit(1);
+    if (membership === undefined) {
+      throw new Error("Expected the creator membership");
+    }
+
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/departures",
+      {
+        body: JSON.stringify({
+          expectedLinkVersion: 1,
+          expectedPersonVersion: person.version,
+          memberId: membership.id,
+          mutationId: "departure-last-owner-start",
+          personId: person.id,
+          reason: "Last owner attempted departure",
+        }),
+        headers: { "content-type": "application/json", cookie: ownerCookie },
+        method: "POST",
+      }
+    );
+    expect(response.status).toBe(503);
+    const workflow = await readDepartureWorkflowInput(organization.id);
+    const operation = await readDepartureEventually(
+      ownerCookie,
+      workflow.operationId,
+      "revocation_repair_required"
+    );
+    expect(operation).toMatchObject({ personId: person.id });
+    await expect(
+      database
+        .select({ id: authSchema.member.id })
+        .from(authSchema.member)
+        .where(eq(authSchema.member.id, membership.id))
+    ).resolves.toHaveLength(1);
+    const rosterResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      { headers: { cookie: ownerCookie } }
+    );
+    expect(rosterResponse.status).toBe(200);
+    await expect(rosterResponse.json()).resolves.toMatchObject({
+      currentPersonId: null,
+      people: [
+        expect.objectContaining({
+          associationState: "departure_pending",
+          id: person.id,
+          lifecycle: "active",
+        }),
+      ],
     });
   }, 30_000);
 

@@ -12,7 +12,7 @@
 - Status: Active
 - Immediate delivery target:
   [`02-account-linking-invitations-and-departure.md`](stages/01-household-people/02-account-linking-invitations-and-departure.md)
-  (`Ready`)
+  (`In progress`)
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -48,10 +48,13 @@ repairable. Work Item 02 must also configure
 `organization({ disableOrganizationDeletion: true })` so neither the public nor
 typed Better Auth deletion operation can erase the organization and its
 memberships before the separate household deletion lifecycle exists. That
-accepted prerequisite promotes Work Item 02 to `Ready`; invitation association,
-accepted linking, link repair, departure, and return are still implementation
-work. Organization-deletion behavior remains out of scope, and Work Items 03
-and 04 remain `Proposed`.
+accepted prerequisite promoted Work Item 02 to implementation. Its delivery
+branch now has a working Better Auth invitation-to-existing-person link,
+explicit repair and same-person return, and the native access-first departure
+Workflow with both crash-window reconciliation paths. Final full-repository,
+hosted-CI, and exact-head review evidence is still pending. Organization-
+deletion behavior remains out of scope, and Work Items 03 and 04 remain
+`Proposed`.
 
 ## Completed Foundation
 
@@ -77,11 +80,8 @@ and 04 remain `Proposed`.
 
 ## Immediate Next Steps
 
-1. After this readiness record merges, assign one delivery owner using Work
-   Item 02's exact bounded implementation-agent assignment.
-2. Implement invitation association/linking, explicit repair, the accepted
-   departure Workflow, and same-person return as one Work Item 02 vertical.
-3. Freeze that implementation head for hosted CI, real Better Auth D1 and
+1. Finish the bounded Work Item 02 verification and migration evidence.
+2. Freeze that implementation head for hosted CI, real Better Auth D1 and
    routed-object runtime proof, and fresh independent exact-head review before
    any merge decision.
 

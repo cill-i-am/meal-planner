@@ -41,6 +41,8 @@ const roster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
   currentPersonId: personId,
   people: [
     {
+      associationState: "linked",
+      associationVersion: 1,
       createdAtEpochMs: 1,
       displayName: "Cillian",
       id: personId,
@@ -60,7 +62,14 @@ const emptyRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
 const unlinkedRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
   creatorSlot: "occupied",
   currentPersonId: null,
-  people: [{ ...roster.people[0], isCurrentAdult: false }],
+  people: [
+    {
+      ...roster.people[0],
+      associationState: "unlinked",
+      associationVersion: null,
+      isCurrentAdult: false,
+    },
+  ],
 });
 const unlinkedRosterBeforeCreatorBootstrap = Schema.decodeUnknownSync(
   HouseholdPeopleRoster
@@ -70,6 +79,8 @@ const unlinkedRosterBeforeCreatorBootstrap = Schema.decodeUnknownSync(
   people: [
     {
       ...roster.people[0],
+      associationState: "unlinked",
+      associationVersion: null,
       displayName: "Household dependant",
       isCurrentAdult: false,
       kind: "dependant",
@@ -94,7 +105,10 @@ const unlinkedArchivedRosterBeforeCreatorBootstrap = Schema.decodeUnknownSync(
   ],
 });
 
-const renderPanel = (operations: HouseholdPeopleOperations) => {
+const renderPanel = (
+  operations: HouseholdPeopleOperations,
+  currentMemberId?: string
+) => {
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: { retryDelay: 0 },
@@ -103,14 +117,135 @@ const renderPanel = (operations: HouseholdPeopleOperations) => {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <HouseholdPeoplePanel operations={operations} organizationId="org-a" />
+      <HouseholdPeoplePanel
+        {...(currentMemberId === undefined ? {} : { currentMemberId })}
+        operations={operations}
+        organizationId="org-a"
+      />
     </QueryClientProvider>
   );
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("HouseholdPeoplePanel", () => {
+  it("selects an existing adult before inviting and never renders the submitted email", async () => {
+    const inviteAdult = vi.fn().mockResolvedValue({
+      association: "associated",
+      invitationId: "invitation-a",
+      person: {
+        ...unlinkedRoster.people[0],
+        associationState: "invitation_pending",
+        associationVersion: 1,
+      },
+    });
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create: vi.fn(),
+      inviteAdult,
+      list: vi.fn().mockResolvedValue(unlinkedRoster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Person"),
+      personId
+    );
+    await userEvent.type(screen.getByLabelText("Email"), "adult@example.test");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Send invitation" })
+    );
+    await waitFor(() => expect(inviteAdult).toHaveBeenCalledTimes(1));
+    expect(inviteAdult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "adult@example.test",
+        personId,
+      }),
+      expect.anything()
+    );
+    expect(screen.queryByText("adult@example.test")).toBeNull();
+  });
+
+  it("confirms self departure before submitting the exact current link", async () => {
+    const departAdult = vi.fn().mockResolvedValue({
+      canRetry: false,
+      executionGeneration: 1,
+      lastAttemptAtEpochMs: null,
+      operationId: "departure_00000000-0000-4000-8000-000000000201",
+      personId,
+      state: "prepared",
+      version: 1,
+    });
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create: vi.fn(),
+      departAdult,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations, "member-current");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Leave household" })
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Confirm leave" })
+    );
+    await waitFor(() => expect(departAdult).toHaveBeenCalledTimes(1));
+    expect(departAdult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedLinkVersion: 1,
+        memberId: "member-current",
+        personId,
+      }),
+      expect.anything()
+    );
+  });
+
+  it("keeps an ambiguous invitation as the sole person mutation until its exact retry resolves", async () => {
+    const inviteAdult = vi
+      .fn()
+      .mockRejectedValueOnce(failure("people_unavailable"))
+      .mockRejectedValueOnce(failure("people_unavailable"))
+      .mockResolvedValueOnce({
+        association: "associated",
+        invitationId: "invitation-a",
+        person: unlinkedRoster.people[0],
+      });
+    const archive = vi.fn();
+    const operations: HouseholdPeopleOperations = {
+      archive,
+      bootstrapCreator: vi.fn(),
+      create: vi.fn(),
+      inviteAdult,
+      list: vi.fn().mockResolvedValue(unlinkedRoster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Person"),
+      personId
+    );
+    await userEvent.type(screen.getByLabelText("Email"), "adult@example.test");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Send invitation" })
+    );
+    await waitFor(() => expect(inviteAdult).toHaveBeenCalledTimes(2));
+    const exactPayload = inviteAdult.mock.calls[0]?.[0];
+
+    expect(screen.getByRole("button", { name: "Archive" })).toBeDisabled();
+    expect(archive).not.toHaveBeenCalled();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retry sending this invitation" })
+    );
+
+    await waitFor(() => expect(inviteAdult).toHaveBeenCalledTimes(3));
+    expect(inviteAdult.mock.calls[2]?.[0]).toEqual(exactPayload);
+  });
   it("shows persisted identities and reports stale transitions without optimistic state", async () => {
     const archive = vi.fn().mockRejectedValue(failure("stale_version"));
     const operations: HouseholdPeopleOperations = {
@@ -436,6 +571,8 @@ describe("HouseholdPeoplePanel", () => {
         const person =
           peopleByMutation.get(key) ??
           Schema.decodeUnknownSync(HouseholdPerson)({
+            associationState: "unlinked",
+            associationVersion: null,
             createdAtEpochMs: 1,
             displayName: payload.displayName,
             id: personId,

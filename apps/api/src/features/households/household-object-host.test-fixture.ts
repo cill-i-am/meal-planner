@@ -1,12 +1,22 @@
 import {
+  AssociateAdultInvitationPayload,
   BootstrapHouseholdCreatorPayload,
+  CancelMemberDeparturePayload,
+  CompleteAcceptedAdultLinkPayload,
   CreateHouseholdPersonPayload,
+  HouseholdAssociationVersion,
+  HouseholdMemberDepartureOperationId,
   HouseholdPeopleAuditActorId,
+  HouseholdPeopleOperationReason,
   HouseholdPersonLinkageSubject,
   HouseholdPersonId,
   HouseholdPersonMutationId,
   HouseholdPersonVersion,
   MealPlanRecipeSnapshot,
+  PrepareMemberDeparturePayload,
+  RepairAdultAccountLinkPayload,
+  RestoreReturningAdultLinkPayload,
+  RetryMemberDeparturePayload,
 } from "@meal-planner/household-api";
 import { Recipe } from "@meal-planner/recipe-import-api";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -51,10 +61,23 @@ import {
   householdRecipes,
 } from "./household.database-schema.js";
 import type {
+  HouseholdAssociateAdultInvitationInput,
   HouseholdBootstrapCreatorPersonInput,
+  HouseholdCancelMemberDepartureInput,
+  HouseholdCompleteAcceptedAdultLinkInput,
+  HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
+  HouseholdFinalizeMemberDepartureInput,
+  HouseholdGetMemberDepartureInput,
   HouseholdGetPersonInput,
   HouseholdListPeopleInput,
+  HouseholdMarkMemberDepartureRepairRequiredInput,
+  HouseholdPrepareMemberDepartureInput,
+  HouseholdReadMemberDepartureSystemInput,
+  HouseholdRepairAdultAccountLinkInput,
+  HouseholdRestoreReturningAdultLinkInput,
+  HouseholdRetryMemberDepartureInput,
+  HouseholdStartMemberDepartureInput,
   HouseholdTransitionPersonInput,
 } from "./people/household-people.contract.js";
 import {
@@ -402,6 +425,9 @@ const BrokenMigrationObjectBridge = Cloudflare.makeDurableObjectBridge(
 export class BrokenMigrationObject extends BrokenMigrationObjectBridge {}
 
 interface HouseholdObjectClient {
+  readonly associateAdultInvitation: (
+    input: HouseholdAssociateAdultInvitationInput
+  ) => Effect.Effect<unknown, unknown>;
   readonly archiveHouseholdPerson: (
     input: HouseholdTransitionPersonInput
   ) => Effect.Effect<unknown, unknown>;
@@ -413,6 +439,9 @@ interface HouseholdObjectClient {
   ) => Effect.Effect<unknown, unknown>;
   readonly bootstrapCreatorPerson: (
     input: HouseholdBootstrapCreatorPersonInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly cancelMemberDeparture: (
+    input: HouseholdCancelMemberDepartureInput
   ) => Effect.Effect<unknown, unknown>;
   readonly approveMealPlan: (input: {
     readonly admission: HouseholdMemberAdmission;
@@ -435,6 +464,15 @@ interface HouseholdObjectClient {
   ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
   readonly createHouseholdPerson: (
     input: HouseholdCreatePersonInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly completeAcceptedAdultLink: (
+    input: HouseholdCompleteAcceptedAdultLinkInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly confirmMemberAccessRevoked: (
+    input: HouseholdConfirmMemberAccessRevokedInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly finalizeMemberDeparture: (
+    input: HouseholdFinalizeMemberDepartureInput
   ) => Effect.Effect<unknown, unknown>;
   readonly commitRecipeImportDraft: (
     input: typeof HouseholdCommitRecipeImportDraftInput.Type
@@ -462,8 +500,22 @@ interface HouseholdObjectClient {
   readonly getHouseholdPerson: (
     input: HouseholdGetPersonInput
   ) => Effect.Effect<unknown, unknown>;
+  readonly getMemberDeparture: (
+    input:
+      | HouseholdGetMemberDepartureInput
+      | HouseholdReadMemberDepartureSystemInput
+  ) => Effect.Effect<unknown, unknown>;
   readonly listHouseholdPeople: (
     input: HouseholdListPeopleInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly markMemberDepartureRepairRequired: (
+    input: HouseholdMarkMemberDepartureRepairRequiredInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly prepareMemberDeparture: (
+    input: HouseholdPrepareMemberDepartureInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly repairAdultAccountLink: (
+    input: HouseholdRepairAdultAccountLinkInput
   ) => Effect.Effect<unknown, unknown>;
   readonly inspectImportWorkflowDispatch: (
     dispatchId: typeof HouseholdDispatchId.Type
@@ -500,6 +552,15 @@ interface HouseholdObjectClient {
   readonly restoreHouseholdPerson: (
     input: HouseholdTransitionPersonInput
   ) => Effect.Effect<unknown, unknown>;
+  readonly restoreReturningAdultLink: (
+    input: HouseholdRestoreReturningAdultLinkInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly retryMemberDeparture: (
+    input: HouseholdRetryMemberDepartureInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly startMemberDeparture: (
+    input: HouseholdStartMemberDepartureInput
+  ) => Effect.Effect<unknown, unknown>;
   readonly resolveRecipeImportSource: (
     input: typeof HouseholdResolveRecipeImportSourceInput.Type
   ) => Effect.Effect<unknown, unknown>;
@@ -521,6 +582,130 @@ interface HouseholdObjectClient {
 }
 
 const HouseholdTestCommand = Schema.Union([
+  Schema.Struct({
+    actorId: Schema.String,
+    invitationDigest: AssociateAdultInvitationPayload.fields.invitationDigest,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("associateAdultInvitation"),
+    organizationId: HouseholdOrganizationId,
+    personId: HouseholdPersonId,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    invitationDigest: CompleteAcceptedAdultLinkPayload.fields.invitationDigest,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("completeAcceptedAdultLink"),
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    expectedPersonVersion:
+      RepairAdultAccountLinkPayload.fields.expectedPersonVersion,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("repairAdultAccountLink"),
+    organizationId: HouseholdOrganizationId,
+    personId: HouseholdPersonId,
+    reason: HouseholdPeopleOperationReason,
+    targetLinkageSubject: Schema.String,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    expectedLinkVersion:
+      PrepareMemberDeparturePayload.fields.expectedLinkVersion,
+    expectedPersonVersion:
+      PrepareMemberDeparturePayload.fields.expectedPersonVersion,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("prepareMemberDeparture"),
+    organizationId: HouseholdOrganizationId,
+    personId: HouseholdPersonId,
+    reason: HouseholdPeopleOperationReason,
+    targetLinkageSubject: Schema.String,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    expectedOperationVersion: HouseholdAssociationVersion,
+    linkageSubject: Schema.String,
+    objectName: Schema.String,
+    operation: Schema.Literal("startMemberDeparture"),
+    operationId: HouseholdMemberDepartureOperationId,
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    expectedOperationVersion:
+      CancelMemberDeparturePayload.fields.expectedOperationVersion,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("cancelMemberDeparture"),
+    operationId: HouseholdMemberDepartureOperationId,
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    expectedOperationVersion:
+      RetryMemberDeparturePayload.fields.expectedOperationVersion,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("retryMemberDeparture"),
+    operationId: HouseholdMemberDepartureOperationId,
+    organizationId: HouseholdOrganizationId,
+    reason: HouseholdPeopleOperationReason,
+    targetLinkageSubject: Schema.NullOr(HouseholdPersonLinkageSubject),
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    linkageSubject: Schema.String,
+    objectName: Schema.String,
+    operation: Schema.Literal("getMemberDeparture"),
+    operationId: HouseholdMemberDepartureOperationId,
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    expectedOperationVersion: HouseholdAssociationVersion,
+    objectName: Schema.String,
+    operation: Schema.Literals([
+      "confirmMemberAccessRevoked",
+      "finalizeMemberDeparture",
+    ]),
+    operationId: HouseholdMemberDepartureOperationId,
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    expectedOperationVersion: HouseholdAssociationVersion,
+    objectName: Schema.String,
+    operation: Schema.Literal("markMemberDepartureRepairRequired"),
+    operationId: HouseholdMemberDepartureOperationId,
+    organizationId: HouseholdOrganizationId,
+    phase: Schema.Literals(["finalization", "revocation"]),
+  }),
+  Schema.Struct({
+    objectName: Schema.String,
+    operation: Schema.Literal("readMemberDepartureSystem"),
+    operationId: HouseholdMemberDepartureOperationId,
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    expectedPersonVersion:
+      RestoreReturningAdultLinkPayload.fields.expectedPersonVersion,
+    invitationDigest: RestoreReturningAdultLinkPayload.fields.invitationDigest,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("restoreReturningAdultLink"),
+    organizationId: HouseholdOrganizationId,
+    personId: HouseholdPersonId,
+  }),
   Schema.Struct({
     objectName: Schema.String,
     operation: Schema.Literal("inspectHouseholdPeopleState"),
@@ -1030,10 +1215,234 @@ const routeHouseholdAdministrationTestCommand = (
   return null;
 };
 
+const routeHouseholdAssociationTestCommand = (
+  household: HouseholdObjectClient,
+  command: typeof HouseholdTestCommand.Type
+) => {
+  if (command.operation === "associateAdultInvitation") {
+    return respond(
+      household.associateAdultInvitation({
+        admission: peopleCreatorAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: {
+          invitationDigest: command.invitationDigest,
+          mutationId: command.mutationId,
+          personId: command.personId,
+        },
+      })
+    );
+  }
+  if (command.operation === "completeAcceptedAdultLink") {
+    return respond(
+      household.completeAcceptedAdultLink({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: {
+          invitationDigest: command.invitationDigest,
+          mutationId: command.mutationId,
+        },
+      })
+    );
+  }
+  if (command.operation === "repairAdultAccountLink") {
+    return respond(
+      household.repairAdultAccountLink({
+        admission: peopleCreatorAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: {
+          expectedPersonVersion: command.expectedPersonVersion,
+          mutationId: command.mutationId,
+          personId: command.personId,
+          reason: command.reason,
+        },
+        targetLinkageSubject: Schema.decodeUnknownSync(
+          HouseholdPersonLinkageSubject
+        )(command.targetLinkageSubject),
+      })
+    );
+  }
+  return null;
+};
+
+const routeDepartureFinalizationTestCommand = (
+  household: HouseholdObjectClient,
+  command: typeof HouseholdTestCommand.Type
+) => {
+  if (command.operation === "getMemberDeparture") {
+    return respond(
+      household.getMemberDeparture({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        operationId: command.operationId,
+      })
+    );
+  }
+  if (command.operation === "readMemberDepartureSystem") {
+    return respond(
+      household.getMemberDeparture({
+        admission: systemAdmission(
+          command.organizationId,
+          "member_departure_finalize"
+        ),
+        operationId: command.operationId,
+      })
+    );
+  }
+  if (command.operation === "confirmMemberAccessRevoked") {
+    return respond(
+      household.confirmMemberAccessRevoked({
+        admission: systemAdmission(
+          command.organizationId,
+          "member_departure_finalize"
+        ),
+        expectedOperationVersion: command.expectedOperationVersion,
+        operationId: command.operationId,
+      })
+    );
+  }
+  if (command.operation === "finalizeMemberDeparture") {
+    return respond(
+      household.finalizeMemberDeparture({
+        admission: systemAdmission(
+          command.organizationId,
+          "member_departure_finalize"
+        ),
+        expectedOperationVersion: command.expectedOperationVersion,
+        operationId: command.operationId,
+      })
+    );
+  }
+  if (command.operation === "markMemberDepartureRepairRequired") {
+    return respond(
+      household.markMemberDepartureRepairRequired({
+        admission: systemAdmission(
+          command.organizationId,
+          "member_departure_finalize"
+        ),
+        expectedOperationVersion: command.expectedOperationVersion,
+        operationId: command.operationId,
+        phase: command.phase,
+      })
+    );
+  }
+  return null;
+};
+
 const routeHouseholdPeopleTestCommand = (
   household: HouseholdObjectClient,
   command: typeof HouseholdTestCommand.Type
 ) => {
+  const associationResponse = routeHouseholdAssociationTestCommand(
+    household,
+    command
+  );
+  if (associationResponse !== null) {
+    return associationResponse;
+  }
+  const finalizationResponse = routeDepartureFinalizationTestCommand(
+    household,
+    command
+  );
+  if (finalizationResponse !== null) {
+    return finalizationResponse;
+  }
+  if (command.operation === "prepareMemberDeparture") {
+    return respond(
+      household.prepareMemberDeparture({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: {
+          expectedLinkVersion: command.expectedLinkVersion,
+          expectedPersonVersion: command.expectedPersonVersion,
+          mutationId: command.mutationId,
+          personId: command.personId,
+          reason: command.reason,
+        },
+        targetLinkageSubject: Schema.decodeUnknownSync(
+          HouseholdPersonLinkageSubject
+        )(command.targetLinkageSubject),
+      })
+    );
+  }
+  if (command.operation === "startMemberDeparture") {
+    return respond(
+      household.startMemberDeparture({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        expectedOperationVersion: command.expectedOperationVersion,
+        operationId: command.operationId,
+      })
+    );
+  }
+  if (command.operation === "cancelMemberDeparture") {
+    return respond(
+      household.cancelMemberDeparture({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        operationId: command.operationId,
+        payload: {
+          expectedOperationVersion: command.expectedOperationVersion,
+          mutationId: command.mutationId,
+        },
+      })
+    );
+  }
+  if (command.operation === "retryMemberDeparture") {
+    return respond(
+      household.retryMemberDeparture({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        operationId: command.operationId,
+        payload: {
+          expectedOperationVersion: command.expectedOperationVersion,
+          mutationId: command.mutationId,
+          reason: command.reason,
+        },
+        targetLinkageSubject: command.targetLinkageSubject,
+      })
+    );
+  }
+  if (command.operation === "restoreReturningAdultLink") {
+    return respond(
+      household.restoreReturningAdultLink({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: {
+          expectedPersonVersion: command.expectedPersonVersion,
+          invitationDigest: command.invitationDigest,
+          mutationId: command.mutationId,
+          personId: command.personId,
+        },
+      })
+    );
+  }
   if (command.operation === "bootstrapCreatorPerson") {
     return respond(
       household.bootstrapCreatorPerson({

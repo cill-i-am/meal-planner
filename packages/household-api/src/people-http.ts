@@ -66,6 +66,16 @@ export const HouseholdPeopleCreatorRequiredProblem = PeopleProblem(
   403,
   "creator_required"
 );
+/** Account-link or departure operation requires a current household owner. */
+export const HouseholdPeopleOrganizerRequiredProblem = PeopleProblem(
+  403,
+  "organizer_required"
+);
+/** The selected Better Auth member or invitation is not valid for this household. */
+export const HouseholdPeopleControlPlaneNotFoundProblem = PeopleProblem(
+  404,
+  "control_plane_resource_not_found"
+);
 /** Mutation conflicts with current state or a prior mutation intent. */
 export const HouseholdPeopleMutationCollisionProblem = PeopleProblem(
   409,
@@ -86,8 +96,28 @@ export const HouseholdPeopleLifecycleConflictProblem = PeopleProblem(
   409,
   "lifecycle_conflict"
 );
+/** Invitation, member, link, or person association conflicts with current authority. */
+export const HouseholdPeopleAssociationConflictProblem = PeopleProblem(
+  409,
+  "association_conflict"
+);
+/** Another departure owns this person/link or the requested transition is invalid. */
+export const HouseholdPeopleDepartureConflictProblem = PeopleProblem(
+  409,
+  "departure_conflict"
+);
+/** Optimistic account-link or departure-operation version is stale. */
+export const HouseholdPeopleAssociationStaleProblem = PeopleProblem(
+  409,
+  "association_stale"
+);
 /** Household people storage is temporarily unavailable. */
 export const HouseholdPeopleUnavailableProblem = PeopleProblem(
   503,
   "people_unavailable"
+);
+/** Better Auth membership or invitation authority is temporarily unavailable. */
+export const HouseholdPeopleControlPlaneUnavailableProblem = PeopleProblem(
+  503,
+  "control_plane_unavailable"
 );
