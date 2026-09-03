@@ -7,6 +7,7 @@ import m0005 from "./20260824002531_household_domain/migration.sql";
 import m0006 from "./20260825015310_household_domain/migration.sql";
 import m0007 from "./20260829061116_household_domain/migration.sql";
 import m0008 from "./20260902211008_household_domain/migration.sql";
+import m0009 from "./20260903214851_household_domain/migration.sql";
 
 export default {
   migrations: {
@@ -19,5 +20,6 @@ export default {
     "20260825015310_household_domain": m0006,
     "20260829061116_household_domain": m0007,
     "20260902211008_household_domain": m0008,
+    "20260903214851_household_domain": m0009,
   },
 };

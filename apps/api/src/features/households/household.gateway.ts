@@ -8,12 +8,12 @@ import type {
   HouseholdAdultInvitationResult,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureOperationId,
-  HouseholdPendingAdultInvitations,
   HouseholdPeopleFailure,
   HouseholdPeoplePrincipal,
   HouseholdPeopleRoster,
   HouseholdPerson,
   HouseholdPersonId,
+  HouseholdPersonMutationId,
   InviteHouseholdAdultPayload,
   RepairHouseholdAdultLinkPayload,
   RetryHouseholdAdultDeparturePayload,
@@ -167,14 +167,15 @@ export interface HouseholdPeopleGateway {
     readonly includeArchived: boolean;
     readonly principal: HouseholdPeoplePrincipal;
   }) => Effect.Effect<HouseholdPeopleRoster, HouseholdPeopleFailure>;
-  readonly listPendingInvitations: (input: {
-    readonly principal: HouseholdPeoplePrincipal;
-  }) => Effect.Effect<
-    HouseholdPendingAdultInvitations,
-    HouseholdPeopleGatewayFailure
-  >;
   readonly getDeparture: (input: {
     readonly operationId: HouseholdMemberDepartureOperationId;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<
+    HouseholdMemberDepartureOperation,
+    HouseholdPeopleGatewayFailure
+  >;
+  readonly getDepartureByMutation: (input: {
+    readonly mutationId: HouseholdPersonMutationId;
     readonly principal: HouseholdPeoplePrincipal;
   }) => Effect.Effect<
     HouseholdMemberDepartureOperation,

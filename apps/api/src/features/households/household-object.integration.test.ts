@@ -114,6 +114,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     const associated = await commandPeople({
       actorId: ownerActorId,
       invitationDigest,
+      invitationRequestDigest: "d".repeat(64),
       linkageSubject: ownerLinkageSubject,
       mutationId: "link-associate-invitation",
       objectName,

@@ -96,6 +96,7 @@ import {
   HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
   HouseholdFinalizeMemberDepartureInput,
+  HouseholdGetMemberDepartureByMutationInput,
   HouseholdGetMemberDepartureInput,
   HouseholdGetPersonInput,
   HouseholdListPeopleInput,
@@ -1079,6 +1080,39 @@ export const HouseholdObjectRuntime = Effect.gen(
                 callerLinkageSubject: command.admission.actor.linkageSubject,
                 operationId: command.operationId,
               })
+            );
+          })
+        ),
+      getMemberDepartureByMutation: (
+        untrustedInput: HouseholdGetMemberDepartureByMutationInput
+      ) =>
+        scoped(
+          Effect.gen(function* getMemberDepartureByMutation() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdGetMemberDepartureByMutationInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "get_member_departure"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const operation = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).getMemberDepartureByMutation({
+              callerIsOwner: command.admission.actor._tag === "PeopleCreator",
+              callerLinkageSubject: command.admission.actor.linkageSubject,
+              mutationId: command.mutationId,
+            });
+            return yield* encodePeopleResult(
+              HouseholdMemberDepartureOperation,
+              operation
             );
           })
         ),

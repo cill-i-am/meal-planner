@@ -61,6 +61,15 @@ export const HouseholdInvitationDigest = Schema.String.pipe(
 /** Purpose-bound digest of one Better Auth invitation identity. */
 export type HouseholdInvitationDigest = typeof HouseholdInvitationDigest.Type;
 
+/** Purpose-bound digest of the exact invitation creation request. */
+export const HouseholdInvitationRequestDigest = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u)),
+  Schema.brand("HouseholdInvitationRequestDigest")
+);
+/** Purpose-bound digest of the exact invitation creation request. */
+export type HouseholdInvitationRequestDigest =
+  typeof HouseholdInvitationRequestDigest.Type;
+
 /** Stable household-local identity for one account-to-person link history. */
 export const HouseholdPersonLinkId = Schema.String.pipe(
   Schema.check(
@@ -185,7 +194,7 @@ export type InviteHouseholdAdultPayload =
 
 /** Explicit retry after invitation creation committed but association did not. */
 export const AssociateHouseholdAdultInvitationPayload = Schema.Struct({
-  invitationId: HouseholdAuthResourceId,
+  email: HouseholdInvitationEmail,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
@@ -251,28 +260,14 @@ export const ReturnHouseholdAdultPayload = Schema.Struct({
 export type ReturnHouseholdAdultPayload =
   typeof ReturnHouseholdAdultPayload.Type;
 
-/** Explicit control-plane/household split outcome for invitation creation. */
+/** Definitive result after one exact invitation intent exists in both authorities. */
 export const HouseholdAdultInvitationResult = Schema.Struct({
-  association: Schema.Literals(["associated", "association_required"]),
+  association: Schema.Literal("associated"),
   invitationId: HouseholdAuthResourceId,
-  person: Schema.NullOr(HouseholdPerson),
+  person: HouseholdPerson,
 });
 export type HouseholdAdultInvitationResult =
   typeof HouseholdAdultInvitationResult.Type;
-
-/** Privacy-safe pending Better Auth invitations available for explicit recovery. */
-export const HouseholdPendingAdultInvitation = Schema.Struct({
-  invitationId: HouseholdAuthResourceId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-export type HouseholdPendingAdultInvitation =
-  typeof HouseholdPendingAdultInvitation.Type;
-
-/** Privacy-safe pending Better Auth invitations available for explicit recovery. */
-export const HouseholdPendingAdultInvitations = Schema.Array(
-  HouseholdPendingAdultInvitation
-);
-export type HouseholdPendingAdultInvitations =
-  typeof HouseholdPendingAdultInvitations.Type;
 
 /** Privacy-safe occupancy state of the household-singleton creator slot. */
 export const HouseholdCreatorSlot = Schema.Literals(["available", "occupied"]);
@@ -319,6 +314,7 @@ export type TransitionHouseholdPersonPayload =
 /** Owner command associating one unlinked adult with an invitation. */
 export const AssociateAdultInvitationPayload = Schema.Struct({
   invitationDigest: HouseholdInvitationDigest,
+  invitationRequestDigest: HouseholdInvitationRequestDigest,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));

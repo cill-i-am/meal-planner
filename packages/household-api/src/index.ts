@@ -52,10 +52,10 @@ import {
   HouseholdAdultInvitationResult,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureOperationId,
-  HouseholdPendingAdultInvitations,
   HouseholdPeopleRoster,
   HouseholdPerson,
   HouseholdPersonId,
+  HouseholdPersonMutationId,
   InviteHouseholdAdultPayload,
   ListHouseholdPeopleUrlParams,
   RepairHouseholdAdultLinkPayload,
@@ -85,12 +85,11 @@ export {
   HouseholdMemberDepartureOperationId,
   HouseholdMemberDepartureStart,
   HouseholdMemberDepartureState,
-  HouseholdPendingAdultInvitation,
-  HouseholdPendingAdultInvitations,
   HouseholdPeopleRoster,
   HouseholdPeopleOperationReason,
   HouseholdPeopleUnavailable,
   HouseholdInvitationDigest,
+  HouseholdInvitationRequestDigest,
   HouseholdInvitationEmail,
   HouseholdPerson,
   HouseholdAuthResourceId,
@@ -375,18 +374,6 @@ const PeopleGroup = HttpApiGroup.make("people")
       payload: InviteHouseholdAdultPayload,
       success: HouseholdAdultInvitationResult.pipe(HttpApiSchema.status(201)),
     }),
-    HttpApiEndpoint.get(
-      "listPendingInvitations",
-      "/v1/household/people/invitations/pending",
-      {
-        error: [
-          HouseholdPeopleControlPlaneUnavailableProblem,
-          HouseholdPeopleOrganizerRequiredProblem,
-          HouseholdPeopleUnavailableProblem,
-        ],
-        success: HouseholdPendingAdultInvitations,
-      }
-    ),
     HttpApiEndpoint.post(
       "associateInvitation",
       "/v1/household/people/invitations/associate",
@@ -451,6 +438,18 @@ const PeopleGroup = HttpApiGroup.make("people")
         HttpApiSchema.status(202)
       ),
     }),
+    HttpApiEndpoint.get(
+      "getDepartureByMutation",
+      "/v1/household/people/departures/by-mutation/:mutationId",
+      {
+        error: [
+          HouseholdPeopleNotFoundProblem,
+          HouseholdPeopleUnavailableProblem,
+        ],
+        params: { mutationId: HouseholdPersonMutationId },
+        success: HouseholdMemberDepartureOperation,
+      }
+    ),
     HttpApiEndpoint.get(
       "getDeparture",
       "/v1/household/people/departures/:operationId",

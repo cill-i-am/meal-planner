@@ -107,6 +107,7 @@ import type {
   HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
   HouseholdFinalizeMemberDepartureInput,
+  HouseholdGetMemberDepartureByMutationInput,
   HouseholdGetMemberDepartureInput,
   HouseholdMemberDepartureSystemState,
   HouseholdGetPersonInput,
@@ -129,6 +130,7 @@ import {
   HouseholdConfirmMemberAccessRevokedInput as HouseholdConfirmMemberAccessRevokedInputSchema,
   HouseholdCreatePersonInput as HouseholdCreatePersonInputSchema,
   HouseholdFinalizeMemberDepartureInput as HouseholdFinalizeMemberDepartureInputSchema,
+  HouseholdGetMemberDepartureByMutationInput as HouseholdGetMemberDepartureByMutationInputSchema,
   HouseholdGetMemberDepartureInput as HouseholdGetMemberDepartureInputSchema,
   HouseholdGetPersonInput as HouseholdGetPersonInputSchema,
   HouseholdListPeopleInput as HouseholdListPeopleInputSchema,
@@ -346,6 +348,12 @@ export interface HouseholdDomainWorkerMethods {
   ) => Effect.Effect<
     | typeof HouseholdMemberDepartureOperation.Encoded
     | typeof HouseholdMemberDepartureSystemState.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
+  readonly getMemberDepartureByMutation: (
+    input: HouseholdGetMemberDepartureByMutationInput
+  ) => Effect.Effect<
+    typeof HouseholdMemberDepartureOperation.Encoded,
     HouseholdPeopleDomainFailure
   >;
   readonly listHouseholdPeople: (
@@ -887,6 +895,15 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
             "get_member_departure",
             (household, command) => household.getMemberDeparture(command)
           ),
+    getMemberDepartureByMutation: (
+      input: HouseholdGetMemberDepartureByMutationInput
+    ) =>
+      route(
+        HouseholdGetMemberDepartureByMutationInputSchema,
+        input,
+        "get_member_departure",
+        (household, command) => household.getMemberDepartureByMutation(command)
+      ),
     listHouseholdPeople: (input: HouseholdListPeopleInput) =>
       route(
         HouseholdListPeopleInputSchema,

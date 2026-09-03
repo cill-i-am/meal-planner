@@ -2,10 +2,10 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  AssociateHouseholdAdultInvitationPayload,
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
   HouseholdPeopleBootstrapConflictProblem,
-  HouseholdPendingAdultInvitations,
   HouseholdPeopleRoster,
   HouseholdPeoplePrincipal,
   ListHouseholdPeopleUrlParams,
@@ -139,23 +139,25 @@ describe("household people public contract", () => {
     ).toThrow();
   });
 
-  it("projects only opaque invitation ids for explicit pending recovery", () => {
+  it("recovers an invitation only from the retained original intent", () => {
     expect(
-      Schema.decodeUnknownSync(HouseholdPendingAdultInvitations)([
-        { invitationId: "invitation-a" },
-        { invitationId: "invitation-b" },
-      ])
-    ).toEqual([
-      { invitationId: "invitation-a" },
-      { invitationId: "invitation-b" },
-    ]);
+      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
+        email: "adult@example.test",
+        mutationId: "invitation-original-intent",
+        personId: "person_00000000-0000-4000-8000-000000000101",
+      })
+    ).toEqual({
+      email: "adult@example.test",
+      mutationId: "invitation-original-intent",
+      personId: "person_00000000-0000-4000-8000-000000000101",
+    });
     expect(() =>
-      Schema.decodeUnknownSync(HouseholdPendingAdultInvitations)([
-        {
-          email: "must-not-cross-the-boundary@example.test",
-          invitationId: "invitation-a",
-        },
-      ])
+      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
+        email: "adult@example.test",
+        invitationId: "invitation-chosen-by-the-browser",
+        mutationId: "invitation-original-intent",
+        personId: "person_00000000-0000-4000-8000-000000000101",
+      })
     ).toThrow();
   });
 

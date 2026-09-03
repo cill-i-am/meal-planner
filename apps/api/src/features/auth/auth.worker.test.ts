@@ -136,6 +136,55 @@ describe("Better Auth D1 control plane", () => {
     });
   });
 
+  it("persists the exact caller-supplied invitation id supported by Better Auth rc.6", async () => {
+    const database = drizzle(testEnv.MealPlannerAuthDatabase);
+    const auth = makeMealPlannerAuth({
+      baseURL,
+      database,
+      schema: authSchema,
+      secret,
+    });
+    const signUp = await auth.fetch(
+      authRequest("/sign-up/email", {
+        email: "exact-invitation-owner@example.test",
+        name: "Exact Invitation Owner",
+        password: "correct horse battery staple",
+      })
+    );
+    const cookie = cookieHeader(signUp);
+    const createOrganization = await auth.fetch(
+      authRequest(
+        "/organization/create",
+        { name: "Exact invitation", slug: "exact-invitation" },
+        cookie
+      )
+    );
+    const organization = (await createOrganization.json()) as { id: string };
+    const invitationId = "invitation-operation-fixed-0001";
+
+    const response = await auth.fetch(
+      authRequest(
+        "/organization/invite-member",
+        {
+          email: "exact-invitation-recipient@example.test",
+          id: invitationId,
+          organizationId: organization.id,
+          role: "member",
+        },
+        cookie
+      )
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: invitationId });
+    expect(
+      await database
+        .select({ id: authSchema.invitation.id })
+        .from(authSchema.invitation)
+        .where(eq(authSchema.invitation.id, invitationId))
+    ).toEqual([{ id: invitationId }]);
+  });
+
   it("rejects an active organization id without a matching membership", async () => {
     const database = drizzle(testEnv.MealPlannerAuthDatabase);
     const auth = makeMealPlannerAuth({

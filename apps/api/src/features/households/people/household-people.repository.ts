@@ -198,6 +198,11 @@ export interface HouseholdPeopleRepository {
     readonly callerLinkageSubject: HouseholdPersonLinkageSubject;
     readonly operationId: typeof HouseholdMemberDepartureOperationId.Type;
   }) => Effect.Effect<Departure, Failure>;
+  readonly getMemberDepartureByMutation: (input: {
+    readonly callerIsOwner: boolean;
+    readonly callerLinkageSubject: HouseholdPersonLinkageSubject;
+    readonly mutationId: string;
+  }) => Effect.Effect<Departure, Failure>;
   readonly getMemberDepartureSystem: (input: {
     readonly operationId: typeof HouseholdMemberDepartureOperationId.Type;
   }) => Effect.Effect<HouseholdMemberDepartureSystemState, Failure>;
@@ -844,6 +849,7 @@ export const makeHouseholdPeopleRepository = (
         actorId: input.actorId,
         command: "associate_invitation",
         invitationDigest: input.payload.invitationDigest,
+        invitationRequestDigest: input.payload.invitationRequestDigest,
         personId: input.payload.personId,
       });
       return yield* database.transaction((transaction) =>
@@ -1452,6 +1458,7 @@ export const makeHouseholdPeopleRepository = (
             linkId: link.linkId,
             operationId,
             personId: person.personId,
+            preparationMutationId: input.payload.mutationId,
             reason: input.payload.reason,
             state: "prepared" as const,
             updatedAtEpochMs: input.now,
@@ -1522,6 +1529,30 @@ export const makeHouseholdPeopleRepository = (
   }) =>
     Effect.gen(function* getMemberDepartureQuery() {
       const row = yield* readDepartureRow(database, input.operationId);
+      if (row === undefined) {
+        return yield* Effect.fail(HouseholdPersonNotFound.make({}));
+      }
+      yield* requireDepartureCaller(database, { ...input, row });
+      return yield* projectDeparture(row);
+    });
+
+  const getMemberDepartureByMutation = (input: {
+    readonly callerIsOwner: boolean;
+    readonly callerLinkageSubject: HouseholdPersonLinkageSubject;
+    readonly mutationId: string;
+  }) =>
+    Effect.gen(function* getMemberDepartureByMutationQuery() {
+      const [row] = yield* database
+        .select()
+        .from(householdMemberDepartureOperations)
+        .where(
+          eq(
+            householdMemberDepartureOperations.preparationMutationId,
+            input.mutationId
+          )
+        )
+        .limit(1)
+        .pipe(queryFailure);
       if (row === undefined) {
         return yield* Effect.fail(HouseholdPersonNotFound.make({}));
       }
@@ -2428,6 +2459,7 @@ export const makeHouseholdPeopleRepository = (
             );
       }),
     getMemberDeparture,
+    getMemberDepartureByMutation,
     getMemberDepartureSystem,
     list: (input) =>
       Effect.gen(function* listPeople() {

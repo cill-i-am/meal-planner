@@ -1,9 +1,13 @@
 import {
   HouseholdInvitationDigest,
+  HouseholdInvitationRequestDigest,
   HouseholdPeopleAuditActorId,
   HouseholdPersonLinkageSubject,
 } from "@meal-planner/household-api";
-import type { HouseholdOrganizationId } from "@meal-planner/household-api";
+import type {
+  HouseholdOrganizationId,
+  HouseholdPersonMutationId,
+} from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
 import { HouseholdDigest } from "../shared-kernel/authority-services.js";
@@ -14,7 +18,12 @@ export class HouseholdPeopleIdentityFailure {
 }
 
 const peopleIdentityMaterial = (
-  purpose: "audit-actor" | "invitation" | "linkage-subject",
+  purpose:
+    | "audit-actor"
+    | "invitation"
+    | "invitation-operation"
+    | "invitation-request"
+    | "linkage-subject",
   organizationId: HouseholdOrganizationId,
   subject: string
 ) =>
@@ -28,7 +37,12 @@ const peopleIdentityMaterial = (
 
 const derive = <A>(
   schema: Schema.Codec<A, string, never>,
-  purpose: "audit-actor" | "invitation" | "linkage-subject",
+  purpose:
+    | "audit-actor"
+    | "invitation"
+    | "invitation-operation"
+    | "invitation-request"
+    | "linkage-subject",
   organizationId: HouseholdOrganizationId,
   subject: string
 ) =>
@@ -67,3 +81,30 @@ export const deriveHouseholdInvitationDigest = (
   invitationId: string
 ) =>
   derive(HouseholdInvitationDigest, "invitation", organizationId, invitationId);
+
+/** Exact Better Auth invitation id derived from one household-scoped mutation. */
+export const deriveHouseholdInvitationId = (
+  organizationId: HouseholdOrganizationId,
+  mutationId: typeof HouseholdPersonMutationId.Type
+) =>
+  derive(
+    HouseholdInvitationDigest,
+    "invitation-operation",
+    organizationId,
+    mutationId
+  ).pipe(Effect.map((digest) => `household_invitation_${digest}`));
+
+/** Digest retaining the exact API-local invitation payload without storing email in Household. */
+export const deriveHouseholdInvitationRequestDigest = (
+  organizationId: HouseholdOrganizationId,
+  input: {
+    readonly email: string;
+    readonly invitationId: string;
+  }
+) =>
+  derive(
+    HouseholdInvitationRequestDigest,
+    "invitation-request",
+    organizationId,
+    JSON.stringify([input.invitationId, input.email])
+  );

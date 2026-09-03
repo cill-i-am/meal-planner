@@ -1,0 +1,2 @@
+ALTER TABLE `household_member_departure_operations` ADD `preparation_mutation_id` text NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX `household_departure_preparation_mutation_unique` ON `household_member_departure_operations` (`preparation_mutation_id`);

@@ -10,6 +10,7 @@ import {
   HouseholdPerson,
   HouseholdPersonId,
   HouseholdPersonLinkageSubject,
+  HouseholdPersonMutationId,
   ListHouseholdPeopleUrlParams,
   PrepareMemberDeparturePayload,
   RepairAdultAccountLinkPayload,
@@ -126,6 +127,14 @@ export const HouseholdGetMemberDepartureInput = Schema.Struct({
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type HouseholdGetMemberDepartureInput =
   typeof HouseholdGetMemberDepartureInput.Type;
+
+/** Closed member-visible lookup of the operation created by one retained mutation. */
+export const HouseholdGetMemberDepartureByMutationInput = Schema.Struct({
+  admission: HouseholdPeopleCallerAdmission,
+  mutationId: HouseholdPersonMutationId,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdGetMemberDepartureByMutationInput =
+  typeof HouseholdGetMemberDepartureByMutationInput.Type;
 
 /** Exact-purpose system query used by the dedicated departure Workflow. */
 export const HouseholdReadMemberDepartureSystemInput = Schema.Struct({

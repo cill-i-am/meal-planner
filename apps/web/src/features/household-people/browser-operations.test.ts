@@ -47,6 +47,9 @@ describe("browser household people operations", () => {
     const operationId = Schema.decodeUnknownSync(
       HouseholdMemberDepartureOperationId
     )("departure_00000000-0000-4000-8000-000000000201");
+    const departureMutationId = Schema.decodeUnknownSync(
+      HouseholdPersonMutationId
+    )("00000000-0000-4000-8000-000000000102");
     const person = {
       associationState: "invitation_pending",
       associationVersion: 1,
@@ -69,8 +72,8 @@ describe("browser household people operations", () => {
       version: 2,
     };
     fetchMock
-      .mockResolvedValueOnce(Response.json([{ invitationId: "invitation-a" }]))
       .mockResolvedValueOnce(Response.json(person))
+      .mockResolvedValueOnce(Response.json(departure))
       .mockResolvedValueOnce(Response.json(departure))
       .mockResolvedValueOnce(
         Response.json({ ...departure, state: "cancelled", version: 3 })
@@ -83,14 +86,14 @@ describe("browser household people operations", () => {
       );
     const operations = makeBrowserHouseholdPeopleOperations();
 
-    await operations.listPendingInvitations?.();
     await operations.associateInvitation?.(
       Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
-        invitationId: "invitation-a",
-        mutationId: "00000000-0000-4000-8000-000000000102",
+        email: "adult@example.test",
+        mutationId: departureMutationId,
         personId,
       })
     );
+    await operations.getDepartureByMutation?.(departureMutationId);
     await operations.getDeparture?.(operationId);
     await operations.cancelDeparture?.(
       operationId,
@@ -118,8 +121,11 @@ describe("browser household people operations", () => {
         return [method, new URL(url, globalThis.location.origin).pathname];
       })
     ).toEqual([
-      ["GET", "/v1/household/people/invitations/pending"],
       ["POST", "/v1/household/people/invitations/associate"],
+      [
+        "GET",
+        `/v1/household/people/departures/by-mutation/${departureMutationId}`,
+      ],
       ["GET", `/v1/household/people/departures/${operationId}`],
       ["POST", `/v1/household/people/departures/${operationId}/cancel`],
       ["POST", `/v1/household/people/departures/${operationId}/retry`],

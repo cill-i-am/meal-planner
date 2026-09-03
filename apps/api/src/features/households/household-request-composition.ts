@@ -3,7 +3,6 @@ import {
   HouseholdOrganizationId,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
-  HouseholdPendingAdultInvitations,
   HouseholdPeopleRoster,
   HouseholdPeopleUnavailable,
   HouseholdPerson,
@@ -72,6 +71,7 @@ import type {
   HouseholdCancelMemberDepartureInput,
   HouseholdCompleteAcceptedAdultLinkInput,
   HouseholdCreatePersonInput,
+  HouseholdGetMemberDepartureByMutationInput,
   HouseholdGetMemberDepartureInput,
   HouseholdGetPersonInput,
   HouseholdListPeopleInput,
@@ -85,6 +85,8 @@ import type {
 import type { HouseholdPeopleControlPlane } from "./people/household-people.control-plane.js";
 import {
   deriveHouseholdInvitationDigest,
+  deriveHouseholdInvitationId,
+  deriveHouseholdInvitationRequestDigest,
   deriveHouseholdPersonLinkageSubject,
 } from "./people/household-people.identity.js";
 import type { MemberDepartureWorkflowStarter } from "./people/member-departure.js";
@@ -155,6 +157,9 @@ interface HouseholdPeopleDomainPort {
   readonly getMemberDeparture: (
     input: HouseholdGetMemberDepartureInput
   ) => Effect.Effect<object, HouseholdDomainFailure | HouseholdPeopleFailure>;
+  readonly getMemberDepartureByMutation: (
+    input: HouseholdGetMemberDepartureByMutationInput
+  ) => Effect.Effect<object, HouseholdDomainFailure | HouseholdPeopleFailure>;
   readonly listHouseholdPeople: (
     input: HouseholdListPeopleInput
   ) => Effect.Effect<object, HouseholdDomainFailure | HouseholdPeopleFailure>;
@@ -219,6 +224,28 @@ const invitationDigest = (
   deriveHouseholdInvitationDigest(organizationId, invitationId).pipe(
     Effect.mapError(() => HouseholdPeopleUnavailable.make({}))
   );
+
+const invitationIntent = (
+  organizationId: HouseholdOrganizationId,
+  input: {
+    readonly email: string;
+    readonly mutationId: Parameters<typeof deriveHouseholdInvitationId>[1];
+  }
+) =>
+  Effect.gen(function* deriveInvitationIntent() {
+    const invitationId = yield* deriveHouseholdInvitationId(
+      organizationId,
+      input.mutationId
+    );
+    const [digest, requestDigest] = yield* Effect.all([
+      deriveHouseholdInvitationDigest(organizationId, invitationId),
+      deriveHouseholdInvitationRequestDigest(organizationId, {
+        email: input.email,
+        invitationId,
+      }),
+    ]);
+    return { digest, invitationId, requestDigest } as const;
+  }).pipe(Effect.mapError(() => HouseholdPeopleUnavailable.make({})));
 
 const linkageSubject = (
   organizationId: Parameters<
@@ -437,8 +464,12 @@ export const makeHouseholdPeopleGateway = (options: {
     associateInvitation: ({ payload, principal }) =>
       Effect.gen(function* associateAdultInvitation() {
         const admission = yield* creatorAdmission(principal);
+        const intent = yield* invitationIntent(
+          principal.organizationId,
+          payload
+        );
         const invitation = yield* options.controlPlane.getInvitation({
-          invitationId: payload.invitationId,
+          invitationId: intent.invitationId,
           organizationId: principal.organizationId,
         });
         if (
@@ -449,15 +480,12 @@ export const makeHouseholdPeopleGateway = (options: {
             HouseholdPersonAssociationConflict.make({})
           );
         }
-        const digest = yield* invitationDigest(
-          principal.organizationId,
-          invitation.id
-        );
         const wire = yield* options.domain
           .associateAdultInvitation({
             admission,
             payload: {
-              invitationDigest: digest,
+              invitationDigest: intent.digest,
+              invitationRequestDigest: intent.requestDigest,
               mutationId: payload.mutationId,
               personId: payload.personId,
             },
@@ -586,47 +614,63 @@ export const makeHouseholdPeopleGateway = (options: {
           .pipe(Effect.mapError(mapPeopleFailure));
         return yield* decodeDeparture(wire);
       }),
+    getDepartureByMutation: ({ mutationId, principal }) =>
+      Effect.gen(function* getMemberDepartureByMutation() {
+        const admission = yield* callerAdmission(principal);
+        const wire = yield* options.domain
+          .getMemberDepartureByMutation({ admission, mutationId })
+          .pipe(Effect.mapError(mapPeopleFailure));
+        return yield* decodeDeparture(wire);
+      }),
     inviteAdult: ({ headers, payload, principal }) =>
       Effect.gen(function* inviteAdult() {
         const admission = yield* creatorAdmission(principal);
-        const invitation = yield* options.controlPlane.createInvitation({
-          email: payload.email,
-          headers,
-          organizationId: principal.organizationId,
-        });
-        const digest = yield* invitationDigest(
+        const intent = yield* invitationIntent(
           principal.organizationId,
-          invitation.id
+          payload
         );
-        const person = yield* options.domain
+        const wire = yield* options.domain
           .associateAdultInvitation({
             admission,
             payload: {
-              invitationDigest: digest,
+              invitationDigest: intent.digest,
+              invitationRequestDigest: intent.requestDigest,
               mutationId: payload.mutationId,
               personId: payload.personId,
             },
           })
+          .pipe(Effect.mapError(mapPeopleFailure));
+        const person = yield* decodePerson(wire);
+        const invitation = yield* options.controlPlane
+          .getInvitation({
+            invitationId: intent.invitationId,
+            organizationId: principal.organizationId,
+          })
           .pipe(
-            Effect.mapError(mapPeopleFailure),
-            Effect.flatMap(decodePerson),
-            Effect.option
+            Effect.catchTag("HouseholdPeopleControlPlaneNotFound", () =>
+              options.controlPlane.createInvitation({
+                email: payload.email,
+                headers,
+                invitationId: intent.invitationId,
+                organizationId: principal.organizationId,
+              })
+            )
           );
+        if (
+          invitation.id !== intent.invitationId ||
+          (invitation.status !== "pending" && invitation.status !== "accepted")
+        ) {
+          return yield* Effect.fail(
+            HouseholdPersonAssociationConflict.make({})
+          );
+        }
         return yield* Schema.decodeUnknownEffect(
           HouseholdAdultInvitationResult
-        )(
-          person._tag === "Some"
-            ? {
-                association: "associated",
-                invitationId: invitation.id,
-                person: person.value,
-              }
-            : {
-                association: "association_required",
-                invitationId: invitation.id,
-                person: null,
-              }
-        ).pipe(Effect.mapError(() => HouseholdPeopleUnavailable.make({})));
+        )({
+          association: "associated",
+          invitationId: invitation.id,
+          person,
+        }).pipe(Effect.mapError(() => HouseholdPeopleUnavailable.make({})));
       }),
     list: ({ includeArchived, principal }) =>
       call(
@@ -638,20 +682,6 @@ export const makeHouseholdPeopleGateway = (options: {
           }),
         HouseholdPeopleRoster
       ),
-    listPendingInvitations: ({ principal }) =>
-      Effect.gen(function* listPendingAdultInvitations() {
-        yield* creatorAdmission(principal);
-        const invitations = yield* options.controlPlane.listPendingInvitations(
-          principal.organizationId
-        );
-        return yield* Schema.decodeUnknownEffect(
-          HouseholdPendingAdultInvitations
-        )(
-          invitations.map((invitation) => ({
-            invitationId: invitation.id,
-          }))
-        ).pipe(Effect.mapError(() => HouseholdPeopleUnavailable.make({})));
-      }),
     repairAdultLink: ({ payload, principal }) =>
       Effect.gen(function* repairAdultAccountLink() {
         const admission = yield* creatorAdmission(principal);

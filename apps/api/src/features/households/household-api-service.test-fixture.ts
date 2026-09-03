@@ -243,6 +243,11 @@ interface HouseholdApiFixtureEnv {
     readonly getMemberDeparture: (
       input: Parameters<HouseholdDomainWorkerMethods["getMemberDeparture"]>[0]
     ) => Promise<Schema.Json>;
+    readonly getMemberDepartureByMutation: (
+      input: Parameters<
+        HouseholdDomainWorkerMethods["getMemberDepartureByMutation"]
+      >[0]
+    ) => Promise<Schema.Json>;
     readonly markMemberDepartureRepairRequired: (
       input: Parameters<
         HouseholdDomainWorkerMethods["markMemberDepartureRepairRequired"]
@@ -797,15 +802,17 @@ export default {
     const peopleControlPlane: HouseholdPeopleControlPlane = {
       ...nativePeopleControlPlane,
       createInvitation: (input) =>
-        nativePeopleControlPlane
-          .createInvitation(input)
-          .pipe(
-            Effect.flatMap((invitation) =>
-              invitationFailure === "after-create-before-response"
-                ? Effect.fail(new HouseholdPeopleControlPlaneUnavailable())
-                : Effect.succeed(invitation)
-            )
-          ),
+        invitationFailure === "after-association-before-create"
+          ? Effect.fail(new HouseholdPeopleControlPlaneUnavailable())
+          : nativePeopleControlPlane
+              .createInvitation(input)
+              .pipe(
+                Effect.flatMap((invitation) =>
+                  invitationFailure === "after-create-before-response"
+                    ? Effect.fail(new HouseholdPeopleControlPlaneUnavailable())
+                    : Effect.succeed(invitation)
+                )
+              ),
     };
     const peopleLayer = makeHouseholdPeopleRequestLayer({
       gateway: makeHouseholdPeopleGateway({
@@ -845,6 +852,8 @@ export default {
             householdDomain.getHouseholdPerson(input),
           getMemberDeparture: (input) =>
             householdDomain.getMemberDeparture(input),
+          getMemberDepartureByMutation: (input) =>
+            householdDomain.getMemberDepartureByMutation(input),
           listHouseholdPeople: (input) =>
             householdDomain.listHouseholdPeople(input),
           prepareMemberDeparture: (input) =>
@@ -858,7 +867,9 @@ export default {
           retryMemberDeparture: (input) =>
             householdDomain.retryMemberDeparture(input),
           startMemberDeparture: (input) =>
-            householdDomain.startMemberDeparture(input),
+            departureCrash === "after-prepare-before-start"
+              ? Effect.die("Injected crash after departure preparation")
+              : householdDomain.startMemberDeparture(input),
         },
       }),
       resolver,

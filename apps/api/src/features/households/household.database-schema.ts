@@ -96,6 +96,7 @@ export const householdMemberDepartureOperations = sqliteTable(
     linkId: text("link_id").notNull(),
     operationId: text("operation_id").primaryKey(),
     personId: text("person_id").notNull(),
+    preparationMutationId: text("preparation_mutation_id").notNull(),
     reason: text("reason").notNull(),
     state: text("state", {
       enum: [
@@ -110,7 +111,12 @@ export const householdMemberDepartureOperations = sqliteTable(
     }).notNull(),
     updatedAtEpochMs: integer("updated_at_epoch_ms").notNull(),
     version: integer("version").notNull(),
-  }
+  },
+  (table) => [
+    uniqueIndex("household_departure_preparation_mutation_unique").on(
+      table.preparationMutationId
+    ),
+  ]
 );
 
 /** Immutable ordered people lifecycle audit. */

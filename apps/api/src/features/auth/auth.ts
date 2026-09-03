@@ -50,6 +50,17 @@ export const makeMealPlannerAuth = ({
                     userId: user.id,
                   }),
               },
+        schema: {
+          invitation: {
+            additionalFields: {
+              id: {
+                input: true,
+                required: false,
+                type: "string",
+              },
+            },
+          },
+        },
       }),
     ],
     secret,

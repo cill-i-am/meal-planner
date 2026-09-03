@@ -8,10 +8,10 @@ import type {
   HouseholdAdultInvitationResult,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureOperationId,
-  HouseholdPendingAdultInvitations,
   HouseholdPeopleRoster,
   HouseholdPerson,
   HouseholdPersonId,
+  HouseholdPersonMutationId,
   InviteHouseholdAdultPayload,
   RepairHouseholdAdultLinkPayload,
   RetryHouseholdAdultDeparturePayload,
@@ -108,11 +108,13 @@ export interface HouseholdPeopleOperations {
   readonly getDeparture?: (
     operationId: HouseholdMemberDepartureOperationId
   ) => Promise<HouseholdMemberDepartureOperation>;
+  readonly getDepartureByMutation?: (
+    mutationId: HouseholdPersonMutationId
+  ) => Promise<HouseholdMemberDepartureOperation>;
   readonly inviteAdult?: (
     payload: InviteHouseholdAdultPayload
   ) => Promise<HouseholdAdultInvitationResult>;
   readonly list: (includeArchived: boolean) => Promise<HouseholdPeopleRoster>;
-  readonly listPendingInvitations?: () => Promise<HouseholdPendingAdultInvitations>;
   readonly repairAdultLink?: (
     payload: RepairHouseholdAdultLinkPayload
   ) => Promise<HouseholdPerson>;

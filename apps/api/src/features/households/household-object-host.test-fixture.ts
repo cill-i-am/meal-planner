@@ -585,6 +585,8 @@ const HouseholdTestCommand = Schema.Union([
   Schema.Struct({
     actorId: Schema.String,
     invitationDigest: AssociateAdultInvitationPayload.fields.invitationDigest,
+    invitationRequestDigest:
+      AssociateAdultInvitationPayload.fields.invitationRequestDigest,
     linkageSubject: Schema.String,
     mutationId: HouseholdPersonMutationId,
     objectName: Schema.String,
@@ -1229,6 +1231,7 @@ const routeHouseholdAssociationTestCommand = (
         ),
         payload: {
           invitationDigest: command.invitationDigest,
+          invitationRequestDigest: command.invitationRequestDigest,
           mutationId: command.mutationId,
           personId: command.personId,
         },

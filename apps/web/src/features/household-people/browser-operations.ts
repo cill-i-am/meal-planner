@@ -197,6 +197,10 @@ export const makeBrowserHouseholdPeopleOperations =
         run((client) =>
           client.people.getDeparture({ params: { operationId } })
         ),
+      getDepartureByMutation: (mutationId) =>
+        run((client) =>
+          client.people.getDepartureByMutation({ params: { mutationId } })
+        ),
       inviteAdult: (payload) =>
         run((client) => client.people.inviteAdult({ payload })),
       list: (includeArchived) =>
@@ -205,8 +209,6 @@ export const makeBrowserHouseholdPeopleOperations =
             query: { includeArchived: includeArchived ? "true" : "false" },
           })
         ),
-      listPendingInvitations: () =>
-        run((client) => client.people.listPendingInvitations({})),
       repairAdultLink: (payload) =>
         run((client) => client.people.repairAdultLink({ payload })),
       restore: (personId, payload) =>

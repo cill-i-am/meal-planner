@@ -144,6 +144,7 @@ const renderPanel = (
 
 afterEach(() => {
   cleanup();
+  globalThis.sessionStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -223,75 +224,13 @@ describe("HouseholdPeoplePanel", () => {
     );
   });
 
-  it("associates the exact invitation and original person intent after creation succeeds but association fails", async () => {
-    const inviteAdult = vi.fn().mockResolvedValue({
-      association: "association_required",
-      invitationId: "invitation-a",
-      person: null,
-    });
-    const associateInvitation = vi
-      .fn()
-      .mockRejectedValueOnce(failure("people_unavailable"))
-      .mockResolvedValue(unlinkedRoster.people[0]);
-    const archive = vi.fn();
-    const operations: HouseholdPeopleOperations = {
-      archive,
-      associateInvitation,
-      bootstrapCreator: vi.fn(),
-      create: vi.fn(),
-      inviteAdult,
-      list: vi.fn().mockResolvedValue(unlinkedRoster),
-      restore: vi.fn(),
-    };
-    renderPanel(operations);
-    await userEvent.selectOptions(
-      await screen.findByLabelText("Person"),
-      personId
-    );
-    await userEvent.type(screen.getByLabelText("Email"), "adult@example.test");
-    await userEvent.click(
-      screen.getByRole("button", { name: "Send invitation" })
-    );
-    await waitFor(() => expect(inviteAdult).toHaveBeenCalledTimes(1));
-    const exactPayload = inviteAdult.mock.calls[0]?.[0];
-
-    expect(
-      await screen.findByRole("heading", {
-        name: "Finish associating this invitation",
-      })
-    ).toBeInTheDocument();
-    expect(screen.getByText("invitation-a")).toBeInTheDocument();
-    expect(screen.getByText("Intended person: Cillian")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Archive" })).toBeDisabled();
-    expect(archive).not.toHaveBeenCalled();
-    await userEvent.click(
-      screen.getByRole("button", { name: "Associate invitation" })
-    );
-
-    await waitFor(() => expect(associateInvitation).toHaveBeenCalledTimes(2));
-    expect(associateInvitation.mock.calls[0]).toEqual(
-      associateInvitation.mock.calls[1]
-    );
-    expect(associateInvitation).toHaveBeenNthCalledWith(1, {
-      invitationId: "invitation-a",
-      mutationId: exactPayload?.mutationId,
-      personId: exactPayload?.personId,
-    });
-    expect(inviteAdult).toHaveBeenCalledTimes(1);
-  });
-
-  it("never replays invitation creation after its Better Auth response is lost", async () => {
+  it("recovers only the exact retained invitation after refresh without candidate selection", async () => {
     const inviteAdult = vi
       .fn()
       .mockRejectedValue(failure("people_unavailable"));
-    const listPendingInvitations = vi
-      .fn()
-      .mockResolvedValue([
-        { invitationId: "invitation-other" },
-        { invitationId: "invitation-a" },
-      ]);
     const associateInvitation = vi
       .fn()
+      .mockRejectedValueOnce(failure("people_unavailable"))
       .mockResolvedValue(unlinkedRoster.people[0]);
     const operations: HouseholdPeopleOperations = {
       archive: vi.fn(),
@@ -300,10 +239,9 @@ describe("HouseholdPeoplePanel", () => {
       create: vi.fn(),
       inviteAdult,
       list: vi.fn().mockResolvedValue(unlinkedRoster),
-      listPendingInvitations,
       restore: vi.fn(),
     };
-    renderPanel(operations);
+    const firstRender = renderPanel(operations);
     await userEvent.selectOptions(
       await screen.findByLabelText("Person"),
       personId
@@ -314,25 +252,36 @@ describe("HouseholdPeoplePanel", () => {
     );
     await waitFor(() => expect(inviteAdult).toHaveBeenCalledTimes(1));
     const exactPayload = inviteAdult.mock.calls[0]?.[0];
+    expect(exactPayload).toBeDefined();
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Find pending invitations" })
-    );
-    expect(await screen.findByText("invitation-other")).toBeInTheDocument();
-    expect(screen.getByText("invitation-a")).toBeInTheDocument();
     expect(
-      screen.getByText("Choose the original invitation for Cillian.")
+      await screen.findByRole("heading", { name: "Finish invitation setup" })
     ).toBeInTheDocument();
+    firstRender.unmount();
+    renderPanel(operations);
+
+    expect(
+      await screen.findByRole("heading", { name: "Finish invitation setup" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Intended person: Cillian")).toBeInTheDocument();
+    expect(
+      screen.getByText(/cannot select another pending invitation/iu)
+    ).toBeInTheDocument();
+    expect(screen.queryByText("invitation-a")).toBeNull();
+    expect(screen.queryByText("invitation-other")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /find pending invitations/iu })
+    ).toBeNull();
     await userEvent.click(
-      screen.getByRole("button", {
-        name: "Associate invitation invitation-a",
-      })
+      screen.getByRole("button", { name: "Finish original invitation" })
     );
 
-    expect(listPendingInvitations).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(associateInvitation).toHaveBeenCalledTimes(1));
-    expect(associateInvitation).toHaveBeenCalledWith({
-      invitationId: "invitation-a",
+    await waitFor(() => expect(associateInvitation).toHaveBeenCalledTimes(2));
+    expect(associateInvitation.mock.calls[1]).toEqual(
+      associateInvitation.mock.calls[0]
+    );
+    expect(associateInvitation).toHaveBeenNthCalledWith(1, {
+      email: "adult@example.test",
       mutationId: exactPayload?.mutationId,
       personId: exactPayload?.personId,
     });
@@ -341,47 +290,11 @@ describe("HouseholdPeoplePanel", () => {
     expect(screen.queryByDisplayValue("adult@example.test")).toBeNull();
   });
 
-  it("keeps a lost invitation visible when reconciliation finds no pending candidate", async () => {
-    const inviteAdult = vi
-      .fn()
-      .mockRejectedValue(failure("people_unavailable"));
-    const listPendingInvitations = vi.fn().mockResolvedValue([]);
-    const operations: HouseholdPeopleOperations = {
-      archive: vi.fn(),
-      bootstrapCreator: vi.fn(),
-      create: vi.fn(),
-      inviteAdult,
-      list: vi.fn().mockResolvedValue(unlinkedRoster),
-      listPendingInvitations,
-      restore: vi.fn(),
-    };
-    renderPanel(operations);
-    await userEvent.selectOptions(
-      await screen.findByLabelText("Person"),
-      personId
-    );
-    await userEvent.type(screen.getByLabelText("Email"), "adult@example.test");
-    await userEvent.click(
-      screen.getByRole("button", { name: "Send invitation" })
-    );
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Find pending invitations" })
-    );
-
-    expect(
-      await screen.findByText(
-        "No pending invitations were found. The original outcome is still unresolved."
-      )
-    ).toBeInTheDocument();
-    expect(inviteAdult).toHaveBeenCalledTimes(1);
-    expect(listPendingInvitations).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps one departure operation through pending, revocation repair, and finalization repair", async () => {
+  it("rediscovers the original departure after refresh and repairs the same operation", async () => {
     const departAdult = vi
       .fn()
-      .mockResolvedValue(departureOperation("revoking_access", 1));
-    const getDeparture = vi
+      .mockRejectedValue(failure("people_unavailable"));
+    const getDepartureByMutation = vi
       .fn()
       .mockResolvedValue(
         departureOperation("revocation_repair_required", 2, true)
@@ -397,12 +310,12 @@ describe("HouseholdPeoplePanel", () => {
       bootstrapCreator: vi.fn(),
       create: vi.fn(),
       departAdult,
-      getDeparture,
+      getDepartureByMutation,
       list: vi.fn().mockResolvedValue(roster),
       restore: vi.fn(),
       retryDeparture,
     };
-    renderPanel(operations, "member-current");
+    const firstRender = renderPanel(operations, "member-current");
 
     await userEvent.click(
       await screen.findByRole("button", { name: "Leave household" })
@@ -411,12 +324,19 @@ describe("HouseholdPeoplePanel", () => {
       screen.getByRole("button", { name: "Confirm leave" })
     );
 
+    await waitFor(() => expect(departAdult).toHaveBeenCalledTimes(1));
+    const exactPayload = departAdult.mock.calls[0]?.[0];
+    expect(exactPayload).toBeDefined();
     expect(
-      await screen.findByText("Access revocation is pending.")
+      await screen.findByRole("heading", { name: "Recover departure status" })
     ).toBeInTheDocument();
-    expect(screen.getByText(departureOperationId)).toBeInTheDocument();
+    firstRender.unmount();
+    renderPanel(operations, "member-current");
+
     await userEvent.click(
-      screen.getByRole("button", { name: "Check current status" })
+      await screen.findByRole("button", {
+        name: "Recover original departure",
+      })
     );
     expect(
       await screen.findByText("Access revocation needs repair.")
@@ -435,7 +355,9 @@ describe("HouseholdPeoplePanel", () => {
     ).toBeInTheDocument();
 
     expect(departAdult).toHaveBeenCalledTimes(1);
-    expect(getDeparture).toHaveBeenCalledWith(departureOperationId);
+    expect(getDepartureByMutation).toHaveBeenCalledWith(
+      exactPayload?.mutationId
+    );
     expect(retryDeparture).toHaveBeenNthCalledWith(
       1,
       departureOperationId,
@@ -454,9 +376,11 @@ describe("HouseholdPeoplePanel", () => {
     );
   });
 
-  it("finds and cancels the exact prepared departure without starting a replacement", async () => {
-    const departAdult = vi.fn();
-    const getDeparture = vi
+  it("rediscovers and cancels the exact prepared departure without a replacement", async () => {
+    const departAdult = vi
+      .fn()
+      .mockRejectedValue(failure("people_unavailable"));
+    const getDepartureByMutation = vi
       .fn()
       .mockResolvedValue(departureOperation("prepared", 1));
     const cancelDeparture = vi
@@ -469,18 +393,29 @@ describe("HouseholdPeoplePanel", () => {
       cancelDeparture,
       create: vi.fn(),
       departAdult,
-      getDeparture,
+      getDepartureByMutation,
       list: vi.fn().mockResolvedValue(roster),
       restore: vi.fn(),
     };
-    renderPanel(operations, "member-current");
+    const firstRender = renderPanel(operations, "member-current");
 
-    await userEvent.type(
-      await screen.findByLabelText("Departure operation code"),
-      departureOperationId
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Leave household" })
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "Find departure" })
+      screen.getByRole("button", { name: "Confirm leave" })
+    );
+    await waitFor(() => expect(departAdult).toHaveBeenCalledTimes(1));
+    const exactPayload = departAdult.mock.calls[0]?.[0];
+    expect(exactPayload).toBeDefined();
+    firstRender.unmount();
+    renderPanel(operations, "member-current");
+
+    expect(screen.queryByLabelText("Departure operation code")).toBeNull();
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Recover original departure",
+      })
     );
     expect(
       await screen.findByText("Access revocation has not started.")
@@ -492,7 +427,9 @@ describe("HouseholdPeoplePanel", () => {
       await screen.findByText("Household departure cancelled.")
     ).toBeInTheDocument();
 
-    expect(getDeparture).toHaveBeenCalledWith(departureOperationId);
+    expect(getDepartureByMutation).toHaveBeenCalledWith(
+      exactPayload?.mutationId
+    );
     expect(cancelDeparture).toHaveBeenCalledTimes(2);
     expect(cancelDeparture).toHaveBeenNthCalledWith(
       1,
@@ -502,7 +439,7 @@ describe("HouseholdPeoplePanel", () => {
     expect(cancelDeparture.mock.calls[1]).toEqual(
       cancelDeparture.mock.calls[0]
     );
-    expect(departAdult).not.toHaveBeenCalled();
+    expect(departAdult).toHaveBeenCalledTimes(1);
   });
 
   it("shows persisted identities and reports stale transitions without optimistic state", async () => {
