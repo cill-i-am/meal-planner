@@ -3,7 +3,7 @@
 - Status: In progress
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
 - Owner: `codex/stage1-account-linking-invitations-departure`
-- Pull request: Not opened
+- Pull request: [PR #201](https://github.com/cill-i-am/meal-planner/pull/201)
 - Completed by: Not completed
 - Promotion condition: Satisfied on 2026-09-01 by merged Work Item 01 evidence
   and accepted ADR-0010
@@ -311,45 +311,45 @@ visible conflicts; the API must not choose by email or name.
 - [x] ADR-0010 fixes coordinator ownership, closed states, ordering, replay,
   timeout, restart, cancellation, authorization, privacy, race, and repair
   semantics before implementation starts.
-- [ ] Invitation association, accepted linking, explicit repair, departure,
+- [x] Invitation association, accepted linking, explicit repair, departure,
   reconciliation, return, and cardinality invariants have domain tests.
-- [ ] Raw invitation/email/auth identity cannot enter household schemas or
+- [x] Raw invitation/email/auth identity cannot enter household schemas or
   projections.
-- [ ] Replay, collision, stale version, association races, duplicate acceptance,
+- [x] Replay, collision, stale version, association races, duplicate acceptance,
   departure/return races, and repair conflicts are deterministic.
-- [ ] Public contracts distinguish Better Auth failure, household failure,
+- [x] Public contracts distinguish Better Auth failure, household failure,
   pending reconciliation, conflict, and completion.
-- [ ] UI tests cover selection, acceptance, repair, partial failure, revoked
+- [x] UI tests cover selection, acceptance, repair, partial failure, revoked
   access, pending departure, archive, and return.
 
 ### Real boundary proof
 
-- [ ] Real Better Auth D1 invitation acceptance and membership removal run
+- [x] Real Better Auth D1 invitation acceptance and membership removal run
   against a real routed `HouseholdObject` in Workerd or Miniflare.
-- [ ] In real Workerd with Better Auth D1 and a routed `HouseholdObject`, kill
+- [x] In real Workerd with Better Auth D1 and a routed `HouseholdObject`, kill
   the API after deterministic Workflow creation but before membership removal
   commits; the waiting Workflow times out, reads `present`, records visible
   repair, and a fresh authorized retry does not duplicate the operation.
-- [ ] In that same real boundary, commit membership removal and kill the API
+- [x] In that same real boundary, commit membership removal and kill the API
   before its outcome event is delivered; the waiting Workflow times out, reads
   `absent`, and confirms/finalizes exactly once without the departed session.
-- [ ] Against pinned Better Auth `1.7.0-rc.6` in the real API runtime, an
+- [x] Against pinned Better Auth `1.7.0-rc.6` in the real API runtime, an
   owner-authenticated `POST /organization/delete` and a typed
   `auth.api.deleteOrganization` call are both rejected as disabled; Better Auth
   D1 organization/memberships and the routed `HouseholdObject` remain intact.
-- [ ] Other lost responses before and after each authority commit reconcile
+- [x] Other lost responses before and after each authority commit reconcile
   without duplicate people, links, membership mutation, audit, or archive.
-- [ ] Restart during pending departure completes from durable state.
-- [ ] Membership removal revokes API/object routing before person archive is
+- [x] Restart during pending departure completes from durable state.
+- [x] Membership removal revokes API/object routing before person archive is
   finalized.
-- [ ] Same-user/multiple-household and cross-household isolation are proven
+- [x] Same-user/multiple-household and cross-household isolation are proven
   through production auth/API routes.
 
 ### Repository and review gates
 
 - [ ] Root format, lint, type checks, full tests, builds, applicable container,
   and hosted CI pass.
-- [ ] Better Auth, household-domain, public contract, UI, stage, and current
+- [x] Better Auth, household-domain, public contract, UI, stage, and current
   delivery docs reflect the shipped protocol.
 - [ ] A completely fresh independent exact-head review disposes identity,
   privacy, authorization-ordering, saga/reconciliation, replay, and test-
@@ -437,3 +437,23 @@ exact-head review is required, and green CI is not merge authority.
   routed-object tests reject another admitted member for both operations and
   prove one winner under concurrent link commands, with no email comparison or
   household email storage.
+- 2026-09-03 — Froze the focused exact-recovery correction as implementation
+  commit `accc194dc61cd19ab6fb796680fb4d1e5255052d`. The organizer UI now
+  lists privacy-safe pending Better Auth invitation IDs after an ambiguous
+  create response and associates the explicitly selected exact invitation with
+  the retained person, payload, and mutation ID. It never replays invitation
+  creation or infers identity from email or name. The same browser surface now
+  retains the exact departure operation ID, renders pending,
+  `revocation_repair_required`, and `finalization_repair_required`, and admits
+  only exact-operation lookup, retry, or cancellation. Executable REDs covered
+  household association failure, Better Auth commit with a lost create
+  response, and durable departure repair/finalization states. Corrected focused
+  contract and UI suites pass 6/6 and 58/58; the full real Better Auth D1 plus
+  routed `HouseholdObject` boundary passes 49/49, including both invitation
+  recovery windows and both departure crash windows without replacement IDs.
+  Root format (392 files), lint, type checks, full tests (138 architecture, 22
+  household contract, 31 recipe contract, 87 web, and 821 API), production
+  build, twice/no-diff schema and migration generation, and the container gate
+  (1/1 in 1,081.73 seconds) are green. PR #201 remains draft and this work item
+  remains `In progress` until hosted CI and a fresh independent exact-head
+  review pass.

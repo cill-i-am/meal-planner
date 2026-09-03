@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-01
+- Last updated: 2026-09-03
 - Delivery source of truth: this repository
 
 ## Active Stage
@@ -48,13 +48,23 @@ repairable. Work Item 02 must also configure
 `organization({ disableOrganizationDeletion: true })` so neither the public nor
 typed Better Auth deletion operation can erase the organization and its
 memberships before the separate household deletion lifecycle exists. That
-accepted prerequisite promoted Work Item 02 to implementation. Its delivery
-branch now has a working Better Auth invitation-to-existing-person link,
-explicit repair and same-person return, and the native access-first departure
-Workflow with both crash-window reconciliation paths. Final full-repository,
-hosted-CI, and exact-head review evidence is still pending. Organization-
-deletion behavior remains out of scope, and Work Items 03 and 04 remain
-`Proposed`.
+accepted prerequisite promoted Work Item 02 to implementation. Draft
+[PR #201](https://github.com/cill-i-am/meal-planner/pull/201) now has the working
+Better Auth invitation-to-existing-person link, explicit repair and same-person
+return, and the native access-first departure Workflow with both crash-window
+reconciliation paths. Its focused recovery correction is frozen at
+`accc194dc61cd19ab6fb796680fb4d1e5255052d`: after either household
+association failure or an ambiguous Better Auth create response, the browser
+surface preserves the original person, payload, and mutation ID and lets the
+organizer explicitly select and associate an exact privacy-safe pending
+invitation ID. It never replays invitation creation or matches by email or
+name. The same surface retains the exact departure operation ID and exposes
+only admitted status, retry, and cancellation actions for durable pending and
+repair states. Full local repository, real Better Auth D1 plus routed-object,
+twice/no-diff generation, and container evidence is green. Hosted CI and a
+fresh independent exact-head review remain pending, so Work Item 02 stays `In
+progress` and PR #201 stays draft. Organization-deletion behavior remains out
+of scope, and Work Items 03 and 04 remain `Proposed`.
 
 ## Completed Foundation
 
@@ -80,10 +90,10 @@ deletion behavior remains out of scope, and Work Items 03 and 04 remain
 
 ## Immediate Next Steps
 
-1. Finish the bounded Work Item 02 verification and migration evidence.
-2. Freeze that implementation head for hosted CI, real Better Auth D1 and
-   routed-object runtime proof, and fresh independent exact-head review before
-   any merge decision.
+1. Publish the single corrected Work Item 02 evidence head and own its hosted
+   CI without changing its draft status.
+2. Run a completely fresh independent exact-head review after hosted CI passes;
+   do not make a merge decision from green CI alone.
 
 ## Deliberate Non-Work
 
