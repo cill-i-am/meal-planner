@@ -370,7 +370,7 @@ email or name, or creates a replacement invitation or mutation.
 
 ### Repository and review gates
 
-- [ ] Root format, lint, type checks, full tests, builds, applicable container,
+- [x] Root format, lint, type checks, full tests, builds, applicable container,
   and hosted CI pass.
 - [x] Better Auth, household-domain, public contract, UI, stage, and current
   delivery docs reflect the shipped protocol.
@@ -499,6 +499,9 @@ exact-head review is required, and green CI is not merge authority.
   household contract, 31 recipe contract, 85 web, and 822 API tests; format,
   lint, type checks, production build, two consecutive no-diff household
   migration generations, and the container gate (1/1 in 1,024.08 seconds) are
-  green. PR #201 remains draft and this work item remains `In progress` until
-  hosted CI for the new evidence head and a completely fresh independent
-  exact-head review pass.
+  green. Hosted
+  [run 33815121584](https://github.com/cill-i-am/meal-planner/actions/runs/33815121584)
+  passes Quality in 13m19s and Synthetic media container in 7m55s for exact
+  evidence head `6ddcfe65d3b5dbd7817aedfc0c3361e6e9aadeba`. PR #201 remains
+  draft and this work item remains `In progress` until a completely fresh
+  independent exact-head review passes.
