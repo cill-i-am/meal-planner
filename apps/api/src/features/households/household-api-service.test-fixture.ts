@@ -1,5 +1,6 @@
 import {
   HouseholdMemberDepartureOperation,
+  HouseholdPeopleUnavailable,
   MealPlanPersistenceFailure,
 } from "@meal-planner/household-api";
 import type {
@@ -86,7 +87,11 @@ import type {
 } from "./household.contract.js";
 import { HouseholdPersistenceFailure } from "./household.contract.js";
 import { HouseholdMemberDepartureSystemState } from "./people/household-people.contract.js";
-import { makeHouseholdPeopleControlPlane } from "./people/household-people.control-plane.js";
+import {
+  HouseholdPeopleControlPlaneUnavailable,
+  makeHouseholdPeopleControlPlane,
+} from "./people/household-people.control-plane.js";
+import type { HouseholdPeopleControlPlane } from "./people/household-people.control-plane.js";
 import {
   makeMemberDepartureWorkflowStarter,
   MemberDepartureWorkflowInput,
@@ -96,7 +101,10 @@ import {
   coordinateMemberDeparture,
   makeMemberDepartureWorkflowPorts,
 } from "./people/member-departure.workflow.js";
-import type { MemberDepartureHouseholdPort } from "./people/member-departure.workflow.js";
+import type {
+  MemberDepartureHouseholdPort,
+  MemberDepartureWorkflowPorts,
+} from "./people/member-departure.workflow.js";
 import type {
   HouseholdAdmitRecipeImportInput,
   HouseholdAnswerRecipeImportActionInput,
@@ -586,9 +594,39 @@ const memberDepartureWorkflowExport = {
           household,
           input,
         });
+        const finalizationRepairKey = `member-departure-finalization-repair:${input.operationId}`;
+        const forceFinalizationRepair = yield* Effect.promise(async () => {
+          const mode = await env.HOUSEHOLD_TEST_OBSERVATIONS.get(
+            finalizationRepairKey
+          );
+          if (mode !== "1") {
+            return false;
+          }
+          await env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+            finalizationRepairKey,
+            "consumed"
+          );
+          return true;
+        });
+        let membershipObservation = 0;
+        const workflowPorts: MemberDepartureWorkflowPorts =
+          forceFinalizationRepair
+            ? {
+                ...ports,
+                observeMembership: (state) => {
+                  membershipObservation += 1;
+                  return membershipObservation === 2
+                    ? Effect.succeed({
+                        _tag: "Observed" as const,
+                        present: true,
+                      })
+                    : ports.observeMembership(state);
+                },
+              }
+            : ports;
         return yield* coordinateMemberDeparture(
           input,
-          ports,
+          workflowPorts,
           undefined,
           "2 seconds"
         );
@@ -724,35 +762,62 @@ export default {
     });
     const nativeDepartureWorkflow = makeNativeMemberDepartureStarter(env);
     const departureCrash = request.headers.get("x-test-member-departure-crash");
+    const forceFinalizationRepair =
+      request.headers.get("x-test-member-departure-finalization-repair") ===
+      "1";
     const departureWorkflow: MemberDepartureWorkflowStarter = {
       confirmTerminal: nativeDepartureWorkflow.confirmTerminal,
       ensureStarted: (input) =>
-        nativeDepartureWorkflow
-          .ensureStarted(input)
-          .pipe(
-            Effect.andThen(
-              departureCrash === "before-removal"
-                ? Effect.die("Injected crash before membership removal")
-                : Effect.void
-            )
-          ),
+        Effect.gen(function* startFixtureDeparture() {
+          if (forceFinalizationRepair) {
+            yield* Effect.promise(() =>
+              env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                `member-departure-finalization-repair:${input.operationId}`,
+                "1"
+              )
+            );
+          }
+          yield* nativeDepartureWorkflow.ensureStarted(input);
+          if (departureCrash === "before-removal") {
+            return yield* Effect.die(
+              "Injected crash before membership removal"
+            );
+          }
+        }),
       signalRemovalOutcome: (input, outcome) =>
         departureCrash === "after-removal-before-signal"
           ? Effect.die("Injected crash after membership removal")
           : nativeDepartureWorkflow.signalRemovalOutcome(input, outcome),
     };
+    const invitationFailure = request.headers.get("x-test-invitation-failure");
+    const nativePeopleControlPlane = makeHouseholdPeopleControlPlane({
+      auth,
+      database: drizzle(env.MealPlannerAuthDatabase),
+    });
+    const peopleControlPlane: HouseholdPeopleControlPlane = {
+      ...nativePeopleControlPlane,
+      createInvitation: (input) =>
+        nativePeopleControlPlane
+          .createInvitation(input)
+          .pipe(
+            Effect.flatMap((invitation) =>
+              invitationFailure === "after-create-before-response"
+                ? Effect.fail(new HouseholdPeopleControlPlaneUnavailable())
+                : Effect.succeed(invitation)
+            )
+          ),
+    };
     const peopleLayer = makeHouseholdPeopleRequestLayer({
       gateway: makeHouseholdPeopleGateway({
-        controlPlane: makeHouseholdPeopleControlPlane({
-          auth,
-          database: drizzle(env.MealPlannerAuthDatabase),
-        }),
+        controlPlane: peopleControlPlane,
         departureWorkflow,
         domain: {
           archiveHouseholdPerson: (input) =>
             householdDomain.archiveHouseholdPerson(input),
           associateAdultInvitation: (input) =>
-            householdDomain.associateAdultInvitation(input),
+            invitationFailure === "after-create-before-association"
+              ? Effect.fail(HouseholdPeopleUnavailable.make({}))
+              : householdDomain.associateAdultInvitation(input),
           bootstrapCreatorPerson: (input) =>
             Effect.promise(async () => {
               await Promise.all([

@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 
 import {
+  AssociateHouseholdAdultInvitationPayload,
+  CancelHouseholdAdultDeparturePayload,
+  HouseholdMemberDepartureOperationId,
   HouseholdPersonId,
   HouseholdPersonMutationId,
+  RetryHouseholdAdultDeparturePayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
 import { Cause, Schema } from "effect";
@@ -36,6 +40,92 @@ afterEach(() => fetchMock.mockReset());
 afterAll(() => vi.unstubAllGlobals());
 
 describe("browser household people operations", () => {
+  it("routes invitation reconciliation and exact departure recovery operations", async () => {
+    const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
+      "person_00000000-0000-4000-8000-000000000101"
+    );
+    const operationId = Schema.decodeUnknownSync(
+      HouseholdMemberDepartureOperationId
+    )("departure_00000000-0000-4000-8000-000000000201");
+    const person = {
+      associationState: "invitation_pending",
+      associationVersion: 1,
+      createdAtEpochMs: 1,
+      displayName: "Cillian",
+      id: personId,
+      isCurrentAdult: false,
+      kind: "adult",
+      lifecycle: "active",
+      updatedAtEpochMs: 1,
+      version: 2,
+    };
+    const departure = {
+      canRetry: true,
+      executionGeneration: 1,
+      lastAttemptAtEpochMs: 2,
+      operationId,
+      personId,
+      state: "revocation_repair_required",
+      version: 2,
+    };
+    fetchMock
+      .mockResolvedValueOnce(Response.json([{ invitationId: "invitation-a" }]))
+      .mockResolvedValueOnce(Response.json(person))
+      .mockResolvedValueOnce(Response.json(departure))
+      .mockResolvedValueOnce(
+        Response.json({ ...departure, state: "cancelled", version: 3 })
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          { ...departure, state: "revoking_access", version: 3 },
+          { status: 202 }
+        )
+      );
+    const operations = makeBrowserHouseholdPeopleOperations();
+
+    await operations.listPendingInvitations?.();
+    await operations.associateInvitation?.(
+      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
+        invitationId: "invitation-a",
+        mutationId: "00000000-0000-4000-8000-000000000102",
+        personId,
+      })
+    );
+    await operations.getDeparture?.(operationId);
+    await operations.cancelDeparture?.(
+      operationId,
+      Schema.decodeUnknownSync(CancelHouseholdAdultDeparturePayload)({
+        expectedOperationVersion: 2,
+        mutationId: "00000000-0000-4000-8000-000000000103",
+      })
+    );
+    await operations.retryDeparture?.(
+      operationId,
+      Schema.decodeUnknownSync(RetryHouseholdAdultDeparturePayload)({
+        expectedOperationVersion: 2,
+        memberId: "member-a",
+        mutationId: "00000000-0000-4000-8000-000000000104",
+        reason: "Explicit departure repair",
+      })
+    );
+
+    expect(
+      fetchMock.mock.calls.map(([request, init]) => {
+        const url =
+          request instanceof Request ? request.url : request.toString();
+        const method =
+          request instanceof Request ? request.method : (init?.method ?? "GET");
+        return [method, new URL(url, globalThis.location.origin).pathname];
+      })
+    ).toEqual([
+      ["GET", "/v1/household/people/invitations/pending"],
+      ["POST", "/v1/household/people/invitations/associate"],
+      ["GET", `/v1/household/people/departures/${operationId}`],
+      ["POST", `/v1/household/people/departures/${operationId}/cancel`],
+      ["POST", `/v1/household/people/departures/${operationId}/retry`],
+    ]);
+  });
+
   it.each([
     {
       cause: Cause.combine(

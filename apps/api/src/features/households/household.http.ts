@@ -262,6 +262,22 @@ const mapInviteAdultError = (error: HouseholdPeopleGatewayFailure) => {
   }
 };
 
+const mapListPendingInvitationsError = (
+  error: HouseholdPeopleGatewayFailure
+) => {
+  switch (error._tag) {
+    case "HouseholdPeopleControlPlaneUnavailable": {
+      return peopleControlPlaneUnavailableProblem;
+    }
+    case "HouseholdPeopleOrganizerRequired": {
+      return peopleOrganizerRequiredProblem;
+    }
+    default: {
+      return peopleUnavailableProblem;
+    }
+  }
+};
+
 const mapAssociateInvitationError = (error: HouseholdPeopleGatewayFailure) => {
   switch (error._tag) {
     case "HouseholdPersonAssociationConflict": {
@@ -735,6 +751,15 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
               principal,
             })
             .pipe(Effect.mapError(mapInviteAdultError));
+        })
+      )
+      .handle("listPendingInvitations", () =>
+        Effect.gen(function* listPendingAdultInvitations() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .listPendingInvitations({ principal })
+            .pipe(Effect.mapError(mapListPendingInvitationsError));
         })
       )
       .handle("associateInvitation", ({ payload }) =>

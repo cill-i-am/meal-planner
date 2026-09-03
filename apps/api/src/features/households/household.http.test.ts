@@ -152,6 +152,8 @@ const gatewayWithList = (
     getDeparture: () => Effect.die("Unexpected departure read"),
     inviteAdult: () => Effect.die("Unexpected invitation"),
     list,
+    listPendingInvitations: () =>
+      Effect.die("Unexpected pending invitation list"),
     repairAdultLink: () => Effect.die("Unexpected link repair"),
     restore: () => Effect.die("Unexpected restore"),
     retryDeparture: () => Effect.die("Unexpected departure retry"),

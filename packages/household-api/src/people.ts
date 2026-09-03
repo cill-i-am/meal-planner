@@ -260,6 +260,20 @@ export const HouseholdAdultInvitationResult = Schema.Struct({
 export type HouseholdAdultInvitationResult =
   typeof HouseholdAdultInvitationResult.Type;
 
+/** Privacy-safe pending Better Auth invitations available for explicit recovery. */
+export const HouseholdPendingAdultInvitation = Schema.Struct({
+  invitationId: HouseholdAuthResourceId,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdPendingAdultInvitation =
+  typeof HouseholdPendingAdultInvitation.Type;
+
+/** Privacy-safe pending Better Auth invitations available for explicit recovery. */
+export const HouseholdPendingAdultInvitations = Schema.Array(
+  HouseholdPendingAdultInvitation
+);
+export type HouseholdPendingAdultInvitations =
+  typeof HouseholdPendingAdultInvitations.Type;
+
 /** Privacy-safe occupancy state of the household-singleton creator slot. */
 export const HouseholdCreatorSlot = Schema.Literals(["available", "occupied"]);
 /** Privacy-safe occupancy state of the household-singleton creator slot. */

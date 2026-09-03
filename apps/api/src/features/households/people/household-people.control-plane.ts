@@ -1,5 +1,5 @@
 import type { HouseholdOrganizationId } from "@meal-planner/household-api";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { Effect } from "effect";
 
@@ -48,6 +48,12 @@ export interface HouseholdPeopleControlPlane {
   readonly listMemberUserIds: (
     organizationId: HouseholdOrganizationId
   ) => Effect.Effect<readonly string[], HouseholdPeopleControlPlaneUnavailable>;
+  readonly listPendingInvitations: (
+    organizationId: HouseholdOrganizationId
+  ) => Effect.Effect<
+    readonly HouseholdControlPlaneInvitation[],
+    HouseholdPeopleControlPlaneUnavailable
+  >;
   readonly removeMember: (input: {
     readonly headers: Headers;
     readonly memberId: string;
@@ -150,6 +156,28 @@ export const makeHouseholdPeopleControlPlane = (options: {
             .from(authSchema.member)
             .where(eq(authSchema.member.organizationId, organizationId)),
       }).pipe(Effect.map((members) => members.map(({ userId }) => userId))),
+    listPendingInvitations: (organizationId) =>
+      Effect.tryPromise({
+        catch: unavailable,
+        try: () =>
+          options.database
+            .select({
+              id: authSchema.invitation.id,
+              status: authSchema.invitation.status,
+            })
+            .from(authSchema.invitation)
+            .where(
+              and(
+                eq(authSchema.invitation.organizationId, organizationId),
+                eq(authSchema.invitation.status, "pending"),
+                gt(authSchema.invitation.expiresAt, new Date())
+              )
+            )
+            .orderBy(
+              asc(authSchema.invitation.createdAt),
+              asc(authSchema.invitation.id)
+            ),
+      }),
     removeMember: (input) =>
       Effect.tryPromise({
         catch: unavailable,

@@ -5,6 +5,7 @@ import {
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
   HouseholdPeopleBootstrapConflictProblem,
+  HouseholdPendingAdultInvitations,
   HouseholdPeopleRoster,
   HouseholdPeoplePrincipal,
   ListHouseholdPeopleUrlParams,
@@ -135,6 +136,26 @@ describe("household people public contract", () => {
         ...principal,
         creatorAuthority: "first_member",
       })
+    ).toThrow();
+  });
+
+  it("projects only opaque invitation ids for explicit pending recovery", () => {
+    expect(
+      Schema.decodeUnknownSync(HouseholdPendingAdultInvitations)([
+        { invitationId: "invitation-a" },
+        { invitationId: "invitation-b" },
+      ])
+    ).toEqual([
+      { invitationId: "invitation-a" },
+      { invitationId: "invitation-b" },
+    ]);
+    expect(() =>
+      Schema.decodeUnknownSync(HouseholdPendingAdultInvitations)([
+        {
+          email: "must-not-cross-the-boundary@example.test",
+          invitationId: "invitation-a",
+        },
+      ])
     ).toThrow();
   });
 

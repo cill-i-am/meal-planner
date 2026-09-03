@@ -3,6 +3,7 @@ import {
   HouseholdOrganizationId,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
+  HouseholdPendingAdultInvitations,
   HouseholdPeopleRoster,
   HouseholdPeopleUnavailable,
   HouseholdPerson,
@@ -637,6 +638,20 @@ export const makeHouseholdPeopleGateway = (options: {
           }),
         HouseholdPeopleRoster
       ),
+    listPendingInvitations: ({ principal }) =>
+      Effect.gen(function* listPendingAdultInvitations() {
+        yield* creatorAdmission(principal);
+        const invitations = yield* options.controlPlane.listPendingInvitations(
+          principal.organizationId
+        );
+        return yield* Schema.decodeUnknownEffect(
+          HouseholdPendingAdultInvitations
+        )(
+          invitations.map((invitation) => ({
+            invitationId: invitation.id,
+          }))
+        ).pipe(Effect.mapError(() => HouseholdPeopleUnavailable.make({})));
+      }),
     repairAdultLink: ({ payload, principal }) =>
       Effect.gen(function* repairAdultAccountLink() {
         const admission = yield* creatorAdmission(principal);

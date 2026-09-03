@@ -52,6 +52,7 @@ import {
   HouseholdAdultInvitationResult,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureOperationId,
+  HouseholdPendingAdultInvitations,
   HouseholdPeopleRoster,
   HouseholdPerson,
   HouseholdPersonId,
@@ -84,6 +85,8 @@ export {
   HouseholdMemberDepartureOperationId,
   HouseholdMemberDepartureStart,
   HouseholdMemberDepartureState,
+  HouseholdPendingAdultInvitation,
+  HouseholdPendingAdultInvitations,
   HouseholdPeopleRoster,
   HouseholdPeopleOperationReason,
   HouseholdPeopleUnavailable,
@@ -372,6 +375,18 @@ const PeopleGroup = HttpApiGroup.make("people")
       payload: InviteHouseholdAdultPayload,
       success: HouseholdAdultInvitationResult.pipe(HttpApiSchema.status(201)),
     }),
+    HttpApiEndpoint.get(
+      "listPendingInvitations",
+      "/v1/household/people/invitations/pending",
+      {
+        error: [
+          HouseholdPeopleControlPlaneUnavailableProblem,
+          HouseholdPeopleOrganizerRequiredProblem,
+          HouseholdPeopleUnavailableProblem,
+        ],
+        success: HouseholdPendingAdultInvitations,
+      }
+    ),
     HttpApiEndpoint.post(
       "associateInvitation",
       "/v1/household/people/invitations/associate",
