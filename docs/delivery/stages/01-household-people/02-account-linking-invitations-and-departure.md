@@ -117,6 +117,8 @@ skip the canonical transitions.
 - `GetCurrentPersonLink` identifies the admitted member's linked person.
 - `GetDepartureOperation(operationId)` exposes an organizer-safe reconciliation
   state without raw Better Auth identifiers.
+- `GetDepartureOperationByPreparationMutation(mutationId)` rediscovers the
+  exact durable operation after the initial departure response is lost.
 
 ## States, Transitions, And Invariants
 
@@ -171,8 +173,10 @@ user/member identity, session information, or private Better Auth errors.
 - Better Auth D1 remains canonical for invitation and membership state.
 - `HouseholdObject` remains canonical for invitation-to-person association,
   account-to-person link, person lifecycle, audit, operation, and receipt state.
-- Raw invitation ID is admitted only at the API boundary and converted to a
-  purpose-bound one-way digest before entering household storage.
+- One deterministic Better Auth invitation ID is derived from the household and
+  original invitation mutation. Only its purpose-bound one-way digest and an
+  exact request digest enter household storage; email and raw provider identity
+  do not.
 - The household transaction atomically updates link/person/operation versions,
   appends audit, and records a receipt. Better Auth calls occur outside that
   transaction.
@@ -233,6 +237,9 @@ the accepted household deletion lifecycle exists.
 - A start/repair receipt replay or concurrent loser cannot repeat membership
   removal. Only a fresh transition winner may make one attempt after the
   deterministic Workflow instance is confirmed durable.
+- The preparation mutation is retained on the durable departure operation, so
+  an initial lost response or browser refresh can rediscover that operation
+  without an operation code or a replacement departure command.
 - If the Workflow is durable but removal was not attempted or committed, its
   missing-signal timeout reads membership as present and records visible
   revocation repair. If removal committed but the result signal was lost, the
@@ -251,39 +258,49 @@ the accepted household deletion lifecycle exists.
 
 ## Minimum API Surface
 
-- An authenticated organizer endpoint that creates a Better Auth invitation and
-  then associates it with a selected unlinked adult person, reporting partial
-  failure explicitly.
+- An authenticated organizer endpoint that durably records one exact
+  invitation intent for the selected unlinked adult before creating the
+  deterministically identified Better Auth invitation.
+- An authenticated organizer reconciliation endpoint that checks only the
+  invitation derived from that original intent and finishes its existing
+  household association; it cannot list or select other pending invitations.
 - An admitted member endpoint to complete an accepted invitation link.
 - Organizer endpoints for explicit link repair and departure initiation.
 - Member/owner cancellation and owner repair endpoints for the exact durable
   departure operation.
 - A returning-member endpoint to restore/link a selected archived adult after
   acceptance.
-- Roster/current-link/departure-operation queries with the privacy-safe
+- Roster/current-link/departure-operation queries, including exact departure
+  lookup by the retained preparation mutation, with the privacy-safe
   projections above.
 
 The API must preserve the separation between Better Auth outcome and household
-outcome; it must not report one combined success when the second authority has
-not committed. If invitation creation succeeds but association is lost, retry
-the association using the exact returned invitation identity rather than
-creating another invitation. If the create response itself is ambiguous, the
-organizer reconciles against Better Auth's pending invitations and explicitly
-selects the intended invitation and person. Zero or multiple candidates remain
-visible conflicts; the API must not choose by email or name.
+outcome. It records the exact household invitation intent before the provider
+call, and provider creation uses the deterministic invitation ID derived from
+that intent. If the create response is lost, reconciliation checks only that
+exact ID and the original request digest. It never lists candidates for the
+organizer to guess, chooses among same-organization invitations, matches by
+email or name, or creates a replacement invitation or mutation.
 
 ## Minimum UI Surface
 
 - Select an existing unlinked adult before sending an invitation.
 - Show pending invitation state without exposing stored email after submission.
+- Preserve the exact original invitation payload and mutation across an
+  ambiguous response or refresh, then offer one action that reconciles only its
+  deterministic provider invitation without showing candidate IDs.
 - After acceptance, confirm the associated person or choose an explicit
   unlinked-adult repair path when association is missing.
 - Show linked current adult, departure-pending, archived, and returning-person
   states.
 - Require confirmation for departure and explain that access is revoked before
   roster archival completes.
-- Offer retry/reconcile actions for visible partial failures; never create a
-  replacement person as recovery.
+- Preserve the exact original departure payload before submission, rediscover
+  its operation by preparation mutation after an ambiguous response or refresh,
+  and offer only admitted status, retry, or cancellation actions against that
+  same operation.
+- Never create a replacement person, invitation, mutation, or departure
+  operation as recovery.
 
 ## Vertical Tracer
 
@@ -339,6 +356,12 @@ visible conflicts; the API must not choose by email or name.
   D1 organization/memberships and the routed `HouseholdObject` remain intact.
 - [x] Other lost responses before and after each authority commit reconcile
   without duplicate people, links, membership mutation, audit, or archive.
+- [x] With multiple pending invitations in one organization, a committed
+  invitation whose response is lost reconciles only the deterministic ID bound
+  to its original person, payload digest, and mutation.
+- [x] A committed departure whose initial response is lost is rediscovered
+  after refresh by its original preparation mutation; status, retry,
+  cancellation, and finalization retain the same operation.
 - [x] Restart during pending departure completes from durable state.
 - [x] Membership removal revokes API/object routing before person archive is
   finalized.
@@ -457,3 +480,25 @@ exact-head review is required, and green CI is not merge authority.
   (1/1 in 1,081.73 seconds) are green. PR #201 remains draft and this work item
   remains `In progress` until hosted CI and a fresh independent exact-head
   review pass.
+- 2026-09-03 — Independent review of head
+  `8262666eb3fda5dc9e80ed26c03dc5124977237e` held the draft: its opaque
+  pending-invitation picker could bind an unrelated invitation, and an initial
+  lost departure response left the generated operation undiscoverable after
+  refresh.
+- 2026-09-03 — Froze the exact correction as implementation commit
+  `d23c90da9ee32244ed6c7b6779a77e5f5fe83b85`. The API now commits the
+  household invitation intent before its provider call and derives one Better
+  Auth invitation ID from the original household and mutation. Reconciliation
+  checks only that ID and the retained request digest; the browser no longer
+  lists or selects opaque candidates. The browser also retains the original
+  departure payload before submission and rediscovers its durable operation by
+  the preparation mutation after an ambiguous response or refresh. Real
+  Better Auth D1 plus routed-`HouseholdObject` proof passes 49/49, including an
+  unrelated same-organization pending invitation and both departure recovery
+  paths without replacement IDs. Root tests pass 138 architecture/Alchemy, 22
+  household contract, 31 recipe contract, 85 web, and 822 API tests; format,
+  lint, type checks, production build, two consecutive no-diff household
+  migration generations, and the container gate (1/1 in 1,024.08 seconds) are
+  green. PR #201 remains draft and this work item remains `In progress` until
+  hosted CI for the new evidence head and a completely fresh independent
+  exact-head review pass.

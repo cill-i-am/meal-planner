@@ -52,19 +52,23 @@ accepted prerequisite promoted Work Item 02 to implementation. Draft
 [PR #201](https://github.com/cill-i-am/meal-planner/pull/201) now has the working
 Better Auth invitation-to-existing-person link, explicit repair and same-person
 return, and the native access-first departure Workflow with both crash-window
-reconciliation paths. Its focused recovery correction is frozen at
-`accc194dc61cd19ab6fb796680fb4d1e5255052d`: after either household
-association failure or an ambiguous Better Auth create response, the browser
-surface preserves the original person, payload, and mutation ID and lets the
-organizer explicitly select and associate an exact privacy-safe pending
-invitation ID. It never replays invitation creation or matches by email or
-name. The same surface retains the exact departure operation ID and exposes
-only admitted status, retry, and cancellation actions for durable pending and
-repair states. Full local repository, real Better Auth D1 plus routed-object,
-twice/no-diff generation, and container evidence is green. Hosted CI and a
-fresh independent exact-head review remain pending, so Work Item 02 stays `In
-progress` and PR #201 stays draft. Organization-deletion behavior remains out
-of scope, and Work Items 03 and 04 remain `Proposed`.
+reconciliation paths. Its corrected behavior is frozen at
+`d23c90da9ee32244ed6c7b6779a77e5f5fe83b85`: before contacting Better Auth,
+the API durably binds the original person, payload digest, and mutation to a
+deterministic provider invitation ID. A lost provider response is therefore
+reconciled only against that exact invitation; the browser never lists opaque
+candidates, guesses among same-household invitations, matches by email or name,
+or mints a replacement invitation or mutation. The browser also retains the
+original departure request before submission and rediscovers its durable
+operation by that exact preparation mutation after a lost response or refresh.
+Its status, retry, and cancellation actions continue against the same operation
+through pending, revocation-repair, finalization-repair, and terminal states.
+Full local repository, real Better Auth D1 plus routed-object,
+twice/no-diff generation, and container evidence is green. Hosted CI for the
+new evidence head and a fresh independent exact-head review remain pending, so
+Work Item 02 stays `In progress` and PR #201 stays draft.
+Organization-deletion behavior remains out of scope, and Work Items 03 and 04
+remain `Proposed`.
 
 ## Completed Foundation
 
