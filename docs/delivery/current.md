@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-01
+- Last updated: 2026-09-04
 - Delivery source of truth: this repository
 
 ## Active Stage
@@ -12,7 +12,7 @@
 - Status: Active
 - Immediate delivery target:
   [`02-account-linking-invitations-and-departure.md`](stages/01-household-people/02-account-linking-invitations-and-departure.md)
-  (`Ready`)
+  (`In progress`)
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -48,10 +48,39 @@ repairable. Work Item 02 must also configure
 `organization({ disableOrganizationDeletion: true })` so neither the public nor
 typed Better Auth deletion operation can erase the organization and its
 memberships before the separate household deletion lifecycle exists. That
-accepted prerequisite promotes Work Item 02 to `Ready`; invitation association,
-accepted linking, link repair, departure, and return are still implementation
-work. Organization-deletion behavior remains out of scope, and Work Items 03
-and 04 remain `Proposed`.
+accepted prerequisite promoted Work Item 02 to implementation. Draft
+[PR #201](https://github.com/cill-i-am/meal-planner/pull/201) now has the working
+Better Auth invitation-to-existing-person link, explicit repair and same-person
+return, and the native access-first departure Workflow with both crash-window
+reconciliation paths. Its corrected behavior is frozen at
+`2328fb2c3419912b805410d29a6e37d3268a00dc`: before contacting Better Auth,
+the API durably binds the original person, payload digest, and mutation to a
+deterministic provider invitation ID. After an ambiguous response or refresh,
+the browser replays the exact retained invitation command with its original
+person, intended email, payload, and mutation. If Better Auth was not reached,
+that replay creates the missing original deterministic invitation; if Better
+Auth committed but its response was lost, it reads and reuses that same
+invitation. The separate association operation remains read-only with respect
+to provider creation. No path lists opaque candidates, guesses among
+same-household invitations, matches by email or name, or mints a replacement
+person, invitation, or mutation. The browser also retains the original
+departure request before submission and rediscovers its durable operation by
+that exact preparation mutation after a lost response or refresh. Its status,
+retry, and cancellation actions continue against the same operation through
+pending, revocation-repair, finalization-repair, and terminal states. Full local
+repository, real Better Auth D1 plus routed-object, twice/no-diff generation,
+and container evidence is green for the corrected implementation. Evidence
+head `8f97e8e6a12646eac42a33f427314f2c8eb854aa` retains behavior freeze
+`2328fb2c3419912b805410d29a6e37d3268a00dc`, and hosted
+[run 33865785353](https://github.com/cill-i-am/meal-planner/actions/runs/33865785353)
+passed Quality and Synthetic media container. Independent review of that exact
+evidence head found no remaining behavioral issue and held only this stale
+repository evidence. Work Item 02 stays `In progress` and PR #201 stays draft
+pending final exact verification and disposition of the docs-only replacement
+head.
+
+Organization-deletion behavior remains out of scope, and Work Items 03 and 04
+remain `Proposed`.
 
 ## Completed Foundation
 
@@ -77,13 +106,8 @@ and 04 remain `Proposed`.
 
 ## Immediate Next Steps
 
-1. After this readiness record merges, assign one delivery owner using Work
-   Item 02's exact bounded implementation-agent assignment.
-2. Implement invitation association/linking, explicit repair, the accepted
-   departure Workflow, and same-person return as one Work Item 02 vertical.
-3. Freeze that implementation head for hosted CI, real Better Auth D1 and
-   routed-object runtime proof, and fresh independent exact-head review before
-   any merge decision.
+1. Verify the docs-only replacement head and its hosted CI exactly, then make
+   the authorized final disposition for Work Item 02 and PR #201.
 
 ## Deliberate Non-Work
 

@@ -3,7 +3,7 @@
 - Status: Active
 - Immediate work item:
   [`02-account-linking-invitations-and-departure.md`](02-account-linking-invitations-and-departure.md)
-  (`Ready`)
+  (`In progress`)
 - Started: 2026-08-27
 
 ## Household Outcome
@@ -69,7 +69,7 @@ evidence are the implemented base for Work Item 02.
 | Order | Work item | Status | Dependency |
 | --- | --- | --- | --- |
 | 01 | [Person registry and lifecycle](01-person-registry-and-lifecycle.md) | Done | Stage 0 and accepted people/auth separation |
-| 02 | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | Ready | Work Item 01 merged; ADR-0010 accepted |
+| 02 | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | In progress | Work Item 01 merged; ADR-0010 accepted |
 | 03 | [Profile authority, versioning, and audit](03-profile-authority-versioning-and-audit.md) | Proposed | Stable person/link semantics from Work Items 01–02 |
 | 04 | [Private interview-session boundary](04-private-interview-session-boundary.md) | Proposed | Work Item 03 and the accepted exact-version Agents SDK spike |
 

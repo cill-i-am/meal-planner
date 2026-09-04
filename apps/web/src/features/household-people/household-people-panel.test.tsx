@@ -1,4 +1,5 @@
 import {
+  HouseholdMemberDepartureOperation,
   HouseholdPeopleRoster,
   HouseholdPerson,
   HouseholdPersonId,
@@ -41,6 +42,8 @@ const roster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
   currentPersonId: personId,
   people: [
     {
+      associationState: "linked",
+      associationVersion: 1,
       createdAtEpochMs: 1,
       displayName: "Cillian",
       id: personId,
@@ -60,7 +63,14 @@ const emptyRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
 const unlinkedRoster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
   creatorSlot: "occupied",
   currentPersonId: null,
-  people: [{ ...roster.people[0], isCurrentAdult: false }],
+  people: [
+    {
+      ...roster.people[0],
+      associationState: "unlinked",
+      associationVersion: null,
+      isCurrentAdult: false,
+    },
+  ],
 });
 const unlinkedRosterBeforeCreatorBootstrap = Schema.decodeUnknownSync(
   HouseholdPeopleRoster
@@ -70,6 +80,8 @@ const unlinkedRosterBeforeCreatorBootstrap = Schema.decodeUnknownSync(
   people: [
     {
       ...roster.people[0],
+      associationState: "unlinked",
+      associationVersion: null,
       displayName: "Household dependant",
       isCurrentAdult: false,
       kind: "dependant",
@@ -93,8 +105,26 @@ const unlinkedArchivedRosterBeforeCreatorBootstrap = Schema.decodeUnknownSync(
     },
   ],
 });
+const departureOperationId = "departure_00000000-0000-4000-8000-000000000201";
+const departureOperation = (
+  state: (typeof HouseholdMemberDepartureOperation.Type)["state"],
+  version: number,
+  canRetry = false
+) =>
+  Schema.decodeUnknownSync(HouseholdMemberDepartureOperation)({
+    canRetry,
+    executionGeneration: 1,
+    lastAttemptAtEpochMs: state === "prepared" ? null : 2,
+    operationId: departureOperationId,
+    personId,
+    state,
+    version,
+  });
 
-const renderPanel = (operations: HouseholdPeopleOperations) => {
+const renderPanel = (
+  operations: HouseholdPeopleOperations,
+  currentMemberId?: string
+) => {
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: { retryDelay: 0 },
@@ -103,14 +133,320 @@ const renderPanel = (operations: HouseholdPeopleOperations) => {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <HouseholdPeoplePanel operations={operations} organizationId="org-a" />
+      <HouseholdPeoplePanel
+        {...(currentMemberId === undefined ? {} : { currentMemberId })}
+        operations={operations}
+        organizationId="org-a"
+      />
     </QueryClientProvider>
   );
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  globalThis.sessionStorage.clear();
+  vi.restoreAllMocks();
+});
 
 describe("HouseholdPeoplePanel", () => {
+  it("selects an existing adult before inviting and never renders the submitted email", async () => {
+    const inviteAdult = vi.fn().mockResolvedValue({
+      association: "associated",
+      invitationId: "invitation-a",
+      person: {
+        ...unlinkedRoster.people[0],
+        associationState: "invitation_pending",
+        associationVersion: 1,
+      },
+    });
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create: vi.fn(),
+      inviteAdult,
+      list: vi.fn().mockResolvedValue(unlinkedRoster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations);
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Person"),
+      personId
+    );
+    await userEvent.type(screen.getByLabelText("Email"), "adult@example.test");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Send invitation" })
+    );
+    await waitFor(() => expect(inviteAdult).toHaveBeenCalledTimes(1));
+    expect(inviteAdult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "adult@example.test",
+        personId,
+      }),
+      expect.anything()
+    );
+    expect(screen.queryByText("adult@example.test")).toBeNull();
+    expect(screen.getByLabelText("Email")).toHaveValue("");
+  });
+
+  it("confirms self departure before submitting the exact current link", async () => {
+    const departAdult = vi.fn().mockResolvedValue({
+      canRetry: false,
+      executionGeneration: 1,
+      lastAttemptAtEpochMs: null,
+      operationId: "departure_00000000-0000-4000-8000-000000000201",
+      personId,
+      state: "prepared",
+      version: 1,
+    });
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create: vi.fn(),
+      departAdult,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    renderPanel(operations, "member-current");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Leave household" })
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Confirm leave" })
+    );
+    await waitFor(() => expect(departAdult).toHaveBeenCalledTimes(1));
+    expect(departAdult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedLinkVersion: 1,
+        memberId: "member-current",
+        personId,
+      }),
+      expect.anything()
+    );
+  });
+
+  it("replays only the exact retained invitation after refresh without candidate selection", async () => {
+    const inviteAdult = vi
+      .fn()
+      .mockRejectedValueOnce(failure("people_unavailable"))
+      .mockResolvedValue({
+        association: "associated",
+        invitationId: "invitation-a",
+        person: {
+          ...unlinkedRoster.people[0],
+          associationState: "invitation_pending",
+          associationVersion: 1,
+        },
+      });
+    const associateInvitation = vi.fn();
+    const create = vi.fn();
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      associateInvitation,
+      bootstrapCreator: vi.fn(),
+      create,
+      inviteAdult,
+      list: vi.fn().mockResolvedValue(unlinkedRoster),
+      restore: vi.fn(),
+    };
+    const firstRender = renderPanel(operations);
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Person"),
+      personId
+    );
+    await userEvent.type(screen.getByLabelText("Email"), "adult@example.test");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Send invitation" })
+    );
+    await waitFor(() => expect(inviteAdult).toHaveBeenCalledTimes(1));
+    const exactPayload = inviteAdult.mock.calls[0]?.[0];
+    expect(exactPayload).toBeDefined();
+
+    expect(
+      await screen.findByRole("heading", { name: "Finish invitation setup" })
+    ).toBeInTheDocument();
+    firstRender.unmount();
+    renderPanel(operations);
+
+    expect(
+      await screen.findByRole("heading", { name: "Finish invitation setup" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Intended person: Cillian")).toBeInTheDocument();
+    expect(
+      screen.getByText(/cannot select another pending invitation/iu)
+    ).toBeInTheDocument();
+    expect(screen.queryByText("invitation-a")).toBeNull();
+    expect(screen.queryByText("invitation-other")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /find pending invitations/iu })
+    ).toBeNull();
+    expect(screen.getByLabelText("Name")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add person" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeDisabled();
+    expect(create).not.toHaveBeenCalled();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Finish original invitation" })
+    );
+
+    await waitFor(() => expect(inviteAdult).toHaveBeenCalledTimes(2));
+    expect(inviteAdult.mock.calls[0]?.[0]).toEqual(exactPayload);
+    expect(inviteAdult.mock.calls[1]?.[0]).toEqual(exactPayload);
+    expect(associateInvitation).not.toHaveBeenCalled();
+    expect(screen.queryByText("adult@example.test")).toBeNull();
+    expect(screen.queryByDisplayValue("adult@example.test")).toBeNull();
+  });
+
+  it("rediscovers the original departure after refresh and repairs the same operation", async () => {
+    const departAdult = vi
+      .fn()
+      .mockRejectedValue(failure("people_unavailable"));
+    const getDepartureByMutation = vi
+      .fn()
+      .mockResolvedValue(
+        departureOperation("revocation_repair_required", 2, true)
+      );
+    const retryDeparture = vi
+      .fn()
+      .mockResolvedValueOnce(
+        departureOperation("finalization_repair_required", 3, true)
+      )
+      .mockResolvedValueOnce(departureOperation("completed", 4));
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      create: vi.fn(),
+      departAdult,
+      getDepartureByMutation,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+      retryDeparture,
+    };
+    const firstRender = renderPanel(operations, "member-current");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Leave household" })
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm leave" })
+    );
+
+    await waitFor(() => expect(departAdult).toHaveBeenCalledTimes(1));
+    const exactPayload = departAdult.mock.calls[0]?.[0];
+    expect(exactPayload).toBeDefined();
+    expect(
+      await screen.findByRole("heading", { name: "Recover departure status" })
+    ).toBeInTheDocument();
+    firstRender.unmount();
+    renderPanel(operations, "member-current");
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Recover original departure",
+      })
+    );
+    expect(
+      await screen.findByText("Access revocation needs repair.")
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Repair departure" })
+    );
+    expect(
+      await screen.findByText("Roster finalization needs repair.")
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Repair departure" })
+    );
+    expect(
+      await screen.findByText("Household departure completed.")
+    ).toBeInTheDocument();
+
+    expect(departAdult).toHaveBeenCalledTimes(1);
+    expect(getDepartureByMutation).toHaveBeenCalledWith(
+      exactPayload?.mutationId
+    );
+    expect(retryDeparture).toHaveBeenNthCalledWith(
+      1,
+      departureOperationId,
+      expect.objectContaining({
+        expectedOperationVersion: 2,
+        memberId: "member-current",
+      })
+    );
+    expect(retryDeparture).toHaveBeenNthCalledWith(
+      2,
+      departureOperationId,
+      expect.objectContaining({
+        expectedOperationVersion: 3,
+        memberId: "member-current",
+      })
+    );
+  });
+
+  it("rediscovers and cancels the exact prepared departure without a replacement", async () => {
+    const departAdult = vi
+      .fn()
+      .mockRejectedValue(failure("people_unavailable"));
+    const getDepartureByMutation = vi
+      .fn()
+      .mockResolvedValue(departureOperation("prepared", 1));
+    const cancelDeparture = vi
+      .fn()
+      .mockRejectedValueOnce(failure("people_unavailable"))
+      .mockResolvedValueOnce(departureOperation("cancelled", 2));
+    const operations: HouseholdPeopleOperations = {
+      archive: vi.fn(),
+      bootstrapCreator: vi.fn(),
+      cancelDeparture,
+      create: vi.fn(),
+      departAdult,
+      getDepartureByMutation,
+      list: vi.fn().mockResolvedValue(roster),
+      restore: vi.fn(),
+    };
+    const firstRender = renderPanel(operations, "member-current");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Leave household" })
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm leave" })
+    );
+    await waitFor(() => expect(departAdult).toHaveBeenCalledTimes(1));
+    const exactPayload = departAdult.mock.calls[0]?.[0];
+    expect(exactPayload).toBeDefined();
+    firstRender.unmount();
+    renderPanel(operations, "member-current");
+
+    expect(screen.queryByLabelText("Departure operation code")).toBeNull();
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Recover original departure",
+      })
+    );
+    expect(
+      await screen.findByText("Access revocation has not started.")
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Cancel departure" })
+    );
+    expect(
+      await screen.findByText("Household departure cancelled.")
+    ).toBeInTheDocument();
+
+    expect(getDepartureByMutation).toHaveBeenCalledWith(
+      exactPayload?.mutationId
+    );
+    expect(cancelDeparture).toHaveBeenCalledTimes(2);
+    expect(cancelDeparture).toHaveBeenNthCalledWith(
+      1,
+      departureOperationId,
+      expect.objectContaining({ expectedOperationVersion: 1 })
+    );
+    expect(cancelDeparture.mock.calls[1]).toEqual(
+      cancelDeparture.mock.calls[0]
+    );
+    expect(departAdult).toHaveBeenCalledTimes(1);
+  });
+
   it("shows persisted identities and reports stale transitions without optimistic state", async () => {
     const archive = vi.fn().mockRejectedValue(failure("stale_version"));
     const operations: HouseholdPeopleOperations = {
@@ -382,7 +718,6 @@ describe("HouseholdPeoplePanel", () => {
       expect(await screen.findByText(/name must/iu)).toBeInTheDocument();
     }
   );
-
   it("explains when an admitted non-owner cannot bootstrap the creator", async () => {
     const bootstrapCreator = vi
       .fn()
@@ -436,6 +771,8 @@ describe("HouseholdPeoplePanel", () => {
         const person =
           peopleByMutation.get(key) ??
           Schema.decodeUnknownSync(HouseholdPerson)({
+            associationState: "unlinked",
+            associationVersion: null,
             createdAtEpochMs: 1,
             displayName: payload.displayName,
             id: personId,

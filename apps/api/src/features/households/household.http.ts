@@ -14,19 +14,23 @@ import {
   HouseholdMealPlanPrincipal,
   HouseholdMealPlanSchemaErrors,
   HouseholdPeopleCurrentPrincipal,
-  HouseholdPeopleAuditActorId,
   HouseholdPeopleApi,
+  HouseholdPeopleAssociationConflictProblem,
+  HouseholdPeopleAssociationStaleProblem,
   HouseholdPeopleBootstrapConflictProblem,
+  HouseholdPeopleControlPlaneNotFoundProblem,
+  HouseholdPeopleControlPlaneUnavailableProblem,
   HouseholdPeopleCreatorRequiredProblem,
+  HouseholdPeopleDepartureConflictProblem,
   HouseholdPeopleLifecycleConflictProblem,
   HouseholdPeopleInvalidRequestProblem,
   HouseholdPeopleMutationCollisionProblem,
   HouseholdPeopleNotFoundProblem,
+  HouseholdPeopleOrganizerRequiredProblem,
   HouseholdPeoplePrincipal,
   HouseholdPeopleSchemaErrors,
   HouseholdPeopleStaleVersionProblem,
   HouseholdPeopleUnavailableProblem,
-  HouseholdPersonLinkageSubject,
   HouseholdSessionAuth,
   toHouseholdMealPlanResponse,
 } from "@meal-planner/household-api";
@@ -38,6 +42,7 @@ import type { HttpApiSchemaError } from "effect/unstable/httpapi/HttpApiError";
 
 import { AuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
 import type {
+  HouseholdPeopleGatewayFailure,
   MealPlanCreateFailure,
   MealPlanDecisionFailure,
   MealPlanReadFailure,
@@ -48,6 +53,10 @@ import {
   HouseholdMealPlanGateway,
   HouseholdPeopleGateway,
 } from "./household.gateway.js";
+import {
+  deriveHouseholdPeopleAuditActorId,
+  deriveHouseholdPersonLinkageSubject,
+} from "./people/household-people.identity.js";
 import { HouseholdDigest } from "./shared-kernel/authority-services.js";
 import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-services.live.js";
 
@@ -143,11 +152,54 @@ const peopleLifecycleConflictProblem = Schema.decodeUnknownSync(
   message: "This lifecycle change is no longer valid.",
   status: 409,
 });
+const peopleOrganizerRequiredProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleOrganizerRequiredProblem
+)({
+  code: "organizer_required",
+  message: "Only a current household owner may coordinate this change.",
+  status: 403,
+});
+const peopleControlPlaneNotFoundProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleControlPlaneNotFoundProblem
+)({
+  code: "control_plane_resource_not_found",
+  message: "That invitation or household member is no longer available.",
+  status: 404,
+});
+const peopleAssociationConflictProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleAssociationConflictProblem
+)({
+  code: "association_conflict",
+  message:
+    "That account, invitation, or person association conflicts with current household state.",
+  status: 409,
+});
+const peopleDepartureConflictProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleDepartureConflictProblem
+)({
+  code: "departure_conflict",
+  message: "That departure conflicts with the current member or person state.",
+  status: 409,
+});
+const peopleAssociationStaleProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleAssociationStaleProblem
+)({
+  code: "association_stale",
+  message: "That account link or departure changed. Refresh and try again.",
+  status: 409,
+});
 const peopleUnavailableProblem = Schema.decodeUnknownSync(
   HouseholdPeopleUnavailableProblem
 )({
   code: "people_unavailable",
   message: "The household roster is temporarily unavailable.",
+  status: 503,
+});
+const peopleControlPlaneUnavailableProblem = Schema.decodeUnknownSync(
+  HouseholdPeopleControlPlaneUnavailableProblem
+)({
+  code: "control_plane_unavailable",
+  message: "Household membership is temporarily unavailable.",
   status: 503,
 });
 
@@ -171,6 +223,204 @@ const mapPeopleTransitionError = (error: HouseholdPeopleFailure) => {
   switch (error._tag) {
     case "HouseholdPersonLifecycleConflict": {
       return peopleLifecycleConflictProblem;
+    }
+    case "HouseholdPersonMutationCollision": {
+      return peopleMutationCollisionProblem;
+    }
+    case "HouseholdPersonNotFound": {
+      return peopleNotFoundProblem;
+    }
+    case "HouseholdPersonStaleVersion": {
+      return peopleStaleVersionProblem;
+    }
+    default: {
+      return peopleUnavailableProblem;
+    }
+  }
+};
+
+const mapInviteAdultError = (error: HouseholdPeopleGatewayFailure) => {
+  switch (error._tag) {
+    case "HouseholdPersonAssociationConflict": {
+      return peopleAssociationConflictProblem;
+    }
+    case "HouseholdPeopleControlPlaneUnavailable": {
+      return peopleControlPlaneUnavailableProblem;
+    }
+    case "HouseholdPersonMutationCollision": {
+      return peopleMutationCollisionProblem;
+    }
+    case "HouseholdPersonNotFound": {
+      return peopleNotFoundProblem;
+    }
+    case "HouseholdPeopleOrganizerRequired": {
+      return peopleOrganizerRequiredProblem;
+    }
+    default: {
+      return peopleUnavailableProblem;
+    }
+  }
+};
+
+const mapAssociateInvitationError = (error: HouseholdPeopleGatewayFailure) => {
+  switch (error._tag) {
+    case "HouseholdPersonAssociationConflict": {
+      return peopleAssociationConflictProblem;
+    }
+    case "HouseholdPeopleControlPlaneNotFound": {
+      return peopleControlPlaneNotFoundProblem;
+    }
+    case "HouseholdPersonMutationCollision": {
+      return peopleMutationCollisionProblem;
+    }
+    case "HouseholdPersonNotFound": {
+      return peopleNotFoundProblem;
+    }
+    case "HouseholdPeopleOrganizerRequired": {
+      return peopleOrganizerRequiredProblem;
+    }
+    default: {
+      return peopleUnavailableProblem;
+    }
+  }
+};
+
+const mapCompleteAdultLinkError = (error: HouseholdPeopleGatewayFailure) => {
+  switch (error._tag) {
+    case "HouseholdPersonAssociationConflict": {
+      return peopleAssociationConflictProblem;
+    }
+    case "HouseholdPeopleControlPlaneNotFound": {
+      return peopleControlPlaneNotFoundProblem;
+    }
+    case "HouseholdPersonMutationCollision": {
+      return peopleMutationCollisionProblem;
+    }
+    default: {
+      return peopleUnavailableProblem;
+    }
+  }
+};
+
+const mapRepairAdultLinkError = (error: HouseholdPeopleGatewayFailure) => {
+  switch (error._tag) {
+    case "HouseholdPersonAssociationConflict": {
+      return peopleAssociationConflictProblem;
+    }
+    case "HouseholdPeopleControlPlaneNotFound": {
+      return peopleControlPlaneNotFoundProblem;
+    }
+    case "HouseholdPersonMutationCollision": {
+      return peopleMutationCollisionProblem;
+    }
+    case "HouseholdPersonNotFound": {
+      return peopleNotFoundProblem;
+    }
+    case "HouseholdPeopleOrganizerRequired": {
+      return peopleOrganizerRequiredProblem;
+    }
+    case "HouseholdPersonStaleVersion": {
+      return peopleStaleVersionProblem;
+    }
+    default: {
+      return peopleUnavailableProblem;
+    }
+  }
+};
+
+const mapDepartAdultError = (error: HouseholdPeopleGatewayFailure) => {
+  switch (error._tag) {
+    case "HouseholdAssociationStaleVersion": {
+      return peopleAssociationStaleProblem;
+    }
+    case "HouseholdPeopleControlPlaneNotFound": {
+      return peopleControlPlaneNotFoundProblem;
+    }
+    case "HouseholdPeopleControlPlaneUnavailable": {
+      return peopleControlPlaneUnavailableProblem;
+    }
+    case "HouseholdMemberDepartureConflict":
+    case "HouseholdMemberDepartureInProgress": {
+      return peopleDepartureConflictProblem;
+    }
+    case "HouseholdPersonMutationCollision": {
+      return peopleMutationCollisionProblem;
+    }
+    case "HouseholdPersonNotFound": {
+      return peopleNotFoundProblem;
+    }
+    case "HouseholdPeopleOrganizerRequired": {
+      return peopleOrganizerRequiredProblem;
+    }
+    case "HouseholdPersonStaleVersion": {
+      return peopleStaleVersionProblem;
+    }
+    default: {
+      return peopleUnavailableProblem;
+    }
+  }
+};
+
+const mapGetDepartureError = (error: HouseholdPeopleGatewayFailure) =>
+  error._tag === "HouseholdPersonNotFound"
+    ? peopleNotFoundProblem
+    : peopleUnavailableProblem;
+
+const mapCancelDepartureError = (error: HouseholdPeopleGatewayFailure) => {
+  switch (error._tag) {
+    case "HouseholdMemberDepartureConflict":
+    case "HouseholdMemberDepartureInProgress": {
+      return peopleDepartureConflictProblem;
+    }
+    case "HouseholdPersonMutationCollision": {
+      return peopleMutationCollisionProblem;
+    }
+    case "HouseholdPersonNotFound": {
+      return peopleNotFoundProblem;
+    }
+    default: {
+      return peopleUnavailableProblem;
+    }
+  }
+};
+
+const mapRetryDepartureError = (error: HouseholdPeopleGatewayFailure) => {
+  switch (error._tag) {
+    case "HouseholdAssociationStaleVersion": {
+      return peopleAssociationStaleProblem;
+    }
+    case "HouseholdPeopleControlPlaneNotFound": {
+      return peopleControlPlaneNotFoundProblem;
+    }
+    case "HouseholdPeopleControlPlaneUnavailable": {
+      return peopleControlPlaneUnavailableProblem;
+    }
+    case "HouseholdMemberDepartureConflict":
+    case "HouseholdMemberDepartureInProgress": {
+      return peopleDepartureConflictProblem;
+    }
+    case "HouseholdPersonMutationCollision": {
+      return peopleMutationCollisionProblem;
+    }
+    case "HouseholdPersonNotFound": {
+      return peopleNotFoundProblem;
+    }
+    case "HouseholdPeopleOrganizerRequired": {
+      return peopleOrganizerRequiredProblem;
+    }
+    default: {
+      return peopleUnavailableProblem;
+    }
+  }
+};
+
+const mapReturnAdultError = (error: HouseholdPeopleGatewayFailure) => {
+  switch (error._tag) {
+    case "HouseholdPersonAssociationConflict": {
+      return peopleAssociationConflictProblem;
+    }
+    case "HouseholdPeopleControlPlaneNotFound": {
+      return peopleControlPlaneNotFoundProblem;
     }
     case "HouseholdPersonMutationCollision": {
       return peopleMutationCollisionProblem;
@@ -229,19 +479,6 @@ const exposeMealPlanResult = <E extends { readonly _tag: string }, P>(
     Effect.map(toHouseholdMealPlanResponse)
   );
 
-const peopleSubjectMaterial = (
-  purpose: "audit-actor" | "linkage-subject",
-  organizationId: string,
-  userId: string
-) =>
-  JSON.stringify([
-    "meal-planner/household-people",
-    purpose,
-    "v1",
-    organizationId,
-    userId,
-  ]);
-
 const HouseholdSessionAuthLive = Layer.effect(
   HouseholdSessionAuth,
   Effect.gen(function* makeHouseholdSessionAuth() {
@@ -256,34 +493,14 @@ const HouseholdSessionAuthLive = Layer.effect(
         const actorId = yield* digest
           .sha256(principal.userId)
           .pipe(Effect.mapError(() => unauthorizedProblem));
-        const peopleActorId = yield* digest
-          .sha256(
-            peopleSubjectMaterial(
-              "audit-actor",
-              principal.organizationId,
-              principal.userId
-            )
-          )
-          .pipe(
-            Effect.flatMap(
-              Schema.decodeUnknownEffect(HouseholdPeopleAuditActorId)
-            ),
-            Effect.mapError(() => unauthorizedProblem)
-          );
-        const linkageSubject = yield* digest
-          .sha256(
-            peopleSubjectMaterial(
-              "linkage-subject",
-              principal.organizationId,
-              principal.userId
-            )
-          )
-          .pipe(
-            Effect.flatMap(
-              Schema.decodeUnknownEffect(HouseholdPersonLinkageSubject)
-            ),
-            Effect.mapError(() => unauthorizedProblem)
-          );
+        const peopleActorId = yield* deriveHouseholdPeopleAuditActorId(
+          principal.organizationId,
+          principal.userId
+        ).pipe(Effect.mapError(() => unauthorizedProblem));
+        const linkageSubject = yield* deriveHouseholdPersonLinkageSubject(
+          principal.organizationId,
+          principal.userId
+        ).pipe(Effect.mapError(() => unauthorizedProblem));
         const mealPlanPrincipal = yield* Schema.decodeUnknownEffect(
           HouseholdMealPlanPrincipal
         )({
@@ -315,7 +532,7 @@ const HouseholdSessionAuthLive = Layer.effect(
       })
     );
   })
-).pipe(Layer.provide(HouseholdAuthorityServicesLive));
+);
 
 const HouseholdMealPlanHandlers = HttpApiBuilder.group(
   HouseholdMealPlanApi,
@@ -506,13 +723,127 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
             .pipe(Effect.mapError(mapPeopleTransitionError));
         })
       )
+      .handle("inviteAdult", ({ payload }) =>
+        Effect.gen(function* inviteAdult() {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .inviteAdult({
+              headers: new globalThis.Headers(Object.entries(request.headers)),
+              payload,
+              principal,
+            })
+            .pipe(Effect.mapError(mapInviteAdultError));
+        })
+      )
+      .handle("associateInvitation", ({ payload }) =>
+        Effect.gen(function* associateAdultInvitation() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .associateInvitation({ payload, principal })
+            .pipe(Effect.mapError(mapAssociateInvitationError));
+        })
+      )
+      .handle("completeAdultLink", ({ payload }) =>
+        Effect.gen(function* completeAdultLink() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .completeAdultLink({ payload, principal })
+            .pipe(Effect.mapError(mapCompleteAdultLinkError));
+        })
+      )
+      .handle("repairAdultLink", ({ payload }) =>
+        Effect.gen(function* repairAdultLink() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .repairAdultLink({ payload, principal })
+            .pipe(Effect.mapError(mapRepairAdultLinkError));
+        })
+      )
+      .handle("departAdult", ({ payload }) =>
+        Effect.gen(function* departAdult() {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .departAdult({
+              headers: new globalThis.Headers(Object.entries(request.headers)),
+              payload,
+              principal,
+            })
+            .pipe(Effect.mapError(mapDepartAdultError));
+        })
+      )
+      .handle("getDeparture", ({ params }) =>
+        Effect.gen(function* getDeparture() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .getDeparture({ operationId: params.operationId, principal })
+            .pipe(Effect.mapError(mapGetDepartureError));
+        })
+      )
+      .handle("getDepartureByMutation", ({ params }) =>
+        Effect.gen(function* getDepartureByMutation() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .getDepartureByMutation({
+              mutationId: params.mutationId,
+              principal,
+            })
+            .pipe(Effect.mapError(mapGetDepartureError));
+        })
+      )
+      .handle("cancelDeparture", ({ params, payload }) =>
+        Effect.gen(function* cancelDeparture() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .cancelDeparture({
+              operationId: params.operationId,
+              payload,
+              principal,
+            })
+            .pipe(Effect.mapError(mapCancelDepartureError));
+        })
+      )
+      .handle("retryDeparture", ({ params, payload }) =>
+        Effect.gen(function* retryDeparture() {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .retryDeparture({
+              headers: new globalThis.Headers(Object.entries(request.headers)),
+              operationId: params.operationId,
+              payload,
+              principal,
+            })
+            .pipe(Effect.mapError(mapRetryDepartureError));
+        })
+      )
+      .handle("returnAdult", ({ payload }) =>
+        Effect.gen(function* returnAdult() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .returnAdult({ payload, principal })
+            .pipe(Effect.mapError(mapReturnAdultError));
+        })
+      )
 );
 
 /** Mount the authenticated household tracer API. */
 export const makeHouseholdHttpApiLayer = () =>
   HttpApiBuilder.layer(HouseholdApi).pipe(
     Layer.provide(HouseholdHandlers),
-    Layer.provide(HouseholdSessionAuthLive)
+    Layer.provide(HouseholdSessionAuthLive),
+    Layer.provide(HouseholdAuthorityServicesLive)
   );
 
 /** Mount the authenticated household-owned meal-plan API. */
@@ -520,7 +851,8 @@ export const makeHouseholdMealPlanHttpApiLayer = () =>
   HttpApiBuilder.layer(HouseholdMealPlanApi).pipe(
     Layer.provide(HouseholdMealPlanHandlers),
     Layer.provide(HouseholdSessionAuthLive),
-    Layer.provide(HouseholdMealPlanSchemaErrorsLive)
+    Layer.provide(HouseholdMealPlanSchemaErrorsLive),
+    Layer.provide(HouseholdAuthorityServicesLive)
   );
 
 /** Mount the authenticated household people API. */
@@ -528,5 +860,6 @@ export const makeHouseholdPeopleHttpApiLayer = () =>
   HttpApiBuilder.layer(HouseholdPeopleApi).pipe(
     Layer.provide(HouseholdPeopleHandlers),
     Layer.provide(HouseholdSessionAuthLive),
-    Layer.provide(HouseholdPeopleSchemaErrorsLive)
+    Layer.provide(HouseholdPeopleSchemaErrorsLive),
+    Layer.provide(HouseholdAuthorityServicesLive)
   );

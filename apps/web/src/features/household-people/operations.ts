@@ -1,9 +1,21 @@
 import type {
+  AssociateHouseholdAdultInvitationPayload,
+  CancelHouseholdAdultDeparturePayload,
+  CompleteHouseholdAdultLinkPayload,
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
+  DepartHouseholdAdultPayload,
+  HouseholdAdultInvitationResult,
+  HouseholdMemberDepartureOperation,
+  HouseholdMemberDepartureOperationId,
   HouseholdPeopleRoster,
   HouseholdPerson,
   HouseholdPersonId,
+  HouseholdPersonMutationId,
+  InviteHouseholdAdultPayload,
+  RepairHouseholdAdultLinkPayload,
+  RetryHouseholdAdultDeparturePayload,
+  ReturnHouseholdAdultPayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
 import { Option, Schema } from "effect";
@@ -11,6 +23,12 @@ import { Option, Schema } from "effect";
 export const HouseholdPeopleOperationFailureCode = Schema.Literals([
   "bootstrap_conflict",
   "creator_required",
+  "organizer_required",
+  "association_conflict",
+  "association_stale",
+  "control_plane_resource_not_found",
+  "control_plane_unavailable",
+  "departure_conflict",
   "internal_error",
   "invalid_request",
   "lifecycle_conflict",
@@ -64,6 +82,9 @@ export const isAmbiguousHouseholdPeopleFailure = (error: Error | null) => {
 
 /** Browser-facing household people operations. */
 export interface HouseholdPeopleOperations {
+  readonly associateInvitation?: (
+    payload: AssociateHouseholdAdultInvitationPayload
+  ) => Promise<HouseholdPerson>;
   readonly archive: (
     personId: HouseholdPersonId,
     payload: TransitionHouseholdPersonPayload
@@ -74,7 +95,36 @@ export interface HouseholdPeopleOperations {
   readonly create: (
     payload: CreateHouseholdPersonPayload
   ) => Promise<HouseholdPerson>;
+  readonly completeAdultLink?: (
+    payload: CompleteHouseholdAdultLinkPayload
+  ) => Promise<HouseholdPerson>;
+  readonly cancelDeparture?: (
+    operationId: HouseholdMemberDepartureOperationId,
+    payload: CancelHouseholdAdultDeparturePayload
+  ) => Promise<HouseholdMemberDepartureOperation>;
+  readonly departAdult?: (
+    payload: DepartHouseholdAdultPayload
+  ) => Promise<HouseholdMemberDepartureOperation>;
+  readonly getDeparture?: (
+    operationId: HouseholdMemberDepartureOperationId
+  ) => Promise<HouseholdMemberDepartureOperation>;
+  readonly getDepartureByMutation?: (
+    mutationId: HouseholdPersonMutationId
+  ) => Promise<HouseholdMemberDepartureOperation>;
+  readonly inviteAdult?: (
+    payload: InviteHouseholdAdultPayload
+  ) => Promise<HouseholdAdultInvitationResult>;
   readonly list: (includeArchived: boolean) => Promise<HouseholdPeopleRoster>;
+  readonly repairAdultLink?: (
+    payload: RepairHouseholdAdultLinkPayload
+  ) => Promise<HouseholdPerson>;
+  readonly retryDeparture?: (
+    operationId: HouseholdMemberDepartureOperationId,
+    payload: RetryHouseholdAdultDeparturePayload
+  ) => Promise<HouseholdMemberDepartureOperation>;
+  readonly returnAdult?: (
+    payload: ReturnHouseholdAdultPayload
+  ) => Promise<HouseholdPerson>;
   readonly restore: (
     personId: HouseholdPersonId,
     payload: TransitionHouseholdPersonPayload

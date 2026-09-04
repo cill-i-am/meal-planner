@@ -317,7 +317,18 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260824002531_household_domain/migration.sql",
       "20260825015310_household_domain/migration.sql",
       "20260829061116_household_domain/migration.sql",
+      "20260902211008_household_domain/migration.sql",
+      "20260903214851_household_domain/migration.sql",
     ]);
+    const departureRecoveryMigration = readRepoFile(
+      "./apps/api/household-migrations/20260903214851_household_domain/migration.sql"
+    );
+    expect(departureRecoveryMigration).toContain(
+      "ADD `preparation_mutation_id` text NOT NULL"
+    );
+    expect(departureRecoveryMigration).toContain(
+      "CREATE UNIQUE INDEX `household_departure_preparation_mutation_unique`"
+    );
     const evidenceMigration = readRepoFile(
       "./apps/api/household-migrations/20260823163811_household_domain/migration.sql"
     );

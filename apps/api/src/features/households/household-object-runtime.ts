@@ -1,4 +1,6 @@
 import {
+  HouseholdMemberDepartureOperation,
+  HouseholdMemberDepartureStart,
   HouseholdPeopleRoster,
   HouseholdPerson,
   MealPlan,
@@ -86,10 +88,26 @@ import {
   HouseholdInvalidInput,
 } from "./household.contract.js";
 import {
+  HouseholdAssociateAdultInvitationInput,
   HouseholdBootstrapCreatorPersonInput,
+  HouseholdCancelMemberDepartureInput,
+  HouseholdCompleteAcceptedAdultLinkInput,
+  HouseholdConfirmAdultInvitationRecipientInput,
+  HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
+  HouseholdFinalizeMemberDepartureInput,
+  HouseholdGetMemberDepartureByMutationInput,
+  HouseholdGetMemberDepartureInput,
   HouseholdGetPersonInput,
   HouseholdListPeopleInput,
+  HouseholdMarkMemberDepartureRepairRequiredInput,
+  HouseholdMemberDepartureSystemState,
+  HouseholdPrepareMemberDepartureInput,
+  HouseholdReadMemberDepartureSystemInput,
+  HouseholdRepairAdultAccountLinkInput,
+  HouseholdRestoreReturningAdultLinkInput,
+  HouseholdRetryMemberDepartureInput,
+  HouseholdStartMemberDepartureInput,
   HouseholdTransitionPersonInput,
 } from "./people/household-people.contract.js";
 import { makeHouseholdPeopleRepository } from "./people/household-people.repository.js";
@@ -185,6 +203,37 @@ export const HouseholdObjectRuntime = Effect.gen(
 
     // eslint-disable-next-line sort-keys -- RPC methods follow the household capability lifecycle.
     return Effect.succeed({
+      associateAdultInvitation: (
+        untrustedInput: HouseholdAssociateAdultInvitationInput
+      ) =>
+        scoped(
+          Effect.gen(function* associateAdultInvitation() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdAssociateAdultInvitationInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "associate_adult_invitation"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const person = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).associateAdultInvitation({
+              actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+            });
+            return yield* encodePeopleResult(HouseholdPerson, person);
+          })
+        ),
       archiveHouseholdPerson: (
         untrustedInput: HouseholdTransitionPersonInput
       ) =>
@@ -781,6 +830,167 @@ export const HouseholdObjectRuntime = Effect.gen(
             );
           })
         ),
+      completeAcceptedAdultLink: (
+        untrustedInput: HouseholdCompleteAcceptedAdultLinkInput
+      ) =>
+        scoped(
+          Effect.gen(function* completeAcceptedAdultLink() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdCompleteAcceptedAdultLinkInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "complete_accepted_adult_link"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const person = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).completeAcceptedAdultLink({
+              actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+            });
+            return yield* encodePeopleResult(HouseholdPerson, person);
+          })
+        ),
+      confirmAdultInvitationRecipient: (
+        untrustedInput: HouseholdConfirmAdultInvitationRecipientInput
+      ) =>
+        scoped(
+          Effect.gen(function* confirmAdultInvitationRecipient() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdConfirmAdultInvitationRecipientInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "confirm_adult_invitation_recipient"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).confirmAdultInvitationRecipient({
+              invitationDigest: command.invitationDigest,
+              linkageSubject: command.linkageSubject,
+            });
+          })
+        ),
+      cancelMemberDeparture: (
+        untrustedInput: HouseholdCancelMemberDepartureInput
+      ) =>
+        scoped(
+          Effect.gen(function* cancelMemberDeparture() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdCancelMemberDepartureInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "cancel_member_departure"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const operation = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).cancelMemberDeparture({
+              actorId: command.admission.actor.actorId,
+              callerIsOwner: command.admission.actor._tag === "PeopleCreator",
+              callerLinkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              operationId: command.operationId,
+              payload: command.payload,
+            });
+            return yield* encodePeopleResult(
+              HouseholdMemberDepartureOperation,
+              operation
+            );
+          })
+        ),
+      confirmMemberAccessRevoked: (
+        untrustedInput: HouseholdConfirmMemberAccessRevokedInput
+      ) =>
+        scoped(
+          Effect.gen(function* confirmMemberAccessRevoked() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdConfirmMemberAccessRevokedInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "confirm_member_access_revoked"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const operation = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).confirmMemberAccessRevoked({
+              expectedOperationVersion: command.expectedOperationVersion,
+              now: yield* Clock.currentTimeMillis,
+              operationId: command.operationId,
+            });
+            return yield* encodePeopleResult(
+              HouseholdMemberDepartureOperation,
+              operation
+            );
+          })
+        ),
+      finalizeMemberDeparture: (
+        untrustedInput: HouseholdFinalizeMemberDepartureInput
+      ) =>
+        scoped(
+          Effect.gen(function* finalizeMemberDeparture() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdFinalizeMemberDepartureInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "finalize_member_departure"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const operation = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).finalizeMemberDeparture({
+              expectedOperationVersion: command.expectedOperationVersion,
+              now: yield* Clock.currentTimeMillis,
+              operationId: command.operationId,
+            });
+            return yield* encodePeopleResult(
+              HouseholdMemberDepartureOperation,
+              operation
+            );
+          })
+        ),
       ensureHousehold: (untrustedInput: HouseholdEnsureInput) =>
         scoped(
           Effect.gen(function* ensureHouseholdObject() {
@@ -827,6 +1037,85 @@ export const HouseholdObjectRuntime = Effect.gen(
             return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
+      getMemberDeparture: (
+        untrustedInput:
+          | HouseholdGetMemberDepartureInput
+          | HouseholdReadMemberDepartureSystemInput
+      ) =>
+        scoped(
+          Effect.gen(function* getMemberDeparture() {
+            const command = yield* Schema.decodeUnknownEffect(
+              Schema.Union([
+                HouseholdGetMemberDepartureInput,
+                HouseholdReadMemberDepartureSystemInput,
+              ]),
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "get_member_departure"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const repository = makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            });
+            if (command.admission.actor._tag === "System") {
+              return yield* encodePeopleResult(
+                HouseholdMemberDepartureSystemState,
+                yield* repository.getMemberDepartureSystem({
+                  operationId: command.operationId,
+                })
+              );
+            }
+            return yield* encodePeopleResult(
+              HouseholdMemberDepartureOperation,
+              yield* repository.getMemberDeparture({
+                callerIsOwner: command.admission.actor._tag === "PeopleCreator",
+                callerLinkageSubject: command.admission.actor.linkageSubject,
+                operationId: command.operationId,
+              })
+            );
+          })
+        ),
+      getMemberDepartureByMutation: (
+        untrustedInput: HouseholdGetMemberDepartureByMutationInput
+      ) =>
+        scoped(
+          Effect.gen(function* getMemberDepartureByMutation() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdGetMemberDepartureByMutationInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "get_member_departure"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const operation = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).getMemberDepartureByMutation({
+              callerIsOwner: command.admission.actor._tag === "PeopleCreator",
+              callerLinkageSubject: command.admission.actor.linkageSubject,
+              mutationId: command.mutationId,
+            });
+            return yield* encodePeopleResult(
+              HouseholdMemberDepartureOperation,
+              operation
+            );
+          })
+        ),
       listHouseholdPeople: (untrustedInput: HouseholdListPeopleInput) =>
         scoped(
           Effect.gen(function* listHouseholdPeople() {
@@ -853,6 +1142,211 @@ export const HouseholdObjectRuntime = Effect.gen(
               linkageSubject: command.admission.actor.linkageSubject,
             });
             return yield* encodePeopleResult(HouseholdPeopleRoster, roster);
+          })
+        ),
+      markMemberDepartureRepairRequired: (
+        untrustedInput: HouseholdMarkMemberDepartureRepairRequiredInput
+      ) =>
+        scoped(
+          Effect.gen(function* markMemberDepartureRepairRequired() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdMarkMemberDepartureRepairRequiredInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "mark_member_departure_repair_required"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const operation = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).markMemberDepartureRepairRequired({
+              expectedOperationVersion: command.expectedOperationVersion,
+              now: yield* Clock.currentTimeMillis,
+              operationId: command.operationId,
+              phase: command.phase,
+            });
+            return yield* encodePeopleResult(
+              HouseholdMemberDepartureOperation,
+              operation
+            );
+          })
+        ),
+      prepareMemberDeparture: (
+        untrustedInput: HouseholdPrepareMemberDepartureInput
+      ) =>
+        scoped(
+          Effect.gen(function* prepareMemberDeparture() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdPrepareMemberDepartureInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "prepare_member_departure"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const operation = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).prepareMemberDeparture({
+              actorId: command.admission.actor.actorId,
+              callerIsOwner: command.admission.actor._tag === "PeopleCreator",
+              callerLinkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+              targetLinkageSubject: command.targetLinkageSubject,
+            });
+            return yield* encodePeopleResult(
+              HouseholdMemberDepartureOperation,
+              operation
+            );
+          })
+        ),
+      repairAdultAccountLink: (
+        untrustedInput: HouseholdRepairAdultAccountLinkInput
+      ) =>
+        scoped(
+          Effect.gen(function* repairAdultAccountLink() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdRepairAdultAccountLinkInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "repair_adult_account_link"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const person = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).repairAdultAccountLink({
+              actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+              targetLinkageSubject: command.targetLinkageSubject,
+            });
+            return yield* encodePeopleResult(HouseholdPerson, person);
+          })
+        ),
+      restoreReturningAdultLink: (
+        untrustedInput: HouseholdRestoreReturningAdultLinkInput
+      ) =>
+        scoped(
+          Effect.gen(function* restoreReturningAdultLink() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdRestoreReturningAdultLinkInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "restore_returning_adult_link"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const person = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).restoreReturningAdultLink({
+              actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+            });
+            return yield* encodePeopleResult(HouseholdPerson, person);
+          })
+        ),
+      retryMemberDeparture: (
+        untrustedInput: HouseholdRetryMemberDepartureInput
+      ) =>
+        scoped(
+          Effect.gen(function* retryMemberDeparture() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdRetryMemberDepartureInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "retry_member_departure"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const start = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).retryMemberDeparture({
+              actorId: command.admission.actor.actorId,
+              callerIsOwner: command.admission.actor._tag === "PeopleCreator",
+              callerLinkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              operationId: command.operationId,
+              payload: command.payload,
+              targetLinkageSubject: command.targetLinkageSubject,
+            });
+            return yield* encodePeopleResult(
+              HouseholdMemberDepartureStart,
+              start
+            );
+          })
+        ),
+      startMemberDeparture: (
+        untrustedInput: HouseholdStartMemberDepartureInput
+      ) =>
+        scoped(
+          Effect.gen(function* startMemberDeparture() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdStartMemberDepartureInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "start_member_departure"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const start = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).startMemberDeparture({
+              callerIsOwner: command.admission.actor._tag === "PeopleCreator",
+              callerLinkageSubject: command.admission.actor.linkageSubject,
+              expectedOperationVersion: command.expectedOperationVersion,
+              now: yield* Clock.currentTimeMillis,
+              operationId: command.operationId,
+            });
+            return yield* encodePeopleResult(
+              HouseholdMemberDepartureStart,
+              start
+            );
           })
         ),
       readMealPlan: (untrustedInput: HouseholdReadMealPlanInput) =>

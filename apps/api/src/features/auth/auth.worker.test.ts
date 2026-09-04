@@ -136,6 +136,55 @@ describe("Better Auth D1 control plane", () => {
     });
   });
 
+  it("persists the exact caller-supplied invitation id supported by Better Auth rc.6", async () => {
+    const database = drizzle(testEnv.MealPlannerAuthDatabase);
+    const auth = makeMealPlannerAuth({
+      baseURL,
+      database,
+      schema: authSchema,
+      secret,
+    });
+    const signUp = await auth.fetch(
+      authRequest("/sign-up/email", {
+        email: "exact-invitation-owner@example.test",
+        name: "Exact Invitation Owner",
+        password: "correct horse battery staple",
+      })
+    );
+    const cookie = cookieHeader(signUp);
+    const createOrganization = await auth.fetch(
+      authRequest(
+        "/organization/create",
+        { name: "Exact invitation", slug: "exact-invitation" },
+        cookie
+      )
+    );
+    const organization = (await createOrganization.json()) as { id: string };
+    const invitationId = "invitation-operation-fixed-0001";
+
+    const response = await auth.fetch(
+      authRequest(
+        "/organization/invite-member",
+        {
+          email: "exact-invitation-recipient@example.test",
+          id: invitationId,
+          organizationId: organization.id,
+          role: "member",
+        },
+        cookie
+      )
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: invitationId });
+    expect(
+      await database
+        .select({ id: authSchema.invitation.id })
+        .from(authSchema.invitation)
+        .where(eq(authSchema.invitation.id, invitationId))
+    ).toEqual([{ id: invitationId }]);
+  });
+
   it("rejects an active organization id without a matching membership", async () => {
     const database = drizzle(testEnv.MealPlannerAuthDatabase);
     const auth = makeMealPlannerAuth({
@@ -199,5 +248,85 @@ describe("Better Auth D1 control plane", () => {
       )
     );
     expect(householdError.reason).toBe("missing_membership");
+  });
+
+  it("keeps membership changes behind the controlled API and disables organization deletion", async () => {
+    const database = drizzle(testEnv.MealPlannerAuthDatabase);
+    const auth = makeMealPlannerAuth({
+      baseURL,
+      database,
+      schema: authSchema,
+      secret,
+    });
+    const signUp = await auth.fetch(
+      authRequest("/sign-up/email", {
+        email: "protected-household@example.test",
+        name: "Protected Household",
+        password: "correct horse battery staple",
+      })
+    );
+    expect(signUp.status).toBe(200);
+    const cookie = cookieHeader(signUp);
+    const createOrganization = await auth.fetch(
+      authRequest(
+        "/organization/create",
+        { name: "Protected household", slug: "protected-household" },
+        cookie
+      )
+    );
+    expect(createOrganization.status).toBe(200);
+    const organization = (await createOrganization.json()) as { id: string };
+
+    const removeMember = await auth.fetch(
+      authRequest(
+        "/organization/remove-member",
+        {
+          memberIdOrEmail: "protected-household@example.test",
+          organizationId: organization.id,
+        },
+        cookie
+      )
+    );
+    expect(removeMember.status).toBe(404);
+
+    const leaveOrganization = await auth.fetch(
+      authRequest(
+        "/organization/leave",
+        { organizationId: organization.id },
+        cookie
+      )
+    );
+    expect(leaveOrganization.status).toBe(404);
+
+    const deleteOrganization = await auth.fetch(
+      authRequest(
+        "/organization/delete",
+        { organizationId: organization.id },
+        cookie
+      )
+    );
+    expect(deleteOrganization.status).toBe(404);
+    await expect(
+      auth.api.deleteOrganization({
+        body: { organizationId: organization.id },
+        headers: new Headers({ cookie }),
+      })
+    ).rejects.toMatchObject({
+      body: { code: "ORGANIZATION_DELETION_DISABLED" },
+      status: "NOT_FOUND",
+    });
+
+    expect(
+      await database
+        .select({ id: authSchema.organization.id })
+        .from(authSchema.organization)
+        .where(eq(authSchema.organization.id, organization.id))
+    ).toEqual([{ id: organization.id }]);
+    expect(
+      await database
+        .select({ organizationId: authSchema.member.organizationId })
+        .from(authSchema.member)
+        .where(eq(authSchema.member.organizationId, organization.id))
+    ).toEqual([{ organizationId: organization.id }]);
   });
 });

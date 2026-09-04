@@ -15,6 +15,8 @@ export type HouseholdActorId = typeof HouseholdActorId.Type;
 export const HouseholdSystemPurpose = Schema.Literals([
   "batch_item_dispatch",
   "import_workflow_dispatch",
+  "member_departure_finalize",
+  "person_invitation_acceptance",
   "recipe_import_lifecycle_commit",
 ]);
 export type HouseholdSystemPurpose = typeof HouseholdSystemPurpose.Type;
@@ -126,13 +128,18 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "answer_recipe_import_action",
   "approve_meal_plan",
   "archive_household_person",
+  "associate_adult_invitation",
   "bootstrap_creator_person",
+  "cancel_member_departure",
   "cancel_recipe_import",
   "claim_import_batch_item",
   "claim_acquisition_attempt",
   "commit_acquisition_evidence",
   "mutate_evidence_stage",
   "commit_recipe_import_draft",
+  "complete_accepted_adult_link",
+  "confirm_adult_invitation_recipient",
+  "confirm_member_access_revoked",
   "create_meal_plan",
   "create_household_person",
   "create_meal_plan_from_recipe_bank",
@@ -140,9 +147,13 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "confirm_recipe_import_action",
   "complete_import_batch_item",
   "fail_import_batch_item",
+  "finalize_member_departure",
+  "get_member_departure",
   "list_recipe_bank",
   "list_household_people",
+  "mark_member_departure_repair_required",
   "observe_evidence_reference",
+  "prepare_member_departure",
   "prepare_recipe_recovery",
   "read_recipe",
   "get_household_person",
@@ -161,7 +172,11 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "read_meal_plan",
   "reject_meal_plan",
   "resolve_recipe_import_source",
+  "repair_adult_account_link",
+  "restore_returning_adult_link",
   "restore_household_person",
+  "retry_member_departure",
+  "start_member_departure",
   "swap_meal_plan",
   "swap_meal_plan_from_recipe_bank",
   "transition_recipe_import_lifecycle",
@@ -169,12 +184,27 @@ export const HouseholdCommandPurpose = Schema.Literals([
 
 const householdPeoplePurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
   "archive_household_person",
+  "cancel_member_departure",
+  "complete_accepted_adult_link",
   "create_household_person",
   "get_household_person",
+  "get_member_departure",
   "list_household_people",
+  "prepare_member_departure",
+  "restore_returning_adult_link",
   "restore_household_person",
+  "retry_member_departure",
+  "start_member_departure",
 ]);
 export type HouseholdCommandPurpose = typeof HouseholdCommandPurpose.Type;
+
+const householdPeopleOwnerPurposes: ReadonlySet<HouseholdCommandPurpose> =
+  new Set([
+    ...householdPeoplePurposes,
+    "associate_adult_invitation",
+    "bootstrap_creator_person",
+    "repair_adult_account_link",
+  ]);
 
 export const HouseholdAuthorizationFailure = Schema.TaggedStruct(
   "HouseholdAuthorizationFailure",
@@ -242,7 +272,7 @@ export const requireHouseholdCommandAdmission = (
         return householdPeoplePurposes.has(purpose);
       }
       case "PeopleCreator": {
-        return purpose === "bootstrap_creator_person";
+        return householdPeopleOwnerPurposes.has(purpose);
       }
       case "System": {
         return (
@@ -250,6 +280,13 @@ export const requireHouseholdCommandAdmission = (
             lifecycleCommitPurposes.has(purpose)) ||
           (admission.actor.purpose === "import_workflow_dispatch" &&
             purpose === "record_recipe_import_dispatch") ||
+          (admission.actor.purpose === "member_departure_finalize" &&
+            (purpose === "confirm_member_access_revoked" ||
+              purpose === "finalize_member_departure" ||
+              purpose === "get_member_departure" ||
+              purpose === "mark_member_departure_repair_required")) ||
+          (admission.actor.purpose === "person_invitation_acceptance" &&
+            purpose === "confirm_adult_invitation_recipient") ||
           (admission.actor.purpose === "batch_item_dispatch" &&
             batchDispatchPurposes.has(purpose))
         );

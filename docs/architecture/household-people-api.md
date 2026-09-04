@@ -17,6 +17,15 @@ membership's exact Better Auth `owner` role; another member receives
 | `POST /v1/household/people` | `displayName`, `adult\|dependant`, client-stable `mutationId` | New unlinked person, status 201 |
 | `POST /v1/household/people/:personId/archive` | `expectedVersion`, client-stable `mutationId` | Same archived person at next version |
 | `POST /v1/household/people/:personId/restore` | `expectedVersion`, client-stable `mutationId` | Same active person at next version |
+| `POST /v1/household/people/invitations` | Selected existing `personId`, invitation email, client-stable `mutationId` | Better Auth invitation plus privacy-safe association result |
+| `POST /v1/household/people/invitations/associate` | Existing invitation identity, selected `personId`, client-stable `mutationId` | Associated adult projection |
+| `POST /v1/household/people/links/complete` | Accepted invitation identity, client-stable `mutationId` | Existing adult linked to the admitted member |
+| `POST /v1/household/people/links/repair` | Selected adult, exact version, member identity, reason, client-stable `mutationId` | Explicitly repaired adult link |
+| `POST /v1/household/people/departures` | Exact person/link versions, member identity, reason, client-stable `mutationId` | Durable departure operation, status 202 |
+| `GET /v1/household/people/departures/:operationId` | Opaque operation ID | Privacy-safe durable operation state |
+| `POST /v1/household/people/departures/:operationId/cancel` | Exact operation version, client-stable `mutationId` | Cancelled prepared operation |
+| `POST /v1/household/people/departures/:operationId/retry` | Exact operation version, member identity, reason, client-stable `mutationId` | Reconciled departure operation, status 202 |
+| `POST /v1/household/people/return` | Accepted invitation identity, archived person and exact version, client-stable `mutationId` | Same restored and linked adult |
 
 Person projections contain only opaque ID, bounded display name, kind,
 lifecycle, version, timestamps, and whether the person is the current linked
@@ -65,9 +74,20 @@ creator setup again once the occupied slot is visible. It keeps the admitted
 account on the shared roster while account linking remains outside this work
 item.
 
-Invitation association, accepted account linking, explicit repair, departure,
-and return remain unimplemented Work Item 02 API scope. Their readiness and
-access-first cross-authority protocol are recorded in
+Invitation association stores only the purpose-bound invitation digest in the
+household object. After Better Auth authenticates the accepting user and
+verifies that user is the invitation recipient, its `beforeAcceptInvitation`
+hook commits the corresponding household-scoped linkage subject to that
+association. Link and return require that exact recorded subject; another
+admitted member cannot consume the accepted invitation. Link, repair,
+departure, and return never infer identity from email or display name. The
+API-owned native departure Workflow is durable
+before the live typed Better Auth membership mutation; it reconciles canonical
+membership after either a missing removal or a lost outcome signal, and only
+confirmed absence permits exact-purpose detach/archive finalization. Public
+Better Auth remove-member and leave routes remain disabled, organization
+deletion is disabled at the plugin, and credentials never enter Workflow or
+Household state. The complete access-first protocol is recorded in
 [Stage 1 Work Item 02](../delivery/stages/01-household-people/02-account-linking-invitations-and-departure.md)
 and
 [ADR-0010](decisions/0010-coordinate-membership-departure-before-person-archival.md).

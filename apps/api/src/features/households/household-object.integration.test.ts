@@ -80,6 +80,228 @@ const recipeImportReview = (
 
 /* eslint-disable no-use-before-define -- The cumulative tracer is grouped with its person fixture; runtime helpers are initialized before tests execute. */
 describe("household person registry on real Durable Object SQLite", () => {
+  it("requires accepted-recipient proof before linking an existing adult", async () => {
+    const organizationId = "org-person-invitation-link";
+    const objectName = await objectNameFor(organizationId);
+    const ownerActorId = "1".repeat(64);
+    const ownerLinkageSubject = "2".repeat(64);
+    const memberActorId = "3".repeat(64);
+    const memberLinkageSubject = "4".repeat(64);
+    const invitationDigest = "5".repeat(64);
+
+    await commandPeople({
+      actorId: ownerActorId,
+      displayName: "Household owner",
+      linkageSubject: ownerLinkageSubject,
+      mutationId: "link-bootstrap-owner",
+      objectName,
+      operation: "bootstrapCreatorPerson",
+      organizationId,
+    });
+    const adult = await commandPeople({
+      actorId: ownerActorId,
+      displayName: "Invited adult",
+      kind: "adult",
+      linkageSubject: ownerLinkageSubject,
+      mutationId: "link-create-adult",
+      objectName,
+      operation: "createHouseholdPerson",
+      organizationId,
+    });
+    expect(adult.ok).toBe(true);
+    const personId = (adult.value as { readonly id: string }).id;
+
+    const associated = await commandPeople({
+      actorId: ownerActorId,
+      invitationDigest,
+      invitationRequestDigest: "d".repeat(64),
+      linkageSubject: ownerLinkageSubject,
+      mutationId: "link-associate-invitation",
+      objectName,
+      operation: "associateAdultInvitation",
+      organizationId,
+      personId,
+    });
+    expect(associated).toMatchObject({
+      ok: true,
+      value: { associationState: "invitation_pending", id: personId },
+    });
+
+    const linked = await commandPeople({
+      actorId: memberActorId,
+      invitationDigest,
+      linkageSubject: memberLinkageSubject,
+      mutationId: "link-complete-accepted",
+      objectName,
+      operation: "completeAcceptedAdultLink",
+      organizationId,
+    });
+    expect(linked).toMatchObject({ ok: false });
+
+    const roster = await commandPeople({
+      actorId: ownerActorId,
+      includeArchived: true,
+      linkageSubject: ownerLinkageSubject,
+      objectName,
+      operation: "listHouseholdPeople",
+      organizationId,
+    });
+    expect(roster).toMatchObject({
+      ok: true,
+      value: { people: expect.any(Array) },
+    });
+    expect(
+      (roster.value as { readonly people: readonly unknown[] }).people
+    ).toHaveLength(2);
+  });
+
+  it("persists a coordinated departure through restart before detaching the adult", async () => {
+    const organizationId = "org-person-departure-return";
+    const objectName = await objectNameFor(organizationId);
+    const ownerActorId = "6".repeat(64);
+    const ownerLinkageSubject = "7".repeat(64);
+    const memberActorId = "8".repeat(64);
+    const memberLinkageSubject = "9".repeat(64);
+
+    await commandPeople({
+      actorId: ownerActorId,
+      displayName: "Household owner",
+      linkageSubject: ownerLinkageSubject,
+      mutationId: "departure-bootstrap-owner",
+      objectName,
+      operation: "bootstrapCreatorPerson",
+      organizationId,
+    });
+    const created = await commandPeople({
+      actorId: ownerActorId,
+      displayName: "Departing adult",
+      kind: "adult",
+      linkageSubject: ownerLinkageSubject,
+      mutationId: "departure-create-adult",
+      objectName,
+      operation: "createHouseholdPerson",
+      organizationId,
+    });
+    expect(created.ok, JSON.stringify(created)).toBe(true);
+    const personId = (created.value as { readonly id: string }).id;
+    const linked = await commandPeople({
+      actorId: ownerActorId,
+      expectedPersonVersion: (created.value as { readonly version: number })
+        .version,
+      linkageSubject: ownerLinkageSubject,
+      mutationId: "departure-repair-link",
+      objectName,
+      operation: "repairAdultAccountLink",
+      organizationId,
+      personId,
+      reason: "Explicitly link the departing adult",
+      targetLinkageSubject: memberLinkageSubject,
+    });
+    const linkedVersion = (linked.value as { readonly version: number })
+      .version;
+
+    const prepared = await commandPeople({
+      actorId: memberActorId,
+      expectedLinkVersion: 1,
+      expectedPersonVersion: linkedVersion,
+      linkageSubject: memberLinkageSubject,
+      mutationId: "departure-prepare",
+      objectName,
+      operation: "prepareMemberDeparture",
+      organizationId,
+      personId,
+      reason: "Leaving this household",
+      targetLinkageSubject: memberLinkageSubject,
+    });
+    expect(prepared).toMatchObject({
+      ok: true,
+      value: { personId, state: "prepared", version: 1 },
+    });
+    const { operationId } = prepared.value as { readonly operationId: string };
+
+    const started = await commandPeople({
+      actorId: memberActorId,
+      expectedOperationVersion: 1,
+      linkageSubject: memberLinkageSubject,
+      objectName,
+      operation: "startMemberDeparture",
+      operationId,
+      organizationId,
+    });
+    expect(started).toMatchObject({
+      ok: true,
+      value: {
+        attemptClaimed: true,
+        operation: { state: "revoking_access", version: 2 },
+      },
+    });
+
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const persisted = await commandPeople({
+      objectName,
+      operation: "readMemberDepartureSystem",
+      operationId,
+      organizationId,
+    });
+    expect(persisted).toMatchObject({
+      ok: true,
+      value: {
+        operation: { state: "revoking_access", version: 2 },
+        targetLinkageSubject: memberLinkageSubject,
+      },
+    });
+
+    const accessRevoked = await commandPeople({
+      expectedOperationVersion: 2,
+      objectName,
+      operation: "confirmMemberAccessRevoked",
+      operationId,
+      organizationId,
+    });
+    expect(accessRevoked).toMatchObject({
+      ok: true,
+      value: { state: "access_revoked", version: 3 },
+    });
+    const finalized = await commandPeople({
+      expectedOperationVersion: 3,
+      objectName,
+      operation: "finalizeMemberDeparture",
+      operationId,
+      organizationId,
+    });
+    expect(finalized).toMatchObject({
+      ok: true,
+      value: { state: "completed", version: 4 },
+    });
+
+    const archivedRoster = await commandPeople({
+      actorId: ownerActorId,
+      includeArchived: true,
+      linkageSubject: ownerLinkageSubject,
+      objectName,
+      operation: "listHouseholdPeople",
+      organizationId,
+    });
+    const archivedPerson = (
+      archivedRoster.value as {
+        readonly people: readonly {
+          readonly associationState: string;
+          readonly id: string;
+          readonly lifecycle: string;
+          readonly version: number;
+        }[];
+      }
+    ).people.find((person) => person.id === personId);
+    expect(archivedPerson).toMatchObject({
+      associationState: "detached",
+      lifecycle: "archived",
+    });
+    if (archivedPerson === undefined) {
+      throw new Error("Expected the departed adult to remain in the roster");
+    }
+  }, 30_000);
+
   it("preserves replay, lifecycle, races, restart, and household isolation", async () => {
     const organizationId = "org-person-registry-a";
     const objectName = await objectNameFor(organizationId);

@@ -20,9 +20,13 @@ import {
   makeHouseholdMealPlanGateway,
   makeHouseholdMealPlanRequestLayer,
   makeHouseholdPeopleGateway,
+  makeHouseholdInvitationRecipientVerifier,
   makeHouseholdPeopleRequestLayer,
   makeHouseholdRequestLayer,
 } from "./features/households/household-request-composition.js";
+import { makeHouseholdPeopleControlPlane } from "./features/households/people/household-people.control-plane.js";
+import { makeMemberDepartureWorkflowStarter } from "./features/households/people/member-departure.js";
+import MemberDepartureWorkflow from "./features/households/people/member-departure.workflow.js";
 import HouseholdImportBatchItemWorkflow from "./features/imports/household-import-batch-item.workflow.js";
 import {
   handleHouseholdImportBatchDeadLetterMessage,
@@ -97,6 +101,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     );
     const importAcquisitionWorkflow = yield* ImportAcquisitionWorkflow;
     const importRecipeRecoveryWorkflow = yield* ImportRecipeRecoveryWorkflow;
+    const memberDepartureWorkflow = yield* MemberDepartureWorkflow;
     const householdBatchItemWorkflow = yield* HouseholdImportBatchItemWorkflow;
     const householdBatchQueue = yield* HouseholdImportBatchQueue;
     const householdBatchDeadLetterQueue =
@@ -167,6 +172,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           database: authDatabase,
           schema: authSchema,
           secret: Redacted.value(authSecret),
+          verifyInvitationRecipient:
+            makeHouseholdInvitationRecipientVerifier(householdDomain),
         });
         if (new URL(webRequest.url).pathname.startsWith("/api/auth/")) {
           return HttpServerResponse.fromWeb(
@@ -209,7 +216,16 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           }
         );
         const householdPeopleRequestLayer = makeHouseholdPeopleRequestLayer({
-          gateway: makeHouseholdPeopleGateway({ domain: householdDomain }),
+          gateway: makeHouseholdPeopleGateway({
+            controlPlane: makeHouseholdPeopleControlPlane({
+              auth,
+              database: authDatabase,
+            }),
+            departureWorkflow: makeMemberDepartureWorkflowStarter(
+              memberDepartureWorkflow
+            ),
+            domain: householdDomain,
+          }),
           resolver: authenticatedOrganizationResolver,
         });
         const routeHandler = yield* HttpRouter.toHttpEffect(

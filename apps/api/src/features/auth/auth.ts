@@ -7,6 +7,11 @@ export interface MealPlannerAuthOptions {
   readonly database: Parameters<typeof drizzleAdapter>[0];
   readonly schema?: Record<string, unknown>;
   readonly secret: string;
+  readonly verifyInvitationRecipient?: (input: {
+    readonly invitationId: string;
+    readonly organizationId: string;
+    readonly userId: string;
+  }) => Promise<void>;
 }
 
 /** Construct the Better Auth control plane with the same plugins in every runtime. */
@@ -15,6 +20,7 @@ export const makeMealPlannerAuth = ({
   database,
   schema,
   secret,
+  verifyInvitationRecipient,
 }: MealPlannerAuthOptions) => {
   const adapterOptions =
     schema === undefined
@@ -24,8 +30,39 @@ export const makeMealPlannerAuth = ({
     appName: "Meal Planner",
     baseURL,
     database: drizzleAdapter(database, adapterOptions),
+    disabledPaths: ["/organization/leave", "/organization/remove-member"],
     emailAndPassword: { enabled: true },
-    plugins: [organization()],
+    plugins: [
+      organization({
+        disableOrganizationDeletion: true,
+        organizationHooks:
+          verifyInvitationRecipient === undefined
+            ? undefined
+            : {
+                beforeAcceptInvitation: ({
+                  invitation,
+                  organization: acceptedOrganization,
+                  user,
+                }) =>
+                  verifyInvitationRecipient({
+                    invitationId: invitation.id,
+                    organizationId: acceptedOrganization.id,
+                    userId: user.id,
+                  }),
+              },
+        schema: {
+          invitation: {
+            additionalFields: {
+              id: {
+                input: true,
+                required: false,
+                type: "string",
+              },
+            },
+          },
+        },
+      }),
+    ],
     secret,
     trustedOrigins: [baseURL],
   });

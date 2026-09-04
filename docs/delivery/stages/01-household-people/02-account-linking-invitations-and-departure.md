@@ -1,9 +1,9 @@
 # Work Item 02 — Account Linking, Invitations, And Departure
 
-- Status: Ready
+- Status: In progress
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
-- Owner: Unassigned
-- Pull request: Not opened
+- Owner: `codex/stage1-account-linking-invitations-departure`
+- Pull request: [PR #201](https://github.com/cill-i-am/meal-planner/pull/201)
 - Completed by: Not completed
 - Promotion condition: Satisfied on 2026-09-01 by merged Work Item 01 evidence
   and accepted ADR-0010
@@ -117,6 +117,8 @@ skip the canonical transitions.
 - `GetCurrentPersonLink` identifies the admitted member's linked person.
 - `GetDepartureOperation(operationId)` exposes an organizer-safe reconciliation
   state without raw Better Auth identifiers.
+- `GetDepartureOperationByPreparationMutation(mutationId)` rediscovers the
+  exact durable operation after the initial departure response is lost.
 
 ## States, Transitions, And Invariants
 
@@ -171,8 +173,10 @@ user/member identity, session information, or private Better Auth errors.
 - Better Auth D1 remains canonical for invitation and membership state.
 - `HouseholdObject` remains canonical for invitation-to-person association,
   account-to-person link, person lifecycle, audit, operation, and receipt state.
-- Raw invitation ID is admitted only at the API boundary and converted to a
-  purpose-bound one-way digest before entering household storage.
+- One deterministic Better Auth invitation ID is derived from the household and
+  original invitation mutation. Only its purpose-bound one-way digest and an
+  exact request digest enter household storage; email and raw provider identity
+  do not.
 - The household transaction atomically updates link/person/operation versions,
   appends audit, and records a receipt. Better Auth calls occur outside that
   transaction.
@@ -233,6 +237,9 @@ the accepted household deletion lifecycle exists.
 - A start/repair receipt replay or concurrent loser cannot repeat membership
   removal. Only a fresh transition winner may make one attempt after the
   deterministic Workflow instance is confirmed durable.
+- The preparation mutation is retained on the durable departure operation, so
+  an initial lost response or browser refresh can rediscover that operation
+  without an operation code or a replacement departure command.
 - If the Workflow is durable but removal was not attempted or committed, its
   missing-signal timeout reads membership as present and records visible
   revocation repair. If removal committed but the result signal was lost, the
@@ -251,39 +258,56 @@ the accepted household deletion lifecycle exists.
 
 ## Minimum API Surface
 
-- An authenticated organizer endpoint that creates a Better Auth invitation and
-  then associates it with a selected unlinked adult person, reporting partial
-  failure explicitly.
+- An authenticated organizer endpoint that durably records one exact
+  invitation intent for the selected unlinked adult before creating the
+  deterministically identified Better Auth invitation.
+- An authenticated organizer reconciliation endpoint that checks only the
+  invitation derived from that original intent and finishes its existing
+  household association. This endpoint is read-only with respect to Better
+  Auth invitation creation; it cannot list or select other pending invitations.
 - An admitted member endpoint to complete an accepted invitation link.
 - Organizer endpoints for explicit link repair and departure initiation.
 - Member/owner cancellation and owner repair endpoints for the exact durable
   departure operation.
 - A returning-member endpoint to restore/link a selected archived adult after
   acceptance.
-- Roster/current-link/departure-operation queries with the privacy-safe
+- Roster/current-link/departure-operation queries, including exact departure
+  lookup by the retained preparation mutation, with the privacy-safe
   projections above.
 
 The API must preserve the separation between Better Auth outcome and household
-outcome; it must not report one combined success when the second authority has
-not committed. If invitation creation succeeds but association is lost, retry
-the association using the exact returned invitation identity rather than
-creating another invitation. If the create response itself is ambiguous, the
-organizer reconciles against Better Auth's pending invitations and explicitly
-selects the intended invitation and person. Zero or multiple candidates remain
-visible conflicts; the API must not choose by email or name.
+outcome. It records the exact household invitation intent before the provider
+call, and provider creation uses the deterministic invitation ID derived from
+that intent. The exact invitation command is replayable with its original
+person, email, payload, and mutation: if the provider call never committed, the
+replay creates the missing invitation at that deterministic ID; if the provider
+committed but its response was lost, the replay reads and reuses that exact
+invitation. The separate association endpoint only reads that derived provider
+invitation and reconciles its existing household association. Neither path
+lists candidates for the organizer to guess, chooses among same-organization
+invitations, matches by email or name, or creates a replacement invitation or
+mutation.
 
 ## Minimum UI Surface
 
 - Select an existing unlinked adult before sending an invitation.
 - Show pending invitation state without exposing stored email after submission.
+- Preserve the exact original invitation payload and mutation across an
+  ambiguous response or refresh, then offer one action that replays that exact
+  invitation command. The replay creates its missing deterministic provider
+  invitation or reuses that exact invitation without showing candidate IDs.
 - After acceptance, confirm the associated person or choose an explicit
   unlinked-adult repair path when association is missing.
 - Show linked current adult, departure-pending, archived, and returning-person
   states.
 - Require confirmation for departure and explain that access is revoked before
   roster archival completes.
-- Offer retry/reconcile actions for visible partial failures; never create a
-  replacement person as recovery.
+- Preserve the exact original departure payload before submission, rediscover
+  its operation by preparation mutation after an ambiguous response or refresh,
+  and offer only admitted status, retry, or cancellation actions against that
+  same operation.
+- Never create a replacement person, invitation, mutation, or departure
+  operation as recovery.
 
 ## Vertical Tracer
 
@@ -311,49 +335,67 @@ visible conflicts; the API must not choose by email or name.
 - [x] ADR-0010 fixes coordinator ownership, closed states, ordering, replay,
   timeout, restart, cancellation, authorization, privacy, race, and repair
   semantics before implementation starts.
-- [ ] Invitation association, accepted linking, explicit repair, departure,
+- [x] Invitation association, accepted linking, explicit repair, departure,
   reconciliation, return, and cardinality invariants have domain tests.
-- [ ] Raw invitation/email/auth identity cannot enter household schemas or
+- [x] Raw invitation/email/auth identity cannot enter household schemas or
   projections.
-- [ ] Replay, collision, stale version, association races, duplicate acceptance,
+- [x] Replay, collision, stale version, association races, duplicate acceptance,
   departure/return races, and repair conflicts are deterministic.
-- [ ] Public contracts distinguish Better Auth failure, household failure,
+- [x] Public contracts distinguish Better Auth failure, household failure,
   pending reconciliation, conflict, and completion.
-- [ ] UI tests cover selection, acceptance, repair, partial failure, revoked
+- [x] UI tests cover selection, acceptance, repair, partial failure, revoked
   access, pending departure, archive, and return.
 
 ### Real boundary proof
 
-- [ ] Real Better Auth D1 invitation acceptance and membership removal run
+- [x] Real Better Auth D1 invitation acceptance and membership removal run
   against a real routed `HouseholdObject` in Workerd or Miniflare.
-- [ ] In real Workerd with Better Auth D1 and a routed `HouseholdObject`, kill
+- [x] In real Workerd with Better Auth D1 and a routed `HouseholdObject`, kill
   the API after deterministic Workflow creation but before membership removal
   commits; the waiting Workflow times out, reads `present`, records visible
   repair, and a fresh authorized retry does not duplicate the operation.
-- [ ] In that same real boundary, commit membership removal and kill the API
+- [x] In that same real boundary, commit membership removal and kill the API
   before its outcome event is delivered; the waiting Workflow times out, reads
   `absent`, and confirms/finalizes exactly once without the departed session.
-- [ ] Against pinned Better Auth `1.7.0-rc.6` in the real API runtime, an
+- [x] Against pinned Better Auth `1.7.0-rc.6` in the real API runtime, an
   owner-authenticated `POST /organization/delete` and a typed
   `auth.api.deleteOrganization` call are both rejected as disabled; Better Auth
   D1 organization/memberships and the routed `HouseholdObject` remain intact.
-- [ ] Other lost responses before and after each authority commit reconcile
+- [x] Other lost responses before and after each authority commit reconcile
   without duplicate people, links, membership mutation, audit, or archive.
-- [ ] Restart during pending departure completes from durable state.
-- [ ] Membership removal revokes API/object routing before person archive is
+- [x] An interruption after the Household invitation receipt but before Better
+  Auth creation survives runtime restart; read-only association leaves the
+  provider empty, while exact browser-command replay creates the original
+  deterministic invitation without a new person or mutation.
+- [x] With multiple pending invitations in one organization, a committed
+  invitation whose response is lost is recovered by exact browser-command
+  replay only at the deterministic ID bound to its original person, payload
+  digest, and mutation.
+- [x] A committed departure whose initial response is lost is rediscovered
+  after refresh by its original preparation mutation; status, retry,
+  cancellation, and finalization retain the same operation.
+- [x] Restart during pending departure completes from durable state.
+- [x] Membership removal revokes API/object routing before person archive is
   finalized.
-- [ ] Same-user/multiple-household and cross-household isolation are proven
+- [x] Same-user/multiple-household and cross-household isolation are proven
   through production auth/API routes.
 
 ### Repository and review gates
 
-- [ ] Root format, lint, type checks, full tests, builds, applicable container,
-  and hosted CI pass.
-- [ ] Better Auth, household-domain, public contract, UI, stage, and current
+- [x] Root format, lint, type checks, full tests, builds, and the applicable
+  container pass for the corrected implementation.
+- [x] Hosted CI passes for exact evidence head
+  `8f97e8e6a12646eac42a33f427314f2c8eb854aa`: Quality and Synthetic media
+  container both succeeded in
+  [run 33865785353](https://github.com/cill-i-am/meal-planner/actions/runs/33865785353).
+- [x] Better Auth, household-domain, public contract, UI, stage, and current
   delivery docs reflect the shipped protocol.
-- [ ] A completely fresh independent exact-head review disposes identity,
-  privacy, authorization-ordering, saga/reconciliation, replay, and test-
-  integrity risks.
+- [x] A completely fresh independent review of exact evidence head
+  `8f97e8e6a12646eac42a33f427314f2c8eb854aa` disposed identity, privacy,
+  authorization-ordering, saga/reconciliation, replay, and test-integrity
+  risks; its sole finding was stale repository delivery evidence.
+- [ ] Final exact verification confirms the docs-only replacement head and its
+  delivery evidence before merge disposition.
 
 ## Review Risk
 
@@ -421,3 +463,95 @@ exact-head review is required, and green CI is not merge authority.
   fresh exact-head review: Work Item 02 must disable organization deletion at
   the organization plugin and prove both HTTP and typed API rejection against
   the pinned version. Organization-deletion behavior remains out of scope.
+- 2026-09-02 — Implemented the working vertical on the dedicated delivery
+  branch: explicit invitation association and accepted-member linking reuse the
+  existing person; link repair and return are admitted explicit operations; a
+  native departure Workflow coordinates access-first removal and durable
+  Household finalization. Real Better Auth D1 plus routed HouseholdObject tests
+  cover both crash windows, restart repair, last-owner rejection, replacement
+  membership, replay, and privacy-safe projections. Final repository and
+  exact-head review gates remain pending.
+- 2026-09-02 — Replaced accepted-invitation email inference with an explicit
+  acceptance-boundary proof. Better Auth first authenticates and verifies the
+  invitation recipient, then its `beforeAcceptInvitation` hook records only
+  the invitation digest and household-scoped linkage subject in
+  `HouseholdObject`. Complete and return require that exact subject. Real
+  routed-object tests reject another admitted member for both operations and
+  prove one winner under concurrent link commands, with no email comparison or
+  household email storage.
+- 2026-09-03 — Froze the focused exact-recovery correction as implementation
+  commit `accc194dc61cd19ab6fb796680fb4d1e5255052d`. The organizer UI now
+  lists privacy-safe pending Better Auth invitation IDs after an ambiguous
+  create response and associates the explicitly selected exact invitation with
+  the retained person, payload, and mutation ID. It never replays invitation
+  creation or infers identity from email or name. The same browser surface now
+  retains the exact departure operation ID, renders pending,
+  `revocation_repair_required`, and `finalization_repair_required`, and admits
+  only exact-operation lookup, retry, or cancellation. Executable REDs covered
+  household association failure, Better Auth commit with a lost create
+  response, and durable departure repair/finalization states. Corrected focused
+  contract and UI suites pass 6/6 and 58/58; the full real Better Auth D1 plus
+  routed `HouseholdObject` boundary passes 49/49, including both invitation
+  recovery windows and both departure crash windows without replacement IDs.
+  Root format (392 files), lint, type checks, full tests (138 architecture, 22
+  household contract, 31 recipe contract, 87 web, and 821 API), production
+  build, twice/no-diff schema and migration generation, and the container gate
+  (1/1 in 1,081.73 seconds) are green. PR #201 remains draft and this work item
+  remains `In progress` until hosted CI and a fresh independent exact-head
+  review pass.
+- 2026-09-03 — Independent review of head
+  `8262666eb3fda5dc9e80ed26c03dc5124977237e` held the draft: its opaque
+  pending-invitation picker could bind an unrelated invitation, and an initial
+  lost departure response left the generated operation undiscoverable after
+  refresh.
+- 2026-09-03 — Froze the exact correction as implementation commit
+  `d23c90da9ee32244ed6c7b6779a77e5f5fe83b85`. The API now commits the
+  household invitation intent before its provider call and derives one Better
+  Auth invitation ID from the original household and mutation. Reconciliation
+  checks only that ID and the retained request digest; the browser no longer
+  lists or selects opaque candidates. The browser also retains the original
+  departure payload before submission and rediscovers its durable operation by
+  the preparation mutation after an ambiguous response or refresh. Real
+  Better Auth D1 plus routed-`HouseholdObject` proof passes 49/49, including an
+  unrelated same-organization pending invitation and both departure recovery
+  paths without replacement IDs. Root tests pass 138 architecture/Alchemy, 22
+  household contract, 31 recipe contract, 85 web, and 822 API tests; format,
+  lint, type checks, production build, two consecutive no-diff household
+  migration generations, and the container gate (1/1 in 1,024.08 seconds) are
+  green. Hosted
+  [run 33815121584](https://github.com/cill-i-am/meal-planner/actions/runs/33815121584)
+  passes Quality in 13m19s and Synthetic media container in 7m55s for exact
+  evidence head `6ddcfe65d3b5dbd7817aedfc0c3361e6e9aadeba`. PR #201 remains
+  draft and this work item remains `In progress` until a completely fresh
+  independent exact-head review passes.
+- 2026-09-04 — Independent review of head
+  `24806d639ee4e04df587710c25f0cc20ffc53f6f` held the draft because the
+  browser sent its retained ambiguous invitation to the read-only association
+  operation. That recovered a committed provider invitation but could not
+  finish an interruption before Better Auth creation.
+- 2026-09-04 — Froze the exact invitation-replay correction as implementation
+  commit `2328fb2c3419912b805410d29a6e37d3268a00dc`. A browser RED proved
+  the stale behavior, then the corrected UI retained and replayed the original
+  person, intended email, full payload, and mutation through `inviteAdult`
+  after remount while sibling person mutations stayed disabled. The
+  `associateInvitation` operation remains provider-creation-read-only. Real
+  Website-to-API Workerd proof with Better Auth D1 and the routed
+  `HouseholdObject` passes 49/49: after an interruption before provider
+  creation, only the exact replay creates the missing deterministic invitation;
+  after a committed response is lost, that replay reuses the original despite
+  another pending invitation. Root tests pass 138 architecture/Alchemy, 22
+  household contract, 31 recipe contract, 85 web, and 822 API tests; format,
+  lint, type checks, production build, two consecutive no-diff household
+  migration generations, and the container gate (1/1 in 1,033.04 seconds) are
+  green. Hosted CI for the frozen replacement head and a completely fresh
+  independent exact-head review remain pending, so PR #201 stays draft and
+  this work item stays `In progress`.
+- 2026-09-04 — Exact evidence head
+  `8f97e8e6a12646eac42a33f427314f2c8eb854aa` retains behavior freeze
+  `2328fb2c3419912b805410d29a6e37d3268a00dc`. Hosted
+  [run 33865785353](https://github.com/cill-i-am/meal-planner/actions/runs/33865785353)
+  passed Quality in 14m08s and Synthetic media container in 11m44s. A fresh
+  independent review of that exact evidence head found no remaining behavioral
+  issue and held only the stale repository delivery wording corrected here.
+  PR #201 remains draft and this work item remains `In progress` pending final
+  exact verification and disposition of the docs-only replacement head.

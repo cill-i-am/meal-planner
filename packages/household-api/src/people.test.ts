@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  AssociateHouseholdAdultInvitationPayload,
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
   HouseholdPeopleBootstrapConflictProblem,
@@ -134,6 +135,28 @@ describe("household people public contract", () => {
       Schema.decodeUnknownSync(HouseholdPeoplePrincipal)({
         ...principal,
         creatorAuthority: "first_member",
+      })
+    ).toThrow();
+  });
+
+  it("recovers an invitation only from the retained original intent", () => {
+    expect(
+      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
+        email: "adult@example.test",
+        mutationId: "invitation-original-intent",
+        personId: "person_00000000-0000-4000-8000-000000000101",
+      })
+    ).toEqual({
+      email: "adult@example.test",
+      mutationId: "invitation-original-intent",
+      personId: "person_00000000-0000-4000-8000-000000000101",
+    });
+    expect(() =>
+      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
+        email: "adult@example.test",
+        invitationId: "invitation-chosen-by-the-browser",
+        mutationId: "invitation-original-intent",
+        personId: "person_00000000-0000-4000-8000-000000000101",
       })
     ).toThrow();
   });

@@ -1,20 +1,32 @@
 import {
+  CancelHouseholdAdultDeparturePayload,
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
+  HouseholdPeopleOperationReason,
   HouseholdPersonDisplayName,
   HouseholdPersonMutationId,
+  RetryHouseholdAdultDeparturePayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
-import type { HouseholdPerson } from "@meal-planner/household-api";
+import type {
+  HouseholdMemberDepartureOperation,
+  HouseholdMemberDepartureOperationId,
+  HouseholdPerson,
+} from "@meal-planner/household-api";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
-import { useRef } from "react";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
+import {
+  DepartureRecovery,
+  HouseholdAssociationControls,
+  PendingInvitationReconciliation,
+} from "./household-association-controls.js";
 import {
   householdPeopleFailureCode,
   isAmbiguousHouseholdPeopleFailure,
@@ -23,6 +35,14 @@ import type {
   HouseholdPeopleOperationFailureCode,
   HouseholdPeopleOperations,
 } from "./operations.js";
+import {
+  clearDepartureIntent,
+  clearInvitationIntent,
+  retainedHouseholdPeopleIntents,
+  retainDepartureIntent,
+  retainInvitationIntent,
+  subscribeToRetainedHouseholdPeopleIntents,
+} from "./retained-intents.js";
 
 const mutationId = () =>
   Schema.decodeUnknownSync(HouseholdPersonMutationId)(crypto.randomUUID());
@@ -317,7 +337,7 @@ const PeopleList = ({
     defaultValues: { personId: null as null | string },
   });
 
-  return (
+  const renderPanel = () => (
     <ul className="people-list">
       {people.map((person) => (
         <li
@@ -410,6 +430,7 @@ const PeopleList = ({
       ))}
     </ul>
   );
+  return renderPanel();
 };
 
 const firstError = (errors: readonly (Error | null)[]) =>
@@ -426,6 +447,16 @@ interface TransitionMutationVariables {
   readonly action: "archive" | "restore";
   readonly personId: Parameters<HouseholdPeopleOperations["archive"]>[0];
   readonly payload: TransitionHouseholdPersonPayload;
+}
+
+interface CancelDepartureMutationVariables {
+  readonly operationId: HouseholdMemberDepartureOperationId;
+  readonly payload: CancelHouseholdAdultDeparturePayload;
+}
+
+interface RetryDepartureMutationVariables {
+  readonly operationId: HouseholdMemberDepartureOperationId;
+  readonly payload: RetryHouseholdAdultDeparturePayload;
 }
 
 const TransitionRetryIntentActions = ({
@@ -449,11 +480,37 @@ const TransitionRetryIntentActions = ({
     />
   );
 
+const AssociationRetryIntent = <Payload,>({
+  disabled,
+  label,
+  mutation,
+  onRetry,
+}: {
+  readonly disabled: boolean;
+  readonly label: string;
+  readonly mutation: {
+    readonly error: Error | null;
+    readonly variables: Payload | undefined;
+  };
+  readonly onRetry: (payload: Payload) => void;
+}) => {
+  const { variables } = mutation;
+  return hasAmbiguousRetryIntent(mutation) && variables !== undefined ? (
+    <RetryIntentActions
+      disabled={disabled}
+      onRetry={() => onRetry(variables)}
+      retryLabel={label}
+    />
+  ) : null;
+};
+
 /** Minimal explicit household roster and lifecycle surface. */
 export const HouseholdPeoplePanel = ({
+  currentMemberId,
   operations,
   organizationId,
 }: {
+  readonly currentMemberId?: string;
   readonly operations: HouseholdPeopleOperations;
   readonly organizationId: string;
 }) => {
@@ -462,6 +519,33 @@ export const HouseholdPeoplePanel = ({
   const queryKey = ["household-people", organizationId] as const;
   const roster = useQuery({ queryFn: () => operations.list(true), queryKey });
   const refresh = () => queryClient.invalidateQueries({ queryKey });
+  const subscribeToRetainedIntents = useCallback(
+    (listener: () => void) =>
+      subscribeToRetainedHouseholdPeopleIntents(organizationId, listener),
+    [organizationId]
+  );
+  const readRetainedIntents = useCallback(
+    () => retainedHouseholdPeopleIntents(organizationId),
+    [organizationId]
+  );
+  const retainedIntents = useSyncExternalStore(
+    subscribeToRetainedIntents,
+    readRetainedIntents,
+    readRetainedIntents
+  );
+  const departureState = useForm({
+    defaultValues: {
+      operation: null as HouseholdMemberDepartureOperation | null,
+    },
+  });
+  const acceptDepartureOperation = (
+    operation: HouseholdMemberDepartureOperation
+  ) => {
+    departureState.setFieldValue("operation", operation);
+    if (operation.state === "completed" || operation.state === "cancelled") {
+      clearDepartureIntent(organizationId);
+    }
+  };
   const bootstrap = useMutation({
     mutationFn: (payload: BootstrapHouseholdCreatorPayload) =>
       operations.bootstrapCreator(payload),
@@ -499,56 +583,178 @@ export const HouseholdPeoplePanel = ({
     onSuccess: refresh,
     retry: retryAmbiguousFailure,
   });
+  const inviteAdult = useMutation({
+    mutationFn:
+      operations.inviteAdult ??
+      (() => Promise.reject(new Error("unsupported"))),
+    onMutate: (payload) => {
+      retainInvitationIntent(organizationId, payload);
+    },
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: () => {
+      clearInvitationIntent(organizationId);
+      void refresh();
+    },
+    retry: false,
+  });
+  const completeAdultLink = useMutation({
+    mutationFn:
+      operations.completeAdultLink ??
+      (() => Promise.reject(new Error("unsupported"))),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: refresh,
+    retry: retryAmbiguousFailure,
+  });
+  const departAdult = useMutation({
+    mutationFn:
+      operations.departAdult ??
+      (() => Promise.reject(new Error("unsupported"))),
+    onMutate: (payload) => {
+      retainDepartureIntent(organizationId, payload);
+    },
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: (operation) => {
+      acceptDepartureOperation(operation);
+      void refresh();
+    },
+    retry: false,
+  });
+  const getDeparture = useMutation({
+    mutationFn: (operationId: HouseholdMemberDepartureOperationId) =>
+      operations.getDeparture === undefined
+        ? Promise.reject(new Error("unsupported"))
+        : operations.getDeparture(operationId),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: (operation) => {
+      acceptDepartureOperation(operation);
+    },
+    retry: retryAmbiguousFailure,
+  });
+  const getDepartureByMutation = useMutation({
+    mutationFn: (
+      retainedMutationId: NonNullable<
+        (typeof retainedIntents)["departure"]
+      >["mutationId"]
+    ) =>
+      operations.getDepartureByMutation === undefined
+        ? Promise.reject(new Error("unsupported"))
+        : operations.getDepartureByMutation(retainedMutationId),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: acceptDepartureOperation,
+    retry: retryAmbiguousFailure,
+  });
+  const cancelDeparture = useMutation({
+    mutationFn: ({ operationId, payload }: CancelDepartureMutationVariables) =>
+      operations.cancelDeparture === undefined
+        ? Promise.reject(new Error("unsupported"))
+        : operations.cancelDeparture(operationId, payload),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: (operation) => {
+      acceptDepartureOperation(operation);
+      void refresh();
+    },
+    retry: retryAmbiguousFailure,
+  });
+  const retryDeparture = useMutation({
+    mutationFn: ({ operationId, payload }: RetryDepartureMutationVariables) =>
+      operations.retryDeparture === undefined
+        ? Promise.reject(new Error("unsupported"))
+        : operations.retryDeparture(operationId, payload),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: (operation) => {
+      acceptDepartureOperation(operation);
+      void refresh();
+    },
+    retry: retryAmbiguousFailure,
+  });
+  const repairAdultLink = useMutation({
+    mutationFn:
+      operations.repairAdultLink ??
+      (() => Promise.reject(new Error("unsupported"))),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: refresh,
+    retry: retryAmbiguousFailure,
+  });
+  const returnAdult = useMutation({
+    mutationFn:
+      operations.returnAdult ??
+      (() => Promise.reject(new Error("unsupported"))),
+    onSettled: () => {
+      personActionLock.current = false;
+    },
+    onSuccess: refresh,
+    retry: retryAmbiguousFailure,
+  });
   const isPersonMutationPending = [
     bootstrap.isPending,
+    cancelDeparture.isPending,
+    completeAdultLink.isPending,
     create.isPending,
+    departAdult.isPending,
+    getDeparture.isPending,
+    getDepartureByMutation.isPending,
+    inviteAdult.isPending,
+    repairAdultLink.isPending,
+    retryDeparture.isPending,
+    returnAdult.isPending,
     transition.isPending,
   ].some(Boolean);
-  const hasUnresolvedAmbiguousIntent = [bootstrap, create, transition].some(
-    hasAmbiguousRetryIntent
-  );
+  const hasUnresolvedGenericIntent = [
+    bootstrap,
+    completeAdultLink,
+    create,
+    repairAdultLink,
+    returnAdult,
+    transition,
+  ].some(hasAmbiguousRetryIntent);
+  const invitationNeedsReconciliation =
+    retainedIntents.invitation !== null && !inviteAdult.isPending;
+  const invitationIntentActive = retainedIntents.invitation !== null;
   const resetSettledMutations = () => {
     resetMutationIfSettled(bootstrap);
+    resetMutationIfSettled(cancelDeparture);
     resetMutationIfSettled(create);
+    resetMutationIfSettled(inviteAdult);
+    resetMutationIfSettled(completeAdultLink);
+    resetMutationIfSettled(departAdult);
+    resetMutationIfSettled(getDeparture);
+    resetMutationIfSettled(getDepartureByMutation);
+    resetMutationIfSettled(repairAdultLink);
+    resetMutationIfSettled(retryDeparture);
+    resetMutationIfSettled(returnAdult);
     resetMutationIfSettled(transition);
-  };
-  const runIfIdle = (action: () => void, allowAmbiguousRetry = false) => {
-    if (
-      personActionLock.current ||
-      isPersonMutationPending ||
-      (hasUnresolvedAmbiguousIntent && !allowAmbiguousRetry)
-    ) {
-      return;
-    }
-    personActionLock.current = true;
-    if (!allowAmbiguousRetry) {
-      resetSettledMutations();
-    }
-    action();
-  };
-  const beginBootstrap = (payload: BootstrapHouseholdCreatorPayload) => {
-    runIfIdle(() => bootstrap.mutate(payload));
-  };
-  const beginCreate = (payload: CreateHouseholdPersonPayload) => {
-    runIfIdle(() => create.mutate(payload));
-  };
-  const beginTransition = (value: Parameters<typeof transition.mutate>[0]) => {
-    runIfIdle(() => transition.mutate(value));
-  };
-  const retryBootstrap = (payload: BootstrapHouseholdCreatorPayload) => {
-    runIfIdle(() => bootstrap.mutate(payload), true);
-  };
-  const retryCreate = (payload: CreateHouseholdPersonPayload) => {
-    runIfIdle(() => create.mutate(payload), true);
-  };
-  const retryTransition = (value: Parameters<typeof transition.mutate>[0]) => {
-    runIfIdle(() => transition.mutate(value), true);
+    departureState.setFieldValue("operation", null);
   };
   const error = firstError([
     roster.error,
     bootstrap.error,
     create.error,
     transition.error,
+    inviteAdult.error,
+    completeAdultLink.error,
+    departAdult.error,
+    getDeparture.error,
+    getDepartureByMutation.error,
+    cancelDeparture.error,
+    retryDeparture.error,
+    repairAdultLink.error,
+    returnAdult.error,
   ]);
   const bootstrapConflict = hasFailureCode(
     bootstrap.error,
@@ -559,79 +765,337 @@ export const HouseholdPeoplePanel = ({
   const transitionPersonName = roster.data?.people.find(
     (person) => person.id === transition.variables?.personId
   )?.displayName;
-
-  return (
-    <section
-      aria-labelledby="household-people-heading"
-      className="people-panel"
-    >
-      <div className="people-heading-row">
-        <div>
-          <p className="eyebrow">Household</p>
-          <h2 id="household-people-heading">People</h2>
-        </div>
-        <Button
-          className="button-secondary"
-          disabled={roster.isFetching}
-          onClick={() => void roster.refetch()}
-          type="button"
-        >
-          {roster.isFetching ? "Refreshing…" : "Refresh"}
-        </Button>
-      </div>
-      {roster.isPending ? (
-        <p role="status">Loading the household roster…</p>
-      ) : null}
-      {error === null ? null : (
-        <Alert role="alert" title={failureTitle(error)}>
-          {failureMessage(error)}
-        </Alert>
-      )}
-      <CreatorSlotOccupiedNotice
-        visible={
-          !bootstrapConflict &&
-          creatorSlotOccupied &&
-          roster.data?.currentPersonId === null
-        }
-      />
-      <CreatorBootstrapForm
-        error={bootstrap.error}
-        isDisabled={isPersonMutationPending || hasUnresolvedAmbiguousIntent}
-        isPending={bootstrap.isPending}
-        onMutate={beginBootstrap}
-        onRetry={retryBootstrap}
-        variables={bootstrap.variables}
-        visible={
-          roster.data?.currentPersonId === null &&
-          roster.data.creatorSlot === "available" &&
-          !bootstrapConflict
-        }
-      />
-      {roster.data === undefined ? null : (
-        <PeopleList
-          isPending={isPersonMutationPending}
-          onTransition={beginTransition}
-          people={roster.data.people}
-          retryIntent={hasUnresolvedAmbiguousIntent}
+  const renderHouseholdPeople = (
+    departureOperation: HouseholdMemberDepartureOperation | null
+  ) => {
+    const deriveRecoveryState = () => {
+      const departureUnresolved =
+        retainedIntents.departure !== null ||
+        (departureOperation !== null &&
+          departureOperation.state !== "completed" &&
+          departureOperation.state !== "cancelled");
+      const hasUnresolvedExactRecovery =
+        invitationNeedsReconciliation ||
+        departureUnresolved ||
+        hasAmbiguousRetryIntent(cancelDeparture) ||
+        hasAmbiguousRetryIntent(retryDeparture);
+      return {
+        departureUnresolved,
+        hasUnresolvedIntent:
+          hasUnresolvedGenericIntent || hasUnresolvedExactRecovery,
+        retainedDepartureMemberId: retainedIntents.departure?.memberId,
+      };
+    };
+    const {
+      departureUnresolved,
+      hasUnresolvedIntent,
+      retainedDepartureMemberId,
+    } = deriveRecoveryState();
+    const runExactRecovery = (action: () => void) => {
+      if (personActionLock.current || isPersonMutationPending) {
+        return;
+      }
+      personActionLock.current = true;
+      action();
+    };
+    const runNewIntent = (action: () => void) => {
+      if (
+        personActionLock.current ||
+        isPersonMutationPending ||
+        hasUnresolvedIntent
+      ) {
+        return;
+      }
+      personActionLock.current = true;
+      resetSettledMutations();
+      action();
+    };
+    const beginTransition = (
+      value: Parameters<typeof transition.mutate>[0]
+    ) => {
+      runNewIntent(() => transition.mutate(value));
+    };
+    const retryTransition = (
+      value: Parameters<typeof transition.mutate>[0]
+    ) => {
+      runExactRecovery(() => transition.mutate(value));
+    };
+    const associationRecoveryDisabled =
+      isPersonMutationPending ||
+      departureUnresolved ||
+      hasUnresolvedGenericIntent;
+    const departureRecoveryDisabled =
+      isPersonMutationPending ||
+      invitationNeedsReconciliation ||
+      hasUnresolvedGenericIntent;
+    const renderInvitationRecovery = () => {
+      const inviteIntent = retainedIntents.invitation;
+      if (!invitationNeedsReconciliation || inviteIntent === null) {
+        return null;
+      }
+      return (
+        <PendingInvitationReconciliation
+          disabled={associationRecoveryDisabled}
+          inviteIntent={inviteIntent}
+          onReplay={(payload) =>
+            runExactRecovery(() => inviteAdult.mutate(payload))
+          }
+          personName={
+            roster.data?.people.find(
+              (person) => person.id === inviteIntent.personId
+            )?.displayName ?? "Selected adult"
+          }
         />
-      )}
-      <TransitionRetryIntentActions
-        disabled={isPersonMutationPending}
-        onRetry={retryTransition}
-        personName={transitionPersonName}
-        variables={
-          hasAmbiguousRetryIntent(transition) ? transition.variables : undefined
-        }
-      />
-      <CreatePersonForm
-        error={create.error}
-        isDisabled={isPersonMutationPending || hasUnresolvedAmbiguousIntent}
-        isPending={create.isPending}
-        onMutate={beginCreate}
-        onRetry={retryCreate}
-        variables={create.variables}
-        visible={roster.data !== undefined}
-      />
-    </section>
+      );
+    };
+    const renderDepartureRecovery = () => {
+      const retainedDeparture = retainedIntents.departure;
+      if (
+        departureOperation === null &&
+        (retainedDeparture === null ||
+          operations.getDepartureByMutation === undefined)
+      ) {
+        return null;
+      }
+      return (
+        <DepartureRecovery
+          disabled={departureRecoveryDisabled}
+          isRecovering={getDepartureByMutation.isPending}
+          operation={departureOperation}
+          {...(operations.cancelDeparture === undefined ||
+          hasAmbiguousRetryIntent(cancelDeparture)
+            ? {}
+            : {
+                onCancel: (operation) =>
+                  runExactRecovery(() =>
+                    cancelDeparture.mutate({
+                      operationId: operation.operationId,
+                      payload: Schema.decodeUnknownSync(
+                        CancelHouseholdAdultDeparturePayload
+                      )({
+                        expectedOperationVersion: operation.version,
+                        mutationId: mutationId(),
+                      }),
+                    })
+                  ),
+              })}
+          {...(operations.getDeparture === undefined ||
+          departureOperation === null
+            ? {}
+            : {
+                onRead: (operation: HouseholdMemberDepartureOperation) =>
+                  runExactRecovery(() =>
+                    getDeparture.mutate(operation.operationId)
+                  ),
+              })}
+          {...(retainedDeparture === null ||
+          operations.getDepartureByMutation === undefined ||
+          departureOperation !== null
+            ? {}
+            : {
+                onRecover: () =>
+                  runExactRecovery(() =>
+                    getDepartureByMutation.mutate(retainedDeparture.mutationId)
+                  ),
+              })}
+          {...(operations.retryDeparture === undefined ||
+          hasAmbiguousRetryIntent(retryDeparture)
+            ? {}
+            : {
+                onRetry: (operation, memberId) =>
+                  runExactRecovery(() =>
+                    retryDeparture.mutate({
+                      operationId: operation.operationId,
+                      payload: Schema.decodeUnknownSync(
+                        RetryHouseholdAdultDeparturePayload
+                      )({
+                        expectedOperationVersion: operation.version,
+                        memberId,
+                        mutationId: mutationId(),
+                        reason: Schema.decodeUnknownSync(
+                          HouseholdPeopleOperationReason
+                        )("Explicit departure repair"),
+                      }),
+                    })
+                  ),
+              })}
+          retainedMemberId={retainedDepartureMemberId}
+        />
+      );
+    };
+    const renderAssociationRetryIntents = () => (
+      <>
+        <AssociationRetryIntent
+          disabled={isPersonMutationPending}
+          label="Retry cancelling this departure"
+          mutation={cancelDeparture}
+          onRetry={(variables) =>
+            runExactRecovery(() => cancelDeparture.mutate(variables))
+          }
+        />
+        <AssociationRetryIntent
+          disabled={isPersonMutationPending}
+          label="Retry repairing this departure"
+          mutation={retryDeparture}
+          onRetry={(variables) =>
+            runExactRecovery(() => retryDeparture.mutate(variables))
+          }
+        />
+        <AssociationRetryIntent
+          disabled={isPersonMutationPending}
+          label="Retry linking my account"
+          mutation={completeAdultLink}
+          onRetry={(payload) =>
+            runExactRecovery(() => completeAdultLink.mutate(payload))
+          }
+        />
+        <AssociationRetryIntent
+          disabled={isPersonMutationPending}
+          label="Retry repairing this link"
+          mutation={repairAdultLink}
+          onRetry={(payload) =>
+            runExactRecovery(() => repairAdultLink.mutate(payload))
+          }
+        />
+        <AssociationRetryIntent
+          disabled={isPersonMutationPending}
+          label="Retry restoring this person"
+          mutation={returnAdult}
+          onRetry={(payload) =>
+            runExactRecovery(() => returnAdult.mutate(payload))
+          }
+        />
+      </>
+    );
+    const renderRoster = () => {
+      if (roster.data === undefined) {
+        return null;
+      }
+      return (
+        <>
+          <PeopleList
+            isPending={isPersonMutationPending}
+            onTransition={beginTransition}
+            people={roster.data.people}
+            retryIntent={hasUnresolvedIntent}
+          />
+          <HouseholdAssociationControls
+            {...(currentMemberId === undefined ? {} : { currentMemberId })}
+            disabled={isPersonMutationPending || hasUnresolvedIntent}
+            {...(operations.completeAdultLink === undefined
+              ? {}
+              : {
+                  onCompleteLink: (payload) =>
+                    runNewIntent(() => completeAdultLink.mutate(payload)),
+                })}
+            {...(operations.departAdult === undefined || departureUnresolved
+              ? {}
+              : {
+                  onDepart: (payload) =>
+                    runNewIntent(() => departAdult.mutate(payload)),
+                })}
+            {...(operations.inviteAdult === undefined || invitationIntentActive
+              ? {}
+              : {
+                  onInvite: (payload) =>
+                    runNewIntent(() => inviteAdult.mutate(payload)),
+                })}
+            {...(operations.repairAdultLink === undefined
+              ? {}
+              : {
+                  onRepair: (payload) =>
+                    runNewIntent(() => repairAdultLink.mutate(payload)),
+                })}
+            {...(operations.returnAdult === undefined
+              ? {}
+              : {
+                  onReturn: (payload) =>
+                    runNewIntent(() => returnAdult.mutate(payload)),
+                })}
+            roster={roster.data}
+          />
+          {renderInvitationRecovery()}
+          {renderDepartureRecovery()}
+          {renderAssociationRetryIntents()}
+        </>
+      );
+    };
+
+    return (
+      <section
+        aria-labelledby="household-people-heading"
+        className="people-panel"
+      >
+        <div className="people-heading-row">
+          <div>
+            <p className="eyebrow">Household</p>
+            <h2 id="household-people-heading">People</h2>
+          </div>
+          <Button
+            className="button-secondary"
+            disabled={roster.isFetching}
+            onClick={() => void roster.refetch()}
+            type="button"
+          >
+            {roster.isFetching ? "Refreshing…" : "Refresh"}
+          </Button>
+        </div>
+        {roster.isPending ? (
+          <p role="status">Loading the household roster…</p>
+        ) : null}
+        {error === null ? null : (
+          <Alert role="alert" title={failureTitle(error)}>
+            {failureMessage(error)}
+          </Alert>
+        )}
+        <CreatorSlotOccupiedNotice
+          visible={
+            !bootstrapConflict &&
+            creatorSlotOccupied &&
+            roster.data?.currentPersonId === null
+          }
+        />
+        <CreatorBootstrapForm
+          error={bootstrap.error}
+          isDisabled={isPersonMutationPending || hasUnresolvedIntent}
+          isPending={bootstrap.isPending}
+          onMutate={(payload) => runNewIntent(() => bootstrap.mutate(payload))}
+          onRetry={(payload) =>
+            runExactRecovery(() => bootstrap.mutate(payload))
+          }
+          variables={bootstrap.variables}
+          visible={
+            roster.data?.currentPersonId === null &&
+            roster.data.creatorSlot === "available" &&
+            !bootstrapConflict
+          }
+        />
+        {renderRoster()}
+        <TransitionRetryIntentActions
+          disabled={isPersonMutationPending}
+          onRetry={retryTransition}
+          personName={transitionPersonName}
+          variables={
+            hasAmbiguousRetryIntent(transition)
+              ? transition.variables
+              : undefined
+          }
+        />
+        <CreatePersonForm
+          error={create.error}
+          isDisabled={isPersonMutationPending || hasUnresolvedIntent}
+          isPending={create.isPending}
+          onMutate={(payload) => runNewIntent(() => create.mutate(payload))}
+          onRetry={(payload) => runExactRecovery(() => create.mutate(payload))}
+          variables={create.variables}
+          visible={roster.data !== undefined}
+        />
+      </section>
+    );
+  };
+  return (
+    <departureState.Subscribe selector={(state) => state.values.operation}>
+      {(departureOperation) => renderHouseholdPeople(departureOperation)}
+    </departureState.Subscribe>
   );
 };

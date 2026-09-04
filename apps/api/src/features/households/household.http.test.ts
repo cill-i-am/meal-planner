@@ -142,11 +142,22 @@ const gatewayWithList = (
 ): HouseholdPeopleGateway =>
   HouseholdPeopleGateway.of({
     archive: () => Effect.die("Unexpected archive"),
+    associateInvitation: () => Effect.die("Unexpected invitation association"),
     bootstrapCreator: () => Effect.die("Unexpected bootstrap"),
+    cancelDeparture: () => Effect.die("Unexpected departure cancellation"),
+    completeAdultLink: () => Effect.die("Unexpected link completion"),
     create: () => Effect.die("Unexpected create"),
+    departAdult: () => Effect.die("Unexpected departure"),
     get: () => Effect.die("Unexpected get"),
+    getDeparture: () => Effect.die("Unexpected departure read"),
+    getDepartureByMutation: () =>
+      Effect.die("Unexpected departure recovery read"),
+    inviteAdult: () => Effect.die("Unexpected invitation"),
     list,
+    repairAdultLink: () => Effect.die("Unexpected link repair"),
     restore: () => Effect.die("Unexpected restore"),
+    retryDeparture: () => Effect.die("Unexpected departure retry"),
+    returnAdult: () => Effect.die("Unexpected adult return"),
   });
 
 describe("household HttpApi boundary", () => {
@@ -225,6 +236,8 @@ describe("household HttpApi boundary", () => {
 describe("household people identity and owner boundary", () => {
   const apps: { readonly dispose: () => Promise<void> }[] = [];
   const creator = Schema.decodeUnknownSync(HouseholdPerson)({
+    associationState: "linked",
+    associationVersion: 1,
     createdAtEpochMs: 1,
     displayName: "Owner",
     id: "person_00000000-0000-4000-8000-000000000001",
