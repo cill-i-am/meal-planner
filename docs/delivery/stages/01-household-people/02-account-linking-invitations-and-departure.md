@@ -263,7 +263,8 @@ the accepted household deletion lifecycle exists.
   deterministically identified Better Auth invitation.
 - An authenticated organizer reconciliation endpoint that checks only the
   invitation derived from that original intent and finishes its existing
-  household association; it cannot list or select other pending invitations.
+  household association. This endpoint is read-only with respect to Better
+  Auth invitation creation; it cannot list or select other pending invitations.
 - An admitted member endpoint to complete an accepted invitation link.
 - Organizer endpoints for explicit link repair and departure initiation.
 - Member/owner cancellation and owner repair endpoints for the exact durable
@@ -277,18 +278,24 @@ the accepted household deletion lifecycle exists.
 The API must preserve the separation between Better Auth outcome and household
 outcome. It records the exact household invitation intent before the provider
 call, and provider creation uses the deterministic invitation ID derived from
-that intent. If the create response is lost, reconciliation checks only that
-exact ID and the original request digest. It never lists candidates for the
-organizer to guess, chooses among same-organization invitations, matches by
-email or name, or creates a replacement invitation or mutation.
+that intent. The exact invitation command is replayable with its original
+person, email, payload, and mutation: if the provider call never committed, the
+replay creates the missing invitation at that deterministic ID; if the provider
+committed but its response was lost, the replay reads and reuses that exact
+invitation. The separate association endpoint only reads that derived provider
+invitation and reconciles its existing household association. Neither path
+lists candidates for the organizer to guess, chooses among same-organization
+invitations, matches by email or name, or creates a replacement invitation or
+mutation.
 
 ## Minimum UI Surface
 
 - Select an existing unlinked adult before sending an invitation.
 - Show pending invitation state without exposing stored email after submission.
 - Preserve the exact original invitation payload and mutation across an
-  ambiguous response or refresh, then offer one action that reconciles only its
-  deterministic provider invitation without showing candidate IDs.
+  ambiguous response or refresh, then offer one action that replays that exact
+  invitation command. The replay creates its missing deterministic provider
+  invitation or reuses that exact invitation without showing candidate IDs.
 - After acceptance, confirm the associated person or choose an explicit
   unlinked-adult repair path when association is missing.
 - Show linked current adult, departure-pending, archived, and returning-person
@@ -356,9 +363,14 @@ email or name, or creates a replacement invitation or mutation.
   D1 organization/memberships and the routed `HouseholdObject` remain intact.
 - [x] Other lost responses before and after each authority commit reconcile
   without duplicate people, links, membership mutation, audit, or archive.
+- [x] An interruption after the Household invitation receipt but before Better
+  Auth creation survives runtime restart; read-only association leaves the
+  provider empty, while exact browser-command replay creates the original
+  deterministic invitation without a new person or mutation.
 - [x] With multiple pending invitations in one organization, a committed
-  invitation whose response is lost reconciles only the deterministic ID bound
-  to its original person, payload digest, and mutation.
+  invitation whose response is lost is recovered by exact browser-command
+  replay only at the deterministic ID bound to its original person, payload
+  digest, and mutation.
 - [x] A committed departure whose initial response is lost is rediscovered
   after refresh by its original preparation mutation; status, retry,
   cancellation, and finalization retain the same operation.
@@ -370,8 +382,9 @@ email or name, or creates a replacement invitation or mutation.
 
 ### Repository and review gates
 
-- [x] Root format, lint, type checks, full tests, builds, applicable container,
-  and hosted CI pass.
+- [x] Root format, lint, type checks, full tests, builds, and the applicable
+  container pass for the corrected implementation.
+- [ ] Hosted CI passes for the frozen replacement head.
 - [x] Better Auth, household-domain, public contract, UI, stage, and current
   delivery docs reflect the shipped protocol.
 - [ ] A completely fresh independent exact-head review disposes identity,
@@ -505,3 +518,25 @@ exact-head review is required, and green CI is not merge authority.
   evidence head `6ddcfe65d3b5dbd7817aedfc0c3361e6e9aadeba`. PR #201 remains
   draft and this work item remains `In progress` until a completely fresh
   independent exact-head review passes.
+- 2026-09-04 — Independent review of head
+  `24806d639ee4e04df587710c25f0cc20ffc53f6f` held the draft because the
+  browser sent its retained ambiguous invitation to the read-only association
+  operation. That recovered a committed provider invitation but could not
+  finish an interruption before Better Auth creation.
+- 2026-09-04 — Froze the exact invitation-replay correction as implementation
+  commit `2328fb2c3419912b805410d29a6e37d3268a00dc`. A browser RED proved
+  the stale behavior, then the corrected UI retained and replayed the original
+  person, intended email, full payload, and mutation through `inviteAdult`
+  after remount while sibling person mutations stayed disabled. The
+  `associateInvitation` operation remains provider-creation-read-only. Real
+  Website-to-API Workerd proof with Better Auth D1 and the routed
+  `HouseholdObject` passes 49/49: after an interruption before provider
+  creation, only the exact replay creates the missing deterministic invitation;
+  after a committed response is lost, that replay reuses the original despite
+  another pending invitation. Root tests pass 138 architecture/Alchemy, 22
+  household contract, 31 recipe contract, 85 web, and 822 API tests; format,
+  lint, type checks, production build, two consecutive no-diff household
+  migration generations, and the container gate (1/1 in 1,033.04 seconds) are
+  green. Hosted CI for the frozen replacement head and a completely fresh
+  independent exact-head review remain pending, so PR #201 stays draft and
+  this work item stays `In progress`.

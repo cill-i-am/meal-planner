@@ -53,23 +53,25 @@ accepted prerequisite promoted Work Item 02 to implementation. Draft
 Better Auth invitation-to-existing-person link, explicit repair and same-person
 return, and the native access-first departure Workflow with both crash-window
 reconciliation paths. Its corrected behavior is frozen at
-`d23c90da9ee32244ed6c7b6779a77e5f5fe83b85`: before contacting Better Auth,
+`2328fb2c3419912b805410d29a6e37d3268a00dc`: before contacting Better Auth,
 the API durably binds the original person, payload digest, and mutation to a
-deterministic provider invitation ID. A lost provider response is therefore
-reconciled only against that exact invitation; the browser never lists opaque
-candidates, guesses among same-household invitations, matches by email or name,
-or mints a replacement invitation or mutation. The browser also retains the
-original departure request before submission and rediscovers its durable
-operation by that exact preparation mutation after a lost response or refresh.
-Its status, retry, and cancellation actions continue against the same operation
-through pending, revocation-repair, finalization-repair, and terminal states.
-Full local repository, real Better Auth D1 plus routed-object,
-twice/no-diff generation, and container evidence is green. Hosted
-[run 33815121584](https://github.com/cill-i-am/meal-planner/actions/runs/33815121584)
-passed Quality and Synthetic media container for exact evidence head
-`6ddcfe65d3b5dbd7817aedfc0c3361e6e9aadeba`. A fresh independent exact-head
-review remains pending, so Work Item 02 stays `In progress` and PR #201 stays
-draft.
+deterministic provider invitation ID. After an ambiguous response or refresh,
+the browser replays the exact retained invitation command with its original
+person, intended email, payload, and mutation. If Better Auth was not reached,
+that replay creates the missing original deterministic invitation; if Better
+Auth committed but its response was lost, it reads and reuses that same
+invitation. The separate association operation remains read-only with respect
+to provider creation. No path lists opaque candidates, guesses among
+same-household invitations, matches by email or name, or mints a replacement
+person, invitation, or mutation. The browser also retains the original
+departure request before submission and rediscovers its durable operation by
+that exact preparation mutation after a lost response or refresh. Its status,
+retry, and cancellation actions continue against the same operation through
+pending, revocation-repair, finalization-repair, and terminal states. Full local
+repository, real Better Auth D1 plus routed-object, twice/no-diff generation,
+and container evidence is green for the corrected implementation. Hosted CI
+for the frozen replacement head and a fresh independent exact-head review
+remain pending, so Work Item 02 stays `In progress` and PR #201 stays draft.
 
 Organization-deletion behavior remains out of scope, and Work Items 03 and 04
 remain `Proposed`.
