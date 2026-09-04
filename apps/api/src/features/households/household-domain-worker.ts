@@ -1,4 +1,7 @@
 import type {
+  HouseholdProfileRejected,
+  PersonProfile,
+  ProfileVersionPage,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
   HouseholdPeopleRoster,
@@ -143,6 +146,11 @@ import {
   HouseholdStartMemberDepartureInput as HouseholdStartMemberDepartureInputSchema,
   HouseholdTransitionPersonInput as HouseholdTransitionPersonInputSchema,
 } from "./people/household-people.contract.js";
+import {
+  HouseholdReadPersonProfileInput,
+  HouseholdListProfileVersionsInput,
+  HouseholdMutatePersonProfileInput,
+} from "./profiles/household-profile.contract.js";
 import type {
   HouseholdAdmitRecipeImportInput,
   HouseholdAnswerRecipeImportActionInput,
@@ -355,6 +363,24 @@ export interface HouseholdDomainWorkerMethods {
   ) => Effect.Effect<
     typeof HouseholdMemberDepartureOperation.Encoded,
     HouseholdPeopleDomainFailure
+  >;
+  readonly readPersonProfile: (
+    input: HouseholdReadPersonProfileInput
+  ) => Effect.Effect<
+    typeof PersonProfile.Encoded,
+    HouseholdDomainFailure | HouseholdProfileRejected
+  >;
+  readonly listProfileVersions: (
+    input: HouseholdListProfileVersionsInput
+  ) => Effect.Effect<
+    typeof ProfileVersionPage.Encoded,
+    HouseholdDomainFailure | HouseholdProfileRejected
+  >;
+  readonly mutatePersonProfile: (
+    input: HouseholdMutatePersonProfileInput
+  ) => Effect.Effect<
+    typeof PersonProfile.Encoded,
+    HouseholdDomainFailure | HouseholdProfileRejected
   >;
   readonly listHouseholdPeople: (
     input: HouseholdListPeopleInput
@@ -903,6 +929,27 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "get_member_departure",
         (household, command) => household.getMemberDepartureByMutation(command)
+      ),
+    readPersonProfile: (input: HouseholdReadPersonProfileInput) =>
+      route(
+        HouseholdReadPersonProfileInput,
+        input,
+        "read_person_profile",
+        (household, command) => household.readPersonProfile(command)
+      ),
+    listProfileVersions: (input: HouseholdListProfileVersionsInput) =>
+      route(
+        HouseholdListProfileVersionsInput,
+        input,
+        "read_person_profile",
+        (household, command) => household.listProfileVersions(command)
+      ),
+    mutatePersonProfile: (input: HouseholdMutatePersonProfileInput) =>
+      route(
+        HouseholdMutatePersonProfileInput,
+        input,
+        "mutate_person_profile",
+        (household, command) => household.mutatePersonProfile(command)
       ),
     listHouseholdPeople: (input: HouseholdListPeopleInput) =>
       route(

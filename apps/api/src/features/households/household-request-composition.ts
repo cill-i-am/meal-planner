@@ -1,4 +1,8 @@
 import {
+  HouseholdProfileRejected,
+  PersonProfile,
+  ProfileVersion,
+  ProfileVersionPage,
   HouseholdAdultInvitationResult,
   HouseholdOrganizationId,
   HouseholdMemberDepartureOperation,
@@ -133,6 +137,9 @@ interface HouseholdMealPlanDomainPort {
 }
 
 interface HouseholdPeopleDomainPort {
+  readonly readPersonProfile: HouseholdDomainWorkerMethods["readPersonProfile"];
+  readonly listProfileVersions: HouseholdDomainWorkerMethods["listProfileVersions"];
+  readonly mutatePersonProfile: HouseholdDomainWorkerMethods["mutatePersonProfile"];
   readonly associateAdultInvitation: (
     input: HouseholdAssociateAdultInvitationInput
   ) => Effect.Effect<object, HouseholdDomainFailure | HouseholdPeopleFailure>;
@@ -449,7 +456,66 @@ export const makeHouseholdPeopleGateway = (options: {
       return input.operation;
     });
 
+  const profileFailure = () =>
+    new HouseholdProfileRejected({ reason: "profile_unavailable" });
+  const mapProfileFailure = (
+    error: HouseholdDomainFailure | HouseholdProfileRejected
+  ) => (error._tag === "HouseholdProfileRejected" ? error : profileFailure());
   return {
+    getProfile: ({ personId, principal, version }) =>
+      makeHouseholdPeopleAdmission(principal).pipe(
+        Effect.mapError(profileFailure),
+        Effect.flatMap((admission) =>
+          options.domain
+            .readPersonProfile({
+              admission,
+              personId,
+              version:
+                version === undefined ? null : ProfileVersion.make(version),
+            })
+            .pipe(Effect.mapError(mapProfileFailure))
+        ),
+        Effect.flatMap((wire) =>
+          Schema.decodeUnknownEffect(PersonProfile)(wire).pipe(
+            Effect.mapError(profileFailure)
+          )
+        )
+      ),
+    listProfileVersions: ({ beforeVersion, personId, principal }) =>
+      makeHouseholdPeopleAdmission(principal).pipe(
+        Effect.mapError(profileFailure),
+        Effect.flatMap((admission) =>
+          options.domain
+            .listProfileVersions({
+              admission,
+              beforeVersion:
+                beforeVersion === null
+                  ? null
+                  : ProfileVersion.make(beforeVersion),
+              personId,
+            })
+            .pipe(Effect.mapError(mapProfileFailure))
+        ),
+        Effect.flatMap((wire) =>
+          Schema.decodeUnknownEffect(ProfileVersionPage)(wire).pipe(
+            Effect.mapError(profileFailure)
+          )
+        )
+      ),
+    mutateProfile: ({ payload, personId, principal }) =>
+      makeHouseholdPeopleAdmission(principal).pipe(
+        Effect.mapError(profileFailure),
+        Effect.flatMap((admission) =>
+          options.domain
+            .mutatePersonProfile({ admission, payload, personId })
+            .pipe(Effect.mapError(mapProfileFailure))
+        ),
+        Effect.flatMap((wire) =>
+          Schema.decodeUnknownEffect(PersonProfile)(wire).pipe(
+            Effect.mapError(profileFailure)
+          )
+        )
+      ),
     archive: ({ payload, personId, principal }) =>
       call(
         makeHouseholdPeopleAdmission(principal),

@@ -1,12 +1,25 @@
 # Work Item 03 — Profile Authority, Versioning, And Audit
 
-- Status: Proposed
+- Status: In progress
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
-- Owner: Unassigned
+- Owner: `codex/stage1-profile-authority-versioning-audit`
 - Pull request: Not opened
 - Completed by: Not completed
-- Promotion condition: stable person and admitted account-link semantics from
-  Work Items 01 and 02
+- Promotion condition: satisfied by Work Items 01 and 02, including merged
+  PR #201 at `9a59f85170f379e065920eadaaf69593d90c2c40`.
+
+## Implementation checkpoint
+
+The first real Workerd tracer passes: an admitted adult records a provisional
+preference for an existing person, reads it back, and replays the exact mutation
+without another version. Historical-version and audit queries use the same
+immutable SQLite version ledger. Each committed row is also its mutation
+receipt; the current profile is the latest version, not a second mutable copy.
+Audit records carry the changed fact before and after, actor, time, and prior
+and next versions. Source is limited to `manual_ui` in this work item.
+
+The complete safety, concurrency, authorization, restart, and UI matrix remains
+in progress. This checkpoint is not completion or merge evidence.
 
 ## Household Outcome
 

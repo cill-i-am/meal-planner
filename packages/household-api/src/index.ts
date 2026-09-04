@@ -1,4 +1,31 @@
 import { Context, Layer, Schema } from "effect";
+
+import {
+  HouseholdProfileErrors,
+  ListProfileVersionsQuery,
+  MutatePersonProfilePayload,
+  PersonProfile,
+  ProfileAuditPage,
+  ProfileVersionPage,
+} from "./profiles.js";
+export {
+  FoodPreference,
+  HardConstraint,
+  HouseholdProfileRejected,
+  HouseholdProfileProblem,
+  ListProfileVersionsQuery,
+  MutatePersonProfilePayload,
+  PersonProfile,
+  ProfileAudit,
+  ProfileCommand,
+  ProfileFact,
+  ProfileFactId,
+  ProfileFactStanding,
+  ProfileFactValue,
+  ProfileLabel,
+  ProfileVersion,
+  ProfileVersionPage,
+} from "./profiles.js";
 import {
   HttpApi,
   HttpApiClient,
@@ -303,6 +330,59 @@ export const HouseholdMealPlanApi = HttpApi.make("householdMealPlanApi")
 
 const PeopleGroup = HttpApiGroup.make("people")
   .add(
+    HttpApiEndpoint.get(
+      "getProfileVersion",
+      "/v1/household/people/:personId/profile/versions/:version",
+      {
+        error: HouseholdProfileErrors,
+        params: {
+          personId: HouseholdPersonId,
+          version: Schema.NumberFromString.pipe(
+            Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+          ),
+        },
+        success: PersonProfile,
+      }
+    ),
+    HttpApiEndpoint.get(
+      "listProfileAudit",
+      "/v1/household/people/:personId/profile/audit",
+      {
+        error: HouseholdProfileErrors,
+        params: { personId: HouseholdPersonId },
+        query: ListProfileVersionsQuery,
+        success: ProfileAuditPage,
+      }
+    ),
+    HttpApiEndpoint.get(
+      "getProfile",
+      "/v1/household/people/:personId/profile",
+      {
+        error: HouseholdProfileErrors,
+        params: { personId: HouseholdPersonId },
+        success: PersonProfile,
+      }
+    ),
+    HttpApiEndpoint.get(
+      "listProfileVersions",
+      "/v1/household/people/:personId/profile/versions",
+      {
+        error: HouseholdProfileErrors,
+        params: { personId: HouseholdPersonId },
+        query: ListProfileVersionsQuery,
+        success: ProfileVersionPage,
+      }
+    ),
+    HttpApiEndpoint.post(
+      "mutateProfile",
+      "/v1/household/people/:personId/profile",
+      {
+        error: HouseholdProfileErrors,
+        params: { personId: HouseholdPersonId },
+        payload: MutatePersonProfilePayload,
+        success: PersonProfile,
+      }
+    ),
     HttpApiEndpoint.post(
       "bootstrapCreator",
       "/v1/household/people/bootstrap-creator",

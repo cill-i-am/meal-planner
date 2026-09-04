@@ -141,6 +141,9 @@ const gatewayWithList = (
   list: HouseholdPeopleGateway["list"]
 ): HouseholdPeopleGateway =>
   HouseholdPeopleGateway.of({
+    getProfile: () => Effect.die("Unexpected profile read"),
+    listProfileVersions: () => Effect.die("Unexpected profile history"),
+    mutateProfile: () => Effect.die("Unexpected profile mutation"),
     archive: () => Effect.die("Unexpected archive"),
     associateInvitation: () => Effect.die("Unexpected invitation association"),
     bootstrapCreator: () => Effect.die("Unexpected bootstrap"),

@@ -1091,6 +1091,86 @@ const review = {
 } as const;
 
 describe("household public API to private Durable Object boundary", () => {
+  it("persists and exactly replays a provisional person profile version", async () => {
+    const { adult, ownerCookie } =
+      await prepareInvitableAdult("Profile Tracer");
+    const url = `https://meal-planner.test/v1/household/people/${adult.id}/profile`;
+    const payload = {
+      command: {
+        _tag: "AddProvisionalProfileFact",
+        fact: {
+          _tag: "FoodPreference",
+          label: "Broccoli",
+          sentiment: "like",
+          targetKind: "ingredient",
+        },
+      },
+      expectedProfileVersion: 0,
+      mutationId: "profile-tracer-first-fact",
+    };
+    const request = {
+      body: JSON.stringify(payload),
+      headers: { "content-type": "application/json", cookie: ownerCookie },
+      method: "POST",
+    };
+    const first = await getRuntime().dispatchFetch(url, request);
+    expect(first.status, await first.clone().text()).toBe(200);
+    const firstBody = await first.text();
+    const replay = await getRuntime().dispatchFetch(url, request);
+    expect(replay.status, await replay.clone().text()).toBe(200);
+    expect(await replay.text()).toBe(firstBody);
+    const current = await getRuntime().dispatchFetch(url, {
+      headers: { cookie: ownerCookie },
+    });
+    expect(current.status, await current.clone().text()).toBe(200);
+    expect(await current.text()).toBe(firstBody);
+    const history = await getRuntime().dispatchFetch(`${url}/versions`, {
+      headers: { cookie: ownerCookie },
+    });
+    expect(history.status, await history.clone().text()).toBe(200);
+    expect(await history.json()).toMatchObject({
+      versions: [{ personId: adult.id, version: 1 }],
+    });
+    const audit = await getRuntime().dispatchFetch(`${url}/audit`, {
+      headers: { cookie: ownerCookie },
+    });
+    expect(audit.status).toBe(200);
+    expect(await audit.json()).toMatchObject({
+      events: [
+        {
+          before: null,
+          after: { value: payload.command.fact },
+          previousVersion: 0,
+          nextVersion: 1,
+        },
+      ],
+    });
+    const historical = await getRuntime().dispatchFetch(`${url}/versions/1`, {
+      headers: { cookie: ownerCookie },
+    });
+    expect(await historical.text()).toBe(firstBody);
+    const collision = await getRuntime().dispatchFetch(url, {
+      ...request,
+      body: JSON.stringify({
+        ...payload,
+        command: {
+          ...payload.command,
+          fact: { ...payload.command.fact, label: "Carrots" },
+        },
+      }),
+    });
+    expect(collision.status, await collision.clone().text()).toBe(409);
+    expect(await collision.json()).toMatchObject({
+      code: "mutation_collision",
+    });
+    const stale = await getRuntime().dispatchFetch(url, {
+      ...request,
+      body: JSON.stringify({ ...payload, mutationId: "profile-tracer-stale" }),
+    });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ code: "stale_version" });
+  });
+
   it("requires household authorization before batch routing", async () => {
     const response = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/recipe-import-batches",

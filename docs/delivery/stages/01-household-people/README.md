@@ -2,7 +2,7 @@
 
 - Status: Active
 - Immediate work item:
-  [`02-account-linking-invitations-and-departure.md`](02-account-linking-invitations-and-departure.md)
+  [`03-profile-authority-versioning-and-audit.md`](03-profile-authority-versioning-and-audit.md)
   (`In progress`)
 - Started: 2026-08-27
 

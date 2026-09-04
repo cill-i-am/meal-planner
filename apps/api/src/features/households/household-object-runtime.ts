@@ -1,4 +1,6 @@
 import {
+  PersonProfile,
+  ProfileVersionPage,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
   HouseholdPeopleRoster,
@@ -111,6 +113,12 @@ import {
   HouseholdTransitionPersonInput,
 } from "./people/household-people.contract.js";
 import { makeHouseholdPeopleRepository } from "./people/household-people.repository.js";
+import {
+  HouseholdReadPersonProfileInput,
+  HouseholdListProfileVersionsInput,
+  HouseholdMutatePersonProfileInput,
+} from "./profiles/household-profile.contract.js";
+import { makeHouseholdProfileRepository } from "./profiles/household-profile.repository.js";
 import {
   HouseholdAdmitRecipeImportInput,
   HouseholdAdmitRecipeImportResult,
@@ -1113,6 +1121,101 @@ export const HouseholdObjectRuntime = Effect.gen(
             return yield* encodePeopleResult(
               HouseholdMemberDepartureOperation,
               operation
+            );
+          })
+        ),
+      readPersonProfile: (untrustedInput: HouseholdReadPersonProfileInput) =>
+        scoped(
+          Effect.gen(function* () {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadPersonProfileInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_person_profile"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const result = yield* makeHouseholdProfileRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).get({
+              actor: command.admission.actor,
+              personId: command.personId,
+              version: command.version,
+            });
+            return yield* Schema.encodeEffect(PersonProfile)(result).pipe(
+              Effect.mapError(invalidInput)
+            );
+          })
+        ),
+      listProfileVersions: (
+        untrustedInput: HouseholdListProfileVersionsInput
+      ) =>
+        scoped(
+          Effect.gen(function* () {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdListProfileVersionsInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_person_profile"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const result = yield* makeHouseholdProfileRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).listVersions({
+              actor: command.admission.actor,
+              personId: command.personId,
+              beforeVersion: command.beforeVersion,
+            });
+            return yield* Schema.encodeEffect(ProfileVersionPage)(result).pipe(
+              Effect.mapError(invalidInput)
+            );
+          })
+        ),
+      mutatePersonProfile: (
+        untrustedInput: HouseholdMutatePersonProfileInput
+      ) =>
+        scoped(
+          Effect.gen(function* () {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdMutatePersonProfileInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "mutate_person_profile"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const result = yield* makeHouseholdProfileRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).mutate({
+              actor: command.admission.actor,
+              personId: command.personId,
+              payload: command.payload,
+              now: yield* Clock.currentTimeMillis,
+            });
+            return yield* Schema.encodeEffect(PersonProfile)(result).pipe(
+              Effect.mapError(invalidInput)
             );
           })
         ),

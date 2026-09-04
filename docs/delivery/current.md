@@ -11,7 +11,7 @@
   [`stages/01-household-people/README.md`](stages/01-household-people/README.md)
 - Status: Active
 - Immediate delivery target:
-  [`02-account-linking-invitations-and-departure.md`](stages/01-household-people/02-account-linking-invitations-and-departure.md)
+  [`03-profile-authority-versioning-and-audit.md`](stages/01-household-people/03-profile-authority-versioning-and-audit.md)
   (`In progress`)
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
@@ -44,16 +44,15 @@ authenticated Better Auth removal, the Workflow waits for an outcome signal
 and reconciles a missing removal or lost signal by canonical membership read,
 and only proven membership absence permits exact-purpose household
 finalization. Every partial state remains durable, visible, bounded, and
-repairable. Work Item 02 must also configure
+repairable. Work Item 02 also configures
 `organization({ disableOrganizationDeletion: true })` so neither the public nor
 typed Better Auth deletion operation can erase the organization and its
 memberships before the separate household deletion lifecycle exists. That
-accepted prerequisite promoted Work Item 02 to implementation. Draft
-[PR #201](https://github.com/cill-i-am/meal-planner/pull/201) now has the working
+accepted prerequisite promoted Work Item 02 to implementation.
+[PR #201](https://github.com/cill-i-am/meal-planner/pull/201) delivered the
 Better Auth invitation-to-existing-person link, explicit repair and same-person
 return, and the native access-first departure Workflow with both crash-window
-reconciliation paths. Its corrected behavior is frozen at
-`2328fb2c3419912b805410d29a6e37d3268a00dc`: before contacting Better Auth,
+reconciliation paths. Before contacting Better Auth,
 the API durably binds the original person, payload digest, and mutation to a
 deterministic provider invitation ID. After an ambiguous response or refresh,
 the browser replays the exact retained invitation command with its original
@@ -69,18 +68,17 @@ that exact preparation mutation after a lost response or refresh. Its status,
 retry, and cancellation actions continue against the same operation through
 pending, revocation-repair, finalization-repair, and terminal states. Full local
 repository, real Better Auth D1 plus routed-object, twice/no-diff generation,
-and container evidence is green for the corrected implementation. Evidence
-head `8f97e8e6a12646eac42a33f427314f2c8eb854aa` retains behavior freeze
-`2328fb2c3419912b805410d29a6e37d3268a00dc`, and hosted
-[run 33865785353](https://github.com/cill-i-am/meal-planner/actions/runs/33865785353)
-passed Quality and Synthetic media container. Independent review of that exact
-evidence head found no remaining behavioral issue and held only this stale
-repository evidence. Work Item 02 stays `In progress` and PR #201 stays draft
-pending final exact verification and disposition of the docs-only replacement
-head.
+and container evidence passed for the corrected implementation. PR #201 merged
+on 2026-09-04 as `9a59f85170f379e065920eadaaf69593d90c2c40`, following final
+review of `34a376cb9a35fd6f177a0bf8b40e5c1dee938bd9` and green hosted
+[run 33910287961](https://github.com/cill-i-am/meal-planner/actions/runs/33910287961).
+Work Item 02 is `Done`. Work Item 03 is `In progress` on this merged foundation;
+its first profile persistence, history, audit, and exact replay tracer passes.
+The remaining safety, authorization, concurrency, restart, and UI proof is not
+yet completion evidence.
 
-Organization-deletion behavior remains out of scope, and Work Items 03 and 04
-remain `Proposed`.
+Organization-deletion behavior remains out of scope. Work Item 04 remains
+`Proposed`.
 
 ## Completed Foundation
 
