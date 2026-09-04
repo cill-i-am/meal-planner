@@ -120,8 +120,9 @@ household-local. Its generated migration is under
 `apps/api/provider-accounting-migrations`; the stable tracking table is
 `d1_migrations`. Alchemy `.76` uses `migrations: { dir, table }` and upgrades
 the old three-column ledger to its five-column format in place. This is a
-real database mutation on the next approved deployment; local regression
-coverage checks conversion, trigger SQL, rollback, and replay.
+real database mutation on the next approved D1 reconciliation; unchanged
+resources may remain a deployment no-op. Local regression coverage checks
+conversion, trigger SQL, rollback, and replay.
 Run `pnpm --filter @meal-planner/api db:generate` or
 `pnpm --dir apps/api db:generate`, then review the generated timestamped
 `migration.sql` and `snapshot.json` together. Regeneration without a schema

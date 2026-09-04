@@ -18,7 +18,9 @@ The two D1 declarations use `.76`'s `migrations: { dir, table }` API with
 unchanged logical resource IDs, migration directories, and `d1_migrations`
 tracking-table names. Upstream now converts the old three-column ledger to
 its five-column format. That conversion is a database mutation at the next
-approved deployment, including when no application migration is pending.
+approved D1 reconciliation. An unchanged resource may remain a deployment
+no-op: Alchemy compares migration hashes and the tracking-table name, which
+this upgrade preserves.
 Local tests exercise conversion and replay; actual deployed histories have
 not been inspected.
 
