@@ -1,5 +1,4 @@
 import {
-  AssociateHouseholdAdultInvitationPayload,
   CompleteHouseholdAdultLinkPayload,
   DepartHouseholdAdultPayload,
   HouseholdAuthResourceId,
@@ -59,39 +58,31 @@ const departureStatusMessage = (
 export const PendingInvitationReconciliation = ({
   disabled,
   inviteIntent,
-  onAssociate,
+  onReplay,
   personName,
 }: {
   readonly disabled: boolean;
   readonly inviteIntent: InviteHouseholdAdultPayloadType;
-  readonly onAssociate: (
-    payload: AssociateHouseholdAdultInvitationPayload
-  ) => void;
+  readonly onReplay: (payload: InviteHouseholdAdultPayloadType) => void;
   readonly personName: string;
-}) => {
-  const associate = () =>
-    onAssociate(
-      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
-        email: inviteIntent.email,
-        mutationId: inviteIntent.mutationId,
-        personId: inviteIntent.personId,
-      })
-    );
-
-  return (
-    <section className="people-form">
-      <h3>Finish invitation setup</h3>
-      <p>Intended person: {personName}</p>
-      <Button disabled={disabled} onClick={associate} type="button">
-        Finish original invitation
-      </Button>
-      <p className="helper">
-        This checks the exact original request. It cannot select another pending
-        invitation or send a replacement.
-      </p>
-    </section>
-  );
-};
+}) => (
+  <section className="people-form">
+    <h3>Finish invitation setup</h3>
+    <p>Intended person: {personName}</p>
+    <Button
+      disabled={disabled}
+      onClick={() => onReplay(inviteIntent)}
+      type="button"
+    >
+      Finish original invitation
+    </Button>
+    <p className="helper">
+      This retries the exact original request. It creates the missing original
+      invitation or reuses its deterministic identity; it cannot select another
+      pending invitation or send a replacement.
+    </p>
+  </section>
+);
 
 export const DepartureRecovery = ({
   disabled,

@@ -6,6 +6,7 @@ import {
   HouseholdMemberDepartureOperationId,
   HouseholdPersonId,
   HouseholdPersonMutationId,
+  InviteHouseholdAdultPayload,
   RetryHouseholdAdultDeparturePayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
@@ -40,7 +41,7 @@ afterEach(() => fetchMock.mockReset());
 afterAll(() => vi.unstubAllGlobals());
 
 describe("browser household people operations", () => {
-  it("routes invitation reconciliation and exact departure recovery operations", async () => {
+  it("routes exact invitation replay, read-only reconciliation, and departure recovery", async () => {
     const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
       "person_00000000-0000-4000-8000-000000000101"
     );
@@ -72,6 +73,16 @@ describe("browser household people operations", () => {
       version: 2,
     };
     fetchMock
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            association: "associated",
+            invitationId: "invitation-a",
+            person,
+          },
+          { status: 201 }
+        )
+      )
       .mockResolvedValueOnce(Response.json(person))
       .mockResolvedValueOnce(Response.json(departure))
       .mockResolvedValueOnce(Response.json(departure))
@@ -85,7 +96,15 @@ describe("browser household people operations", () => {
         )
       );
     const operations = makeBrowserHouseholdPeopleOperations();
+    const invitePayload = Schema.decodeUnknownSync(InviteHouseholdAdultPayload)(
+      {
+        email: "adult@example.test",
+        mutationId: departureMutationId,
+        personId,
+      }
+    );
 
+    await operations.inviteAdult?.(invitePayload);
     await operations.associateInvitation?.(
       Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
         email: "adult@example.test",
@@ -121,6 +140,7 @@ describe("browser household people operations", () => {
         return [method, new URL(url, globalThis.location.origin).pathname];
       })
     ).toEqual([
+      ["POST", "/v1/household/people/invitations"],
       ["POST", "/v1/household/people/invitations/associate"],
       [
         "GET",
@@ -130,6 +150,18 @@ describe("browser household people operations", () => {
       ["POST", `/v1/household/people/departures/${operationId}/cancel`],
       ["POST", `/v1/household/people/departures/${operationId}/retry`],
     ]);
+    const [invitationCall] = fetchMock.mock.calls;
+    if (invitationCall === undefined) {
+      throw new Error("Expected the generated client to send the invitation");
+    }
+    const [invitationRequest, invitationInit] = invitationCall;
+    const replayedRequest =
+      invitationRequest instanceof Request
+        ? invitationRequest.clone()
+        : new Request(invitationRequest, invitationInit);
+    await expect(replayedRequest.json()).resolves.toEqual(
+      Schema.encodeSync(InviteHouseholdAdultPayload)(invitePayload)
+    );
   });
 
   it.each([

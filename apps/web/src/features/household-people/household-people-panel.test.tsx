@@ -224,19 +224,26 @@ describe("HouseholdPeoplePanel", () => {
     );
   });
 
-  it("recovers only the exact retained invitation after refresh without candidate selection", async () => {
+  it("replays only the exact retained invitation after refresh without candidate selection", async () => {
     const inviteAdult = vi
       .fn()
-      .mockRejectedValue(failure("people_unavailable"));
-    const associateInvitation = vi
-      .fn()
       .mockRejectedValueOnce(failure("people_unavailable"))
-      .mockResolvedValue(unlinkedRoster.people[0]);
+      .mockResolvedValue({
+        association: "associated",
+        invitationId: "invitation-a",
+        person: {
+          ...unlinkedRoster.people[0],
+          associationState: "invitation_pending",
+          associationVersion: 1,
+        },
+      });
+    const associateInvitation = vi.fn();
+    const create = vi.fn();
     const operations: HouseholdPeopleOperations = {
       archive: vi.fn(),
       associateInvitation,
       bootstrapCreator: vi.fn(),
-      create: vi.fn(),
+      create,
       inviteAdult,
       list: vi.fn().mockResolvedValue(unlinkedRoster),
       restore: vi.fn(),
@@ -272,20 +279,18 @@ describe("HouseholdPeoplePanel", () => {
     expect(
       screen.queryByRole("button", { name: /find pending invitations/iu })
     ).toBeNull();
+    expect(screen.getByLabelText("Name")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add person" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeDisabled();
+    expect(create).not.toHaveBeenCalled();
     await userEvent.click(
       screen.getByRole("button", { name: "Finish original invitation" })
     );
 
-    await waitFor(() => expect(associateInvitation).toHaveBeenCalledTimes(2));
-    expect(associateInvitation.mock.calls[1]).toEqual(
-      associateInvitation.mock.calls[0]
-    );
-    expect(associateInvitation).toHaveBeenNthCalledWith(1, {
-      email: "adult@example.test",
-      mutationId: exactPayload?.mutationId,
-      personId: exactPayload?.personId,
-    });
-    expect(inviteAdult).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(inviteAdult).toHaveBeenCalledTimes(2));
+    expect(inviteAdult.mock.calls[0]?.[0]).toEqual(exactPayload);
+    expect(inviteAdult.mock.calls[1]?.[0]).toEqual(exactPayload);
+    expect(associateInvitation).not.toHaveBeenCalled();
     expect(screen.queryByText("adult@example.test")).toBeNull();
     expect(screen.queryByDisplayValue("adult@example.test")).toBeNull();
   });

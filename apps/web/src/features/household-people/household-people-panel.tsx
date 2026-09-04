@@ -9,7 +9,6 @@ import {
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
 import type {
-  AssociateHouseholdAdultInvitationPayload,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureOperationId,
   HouseholdPerson,
@@ -600,20 +599,6 @@ export const HouseholdPeoplePanel = ({
     },
     retry: false,
   });
-  const associateInvitation = useMutation({
-    mutationFn: (payload: AssociateHouseholdAdultInvitationPayload) =>
-      operations.associateInvitation === undefined
-        ? Promise.reject(new Error("unsupported"))
-        : operations.associateInvitation(payload),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: () => {
-      clearInvitationIntent(organizationId);
-      void refresh();
-    },
-    retry: retryAmbiguousFailure,
-  });
   const completeAdultLink = useMutation({
     mutationFn:
       operations.completeAdultLink ??
@@ -717,7 +702,6 @@ export const HouseholdPeoplePanel = ({
     retry: retryAmbiguousFailure,
   });
   const isPersonMutationPending = [
-    associateInvitation.isPending,
     bootstrap.isPending,
     cancelDeparture.isPending,
     completeAdultLink.isPending,
@@ -743,7 +727,6 @@ export const HouseholdPeoplePanel = ({
     retainedIntents.invitation !== null && !inviteAdult.isPending;
   const invitationIntentActive = retainedIntents.invitation !== null;
   const resetSettledMutations = () => {
-    resetMutationIfSettled(associateInvitation);
     resetMutationIfSettled(bootstrap);
     resetMutationIfSettled(cancelDeparture);
     resetMutationIfSettled(create);
@@ -764,7 +747,6 @@ export const HouseholdPeoplePanel = ({
     create.error,
     transition.error,
     inviteAdult.error,
-    associateInvitation.error,
     completeAdultLink.error,
     departAdult.error,
     getDeparture.error,
@@ -795,7 +777,6 @@ export const HouseholdPeoplePanel = ({
       const hasUnresolvedExactRecovery =
         invitationNeedsReconciliation ||
         departureUnresolved ||
-        hasAmbiguousRetryIntent(associateInvitation) ||
         hasAmbiguousRetryIntent(cancelDeparture) ||
         hasAmbiguousRetryIntent(retryDeparture);
       return {
@@ -846,8 +827,7 @@ export const HouseholdPeoplePanel = ({
     const departureRecoveryDisabled =
       isPersonMutationPending ||
       invitationNeedsReconciliation ||
-      hasUnresolvedGenericIntent ||
-      hasAmbiguousRetryIntent(associateInvitation);
+      hasUnresolvedGenericIntent;
     const renderInvitationRecovery = () => {
       const inviteIntent = retainedIntents.invitation;
       if (!invitationNeedsReconciliation || inviteIntent === null) {
@@ -857,8 +837,8 @@ export const HouseholdPeoplePanel = ({
         <PendingInvitationReconciliation
           disabled={associationRecoveryDisabled}
           inviteIntent={inviteIntent}
-          onAssociate={(payload) =>
-            runExactRecovery(() => associateInvitation.mutate(payload))
+          onReplay={(payload) =>
+            runExactRecovery(() => inviteAdult.mutate(payload))
           }
           personName={
             roster.data?.people.find(

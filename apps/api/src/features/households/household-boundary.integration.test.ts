@@ -2188,18 +2188,18 @@ describe("household public API to private Durable Object boundary", () => {
     expect(roster.people).toHaveLength(2);
   }, 30_000);
 
-  it("persists the exact Household invitation intent before calling Better Auth", async () => {
+  it("replays a retained browser invitation through the real boundary after interruption before Better Auth", async () => {
     const setup = await prepareInvitableAdult("Invitation Intent Staging");
-    const email = "invitation-intent-staging-adult@example.test";
-    const mutationId = "invitation-intent-staging";
+    const retainedBrowserPayload = {
+      email: "invitation-intent-staging-adult@example.test",
+      mutationId: "invitation-intent-staging",
+      personId: setup.adult.id,
+    } as const;
+    const retainedBrowserBody = JSON.stringify(retainedBrowserPayload);
     const invitationResponse = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/household/people/invitations",
       {
-        body: JSON.stringify({
-          email,
-          mutationId,
-          personId: setup.adult.id,
-        }),
+        body: retainedBrowserBody,
         headers: {
           "content-type": "application/json",
           cookie: setup.ownerCookie,
@@ -2231,12 +2231,36 @@ describe("household public API to private Durable Object boundary", () => {
       stagedRoster.people.find((person) => person.id === setup.adult.id)
     ).toMatchObject({ associationState: "invitation_pending" });
 
+    await restartRuntime();
+
+    const readOnlyAssociation = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/invitations/associate",
+      {
+        body: retainedBrowserBody,
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(readOnlyAssociation.status).toBe(404);
+    await expect(readOnlyAssociation.json()).resolves.toMatchObject({
+      code: "control_plane_resource_not_found",
+    });
+
+    const persistedDatabase = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    await expect(
+      persistedDatabase
+        .select({ id: authSchema.invitation.id })
+        .from(authSchema.invitation)
+        .where(eq(authSchema.invitation.organizationId, setup.organization.id))
+    ).resolves.toHaveLength(0);
+
     const replayRequest = {
-      body: JSON.stringify({
-        email,
-        mutationId,
-        personId: setup.adult.id,
-      }),
+      body: retainedBrowserBody,
       headers: {
         "content-type": "application/json",
         cookie: setup.ownerCookie,
@@ -2260,7 +2284,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     await expect(
-      database
+      persistedDatabase
         .select({ id: authSchema.invitation.id })
         .from(authSchema.invitation)
         .where(eq(authSchema.invitation.organizationId, setup.organization.id))
@@ -2278,9 +2302,14 @@ describe("household public API to private Durable Object boundary", () => {
     ).toHaveLength(1);
   }, 30_000);
 
-  it("recovers only the exact committed invitation intent after its creation response is lost", async () => {
+  it("replays only the exact committed browser invitation after its creation response is lost", async () => {
     const setup = await prepareInvitableAdult("Invitation Response Lost");
-    const mutationId = "invitation-response-lost";
+    const retainedBrowserPayload = {
+      email: "invitation-response-lost-adult@example.test",
+      mutationId: "invitation-response-lost",
+      personId: setup.adult.id,
+    } as const;
+    const retainedBrowserBody = JSON.stringify(retainedBrowserPayload);
     const unrelatedResponse = await authRequest(
       "/organization/invite-member",
       {
@@ -2297,11 +2326,7 @@ describe("household public API to private Durable Object boundary", () => {
     const invitationResponse = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/household/people/invitations",
       {
-        body: JSON.stringify({
-          email: "invitation-response-lost-adult@example.test",
-          mutationId,
-          personId: setup.adult.id,
-        }),
+        body: retainedBrowserBody,
         headers: {
           "content-type": "application/json",
           cookie: setup.ownerCookie,
@@ -2338,14 +2363,10 @@ describe("household public API to private Durable Object boundary", () => {
 
     await restartRuntime();
 
-    const association = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations/associate",
+    const replay = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/invitations",
       {
-        body: JSON.stringify({
-          email: "invitation-response-lost-adult@example.test",
-          mutationId,
-          personId: setup.adult.id,
-        }),
+        body: retainedBrowserBody,
         headers: {
           "content-type": "application/json",
           cookie: setup.ownerCookie,
@@ -2353,17 +2374,21 @@ describe("household public API to private Durable Object boundary", () => {
         method: "POST",
       }
     );
-    expect(association.status, await association.clone().text()).toBe(200);
-    await expect(association.json()).resolves.toMatchObject({
-      associationState: "invitation_pending",
-      id: setup.adult.id,
+    expect(replay.status, await replay.clone().text()).toBe(201);
+    await expect(replay.json()).resolves.toMatchObject({
+      association: "associated",
+      invitationId: originalInvitation.id,
+      person: {
+        associationState: "invitation_pending",
+        id: setup.adult.id,
+      },
     });
     const conflictingIntent = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations/associate",
+      "https://meal-planner.test/v1/household/people/invitations",
       {
         body: JSON.stringify({
           email: "unrelated-pending-adult@example.test",
-          mutationId,
+          mutationId: retainedBrowserPayload.mutationId,
           personId: setup.adult.id,
         }),
         headers: {
@@ -2376,6 +2401,26 @@ describe("household public API to private Durable Object boundary", () => {
     expect(conflictingIntent.status).toBe(409);
     await expect(conflictingIntent.json()).resolves.toMatchObject({
       code: "mutation_collision",
+    });
+
+    const readOnlyAssociation = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/invitations/associate",
+      {
+        body: retainedBrowserBody,
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(
+      readOnlyAssociation.status,
+      await readOnlyAssociation.clone().text()
+    ).toBe(200);
+    await expect(readOnlyAssociation.json()).resolves.toMatchObject({
+      associationState: "invitation_pending",
+      id: setup.adult.id,
     });
     const persistedDatabase = drizzle(
       await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
