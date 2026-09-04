@@ -138,25 +138,7 @@ const prepareProviderRecovery = (
         return yield* Effect.fail(failure("persistence_unavailable"));
       }
       const restartOutcome = yield* restart(recovery.workflowIdentity).pipe(
-        Effect.catchCause(() =>
-          hasHouseholdProviderRecoveryProgress({
-            acquisitionGeneration: request.acquisitionGeneration,
-            executionGeneration: request.executionGeneration,
-            householdDomain: service.householdDomain,
-            importId: request.importId,
-            inputFingerprint: recovery.inputFingerprint,
-            organizationId: request.organizationId,
-            recoveryDispatchId: recovery.recoveryDispatchId,
-            stage,
-          }).pipe(
-            Effect.mapError(mapHouseholdError),
-            Effect.flatMap((hasProgress) =>
-              hasProgress
-                ? Effect.succeed("RestartAmbiguous" as const)
-                : Effect.fail(failure("persistence_unavailable"))
-            )
-          )
-        )
+        Effect.catchCause(() => Effect.succeed("RestartAmbiguous" as const))
       );
       if (restartOutcome === "RestartAmbiguous") {
         const hasProgress = yield* hasHouseholdProviderRecoveryProgress({

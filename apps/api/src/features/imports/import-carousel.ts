@@ -15,10 +15,12 @@ import type {
   CarouselEvidenceRepository,
   CompletedCarouselEvidence,
 } from "./import-carousel.repository.js";
+import { bytesToHex, checksumBytes, sha256Bytes } from "./import-digest.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import {
   AcquisitionGeneration,
   EvidenceRetentionSeconds,
+  Sha256Hex,
   VerifiedSourceMetadata,
 } from "./import-media.model.js";
 import { produceRecipeDraftFromEvidence } from "./import-recipe-draft.js";
@@ -47,9 +49,6 @@ import {
   SourceCanonicalId,
 } from "./import.contracts.js";
 
-const Sha256Hex = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
-);
 const PositiveInteger = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThan(0))
 );
@@ -166,27 +165,6 @@ export const carouselManifestObjectKey = (
   generation: AcquisitionGeneration
 ) => `${carouselGenerationPrefix(importId, generation)}/manifest.json`;
 
-const bytesToHex = (value: ArrayBuffer) =>
-  Array.from(new Uint8Array(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-
-const sha256Bytes = (value: Uint8Array) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", Uint8Array.from(value).buffer)
-  );
-
-const sha256Hex = (value: Uint8Array) =>
-  Effect.map(sha256Bytes(value), bytesToHex);
-
-const checksumBuffer = (hex: string) => {
-  const bytes = new Uint8Array(32);
-  for (let index = 0; index < bytes.length; index += 1) {
-    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-  }
-  return bytes.buffer;
-};
-
 const nativeSha256 = (object: {
   readonly checksums?: { readonly sha256?: ArrayBuffer };
 }) => {
@@ -195,7 +173,7 @@ const nativeSha256 = (object: {
 };
 
 const descriptorFingerprint = (descriptor: TikTokCarouselDescriptor) =>
-  sha256Hex(
+  sha256Bytes(
     new TextEncoder().encode(
       JSON.stringify(
         Schema.encodeSync(TikTokCarouselDescriptorSchema)(descriptor)
@@ -235,6 +213,9 @@ const validateCompleteAcquisition = (
       (left, right) => left.orderIndex - right.orderIndex
     );
     const checksums = new Set<string>();
+    const verifiedImages: (TikTokCarouselAcquisition["images"][number] & {
+      readonly sha256: Sha256Hex;
+    })[] = [];
     let totalBytes = 0;
     for (const [orderIndex, image] of ordered.entries()) {
       const dimensions = decodeJpegDimensions(image.bytes);
@@ -252,15 +233,18 @@ const validateCompleteAcquisition = (
         dimensions === null ||
         dimensions.height !== image.height ||
         dimensions.width !== image.width ||
-        !/^[a-f\d]{64}$/u.test(image.sha256) ||
-        checksums.has(image.sha256) ||
-        (yield* sha256Hex(image.bytes)) !== image.sha256
+        checksums.has(image.sha256)
       ) {
         return yield* Effect.fail(partialFailure());
       }
-      checksums.add(image.sha256);
+      const sha256 = yield* sha256Bytes(image.bytes);
+      if (sha256 !== image.sha256) {
+        return yield* Effect.fail(partialFailure());
+      }
+      checksums.add(sha256);
+      verifiedImages.push({ ...image, sha256 });
     }
-    return { images: ordered, source };
+    return { images: verifiedImages, source };
   });
 
 const imageMetadata = (
@@ -306,7 +290,7 @@ const storeImage = (
           contentType: "image/jpeg",
         },
         onlyIf: { etagDoesNotMatch: "*" },
-        sha256: checksumBuffer(reference.sha256),
+        sha256: checksumBytes(reference.sha256),
       })
       .pipe(Effect.exit);
     const stored = yield* bucket
@@ -393,7 +377,7 @@ const readVerifiedManifest = (
         )
       );
     const bytes = new TextEncoder().encode(text);
-    const sha256 = yield* sha256Hex(bytes);
+    const sha256 = yield* sha256Bytes(bytes);
     const parsed = yield* Effect.try({
       catch: () =>
         pipelineFailure("carousel_evidence_invalid", "operator_reconcile"),
@@ -462,7 +446,7 @@ const storeManifest = (
         Schema.encodeSync(CarouselEvidenceManifestDocument)(document)
       )
     );
-    const sha256 = yield* sha256Hex(bytes);
+    const sha256 = yield* sha256Bytes(bytes);
     const key = carouselManifestObjectKey(
       document.importId,
       document.acquisitionGeneration
@@ -476,7 +460,7 @@ const storeManifest = (
           contentType: "application/json",
         },
         onlyIf: { etagDoesNotMatch: "*" },
-        sha256: checksumBuffer(sha256),
+        sha256: checksumBytes(sha256),
       })
       .pipe(Effect.exit);
     return { byteLength: bytes.byteLength, key, sha256 };
@@ -542,7 +526,7 @@ const assembleRecipeEvidence = (
 ) =>
   Effect.gen(function* assemble() {
     const items = recipeEvidenceItems(document, manifestSha256, source);
-    const evidenceFingerprint = yield* sha256Hex(
+    const evidenceFingerprint = yield* sha256Bytes(
       new TextEncoder().encode(
         JSON.stringify({
           generation: document.acquisitionGeneration,
@@ -868,7 +852,6 @@ export const produceTikTokCarouselRecipeDraft = Effect.fn(
     source,
     transcript: {
       reason: "source_type_carousel",
-      route: "carousel_v2",
       status: "not_applicable",
     },
   };
@@ -887,30 +870,4 @@ export const produceTikTokCarouselRecipeDraft = Effect.fn(
     },
     status: { kind: "needs_review" as const },
   };
-});
-
-/** Deterministic composition retained for local tests and synthetic harnesses. */
-export const importTikTokCarouselToRecipeDraft = Effect.fn(
-  "Imports.importTikTokCarouselToRecipeDraft"
-)(function* importCarousel(input: {
-  readonly adapter: TikTokCarouselAdapter;
-  readonly bucket: AcquisitionBucketLike;
-  readonly carouselRepository: CarouselEvidenceRepository;
-  readonly descriptor: TikTokCarouselDescriptor;
-  readonly extractor: RecipeExtractor;
-  readonly importId: ImportId;
-  readonly now: () => ImportTimestamp;
-  readonly recipeRepository: RecipeDraftRepository;
-  readonly visualExtractor: VisualEvidenceExtractor;
-}) {
-  const evidence = yield* prepareTikTokCarouselEvidence(input);
-  return yield* produceTikTokCarouselRecipeDraft({
-    bucket: input.bucket,
-    descriptor: input.descriptor,
-    evidence,
-    extractor: input.extractor,
-    importId: input.importId,
-    now: input.now,
-    recipeRepository: input.recipeRepository,
-  });
 });

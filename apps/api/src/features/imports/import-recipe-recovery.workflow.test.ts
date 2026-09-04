@@ -261,6 +261,7 @@ describe("bounded recipe recovery workflow", () => {
       importId,
       lifecycle: "needs_review",
       schemaVersion: 1,
+      transcript: { status: "available" },
     });
 
     await Effect.runPromise(lifecycle.grounding);

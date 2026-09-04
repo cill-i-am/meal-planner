@@ -14,6 +14,7 @@ import { RetryableAcquisitionError } from "./import-media.errors.js";
 import type {
   RetryableAcquisitionFailure,
   TikTokIdentity,
+  ProviderEvidenceTransport,
 } from "./import-media.model.js";
 import {
   RetryableAcquisitionFailure as RetryableAcquisitionFailureSchema,
@@ -28,10 +29,6 @@ const ContainerAcquisitionFailure = Schema.Union([
   UnavailableFailure,
   UnsupportedCarouselFailure,
 ]);
-
-type PreparedProviderEvidence = Effect.Success<
-  ReturnType<NonNullable<AcquisitionMediaObjectLike["prepareProviderEvidence"]>>
->;
 
 type AcquisitionRpcFailure =
   | ContainerAcquisitionError
@@ -56,7 +53,7 @@ export interface AcquisitionMediaObjectStub {
   readonly prepareProviderEvidence: (
     artifactId: string,
     durationSeconds: number
-  ) => AcquisitionRpcEffect<PreparedProviderEvidence>;
+  ) => AcquisitionRpcEffect<typeof ProviderEvidenceTransport.Encoded>;
 }
 
 const privateArtifactFailure = (): RetryableAcquisitionFailure =>

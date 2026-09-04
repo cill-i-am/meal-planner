@@ -9,6 +9,8 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+import { ProviderAccountingDispatchState } from "./provider-accounting.js";
+
 /** Cross-household provider cost authority. It owns no Household product state. */
 export const providerAccountingBudgets = sqliteTable(
   "provider_accounting_budgets",
@@ -62,14 +64,7 @@ export const providerAccountingDispatches = sqliteTable(
     providerStageId: text("provider_stage_id").notNull(),
     runId: text("run_id").notNull(),
     state: text("state", {
-      enum: [
-        "reserved",
-        "invoking",
-        "released",
-        "settled_known",
-        "settled_unknown",
-        "settled_conservative",
-      ],
+      enum: ProviderAccountingDispatchState.literals,
     })
       .notNull()
       .default("reserved"),

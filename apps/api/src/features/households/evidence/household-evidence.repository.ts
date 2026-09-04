@@ -6,7 +6,7 @@ import {
 } from "@meal-planner/recipe-import-api";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
-import { Clock, DateTime, Effect, Option, Schema } from "effect";
+import { Clock, DateTime, Effect, Match, Option, Schema } from "effect";
 
 import { EvidenceRetentionSeconds } from "../../imports/import-media.model.js";
 import { ensureHouseholdProvenance } from "../foundation/household-provenance.js";
@@ -36,13 +36,14 @@ import {
   HouseholdMutateEvidenceStageResult,
   HouseholdEvidenceStageResult,
   HouseholdExtractionClaimContext,
-  HouseholdReadEvidenceStageResult,
+  HouseholdEvidenceStageSnapshot,
   HouseholdReadEvidenceReferencesResult,
   HouseholdReadAcquisitionAttemptsResult,
   HouseholdReadImportTerminalCheckpointResult,
   HouseholdPrepareRecipeRecoveryInput,
   HouseholdPrepareRecipeRecoveryResult,
   HouseholdReadRecipeRecoveryAttemptResult,
+  HouseholdRecipeRecoveryAttempt,
 } from "./household-evidence.contract.js";
 import type {
   HouseholdCommitAcquisitionEvidenceInput as HouseholdCommitAcquisitionEvidenceInputType,
@@ -326,7 +327,7 @@ const requireRecoveryStage = (stage: RecoveryStageRow | undefined) =>
   stage.state === "failed" &&
   stage.failureCode === "provider_error" &&
   stage.claimJson !== null
-    ? Effect.succeed(stage)
+    ? Effect.succeed({ ...stage, claimJson: stage.claimJson })
     : Effect.fail(failure("illegal_transition"));
 
 const validateRecoveryCheckpoint = (
@@ -551,27 +552,8 @@ export const makeHouseholdEvidenceRepository = (
               )
               .limit(1)
               .pipe(mapPersistence);
-            const [committedEvidence] = yield* transaction
-              .select({
-                acquisitionAttemptGeneration:
-                  householdImportEvidenceExecutions.acquisitionAttemptGeneration,
-              })
-              .from(householdImportEvidenceExecutions)
-              .where(
-                eq(householdImportEvidenceExecutions.intentId, input.intentId)
-              )
-              .orderBy(
-                desc(
-                  householdImportEvidenceExecutions.acquisitionAttemptGeneration
-                )
-              )
-              .limit(1)
-              .pipe(mapPersistence);
             const acquisitionAttemptGeneration =
-              Math.max(
-                latestAttempt?.acquisitionAttemptGeneration ?? 0,
-                committedEvidence?.acquisitionAttemptGeneration ?? 0
-              ) + 1;
+              (latestAttempt?.acquisitionAttemptGeneration ?? 0) + 1;
             const attempt = {
               acquisitionAttemptGeneration,
               attemptIdentity: input.attemptIdentity,
@@ -1050,404 +1032,391 @@ export const makeHouseholdEvidenceRepository = (
               .limit(1)
               .pipe(mapPersistence);
             const committedAt = new Date(nowEpochMs).toISOString();
-            const claimStage = Effect.gen(function* claimEvidenceStage() {
-              if (input.operation._tag !== "Claim") {
-                return yield* Effect.fail(failure("invalid_input"));
-              }
-              if (current === undefined) {
-                const claimJson =
-                  input.operation.extractionContext === undefined
-                    ? null
-                    : JSON.stringify(input.operation.extractionContext);
-                yield* transaction
-                  .insert(householdEvidenceStageExecutions)
-                  .values({
-                    acquisitionAttemptGeneration:
-                      input.acquisitionAttemptGeneration,
-                    claimJson,
-                    committedAt,
-                    dispatchId: input.operation.dispatchId,
-                    executionGeneration: input.expectedGeneration,
-                    inputFingerprint: input.inputFingerprint,
-                    intentId: input.intentId,
-                    stage: input.operation.stage,
-                    startedAt: DateTime.formatIso(input.operation.startedAt),
-                    state: "dispatching",
-                  });
-                return "DispatchClaimed" as const;
-              }
-              if (
-                current.acquisitionAttemptGeneration !==
-                  input.acquisitionAttemptGeneration ||
-                current.inputFingerprint !== input.inputFingerprint ||
-                current.dispatchId !== input.operation.dispatchId
-              ) {
-                return yield* Effect.fail(failure("idempotency_conflict"));
-              }
-              if (current.state === "completed") {
-                return "Completed" as const;
-              }
-              if (current.state === "failed") {
-                return "Failed" as const;
-              }
-              return "ResumeDispatch" as const;
-            });
-            const completeStage = Effect.gen(function* completeEvidenceStage() {
-              if (input.operation._tag !== "Complete") {
-                return yield* Effect.fail(failure("invalid_input"));
-              }
-              if (
-                current === undefined ||
-                current.acquisitionAttemptGeneration !==
-                  input.acquisitionAttemptGeneration ||
-                current.inputFingerprint !== input.inputFingerprint ||
-                current.dispatchId !== input.operation.dispatchId
-              ) {
-                return yield* Effect.fail(
-                  failure(
-                    current === undefined
-                      ? "illegal_transition"
-                      : "idempotency_conflict"
-                  )
-                );
-              }
-              const encodedResult = yield* Schema.encodeEffect(
-                HouseholdEvidenceStageResult
-              )(input.operation.result).pipe(
-                Effect.mapError(persistenceFailure)
-              );
-              const resultJson = JSON.stringify(encodedResult);
-              if (current.state === "completed") {
-                if (current.resultJson !== resultJson) {
-                  return yield* Effect.fail(failure("idempotency_conflict"));
-                }
-              } else if (current.state === "dispatching") {
-                yield* transaction
-                  .update(householdEvidenceStageExecutions)
-                  .set({ committedAt, resultJson, state: "completed" })
-                  .where(
-                    and(
-                      eq(
-                        householdEvidenceStageExecutions.intentId,
-                        input.intentId
-                      ),
-                      eq(
-                        householdEvidenceStageExecutions.executionGeneration,
-                        input.expectedGeneration
-                      ),
-                      eq(
-                        householdEvidenceStageExecutions.stage,
-                        input.operation.stage
-                      ),
-                      eq(
-                        householdEvidenceStageExecutions.dispatchId,
-                        input.operation.dispatchId
-                      ),
-                      eq(householdEvidenceStageExecutions.state, "dispatching")
-                    )
-                  );
-                const { reference } = input.operation;
-                const expected = expectedStageReference(
-                  input.operation.stage,
-                  input.intentId,
-                  input.acquisitionAttemptGeneration
-                );
-                if (reference !== undefined && expected !== null) {
-                  yield* transaction
-                    .insert(householdEvidenceReferences)
-                    .values({
-                      byteLength: reference.byteLength,
-                      deleteAt: DateTime.formatIso(reference.deleteAt),
-                      executionGeneration: input.expectedGeneration,
-                      intentId: input.intentId,
-                      kind: reference.kind,
-                      objectKey: reference.key,
-                      ordinal: expected.ordinal,
-                      sha256: reference.sha256,
-                    });
-                }
-              } else {
-                return yield* Effect.fail(failure("illegal_transition"));
-              }
-              return "Completed" as const;
-            });
-            const failStage = Effect.gen(function* failEvidenceStage() {
-              if (input.operation._tag !== "Fail") {
-                return yield* Effect.fail(failure("invalid_input"));
-              }
-              if (
-                current === undefined ||
-                current.acquisitionAttemptGeneration !==
-                  input.acquisitionAttemptGeneration ||
-                current.inputFingerprint !== input.inputFingerprint ||
-                current.dispatchId !== input.operation.dispatchId
-              ) {
-                return yield* Effect.fail(
-                  failure(
-                    current === undefined
-                      ? "illegal_transition"
-                      : "idempotency_conflict"
-                  )
-                );
-              }
-              if (current.state === "failed") {
-                if (
-                  current.failureCode !== input.operation.failureCode ||
-                  current.completedAt !==
-                    DateTime.formatIso(input.operation.completedAt)
-                ) {
-                  return yield* Effect.fail(failure("idempotency_conflict"));
-                }
-              } else if (current.state === "dispatching") {
-                yield* transaction
-                  .update(householdEvidenceStageExecutions)
-                  .set({
-                    committedAt,
-                    completedAt: DateTime.formatIso(
-                      input.operation.completedAt
-                    ),
-                    failureCode: input.operation.failureCode,
-                    state: "failed",
-                  })
-                  .where(
-                    and(
-                      eq(
-                        householdEvidenceStageExecutions.intentId,
-                        input.intentId
-                      ),
-                      eq(
-                        householdEvidenceStageExecutions.executionGeneration,
-                        input.expectedGeneration
-                      ),
-                      eq(
-                        householdEvidenceStageExecutions.stage,
-                        input.operation.stage
-                      ),
-                      eq(
-                        householdEvidenceStageExecutions.dispatchId,
-                        input.operation.dispatchId
-                      ),
-                      eq(householdEvidenceStageExecutions.state, "dispatching")
-                    )
-                  );
-                if (input.operation.stage !== "carousel") {
-                  yield* transaction.insert(importTerminalCheckpoints).values({
-                    completedAt: DateTime.formatIso(
-                      input.operation.completedAt
-                    ),
-                    executionGeneration: input.expectedGeneration,
-                    failureCode: input.operation.failureCode,
-                    inputFingerprint: input.inputFingerprint,
-                    intentId: input.intentId,
-                    ownershipId: input.operation.dispatchId,
-                    stage: input.operation.stage,
-                  });
-                }
-              } else {
-                return yield* Effect.fail(failure("illegal_transition"));
-              }
-              return "Failed" as const;
-            });
-            const currentMatchesRecoveryAttempt =
-              current?.acquisitionAttemptGeneration ===
-                input.acquisitionAttemptGeneration &&
-              current?.inputFingerprint === input.inputFingerprint &&
-              current.dispatchId === input.operation.dispatchId;
-            const prepareRecoveryStage = Effect.gen(
-              function* prepareFailedProviderRecovery() {
-                if (input.operation._tag !== "PrepareRecovery") {
-                  return yield* Effect.fail(failure("invalid_input"));
-                }
-                if (currentMatchesRecoveryAttempt) {
-                  return "RecoveryPrepared" as const;
-                }
-                if (
-                  current === undefined ||
-                  current.inputFingerprint !==
-                    input.operation.predecessorInputFingerprint ||
-                  current.dispatchId !== input.operation.predecessorDispatchId
-                ) {
-                  return yield* Effect.fail(
-                    failure(
-                      current === undefined
-                        ? "illegal_transition"
-                        : "idempotency_conflict"
-                    )
-                  );
-                }
-                if (
-                  current.state !== "failed" ||
-                  current.failureCode !== "outcome_unknown"
-                ) {
-                  return yield* Effect.fail(failure("illegal_transition"));
-                }
-                const [checkpoint] = yield* transaction
-                  .select()
-                  .from(importTerminalCheckpoints)
-                  .where(
-                    and(
-                      eq(importTerminalCheckpoints.intentId, input.intentId),
-                      eq(
-                        importTerminalCheckpoints.executionGeneration,
-                        input.expectedGeneration
-                      ),
-                      eq(
-                        importTerminalCheckpoints.stage,
-                        input.operation.stage
-                      ),
-                      eq(
-                        importTerminalCheckpoints.ownershipId,
-                        input.operation.predecessorDispatchId
+            const outcome = yield* Match.value(input.operation).pipe(
+              Match.tagsExhaustive({
+                Claim: (operation) =>
+                  Effect.gen(function* claimEvidenceStage() {
+                    if (current === undefined) {
+                      const claimJson =
+                        operation.extractionContext === undefined
+                          ? null
+                          : JSON.stringify(operation.extractionContext);
+                      yield* transaction
+                        .insert(householdEvidenceStageExecutions)
+                        .values({
+                          acquisitionAttemptGeneration:
+                            input.acquisitionAttemptGeneration,
+                          claimJson,
+                          committedAt,
+                          dispatchId: operation.dispatchId,
+                          executionGeneration: input.expectedGeneration,
+                          inputFingerprint: input.inputFingerprint,
+                          intentId: input.intentId,
+                          stage: operation.stage,
+                          startedAt: DateTime.formatIso(operation.startedAt),
+                          state: "dispatching",
+                        });
+                      return "DispatchClaimed" as const;
+                    }
+                    if (
+                      current.acquisitionAttemptGeneration !==
+                        input.acquisitionAttemptGeneration ||
+                      current.inputFingerprint !== input.inputFingerprint ||
+                      current.dispatchId !== operation.dispatchId
+                    ) {
+                      return yield* Effect.fail(
+                        failure("idempotency_conflict")
+                      );
+                    }
+                    if (current.state === "completed") {
+                      return "Completed" as const;
+                    }
+                    if (current.state === "failed") {
+                      return "Failed" as const;
+                    }
+                    return "ResumeDispatch" as const;
+                  }),
+                Complete: (operation) =>
+                  Effect.gen(function* completeEvidenceStage() {
+                    if (
+                      current === undefined ||
+                      current.acquisitionAttemptGeneration !==
+                        input.acquisitionAttemptGeneration ||
+                      current.inputFingerprint !== input.inputFingerprint ||
+                      current.dispatchId !== operation.dispatchId
+                    ) {
+                      return yield* Effect.fail(
+                        failure(
+                          current === undefined
+                            ? "illegal_transition"
+                            : "idempotency_conflict"
+                        )
+                      );
+                    }
+                    const encodedResult = yield* Schema.encodeEffect(
+                      HouseholdEvidenceStageResult
+                    )(operation.result).pipe(
+                      Effect.mapError(persistenceFailure)
+                    );
+                    const resultJson = JSON.stringify(encodedResult);
+                    if (current.state === "completed") {
+                      if (current.resultJson !== resultJson) {
+                        return yield* Effect.fail(
+                          failure("idempotency_conflict")
+                        );
+                      }
+                    } else if (current.state === "dispatching") {
+                      yield* transaction
+                        .update(householdEvidenceStageExecutions)
+                        .set({ committedAt, resultJson, state: "completed" })
+                        .where(
+                          and(
+                            eq(
+                              householdEvidenceStageExecutions.intentId,
+                              input.intentId
+                            ),
+                            eq(
+                              householdEvidenceStageExecutions.executionGeneration,
+                              input.expectedGeneration
+                            ),
+                            eq(
+                              householdEvidenceStageExecutions.stage,
+                              operation.stage
+                            ),
+                            eq(
+                              householdEvidenceStageExecutions.dispatchId,
+                              operation.dispatchId
+                            ),
+                            eq(
+                              householdEvidenceStageExecutions.state,
+                              "dispatching"
+                            )
+                          )
+                        );
+                      const { reference } = operation;
+                      const expected = expectedStageReference(
+                        operation.stage,
+                        input.intentId,
+                        input.acquisitionAttemptGeneration
+                      );
+                      if (reference !== undefined && expected !== null) {
+                        yield* transaction
+                          .insert(householdEvidenceReferences)
+                          .values({
+                            byteLength: reference.byteLength,
+                            deleteAt: DateTime.formatIso(reference.deleteAt),
+                            executionGeneration: input.expectedGeneration,
+                            intentId: input.intentId,
+                            kind: reference.kind,
+                            objectKey: reference.key,
+                            ordinal: expected.ordinal,
+                            sha256: reference.sha256,
+                          });
+                      }
+                    } else {
+                      return yield* Effect.fail(failure("illegal_transition"));
+                    }
+                    return "Completed" as const;
+                  }),
+                Fail: (operation) =>
+                  Effect.gen(function* failEvidenceStage() {
+                    if (
+                      current === undefined ||
+                      current.acquisitionAttemptGeneration !==
+                        input.acquisitionAttemptGeneration ||
+                      current.inputFingerprint !== input.inputFingerprint ||
+                      current.dispatchId !== operation.dispatchId
+                    ) {
+                      return yield* Effect.fail(
+                        failure(
+                          current === undefined
+                            ? "illegal_transition"
+                            : "idempotency_conflict"
+                        )
+                      );
+                    }
+                    if (current.state === "failed") {
+                      if (
+                        current.failureCode !== operation.failureCode ||
+                        current.completedAt !==
+                          DateTime.formatIso(operation.completedAt)
+                      ) {
+                        return yield* Effect.fail(
+                          failure("idempotency_conflict")
+                        );
+                      }
+                    } else if (current.state === "dispatching") {
+                      yield* transaction
+                        .update(householdEvidenceStageExecutions)
+                        .set({
+                          committedAt,
+                          completedAt: DateTime.formatIso(
+                            operation.completedAt
+                          ),
+                          failureCode: operation.failureCode,
+                          state: "failed",
+                        })
+                        .where(
+                          and(
+                            eq(
+                              householdEvidenceStageExecutions.intentId,
+                              input.intentId
+                            ),
+                            eq(
+                              householdEvidenceStageExecutions.executionGeneration,
+                              input.expectedGeneration
+                            ),
+                            eq(
+                              householdEvidenceStageExecutions.stage,
+                              operation.stage
+                            ),
+                            eq(
+                              householdEvidenceStageExecutions.dispatchId,
+                              operation.dispatchId
+                            ),
+                            eq(
+                              householdEvidenceStageExecutions.state,
+                              "dispatching"
+                            )
+                          )
+                        );
+                      if (operation.stage !== "carousel") {
+                        yield* transaction
+                          .insert(importTerminalCheckpoints)
+                          .values({
+                            completedAt: DateTime.formatIso(
+                              operation.completedAt
+                            ),
+                            executionGeneration: input.expectedGeneration,
+                            failureCode: operation.failureCode,
+                            inputFingerprint: input.inputFingerprint,
+                            intentId: input.intentId,
+                            ownershipId: operation.dispatchId,
+                            stage: operation.stage,
+                          });
+                      }
+                    } else {
+                      return yield* Effect.fail(failure("illegal_transition"));
+                    }
+                    return "Failed" as const;
+                  }),
+                PrepareRecovery: (operation) =>
+                  Effect.gen(function* prepareRecoveryEvidenceStage() {
+                    const currentMatchesRecoveryAttempt =
+                      current?.acquisitionAttemptGeneration ===
+                        input.acquisitionAttemptGeneration &&
+                      current?.inputFingerprint === input.inputFingerprint &&
+                      current.dispatchId === operation.dispatchId;
+                    if (currentMatchesRecoveryAttempt) {
+                      return "RecoveryPrepared" as const;
+                    }
+                    if (
+                      current === undefined ||
+                      current.inputFingerprint !==
+                        operation.predecessorInputFingerprint ||
+                      current.dispatchId !== operation.predecessorDispatchId
+                    ) {
+                      return yield* Effect.fail(
+                        failure(
+                          current === undefined
+                            ? "illegal_transition"
+                            : "idempotency_conflict"
+                        )
+                      );
+                    }
+                    if (
+                      current.state !== "failed" ||
+                      current.failureCode !== "outcome_unknown"
+                    ) {
+                      return yield* Effect.fail(failure("illegal_transition"));
+                    }
+                    const [checkpoint] = yield* transaction
+                      .select()
+                      .from(importTerminalCheckpoints)
+                      .where(
+                        and(
+                          eq(
+                            importTerminalCheckpoints.intentId,
+                            input.intentId
+                          ),
+                          eq(
+                            importTerminalCheckpoints.executionGeneration,
+                            input.expectedGeneration
+                          ),
+                          eq(importTerminalCheckpoints.stage, operation.stage),
+                          eq(
+                            importTerminalCheckpoints.ownershipId,
+                            operation.predecessorDispatchId
+                          )
+                        )
                       )
-                    )
-                  )
-                  .limit(1)
-                  .pipe(mapPersistence);
-                if (
-                  checkpoint === undefined ||
-                  checkpoint.failureCode !== current.failureCode ||
-                  checkpoint.inputFingerprint !== current.inputFingerprint
-                ) {
-                  return yield* Effect.fail(failure("illegal_transition"));
-                }
-                const recoveryStartedAt = checkpoint.completedAt;
-                yield* transaction
-                  .update(householdEvidenceStageExecutions)
-                  .set({
-                    acquisitionAttemptGeneration:
-                      input.acquisitionAttemptGeneration,
-                    committedAt,
-                    completedAt: null,
-                    dispatchId: input.operation.dispatchId,
-                    failureCode: null,
-                    inputFingerprint: input.inputFingerprint,
-                    resultJson: null,
-                    startedAt: recoveryStartedAt,
-                    state: "dispatching",
-                  })
-                  .where(
-                    and(
-                      eq(
-                        householdEvidenceStageExecutions.intentId,
-                        input.intentId
-                      ),
-                      eq(
-                        householdEvidenceStageExecutions.executionGeneration,
-                        input.expectedGeneration
-                      ),
-                      eq(
-                        householdEvidenceStageExecutions.stage,
-                        input.operation.stage
-                      ),
-                      eq(
-                        householdEvidenceStageExecutions.dispatchId,
-                        input.operation.predecessorDispatchId
-                      ),
-                      eq(householdEvidenceStageExecutions.state, "failed")
-                    )
-                  );
-                const [failedIntentRow] = yield* transaction
-                  .select({ intentJson: householdRecipeImports.intentJson })
-                  .from(householdRecipeImports)
-                  .where(eq(householdRecipeImports.intentId, input.intentId))
-                  .limit(1)
-                  .pipe(mapPersistence);
-                if (failedIntentRow === undefined) {
-                  return yield* Effect.fail(failure("intent_not_found"));
-                }
-                const failedIntent = yield* decode(
-                  EncodedRecipeImportIntent,
-                  failedIntentRow.intentJson
-                );
-                if (failedIntent.status !== "failed") {
-                  return yield* Effect.fail(failure("illegal_transition"));
-                }
-                const failedWire = yield* encode(
-                  FailedRecipeImportIntent,
-                  failedIntent
-                );
-                const {
-                  error: _error,
-                  failedAt: _failedAt,
-                  ...common
-                } = failedWire;
-                const recoveredIntent = yield* decode(
-                  ProcessingRecipeImportIntent,
-                  {
-                    ...common,
-                    activity: { type: "working" },
-                    intentVersion: failedIntent.intentVersion + 1,
-                    processing: {
-                      speech:
-                        input.operation.stage === "speech"
-                          ? "processing"
-                          : "completed",
-                      startedAt: recoveryStartedAt,
-                      type: "analyzing_evidence",
-                      visuals:
-                        input.operation.stage === "visual"
-                          ? "processing"
-                          : "not_started",
-                    },
-                    status: "processing",
-                    updatedAt: recoveryStartedAt,
-                  }
-                );
-                yield* transaction
-                  .update(householdRecipeImports)
-                  .set({
-                    intentJson: yield* encode(
-                      EncodedRecipeImportIntent,
-                      recoveredIntent
-                    ),
-                    status: "processing",
-                    updatedAt: recoveryStartedAt,
-                  })
-                  .where(eq(householdRecipeImports.intentId, input.intentId));
-                yield* transaction
-                  .insert(householdRecipeImportTimeline)
-                  .values({
-                    eventJson: yield* encode(
-                      EncodedRecipeImportTimelineEvent,
-                      yield* decode(RecipeImportTimelineEvent, {
-                        at: recoveryStartedAt,
-                        intentVersion: recoveredIntent.intentVersion,
-                        type: "recovered",
+                      .limit(1)
+                      .pipe(mapPersistence);
+                    if (
+                      checkpoint === undefined ||
+                      checkpoint.failureCode !== current.failureCode ||
+                      checkpoint.inputFingerprint !== current.inputFingerprint
+                    ) {
+                      return yield* Effect.fail(failure("illegal_transition"));
+                    }
+                    const recoveryStartedAt = checkpoint.completedAt;
+                    yield* transaction
+                      .update(householdEvidenceStageExecutions)
+                      .set({
+                        acquisitionAttemptGeneration:
+                          input.acquisitionAttemptGeneration,
+                        committedAt,
+                        completedAt: null,
+                        dispatchId: operation.dispatchId,
+                        failureCode: null,
+                        inputFingerprint: input.inputFingerprint,
+                        resultJson: null,
+                        startedAt: recoveryStartedAt,
+                        state: "dispatching",
                       })
-                    ),
-                    intentId: input.intentId,
-                    intentVersion: recoveredIntent.intentVersion,
-                  });
-                return "RecoveryPrepared" as const;
-              }
+                      .where(
+                        and(
+                          eq(
+                            householdEvidenceStageExecutions.intentId,
+                            input.intentId
+                          ),
+                          eq(
+                            householdEvidenceStageExecutions.executionGeneration,
+                            input.expectedGeneration
+                          ),
+                          eq(
+                            householdEvidenceStageExecutions.stage,
+                            operation.stage
+                          ),
+                          eq(
+                            householdEvidenceStageExecutions.dispatchId,
+                            operation.predecessorDispatchId
+                          ),
+                          eq(householdEvidenceStageExecutions.state, "failed")
+                        )
+                      );
+                    const [failedIntentRow] = yield* transaction
+                      .select({
+                        intentJson: householdRecipeImports.intentJson,
+                      })
+                      .from(householdRecipeImports)
+                      .where(
+                        eq(householdRecipeImports.intentId, input.intentId)
+                      )
+                      .limit(1)
+                      .pipe(mapPersistence);
+                    if (failedIntentRow === undefined) {
+                      return yield* Effect.fail(failure("intent_not_found"));
+                    }
+                    const failedIntent = yield* decode(
+                      EncodedRecipeImportIntent,
+                      failedIntentRow.intentJson
+                    );
+                    if (failedIntent.status !== "failed") {
+                      return yield* Effect.fail(failure("illegal_transition"));
+                    }
+                    const failedWire = yield* encode(
+                      FailedRecipeImportIntent,
+                      failedIntent
+                    );
+                    const {
+                      error: _error,
+                      failedAt: _failedAt,
+                      ...common
+                    } = failedWire;
+                    const recoveredIntent = yield* decode(
+                      ProcessingRecipeImportIntent,
+                      {
+                        ...common,
+                        activity: { type: "working" },
+                        intentVersion: failedIntent.intentVersion + 1,
+                        processing: {
+                          speech:
+                            operation.stage === "speech"
+                              ? "processing"
+                              : "completed",
+                          startedAt: recoveryStartedAt,
+                          type: "analyzing_evidence",
+                          visuals:
+                            operation.stage === "visual"
+                              ? "processing"
+                              : "not_started",
+                        },
+                        status: "processing",
+                        updatedAt: recoveryStartedAt,
+                      }
+                    );
+                    yield* transaction
+                      .update(householdRecipeImports)
+                      .set({
+                        intentJson: yield* encode(
+                          EncodedRecipeImportIntent,
+                          recoveredIntent
+                        ),
+                        status: "processing",
+                        updatedAt: recoveryStartedAt,
+                      })
+                      .where(
+                        eq(householdRecipeImports.intentId, input.intentId)
+                      );
+                    yield* transaction
+                      .insert(householdRecipeImportTimeline)
+                      .values({
+                        eventJson: yield* encode(
+                          EncodedRecipeImportTimelineEvent,
+                          yield* decode(RecipeImportTimelineEvent, {
+                            at: recoveryStartedAt,
+                            intentVersion: recoveredIntent.intentVersion,
+                            type: "recovered",
+                          })
+                        ),
+                        intentId: input.intentId,
+                        intentVersion: recoveredIntent.intentVersion,
+                      });
+                    return "RecoveryPrepared" as const;
+                  }),
+              })
             );
-            let outcome:
-              | "Completed"
-              | "DispatchClaimed"
-              | "Failed"
-              | "RecoveryPrepared"
-              | "ResumeDispatch";
-            switch (input.operation._tag) {
-              case "Claim": {
-                outcome = yield* claimStage;
-                break;
-              }
-              case "Complete": {
-                outcome = yield* completeStage;
-                break;
-              }
-              case "Fail": {
-                outcome = yield* failStage;
-                break;
-              }
-              case "PrepareRecovery": {
-                outcome = yield* prepareRecoveryStage;
-                break;
-              }
-              default: {
-                return yield* Effect.fail(failure("invalid_input"));
-              }
-            }
             const result = yield* decode(HouseholdMutateEvidenceStageResult, {
               acquisitionAttemptGeneration: input.acquisitionAttemptGeneration,
               committedAt,
@@ -1661,14 +1630,10 @@ export const makeHouseholdEvidenceRepository = (
               return yield* Effect.fail(failure("idempotency_conflict"));
             }
             const validStage = yield* requireRecoveryStage(stage);
-            const claimValue = yield* Effect.try({
-              catch: persistenceFailure,
-              try: () => JSON.parse(validStage.claimJson as string) as unknown,
-            });
             const claim = yield* Schema.decodeUnknownEffect(
-              HouseholdExtractionClaimContext,
+              Schema.fromJsonString(HouseholdExtractionClaimContext),
               { onExcessProperty: "error" }
-            )(claimValue).pipe(Effect.mapError(persistenceFailure));
+            )(validStage.claimJson).pipe(Effect.mapError(persistenceFailure));
 
             const [checkpoint] = yield* transaction
               .select()
@@ -1773,7 +1738,7 @@ export const makeHouseholdEvidenceRepository = (
             const currentDispatchId = `${rootDispatchId}:recovery:${ordinal}`;
             const currentExtractionFingerprint = proposedExtractionFingerprint;
             const attempt = yield* Schema.decodeUnknownEffect(
-              HouseholdReadRecipeRecoveryAttemptResult,
+              HouseholdRecipeRecoveryAttempt,
               { onExcessProperty: "error" }
             )({
               acquisitionGeneration: input.acquisitionAttemptGeneration,
@@ -1793,9 +1758,6 @@ export const makeHouseholdEvidenceRepository = (
               transcriptSha256: claim.transcriptSha256,
               visualManifestSha256: claim.visualManifestSha256,
             }).pipe(Effect.mapError(persistenceFailure));
-            if (attempt === null) {
-              return yield* Effect.fail(persistenceFailure());
-            }
             const result: HouseholdPrepareRecipeRecoveryResult = {
               attempt,
               outcome: "Prepared",
@@ -1975,20 +1937,6 @@ export const makeHouseholdEvidenceRepository = (
       if (stage === undefined) {
         return null;
       }
-      const result =
-        stage.resultJson === null
-          ? null
-          : yield* Effect.try({
-              catch: persistenceFailure,
-              try: () => JSON.parse(stage.resultJson as string) as unknown,
-            });
-      const extractionContext =
-        stage.claimJson === null
-          ? null
-          : yield* Effect.try({
-              catch: persistenceFailure,
-              try: () => JSON.parse(stage.claimJson as string) as unknown,
-            });
       const expectedReference = expectedStageReference(
         input.stage,
         input.intentId,
@@ -2013,7 +1961,15 @@ export const makeHouseholdEvidenceRepository = (
               .limit(1)
               .pipe(mapPersistence);
       return yield* Schema.decodeUnknownEffect(
-        HouseholdReadEvidenceStageResult,
+        Schema.Struct({
+          ...HouseholdEvidenceStageSnapshot.fields,
+          extractionContext: Schema.NullOr(
+            Schema.fromJsonString(HouseholdExtractionClaimContext)
+          ),
+          result: Schema.NullOr(
+            Schema.fromJsonString(HouseholdEvidenceStageResult)
+          ),
+        }),
         {
           onExcessProperty: "error",
         }
@@ -2023,7 +1979,7 @@ export const makeHouseholdEvidenceRepository = (
         completedAt: stage.completedAt,
         dispatchId: stage.dispatchId,
         executionGeneration: input.expectedGeneration,
-        extractionContext,
+        extractionContext: stage.claimJson,
         failureCode: stage.failureCode,
         inputFingerprint: stage.inputFingerprint,
         intentId: input.intentId,
@@ -2038,7 +1994,7 @@ export const makeHouseholdEvidenceRepository = (
                 kind: reference.kind,
                 sha256: reference.sha256,
               },
-        result,
+        result: stage.resultJson,
         stage: input.stage,
         startedAt: stage.startedAt,
       }).pipe(Effect.mapError(persistenceFailure));

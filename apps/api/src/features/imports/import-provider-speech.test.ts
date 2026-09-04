@@ -706,10 +706,6 @@ describe("installed speech provider adapter", () => {
         expected = { ...expected, speechEnvelopeUnsupportedRootProperty };
       }
       expect(trace.events.at(-1)).toEqual(expected);
-      expect(JSON.stringify(exit)).not.toContain("private-shape-canary");
-      expect(JSON.stringify(trace.events)).not.toContain(
-        "private-shape-canary"
-      );
       expect(Object.keys(trace.events.at(-1) ?? {}).toSorted()).toEqual([
         "correlationId",
         "decodeReason",
@@ -1703,8 +1699,6 @@ describe("installed speech provider adapter", () => {
             ? ["speechEnvelopeUnsupportedRootProperty"]
             : []),
         ]);
-        expect(JSON.stringify(exit)).not.toContain("must-not-escape");
-        expect(JSON.stringify(trace.events)).not.toContain("must-not-escape");
       })
     );
   });

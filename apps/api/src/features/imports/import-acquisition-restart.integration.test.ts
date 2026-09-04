@@ -2,12 +2,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
-import * as Bundle from "alchemy/Bundle";
-import { Effect, Schema } from "effect";
-import type { ModuleDefinition } from "miniflare";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 
 const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
@@ -23,57 +21,16 @@ const householdDomainFixturePath = fileURLToPath(
 let runtime: Miniflare;
 let temporaryDirectory: string;
 
-const buildFixture = async (inputPath: string, outputDirectory: string) => {
-  const output = await Effect.runPromise(
-    Bundle.build(
-      {
-        checks: {
-          ineffectiveDynamicImport: false,
-          unresolvedImport: false,
-        },
-        external: ["cloudflare:workers"],
-        input: inputPath,
-        plugins: [
-          cloudflareRolldown({ compatibilityDate, compatibilityFlags }),
-        ],
-      },
-      {
-        codeSplitting: false,
-        dir: outputDirectory,
-        format: "esm",
-        minify: true,
-        sourcemap: false,
-      }
-    )
-  );
-  const [entry, ...assets] = output.files;
-  return [
-    {
-      contents: Schema.is(Schema.String)(entry.content)
-        ? entry.content
-        : new TextDecoder().decode(entry.content),
-      path: entry.path,
-      type: "ESModule",
-    },
-    ...assets.map(
-      (asset): ModuleDefinition => ({
-        contents: Schema.is(Schema.String)(asset.content)
-          ? asset.content
-          : new TextDecoder().decode(asset.content),
-        path: asset.path,
-        type: "Text",
-      })
-    ),
-  ] as const satisfies readonly [ModuleDefinition, ...ModuleDefinition[]];
-};
-
 beforeAll(async () => {
   temporaryDirectory = await mkdtemp(
     `${tmpdir()}/meal-planner-acquisition-restart-`
   );
   const [fixtureModules, householdModules] = await Promise.all([
-    buildFixture(fixturePath, `${temporaryDirectory}/workflow`),
-    buildFixture(householdDomainFixturePath, `${temporaryDirectory}/household`),
+    bundleWorkerFixture(fixturePath, `${temporaryDirectory}/workflow`),
+    bundleWorkerFixture(
+      householdDomainFixturePath,
+      `${temporaryDirectory}/household`
+    ),
   ]);
   runtime = new Miniflare({
     compatibilityDate,

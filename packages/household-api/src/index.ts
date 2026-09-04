@@ -63,6 +63,7 @@ import {
   ReturnHouseholdAdultPayload,
   TransitionHouseholdPersonPayload,
 } from "./people.js";
+import { ProblemDetails } from "./problem-details.js";
 
 export {
   AssociateAdultInvitationPayload,
@@ -165,14 +166,10 @@ export {
   MealPlanActorId,
   MealPlanApproved,
   MealPlanDecisionRequest,
-  MealPlanDietaryFit,
-  MealPlanDifficulty,
   MealPlanDraft,
   MealPlanDraftId,
   MealPlanGap,
   MealPlanInstant,
-  MealPlanLeftovers,
-  MealPlanMealType,
   MealPlanMutationConflict,
   MealPlanMutationId,
   MealPlanNotFound,
@@ -190,8 +187,6 @@ export {
   MealPlanSlot,
   MealPlanSlotId,
   MealPlanSwapRejected,
-  MealPlanTags,
-  MealPlanTotalTimeBand,
   MealPlanTransitionRejected,
   MealPlanVersionConflict,
   PlannedMeal,
@@ -207,19 +202,6 @@ export const HouseholdStatus = Schema.Struct({
   status: Schema.Literal("ready"),
 });
 export type HouseholdStatus = typeof HouseholdStatus.Type;
-
-const ProblemDetails = <const Status extends number, const Code extends string>(
-  status: Status,
-  code: Code
-) =>
-  Schema.Struct({
-    code: Schema.Literal(code),
-    message: Schema.String,
-    status: Schema.Literal(status),
-  }).pipe(
-    HttpApiSchema.status(status),
-    HttpApiSchema.asJson({ contentType: "application/problem+json" })
-  );
 
 export const HouseholdUnauthorizedProblem = ProblemDetails(401, "unauthorized");
 export const HouseholdInternalProblem = ProblemDetails(500, "internal_error");

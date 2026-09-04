@@ -12,7 +12,6 @@ import {
   oneForcedToolCall,
   pricedTokenUsage,
   providerFailureFromEvidence,
-  safeFailureCode,
 } from "./import-provider-kernel.js";
 import type {
   ProviderDispatchGate,
@@ -183,13 +182,11 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                     }
                     return Schema.is(Schema.String)(error)
                       ? error
-                      : safeFailureCode(
-                          providerFailureFromEvidence(
-                            Option.getOrUndefined(
-                              decodeProviderFailureEvidence(error)
-                            )
+                      : providerFailureFromEvidence(
+                          Option.getOrUndefined(
+                            decodeProviderFailureEvidence(error)
                           )
-                        );
+                        ).code;
                   })
                 ),
                 maximumCostMicroUsd: VisualMaximumCostMicroUsd,

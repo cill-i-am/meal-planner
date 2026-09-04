@@ -1,5 +1,4 @@
 import { Context, Schema } from "effect";
-import { HttpApiSchema } from "effect/unstable/httpapi";
 
 import { HouseholdOrganizationId } from "./household-principal.js";
 import type { MealPlan } from "./meal-plan.js";
@@ -9,6 +8,7 @@ import {
   MealPlanApproved,
   MealPlanDraft,
 } from "./meal-plan.js";
+import { ProblemDetails } from "./problem-details.js";
 
 export const HouseholdMealPlanPrincipal = Schema.Struct({
   actorId: MealPlanActorId,
@@ -122,19 +122,6 @@ export const toHouseholdMealPlanResponse = (
     },
   };
 };
-
-const ProblemDetails = <const Status extends number, const Code extends string>(
-  status: Status,
-  code: Code
-) =>
-  Schema.Struct({
-    code: Schema.Literal(code),
-    message: Schema.String,
-    status: Schema.Literal(status),
-  }).pipe(
-    HttpApiSchema.status(status),
-    HttpApiSchema.asJson({ contentType: "application/problem+json" })
-  );
 
 export const HouseholdMealPlanInvalidRequestProblem = ProblemDetails(
   400,

@@ -70,10 +70,6 @@ export const invalidImportRequest = (): InvalidImportRequest => ({
   _tag: "InvalidImportRequest",
 });
 
-export const invalidImportId = (): InvalidImportId => ({
-  _tag: "InvalidImportId",
-});
-
 export const invalidSource = (): InvalidSource => ({ _tag: "InvalidSource" });
 
 export const sourceIdentityUnavailable = (): SourceIdentityUnavailable => ({
@@ -86,15 +82,6 @@ export const sourceValidationUnavailable = (): SourceValidationUnavailable => ({
 
 export const unauthorizedImportCaller = (): UnauthorizedImportCaller => ({
   _tag: "UnauthorizedImportCaller",
-});
-
-export const idempotencyConflict = (): IdempotencyConflict => ({
-  _tag: "IdempotencyConflict",
-});
-
-export const importNotFound = (importId: ImportId): ImportNotFound => ({
-  _tag: "ImportNotFound",
-  importId,
 });
 
 export const importPersistenceUnavailable =
@@ -116,10 +103,6 @@ export const workflowStartRefused = (): WorkflowStartRefused => ({
 
 export const importTransitionRejected = (): ImportTransitionRejected => ({
   _tag: "ImportTransitionRejected",
-});
-
-export const invalidCarouselBundle = (): InvalidCarouselBundle => ({
-  _tag: "InvalidCarouselBundle",
 });
 
 export const carouselProcessingUnavailable =

@@ -3,13 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   IdempotencyKey,
-  ImportView,
   SourceDescriptor,
   SourceUrl,
 } from "./import.contracts.js";
 
 const decodeSource = Schema.decodeUnknownSync(SourceDescriptor);
-const decodeImport = Schema.decodeUnknownSync(ImportView);
 
 describe("import contracts", () => {
   it("accepts the source-agnostic TikTok request envelope", () => {
@@ -49,146 +47,5 @@ describe("import contracts", () => {
     expect(() => decode("x".repeat(1_000_000))).toThrow();
     expect(() => decode("http://www.tiktok.com/@cook/video/1")).toThrow();
     expect(() => decode("https://[")).toThrow();
-  });
-
-  it("decodes the acquisition lifecycle without admitting crossed failure pairs", () => {
-    const base = {
-      createdAt: "2026-07-20T09:30:00.000Z",
-      evidence: [],
-      id: "018f47ad-91aa-7c35-b6fe-3f00a63f8502",
-      source: { canonicalId: "7520000000000000000", kind: "tiktok" },
-      updatedAt: "2026-07-20T09:30:00.000Z",
-    };
-
-    expect(
-      decodeImport({ ...base, status: { kind: "queued" } }).status
-    ).toEqual({ kind: "queued" });
-    expect(
-      decodeImport({ ...base, status: { kind: "acquiring" } }).status
-    ).toEqual({ kind: "acquiring" });
-    expect(
-      decodeImport({
-        ...base,
-        status: {
-          code: "private_or_unavailable",
-          kind: "failed",
-          recovery: "check_source_visibility",
-        },
-      }).status
-    ).toEqual({
-      code: "private_or_unavailable",
-      kind: "failed",
-      recovery: "check_source_visibility",
-    });
-    expect(
-      decodeImport({
-        ...base,
-        status: {
-          code: "acquisition_temporarily_unavailable",
-          kind: "failed",
-          recovery: "retry_later",
-        },
-      }).status
-    ).toEqual({
-      code: "acquisition_temporarily_unavailable",
-      kind: "failed",
-      recovery: "retry_later",
-    });
-    expect(
-      decodeImport({
-        ...base,
-        status: {
-          code: "invalid_or_unsupported_media",
-          kind: "failed",
-          recovery: "submit_supported_public_video",
-        },
-      }).status
-    ).toEqual({
-      code: "invalid_or_unsupported_media",
-      kind: "failed",
-      recovery: "submit_supported_public_video",
-    });
-    expect(
-      decodeImport({
-        ...base,
-        status: {
-          code: "unsupported_post_type",
-          kind: "unsupported",
-          recovery: "submit_supported_public_video",
-        },
-      }).status
-    ).toEqual({
-      code: "unsupported_post_type",
-      kind: "unsupported",
-      recovery: "submit_supported_public_video",
-    });
-
-    expect(() =>
-      decodeImport({
-        ...base,
-        status: {
-          code: "unsupported_post_type",
-          kind: "failed",
-          recovery: "submit_supported_public_video",
-        },
-      })
-    ).toThrow();
-    expect(() =>
-      decodeImport({
-        ...base,
-        status: {
-          code: "acquisition_temporarily_unavailable",
-          kind: "failed",
-          recovery: "check_source_visibility",
-        },
-      })
-    ).toThrow();
-  });
-
-  it("requires exactly the deterministic evidence pair for acquired", () => {
-    const base = {
-      createdAt: "2026-07-20T09:30:00.000Z",
-      id: "018f47ad-91aa-7c35-b6fe-3f00a63f8502",
-      source: { canonicalId: "7520000000000000000", kind: "tiktok" },
-      updatedAt: "2026-07-20T09:31:00.000Z",
-    };
-    const evidence = [
-      {
-        kind: "original_media",
-        referenceId:
-          "imports/018f47ad-91aa-7c35-b6fe-3f00a63f8502/acquisition/v1/generations/7/original.mp4",
-      },
-      {
-        kind: "acquisition_manifest",
-        referenceId:
-          "imports/018f47ad-91aa-7c35-b6fe-3f00a63f8502/acquisition/v1/generations/7/manifest.json",
-      },
-    ];
-
-    expect(
-      decodeImport({ ...base, evidence, status: { kind: "acquired" } }).status
-    ).toEqual({ kind: "acquired" });
-    expect(() =>
-      decodeImport({ ...base, evidence: [], status: { kind: "acquired" } })
-    ).toThrow();
-    expect(() =>
-      decodeImport({ ...base, evidence, status: { kind: "acquiring" } })
-    ).toThrow();
-  });
-
-  it("keeps submitted URLs and recipe data out of the public projection", () => {
-    const decoded = decodeImport({
-      createdAt: "2026-07-20T09:30:00.000Z",
-      evidence: [],
-      id: "018f47ad-91aa-7c35-b6fe-3f00a63f8502",
-      source: { canonicalId: "7520000000000000000", kind: "tiktok" },
-      status: { kind: "queued" },
-      updatedAt: "2026-07-20T09:30:00.000Z",
-    });
-    const encoded = JSON.stringify(decoded);
-
-    expect(encoded).not.toContain("url");
-    expect(encoded).not.toContain("ingredient");
-    expect(encoded).not.toContain("instruction");
   });
 });

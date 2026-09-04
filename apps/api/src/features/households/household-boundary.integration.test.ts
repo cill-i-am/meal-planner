@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
 import {
   CreateMealPlanPayload,
   HouseholdAdultInvitationResult,
@@ -19,7 +18,6 @@ import {
   RecipeImportIntent,
   RecipeImportTimeline,
 } from "@meal-planner/recipe-import-api";
-import * as Bundle from "alchemy/Bundle";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
@@ -27,6 +25,7 @@ import type { ModuleDefinition } from "miniflare";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
 import {
   ProviderAccountingDispatchId,
@@ -99,54 +98,6 @@ const createPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
     ],
   },
 });
-
-const bundleText = (content: string | Uint8Array<ArrayBufferLike>): string =>
-  Schema.is(Schema.String)(content)
-    ? content
-    : new TextDecoder().decode(content);
-
-const bundleFixture = async (
-  fileName: string,
-  outputDirectory: string
-): Promise<readonly [ModuleDefinition, ...ModuleDefinition[]]> => {
-  const output = await Effect.runPromise(
-    Bundle.build(
-      {
-        checks: {
-          ineffectiveDynamicImport: false,
-          unresolvedImport: false,
-        },
-        external: ["cloudflare:workers"],
-        input: fileURLToPath(new URL(fileName, import.meta.url)),
-        plugins: [
-          cloudflareRolldown({ compatibilityDate, compatibilityFlags }),
-        ],
-      },
-      {
-        codeSplitting: false,
-        dir: outputDirectory,
-        format: "esm",
-        minify: true,
-        sourcemap: false,
-      }
-    )
-  );
-  const [entry, ...assets] = output.files;
-  return [
-    {
-      contents: bundleText(entry.content),
-      path: entry.path,
-      type: "ESModule",
-    },
-    ...assets.map(
-      (asset): ModuleDefinition => ({
-        contents: bundleText(asset.content),
-        path: asset.path,
-        type: "Text",
-      })
-    ),
-  ];
-};
 
 type MiniflareD1Database = Awaited<ReturnType<Miniflare["getD1Database"]>>;
 
@@ -266,21 +217,34 @@ beforeAll(async () => {
     providerRecoveryModules,
     batchQueueModules,
   ] = await Promise.all([
-    bundleFixture(
-      "household-website-service.test-fixture.js",
+    bundleWorkerFixture(
+      fileURLToPath(
+        new URL("household-website-service.test-fixture.js", import.meta.url)
+      ),
       temporaryDirectory
     ),
-    bundleFixture("household-api-service.test-fixture.ts", temporaryDirectory),
-    bundleFixture(
-      "household-domain-service.test-fixture.js",
+    bundleWorkerFixture(
+      fileURLToPath(
+        new URL("household-api-service.test-fixture.ts", import.meta.url)
+      ),
       temporaryDirectory
     ),
-    bundleFixture(
-      "household-provider-recovery.test-fixture.ts",
+    bundleWorkerFixture(
+      fileURLToPath(
+        new URL("household-domain-service.test-fixture.js", import.meta.url)
+      ),
       temporaryDirectory
     ),
-    bundleFixture(
-      "household-import-batch-queue.test-fixture.ts",
+    bundleWorkerFixture(
+      fileURLToPath(
+        new URL("household-provider-recovery.test-fixture.ts", import.meta.url)
+      ),
+      temporaryDirectory
+    ),
+    bundleWorkerFixture(
+      fileURLToPath(
+        new URL("household-import-batch-queue.test-fixture.ts", import.meta.url)
+      ),
       temporaryDirectory
     ),
   ]);
@@ -645,46 +609,37 @@ const readDepartureByMutationEventually = async (
 };
 
 const systemCommand = (
-  operation:
-    | "claim-acquisition-attempt"
-    | "claim-batch-item"
-    | "commit-acquisition-evidence"
-    | "complete-batch-item"
-    | "commit-draft"
-    | "fail-batch-item"
-    | "mutate-evidence-stage"
-    | "observe-evidence-reference"
-    | "prepare-recipe-recovery"
-    | "read-acquisition-attempts"
-    | "read-evidence-references"
-    | "read-evidence-stage"
-    | "read-terminal-checkpoint"
-    | "read-recipe-recovery-attempt"
-    | "resolve"
-    | "transition-lifecycle",
-  input: object
-) => {
-  let attemptGeneration: string | undefined;
-  if (operation === "commit-acquisition-evidence") {
-    attemptGeneration = /\/generations\/(?<generation>\d+)\//u.exec(
-      JSON.stringify(input)
-    )?.groups?.["generation"];
-  } else if (operation === "mutate-evidence-stage") {
-    attemptGeneration = /"expectedGeneration":(?<generation>\d+)/u.exec(
-      JSON.stringify(input)
-    )?.groups?.["generation"];
-  }
-  const command =
-    attemptGeneration === undefined
-      ? input
-      : {
-          acquisitionAttemptGeneration: Number(attemptGeneration),
-          ...input,
-        };
-  return getRuntime().dispatchFetch(
+  ...[operation, input]:
+    | [
+        operation: "commit-acquisition-evidence" | "mutate-evidence-stage",
+        input: {
+          readonly acquisitionAttemptGeneration: number;
+          readonly [field: string]: unknown;
+        },
+      ]
+    | [
+        operation:
+          | "claim-acquisition-attempt"
+          | "claim-batch-item"
+          | "complete-batch-item"
+          | "commit-draft"
+          | "fail-batch-item"
+          | "observe-evidence-reference"
+          | "prepare-recipe-recovery"
+          | "read-acquisition-attempts"
+          | "read-evidence-references"
+          | "read-evidence-stage"
+          | "read-terminal-checkpoint"
+          | "read-recipe-recovery-attempt"
+          | "resolve"
+          | "transition-lifecycle",
+        input: object,
+      ]
+) =>
+  getRuntime().dispatchFetch(
     "https://meal-planner.test/v1/__test/system-import",
     {
-      body: JSON.stringify(command),
+      body: JSON.stringify(input),
       headers: {
         "content-type": "application/json",
         "x-test-household-system-operation": operation,
@@ -692,7 +647,6 @@ const systemCommand = (
       method: "POST",
     }
   );
-};
 
 const terminalSettlementCommand = async (
   input: object,
@@ -972,6 +926,7 @@ const prepareUnknownSpeechTerminal = async (input: {
     intentId: admitted.id,
   });
   const committed = await systemCommand("commit-acquisition-evidence", {
+    acquisitionAttemptGeneration: acquisitionGeneration,
     admission,
     expectedGeneration: executionGeneration,
     intentId: admitted.id,
@@ -3413,6 +3368,7 @@ describe("household public API to private Durable Object boundary", () => {
     const acquiredAt = new Date(Date.now() + 60_000);
     const deleteAt = new Date(acquiredAt.getTime() + 604_800_000).toISOString();
     const commitResponse = await systemCommand("commit-acquisition-evidence", {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       intentId: admitted.id,
@@ -3526,6 +3482,7 @@ describe("household public API to private Durable Object boundary", () => {
     const acquiredAt = new Date(Date.now() + 60_000);
     const mutationId = "a".repeat(64);
     const staleResponse = await systemCommand("commit-acquisition-evidence", {
+      acquisitionAttemptGeneration: 2,
       admission,
       expectedGeneration: 2,
       intentId: admitted.id,
@@ -3541,6 +3498,7 @@ describe("household public API to private Durable Object boundary", () => {
     const correctedResponse = await systemCommand(
       "commit-acquisition-evidence",
       {
+        acquisitionAttemptGeneration: 1,
         admission,
         expectedGeneration: 1,
         intentId: admitted.id,
@@ -3564,6 +3522,7 @@ describe("household public API to private Durable Object boundary", () => {
     const inputFingerprint = "2".repeat(64);
     const dispatchId = `speech:${admitted.id}:1`;
     const stale = await systemCommand("mutate-evidence-stage", {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 2,
       inputFingerprint,
@@ -3578,6 +3537,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
     expect(stale.status).toBe(409);
     const claim = await systemCommand("mutate-evidence-stage", {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       inputFingerprint,
@@ -3597,6 +3557,7 @@ describe("household public API to private Durable Object boundary", () => {
     const deleteAt = new Date(expiresAtEpochMs);
     const transcriptKey = `imports/${admitted.id}/transcription/v1/generations/1/transcript.json`;
     const command = {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       inputFingerprint,
@@ -3732,6 +3693,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
     const dispatchId = `speech:${admitted.id}:1`;
     const claimCommand = {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       inputFingerprint: "9".repeat(64),
@@ -3843,6 +3805,7 @@ describe("household public API to private Durable Object boundary", () => {
     const crossHouseholdResponse = await systemCommand(
       "commit-acquisition-evidence",
       {
+        acquisitionAttemptGeneration: 1,
         admission: {
           ...householdA.admission,
           organizationId: organizationB.id,
@@ -3856,6 +3819,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(crossHouseholdResponse.status).toBe(404);
 
     const ownerResponse = await systemCommand("commit-acquisition-evidence", {
+      acquisitionAttemptGeneration: 1,
       admission: householdA.admission,
       expectedGeneration: 1,
       intentId: householdA.admitted.id,
@@ -3877,6 +3841,7 @@ describe("household public API to private Durable Object boundary", () => {
       intentId: admitted.id,
     });
     const command = {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       intentId: admitted.id,
@@ -3940,6 +3905,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
     const expiresAtEpochMs = Date.now() + 2000;
     const command = {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       intentId: admitted.id,
@@ -4000,6 +3966,7 @@ describe("household public API to private Durable Object boundary", () => {
       acquiredAt.getTime() + 604_800_001
     ).toISOString();
     const invalidResponse = await systemCommand("commit-acquisition-evidence", {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       intentId: admitted.id,
@@ -4017,6 +3984,7 @@ describe("household public API to private Durable Object boundary", () => {
     const correctedResponse = await systemCommand(
       "commit-acquisition-evidence",
       {
+        acquisitionAttemptGeneration: 1,
         admission,
         expectedGeneration: 1,
         intentId: admitted.id,
@@ -4039,6 +4007,7 @@ describe("household public API to private Durable Object boundary", () => {
       intentId: admitted.id,
     });
     const committed = await systemCommand("commit-acquisition-evidence", {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       intentId: admitted.id,
@@ -4244,6 +4213,7 @@ describe("household public API to private Durable Object boundary", () => {
     const wrongAcquisition = await systemCommand(
       "commit-acquisition-evidence",
       {
+        acquisitionAttemptGeneration: 1,
         admission: carousel.admission,
         expectedGeneration: 1,
         intentId: carousel.admitted.id,
@@ -4275,6 +4245,7 @@ describe("household public API to private Durable Object boundary", () => {
     const correctedCarouselClaim = await systemCommand(
       "mutate-evidence-stage",
       {
+        acquisitionAttemptGeneration: 1,
         admission: carousel.admission,
         expectedGeneration: 1,
         inputFingerprint: "d".repeat(64),
@@ -4302,6 +4273,7 @@ describe("household public API to private Durable Object boundary", () => {
     const stageMutationId = "f".repeat(64);
     const stageFingerprint = "0".repeat(64);
     const wrongStage = await systemCommand("mutate-evidence-stage", {
+      acquisitionAttemptGeneration: 1,
       admission: video.admission,
       expectedGeneration: 1,
       inputFingerprint: stageFingerprint,
@@ -4332,6 +4304,7 @@ describe("household public API to private Durable Object boundary", () => {
     await expect(emptyVideoStage.json()).resolves.toBeNull();
 
     const correctedSpeechClaim = await systemCommand("mutate-evidence-stage", {
+      acquisitionAttemptGeneration: 1,
       admission: video.admission,
       expectedGeneration: 1,
       inputFingerprint: stageFingerprint,
@@ -4400,6 +4373,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
     const acquiredAt = new Date(Date.now() + 60_000);
     const acquisition = await systemCommand("commit-acquisition-evidence", {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       intentId: admitted.id,
@@ -4439,6 +4413,7 @@ describe("household public API to private Durable Object boundary", () => {
               }
             : undefined;
         const claim = await systemCommand("mutate-evidence-stage", {
+          acquisitionAttemptGeneration: 1,
           admission,
           expectedGeneration: 1,
           inputFingerprint: fingerprint,
@@ -4459,6 +4434,7 @@ describe("household public API to private Durable Object boundary", () => {
           acquiredAt.getTime() + identities.length + ordinal + 1
         ).toISOString();
         const failure = await systemCommand("mutate-evidence-stage", {
+          acquisitionAttemptGeneration: 1,
           admission,
           expectedGeneration: 1,
           inputFingerprint: fingerprint,
@@ -4562,6 +4538,7 @@ describe("household public API to private Durable Object boundary", () => {
         videoId,
       });
       const acquisition = await systemCommand("commit-acquisition-evidence", {
+        acquisitionAttemptGeneration: 1,
         admission,
         expectedGeneration: 1,
         intentId: admitted.id,
@@ -5144,6 +5121,7 @@ describe("household public API to private Durable Object boundary", () => {
     const predecessorFingerprint = "2".repeat(64);
     const evidenceFingerprint = "a".repeat(64);
     const predecessorClaim = await systemCommand("mutate-evidence-stage", {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       inputFingerprint: predecessorFingerprint,
@@ -5171,6 +5149,7 @@ describe("household public API to private Durable Object boundary", () => {
       200
     );
     const predecessorFailure = await systemCommand("mutate-evidence-stage", {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: 1,
       inputFingerprint: predecessorFingerprint,
@@ -5314,6 +5293,7 @@ describe("household public API to private Durable Object boundary", () => {
     const evidenceFingerprint = "c".repeat(64);
     const dispatchId = `recipe:${admitted.id}:${generation}:${evidenceFingerprint}`;
     const claim = await systemCommand("mutate-evidence-stage", {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: generation,
       inputFingerprint: extractionFingerprint,
@@ -5339,6 +5319,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
     expect(claim.status, await claim.clone().text()).toBe(200);
     const failed = await systemCommand("mutate-evidence-stage", {
+      acquisitionAttemptGeneration: 1,
       admission,
       expectedGeneration: generation,
       inputFingerprint: extractionFingerprint,

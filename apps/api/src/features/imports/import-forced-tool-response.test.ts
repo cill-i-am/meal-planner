@@ -1,10 +1,7 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import {
-  decodeForcedToolResponse,
-  decodeForcedToolResponseResult,
-} from "./import-forced-tool-response.js";
+import { decodeForcedToolResponseResult } from "./import-forced-tool-response.js";
 
 const validArguments = {
   name: {
@@ -33,7 +30,7 @@ describe("forced tool response boundary", () => {
     "accepts one installed mirrored structured and native %s call",
     (field) => {
       expect(
-        decodeForcedToolResponse(
+        decodeForcedToolResponseResult(
           [
             toolPart(),
             textPart({
@@ -43,13 +40,13 @@ describe("forced tool response boundary", () => {
           ],
           "record_recipe"
         )
-      ).toEqual(validArguments);
+      ).toEqual({ _tag: "Decoded", value: validArguments });
     }
   );
 
   it("accepts installed structured parameters encoded as one JSON object string", () => {
     expect(
-      decodeForcedToolResponse(
+      decodeForcedToolResponseResult(
         [
           {
             ...toolPart(),
@@ -58,7 +55,7 @@ describe("forced tool response boundary", () => {
         ],
         "record_recipe"
       )
-    ).toEqual(validArguments);
+    ).toEqual({ _tag: "Decoded", value: validArguments });
   });
 
   it("compares mirrored JSON objects semantically while preserving array order", () => {
@@ -71,7 +68,7 @@ describe("forced tool response boundary", () => {
       },
     };
     expect(
-      decodeForcedToolResponse(
+      decodeForcedToolResponseResult(
         [
           toolPart(),
           textPart({
@@ -81,14 +78,14 @@ describe("forced tool response boundary", () => {
         ],
         "record_recipe"
       )
-    ).toEqual(validArguments);
+    ).toEqual({ _tag: "Decoded", value: validArguments });
   });
 
   it.each(["parameters", "arguments"] as const)(
     "accepts one native %s envelope when no structured call exists",
     (field) => {
       expect(
-        decodeForcedToolResponse(
+        decodeForcedToolResponseResult(
           [
             textPart({
               [field]: validArguments,
@@ -97,7 +94,7 @@ describe("forced tool response boundary", () => {
           ],
           "record_recipe"
         )
-      ).toEqual(validArguments);
+      ).toEqual({ _tag: "Decoded", value: validArguments });
     }
   );
 
@@ -105,7 +102,7 @@ describe("forced tool response boundary", () => {
     "accepts one native %s envelope in the installed singleton-array shape",
     (field) => {
       expect(
-        decodeForcedToolResponse(
+        decodeForcedToolResponseResult(
           [
             textPart([
               {
@@ -116,29 +113,32 @@ describe("forced tool response boundary", () => {
           ],
           "record_recipe"
         )
-      ).toEqual(validArguments);
+      ).toEqual({ _tag: "Decoded", value: validArguments });
     }
   );
 
   it("keeps one installed structured call authoritative beside non-envelope text", () => {
     expect(
-      decodeForcedToolResponse(
+      decodeForcedToolResponseResult(
         [textPart("non-authoritative model text"), toolPart()],
         "record_recipe"
       )
-    ).toEqual(validArguments);
+    ).toEqual({ _tag: "Decoded", value: validArguments });
   });
 
   it("accepts an installed bare-object text mirror only beside the same structured call", () => {
     expect(
-      decodeForcedToolResponse(
+      decodeForcedToolResponseResult(
         [toolPart(), textPart(validArguments)],
         "record_recipe"
       )
-    ).toEqual(validArguments);
+    ).toEqual({ _tag: "Decoded", value: validArguments });
     expect(
-      decodeForcedToolResponse([textPart(validArguments)], "record_recipe")
-    ).toBeUndefined();
+      decodeForcedToolResponseResult(
+        [textPart(validArguments)],
+        "record_recipe"
+      )
+    ).toMatchObject({ _tag: "Malformed" });
   });
 
   it("accepts one direct bare-object recipe authority only when explicitly enabled", () => {
@@ -216,8 +216,13 @@ describe("forced tool response boundary", () => {
     }
   );
 
+  it("reports a missing response when no parts arrive", () => {
+    expect(decodeForcedToolResponseResult([], "record_recipe")).toMatchObject({
+      _tag: "Missing",
+    });
+  });
+
   it.each([
-    ["zero parts", []],
     [
       "multiple native text parts",
       [
@@ -342,6 +347,8 @@ describe("forced tool response boundary", () => {
       [textPart({ name: "record_recipe", parameters: [] })],
     ],
   ])("rejects %s", (_label, parts) => {
-    expect(decodeForcedToolResponse(parts, "record_recipe")).toBeUndefined();
+    expect(
+      decodeForcedToolResponseResult(parts, "record_recipe")
+    ).toMatchObject({ _tag: "Malformed" });
   });
 });

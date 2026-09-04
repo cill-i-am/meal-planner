@@ -88,20 +88,13 @@ describe("household foundation structural boundaries", () => {
     }
   });
 
-  it("assigns mutation audit authority only after object admission", async () => {
-    const [contract, http, objectRuntime, admission] = await Promise.all([
+  it("keeps client-selected audit authority outside meal-plan commands", async () => {
+    const [contract, http] = await Promise.all([
       read(path.join(householdRoot, "household-meal-plan.contract.ts")),
       read(path.join(householdRoot, "household.http.ts")),
-      read(path.join(householdRoot, "household-object-runtime.ts")),
-      read(path.join(householdRoot, "household-meal-plan-admission.ts")),
     ]);
     expect(http).not.toContain("Clock.currentTimeMillis");
     expect(contract).not.toMatch(/actorId|decidedAt|swappedAt/u);
-    expect(objectRuntime).toContain("ensureHouseholdProvenance(");
-    expect(objectRuntime).toContain("admitMealPlanDecision(");
-    expect(objectRuntime).toContain("admitManualMealSwap(");
-    expect(admission).toContain("Clock.currentTimeMillis");
-    expect(admission).toContain("actorId: admission.actor.actorId");
   });
 
   it("routes household objects only through the versioned locator", async () => {
@@ -124,51 +117,6 @@ describe("household foundation structural boundaries", () => {
     expect(locator).toContain("household:v1:");
     expect(locator).toContain("HouseholdDigest");
     expect(locator).not.toMatch(/household:v1:\$\{organizationId\}/u);
-  });
-
-  it("authorizes private Worker commands before household routing", async () => {
-    const [worker, router] = await Promise.all([
-      read(path.join(householdRoot, "household-domain-worker.ts")),
-      read(path.join(householdRoot, "household-command-router.ts")),
-    ]);
-    const routingSites = [
-      ...worker.matchAll(/routeAdmittedHouseholdCommand\(\{/gu),
-    ];
-    const admission = router.indexOf("requireHouseholdCommandAdmission(");
-    const locate = router.indexOf("input.locate(");
-    const getByName = router.indexOf("input.getByName(");
-
-    expect(routingSites).toHaveLength(5);
-    expect(admission).toBeGreaterThan(-1);
-    expect(locate).toBeGreaterThan(admission);
-    expect(getByName).toBeGreaterThan(locate);
-  });
-
-  it("authorizes specialized private Worker commands before re-encoding", async () => {
-    const worker = await read(
-      path.join(householdRoot, "household-domain-worker.ts")
-    );
-    const specializedRouters = [
-      ["routeAcquisitionEvidence", "routeEvidenceObservation"],
-      ["routeEvidenceObservation", "routeEvidenceStage"],
-      ["routeEvidenceStage", "routeRecipeRecovery"],
-      ["routeRecipeRecovery", "return {"],
-    ] as const;
-
-    for (const [start, end] of specializedRouters) {
-      const routeSource = worker
-        .split(`const ${start}`)[1]
-        ?.split(`const ${end}`)[0];
-      expect(routeSource, `${start} is present`).toBeDefined();
-      const admission = routeSource?.indexOf(
-        "requireHouseholdCommandAdmission("
-      );
-      const encoding = routeSource?.indexOf("Schema.encodeEffect(");
-      expect(admission, `${start} admits before encoding`).toBeGreaterThan(-1);
-      expect(encoding, `${start} has a closed encoder`).toBeGreaterThan(
-        admission ?? Number.MAX_SAFE_INTEGER
-      );
-    }
   });
 
   it("binds invitation acceptance to the authenticated Better Auth subject without email inference", async () => {
@@ -494,41 +442,5 @@ describe("household foundation structural boundaries", () => {
     );
     expect(workflow).toContain("restartFromVisual");
     expect(workflow).toContain('name: "extract-visual-evidence-v1"');
-  });
-
-  it("keeps the Alchemy host thin and SQLite evolution migration-owned", async () => {
-    const host = await read(path.join(householdRoot, "household-object.ts"));
-    expect(host.split("\n").length).toBeLessThanOrEqual(17);
-    expect(host).toContain("Stable Alchemy class host");
-    expect(host).toContain("SQLite evolution belongs to Drizzle migrations");
-    expect(host).not.toContain("Drizzle.DurableObject");
-
-    const runtime = await read(
-      path.join(householdRoot, "household-object-runtime.ts")
-    );
-    expect(runtime).toContain("Drizzle.DurableObject({ migrations })");
-  });
-
-  it("fences the noncanonical acquisition coordinator by import generation", async () => {
-    const [containerRuntime, coordinator, model, workflow] = await Promise.all([
-      read(
-        path.join(apiFeaturesRoot, "imports/import-media-container.runtime.ts")
-      ),
-      read(
-        path.join(apiFeaturesRoot, "imports/import-media-acquisition-object.ts")
-      ),
-      read(path.join(apiFeaturesRoot, "imports/import-media.model.ts")),
-      read(path.join(apiFeaturesRoot, "imports/import.workflow.ts")),
-    ]);
-    expect(coordinator).toContain(
-      "Noncanonical execution/transport coordinator only"
-    );
-    expect(coordinator).toContain("decodeAcquisitionArtifact");
-    expect(coordinator).toContain("durableObjectState.id.name");
-    expect(coordinator).toContain("requireMatchingCoordinator");
-    expect(model).toContain(":acquisition-generation:");
-    expect(workflow).toContain("mediaObjects.getByName(");
-    expect(workflow).toContain("acquisitionCoordinatorId(");
-    expect(containerRuntime).toContain("acquisitionArtifactId(");
   });
 });

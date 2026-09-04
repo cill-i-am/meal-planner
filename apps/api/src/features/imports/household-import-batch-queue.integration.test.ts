@@ -3,48 +3,16 @@ import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
-import * as Bundle from "alchemy/Bundle";
-import { Effect, Schema } from "effect";
-import type { ModuleDefinition } from "miniflare";
+import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 
 const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
 let persistenceDirectory = "";
 let runtime: Miniflare;
-
-const moduleText = (value: string | Uint8Array<ArrayBufferLike>) =>
-  Schema.is(Schema.String)(value) ? value : new TextDecoder().decode(value);
-
-const bundleFixture = async (
-  fileName: string
-): Promise<readonly [ModuleDefinition, ...ModuleDefinition[]]> => {
-  const output = await Effect.runPromise(
-    Bundle.build(
-      {
-        external: ["cloudflare:workers"],
-        input: fileURLToPath(new URL(fileName, import.meta.url)),
-        plugins: [
-          cloudflareRolldown({ compatibilityDate, compatibilityFlags }),
-        ],
-      },
-      { codeSplitting: false, format: "esm", minify: true, sourcemap: false }
-    )
-  );
-  const [entry, ...assets] = output.files;
-  return [
-    { contents: moduleText(entry.content), path: entry.path, type: "ESModule" },
-    ...assets.map(
-      (asset): ModuleDefinition => ({
-        contents: moduleText(asset.content),
-        path: asset.path,
-        type: "Text",
-      })
-    ),
-  ];
-};
 
 const readEventually = async (
   worker: "consumer" | "dead-letter-consumer",
@@ -75,10 +43,35 @@ describe("household batch Queue transport", () => {
       domainModules,
       queueLossModules,
     ] = await Promise.all([
-      bundleFixture("household-import-batch-queue.test-fixture.ts"),
-      bundleFixture("household-import-batch-dlq.test-fixture.ts"),
-      bundleFixture("../households/household-domain-service.test-fixture.js"),
-      bundleFixture("household-import-batch-queue-loss.test-fixture.js"),
+      bundleWorkerFixture(
+        fileURLToPath(
+          new URL(
+            "household-import-batch-queue.test-fixture.ts",
+            import.meta.url
+          )
+        )
+      ),
+      bundleWorkerFixture(
+        fileURLToPath(
+          new URL("household-import-batch-dlq.test-fixture.ts", import.meta.url)
+        )
+      ),
+      bundleWorkerFixture(
+        fileURLToPath(
+          new URL(
+            "../households/household-domain-service.test-fixture.js",
+            import.meta.url
+          )
+        )
+      ),
+      bundleWorkerFixture(
+        fileURLToPath(
+          new URL(
+            "household-import-batch-queue-loss.test-fixture.js",
+            import.meta.url
+          )
+        )
+      ),
     ]);
     runtime = new Miniflare({
       compatibilityDate,

@@ -1,3 +1,4 @@
+import { PlanningTags } from "@meal-planner/recipe-domain";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -11,7 +12,6 @@ import {
   MealPlanPersistenceFailure,
   MealPlanRecipeSnapshotId,
   MealPlanRequest,
-  MealPlanTags,
   SwapMealPlanPayload,
 } from "./meal-plan.js";
 
@@ -50,7 +50,7 @@ describe("meal-plan contract", () => {
       )
     ).toBe("2026-07-22T10:01:00.000Z");
     expect(
-      Schema.decodeUnknownSync(MealPlanTags)({
+      Schema.decodeUnknownSync(PlanningTags)({
         cuisines: ["Mediterranean"],
         dietaryFit: "household_match",
         difficulty: "easy",

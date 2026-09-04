@@ -1,7 +1,6 @@
 import {
   HouseholdMemberDepartureOperation,
   HouseholdPeopleUnavailable,
-  MealPlanPersistenceFailure,
 } from "@meal-planner/household-api";
 import type {
   CancelledRecipeImportIntent,
@@ -85,7 +84,6 @@ import type {
   HouseholdEnsureInput,
   HouseholdMetadata,
 } from "./household.contract.js";
-import { HouseholdPersistenceFailure } from "./household.contract.js";
 import { HouseholdMemberDepartureSystemState } from "./people/household-people.contract.js";
 import {
   HouseholdPeopleControlPlaneUnavailable,
@@ -721,48 +719,12 @@ export default {
     );
     const householdLayer = makeHouseholdRequestLayer({
       gateway: makeHouseholdDomainGateway({
-        ensureHousehold: (input) =>
-          Effect.tryPromise({
-            catch: () =>
-              HouseholdPersistenceFailure.make({ operation: "ensure" }),
-            try: () => env.HouseholdDomainWorker.ensureHousehold(input),
-          }),
+        ensureHousehold: householdDomain.ensureHousehold,
       }),
       resolver,
     });
-    const mealPlanDomain: Parameters<
-      typeof makeHouseholdMealPlanGateway
-    >[0]["domain"] = {
-      approveMealPlan: (input) =>
-        Effect.tryPromise({
-          catch: () => MealPlanPersistenceFailure.make({ operation: "save" }),
-          try: () => env.HouseholdDomainWorker.approveMealPlan(input),
-        }),
-      createMealPlanFromRecipeBank: (input) =>
-        Effect.tryPromise({
-          catch: () => MealPlanPersistenceFailure.make({ operation: "create" }),
-          try: () =>
-            env.HouseholdDomainWorker.createMealPlanFromRecipeBank(input),
-        }),
-      readMealPlan: (input) =>
-        Effect.tryPromise({
-          catch: () => MealPlanPersistenceFailure.make({ operation: "read" }),
-          try: () => env.HouseholdDomainWorker.readMealPlan(input),
-        }),
-      rejectMealPlan: (input) =>
-        Effect.tryPromise({
-          catch: () => MealPlanPersistenceFailure.make({ operation: "save" }),
-          try: () => env.HouseholdDomainWorker.rejectMealPlan(input),
-        }),
-      swapMealPlanFromRecipeBank: (input) =>
-        Effect.tryPromise({
-          catch: () => MealPlanPersistenceFailure.make({ operation: "save" }),
-          try: () =>
-            env.HouseholdDomainWorker.swapMealPlanFromRecipeBank(input),
-        }),
-    };
     const mealPlanLayer = makeHouseholdMealPlanRequestLayer({
-      gateway: makeHouseholdMealPlanGateway({ domain: mealPlanDomain }),
+      gateway: makeHouseholdMealPlanGateway({ domain: householdDomain }),
       resolver,
     });
     const nativeDepartureWorkflow = makeNativeMemberDepartureStarter(env);

@@ -14,10 +14,7 @@ import { HouseholdPeoplePanel } from "../features/household-people/household-peo
 import { makeBrowserHouseholdOperations } from "../features/households/browser-operations.js";
 import { HouseholdDomainStatus } from "../features/households/household-domain-status.js";
 import { makeBrowserRecipeImportOperations } from "../features/recipe-import/browser-operations.js";
-import {
-  decodeRecipeImportSearch,
-  recipeImportPageSessionKey,
-} from "../features/recipe-import/navigation.js";
+import { decodeRecipeImportSearch } from "../features/recipe-import/navigation.js";
 import { RecipeImportPage } from "../features/recipe-import/recipe-import-page.js";
 
 const MealPlannerRoute = () => {
@@ -28,7 +25,7 @@ const MealPlannerRoute = () => {
   const activeOrganization = authClient.useActiveOrganization();
   const householdOperations = useMemo(makeBrowserHouseholdOperations, []);
   const peopleOperations = useMemo(makeBrowserHouseholdPeopleOperations, []);
-  const operations = useMemo(() => makeBrowserRecipeImportOperations(), []);
+  const operations = useMemo(makeBrowserRecipeImportOperations, []);
 
   const signOut = async () => {
     await requireAuthSuccess(authClient.signOut());
@@ -73,26 +70,24 @@ const MealPlannerRoute = () => {
           householdId={household.id}
           householdName={household.name}
           householdDomainStatus={
-            <>
-              <HouseholdDomainStatus
-                operations={householdOperations}
-                organizationId={household.id}
-              />
-              <HouseholdPeoplePanel
-                {...(() => {
-                  const currentMemberId = activeOrganization.data?.members.find(
-                    (member) => member.userId === session.data?.user.id
-                  )?.id;
-                  return currentMemberId === undefined
-                    ? {}
-                    : { currentMemberId };
-                })()}
-                operations={peopleOperations}
-                organizationId={household.id}
-              />
-            </>
+            <HouseholdDomainStatus
+              operations={householdOperations}
+              organizationId={household.id}
+            />
           }
-          key={recipeImportPageSessionKey(household.id, intentId)}
+          householdPeople={
+            <HouseholdPeoplePanel
+              {...(() => {
+                const currentMemberId = activeOrganization.data?.members.find(
+                  (member) => member.userId === session.data?.user.id
+                )?.id;
+                return currentMemberId === undefined ? {} : { currentMemberId };
+              })()}
+              operations={peopleOperations}
+              organizationId={household.id}
+            />
+          }
+          key={`${household.id}:${intentId ?? "new"}`}
           onSignOut={logout}
           operations={operations}
         />

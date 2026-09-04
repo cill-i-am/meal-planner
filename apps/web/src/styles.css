@@ -113,11 +113,8 @@ a:hover {
   padding: 3px 10px;
 }
 .workspace {
-  display: grid;
-  gap: clamp(36px, 6vw, 84px);
-  grid-template-columns: minmax(0, 760px) minmax(180px, 240px);
   margin: 0 auto;
-  max-width: 1180px;
+  max-width: 980px;
   padding: clamp(44px, 7vw, 92px) clamp(20px, 5vw, 72px) 100px;
 }
 .reading-area {
@@ -367,26 +364,33 @@ h3 {
   font-size: clamp(25px, 4vw, 34px);
   margin: 34px 0 6px;
 }
-.recipe-columns {
-  display: grid;
-  gap: clamp(30px, 6vw, 70px);
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-  margin-top: 42px;
+.review-document > section {
+  margin-top: 24px;
 }
-.recipe-columns h3 {
+.review-document > section h3 {
   color: #59645d;
   font-size: 13px;
+  font-weight: 750;
   letter-spacing: 0.1em;
+  margin-bottom: 12px;
   text-transform: uppercase;
 }
-.recipe-columns ul,
-.recipe-columns ol {
+.review-document ul,
+.review-document ol {
   line-height: 1.7;
-  margin: 0;
   padding-left: 21px;
 }
-.recipe-columns li + li {
+.review-document ul {
+  list-style: disc;
+}
+.review-document ol {
+  list-style: decimal;
+}
+.review-document li + li {
   margin-top: 9px;
+}
+.review-document > .field-stack {
+  margin-top: 28px;
 }
 .approve-bar {
   align-items: center;
@@ -426,54 +430,6 @@ h3 {
   margin-top: 30px;
   padding: 20px 0;
 }
-.status-rail {
-  align-self: start;
-  padding-top: 10px;
-  position: sticky;
-  top: 40px;
-}
-.rail-title {
-  color: #59645d;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  margin: 0 0 22px;
-  text-transform: uppercase;
-}
-.status-rail ol {
-  display: grid;
-  gap: 20px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.status-rail li {
-  align-items: start;
-  color: #87908a;
-  display: grid;
-  font-size: 13px;
-  gap: 10px;
-  grid-template-columns: 10px 1fr;
-  line-height: 1.35;
-}
-.status-rail li.active {
-  color: #26312c;
-}
-.status-rail li[aria-current="step"] {
-  color: #1f6b50;
-  font-weight: 750;
-}
-.stage-marker {
-  background: #d8d2c6;
-  border-radius: 50%;
-  height: 8px;
-  margin-top: 4px;
-  width: 8px;
-}
-.active .stage-marker {
-  background: #1f6b50;
-}
-
 @keyframes breathe {
   50% {
     opacity: 0.48;
@@ -497,7 +453,6 @@ h3 {
     grid-template-columns: 1fr;
   }
   .workspace {
-    display: block;
     padding: 20px 0 0;
   }
   .reading-area {
@@ -506,13 +461,10 @@ h3 {
     box-shadow: none;
     padding: 36px 20px 120px;
   }
-  .status-rail {
-    border-top: 1px solid #d8d2c6;
-    padding: 28px 20px 46px;
-    position: static;
+  .workspace > .people-panel {
+    margin: 28px 20px;
   }
-  .input-row,
-  .recipe-columns {
+  .input-row {
     grid-template-columns: 1fr;
   }
   .approve-bar {

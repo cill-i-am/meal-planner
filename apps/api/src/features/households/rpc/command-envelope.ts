@@ -140,7 +140,6 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "complete_accepted_adult_link",
   "confirm_adult_invitation_recipient",
   "confirm_member_access_revoked",
-  "create_meal_plan",
   "create_household_person",
   "create_meal_plan_from_recipe_bank",
   "ensure_household",
@@ -177,7 +176,6 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "restore_household_person",
   "retry_member_departure",
   "start_member_departure",
-  "swap_meal_plan",
   "swap_meal_plan_from_recipe_bank",
   "transition_recipe_import_lifecycle",
 ]);
@@ -219,7 +217,6 @@ const memberPurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
   "answer_recipe_import_action",
   "approve_meal_plan",
   "cancel_recipe_import",
-  "create_meal_plan",
   "create_meal_plan_from_recipe_bank",
   "ensure_household",
   "confirm_recipe_import_action",
@@ -231,7 +228,6 @@ const memberPurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
   "read_import_batch",
   "read_meal_plan",
   "reject_meal_plan",
-  "swap_meal_plan",
   "swap_meal_plan_from_recipe_bank",
 ]);
 

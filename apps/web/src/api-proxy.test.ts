@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { isApiRequest, proxyApiRequest } from "./api-proxy.js";
+import { isApiRequest } from "./api-proxy.js";
+import worker from "./worker.js";
+
+vi.mock("@tanstack/react-start/server-entry", () => ({
+  default: { fetch: vi.fn() },
+}));
 
 describe("same-origin API proxy", () => {
   it.each([
@@ -44,7 +49,9 @@ describe("same-origin API proxy", () => {
     });
     const fetch = vi.fn(async () => response);
 
-    const proxied = await proxyApiRequest(request, { fetch });
+    const proxied = await worker.fetch(request, {
+      MEAL_PLANNER_API: { fetch },
+    });
 
     expect(fetch).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledWith(request);

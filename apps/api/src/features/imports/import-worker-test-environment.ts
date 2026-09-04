@@ -41,12 +41,6 @@ export interface ImportWorkerR2TestEnvironment extends ImportWorkerTestEnvironme
   readonly ImportEvidenceBucket: WorkerTestR2Bucket;
 }
 
-/** Convert decoded migrations to the mutable arrays required by the test API. */
-export const workerTestMigrations = (
-  migrations: readonly WorkerTestMigration[]
-): { name: string; queries: string[] }[] =>
-  migrations.map(({ name, queries }) => ({ name, queries: [...queries] }));
-
 /** Materialize an acquisition port value into a Miniflare-compatible R2 body. */
 export const workerTestR2PutBody = (
   value: AcquisitionPutValue,

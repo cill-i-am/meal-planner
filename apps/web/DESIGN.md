@@ -1,12 +1,9 @@
-# Recipe import POC design
+# Recipe import design
 
-## Direction
+A warm kitchen notebook: cream paper, dark ink and restrained green accents. A compact top bar identifies the household and shows storage status and sign-out controls. The household people panel follows the import surface in the same centered workspace.
 
-A warm, rule-lined kitchen notebook with quiet operator precision. The page uses a compact top bar, a single paper reading surface, and a narrow status rail. It avoids dashboard framing and decorative AI language.
+The import flow uses one centered reading surface. The link form leads into processing, review, error or saved-recipe content. Ingredients and method follow in reading order. The review exposes name and planning-tag editors only when the action permits them, with confirmation after the editors.
 
-## System
+At narrow widths the reading surface fills the screen, form controls stack, and the confirmation button stays accessible at the bottom of the review. Desktop planning-tag fields share two columns; narrow screens use one.
 
-- Oat `#F5F1E8`, paper `#FCFAF6`, divider `#D8D2C6`, ink `#26312C`, secondary `#59645D`, herb `#1F6B50`, success `#197449`, error `#B42318`.
-- One system sans-serif stack, 44px-or-larger controls, visible focus rings, and reduced-motion support.
-- Desktop review is a two-column ingredients/method document. Mobile is one column with a safe sticky approval action.
-- Only the locally-scoped Input, Label, Button, Badge, Separator, Skeleton, and Alert shadcn primitives are used.
+Shared Input, Label, Button, Badge, Separator, Skeleton and Alert components own the small visual vocabulary. Semantic CSS classes own the layout and variants.

@@ -1,9 +1,9 @@
 import { WorkflowStepContext, task } from "alchemy/Cloudflare/Workflows";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
 import type { ImportTraceContext } from "./import-observability.js";
 import { emitImportObservabilityEvent } from "./import-observability.js";
-import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
+import type { ProviderTaskFailureCheckpoint } from "./import-provider-workflow-checkpoint.js";
 import type { ImportTransitionError } from "./import.repository.js";
 
 export const ProviderTaskStepConfig = {
@@ -11,15 +11,6 @@ export const ProviderTaskStepConfig = {
   timeout: "3 minutes",
 } as const;
 
-export const ProviderTaskFailureCheckpoint = Schema.Struct({
-  _tag: Schema.Literal("Failed"),
-  code: Schema.String,
-  reasonCode: Schema.optionalKey(ProviderTaskDiagnosticReasonCode),
-  stage: Schema.Literals(["recipe", "speech", "visual"]),
-});
-
-export type ProviderTaskFailureCheckpoint =
-  typeof ProviderTaskFailureCheckpoint.Type;
 export type ProviderTaskStage = ProviderTaskFailureCheckpoint["stage"];
 
 export interface ProviderTaskRetryLifecycle {

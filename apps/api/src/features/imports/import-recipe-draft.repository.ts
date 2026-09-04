@@ -10,7 +10,7 @@ import type { DurableRecipeExtractionFailureCode } from "./import-recipe-extract
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportTransitionError } from "./import.repository.js";
 
-const RecipeDraftV1 = Schema.Struct({
+export const RecipeDraft = Schema.Struct({
   createdAt: ImportTimestamp,
   evidenceFingerprint: Sha256Hex,
   extraction: RecipeExtraction,
@@ -20,20 +20,15 @@ const RecipeDraftV1 = Schema.Struct({
   importId: ImportId,
   lifecycle: Schema.Literal("needs_review"),
   schemaVersion: Schema.Literal(1),
+  transcript: Schema.Union([
+    Schema.Struct({ status: Schema.Literal("available") }),
+    Schema.Struct({
+      reason: Schema.Literal("source_type_carousel"),
+      status: Schema.Literal("not_applicable"),
+    }),
+  ]),
 });
 
-const CarouselTranscriptDisposition = Schema.Struct({
-  reason: Schema.Literal("source_type_carousel"),
-  status: Schema.Literal("not_applicable"),
-});
-
-const RecipeDraftV2 = Schema.Struct({
-  ...RecipeDraftV1.fields,
-  schemaVersion: Schema.Literal(2),
-  transcript: CarouselTranscriptDisposition,
-});
-
-export const RecipeDraft = Schema.Union([RecipeDraftV1, RecipeDraftV2]);
 export type RecipeDraft = typeof RecipeDraft.Type;
 
 export type RecipeExtractionFailureCode = DurableRecipeExtractionFailureCode;

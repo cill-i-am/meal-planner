@@ -476,23 +476,24 @@ export const HouseholdReadEvidenceStageInput = Schema.Struct({
 export type HouseholdReadEvidenceStageInput =
   typeof HouseholdReadEvidenceStageInput.Type;
 
+export const HouseholdEvidenceStageSnapshot = Schema.Struct({
+  acquisitionAttemptGeneration: PositiveSafeInteger,
+  committedAt: ImportTimestamp,
+  completedAt: Schema.NullOr(ImportTimestamp),
+  dispatchId: DispatchId,
+  executionGeneration: PositiveSafeInteger,
+  extractionContext: Schema.NullOr(HouseholdExtractionClaimContext),
+  failureCode: Schema.NullOr(HouseholdEvidenceStageFailureCode),
+  inputFingerprint: HouseholdEvidenceSha256,
+  intentId: RecipeImportIntentId,
+  outcome: Schema.Literals(["Completed", "Dispatching", "Failed"]),
+  reference: Schema.NullOr(HouseholdEvidenceStageReference),
+  result: Schema.NullOr(HouseholdEvidenceStageResult),
+  stage: HouseholdEvidenceStage,
+  startedAt: ImportTimestamp,
+});
 export const HouseholdReadEvidenceStageResult = Schema.NullOr(
-  Schema.Struct({
-    acquisitionAttemptGeneration: PositiveSafeInteger,
-    committedAt: ImportTimestamp,
-    completedAt: Schema.NullOr(ImportTimestamp),
-    dispatchId: DispatchId,
-    executionGeneration: PositiveSafeInteger,
-    extractionContext: Schema.NullOr(HouseholdExtractionClaimContext),
-    failureCode: Schema.NullOr(HouseholdEvidenceStageFailureCode),
-    inputFingerprint: HouseholdEvidenceSha256,
-    intentId: RecipeImportIntentId,
-    outcome: Schema.Literals(["Completed", "Dispatching", "Failed"]),
-    reference: Schema.NullOr(HouseholdEvidenceStageReference),
-    result: Schema.NullOr(HouseholdEvidenceStageResult),
-    stage: HouseholdEvidenceStage,
-    startedAt: ImportTimestamp,
-  })
+  HouseholdEvidenceStageSnapshot
 );
 export type HouseholdReadEvidenceStageResult =
   typeof HouseholdReadEvidenceStageResult.Type;

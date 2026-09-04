@@ -1,4 +1,3 @@
-import { Context } from "effect";
 import type { Effect } from "effect";
 
 import type {
@@ -61,7 +60,3 @@ export interface SourceResolver {
     | UnsupportedCarouselFailure
   >;
 }
-
-export const SourceResolver = Context.Service<SourceResolver>(
-  "meal-planner/SourceResolver"
-);

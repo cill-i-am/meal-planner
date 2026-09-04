@@ -22,6 +22,7 @@
 - [Repository-owned delivery workflow](delivery/README.md)
 - [Current delivery state](delivery/current.md)
 - [Work-item template](delivery/work-item-template.md)
+- [Seven-pass cleanup](delivery/anti-slop-cleanup.md)
 
 The repository owns product intent, accepted decisions, active delivery scope,
 status, blockers, and evidence. Pull requests are the review boundary for an
@@ -40,9 +41,6 @@ architecture documents must describe what production composition owns now.
 ## Product And Operator Research
 
 - [TikTok recipe-import feasibility report](tiktok-recipe-import-feasibility.html)
-- [Real-source recipe quality pilot runbook](real-source-pilot-runbook.md)
-- [Real-source pilot input package](real-source-pilot-input-package.md)
-- [Operator TikTok carousel bundle runbook](operator-carousel-import-runbook.md)
 - [Tesco API facade](../apps/api/README.md)
 
 ## Agent Workflow

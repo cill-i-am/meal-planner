@@ -62,6 +62,17 @@ export const AcquisitionArtifactId = AcquisitionExecutionFence.pipe(
 );
 export type AcquisitionArtifactId = typeof AcquisitionArtifactId.Type;
 
+/** Private artifacts are a source, audio, or frame owned by one acquisition. */
+export const AcquisitionArtifact = Schema.Union([
+  Schema.TemplateLiteralParser([AcquisitionCoordinatorId]),
+  Schema.TemplateLiteralParser([AcquisitionCoordinatorId, ":audio"]),
+  Schema.TemplateLiteralParser([
+    AcquisitionCoordinatorId,
+    ":frame:",
+    Schema.Literals(["0", "1", "2"]),
+  ]),
+]);
+
 export const MediaObjectKey = Schema.String.pipe(
   Schema.check(
     Schema.isPattern(
@@ -143,6 +154,30 @@ export const FrameTimestampMilliseconds = Schema.Number.pipe(
   Schema.brand("FrameTimestampMilliseconds")
 );
 export type FrameTimestampMilliseconds = typeof FrameTimestampMilliseconds.Type;
+
+const ImageDimension = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThan(0))
+);
+
+/** Container output for private provider audio and visual evidence. */
+export const ProviderEvidenceTransport = Schema.Struct({
+  audio: Schema.Struct({
+    artifactId: MediaArtifactId,
+    bytes: MediaByteCount,
+    durationMilliseconds: MediaDurationMilliseconds,
+    sha256: Sha256Hex,
+  }),
+  frames: Schema.NonEmptyArray(
+    Schema.Struct({
+      artifactId: MediaArtifactId,
+      bytes: MediaByteCount,
+      height: ImageDimension,
+      sha256: Sha256Hex,
+      timestampMilliseconds: FrameTimestampMilliseconds,
+      width: ImageDimension,
+    })
+  ),
+});
 
 export const AcquisitionStage = Schema.Literals([
   "container",
@@ -226,7 +261,7 @@ export const VerifiedAcquisitionEvidence = Schema.Struct({
   manifestSha256: Sha256Hex,
   mediaKey: MediaObjectKey,
   sha256: Sha256Hex,
-  source: Schema.optionalKey(VerifiedSourceMetadata),
+  source: VerifiedSourceMetadata,
   videoStreams: Schema.NonEmptyArray(MediaStreamSummary),
 });
 export type VerifiedAcquisitionEvidence =

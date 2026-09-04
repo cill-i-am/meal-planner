@@ -1,4 +1,4 @@
-import { Effect, Fiber, Schema } from "effect";
+import { Effect, Exit, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,6 +11,7 @@ import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
 } from "./import-observability.js";
+import { makeRecordingTraceStore } from "./import-provider-adapters.test-fixture.js";
 import {
   failAfter,
   makeProviderDispatchGate,
@@ -85,24 +86,33 @@ const repository: ProviderAccountingRepository = {
 };
 
 describe("provider dispatch observability", () => {
-  it("keeps a slow visual provider response alive for the observed production window", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
-    await Effect.runPromise(
-      Effect.gen(function* slowProvider() {
+  it("keeps a visual response alive until the provider timeout and then fails", async () => {
+    const trace = makeRecordingTraceStore();
+    const exit = await Effect.runPromise(
+      Effect.gen(function* observeProviderDeadline() {
         const fiber = yield* Effect.forkChild(
           failAfter(Effect.never, {
             correlationId,
             providerStage: "visual",
+            traceStore: trace.service,
           })
         );
-        yield* Effect.yieldNow;
         yield* TestClock.adjust("149 seconds");
-        return yield* Fiber.interrupt(fiber);
+        expect(fiber.pollUnsafe()).toBeUndefined();
+        expect(trace.events).toEqual([]);
+        yield* TestClock.adjust("1 second");
+        return yield* Fiber.await(fiber);
       }).pipe(Effect.provide(TestClock.layer({ warningDelay: "10 seconds" })))
     );
-
-    expect(log.mock.calls).toEqual([]);
-    log.mockRestore();
+    expect(exit).toEqual(Exit.fail("timeout"));
+    expect(trace.events).toEqual([
+      {
+        correlationId,
+        event: "provider.timeout",
+        outcome: "timed_out",
+        providerStage: "visual",
+      },
+    ]);
   });
 
   it("emits the closed timeout event without leaking the failed operation", async () => {

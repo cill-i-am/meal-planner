@@ -1,11 +1,10 @@
 import * as LabelPrimitive from "@radix-ui/react-label";
+import { clsx } from "clsx";
 import type { ComponentProps } from "react";
-
-import { cn } from "../../lib/cn.js";
 
 export const Label = ({
   className,
   ...props
 }: ComponentProps<typeof LabelPrimitive.Root>) => (
-  <LabelPrimitive.Root className={cn("label", className)} {...props} />
+  <LabelPrimitive.Root className={clsx("label", className)} {...props} />
 );

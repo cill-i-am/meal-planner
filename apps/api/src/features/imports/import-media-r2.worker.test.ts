@@ -17,6 +17,7 @@ import {
 import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
+  AcquisitionMediaSource,
   AcquisitionPutOptions,
   AcquisitionPutValue,
   PreparedMediaArtifact,
@@ -186,7 +187,7 @@ const makeMediaObject = (
     sha256: artifactSha256,
     videoStreams: [{ codec: "h264", index: 0 }],
   };
-  const object: AcquisitionMediaObjectLike = {
+  const object: AcquisitionMediaSource = {
     cleanup: () =>
       Effect.sync(() => {
         cleanupCalls += 1;
@@ -527,10 +528,10 @@ describe("derived provider evidence", () => {
 
     const exit = await Effect.runPromiseExit(
       acquireStoreVerify(rejectingDerivedBucket, mediaObject, {
-        beforeCleanup: (prepared, acquisition) =>
+        beforeCleanup: (prepared) =>
           persistDerivedProviderEvidence(
             rejectingDerivedBucket,
-            acquisition,
+            mediaObject,
             prepared,
             { generation, importId }
           ),
@@ -913,7 +914,7 @@ describe("native R2 generation commit", () => {
     const importId = id(404);
     const generation = decodeGeneration(3);
     let calls = 0;
-    const unavailable: AcquisitionMediaObjectLike = {
+    const unavailable: AcquisitionMediaSource = {
       cleanup: () => Effect.void,
       prepare: () => {
         calls += 1;
@@ -1082,7 +1083,7 @@ describe("native R2 generation commit", () => {
     const generation = decodeGeneration(1);
     const fake = makeMediaObject();
     const events: string[] = [];
-    const mediaObject: AcquisitionMediaObjectLike = {
+    const mediaObject: AcquisitionMediaSource = {
       ...fake.object,
       cleanup: () =>
         Effect.sync(() => {
@@ -1132,7 +1133,7 @@ describe("native R2 generation commit", () => {
     const fake = makeMediaObject();
     const events: string[] = [];
     const streamStarted = Promise.withResolvers<null>();
-    const mediaObject: AcquisitionMediaObjectLike = {
+    const mediaObject: AcquisitionMediaSource = {
       ...fake.object,
       cleanup: () =>
         Effect.sync(() => {
@@ -1172,7 +1173,7 @@ describe("native R2 generation commit", () => {
     const generation = decodeGeneration(1);
     const fake = makeMediaObject();
     const cleanupStarted = Promise.withResolvers<null>();
-    const mediaObject: AcquisitionMediaObjectLike = {
+    const mediaObject: AcquisitionMediaSource = {
       ...fake.object,
       cleanup: () =>
         Effect.sync(() => cleanupStarted.resolve(null)).pipe(
