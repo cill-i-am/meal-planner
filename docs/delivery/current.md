@@ -73,9 +73,13 @@ on 2026-09-04 as `9a59f85170f379e065920eadaaf69593d90c2c40`, following final
 review of `34a376cb9a35fd6f177a0bf8b40e5c1dee938bd9` and green hosted
 [run 33910287961](https://github.com/cill-i-am/meal-planner/actions/runs/33910287961).
 Work Item 02 is `Done`. Work Item 03 is `In progress` on this merged foundation;
-its first profile persistence, history, audit, and exact replay tracer passes.
-The remaining safety, authorization, concurrency, restart, and UI proof is not
-yet completion evidence.
+its implementation is in draft [PR #202](https://github.com/cill-i-am/meal-planner/pull/202).
+Focused proof covers profile persistence, immutable history and audit, exact
+replay, safety confirmation, adult-edit races, archival/restoration, restart,
+cross-household denial, dependant confirmation, and retained ambiguous UI
+commands. Local repository tests, static checks, builds, and twice/no-diff
+Household and D1 generation pass. Hosted CI and independent exact-head review
+remain delivery gates; the draft is not merge authority.
 
 Organization-deletion behavior remains out of scope. Work Item 04 remains
 `Proposed`.
@@ -104,13 +108,14 @@ Organization-deletion behavior remains out of scope. Work Item 04 remains
 
 ## Immediate Next Steps
 
-1. Verify the docs-only replacement head and its hosted CI exactly, then make
-   the authorized final disposition for Work Item 02 and PR #201.
+1. Finish Work Item 03 verification and freeze PR #202 for hosted CI and an
+   independent exact-head review. Do not treat the draft or focused tests as
+   merge authority.
 
 ## Deliberate Non-Work
 
-Do not start Work Items 03 or 04, retailer integration, full pantry inventory,
+Do not start Work Item 04, retailer integration, full pantry inventory,
 calories/macros, medical goal systems, MCP delivery, embedded channels, or
-generic organization support while Work Item 02 remains the immediate target.
+generic organization support while Work Item 03 remains the immediate target.
 Do not implement organization deletion; keep it disabled until its accepted
 household cleanup and tombstone lifecycle is separately authorized and ready.

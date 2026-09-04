@@ -11,6 +11,7 @@ import {
   HouseholdMealPlanResponse,
   HouseholdPeopleRoster,
   HouseholdPerson,
+  PersonProfile,
 } from "@meal-planner/household-api";
 import {
   Recipe,
@@ -1091,6 +1092,263 @@ const review = {
 } as const;
 
 describe("household public API to private Durable Object boundary", () => {
+  it("records and confirms a dependant profile without inventing a dependant account", async () => {
+    const { ownerCookie } = await prepareInvitableAdult("Dependant Profile");
+    const headers = { "content-type": "application/json", cookie: ownerCookie };
+    const created = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people",
+      {
+        body: JSON.stringify({
+          displayName: "Child",
+          kind: "dependant",
+          mutationId: "profile-child",
+        }),
+        headers,
+        method: "POST",
+      }
+    );
+    expect(created.status).toBe(201);
+    const person = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await created.json()
+    );
+    const url = `https://meal-planner.test/v1/household/people/${person.id}/profile`;
+    const provisional = await getRuntime().dispatchFetch(url, {
+      body: JSON.stringify({
+        command: {
+          _tag: "AddProvisionalProfileFact",
+          fact: {
+            _tag: "FoodPreference",
+            label: "Carrots",
+            sentiment: "like",
+            targetKind: "ingredient",
+          },
+        },
+        expectedProfileVersion: 0,
+        mutationId: "profile-child-provisional",
+      }),
+      headers,
+      method: "POST",
+    });
+    expect(provisional.status).toBe(200);
+    const first = await Schema.decodeUnknownPromise(PersonProfile)(
+      await provisional.json()
+    );
+    const [fact] = first.facts;
+    if (fact === undefined) {
+      throw new Error("Expected the child's provisional fact.");
+    }
+    const confirmed = await getRuntime().dispatchFetch(url, {
+      body: JSON.stringify({
+        command: {
+          _tag: "ConfirmProfileFact",
+          basis: "household_adult",
+          factId: fact.id,
+        },
+        expectedProfileVersion: 1,
+        mutationId: "profile-child-confirm",
+      }),
+      headers,
+      method: "POST",
+    });
+    expect(confirmed.status).toBe(200);
+    const second = await Schema.decodeUnknownPromise(PersonProfile)(
+      await confirmed.json()
+    );
+    expect(second.facts[0]).toMatchObject({
+      id: fact.id,
+      standing: { _tag: "confirmed", basis: "household_adult" },
+    });
+    expect(second.audit?.before).toMatchObject({
+      standing: { _tag: "provisional" },
+    });
+    expect(second.audit?.after).toMatchObject({
+      id: fact.id,
+      standing: { _tag: "confirmed" },
+    });
+  });
+
+  it("serializes person archival with a profile mutation without losing history", async () => {
+    const { adult, ownerCookie } = await prepareInvitableAdult(
+      "Profile Archive Race"
+    );
+    const base = `https://meal-planner.test/v1/household/people/${adult.id}`;
+    const headers = { "content-type": "application/json", cookie: ownerCookie };
+    const [archive, mutation] = await Promise.all([
+      getRuntime().dispatchFetch(`${base}/archive`, {
+        body: JSON.stringify({
+          expectedVersion: adult.version,
+          mutationId: "profile-archive-race",
+        }),
+        headers,
+        method: "POST",
+      }),
+      getRuntime().dispatchFetch(`${base}/profile`, {
+        body: JSON.stringify({
+          command: {
+            _tag: "AddProvisionalProfileFact",
+            fact: {
+              _tag: "FoodPreference",
+              label: "Carrots",
+              sentiment: "like",
+              targetKind: "ingredient",
+            },
+          },
+          expectedProfileVersion: 0,
+          mutationId: "profile-racing-write",
+        }),
+        headers,
+        method: "POST",
+      }),
+    ]);
+    expect(archive.status, await archive.clone().text()).toBe(200);
+    expect([200, 409]).toContain(mutation.status);
+    const current = await getRuntime().dispatchFetch(`${base}/profile`, {
+      headers,
+    });
+    const profile = await Schema.decodeUnknownPromise(PersonProfile)(
+      await current.json()
+    );
+    expect(profile.version).toBe(mutation.status === 200 ? 1 : 0);
+    if (mutation.status === 409) {
+      expect(await mutation.json()).toMatchObject({ code: "person_archived" });
+    }
+    const history = await getRuntime().dispatchFetch(
+      `${base}/profile/versions`,
+      { headers }
+    );
+    expect(await history.json()).toMatchObject({
+      versions:
+        profile.version === 0
+          ? []
+          : [Schema.encodeSync(PersonProfile)(profile)],
+    });
+    const unauthorized = await getRuntime().dispatchFetch(`${base}/profile`);
+    expect(unauthorized.status).toBe(401);
+  });
+
+  it("fences profile safety, concurrent adult edits, and durable history by household", async () => {
+    const setup = await prepareLinkedAdult("Profile Safety Runtime");
+    const url = `https://meal-planner.test/v1/household/people/${setup.adult.id}/profile`;
+    const post = (cookie: string, payload: object) =>
+      getRuntime().dispatchFetch(url, {
+        body: JSON.stringify(payload),
+        headers: { "content-type": "application/json", cookie },
+        method: "POST",
+      });
+    const initial = await post(setup.ownerCookie, {
+      command: {
+        _tag: "AddProvisionalProfileFact",
+        fact: {
+          _tag: "HardConstraint",
+          category: "allergen",
+          handling: "exclude",
+          label: "Peanuts",
+        },
+      },
+      expectedProfileVersion: 0,
+      mutationId: "profile-safety-initial",
+    });
+    expect(initial.status, await initial.clone().text()).toBe(200);
+    const versionOne = await Schema.decodeUnknownPromise(PersonProfile)(
+      await initial.json()
+    );
+    const [fact] = versionOne.facts;
+    if (fact === undefined) {
+      throw new Error("Expected persisted safety fact");
+    }
+    const falseSelf = await post(setup.ownerCookie, {
+      command: { _tag: "ConfirmProfileFact", basis: "self", factId: fact.id },
+      expectedProfileVersion: 1,
+      mutationId: "profile-safety-false-self",
+    });
+    expect(falseSelf.status).toBe(409);
+    expect(await falseSelf.json()).toMatchObject({ code: "self_required" });
+    const confirmation = await post(setup.memberCookie, {
+      command: { _tag: "ConfirmProfileFact", basis: "self", factId: fact.id },
+      expectedProfileVersion: 1,
+      mutationId: "profile-safety-self",
+    });
+    expect(confirmation.status, await confirmation.clone().text()).toBe(200);
+    expect(await confirmation.json()).toMatchObject({
+      facts: [{ id: fact.id, standing: { _tag: "confirmed", basis: "self" } }],
+      version: 2,
+    });
+    const ordinary = await post(setup.ownerCookie, {
+      command: { _tag: "RemoveOrdinaryProfileFact", factId: fact.id },
+      expectedProfileVersion: 2,
+      mutationId: "profile-safety-bypass",
+    });
+    expect(ordinary.status).toBe(409);
+    expect(await ordinary.json()).toMatchObject({
+      code: "safety_confirmation_required",
+    });
+    const reduction = {
+      command: {
+        _tag: "ConfirmHardConstraintReduction",
+        confirmation: "I confirm this safety constraint change",
+        factId: fact.id,
+        replacement: null,
+      },
+      expectedProfileVersion: 2,
+      mutationId: "profile-safety-reduction",
+    };
+    const race = await Promise.all([
+      post(setup.ownerCookie, reduction),
+      post(setup.memberCookie, {
+        command: { _tag: "ConfirmProfileFact", basis: "self", factId: fact.id },
+        expectedProfileVersion: 2,
+        mutationId: "profile-safety-racing-confirm",
+      }),
+    ]);
+    expect(race.map((response) => response.status).toSorted()).toEqual([
+      200, 409,
+    ]);
+    const stale = race.find((response) => response.status === 409);
+    expect(await stale?.json()).toMatchObject({ code: "stale_version" });
+    const current = await getRuntime().dispatchFetch(url, {
+      headers: { cookie: setup.memberCookie },
+    });
+    const currentBytes = await current.text();
+    const audit = await getRuntime().dispatchFetch(`${url}/audit`, {
+      headers: { cookie: setup.ownerCookie },
+    });
+    const auditBytes = await audit.text();
+    const outsider = await prepareInvitableAdult("Profile Outsider Runtime");
+    await Promise.all(
+      [url, `${url}/versions`, `${url}/versions/1`, `${url}/audit`].map(
+        async (path) => {
+          const denied = await getRuntime().dispatchFetch(path, {
+            headers: { cookie: outsider.ownerCookie },
+          });
+          expect(denied.status).toBe(409);
+          expect(await denied.json()).toMatchObject({
+            code: "person_not_found",
+          });
+        }
+      )
+    );
+    const deniedMutation = await post(outsider.ownerCookie, reduction);
+    expect(deniedMutation.status).toBe(409);
+    expect(await deniedMutation.json()).toMatchObject({
+      code: "person_not_found",
+    });
+    await restartRuntime();
+    const restoredCurrent = await getRuntime().dispatchFetch(url, {
+      headers: { cookie: setup.memberCookie },
+    });
+    expect(await restoredCurrent.text()).toBe(currentBytes);
+    const restoredAudit = await getRuntime().dispatchFetch(`${url}/audit`, {
+      headers: { cookie: setup.ownerCookie },
+    });
+    expect(await restoredAudit.text()).toBe(auditBytes);
+    const historical = await getRuntime().dispatchFetch(`${url}/versions/1`, {
+      headers: { cookie: setup.memberCookie },
+    });
+    expect(await historical.json()).toEqual(
+      Schema.encodeSync(PersonProfile)(versionOne)
+    );
+  });
+
   it("persists and exactly replays a provisional person profile version", async () => {
     const { adult, ownerCookie } =
       await prepareInvitableAdult("Profile Tracer");
@@ -1138,10 +1396,10 @@ describe("household public API to private Durable Object boundary", () => {
     expect(await audit.json()).toMatchObject({
       events: [
         {
-          before: null,
           after: { value: payload.command.fact },
-          previousVersion: 0,
+          before: null,
           nextVersion: 1,
+          previousVersion: 0,
         },
       ],
     });
@@ -1169,6 +1427,53 @@ describe("household public API to private Durable Object boundary", () => {
     });
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ code: "stale_version" });
+    const archive = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/household/people/${adult.id}/archive`,
+      {
+        body: JSON.stringify({
+          expectedVersion: adult.version,
+          mutationId: "profile-tracer-archive",
+        }),
+        headers: request.headers,
+        method: "POST",
+      }
+    );
+    expect(archive.status, await archive.clone().text()).toBe(200);
+    const archived = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await archive.json()
+    );
+    const archivedWrite = await getRuntime().dispatchFetch(url, {
+      ...request,
+      body: JSON.stringify({
+        ...payload,
+        expectedProfileVersion: 1,
+        mutationId: "profile-tracer-archived-write",
+      }),
+    });
+    expect(archivedWrite.status).toBe(409);
+    expect(await archivedWrite.json()).toMatchObject({
+      code: "person_archived",
+    });
+    await restartRuntime();
+    const archivedReplay = await getRuntime().dispatchFetch(url, request);
+    expect(archivedReplay.status).toBe(200);
+    expect(await archivedReplay.text()).toBe(firstBody);
+    const restore = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/household/people/${adult.id}/restore`,
+      {
+        body: JSON.stringify({
+          expectedVersion: archived.version,
+          mutationId: "profile-tracer-restore",
+        }),
+        headers: request.headers,
+        method: "POST",
+      }
+    );
+    expect(restore.status).toBe(200);
+    const restored = await getRuntime().dispatchFetch(url, {
+      headers: { cookie: ownerCookie },
+    });
+    expect(await restored.text()).toBe(firstBody);
   });
 
   it("requires household authorization before batch routing", async () => {
@@ -1499,6 +1804,11 @@ describe("household public API to private Durable Object boundary", () => {
 
     const bootstrapURL =
       "https://meal-planner.test/v1/household/people/bootstrap-creator";
+    const observations = await getRuntime().getKVNamespace(
+      "HOUSEHOLD_TEST_OBSERVATIONS",
+      "api"
+    );
+    await observations.delete("people-bootstrap-private-invoked");
     const memberBootstrap = {
       body: JSON.stringify({
         displayName: "Racing member",
@@ -1528,10 +1838,6 @@ describe("household public API to private Durable Object boundary", () => {
         status: 403,
       },
     ]);
-    const observations = await getRuntime().getKVNamespace(
-      "HOUSEHOLD_TEST_OBSERVATIONS",
-      "api"
-    );
     expect(
       await observations.get("people-bootstrap-private-invoked")
     ).toBeNull();

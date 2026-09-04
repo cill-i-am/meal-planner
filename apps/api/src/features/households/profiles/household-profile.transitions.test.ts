@@ -71,8 +71,8 @@ describe("household profile transitions", () => {
         facts,
         {
           _tag: "ReplaceOrdinaryProfileFact",
-          factId: id,
           fact: { ...preference, sentiment: "dislike" },
+          factId: id,
         },
         { ...context, version: ProfileVersion.make(2) }
       )

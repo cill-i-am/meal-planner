@@ -1126,7 +1126,7 @@ export const HouseholdObjectRuntime = Effect.gen(
         ),
       readPersonProfile: (untrustedInput: HouseholdReadPersonProfileInput) =>
         scoped(
-          Effect.gen(function* () {
+          Effect.gen(function* readPersonProfile() {
             const command = yield* Schema.decodeUnknownEffect(
               HouseholdReadPersonProfileInput,
               { onExcessProperty: "error" }
@@ -1158,7 +1158,7 @@ export const HouseholdObjectRuntime = Effect.gen(
         untrustedInput: HouseholdListProfileVersionsInput
       ) =>
         scoped(
-          Effect.gen(function* () {
+          Effect.gen(function* listProfileVersions() {
             const command = yield* Schema.decodeUnknownEffect(
               HouseholdListProfileVersionsInput,
               { onExcessProperty: "error" }
@@ -1178,8 +1178,8 @@ export const HouseholdObjectRuntime = Effect.gen(
               identity: identityGenerator,
             }).listVersions({
               actor: command.admission.actor,
-              personId: command.personId,
               beforeVersion: command.beforeVersion,
+              personId: command.personId,
             });
             return yield* Schema.encodeEffect(ProfileVersionPage)(result).pipe(
               Effect.mapError(invalidInput)
@@ -1190,7 +1190,7 @@ export const HouseholdObjectRuntime = Effect.gen(
         untrustedInput: HouseholdMutatePersonProfileInput
       ) =>
         scoped(
-          Effect.gen(function* () {
+          Effect.gen(function* mutatePersonProfile() {
             const command = yield* Schema.decodeUnknownEffect(
               HouseholdMutatePersonProfileInput,
               { onExcessProperty: "error" }
@@ -1210,9 +1210,9 @@ export const HouseholdObjectRuntime = Effect.gen(
               identity: identityGenerator,
             }).mutate({
               actor: command.admission.actor,
-              personId: command.personId,
-              payload: command.payload,
               now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+              personId: command.personId,
             });
             return yield* Schema.encodeEffect(PersonProfile)(result).pipe(
               Effect.mapError(invalidInput)

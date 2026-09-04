@@ -38,7 +38,7 @@ const decodeSnapshot = Schema.decodeUnknownEffect(
 const encodeSnapshot = Schema.encodeSync(Schema.fromJsonString(PersonProfile));
 
 const activeAdult = (database: Reader, actor: Actor) =>
-  Effect.gen(function* () {
+  Effect.gen(function* activeAdultEffect() {
     const [person] = yield* database
       .select({
         id: householdPeople.personId,
@@ -58,28 +58,30 @@ const activeAdult = (database: Reader, actor: Actor) =>
       )
       .limit(1)
       .pipe(Effect.mapError(unavailable));
-    if (person === undefined)
+    if (person === undefined) {
       return yield* Effect.fail(reject("adult_required"));
+    }
     return yield* Schema.decodeUnknownEffect(HouseholdPersonId)(person.id).pipe(
       Effect.mapError(unavailable)
     );
   });
 
 const targetPerson = (database: Reader, personId: HouseholdPersonId) =>
-  Effect.gen(function* () {
+  Effect.gen(function* targetPersonEffect() {
     const [person] = yield* database
       .select()
       .from(householdPeople)
       .where(eq(householdPeople.personId, personId))
       .limit(1)
       .pipe(Effect.mapError(unavailable));
-    if (person === undefined)
+    if (person === undefined) {
       return yield* Effect.fail(reject("person_not_found"));
+    }
     return person;
   });
 
 const current = (database: Reader, personId: HouseholdPersonId) =>
-  Effect.gen(function* () {
+  Effect.gen(function* currentEffect() {
     const [row] = yield* database
       .select()
       .from(householdProfileVersions)
@@ -109,17 +111,18 @@ export const makeHouseholdProfileRepository = (
   }) =>
     database
       .transaction((transaction) =>
-        Effect.gen(function* () {
+        Effect.gen(function* getEffect() {
           yield* activeAdult(transaction, input.actor);
           yield* targetPerson(transaction, input.personId);
           if (input.version !== null) {
-            if (input.version === 0)
+            if (input.version === 0) {
               return {
                 audit: null,
                 facts: [],
                 personId: input.personId,
                 version: input.version,
               };
+            }
             const [row] = yield* transaction
               .select()
               .from(householdProfileVersions)
@@ -131,8 +134,9 @@ export const makeHouseholdProfileRepository = (
               )
               .limit(1)
               .pipe(Effect.mapError(unavailable));
-            if (row === undefined)
+            if (row === undefined) {
               return yield* Effect.fail(reject("fact_not_found"));
+            }
             return yield* decodeSnapshot(row.snapshotJson).pipe(
               Effect.mapError(unavailable)
             );
@@ -149,7 +153,7 @@ export const makeHouseholdProfileRepository = (
   }): Effect.Effect<ProfileVersionPage, Failure> =>
     database
       .transaction((transaction) =>
-        Effect.gen(function* () {
+        Effect.gen(function* listVersionsEffect() {
           yield* activeAdult(transaction, input.actor);
           yield* targetPerson(transaction, input.personId);
           const rows = yield* transaction
@@ -185,12 +189,12 @@ export const makeHouseholdProfileRepository = (
     readonly payload: MutatePersonProfilePayload;
     readonly now: number;
   }): Effect.Effect<PersonProfile, Failure> =>
-    Effect.gen(function* () {
+    Effect.gen(function* mutateEffect() {
       const canonical = yield* services.canonical
         .encode({
           actor: input.actor,
-          personId: input.personId,
           payload: input.payload,
+          personId: input.personId,
         })
         .pipe(Effect.mapError(unavailable));
       const digest = yield* services.digest
@@ -198,7 +202,7 @@ export const makeHouseholdProfileRepository = (
         .pipe(Effect.mapError(unavailable));
       return yield* database
         .transaction((transaction) =>
-          Effect.gen(function* () {
+          Effect.gen(function* commitProfileVersion() {
             const actorPersonId = yield* activeAdult(transaction, input.actor);
             const person = yield* targetPerson(transaction, input.personId);
             const [receipt] = yield* transaction
@@ -213,19 +217,22 @@ export const makeHouseholdProfileRepository = (
               .limit(1)
               .pipe(Effect.mapError(unavailable));
             if (receipt !== undefined) {
-              if (receipt.intentDigest !== digest)
+              if (receipt.intentDigest !== digest) {
                 return yield* Effect.fail(reject("mutation_collision"));
+              }
               return yield* decodeSnapshot(receipt.snapshotJson).pipe(
                 Effect.mapError(unavailable)
               );
             }
-            if (person.lifecycle !== "active")
+            if (person.lifecycle !== "active") {
               return yield* Effect.fail(reject("person_archived"));
+            }
             const previous = yield* current(transaction, input.personId);
-            if (previous.version !== input.payload.expectedProfileVersion)
+            if (previous.version !== input.payload.expectedProfileVersion) {
               return yield* Effect.fail(reject("stale_version"));
+            }
             const version = ProfileVersion.make(previous.version + 1);
-            const command = input.payload.command;
+            const { command } = input.payload;
             const uuid = yield* services.identity
               .generate()
               .pipe(Effect.mapError(unavailable));
@@ -242,20 +249,20 @@ export const makeHouseholdProfileRepository = (
               audit: {
                 actorId: input.actor.actorId,
                 actorPersonId,
+                after:
+                  facts.find((fact) => fact.updatedInVersion === version) ??
+                  null,
                 atEpochMs: input.now,
-                command,
-                source: "manual_ui",
                 before:
                   "factId" in command
                     ? (previous.facts.find(
                         (fact) => fact.id === command.factId
                       ) ?? null)
                     : null,
-                after:
-                  facts.find((fact) => fact.updatedInVersion === version) ??
-                  null,
-                previousVersion: previous.version,
+                command,
                 nextVersion: version,
+                previousVersion: previous.version,
+                source: "manual_ui",
               },
               facts,
               personId: input.personId,

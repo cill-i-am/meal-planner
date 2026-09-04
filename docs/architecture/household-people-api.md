@@ -91,3 +91,38 @@ Household state. The complete access-first protocol is recorded in
 [Stage 1 Work Item 02](../delivery/stages/01-household-people/02-account-linking-invitations-and-departure.md)
 and
 [ADR-0010](decisions/0010-coordinate-membership-departure-before-person-archival.md).
+
+## Household-visible profiles
+
+Work Item 03 adds current-profile, exact-version, paginated version and audit
+queries, plus one closed profile-command endpoint for a household person.
+The API admits current Better Auth membership before private routing. Inside
+the object, the immutable linkage subject must resolve to an active linked
+adult. It is not inferred from the purpose-separated audit actor. Only the
+linked subject can claim self confirmation; an admitted adult can confirm a
+dependant's facts or make honestly attributed household-adult edits.
+
+The initial fact union is `FoodPreference`, `HardConstraint`, and the explicit
+reviewed `NoKnownHardConstraints` statement. Missing facts never imply safety
+clearance. Only `manual_ui` provenance is accepted. The closed public command
+cannot supply an actor, email, session, invitation, transcript, or arbitrary
+source. Ordinary edits cannot change a safety fact; the distinct safety-change
+command requires an explicit confirmation and the UI displays old and proposed
+meaning before submission.
+
+One immutable `household_profile_versions` row commits the full typed snapshot,
+changed fact before/after, actor and actor-person identities, time, command,
+prior/next version, and mutation receipt. Current state is the latest snapshot;
+version and audit queries read that same ledger rather than a second writer.
+The transaction checks active adult, subject lifecycle, receipt collision,
+expected version, and fact policy before inserting exactly one row. An exact
+receipt replay precedes the archived-subject write guard but still requires
+current adult authorization. Archive and restoration never delete history.
+
+The profile UI keeps one unresolved command per household, including its exact
+payload and mutation ID, across feature navigation. Other profile mutations and
+form changes remain disabled until that command has a definitive result. A
+network or malformed-response failure does not authorize a new mutation. A
+definitive conflict requires reloading current state before an explicit new
+submission. This narrow gate is separate from invitation/departure coordination
+and does not introduce a generic saga framework.

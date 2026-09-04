@@ -930,12 +930,12 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "get_member_departure",
         (household, command) => household.getMemberDepartureByMutation(command)
       ),
-    readPersonProfile: (input: HouseholdReadPersonProfileInput) =>
+    listHouseholdPeople: (input: HouseholdListPeopleInput) =>
       route(
-        HouseholdReadPersonProfileInput,
+        HouseholdListPeopleInputSchema,
         input,
-        "read_person_profile",
-        (household, command) => household.readPersonProfile(command)
+        "list_household_people",
+        (household, command) => household.listHouseholdPeople(command)
       ),
     listProfileVersions: (input: HouseholdListProfileVersionsInput) =>
       route(
@@ -943,20 +943,6 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "read_person_profile",
         (household, command) => household.listProfileVersions(command)
-      ),
-    mutatePersonProfile: (input: HouseholdMutatePersonProfileInput) =>
-      route(
-        HouseholdMutatePersonProfileInput,
-        input,
-        "mutate_person_profile",
-        (household, command) => household.mutatePersonProfile(command)
-      ),
-    listHouseholdPeople: (input: HouseholdListPeopleInput) =>
-      route(
-        HouseholdListPeopleInputSchema,
-        input,
-        "list_household_people",
-        (household, command) => household.listHouseholdPeople(command)
       ),
     listRecipeBank: (input: typeof HouseholdRecipePageInputSchema.Type) =>
       route(
@@ -978,6 +964,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
     mutateEvidenceStage: (
       input: typeof HouseholdMutateEvidenceStageInputSchema.Encoded
     ) => routeEvidenceStage(input),
+    mutatePersonProfile: (input: HouseholdMutatePersonProfileInput) =>
+      route(
+        HouseholdMutatePersonProfileInput,
+        input,
+        "mutate_person_profile",
+        (household, command) => household.mutatePersonProfile(command)
+      ),
     observeEvidenceReference: (
       input: typeof HouseholdObserveEvidenceReferenceInputSchema.Encoded
     ) => routeEvidenceObservation(input),
@@ -1034,6 +1027,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "read_meal_plan",
         (household, command) => household.readMealPlan(command)
+      ),
+    readPersonProfile: (input: HouseholdReadPersonProfileInput) =>
+      route(
+        HouseholdReadPersonProfileInput,
+        input,
+        "read_person_profile",
+        (household, command) => household.readPersonProfile(command)
       ),
     readRecipe: (input: typeof HouseholdReadRecipeInputSchema.Type) =>
       route(

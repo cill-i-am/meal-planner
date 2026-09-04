@@ -664,7 +664,7 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
   (handlers) =>
     handlers
       .handle("getProfileVersion", ({ params }) =>
-        Effect.gen(function* () {
+        Effect.gen(function* getProfileVersion() {
           const gateway = yield* HouseholdPeopleGateway;
           const principal = yield* HouseholdPeopleCurrentPrincipal;
           return yield* gateway
@@ -682,7 +682,7 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
         })
       )
       .handle("listProfileAudit", ({ params, query }) =>
-        Effect.gen(function* () {
+        Effect.gen(function* listProfileAudit() {
           const gateway = yield* HouseholdPeopleGateway;
           const principal = yield* HouseholdPeopleCurrentPrincipal;
           const page = yield* gateway
@@ -706,7 +706,7 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
         })
       )
       .handle("getProfile", ({ params }) =>
-        Effect.gen(function* () {
+        Effect.gen(function* getProfile() {
           const principal = yield* HouseholdPeopleCurrentPrincipal;
           const gateway = yield* HouseholdPeopleGateway;
           return yield* gateway
@@ -720,7 +720,7 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
         })
       )
       .handle("listProfileVersions", ({ params, query }) =>
-        Effect.gen(function* () {
+        Effect.gen(function* listProfileVersions() {
           const principal = yield* HouseholdPeopleCurrentPrincipal;
           const gateway = yield* HouseholdPeopleGateway;
           return yield* gateway
@@ -738,7 +738,7 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
         })
       )
       .handle("mutateProfile", ({ params, payload }) =>
-        Effect.gen(function* () {
+        Effect.gen(function* mutateProfile() {
           const principal = yield* HouseholdPeopleCurrentPrincipal;
           const gateway = yield* HouseholdPeopleGateway;
           return yield* gateway

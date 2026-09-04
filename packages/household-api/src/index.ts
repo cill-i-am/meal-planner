@@ -1,31 +1,4 @@
 import { Context, Layer, Schema } from "effect";
-
-import {
-  HouseholdProfileErrors,
-  ListProfileVersionsQuery,
-  MutatePersonProfilePayload,
-  PersonProfile,
-  ProfileAuditPage,
-  ProfileVersionPage,
-} from "./profiles.js";
-export {
-  FoodPreference,
-  HardConstraint,
-  HouseholdProfileRejected,
-  HouseholdProfileProblem,
-  ListProfileVersionsQuery,
-  MutatePersonProfilePayload,
-  PersonProfile,
-  ProfileAudit,
-  ProfileCommand,
-  ProfileFact,
-  ProfileFactId,
-  ProfileFactStanding,
-  ProfileFactValue,
-  ProfileLabel,
-  ProfileVersion,
-  ProfileVersionPage,
-} from "./profiles.js";
 import {
   HttpApi,
   HttpApiClient,
@@ -90,6 +63,33 @@ import {
   ReturnHouseholdAdultPayload,
   TransitionHouseholdPersonPayload,
 } from "./people.js";
+import {
+  HouseholdProfileErrors,
+  ListProfileVersionsQuery,
+  MutatePersonProfilePayload,
+  PersonProfile,
+  ProfileAuditPage,
+  ProfileVersionPage,
+} from "./profiles.js";
+
+export {
+  FoodPreference,
+  HardConstraint,
+  HouseholdProfileRejected,
+  HouseholdProfileProblem,
+  ListProfileVersionsQuery,
+  MutatePersonProfilePayload,
+  PersonProfile,
+  ProfileAudit,
+  ProfileCommand,
+  ProfileFact,
+  ProfileFactId,
+  ProfileFactStanding,
+  ProfileFactValue,
+  ProfileLabel,
+  ProfileVersion,
+  ProfileVersionPage,
+} from "./profiles.js";
 
 export {
   AssociateAdultInvitationPayload,

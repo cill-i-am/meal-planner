@@ -3,7 +3,7 @@
 - Status: In progress
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
 - Owner: `codex/stage1-profile-authority-versioning-audit`
-- Pull request: Not opened
+- Pull request: [#202](https://github.com/cill-i-am/meal-planner/pull/202) (draft)
 - Completed by: Not completed
 - Promotion condition: satisfied by Work Items 01 and 02, including merged
   PR #201 at `9a59f85170f379e065920eadaaf69593d90c2c40`.
@@ -18,8 +18,17 @@ receipt; the current profile is the latest version, not a second mutable copy.
 Audit records carry the changed fact before and after, actor, time, and prior
 and next versions. Source is limited to `manual_ui` in this work item.
 
-The complete safety, concurrency, authorization, restart, and UI matrix remains
-in progress. This checkpoint is not completion or merge evidence.
+Focused runtime proof now covers safety confirmation, concurrent adult edits,
+archival races, restored history, restart replay, and cross-household denial.
+The separate profile UI retains an ambiguous command's exact payload and ID,
+blocks other profile mutations until resolution, and requires explicit reload
+and resubmission after a definitive stale-version result. Closed contract
+property tests reject injected identity and transcript fields. A routed
+dependant-confirmation case preserves fact identity and before/after audit
+without a dependant account. Local repository tests, static checks, builds,
+and twice/no-diff Household and D1 generation pass. Hosted CI and independent
+exact-head review remain pending. This checkpoint is not completion or merge
+evidence.
 
 ## Household Outcome
 
@@ -92,8 +101,8 @@ Every fact carries:
 - stable `ProfileFactId` and subject `HouseholdPersonId`;
 - standing `provisional` or `confirmed`;
 - confirmation basis `self` or `household_adult` where confirmed;
-- a closed source such as `manual_ui`, `private_interview_proposal`,
-  `shared_agent_proposal`, or `operator_repair`;
+- source `manual_ui` only; future proposal sources require their own admitted
+  boundary and are not speculative handlers in this work item;
 - created/updated actor and time; and
 - the immutable profile version in which it became current.
 

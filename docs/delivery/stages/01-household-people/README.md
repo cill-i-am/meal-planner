@@ -70,7 +70,7 @@ evidence are the implemented base for Work Item 02.
 | --- | --- | --- | --- |
 | 01 | [Person registry and lifecycle](01-person-registry-and-lifecycle.md) | Done | Stage 0 and accepted people/auth separation |
 | 02 | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | In progress | Work Item 01 merged; ADR-0010 accepted |
-| 03 | [Profile authority, versioning, and audit](03-profile-authority-versioning-and-audit.md) | Proposed | Stable person/link semantics from Work Items 01–02 |
+| 03 | [Profile authority, versioning, and audit](03-profile-authority-versioning-and-audit.md) | In progress | Work Items 01–02 merged; draft PR #202 |
 | 04 | [Private interview-session boundary](04-private-interview-session-boundary.md) | Proposed | Work Item 03 and the accepted exact-version Agents SDK spike |
 
 The four-part split remains a delivery hypothesis. Inspection of the live code

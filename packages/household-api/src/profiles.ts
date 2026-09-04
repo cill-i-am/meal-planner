@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Data, Schema } from "effect";
 import { HttpApiSchema } from "effect/unstable/httpapi";
 
 import { HouseholdPeopleAuditActorId } from "./people-http.js";
@@ -121,12 +121,12 @@ export type MutatePersonProfilePayload = typeof MutatePersonProfilePayload.Type;
 export const ProfileAudit = Schema.Struct({
   actorId: HouseholdPeopleAuditActorId,
   actorPersonId: HouseholdPersonId,
-  atEpochMs: Schema.Int,
-  command: ProfileCommand,
-  before: Schema.NullOr(ProfileFact),
   after: Schema.NullOr(ProfileFact),
-  previousVersion: ProfileVersion,
+  atEpochMs: Schema.Int,
+  before: Schema.NullOr(ProfileFact),
+  command: ProfileCommand,
   nextVersion: ProfileVersion,
+  previousVersion: ProfileVersion,
   source: Schema.Literal("manual_ui"),
 });
 export const ProfileAuditPage = Schema.Struct({
@@ -147,23 +147,21 @@ export const ProfileVersionPage = Schema.Struct({
 });
 export type ProfileVersionPage = typeof ProfileVersionPage.Type;
 
-export class HouseholdProfileRejected extends Schema.TaggedError<HouseholdProfileRejected>()(
-  "HouseholdProfileRejected",
-  {
-    reason: Schema.Literals([
-      "person_not_found",
-      "adult_required",
-      "person_archived",
-      "stale_version",
-      "mutation_collision",
-      "fact_not_found",
-      "self_required",
-      "safety_confirmation_required",
-      "fact_conflict",
-      "profile_unavailable",
-    ]),
-  }
-) {}
+export class HouseholdProfileRejected extends Data.TaggedError(
+  "HouseholdProfileRejected"
+)<{
+  readonly reason:
+    | "person_not_found"
+    | "adult_required"
+    | "person_archived"
+    | "stale_version"
+    | "mutation_collision"
+    | "fact_not_found"
+    | "self_required"
+    | "safety_confirmation_required"
+    | "fact_conflict"
+    | "profile_unavailable";
+}> {}
 
 const ProfileConflict = Schema.Struct({
   code: Schema.Literals([

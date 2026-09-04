@@ -53,8 +53,10 @@ const updateFact = (
 });
 
 const key = (value: ProfileFactValue): string => {
-  if (value._tag === "NoKnownHardConstraints") return value._tag;
-  const label = value.label.toLocaleLowerCase("en").replace(/\s+/gu, " ");
+  if (value._tag === "NoKnownHardConstraints") {
+    return value._tag;
+  }
+  const label = value.label.toLocaleLowerCase("en").replaceAll(/\s+/gu, " ");
   return value._tag === "FoodPreference"
     ? `${value._tag}:${value.targetKind}:${label}`
     : `${value._tag}:${value.category}:${label}`;
@@ -62,13 +64,15 @@ const key = (value: ProfileFactValue): string => {
 
 const validateFacts = (facts: readonly ProfileFact[]) => {
   const identities = facts.map((fact) => key(fact.value));
-  if (new Set(identities).size !== identities.length)
+  if (new Set(identities).size !== identities.length) {
     return reject("fact_conflict");
+  }
   if (
     facts.some((fact) => fact.value._tag === "NoKnownHardConstraints") &&
     facts.some((fact) => fact.value._tag === "HardConstraint")
-  )
+  ) {
     return reject("fact_conflict");
+  }
   return Effect.succeed(facts);
 };
 
@@ -80,12 +84,13 @@ const addFact = (
   >,
   context: ProfileChangeContext
 ) =>
-  Effect.gen(function* () {
+  Effect.gen(function* addFactEffect() {
     if (
       command._tag === "AddProvisionalProfileFact" &&
       command.fact._tag === "NoKnownHardConstraints"
-    )
+    ) {
       return yield* reject("safety_confirmation_required");
+    }
     const standing: ProfileFactStanding =
       command._tag === "AddProvisionalProfileFact"
         ? { _tag: "provisional" }
@@ -136,14 +141,17 @@ export const applyProfileCommand = (
   command: ProfileCommand,
   context: ProfileChangeContext
 ): Effect.Effect<readonly ProfileFact[], HouseholdProfileRejected> =>
-  Effect.gen(function* () {
+  Effect.gen(function* applyProfileCommandEffect() {
     if (
       command._tag === "AddProvisionalProfileFact" ||
       command._tag === "AddConfirmedProfileFact"
-    )
+    ) {
       return yield* addFact(facts, command, context);
+    }
     const fact = facts.find((candidate) => candidate.id === command.factId);
-    if (fact === undefined) return yield* reject("fact_not_found");
+    if (fact === undefined) {
+      return yield* reject("fact_not_found");
+    }
     switch (command._tag) {
       case "ConfirmProfileFact": {
         const standing = yield* confirmedStanding(command.basis, context);
@@ -151,8 +159,9 @@ export const applyProfileCommand = (
           fact.standing._tag === "confirmed" &&
           fact.standing.basis === "self" &&
           command.basis !== "self"
-        )
+        ) {
           return yield* reject("fact_conflict");
+        }
         return facts.map((candidate) =>
           candidate.id === fact.id
             ? updateFact({ ...fact, standing }, context)
@@ -160,19 +169,25 @@ export const applyProfileCommand = (
         );
       }
       case "ConfirmHardConstraintReduction": {
-        if (fact.value._tag === "FoodPreference")
+        if (fact.value._tag === "FoodPreference") {
           return yield* reject("fact_conflict");
+        }
         return yield* replaceFact(facts, fact, command.replacement, context);
       }
       case "RemoveOrdinaryProfileFact": {
-        if (fact.value._tag !== "FoodPreference")
+        if (fact.value._tag !== "FoodPreference") {
           return yield* reject("safety_confirmation_required");
+        }
         return yield* replaceFact(facts, fact, null, context);
       }
       case "ReplaceOrdinaryProfileFact": {
-        if (fact.value._tag !== "FoodPreference")
+        if (fact.value._tag !== "FoodPreference") {
           return yield* reject("safety_confirmation_required");
+        }
         return yield* replaceFact(facts, fact, command.fact, context);
+      }
+      default: {
+        return yield* Effect.die(command satisfies never);
       }
     }
   });
