@@ -12,7 +12,7 @@ interface VendorContractException {
   readonly removalCondition: string;
 }
 
-// Last verified 2026-08-18: npm latest=next=alchemy@2.0.0-beta.72;
+// Last verified 2026-09-04: npm latest=alchemy@2.0.0-beta.76;
 // anti-slop main=6d538555cb151d4121ed51a27db81890eacf8ae9;
 // Alchemy main=6b73819a02f609e8942b1d9286dc197fbca200ab.
 const vendorContractExceptions: readonly VendorContractException[] = [
@@ -175,7 +175,7 @@ describe("anti-slop vendor contract exceptions", () => {
     expect(config).toContain(`"${ruleName}": "error"`);
   });
 
-  it("keeps exactly the nine reviewed Alchemy beta.72 exceptions", () => {
+  it("keeps exactly the nine reviewed Alchemy beta.76 exceptions", () => {
     expect(vendorContractExceptions).toHaveLength(9);
     expect(suppressionLocations()).toHaveLength(9);
 
@@ -185,7 +185,7 @@ describe("anti-slop vendor contract exceptions", () => {
         "utf-8"
       );
       const lines = source.split("\n");
-      const marker = `TODO(${exception.id} alchemy@2.0.0-beta.72)`;
+      const marker = `TODO(${exception.id} alchemy@2.0.0-beta.76)`;
       const markerIndexes = lines.flatMap((line, index) =>
         line.includes(marker) ? [index] : []
       );

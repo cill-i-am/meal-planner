@@ -4,7 +4,6 @@ import * as Cloudflare from "alchemy/Cloudflare";
 export const MealPlannerAuthDatabase = Cloudflare.D1.Database(
   "MealPlannerAuthDatabase",
   {
-    migrationsDir: "./apps/api/auth-migrations",
-    migrationsTable: "d1_migrations",
+    migrations: { dir: "./apps/api/auth-migrations", table: "d1_migrations" },
   }
 );

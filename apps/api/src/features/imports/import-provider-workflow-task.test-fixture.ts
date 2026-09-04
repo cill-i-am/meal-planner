@@ -762,7 +762,7 @@ const recipeRecoveryFailure = (
 
 const providerWorkflowExport = {
   kind: "workflow" as const,
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU005 alchemy@2.0.0-beta.72): WorkflowExport.make(env: unknown) erases behaviorful KV/D1 bindings; Schema cannot reconstruct branded host handles or their runtime behavior. Remove when Alchemy provides a precise env generic or supported real-runtime harness.
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU005 alchemy@2.0.0-beta.76): WorkflowExport.make(env: unknown) erases behaviorful KV/D1 bindings; Schema cannot reconstruct branded host handles or their runtime behavior. Remove when Alchemy provides a precise env generic or supported real-runtime harness.
   make: (rawEnv: unknown) => {
     const env = rawEnv as ProviderWorkflowTestEnv;
     return Effect.succeed((rawInput: Schema.Json) =>

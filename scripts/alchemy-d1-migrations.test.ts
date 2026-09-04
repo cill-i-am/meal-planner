@@ -75,17 +75,37 @@ const triggerMigrationFixture = [
   },
 ] as const satisfies readonly MigrationFile[];
 
+interface SqlExecutor {
+  readonly dialect: "sqlite";
+  readonly query: (
+    sql: string
+  ) => Effect.Effect<Record<string, unknown>[], unknown>;
+  readonly batch: (
+    statements: readonly string[]
+  ) => Effect.Effect<void, unknown>;
+}
 interface ApplyMigrationsModule {
-  readonly applyMigrations: (options: {
+  readonly makeCloudD1MigrationExecutor: (options: {
     readonly accountId: string;
     readonly databaseId: string;
-    readonly migrationsFiles: readonly MigrationFile[];
-    readonly migrationsTable: string;
   }) => Effect.Effect<
-    void,
+    SqlExecutor,
     unknown,
     CloudflareCredentialsRequirement | HttpClient.HttpClient
   >;
+}
+interface AlchemyFormatModule {
+  readonly applyAlchemyFormat: (options: {
+    readonly executor: SqlExecutor;
+    readonly table: string;
+    readonly records: readonly {
+      readonly name: string;
+      readonly hash: string;
+      readonly createdAtMillis: undefined;
+      readonly sql: string;
+      readonly statements: readonly string[];
+    }[];
+  }) => Effect.Effect<void, unknown>;
 }
 
 interface D1QueryBody {
@@ -107,6 +127,7 @@ interface RecordedD1Transport {
 
 interface LoadedAlchemyD1Modules {
   readonly applyMigrationsModule: ApplyMigrationsModule;
+  readonly formatModule: AlchemyFormatModule;
   readonly credentialsModule: CredentialsModule;
 }
 
@@ -128,17 +149,23 @@ const loadAlchemyD1Modules = async (): Promise<LoadedAlchemyD1Modules> => {
     requireFromAlchemy.resolve("@distilled.cloud/cloudflare/Credentials")
   );
 
-  const [applyMigrationsModule, credentialsModule] = await Promise.all([
-    import(applyMigrationsUrl.href) as Promise<ApplyMigrationsModule>,
-    import(credentialsUrl.href) as Promise<CredentialsModule>,
-  ]);
+  const [applyMigrationsModule, credentialsModule, formatModule] =
+    await Promise.all([
+      import(applyMigrationsUrl.href) as Promise<ApplyMigrationsModule>,
+      import(credentialsUrl.href) as Promise<CredentialsModule>,
+      import(
+        new URL("../SQL/Migrations/AlchemyFormat.js", cloudflareEntry).href
+      ) as Promise<AlchemyFormatModule>,
+    ]);
 
-  return { applyMigrationsModule, credentialsModule };
+  return { applyMigrationsModule, credentialsModule, formatModule };
 };
 
-const loadCheckedInMigrations = async (): Promise<readonly MigrationFile[]> => {
+const loadCheckedInMigrations = async (
+  directory: string
+): Promise<readonly MigrationFile[]> => {
   const migrationsDirectory = new URL(
-    "../apps/api/provider-accounting-migrations/",
+    `../apps/api/${directory}/`,
     import.meta.url
   );
   const directoryEntries = await readdir(migrationsDirectory, {
@@ -230,13 +257,24 @@ const runApplyMigrations = async (
   });
 
   await modules.applyMigrationsModule
-    .applyMigrations({
+    .makeCloudD1MigrationExecutor({
       accountId: "local-account",
       databaseId: "local-database",
-      migrationsFiles,
-      migrationsTable: "d1_migrations",
     })
     .pipe(
+      Effect.flatMap((executor) =>
+        modules.formatModule.applyAlchemyFormat({
+          executor,
+          records: migrationsFiles.map((migration) => ({
+            createdAtMillis: undefined,
+            hash: createHash("sha256").update(migration.sql).digest("hex"),
+            name: migration.id,
+            sql: migration.sql,
+            statements: splitMigrationStatements(migration.sql),
+          })),
+          table: "d1_migrations",
+        })
+      ),
       Effect.provideService(HttpClient.HttpClient, client),
       Effect.provideService(
         modules.credentialsModule.Credentials,
@@ -394,44 +432,47 @@ const makeSemanticD1Client = (
   );
 
 const isMigrationRequest = (body: D1QueryBody): boolean =>
-  body.sql?.includes("INSERT INTO d1_migrations") === true ||
-  body.batch?.some(({ sql }) => sql.includes("INSERT INTO d1_migrations")) ===
-    true;
+  [body.sql, ...(body.batch?.map(({ sql }) => sql) ?? [])].some(
+    (sql) => sql !== undefined && /INSERT INTO ["`]?d1_migrations\b/iu.test(sql)
+  );
 
 const migrationHistory = (database: DatabaseSync) =>
-  database.prepare("SELECT id, name FROM d1_migrations ORDER BY id;").all();
+  database.prepare("SELECT name FROM d1_migrations ORDER BY id;").all();
 
 describe("Alchemy D1 migration reconciliation", () => {
-  it("imports every checked-in migration as one marker-free SQL file", async () => {
-    const modules = await loadAlchemyD1Modules();
-    const migrationsFiles = await loadCheckedInMigrations();
-    const database = new DatabaseSync(":memory:");
-    try {
-      const transport: RecordedD1Transport = {
-        importFiles: [],
-        queryBodies: [],
-      };
-      const client = makeSemanticD1Client(database, transport);
+  it.each(["auth-migrations", "provider-accounting-migrations"])(
+    "imports every checked-in %s migration as one marker-free SQL file",
+    async (directory) => {
+      const modules = await loadAlchemyD1Modules();
+      const migrationsFiles = await loadCheckedInMigrations(directory);
+      const database = new DatabaseSync(":memory:");
+      try {
+        const transport: RecordedD1Transport = {
+          importFiles: [],
+          queryBodies: [],
+        };
+        const client = makeSemanticD1Client(database, transport);
 
-      await runApplyMigrations(modules, migrationsFiles, client);
+        await runApplyMigrations(modules, migrationsFiles, client);
 
-      expect(transport.importFiles).toHaveLength(migrationsFiles.length);
-      expect(transport.queryBodies.filter(isMigrationRequest)).toHaveLength(0);
-
-      for (const [index, migration] of migrationsFiles.entries()) {
-        const expectedFile = [
-          ...splitMigrationStatements(migration.sql),
-          migrationLedgerStatement(migration, index),
-        ].join("\n");
-        expect(transport.importFiles[index]).toBe(expectedFile);
-        expect(transport.importFiles[index]).not.toContain(
-          "--> statement-breakpoint"
+        expect(transport.importFiles).toHaveLength(migrationsFiles.length + 1);
+        expect(transport.queryBodies.filter(isMigrationRequest)).toHaveLength(
+          0
         );
+
+        for (const [index, migration] of migrationsFiles.entries()) {
+          for (const statement of splitMigrationStatements(migration.sql)) {
+            expect(transport.importFiles[index + 1]).toContain(statement);
+          }
+          expect(transport.importFiles[index + 1]).not.toContain(
+            "--> statement-breakpoint"
+          );
+        }
+      } finally {
+        database.close();
       }
-    } finally {
-      database.close();
     }
-  });
+  );
 
   it("imports trigger migrations atomically without skipping or duplicating the ledger", async () => {
     const modules = await loadAlchemyD1Modules();
@@ -451,8 +492,8 @@ describe("Alchemy D1 migration reconciliation", () => {
         /incomplete input/u
       );
       expect(migrationHistory(database)).toEqual([
-        { id: "00001", name: initialMigration.id },
-        { id: "00002", name: acquisitionMigration.id },
+        { name: initialMigration.id },
+        { name: acquisitionMigration.id },
       ]);
       expect(
         database
@@ -470,8 +511,7 @@ describe("Alchemy D1 migration reconciliation", () => {
 
       await runApplyMigrations(modules, migrationsFiles, client);
 
-      const expectedHistory = migrationsFiles.map((migration, index) => ({
-        id: (index + 1).toString().padStart(5, "0"),
+      const expectedHistory = migrationsFiles.map((migration) => ({
         name: migration.id,
       }));
       const history = migrationHistory(database);
@@ -503,7 +543,8 @@ describe("Alchemy D1 migration reconciliation", () => {
       ).toThrow("fixture event identity is immutable");
 
       const firstRunImportCount = transport.importFiles.length;
-      expect(firstRunImportCount).toBe(1);
+      // Ledger conversion plus pending migration.
+      expect(firstRunImportCount).toBe(2);
       expect(transport.queryBodies.filter(isMigrationRequest)).toHaveLength(0);
 
       await runApplyMigrations(modules, migrationsFiles, client);
@@ -543,8 +584,8 @@ describe("Alchemy D1 migration reconciliation", () => {
       ).rejects.toThrow();
 
       expect(migrationHistory(database)).toEqual([
-        { id: "00001", name: initialMigration.id },
-        { id: "00002", name: acquisitionMigration.id },
+        { name: initialMigration.id },
+        { name: acquisitionMigration.id },
       ]);
       expect(
         database
@@ -556,8 +597,7 @@ describe("Alchemy D1 migration reconciliation", () => {
 
       await runApplyMigrations(modules, migrationsFiles, client);
       expect(migrationHistory(database)).toEqual(
-        migrationsFiles.map((migration, index) => ({
-          id: (index + 1).toString().padStart(5, "0"),
+        migrationsFiles.map((migration) => ({
           name: migration.id,
         }))
       );

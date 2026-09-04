@@ -15,12 +15,12 @@
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.0-rc.6",
-    "@effect/platform-node": "4.0.0-rc.109",
+    "@effect/platform-node": "4.0.0-rc.112",
     "@meal-planner/household-api": "workspace:*",
     "@meal-planner/recipe-import-api": "workspace:*",
     "better-auth": "1.7.0-rc.6",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
-    "effect": "4.0.0-rc.109",
+    "effect": "4.0.0-rc.112",
     "graphql": "16.11.0",
     "jpeg-js": "0.4.4",
     "parse5": "8.0.1"
@@ -28,7 +28,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.6",
     "@distilled.cloud/cloudflare-rolldown-plugin": "0.17.1",
-    "@effect/vitest": "4.0.0-rc.109",
+    "@effect/vitest": "4.0.0-rc.112",
     "@types/node": "24.13.2",
     "auth": "1.7.0-rc.6",
     "drizzle-kit": "1.0.0-rc.5-ab785fc",

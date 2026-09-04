@@ -247,7 +247,7 @@ const withInstalledAcquisitionBoundary = async <A>(
   });
   class TestDurableObject {
     readonly ctx;
-    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU009 alchemy@2.0.0-beta.72): makeDurableObjectBridge(durableObject: typeof DurableObject) requires a generated branded host class; Schema cannot manufacture its brand, container binding, or runtime behavior. Remove when Alchemy provides a public precise bridge generic or supported real-runtime harness.
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU009 alchemy@2.0.0-beta.76): makeDurableObjectBridge(durableObject: typeof DurableObject) requires a generated branded host class; Schema cannot manufacture its brand, container binding, or runtime behavior. Remove when Alchemy provides a public precise bridge generic or supported real-runtime harness.
     constructor(ctx: unknown) {
       this.ctx = ctx;
     }

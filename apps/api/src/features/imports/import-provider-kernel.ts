@@ -598,7 +598,7 @@ export type WorkersAiBinding = Effect.Success<QueryGatewayClient["raw"]>;
 export const runWorkersAi = (
   ai: WorkersAiBinding,
   model: string,
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU001 alchemy@2.0.0-beta.72): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU001 alchemy@2.0.0-beta.76): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
   body: unknown,
   gatewayId: string
 ): Promise<Response> =>
@@ -1079,9 +1079,9 @@ export const noLogWorkersAiClient = (
       ([ai, gatewayId]) =>
         ({
           run: async (
-            // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU002 alchemy@2.0.0-beta.72): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema cannot establish the missing behavioral model/body relationship. Remove when Alchemy provides a public precise visual request transport.
+            // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU002 alchemy@2.0.0-beta.76): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema cannot establish the missing behavioral model/body relationship. Remove when Alchemy provides a public precise visual request transport.
             model: unknown,
-            // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU003 alchemy@2.0.0-beta.72): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
+            // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU003 alchemy@2.0.0-beta.76): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
             body: unknown
           ) => {
             let response: Response;

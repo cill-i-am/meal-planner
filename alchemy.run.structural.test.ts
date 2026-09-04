@@ -106,7 +106,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       /Cloudflare\.D1\.Database\(\s*"ProviderAccountingDatabase"/u
     );
     expect(providerAccountingDatabase).toContain(
-      'migrationsDir: "./apps/api/provider-accounting-migrations"'
+      'dir: "./apps/api/provider-accounting-migrations"'
     );
     expect(providerAccountingSchema).not.toMatch(
       /organizationId|organization_id|import_evidence_routes|import_execution_runs/iu
@@ -213,10 +213,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       .toSorted();
 
     expect(databaseSource).toContain('"MealPlannerAuthDatabase"');
-    expect(databaseSource).toContain(
-      'migrationsDir: "./apps/api/auth-migrations"'
-    );
-    expect(databaseSource).toContain('migrationsTable: "d1_migrations"');
+    expect(databaseSource).toContain('dir: "./apps/api/auth-migrations"');
+    expect(databaseSource).toContain('table: "d1_migrations"');
     expect(databaseSource.match(/Cloudflare\.D1\.Database\(/gu)).toHaveLength(
       1
     );
