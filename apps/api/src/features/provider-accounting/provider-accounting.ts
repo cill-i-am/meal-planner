@@ -1,4 +1,4 @@
-import { Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 
 import { ImportTimestamp } from "../imports/import.contracts.js";
 
@@ -504,21 +504,41 @@ export const runAccountedProviderDispatch = <A, E>(input: {
         };
       }
     ).pipe(
-      Effect.catch((error) =>
-        isProviderKnownZeroCostFailure(error)
-          ? settleKnownZero(
-              input.repository,
-              input.reservation,
-              invocationGeneration,
-              observeSettlement("known")
-            ).pipe(
-              Effect.as<KnownZeroFailureResult<E>>({
-                _tag: "KnownZeroFailure",
-                error: error.error,
-              })
+      Effect.catchCause((cause) => {
+        const [reason] = cause.reasons;
+        // Zero-cost authority requires the entire failure, not one reason in it.
+        if (
+          cause.reasons.length === 1 &&
+          reason !== undefined &&
+          Cause.isFailReason(reason) &&
+          isProviderKnownZeroCostFailure(reason.error)
+        ) {
+          return settleKnownZero(
+            input.repository,
+            input.reservation,
+            invocationGeneration,
+            observeSettlement("known")
+          ).pipe(
+            Effect.as<KnownZeroFailureResult<E>>({
+              _tag: "KnownZeroFailure",
+              error: reason.error.error,
+            })
+          );
+        }
+        return Effect.failCause(
+          cause.pipe(
+            Cause.map(
+              (
+                error:
+                  | E
+                  | ProviderAccountingError
+                  | ProviderKnownZeroCostFailure<E>
+              ): E | ProviderAccountingError =>
+                isProviderKnownZeroCostFailure(error) ? error.error : error
             )
-          : Effect.fail(error)
-      ),
+          )
+        );
+      }),
       Effect.onExit((exit) => {
         if (Exit.isSuccess(exit)) {
           return Effect.void;

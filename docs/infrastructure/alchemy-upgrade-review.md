@@ -29,6 +29,12 @@ uses the already-pinned `tsx` through Node's `--import tsx`. A real Alchemy
 CLI plan of an in-memory fixture resolves the repository's `.js`-to-`.ts`
 imports without the loader. The stage/profile and approval guards remain.
 
+The runtime suite also exposed an Effect `.109` → `.112` failure-handling
+change. Provider accounting now grants zero-cost retry authority only to a
+single trusted failure reason. Mixed defects or interruptions preserve the
+full cause and retain the conservative spending reservation; real workerd/D1
+regressions cover both combinations.
+
 ## Remaining shims and their removal conditions
 
 | Area | Why it remains on `.76` | Removal proof |
