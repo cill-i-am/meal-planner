@@ -135,44 +135,53 @@ describe("household foundation contracts", () => {
     ).toThrow();
   });
 
-  it("rejects the wrong command purpose before any household routing step", async () => {
-    const systemAdmission = Schema.decodeUnknownSync(HouseholdSystemAdmission)({
-      actor: {
-        _tag: "System",
-        purpose: "import_workflow_dispatch",
-      },
-      organizationId,
-    });
-    const calls = {
-      getByName: 0,
-      invoke: 0,
-      locate: 0,
-    };
+  it.each([
+    "bootstrap_creator_person",
+    "read_person_profile",
+    "mutate_person_profile",
+  ] as const)(
+    "rejects the wrong command purpose before routing %s",
+    async (purpose) => {
+      const systemAdmission = Schema.decodeUnknownSync(
+        HouseholdSystemAdmission
+      )({
+        actor: {
+          _tag: "System",
+          purpose: "import_workflow_dispatch",
+        },
+        organizationId,
+      });
+      const calls = {
+        getByName: 0,
+        invoke: 0,
+        locate: 0,
+      };
 
-    const routed = routeAdmittedHouseholdCommand({
-      admission: systemAdmission,
-      getByName: () => {
-        calls.getByName += 1;
-        return {};
-      },
-      invoke: () => {
-        calls.invoke += 1;
-        return Effect.void;
-      },
-      locate: () => {
-        calls.locate += 1;
-        return Effect.succeed("household-object-name");
-      },
-      purpose: "bootstrap_creator_person",
-    });
+      const routed = routeAdmittedHouseholdCommand({
+        admission: systemAdmission,
+        getByName: () => {
+          calls.getByName += 1;
+          return {};
+        },
+        invoke: () => {
+          calls.invoke += 1;
+          return Effect.void;
+        },
+        locate: () => {
+          calls.locate += 1;
+          return Effect.succeed("household-object-name");
+        },
+        purpose,
+      });
 
-    await expect(Effect.runPromise(routed)).rejects.toBeDefined();
-    expect(calls).toEqual({
-      getByName: 0,
-      invoke: 0,
-      locate: 0,
-    });
-  });
+      await expect(Effect.runPromise(routed)).rejects.toBeDefined();
+      expect(calls).toEqual({
+        getByName: 0,
+        invoke: 0,
+        locate: 0,
+      });
+    }
+  );
 
   it("derives one privacy-safe Workflow identity per execution generation", async () => {
     const importId = Schema.decodeUnknownSync(ImportId)(

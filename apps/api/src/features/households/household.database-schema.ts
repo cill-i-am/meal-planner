@@ -42,6 +42,19 @@ export const householdPeople = sqliteTable("household_people", {
   version: integer("version").notNull(),
 });
 
+/** Append-only profile versions, audit metadata, and exact mutation receipts. */
+export const householdProfileVersions = sqliteTable(
+  "household_profile_versions",
+  {
+    intentDigest: text("intent_digest").notNull(),
+    mutationId: text("mutation_id").notNull().unique(),
+    personId: text("person_id").notNull(),
+    snapshotJson: text("snapshot_json").notNull(),
+    version: integer("version").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.personId, table.version] })]
+);
+
 export const householdCreatorAssociationSingletonKey = "creator" as const;
 
 /** Household-singleton creator association with purpose-bound identity linkage. */

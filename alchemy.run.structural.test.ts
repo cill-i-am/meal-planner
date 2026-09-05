@@ -319,7 +319,14 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "20260829061116_household_domain/migration.sql",
       "20260902211008_household_domain/migration.sql",
       "20260903214851_household_domain/migration.sql",
+      "20260904202917_household_domain/migration.sql",
     ]);
+    const profileMigration = readRepoFile(
+      "./apps/api/household-migrations/20260904202917_household_domain/migration.sql"
+    );
+    expect(profileMigration).toContain(
+      "CREATE TABLE `household_profile_versions`"
+    );
     const departureRecoveryMigration = readRepoFile(
       "./apps/api/household-migrations/20260903214851_household_domain/migration.sql"
     );
