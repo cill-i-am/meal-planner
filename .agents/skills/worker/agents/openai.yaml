@@ -1,4 +1,0 @@
-interface:
-  display_name: "Worker"
-  short_description: "Deliver a scoped repository change end to end"
-  default_prompt: "Use $worker to complete the scoped user request or repository work item through implementation and relevant verification."
