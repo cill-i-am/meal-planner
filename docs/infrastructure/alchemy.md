@@ -7,8 +7,8 @@ operational D1. Changing any of these logical IDs is a resource-identity
 decision and must not be treated as a cosmetic rename.
 
 The pinned infrastructure toolchain is Alchemy `2.0.0-beta.76`, Effect and
-`@effect/platform-node` `4.0.0-rc.112`, Node `>=22.18.0`, and pnpm `11.7.0`.
-CI runs Node `22.19.0`.
+`@effect/platform-node` `4.0.0-rc.112`, Node `>=24.20.0`, and pnpm `12.3.4`.
+CI runs Node `24.20.0`.
 
 Version-sensitive APIs were checked against the installed package and the
 official [`v2.0.0-beta.76` source tag](https://github.com/alchemy-run/alchemy/tree/v2.0.0-beta.76).
