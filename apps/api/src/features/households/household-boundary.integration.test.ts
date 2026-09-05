@@ -2381,6 +2381,43 @@ describe("household public API to private Durable Object boundary", () => {
       await adultResponse.json()
     );
 
+    const profileUrl = `https://meal-planner.test/v1/household/people/${adult.id}/profile`;
+    const provisionalResponse = await getRuntime().dispatchFetch(profileUrl, {
+      body: JSON.stringify({
+        command: {
+          _tag: "AddProvisionalProfileFact",
+          fact: {
+            _tag: "FoodPreference",
+            label: "Broccoli",
+            sentiment: "like",
+            targetKind: "ingredient",
+          },
+        },
+        expectedProfileVersion: 0,
+        mutationId: "invite-provisional-profile",
+      }),
+      headers: { "content-type": "application/json", cookie: ownerCookie },
+      method: "POST",
+    });
+    expect(
+      provisionalResponse.status,
+      await provisionalResponse.clone().text()
+    ).toBe(200);
+    const provisionalBytes = await provisionalResponse.clone().text();
+    const provisional = await Schema.decodeUnknownPromise(PersonProfile)(
+      await provisionalResponse.json()
+    );
+    const [provisionalFact] = provisional.facts;
+    if (provisionalFact === undefined) {
+      throw new Error("Expected provisional profile fact before invitation");
+    }
+    const originalAudit = await getRuntime().dispatchFetch(
+      `${profileUrl}/audit`,
+      { headers: { cookie: ownerCookie } }
+    );
+    expect(originalAudit.status).toBe(200);
+    const originalAuditBytes = await originalAudit.text();
+
     const inviteeLabel = "People Invited Adult";
     const inviteeCookie = await signUp(inviteeLabel);
     const invitationResponse = await getRuntime().dispatchFetch(
@@ -2527,6 +2564,50 @@ describe("household public API to private Durable Object boundary", () => {
       roster.people.filter((person) => person.id === adult.id)
     ).toHaveLength(1);
     expect(roster.people).toHaveLength(2);
+    const linkedProfile = await getRuntime().dispatchFetch(profileUrl, {
+      headers: { cookie: admittedInviteeCookie },
+    });
+    expect(linkedProfile.status).toBe(200);
+    expect(await linkedProfile.text()).toBe(provisionalBytes);
+    const linkedAudit = await getRuntime().dispatchFetch(
+      `${profileUrl}/audit`,
+      { headers: { cookie: admittedInviteeCookie } }
+    );
+    expect(linkedAudit.status).toBe(200);
+    expect(await linkedAudit.text()).toBe(originalAuditBytes);
+    const confirmation = await getRuntime().dispatchFetch(profileUrl, {
+      body: JSON.stringify({
+        command: {
+          _tag: "ConfirmProfileFact",
+          basis: "self",
+          factId: provisionalFact.id,
+        },
+        expectedProfileVersion: provisional.version,
+        mutationId: "invite-profile-self-confirmation",
+      }),
+      headers: {
+        "content-type": "application/json",
+        cookie: admittedInviteeCookie,
+      },
+      method: "POST",
+    });
+    expect(confirmation.status, await confirmation.clone().text()).toBe(200);
+    expect(await confirmation.json()).toMatchObject({
+      facts: [
+        {
+          id: provisionalFact.id,
+          standing: { _tag: "confirmed", basis: "self" },
+        },
+      ],
+      personId: adult.id,
+      version: 2,
+    });
+    const historicalProfile = await getRuntime().dispatchFetch(
+      `${profileUrl}/versions/1`,
+      { headers: { cookie: ownerCookie } }
+    );
+    expect(historicalProfile.status).toBe(200);
+    expect(await historicalProfile.text()).toBe(provisionalBytes);
   }, 30_000);
 
   it("replays a retained browser invitation through the real boundary after interruption before Better Auth", async () => {
@@ -3316,6 +3397,48 @@ describe("household public API to private Durable Object boundary", () => {
 
   it("returns an invited former member to the same historical person", async () => {
     const setup = await prepareLinkedAdult("Returning Historical Adult");
+    const profileUrl = `https://meal-planner.test/v1/household/people/${setup.adult.id}/profile`;
+    const initialProfileResponse = await getRuntime().dispatchFetch(
+      profileUrl,
+      {
+        body: JSON.stringify({
+          command: {
+            _tag: "AddProvisionalProfileFact",
+            fact: {
+              _tag: "FoodPreference",
+              label: "Carrots",
+              sentiment: "like",
+              targetKind: "ingredient",
+            },
+          },
+          expectedProfileVersion: 0,
+          mutationId: "returning-adult-profile",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(
+      initialProfileResponse.status,
+      await initialProfileResponse.clone().text()
+    ).toBe(200);
+    const profileBytes = await initialProfileResponse.clone().text();
+    const initialProfile = await Schema.decodeUnknownPromise(PersonProfile)(
+      await initialProfileResponse.json()
+    );
+    const [fact] = initialProfile.facts;
+    if (fact === undefined) {
+      throw new Error("Expected persisted profile before departure");
+    }
+    const auditResponse = await getRuntime().dispatchFetch(
+      `${profileUrl}/audit`,
+      { headers: { cookie: setup.ownerCookie } }
+    );
+    expect(auditResponse.status).toBe(200);
+    const auditBytes = await auditResponse.text();
     const departure = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/household/people/departures",
       {
@@ -3360,6 +3483,28 @@ describe("household public API to private Durable Object boundary", () => {
     if (archived === undefined) {
       throw new Error("Expected the departed adult to remain archived");
     }
+
+    await restartRuntime();
+    await Promise.all(
+      ["", "/versions/1"].map(async (suffix) => {
+        const preserved = await getRuntime().dispatchFetch(
+          `${profileUrl}${suffix}`,
+          { headers: { cookie: setup.ownerCookie } }
+        );
+        expect(preserved.status).toBe(200);
+        expect(await preserved.text()).toBe(profileBytes);
+      })
+    );
+    const archivedAudit = await getRuntime().dispatchFetch(
+      `${profileUrl}/audit`,
+      { headers: { cookie: setup.ownerCookie } }
+    );
+    expect(archivedAudit.status).toBe(200);
+    expect(await archivedAudit.text()).toBe(auditBytes);
+    const departedRead = await getRuntime().dispatchFetch(profileUrl, {
+      headers: { cookie: setup.memberCookie },
+    });
+    expect(departedRead.status).toBe(401);
 
     const invitationResponse = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/household/people/invitations",
@@ -3460,6 +3605,38 @@ describe("household public API to private Durable Object boundary", () => {
     await expect(replay.json()).resolves.toEqual(
       Schema.encodeSync(HouseholdPerson)(restored)
     );
+    const returnedProfile = await getRuntime().dispatchFetch(profileUrl, {
+      headers: { cookie: admittedCookie },
+    });
+    expect(returnedProfile.status).toBe(200);
+    expect(await returnedProfile.text()).toBe(profileBytes);
+    const returnedAudit = await getRuntime().dispatchFetch(
+      `${profileUrl}/audit`,
+      { headers: { cookie: admittedCookie } }
+    );
+    expect(returnedAudit.status).toBe(200);
+    expect(await returnedAudit.text()).toBe(auditBytes);
+    const confirmation = await getRuntime().dispatchFetch(profileUrl, {
+      body: JSON.stringify({
+        command: { _tag: "ConfirmProfileFact", basis: "self", factId: fact.id },
+        expectedProfileVersion: initialProfile.version,
+        mutationId: "returning-adult-self-confirmation",
+      }),
+      headers: { "content-type": "application/json", cookie: admittedCookie },
+      method: "POST",
+    });
+    expect(confirmation.status, await confirmation.clone().text()).toBe(200);
+    expect(await confirmation.json()).toMatchObject({
+      facts: [{ id: fact.id, standing: { _tag: "confirmed", basis: "self" } }],
+      personId: restored.id,
+      version: 2,
+    });
+    const historicalProfile = await getRuntime().dispatchFetch(
+      `${profileUrl}/versions/1`,
+      { headers: { cookie: admittedCookie } }
+    );
+    expect(historicalProfile.status).toBe(200);
+    expect(await historicalProfile.text()).toBe(profileBytes);
   }, 30_000);
 
   it("preserves the last owner and requires an explicit repair outcome", async () => {

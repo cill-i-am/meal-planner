@@ -2,8 +2,8 @@
 
 - Status: Active
 - Immediate work item:
-  [`04-private-interview-session-boundary.md`](04-private-interview-session-boundary.md)
-  (boundary evidence in review; no Stage 1 implementation proposed)
+  [`05-cumulative-exit-proof.md`](05-cumulative-exit-proof.md)
+  (In progress; Work Item 04 boundary evidence accepted in merged PR #204)
 - Started: 2026-08-27
 
 ## Household Outcome
@@ -72,7 +72,8 @@ evidence are the implemented base for Work Item 02.
 | 01    | [Person registry and lifecycle](01-person-registry-and-lifecycle.md)                           | Done                        | Stage 0 and accepted people/auth separation                                 |
 | 02    | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | Done                        | PR #201 merged; ADR-0010 accepted                                           |
 | 03    | [Profile authority, versioning, and audit](03-profile-authority-versioning-and-audit.md)       | Done                        | PR #202 merged as `b509ba5` on 2026-09-05                                   |
-| 04    | [Private interview-session boundary](04-private-interview-session-boundary.md)                 | Boundary evidence in review | Provider-free SDK spike supports deferring implementation intact to Stage 2 |
+| 04    | [Private interview-session boundary](04-private-interview-session-boundary.md)                 | Done | PR #204 accepted boundary evidence; no Stage 1 grant implemented |
+| 05    | [Cumulative exit proof](05-cumulative-exit-proof.md) | In progress | Work Items 01–04 merged; focused real-runtime profile/lifecycle joins |
 
 The four-part split remains a delivery hypothesis. Inspection of the live code
 caused three refinements:
@@ -271,9 +272,11 @@ infer, link, archive, restore, or mutate any of that state.
 
 ## Next Implementation Assignment
 
-Review Work Item 04's [boundary evidence and smallest Stage 2 handoff](04-agents-boundary-evidence.md#smallest-stage-2-handoff).
-Do not implement a Stage 1 grant or start conversation/model work. The next
-proposed integration slice is provider-free Agent admission and lifecycle,
-subject to acceptance of that record. Stage 1 remains active while this boundary
-disposition and the cumulative exit evidence are reviewed; do not infer stage
-completion from the SDK probe alone.
+Complete [Work Item 05](05-cumulative-exit-proof.md)'s focused cumulative proof,
+repository verification, independent review, and merge. Stage 1 stays Active
+until that evidence is accepted. Work Item 04's boundary disposition was accepted
+in PR #204; no Stage 1 grant or conversation code was implemented.
+
+The [bounded Stage 2 handoff](04-agents-boundary-evidence.md#smallest-stage-2-handoff)
+remains Proposed until cumulative completion. Do not start conversation/model
+work or infer Stage 1 completion from the synthetic-authority SDK probe alone.

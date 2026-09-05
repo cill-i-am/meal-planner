@@ -11,8 +11,8 @@
   [`stages/01-household-people/README.md`](stages/01-household-people/README.md)
 - Status: Active
 - Immediate delivery target:
-  [`04-private-interview-session-boundary.md`](stages/01-household-people/04-private-interview-session-boundary.md)
-  (boundary evidence in review; no Stage 1 grant implementation proposed)
+  [`05-cumulative-exit-proof.md`](stages/01-household-people/05-cumulative-exit-proof.md)
+  (In progress: prove profile history across invitation, departure, and return)
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -106,8 +106,17 @@ runtime, retain metadata across restart, and admit synthetic participant-only
 access without a Household grant. The recommendation is to defer interview
 implementation intact to Stage 2. Production auth/link composition, the Alchemy
 bundle, and passive/in-flight revocation remain named integration gates. Stage 1
-is still active pending this disposition and its cumulative exit evidence.
+is still active pending its cumulative exit verification, review, and merge.
 Organization deletion and conversation implementation remain out of scope.
+
+[PR #204](https://github.com/cill-i-am/meal-planner/pull/204) merged the accepted
+Work Item 04 boundary disposition on 2026-09-05 as
+`5d629f0f3e1e9e7c2006d2b7a0c14fd235015013`, after independent review of
+`2d607a77a509fec64047678add31fdab02053eea` and green hosted
+[run 33974785385](https://github.com/cill-i-am/meal-planner/actions/runs/33974785385).
+Work Item 04 is Done as boundary evidence, not conversation implementation.
+No Stage 1 grant was implemented. The bounded Stage 2 handoff remains Proposed
+until the cumulative Stage 1 exit proof is accepted.
 
 ## Completed Foundation
 
@@ -133,8 +142,8 @@ Organization deletion and conversation implementation remain out of scope.
 
 ## Immediate Next Steps
 
-1. Review the docs-only Work Item 04 evidence and no-Household-grant recommendation.
-2. Reconcile cumulative Stage 1 exit evidence, then promote only the bounded
+1. Complete Work Item 05's focused cumulative runtime proof and exact-head review.
+2. After its verification, review, and merge, reconcile Stage 1 exit evidence and promote only the bounded
    provider-free Stage 2 admission/lifecycle integration assignment. Do not
    assign the whole conversation or AI roadmap.
 
