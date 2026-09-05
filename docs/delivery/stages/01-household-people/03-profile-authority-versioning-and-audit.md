@@ -1,10 +1,11 @@
 # Work Item 03 — Profile Authority, Versioning, And Audit
 
-- Status: In progress
+- Status: Done
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
 - Owner: `codex/stage1-profile-authority-versioning-audit`
-- Pull request: [#202](https://github.com/cill-i-am/meal-planner/pull/202) (draft)
-- Completed by: Not completed
+- Pull request: [#202](https://github.com/cill-i-am/meal-planner/pull/202) (merged)
+- Completed by: PR #202, merged 2026-09-05 as
+  `b509ba53ce1ac1326e86a9e826bdf58cbb0e7856`
 - Promotion condition: satisfied by Work Items 01 and 02, including merged
   PR #201 at `9a59f85170f379e065920eadaaf69593d90c2c40`.
 
@@ -309,3 +310,8 @@ review is required.
 
 - 2026-08-27 — Created as `Proposed`; depends on stable person and account-link
   semantics from Work Items 01 and 02.
+
+- 2026-09-05 — PR #202 merged at `b509ba53ce1ac1326e86a9e826bdf58cbb0e7856`.
+  PR #203 reconciles that implementation without changing its profile feature
+  or migrations; combined verification and recovery proof are recorded in
+  [the cleanup delivery record](../../anti-slop-cleanup.md).
