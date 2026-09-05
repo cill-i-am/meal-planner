@@ -3,7 +3,7 @@
 - Status: Active
 - Stage: [Stage 1 — Household People](README.md)
 - Owner: `codex/stage1-exit-proof`
-- Pull request: Not opened
+- Pull request: [#205](https://github.com/cill-i-am/meal-planner/pull/205) (draft)
 - Completed by: Not completed
 
 ## Household Outcome
@@ -81,11 +81,11 @@ mock session.
 ## Acceptance Evidence
 
 - [x] Both extended real-runtime tracers pass locally; exact-head review remains pending.
-- [ ] Existing household boundary suite passes, including outsider profile read,
+- [x] Existing household boundary suite passes, including outsider profile read,
       history, audit, and mutation denial.
-- [ ] Existing browser-operation and panel tests pass for roster/link/departure
+- [x] Existing browser-operation and panel tests pass for roster/link/departure
       and profile edits, safety confirmation, unresolved commands, and reauth.
-- [ ] Root check, lint, formatting, tests, build, and diff check pass.
+- [x] Root check, lint, formatting, tests, build, and diff check pass locally.
 - [ ] Hosted CI passes on the frozen head.
 - [ ] Independent exact-head review is accepted by the orchestrator.
 
@@ -116,3 +116,14 @@ to justify a speculative refactor.
   Fast-forwarded the owned branch to merged PR #204/main
   `5d629f0f3e1e9e7c2006d2b7a0c14fd235015013`, preserving the test changes.
   WI04 is accepted as boundary evidence only. Stage 1 remains Active.
+- 2026-09-05: Local final verification passed: `pnpm check`, `pnpm lint`,
+  `pnpm format:check`, `pnpm test`, `pnpm build`, and `git diff --check`.
+  Full tests: 1,068 (128 root/Alchemy, 24 household contract, 31 import contract,
+  95 web, 790 API). The API run includes all 53 household boundary tests;
+  the web run includes roster/profile browser-operation and panel coverage.
+  Explicit pinned-formatter stdin verification covers delivery Markdown because
+  the checkout's local Git exclude hides docs from ordinary discovery.
+  No schema, migration, production, or container code changed; no redundant
+  local synthetic-container build was run. Hosted CI retains that required gate.
+  PR #205 owns the frozen-head CI and independent-review evidence; neither is
+  replaced by these local results.
