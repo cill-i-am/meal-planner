@@ -139,3 +139,24 @@ No external I/O is introduced inside household transactions.
   on PR #203. The previous head's full 1,041 tests, container verification, and
   both hosted CI jobs passed; they do not replace verification of this correction.
 - No deployment or merge is authorized by this correction.
+
+### Hosted CI correction and completed-settlement review
+
+- Hosted Quality at `d103f1af6706b1d9b4422764733c942caa8b963e` found a stale
+  architecture assertion that allowed only the baseline migration and snapshot.
+  The local full run started before the new files were staged, so its tracked-file
+  inventory missed them. Reproducing after staging exposed the same failure.
+- Removed the fixed filename inventory. The guard checks tables across every SQL
+  migration and each Drizzle snapshot, retaining the existing resource, consumer,
+  migration-root, and five-table restrictions. Adversarial tests target the later
+  migration/snapshot and a flat SQL migration. All 28 existing architecture tests
+  and the new flat-migration regression pass; type and lint checks pass.
+- Fresh independent review confirms the original P1 is closed but found a P2:
+  successful conservative settlements from main are stored as `settled_unknown`
+  with conservative audit/replay evidence. The new reader rejects those completed
+  rows as `persistence_corrupt` after the current migration.
+- A proposed state-only conversion passed two disposable native D1 tests using
+  the real main repository before upgrade. Conservative reads/replays recover
+  with unchanged budget, audit, replay, and ledger; genuinely unknown settlements
+  remain unchanged. This backfill is not included pending the explicit approval
+  required by the greenfield policy. The PR remains draft and must not be merged.

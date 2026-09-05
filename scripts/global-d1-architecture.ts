@@ -1040,17 +1040,13 @@ export const inspectGlobalD1Architecture = (
   const migrationRoots = collectMigrationRoots(trackedSources);
   const providerSchemaPath =
     "apps/api/src/features/provider-accounting/provider-accounting.database-schema.ts";
-  const providerMigrationPath =
-    "apps/api/provider-accounting-migrations/20260824183013_provider_accounting/migration.sql";
-  const providerSnapshotPath =
-    "apps/api/provider-accounting-migrations/20260824183013_provider_accounting/snapshot.json";
   const providerSchema = trackedSources.find(
     ({ path: sourcePath }) => sourcePath === providerSchemaPath
   );
   const providerMigrations = trackedSources.filter(
     ({ path: sourcePath }) =>
       sourcePath.startsWith("apps/api/provider-accounting-migrations/") &&
-      sourcePath.endsWith("/migration.sql")
+      sourcePath.endsWith(".sql")
   );
 
   const violations = [
@@ -1105,42 +1101,29 @@ export const inspectGlobalD1Architecture = (
 
   violations.push(
     ...exactValueViolation(
-      "provider-accounting migration files",
-      providerMigrations.map(({ path: sourcePath }) => sourcePath).toSorted(),
-      [providerMigrationPath]
+      "provider-accounting migration tables",
+      [
+        ...new Set(
+          providerMigrations.flatMap(({ source }) =>
+            collectCreatedTables(source)
+          )
+        ),
+      ].toSorted(),
+      expectedProviderAccountingTables
+        .map(({ tableName }) => tableName)
+        .toSorted()
     )
   );
-  const providerMigration = providerMigrations.find(
-    ({ path: sourcePath }) => sourcePath === providerMigrationPath
-  );
-  if (providerMigration) {
-    violations.push(
-      ...exactValueViolation(
-        "provider-accounting migration tables",
-        collectCreatedTables(providerMigration.source),
-        expectedProviderAccountingTables
-          .map(({ tableName }) => tableName)
-          .toSorted()
-      )
-    );
-  }
 
   const providerSnapshots = trackedSources.filter(
     ({ path: sourcePath }) =>
       sourcePath.startsWith("apps/api/provider-accounting-migrations/") &&
       sourcePath.endsWith("/snapshot.json")
   );
-  violations.push(
-    ...exactValueViolation(
-      "provider-accounting snapshot files",
-      providerSnapshots.map(({ path: sourcePath }) => sourcePath).toSorted(),
-      [providerSnapshotPath]
-    )
-  );
-  const providerSnapshot = providerSnapshots.find(
-    ({ path: sourcePath }) => sourcePath === providerSnapshotPath
-  );
-  if (providerSnapshot) {
+  if (providerSnapshots.length === 0) {
+    violations.push("provider-accounting snapshots missing");
+  }
+  for (const providerSnapshot of providerSnapshots) {
     violations.push(
       ...exactValueViolation(
         "provider-accounting snapshot tables",

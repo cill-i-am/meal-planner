@@ -350,14 +350,20 @@ export const TenantLedgerQuery = Cloudflare.D1.QueryDatabase(ProviderAccountingD
       },
       {
         entryPath:
-          "apps/api/provider-accounting-migrations/20260824183013_provider_accounting/migration.sql",
+          "apps/api/provider-accounting-migrations/20260905063703_conservative_settlement/migration.sql",
         label: "sixth provider-accounting migration table",
         source: () =>
           `${readFileSync(path.join(repositoryRoot, "apps/api/provider-accounting-migrations/20260824183013_provider_accounting/migration.sql"), "utf-8")}\nCREATE TABLE \`household_ledger\` (\`id\` text PRIMARY KEY);\n`,
       },
       {
+        entryPath: "apps/api/provider-accounting-migrations/20990101_extra.sql",
+        label: "flat SQL migration with a sixth table",
+        source: () =>
+          "CREATE TABLE `household_ledger` (`id` text PRIMARY KEY);",
+      },
+      {
         entryPath:
-          "apps/api/provider-accounting-migrations/20260824183013_provider_accounting/snapshot.json",
+          "apps/api/provider-accounting-migrations/20260905063703_conservative_settlement/snapshot.json",
         label: "sixth provider-accounting snapshot table",
         source: () => {
           const snapshot = JSON.parse(
