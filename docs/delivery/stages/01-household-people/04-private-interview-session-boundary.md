@@ -3,7 +3,7 @@
 - Status: Boundary evidence in review; implementation deferred to Stage 2
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
 - Owner: `codex/stage1-private-interview-boundary`
-- Pull request: Not opened
+- Pull request: [#204](https://github.com/cill-i-am/meal-planner/pull/204) (draft)
 - Completed by: Not completed
 - Promotion condition: review the evidence, then promote one bounded Stage 2
   integration work item; no Stage 1 grant prerequisite was identified
