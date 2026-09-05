@@ -18,7 +18,7 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     const bucket = yield* Cloudflare.R2.Bucket("Uploads");
     return { bucketName: bucket.bucketName };
-  })
+  }),
 );
 ```
 
@@ -26,21 +26,21 @@ export default Alchemy.Stack(
 
 ## Application Router
 
-| Need | Reach for |
-| --- | --- |
-| HTTP, RPC, cron, queue, or application compute | Worker |
-| Strongly consistent keyed state, WebSockets, coordination | Durable Object |
-| Arbitrary/long-running process | Container paired with a Durable Object |
-| Durable multi-step work | Workflow |
-| Pure Vite/full-stack Vite application | `Cloudflare.Vite` |
-| Arbitrary static build output | `Cloudflare.StaticSite` |
-| SQLite relational data | `Cloudflare.D1.Database` |
-| Edge configuration/cache lookups | `Cloudflare.KV.Namespace` |
-| Object storage | `Cloudflare.R2.Bucket` |
-| External Postgres/MySQL | Hyperdrive plus the provider origin |
-| Background work | `Cloudflare.Queues.Queue` |
-| Internal service call | schemaless Worker/Durable Object binding |
-| Public typed API | Effect RPC or Effect HTTP |
+| Need                                                      | Reach for                                |
+| --------------------------------------------------------- | ---------------------------------------- |
+| HTTP, RPC, cron, queue, or application compute            | Worker                                   |
+| Strongly consistent keyed state, WebSockets, coordination | Durable Object                           |
+| Arbitrary/long-running process                            | Container paired with a Durable Object   |
+| Durable multi-step work                                   | Workflow                                 |
+| Pure Vite/full-stack Vite application                     | `Cloudflare.Vite`                        |
+| Arbitrary static build output                             | `Cloudflare.StaticSite`                  |
+| SQLite relational data                                    | `Cloudflare.D1.Database`                 |
+| Edge configuration/cache lookups                          | `Cloudflare.KV.Namespace`                |
+| Object storage                                            | `Cloudflare.R2.Bucket`                   |
+| External Postgres/MySQL                                   | Hyperdrive plus the provider origin      |
+| Background work                                           | `Cloudflare.Queues.Queue`                |
+| Internal service call                                     | schemaless Worker/Durable Object binding |
+| Public typed API                                          | Effect RPC or Effect HTTP                |
 
 Cloudflare frontends are Workers-first. Use Pages only when the current project has a specific Pages constraint.
 
@@ -64,7 +64,7 @@ export default Cloudflare.Worker(
         return HttpServerResponse.text(object === null ? "missing" : "ok");
       }),
     };
-  }).pipe(Effect.provide(Cloudflare.R2.ReadWriteBucketBinding))
+  }).pipe(Effect.provide(Cloudflare.R2.ReadWriteBucketBinding)),
 );
 ```
 
@@ -116,7 +116,7 @@ yield *
   Cloudflare.Queues.consumeQueueMessages<Job>(
     queue,
     { batchSize: 10, maxRetries: 3, retryDelay: "1 second" },
-    (messages) => Stream.runForEach(messages, processJob)
+    (messages) => Stream.runForEach(messages, processJob),
   );
 ```
 
@@ -131,7 +131,7 @@ Workers cron and GitHub repository events use the same event-source pattern: one
 - Containers pair arbitrary runtime processes with a Durable Object interface and lifecycle. Verify image architecture, health, persistence, scale, and RPC contract.
 - Workflows own replayable, checkpointed multi-step jobs. Keep steps deterministic/idempotent around retries and external side effects.
 
-Use typed internal RPC for Worker/DO/Container communication. Add schema validation only where data crosses a trust boundary.
+Use typed native RPC for Worker/DO/Container communication. Validate or reconstruct domain values at runtime ingress as the owning contract requires, including trusted serialized calls; reuse canonical schemas.
 
 ## Frontends
 

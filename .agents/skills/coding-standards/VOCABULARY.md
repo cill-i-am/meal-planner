@@ -1,6 +1,6 @@
 # Vocabulary
 
-Use these exact terms in explanations, reviews, and code-facing design notes when the concept applies. Topic files may define only topic-local terms near their rules.
+These definitions clarify recurring concepts. Use the terminology that makes the current explanation clearest; the glossary does not dictate wording or capitalization.
 
 ## Failure language
 

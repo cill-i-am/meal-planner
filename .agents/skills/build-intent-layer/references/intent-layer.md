@@ -28,7 +28,7 @@ Ask:
 
 If not, the node probably does not deserve its own intent file.
 
-The inverse also matters: if a subtree clearly has a different role but no local node exists yet, infer that missing node instead of pretending the root is sufficient.
+Add a local file only when a durable, non-obvious constraint needs that scope. A distinct directory role alone does not justify instructions; readable code and existing documentation may already be sufficient.
 
 ## Nearest Common Ancestor Placement
 

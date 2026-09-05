@@ -1,52 +1,27 @@
-# Meal Planner Agent Instructions
+# Meal Planner
 
-## Scope
+This file governs the repository. Add nested instructions only for a real local constraint; keep each rule in one place.
 
-This file governs the whole repository. Put narrower instructions in a nested `AGENTS.md` only when a subtree develops materially different constraints; do not duplicate these repo-wide rules into tool-specific instruction files.
+## Working here
 
-## Sources Of Truth
+Use pnpm and the scripts in `package.json`; choose checks for the changed behaviour. Preserve unrelated work. Use an isolated worktree for substantial changes when the current checkout is dirty, stale, or shared.
 
-Read repository authority in this order:
+Carry the requested outcome through implementation, relevant verification, and in-scope fixes. Local source edits, disposable local tests, builds, browser checks, and rerunning affected checks are authorized within the task. Inspect unfamiliar scripts before assuming they are local. Ask only when a missing decision or unauthorized effect prevents the next step; continue independent work in the meantime.
 
-1. [`docs/product-blueprint/`](docs/product-blueprint/) owns long-horizon household product intent, experience, domain language, beta proof, and the staged capability sequence.
-2. [`docs/decisions/product/`](docs/decisions/product/) owns accepted product decisions.
-3. [`docs/architecture/decisions/`](docs/architecture/decisions/) and the current architecture documents own durable technical boundaries and implemented authority.
-4. [`docs/delivery/current.md`](docs/delivery/current.md) and the owning stage/work-item record own active scope, blockers, status, and evidence.
-5. Pull requests own review of one exact implementation head; after merge, durable state returns to the repository records above.
+Keep greenfield designs direct. Delete superseded experimental paths. Compatibility shims, dual writes, backfills, and portability machinery require a concrete existing contract and explicit approval; do not build them for hypothetical future consumers.
 
-Linear is not authoritative for new Meal Planner work. Do not create, update, or infer delivery state from Linear unless the user explicitly changes this policy through an accepted repository decision.
+## Context when needed
 
-## Repository Workflow
+- Product meaning: [blueprint](docs/product-blueprint/), [accepted product decisions](docs/decisions/product/), and [domain conventions](docs/agents/domain.md).
+- Technical boundaries: [architecture](docs/architecture/) and [ADRs](docs/architecture/decisions/).
+- Ongoing product work: [current delivery](docs/delivery/current.md) and its owning work item. Repository records own delivery; Linear is not used for new work.
+- Delivery and review: [repository workflow](docs/agents/repository-workflow.md) and [execution policy](docs/agents/execution-policy.md).
+- Skills: load a skill only when its task-specific guidance helps; read supporting references as needed. These project copies are maintained locally, not bulk-synced from an upstream skill bundle.
 
-- This is a pnpm monorepo. Use the root `pnpm` scripts for build, check, test, lint, and formatting unless a narrower command is the correct verification.
-- Inspect the current Git state before editing. Preserve unrelated user changes and use isolated worktrees for non-trivial worker threads.
-- Keep changes scoped to the owning repository work item or explicit user request.
-- Record verification commands and results; use runtime evidence when behaviour is user-visible.
-- Update current-state architecture and public documentation in the same change when authority or product behaviour moves.
-- Never expose Tesco credentials, cookie material, authorization values, raw provider responses, interview transcripts, or other secrets in source, logs, work items, PRs, or agent handoffs.
-- Tesco mutations, basket changes, checkout, payment, publishing, external messages, deployment, and destructive cloud operations require a separately recorded explicit approval boundary.
+Use these links to answer the task's questions, not as a reading checklist. A clear, bounded user request does not need a new work item, planner, or handoff. Record consequential product/architecture choices and update affected documentation when behaviour or authority changes.
 
-## Decision Discipline
+## External effects and private data
 
-- Product behaviour, privacy, safety, authority, and plan semantics belong in a product decision record when they need durable resolution.
-- Long-lived technical and consistency choices belong in an ADR.
-- Do not let a convenient implementation shape silently answer an unresolved product or architecture question.
-- Keep decision records focused. Do not turn every local refactor into an ADR.
-- When a decision changes, name the superseding record and update dependent blueprint, delivery, and architecture documents.
+Tesco/provider mutations, basket changes, checkout, payment, external messages, publication, deployment, destructive cloud operations, and irreversible data changes need explicit authorization covering the actual effect and target. Existing authorization remains valid within its scope; record it where needed rather than asking again. Finish safe preparation before seeking missing approval.
 
-## Greenfield Architecture
-
-- Treat this repository as a greenfield product unless an accepted record identifies production data, external consumers, or a compatibility contract that must be preserved.
-- Prefer the best current architecture and clearest domain model over preserving experimental structures. Substantial refactors, schema resets, and replacement of prototypes are acceptable when they improve the design.
-- Do not add compatibility shims, legacy adapters, dual-write paths, backfills, backwards-compatibility behaviour, or portability machinery without first explaining the concrete need and receiving explicit approval in a decision record.
-- Exploration is encouraged, but converge by deleting superseded paths rather than carrying multiple architectures forward. Keep reusable domain knowledge and proven behaviour; do not preserve accidental implementation shape.
-- Design clean boundaries and stable domain identifiers where intrinsically valuable, but do not confuse future extensibility with an obligation to build unused abstractions now.
-
-## Agent Workflow
-
-- Read [`docs/agents/repository-workflow.md`](docs/agents/repository-workflow.md) before planning or delivering non-trivial work.
-- Read [`docs/agents/domain.md`](docs/agents/domain.md) before changing durable product or household intent.
-- Read [`docs/agents/execution-policy.md`](docs/agents/execution-policy.md) before dispatching workers or reviewers or handing off a PR.
-- Use [`docs/delivery/work-item-template.md`](docs/delivery/work-item-template.md) for implementation work.
-- Use the templates indexed by [`docs/agents/README.md`](docs/agents/README.md) for worker and reviewer handoffs.
-- Do not use Linear-oriented skills or workflow documents for new work unless the user explicitly requests a separately approved return to that system.
+Keep credentials, cookies, authorization values, raw private provider data, and interview transcripts out of source, logs, work records, PRs, and handoffs. Draft meal plans and shopping previews are not household approval.
