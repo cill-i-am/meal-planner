@@ -1,81 +1,30 @@
 # Work Item — <Outcome>
 
 - Status: Proposed
-- Stage: <stage identifier and link>
-- Owner: <implementation lane or person>
-- Pull request: Not opened
-- Completed by: Not completed
+- Owner: <person or delivery owner>
+- Stage / pull request: <links when they exist>
 
-## Household Outcome
+## Outcome and scope
 
-Describe the user-visible or operator-visible outcome in one paragraph. Name the
-person or household actor affected and the problem removed.
+Describe the person affected, the problem removed, and the observable result. Name exclusions only where they prevent a likely misunderstanding.
 
-## Accepted Direction
+## Accepted direction
 
-Link the product decision records, ADRs, current architecture documents, and
-blueprint sections that constrain this work.
+Link the product decisions, architecture, or blueprint sections that constrain this work. Define any new commands, states, invariants, permissions, or visible failures needed to make the outcome unambiguous.
 
-## Scope
+Include authority, privacy, transaction, replay, concurrency, retention, and recovery requirements only where this work affects them. Identify the actual external effects and the authorization they require. Do not turn every category into a new implementation requirement.
 
-### In scope
+## Acceptance evidence
 
-- <behaviour>
-- <behaviour>
+List concrete scenarios and the evidence that will prove them. Use the real runtime or persistence seam when that is the changed contract. Include relevant authorization, isolation, replay, and failure cases for work that changes those behaviours. Choose required checks for this scope; use the [execution policy](../agents/execution-policy.md) for review and merge authority.
 
-### Out of scope
+- <scenario and expected result>
+- <verification method>
 
-- <explicit exclusion>
-- <explicit exclusion>
+## Implementation constraints
 
-## Product Semantics
+Record constraints that help implementation without freezing a file layout or unnecessary abstraction. Capture consequential durable choices in the appropriate decision record.
 
-Define the important commands, states, invariants, permissions, and visible
-failure behaviour. Do not substitute file names for product behaviour.
+## Delivery record
 
-## Authority And Privacy
-
-State:
-
-- canonical writer and store;
-- admitted actors and authorization path;
-- private versus household-visible information;
-- transaction boundary;
-- external effects and post-commit behaviour; and
-- deletion or retention effects, when relevant.
-
-## Failure, Replay, And Concurrency
-
-List expected conflicts, idempotency rules, stale-version behaviour, races, and
-recovery semantics.
-
-## Vertical Tracer
-
-Describe one end-to-end scenario that proves the production boundary rather than
-isolated helpers.
-
-## Acceptance Evidence
-
-- [ ] Product/domain tests prove the accepted semantics.
-- [ ] Real runtime or persistence tests cover the production authority seam.
-- [ ] Authorization and cross-household isolation are proven.
-- [ ] Replay, collision, restart, and relevant concurrency are proven.
-- [ ] Privacy-safe projections and failures are proven.
-- [ ] Current-state architecture and public contracts are updated.
-- [ ] Required repository checks, tests, lint, formatting, and builds pass.
-- [ ] Exact-head review findings are disposed for the risk tier.
-
-Add work-specific evidence below:
-
-- [ ] <evidence>
-
-## Implementation Notes
-
-Record constraints that help implementation without prematurely freezing a file
-layout or abstraction. Move a durable choice into an ADR instead of burying it
-here.
-
-## Delivery Log
-
-Record meaningful status transitions, exact pull-request head, verification
-results, review disposition, merge commit, and any superseding work.
+Record meaningful status changes, verification results, the reviewed head and findings, remaining gates, and the merge commit when applicable. Omit sections that add no useful information to the work item.

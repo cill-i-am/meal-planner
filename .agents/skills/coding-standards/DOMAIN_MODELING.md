@@ -16,7 +16,7 @@ Model domain concepts so illegal states are hard to create and legal operations 
 
 ## Apply this file
 
-A domain-modeling pass is complete when every touched concept has been checked for:
+When a change affects domain semantics, use the relevant questions:
 
 - construction or parsing invariants;
 - required vs optional values;
@@ -25,7 +25,7 @@ A domain-modeling pass is complete when every touched concept has been checked f
 - exhaustive handling of closed variants;
 - persistence constraints or guarded writes when the invariant is persisted.
 
-If one check cannot be fully applied without broader migration, name the compatibility constraint and improve the changed path.
+If a proposed improvement requires unrelated migration, keep the current task scoped and explain any material unresolved invariant. Do not add compatibility machinery without the repository's required approval.
 
 ## Non-negotiables
 
@@ -115,7 +115,7 @@ Prefer:
 class Money {
   private constructor(
     readonly cents: Cents,
-    readonly currency: Currency
+    readonly currency: Currency,
   ) {}
 
   static create(input: MoneyInput): Result<Money, InvalidMoney> {
