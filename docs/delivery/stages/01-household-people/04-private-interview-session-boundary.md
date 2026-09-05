@@ -1,11 +1,11 @@
 # Work Item 04 — Private Interview-Session Boundary
 
-- Status: Boundary evidence in review; implementation deferred to Stage 2
+- Status: Done — boundary evidence accepted; implementation deferred to Stage 2
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
 - Owner: `codex/stage1-private-interview-boundary`
-- Pull request: [#204](https://github.com/cill-i-am/meal-planner/pull/204) (draft)
-- Completed by: Not completed
-- Promotion condition: review the evidence, then promote one bounded Stage 2
+- Pull request: [#204](https://github.com/cill-i-am/meal-planner/pull/204) (merged 2026-09-05)
+- Completed by: `5d629f0f3e1e9e7c2006d2b7a0c14fd235015013`
+- Promotion condition: accept cumulative Stage 1 exit proof, then promote one bounded Stage 2
   integration work item; no Stage 1 grant prerequisite was identified
 
 ## Household outcome
@@ -28,7 +28,7 @@ The [exact-version SDK evidence](04-agents-boundary-evidence.md) exercises
 
 ## Boundary disposition
 
-Recommend **no Stage 1 Household grant, session table, API, or UI**. The SDK
+Accepted: **no Stage 1 Household grant, session table, API, or UI**. The SDK
 supports isolated Agent-owned participant/lifecycle metadata and restart without
 Household persistence. Fresh membership and person linkage come from existing
 authorities, not a grant. The earlier conditional Household grant was a planning
@@ -140,7 +140,7 @@ first slice.
       and lost-response behaviour are proven in the production composition.
 - [ ] Actual proposal confirmation proves current authorization, versions,
       safety, and closed privacy-safe provenance without transcript injection.
-- [ ] This docs-only PR passes formatting/link/diff checks and hosted CI; its
+- [x] This docs-only PR passes formatting/link/diff checks and hosted CI; its
       exact-head review records the boundary disposition.
 - [ ] The orchestrator reconciles cumulative Stage 1 exit evidence separately.
 
@@ -157,7 +157,7 @@ unproven product integration.
 
 Use the exact bounded
 [Stage 2 handoff](04-agents-boundary-evidence.md#smallest-stage-2-handoff)
-after accepting this record. Do not assign the whole AI roadmap.
+after accepting the cumulative Stage 1 exit proof. Do not assign the whole AI roadmap.
 
 ## Delivery log
 
@@ -166,3 +166,10 @@ after accepting this record. Do not assign the whole AI roadmap.
 - 2026-09-05 — Work Item 03 merged. The provider-free SDK spike supports moving
   interview implementation intact to Stage 2 without a Household grant.
   Boundary disposition is in review; no production conversation code landed.
+- 2026-09-05 — PR #204 merged as
+  `5d629f0f3e1e9e7c2006d2b7a0c14fd235015013`. Independent content and exact-head
+  review accepted `2d607a77a509fec64047678add31fdab02053eea`; both hosted checks
+  passed in [run 33974785385](https://github.com/cill-i-am/meal-planner/actions/runs/33974785385).
+  Boundary evidence is Done. Synthetic SDK metadata/restart proof does not
+  establish production auth, Alchemy composition, or continuing revocation;
+  those remain Stage 2 gates. Cumulative exit proof is Work Item 05.
