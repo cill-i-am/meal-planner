@@ -128,7 +128,13 @@ const ProfileHistory = ({
       {history.isError && (
         <Alert>
           History could not be loaded.{" "}
-          <Button onClick={() => void history.refetch()}>Retry history</Button>
+          <Button
+            onClick={() => {
+              void history.refetch();
+            }}
+          >
+            Retry history
+          </Button>
         </Alert>
       )}
       {history.isPending && <p role="status">Loading history…</p>}
@@ -174,7 +180,9 @@ const ProfileHistory = ({
       {history.hasNextPage && (
         <Button
           disabled={history.isFetchingNextPage}
-          onClick={() => void history.fetchNextPage()}
+          onClick={() => {
+            void history.fetchNextPage();
+          }}
         >
           Older changes
         </Button>
@@ -445,7 +453,13 @@ export const HouseholdProfilesPanel = ({
       {roster.isError && (
         <Alert>
           People could not be loaded.{" "}
-          <Button onClick={() => void roster.refetch()}>Retry people</Button>
+          <Button
+            onClick={() => {
+              void roster.refetch();
+            }}
+          >
+            Retry people
+          </Button>
         </Alert>
       )}
       {roster.data?.currentPersonId === null && (

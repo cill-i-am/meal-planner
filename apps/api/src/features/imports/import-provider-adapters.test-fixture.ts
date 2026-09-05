@@ -236,14 +236,12 @@ const providerResponseParts = (
             type: "text",
           }),
         ]),
-    ...calls.map(
-      (call): AiResponse.ToolCallPartEncoded => ({
-        id: call.id ?? "provider-fixture-call",
-        name: toolCallName(call),
-        params: toolCallArguments(call),
-        type: "tool-call",
-      })
-    ),
+    ...calls.map((call): AiResponse.ToolCallPartEncoded => ({
+      id: call.id ?? "provider-fixture-call",
+      name: toolCallName(call),
+      params: toolCallArguments(call),
+      type: "tool-call",
+    })),
     {
       reason: calls.length === 0 ? "stop" : "tool-calls",
       type: "finish",

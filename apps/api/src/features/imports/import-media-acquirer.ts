@@ -188,7 +188,7 @@ const AcquisitionManifest = Schema.Struct({
   }),
   deleteAt: ImportTimestamp,
   durationSeconds: MediaDurationSecondsSchema,
-  ffmpegVersion: Schema.Literal("8.1.2"),
+  ffmpegVersion: Schema.Literal("9.0.1"),
   generation: AcquisitionGenerationSchema,
   importId: ImportId,
   manifestKey: ManifestObjectKeySchema,
@@ -210,7 +210,7 @@ const AcquisitionManifest = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   sha256: Sha256HexSchema,
   videoStreams: Schema.NonEmptyArray(MediaStreamSummary),
-  ytDlpVersion: Schema.Literal("2026.07.04"),
+  ytDlpVersion: Schema.Literal("2026.08.19"),
 });
 
 export const VerifiedPreparedMediaArtifact = Schema.Struct({
@@ -659,7 +659,7 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
         creator: prepared.metadata.creator,
         deleteAt,
         durationSeconds: prepared.durationSeconds,
-        ffmpegVersion: "8.1.2",
+        ffmpegVersion: "9.0.1",
         generation: input.generation,
         importId: input.importId,
         manifestKey,
@@ -672,7 +672,7 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
         schemaVersion: 1,
         sha256: prepared.sha256,
         videoStreams: prepared.videoStreams,
-        ytDlpVersion: "2026.07.04",
+        ytDlpVersion: "2026.08.19",
       }).pipe(Effect.mapError(() => retryableAt("store")));
       const manifest = yield* Schema.encodeUnknownEffect(AcquisitionManifest)(
         decodedManifest

@@ -1,7 +1,6 @@
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-// eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
-import { join } from "node:path";
+import path from "node:path";
 
 import { Cause, Effect, Exit, Fiber, Option } from "effect";
 import { describe, expect, it } from "vitest";
@@ -131,7 +130,7 @@ describe("bounded media process execution", () => {
 
   it("settles without invoking an executor when the deadline expires during initial workspace preflight", async () => {
     const root = await mkdtemp(
-      join(tmpdir(), "meal-planner-process-preflight-")
+      path.join(tmpdir(), "meal-planner-process-preflight-")
     );
     try {
       let executions = 0;
@@ -361,8 +360,10 @@ describe("bounded media process execution", () => {
   });
 
   it("never launches a child for a pre-aborted execution", async () => {
-    const root = await mkdtemp(join(tmpdir(), "meal-planner-process-aborted-"));
-    const marker = join(root, "launched");
+    const root = await mkdtemp(
+      path.join(tmpdir(), "meal-planner-process-aborted-")
+    );
+    const marker = path.join(root, "launched");
     try {
       const controller = new AbortController();
       controller.abort();
@@ -385,9 +386,11 @@ describe("bounded media process execution", () => {
   });
 
   it("closes the spawn-listener race and interrupts an in-flight child", async () => {
-    const root = await mkdtemp(join(tmpdir(), "meal-planner-process-race-"));
-    const raceMarker = join(root, "race-launched");
-    const interruptionMarker = join(root, "interruption-launched");
+    const root = await mkdtemp(
+      path.join(tmpdir(), "meal-planner-process-race-")
+    );
+    const raceMarker = path.join(root, "race-launched");
+    const interruptionMarker = path.join(root, "interruption-launched");
     try {
       let abortedReads = 0;
       const racingSignal = {
@@ -479,12 +482,14 @@ describe("bounded media process execution", () => {
   });
 
   it("interrupts a running process when its workspace crosses the file cap", async () => {
-    const root = await mkdtemp(join(tmpdir(), "meal-planner-process-cap-"));
+    const root = await mkdtemp(
+      path.join(tmpdir(), "meal-planner-process-cap-")
+    );
     try {
       const runner = makeMediaProcessRunner(async ({ signal }) => {
         await Promise.all(
           Array.from({ length: MaximumTemporaryFiles + 1 }, (_, index) =>
-            writeFile(join(root, `partial-${index}`), "")
+            writeFile(path.join(root, `partial-${index}`), "")
           )
         );
         // eslint-disable-next-line promise/avoid-new -- The fake process waits for its AbortSignal callback.

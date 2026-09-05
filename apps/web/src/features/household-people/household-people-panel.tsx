@@ -1034,7 +1034,9 @@ export const HouseholdPeoplePanel = ({
           <Button
             className="button-secondary"
             disabled={roster.isFetching}
-            onClick={() => void roster.refetch()}
+            onClick={() => {
+              void roster.refetch();
+            }}
             type="button"
           >
             {roster.isFetching ? "Refreshing…" : "Refresh"}

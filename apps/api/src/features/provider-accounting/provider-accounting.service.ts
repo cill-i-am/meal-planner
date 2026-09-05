@@ -311,13 +311,11 @@ const sweepExpiredRecipeReplays = (database: ProviderAccountingDatabase) =>
         onExcessProperty: "ignore",
       })(result).pipe(Effect.mapError(() => failure("persistence_corrupt")))
     ),
-    Effect.map(
-      (result): ProviderAccountingResponse => ({
-        accountingScope: ProviderAccountingScope,
-        deletedCount: result.meta.changes,
-        outcome: "expired_recipe_replays_swept",
-      })
-    )
+    Effect.map((result): ProviderAccountingResponse => ({
+      accountingScope: ProviderAccountingScope,
+      deletedCount: result.meta.changes,
+      outcome: "expired_recipe_replays_swept",
+    }))
   );
 
 export interface ProviderAccountingService {

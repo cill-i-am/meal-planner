@@ -143,28 +143,26 @@ const RawTescoConfigDefinition = Config.all({
 
 const TescoConfigDefinition: Config.Config<TescoConfig> =
   RawTescoConfigDefinition.pipe(
-    Config.map(
-      (raw): TescoConfig => ({
-        authBootstrap: {
-          initialAuthorization: raw.authorization,
-          initialCookieHeader: raw.authCookieHeader,
-        },
-        catalogue: {
-          locale: raw.locale,
-          mangoApiKey: raw.mangoApiKey,
-          mangoUrl: raw.mangoUrl,
-          region: raw.region,
-          releaseBranch: raw.releaseBranch,
-          suggestionUrl: raw.suggestionUrl,
-          transactionPurpose: raw.transactionPurpose,
-        },
-        softLogin: {
-          locale: raw.locale,
-          refreshFromUrl: raw.authRefreshFromUrl,
-          signInUrl: raw.softRefreshSignInUrl,
-        },
-      })
-    )
+    Config.map((raw): TescoConfig => ({
+      authBootstrap: {
+        initialAuthorization: raw.authorization,
+        initialCookieHeader: raw.authCookieHeader,
+      },
+      catalogue: {
+        locale: raw.locale,
+        mangoApiKey: raw.mangoApiKey,
+        mangoUrl: raw.mangoUrl,
+        region: raw.region,
+        releaseBranch: raw.releaseBranch,
+        suggestionUrl: raw.suggestionUrl,
+        transactionPurpose: raw.transactionPurpose,
+      },
+      softLogin: {
+        locale: raw.locale,
+        refreshFromUrl: raw.authRefreshFromUrl,
+        signInUrl: raw.softRefreshSignInUrl,
+      },
+    }))
   );
 
 const issueEnvironmentVariable = (

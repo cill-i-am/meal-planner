@@ -328,7 +328,6 @@ const ImportAcquisitionWorkflowBridge = makeWorkflowBridge(
 )("ImportAcquisitionTestWorkflow");
 
 export class HouseholdBatchTestWorkflow extends HouseholdBatchWorkflowBridge {}
-// eslint-disable-next-line max-classes-per-file -- One native host module must export both Workflow entrypoint classes for the cross-workflow proof.
 export class ImportAcquisitionTestWorkflow extends ImportAcquisitionWorkflowBridge {}
 
 const waitForTerminalStatus = async (

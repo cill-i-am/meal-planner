@@ -257,7 +257,12 @@ const HouseholdSetup = ({
             Create household
           </Button>
         </form>
-        <Button onClick={() => void actions.signOut()} type="button">
+        <Button
+          onClick={() => {
+            void actions.signOut();
+          }}
+          type="button"
+        >
           Log out
         </Button>
       </section>
@@ -287,7 +292,12 @@ export const AuthBoundary = ({
           <p className="eyebrow">Meal Planner</p>
           <h1 id="auth-error-title">Account temporarily unavailable</h1>
           <p className="lede">We couldn’t load your account right now.</p>
-          <Button onClick={() => void actions.retry()} type="button">
+          <Button
+            onClick={() => {
+              void actions.retry();
+            }}
+            type="button"
+          >
             Try again
           </Button>
         </section>

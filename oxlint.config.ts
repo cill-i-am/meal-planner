@@ -27,6 +27,25 @@ export default defineConfig({
   ],
   overrides: [
     {
+      files: ["**/*.{ts,tsx,mts,cts}"],
+      rules: {
+        // TypeScript permits paired type/value names for Effect schemas and
+        // services. The compiler checks real redeclarations; this JS rule does not.
+        "no-redeclare": "off",
+      },
+    },
+    {
+      files: [
+        "apps/api/src/features/households/household-object-host.test-fixture.ts",
+        "apps/api/src/features/imports/household-import-batch-workflow.test-fixture.ts",
+      ],
+      rules: {
+        // Native Worker hosts must export their cooperating runtime classes
+        // from the same entry module. Oxlint reports this rule at file scope.
+        "max-classes-per-file": "off",
+      },
+    },
+    {
       files: [
         "apps/api/src/features/tesco/auth/auth-cookies.ts",
         "apps/api/src/features/tesco/auth/auth-session.test.ts",

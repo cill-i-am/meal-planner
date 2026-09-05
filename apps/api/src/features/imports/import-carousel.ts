@@ -712,26 +712,24 @@ export const prepareTikTokCarouselEvidence = Effect.fn(
     );
   }
   const deleteAt = deleteAtFor(now);
-  const images = validated.images.map(
-    (image): CarouselImageReference => ({
-      byteLength: image.bytes.byteLength,
-      deleteAt,
-      height: image.height,
-      key: carouselImageObjectKey(
-        input.importId,
-        parent.generation,
-        image.orderIndex
-      ),
-      mimeType: image.mimeType,
-      orderIndex: image.orderIndex,
-      sha256: image.sha256,
-      sourceAttribution: {
-        canonicalId: descriptor.canonicalId,
-        provenance: validated.source.provenance.canonicalUrl,
-      },
-      width: image.width,
-    })
-  );
+  const images = validated.images.map((image): CarouselImageReference => ({
+    byteLength: image.bytes.byteLength,
+    deleteAt,
+    height: image.height,
+    key: carouselImageObjectKey(
+      input.importId,
+      parent.generation,
+      image.orderIndex
+    ),
+    mimeType: image.mimeType,
+    orderIndex: image.orderIndex,
+    sha256: image.sha256,
+    sourceAttribution: {
+      canonicalId: descriptor.canonicalId,
+      provenance: validated.source.provenance.canonicalUrl,
+    },
+    width: image.width,
+  }));
   const [firstImage, ...remainingImages] = images;
   if (firstImage === undefined) {
     return yield* Effect.fail(

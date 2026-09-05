@@ -22,7 +22,6 @@ import {
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
-import type { ModuleDefinition } from "miniflare";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -57,11 +56,11 @@ const secret = "local-boundary-test-secret-at-least-32-characters";
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare | undefined;
 let persistenceDirectory = "";
-let websiteModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
-let apiModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
-let domainModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
-let providerRecoveryModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
-let batchQueueModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
+let websiteManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
+let apiManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
+let domainManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
+let providerRecoveryManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
+let batchQueueManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 
 const getRuntime = (): Miniflare => {
   if (runtime === undefined) {
@@ -133,70 +132,109 @@ const applyD1Migrations = async (
 
 const makeRuntime = () =>
   new Miniflare({
-    compatibilityDate,
-    compatibilityFlags,
-    d1Persist: persistenceDirectory,
-    durableObjectsPersist: persistenceDirectory,
-    kvPersist: persistenceDirectory,
-    r2Persist: persistenceDirectory,
+    cf: false,
+    resourcePersistencePath: persistenceDirectory,
     workers: [
       {
-        compatibilityDate,
-        compatibilityFlags,
-        modules: [...websiteModules],
-        name: "website",
-        serviceBindings: { MEAL_PLANNER_API: "api" },
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: { MEAL_PLANNER_API: { type: "worker", worker: "api" } },
+          manifest: websiteManifest,
+          name: "website",
+          type: "worker",
+        },
       },
       {
-        bindings: { BETTER_AUTH_SECRET: secret },
-        compatibilityDate,
-        compatibilityFlags,
-        d1Databases: {
-          MealPlannerAuthDatabase: "household-auth-test",
-          ProviderAccountingDatabase: "provider-accounting-test",
-        },
-        kvNamespaces: ["HOUSEHOLD_TEST_OBSERVATIONS"],
-        modules: [...apiModules],
-        name: "api",
-        serviceBindings: { HouseholdDomainWorker: "household-domain" },
-        workflows: {
-          MemberDepartureTestWorkflow: {
-            className: "MemberDepartureTestWorkflow",
-            name: "member-departure-test-workflow",
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: {
+            BETTER_AUTH_SECRET: { type: "text", value: secret },
+            HOUSEHOLD_TEST_OBSERVATIONS: {
+              id: "HOUSEHOLD_TEST_OBSERVATIONS",
+              type: "kv",
+            },
+            HouseholdDomainWorker: {
+              type: "worker",
+              worker: "household-domain",
+            },
+            MealPlannerAuthDatabase: { id: "household-auth-test", type: "d1" },
+            MemberDepartureTestWorkflow: {
+              exportName: "MemberDepartureTestWorkflow",
+              name: "member-departure-test-workflow",
+              type: "workflow",
+              worker: "api",
+            },
+            ProviderAccountingDatabase: {
+              id: "provider-accounting-test",
+              type: "d1",
+            },
           },
+          manifest: apiManifest,
+          name: "api",
+          type: "worker",
         },
       },
       {
-        compatibilityDate,
-        compatibilityFlags,
-        kvNamespaces: ["BATCH_QUEUE_RESULTS"],
-        modules: [...batchQueueModules],
-        name: "batch-consumer",
-        queueConsumers: ["household-import-batches"],
-      },
-      {
-        compatibilityDate,
-        compatibilityFlags,
-        durableObjects: {
-          HouseholdObject: { className: "HouseholdObject", useSQLite: true },
-        },
-        modules: [...domainModules],
-        name: "household-domain",
-        queueProducers: {
-          HouseholdImportBatchQueue: { queueName: "household-import-batches" },
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: {
+            BATCH_QUEUE_RESULTS: { id: "BATCH_QUEUE_RESULTS", type: "kv" },
+          },
+          manifest: batchQueueManifest,
+          name: "batch-consumer",
+          triggers: [{ name: "household-import-batches", type: "queue" }],
+          type: "worker",
         },
       },
       {
-        compatibilityDate,
-        compatibilityFlags,
-        d1Databases: {
-          ProviderAccountingDatabase: "provider-accounting-test",
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: {
+            HouseholdImportBatchQueue: {
+              name: "household-import-batches",
+              type: "queue",
+            },
+            HouseholdObject: {
+              exportName: "HouseholdObject",
+              type: "durable-object",
+              worker: "household-domain",
+            },
+          },
+          exports: {
+            HouseholdObject: { storage: "sqlite", type: "durable-object" },
+          },
+          manifest: domainManifest,
+          name: "household-domain",
+          type: "worker",
         },
-        kvNamespaces: ["PROVIDER_RECOVERY_RESULTS"],
-        modules: [...providerRecoveryModules],
-        name: "provider-recovery",
-        r2Buckets: ["ImportEvidenceBucket"],
-        serviceBindings: { HouseholdDomainWorker: "household-domain" },
+      },
+      {
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: {
+            HouseholdDomainWorker: {
+              type: "worker",
+              worker: "household-domain",
+            },
+            ImportEvidenceBucket: { name: "ImportEvidenceBucket", type: "r2" },
+            PROVIDER_RECOVERY_RESULTS: {
+              id: "PROVIDER_RECOVERY_RESULTS",
+              type: "kv",
+            },
+            ProviderAccountingDatabase: {
+              id: "provider-accounting-test",
+              type: "d1",
+            },
+          },
+          manifest: providerRecoveryManifest,
+          name: "provider-recovery",
+          type: "worker",
+        },
       },
     ],
   });
@@ -213,11 +251,11 @@ beforeAll(async () => {
   temporaryDirectories.push(temporaryDirectory);
   persistenceDirectory = `${temporaryDirectory}/runtime-storage`;
   [
-    websiteModules,
-    apiModules,
-    domainModules,
-    providerRecoveryModules,
-    batchQueueModules,
+    websiteManifest,
+    apiManifest,
+    domainManifest,
+    providerRecoveryManifest,
+    batchQueueManifest,
   ] = await Promise.all([
     bundleWorkerFixture(
       fileURLToPath(

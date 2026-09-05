@@ -1,7 +1,6 @@
 import { constants } from "node:fs";
 import { open, rm } from "node:fs/promises";
-// eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
-import { join } from "node:path";
+import path from "node:path";
 
 import { Clock, Effect, Schema } from "effect";
 
@@ -352,7 +351,7 @@ export const makeTikTokSourceResolver = (
 ): SourceResolver => ({
   resolve: Effect.fn("ImportMedia.resolveTikTokSource")(
     (identity, workspaceRoot) => {
-      const sessionPath = join(workspaceRoot, "yt-dlp-session.cookies");
+      const sessionPath = path.join(workspaceRoot, "yt-dlp-session.cookies");
       const createSessionFile = Effect.tryPromise({
         catch: retryableSession,
         try: async () => {

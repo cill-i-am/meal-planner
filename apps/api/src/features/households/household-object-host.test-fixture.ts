@@ -475,7 +475,6 @@ const BrokenMigrationObjectBridge = Cloudflare.makeDurableObjectBridge(
   }
 )("BrokenMigrationObject");
 
-// eslint-disable-next-line max-classes-per-file -- The installed fixture exports both production and deliberately broken migration classes.
 export class BrokenMigrationObject extends BrokenMigrationObjectBridge {}
 
 interface HouseholdObjectClient {

@@ -23,7 +23,12 @@ export const HouseholdDomainStatus = ({
     return (
       <span role="alert">
         Household storage unavailable.
-        <Button onClick={() => void household.refetch()} type="button">
+        <Button
+          onClick={() => {
+            void household.refetch();
+          }}
+          type="button"
+        >
           Retry
         </Button>
       </span>

@@ -328,12 +328,10 @@ export const runAcquisitionTask = <
           : Effect.void;
       return begin.pipe(
         Effect.andThen(allocate()),
-        Effect.mapError(
-          (): UnconfirmedAcquisitionRetry => ({
-            _tag: "UnconfirmedAcquisitionRetry",
-            stage: "reconcile",
-          })
-        ),
+        Effect.mapError((): UnconfirmedAcquisitionRetry => ({
+          _tag: "UnconfirmedAcquisitionRetry",
+          stage: "reconcile",
+        })),
         Effect.tap((allocation) =>
           Effect.sync(() => {
             confirmedGeneration = allocation.generation;
@@ -610,12 +608,10 @@ export const runHouseholdAcquisitionTask = (input: {
       retryOptions
     );
   }).pipe(
-    Effect.mapError(
-      (): UnconfirmedAcquisitionRetry => ({
-        _tag: "UnconfirmedAcquisitionRetry",
-        stage: "reconcile",
-      })
-    )
+    Effect.mapError((): UnconfirmedAcquisitionRetry => ({
+      _tag: "UnconfirmedAcquisitionRetry",
+      stage: "reconcile",
+    }))
   );
 
 const makeHouseholdIntentTransitions = (input: {

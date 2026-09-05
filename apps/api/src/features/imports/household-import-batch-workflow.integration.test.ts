@@ -63,7 +63,7 @@ describe("household batch native production Workflow composition", () => {
     persistenceDirectory = await mkdtemp(
       `${tmpdir()}/meal-planner-household-batch-workflow-`
     );
-    const [hostModules, domainModules] = await Promise.all([
+    const [hostManifest, domainManifest] = await Promise.all([
       bundleWorkerFixture(
         fileURLToPath(
           new URL(
@@ -84,42 +84,58 @@ describe("household batch native production Workflow composition", () => {
       ),
     ]);
     runtime = new Miniflare({
-      compatibilityDate,
-      compatibilityFlags,
-      d1Persist: persistenceDirectory,
-      durableObjectsPersist: persistenceDirectory,
-      kvPersist: persistenceDirectory,
+      cf: false,
+      resourcePersistencePath: persistenceDirectory,
       workers: [
         {
-          compatibilityDate,
-          compatibilityFlags,
-          kvNamespaces: ["BATCH_WORKFLOW_STATE"],
-          modules: [...hostModules],
-          name: "workflow-host",
-          serviceBindings: { HouseholdDomainWorker: "household-domain" },
-          workflows: {
-            HouseholdBatchTestWorkflow: {
-              className: "HouseholdBatchTestWorkflow",
-              name: "household-batch-test-workflow",
+          config: {
+            compatibilityDate,
+            compatibilityFlags,
+            env: {
+              BATCH_WORKFLOW_STATE: { id: "BATCH_WORKFLOW_STATE", type: "kv" },
+              HouseholdBatchTestWorkflow: {
+                exportName: "HouseholdBatchTestWorkflow",
+                name: "household-batch-test-workflow",
+                type: "workflow",
+                worker: "workflow-host",
+              },
+              HouseholdDomainWorker: {
+                type: "worker",
+                worker: "household-domain",
+              },
+              ImportAcquisitionTestWorkflow: {
+                exportName: "ImportAcquisitionTestWorkflow",
+                name: "import-acquisition-test-workflow",
+                type: "workflow",
+                worker: "workflow-host",
+              },
             },
-            ImportAcquisitionTestWorkflow: {
-              className: "ImportAcquisitionTestWorkflow",
-              name: "import-acquisition-test-workflow",
-            },
+            manifest: hostManifest,
+            name: "workflow-host",
+            type: "worker",
           },
         },
         {
-          compatibilityDate,
-          compatibilityFlags,
-          durableObjects: {
-            HouseholdObject: { className: "HouseholdObject", useSQLite: true },
-          },
-          modules: [...domainModules],
-          name: "household-domain",
-          queueProducers: {
-            HouseholdImportBatchQueue: {
-              queueName: "household-import-batches",
+          config: {
+            compatibilityDate,
+            compatibilityFlags,
+            env: {
+              HouseholdImportBatchQueue: {
+                name: "household-import-batches",
+                type: "queue",
+              },
+              HouseholdObject: {
+                exportName: "HouseholdObject",
+                type: "durable-object",
+                worker: "household-domain",
+              },
             },
+            exports: {
+              HouseholdObject: { storage: "sqlite", type: "durable-object" },
+            },
+            manifest: domainManifest,
+            name: "household-domain",
+            type: "worker",
           },
         },
       ],

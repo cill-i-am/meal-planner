@@ -779,7 +779,12 @@ export const RecipeImportPage = ({
         <div className="session-control">
           {householdDomainStatus}
           <span className="active-household">{householdName}</span>
-          <Button onClick={() => void onSignOut()} type="button">
+          <Button
+            onClick={() => {
+              void onSignOut();
+            }}
+            type="button"
+          >
             Log out
           </Button>
         </div>

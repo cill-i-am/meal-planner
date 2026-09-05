@@ -21,21 +21,22 @@
   },
   "devDependencies": {
     "@effect/platform-node": "4.0.0-rc.112",
-    "@oxlint/plugins": "1.73.0",
-    "@types/node": "24.13.2",
+    "@oxlint/plugins": "1.81.0",
+    "@types/node": "24.13.3",
     "alchemy": "2.0.0-beta.76",
     "effect": "4.0.0-rc.112",
-    "mysql2": "3.24.2",
-    "oxfmt": "0.58.0",
-    "oxlint": "1.73.0",
-    "tsx": "4.22.4",
-    "typescript": "5.9.3",
-    "ultracite": "7.9.3",
-    "vitest": "4.1.9"
+    "mysql2": "3.24.3",
+    "oxfmt": "0.66.0",
+    "oxlint": "1.81.0",
+    "tsx": "4.23.13",
+    "typescript": "6.0.3",
+    "ultracite": "7.10.8",
+    "vitest": "4.1.11",
+    "zod": "4.5.4"
   },
   "engines": {
-    "node": ">=22.18.0",
-    "pnpm": ">=11.7.0"
+    "node": ">=24.20.0",
+    "pnpm": ">=12.3.4"
   },
-  "packageManager": "pnpm@11.7.0"
+  "packageManager": "pnpm@12.3.4"
 }
