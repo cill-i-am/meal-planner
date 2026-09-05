@@ -174,6 +174,8 @@ export type AcquisitionMediaSource = Pick<
 >;
 
 const NullableString = Schema.NullOr(Schema.String);
+// Retained tool versions describe the producer of an immutable artifact.
+const ToolVersion = Schema.String.pipe(Schema.check(Schema.isNonEmpty()));
 const AcquisitionManifest = Schema.Struct({
   acquiredAt: ImportTimestamp,
   audioStreams: Schema.NonEmptyArray(MediaStreamSummary),
@@ -188,7 +190,7 @@ const AcquisitionManifest = Schema.Struct({
   }),
   deleteAt: ImportTimestamp,
   durationSeconds: MediaDurationSecondsSchema,
-  ffmpegVersion: Schema.Literal("9.0.1"),
+  ffmpegVersion: ToolVersion,
   generation: AcquisitionGenerationSchema,
   importId: ImportId,
   manifestKey: ManifestObjectKeySchema,
@@ -210,7 +212,7 @@ const AcquisitionManifest = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   sha256: Sha256HexSchema,
   videoStreams: Schema.NonEmptyArray(MediaStreamSummary),
-  ytDlpVersion: Schema.Literal("2026.08.19"),
+  ytDlpVersion: ToolVersion,
 });
 
 export const VerifiedPreparedMediaArtifact = Schema.Struct({
