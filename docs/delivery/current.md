@@ -3,16 +3,18 @@
 - Last updated: 2026-09-05
 - Delivery source of truth: this repository
 
-## Active Stage
+## Latest Completed Stage
 
 ### Stage 1 — Household people, profiles, and permissions
 
 - Stage record:
   [`stages/01-household-people/README.md`](stages/01-household-people/README.md)
-- Status: Active
-- Immediate delivery target:
+- Status: Done (2026-09-05)
+- Completed by:
   [`05-cumulative-exit-proof.md`](stages/01-household-people/05-cumulative-exit-proof.md)
-  (In progress: prove profile history across invitation, departure, and return)
+  ([PR #205](https://github.com/cill-i-am/meal-planner/pull/205), merge
+  `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2`)
+- Active implementation: None. Work is paused for discussion at the user's request.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -105,8 +107,8 @@ Actual `agents@0.22.0` sub-agents run on the pinned local Miniflare/workerd
 runtime, retain metadata across restart, and admit synthetic participant-only
 access without a Household grant. The recommendation is to defer interview
 implementation intact to Stage 2. Production auth/link composition, the Alchemy
-bundle, and passive/in-flight revocation remain named integration gates. Stage 1
-is still active pending its cumulative exit verification, review, and merge.
+bundle, and passive/in-flight revocation remain named Stage 2 integration gates.
+Stage 1's cumulative exit evidence is accepted through merged PR #205.
 Organization deletion and conversation implementation remain out of scope.
 
 [PR #204](https://github.com/cill-i-am/meal-planner/pull/204) merged the accepted
@@ -115,8 +117,16 @@ Work Item 04 boundary disposition on 2026-09-05 as
 `2d607a77a509fec64047678add31fdab02053eea` and green hosted
 [run 33974785385](https://github.com/cill-i-am/meal-planner/actions/runs/33974785385).
 Work Item 04 is Done as boundary evidence, not conversation implementation.
-No Stage 1 grant was implemented. The bounded Stage 2 handoff remains Proposed
-until the cumulative Stage 1 exit proof is accepted.
+No Stage 1 grant was implemented. The bounded Stage 2 handoff remains Proposed;
+Stage 1 completion does not authorize starting it.
+
+PR #205 merged on 2026-09-05 as `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2`
+after independent review of `1b625121e835bc531fe7f5b6cd17bd04949c361e`
+found no issues. All 1,068 local tests and both hosted checks in
+[run 33975759741](https://github.com/cill-i-am/meal-planner/actions/runs/33975759741)
+passed. The cumulative proof preserves profile, version, audit, and person
+identity through invitation/linking and departure/return, including renewed
+self-confirmation and departed-account denial. No production change was needed.
 
 ## Completed Foundation
 
@@ -142,10 +152,10 @@ until the cumulative Stage 1 exit proof is accepted.
 
 ## Immediate Next Steps
 
-1. Complete Work Item 05's focused cumulative runtime proof and exact-head review.
-2. After its verification, review, and merge, reconcile Stage 1 exit evidence and promote only the bounded
-   provider-free Stage 2 admission/lifecycle integration assignment. Do not
-   assign the whole conversation or AI roadmap.
+No implementation is active. Discuss the proposed provider-free Stage 2
+admission/lifecycle integration slice before promoting or assigning it.
+Do not start Stage 2, conversation/model work, or the wider AI roadmap without
+the user's further direction.
 
 ## Deliberate Non-Work
 

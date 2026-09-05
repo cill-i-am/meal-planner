@@ -142,7 +142,8 @@ first slice.
       safety, and closed privacy-safe provenance without transcript injection.
 - [x] This docs-only PR passes formatting/link/diff checks and hosted CI; its
       exact-head review records the boundary disposition.
-- [ ] The orchestrator reconciles cumulative Stage 1 exit evidence separately.
+- [x] The orchestrator accepted the cumulative Stage 1 exit evidence in
+      [Work Item 05](05-cumulative-exit-proof.md), completed by merged PR #205.
 
 Unchecked integration items belong to the proposed Stage 2 slices. They are not
 permission to mark a grant implementation Ready, nor evidence that a Household

@@ -1,10 +1,10 @@
 # Work Item 05 — Prove Stable People And Profiles Across Membership Changes
 
-- Status: Active
+- Status: Done
 - Stage: [Stage 1 — Household People](README.md)
 - Owner: `codex/stage1-exit-proof`
-- Pull request: [#205](https://github.com/cill-i-am/meal-planner/pull/205) (draft)
-- Completed by: Not completed
+- Pull request: [#205](https://github.com/cill-i-am/meal-planner/pull/205) (merged)
+- Completed by: merge `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2` on 2026-09-05
 
 ## Household Outcome
 
@@ -38,7 +38,8 @@ and native departure Workflow composition. Record fresh cumulative evidence.
 No new product functionality, command, endpoint, UI, schema, dependency,
 infrastructure, authority, compatibility path, or migration. No interview,
 transcript, Agents SDK, model, routine, planning, or Stage 2 implementation.
-This record does not mark Stage 1 complete or authorize Stage 2.
+Its accepted evidence completes the Stage 1 cumulative proof. It does not
+authorize Stage 2.
 
 ## Product Semantics And Authority
 
@@ -80,14 +81,14 @@ mock session.
 
 ## Acceptance Evidence
 
-- [x] Both extended real-runtime tracers pass locally; exact-head review remains pending.
+- [x] Both extended real-runtime tracers pass locally; exact-head review accepted.
 - [x] Existing household boundary suite passes, including outsider profile read,
       history, audit, and mutation denial.
 - [x] Existing browser-operation and panel tests pass for roster/link/departure
       and profile edits, safety confirmation, unresolved commands, and reauth.
 - [x] Root check, lint, formatting, tests, build, and diff check pass locally.
-- [ ] Hosted CI passes on the frozen head.
-- [ ] Independent exact-head review is accepted by the orchestrator.
+- [x] Hosted CI passes on the frozen head.
+- [x] Independent exact-head review is accepted by the orchestrator.
 
 Browser tests prove the shipped interaction contracts; the real runtime suite
 proves authenticated authority and persistence. No new full-browser authenticated
@@ -127,3 +128,12 @@ to justify a speculative refactor.
   local synthetic-container build was run. Hosted CI retains that required gate.
   PR #205 owns the frozen-head CI and independent-review evidence; neither is
   replaced by these local results.
+- 2026-09-05: Independent review of exact head
+  `1b625121e835bc531fe7f5b6cd17bd04949c361e` found no issues in test integrity,
+  authenticated runtime composition, evidence fidelity, or simplicity. Both
+  Quality and Synthetic media container checks passed in
+  [run 33975759741](https://github.com/cill-i-am/meal-planner/actions/runs/33975759741).
+  PR #205 merged with user approval as
+  `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2`. The orchestrator accepts the
+  cumulative evidence and records Stage 1 Done. Work is paused for discussion;
+  no Stage 2 promotion or implementation is authorized.
