@@ -10,9 +10,9 @@
 - Stage record:
   [`stages/01-household-people/README.md`](stages/01-household-people/README.md)
 - Status: Active
-- Latest completed delivery:
-  [`03-profile-authority-versioning-and-audit.md`](stages/01-household-people/03-profile-authority-versioning-and-audit.md)
-  (PR #202, merged as `b509ba53ce1ac1326e86a9e826bdf58cbb0e7856`)
+- Immediate delivery target:
+  [`04-private-interview-session-boundary.md`](stages/01-household-people/04-private-interview-session-boundary.md)
+  (boundary evidence in review; no Stage 1 grant implementation proposed)
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -72,25 +72,42 @@ and container evidence passed for the corrected implementation. PR #201 merged
 on 2026-09-04 as `9a59f85170f379e065920eadaaf69593d90c2c40`, following final
 review of `34a376cb9a35fd6f177a0bf8b40e5c1dee938bd9` and green hosted
 [run 33910287961](https://github.com/cill-i-am/meal-planner/actions/runs/33910287961).
-Work Items 02 and 03 are `Done`. [PR #202](https://github.com/cill-i-am/meal-planner/pull/202)
-merged on 2026-09-05 as `b509ba53ce1ac1326e86a9e826bdf58cbb0e7856`.
-Its profile implementation owns immutable versions and audit in household SQLite,
-with exact mutation replay, safety confirmation, adult-edit races, isolation,
-and retained ambiguous commands. Authentication expiry preserves the original
-command through sign-in and explicit retry; delayed callbacks cannot clear a
-newer unresolved command.
+Work Items 02 and 03 are `Done`.
+[PR #202](https://github.com/cill-i-am/meal-planner/pull/202) merged on 2026-09-05
+as `b509ba53ce1ac1326e86a9e826bdf58cbb0e7856` from final head
+`44ffffc889a8b1893229906fe64c82fcf76c1bf3` after user approval and green hosted
+[run 33951078370](https://github.com/cill-i-am/meal-planner/actions/runs/33951078370).
+Focused proof covers profile persistence, immutable history and audit, exact
+replay, safety confirmation, adult-edit races, archival/restoration, restart,
+cross-household denial, dependant confirmation, and retained ambiguous UI
+commands. Local repository tests, static checks, builds, and twice/no-diff
+Household and D1 generation passed for the merged profile implementation.
 
-[PR #203](https://github.com/cill-i-am/meal-planner/pull/203) carries the seven-pass
-cleanup and is effective on merge after its final exact-head CI gate. It includes
-#202 unchanged at the profile feature and migration boundaries. The combined
-branch passed all 1,068 repository tests and static/build checks; the independent
-implementation review found no unresolved issues. Native upgrade tests preserve
-completed provider settlements, including expired replay, under the explicitly
-approved [ADR-0011](../architecture/decisions/0011-canonicalize-completed-conservative-settlements.md).
+The final UI correction additionally proves that delayed callbacks from an older
+command cannot clear a newer unresolved command, and that authentication expiry
+preserves the exact command through sign-in and explicit retry. Its affected web
+suite passes 95 tests; root static checks and the web production build pass.
+These corrections are included in the merged PR #202 head.
+
+[PR #203](https://github.com/cill-i-am/meal-planner/pull/203) merged the seven-pass
+cleanup on 2026-09-05 as `2fb37db0baa0c50f31afe658da9303c7a13bcd4c`.
+It includes #202 unchanged at the profile feature and migration boundaries.
+The combined branch passed all 1,068 repository tests and static/build checks;
+the independent implementation review found no unresolved issues. Native
+upgrade tests preserve completed provider settlements, including expired replay,
+under the explicitly approved
+[ADR-0011](../architecture/decisions/0011-canonicalize-completed-conservative-settlements.md).
 [The cleanup delivery record](anti-slop-cleanup.md) owns its detailed evidence.
 
-Organization-deletion behavior remains out of scope. Work Item 04 remains
-`Proposed`.
+Work Item 04 now has a
+[provider-free SDK boundary record](stages/01-household-people/04-agents-boundary-evidence.md).
+Actual `agents@0.22.0` sub-agents run on the pinned local Miniflare/workerd
+runtime, retain metadata across restart, and admit synthetic participant-only
+access without a Household grant. The recommendation is to defer interview
+implementation intact to Stage 2. Production auth/link composition, the Alchemy
+bundle, and passive/in-flight revocation remain named integration gates. Stage 1
+is still active pending this disposition and its cumulative exit evidence.
+Organization deletion and conversation implementation remain out of scope.
 
 ## Completed Foundation
 
@@ -116,14 +133,15 @@ Organization-deletion behavior remains out of scope. Work Item 04 remains
 
 ## Immediate Next Steps
 
-1. Complete the authorized PR #203 merge only after its exact-head hosted checks
-   pass. No new product work or cloud deployment is authorized by this cleanup.
-2. Work Item 04 remains Proposed; select and promote it separately before starting.
+1. Review the docs-only Work Item 04 evidence and no-Household-grant recommendation.
+2. Reconcile cumulative Stage 1 exit evidence, then promote only the bounded
+   provider-free Stage 2 admission/lifecycle integration assignment. Do not
+   assign the whole conversation or AI roadmap.
 
 ## Deliberate Non-Work
 
-Do not start Work Item 04, retailer integration, full pantry inventory,
+Do not start interview/chat runtime, model/provider work, retailer integration, full pantry inventory,
 calories/macros, medical goal systems, MCP delivery, embedded channels, or
-generic organization support without separate work-item selection and authorization.
+generic organization support as part of this boundary investigation.
 Do not implement organization deletion; keep it disabled until its accepted
 household cleanup and tombstone lifecycle is separately authorized and ready.

@@ -4,8 +4,7 @@
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
 - Owner: `codex/stage1-profile-authority-versioning-audit`
 - Pull request: [#202](https://github.com/cill-i-am/meal-planner/pull/202) (merged)
-- Completed by: PR #202, merged 2026-09-05 as
-  `b509ba53ce1ac1326e86a9e826bdf58cbb0e7856`
+- Completed by: merge `b509ba53ce1ac1326e86a9e826bdf58cbb0e7856` on 2026-09-05
 - Promotion condition: satisfied by Work Items 01 and 02, including merged
   PR #201 at `9a59f85170f379e065920eadaaf69593d90c2c40`.
 
@@ -27,9 +26,12 @@ and resubmission after a definitive stale-version result. Closed contract
 property tests reject injected identity and transcript fields. A routed
 dependant-confirmation case preserves fact identity and before/after audit
 without a dependant account. Local repository tests, static checks, builds,
-and twice/no-diff Household and D1 generation pass. Hosted CI and independent
-exact-head review remain pending. This checkpoint is not completion or merge
-evidence.
+and twice/no-diff Household and D1 generation pass. The final head
+`44ffffc889a8b1893229906fe64c82fcf76c1bf3` also fixes delayed callback ownership
+and explicit sign-in recovery while retaining the exact unresolved command.
+Both hosted jobs in [run 33951078370](https://github.com/cill-i-am/meal-planner/actions/runs/33951078370)
+passed. PR #202 merged with user authorization on 2026-09-05 as
+`b509ba53ce1ac1326e86a9e826bdf58cbb0e7856`.
 
 ## Household Outcome
 
@@ -115,19 +117,19 @@ requires a product decision rather than a silent schema extension.
 
 ### Commands
 
-- `AddProvisionalProfileFact(mutationId, personId, expectedProfileVersion,
-  fact)` records information about another person without claiming self
+- `AddProvisionalProfileFact(mutationId, personId, expectedProfileVersion, fact)`
+  records information about another person without claiming self
   confirmation.
-- `ConfirmProfileFact(mutationId, personId, factId,
-  expectedProfileVersion)` confirms an existing fact under the allowed
+- `ConfirmProfileFact(mutationId, personId, factId, expectedProfileVersion)`
+  confirms an existing fact under the allowed
   self/dependant policy.
 - `AddConfirmedProfileFact(...)` permits an adult to add their own confirmed
   fact or an adult-confirmed dependant fact.
-- `ReplaceOrdinaryProfileFact(mutationId, personId, factId,
-  expectedProfileVersion, replacement)` versions an ordinary preference.
+- `ReplaceOrdinaryProfileFact(mutationId, personId, factId, expectedProfileVersion, replacement)`
+  versions an ordinary preference.
 - `RemoveOrdinaryProfileFact(...)` versions removal of a non-safety fact.
-- `ConfirmHardConstraintReduction(mutationId, personId, factId,
-  expectedProfileVersion, replacementOrRemoval, confirmation)` is the only path
+- `ConfirmHardConstraintReduction(mutationId, personId, factId, expectedProfileVersion, replacementOrRemoval, confirmation)`
+  is the only path
   that can remove or weaken a hard constraint or replace
   `NoKnownHardConstraints` in a safety-significant way.
 
@@ -261,34 +263,34 @@ in Work Item 04, and always excludes transcript/message text.
 ### Focused tests
 
 - [ ] Closed-schema property tests cover every fact variant, standing, source,
-  confirmation basis, bounded label, and excess-property rejection.
+      confirmation basis, bounded label, and excess-property rejection.
 - [ ] Provisional, self-confirmed, dependant-confirmed, replace, ordinary
-  remove, and hard-constraint reduction transitions satisfy the invariants.
+      remove, and hard-constraint reduction transitions satisfy the invariants.
 - [ ] Immutable version reconstruction and privacy-safe before/after audit are
-  proven.
+      proven.
 - [ ] Replay, collision, stale version, edit/confirm/remove races, archive race,
-  and safety-path bypass attempts are deterministic.
+      and safety-path bypass attempts are deterministic.
 - [ ] API/generated client and UI tests prove the minimum surface and visible
-  error distinctions.
+      error distinctions.
 
 ### Real runtime and persistence proof
 
 - [ ] A real authenticated Workerd or Miniflare tracer crosses public API,
-  private Worker, `HouseholdObject`, and migrated SQLite for both adults.
+      private Worker, `HouseholdObject`, and migrated SQLite for both adults.
 - [ ] Restart proves byte-stable current profile, immutable versions, audit,
-  receipts, and source/actor provenance.
+      receipts, and source/actor provenance.
 - [ ] Wrong-purpose, non-member, false self-confirmation, and cross-household
-  requests fail before disclosure or mutation.
+      requests fail before disclosure or mutation.
 - [ ] Physical migration proof shows no shared-D1 profile authority or fallback.
 
 ### Repository and review gates
 
 - [ ] Root format, lint, type checks, full tests, builds, applicable container,
-  and hosted CI pass.
+      and hosted CI pass.
 - [ ] Public contracts, privacy docs, household-domain architecture, stage, and
-  current delivery records are updated.
+      current delivery records are updated.
 - [ ] A fresh independent exact-head review disposes safety, privacy, versioning,
-  authorization, concurrency, and test-integrity findings.
+      authorization, concurrency, and test-integrity findings.
 
 ## Review Risk
 
