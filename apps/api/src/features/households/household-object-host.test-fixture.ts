@@ -13,6 +13,10 @@ import {
   HouseholdPersonMutationId,
   HouseholdPersonVersion,
   MealPlanRecipeSnapshot,
+  MealPlan,
+  MealPlanDraftId,
+  MealPlanPolicy,
+  MealPlanRequest,
   PrepareMemberDeparturePayload,
   RepairAdultAccountLinkPayload,
   RestoreReturningAdultLinkPayload,
@@ -27,17 +31,14 @@ import { Context, Effect, Option, Schema } from "effect";
 
 import migrations from "../../../household-migrations/migrations.js";
 import { ApprovedRecipe } from "../imports/import-recipe-review.js";
-import {
-  MealPlan,
-  MealPlanDraftId,
-  MealPlanPolicy,
-  MealPlanRequest,
-} from "../meal-planning/meal-plan.js";
 import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
 import { HouseholdImportBatchQueueWriter } from "./batches/household-import-batch-queue.port.js";
 import { HouseholdDispatchId } from "./foundation/import-workflow-admission.contract.js";
 import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
-import type { HouseholdCreateMealPlanFromRecipeBankInput } from "./household-meal-plan.contract.js";
+import type {
+  HouseholdCreateMealPlanFromRecipeBankInput,
+  HouseholdSwapMealPlanFromRecipeBankInput,
+} from "./household-meal-plan.contract.js";
 import {
   HouseholdManualMealSwapCommand,
   HouseholdMealPlanDecisionCommand,
@@ -283,6 +284,59 @@ const HouseholdObjectTestRuntime = Effect.gen(
             };
           })
         ),
+      seedPlanningRecipes: (
+        recipes: readonly (typeof ApprovedRecipeWire.Type)[]
+      ) =>
+        scoped(
+          Effect.gen(function* seedPlanningRecipes() {
+            const connection = yield* database;
+            for (const recipe of recipes) {
+              const planningRecipe = yield* Schema.decodeUnknownEffect(
+                MealPlanRecipeSnapshot
+              )(recipe);
+              const publicRecipe = Schema.decodeUnknownSync(Recipe)({
+                id: recipe.importId,
+                object: "recipe",
+                recipe: {
+                  author: null,
+                  category: null,
+                  cookTimeMinutes: null,
+                  cuisine: null,
+                  description: null,
+                  ingredientQuantities: null,
+                  ingredientUnits: null,
+                  nutrition: null,
+                  prepTimeMinutes: null,
+                  temperatureCelsius: null,
+                  tools: null,
+                  totalTimeMinutes: null,
+                  yield: null,
+                  ...recipe.recipe,
+                },
+                tags: recipe.tags,
+              });
+              const stored = {
+                importId: recipe.importId,
+                planningRecipeJson: Schema.encodeSync(
+                  Schema.fromJsonString(MealPlanRecipeSnapshot)
+                )(planningRecipe),
+                publicRecipeJson: Schema.encodeSync(
+                  Schema.fromJsonString(Recipe)
+                )(publicRecipe),
+                publishedAt: recipe.approvedAt,
+                recipeId: recipe.importId,
+                version: recipe.version,
+              };
+              yield* connection
+                .insert(householdRecipes)
+                .values(stored)
+                .onConflictDoUpdate({
+                  set: stored,
+                  target: householdRecipes.importId,
+                });
+            }
+          })
+        ),
       seedApprovedRecipes: (count: number) =>
         scoped(
           Effect.gen(function* seedApprovedRecipes() {
@@ -450,15 +504,9 @@ interface HouseholdObjectClient {
     typeof MealPlanWire.Type,
     HouseholdDomainFailure | MealPlanServiceError
   >;
-  readonly createMealPlan: (input: {
-    readonly admission: HouseholdMemberAdmission;
-    readonly approvedRecipes: readonly (typeof ApprovedRecipeWire.Type)[];
-    readonly policy: typeof MealPlanPolicyWire.Type;
-    readonly request: typeof MealPlanRequestWire.Type;
-  }) => Effect.Effect<
-    typeof MealPlanWire.Type,
-    HouseholdDomainFailure | MealPlanServiceError
-  >;
+  readonly seedPlanningRecipes: (
+    recipes: readonly (typeof ApprovedRecipeWire.Type)[]
+  ) => Effect.Effect<void, unknown>;
   readonly createMealPlanFromRecipeBank: (
     input: typeof HouseholdCreateMealPlanFromRecipeBankInput.Type
   ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
@@ -571,14 +619,9 @@ interface HouseholdObjectClient {
     input: typeof HouseholdRecipePageInput.Type
   ) => Effect.Effect<unknown, unknown>;
   readonly seedApprovedRecipes: (count: number) => Effect.Effect<void, unknown>;
-  readonly swapMealPlan: (input: {
-    readonly admission: HouseholdMemberAdmission;
-    readonly approvedRecipes: readonly (typeof ApprovedRecipeWire.Type)[];
-    readonly request: typeof ManualMealSwapRequestWire.Type;
-  }) => Effect.Effect<
-    typeof MealPlanWire.Type,
-    HouseholdDomainFailure | MealPlanServiceError
-  >;
+  readonly swapMealPlanFromRecipeBank: (
+    input: HouseholdSwapMealPlanFromRecipeBankInput
+  ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
 }
 
 const HouseholdTestCommand = Schema.Union([
@@ -880,7 +923,7 @@ const HouseholdTestCommand = Schema.Union([
   Schema.Struct({
     approvedRecipes: Schema.Array(ApprovedRecipeWire),
     objectName: Schema.String,
-    operation: Schema.Literal("createMealPlan"),
+    operation: Schema.Literal("seedAndCreateMealPlan"),
     organizationId: HouseholdOrganizationId,
     policy: MealPlanPolicyWire,
     request: MealPlanRequestWire,
@@ -960,7 +1003,7 @@ const HouseholdTestCommand = Schema.Union([
   Schema.Struct({
     approvedRecipes: Schema.Array(ApprovedRecipeWire),
     objectName: Schema.String,
-    operation: Schema.Literal("swapMealPlan"),
+    operation: Schema.Literal("seedAndSwapMealPlan"),
     organizationId: HouseholdOrganizationId,
     request: ManualMealSwapRequestWire,
   }),
@@ -1553,14 +1596,17 @@ const routeMealPlanTestCommand = (
       })
     );
   }
-  if (command.operation === "createMealPlan") {
+  if (command.operation === "seedAndCreateMealPlan") {
     return respond(
-      household.createMealPlan({
-        admission: memberAdmission(command.organizationId),
-        approvedRecipes: command.approvedRecipes,
-        policy: command.policy,
-        request: command.request,
-      })
+      household.seedPlanningRecipes(command.approvedRecipes).pipe(
+        Effect.andThen(
+          household.createMealPlanFromRecipeBank({
+            admission: memberAdmission(command.organizationId),
+            policy: command.policy,
+            request: command.request,
+          })
+        )
+      )
     );
   }
   if (command.operation === "createMealPlanFromRecipeBank") {
@@ -1591,13 +1637,16 @@ const routeMealPlanTestCommand = (
       })
     );
   }
-  if (command.operation === "swapMealPlan") {
+  if (command.operation === "seedAndSwapMealPlan") {
     return respond(
-      household.swapMealPlan({
-        admission: memberAdmission(command.organizationId),
-        approvedRecipes: command.approvedRecipes,
-        request: command.request,
-      })
+      household.seedPlanningRecipes(command.approvedRecipes).pipe(
+        Effect.andThen(
+          household.swapMealPlanFromRecipeBank({
+            admission: memberAdmission(command.organizationId),
+            request: command.request,
+          })
+        )
+      )
     );
   }
   return null;

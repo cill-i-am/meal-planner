@@ -38,13 +38,17 @@ export const ProviderTaskDiagnosticReasonCode = Schema.Literals([
 export type ProviderTaskDiagnosticReasonCode =
   typeof ProviderTaskDiagnosticReasonCode.Type;
 
+export const ProviderTaskFailureCheckpoint = Schema.Struct({
+  _tag: Schema.Literal("Failed"),
+  code: Schema.String,
+  reasonCode: Schema.optionalKey(ProviderTaskDiagnosticReasonCode),
+  stage: Schema.Literals(["recipe", "speech", "visual"]),
+});
+export type ProviderTaskFailureCheckpoint =
+  typeof ProviderTaskFailureCheckpoint.Type;
+
 export const ProviderTaskCheckpoint = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("Failed"),
-    code: Schema.String,
-    reasonCode: Schema.optionalKey(ProviderTaskDiagnosticReasonCode),
-    stage: Schema.Literals(["recipe", "speech", "visual"]),
-  }),
+  ProviderTaskFailureCheckpoint,
   Schema.Struct({
     _tag: Schema.Literal("Succeeded"),
     stage: Schema.Literals(["recipe", "speech", "visual"]),

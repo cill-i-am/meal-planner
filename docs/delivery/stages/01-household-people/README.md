@@ -1,9 +1,9 @@
 # Stage 1 — Household People, Profiles, And Permissions
 
 - Status: Active
-- Immediate work item:
+- Latest completed work item:
   [`03-profile-authority-versioning-and-audit.md`](03-profile-authority-versioning-and-audit.md)
-  (`In progress`)
+  (PR #202, merged 2026-09-05). Work Item 04 remains Proposed.
 - Started: 2026-08-27
 
 ## Household Outcome
@@ -27,8 +27,8 @@ The live repository establishes these boundaries:
   opaque object routing, object-side authorization, local transactions, and
   mutation receipts.
 - Public household contracts expose status, meal-plan, and the closed person
-  registry lifecycle operations. Profile, general account-link, and interview
-  session APIs remain absent.
+  registry lifecycle operations, account linking and versioned food profiles.
+  Interview session APIs remain absent.
 - The web application can create and select Better Auth organizations and now
   presents explicit creator bootstrap plus roster create/archive/restore. It
   never creates a person as an implicit read side effect.
@@ -69,8 +69,8 @@ evidence are the implemented base for Work Item 02.
 | Order | Work item | Status | Dependency |
 | --- | --- | --- | --- |
 | 01 | [Person registry and lifecycle](01-person-registry-and-lifecycle.md) | Done | Stage 0 and accepted people/auth separation |
-| 02 | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | In progress | Work Item 01 merged; ADR-0010 accepted |
-| 03 | [Profile authority, versioning, and audit](03-profile-authority-versioning-and-audit.md) | In progress | Work Items 01–02 merged; draft PR #202 |
+| 02 | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | Done | PR #201 merged; ADR-0010 implemented |
+| 03 | [Profile authority, versioning, and audit](03-profile-authority-versioning-and-audit.md) | Done | PR #202 merged |
 | 04 | [Private interview-session boundary](04-private-interview-session-boundary.md) | Proposed | Work Item 03 and the accepted exact-version Agents SDK spike |
 
 The four-part split remains a delivery hypothesis. Inspection of the live code
@@ -81,7 +81,7 @@ caused three refinements:
    invitation association and no active account link.
 2. Membership departure crosses Better Auth and household authority and cannot
    be made atomic. ADR-0010 now accepts the access-first durable coordination
-   protocol, so Work Item 02 is ready for one bounded implementation owner.
+   protocol, implemented by Work Item 02 in PR #201.
 3. Work Item 04 defines only the prerequisite boundary. Agent Durable Object
    conversation storage and runtime implementation remain Stage 2 unless the
    exact-version spike proves that a minimal prerequisite must land sooner.

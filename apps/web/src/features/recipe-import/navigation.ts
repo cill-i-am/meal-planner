@@ -10,13 +10,3 @@ export const decodeRecipeImportSearch = Schema.decodeUnknownSync(
   RecipeImportSearch,
   { onExcessProperty: "error" }
 );
-
-export const recipeImportIntentRedirectSearch = (
-  previous: RecipeImportSearch,
-  intentId: typeof RecipeImportIntentId.Type
-): RecipeImportSearch => ({ ...previous, intentId });
-
-export const recipeImportPageSessionKey = (
-  householdId: string,
-  intentId?: typeof RecipeImportIntentId.Type
-) => `${householdId}:${intentId ?? "new"}`;

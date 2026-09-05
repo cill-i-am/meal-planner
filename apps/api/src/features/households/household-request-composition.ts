@@ -65,9 +65,9 @@ import {
   HouseholdPeopleOrganizerRequired,
 } from "./household.gateway.js";
 import {
-  makeHouseholdHttpApiLayer,
-  makeHouseholdMealPlanHttpApiLayer,
-  makeHouseholdPeopleHttpApiLayer,
+  HouseholdHttpApiLayer,
+  HouseholdMealPlanHttpApiLayer,
+  HouseholdPeopleHttpApiLayer,
 } from "./household.http.js";
 import type {
   HouseholdAssociateAdultInvitationInput,
@@ -1002,7 +1002,7 @@ export const makeHouseholdRequestLayer = (options: {
     Layer.succeed(AuthenticatedOrganizationResolverService, options.resolver),
     Layer.succeed(HouseholdDomainGatewayService, options.gateway)
   );
-  return makeHouseholdHttpApiLayer().pipe(
+  return HouseholdHttpApiLayer.pipe(
     Layer.provide(RecipeImportHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)
@@ -1018,7 +1018,7 @@ export const makeHouseholdMealPlanRequestLayer = (options: {
     Layer.succeed(AuthenticatedOrganizationResolverService, options.resolver),
     Layer.succeed(HouseholdMealPlanGatewayService, options.gateway)
   );
-  return makeHouseholdMealPlanHttpApiLayer().pipe(
+  return HouseholdMealPlanHttpApiLayer.pipe(
     Layer.provide(RecipeImportHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)
@@ -1034,7 +1034,7 @@ export const makeHouseholdPeopleRequestLayer = (options: {
     Layer.succeed(AuthenticatedOrganizationResolverService, options.resolver),
     Layer.succeed(HouseholdPeopleGatewayService, options.gateway)
   );
-  return makeHouseholdPeopleHttpApiLayer().pipe(
+  return HouseholdPeopleHttpApiLayer.pipe(
     Layer.provide(RecipeImportHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)

@@ -1,4 +1,12 @@
-import { MealPlanRecipeSnapshot as SharedMealPlanRecipeSnapshot } from "@meal-planner/household-api";
+import {
+  MealPlanDecisionRequest,
+  MealPlanPolicy,
+  MealPlanRecipeSnapshotId,
+  MealPlanRecipeSnapshot,
+  MealPlanRequest,
+  ManualMealSwapRequest,
+} from "@meal-planner/household-api";
+import { PlanningTags } from "@meal-planner/recipe-domain";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -12,21 +20,14 @@ import {
 } from "./meal-plan.fake.js";
 import {
   addMealPlanCandidatePage,
-  makeDeterministicMealPlanPlanner,
+  makeMealPlanProposal,
   makeMealPlanCandidateFrontier,
-  MealPlanDecisionRequest,
-  MealPlanPolicy,
   MealPlanRecipeAuthorityToken,
-  MealPlanRecipeSnapshotId,
-  MealPlanTags,
-  MealPlanRecipeSnapshot,
-  MealPlanRequest,
-  ManualMealSwapRequest,
   selectMealPlanCandidates,
 } from "./meal-plan.js";
 
 const decodeCandidateId = Schema.decodeUnknownSync(MealPlanRecipeSnapshotId);
-const decodeCandidateTags = Schema.decodeUnknownSync(MealPlanTags);
+const decodeCandidateTags = Schema.decodeUnknownSync(PlanningTags);
 const decodeCandidatePolicy = Schema.decodeUnknownSync(MealPlanPolicy);
 const decodeCandidateRequest = Schema.decodeUnknownSync(MealPlanRequest);
 const decodeCandidateAuthorityToken = Schema.decodeUnknownSync(
@@ -126,7 +127,7 @@ const referenceCandidateSelection = (input: {
 };
 
 describe("bounded meal-plan candidate selection", () => {
-  it("preserves greedy selection across arbitrary pages larger than 128 candidates", async () => {
+  it("preserves greedy selection across arbitrary pages larger than 128 candidates", () => {
     const request = decodeCandidateRequest({
       requestKey: "candidate-frontier-large-catalogue",
       slots: [
@@ -257,12 +258,15 @@ describe("bounded meal-plan candidate selection", () => {
       "ordinary"
     );
 
-    const fullProposal = await Effect.runPromise(
-      makeDeterministicMealPlanPlanner().plan({
-        approvedRecipes: candidates.map(candidateSnapshot),
-        policy,
-        request,
-      })
+    const fullProposal = makeMealPlanProposal(
+      selection,
+      new Map(
+        candidates.map((candidate) => [
+          candidate.importId,
+          candidateSnapshot(candidate),
+        ])
+      ),
+      policy
     );
     expect(
       fullProposal.meals.map(({ sourceRecipe, slotId }) => ({
@@ -460,22 +464,6 @@ describe("bounded meal-plan candidate selection", () => {
 });
 
 describe("provider-free meal-plan tracer", () => {
-  it("uses the shared recipe snapshot contract at the review boundary", async () => {
-    expect(MealPlanRecipeSnapshot).toBe(SharedMealPlanRecipeSnapshot);
-
-    const { recipeRepository } = makeSyntheticMealPlanTracer();
-    const snapshots = await Effect.runPromise(recipeRepository.listApproved());
-
-    expect(snapshots).toHaveLength(3);
-    const isMealPlanRecipeSnapshot = Schema.is(MealPlanRecipeSnapshot);
-    expect(
-      snapshots.every((snapshot) => isMealPlanRecipeSnapshot(snapshot))
-    ).toBe(true);
-    expect(
-      snapshots.some(({ importId }) => importId === syntheticRejectedRecipeId)
-    ).toBe(false);
-  });
-
   it("creates an approved-only deterministic draft with explicit hard-constraint gaps", async () => {
     const tracer = makeSyntheticMealPlanTracer();
 

@@ -2,6 +2,7 @@ import { Effect, Redacted, Schema } from "effect";
 
 import { TescoSoftLoginResponseInvalid } from "./auth.errors.js";
 import { TescoAuthorizationValue } from "./auth.model.js";
+import type { TescoAuthorization } from "./auth.model.js";
 
 const TescoDiscoverAuthConfig = Schema.Struct({
   "mfe-orchestrator": Schema.Struct({
@@ -16,12 +17,9 @@ const TescoDiscoverAuthConfig = Schema.Struct({
 const DiscoverScriptPattern =
   /<script[^>]*type=["']application\/discover\+json["'][^>]*>(?<json>[\s\S]*?)<\/script>/u;
 
-export const discoverJsonFromHtml = (
+export const authorizationFromDiscoverHtml = (
   html: string
-): Effect.Effect<
-  typeof TescoDiscoverAuthConfig.Type,
-  TescoSoftLoginResponseInvalid
-> =>
+): Effect.Effect<TescoAuthorization, TescoSoftLoginResponseInvalid> =>
   Effect.gen(function* () {
     const match = DiscoverScriptPattern.exec(html);
     const jsonText = match?.groups?.["json"];
@@ -34,13 +32,9 @@ export const discoverJsonFromHtml = (
       try: () => JSON.parse(jsonText),
     }).pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(TescoDiscoverAuthConfig)),
-      Effect.mapError(() => new TescoSoftLoginResponseInvalid())
+      Effect.mapError(() => new TescoSoftLoginResponseInvalid()),
+      Effect.map((config) =>
+        Redacted.make(config["mfe-orchestrator"].props.config.authorization)
+      )
     );
   });
-
-export const authorizationFromDiscoverConfig = (
-  discoverConfig: typeof TescoDiscoverAuthConfig.Type
-) =>
-  Effect.succeed(
-    Redacted.make(discoverConfig["mfe-orchestrator"].props.config.authorization)
-  );

@@ -2,28 +2,25 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
-import * as Bundle from "alchemy/Bundle";
+import {
+  MealPlan,
+  MealPlanPolicy,
+  MealPlanRequest,
+  MealPlanRecipeSnapshot,
+} from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 import type { ModuleDefinition } from "miniflare";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import {
-  ApprovedRecipe,
-  projectApprovedRecipe,
-} from "../imports/import-recipe-review.js";
+import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { ApprovedRecipe } from "../imports/import-recipe-review.js";
 import {
   syntheticReplacementRecipeId,
   syntheticMealPlanRequest,
   syntheticPlanningPolicy,
-  syntheticRecipeReviews,
+  syntheticApprovedRecipes,
 } from "../meal-planning/meal-plan.fake.js";
-import {
-  MealPlan,
-  MealPlanPolicy,
-  MealPlanRequest,
-} from "../meal-planning/meal-plan.js";
 import { HouseholdImportWorkflowDispatchView } from "./foundation/import-workflow-admission.contract.js";
 import {
   HouseholdManualMealSwapCommand,
@@ -89,7 +86,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     const memberLinkageSubject = "4".repeat(64);
     const invitationDigest = "5".repeat(64);
 
-    await commandPeople({
+    await dispatchHouseholdCommand({
       actorId: ownerActorId,
       displayName: "Household owner",
       linkageSubject: ownerLinkageSubject,
@@ -98,7 +95,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       operation: "bootstrapCreatorPerson",
       organizationId,
     });
-    const adult = await commandPeople({
+    const adult = await dispatchHouseholdCommand({
       actorId: ownerActorId,
       displayName: "Invited adult",
       kind: "adult",
@@ -111,7 +108,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     expect(adult.ok).toBe(true);
     const personId = (adult.value as { readonly id: string }).id;
 
-    const associated = await commandPeople({
+    const associated = await dispatchHouseholdCommand({
       actorId: ownerActorId,
       invitationDigest,
       invitationRequestDigest: "d".repeat(64),
@@ -127,7 +124,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       value: { associationState: "invitation_pending", id: personId },
     });
 
-    const linked = await commandPeople({
+    const linked = await dispatchHouseholdCommand({
       actorId: memberActorId,
       invitationDigest,
       linkageSubject: memberLinkageSubject,
@@ -138,7 +135,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     });
     expect(linked).toMatchObject({ ok: false });
 
-    const roster = await commandPeople({
+    const roster = await dispatchHouseholdCommand({
       actorId: ownerActorId,
       includeArchived: true,
       linkageSubject: ownerLinkageSubject,
@@ -163,7 +160,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     const memberActorId = "8".repeat(64);
     const memberLinkageSubject = "9".repeat(64);
 
-    await commandPeople({
+    await dispatchHouseholdCommand({
       actorId: ownerActorId,
       displayName: "Household owner",
       linkageSubject: ownerLinkageSubject,
@@ -172,7 +169,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       operation: "bootstrapCreatorPerson",
       organizationId,
     });
-    const created = await commandPeople({
+    const created = await dispatchHouseholdCommand({
       actorId: ownerActorId,
       displayName: "Departing adult",
       kind: "adult",
@@ -184,7 +181,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     });
     expect(created.ok, JSON.stringify(created)).toBe(true);
     const personId = (created.value as { readonly id: string }).id;
-    const linked = await commandPeople({
+    const linked = await dispatchHouseholdCommand({
       actorId: ownerActorId,
       expectedPersonVersion: (created.value as { readonly version: number })
         .version,
@@ -200,7 +197,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     const linkedVersion = (linked.value as { readonly version: number })
       .version;
 
-    const prepared = await commandPeople({
+    const prepared = await dispatchHouseholdCommand({
       actorId: memberActorId,
       expectedLinkVersion: 1,
       expectedPersonVersion: linkedVersion,
@@ -219,7 +216,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     });
     const { operationId } = prepared.value as { readonly operationId: string };
 
-    const started = await commandPeople({
+    const started = await dispatchHouseholdCommand({
       actorId: memberActorId,
       expectedOperationVersion: 1,
       linkageSubject: memberLinkageSubject,
@@ -238,7 +235,7 @@ describe("household person registry on real Durable Object SQLite", () => {
 
     await runtime.dispose();
     runtime = makeRuntime();
-    const persisted = await commandPeople({
+    const persisted = await dispatchHouseholdCommand({
       objectName,
       operation: "readMemberDepartureSystem",
       operationId,
@@ -252,7 +249,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       },
     });
 
-    const accessRevoked = await commandPeople({
+    const accessRevoked = await dispatchHouseholdCommand({
       expectedOperationVersion: 2,
       objectName,
       operation: "confirmMemberAccessRevoked",
@@ -263,7 +260,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       ok: true,
       value: { state: "access_revoked", version: 3 },
     });
-    const finalized = await commandPeople({
+    const finalized = await dispatchHouseholdCommand({
       expectedOperationVersion: 3,
       objectName,
       operation: "finalizeMemberDeparture",
@@ -275,7 +272,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       value: { state: "completed", version: 4 },
     });
 
-    const archivedRoster = await commandPeople({
+    const archivedRoster = await dispatchHouseholdCommand({
       actorId: ownerActorId,
       includeArchived: true,
       linkageSubject: ownerLinkageSubject,
@@ -316,7 +313,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       operation: "bootstrapCreatorPerson",
       organizationId,
     };
-    const objectSideDenial = await commandPeople({
+    const objectSideDenial = await dispatchHouseholdCommand({
       ...bootstrapCommand,
       operation: "bootstrapCreatorPersonAsMember",
     });
@@ -324,7 +321,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       error: { _tag: "HouseholdInvalidInput" },
       ok: false,
     });
-    const stateAfterDeniedBootstrap = await commandPeople({
+    const stateAfterDeniedBootstrap = await dispatchHouseholdCommand({
       objectName,
       operation: "inspectHouseholdPeopleState",
     });
@@ -333,8 +330,8 @@ describe("household person registry on real Durable Object SQLite", () => {
       value: { associations: [], audits: [], people: [], receipts: [] },
     });
     const [bootstrap, concurrentReplay] = await Promise.all([
-      commandPeople(bootstrapCommand),
-      commandPeople(bootstrapCommand),
+      dispatchHouseholdCommand(bootstrapCommand),
+      dispatchHouseholdCommand(bootstrapCommand),
     ]);
     expect(concurrentReplay).toEqual(bootstrap);
     expect(bootstrap.ok).toBe(true);
@@ -349,7 +346,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       version: 1,
     });
 
-    const collision = await commandPeople({
+    const collision = await dispatchHouseholdCommand({
       ...bootstrapCommand,
       displayName: "Different intent",
     });
@@ -358,7 +355,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       ok: false,
     });
 
-    const conflictingBootstrap = await commandPeople({
+    const conflictingBootstrap = await dispatchHouseholdCommand({
       ...bootstrapCommand,
       actorId: "d".repeat(64),
       displayName: "Another creator",
@@ -370,7 +367,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       ok: false,
     });
 
-    const dependant = await commandPeople({
+    const dependant = await dispatchHouseholdCommand({
       actorId,
       displayName: "Household child",
       kind: "dependant",
@@ -397,8 +394,11 @@ describe("household person registry on real Durable Object SQLite", () => {
       personId: dependantId,
     };
     const [archiveFirst, archiveRace] = await Promise.all([
-      commandPeople(archiveCommand),
-      commandPeople({ ...archiveCommand, mutationId: "person-archive-race" }),
+      dispatchHouseholdCommand(archiveCommand),
+      dispatchHouseholdCommand({
+        ...archiveCommand,
+        mutationId: "person-archive-race",
+      }),
     ]);
     const outcomes = [archiveFirst, archiveRace];
     expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1);
@@ -413,13 +413,13 @@ describe("household person registry on real Durable Object SQLite", () => {
     const successfulArchiveMutation = archiveFirst.ok
       ? "person-archive-a"
       : "person-archive-race";
-    const archiveReplay = await commandPeople({
+    const archiveReplay = await dispatchHouseholdCommand({
       ...archiveCommand,
       mutationId: successfulArchiveMutation,
     });
     expect(archiveReplay).toEqual(archived);
 
-    const restore = await commandPeople({
+    const restore = await dispatchHouseholdCommand({
       ...archiveCommand,
       expectedVersion: 2,
       mutationId: "person-restore-a",
@@ -432,7 +432,7 @@ describe("household person registry on real Durable Object SQLite", () => {
 
     await runtime.dispose();
     runtime = makeRuntime();
-    const rosterAfterRestart = await commandPeople({
+    const rosterAfterRestart = await dispatchHouseholdCommand({
       actorId,
       includeArchived: true,
       linkageSubject,
@@ -451,7 +451,7 @@ describe("household person registry on real Durable Object SQLite", () => {
         ],
       },
     });
-    const persistedPeopleState = await commandPeople({
+    const persistedPeopleState = await dispatchHouseholdCommand({
       objectName,
       operation: "inspectHouseholdPeopleState",
     });
@@ -514,7 +514,7 @@ describe("household person registry on real Durable Object SQLite", () => {
 
     const otherOrganizationId = "org-person-registry-b";
     const otherObjectName = await objectNameFor(otherOrganizationId);
-    const isolatedRead = await commandPeople({
+    const isolatedRead = await dispatchHouseholdCommand({
       actorId,
       linkageSubject,
       objectName: otherObjectName,
@@ -526,7 +526,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       error: { _tag: "HouseholdPersonNotFound" },
       ok: false,
     });
-    const isolatedMutationId = await commandPeople({
+    const isolatedMutationId = await dispatchHouseholdCommand({
       ...bootstrapCommand,
       objectName: otherObjectName,
       organizationId: otherOrganizationId,
@@ -540,7 +540,7 @@ describe("household person registry on real Durable Object SQLite", () => {
   it("physically rejects a second creator association in one household database", async () => {
     const organizationId = "org-person-creator-singleton-constraint";
     const objectName = await objectNameFor(organizationId);
-    const result = await commandPeople({
+    const result = await dispatchHouseholdCommand({
       objectName,
       operation: "proveCreatorAssociationSingletonConstraint",
     });
@@ -648,56 +648,6 @@ const MealPlanStorageResponse = Schema.Struct({
   ),
 });
 
-const bundleText = (content: string | Uint8Array<ArrayBufferLike>): string =>
-  Schema.is(Schema.String)(content)
-    ? content
-    : new TextDecoder().decode(content);
-
-const buildFixture = async (
-  outputDirectory: string
-): Promise<readonly [ModuleDefinition, ...ModuleDefinition[]]> => {
-  const output = await Effect.runPromise(
-    Bundle.build(
-      {
-        checks: {
-          ineffectiveDynamicImport: false,
-          unresolvedImport: false,
-        },
-        external: ["cloudflare:workers"],
-        input: fixturePath,
-        plugins: [
-          cloudflareRolldown({
-            compatibilityDate,
-            compatibilityFlags,
-          }),
-        ],
-      },
-      {
-        codeSplitting: false,
-        dir: outputDirectory,
-        format: "esm",
-        minify: true,
-        sourcemap: false,
-      }
-    )
-  );
-  const [entry, ...assets] = output.files;
-  return [
-    {
-      contents: bundleText(entry.content),
-      path: entry.path,
-      type: "ESModule",
-    },
-    ...assets.map(
-      (asset): ModuleDefinition => ({
-        contents: bundleText(asset.content),
-        path: asset.path,
-        type: "Text",
-      })
-    ),
-  ];
-};
-
 const makeRuntime = () =>
   new Miniflare({
     compatibilityDate,
@@ -722,7 +672,7 @@ beforeAll(async () => {
   );
   temporaryDirectories.push(temporaryDirectory);
   persistenceDirectory = `${temporaryDirectory}/durable-object-storage`;
-  fixtureModules = await buildFixture(temporaryDirectory);
+  fixtureModules = await bundleWorkerFixture(fixturePath, temporaryDirectory);
   runtime = makeRuntime();
 }, 30_000);
 
@@ -856,26 +806,22 @@ const commandHousehold = async (objectName: string, organizationId: string) => {
   );
 };
 
-const ensureHousehold = (objectName: string, organizationId: string) =>
-  commandHousehold(objectName, organizationId);
-
-const commandPeople = async (command: Record<string, unknown>) => {
+const dispatchHouseholdCommand = async (command: Record<string, unknown>) => {
   const response = await runtime.dispatchFetch("http://localhost/", {
     body: JSON.stringify(command),
     method: "POST",
   });
   expect(response.status).toBe(200);
   return (await response.json()) as {
-    readonly error?: { readonly _tag?: string };
+    readonly error?: { readonly _tag?: string; readonly reason?: string };
     readonly ok: boolean;
     readonly value?: unknown;
   };
 };
 
-const approvedRecipes = syntheticRecipeReviews
-  .filter(({ lifecycle }) => lifecycle === "approved")
-  .map(projectApprovedRecipe)
-  .map((recipe) => Schema.encodeSync(ApprovedRecipe)(recipe));
+const approvedRecipes = syntheticApprovedRecipes.map((recipe) =>
+  Schema.encodeSync(MealPlanRecipeSnapshot)(recipe)
+);
 
 const makeLargeApprovedRecipe = (input: {
   readonly character: string;
@@ -889,7 +835,9 @@ const makeLargeApprovedRecipe = (input: {
   }
   return Schema.decodeUnknownSync(ApprovedRecipeWire)({
     ...base,
-    extractionFingerprint: input.character.repeat(64),
+    extractionFingerprint: Buffer.from(input.character)
+      .toString("hex")
+      .repeat(32),
     importId: input.importId,
     recipe: {
       ...base.recipe,
@@ -961,7 +909,7 @@ const createMealPlan = async (
     body: JSON.stringify({
       approvedRecipes: input.approvedRecipes ?? approvedRecipes,
       objectName,
-      operation: "createMealPlan",
+      operation: "seedAndCreateMealPlan",
       organizationId,
       policy: Schema.encodeSync(MealPlanPolicy)(
         input.policy ?? syntheticPlanningPolicy
@@ -996,6 +944,7 @@ const mutateMealPlan = async (input: {
       ? {
           ...command,
           approvedRecipes: input.approvedRecipes ?? approvedRecipes,
+          operation: "seedAndSwapMealPlan",
         }
       : command;
   const response = await runtime.dispatchFetch("http://localhost/", {
@@ -1072,22 +1021,12 @@ describe("household Durable Object", () => {
   it("owns the provider-free admission-to-confirmation-to-planning tracer", async () => {
     const organizationId = "organization-recipe-import-tracer";
     const objectName = await objectNameFor(organizationId);
-    const dispatch = async (command: object) => {
-      const response = await runtime.dispatchFetch("http://localhost/", {
-        body: JSON.stringify({ objectName, organizationId, ...command }),
-        method: "POST",
-      });
-      expect(response.status).toBe(200);
-      return response.json() as Promise<{
-        readonly error?: { readonly _tag?: string; readonly reason?: string };
-        readonly ok: boolean;
-        readonly value?: unknown;
-      }>;
-    };
 
-    const admitted = await dispatch({
+    const admitted = await dispatchHouseholdCommand({
       idempotencyKey: "tracer-admission",
+      objectName,
       operation: "admitRecipeImport",
+      organizationId,
       source: {
         kind: "tiktok",
         url: "https://www.tiktok.com/@mealplanner/video/7000000000000000001",
@@ -1106,14 +1045,16 @@ describe("household Durable Object", () => {
       readonly intent: { readonly id: string };
     };
 
-    const resolved = await dispatch({
+    const resolved = await dispatchHouseholdCommand({
       canonicalSourceId: "tiktok:video:7000000000000000001",
       canonicalUrl:
         "https://www.tiktok.com/@mealplanner/video/7000000000000000001",
       expectedGeneration: 1,
       intentId: admission.intent.id,
       mutationId: "1".repeat(64),
+      objectName,
       operation: "resolveRecipeImportSource",
+      organizationId,
       sourceKind: "video",
     });
     expect(resolved).toMatchObject({
@@ -1121,13 +1062,15 @@ describe("household Durable Object", () => {
       value: { intentVersion: 2, status: "processing" },
     });
 
-    const draft = await dispatch({
+    const draft = await dispatchHouseholdCommand({
       evidenceFingerprint: "2".repeat(64),
       expectedGeneration: 1,
       extractionFingerprint: "3".repeat(64),
       intentId: admission.intent.id,
       mutationId: "4".repeat(64),
+      objectName,
       operation: "commitRecipeImportDraft",
+      organizationId,
       review: {
         answers: [],
         blockers: { invalidFields: [], unresolvedRequiredFields: [] },
@@ -1172,12 +1115,14 @@ describe("household Durable Object", () => {
       readonly intent: { readonly intentVersion: number };
     };
 
-    const confirmed = await dispatch({
+    const confirmed = await dispatchHouseholdCommand({
       actionId: active.action.id,
       expectedActionVersion: 1,
       idempotencyKey: "tracer-confirmation",
       intentId: admission.intent.id,
+      objectName,
       operation: "confirmRecipeImportAction",
+      organizationId,
     });
     expect(confirmed).toMatchObject({
       ok: true,
@@ -1187,8 +1132,10 @@ describe("household Durable Object", () => {
       },
     });
 
-    const planned = await dispatch({
+    const planned = await dispatchHouseholdCommand({
+      objectName,
       operation: "createMealPlanFromRecipeBank",
+      organizationId,
       policy: Schema.encodeSync(MealPlanPolicy)(syntheticPlanningPolicy),
       request: Schema.encodeSync(MealPlanRequest)(syntheticMealPlanRequest),
     });
@@ -1200,12 +1147,14 @@ describe("household Durable Object", () => {
     await runtime.dispose();
     runtime = makeRuntime();
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         actionId: active.action.id,
         expectedActionVersion: 1,
         idempotencyKey: "tracer-confirmation",
         intentId: admission.intent.id,
+        objectName,
         operation: "confirmRecipeImportAction",
+        organizationId,
       })
     ).toEqual(confirmed);
   });
@@ -1213,21 +1162,11 @@ describe("household Durable Object", () => {
   it("persists generation-fenced executor lifecycle transitions and replay across restart", async () => {
     const organizationId = "organization-recipe-import-lifecycle";
     const objectName = await objectNameFor(organizationId);
-    const dispatch = async (command: object) => {
-      const response = await runtime.dispatchFetch("http://localhost/", {
-        body: JSON.stringify({ objectName, organizationId, ...command }),
-        method: "POST",
-      });
-      expect(response.status).toBe(200);
-      return response.json() as Promise<{
-        readonly error?: { readonly reason?: string };
-        readonly ok: boolean;
-        readonly value?: unknown;
-      }>;
-    };
-    const admitted = await dispatch({
+    const admitted = await dispatchHouseholdCommand({
       idempotencyKey: "lifecycle-admission",
+      objectName,
       operation: "admitRecipeImport",
+      organizationId,
       source: {
         kind: "tiktok",
         url: "https://www.tiktok.com/@mealplanner/video/7000000000000000201",
@@ -1236,22 +1175,26 @@ describe("household Durable Object", () => {
     const intentId = (
       admitted.value as { readonly intent: { readonly id: string } }
     ).intent.id;
-    await dispatch({
+    await dispatchHouseholdCommand({
       canonicalSourceId: "tiktok:video:7000000000000000201",
       canonicalUrl:
         "https://www.tiktok.com/@mealplanner/video/7000000000000000201",
       expectedGeneration: 1,
       intentId,
       mutationId: "8".repeat(64),
+      objectName,
       operation: "resolveRecipeImportSource",
+      organizationId,
       sourceKind: "carousel",
     });
 
     const transition = (value: object, expectedGeneration = 1) =>
-      dispatch({
+      dispatchHouseholdCommand({
         expectedGeneration,
         intentId,
+        objectName,
         operation: "transitionRecipeImportLifecycle",
+        organizationId,
         transition: value,
       });
     expect(
@@ -1316,7 +1259,12 @@ describe("household Durable Object", () => {
     await runtime.dispose();
     runtime = makeRuntime();
     expect(
-      await dispatch({ intentId, operation: "readRecipeImport" })
+      await dispatchHouseholdCommand({
+        intentId,
+        objectName,
+        operation: "readRecipeImport",
+        organizationId,
+      })
     ).toMatchObject({
       ok: true,
       value: { activity: { type: "retrying" }, intentVersion: 8 },
@@ -1326,7 +1274,7 @@ describe("household Durable Object", () => {
   it("paginates and plans from more than 128 approved household recipes across restart", async () => {
     const organizationId = "organization-recipe-bank-pagination";
     const objectName = await objectNameFor(organizationId);
-    await ensureHousehold(objectName, organizationId);
+    await commandHousehold(objectName, organizationId);
     const seedResponse = await runtime.dispatchFetch("http://localhost/", {
       body: JSON.stringify({
         count: 129,
@@ -1395,22 +1343,12 @@ describe("household Durable Object", () => {
   it("releases terminal canonical-source ownership across restart", async () => {
     const organizationId = "organization-terminal-source-release";
     const objectName = await objectNameFor(organizationId);
-    const dispatch = async (command: object) => {
-      const response = await runtime.dispatchFetch("http://localhost/", {
-        body: JSON.stringify({ objectName, organizationId, ...command }),
-        method: "POST",
-      });
-      expect(response.status).toBe(200);
-      return response.json() as Promise<{
-        readonly error?: { readonly reason?: string };
-        readonly ok: boolean;
-        readonly value?: unknown;
-      }>;
-    };
     const admit = async (key: string, videoId: string) => {
-      const result = await dispatch({
+      const result = await dispatchHouseholdCommand({
         idempotencyKey: key,
+        objectName,
         operation: "admitRecipeImport",
+        organizationId,
         source: {
           kind: "tiktok",
           url: `https://www.tiktok.com/@mealplanner/video/${videoId}`,
@@ -1432,13 +1370,15 @@ describe("household Durable Object", () => {
     );
     const initial = await Promise.all(
       [firstIntentId, redirectedIntentId].map((intentId, index) =>
-        dispatch({
+        dispatchHouseholdCommand({
           canonicalSourceId,
           canonicalUrl,
           expectedGeneration: 1,
           intentId,
           mutationId: `${index + 1}`.repeat(64),
+          objectName,
           operation: "resolveRecipeImportSource",
+          organizationId,
           sourceKind: "video",
         })
       )
@@ -1462,11 +1402,13 @@ describe("household Durable Object", () => {
       readonly intentVersion: number;
     };
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         expectedIntentVersion: liveOwnerIntent.intentVersion,
         idempotencyKey: "terminal-source-cancel",
         intentId: liveOwnerIntent.id,
+        objectName,
         operation: "cancelRecipeImport",
+        organizationId,
       })
     ).toMatchObject({ ok: true, value: { status: "cancelled" } });
 
@@ -1477,21 +1419,25 @@ describe("household Durable Object", () => {
       "7000000000000000303"
     );
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         canonicalSourceId,
         canonicalUrl,
         expectedGeneration: 1,
         intentId: afterCancellationId,
         mutationId: "a".repeat(64),
+        objectName,
         operation: "resolveRecipeImportSource",
+        organizationId,
         sourceKind: "video",
       })
     ).toMatchObject({ ok: true, value: { status: "processing" } });
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         expectedGeneration: 1,
         intentId: afterCancellationId,
+        objectName,
         operation: "transitionRecipeImportLifecycle",
+        organizationId,
         transition: {
           _tag: "Fail",
           attemptIdentity: "terminal-source-after-cancel:acquisition:1",
@@ -1510,13 +1456,15 @@ describe("household Durable Object", () => {
       "7000000000000000304"
     );
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         canonicalSourceId,
         canonicalUrl,
         expectedGeneration: 1,
         intentId: afterFailureId,
         mutationId: "b".repeat(64),
+        objectName,
         operation: "resolveRecipeImportSource",
+        organizationId,
         sourceKind: "video",
       })
     ).toMatchObject({ ok: true, value: { status: "processing" } });
@@ -1525,22 +1473,12 @@ describe("household Durable Object", () => {
   it("rejects an oversized correction and keeps the largest bounded recipe usable across restart", async () => {
     const organizationId = "organization-recipe-bank-byte-bound";
     const objectName = await objectNameFor(organizationId);
-    const dispatch = async (command: object) => {
-      const response = await runtime.dispatchFetch("http://localhost/", {
-        body: JSON.stringify({ objectName, organizationId, ...command }),
-        method: "POST",
-      });
-      expect(response.status).toBe(200);
-      return response.json() as Promise<{
-        readonly error?: { readonly reason?: string };
-        readonly ok: boolean;
-        readonly value?: unknown;
-      }>;
-    };
     const prepareReview = async (key: string, videoId: string) => {
-      const admitted = await dispatch({
+      const admitted = await dispatchHouseholdCommand({
         idempotencyKey: `${key}-admit`,
+        objectName,
         operation: "admitRecipeImport",
+        organizationId,
         source: {
           kind: "tiktok",
           url: `https://www.tiktok.com/@mealplanner/video/${videoId}`,
@@ -1549,22 +1487,26 @@ describe("household Durable Object", () => {
       const intentId = (
         admitted.value as { readonly intent: { readonly id: string } }
       ).intent.id;
-      await dispatch({
+      await dispatchHouseholdCommand({
         canonicalSourceId: `tiktok:video:${videoId}`,
         canonicalUrl: `https://www.tiktok.com/@mealplanner/video/${videoId}`,
         expectedGeneration: 1,
         intentId,
         mutationId: key.at(0)?.repeat(64),
+        objectName,
         operation: "resolveRecipeImportSource",
+        organizationId,
         sourceKind: "video",
       });
-      const draft = await dispatch({
+      const draft = await dispatchHouseholdCommand({
         evidenceFingerprint: "c".repeat(64),
         expectedGeneration: 1,
         extractionFingerprint: "d".repeat(64),
         intentId,
         mutationId: key.at(-1)?.repeat(64),
+        objectName,
         operation: "commitRecipeImportDraft",
+        organizationId,
         review: recipeImportReview(`${key} recipe`),
       });
       return {
@@ -1575,7 +1517,7 @@ describe("household Durable Object", () => {
     };
 
     const oversized = await prepareReview("ef", "7000000000000000401");
-    const oversizedAnswer = await dispatch({
+    const oversizedAnswer = await dispatchHouseholdCommand({
       actionId: oversized.actionId,
       answers: [
         {
@@ -1586,19 +1528,23 @@ describe("household Durable Object", () => {
       expectedActionVersion: 1,
       idempotencyKey: "oversized-correction",
       intentId: oversized.intentId,
+      objectName,
       operation: "answerRecipeImportAction",
+      organizationId,
     });
     expect(
       oversizedAnswer,
       JSON.stringify(oversizedAnswer.error)
     ).toMatchObject({ ok: true });
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         actionId: oversized.actionId,
         expectedActionVersion: 2,
         idempotencyKey: "oversized-confirmation",
         intentId: oversized.intentId,
+        objectName,
         operation: "confirmRecipeImportAction",
+        organizationId,
       })
     ).toMatchObject({ error: { reason: "invalid_input" }, ok: false });
 
@@ -1607,22 +1553,26 @@ describe("household Durable Object", () => {
       "y".repeat(4000)
     );
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         actionId: bounded.actionId,
         answers: [{ field: "ingredient_lines", value: boundedIngredientLines }],
         expectedActionVersion: 1,
         idempotencyKey: "bounded-correction",
         intentId: bounded.intentId,
+        objectName,
         operation: "answerRecipeImportAction",
+        organizationId,
       })
     ).toMatchObject({ ok: true });
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         actionId: bounded.actionId,
         expectedActionVersion: 2,
         idempotencyKey: "bounded-confirmation",
         intentId: bounded.intentId,
+        objectName,
         operation: "confirmRecipeImportAction",
+        organizationId,
       })
     ).toMatchObject({ ok: true, value: { status: "succeeded" } });
 
@@ -1632,12 +1582,13 @@ describe("household Durable Object", () => {
     let cursor: string | null = null;
     do {
       // eslint-disable-next-line no-await-in-loop -- Each bounded page depends on the preceding exclusive cursor.
-      const page = await dispatch({
+      const page = await dispatchHouseholdCommand({
         byteLimit: 524_288,
         cursor,
         limit: 100,
         objectName,
         operation: "listRecipeBank",
+        organizationId,
       });
       expect(page.ok, JSON.stringify(page.error)).toBe(true);
       const value = page.value as {
@@ -1652,8 +1603,10 @@ describe("household Durable Object", () => {
       recipe: { ingredientLines: { length: boundedIngredientLines.length } },
     });
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
+        objectName,
         operation: "createMealPlanFromRecipeBank",
+        organizationId,
         policy: Schema.encodeSync(MealPlanPolicy)(syntheticPlanningPolicy),
         request: Schema.encodeSync(MealPlanRequest)(syntheticMealPlanRequest),
       })
@@ -1666,22 +1619,12 @@ describe("household Durable Object", () => {
   it("settles deduplication, stale fences, cancel-confirm races, and mutation collisions across restart", async () => {
     const organizationId = "organization-recipe-import-races";
     const objectName = await objectNameFor(organizationId);
-    const dispatch = async (command: object) => {
-      const response = await runtime.dispatchFetch("http://localhost/", {
-        body: JSON.stringify({ objectName, organizationId, ...command }),
-        method: "POST",
-      });
-      expect(response.status).toBe(200);
-      return response.json() as Promise<{
-        readonly error?: { readonly reason?: string };
-        readonly ok: boolean;
-        readonly value?: unknown;
-      }>;
-    };
     const admit = (key: string, videoId: string) =>
-      dispatch({
+      dispatchHouseholdCommand({
         idempotencyKey: key,
+        objectName,
         operation: "admitRecipeImport",
+        organizationId,
         source: {
           kind: "tiktok",
           url: `https://www.tiktok.com/@mealplanner/video/${videoId}`,
@@ -1696,9 +1639,11 @@ describe("household Durable Object", () => {
       second.value as { readonly intent: { readonly id: string } }
     ).intent.id;
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         idempotencyKey: "dedup-first",
+        objectName,
         operation: "admitRecipeImport",
+        organizationId,
         source: {
           kind: "tiktok",
           url: "https://www.tiktok.com/@mealplanner/video/7999999999999999999",
@@ -1712,14 +1657,16 @@ describe("household Durable Object", () => {
     const canonicalSourceId = "tiktok:video:7000000000000000199";
     const resolutions = await Promise.all(
       [firstIntentId, secondIntentId].map((intentId, index) =>
-        dispatch({
+        dispatchHouseholdCommand({
           canonicalSourceId,
           canonicalUrl:
             "https://www.tiktok.com/@mealplanner/video/7000000000000000199",
           expectedGeneration: 1,
           intentId,
           mutationId: `${index + 1}`.repeat(64),
+          objectName,
           operation: "resolveRecipeImportSource",
+          organizationId,
           sourceKind: "video",
         })
       )
@@ -1741,13 +1688,15 @@ describe("household Durable Object", () => {
     }
     const winnerIntentId = (winner.value as { readonly id: string }).id;
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         evidenceFingerprint: "3".repeat(64),
         expectedGeneration: 2,
         extractionFingerprint: "4".repeat(64),
         intentId: winnerIntentId,
         mutationId: "5".repeat(64),
+        objectName,
         operation: "commitRecipeImportDraft",
+        organizationId,
         review: {
           answers: [],
           blockers: { invalidFields: [], unresolvedRequiredFields: [] },
@@ -1791,13 +1740,15 @@ describe("household Durable Object", () => {
       method: "POST",
     });
     expect(await seedCollision.json()).toEqual({ ok: true });
-    const rollbackDraft = await dispatch({
+    const rollbackDraft = await dispatchHouseholdCommand({
       evidenceFingerprint: "a".repeat(64),
       expectedGeneration: 1,
       extractionFingerprint: "b".repeat(64),
       intentId: winnerIntentId,
       mutationId: "c".repeat(64),
+      objectName,
       operation: "commitRecipeImportDraft",
+      organizationId,
       review: {
         answers: [],
         blockers: { invalidFields: [], unresolvedRequiredFields: [] },
@@ -1834,12 +1785,14 @@ describe("household Durable Object", () => {
       rollbackDraft.value as { readonly action: { readonly id: string } }
     ).action.id;
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         actionId: rollbackActionId,
         expectedActionVersion: 1,
         idempotencyKey: "forced-precommit-failure",
         intentId: winnerIntentId,
+        objectName,
         operation: "confirmRecipeImportActionWithRecipeId",
+        organizationId,
         recipeId: "10000000-0000-4000-8000-000000000001",
       })
     ).toMatchObject({
@@ -1847,18 +1800,22 @@ describe("household Durable Object", () => {
       ok: false,
     });
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         intentId: winnerIntentId,
+        objectName,
         operation: "readRecipeImport",
+        organizationId,
       })
     ).toMatchObject({ ok: true, value: { status: "requires_action" } });
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         actionId: rollbackActionId,
         expectedActionVersion: 1,
         idempotencyKey: "post-rollback-confirm",
         intentId: winnerIntentId,
+        objectName,
         operation: "confirmRecipeImportAction",
+        organizationId,
       })
     ).toMatchObject({ ok: true, value: { status: "succeeded" } });
 
@@ -1866,23 +1823,27 @@ describe("household Durable Object", () => {
     const raceIntentId = (
       raceImport.value as { readonly intent: { readonly id: string } }
     ).intent.id;
-    await dispatch({
+    await dispatchHouseholdCommand({
       canonicalSourceId: "tiktok:video:7000000000000000103",
       canonicalUrl:
         "https://www.tiktok.com/@mealplanner/video/7000000000000000103",
       expectedGeneration: 1,
       intentId: raceIntentId,
       mutationId: "6".repeat(64),
+      objectName,
       operation: "resolveRecipeImportSource",
+      organizationId,
       sourceKind: "video",
     });
-    const draft = await dispatch({
+    const draft = await dispatchHouseholdCommand({
       evidenceFingerprint: "7".repeat(64),
       expectedGeneration: 1,
       extractionFingerprint: "8".repeat(64),
       intentId: raceIntentId,
       mutationId: "9".repeat(64),
+      objectName,
       operation: "commitRecipeImportDraft",
+      organizationId,
       review: {
         answers: [],
         blockers: { invalidFields: [], unresolvedRequiredFields: [] },
@@ -1919,28 +1880,34 @@ describe("household Durable Object", () => {
       draft.value as { readonly action: { readonly id: string } }
     ).action.id;
     expect(
-      await dispatch({
+      await dispatchHouseholdCommand({
         actionId,
         expectedActionVersion: 2,
         idempotencyKey: "stale-confirm",
         intentId: raceIntentId,
+        objectName,
         operation: "confirmRecipeImportAction",
+        organizationId,
       })
     ).toMatchObject({ error: { reason: "version_conflict" }, ok: false });
 
     const [cancelled, confirmed] = await Promise.all([
-      dispatch({
+      dispatchHouseholdCommand({
         expectedIntentVersion: 3,
         idempotencyKey: "race-cancel",
         intentId: raceIntentId,
+        objectName,
         operation: "cancelRecipeImport",
+        organizationId,
       }),
-      dispatch({
+      dispatchHouseholdCommand({
         actionId,
         expectedActionVersion: 1,
         idempotencyKey: "race-confirm",
         intentId: raceIntentId,
+        objectName,
         operation: "confirmRecipeImportAction",
+        organizationId,
       }),
     ]);
     expect([cancelled, confirmed].filter(({ ok }) => ok)).toHaveLength(1);
@@ -1950,27 +1917,33 @@ describe("household Durable Object", () => {
 
     await runtime.dispose();
     runtime = makeRuntime();
-    const persisted = await dispatch({
+    const persisted = await dispatchHouseholdCommand({
       intentId: raceIntentId,
+      objectName,
       operation: "readRecipeImport",
+      organizationId,
     });
     expect(persisted).toMatchObject({
       ok: true,
       value: { status: terminalStatus },
     });
     const collision = cancelled.ok
-      ? await dispatch({
+      ? await dispatchHouseholdCommand({
           expectedIntentVersion: 2,
           idempotencyKey: "race-cancel",
           intentId: raceIntentId,
+          objectName,
           operation: "cancelRecipeImport",
+          organizationId,
         })
-      : await dispatch({
+      : await dispatchHouseholdCommand({
           actionId,
           expectedActionVersion: 2,
           idempotencyKey: "race-confirm",
           intentId: raceIntentId,
+          objectName,
           operation: "confirmRecipeImportAction",
+          organizationId,
         });
     expect(collision).toMatchObject({
       error: { reason: "idempotency_conflict" },
@@ -1980,8 +1953,8 @@ describe("household Durable Object", () => {
 
   it("initializes once and rejects a conflicting organization provenance", async () => {
     const objectName = await objectNameFor("organization-a");
-    const initial = await ensureHousehold(objectName, "organization-a");
-    const replay = await ensureHousehold(objectName, "organization-a");
+    const initial = await commandHousehold(objectName, "organization-a");
+    const replay = await commandHousehold(objectName, "organization-a");
 
     expect(initial).toMatchObject({ ok: true });
     if (!initial.ok) {
@@ -1996,7 +1969,7 @@ describe("household Durable Object", () => {
     });
     expect(replay).toEqual(initial);
 
-    const mismatch = await ensureHousehold(objectName, "organization-b");
+    const mismatch = await commandHousehold(objectName, "organization-b");
     expect(mismatch).toMatchObject({ ok: false });
     if (mismatch.ok) {
       throw new Error("Expected conflicting household provenance to fail.");
@@ -2030,7 +2003,7 @@ describe("household Durable Object", () => {
   it("rejects corrupt persisted household provenance metadata", async () => {
     const organizationId = "organization-corrupt-provenance";
     const objectName = await objectNameFor(organizationId);
-    expect(await ensureHousehold(objectName, organizationId)).toMatchObject({
+    expect(await commandHousehold(objectName, organizationId)).toMatchObject({
       ok: true,
     });
 
@@ -2039,7 +2012,7 @@ describe("household Durable Object", () => {
       objectName,
     });
 
-    expect(await ensureHousehold(objectName, organizationId)).toEqual({
+    expect(await commandHousehold(objectName, organizationId)).toEqual({
       error: { _tag: "HouseholdPersistenceFailure", operation: "read" },
       ok: false,
     });

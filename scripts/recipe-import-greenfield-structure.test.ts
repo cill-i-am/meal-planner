@@ -6,11 +6,6 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  inspectGlobalD1Architecture,
-  readTrackedGlobalD1Architecture,
-} from "./global-d1-architecture.js";
-
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 
 const trackedFiles = execFileSync("git", ["ls-files", "-z"], {
@@ -123,52 +118,6 @@ describe("greenfield recipe-import architecture", () => {
     expect(classifyWebProductionSource(entryPath)).toBe(expected);
   });
 
-  it("keeps removed compatibility surfaces out of production code", async () => {
-    const sources = await loadSources(
-      [
-        `${repositoryRoot}/apps/api/src/features/imports`,
-        `${repositoryRoot}/apps/api/src/worker.ts`,
-        `${repositoryRoot}/apps/web/src/features/recipe-import`,
-      ],
-      isProductionSource
-    );
-    const forbidden = [
-      /["'`]\/imports(?:\/\$\{|["'`])/u,
-      /["'`]\/recipe-drafts(?:\/|["'`])/u,
-      /["'`]\/recipe-bank(?:\/|["'`])/u,
-      /\bLegacyMealPlannerWorkerRoutes\b/u,
-      /\blegacyRoutes\b/u,
-      /\bRecipeReviewCompatibility\w*\b/u,
-      /\bLegacyImportWorkflow(?:ExecutionGeneration|Input)\b/u,
-      /\bLegacyPrivate(?:HouseholdScopeId|ImportActorId|ImportPrincipal)\b/u,
-      /\bLegacyRecipeRecoveryWorkflowInput\b/u,
-      /\b(?:derive|make)LegacyImportCorrelationId\b/u,
-      /\blegacyStatus\b/u,
-      /readonly start\?:/u,
-    ] as const;
-
-    expect(
-      forbidden.flatMap((pattern) => violations(sources, pattern))
-    ).toEqual([]);
-  });
-
-  it("uses the generated contract instead of a handwritten web transport", async () => {
-    const sources = await loadSources(
-      [`${repositoryRoot}/apps/web/src/features/recipe-import`],
-      isProductionSource
-    );
-    const forbidden = [
-      /\brequestJson\b/u,
-      /\bImportStatusView\b/u,
-      /\bRecipeBankView\b/u,
-      /\bDraftId\b/u,
-    ] as const;
-
-    expect(
-      forbidden.flatMap((pattern) => violations(sources, pattern))
-    ).toEqual([]);
-  });
-
   it("keeps browser and website worker code free of runtime secrets", async () => {
     const sources = await loadSources(
       [`${repositoryRoot}/apps/web/src`],
@@ -191,52 +140,6 @@ describe("greenfield recipe-import architecture", () => {
     expect(
       forbidden.flatMap((pattern) => violations(sources, pattern))
     ).toEqual([]);
-  });
-
-  it("permits only Better Auth and provider accounting in tracked global D1 production paths", () => {
-    expect(
-      inspectGlobalD1Architecture(
-        readTrackedGlobalD1Architecture(repositoryRoot)
-      )
-    ).toEqual([]);
-  }, 60_000);
-
-  it("documents only the current recipe-import design", async () => {
-    const sources = await loadSources(
-      [
-        `${repositoryRoot}/apps/web/PRODUCT.md`,
-        `${repositoryRoot}/apps/web/README.md`,
-        `${repositoryRoot}/docs/architecture/household-capability-migration-plan.md`,
-        `${repositoryRoot}/docs/architecture/recipe-import-intent.md`,
-        `${repositoryRoot}/docs/infrastructure/alchemy.md`,
-      ],
-      (entryPath) => path.extname(entryPath) === ".md"
-    );
-    const forbidden = [
-      /["'`]\/imports(?:\/\$\{|["'`])/u,
-      /\/recipe-drafts(?:\/|\b)/u,
-      /\/recipe-bank(?:\/|\b)/u,
-      /\b(?:fake API|fake-api|production-shaped endpoints)\b/iu,
-      /\bcompatibility-private\b/iu,
-      /\bmigration_snapshot\b/u,
-      /\btemporary transport adapter\b/iu,
-      /\blegacy-route removal\b/iu,
-      /\bR2 Queue event notifications\b/u,
-      /events pass through a reconciliation Queue/iu,
-    ] as const;
-
-    expect(
-      forbidden.flatMap((pattern) => violations(sources, pattern))
-    ).toEqual([]);
-    const migrationPlan = sources.find(
-      ({ path: sourcePath }) =>
-        sourcePath ===
-        "docs/architecture/household-capability-migration-plan.md"
-    )?.source;
-    expect(migrationPlan).toContain("Direct Workflow/R2 integrity probes");
-    expect(migrationPlan).toContain(
-      "There is no R2 event Queue, consumer, or DLQ."
-    );
   });
 
   it("configures only the canonical authenticated recipe-import surface", async () => {

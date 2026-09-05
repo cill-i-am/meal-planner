@@ -18,5 +18,5 @@ Better Auth uses its own Cloudflare D1 database through the official Drizzle ada
 - The household storage tracer uses the selected Better Auth organization ID only after API-side membership authorization; the browser cannot select a Durable Object directly.
 - It remains a single-intent recipe-import experience without a saved-recipe browser/listing, batch/run UI, general correction editor, or realtime transport.
 - Batch and provider-settlement routes remain system-principal-only and cannot be selected in this UI. Operator-carousel remains household-principal scoped and is outside this page.
-- The current UI presents the generated review and offers one name editor only when the canonical action marks `name` editable. It submits that typed answer with the current action version; no arbitrary correction editor is implied.
-- The web workspace makes no direct provider calls. Any TikTok/media/AI/provider work remains behind the canonical API, and this POC has no Tesco, basket, checkout, payment, publish, or external-message effects.
+- The current UI presents the generated review and offers name and planning-tag editors when the canonical action marks those fields editable. It submits each typed answer with the current action version; no arbitrary correction editor is implied.
+- The web workspace makes no direct provider calls. Any TikTok/media/AI/provider work remains behind the canonical API, and this interface has no Tesco, basket, checkout, payment, publish, or external-message effects.

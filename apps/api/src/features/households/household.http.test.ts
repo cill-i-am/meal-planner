@@ -37,8 +37,8 @@ import {
   HouseholdPeopleGateway,
 } from "./household.gateway.js";
 import {
-  makeHouseholdMealPlanHttpApiLayer,
-  makeHouseholdPeopleHttpApiLayer,
+  HouseholdMealPlanHttpApiLayer,
+  HouseholdPeopleHttpApiLayer,
 } from "./household.http.js";
 
 const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
@@ -284,7 +284,7 @@ describe("household people identity and owner boundary", () => {
       Layer.succeed(HouseholdPeopleGateway, options.gateway)
     );
     const app = HttpRouter.toWebHandler(
-      makeHouseholdPeopleHttpApiLayer().pipe(
+      HouseholdPeopleHttpApiLayer.pipe(
         Layer.provide(RecipeImportHttpPlatformServices),
         Layer.provide(requestServices),
         HttpRouter.provideRequest(requestServices)
@@ -464,7 +464,7 @@ describe("household meal-plan HttpApi boundary", () => {
       Layer.succeed(HouseholdMealPlanGateway, options.gateway)
     );
     const app = HttpRouter.toWebHandler(
-      makeHouseholdMealPlanHttpApiLayer().pipe(
+      HouseholdMealPlanHttpApiLayer.pipe(
         Layer.provide(RecipeImportHttpPlatformServices),
         Layer.provide(requestServices),
         HttpRouter.provideRequest(requestServices)

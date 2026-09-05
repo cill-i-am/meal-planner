@@ -1,4 +1,4 @@
-import { Context, Schema } from "effect";
+import { Schema } from "effect";
 import type { Effect } from "effect";
 
 import type { AcquisitionGeneration } from "./import-media.model.js";
@@ -314,9 +314,6 @@ export interface VisualEvidenceExtractor {
 }
 
 /** Replaceable provider-neutral visual evidence capability. */
-export const VisualEvidenceExtractor = Context.Service<VisualEvidenceExtractor>(
-  "meal-planner/VisualEvidenceExtractor"
-);
 
 export const decodeVisualEvidence = Schema.decodeUnknownEffect(VisualEvidence, {
   onExcessProperty: "error",

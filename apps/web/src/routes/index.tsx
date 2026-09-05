@@ -16,10 +16,7 @@ import { HouseholdProfilesPanel } from "../features/household-profiles/household
 import { makeBrowserHouseholdOperations } from "../features/households/browser-operations.js";
 import { HouseholdDomainStatus } from "../features/households/household-domain-status.js";
 import { makeBrowserRecipeImportOperations } from "../features/recipe-import/browser-operations.js";
-import {
-  decodeRecipeImportSearch,
-  recipeImportPageSessionKey,
-} from "../features/recipe-import/navigation.js";
+import { decodeRecipeImportSearch } from "../features/recipe-import/navigation.js";
 import { RecipeImportPage } from "../features/recipe-import/recipe-import-page.js";
 
 const MealPlannerRoute = () => {
@@ -31,7 +28,7 @@ const MealPlannerRoute = () => {
   const householdOperations = useMemo(makeBrowserHouseholdOperations, []);
   const peopleOperations = useMemo(makeBrowserHouseholdPeopleOperations, []);
   const profileOperations = useMemo(makeBrowserHouseholdProfileOperations, []);
-  const operations = useMemo(() => makeBrowserRecipeImportOperations(), []);
+  const operations = useMemo(makeBrowserRecipeImportOperations, []);
 
   const signOut = async () => {
     await requireAuthSuccess(authClient.signOut());
@@ -76,11 +73,13 @@ const MealPlannerRoute = () => {
           householdId={household.id}
           householdName={household.name}
           householdDomainStatus={
+            <HouseholdDomainStatus
+              operations={householdOperations}
+              organizationId={household.id}
+            />
+          }
+          householdPeople={
             <>
-              <HouseholdDomainStatus
-                operations={householdOperations}
-                organizationId={household.id}
-              />
               <HouseholdPeoplePanel
                 {...(() => {
                   const currentMemberId = activeOrganization.data?.members.find(
@@ -106,7 +105,7 @@ const MealPlannerRoute = () => {
               />
             </>
           }
-          key={recipeImportPageSessionKey(household.id, intentId)}
+          key={`${household.id}:${intentId ?? "new"}`}
           onSignOut={logout}
           operations={operations}
         />

@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 
+import { sha256Bytes } from "./import-digest.js";
 import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
@@ -47,16 +48,6 @@ const pipelineFailure = (
   reasonCode === undefined
     ? { _tag: "SpeechPipelineFailure", code }
     : { _tag: "SpeechPipelineFailure", code, reasonCode };
-
-const bytesToHex = (value: ArrayBuffer) =>
-  Array.from(new Uint8Array(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-
-const sha256Hex = (bytes: Uint8Array) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer)
-  ).pipe(Effect.map(bytesToHex));
 
 const completedFromDocument = (
   document: TranscriptEvidenceDocument,
@@ -186,7 +177,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
       if (!validateSpeechAudioArtifact(audio, evidence.sha256)) {
         return yield* Effect.fail(pipelineFailure("audio_extraction_failed"));
       }
-      const audioSha256 = yield* sha256Hex(audio.bytes);
+      const audioSha256 = yield* sha256Bytes(audio.bytes);
       if (audioSha256 !== audio.sha256) {
         return yield* Effect.fail(pipelineFailure("audio_extraction_failed"));
       }

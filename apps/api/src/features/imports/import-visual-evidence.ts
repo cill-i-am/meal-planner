@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
 
+import { sha256Bytes } from "./import-digest.js";
 import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
@@ -37,8 +38,7 @@ export interface VisualEvidencePipelineFailure {
     | VisualEvidenceFailureCode
     | "provider_unavailable"
     | "throttled"
-    | "timeout"
-    | "visual_evidence_unknown";
+    | "timeout";
   readonly reasonCode?: ProviderTaskDiagnosticReasonCode;
 }
 const pipelineFailure = (
@@ -48,14 +48,6 @@ const pipelineFailure = (
   reasonCode === undefined
     ? { _tag: "VisualEvidencePipelineFailure", code }
     : { _tag: "VisualEvidencePipelineFailure", code, reasonCode };
-const bytesToHex = (value: ArrayBuffer) =>
-  Array.from(new Uint8Array(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-const sha256Hex = (bytes: Uint8Array) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer)
-  ).pipe(Effect.map(bytesToHex));
 const observationsMatchFrames = (
   observations: readonly {
     readonly frameIndex: number;
@@ -223,7 +215,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
       return yield* Effect.fail(pipelineFailure("frame_sampling_failed"));
     }
     for (const frame of frames) {
-      if ((yield* sha256Hex(frame.bytes)) !== frame.sha256) {
+      if ((yield* sha256Bytes(frame.bytes)) !== frame.sha256) {
         return yield* Effect.fail(pipelineFailure("frame_sampling_failed"));
       }
     }
@@ -298,12 +290,12 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     );
   }).pipe(
     Effect.catchTag("VisualEvidencePipelineFailure", (failure) => {
+      // Unsettled provider outcomes retain dispatch ownership; do not authorize another call.
       if (
         failure.code === "outcome_unknown" ||
         failure.code === "provider_unavailable" ||
         failure.code === "throttled" ||
-        failure.code === "timeout" ||
-        failure.code === "visual_evidence_unknown"
+        failure.code === "timeout"
       ) {
         return Effect.fail(failure);
       }

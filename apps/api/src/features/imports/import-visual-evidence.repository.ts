@@ -7,7 +7,7 @@ import type { ImportTransitionError } from "./import.repository.js";
 
 export type VisualEvidenceOutcome = "empty" | "found" | "low_confidence";
 export interface CompletedVisualEvidence {
-  readonly byteLength?: number;
+  readonly byteLength: number;
   readonly completedAt: ImportTimestamp;
   readonly cost: {
     readonly certainty: "estimated" | "known";
@@ -15,7 +15,7 @@ export interface CompletedVisualEvidence {
     readonly estimatedMicroUsd: number;
   };
   readonly dispatchId: string;
-  readonly deleteAt?: ImportTimestamp;
+  readonly deleteAt: ImportTimestamp;
   readonly generation: AcquisitionGeneration;
   readonly importId: ImportId;
   readonly manifestKey: string;

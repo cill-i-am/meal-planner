@@ -1060,14 +1060,9 @@ export const makeHouseholdRecipeImportRepository = (
       if (workflow === undefined || workflow.originalTraceJson === null) {
         return yield* Effect.fail(failure("illegal_transition"));
       }
-      const originalTraceText = workflow.originalTraceJson;
-      const originalTraceJson = yield* Effect.try({
-        catch: persistenceFailure,
-        try: () => JSON.parse(originalTraceText) as Schema.Json,
-      });
       const originalTrace = yield* decode(
-        ImportTraceContext,
-        originalTraceJson
+        Schema.fromJsonString(ImportTraceContext),
+        workflow.originalTraceJson
       );
       return yield* decode(HouseholdRecipeImportExecutionView, {
         acquisitionAttemptGeneration:

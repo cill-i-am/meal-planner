@@ -1,4 +1,4 @@
-import { Context, Schema } from "effect";
+import { Schema } from "effect";
 import type { Effect } from "effect";
 
 import type { AcquisitionGeneration } from "./import-media.model.js";
@@ -135,9 +135,6 @@ export interface SpeechTranscriber {
 }
 
 /** Effect service tag for a replaceable speech provider adapter. */
-export const SpeechTranscriber = Context.Service<SpeechTranscriber>(
-  "meal-planner/SpeechTranscriber"
-);
 
 /** Strictly decode a speech adapter's normalized response. */
 export const decodeSpeechTranscript = Schema.decodeUnknownEffect(

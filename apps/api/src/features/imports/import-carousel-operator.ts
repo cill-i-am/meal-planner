@@ -9,6 +9,8 @@ import {
   MaximumCarouselImages,
   decodeJpegDimensions,
 } from "./import-carousel-adapter.js";
+import { sha256Bytes } from "./import-digest.js";
+import { Sha256Hex } from "./import-media.model.js";
 import {
   MaximumVisualFrameBytes,
   MaximumVisualInputBytes,
@@ -30,9 +32,7 @@ const SafeOrderIndex = Schema.Number.pipe(
     Schema.isLessThan(MaximumCarouselImages)
   )
 );
-const Sha256Hex = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
-);
+
 const MaximumEncodedJpegBytes = Math.ceil(MaximumVisualFrameBytes / 3) * 4;
 const EncodedJpeg = Schema.String.pipe(
   Schema.check(
@@ -83,17 +83,6 @@ const decodeBase64 = (value: string) =>
     },
   });
 
-const sha256Hex = (bytes: Uint8Array) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer)
-  ).pipe(
-    Effect.map((digest) =>
-      Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("")
-    )
-  );
-
 export const makeOperatorCarouselAdapter = (input: {
   readonly bundle: OperatorCarouselBundle;
   readonly canonicalId: SourceCanonicalId;
@@ -120,7 +109,7 @@ export const makeOperatorCarouselAdapter = (input: {
       for (const [orderIndex, encoded] of input.bundle.images.entries()) {
         const bytes = yield* decodeBase64(encoded.jpegBase64);
         const dimensions = decodeJpegDimensions(bytes);
-        const actualSha256 = yield* sha256Hex(bytes);
+        const actualSha256 = yield* sha256Bytes(bytes);
         totalBytes += bytes.byteLength;
         if (
           encoded.orderIndex !== orderIndex ||

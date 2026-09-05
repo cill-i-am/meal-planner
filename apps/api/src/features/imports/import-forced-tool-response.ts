@@ -277,11 +277,3 @@ export const decodeForcedToolResponseResult = (
     options?.acceptUnwrappedObject === true
   );
 };
-
-export const decodeForcedToolResponse = (
-  content: readonly unknown[],
-  expectedName: string
-): ForcedToolJsonObject | undefined => {
-  const result = decodeForcedToolResponseResult(content, expectedName);
-  return result._tag === "Decoded" ? result.value : undefined;
-};

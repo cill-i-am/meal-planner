@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 // eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
@@ -288,9 +287,6 @@ ffprobe -v error -show_format -show_streams -of json /tmp/video-only.mp4 > /tmp/
       expect(hasIsoBaseMediaFileType(validBytes.subarray(0, 12))).toBe(true);
       expect(validated.audioStreams).toHaveLength(1);
       expect(validated.videoStreams).toHaveLength(1);
-      expect(createHash("sha256").update(validBytes).digest("hex")).toMatch(
-        /^[a-f\d]{64}$/u
-      );
 
       await Promise.all(
         (

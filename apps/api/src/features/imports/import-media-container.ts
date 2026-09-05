@@ -7,6 +7,7 @@ import type {
 } from "./import-media-acquirer.js";
 import type {
   RetryableAcquisitionFailure,
+  ProviderEvidenceTransport,
   TikTokIdentity,
 } from "./import-media.model.js";
 
@@ -21,22 +22,7 @@ export class TikTokMediaContainer extends Cloudflare.Container<
       artifactId: string,
       durationSeconds: number
     ) => Effect.Effect<
-      {
-        readonly audio: {
-          readonly artifactId: string;
-          readonly bytes: number;
-          readonly durationMilliseconds: number;
-          readonly sha256: string;
-        };
-        readonly frames: readonly {
-          readonly artifactId: string;
-          readonly bytes: number;
-          readonly height: number;
-          readonly sha256: string;
-          readonly timestampMilliseconds: number;
-          readonly width: number;
-        }[];
-      },
+      typeof ProviderEvidenceTransport.Encoded,
       RetryableAcquisitionFailure
     >;
   }

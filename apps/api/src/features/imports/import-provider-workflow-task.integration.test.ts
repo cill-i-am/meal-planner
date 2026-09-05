@@ -7,13 +7,11 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
-import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
-import * as Bundle from "alchemy/Bundle";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Schema } from "effect";
-import type { ModuleDefinition } from "miniflare";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 
 interface ProviderWorkflowInput {
   readonly failureCode?: string;
@@ -72,53 +70,6 @@ const readDrizzleD1Migrations = (migrationsPath: string) => {
   );
 };
 
-const buildFixture = async (inputPath: string, outputDirectory: string) => {
-  const output = await Effect.runPromise(
-    Bundle.build(
-      {
-        checks: {
-          ineffectiveDynamicImport: false,
-          unresolvedImport: false,
-        },
-        external: ["cloudflare:workers"],
-        input: inputPath,
-        plugins: [
-          cloudflareRolldown({
-            compatibilityDate,
-            compatibilityFlags,
-          }),
-        ],
-      },
-      {
-        codeSplitting: false,
-        dir: outputDirectory,
-        format: "esm",
-        minify: true,
-        sourcemap: false,
-      }
-    )
-  );
-  const [entry, ...assets] = output.files;
-  return [
-    {
-      contents: Schema.is(Schema.String)(entry.content)
-        ? entry.content
-        : new TextDecoder().decode(entry.content),
-      path: entry.path,
-      type: "ESModule",
-    },
-    ...assets.map(
-      (asset): ModuleDefinition => ({
-        contents: Schema.is(Schema.String)(asset.content)
-          ? asset.content
-          : new TextDecoder().decode(asset.content),
-        path: asset.path,
-        type: "Text",
-      })
-    ),
-  ] as const satisfies readonly [ModuleDefinition, ...ModuleDefinition[]];
-};
-
 const applyMigrations = async () => {
   const database = await runtime.getD1Database("ProviderAccountingDatabase");
   const migrations = await readDrizzleD1Migrations(
@@ -159,8 +110,11 @@ beforeAll(async () => {
   );
   temporaryDirectories.push(temporaryDirectory);
   const [fixtureModules, householdDomainModules] = await Promise.all([
-    buildFixture(fixturePath, `${temporaryDirectory}/provider-workflow`),
-    buildFixture(householdDomainFixturePath, `${temporaryDirectory}/household`),
+    bundleWorkerFixture(fixturePath, `${temporaryDirectory}/provider-workflow`),
+    bundleWorkerFixture(
+      householdDomainFixturePath,
+      `${temporaryDirectory}/household`
+    ),
   ]);
   runtime = new Miniflare({
     compatibilityDate,
@@ -748,7 +702,7 @@ describe("provider workflow task retry exhaustion", () => {
       maximum_cost_micro_usd: 100_000,
       provider_stage_id: "recipe-extraction",
       run_id: `recipe-import:recipe-recovery:${importId}`,
-      state: "settled_unknown",
+      state: "settled_conservative",
     });
     await expect(
       database
@@ -814,7 +768,7 @@ describe("provider workflow task retry exhaustion", () => {
     ).resolves.toEqual({
       provider_stage_id: "recipe-extraction",
       run_id: `recipe-import:recipe-recovery:${importId}`,
-      state: "settled_unknown",
+      state: "settled_conservative",
     });
     await expect(
       database
@@ -829,7 +783,7 @@ describe("provider workflow task retry exhaustion", () => {
       dispatch_id: firstDispatchId,
       provider_stage_id: "recipe-extraction",
       run_id: `recipe-import:recipe-recovery:${importId}`,
-      state: "settled_unknown",
+      state: "settled_conservative",
     });
 
     await expect(
@@ -925,7 +879,7 @@ describe("provider workflow task retry exhaustion", () => {
       maximum_cost_micro_usd: 100_000,
       provider_stage_id: "recipe-extraction",
       run_id: `recipe-import:${importId}`,
-      state: "settled_unknown",
+      state: "settled_conservative",
     });
     await expect(
       database

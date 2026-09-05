@@ -1,6 +1,14 @@
 import {
+  PlanningDietaryFit,
+  PlanningDifficulty,
+  PlanningLeftovers,
+  PlanningMealType,
+  PlanningTotalTimeBand,
+} from "@meal-planner/recipe-domain";
+import {
   AnswerReviewRecipeActionRequest,
   IdempotencyKey,
+  RecipeReviewAnswer,
   SourceUrl,
 } from "@meal-planner/recipe-import-api";
 import type {
@@ -30,7 +38,6 @@ import { Label } from "../../components/ui/label.js";
 import { Separator } from "../../components/ui/separator.js";
 import { Skeleton } from "../../components/ui/skeleton.js";
 import { recipeImportQueryKeys } from "./household-query-isolation.js";
-import { recipeImportIntentRedirectSearch } from "./navigation.js";
 import type { RecipeImportOperations } from "./operations.js";
 
 type ActiveReviewAction = Extract<
@@ -48,51 +55,75 @@ const stageLabels = {
   resolving_source: "Resolving the link",
 } as const;
 
-const sourceUrlMessage = (value: string) => {
-  let message: string | undefined;
-  try {
-    Schema.decodeUnknownSync(SourceUrl)(value);
-  } catch {
-    message = "Enter an absolute HTTPS recipe link.";
-  }
-  return message;
-};
+const sourceUrlValidator = Schema.toStandardSchemaV1(SourceUrl);
+const nameValidator = Schema.toStandardSchemaV1(
+  RecipeReviewAnswer.members[0].fields.value
+);
+const decodeSourceUrl = Schema.decodeUnknownSync(SourceUrl);
+const decodeAnswer = Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest);
+const decodeIdempotencyKey = Schema.decodeUnknownSync(IdempotencyKey);
 
 const idempotencyKey = (makeRequestId: () => string) =>
-  Schema.decodeUnknownSync(IdempotencyKey)(makeRequestId());
+  decodeIdempotencyKey(makeRequestId());
 
-const hasRecipeImportRequestFailure = (input: {
-  readonly action: boolean;
-  readonly answer: boolean;
-  readonly cancel: boolean;
-  readonly confirm: boolean;
-  readonly create: boolean;
-  readonly intent: boolean;
-  readonly recipe: boolean;
-}) =>
-  input.action ||
-  input.answer ||
-  input.cancel ||
-  input.confirm ||
-  input.create ||
-  input.intent ||
-  input.recipe;
+const planningTagLabels = {
+  "30_to_60_minutes": "30 to 60 minutes",
+  breakfast: "Breakfast",
+  dessert: "Dessert",
+  dinner: "Dinner",
+  easy: "Easy",
+  hard: "Hard",
+  household_match: "Household match",
+  lunch: "Lunch",
+  medium: "Medium",
+  needs_adaptation: "Needs adaptation",
+  none: "None",
+  not_suitable: "Not suitable",
+  one_meal: "One meal",
+  over_60_minutes: "Over 60 minutes",
+  snack: "Snack",
+  two_plus_meals: "Two or more meals",
+  under_30_minutes: "Under 30 minutes",
+  unknown: "Unknown",
+} as const;
 
-const nameAnswerMessage = (
-  value: string,
-  actionVersion: ActiveReviewAction["actionVersion"]
-) => {
-  let message: string | undefined;
-  try {
-    Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest)({
-      answers: [{ field: "name", value }],
-      expectedActionVersion: actionVersion,
-    });
-  } catch {
-    message = "Enter a recipe name.";
-  }
-  return message;
-};
+const PlanningTagSelect = <T extends keyof typeof planningTagLabels>({
+  id,
+  label,
+  name,
+  onBlur,
+  onChange,
+  schema,
+  value,
+}: {
+  readonly id: string;
+  readonly label: string;
+  readonly name: string;
+  readonly onBlur: () => void;
+  readonly onChange: (value: T) => void;
+  readonly schema: Schema.Literals<readonly T[]>;
+  readonly value: T;
+}) => (
+  <div className="field-stack">
+    <Label htmlFor={id}>{label}</Label>
+    <select
+      className="field-select"
+      id={id}
+      name={name}
+      onBlur={onBlur}
+      onChange={(event) =>
+        onChange(Schema.decodeUnknownSync(schema)(event.target.value))
+      }
+      value={value}
+    >
+      {schema.literals.map((option) => (
+        <option key={option} value={option}>
+          {planningTagLabels[option]}
+        </option>
+      ))}
+    </select>
+  </div>
+);
 
 const NameAnswerForm = ({
   action,
@@ -110,12 +141,10 @@ const NameAnswerForm = ({
   const form = useForm({
     defaultValues: { name: action.review.recipe.name ?? "" },
     onSubmit: ({ value }) => {
-      const request = Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest)(
-        {
-          answers: [{ field: "name", value: value.name }],
-          expectedActionVersion: action.actionVersion,
-        }
-      );
+      const request = decodeAnswer({
+        answers: [{ field: "name", value: value.name }],
+        expectedActionVersion: action.actionVersion,
+      });
       submit({
         actionId: action.id,
         idempotencyKey: idempotencyKey(makeRequestId),
@@ -137,7 +166,7 @@ const NameAnswerForm = ({
       <form.Field
         name="name"
         validators={{
-          onBlur: ({ value }) => nameAnswerMessage(value, action.actionVersion),
+          onBlur: nameValidator,
         }}
       >
         {(field) => (
@@ -153,7 +182,9 @@ const NameAnswerForm = ({
               value={field.state.value}
             />
             <p className="field-error" id={`${field.name}-${action.id}-error`}>
-              {field.state.meta.errors.filter(Boolean).join(" ")}
+              {field.state.meta.errors.length > 0
+                ? "Enter a recipe name."
+                : null}
             </p>
           </>
         )}
@@ -189,24 +220,22 @@ const TagsAnswerForm = ({
       totalTimeBand: tags?.totalTimeBand ?? ("30_to_60_minutes" as const),
     },
     onSubmit: ({ value }) => {
-      const request = Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest)(
-        {
-          answers: [
-            {
-              field: "tags",
-              value: {
-                cuisines: [value.cuisine.trim()],
-                dietaryFit: value.dietaryFit,
-                difficulty: value.difficulty,
-                leftovers: value.leftovers,
-                mealTypes: [value.mealType],
-                totalTimeBand: value.totalTimeBand,
-              },
+      const request = decodeAnswer({
+        answers: [
+          {
+            field: "tags",
+            value: {
+              cuisines: [value.cuisine.trim()],
+              dietaryFit: value.dietaryFit,
+              difficulty: value.difficulty,
+              leftovers: value.leftovers,
+              mealTypes: [value.mealType],
+              totalTimeBand: value.totalTimeBand,
             },
-          ],
-          expectedActionVersion: action.actionVersion,
-        }
-      );
+          },
+        ],
+        expectedActionVersion: action.actionVersion,
+      });
       submit({
         actionId: action.id,
         idempotencyKey: idempotencyKey(makeRequestId),
@@ -243,120 +272,67 @@ const TagsAnswerForm = ({
       <div className="planning-tags-grid">
         <form.Field name="mealType">
           {(field) => (
-            <div className="field-stack">
-              <Label htmlFor={`mealType-${action.id}`}>Meal type</Label>
-              <select
-                className="field-select"
-                id={`mealType-${action.id}`}
-                name={field.name}
-                onBlur={field.handleBlur}
-                onChange={(event) =>
-                  field.handleChange(
-                    event.target.value as typeof field.state.value
-                  )
-                }
-                value={field.state.value}
-              >
-                <option value="breakfast">Breakfast</option>
-                <option value="lunch">Lunch</option>
-                <option value="dinner">Dinner</option>
-                <option value="snack">Snack</option>
-                <option value="dessert">Dessert</option>
-              </select>
-            </div>
+            <PlanningTagSelect
+              id={`mealType-${action.id}`}
+              label="Meal type"
+              name={field.name}
+              onBlur={field.handleBlur}
+              onChange={field.handleChange}
+              schema={PlanningMealType}
+              value={field.state.value}
+            />
           )}
         </form.Field>
         <form.Field name="dietaryFit">
           {(field) => (
-            <div className="field-stack">
-              <Label htmlFor={`dietaryFit-${action.id}`}>Dietary fit</Label>
-              <select
-                className="field-select"
-                id={`dietaryFit-${action.id}`}
-                name={field.name}
-                onBlur={field.handleBlur}
-                onChange={(event) =>
-                  field.handleChange(
-                    event.target.value as typeof field.state.value
-                  )
-                }
-                value={field.state.value}
-              >
-                <option value="household_match">Household match</option>
-                <option value="needs_adaptation">Needs adaptation</option>
-                <option value="not_suitable">Not suitable</option>
-              </select>
-            </div>
+            <PlanningTagSelect
+              id={`dietaryFit-${action.id}`}
+              label="Dietary fit"
+              name={field.name}
+              onBlur={field.handleBlur}
+              onChange={field.handleChange}
+              schema={PlanningDietaryFit}
+              value={field.state.value}
+            />
           )}
         </form.Field>
         <form.Field name="difficulty">
           {(field) => (
-            <div className="field-stack">
-              <Label htmlFor={`difficulty-${action.id}`}>Difficulty</Label>
-              <select
-                className="field-select"
-                id={`difficulty-${action.id}`}
-                name={field.name}
-                onBlur={field.handleBlur}
-                onChange={(event) =>
-                  field.handleChange(
-                    event.target.value as typeof field.state.value
-                  )
-                }
-                value={field.state.value}
-              >
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
-              </select>
-            </div>
+            <PlanningTagSelect
+              id={`difficulty-${action.id}`}
+              label="Difficulty"
+              name={field.name}
+              onBlur={field.handleBlur}
+              onChange={field.handleChange}
+              schema={PlanningDifficulty}
+              value={field.state.value}
+            />
           )}
         </form.Field>
         <form.Field name="leftovers">
           {(field) => (
-            <div className="field-stack">
-              <Label htmlFor={`leftovers-${action.id}`}>Leftovers</Label>
-              <select
-                className="field-select"
-                id={`leftovers-${action.id}`}
-                name={field.name}
-                onBlur={field.handleBlur}
-                onChange={(event) =>
-                  field.handleChange(
-                    event.target.value as typeof field.state.value
-                  )
-                }
-                value={field.state.value}
-              >
-                <option value="none">None</option>
-                <option value="one_meal">One meal</option>
-                <option value="two_plus_meals">Two or more meals</option>
-              </select>
-            </div>
+            <PlanningTagSelect
+              id={`leftovers-${action.id}`}
+              label="Leftovers"
+              name={field.name}
+              onBlur={field.handleBlur}
+              onChange={field.handleChange}
+              schema={PlanningLeftovers}
+              value={field.state.value}
+            />
           )}
         </form.Field>
         <form.Field name="totalTimeBand">
           {(field) => (
-            <div className="field-stack">
-              <Label htmlFor={`totalTimeBand-${action.id}`}>Total time</Label>
-              <select
-                className="field-select"
-                id={`totalTimeBand-${action.id}`}
-                name={field.name}
-                onBlur={field.handleBlur}
-                onChange={(event) =>
-                  field.handleChange(
-                    event.target.value as typeof field.state.value
-                  )
-                }
-                value={field.state.value}
-              >
-                <option value="under_30_minutes">Under 30 minutes</option>
-                <option value="30_to_60_minutes">30 to 60 minutes</option>
-                <option value="over_60_minutes">Over 60 minutes</option>
-                <option value="unknown">Unknown</option>
-              </select>
-            </div>
+            <PlanningTagSelect
+              id={`totalTimeBand-${action.id}`}
+              label="Total time"
+              name={field.name}
+              onBlur={field.handleBlur}
+              onChange={field.handleChange}
+              schema={PlanningTotalTimeBand}
+              value={field.state.value}
+            />
           )}
         </form.Field>
       </div>
@@ -389,7 +365,7 @@ const ImportRecipeForm = ({
   const form = useForm({
     defaultValues: { sourceUrl: "" },
     onSubmit: ({ value }) => {
-      submit(Schema.decodeUnknownSync(SourceUrl)(value.sourceUrl));
+      submit(decodeSourceUrl(value.sourceUrl));
     },
   });
 
@@ -402,10 +378,7 @@ const ImportRecipeForm = ({
         void form.handleSubmit();
       }}
     >
-      <form.Field
-        name="sourceUrl"
-        validators={{ onBlur: ({ value }) => sourceUrlMessage(value) }}
-      >
+      <form.Field name="sourceUrl" validators={{ onBlur: sourceUrlValidator }}>
         {(field) => (
           <div className="field-stack">
             <Label htmlFor={field.name}>Recipe link</Label>
@@ -442,7 +415,9 @@ const ImportRecipeForm = ({
               One link at a time.
             </p>
             <p className="field-error" id={`${field.name}-error`}>
-              {field.state.meta.errors.filter(Boolean).join(" ")}
+              {field.state.meta.errors.length > 0
+                ? "Enter an absolute HTTPS recipe link."
+                : null}
             </p>
           </div>
         )}
@@ -525,13 +500,7 @@ const IntentOutcome = ({
       <Alert>
         <h2>An existing import is already in progress</h2>
         <p>This request was redirected to the canonical import.</p>
-        <Link
-          from="/"
-          search={(previous) =>
-            recipeImportIntentRedirectSearch(previous, intent.redirect.intentId)
-          }
-          to="/"
-        >
+        <Link from="/" search={{ intentId: intent.redirect.intentId }} to="/">
           View existing import
         </Link>
       </Alert>
@@ -660,89 +629,12 @@ const SavedRecipeStatus = ({
   );
 };
 
-const RecipeImportFlow = ({
-  action,
-  answer,
-  cancel,
-  confirm,
-  hasActionError,
-  hasRecipeError,
-  hasRequestFailure,
-  intent,
-  isAnswering,
-  isCancelling,
-  isConfirming,
-  isCreating,
-  makeRequestId,
-  recipe,
-}: {
-  readonly action: RecipeImportAction | undefined;
-  readonly answer: (
-    input: Parameters<RecipeImportOperations["answerAction"]>[0]
-  ) => void;
-  readonly cancel: (
-    input: Parameters<RecipeImportOperations["cancel"]>[0]
-  ) => void;
-  readonly confirm: (
-    input: Parameters<RecipeImportOperations["confirmAction"]>[0]
-  ) => void;
-  readonly hasActionError: boolean;
-  readonly hasRecipeError: boolean;
-  readonly hasRequestFailure: boolean;
-  readonly intent: RecipeImportIntent | undefined;
-  readonly isAnswering: boolean;
-  readonly isCancelling: boolean;
-  readonly isConfirming: boolean;
-  readonly isCreating: boolean;
-  readonly makeRequestId: () => string;
-  readonly recipe: Recipe | undefined;
-}) => {
-  const awaitsAction = intent?.status === "requires_action";
-  return (
-    <div aria-live="polite" className="flow-region">
-      <ProcessingStatus
-        cancel={cancel}
-        intent={intent}
-        isCancelling={isCancelling}
-        isCreating={isCreating}
-        makeRequestId={makeRequestId}
-      />
-      {hasRequestFailure ? (
-        <Alert>
-          <h2>This import couldn’t be completed</h2>
-          <p>Please try again later.</p>
-        </Alert>
-      ) : null}
-      <IntentOutcome intent={intent} />
-      {awaitsAction && action === undefined && !hasActionError ? (
-        <section aria-label="Loading recipe review">
-          <Skeleton className="skeleton-title" />
-          <Skeleton className="skeleton-line" />
-        </section>
-      ) : null}
-      {action?.status === "active" ? (
-        <RecipeReview
-          action={action}
-          answer={answer}
-          confirm={confirm}
-          isAnswering={isAnswering}
-          isConfirming={isConfirming}
-          makeRequestId={makeRequestId}
-        />
-      ) : null}
-      <SavedRecipeStatus
-        hasRecipeError={hasRecipeError}
-        intent={intent}
-        recipe={recipe}
-      />
-    </div>
-  );
-};
-
+// eslint-disable-next-line complexity -- Keep query state and its rendering together instead of a forwarding component.
 export const RecipeImportPage = ({
   householdDomainStatus,
   householdId,
   householdName,
+  householdPeople,
   initialIntentId,
   makeRequestId = () => crypto.randomUUID(),
   onSignOut,
@@ -752,6 +644,7 @@ export const RecipeImportPage = ({
   readonly householdDomainStatus?: ReactNode;
   readonly householdId: string;
   readonly householdName: string;
+  readonly householdPeople?: ReactNode;
   readonly initialIntentId?: RecipeImportIntentId;
   readonly makeRequestId?: () => string;
   readonly onSignOut: () => Promise<void>;
@@ -869,15 +762,13 @@ export const RecipeImportPage = ({
 
   const hasRequestFailure =
     session.active &&
-    hasRecipeImportRequestFailure({
-      action: actionQuery.isError,
-      answer: answerMutation.isError,
-      cancel: cancelMutation.isError,
-      confirm: confirmMutation.isError,
-      create: createMutation.isError,
-      intent: intentQuery.isError,
-      recipe: recipeQuery.isError,
-    });
+    (actionQuery.isError ||
+      answerMutation.isError ||
+      cancelMutation.isError ||
+      confirmMutation.isError ||
+      createMutation.isError ||
+      intentQuery.isError ||
+      recipeQuery.isError);
   const action = actionQuery.data;
   const recipe = recipeQuery.data;
 
@@ -917,23 +808,48 @@ export const RecipeImportPage = ({
 
           <Separator />
 
-          <RecipeImportFlow
-            action={action}
-            answer={answerMutation.mutate}
-            cancel={cancelMutation.mutate}
-            confirm={confirmMutation.mutate}
-            hasActionError={actionQuery.isError}
-            hasRecipeError={recipeQuery.isError}
-            hasRequestFailure={hasRequestFailure}
-            intent={intent}
-            isAnswering={answerMutation.isPending}
-            isCancelling={cancelMutation.isPending}
-            isConfirming={confirmMutation.isPending}
-            isCreating={createMutation.isPending}
-            makeRequestId={makeRequestId}
-            recipe={recipe}
-          />
+          <div aria-live="polite" className="flow-region">
+            <ProcessingStatus
+              cancel={cancelMutation.mutate}
+              intent={intent}
+              isCancelling={cancelMutation.isPending}
+              isCreating={createMutation.isPending}
+              makeRequestId={makeRequestId}
+            />
+            {hasRequestFailure ? (
+              <Alert>
+                <h2>This import couldn’t be completed</h2>
+                <p>Please try again later.</p>
+              </Alert>
+            ) : null}
+            <IntentOutcome intent={intent} />
+            {intent?.status === "requires_action" &&
+            action === undefined &&
+            !actionQuery.isError ? (
+              <section aria-label="Loading recipe review">
+                <Skeleton className="skeleton-title" />
+                <Skeleton className="skeleton-line" />
+              </section>
+            ) : null}
+            {intent?.status === "requires_action" &&
+            action?.status === "active" ? (
+              <RecipeReview
+                action={action}
+                answer={answerMutation.mutate}
+                confirm={confirmMutation.mutate}
+                isAnswering={answerMutation.isPending}
+                isConfirming={confirmMutation.isPending}
+                makeRequestId={makeRequestId}
+              />
+            ) : null}
+            <SavedRecipeStatus
+              hasRecipeError={recipeQuery.isError}
+              intent={intent}
+              recipe={recipe}
+            />
+          </div>
         </section>
+        {householdPeople}
       </div>
     </main>
   );

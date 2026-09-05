@@ -5,6 +5,7 @@ import {
   isProviderKnownZeroCostFailure,
   providerKnownZeroCostFailure,
 } from "../provider-accounting/provider-accounting.js";
+import { bytesToHex } from "./import-digest.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import {
   ImportObservabilityTraceStore,
@@ -13,19 +14,17 @@ import {
 import {
   ProviderKnownZeroSetupFailureMessage,
   ProviderName,
-  RecipeWorkersAiRequest,
   SafeProviderFailureCode,
   decodeProviderFailureEvidence,
   failAfter,
   isSafeProviderFailureCode,
   pricedTokenUsage,
-  providerErrorDescription,
   providerFailureFromEvidence,
   providerFailureFromStatus,
   providerNormalizationDecodeReasonFromDescription,
-  safeFailureCode,
 } from "./import-provider-kernel.js";
 import type {
+  RecipeWorkersAiRequest,
   ProviderDispatchGate,
   ProviderDispatchRequest,
   WorkersAiTransport,
@@ -75,16 +74,11 @@ const recipeReplaySha256 = (valueJson: string) =>
         "SHA-256",
         new TextEncoder().encode(valueJson)
       );
-      return [...new Uint8Array(digest)]
-        .map((byte) => byte.toString(16).padStart(2, "0"))
-        .join("");
+      return bytesToHex(digest);
     },
   });
 
 const RecipeReplayMaximumBytes = 262_144;
-
-const recipeReplayByteLength = (valueJson: string) =>
-  new TextEncoder().encode(valueJson).byteLength;
 
 const recipeConservativeReplay = (
   request: RecipeEvidenceAssembly
@@ -96,12 +90,15 @@ const recipeConservativeReplay = (
 > => ({
   decode: (replay) =>
     Effect.gen(function* decodeRecipeReplay() {
+      const valueByteLength = new TextEncoder().encode(
+        replay.valueJson
+      ).byteLength;
       if (
         replay.evidenceFingerprint !== request.evidenceFingerprint ||
         replay.generation !== request.generation ||
         replay.importId !== request.importId ||
-        recipeReplayByteLength(replay.valueJson) === 0 ||
-        recipeReplayByteLength(replay.valueJson) > RecipeReplayMaximumBytes ||
+        valueByteLength === 0 ||
+        valueByteLength > RecipeReplayMaximumBytes ||
         (yield* recipeReplaySha256(replay.valueJson)) !== replay.valueSha256
       ) {
         return yield* Effect.fail("malformed_response" as const);
@@ -132,7 +129,7 @@ const recipeConservativeReplay = (
           ? value
           : Schema.encodeSync(RecipeExtraction)(value.extraction);
       const valueJson = JSON.stringify(encodedValue);
-      const valueByteLength = recipeReplayByteLength(valueJson);
+      const valueByteLength = new TextEncoder().encode(valueJson).byteLength;
       if (valueByteLength === 0 || valueByteLength > RecipeReplayMaximumBytes) {
         return yield* Effect.fail("malformed_response" as const);
       }
@@ -202,18 +199,20 @@ const decodeRecipeJsonModeTransportEnvelope = Schema.decodeUnknownResult(
 const decodeRecipeCandidate = Schema.decodeUnknownResult(RecipeCandidate, {
   onExcessProperty: "error",
 });
+const recipeCandidateJsonSchema = Schema.decodeUnknownSync(Schema.Json)(
+  Tool.getJsonSchemaFromSchema(RecipeCandidate)
+);
 const recipeJsonModeRequest = (
   request: RecipeEvidenceAssembly
-): RecipeWorkersAiRequest =>
-  Schema.decodeUnknownSync(RecipeWorkersAiRequest)({
-    max_tokens: 16_384,
-    messages: [{ content: recipePromptText(request), role: "user" }],
-    response_format: {
-      json_schema: Tool.getJsonSchemaFromSchema(RecipeCandidate),
-      type: "json_schema",
-    },
-    temperature: 0,
-  });
+): RecipeWorkersAiRequest => ({
+  max_tokens: 16_384,
+  messages: [{ content: recipePromptText(request), role: "user" }],
+  response_format: {
+    json_schema: recipeCandidateJsonSchema,
+    type: "json_schema",
+  },
+  temperature: 0,
+});
 
 type RecipeJsonModeOutcome =
   | {
@@ -245,7 +244,7 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
         if (!response.ok) {
           return {
             _tag: "Failed" as const,
-            code: safeFailureCode(providerFailureFromStatus(response.status)),
+            code: providerFailureFromStatus(response.status).code,
           } satisfies RecipeJsonModeOutcome;
         }
         const raw = Option.getOrUndefined(
@@ -350,11 +349,9 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
         const decodeReason = providerNormalizationDecodeReasonFromDescription(
           error instanceof Error
             ? error.message
-            : providerErrorDescription(
-                providerFailureFromEvidence(
-                  Option.getOrUndefined(decodeProviderFailureEvidence(error))
-                )
-              )
+            : providerFailureFromEvidence(
+                Option.getOrUndefined(decodeProviderFailureEvidence(error))
+              ).description
         );
         return decodeReason === undefined
           ? Effect.void
@@ -374,35 +371,21 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
         if (Schema.is(Schema.String)(error)) {
           return error;
         }
+        const failure = providerFailureFromEvidence(
+          Option.getOrUndefined(decodeProviderFailureEvidence(error))
+        );
+        const description =
+          error instanceof Error ? error.message : failure.description;
         if (
-          providerNormalizationDecodeReasonFromDescription(
-            error instanceof Error
-              ? error.message
-              : providerErrorDescription(
-                  providerFailureFromEvidence(
-                    Option.getOrUndefined(decodeProviderFailureEvidence(error))
-                  )
-                )
-          ) !== undefined
+          providerNormalizationDecodeReasonFromDescription(description) !==
+          undefined
         ) {
           return "malformed_response" as const;
         }
-        if (
-          (error instanceof Error
-            ? error.message
-            : providerErrorDescription(
-                providerFailureFromEvidence(
-                  Option.getOrUndefined(decodeProviderFailureEvidence(error))
-                )
-              )) === ProviderKnownZeroSetupFailureMessage
-        ) {
+        if (description === ProviderKnownZeroSetupFailureMessage) {
           return providerKnownZeroCostFailure("provider_unavailable" as const);
         }
-        return safeFailureCode(
-          providerFailureFromEvidence(
-            Option.getOrUndefined(decodeProviderFailureEvidence(error))
-          )
-        );
+        return failure.code;
       })
     );
   }

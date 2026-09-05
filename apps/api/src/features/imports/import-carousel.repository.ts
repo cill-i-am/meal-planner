@@ -13,10 +13,10 @@ import type {
 import type { ImportTransitionError } from "./import.repository.js";
 
 export interface CompletedCarouselEvidence {
-  readonly byteLength?: number;
+  readonly byteLength: number;
   readonly completedAt: ImportTimestamp;
   readonly descriptorFingerprint: string;
-  readonly deleteAt?: ImportTimestamp;
+  readonly deleteAt: ImportTimestamp;
   readonly dispatchId: string;
   readonly generation: AcquisitionGeneration;
   readonly imageCount: number;

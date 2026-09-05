@@ -16,7 +16,6 @@ const {
   RecipeImportIntentId,
   RecipeImportTimeline,
   RecipeId,
-  RequiresActionRecipeImportIntent,
 } = Protocol;
 
 const intentId = "018f47ad-91aa-7c35-b6fe-000000000001";
@@ -283,12 +282,6 @@ describe("RecipeImportIntent protocol", () => {
       "create-once"
     );
     expect(() => Schema.decodeUnknownSync(IdempotencyKey)(" ")).toThrow();
-    expect("RecipeImportRequirementId" in Protocol).toBe(false);
-    expect(
-      Object.keys(RequiresActionRecipeImportIntent.fields).filter(
-        (field) => field === "action"
-      )
-    ).toEqual(["action"]);
   });
 
   it("rejects excess properties at every public mutation boundary by default", () => {

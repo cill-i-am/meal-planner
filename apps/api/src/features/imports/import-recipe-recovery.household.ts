@@ -20,6 +20,7 @@ import {
   HouseholdImportMutationId,
   HouseholdRecipeImportExecutionView,
 } from "../households/recipe-import/household-recipe-import.contract.js";
+import { sha256Bytes } from "./import-digest.js";
 import type { HouseholdEvidenceDomain } from "./import-evidence.repository.household.js";
 import {
   makeHouseholdImportEvidenceCurrentRepository,
@@ -72,21 +73,11 @@ export interface HouseholdProviderRecovery {
 }
 
 export const recipeRecoveryHouseholdMutationId = (semanticKey: string) =>
-  Effect.promise(() =>
-    crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(
-        `household-recipe-import-recovery:v1:${semanticKey}`
-      )
+  sha256Bytes(
+    new TextEncoder().encode(
+      `household-recipe-import-recovery:v1:${semanticKey}`
     )
-  ).pipe(
-    Effect.map((digest) =>
-      Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("")
-    ),
-    Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId))
-  );
+  ).pipe(Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId)));
 
 const mapHouseholdFailure = (error: HouseholdRecipeImportDomainFailure) =>
   Schema.is(PersistenceUnavailableFailure)(error)
