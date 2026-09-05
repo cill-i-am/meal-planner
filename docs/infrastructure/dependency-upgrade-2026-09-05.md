@@ -77,16 +77,46 @@ GraphQL 17 is exercised by the existing provider document parsing tests. The
 repository does not use the execution APIs with signature changes listed in the
 [GraphQL 17 upgrade guide](https://www.graphql-js.org/upgrade-guides/v16-v17/).
 
+Retained media manifests treat tool versions as nonempty producer provenance.
+Their validity is independent of the binaries installed today. Existing
+schema-v1 media/manifest pairs produced by FFmpeg `8.1.2` and yt-dlp `2026.07.04`
+remain readable with their original checksums and retention bounds. New
+acquisitions record the current pinned versions. Real R2 regressions cover both
+generations of tool provenance through the same reader.
+
 ## Verification record
 
-During migration, five native Miniflare suites passed all 93 tests covering the
-authenticated API/Household boundary, Durable Object state, Queue/DLQ/lost-ack
-semantics, batch Workflow behaviour, and workflow inputs. The accounting upgrade
-suite also passed all five tests, including durable migration replay.
+Verification used Node `24.20.0` and pnpm `12.3.4`. The independent complete run
+used `5ac6bcae5b4b81390050d04217ebf6f19ca1e42c`. The subsequent correction at
+`220337f2c45d0c8e37947e7f4a497422d8069fbf` changes only retained tool-provenance
+decoding and its R2 regression coverage.
 
-The final candidate requires the repository's format, lint, type, test, build,
-and synthetic media-container checks, plus frozen installation and no-diff
-authentication/Drizzle schema generation. The independent verification result
-belongs with the final reviewed commit. No provider requests, deployment,
-publication, production compatibility-date change, or applied migration edits
-are included in this upgrade.
+| Check | Result |
+| --- | --- |
+| `pnpm install --frozen-lockfile` | Passed in the independent verification checkout. |
+| `pnpm format:check`, `pnpm lint`, `pnpm check` | Passed independently on the upgrade; passed again after the provenance correction. |
+| `pnpm test` | 1,071 tests passed across 99 files with no skips: 129 infrastructure, 55 shared-package, 95 web, and 792 API tests. Includes real authentication, D1, R2, Durable Object, Queue, and Workflow behaviour. |
+| `pnpm build` | Passed for every workspace package. |
+| `pnpm exec ultracite doctor` | Passed. |
+| `pnpm --filter @meal-planner/api exec vitest run src/features/imports/import-media-r2.worker.test.ts src/features/imports/import-acquisition-checkpoint.test.ts` | 29 tests passed independently after the provenance correction. Before the fix, the new regression rejected the prior tool versions while accepting the current versions. |
+| `pnpm auth:db:generate`, `pnpm db:generate`, `pnpm --filter @meal-planner/api household:db:generate` | No schema changes or new migrations. |
+| Built Nitro browser check | Passed anonymous SSR, hydration, asset loading, and browser-error checks against synthetic anonymous API responses. |
+| `pnpm test:container` | One real-image test passed in 1,112.63 seconds, covering installed tool versions, nonroot execution, temporary-directory isolation, network restrictions, media processing, and cleanup. The Dockerfile/runtime are unchanged by the provenance correction. |
+
+`pnpm auth:schema:generate` is **not** a no-diff pass. Both the base
+`auth@1.7.0-rc.6` and upgraded `auth@1.7.2` CLI exit successfully but emit an
+additional `id: text("id")` after the invitation's `inviterId`, duplicating its
+existing primary-key field. Their raw outputs are byte-identical: 6,744 bytes,
+SHA-256 `8510ae92408d4e835994acaed2369f682339eb4eca4479e87ee7ba4366174b9d`.
+The configured invitation ID is required by the existing caller-supplied-ID
+contract, which remains covered by the authentication worker tests. The
+[upstream generator](https://github.com/better-auth/better-auth/blob/v1.7.2/packages/cli/src/generators/drizzle.ts#L282-L290)
+emits both a primary ID and every configured field. This inherited generator
+limitation does not introduce schema drift in this upgrade; the checked-in
+canonical schema and all migrations remain unchanged. No generator patch or
+normalization path was added.
+
+No provider requests, deployment, publication, production compatibility-date
+change, or applied migration edits are included in this upgrade. The browser
+proof covers the built anonymous entry flow; authenticated runtime behaviour
+is covered by the real Worker integration suite.
