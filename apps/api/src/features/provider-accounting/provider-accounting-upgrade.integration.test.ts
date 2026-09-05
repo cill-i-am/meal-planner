@@ -1,4 +1,5 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -17,6 +18,7 @@ import {
   ProviderAccountingTimestamp,
 } from "./provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "./provider-accounting.repository.d1.js";
+import { makeD1ProviderAccountingRepository as makePreviousRepository } from "./provider-accounting.repository.previous.test-fixture.js";
 
 interface AlchemyMigrations {
   readonly applyMigrationsWith: (
@@ -30,7 +32,48 @@ interface AlchemyMigrations {
   ) => Effect.Effect<void, unknown>;
 }
 
-it("upgrades an applied baseline and conservatively settles an existing invocation exactly once", async () => {
+type UpgradeDatabase = Awaited<ReturnType<Miniflare["getD1Database"]>>;
+
+const readPersisted = async (database: UpgradeDatabase) => {
+  const [budgets, dispatches, audits, replay, reconciliations] =
+    await Promise.all([
+      database
+        .prepare("SELECT * FROM provider_accounting_budgets ORDER BY rowid")
+        .all(),
+      database
+        .prepare("SELECT * FROM provider_accounting_dispatches ORDER BY rowid")
+        .all(),
+      database
+        .prepare(
+          "SELECT * FROM provider_accounting_conservative_settlements ORDER BY rowid"
+        )
+        .all(),
+      database
+        .prepare(
+          "SELECT * FROM provider_accounting_recipe_replay_values ORDER BY rowid"
+        )
+        .all(),
+      database
+        .prepare(
+          "SELECT * FROM provider_accounting_reconciliations ORDER BY rowid"
+        )
+        .all(),
+    ]);
+  return {
+    provider_accounting_budgets: budgets.results,
+    provider_accounting_conservative_settlements: audits.results,
+    provider_accounting_dispatches: dispatches.results,
+    provider_accounting_recipe_replay_values: replay.results,
+    provider_accounting_reconciliations: reconciliations.results,
+  };
+};
+
+const withAppliedBaseline = async (
+  run: (
+    database: UpgradeDatabase,
+    upgrade: () => Promise<void>
+  ) => Promise<void>
+) => {
   // SAFETY: beta.72 exports this executor seam from the resolved module, but not its package barrel.
   const { applyMigrationsWith } = (await import(
     new URL("ApplyMigrations.js", import.meta.resolve("alchemy/Cloudflare/D1"))
@@ -74,12 +117,39 @@ it("upgrades an applied baseline and conservatively settles an existing invocati
       migrationsFiles: [baseline],
       migrationsTable: "d1_migrations",
     }).pipe(Effect.runPromise);
-    const historySql = "SELECT id, name FROM d1_migrations ORDER BY id";
+    const historySql = "SELECT * FROM d1_migrations ORDER BY id";
     const baselineHistory = await database.prepare(historySql).all();
     expect(baselineHistory.results).toEqual([
-      { id: "00001", name: baseline.id },
+      { applied_at: expect.any(String), id: "00001", name: baseline.id },
     ]);
 
+    const upgrade = () =>
+      applyMigrationsWith(executeSql, {
+        migrationsFiles: migrations,
+        migrationsTable: "d1_migrations",
+      }).pipe(Effect.runPromise);
+    await run(database, upgrade);
+    const upgradedHistory = await database.prepare(historySql).all();
+    expect(upgradedHistory.results).toEqual(
+      migrations.map(({ id }, index) => ({
+        applied_at: expect.any(String),
+        id: (index + 1).toString().padStart(5, "0"),
+        name: id,
+      }))
+    );
+    const persisted = await readPersisted(database);
+    await upgrade();
+    const repeatedHistory = await database.prepare(historySql).all();
+    expect(repeatedHistory.results).toEqual(upgradedHistory.results);
+    expect(await readPersisted(database)).toEqual(persisted);
+  } finally {
+    await runtime.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+};
+
+it("upgrades an applied baseline and conservatively settles an existing invocation exactly once", async () => {
+  await withAppliedBaseline(async (database, upgrade) => {
     const repository = makeD1ProviderAccountingRepository(database);
     const evidenceFingerprint = "e".repeat(64);
     const command = {
@@ -110,10 +180,7 @@ it("upgrades an applied baseline and conservatively settles an existing invocati
       state: "invoking",
     });
 
-    await applyMigrationsWith(executeSql, {
-      migrationsFiles: migrations,
-      migrationsTable: "d1_migrations",
-    }).pipe(Effect.runPromise);
+    await upgrade();
     const settlement = {
       ...command,
       conservativeChargeMicroUsd: 100_000,
@@ -178,20 +245,185 @@ it("upgrades an applied baseline and conservatively settles an existing invocati
         value_sha256: settlement.replay.valueSha256,
       },
     ]);
-    const expectedHistory = migrations.map(({ id }, index) => ({
-      id: (index + 1).toString().padStart(5, "0"),
-      name: id,
-    }));
-    const upgradedHistory = await database.prepare(historySql).all();
-    expect(upgradedHistory.results).toEqual(expectedHistory);
-    await applyMigrationsWith(executeSql, {
-      migrationsFiles: migrations,
-      migrationsTable: "d1_migrations",
-    }).pipe(Effect.runPromise);
-    const replayedHistory = await database.prepare(historySql).all();
-    expect(replayedHistory.results).toEqual(expectedHistory);
-  } finally {
-    await runtime.dispose();
-    await rm(directory, { force: true, recursive: true });
-  }
+  });
 }, 30_000);
+
+// Frozen, unmodified repository from main at 9a59f85170f379e065920eadaaf69593d90c2c40.
+const previousRepositorySha256 =
+  "447c63a4de74627a5f581e2338c86449a27725579fde0484a7bfe84ccbbe5aa8";
+
+it.each(["active", "expired", "swept", "unknown"] as const)(
+  "upgrades a previously completed %s settlement without changing its persisted evidence or charging again",
+  async (scenario) => {
+    const source = await readFile(
+      new URL(
+        "provider-accounting.repository.previous.test-fixture.ts",
+        import.meta.url
+      )
+    );
+    expect(createHash("sha256").update(source).digest("hex")).toBe(
+      previousRepositorySha256
+    );
+    await withAppliedBaseline(async (database, upgrade) => {
+      const previous = makePreviousRepository(database);
+      const evidenceFingerprint = "e".repeat(64);
+      const command = {
+        dispatchId: Schema.decodeUnknownSync(ProviderAccountingDispatchId)(
+          `recipe:upgrade-${scenario}:1:${evidenceFingerprint}`
+        ),
+        maximumCostMicroUsd: 100_000,
+        providerStageId: Schema.decodeUnknownSync(
+          ProviderAccountingProviderStageId
+        )("recipe-extraction"),
+        runId: Schema.decodeUnknownSync(ProviderAccountingRunId)(
+          `recipe-import:upgrade-${scenario}`
+        ),
+        timestamp: Schema.decodeUnknownSync(ProviderAccountingTimestamp)(
+          new Date().toISOString()
+        ),
+      };
+      await previous.reserve(command).pipe(Effect.runPromise);
+      const claim = await previous
+        .beginInvocation(command)
+        .pipe(Effect.runPromise);
+      if (claim._tag !== "Claimed") {
+        throw new Error("Expected a previous-repository invocation");
+      }
+      const settlement = {
+        ...command,
+        conservativeChargeMicroUsd: 100_000,
+        invocationGeneration: claim.dispatch.invocationGeneration,
+        replay: {
+          evidenceFingerprint,
+          generation: 1,
+          importId: `upgrade-${scenario}`,
+          valueJson: JSON.stringify("decoded-recipe"),
+          valueSha256: "a".repeat(64),
+        },
+      };
+      await (
+        scenario === "unknown"
+          ? previous.settleUnknown(settlement)
+          : previous.settleConservative(settlement)
+      ).pipe(Effect.runPromise);
+      const cleanupCommand = {
+        ...command,
+        dispatchId: Schema.decodeUnknownSync(ProviderAccountingDispatchId)(
+          "recipe:cleanup-after-upgrade"
+        ),
+      };
+      if (scenario === "expired") {
+        await previous.reserve(cleanupCommand).pipe(Effect.runPromise);
+      }
+      if (scenario === "expired" || scenario === "swept") {
+        const immutableTrigger = await database
+          .prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'provider_accounting_recipe_replay_values_immutable_update'"
+          )
+          .first<string>("sql");
+        if (immutableTrigger === null) {
+          throw new Error("Replay immutability trigger is missing");
+        }
+        await database
+          .prepare(
+            "DROP TRIGGER provider_accounting_recipe_replay_values_immutable_update"
+          )
+          .run();
+        try {
+          await database
+            .prepare(
+              "UPDATE provider_accounting_recipe_replay_values SET created_at = '2026-07-20T18:00:00.000Z', expires_at = '2026-07-27T18:00:00.000Z'"
+            )
+            .run();
+        } finally {
+          await database.prepare(immutableTrigger).run();
+        }
+        if (scenario === "swept") {
+          await database
+            .prepare(
+              "DELETE FROM provider_accounting_recipe_replay_values WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
+            )
+            .run();
+        }
+      }
+      const before = await readPersisted(database);
+      expect(
+        before.provider_accounting_dispatches.map((row) => row["state"])
+      ).toEqual(
+        scenario === "expired"
+          ? ["settled_unknown", "reserved"]
+          : ["settled_unknown"]
+      );
+      expect(before.provider_accounting_budgets).toEqual([
+        expect.objectContaining({
+          reserved_micro_usd: ["unknown", "expired"].includes(scenario)
+            ? 100_000
+            : 0,
+          settled_micro_usd: scenario === "unknown" ? 0 : 100_000,
+          state: scenario === "unknown" ? "poisoned" : "open",
+        }),
+      ]);
+      expect(before.provider_accounting_conservative_settlements).toHaveLength(
+        scenario === "unknown" ? 0 : 1
+      );
+      expect(before.provider_accounting_recipe_replay_values).toHaveLength(
+        scenario === "active" || scenario === "expired" ? 1 : 0
+      );
+      await upgrade();
+      const expected =
+        scenario === "unknown"
+          ? before
+          : {
+              ...before,
+              provider_accounting_dispatches:
+                before.provider_accounting_dispatches.map((row) =>
+                  row["dispatch_id"] === command.dispatchId
+                    ? {
+                        ...row,
+                        state: "settled_conservative",
+                      }
+                    : row
+                ),
+            };
+      expect(await readPersisted(database)).toEqual(expected);
+      const current = makeD1ProviderAccountingRepository(database);
+      const read = await current.readDispatch(command).pipe(Effect.runPromise);
+      expect(read.state).toBe(
+        scenario === "unknown" ? "settled_unknown" : "settled_conservative"
+      );
+      if (scenario === "active") {
+        expect(read.conservativeReplay).toMatchObject(settlement.replay);
+        await expect(
+          current.settleConservative(settlement).pipe(Effect.runPromise)
+        ).resolves.toEqual(read);
+        await expect(
+          current.settleConservative(settlement).pipe(Effect.runPromise)
+        ).resolves.toEqual(read);
+      } else if (scenario === "unknown") {
+        expect(read.conservativeReplay).toBeUndefined();
+        await expect(
+          current.settleUnknown(settlement).pipe(Effect.runPromise)
+        ).resolves.toEqual(read);
+      } else {
+        expect(read.conservativeReplay).toBeUndefined();
+        await expect(
+          current.settleConservative(settlement).pipe(Effect.runPromise)
+        ).rejects.toMatchObject({
+          _tag: "ProviderAccountingError",
+          code: "dispatch_conflict",
+        });
+      }
+      expect(await readPersisted(database)).toEqual(expected);
+      if (scenario === "expired") {
+        await expect(
+          current.beginInvocation(cleanupCommand).pipe(Effect.runPromise)
+        ).resolves.toMatchObject({ _tag: "Claimed" });
+        const remainingReplay = await database
+          .prepare("SELECT * FROM provider_accounting_recipe_replay_values")
+          .all();
+        expect(remainingReplay.results).toEqual([]);
+      }
+    });
+  },
+  30_000
+);

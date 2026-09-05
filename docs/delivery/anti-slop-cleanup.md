@@ -75,7 +75,7 @@ No external I/O is introduced inside household transactions.
 
 ## Acceptance Evidence
 
-- [ ] All repository type, build, test, lint, and format checks pass.
+- [x] All repository type, build, test, lint, and format checks pass.
 - [x] Media client → installed Alchemy Durable Object bridge → artifact registry
       proves original, audio, and frame reads plus foreign-owner rejection.
 - [x] Native household tests preserve isolation, restart, replay, collisions,
@@ -138,7 +138,8 @@ No external I/O is introduced inside household transactions.
   hosted CI, and independent review of the corrected immutable head are tracked
   on PR #203. The previous head's full 1,041 tests, container verification, and
   both hosted CI jobs passed; they do not replace verification of this correction.
-- No deployment or merge is authorized by this correction.
+- At that correction, deployment and merge were not authorized; subsequent merge
+  authority is recorded below. Deployment remains outside scope.
 
 ### Hosted CI correction and completed-settlement review
 
@@ -158,5 +159,43 @@ No external I/O is introduced inside household transactions.
 - A proposed state-only conversion passed two disposable native D1 tests using
   the real main repository before upgrade. Conservative reads/replays recover
   with unchanged budget, audit, replay, and ledger; genuinely unknown settlements
-  remain unchanged. This backfill is not included pending the explicit approval
-  required by the greenfield policy. The PR remains draft and must not be merged.
+  remain unchanged. Approval was pending at that reviewed head; the subsequent
+  decision and committed correction are recorded below.
+
+
+### Completed-settlement correction and integration with #202
+
+- The user requested the narrow conversion and subsequently authorized merging
+  after verification. [ADR-0011](../architecture/decisions/0011-canonicalize-completed-conservative-settlements.md)
+  records the one-time state conversion and its boundaries. No cloud deployment
+  or live database operation is authorized.
+- Reconciled freshly fetched main at
+  `b509ba53ce1ac1326e86a9e826bdf58cbb0e7856`, including #202's profile authority,
+  versioning, audit and retained-mutation recovery. Four conflicts were resolved
+  by preserving profile RPC/contracts/UI alongside the cleanup. Profile storage,
+  migrations, operations and recovery implementations remain unchanged from main.
+- Conversion requires existing immutable conservative audit evidence and changes
+  only the stored dispatch state. Both the transition guard and dispatch-update
+  replay cleanup are suspended and restored within the atomic migration batch.
+  This avoids deleting expired replay rows as an incidental conversion effect.
+- The upgrade suite now runs the byte-pinned previous repository implementation
+  from `9a59f85170f379e065920eadaaf69593d90c2c40`. Active, expired and already-swept
+  conservative settlements reproduce the old representation. Genuine unknown
+  settlements remain unchanged. Tests compare every persisted column across all
+  five accounting tables and verify migration reapplication and settlement retry.
+- RED: all three completed conservative cases rejected the unchanged stored state
+  after the trigger-only migration; the in-flight and genuine unknown cases passed.
+  Expired replay remains unavailable to callers without invalidating the accounting
+  record, inventing evidence, or allowing another charge.
+- GREEN: all five upgrade cases and 27 existing native accounting tests pass.
+  All 1,068 repository tests pass: 128 root/Alchemy, 55 shared contracts,
+  790 API and 95 web. Verification used `pnpm exec vitest run --config
+  vitest.alchemy.config.ts` and `pnpm --recursive test`, the two components of
+  root `pnpm test`. `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm build`,
+  `pnpm exec ultracite doctor` and diff checks pass.
+- The real reconciled route passes desktop (1440px) and narrow (375px) local
+  HTTP-fixture browser checks: reachable profile anchor, no horizontal overflow,
+  interrupted preference save, exact-command retry preserving the mutation ID,
+  successful save and subsequent correction. No live authentication/provider call
+  is claimed. Independent final-head review and hosted checks are recorded on
+  PR #203 before the authorized merge.

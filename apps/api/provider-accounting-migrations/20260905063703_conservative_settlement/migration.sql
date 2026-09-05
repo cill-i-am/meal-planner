@@ -1,5 +1,29 @@
 DROP TRIGGER `provider_accounting_dispatches_transition_guard`;
 --> statement-breakpoint
+DROP TRIGGER `provider_accounting_recipe_replay_values_dispatch_update_cleanup`;
+--> statement-breakpoint
+UPDATE `provider_accounting_dispatches`
+SET `state` = 'settled_conservative'
+WHERE `state` = 'settled_unknown'
+  AND `provider_stage_id` = 'recipe-extraction'
+  AND `maximum_cost_micro_usd` = 100000
+  AND `actual_cost_micro_usd` IS NULL
+  AND EXISTS (
+    SELECT 1 FROM `provider_accounting_conservative_settlements` AS audit
+    WHERE audit.`accounting_scope` = `provider_accounting_dispatches`.`accounting_scope`
+      AND audit.`dispatch_id` = `provider_accounting_dispatches`.`dispatch_id`
+      AND audit.`actual_cost_was_unknown` = 1
+      AND audit.`authority` = 'schema_valid_provider_response'
+      AND audit.`conservative_charge_micro_usd` = 100000
+  );
+--> statement-breakpoint
+CREATE TRIGGER `provider_accounting_recipe_replay_values_dispatch_update_cleanup`
+AFTER UPDATE ON `provider_accounting_dispatches`
+BEGIN
+	DELETE FROM `provider_accounting_recipe_replay_values`
+		WHERE `expires_at` <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+END;
+--> statement-breakpoint
 CREATE TRIGGER `provider_accounting_dispatches_transition_guard`
 BEFORE UPDATE ON `provider_accounting_dispatches`
 BEGIN

@@ -1,4 +1,8 @@
 import type {
+  HouseholdProfileRejected,
+  MutatePersonProfilePayload,
+  PersonProfile,
+  ProfileVersionPage,
   AssociateHouseholdAdultInvitationPayload,
   BootstrapHouseholdCreatorPayload,
   CancelHouseholdAdultDeparturePayload,
@@ -122,6 +126,21 @@ export type HouseholdPeopleGatewayFailure =
 
 /** Admitted application boundary for household people. */
 export interface HouseholdPeopleGateway {
+  readonly getProfile: (input: {
+    readonly personId: HouseholdPersonId;
+    readonly principal: HouseholdPeoplePrincipal;
+    readonly version?: number;
+  }) => Effect.Effect<PersonProfile, HouseholdProfileRejected>;
+  readonly listProfileVersions: (input: {
+    readonly beforeVersion: number | null;
+    readonly personId: HouseholdPersonId;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<ProfileVersionPage, HouseholdProfileRejected>;
+  readonly mutateProfile: (input: {
+    readonly payload: MutatePersonProfilePayload;
+    readonly personId: HouseholdPersonId;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<PersonProfile, HouseholdProfileRejected>;
   readonly archive: (input: {
     readonly payload: TransitionHouseholdPersonPayload;
     readonly personId: HouseholdPersonId;

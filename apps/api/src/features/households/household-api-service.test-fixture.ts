@@ -818,8 +818,14 @@ export default {
             householdDomain.getMemberDepartureByMutation(input),
           listHouseholdPeople: (input) =>
             householdDomain.listHouseholdPeople(input),
+          listProfileVersions: (input) =>
+            householdDomain.listProfileVersions(input),
+          mutatePersonProfile: (input) =>
+            householdDomain.mutatePersonProfile(input),
           prepareMemberDeparture: (input) =>
             householdDomain.prepareMemberDeparture(input),
+          readPersonProfile: (input) =>
+            householdDomain.readPersonProfile(input),
           repairAdultAccountLink: (input) =>
             householdDomain.repairAdultAccountLink(input),
           restoreHouseholdPerson: (input) =>
