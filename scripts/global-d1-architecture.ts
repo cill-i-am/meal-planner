@@ -722,28 +722,30 @@ const collectD1Resources = (
           expression.endsWith(".D1.Database")
         ) {
           const [logicalId, configuration] = call.arguments;
+          const migrationsProperty =
+            configuration !== undefined &&
+            ts.isObjectLiteralExpression(configuration)
+              ? configuration.properties.find(
+                  (property): property is ts.PropertyAssignment =>
+                    ts.isPropertyAssignment(property) &&
+                    (ts.isIdentifier(property.name) ||
+                      ts.isStringLiteralLike(property.name)) &&
+                    property.name.text === "migrations"
+                )
+              : undefined;
+          const migrations =
+            migrationsProperty &&
+            ts.isObjectLiteralExpression(migrationsProperty.initializer)
+              ? migrationsProperty.initializer
+              : undefined;
           declarations.push({
             exportName: node.name.text,
             logicalId:
               logicalId !== undefined && ts.isStringLiteralLike(logicalId)
                 ? logicalId.text
                 : "<non-literal>",
-            migrationsDir:
-              stringProperty(
-                configuration !== undefined &&
-                  ts.isObjectLiteralExpression(configuration)
-                  ? configuration
-                  : undefined,
-                "migrationsDir"
-              ) ?? "<missing>",
-            migrationsTable:
-              stringProperty(
-                configuration !== undefined &&
-                  ts.isObjectLiteralExpression(configuration)
-                  ? configuration
-                  : undefined,
-                "migrationsTable"
-              ) ?? "<missing>",
+            migrationsDir: stringProperty(migrations, "dir") ?? "<missing>",
+            migrationsTable: stringProperty(migrations, "table") ?? "<missing>",
             path: trackedSource.path,
           });
         }

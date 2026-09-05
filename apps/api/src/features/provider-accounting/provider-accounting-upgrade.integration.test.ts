@@ -5,8 +5,9 @@ import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { NodeServices } from "@effect/platform-node";
+import { applyMigrations } from "alchemy/SQL/Migrations/index";
+import type { SqlExecutor } from "alchemy/SQL/Migrations/index";
 import { listSqlFiles } from "alchemy/SQL/SqlFile";
-import type { SqlFile } from "alchemy/SQL/SqlFile";
 import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { expect, it } from "vitest";
@@ -19,18 +20,6 @@ import {
 } from "./provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "./provider-accounting.repository.d1.js";
 import { makeD1ProviderAccountingRepository as makePreviousRepository } from "./provider-accounting.repository.previous.test-fixture.js";
-
-interface AlchemyMigrations {
-  readonly applyMigrationsWith: (
-    executor: (sql: string) => Effect.Effect<{
-      readonly result: readonly { readonly results?: unknown }[];
-    }>,
-    options: {
-      readonly migrationsTable: string;
-      readonly migrationsFiles: readonly SqlFile[];
-    }
-  ) => Effect.Effect<void, unknown>;
-}
 
 type UpgradeDatabase = Awaited<ReturnType<Miniflare["getD1Database"]>>;
 
@@ -74,16 +63,24 @@ const withAppliedBaseline = async (
     upgrade: () => Promise<void>
   ) => Promise<void>
 ) => {
-  // SAFETY: beta.72 exports this executor seam from the resolved module, but not its package barrel.
-  const { applyMigrationsWith } = (await import(
+  // Alchemy's Cloudflare wildcard export maps to barrels; this executor is internal.
+  const { makeD1MigrationExecutor } = (await import(
     new URL("ApplyMigrations.js", import.meta.resolve("alchemy/Cloudflare/D1"))
       .href
-  )) as AlchemyMigrations;
-  const migrations = await listSqlFiles(
-    fileURLToPath(
-      new URL("../../../provider-accounting-migrations", import.meta.url)
-    )
-  ).pipe(Effect.provide(NodeServices.layer), Effect.runPromise);
+  )) as {
+    readonly makeD1MigrationExecutor: (
+      execute: (sql: string) => Effect.Effect<{
+        readonly result: readonly { readonly results?: unknown }[];
+      }>
+    ) => SqlExecutor;
+  };
+  const migrationsDirectory = fileURLToPath(
+    new URL("../../../provider-accounting-migrations", import.meta.url)
+  );
+  const migrations = await listSqlFiles(migrationsDirectory).pipe(
+    Effect.provide(NodeServices.layer),
+    Effect.runPromise
+  );
   const baseline = migrations.find(
     ({ id }) => id === "20260824183013_provider_accounting/migration.sql"
   );
@@ -113,10 +110,12 @@ const withAppliedBaseline = async (
         );
         return { result: await database.batch(statements) };
       });
-    await applyMigrationsWith(executeSql, {
-      migrationsFiles: [baseline],
-      migrationsTable: "d1_migrations",
-    }).pipe(Effect.runPromise);
+    // Seed the installed beta.72 schema and ledger to exercise the real upgrade.
+    await executeSql(`
+      ${baseline.sql}
+      CREATE TABLE d1_migrations (id TEXT PRIMARY KEY, name TEXT, applied_at TEXT);
+      INSERT INTO d1_migrations VALUES ('00001', '${baseline.id}', '2026-08-24T18:30:13.000Z');
+    `).pipe(Effect.runPromise);
     const historySql = "SELECT * FROM d1_migrations ORDER BY id";
     const baselineHistory = await database.prepare(historySql).all();
     expect(baselineHistory.results).toEqual([
@@ -124,17 +123,19 @@ const withAppliedBaseline = async (
     ]);
 
     const upgrade = () =>
-      applyMigrationsWith(executeSql, {
-        migrationsFiles: migrations,
-        migrationsTable: "d1_migrations",
-      }).pipe(Effect.runPromise);
+      applyMigrations({
+        executor: makeD1MigrationExecutor(executeSql),
+        resolved: { dir: migrationsDirectory, table: "d1_migrations" },
+      }).pipe(Effect.provide(NodeServices.layer), Effect.runPromise);
     await run(database, upgrade);
     const upgradedHistory = await database.prepare(historySql).all();
     expect(upgradedHistory.results).toEqual(
-      migrations.map(({ id }, index) => ({
+      migrations.map(({ id, hash }, index) => ({
         applied_at: expect.any(String),
-        id: (index + 1).toString().padStart(5, "0"),
-        name: id,
+        created_at: expect.any(Number),
+        hash,
+        id: index + 1,
+        name: id === baseline.id ? id : id.replace("/migration.sql", ""),
       }))
     );
     const persisted = await readPersisted(database);

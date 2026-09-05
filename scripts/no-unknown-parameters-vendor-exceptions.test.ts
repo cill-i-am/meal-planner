@@ -105,7 +105,7 @@ describe("anti-slop vendor contract exceptions", () => {
         new URL(exception.file, repositoryRootUrl),
         "utf-8"
       );
-      const marker = `TODO(${exception.id} alchemy@2.0.0-beta.72)`;
+      const marker = `TODO(${exception.id} alchemy@2.0.0-beta.76)`;
       const comments = source
         .split("\n")
         .filter((line) => line.includes(marker));

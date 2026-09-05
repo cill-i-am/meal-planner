@@ -1,6 +1,6 @@
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Deferred, Effect, Fiber, Schema } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Schema } from "effect";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ImportId } from "../imports/import.contracts.js";
@@ -1326,51 +1326,65 @@ describe("provider accounting", () => {
     expect(providerCalls).toBe(2);
   });
 
-  it("poisons a known-zero marker combined with a defect", async () => {
-    const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
-    );
-    const first = reservation(
-      "run_ambiguous_known_zero",
-      "dispatch_ambiguous_known_zero",
-      10
-    );
+  it.each([
+    {
+      finalizer: Effect.die(new Error("simulated post-dispatch defect")),
+      label: "defect",
+    },
+    { finalizer: Effect.interrupt, label: "interruption" },
+  ])(
+    "poisons a known-zero marker combined with a $label",
+    async ({ finalizer, label }) => {
+      const repository = makeD1ProviderAccountingRepository(
+        testEnv.ProviderAccountingDatabase
+      );
+      const first = reservation(
+        "run_ambiguous_known_zero",
+        "dispatch_ambiguous_known_zero",
+        10
+      );
 
-    await Effect.runPromiseExit(
-      runAccountedProviderDispatch({
-        invoke: Effect.fail(
-          providerKnownZeroCostFailure({
-            code: "provider_unavailable",
-          })
-        ).pipe(
-          Effect.ensuring(
-            Effect.die(new Error("simulated post-dispatch defect"))
-          )
-        ),
-        repository,
-        reservation: first,
-      })
-    );
+      const exit = await Effect.runPromiseExit(
+        runAccountedProviderDispatch({
+          invoke: Effect.fail(
+            providerKnownZeroCostFailure({
+              code: "provider_unavailable",
+            })
+          ).pipe(Effect.ensuring(finalizer)),
+          repository,
+          reservation: first,
+        })
+      );
 
-    expect(await Effect.runPromise(repository.readStage())).toMatchObject({
-      poisonDispatchId: first.dispatchId,
-      reservedMicroUsd: 10,
-      settledMicroUsd: 0,
-      state: "poisoned",
-    });
-    await expect(
-      testEnv.ProviderAccountingDatabase.prepare(
-        `SELECT actual_cost_micro_usd, state
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        expect(Cause.hasFails(exit.cause)).toBe(true);
+        expect(
+          label === "defect"
+            ? Cause.hasDies(exit.cause)
+            : Cause.hasInterrupts(exit.cause)
+        ).toBe(true);
+      }
+      expect(await Effect.runPromise(repository.readStage())).toMatchObject({
+        poisonDispatchId: first.dispatchId,
+        reservedMicroUsd: 10,
+        settledMicroUsd: 0,
+        state: "poisoned",
+      });
+      await expect(
+        testEnv.ProviderAccountingDatabase.prepare(
+          `SELECT actual_cost_micro_usd, state
            FROM provider_accounting_dispatches
           WHERE dispatch_id = ?`
-      )
-        .bind(first.dispatchId)
-        .first()
-    ).resolves.toEqual({
-      actual_cost_micro_usd: null,
-      state: "settled_unknown",
-    });
-  });
+        )
+          .bind(first.dispatchId)
+          .first()
+      ).resolves.toEqual({
+        actual_cost_micro_usd: null,
+        state: "settled_unknown",
+      });
+    }
+  );
 
   it("does not grant zero-cost authority to a structurally similar provider error", async () => {
     const repository = makeD1ProviderAccountingRepository(

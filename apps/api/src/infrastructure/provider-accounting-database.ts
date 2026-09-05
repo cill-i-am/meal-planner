@@ -4,7 +4,9 @@ import * as Cloudflare from "alchemy/Cloudflare";
 export const ProviderAccountingDatabase = Cloudflare.D1.Database(
   "ProviderAccountingDatabase",
   {
-    migrationsDir: "./apps/api/provider-accounting-migrations",
-    migrationsTable: "d1_migrations",
+    migrations: {
+      dir: "./apps/api/provider-accounting-migrations",
+      table: "d1_migrations",
+    },
   }
 );

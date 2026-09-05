@@ -1,58 +1,92 @@
+diff --git a/lib/Cloudflare/D1/ApplyMigrations.d.ts b/lib/Cloudflare/D1/ApplyMigrations.d.ts
+index 0c9935255b73ac427d76e4e1b19074aafabfcc0b..809c5be594df7083e83bf3dc27a26a6891f51e5b 100644
+--- a/lib/Cloudflare/D1/ApplyMigrations.d.ts
++++ b/lib/Cloudflare/D1/ApplyMigrations.d.ts
+@@ -28,3 +28,4 @@ export type D1SqlExecutor<E = unknown, R = never> = (sql: string) => Effect.Effe
+  */
+ export declare const makeD1MigrationExecutor: <E>(raw: D1SqlExecutor<E>) => SqlExecutor;
+ //# sourceMappingURL=ApplyMigrations.d.ts.map
++export declare const makeCloudD1MigrationExecutor: (options: { accountId: string; databaseId: string }) => Effect.Effect<SqlExecutor, never, import("@distilled.cloud/cloudflare/d1").CloudflareOpContext>;
 diff --git a/lib/Cloudflare/D1/ApplyMigrations.js b/lib/Cloudflare/D1/ApplyMigrations.js
-index 28df29458fd33b178660429915cb8c9ae4c7abe9..7109661959ea066e8adce95848729b6a6deda874 100644
+index 969249320fda95b2f0ce39544c0520db470bbc0f..dcac2ad78231da0a88cc94c856189b8f72d8df01 100644
 --- a/lib/Cloudflare/D1/ApplyMigrations.js
 +++ b/lib/Cloudflare/D1/ApplyMigrations.js
-@@ -1,5 +1,6 @@
- import * as d1 from "@distilled.cloud/cloudflare/d1";
- import * as Effect from "effect/Effect";
+@@ -1,3 +1,5 @@
++import * as d1 from "@distilled.cloud/cloudflare/d1";
 +import { importD1Database } from "./ImportDatabase.js";
+ import * as Effect from "effect/Effect";
+ import { inlineSqlParams, MigrationError, } from "../../SQL/Migrations/index.js";
  /**
-  * Apply pending D1 migrations in order against the live cloud API. Uses the
-  * wrangler-compatible 3-column schema `(id TEXT PK, name TEXT, applied_at
-@@ -12,13 +13,19 @@ export const applyMigrations = (options) => Effect.gen(function* () {
-         databaseId: options.databaseId,
-         sql,
-     });
--    yield* applyMigrationsWith(executor, options);
-+    const importMigration = (sql) => importD1Database({
-+        accountId: options.accountId,
-+        databaseId: options.databaseId,
-+        sqlData: sql,
-+    }).pipe(Effect.asVoid);
-+    yield* applyMigrationsWithExecutors(executor, importMigration, options);
+@@ -26,4 +28,19 @@ export const makeD1MigrationExecutor = (raw) => ({
+         cause,
+     }))),
  });
- /**
-  * Apply pending D1 migrations in order through the given SQL executor —
-  * the executor-agnostic core shared by the cloud and local flows.
-  */
--export const applyMigrationsWith = (executor, options) => Effect.gen(function* () {
-+export const applyMigrationsWith = (executor, options) => applyMigrationsWithExecutors(executor, (sql) => executor(sql).pipe(Effect.asVoid), options);
-+const applyMigrationsWithExecutors = (executor, applyMigration, options) => Effect.gen(function* () {
-     const { migrationsTable, migrationsFiles } = options;
-     yield* ensureMigrationsTable(executor, migrationsTable);
-     const applied = yield* getAppliedMigrations(executor, migrationsTable);
-@@ -28,14 +35,15 @@ export const applyMigrationsWith = (executor, options) => Effect.gen(function* (
-             continue;
-         const migrationId = nextSeq.toString().padStart(5, "0");
-         nextSeq += 1;
--        // D1 over HTTP doesn't support transactions; run migration + record
--        // in a single batched query.
--        yield* executor([
--            migration.sql,
-+        // D1 SQL-file imports preserve compound statements such as triggers
-+        // and commit the migration ledger in the same atomic import.
-+        yield* applyMigration([
-+            ...splitMigrationStatements(migration.sql),
-             `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
-         ].join("\n"));
+-//# sourceMappingURL=ApplyMigrations.js.map
+\ No newline at end of file
++/** Preserve compound SQL and commit each migration with its ledger atomically. */
++export const makeCloudD1MigrationExecutor = (options) => Effect.gen(function* () {
++    const queryDb = yield* d1.queryDatabase;
++    const services = yield* Effect.context();
++    const executor = makeD1MigrationExecutor((sql) => queryDb({ ...options, sql }));
++    return {
++        ...executor,
++        batch: (statements) => importD1Database({
++            ...options,
++            sqlData: statements.map((statement) => statement.trim())
++                .filter((statement) => statement.length > 0)
++                .map((statement) => statement.endsWith(";") ? statement : `${statement};`)
++                .join("\n"),
++        }).pipe(Effect.provideContext(services), Effect.asVoid, Effect.mapError((cause) => new MigrationError({ message: "D1 migration import failed", cause }))),
++    };
++});
+diff --git a/lib/Cloudflare/D1/Database.js b/lib/Cloudflare/D1/Database.js
+index 70c17acfdb6bb9539f9096832b564489c49fd3c6..80b0991b7830e5d1b8067fc4f42fddf360c6355a 100644
+--- a/lib/Cloudflare/D1/Database.js
++++ b/lib/Cloudflare/D1/Database.js
+@@ -3,7 +3,6 @@ import * as Effect from "effect/Effect";
+ import * as Layer from "effect/Layer";
+ import * as Option from "effect/Option";
+ import * as Stream from "effect/Stream";
+-import * as HttpClient from "effect/unstable/http/HttpClient";
+ import { isResolved } from "../../Diff.js";
+ import * as ProviderLayer from "../../Local/ProviderLayer.js";
+ import * as RpcProvider from "../../Local/RpcProvider.js";
+@@ -15,7 +14,7 @@ import { hashImports, readSqlFile } from "../../SQL/SqlFile.js";
+ import { recordsEqual } from "../../Util/equal.js";
+ import { CloudflareEnvironment } from "../CloudflareEnvironment.js";
+ import { generateLocalId, LOCAL_ENTRY_URL, localRuntimeServices, } from "../LocalRuntime.js";
+-import { makeD1MigrationExecutor } from "./ApplyMigrations.js";
++import { makeCloudD1MigrationExecutor, makeD1MigrationExecutor } from "./ApplyMigrations.js";
+ import { cloneDatabase } from "./CloneDatabase.js";
+ import { importD1Database } from "./ImportDatabase.js";
+ import { withLocalD1Executor } from "./LocalD1Gateway.js";
+@@ -79,7 +78,7 @@ export const isDatabase = (value) => isResourceOfType(value, "Cloudflare.D1Datab
+  * **Example:** Drizzle migrations (adopts an existing drizzle-kit-migrated database)
+  * ```typescript
+  * const schema = yield* Drizzle.Schema("app-schema", {
+- *   schema: "./src/schema.ts",
++ *   schema: "./src/schema.js",
+  *   dialect: "sqlite",
+  * });
+  * const db = yield* Cloudflare.D1.Database("my-db", {
+@@ -344,8 +343,7 @@ export const ProviderLive = () => Provider.succeed(Database, {
+                 input: migrationsInput,
+                 stamped: stampedOf(output),
+                 withExecutor: (apply) => Effect.gen(function* () {
+-                    const queryDb = yield* d1.queryDatabase;
+-                    yield* apply(makeD1MigrationExecutor((sql) => queryDb({ accountId: acct, databaseId, sql })));
++                    yield* apply(yield* makeCloudD1MigrationExecutor({ accountId: acct, databaseId }));
+                 }),
+             })
+             : undefined;
+@@ -553,4 +551,3 @@ const runImports = (accountId, databaseId, importFiles, rootDir, previous) => Ef
      }
+     return hashes;
  });
-+const splitMigrationStatements = (sql) => sql.split(/--> statement-breakpoint(?:\r?\n)?/u).map((statement) => statement.trim()).filter((statement) => statement.length > 0);
- const detectSchema = (executor, migrationsTable) => Effect.gen(function* () {
-     const result = yield* executor(`PRAGMA table_info(${migrationsTable});`).pipe(Effect.option);
-     const columns = [];
+-//# sourceMappingURL=Database.js.map
+\ No newline at end of file
 diff --git a/lib/Cloudflare/Queues/Consumer.d.ts b/lib/Cloudflare/Queues/Consumer.d.ts
-index 03318b2a63c07d3033ccbd93ddcb687709bbe980..60b240e2611bf4ee7de4773b34ab0fe2d89c1d36 100644
+index be9ff2d750b5de479d77f13175efe8ca8b79bc10..0db6dbcd6b3cd6f6ed770ffd7076400bdf0346ab 100644
 --- a/lib/Cloudflare/Queues/Consumer.d.ts
 +++ b/lib/Cloudflare/Queues/Consumer.d.ts
 @@ -20,6 +20,14 @@ export type ConsumerProps = {
@@ -71,10 +105,10 @@ index 03318b2a63c07d3033ccbd93ddcb687709bbe980..60b240e2611bf4ee7de4773b34ab0fe2
       * Consumer settings.
       */
 diff --git a/lib/Cloudflare/Queues/Consumer.js b/lib/Cloudflare/Queues/Consumer.js
-index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd33a1cc0b 100644
+index 5db97bf54dee227edda309cbeb2f6612e55eb093..649311a8b736d3e4d0d1ff171d7a6e08a54cc224 100644
 --- a/lib/Cloudflare/Queues/Consumer.js
 +++ b/lib/Cloudflare/Queues/Consumer.js
-@@ -97,6 +97,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
+@@ -98,6 +98,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
  // consumer yet" — the caller falls through to createConsumer, which
  // retries QueueNotFound until the queue propagates.
  Effect.catchTag("QueueNotFound", () => Effect.succeed(undefined)));
@@ -97,7 +131,7 @@ index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd
  export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
      // The `consumerId` is not marked as stable because if you start in dev mode, the ID will change on first deploy.
      stables: ["accountId"],
-@@ -138,13 +154,13 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -139,13 +155,13 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
          Effect.catchTag(["QueueNotFound", "InvalidRoute"], () => Effect.succeed([]))), { concurrency: 10 });
          return rows.flat();
      }),
@@ -115,7 +149,7 @@ index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd
              return { action: "update" };
          }
          if ((output?.accountId ?? accountId) !== accountId) {
-@@ -155,6 +171,21 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -156,6 +172,21 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
          if (output?.queueId && news.queueId !== output.queueId) {
              return { action: "replace", deleteFirst: true };
          }
@@ -137,7 +171,7 @@ index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd
          // Settings / DLQ / script drift is an update. We DON'T
          // escalate scriptName changes to `replace` because the
          // engine resolves cross-resource Output<string> refs (a
-@@ -166,16 +197,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -167,16 +198,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
          // we detect script drift and rebuild the consumer in
          // place (Cloudflare's PUT silently ignores `script_name`
          // changes, so reconcile does delete-then-create).
@@ -159,7 +193,7 @@ index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd
          const { accountId } = yield* yield* CloudflareEnvironment;
          const acct = output?.accountId ?? accountId;
          // Only use `output.queueId` if it's a live ID (i.e. no `dev:` prefix).
-@@ -224,7 +254,7 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -225,7 +255,7 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
          if (!observed) {
              observed = yield* findWorkerConsumer(acct, queueId);
          }
@@ -168,7 +202,7 @@ index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd
          // it in place. Cloudflare's PUT consumer silently ignores
          // `script_name` changes on existing consumers (the live
          // record stays pinned to the original worker), and the
-@@ -368,19 +398,87 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -369,19 +399,87 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
              while: (e) => e._tag === "QueueHandlerMissing",
              schedule: queueHandlerReadinessSchedule,
          }));
@@ -263,7 +297,7 @@ index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd
          };
      }),
      delete: Effect.fn(function* ({ output }) {
-@@ -422,14 +520,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -423,14 +521,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
                  consumerId: output.consumerId,
              })
                  .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
@@ -283,7 +317,7 @@ index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd
                  };
              }
          }
-@@ -445,8 +544,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -446,8 +545,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
                      queueId: output.queueId,
                      scriptName: match.scriptName ?? output.scriptName,
                      accountId: output.accountId,
@@ -294,7 +328,7 @@ index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd
                  };
              }
          }
-@@ -454,8 +553,101 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+@@ -455,8 +554,101 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
      }),
  });
  const toObserved = (c) => c.consumerId && c.type === "worker"
@@ -398,7 +432,7 @@ index 738de46cc40c2eeeecac524a5ab9de9d2da2a6f5..1d41acf8166c95a4ea65e2964445e5dd
  // but a fresh container/asset deploy can stretch that.
  const queueHandlerReadinessSchedule = Schedule.max([
 diff --git a/lib/Cloudflare/Queues/EventSource.d.ts b/lib/Cloudflare/Queues/EventSource.d.ts
-index 0b609cf9379d242927208a40d24f11d9938f0b38..40d78bef82f1fa96d11e43c36f664bb835faf89d 100644
+index 98e8a3a642a8f0ff5a6c5eb2f167b4275232a69e..2bdf6e5d1c0e6854724909d4514a0e7ec04e158d 100644
 --- a/lib/Cloudflare/Queues/EventSource.d.ts
 +++ b/lib/Cloudflare/Queues/EventSource.d.ts
 @@ -4,6 +4,7 @@ import * as Duration from "effect/Duration";
@@ -421,7 +455,7 @@ index 0b609cf9379d242927208a40d24f11d9938f0b38..40d78bef82f1fa96d11e43c36f664bb8
  /**
   * Convert a {@link MessagesProps} (with `Duration.Input` time fields)
 diff --git a/lib/Cloudflare/Queues/EventSource.js b/lib/Cloudflare/Queues/EventSource.js
-index 4f79fdff1eebd98f888781ee9f3655750f72879b..2f47114f8fe187350a08fe770c9a7079c10a8c77 100644
+index 4f79fdff1eebd98f888781ee9f3655750f72879b..cfab533151025e4320c51c75eca91b1d78470d68 100644
 --- a/lib/Cloudflare/Queues/EventSource.js
 +++ b/lib/Cloudflare/Queues/EventSource.js
 @@ -68,6 +68,7 @@ export const EventSourceLive = Layer.effect(EventSource, Effect.gen(function* ()
@@ -433,10 +467,22 @@ index 4f79fdff1eebd98f888781ee9f3655750f72879b..2f47114f8fe187350a08fe770c9a7079
              }));
          }
 diff --git a/lib/Cloudflare/Workers/WorkerProvider.js b/lib/Cloudflare/Workers/WorkerProvider.js
-index d2ea997936a918ee7eb707a67312c95362ca55b2..455d58aa8c8c993d6d038fefb72acadce3634a92 100644
+index ed5ca797826c79a954ad6392b2641cd3828a2f47..f6d0826206901adcefb7d0374d1b85b88b0937a5 100644
 --- a/lib/Cloudflare/Workers/WorkerProvider.js
 +++ b/lib/Cloudflare/Workers/WorkerProvider.js
-@@ -687,18 +687,20 @@ const workerAssetConfigForHash = (assets) => {
+@@ -16,11 +16,9 @@ import { isHttpClientError } from "effect/unstable/http/HttpClientError";
+ import * as crypto from "node:crypto";
+ import { Unowned } from "../../AdoptPolicy.js";
+ import * as Artifacts from "../../Artifacts.js";
+-import { hashDirectory } from "../../Command/Memo.js";
+ import { havePropsChanged, isResolved, stripEffects } from "../../Diff.js";
+ import * as ProviderLayer from "../../Local/ProviderLayer.js";
+ import * as Provider from "../../Provider.js";
+-import {} from "../../Resource.js";
+ import { Stack } from "../../Stack.js";
+ import { cachedFunction } from "../../Util/cached-function.js";
+ import { initialCwd } from "../../Util/Node.js";
+@@ -744,7 +742,8 @@ const workerAssetConfigForHash = (assets) => {
   * the bundle/vite/asset-content hashes, so a change to e.g. a compatibility
   * flag or observability config planned as a noop and silently never deployed.
   */
@@ -446,15 +492,14 @@ index d2ea997936a918ee7eb707a67312c95362ca55b2..455d58aa8c8c993d6d038fefb72acadc
      accountId,
      selfUrl,
      stack: { name: stack.name, stage: stack.stage },
-     compatibility: getCompatibility(props),
-     env: props.env,
+@@ -755,12 +754,10 @@ const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl,
+     // materialized as different attribute projections between reconcile and a
+     // later plan; hashing props.env as well would turn those irrelevant shape
+     // differences into perpetual updates.
 -    bindings: bindings.map((binding) => ({
 -        sid: binding.sid,
 -        data: binding.data,
 -    })),
-+    // Hash only the metadata Alchemy sends to the Worker API. Provider-only
-+    // resource attributes can change between plan phases without changing the
-+    // live Worker and must not manufacture a perpetual update.
 +    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
 +    containers: Array.from(new Set(bindings.flatMap((binding) => (binding.data.containers ?? []).map((container) => container.className)))).sort(),
      assets: workerAssetConfigForHash(props.assets),
@@ -463,7 +508,7 @@ index d2ea997936a918ee7eb707a67312c95362ca55b2..455d58aa8c8c993d6d038fefb72acadc
      limits: props.limits,
      logpush: props.logpush,
      observability: props.observability,
-@@ -3074,7 +3076,9 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
+@@ -3170,7 +3167,9 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
              // form against the stripped stored props and re-plans an update
              // forever (#874).
              const news = stripEffects(desired);
@@ -474,86 +519,79 @@ index d2ea997936a918ee7eb707a67312c95362ca55b2..455d58aa8c8c993d6d038fefb72acadc
                  return undefined;
              if ((output?.accountId ?? accountId) !== accountId) {
                  return { action: "replace" };
+@@ -4192,4 +4191,3 @@ const validateWorkerTags = (scriptName, tags, alchemyTagCount) => Effect.gen(fun
+         }
+     }
+ });
+-//# sourceMappingURL=WorkerProvider.js.map
+\ No newline at end of file
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
-index d43ec61be953a0b95770b43a735c792c15b43d64..f873754ae7157c9f7a4e933575550872126cbd28 100644
+index aa79c99b10f59988b7c92de5cf8bf8ef4473e2f5..6b30d08fa758302ecc2c5a09ca0974776807310b 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
 +++ b/src/Cloudflare/D1/ApplyMigrations.ts
-@@ -1,6 +1,7 @@
- import * as d1 from "@distilled.cloud/cloudflare/d1";
- import * as Effect from "effect/Effect";
- import type { SqlFile } from "../../SQL/SqlFile.ts";
+@@ -1,3 +1,5 @@
++import * as d1 from "@distilled.cloud/cloudflare/d1";
 +import { importD1Database } from "./ImportDatabase.ts";
- 
- /**
-  * The minimal query surface the migration flow needs: run (possibly
-@@ -45,7 +46,13 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
-         databaseId: options.databaseId,
-         sql,
-       });
--    yield* applyMigrationsWith(executor, options);
-+    const importMigration = (sql: string) =>
-+      importD1Database({
-+        accountId: options.accountId,
-+        databaseId: options.databaseId,
-+        sqlData: sql,
-+      }).pipe(Effect.asVoid);
-+    yield* applyMigrationsWithExecutors(executor, importMigration, options);
-   });
- 
- /**
-@@ -59,6 +66,22 @@ export const applyMigrationsWith = <E, R>(
-     migrationsFiles: ReadonlyArray<SqlFile>;
-   },
- ): Effect.Effect<void, E, R> =>
-+  applyMigrationsWithExecutors(
-+    executor,
-+    (sql) => executor(sql).pipe(Effect.asVoid),
-+    options,
-+  );
+ import * as Effect from "effect/Effect";
+ import {
+   inlineSqlParams,
+@@ -77,3 +79,27 @@ export const makeD1MigrationExecutor = <E>(
+       ),
+     ),
+ });
 +
-+const applyMigrationsWithExecutors = <QueryE, QueryR, MigrationE, MigrationR>(
-+  executor: D1SqlExecutor<QueryE, QueryR>,
-+  applyMigration: (
-+    sql: string,
-+  ) => Effect.Effect<void, MigrationE, MigrationR>,
-+  options: {
-+    migrationsTable: string;
-+    migrationsFiles: ReadonlyArray<SqlFile>;
-+  },
-+): Effect.Effect<void, QueryE | MigrationE, QueryR | MigrationR> =>
-   Effect.gen(function* () {
-     const { migrationsTable, migrationsFiles } = options;
-     yield* ensureMigrationsTable(executor, migrationsTable);
-@@ -69,17 +92,23 @@ export const applyMigrationsWith = <E, R>(
-       if (applied.has(migration.id)) continue;
-       const migrationId = nextSeq.toString().padStart(5, "0");
-       nextSeq += 1;
--      // D1 over HTTP doesn't support transactions; run migration + record
--      // in a single batched query.
--      yield* executor(
-+      // D1 SQL-file imports preserve compound statements such as triggers
-+      // and commit the migration ledger in the same atomic import.
-+      yield* applyMigration(
-         [
--          migration.sql,
-+          ...splitMigrationStatements(migration.sql),
-           `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
-         ].join("\n"),
-       );
-     }
-   });
- 
-+const splitMigrationStatements = (sql: string): readonly string[] =>
-+  sql
-+    .split(/--> statement-breakpoint(?:\r?\n)?/u)
-+    .map((statement) => statement.trim())
-+    .filter((statement) => statement.length > 0);
-+
- interface TableColumn {
-   name: string;
-   type: string;
++/** Preserve compound SQL and commit each migration with its ledger atomically. */
++export const makeCloudD1MigrationExecutor = (options: {
++  accountId: string;
++  databaseId: string;
++}): Effect.Effect<SqlExecutor, never, d1.CloudflareOpContext> => Effect.gen(function* () {
++  const queryDb = yield* d1.queryDatabase;
++  const services = yield* Effect.context<Effect.Services<ReturnType<typeof importD1Database>>>();
++  const executor = makeD1MigrationExecutor((sql) => queryDb({ ...options, sql }));
++  return {
++    ...executor,
++    batch: (statements: ReadonlyArray<string>) => importD1Database({
++      ...options,
++      sqlData: statements.map((statement) => statement.trim())
++        .filter((statement) => statement.length > 0)
++        .map((statement) => statement.endsWith(";") ? statement : `${statement};`)
++        .join("\n"),
++    }).pipe(
++      Effect.provideContext(services),
++      Effect.asVoid,
++      Effect.mapError((cause) => new MigrationError({ message: "D1 migration import failed", cause })),
++    ),
++  } satisfies SqlExecutor;
++});
+diff --git a/src/Cloudflare/D1/Database.ts b/src/Cloudflare/D1/Database.ts
+index ea1785f59d6783215afb538cd171e09283ec66ab..0b95370f6b0dd04963658f938fe6bfa5cfe12451 100644
+--- a/src/Cloudflare/D1/Database.ts
++++ b/src/Cloudflare/D1/Database.ts
+@@ -29,7 +29,7 @@ import {
+   localRuntimeServices,
+ } from "../LocalRuntime.ts";
+ import type { Providers } from "../Providers.ts";
+-import { makeD1MigrationExecutor } from "./ApplyMigrations.ts";
++import { makeCloudD1MigrationExecutor, makeD1MigrationExecutor } from "./ApplyMigrations.ts";
+ import { cloneDatabase } from "./CloneDatabase.ts";
+ import { importD1Database } from "./ImportDatabase.ts";
+ import { withLocalD1Executor } from "./LocalD1Gateway.ts";
+@@ -522,12 +522,7 @@ export const ProviderLive = () =>
+             stamped: stampedOf(output),
+             withExecutor: (apply) =>
+               Effect.gen(function* () {
+-                const queryDb = yield* d1.queryDatabase;
+-                yield* apply(
+-                  makeD1MigrationExecutor((sql) =>
+-                    queryDb({ accountId: acct, databaseId, sql }),
+-                  ),
+-                );
++                yield* apply(yield* makeCloudD1MigrationExecutor({ accountId: acct, databaseId }));
+               }),
+           })
+         : undefined;
 diff --git a/src/Cloudflare/Queues/Consumer.ts b/src/Cloudflare/Queues/Consumer.ts
-index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf41d8a09e2 100644
+index f69b5818195f681f36a789e8d78ec7b6bd75ad46..0d02ac961ba8557543ba7d5db9dd0692a0115675 100644
 --- a/src/Cloudflare/Queues/Consumer.ts
 +++ b/src/Cloudflare/Queues/Consumer.ts
 @@ -34,6 +34,14 @@ export type ConsumerProps = {
@@ -571,7 +609,7 @@ index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf4
    /**
     * Consumer settings.
     */
-@@ -218,6 +226,29 @@ const findWorkerConsumer = (acct: string, queueId: string) =>
+@@ -219,6 +227,29 @@ const findWorkerConsumer = (acct: string, queueId: string) =>
      Effect.catchTag("QueueNotFound", () => Effect.succeed(undefined)),
    );
  
@@ -601,7 +639,7 @@ index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf4
  export const ConsumerProviderLive = () =>
    Provider.succeed(Consumer, {
      // The `consumerId` is not marked as stable because if you start in dev mode, the ID will change on first deploy.
-@@ -280,12 +311,12 @@ export const ConsumerProviderLive = () =>
+@@ -281,12 +312,12 @@ export const ConsumerProviderLive = () =>
        );
        return rows.flat();
      }),
@@ -618,7 +656,7 @@ index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf4
          return { action: "update" };
        }
        if ((output?.accountId ?? accountId) !== accountId) {
-@@ -296,6 +327,23 @@ export const ConsumerProviderLive = () =>
+@@ -297,6 +328,23 @@ export const ConsumerProviderLive = () =>
        if (output?.queueId && news.queueId !== output.queueId) {
          return { action: "replace", deleteFirst: true } as const;
        }
@@ -642,7 +680,7 @@ index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf4
        // Settings / DLQ / script drift is an update. We DON'T
        // escalate scriptName changes to `replace` because the
        // engine resolves cross-resource Output<string> refs (a
-@@ -308,17 +356,16 @@ export const ConsumerProviderLive = () =>
+@@ -309,17 +357,16 @@ export const ConsumerProviderLive = () =>
        // place (Cloudflare's PUT silently ignores `script_name`
        // changes, so reconcile does delete-then-create).
        if (
@@ -665,7 +703,7 @@ index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf4
        const { accountId } = yield* yield* CloudflareEnvironment;
        const acct = output?.accountId ?? accountId;
        // Only use `output.queueId` if it's a live ID (i.e. no `dev:` prefix).
-@@ -379,7 +426,7 @@ export const ConsumerProviderLive = () =>
+@@ -380,7 +427,7 @@ export const ConsumerProviderLive = () =>
          observed = yield* findWorkerConsumer(acct, queueId);
        }
  
@@ -674,7 +712,7 @@ index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf4
        // it in place. Cloudflare's PUT consumer silently ignores
        // `script_name` changes on existing consumers (the live
        // record stays pinned to the original worker), and the
-@@ -556,28 +603,107 @@ export const ConsumerProviderLive = () =>
+@@ -557,28 +604,107 @@ export const ConsumerProviderLive = () =>
            }),
          );
  
@@ -800,7 +838,7 @@ index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf4
        };
      }),
      delete: Effect.fn(function* ({ output }) {
-@@ -629,14 +755,15 @@ export const ConsumerProviderLive = () =>
+@@ -630,14 +756,15 @@ export const ConsumerProviderLive = () =>
                Effect.succeed(undefined),
              ),
            );
@@ -820,7 +858,7 @@ index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf4
            };
          }
        }
-@@ -655,8 +782,8 @@ export const ConsumerProviderLive = () =>
+@@ -656,8 +783,8 @@ export const ConsumerProviderLive = () =>
              queueId: output.queueId,
              scriptName: match.scriptName ?? output.scriptName,
              accountId: output.accountId,
@@ -831,7 +869,7 @@ index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf4
            };
          }
        }
-@@ -665,19 +792,175 @@ export const ConsumerProviderLive = () =>
+@@ -666,19 +793,175 @@ export const ConsumerProviderLive = () =>
    });
  
  type ObservedConsumer = {
@@ -1009,7 +1047,7 @@ index 561ac876ce997599814834b9a41f78f5012de65c..1ce9d77a9f23cada17e4ef961a98aaf4
  // but a fresh container/asset deploy can stretch that.
  const queueHandlerReadinessSchedule = Schedule.max([
 diff --git a/src/Cloudflare/Queues/EventSource.ts b/src/Cloudflare/Queues/EventSource.ts
-index 94fe8e726cbbe5f9c7ea92cd69f49112dc137c48..720bddc00fe7eea6e8f6dae990c089ae3b34031a 100644
+index 7e19f329d2e8a95fe39eb5ca7c7da10580298377..f539b1a28ba5dc19552a3b75ac1533aa8870e487 100644
 --- a/src/Cloudflare/Queues/EventSource.ts
 +++ b/src/Cloudflare/Queues/EventSource.ts
 @@ -5,6 +5,7 @@ import * as Duration from "effect/Duration";
@@ -1031,7 +1069,7 @@ index 94fe8e726cbbe5f9c7ea92cd69f49112dc137c48..720bddc00fe7eea6e8f6dae990c089ae
  }
  
  /**
-@@ -211,6 +214,7 @@ export const EventSourceLive = Layer.effect(
+@@ -212,6 +215,7 @@ export const EventSourceLive = Layer.effect(
                scriptName: host.workerName,
                settings: toConsumerSettings(props),
                deadLetterQueue: props.deadLetterQueue,
@@ -1040,10 +1078,10 @@ index 94fe8e726cbbe5f9c7ea92cd69f49112dc137c48..720bddc00fe7eea6e8f6dae990c089ae
            }),
          );
 diff --git a/src/Cloudflare/Workers/WorkerProvider.ts b/src/Cloudflare/Workers/WorkerProvider.ts
-index 1687f8d0007cf2a97ecf73d2071d9658f22e0b9b..0a0f4733766ac2a0df8d939e469c4e8bf9dee072 100644
+index d0d549a71f51cc43bb8939d5a3f398c74ad4bfcc..47237504a914d165eeccf071540a86e046eeb8a7 100644
 --- a/src/Cloudflare/Workers/WorkerProvider.ts
 +++ b/src/Cloudflare/Workers/WorkerProvider.ts
-@@ -992,7 +992,8 @@ const workerAssetConfigForHash = (assets: WorkerProps["assets"]) => {
+@@ -1088,7 +1088,8 @@ const workerAssetConfigForHash = (assets: WorkerProps["assets"]) => {
   * the bundle/vite/asset-content hashes, so a change to e.g. a compatibility
   * flag or observability config planned as a noop and silently never deployed.
   */
@@ -1053,34 +1091,25 @@ index 1687f8d0007cf2a97ecf73d2071d9658f22e0b9b..0a0f4733766ac2a0df8d939e469c4e8b
    props,
    bindings,
    accountId,
-@@ -1005,12 +1006,21 @@ const resolveWorkerMetadataHash = ({
-     stack: { name: stack.name, stage: stack.stage },
-     compatibility: getCompatibility(props),
-     env: props.env,
+@@ -1106,12 +1107,12 @@ const resolveWorkerMetadataHash = ({
+     // materialized as different attribute projections between reconcile and a
+     // later plan; hashing props.env as well would turn those irrelevant shape
+     // differences into perpetual updates.
 -    bindings: bindings.map((binding) => ({
 -      sid: binding.sid,
 -      data: binding.data,
 -    })),
-+    // Hash only the metadata Alchemy sends to the Worker API. Provider-only
-+    // resource attributes can change between plan phases without changing the
-+    // live Worker and must not manufacture a perpetual update.
 +    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
-+    containers: Array.from(
-+      new Set(
-+        bindings.flatMap((binding) =>
-+          (binding.data.containers ?? []).map(
-+            (container) => container.className,
-+          ),
-+        ),
-+      ),
-+    ).sort(),
++    containers: Array.from(new Set(bindings.flatMap((binding) =>
++      (binding.data.containers ?? []).map((container) => container.className)
++    ))).sort(),
      assets: workerAssetConfigForHash(props.assets),
 -    cache: props.cache,
 +    cache: props.cache ?? getCacheBinding(bindings),
      limits: props.limits,
      logpush: props.logpush,
      observability: props.observability,
-@@ -4139,7 +4149,9 @@ export const LiveWorkerProvider = () =>
+@@ -4303,7 +4304,9 @@ export const LiveWorkerProvider = () =>
            // form against the stripped stored props and re-plans an update
            // forever (#874).
            const news = stripEffects(desired);

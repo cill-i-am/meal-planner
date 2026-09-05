@@ -100,10 +100,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       .toSorted();
 
     expect(databaseSource).toContain('"MealPlannerAuthDatabase"');
-    expect(databaseSource).toContain(
-      'migrationsDir: "./apps/api/auth-migrations"'
-    );
-    expect(databaseSource).toContain('migrationsTable: "d1_migrations"');
+    expect(databaseSource).toContain('dir: "./apps/api/auth-migrations"');
+    expect(databaseSource).toContain('table: "d1_migrations"');
     expect(databaseSource.match(/Cloudflare\.D1\.Database\(/gu)).toHaveLength(
       1
     );

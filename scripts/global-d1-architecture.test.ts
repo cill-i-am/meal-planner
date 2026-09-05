@@ -135,8 +135,7 @@ describe.sequential(
 export const TenantLedgerDatabase = Cloudflare.D1.Database(
   "TenantLedgerDatabase",
   {
-    migrationsDir: "./apps/api/tenant-ledger-migrations",
-    migrationsTable: "d1_migrations",
+    migrations: { dir: "./apps/api/tenant-ledger-migrations", table: "d1_migrations" },
   }
 );`;
 
@@ -189,8 +188,7 @@ const { D1: TenantD1 } = Cloudflare;
 export const TenantLedgerDatabase = TenantD1.Database(
   "TenantLedgerDatabase",
   {
-    migrationsDir: "./apps/api/tenant-ledger-migrations",
-    migrationsTable: "d1_migrations",
+    migrations: { dir: "./apps/api/tenant-ledger-migrations", table: "d1_migrations" },
   }
 );`,
         () => {
@@ -210,8 +208,7 @@ export const TenantLedgerDatabase = TenantD1.Database(
 export const TenantLedgerDatabase = Cloudflare["D1"]["Database"](
   "TenantLedgerDatabase",
   {
-    migrationsDir: "./apps/api/tenant-ledger-migrations",
-    migrationsTable: "d1_migrations",
+    migrations: { dir: "./apps/api/tenant-ledger-migrations", table: "d1_migrations" },
   }
 );`,
         () => {
@@ -310,8 +307,7 @@ export const TenantLedgerDatabase = Cloudflare["D1"]["Database"](
 export const TenantLedgerDatabase = Cloudflare.D1.Database(
   "TenantLedgerDatabase",
   {
-    migrationsDir: "./apps/api/tenant-ledger-migrations",
-    migrationsTable: "d1_migrations",
+    migrations: { dir: "./apps/api/tenant-ledger-migrations", table: "d1_migrations" },
   }
 );`,
       },
@@ -401,8 +397,7 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 export const TenantLedgerDatabase = Cloudflare.D1.Database(
   "TenantLedgerDatabase",
   {
-    migrationsDir: "./apps/api/tenant-ledger-migrations",
-    migrationsTable: "d1_migrations",
+    migrations: { dir: "./apps/api/tenant-ledger-migrations", table: "d1_migrations" },
   }
 );
 export const TenantLedgerQuery = Cloudflare.D1.QueryDatabase(TenantLedgerDatabase);
